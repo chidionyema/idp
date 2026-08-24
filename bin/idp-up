@@ -61,7 +61,16 @@ fi
 #    every asset the estate owns, and LAW 21 says the default is closed. Going
 #    public is bin/idp-publish, which is one command and the founder's call.
 if command -v tailscale >/dev/null; then
-  tailscale serve --bg --http=8443 "http://127.0.0.1:$PORT_PRIMARY"  >/dev/null 2>&1 || true
+  # 8443 is only claimed when nothing holds it. This runs hourly under launchd,
+  # and re-pointing it at the primary every hour would silently undo a
+  # bin/idp-switch fallback -- the link would go back on its own, which is the
+  # worst kind of bug because it looks like it worked and then does not.
+  if tailscale serve status 2>/dev/null | grep -q ':8443'; then
+    log "publish   8443 already points somewhere -- left alone (idp-switch owns it)"
+  else
+    tailscale serve --bg --http=8443 "http://127.0.0.1:$PORT_PRIMARY" >/dev/null 2>&1 || true
+  fi
+  # 10000 is the fallback's own address and never moves, so it is always set.
   tailscale serve --bg --http=10000 "http://127.0.0.1:$PORT_FALLBACK" >/dev/null 2>&1 || true
   host=$(tailscale status --json | /usr/local/bin/jq -r '.Self.DNSName' | sed 's/\.$//')
   log "primary   http://$host:8443/"

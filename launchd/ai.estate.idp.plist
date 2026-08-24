@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The portal starts itself. Nobody types bin/idp-up.
+
+  RunAtLoad brings it back after a reboot. The hourly repeat is not a watchdog
+  bolted on: bin/idp-up regenerates both renderings from the inventory, which
+  the hourly inventory job has just rewritten, and starts whichever renderer is
+  no longer running. Running it when everything is already healthy costs two
+  file writes and two curl probes.
+
+  KeepAlive is deliberately absent. bin/idp-up starts the renderers in the
+  background and exits, so KeepAlive would read that exit as a crash and
+  restart it in a loop forever.
+
+  Install:    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.estate.idp.plist
+  Remove:     launchctl bootout gui/$(id -u)/ai.estate.idp
+-->
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/Users/chidionyema/.nvm/versions/node/v22.13.1/bin:/Users/chidionyema/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>HOME</key>
+		<string>/Users/chidionyema</string>
+	</dict>
+	<key>Label</key>
+	<string>ai.estate.idp</string>
+	<key>LowPriorityIO</key>
+	<true/>
+	<key>Nice</key>
+	<integer>5</integer>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/chidionyema/dev/code/idp/bin/idp-up</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StartInterval</key>
+	<integer>3600</integer>
+	<key>StandardErrorPath</key>
+	<string>/Users/chidionyema/dev/code/idp/logs/launchd.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/chidionyema/dev/code/idp/logs/launchd.log</string>
+	<key>WorkingDirectory</key>
+	<string>/Users/chidionyema/dev/code/idp</string>
+</dict>
+</plist>
