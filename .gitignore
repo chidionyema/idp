@@ -28,3 +28,5 @@ reports/
 # rule scoped to one directory is a rule that fails the moment a directory is added.
 .env
 **/.env
+site/
+architecture/out/

@@ -197,6 +197,11 @@ catalog:
       rules:
         - allow: [Component, Resource, Domain, System, Group]
 
+    # The platform itself, hand-written, carrying techdocs-ref and dependsOn.
+    # The generated file above has neither; see docs/decisions/0002.
+    - type: file
+      target: ../../../catalog-info.yaml
+
     # Local example data, file locations are relative to the backend process, typically `packages/backend`
     - type: file
       target: ../../examples/entities.yaml

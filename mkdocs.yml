@@ -1,0 +1,16 @@
+# TechDocs renders this. Backstage's builder is already configured
+# (backstage/app-config.yaml:158) and had nothing to build until this file existed.
+site_name: idp — the platform
+docs_dir: docs
+plugins:
+  - techdocs-core
+nav:
+  - Home: index.md
+  - Architecture: architecture/index.md
+  - Decisions:
+      - 0001 Gateway API is the routing standard: decisions/0001-gateway-api-is-the-routing-standard.md
+      - 0002 Documentation is code: decisions/0002-documentation-is-code-and-the-portal-renders-it.md
+  - Tutorials: tutorials/index.md
+  - How-to: how-to/index.md
+  - Reference: reference/index.md
+  - Explanation: explanation/index.md
