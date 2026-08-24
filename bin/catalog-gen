@@ -51,7 +51,7 @@ def y(v):
         return "'" + s.replace("'", "''") + "'"
     return s
 
-def entity(kind, name, title, etype, annotations, tags, links=()):
+def entity(kind, name, title, etype, annotations, tags, links=(), depends_on=()):
     out = [
         "apiVersion: backstage.io/v1alpha1",
         f"kind: {kind}",
@@ -61,8 +61,13 @@ def entity(kind, name, title, etype, annotations, tags, links=()):
     ]
     if annotations:
         out.append("  annotations:")
-        out += [f"    estate/{k}: {y(v)}" for k, v in sorted(annotations.items())
-                if v not in (None, "")]
+        # A key with a slash is already namespaced -- backstage.io/techdocs-ref is
+        # read by the TechDocs plugin and must not be rewritten. Everything else is
+        # ours and gets the estate/ prefix so it cannot collide with Backstage's.
+        for k, v in sorted(annotations.items()):
+            if v in (None, ""):
+                continue
+            out.append(f"    {k if '/' in k else 'estate/' + k}: {y(v)}")
     if tags:
         out.append("  tags:")
         out += [f"    - {y(slug(t).lower())}" for t in tags if t]
@@ -73,6 +78,12 @@ def entity(kind, name, title, etype, annotations, tags, links=()):
     out += ["spec:", f"  type: {etype}", f"  owner: {OWNER}", f"  system: {SYSTEM}"]
     if kind == "Component":
         out.append("  lifecycle: production")
+    # sorted() and not the discovery order. Founder, 2026-08-24: "we need to take
+    # idempotency serious across platform". bin/idp-ci runs this twice over one
+    # inventory and fails on a single byte of difference.
+    if depends_on:
+        out.append("  dependsOn:")
+        out += [f"    - {r}" for r in sorted(set(depends_on))]
     return "\n".join(out)
 
 
@@ -91,6 +102,60 @@ def main() -> int:
 
     os.makedirs(OUT, exist_ok=True)
     docs, counts, seen = [], {}, set()
+    edges = orphans = techdocs = 0
+
+    # ---- pass 1: entity names, and the two relationships the inventory can prove ----
+    #
+    # A relationship this file invents is worse than no relationship: the portal
+    # renders it identically and nobody can tell. So only two are emitted, and both
+    # are read off measured fields rather than guessed from a name.
+    #
+    #   containment -- an asset whose `path` is inside a repo's `path` depends on
+    #     that repo. Longest match wins, because ~/.claude/scripts sits inside
+    #     ~/.claude. Measured on the 2026-08-24T19:00Z inventory: 197 of 215
+    #     non-repo assets resolve; the 18 that do not are tagged outside-any-repo,
+    #     which is LAW 24 made visible instead of silent.
+    #
+    #   coupling -- `coupling: anthropic` is the field the drills already grade
+    #     "what survives losing this vendor". Emitting it as a Resource turns the
+    #     portal's relations graph into the blast radius: click the vendor, see
+    #     every asset that stops. 139 of 241 rows on the same inventory.
+    #
+    # Deliberately NOT emitted: providesApis. No repository in the estate publishes
+    # an OpenAPI document -- measured, 0 of 26 -- so the field would be an empty
+    # promise. It arrives when a service ships a spec, not before.
+    names, repo_index = {}, []
+    for r in rows:
+        if r.get("kind") not in MAP:
+            continue
+        name = slug(r.get("id") or "unnamed")
+        if name in seen:                       # ids collide across roots
+            name = slug(f"{name}-{slug(r.get('root','x'))}")
+        if name in seen:                       # still colliding: never drop an asset (idp-verify counts them)
+            import hashlib
+            name = slug(f"{name[:55]}-{hashlib.sha1(str(r.get('id')).encode()).hexdigest()[:6]}")
+        seen.add(name)
+        names[id(r)] = name
+        if r.get("kind") == "repo" and r.get("path"):
+            repo_index.append((r["path"].rstrip("/"), name))
+    repo_index.sort(key=lambda t: -len(t[0]))  # longest path first: most specific repo wins
+
+    def owning_repo(path):
+        p = (path or "").rstrip("/")
+        for rp, rname in repo_index:
+            if p == rp or p.startswith(rp + os.sep):
+                return rname
+        return None
+
+    couplings = sorted({r.get("coupling") for r in rows
+                        if r.get("coupling") and r.get("coupling") != "none"})
+    for c in couplings:
+        n = sum(1 for r in rows if r.get("coupling") == c)
+        docs.append(entity(
+            "Resource", f"vendor-{slug(c)}", f"Vendor: {c}", "vendor",
+            {"coupling": c, "dependents": n,
+             "why": "every asset tagged with this coupling stops if it does"},
+            ["vendor", f"coupling-{slug(c)}"]))
 
     # Domain and System take no spec.type/spec.system, so they are written out
     # literally rather than through entity(), which exists for the 194 rows.
@@ -109,22 +174,31 @@ def main() -> int:
         "  name: platform", "  title: Platform", "spec:", "  type: team",
         "  children: []"]))
 
+    # ---- pass 2: the entities ----
     for r in rows:
         k = r.get("kind")
         if k not in MAP:
             continue
         bkind, btype = MAP[k]
-        name = slug(r.get("id") or "unnamed")
-        if name in seen:                       # ids collide across roots
-            name = slug(f"{name}-{slug(r.get('root','x'))}")
-        if name in seen:                       # still colliding: never drop an asset (idp-verify counts them)
-            import hashlib
-            name = slug(f"{name[:55]}-{hashlib.sha1(str(r.get('id')).encode()).hexdigest()[:6]}")
-        seen.add(name)
+        name = names[id(r)]
 
         ann = {"root": r.get("root"), "path": r.get("path"), "coupling": r.get("coupling"),
                "kind": k}
         tags = [k.replace("_", "-"), f"coupling-{r.get('coupling') or 'none'}"]
+
+        deps = []
+        if r.get("coupling") and r.get("coupling") != "none":
+            deps.append(f"resource:default/vendor-{slug(r['coupling'])}")
+        if k != "repo":
+            owner_repo = owning_repo(r.get("path"))
+            if owner_repo:
+                deps.append(f"component:default/{owner_repo}")
+            else:
+                # Load-bearing and in no repository we track: LAW 24. Three of these
+                # run ~/.hermes/scripts/launchd_receipt.py, the estate the founder
+                # killed on 2026-08-22.
+                tags.append("outside-any-repo")
+                orphans += 1
 
         if k == "repo":
             ann.update({"branch": r.get("branch"), "dirty": r.get("dirty"),
@@ -139,6 +213,15 @@ def main() -> int:
             ann["licence-file"] = "present" if lic else "ABSENT"
             if not lic:
                 tags.append("no-licence")
+            # TechDocs renders MkDocs. Annotating a repo that has no mkdocs.yml
+            # gives the portal a Docs tab that 404s, which is the empty-shell
+            # failure again. Measured 2026-08-24: 1 of 26 repos has one.
+            if os.path.exists(os.path.join(r.get("path", ""), "mkdocs.yml")):
+                ann["backstage.io/techdocs-ref"] = "dir:."
+                tags.append("has-docs")
+                techdocs += 1
+            else:
+                tags.append("no-docs")
         elif k == "scheduled_job":
             ann.update({"loaded": r.get("loaded"), "last-status": r.get("last_status"),
                         "interval-s": r.get("interval_s")})
@@ -163,8 +246,9 @@ def main() -> int:
             links.append(("Remote", rem.replace("git@github.com:", "https://github.com/")
                           .removesuffix(".git")))
 
-        docs.append(entity(bkind, name, r.get("id") or name, btype, ann, tags, links))
+        docs.append(entity(bkind, name, r.get("id") or name, btype, ann, tags, links, deps))
         counts[k] = counts.get(k, 0) + 1
+        edges += len(deps)
 
     target = os.path.join(OUT, "catalog-info.yaml")
     with open(target, "w") as fh:
@@ -173,9 +257,12 @@ def main() -> int:
                  "# Do not hand-edit: the next run overwrites it. Fix the inventory instead.\n---\n")
         fh.write("\n---\n".join(docs) + "\n")
 
-    print(f"catalog-gen: {len(docs)} entities -> {target}")
+    print(f"catalog-gen: {len(docs)} entities, {edges} dependsOn edges -> {target}")
     for k in sorted(counts):
         print(f"  {k:14} {counts[k]}")
+    print(f"  {'vendors':14} {len(couplings)}  ({', '.join(couplings) or 'none'})")
+    print(f"  {'orphans':14} {orphans}  (asset in no tracked repo -- LAW 24)")
+    print(f"  {'techdocs':14} {techdocs}  (repo with an mkdocs.yml)")
     return 0
 
 

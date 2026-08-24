@@ -60,13 +60,41 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 FIX="$IDP/tests/fixtures/inventory.json"
 n=$(jq '.rows|length' "$FIX")
 INV="$FIX" OUT="$tmp" python3 "$IDP/bin/catalog-gen" >/dev/null
-got=$(grep -c '^kind: \(Component\|Resource\)$' "$tmp/catalog-info.yaml")
+# Count the entities that came from a row: every one carries estate/kind. The
+# vendor Resources catalog-gen synthesises are not assets and must not inflate
+# this, or the incident test stops meaning "no asset was dropped".
+got=$(grep -c '^    estate/kind: ' "$tmp/catalog-info.yaml")
 INV="$FIX" DB="$tmp/estate.db" SU="$(command -v sqlite-utils)" "$IDP/bin/db-gen" >/dev/null 2>&1 &
 INV="$FIX" DB="$tmp/estate.db" SU="$(command -v sqlite-utils)" "$IDP/bin/db-gen" >/dev/null 2>&1 &
 wait
 rows=$(sqlite3 "$tmp/estate.db" 'select count(*) from assets')
 if [ "$got" -eq "$n" ] && [ "$rows" -eq "$n" ]; then say "ok    incident 2026-08-24 dropped assets: $n rows -> $got entities, $rows db rows (two concurrent db-gens)"
 else say "FAIL  incident 2026-08-24 dropped assets: $n rows -> $got entities, $rows db rows"; fail=1; fi
+
+# 4b. Idempotency, as a property: one inventory, two runs, zero bytes different.
+#     Founder, 2026-08-24: "we need to take idempotency serious across platform".
+#     This is rung 2 of ~/AGENTS.md "How to test" -- a property, not an example, so
+#     it survives any rewrite of catalog-gen. It is not decoration: catalog/ is
+#     gitignored and rebuilt on every idp-up, and Backstage re-reads the file, so a
+#     generator that reorders a map or stamps a clock churns the portal and the
+#     estate.db rows on every refresh with nothing having changed.
+a="$tmp/idem-a"; b="$tmp/idem-b"
+INV="$FIX" OUT="$a" python3 "$IDP/bin/catalog-gen" >/dev/null
+INV="$FIX" OUT="$b" python3 "$IDP/bin/catalog-gen" >/dev/null
+if cmp -s "$a/catalog-info.yaml" "$b/catalog-info.yaml"; then
+  say "ok    idempot  catalog-gen twice over one inventory: identical ($(wc -c < "$a/catalog-info.yaml" | tr -d ' ') bytes)"
+else say "FAIL  idempot  catalog-gen is not deterministic:"; diff "$a/catalog-info.yaml" "$b/catalog-info.yaml" | head -10 | sed 's/^/      /'; fail=1; fi
+
+# 4c. The catalogue must carry relationships. An entity list with no edges renders
+#     exactly like a mapped estate and is the failure a peer session named on
+#     2026-08-24: "Backstage doesn't magically discover your architecture". Two
+#     edge kinds are derivable from the inventory and both must appear.
+edges=$(grep -c '^  dependsOn:$' "$a/catalog-info.yaml" || true)
+vend=$(grep -c '^    - resource:default/vendor-' "$a/catalog-info.yaml" || true)
+cont=$(grep -c '^    - component:default/' "$a/catalog-info.yaml" || true)
+if [ "$edges" -gt 0 ] && [ "$vend" -gt 0 ] && [ "$cont" -gt 0 ]; then
+  say "ok    graph    $edges entities carry dependsOn: $cont containment, $vend vendor-coupling"
+else say "FAIL  graph    catalogue has no relationship graph (dependsOn=$edges containment=$cont vendor=$vend)"; fail=1; fi
 
 # 5. Every generated entity validates against the published Backstage schema.
 python3 - "$tmp/catalog-info.yaml" "$tmp/docs" <<'PY'
