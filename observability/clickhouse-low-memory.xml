@@ -9,9 +9,17 @@
   that runs slowly: the kill looks like a crash and nobody reads it as capacity.
 
   These numbers assume a few thousand spans a day. If ingest ever grows, raise
-  max_server_memory_usage and the mem_limit together -- changing one alone gets
+  max_server_memory_usage and the mem_limit together. Changing one alone gets
   you either an OOM kill or wasted headroom.
+
+  A double hyphen is illegal inside an XML comment, and one in this block cost
+  three hours: ClickHouse refused the whole file with "SAXParseException:
+  Invalid token", crash-looped, and because langfuse-web and langfuse-worker
+  wait on it being healthy they were never started at all. Writing the fix
+  introduced a second one, inside the very sentence naming the validator, which
+  is why the validator now runs in bin/langfuse-up rather than living in prose.
 -->
+<!-- Validate: xmllint (noout) observability/clickhouse-low-memory.xml -->
 <clickhouse>
     <!-- 1000 MB, inside the container's 1200m ceiling with room for overhead. -->
     <max_server_memory_usage>1000000000</max_server_memory_usage>

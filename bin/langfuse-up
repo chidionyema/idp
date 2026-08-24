@@ -22,6 +22,29 @@ log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 command -v docker >/dev/null || { echo "docker is not installed"; exit 2; }
 docker info >/dev/null 2>&1 || { echo "docker daemon is not running -- start Docker Desktop"; exit 2; }
 
+# Validate the ClickHouse config before starting anything that depends on it.
+#
+# A double hyphen inside its opening XML comment made ClickHouse refuse the whole
+# file and crash-loop. langfuse-web and langfuse-worker wait on clickhouse being
+# healthy, so neither was ever started, and `docker ps -a` showed them as Created
+# rather than Exited -- which reads like "not reached yet", not like a fault.
+# Three hours to find, one command to catch. It is here and not in a comment
+# because writing that comment introduced a second double hyphen.
+CH_XML="$OBS/clickhouse-low-memory.xml"
+if command -v xmllint >/dev/null 2>&1; then
+  if ! xmllint --noout "$CH_XML" 2>/tmp/lf-xml.$$; then
+    echo "FAIL  $CH_XML is not valid XML, so ClickHouse would refuse it and crash-loop:"
+    sed 's/^/        /' /tmp/lf-xml.$$
+    rm -f /tmp/lf-xml.$$
+    exit 2
+  fi
+  rm -f /tmp/lf-xml.$$
+  log "clickhouse config is valid XML"
+else
+  # A guard that cannot read its evidence says so rather than returning a verdict.
+  log "BLIND  xmllint is not installed, so $CH_XML was NOT validated"
+fi
+
 # --- secrets ------------------------------------------------------------------
 # Generated once and reused. Regenerating ENCRYPTION_KEY after data exists makes
 # every stored API key unreadable, so this block never overwrites an existing
