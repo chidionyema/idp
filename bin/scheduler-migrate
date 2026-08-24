@@ -190,11 +190,21 @@ def rollback():
         if daemon_pid() is None and web_pid() is None:
             break
         time.sleep(0.5)
+    # A process that ignored SIGTERM (mid-startup, 2026-08-24) is killed, never
+    # forgotten: dropping its pidfile while it lives orphans the port for the next run.
     for name in ("daemon", "web"):
-        try:
-            os.remove(os.path.join(HOME, f"{name}.pid"))
-        except OSError:
-            pass
+        pid = _pid(name)
+        if pid:
+            os.kill(pid, 9)
+            for _ in range(20):
+                if _pid(name) is None:
+                    break
+                time.sleep(0.25)
+        if _pid(name) is None:
+            try:
+                os.remove(os.path.join(HOME, f"{name}.pid"))
+            except OSError:
+                pass
     back = 0
     if LAUNCHD:
         for l in labels():
