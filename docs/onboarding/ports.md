@@ -22,3 +22,13 @@ A single hand-kept ledger drifts the first time someone binds a port at 2am to g
 
 ## Next
 Hostnames (`dagster.local`) via the gateway are the reverse-proxy row, tracked separately.
+
+## GitHub default-branch rulesets
+
+`bin/repo-rulesets` (report) / `bin/repo-rulesets --apply` puts
+`platform/github/ruleset.default-branch.json` (no deletion, no force-push on
+the default branch) on every repository under the estate account, idempotently.
+The account is a User, not an organization, so an org-wide `~ALL` ruleset does
+not exist here; the runner loops the repositories instead. Private repositories
+on the free plan answer 403 and are printed as BLOCKED, never skipped silently.
+2026-08-24: 26 public repos carry it, 24 private repos blocked by plan.
