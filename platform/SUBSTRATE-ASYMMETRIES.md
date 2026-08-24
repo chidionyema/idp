@@ -24,16 +24,30 @@ Measured 2026-08-24 on `chidis-MacBook-Pro` unless a row says otherwise.
 Dev is x86_64 from the laptop down to the kubelet. The target is ARM. Every image
 this estate builds locally is single-arch amd64 and will not run there.
 
-This is the row most likely to be found by someone else first. Settle it the moment
-a prod node exists:
+**Ruled and gated since this was written.** Founder ruling R24, 2026-08-25: every
+tag carries `linux/amd64` and `linux/arm64` under one manifest list. `bin/build-image`
+is the one build path and `bin/multiarch-gate` refuses a single-arch push; both landed
+in idp#35 (8bc2990) and `bin/idp-ci` proves the gate both ways. The STANDARDS row is
+crew#196.
+
+So this is no longer an open asymmetry in idp — it is an open **sweep**. The estate
+outside this repo still builds single-arch, measured 2026-08-25:
+
+```
+$ python3 bin/multiarch-gate ~/dev/code/prospector-main ~/dev/code/hermes-v2 \
+      ~/dev/code/survival-stack ~/dev/code/crew | tail -1
+FAIL  multiarch 8 findings across 4 root(s)
+```
+
+Eight builds in four repos, tracked as crew#195. Until that reaches zero, an image
+built by one of those paths runs on the laptop and will not run on the Oracle node.
+
+The prod reading is still unmeasured, because no prod node exists. Take it the moment
+one does, rather than trusting the vendor page:
 
 ```
 kubectl --context prod get node -o jsonpath='{.items[0].status.nodeInfo.architecture}'
 ```
-
-If it returns `arm64`, every `docker build` in this estate needs `--platform
-linux/amd64,linux/arm64` and a registry that holds a manifest list. Nothing has been
-changed for this yet — recorded, not fixed.
 
 ## 2. `network.hostAddresses` voids Docker's loopback bindings
 
