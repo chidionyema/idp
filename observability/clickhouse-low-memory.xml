@@ -36,6 +36,29 @@
     <background_common_pool_size>4</background_common_pool_size>
     <max_concurrent_queries>16</max_concurrent_queries>
 
+    <!--
+      Shrinking background_pool_size alone is not safe. ClickHouse runs a sanity
+      check at startup and REFUSES TO BOOT if the MergeTree pool reservations
+      exceed the pool that now exists:
+
+        Code: 36. DB::Exception: The value of
+        'number_of_free_entries_in_pool_to_execute_mutation' setting (20) is
+        greater than the value of
+        'background_pool_size'*'background_merges_mutations_concurrency_ratio'
+        (8). This indicates incorrect configuration because mutations cannot
+        work with these settings. (BAD_ARGUMENTS)
+
+      Those two defaults, 20 and 8, are sized against the default pool of 16.
+      With a pool of 4 and a ratio of 2 there are 8 slots, so both reservations
+      have to come down with it. They are the number of slots kept free, so 2
+      leaves 6 usable and still lets a mutation run.
+    -->
+    <merge_tree>
+        <number_of_free_entries_in_pool_to_execute_mutation>2</number_of_free_entries_in_pool_to_execute_mutation>
+        <number_of_free_entries_in_pool_to_lower_max_size_of_merge>2</number_of_free_entries_in_pool_to_lower_max_size_of_merge>
+        <number_of_free_entries_in_pool_to_execute_optimize_entire_partition>2</number_of_free_entries_in_pool_to_execute_optimize_entire_partition>
+    </merge_tree>
+
     <!-- Logs otherwise grow without bound in a volume nobody looks at. -->
     <logger>
         <level>warning</level>
