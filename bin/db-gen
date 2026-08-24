@@ -28,7 +28,22 @@ mkdir -p "$(dirname "$DB")"
 tmp="$DB.tmp"; rm -f "$tmp"
 
 jq -c '.rows[]' "$INV" | "$SU" insert "$tmp" assets - --nl --alter
-jq -c '{taken_at: .at, rows: (.rows|length), generated_by: "idp/bin/db-gen"}' "$INV" \
+
+# meta identifies which run produced this database, for a stranger who has
+# only the .db file. schema_version covers this table's own shape (bump it
+# when a column here is added, renamed or reinterpreted). The inventory has
+# no run id of its own -- it is a plain JSON object with `at`, `findings`,
+# `rows` -- so inventory_sha256 is the trace-back key: a stranger holding the
+# same inventory.json can hash it and confirm this database came from that
+# exact run, byte for byte, without trusting a timestamp alone. generated_at
+# is when db-gen ran, which is not the same moment as taken_at (the inventory
+# snapshot can be older than the render that consumed it).
+inv_sha256=$(shasum -a 256 "$INV" | awk '{print $1}')
+generated_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+jq -c --arg sha "$inv_sha256" --arg gen_at "$generated_at" --arg inv_path "$INV" \
+  '{schema_version: 1, taken_at: .at, rows: (.rows|length),
+    generated_by: "idp/bin/db-gen", generated_at: $gen_at,
+    inventory_path: $inv_path, inventory_sha256: $sha}' "$INV" \
   | "$SU" insert "$tmp" meta - --nl --alter
 
 # Licence presence is a buyer question and the inventory does not record it yet,

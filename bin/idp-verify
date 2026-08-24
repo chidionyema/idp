@@ -36,6 +36,62 @@ fi
 want=$(grep -c '^kind:' "$YAML")
 say "source    $want entities in catalog-info.yaml"
 
+# --- schema: catalog-info.yaml validates against Backstage's published schema -
+# Backstage's own schema lives at github.com/backstage/backstage under
+# packages/catalog-model/src/schema/kinds/*.schema.json, one file per kind,
+# cross-referencing each other by bare $id ("EntityMeta", "common#relation")
+# rather than resolvable URIs -- they are bundled at Backstage's own build
+# time, not fetchable as a standalone schema. SchemaStore republishes the same
+# coverage as one self-contained, resolvable file, listed in SchemaStore's own
+# catalog as "Catalog Info" / Backstage: https://json.schemastore.org/catalog-info.json
+# (anyOf across API, Component, Domain, Group, Location, Resource, System,
+# Template, User -- confirmed against SchemaStore's repo 2026-08-24).
+#
+# That schema validates one entity document. catalog-info.yaml is a
+# multi-document YAML stream (`---`-separated) and check-jsonschema parses one
+# document per file, so pointing it at the whole file fails to parse --
+# "ComposerError: expected a single document in the stream" -- before the
+# schema ever runs. Confirmed 2026-08-24, exit 1, no document checked. So this
+# splits the stream into one instance file per document first and validates
+# each one, which is everything the published schema can check; it does not
+# and cannot validate cross-document properties such as duplicate names.
+CJS="$IDP/.venv/bin/check-jsonschema"
+SCHEMA_URL="https://json.schemastore.org/catalog-info.json"
+if [ ! -x "$CJS" ]; then
+  say "FAIL      schema  check-jsonschema missing -- $IDP/.venv/bin/pip install check-jsonschema"
+  fail=1
+else
+  split_dir=$(mktemp -d)
+  n_docs=$("$IDP/.venv/bin/python3" - "$YAML" "$split_dir" <<'PY'
+import sys, os, yaml
+src, out = sys.argv[1], sys.argv[2]
+n = 0
+for doc in yaml.safe_load_all(open(src)):
+    if not doc:
+        continue
+    n += 1
+    kind = doc.get("kind", "unknown")
+    name = (doc.get("metadata") or {}).get("name", "x")
+    with open(os.path.join(out, f"{n:04d}-{kind}-{name}.yaml"), "w") as fh:
+        yaml.safe_dump(doc, fh)
+print(n)
+PY
+)
+  schema_out=$(mktemp)
+  if [ "$n_docs" -eq 0 ]; then
+    say "FAIL      schema  no entity documents parsed out of $YAML"
+    fail=1
+  elif "$CJS" --schemafile "$SCHEMA_URL" "$split_dir"/*.yaml > "$schema_out" 2>&1; then
+    say "schema    $n_docs/$n_docs entity documents valid against $SCHEMA_URL"
+  else
+    say "FAIL      schema validation failed against $SCHEMA_URL:"
+    sed 's/^/            /' "$schema_out"
+    fail=1
+  fi
+  rm -f "$schema_out"
+  rm -rf "$split_dir"
+fi
+
 # --- fallback renderer --------------------------------------------------------
 db_rows=$(sqlite3 "$DB" "select count(*) from assets" 2>/dev/null || echo 0)
 http_rows=$(curl -sS --max-time 10 "$FALLBACK/estate/assets.json?_shape=array&_size=0" \
