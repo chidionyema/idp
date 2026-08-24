@@ -49,3 +49,22 @@ The gateway listens on 127.0.0.1 only. Nothing reaches it from the network.
 
 The vault holds no `GITHUB_MCP_TOKEN` yet. Until it does, `bin/mcp-status`
 prints `github FAIL http 400` and exits 1; the estate route works regardless.
+
+## Registering an agent against the gateway
+
+The gateway is only a control if agents go through it. This machine's Claude Code
+is registered at user scope, so every session in every repo reaches GitHub and the
+estate tools through Agentgateway and its audit log, never directly:
+
+```
+K=$(grep -m1 '^MCP_GATEWAY_KEY=' mcp/.env | cut -d= -f2-)
+claude mcp add --transport http --scope user estate http://127.0.0.1:3310/estate/mcp --header "Authorization: Bearer $K"
+claude mcp add --transport http --scope user github http://127.0.0.1:3310/github/mcp --header "Authorization: Bearer $K"
+claude mcp list          # both must read "Connected"
+```
+
+The key lives in `~/.claude.json` (mode 600) and `mcp/.env` (gitignored); it is in no
+repository. The `github` route needs `GITHUB_MCP_TOKEN` in `mcp/.env` to be a real
+token — on 2026-08-24 it was a 7-character placeholder and GitHub answered
+"Authorization header is badly formatted" through the gateway. `gh auth token` is the
+value this machine uses.

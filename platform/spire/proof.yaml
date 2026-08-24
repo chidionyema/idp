@@ -1,0 +1,37 @@
+# The receipt for agent identity: a workload in the catalogue's namespace, holding
+# no secret, obtains a short-lived X.509 SVID from the SPIRE Workload API through
+# the CSI-mounted socket. `make spire-proof` runs it and prints the SPIFFE ID.
+# Restricted-PSA compliant, like everything else in that namespace.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: spiffe-proof
+  namespace: backstage
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 6   # the agent learns a new entry a few seconds after the pod starts; early attempts get "no identity issued"
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: fetch
+          image: ghcr.io/spiffe/spire-agent:1.15.3   # already on the node; the CLI is in it
+          imagePullPolicy: IfNotPresent
+          command: ["/opt/spire/bin/spire-agent", "api", "fetch", "x509",
+                    "-socketPath", "/spiffe-workload-api/spire-agent.sock", "-timeout", "60s"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: spiffe-workload-api
+              mountPath: /spiffe-workload-api
+              readOnly: true
+      volumes:
+        - name: spiffe-workload-api
+          csi:
+            driver: csi.spiffe.io
+            readOnly: true
