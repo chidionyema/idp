@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The estate scheduler. launchd supervises this one process; Dagster schedules
+  everything else from scheduler/schedule.yml. This is the only launchd job that
+  should ever run a scheduled estate script again.
+
+  bin/scheduler-up starts dagster-daemon and dagster-webserver in the background
+  and exits, so KeepAlive is absent (it would restart it forever) and the
+  10-minute repeat is what brings a crashed daemon back.
+
+  Install:    bin/idp-install-launchd
+  Remove:     launchctl bootout gui/$(id -u)/ai.estate.scheduler
+-->
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>${PATH}</string>
+		<key>HOME</key>
+		<string>${HOME}</string>
+	</dict>
+	<key>Label</key>
+	<string>ai.estate.scheduler</string>
+	<key>Nice</key>
+	<integer>5</integer>
+	<key>ProgramArguments</key>
+	<array>
+		<string>${IDP}/bin/scheduler-up</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StartInterval</key>
+	<integer>600</integer>
+	<key>StandardErrorPath</key>
+	<string>${IDP}/run/scheduler-launchd.log</string>
+	<key>StandardOutPath</key>
+	<string>${IDP}/run/scheduler-launchd.log</string>
+	<key>WorkingDirectory</key>
+	<string>${IDP}</string>
+</dict>
+</plist>

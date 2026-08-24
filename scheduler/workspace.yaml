@@ -1,0 +1,4 @@
+load_from:
+  - python_file:
+      relative_path: estate_scheduler/definitions.py
+      attribute: defs
