@@ -178,9 +178,18 @@ a{color:var(--brass)}
     <li><code>kswapd0</code>, the kernel's reclaim daemon, is pinned at <strong>94% of a core</strong>. With no swap it can only evict page cache, and it is not keeping up. System time is 56%; idle is 0.0%.</li>
     <li>Containers therefore accept connections and never get scheduled to answer them. This is why a container can report <em>healthy</em> and return HTTP 000 — the healthcheck proves the process is alive, never that it can do work.</li>
     <li>Healthchecks is one of those containers. It is what <code>placement-audit</code> reads. So the audit goes <span class="chip c-blind">Blind</span> on 35 of 45 estate jobs — it reports UNKNOWN rather than inventing a verdict, which is correct behaviour and still a hole.</li>
-    <li>Langfuse cannot come up in that VM, so observability stays unproven and three of the six improvements cannot be demonstrated at all.</li>
+    <li>Langfuse cannot come up, so observability stays unproven and three of the six improvements cannot be demonstrated. <strong>But see below — the VM was only half of that one.</strong></li>
   </ol></div>
 </section>
+
+<div class="callout" style="border-left-color:var(--fail)">
+  <h3 style="color:var(--fail)">Found while writing this page: a second cause, and it was mine</h3>
+  <p>I had been attributing Langfuse entirely to the VM. It was also crash-looping on a syntax error in a config file I wrote. <code>clickhouse-low-memory.xml</code> contained a <strong>double hyphen inside an XML comment</strong>, which is illegal, so ClickHouse refused the whole file and died on boot in a loop:</p>
+  <pre style="margin:10px 0">SAXParseException: Invalid token in
+'/etc/clickhouse-server/config.d/low-memory.xml', line 12 column 55</pre>
+  <p>Because <code>langfuse-web</code> and <code>langfuse-worker</code> both wait on ClickHouse being healthy, neither was ever started. <code>docker ps -a</code> listed them as <em>Created</em> rather than <em>Exited</em> — which reads like "not reached yet", not like a fault. That is why three hours of looking at the VM never found it.</p>
+  <p>Fixed and pushed. ClickHouse now stays up instead of restarting. Writing the fix introduced a <em>second</em> double hyphen, inside the sentence naming the validator, because the validator's flag is spelled with two hyphens — so the check now lives in <code>bin/langfuse-up</code> instead of in a comment, proved both ways: the real file exits 0, the same file with the hyphen put back exits 1.</p>
+</div>
 
 <div class="callout">
   <h3>A correction, and the instrument that caused it</h3>
@@ -196,6 +205,8 @@ a{color:var(--brass)}
     <div class="gh"><span class="t">Blocked on the VM</span><span class="chip c-fail">Blocks 3 of 6 improvements</span><span class="n">1 decision</span></div>
     <ul>
       <li>Give the VM more memory. It is <span class="mono">colima stop &amp;&amp; colima start --memory 12</span> and it restarts <em>every</em> container in one go — the prospector stack included. That is the load-255 shape, so it is yours to call, not mine.</li>
+      <li><s>ClickHouse crash-looping.</s> <span class="chip c-pass">Fixed</span> Not a VM problem at all — an illegal double hyphen in an XML comment in a config file I wrote. Pushed as <code>1d1ad3a</code>, with the validator now in <code>bin/langfuse-up</code>.</li>
+      <li>Starting <code>langfuse-web</code> and <code>langfuse-worker</code> needs about 1.8 GiB the VM does not currently have. This is now the <em>only</em> thing between here and a proven observability stack, which is what makes the memory call worth making.</li>
       <li>The cheaper half is already found and needs no restart: healthcheck <code>exec</code> churn is leaving a zombie per probe per interval, 60 of them now. A peer has <code>init: true</code> committed on a branch for the three prospector services. It reclaims PIDs, not memory — a leak repair, not the relief.</li>
     </ul>
   </div>
