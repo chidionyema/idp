@@ -1,0 +1,63 @@
+# The front door's own health page. crew#191 item 3.
+#
+# Twenty lines of nothing, and it is the only thing in the cluster that can
+# answer "is the single front door actually routing?" without a real workload
+# behind it. When Backstage is down, this tells you whether Backstage is down or
+# whether Traefik is. Those are different incidents and today nothing separates
+# them.
+#
+# traefik/whoami is the standard ingress smoke test, echoes the request it got,
+# and is a ~5 MiB image. It is not a service, it has no state and nothing
+# depends on it.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whoami
+  namespace: platform
+  labels: {app: whoami}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: whoami}
+  template:
+    metadata:
+      labels: {app: whoami}
+    spec:
+      containers:
+        - name: whoami
+          image: traefik/whoami:v1.10.2
+          ports:
+            - containerPort: 80
+          # No resources stanza on purpose. The LimitRange in this namespace
+          # supplies them, and this pod existing at all is the standing proof
+          # that the quota admits a pod that declares nothing (LAW 38).
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: whoami
+  namespace: platform
+spec:
+  selector: {app: whoami}
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: whoami
+  namespace: platform
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: hello.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: whoami
+                port: {number: 80}
