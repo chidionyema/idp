@@ -25,7 +25,8 @@ ports:
   - {port: 5291, service: prospector-store-api, compose: prospector}
   - {port: 7107, service: backstage-backend,    compose: none, bind: 127.0.0.1}
   - {port: 8001, service: datasette,            compose: none}
-  - {port: 8080, service: prospector-edge,      compose: prospector, non_loopback: true}
+  - {port: 8080, service: prospector-edge,      compose: prospector, bind: 127.0.0.1}
+  - {port: 8443, service: prospector-edge-tls,  compose: prospector, bind: 127.0.0.1}
   - {port: 8611, service: prospector-engine,    compose: prospector}
   - {port: 8765, service: consultd,             compose: none}
   - {port: 8766, service: kimi_bridge,          compose: none}
