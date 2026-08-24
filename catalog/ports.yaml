@@ -30,11 +30,32 @@ ports:
   - {port: 7107, service: backstage-backend,    compose: none, bind: 127.0.0.1}
   - {port: 8001, service: datasette,            compose: none}
   - {port: 8080, service: prospector-edge,      compose: prospector, non_loopback: true}
+  - {port: 8443, service: prospector-edge-tls,  compose: prospector, non_loopback: true}
   - {port: 8611, service: prospector-engine,    compose: prospector}
   - {port: 8765, service: consultd,             compose: none}
   - {port: 8766, service: kimi_bridge,          compose: none}
   - {port: 8767, service: kimi_bridge,          compose: none}
   - {port: 8787, service: board_serve,          compose: none}
   - {port: 11434, service: ollama,              compose: none}
-# Not ours, not gated: 53/54861 (lima), 5000/7000 (macOS ControlCenter), 49248 (rapportd),
-# 49xxx ephemeral, 53145 (ssh forward to k3d API; owner: founder).
+
+# Ports this estate does not own but that exist on the substrate it runs on.
+# These used to be a list of process names inside bin/port-gate, which meant a
+# process could hold ANY port unchecked once its name was on that list -- colima
+# republishes every container port as `limactl`, so that one line exempted every
+# containerised service in the estate from this file. Founder directive
+# 2026-08-24: "limactl holding *:PORT is a claim, not an exemption. If a process
+# holds a port, it gets checked against the ledger. No exceptions."
+#
+# A row here exempts ONE port, names its owner, and says why it may be where it
+# is. Anything not listed is a finding, whoever holds it.
+substrate:
+  - {port: 53,   owner: limactl,        non_loopback: true, why: "colima's lima hostagent DNS resolver for the Docker VM. Removing it breaks name resolution inside every container on this machine."}
+  - {port: 5000, owner: ControlCenter,  non_loopback: true, why: "macOS AirPlay Receiver. Apple-owned. Turned off under System Settings > General > AirDrop & Handoff if it is ever unwanted."}
+  - {port: 7000, owner: ControlCenter,  non_loopback: true, why: "macOS AirPlay Receiver, second port. Same owner as 5000."}
+  - {port: 49248, owner: rapportd,     non_loopback: true, why: "macOS Continuity/Handoff. Apple-owned, not ours to move; turning it off costs the founder Handoff between his own devices. Inside the ephemeral range but pinned, so it is declared rather than left to the range rule."}
+
+# The one range that cannot be declared per port, because the kernel assigns it.
+# Stated here rather than hardcoded in the gate so that the ledger holds every
+# rule the gate applies. rapportd (macOS Continuity/Handoff) and the ssh forwards
+# colima opens for container ports both land in here.
+ephemeral: [49152, 65535]

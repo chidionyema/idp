@@ -31,6 +31,14 @@
             "process": "limactl",
             "owner": "limactl",
             "command": "limactl hostagent"
+        },
+        {
+            "kind": "listener",
+            "port": 54861,
+            "bind": "127.0.0.1",
+            "process": "limactl",
+            "owner": "limactl",
+            "command": "limactl hostagent"
         }
     ]
 }

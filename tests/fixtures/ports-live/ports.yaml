@@ -11,3 +11,11 @@ ports:
   service: traefik-ingress
   compose: none
   bind: 127.0.0.1
+substrate:
+- port: 53
+  owner: limactl
+  non_loopback: true
+  why: lima's DNS resolver for the Docker VM.
+ephemeral:
+- 49152
+- 65535
