@@ -9,7 +9,7 @@
 # has to catch.
 set -uo pipefail
 
-IDP="$HOME/dev/code/idp"
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
 LLM="$IDP/llm"
 ENVF="$LLM/.env"
 

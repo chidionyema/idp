@@ -13,7 +13,7 @@
 #   policy-test        run every fixture, print a table, exit non-zero on any surprise
 set -uo pipefail
 
-IDP="$(cd "$(dirname "$0")/.." && pwd)"   # not $HOME/dev/code/idp: CI checks out elsewhere
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
 FIX="$IDP/policy/fixtures"
 fail=0
 

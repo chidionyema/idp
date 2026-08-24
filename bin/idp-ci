@@ -19,6 +19,21 @@ for f in "$IDP"/bin/*; do
     && say "ok    shell    $(basename "$f")" || { say "FAIL  shell    $(basename "$f")"; fail=1; }
 done
 
+# 1b. No file hardcodes where this repo lives. 17 of 19 scripts carried
+#     $HOME/dev/code/idp on 2026-08-24 and the first one CI ran failed on the
+#     runner. Founder: "no hardcoding -- law" (LAW 46). Proved both ways: the
+#     .bad fixture must be refused and the .good fixture must pass.
+HARDCODE='dev/code/[a-z]|/Users/chidi''onyema|/home/[a-z]+/'   # split so this line does not match itself
+hardcode_scan() { grep -nE "$HARDCODE" "$1" | grep -vE '^[0-9]+:\s*#' ; }
+if hardcode_scan "$IDP/tests/fixtures/hardcoded-path.bad.sh" >/dev/null && ! hardcode_scan "$IDP/tests/fixtures/hardcoded-path.good.sh" >/dev/null; then
+  say "ok    guard    hardcoded-path guard refuses the bad fixture and passes the good one"
+else say "FAIL  guard    hardcoded-path guard is not discriminating"; fail=1; fi
+hits=0
+while IFS= read -r f; do
+  if out=$(hardcode_scan "$f"); then say "FAIL  hardcode $f"; printf '%s\n' "$out" | sed 's/^/      /'; hits=$((hits+1)); fi
+done < <(cd "$IDP" && git ls-files bin llm observability mcp launchd '*.py' '*.yml' '*.yaml' '*.json' 2>/dev/null | grep -v '^tests/fixtures/')
+[ "$hits" -eq 0 ] && say "ok    hardcode 0 files hardcode a checkout path" || fail=1
+
 # 2. Compose files are valid. Values are placeholders; compose only checks shape.
 for c in llm/litellm.yml observability/langfuse.yml; do
   # shellcheck disable=SC2046  # NAME=placeholder pairs are meant to split

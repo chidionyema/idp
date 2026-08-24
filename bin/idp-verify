@@ -16,7 +16,7 @@
 # renderers.
 set -uo pipefail
 
-IDP="$HOME/dev/code/idp"
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
 YAML="$IDP/catalog/catalog-info.yaml"
 DB="$IDP/catalog/estate.db"
 BACKEND="http://127.0.0.1:7107"

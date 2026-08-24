@@ -14,7 +14,7 @@
 # never heard of node.
 set -euo pipefail
 
-IDP="$HOME/dev/code/idp"
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
 RUN="$IDP/logs"; mkdir -p "$RUN"
 PORT_PRIMARY=3100
 PORT_FALLBACK=8001

@@ -21,9 +21,9 @@
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>PATH</key>
-		<string>/Users/chidionyema/.nvm/versions/node/v22.13.1/bin:/Users/chidionyema/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<string>${PATH}</string>
 		<key>HOME</key>
-		<string>/Users/chidionyema</string>
+		<string>${HOME}</string>
 	</dict>
 	<key>Label</key>
 	<string>ai.estate.idp</string>
@@ -33,17 +33,17 @@
 	<integer>5</integer>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/chidionyema/dev/code/idp/bin/idp-up</string>
+		<string>${IDP}/bin/idp-up</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StartInterval</key>
 	<integer>3600</integer>
 	<key>StandardErrorPath</key>
-	<string>/Users/chidionyema/dev/code/idp/logs/launchd.log</string>
+	<string>${IDP}/logs/launchd.log</string>
 	<key>StandardOutPath</key>
-	<string>/Users/chidionyema/dev/code/idp/logs/launchd.log</string>
+	<string>${IDP}/logs/launchd.log</string>
 	<key>WorkingDirectory</key>
-	<string>/Users/chidionyema/dev/code/idp</string>
+	<string>${IDP}</string>
 </dict>
 </plist>

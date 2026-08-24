@@ -9,7 +9,7 @@
 # way cannot be used as a check.
 set -uo pipefail
 
-IDP="$HOME/dev/code/idp"
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
 OBS="$IDP/observability"
 ENVF="$OBS/.env"
 JQ=/usr/local/bin/jq
