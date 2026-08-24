@@ -25,7 +25,9 @@ if [ "$rows" -eq 0 ]; then
 fi
 
 mkdir -p "$(dirname "$DB")"
-tmp="$DB.tmp"; rm -f "$tmp"
+# Per-process scratch file. Two db-gens ran concurrently on 2026-08-24 (idp-up and a
+# hand run) sharing one "$DB.tmp" and both inserted into it: 478 rows for 239 assets.
+tmp="$DB.tmp.$$"; rm -f "$tmp"; trap 'rm -f "$tmp"' EXIT
 
 jq -c '.rows[]' "$INV" | "$SU" insert "$tmp" assets - --nl --alter
 

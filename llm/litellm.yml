@@ -38,10 +38,14 @@ name: litellm
 
 services:
   litellm:
-    image: ghcr.io/berriai/litellm-database:main-v1.61.20
+    # Pinned to a release tag. main-v1.61.20 vanished from ghcr on or before 2026-08-24 and
+    # litellm-up failed with 'not found'; v1.98.0 is the release tag (amd64+arm64 manifest).
+    image: ghcr.io/berriai/litellm-database:v1.98.0
     container_name: litellm-proxy
     restart: unless-stopped
-    mem_limit: 512m
+    # 512m and 1024m were both OOM-killed at v1.98.0 (docker events: oom, die 137); the
+    # startup peak sampled at 984 MiB on 2026-08-24. 2g leaves headroom on an 8 GiB VM.
+    mem_limit: 2g
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     volumes:
       - ./config.yaml:/app/config.yaml:ro

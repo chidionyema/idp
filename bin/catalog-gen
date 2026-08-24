@@ -116,8 +116,9 @@ def main() -> int:
         name = slug(r.get("id") or "unnamed")
         if name in seen:                       # ids collide across roots
             name = slug(f"{name}-{slug(r.get('root','x'))}")
-        if name in seen:
-            continue
+        if name in seen:                       # still colliding: never drop an asset (idp-verify counts them)
+            import hashlib
+            name = slug(f"{name[:55]}-{hashlib.sha1(str(r.get('id')).encode()).hexdigest()[:6]}")
         seen.add(name)
 
         ann = {"root": r.get("root"), "path": r.get("path"), "coupling": r.get("coupling"),
