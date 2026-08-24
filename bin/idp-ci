@@ -250,6 +250,17 @@ if python3 "$IDP/bin/plist-gate" >/dev/null 2>&1 \
   say "ok    plist    every launchd template renders to a plist that parses and names its job; gate proved both ways"
 else say "FAIL  plist    a launchd template does not render to a valid plist, or the gate does not discriminate"; python3 "$IDP/bin/plist-gate" | sed 's/^/      /'; fail=1; fi
 
+# --live must take its own reading, not grade a saved file. Poison the default
+# inventory with a violation that is not true of this machine: a gate that still
+# reads the file reports it, a gate that reads lsof does not. Measured 2026-08-24:
+# the file was 73 minutes stale and failed 7107 for a bind corrected 45 min earlier,
+# and -- the half that matters -- never once mentioned the *:8080 that was live.
+poison="$tmp/poisonhome"; mkdir -p "$poison/.estate/state"
+printf '{"rows":[{"kind":"listener","port":7107,"bind":"*","process":"node","owner":"poison"}]}\n' \
+  > "$poison/.estate/state/inventory.json"
+if HOME="$poison" python3 "$IDP/bin/port-gate" --live 2>&1 | grep -q 'poison'; then
+  say "FAIL  portlive port-gate --live is reading ~/.estate/state/inventory.json, not the machine"; fail=1
+else say "ok    portlive port-gate --live reads the machine, not a saved inventory"; fi
 # Reconcile (crew#186 CP3): a rogue container is a finding, the clean fixture is not.
 rec_out=$(python3 "$IDP/bin/idp-reconcile" --ps tests/fixtures/reconcile/ps.rogue.jsonl 2>&1)   # grep -q under pipefail would SIGPIPE it
 if [ "$(printf '%s' "$rec_out" | grep -c 'rogue       rogue-redis')" != 1 ] \

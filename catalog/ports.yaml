@@ -35,4 +35,5 @@ ports:
   - {port: 8787, service: board_serve,          compose: none}
   - {port: 11434, service: ollama,              compose: none}
 # Not ours, not gated: 53/54861 (lima), 5000/7000 (macOS ControlCenter), 49248 (rapportd),
-# 49xxx ephemeral, 53145 (ssh forward to k3d API; owner: founder).
+# 49xxx ephemeral. The k3d API forward is 6445 and is declared above, not exempted here:
+# it moved from 53145 and the exemption went stale, so the gate called it undeclared.
