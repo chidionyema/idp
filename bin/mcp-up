@@ -17,7 +17,7 @@ set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 MCP="$IDP/mcp"
 ENVF="$MCP/.env"
-AGE_BLOB="$HOME/dev/code/prospector-main/deploy/secrets.env.age"
+AGE_BLOB="${AGE_BLOB:-$(dirname "$IDP")/prospector-main/deploy/secrets.env.age}"   # sibling checkout; migration source until the sops vault lands
 AGE_ID="$HOME/.config/prospector/age-key.txt"
 COMPOSE=(docker compose --env-file "$ENVF" -f "$MCP/agentgateway.yml")
 GATEWAY="http://127.0.0.1:3310"
