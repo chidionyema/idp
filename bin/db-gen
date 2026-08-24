@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Estate inventory -> SQLite, for the fallback renderer.
+#
+# The second of two renderings of the same source. bin/catalog-gen writes YAML
+# for Backstage; this writes SQLite for Datasette. Neither is the source: the
+# source is ~/.estate/state/inventory.json, which LAW 39 already produces.
+#
+# It is deliberately sqlite-utils rather than a Python script. The transform is
+# "put this JSON array in a table", which is the one thing sqlite-utils exists
+# to do, and a script here would be a worse copy of it.
+set -euo pipefail
+
+INV="${INV:-$HOME/.estate/state/inventory.json}"
+DB="${DB:-$HOME/dev/code/idp/catalog/estate.db}"
+SU="$HOME/dev/code/idp/.venv/bin/sqlite-utils"
+
+[ -f "$INV" ] || { echo "db-gen: no inventory at $INV" >&2; exit 2; }
+[ -x "$SU" ]  || { echo "db-gen: sqlite-utils missing at $SU" >&2; exit 2; }
+
+rows=$(jq '.rows | length' "$INV")
+if [ "$rows" -eq 0 ]; then
+  # An empty database renders as a healthy portal with nothing in it. Refuse.
+  echo "db-gen: inventory has 0 rows -- refusing to write an empty database" >&2
+  exit 1
+fi
+
+mkdir -p "$(dirname "$DB")"
+tmp="$DB.tmp"; rm -f "$tmp"
+
+jq -c '.rows[]' "$INV" | "$SU" insert "$tmp" assets - --nl --alter
+jq -c '{taken_at: .at, rows: (.rows|length), generated_by: "idp/bin/db-gen"}' "$INV" \
+  | "$SU" insert "$tmp" meta - --nl --alter
+
+# Licence presence is a buyer question and the inventory does not record it yet,
+# so it is computed here. bin/catalog-gen computes the same thing for the YAML,
+# which is one fact in two places and therefore wrong. The fix is a licence_file
+# column in the inventory itself; until that lands both readers agree because
+# both check the same five filenames.
+"$SU" add-column "$tmp" assets licence_file text 2>/dev/null || true
+"$SU" rows "$tmp" assets --column id --column path --column kind --json-cols 2>/dev/null \
+  | jq -r '.[] | select(.kind=="repo") | [.id, .path] | @tsv' \
+  | while IFS=$'\t' read -r rid rpath; do
+      have=ABSENT
+      for n in LICENSE LICENSE.md LICENSE.txt COPYING LICENCE; do
+        [ -f "$rpath/$n" ] && { have=present; break; }
+      done
+      "$SU" "$tmp" "update assets set licence_file = :v where id = :i and kind='repo'" \
+        -p v "$have" -p i "$rid" >/dev/null
+    done
+
+# Views are the fallback's whole interface: a stranger lands on a list of
+# tables, so the questions a buyer asks are named as tables of their own.
+"$SU" create-view "$tmp" repos_without_licence \
+  "select id, path, remote, dirty from assets where kind='repo' and licence_file='ABSENT'" --ignore 2>/dev/null || true
+"$SU" create-view "$tmp" drills_never_run \
+  "select id, last_status, max_age_days from assets where kind='drill' and (last_status is null or last_status='NEVER RUN')" --ignore 2>/dev/null || true
+"$SU" create-view "$tmp" jobs_not_clean \
+  "select id, root, loaded, last_status from assets where kind='scheduled_job' and last_status is not 'clean'" --ignore 2>/dev/null || true
+"$SU" create-view "$tmp" provider_coupling \
+  "select coalesce(coupling,'none') as coupling, count(*) as n from assets group by 1 order by n desc" --ignore 2>/dev/null || true
+
+mv "$tmp" "$DB"
+echo "db-gen: $rows rows -> $DB"
+"$SU" tables "$DB" --counts

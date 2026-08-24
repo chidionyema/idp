@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# Start both renderers over one catalogue, then publish them on the tailnet.
+#
+# Two renderers run at once on purpose. That is the 0-second switch: if one is
+# wrong, broken or mid-upgrade, the other is already serving the same facts at
+# its own URL and nobody has to do anything. It is the same shape as Fly and
+# this laptop -- the fallback is not a plan, it is already running.
+#
+#   primary   Backstage   node    127.0.0.1:3100
+#   fallback  Datasette   python  127.0.0.1:8001
+#
+# They share no runtime. A broken node_modules, a bad yarn install or a
+# Backstage upgrade cannot take the fallback down, because the fallback has
+# never heard of node.
+set -euo pipefail
+
+IDP="$HOME/dev/code/idp"
+RUN="$IDP/logs"; mkdir -p "$RUN"
+PORT_PRIMARY=3100
+PORT_FALLBACK=8001
+
+log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
+
+# 1. Regenerate both renderings from the one source.
+"$IDP/bin/catalog-gen"
+"$IDP/bin/db-gen"
+
+# 2. Fallback first. It starts in under a second and has no build step, so if
+#    the primary is broken there is still something serving before we find out.
+if ! curl -fsS -o /dev/null "http://127.0.0.1:$PORT_FALLBACK/-/versions.json" 2>/dev/null; then
+  nohup "$IDP/.venv/bin/datasette" serve "$IDP/catalog/estate.db" \
+      --host 127.0.0.1 --port "$PORT_FALLBACK" \
+      --metadata "$IDP/datasette-metadata.json" \
+      --setting sql_time_limit_ms 5000 \
+      --setting default_page_size 100 \
+      > "$RUN/datasette.log" 2>&1 &
+  echo $! > "$RUN/datasette.pid"
+  log "fallback  starting on $PORT_FALLBACK (pid $(cat "$RUN/datasette.pid"))"
+else
+  log "fallback  already up on $PORT_FALLBACK"
+fi
+
+# 3. Primary.
+if [ -d "$IDP/backstage/node_modules" ]; then
+  if ! curl -fsS -o /dev/null "http://127.0.0.1:$PORT_PRIMARY" 2>/dev/null; then
+    ( cd "$IDP/backstage"
+      export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh" >/dev/null
+      export PATH="$HOME/.nvm/versions/node/v22.13.1/bin:$PATH"
+      export PORT="$PORT_PRIMARY"
+      nohup yarn start > "$RUN/backstage.log" 2>&1 &
+      echo $! > "$RUN/backstage.pid" )
+    log "primary   starting on $PORT_PRIMARY (pid $(cat "$RUN/backstage.pid")) -- first boot takes a minute"
+  else
+    log "primary   already up on $PORT_PRIMARY"
+  fi
+else
+  log "primary   NOT BUILT ($IDP/backstage/node_modules missing) -- fallback is serving alone"
+fi
+
+# 4. Publish on the tailnet. Not the public internet: the catalogue is a map of
+#    every asset the estate owns, and LAW 21 says the default is closed. Going
+#    public is bin/idp-publish, which is one command and the founder's call.
+if command -v tailscale >/dev/null; then
+  tailscale serve --bg --http=8443 "http://127.0.0.1:$PORT_PRIMARY"  >/dev/null 2>&1 || true
+  tailscale serve --bg --http=10000 "http://127.0.0.1:$PORT_FALLBACK" >/dev/null 2>&1 || true
+  host=$(tailscale status --json | /usr/local/bin/jq -r '.Self.DNSName' | sed 's/\.$//')
+  log "primary   http://$host:8443/"
+  log "fallback  http://$host:10000/"
+fi
+
+"$IDP/bin/idp-status"
+
+# 5. Up is not the same as correct. On 2026-08-24 Backstage rejected 141 of 194
+#    entities and served the remaining 53 as a healthy-looking portal, so the
+#    last step is proving what is published matches the inventory. --wait
+#    because a cold Backstage takes a couple of minutes to ingest.
+echo
+"$IDP/bin/idp-verify" --wait

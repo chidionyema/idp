@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+"""Estate inventory -> Backstage catalog entities.
+
+A thin adapter, deliberately. It reads the inventory LAW 39 already produces and
+writes catalog-info.yaml in the Backstage entity format -- an open, documented
+schema that Backstage, Port and Roadie all ingest and that anything else can parse
+as plain YAML. Nothing about the estate is stored HERE; this file only translates.
+
+That is the whole point. The catalogue is the asset, the portal is a renderer, and
+a renderer you can replace in one command is not a dependency. If Backstage is
+wrong in a year, this adapter changes its output format and the estate does not.
+"""
+import json, os, re, sys
+
+INV = os.path.expanduser("~/.estate/state/inventory.json")
+OUT = os.path.expanduser("~/dev/code/idp/catalog")
+OWNER = "group:default/platform"
+SYSTEM = "system:default/estate"
+
+# Backstage names: ^[a-zA-Z0-9]([-_.a-zA-Z0-9]*[a-zA-Z0-9])?$, 63 chars max.
+def slug(s: str) -> str:
+    s = re.sub(r"[^a-zA-Z0-9._-]", "-", str(s)).strip("-._")
+    s = re.sub(r"-{2,}", "-", s) or "unnamed"
+    return s[:63].strip("-._")
+
+# kind of estate asset -> (Backstage kind, spec.type)
+MAP = {
+    "repo":          ("Component", "service"),
+    "scheduled_job": ("Resource",  "scheduled-job"),
+    "guard":         ("Resource",  "guard"),
+    "ledger":        ("Resource",  "ledger"),
+    "data":          ("Resource",  "data-store"),
+    "drill":         ("Resource",  "drill"),
+}
+
+def y(v):
+    """YAML scalar, quoted when it could be misread.
+
+    Numbers are quoted too. Backstage's entity envelope requires every
+    annotation value to be a string, and an unquoted 12.4 or 3 parses as a
+    number, so the entity is rejected with "Malformed envelope, ... must be
+    string". Measured 2026-08-24: 141 of 194 entities lost this way, and the
+    catalogue still rendered, which is why it looked fine.
+    """
+    s = str(v)
+    if s == "" or re.search(r"[:#\-{}\[\]&*?|>%@`'\"\n]", s) or s.lower() in (
+            "true", "false", "null", "yes", "no", "on", "off") \
+            or re.fullmatch(r"[+-]?(\d[\d_]*)(\.\d*)?([eE][+-]?\d+)?", s) \
+            or re.fullmatch(r"0[xXoObB][0-9a-fA-F_]+", s):
+        return "'" + s.replace("'", "''") + "'"
+    return s
+
+def entity(kind, name, title, etype, annotations, tags, links=()):
+    out = [
+        "apiVersion: backstage.io/v1alpha1",
+        f"kind: {kind}",
+        "metadata:",
+        f"  name: {y(name)}",
+        f"  title: {y(title)}",
+    ]
+    if annotations:
+        out.append("  annotations:")
+        out += [f"    estate/{k}: {y(v)}" for k, v in sorted(annotations.items())
+                if v not in (None, "")]
+    if tags:
+        out.append("  tags:")
+        out += [f"    - {y(slug(t).lower())}" for t in tags if t]
+    if links:
+        out.append("  links:")
+        for t, u in links:
+            out += [f"    - title: {y(t)}", f"      url: {y(u)}"]
+    out += ["spec:", f"  type: {etype}", f"  owner: {OWNER}", f"  system: {SYSTEM}"]
+    if kind == "Component":
+        out.append("  lifecycle: production")
+    return "\n".join(out)
+
+
+def main() -> int:
+    if not os.path.exists(INV):
+        print(f"catalog-gen: no inventory at {INV} -- run the inventory first", file=sys.stderr)
+        return 2
+    inv = json.load(open(INV))
+    rows = inv.get("rows") or []
+    if not rows:
+        # A catalogue that renders empty looks identical to a portal with nothing
+        # wrong. Refuse instead, so the failure is loud where it happens.
+        print("catalog-gen: inventory has 0 rows -- refusing to write an empty catalogue",
+              file=sys.stderr)
+        return 1
+
+    os.makedirs(OUT, exist_ok=True)
+    docs, counts, seen = [], {}, set()
+
+    # Domain and System take no spec.type/spec.system, so they are written out
+    # literally rather than through entity(), which exists for the 194 rows.
+    docs.append("\n".join([
+        "apiVersion: backstage.io/v1alpha1", "kind: Domain", "metadata:",
+        "  name: platform", "  title: Platform",
+        f"  description: {y('Everything the estate runs, owns or depends on.')}",
+        "spec:", f"  owner: {OWNER}"]))
+    docs.append("\n".join([
+        "apiVersion: backstage.io/v1alpha1", "kind: System", "metadata:",
+        "  name: estate", "  title: The estate",
+        f"  description: {y('Every asset the estate owns, generated from the inventory at ' + str(inv.get('at')))}",
+        "spec:", f"  owner: {OWNER}", "  domain: platform"]))
+    docs.append("\n".join([
+        "apiVersion: backstage.io/v1alpha1", "kind: Group", "metadata:",
+        "  name: platform", "  title: Platform", "spec:", "  type: team",
+        "  children: []"]))
+
+    for r in rows:
+        k = r.get("kind")
+        if k not in MAP:
+            continue
+        bkind, btype = MAP[k]
+        name = slug(r.get("id") or "unnamed")
+        if name in seen:                       # ids collide across roots
+            name = slug(f"{name}-{slug(r.get('root','x'))}")
+        if name in seen:
+            continue
+        seen.add(name)
+
+        ann = {"root": r.get("root"), "path": r.get("path"), "coupling": r.get("coupling"),
+               "kind": k}
+        tags = [k.replace("_", "-"), f"coupling-{r.get('coupling') or 'none'}"]
+
+        if k == "repo":
+            ann.update({"branch": r.get("branch"), "dirty": r.get("dirty"),
+                        "tracked-files": r.get("tracked_files"),
+                        "offsite": r.get("offsite")})
+            if r.get("dirty"):
+                tags.append("dirty")
+            if not r.get("offsite"):
+                tags.append("not-offsite")
+            lic = any(os.path.exists(os.path.join(r.get("path", ""), n)) for n in
+                      ("LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING", "LICENCE"))
+            ann["licence-file"] = "present" if lic else "ABSENT"
+            if not lic:
+                tags.append("no-licence")
+        elif k == "scheduled_job":
+            ann.update({"loaded": r.get("loaded"), "last-status": r.get("last_status"),
+                        "interval-s": r.get("interval_s")})
+            if str(r.get("last_status")) != "clean":
+                tags.append("not-clean")
+            if not r.get("loaded"):
+                tags.append("not-loaded")
+        elif k == "drill":
+            ann.update({"last-status": r.get("last_status"), "age-h": r.get("age_h"),
+                        "max-age-days": r.get("max_age_days"), "stale": r.get("stale")})
+            if r.get("last_status") in (None, "", "NEVER RUN"):
+                tags.append("never-run")
+            if r.get("stale"):
+                tags.append("stale")
+        elif k in ("ledger", "data"):
+            ann.update({"rows": r.get("rows"), "mb": r.get("mb"),
+                        "referenced": r.get("referenced")})
+
+        links = []
+        rem = r.get("remote")
+        if rem and rem != "(none)":
+            links.append(("Remote", rem.replace("git@github.com:", "https://github.com/")
+                          .removesuffix(".git")))
+
+        docs.append(entity(bkind, name, r.get("id") or name, btype, ann, tags, links))
+        counts[k] = counts.get(k, 0) + 1
+
+    target = os.path.join(OUT, "catalog-info.yaml")
+    with open(target, "w") as fh:
+        fh.write("# GENERATED by idp/bin/catalog-gen from ~/.estate/state/inventory.json\n"
+                 f"# inventory taken: {inv.get('at')}\n"
+                 "# Do not hand-edit: the next run overwrites it. Fix the inventory instead.\n---\n")
+        fh.write("\n---\n".join(docs) + "\n")
+
+    print(f"catalog-gen: {len(docs)} entities -> {target}")
+    for k in sorted(counts):
+        print(f"  {k:14} {counts[k]}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

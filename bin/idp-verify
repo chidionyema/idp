@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Does what is published actually match the inventory? This is the definition of
+# done for the portal, written as a command.
+#
+# It exists because of a real failure on 2026-08-24: catalog-gen emitted
+# annotation values as YAML numbers, Backstage rejected 141 of 194 entities as
+# "Malformed envelope ... must be string", and the portal rendered perfectly
+# with three quarters of the estate missing. Nothing went red. A catalogue that
+# is quietly incomplete is worse than one that is down, because a buyer reads
+# what is there and believes it is everything.
+#
+#   idp-verify          check once
+#   idp-verify --wait   allow up to 180s for Backstage to finish ingesting
+#
+# Exit 0 only when every entity in the generated file is present in both
+# renderers.
+set -uo pipefail
+
+IDP="$HOME/dev/code/idp"
+YAML="$IDP/catalog/catalog-info.yaml"
+DB="$IDP/catalog/estate.db"
+BACKEND="http://127.0.0.1:7107"
+FALLBACK="http://127.0.0.1:8001"
+JQ=/usr/local/bin/jq
+
+deadline=0
+[ "${1:-}" = "--wait" ] && deadline=$(( $(date +%s) + 180 ))
+
+fail=0
+say() { printf '%s\n' "$*"; }
+
+# --- source of truth: what the generator wrote --------------------------------
+if [ ! -f "$YAML" ]; then
+  say "FAIL  no $YAML -- run bin/catalog-gen"; exit 1
+fi
+want=$(grep -c '^kind:' "$YAML")
+say "source    $want entities in catalog-info.yaml"
+
+# --- fallback renderer --------------------------------------------------------
+db_rows=$(sqlite3 "$DB" "select count(*) from assets" 2>/dev/null || echo 0)
+http_rows=$(curl -sS --max-time 10 "$FALLBACK/estate/assets.json?_shape=array&_size=0" \
+  -o /dev/null -w '%{http_code}' 2>/dev/null || echo 000)
+# The row count the generator wrote and the row count Datasette serves are two
+# different facts. 194 in the file and 194 over HTTP is what proves it serving.
+served=$(curl -sS --max-time 10 "$FALLBACK/estate.json?sql=select+count(*)+as+n+from+assets&_shape=array" \
+  2>/dev/null | $JQ -r '.[0].n // "none"' 2>/dev/null || echo none)
+if [ "$served" = "$want" ]; then
+  say "fallback  $served rows served over HTTP -- matches"
+else
+  say "FAIL      fallback serves '$served', expected $want (db has $db_rows, HTTP $http_rows)"
+  fail=1
+fi
+
+# --- primary renderer ---------------------------------------------------------
+ingested_names() {
+  local tok
+  tok=$(curl -sS --max-time 8 -X POST "$BACKEND/api/auth/guest/refresh" 2>/dev/null \
+        | $JQ -r '.backstageIdentity.token // empty' 2>/dev/null)
+  [ -z "$tok" ] && return 1
+  curl -sS --max-time 25 -H "Authorization: Bearer $tok" \
+    "$BACKEND/api/catalog/entities?limit=5000&fields=kind,metadata.name" 2>/dev/null \
+    | $JQ -r '.[] | "\(.kind)/\(.metadata.name)"' 2>/dev/null
+}
+
+wanted_names() {
+  awk '
+    /^kind: /            { k=$2 }
+    /^  name: / && k != "" { n=$2; gsub(/^'"'"'|'"'"'$/,"",n); print k "/" n; k="" }
+  ' "$YAML"
+}
+
+if ! curl -sS -o /dev/null --max-time 4 "$BACKEND/api/catalog/entities" 2>/dev/null; then
+  say "SKIP      primary (Backstage backend on 7107 is not answering)"
+  say
+  [ "$fail" -eq 0 ] && say "PARTIAL   fallback verified, primary not running" || say "FAIL"
+  exit "$fail"
+fi
+
+tmp_w=$(mktemp); tmp_i=$(mktemp)
+wanted_names | sort -u > "$tmp_w"
+while :; do
+  ingested_names | sort -u > "$tmp_i" 2>/dev/null
+  missing=$(comm -23 "$tmp_w" "$tmp_i" | wc -l | tr -d ' ')
+  [ "$missing" -eq 0 ] && break
+  [ "$(date +%s)" -ge "$deadline" ] && break
+  say "          waiting: $missing of $want not ingested yet"
+  sleep 15
+done
+
+if [ "$missing" -eq 0 ]; then
+  say "primary   all $want entities ingested by Backstage -- matches"
+else
+  say "FAIL      primary is missing $missing of $want entities:"
+  comm -23 "$tmp_w" "$tmp_i" | head -10 | sed 's/^/            /'
+  [ "$missing" -gt 10 ] && say "            ... and $((missing - 10)) more"
+  say "          look for 'Policy check failed' in logs/backstage.log"
+  fail=1
+fi
+rm -f "$tmp_w" "$tmp_i"
+
+say
+if [ "$fail" -eq 0 ]; then
+  say "PASS      both renderers agree with the inventory: $want entities"
+else
+  say "FAIL      the portal does not match the inventory"
+fi
+exit "$fail"

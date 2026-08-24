@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# What is serving right now, and where. One line per fact, each from a probe.
+set -uo pipefail
+
+IDP="$HOME/dev/code/idp"
+host=$(tailscale status --json 2>/dev/null | /usr/local/bin/jq -r '.Self.DNSName' | sed 's/\.$//')
+
+# curl writes %{http_code} even when it fails -- "000" -- so `|| echo down`
+# appends and the caller gets "000down", which matches neither. Read the code
+# and decide here.
+probe() {
+  local c
+  c=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 4 "$1" 2>/dev/null || true)
+  case "$c" in ""|000) echo "down" ;; *) echo "$c" ;; esac
+}
+
+primary=$(probe http://127.0.0.1:3100)
+fallback=$(probe http://127.0.0.1:8001/-/versions.json)
+
+echo "RENDERER   LOCAL                  HTTP   PUBLISHED"
+printf "%-10s %-22s %-6s %s\n" "primary"  "127.0.0.1:3100 backstage" "$primary"  "http://$host:8443/"
+printf "%-10s %-22s %-6s %s\n" "fallback" "127.0.0.1:8001 datasette" "$fallback" "http://$host:10000/"
+
+echo
+echo "CATALOGUE"
+if [ -f "$IDP/catalog/estate.db" ]; then
+  taken=$(sqlite3 "$IDP/catalog/estate.db" "select taken_at from meta limit 1" 2>/dev/null)
+  n=$(sqlite3 "$IDP/catalog/estate.db" "select count(*) from assets" 2>/dev/null)
+  echo "  $n assets, inventory taken $taken"
+else
+  echo "  no estate.db -- run bin/db-gen"
+fi
+[ -f "$IDP/catalog/catalog-info.yaml" ] \
+  && echo "  $(grep -c '^kind:' "$IDP/catalog/catalog-info.yaml") entities in catalog-info.yaml" \
+  || echo "  no catalog-info.yaml -- run bin/catalog-gen"
+
+echo
+echo "REACHABILITY"
+tailscale serve status 2>/dev/null | sed 's/^/  /' || echo "  tailscale serve: not configured"
+funnel=$(tailscale funnel status 2>/dev/null | grep -c 'Funnel on' || true)
+if [ "${funnel:-0}" -gt 0 ]; then
+  echo "  PUBLIC: funnel is on -- anyone with the URL can read the catalogue"
+else
+  echo "  tailnet only -- not reachable from the public internet"
+fi
+
+# Exit non-zero when NOTHING is serving. One renderer down is the design
+# working; both down is an outage, and a status command that returns 0 either
+# way cannot be used as a check.
+[ "$primary" = "down" ] && [ "$fallback" = "down" ] && exit 1
+exit 0

@@ -1,0 +1,18 @@
+# Generated. Both are rebuilt from ~/.estate/state/inventory.json on every
+# bin/idp-up, so a committed copy is a stale copy that reads as a record.
+catalog/catalog-info.yaml
+catalog/estate.db
+catalog/estate.db.tmp
+
+# Runtime
+logs/
+*.pid
+
+# Installed, not authored
+.venv/
+node_modules/
+dist-types/
+.yarn/cache/
+
+# Denied to agent sessions on this machine; nothing load-bearing lives here.
+run/
