@@ -1,0 +1,30 @@
+# The one hole in platform's ingress deny, and it is the hole the front door
+# needs. crew#191 item 2, "Explicitly allow only Ingress-to-Pod ... where
+# required".
+#
+# k3s runs its Traefik in kube-system, because that is where k3s puts the
+# components it ships and manages. The founder's blueprint grouped Traefik under
+# `platform` conceptually; hand-installing a second Traefik into `platform` to
+# match the diagram would mean running two ingress controllers and managing the
+# one k3s already manages, which is the stitching the estate is trying to stop.
+# So Traefik stays where k3s keeps it and reaches in through this rule.
+#
+# The rule is as narrow as the API allows: one namespace, and inside it only
+# pods carrying Traefik's own label. It is not "allow kube-system".
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-traefik
+  namespace: platform
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik

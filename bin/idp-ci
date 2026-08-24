@@ -144,7 +144,7 @@ else say "FAIL  portlock port-gate is not discriminating or the repo has an unde
 # --live must refuse a listener bound to a different address than its row declares, and pass the matching one.
 if ! REG=tests/fixtures/ports-live/ports.yaml INV=tests/fixtures/ports-live/inventory.bad.json COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" --live >/dev/null 2>&1 \
    && REG=tests/fixtures/ports-live/ports.yaml INV=tests/fixtures/ports-live/inventory.good.json COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" --live >/dev/null 2>&1; then
-  say "ok    portbind port-gate --live refuses a bind that differs from the declared address and passes a matching one"
+  say "ok    portbind port-gate --live refuses a declared port bound at the wrong address, including one published under a foreign process name, and passes a matching one"
 else say "FAIL  portbind port-gate --live does not discriminate on bind address"; fail=1; fi
 # R24 multi-arch: a build step naming fewer than both architectures is refused; the compliant one passes; this repo is clean.
 if ! python3 "$IDP/bin/multiarch-gate" tests/fixtures/multiarch/bad >/dev/null 2>&1 \
@@ -206,6 +206,7 @@ else say "FAIL  schema   check-jsonschema rejected a generated entity"; fail=1; 
 #    rule cannot exist without its proof (LAW 44) and no gate refuses good work (LAW 38).
 policy_gate() { conftest test --parser json -p "$IDP/policy" "$1" >/dev/null 2>&1; }
 bind_audit() { "$IDP/bin/bind-audit" --table "$1" >/dev/null 2>&1; }
+port_gate_live() { REG=tests/fixtures/ports-live/ports.yaml INV="$1" COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" --live >/dev/null 2>&1; }
 ns_fence_gate() { python3 "$IDP/bin/ns-fence-gate" "$1" >/dev/null 2>&1; }
 rows=0
 while IFS='|' read -r _ rule gate bad good _; do

@@ -38,23 +38,39 @@ options:
   k3d:
     wait: true
     timeout: "300s"
-    # k3d's load balancer is a second container that exists to map ports from
-    # the host onto several nodes. With one node there is nothing to balance.
-    disableLoadbalancer: true
+    # k3d's load balancer is ENABLED, reversing the line that used to sit here.
+    # That line said "with one node there is nothing to balance", which is true
+    # and beside the point: balancing is the LB's second job. Its first is
+    # mapping host ports onto nodes, and k3d refuses to do that without it --
+    # measured, from the run that took this cluster down:
+    #
+    #   FATA failed to transform ports: port-mapping of type 'proxy' specified,
+    #        but loadbalancer is disabled
+    #
+    # It is a ~10 MiB nginx container. The `ports:` block below is what needs it.
+    disableLoadbalancer: false
   k3s:
     extraArgs:
-      # k3s ships Traefik as its ingress. The estate's ingress decision is not
-      # made yet, and an ingress controller nobody chose is a dependency that
-      # arrives by accident.
-      - arg: --disable=traefik
-        nodeFilters:
-          - server:*
-      # servicelb hands LoadBalancer services a host port. On a laptop that
-      # collides with whatever else holds the port, and the failure reads as a
-      # broken service rather than a taken port.
-      - arg: --disable=servicelb
-        nodeFilters:
-          - server:*
+      # Traefik and servicelb are now ENABLED, and this is a deliberate reversal
+      # of the two lines that used to sit here. They said the ingress decision
+      # was not made and that a LoadBalancer service would collide with whatever
+      # held the port. Both have been answered:
+      #
+      #   The decision is made. ADR 0001 chose Traefik, and board/MIGRATION.md
+      #   is already written against it. Enabling the Traefik that k3s ships and
+      #   manages is taking the decision that exists; hand-installing a second
+      #   Traefik next to it is the stitching the estate is trying to stop.
+      #
+      #   The port is free and now declared. `lsof -nP -iTCP:80 -iTCP:443
+      #   -sTCP:LISTEN` on 2026-08-24 returned nothing, and 80/443 have rows in
+      #   catalog/ports.yaml, so bin/port-gate fails if anything else claims
+      #   them. The collision the old comment feared is exactly what the port
+      #   ledger exists to catch.
+      #
+      # crew#191 item 3, the founder's words: "Configure the k3s Traefik ingress
+      # controller to bind securely to ports 80/443 on the host, acting as the
+      # single front door for the estate."
+      #
       # metrics-server scrapes every node every 15s to feed `kubectl top` and
       # autoscaling. Neither is being proved here, and the scrape is a
       # background cost on a machine the founder is trying to work on.
@@ -63,6 +79,30 @@ options:
           - server:*
   runtime:
     # Measured: the server sits at 622 MiB with two nginx pods running. The cap
-    # is the point — without it k3s will take what the VM has, and the VM is
+    # is the point -- without it k3s will take what the VM has, and the VM is
     # shared with Langfuse, LiteLLM and the prospector stack.
+    #
+    # This number is going to have to rise and it is not being raised on a
+    # guess. Measured 2026-08-24: node allocatable 4 cpu / 1536Mi, with 70Mi
+    # already taken by coredns and local-path-provisioner, against a Docker VM
+    # at 7052 MiB of 7939 used. Traefik lands first; ArgoCD is seven pods. Each
+    # rise happens with the `kubectl top` reading that justified it, in the
+    # commit that makes it.
     serversMemory: 1500m
+
+# The front door, and the whole of what this cluster publishes. Bound to
+# 127.0.0.1, not 0.0.0.0. R20: the gateway is the only process that binds a
+# non-loopback address, and R21 says this laptop is `dev`. A dev laptop's ingress
+# on 0.0.0.0 puts the estate on whatever wifi the founder is sitting on. The
+# hostIP prefix is the entire difference and it is one string.
+#
+# Everything else in the cluster reaches Traefik over the cluster network. No
+# second host port is published here, ever -- a service that needs to be
+# reachable gets an Ingress. That is what "single front door" means.
+ports:
+  - port: "127.0.0.1:80:80"
+    nodeFilters:
+      - server:0
+  - port: "127.0.0.1:443:443"
+    nodeFilters:
+      - server:0

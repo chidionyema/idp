@@ -5,6 +5,7 @@
 # registered in its entity, or if two services claim one port."
 # R20: only the gateway may bind a non-loopback address.
 blocks:
+  80,443: the estate's single front door (k3s Traefik, crew#191 item 3)
   3000-3099: product web
   3100-3199: product APIs and the portal
   3200-3299: platform UIs
@@ -14,6 +15,9 @@ blocks:
   8000-8099: monitors and data
   8600-8799: agents and product engines
 ports:
+  - {port: 80,   service: traefik-ingress,     compose: none, bind: 127.0.0.1}
+  - {port: 443,  service: traefik-ingress,     compose: none, bind: 127.0.0.1}
+  - {port: 6445, service: k3d-apiserver,        compose: none, bind: 127.0.0.1}
   - {port: 3000, service: prospector-store-web, compose: prospector}
   - {port: 3100, service: backstage-app,        compose: none, bind: '[::1]'}
   - {port: 3200, service: langfuse-web,         compose: observability/langfuse.yml}
