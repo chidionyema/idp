@@ -23,6 +23,22 @@
             "process": "limactl",
             "owner": "traefik-ingress",
             "command": "limactl hostagent"
+        },
+        {
+            "kind": "listener",
+            "port": 9999,
+            "bind": "127.0.0.1",
+            "process": "limactl",
+            "owner": "something-nobody-declared",
+            "command": "limactl hostagent"
+        },
+        {
+            "kind": "listener",
+            "port": 53,
+            "bind": "*",
+            "process": "dnsmasq",
+            "owner": "dnsmasq",
+            "command": "dnsmasq"
         }
     ]
 }

@@ -37,23 +37,42 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------------------
-# The allow-list. One row per thing that is allowed to face the network, with
-# the reason it is allowed. A listener that matches no row FAILS -- there is no
-# silent pass branch, because an allow-list with a silent miss case is how ten
-# criticals went undelivered for 18 hours on this estate.
+# The allow-list is catalog/ports.yaml. It used to be an array in this file,
+# which meant the estate had TWO allow-lists for one question -- this one and
+# bin/port-gate's -- free to drift apart, and neither visible from the ledger the
+# founder made law. Founder directive 2026-08-24: "ports.yaml is the single
+# source of truth for all port bindings across all environments."
 #
-# Fields: COMMAND-prefix | port | why
-# COMMAND-prefix is matched against lsof's COMMAND column, which macOS truncates
-# to nine characters, so "ControlCe" and not "ControlCenter".
+# A port may face the network if the ledger gives it either
+#   substrate: a row under `substrate:`   (not ours: Apple, lima)
+#   ours:      a row with non_loopback: true  (R20: the gateway, and only it)
+# Anything else FAILS. There is no silent pass branch, because an allow-list with
+# a silent miss case is how ten criticals went undelivered for 18 hours here.
+#
+# REG can be overridden so bin/idp-ci can prove this both ways on a fixture.
 # ---------------------------------------------------------------------------
-ALLOW=(
-  "rapportd|49248|macOS Continuity/Handoff. Apple-owned, not ours to move; turning it off costs the founder Handoff between his own devices."
-  "ControlCe|7000|macOS AirPlay Receiver. Apple-owned. Disabled under System Settings > General > AirDrop & Handoff if it is ever unwanted."
-  "ControlCe|5000|macOS AirPlay Receiver, second port. Same owner as 7000."
-  "limactl|53|colima's lima hostagent DNS resolver for the Docker VM. Removing it breaks name resolution inside every container on this machine."
-  "ssh|8080|prospector-edge, the gateway. R20 names the gateway as the one process allowed a non-loopback address. Published through colima's ssh mux, which is why the COMMAND column says ssh and not docker."
-  "ssh|8443|prospector-edge TLS, same gateway as 8080."
+REG=${REG:-"$(dirname "$(dirname "$(cd "$(dirname "$0")" && pwd)/x")")/catalog/ports.yaml"}
+if [ ! -f "$REG" ]; then
+  echo "BLIND: no port ledger at $REG. This is not a pass; nothing was checked." >&2
+  exit 2
+fi
+# One "port|why" line per allowed non-loopback binding, read from the ledger.
+ALLOW=()
+while IFS= read -r line; do ALLOW+=("$line"); done < <(python3 - "$REG" <<'PYEOF'
+import sys, yaml
+reg = yaml.safe_load(open(sys.argv[1])) or {}
+for r in reg.get("substrate") or []:
+    if r.get("non_loopback"):
+        print(f'{r["port"]}|{r.get("why","declared in catalog/ports.yaml as a substrate port.")}')
+for r in reg.get("ports") or []:
+    if r.get("non_loopback"):
+        print(f'{r["port"]}|{r.get("service","?")}: declared non_loopback in catalog/ports.yaml. R20 allows this only for the gateway.')
+PYEOF
 )
+if [ ${#ALLOW[@]} -eq 0 ]; then
+  echo "BLIND: the ledger at $REG declares no non-loopback port. Refusing to report every listener as a finding on an empty list." >&2
+  exit 2
+fi
 
 selftest_table() {
   # A synthetic lsof table: one row that must pass, one that must fail.
@@ -74,7 +93,7 @@ real_table() {
 # which puts it in a subshell where an assignment is lost -- that bug made the
 # first version of this script exit 1 on a clean machine.
 audit() {
-  local line cmd addr port hit row acmd aport why
+  local line cmd addr port hit row aport why
   while read -r line; do
     # lsof's own header, blank lines, and the '#' comments the recorded fixture
     # tables carry. Without the '#' arm a fixture's explanatory prose parsed as
@@ -89,15 +108,14 @@ audit() {
     port=${addr##*:}
     hit=""
     for row in "${ALLOW[@]}"; do
-      acmd=${row%%|*}
-      aport=$(printf '%s\n' "$row" | cut -d'|' -f2)
-      why=${row#*|*|}
-      if [ "$cmd" = "$acmd" ] && [ "$port" = "$aport" ]; then hit="$why"; break; fi
+      aport=${row%%|*}
+      why=${row#*|}
+      if [ "$port" = "$aport" ]; then hit="$why"; break; fi
     done
     if [ -n "$hit" ]; then
       printf 'OK       %-12s %-22s %s\n' "$cmd" "$addr" "$hit"
     else
-      printf 'UNKNOWN  %-12s %-22s not on the allow-list. Bind it to 127.0.0.1, or add a row to bin/bind-audit saying why it may face the network.\n' "$cmd" "$addr"
+      printf 'UNKNOWN  %-12s %-22s not declared in catalog/ports.yaml. Bind it to 127.0.0.1, or add a row to the ledger saying why it may face the network.\n' "$cmd" "$addr"
     fi
   done
 }

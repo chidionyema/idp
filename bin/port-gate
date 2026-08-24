@@ -21,7 +21,6 @@ IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REG = os.environ.get("REG") or os.path.join(IDP, "catalog", "ports.yaml")
 INV = os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json")
 COMPOSE = os.environ.get("COMPOSE_GLOB") or "board/*.yml llm/*.yml mcp/*.yml observability/*.yml"
-FOREIGN = {"limactl", "ControlCenter", "rapportd", "launchd", "sharingd"}
 PUB = re.compile(r'^\s*-\s*"?(?:(?P<host>[\d.]+):)?(?P<port>\d+):\d+"?\s*$')
 
 
@@ -59,6 +58,10 @@ def main() -> int:
                     print(f"FAIL  ports    {rel}:{n} binds {host}:{port}; R20 allows only the gateway off loopback")
                     bad += 1
 
+    substrate = {r["port"]: r for r in (reg.get("substrate") or [])}
+    eph = reg.get("ephemeral") or [49152, 65535]
+    eph_lo, eph_hi = int(eph[0]), int(eph[1])
+
     if "--live" in sys.argv:
         if not os.path.exists(INV):
             print(f"BLIND ports    no inventory at {INV}; live check not run")
@@ -68,15 +71,19 @@ def main() -> int:
             if r.get("kind") != "listener":
                 continue
             port, proc = int(r["port"]), r.get("process", "")
-            if port >= 49152:
+            if eph_lo <= port <= eph_hi:
                 continue
-            # limactl/colima republishes every container port under its own name, so
-            # treating the whole process as foreign exempted every containerised
-            # service on this machine from the ledger -- measured 2026-08-24, ports
-            # 80 and 443 bound *:* while ports.yaml declared 127.0.0.1 and nothing
-            # said so. A FOREIGN process is foreign only for a port the ledger does
-            # not claim; a port the ledger claims is ours whoever publishes it.
-            if proc in FOREIGN and port not in declared:
+            # There is no process-name exemption. A list of trusted process names
+            # was the defect: colima republishes every container port as `limactl`,
+            # so naming that process exempted every containerised service in the
+            # estate. Founder directive 2026-08-24 -- a process holding a port is
+            # making a claim, not earning an exemption. Substrate ports we do not
+            # own are declared per port in ports.yaml, with an owner and a reason.
+            sub = substrate.get(port)
+            if sub:
+                if sub.get("owner") and proc and not sub["owner"].lower().startswith(proc.lower()[:8]):
+                    print(f"FAIL  ports    live listener {port} is held by {proc}; ports.yaml declares substrate owner {sub['owner']}")
+                    bad += 1
                 continue
             d = declared.get(port)
             if not d:
