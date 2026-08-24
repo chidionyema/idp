@@ -17,7 +17,7 @@ by R14. The one remaining option with a managed control plane at zero cost is Or
 ## Decision
 
 1. **Cluster: OKE Basic.** Basic clusters carry no control-plane charge. Workers are the Always
-   Free Ampere A1 allowance, 4 OCPU and 24 GB across at most four instances. A VM running k3s
+   Free Ampere A1 allowance, 2 OCPU and 12 GB (halved from 4/24 on 2026-06-15 with no announcement; a terminated resource may not be recreatable above the new limit, so grandfathering does not survive a teardown -- infoq.com/news/2026/07/oracle-cloud-free-tier-limits/). That is fewer CPUs than the dev VM (colima cpu: 4); size nothing against 4/24. A VM running k3s
    was rejected: it is the cluster we already hand-roll on the Mac, and the headline rule is to
    buy the managed platform, not stitch one.
 2. **GitOps: Flux.** `crew/docs/STANDARDS.md` row 16 names Flux for solo-operator clusters and

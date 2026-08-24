@@ -1,0 +1,57 @@
+name: build-multiarch
+# R24: every Dockerfile in this repository is built for linux/amd64 and linux/arm64
+# and pushed as one manifest list to GHCR on main. Pull requests build both
+# architectures and push nothing. bin/multiarch-gate (run by idp-ci) refuses any
+# build step that names fewer than both.
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  packages: write
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      dockerfiles: ${{ steps.find.outputs.list }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: find
+        run: |
+          # backstage/packages/backend/Dockerfile is the upstream scaffold: it needs a host
+          # `yarn build:backend` first and the repo root as context, so it is not a
+          # self-contained estate image. idp#29 adds backstage/Dockerfile, which is.
+          list=$(find . -name Dockerfile -not -path '*/node_modules/*' -not -path './.git/*' -not -path './tests/*' -not -path '*/packages/backend/Dockerfile' | sed 's|^\./||' | jq -R . | jq -sc .)
+          echo "list=$list" >> "$GITHUB_OUTPUT"; echo "dockerfiles: $list"
+  build:
+    needs: discover
+    if: needs.discover.outputs.dockerfiles != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile: ${{ fromJson(needs.discover.outputs.dockerfiles) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.event_name == 'push'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: name
+        run: |
+          d=$(dirname "${{ matrix.dockerfile }}"); n=$(basename "$d"); [ "$n" = "." ] && n=idp
+          echo "context=$d" >> "$GITHUB_OUTPUT"; echo "image=ghcr.io/${{ github.repository_owner }}/$n" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ steps.name.outputs.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.name.outputs.image }}:main,${{ steps.name.outputs.image }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

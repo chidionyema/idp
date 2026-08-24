@@ -15,6 +15,7 @@ here grants access. API keys and the private key live in the sops vault
 | Audit retention | 365 days |
 | Root compartment | `chidionyema (root)` |
 | Plan | Free Tier; Always Free resources only (ruling R23) |
+| Always Free A1 allowance | 2 OCPU / 12 GB since 2026-06-15 (was 4 / 24); not restored after a teardown |
 
 ## What is not yet true
 

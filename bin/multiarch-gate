@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""multiarch-gate: every image build that can reach a registry names both
+architectures (ruling R24).
+
+    bin/multiarch-gate [PATH ...]      default: this repository
+
+Scans GitHub workflows for `docker/build-push-action` steps and every
+Makefile/shell/workflow for `docker build` / `docker buildx build`. A
+build-push-action step must carry `platforms: linux/amd64,linux/arm64`; a raw
+`docker build` is a finding unless it goes through bin/build-image. Prints one
+line per finding, exit 1 on any, exit 0 clean. Report mode only: it never edits.
+"""
+import os
+import re
+import sys
+
+import yaml
+
+BOTH = {"linux/amd64", "linux/arm64"}
+SKIP = {".git", "node_modules", ".venv", "dist", "build", "fixtures"}
+RAW = re.compile(r"\bdocker\s+(?:buildx\s+)?build\b")
+RAW_OK = re.compile(r"build-image|--platform\s+linux/amd64,linux/arm64|--platform\s+linux/arm64,linux/amd64")
+
+
+def workflow_findings(path):
+    try:
+        doc = yaml.safe_load(open(path)) or {}
+    except yaml.YAMLError as e:
+        return [f"{path}: unparseable workflow ({e.__class__.__name__})"]
+    out = []
+    for jname, job in (doc.get("jobs") or {}).items():
+        for i, step in enumerate(job.get("steps") or []):
+            uses = str(step.get("uses", ""))
+            if uses.startswith("docker/build-push-action"):
+                plats = str((step.get("with") or {}).get("platforms", ""))
+                # A per-architecture matrix merged into one manifest is a legitimate
+                # shape (hermes-agent does it): resolve `${{ matrix.X }}` to the union
+                # of the job's matrix values before judging.
+                m = re.fullmatch(r"\$\{\{\s*matrix\.(\w+)\s*\}\}", plats.strip())
+                if m:
+                    vals = ((job.get("strategy") or {}).get("matrix") or {}).get(m.group(1)) or []
+                    plats = ",".join(str(v) for v in vals)
+                have = {p.strip() for p in plats.split(",") if p.strip()}
+                if not BOTH <= have:
+                    out.append(f"{path}: job {jname} step {i} build-push-action platforms={plats or '(unset)'}; R24 needs linux/amd64,linux/arm64")
+    return out
+
+
+def text_findings(path):
+    out = []
+    try:
+        lines = open(path, errors="replace").read().splitlines()
+    except OSError:
+        return out
+    for n, line in enumerate(lines, 1):
+        s = line.strip()
+        if s.startswith("#") or not RAW.search(s) or RAW_OK.search(s):
+            continue
+        out.append(f"{path}:{n}: raw `docker build` without both platforms; use bin/build-image (R24)")
+    return out
+
+
+def main(roots):
+    findings = []
+    for root in roots:
+        if os.path.isfile(root):
+            files = [root]
+        else:
+            files = []
+            for d, dirs, fs in os.walk(root):
+                dirs[:] = [x for x in dirs if x not in SKIP]
+                files += [os.path.join(d, f) for f in fs]
+        for f in files:
+            if "/.github/workflows/" in f and f.endswith((".yml", ".yaml")):
+                findings += workflow_findings(f)
+                findings += text_findings(f)
+            elif f.endswith((".sh", "Makefile", ".mk")) or os.path.basename(f) == "Makefile":
+                findings += text_findings(f)
+    for f in findings:
+        print("FAIL  multiarch " + f)
+    print(f"{'FAIL' if findings else 'ok  '}  multiarch {len(findings)} findings across {len(roots)} root(s)")
+    return 1 if findings else 0
+
+
+if __name__ == "__main__":
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.exit(main(sys.argv[1:] or [here]))
