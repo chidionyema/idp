@@ -1,0 +1,426 @@
+<title>Who Backs Our Tooling</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400&family=Public+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+:root{
+  --ground:#F5F7F5;
+  --surface:#FFFFFF;
+  --surface-2:#EDF1EE;
+  --ink:#15201B;
+  --ink-soft:#525E58;
+  --ink-faint:#7C8880;
+  --line:#DCE2DD;
+  --line-strong:#C3CDC6;
+  --accent:#17624F;
+  --accent-soft:#DCEDE6;
+  --warn:#9A5713;
+  --warn-soft:#F6E9D8;
+  --stop:#8C2E2E;
+  --stop-soft:#F4DEDE;
+  --shadow:0 1px 2px rgba(21,32,27,.05),0 8px 24px -12px rgba(21,32,27,.18);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1512;
+    --surface:#161D19;
+    --surface-2:#1D2622;
+    --ink:#E6EDE8;
+    --ink-soft:#9AA79F;
+    --ink-faint:#77857D;
+    --line:#26312B;
+    --line-strong:#374339;
+    --accent:#5CBEA1;
+    --accent-soft:#17302A;
+    --warn:#D3934A;
+    --warn-soft:#33261A;
+    --stop:#D57272;
+    --stop-soft:#331E1E;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1512;
+  --surface:#161D19;
+  --surface-2:#1D2622;
+  --ink:#E6EDE8;
+  --ink-soft:#9AA79F;
+  --ink-faint:#77857D;
+  --line:#26312B;
+  --line-strong:#374339;
+  --accent:#5CBEA1;
+  --accent-soft:#17302A;
+  --warn:#D3934A;
+  --warn-soft:#33261A;
+  --stop:#D57272;
+  --stop-soft:#331E1E;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--ground);
+  color:var(--ink);
+  font-family:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size:17px;
+  line-height:1.62;
+  margin:0;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:920px;margin:0 auto;padding:0 20px 96px}
+main{display:flex;flex-direction:column;gap:52px}
+section{display:flex;flex-direction:column;gap:18px}
+p{margin:0;max-width:66ch}
+h1,h2,h3{margin:0;text-wrap:balance;font-family:Spectral,Georgia,"Times New Roman",serif;font-weight:600;letter-spacing:-.01em}
+h1{font-size:clamp(2.1rem,6vw,3.1rem);line-height:1.08;font-weight:700}
+h2{font-size:clamp(1.45rem,3.4vw,1.85rem);line-height:1.2}
+h3{font-size:1.1rem;line-height:1.3}
+a{color:var(--accent);text-underline-offset:3px;text-decoration-thickness:1px}
+code,kbd{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em}
+strong{font-weight:700}
+
+/* header */
+header{padding:64px 0 0;display:flex;flex-direction:column;gap:22px}
+.eyebrow{
+  font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;font-weight:700;
+  color:var(--ink-faint);
+}
+.standfirst{font-family:Spectral,Georgia,serif;font-size:clamp(1.1rem,2.4vw,1.32rem);line-height:1.5;color:var(--ink-soft);max-width:58ch}
+.rule{height:1px;background:var(--line-strong);border:0;margin:0}
+
+/* headline numbers */
+.figures{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.fig{background:var(--surface);padding:20px 22px;display:flex;flex-direction:column;gap:4px}
+.fig .n{font-family:Spectral,Georgia,serif;font-size:2rem;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;color:var(--accent)}
+.fig .l{font-size:.85rem;color:var(--ink-soft);line-height:1.4}
+
+/* job cards */
+.jobs{display:flex;flex-direction:column;gap:16px}
+.job{
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  box-shadow:var(--shadow);overflow:hidden;
+}
+.job-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 14px;padding:18px 22px 14px;border-bottom:1px solid var(--line)}
+.job-head h3{flex:1 1 auto;min-width:200px}
+.chip{
+  font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  padding:4px 9px;border-radius:999px;white-space:nowrap;
+}
+.chip.live{background:var(--accent-soft);color:var(--accent)}
+.chip.plan{background:var(--warn-soft);color:var(--warn)}
+.chip.none{background:var(--surface-2);color:var(--ink-faint)}
+.job-grid{display:grid;grid-template-columns:1fr;gap:1px;background:var(--line)}
+@media(min-width:720px){.job-grid{grid-template-columns:1fr 1fr}}
+.cell{background:var(--surface);padding:16px 22px;display:flex;flex-direction:column;gap:6px}
+.cell .k{font-size:.7rem;letter-spacing:.11em;text-transform:uppercase;font-weight:700;color:var(--ink-faint)}
+.cell p{font-size:.95rem;line-height:1.55}
+.cell.span{grid-column:1/-1}
+.badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.badge{
+  font-size:.76rem;font-family:"JetBrains Mono",monospace;
+  background:var(--surface-2);color:var(--ink-soft);
+  border:1px solid var(--line);border-radius:6px;padding:2px 8px;white-space:nowrap;
+}
+.badge.hi{background:var(--accent-soft);color:var(--accent);border-color:transparent;font-weight:500}
+
+/* corrections */
+.fix{
+  background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--stop);
+  border-radius:10px;padding:18px 22px;display:flex;flex-direction:column;gap:8px;
+}
+.fix h3{font-family:"Public Sans",sans-serif;font-size:.98rem;font-weight:700;letter-spacing:0}
+.fix p{font-size:.95rem}
+.was{color:var(--ink-faint);font-size:.88rem}
+
+/* table */
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.93rem;min-width:560px}
+th,td{text-align:left;padding:12px 18px;border-bottom:1px solid var(--line);vertical-align:top}
+thead th{
+  font-size:.7rem;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-faint);
+  background:var(--surface-2);border-bottom:1px solid var(--line-strong);white-space:nowrap;
+}
+tbody tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap;font-family:"JetBrains Mono",monospace;font-size:.86rem}
+tr.ours td{background:var(--accent-soft)}
+tr.ours td:first-child{font-weight:700}
+td.zero{color:var(--accent);font-weight:700}
+
+/* commands */
+.cmd{
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  padding:16px 20px;display:flex;flex-direction:column;gap:10px;
+}
+.cmd .q{font-size:.95rem;color:var(--ink-soft)}
+pre{
+  margin:0;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;
+  padding:12px 14px;overflow-x:auto;font-family:"JetBrains Mono",monospace;font-size:.82rem;
+  line-height:1.6;color:var(--ink);
+}
+ul{margin:0;padding-left:1.15rem;display:flex;flex-direction:column;gap:8px;max-width:66ch}
+li{padding-left:2px}
+li::marker{color:var(--ink-faint)}
+footer{margin-top:8px;padding-top:24px;border-top:1px solid var(--line);color:var(--ink-faint);font-size:.86rem;display:flex;flex-direction:column;gap:10px}
+footer p{max-width:70ch;font-size:.86rem;line-height:1.6}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Platform tooling · 24 August 2026</div>
+  <h1>Who Backs Our Tooling</h1>
+  <p class="standfirst">Every tool this platform runs on, who stands behind it, what it costs, and what we switch to if it stops being viable. Written so an investor can check any line without asking us.</p>
+  <div class="figures">
+    <div class="fig"><span class="n">$0</span><span class="l">a year, for the whole stack</span></div>
+    <div class="fig"><span class="n">100%</span><span class="l">Apache-2.0, so a buyer inherits it cleanly</span></div>
+    <div class="fig"><span class="n">2 of 4</span><span class="l">jobs are on a recognised tool today; the other two are named and not yet done</span></div>
+  </div>
+</header>
+
+<main>
+
+<section>
+  <h2>The short version</h2>
+  <p>We were writing our own tools for jobs the industry already solved. That is cheap to start and expensive to defend, because a stranger has no reason to trust code only we have ever run.</p>
+  <p>So we are moving job by job onto tools with a foundation behind them. As of 24 August all four jobs are running. Three run on the tool this page originally named. The fourth does not: we said we would use the OSS Review Toolkit for licences and we used conftest instead, and the card below says what that swap cost rather than quietly claiming the tool we did not install.</p>
+  <p>Nothing here costs money. Every tool is Apache-2.0, installed with one command, running on the laptop. The commercial products that do the same jobs start at <strong>$14,400 a year</strong> and go past <strong>$59,000</strong>.</p>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2>The four jobs</h2>
+  <p>Each card is one job the platform has to do. It says what we built ourselves, what we run instead, who stands behind that, and what happens if it dies.</p>
+
+  <div class="jobs">
+
+    <article class="job">
+      <div class="job-head">
+        <h3>Checking the risk register is honest</h3>
+        <span class="chip live">Running</span>
+      </div>
+      <div class="job-grid">
+        <div class="cell">
+          <span class="k">What we built ourselves</span>
+          <p>80 lines of Python that checked each risk had its fields filled in, no duplicate ids, and a real command backing any risk we claimed was handled.</p>
+        </div>
+        <div class="cell">
+          <span class="k">What runs now</span>
+          <p>Open Policy Agent, through Conftest. Seven of the eight rules are now a policy file that any engineer already knows how to read.</p>
+          <div class="badges">
+            <span class="badge hi">CNCF Graduated</span>
+            <span class="badge">Apache-2.0</span>
+            <span class="badge">12,144 stars</span>
+            <span class="badge">v1.19.1 · 17 Aug 2026</span>
+          </div>
+        </div>
+        <div class="cell">
+          <span class="k">Why that is worth something</span>
+          <p>Graduated is the CNCF's top tier, the same one Kubernetes sits in, and OPA has held it since January 2021. The rules are now written in a language other engineers already read, so nobody has to take our word for any of them.</p>
+        </div>
+        <div class="cell">
+          <span class="k">If it stops being viable</span>
+          <p>The Python check is still there and still runs. It was kept, not deleted, and it holds the one rule a policy engine cannot do — whether the program a receipt names actually exists on the machine. Switch cost is zero: both run today.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="job">
+      <div class="job-head">
+        <h3>Showing what the platform is made of</h3>
+        <span class="chip live">Running</span>
+      </div>
+      <div class="job-grid">
+        <div class="cell">
+          <span class="k">What we built ourselves</span>
+          <p>A JSON file listing what the estate owns, and no way for anyone but us to look at it.</p>
+        </div>
+        <div class="cell">
+          <span class="k">What runs now</span>
+          <p>Backstage, the portal Spotify built and gave to the CNCF. Datasette runs beside it as a second, independent view of the same data.</p>
+          <div class="badges">
+            <span class="badge hi">CNCF Incubating</span>
+            <span class="badge">Apache-2.0</span>
+            <span class="badge">34,218 stars</span>
+            <span class="badge">290 named adopters</span>
+          </div>
+        </div>
+        <div class="cell">
+          <span class="k">Why that is worth something</span>
+          <p>American Airlines, Expedia, LinkedIn, Twilio, Siemens, Volvo Cars, Booking.com and Fidelity all run Backstage and say so publicly. It is the default answer to this problem.</p>
+        </div>
+        <div class="cell">
+          <span class="k">If it stops being viable</span>
+          <p>Datasette is already serving the same data on a second port, so one dying does not take the view with it. Beyond that, OpenChoreo is the named replacement: free, Apache-2.0, CNCF Sandbox, and it ships a Backstage-powered portal, so it is a swap rather than a rewrite.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="job">
+      <div class="job-head">
+        <h3>Knowing what is inside what we ship</h3>
+        <span class="chip live">Shipped 24 Aug</span>
+      </div>
+      <div class="job-grid">
+        <div class="cell">
+          <span class="k">Where we are</span>
+          <p>Installed and running as <code>bin/supply-chain</code>. One scan writes a parts list in two formats and grades it: <strong>4,996 packages, 3,081 with a declared licence, 447 vulnerabilities, 49 of them critical, nothing sell-blocking.</strong> Exit 0. The captured output is in the repo at <code>docs/evidence/supply-chain.txt</code>.</p>
+        </div>
+        <div class="cell">
+          <span class="k">What we used</span>
+          <p>Syft to write the parts list, Grype to check it — exactly as named here. Both Apache-2.0, both from Anchore, both installed with one command.</p>
+          <div class="badges">
+            <span class="badge">Apache-2.0</span>
+            <span class="badge">Syft 9,450 stars</span>
+            <span class="badge">Grype 12,777 stars</span>
+          </div>
+        </div>
+        <div class="cell span">
+          <span class="k">The honest bit</span>
+          <p>Syft and Grype are <strong>not</strong> CNCF projects. They appear in the CNCF's landscape directory, which lists tools that exist in the ecosystem and confers no status at all. Trivy is the same. We will say "widely adopted", never "CNCF", because the second one is checkable and false.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="job">
+      <div class="job-head">
+        <h3>Knowing what we are allowed to sell</h3>
+        <span class="chip live">Shipped 24 Aug — but not with the tool named here</span>
+      </div>
+      <div class="job-grid">
+        <div class="cell">
+          <span class="k">Where we are</span>
+          <p>The licence gate runs inside <code>bin/supply-chain</code>. Of 4,996 packages, <strong>3,081 carry a declared licence and none of them is sell-blocking</strong>, so the gate exits 0. It refuses AGPL, SSPL, BUSL, the Elastic licence, non-commercial Creative Commons and the Commons Clause — and it also refuses a full parts list with no terms in it at all, rather than reading an empty scan as clean.</p>
+          <p>It warns rather than refuses on two things, and both are printed every run: <strong>1,915 packages declare no licence</strong>, which is usually a metadata gap but grants us nothing if any of them ship in the product; and two packages are copyleft (<code>axe-core</code> MPL-2.0, <code>rollup-plugin-dts</code> LGPL-3.0-only), fine to use and a constraint on distribution.</p>
+        </div>
+        <div class="cell">
+          <span class="k">What we used, and it is not what this page said we would</span>
+          <p>Syft already extracts the licence terms while it writes the parts list, so we wrote the rule in Rego and run it with <a href="https://www.openpolicyagent.org/">conftest</a> — <code>policy/licences.rego</code>. We did <strong>not</strong> adopt the OSS Review Toolkit.</p>
+          <div class="badges">
+            <span class="badge hi">CNCF (graduated)</span>
+            <span class="badge">Apache-2.0</span>
+            <span class="badge">conftest · Open Policy Agent</span>
+          </div>
+        </div>
+        <div class="cell span">
+          <span class="k">What that substitution cost us, stated plainly</span>
+          <p>We swapped ORT for conftest because ORT needs a Java runtime and has no Homebrew formula, while conftest was already installed for the placement gate. One tool, two policies, no new runtime.</p>
+          <p>The trade-off is real and it goes on the risk register. ORT has Linux Foundation governance and is run by Bosch, Volkswagen, Porsche and Deutsche Telekom; the OPA project has CNCF governance, which is comparable, but <strong>the licence rules themselves are ours</strong> — a file only we have ever run, which is the exact thing this page was written to stop. ORT also ships a curated licence-classification database we do not have, so our list of sell-blocking terms is a list we maintain by hand and it will go stale.</p>
+          <p>What keeps that honest for now: <code>bin/policy-test</code> runs six fixtures through the real conftest binary and checks the exit code each time. Three of them are licence fixtures — one permissive tree that must pass, one sell-blocking tree that must fail, and one empty scan that must also fail. A rule that starts saying yes to AGPL fails that run, and so does a rule that goes quiet. It is a smaller claim than ORT's, and it is the one we can actually show.</p>
+        </div>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2>Three things we were about to get wrong</h2>
+  <p>These are corrections to claims we were on the way to making. Each one would have been caught by a buyer in an afternoon, and being caught is worse than the fact itself.</p>
+
+  <div class="jobs">
+    <div class="fix">
+      <h3>Backstage is CNCF Incubating, not Graduated</h3>
+      <p>It reached Sandbox in September 2020 and Incubating in March 2022, which is still its most recent move. Four separate sources agree, including the CNCF's own landscape file. Writing "Graduated" on a diligence page would have been a false claim that takes one search to disprove.</p>
+    </div>
+    <div class="fix">
+      <h3>Trivy, Syft, Grype and Kratix are not CNCF projects</h3>
+      <p class="was">We had them recorded as CNCF-backed.</p>
+      <p>All four appear in the CNCF landscape with no maturity stage attached, which means listed, not governed. They are still good tools with permissive licences. They are just not the credential we thought they were.</p>
+    </div>
+    <div class="fix">
+      <h3>Conftest will fail an automated licence scan</h3>
+      <p>Its licence text is plain Apache-2.0, but the file carries a custom preamble that defeats GitHub's detector, so it reports as unknown. A buyer's scanner will flag it. Better that the answer is already written down than that we improvise it in a meeting.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2>What the alternatives cost</h2>
+  <p>These are the commercial products that do the jobs above. Published list prices, read on 24 August 2026. None of them has a free tier you can run on your own machine.</p>
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th>Product</th><th>Entry price</th><th class="num">Per year</th><th>Free self-hosted?</th></tr>
+      </thead>
+      <tbody>
+        <tr class="ours"><td>Our stack</td><td>Apache-2.0, brew install</td><td class="num zero">$0</td><td>Yes — it is all we run</td></tr>
+        <tr><td>Humanitec</td><td>€1,999 / month, 5 users</td><td class="num">≈ €23,988</td><td>No</td></tr>
+        <tr><td>Humanitec Pro</td><td>€4,999 / month, 50 users</td><td class="num">≈ €59,988</td><td>No</td></tr>
+        <tr><td>Roadie</td><td>$24 / developer / month, 50 minimum</td><td class="num">≈ $14,400</td><td>No</td></tr>
+        <tr><td>Port</td><td>$30 / seat / month</td><td class="num">varies</td><td>No — free tier is hosted, 15 seats</td></tr>
+        <tr><td>Cortex</td><td>Quote only, no published price</td><td class="num">unknown</td><td>No</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>One of these we will not use at any price. <strong>Humanitec ships no licence file on 12 of its 18 public repositories</strong>, including the command-line tool and the Terraform provider. No licence file grants nothing, so anything built on it could not be sold. That is a fact about their repositories, checkable in ten seconds, and it is the single hardest disqualifier on this page.</p>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2>Check any of it yourself</h2>
+  <p>Every claim above is one command away. These are the commands, so nobody has to trust the page.</p>
+
+  <div class="cmd">
+    <span class="q">Is Backstage really only Incubating, and is OPA really Graduated?</span>
+    <pre>curl -s https://raw.githubusercontent.com/cncf/landscape/master/landscape.yml \
+  | grep -A12 'name: Backstage' | grep 'project:'</pre>
+  </div>
+
+  <div class="cmd">
+    <span class="q">Are Trivy, Syft and Grype CNCF projects?</span>
+    <pre>curl -s https://raw.githubusercontent.com/cncf/landscape/master/landscape.yml \
+  | grep -A12 -E 'name: (Trivy|Syft|Grype)' | grep -c 'project:'
+# prints 0 — no maturity stage on any of the three</pre>
+  </div>
+
+  <div class="cmd">
+    <span class="q">What licence does each tool actually carry?</span>
+    <pre>for r in backstage/backstage simonw/datasette open-policy-agent/opa \
+         anchore/syft anchore/grype oss-review-toolkit/ort; do
+  gh api "repos/$r" --jq '"\(.full_name)  \(.license.spdx_id)"'
+done</pre>
+  </div>
+
+  <div class="cmd">
+    <span class="q">Does Humanitec really ship no licence?</span>
+    <pre>gh api repos/humanitec/terraform-provider-humanitec --jq '.license'
+gh api repos/humanitec/terraform-provider-humanitec/contents --jq '.[].name'
+# license is null, and no LICENSE file is listed</pre>
+  </div>
+
+  <div class="cmd">
+    <span class="q">Does the risk register policy actually run?</span>
+    <pre>jq -s '{risks: .}' risk/REGISTER.jsonl \
+  | conftest test --parser json -p policy -
+# 7 tests, 7 passed, 0 failures</pre>
+  </div>
+</section>
+
+<hr class="rule">
+
+<section>
+  <h2>What we still owe</h2>
+  <ul>
+    <li><strong>Install Syft and Grype</strong> and put the parts list where a buyer can read it. One command each; the reason it has not happened is time, not cost.</li>
+    <li><strong>Stand up the OSS Review Toolkit</strong> so the licence answer is generated rather than remembered. Needs a Java runtime first.</li>
+    <li><strong>Update Backstage.</strong> We run 1.54.0. Current is 1.54.3, released two days ago. Three patch releases behind is fine; forgetting we are behind is not.</li>
+    <li><strong>Write down two risks a buyer would find anyway</strong> — Datasette has one maintainer with 2,910 commits against the next person's 20, and Spotify holds four of Backstage's five maintainer seats. Both are real, neither is disqualifying, and both are far cheaper to disclose than to be caught on.</li>
+  </ul>
+</section>
+
+<footer>
+  <p><strong>How we know.</strong> The maturity claims come from the CNCF's own landscape file, parsed directly rather than read off a vendor page. The licence and star counts come from the authenticated GitHub API on 24 August 2026. Prices come from each vendor's published pricing page on the same day.</p>
+  <p><strong>What is weaker.</strong> The criticism of Backstage's maintenance cost is real and named — Spotify's own head of engineering for Backstage put average adoption at 10%, and an engineer at SPS Commerce described it publicly as a framework for building a portal rather than a portal. Some of those quotes were confirmed from one source only. The Gartner figures that circulate on this subject trace back to a vendor's blog citing Gartner second-hand; the note itself is paywalled and we have not read it, so we do not repeat them.</p>
+</footer>
+
+</main>
+</div>
+
+</body></html>
