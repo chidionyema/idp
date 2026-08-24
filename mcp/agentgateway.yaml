@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+# Agentgateway v1.4.1 static config. Schema: schema/config.json at that tag; bin/idp-ci
+# validates this file against it. Dollar-brace references are expanded by agentgateway
+# from its environment (shellexpand::full in crates/agentgateway/src/config.rs) -- in
+# comments too, and an unset name is a fatal error, so no example reference lives in this
+# comment. That expansion is how the key and the token get here without being written
+# into a committed file.
+#
+# One bind, one route per backend, stateless MCP so a plain HTTP request is a complete
+# call and nothing has to hold a session id. Tool names are prefixed with the target name.
+binds:
+- port: 3000
+  listeners:
+  - name: mcp
+    routes:
+    - name: github
+      matches:
+      - path:
+          exact: /github/mcp
+      policies:
+        apiKey:
+          mode: strict
+          keys:
+          - key: ${MCP_GATEWAY_KEY}
+      backends:
+      - mcp:
+          statefulMode: stateless
+          targets:
+          - name: github
+            mcp:
+              host: http://github-mcp:8082/mcp
+            policies:
+              backendAuth:
+                key:
+                  value: ${GITHUB_MCP_TOKEN}
+    - name: estate
+      matches:
+      - path:
+          exact: /estate/mcp
+      policies:
+        apiKey:
+          mode: strict
+          keys:
+          - key: ${MCP_GATEWAY_KEY}
+      backends:
+      - mcp:
+          statefulMode: stateless
+          targets:
+          - name: estate
+            mcp:
+              host: http://estate-mcp:8001/-/mcp
