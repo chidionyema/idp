@@ -142,6 +142,19 @@ if ! COMPOSE_GLOB='tests/fixtures/ports-bad/*.yml' python3 "$IDP/bin/port-gate" 
   say "ok    portlock $(printf '%s' "$out" | tail -1 | sed 's/^ok *ports *//')"
 else say "FAIL  portlock port-gate is not discriminating or the repo has an undeclared bind"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
+# 4d. Migration gate (crew#186 CP1, R22 mechanism 1): the scheduler migration
+#     applies healthy, applies again without changing state, and rolls back to
+#     the pre-state, on a pristine temp home. Skipped only if dagster is absent,
+#     and then it says BLIND rather than ok.
+MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
+if "$IDP/bin/migration-gate" "$IDP/tests/fixtures/migration-not-idempotent" >/dev/null 2>&1; then
+  say "FAIL  migration gate accepted a migration whose second apply adds a resource"; fail=1
+else say "ok    migration gate refuses the non-idempotent fixture"; fi
+if "$MPY" -c "import dagster" 2>/dev/null; then
+  if out=$(PATH="$(dirname "$MPY"):$PATH" "$IDP/bin/migration-gate" "$IDP/bin/scheduler-migrate" 2>&1); then say "$out"
+  else say "$out"; fail=1; fi
+else say "BLIND migration dagster not importable; gate not run"; fail=1; fi
+
 # 5. Every generated entity validates against the published Backstage schema.
 python3 - "$tmp/catalog-info.yaml" "$tmp/docs" <<'PY'
 import sys, os, yaml, json

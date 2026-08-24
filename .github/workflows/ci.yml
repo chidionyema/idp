@@ -13,6 +13,8 @@ jobs:
       - name: tools
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q shellcheck jq sqlite3
-          pip install -q check-jsonschema sqlite-utils pyyaml
+          pip install -q check-jsonschema sqlite-utils pyyaml dagster dagster-webserver
           curl -sSL https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
       - run: bin/idp-ci
+        env:
+          MIGRATE_HEALTH_WAIT: "240"
