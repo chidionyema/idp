@@ -71,6 +71,44 @@ rows=$(sqlite3 "$tmp/estate.db" 'select count(*) from assets')
 if [ "$got" -eq "$n" ] && [ "$rows" -eq "$n" ]; then say "ok    incident 2026-08-24 dropped assets: $n rows -> $got entities, $rows db rows (two concurrent db-gens)"
 else say "FAIL  incident 2026-08-24 dropped assets: $n rows -> $got entities, $rows db rows"; fail=1; fi
 
+# 4b. incident_2026_08_24_live_gate_read_a_file: `port-gate --live` read
+#     ~/.estate/state/inventory.json, which com.estate.inventory rebuilds at 01:13,
+#     07:13, 13:13 and 19:13 -- every six hours. So a gate whose name promises the
+#     current state was grading a state up to six hours old. Caught when it kept
+#     reporting listeners on 80 and 443 two minutes after k3d stopped; that
+#     direction is only noisy, but the same lag reversed reports "ok" on a port
+#     opened since the last rebuild, and that is a security gate with a silent miss.
+#
+#     A fixture cannot prove this. Replaying a captured file is exactly the defect,
+#     so the test opens a socket that has never appeared in any file, and requires
+#     the gate to see it appear and disappear. INV is unset here on purpose: with it
+#     set, the gate replays a file and this test would pass while proving nothing,
+#     so the child drops INV from its own environment rather than trusting ours.
+liveness=$(python3 - "$IDP" <<'PYLIVE'
+import os, socket, subprocess, sys
+IDP, PORT = sys.argv[1], 34567
+env = dict(os.environ); env.pop("INV", None)
+def sees():
+    r = subprocess.run([sys.executable, os.path.join(IDP, "bin", "port-gate"), "--live"],
+                       capture_output=True, text=True, env=env, cwd=IDP)
+    return any(str(PORT) in l for l in r.stdout.splitlines())
+if sees():
+    print("SKIP something already holds 34567"); raise SystemExit(0)
+s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+try:
+    s.bind(("127.0.0.1", PORT)); s.listen(1)
+    open_seen = sees()
+finally:
+    s.close()
+print("PASS" if (open_seen and not sees()) else "FAIL")
+PYLIVE
+)
+case "$liveness" in
+  PASS*) say "ok    live     port-gate --live sees a socket open and close that is in no file" ;;
+  SKIP*) say "BLIND live     ${liveness#SKIP }; liveness of port-gate --live not proved"; fail=1 ;;
+  *)     say "FAIL  live     port-gate --live did not notice a real listener appear and vanish"; fail=1 ;;
+esac
+
 # 4b. Idempotency, as a property: one inventory, two runs, zero bytes different.
 #     Founder, 2026-08-24: "we need to take idempotency serious across platform".
 #     This is rung 2 of ~/AGENTS.md "How to test" -- a property, not an example, so
