@@ -67,7 +67,31 @@ RUN mkdir packages/backend/dist/skeleton packages/backend/dist/bundle \
     && tar xzf packages/backend/dist/skeleton.tar.gz -C packages/backend/dist/skeleton \
     && tar xzf packages/backend/dist/bundle.tar.gz -C packages/backend/dist/bundle
 
-# --- stage 3: the runtime image -----------------------------------------------
+# --- stage 3: the production dependency tree ----------------------------------
+# `yarn workspaces focus --all --production` does not just download packages, it
+# compiles three of them from C++ source: better-sqlite3, cpu-features and
+# keytar. Measured 2026-08-24, running it in the runtime image below: all three
+# reported "couldn't be built successfully (exit code 1)" and the build failed
+# after 12m39s, because that image carries libsqlite3-dev and no compiler -- the
+# header with nothing to read it. Installing build-essential into the runtime
+# image would fix the build by shipping a C++ toolchain to production, so the
+# install happens in this stage and only its output crosses the line.
+FROM node:24-trixie-slim AS deps
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends libsqlite3-dev python3 build-essential && \
+    rm -rf /var/lib/apt/lists/*
+USER node
+WORKDIR /app
+COPY --from=build --chown=node:node /app/.yarn ./.yarn
+COPY --from=build --chown=node:node /app/.yarnrc.yml ./
+COPY --from=build --chown=node:node /app/backstage.json ./
+COPY --from=build --chown=node:node /app/yarn.lock /app/package.json /app/packages/backend/dist/skeleton/ ./
+RUN --mount=type=cache,target=/home/node/.cache/yarn,sharing=locked,uid=1000,gid=1000 \
+    yarn workspaces focus --all --production && rm -rf "$(yarn cache clean)"
+
+# --- stage 4: the runtime image -----------------------------------------------
 FROM node:24-trixie-slim
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -78,12 +102,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # need; the catalogue file is mounted read-only from the host.
 USER node
 WORKDIR /app
-COPY --from=build --chown=node:node /app/.yarn ./.yarn
-COPY --from=build --chown=node:node /app/.yarnrc.yml ./
-COPY --from=build --chown=node:node /app/backstage.json ./
-COPY --from=build --chown=node:node /app/yarn.lock /app/package.json /app/packages/backend/dist/skeleton/ ./
-RUN --mount=type=cache,target=/home/node/.cache/yarn,sharing=locked,uid=1000,gid=1000 \
-    yarn workspaces focus --all --production && rm -rf "$(yarn cache clean)"
+# The whole of /app from deps: that stage's working directory holds exactly the
+# backend skeleton and the node_modules built against it, which is what this
+# stage used to produce for itself.
+COPY --from=deps --chown=node:node /app ./
 COPY --from=build --chown=node:node /app/packages/backend/dist/bundle/ ./
 COPY --chown=node:node app-config*.yaml ./
 # templates/ and examples/ are catalog locations, not decoration:

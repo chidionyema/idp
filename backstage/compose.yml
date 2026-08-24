@@ -29,6 +29,12 @@ services:
       context: .
       dockerfile: Dockerfile
     image: idp/backstage:local
+    # Build it, never try to fetch it. `idp/backstage` is not a registry
+    # namespace anyone owns, so the default policy sent compose to Docker Hub
+    # and `docker compose up` died on "pull access denied for idp/backstage"
+    # (measured 2026-08-24) even with the `build:` block right above. Phase 2
+    # publishes the image to a registry and this line goes with the file.
+    pull_policy: build
     restart: unless-stopped
     depends_on:
       postgres:

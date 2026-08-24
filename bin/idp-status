@@ -14,10 +14,20 @@ probe() {
   case "$c" in ""|000) echo "down" ;; *) echo "$c" ;; esac
 }
 
-# localhost, NOT 127.0.0.1. Backstage's app binds [::1] only, so a v4 probe
-# returns 000 and this command reports the catalogue down while a browser on
-# the same machine is reading it. Measured 2026-08-24: curl 127.0.0.1:3100
-# -> 000, curl localhost:3100 -> 200, lsof: node IPv6 TCP [::1]:3100 (LISTEN).
+# `localhost`, deliberately, and the reason changed today -- keep the name.
+#
+# It was written because the `yarn start` dev server bound [::1] only, so a
+# v4 probe returned 000 and this command called the catalogue down while a
+# browser on the same machine was reading it. That server is gone: the
+# catalogue is a container now, and compose publishes 127.0.0.1:3100, which
+# is v4. So the original reason is dead and the opposite failure is the live
+# one -- a hardcoded [::1] probe would now be the broken half.
+#
+# `localhost` survives both because it resolves to both families and curl
+# tries each in turn. That is the point: this probe should not encode which
+# address family today's deployment happens to use, because it has already
+# been wrong in both directions inside one day. Measured 2026-08-24 against
+# the container: curl 127.0.0.1:3100/healthcheck -> 200, curl localhost -> 200.
 catalogue=$(probe http://localhost:3100)
 
 echo "SURFACE    LOCAL                  HTTP   PUBLISHED"
