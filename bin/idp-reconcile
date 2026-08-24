@@ -8,6 +8,9 @@
   idp-reconcile --ps FILE  read `docker ps --format json` lines from FILE
                            instead of docker (fixtures, CI)
 
+Containers started by bin/idp-apply carry label idp.manifest=<name> and are
+owned while catalog/manifests/<name>.yaml exists.
+
 Drift classes: rogue (no owner), config-path (an idp project running from a
 config file outside this checkout, e.g. a worktree), stale (owned by a compose
 file that no longer exists). docker compose is the reconcile primitive for
@@ -51,6 +54,7 @@ def containers(ps_file):
         c = json.loads(line)
         labels = dict(kv.split("=", 1) for kv in c.get("Labels", "").split(",") if "=" in kv)
         out.append({"name": c["Names"], "id": c.get("ID", ""), "project": labels.get("com.docker.compose.project", ""),
+                    "manifest": labels.get("idp.manifest", ""),
                     "config": labels.get("com.docker.compose.project.config_files", ""), "ports": c.get("Ports", "")})
     return out
 
@@ -69,6 +73,11 @@ def classify(cs, spec):
         if any(c["name"].startswith(p) for p in prefixes):
             continue
         if cfgs and any(cf.startswith(fp) for fp in foreign for cf in cfgs):
+            continue
+        if c["manifest"]:
+            if os.path.exists(os.path.join(IDP, "catalog", "manifests", c["manifest"] + ".yaml")):
+                continue
+            findings.append(("stale", c, f"manifest catalog/manifests/{c['manifest']}.yaml does not exist"))
             continue
         if c["project"] in projects:
             if cfgs and all(cf == projects[c["project"]] for cf in cfgs):
