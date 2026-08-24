@@ -6,3 +6,4 @@ kind: Kustomization
 resources:
   - platform.yaml
   - data-ops.yaml
+  - allow-traefik.yaml

@@ -68,7 +68,15 @@ def main() -> int:
             if r.get("kind") != "listener":
                 continue
             port, proc = int(r["port"]), r.get("process", "")
-            if proc in FOREIGN or port >= 49152:
+            if port >= 49152:
+                continue
+            # limactl/colima republishes every container port under its own name, so
+            # treating the whole process as foreign exempted every containerised
+            # service on this machine from the ledger -- measured 2026-08-24, ports
+            # 80 and 443 bound *:* while ports.yaml declared 127.0.0.1 and nothing
+            # said so. A FOREIGN process is foreign only for a port the ledger does
+            # not claim; a port the ledger claims is ours whoever publishes it.
+            if proc in FOREIGN and port not in declared:
                 continue
             d = declared.get(port)
             if not d:

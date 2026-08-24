@@ -1,3 +1,13 @@
 ports:
-  - {port: 3100, service: backstage-app, compose: none, bind: '[::1]'}
-  - {port: 7107, service: backstage-backend, compose: none, bind: 127.0.0.1}
+- port: 3100
+  service: backstage-app
+  compose: none
+  bind: '[::1]'
+- port: 7107
+  service: backstage-backend
+  compose: none
+  bind: 127.0.0.1
+- port: 80
+  service: traefik-ingress
+  compose: none
+  bind: 127.0.0.1

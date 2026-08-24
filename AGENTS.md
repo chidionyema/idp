@@ -15,6 +15,7 @@ Row format, one rule per row. `gate` is a shell function or command defined in `
 | No dependency whose licence blocks a sale; a scan with no licences is not clean (LAW 40) | policy_gate | policy/fixtures/sell-blocking.json | policy/fixtures/clean.json |
 | No scheduled job on this laptop that runs in the sleep window or is never pinged (LAW 28) | policy_gate | policy/fixtures/placement-misplaced.json | policy/fixtures/placement-ok.json |
 | Only the gateway binds a non-loopback address; everything else is 127.0.0.1 or nothing (R20) | bind_audit | tests/fixtures/listeners.bad.txt | tests/fixtures/listeners.good.txt |
+| A port catalog/ports.yaml claims is ours whoever publishes it; a listener process is exempt only for ports the ledger does not claim (R20) | port_gate_live | tests/fixtures/ports-live/inventory.bad.json | tests/fixtures/ports-live/inventory.good.json |
 | No namespace without a both-ways default-deny NetworkPolicy, a ResourceQuota, a LimitRange and a DNS exception (crew#191) | ns_fence_gate | tests/fixtures/ns-fence/bad.yaml | tests/fixtures/ns-fence/good.yaml |
 
 Rules that are already types or tools, and so need no row: compose files must parse
