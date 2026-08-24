@@ -21,6 +21,19 @@ metadata:
 servers: 1
 agents: 0
 
+# Where the Kubernetes API server is reachable from. Without this k3d publishes
+# it on 0.0.0.0 at a port the kernel picks, which put the API of this cluster on
+# every interface of the laptop: `docker port` read `6443/tcp -> 0.0.0.0:53145`
+# and the generated kubeconfig said `server: https://0.0.0.0:53145`. Founder
+# ruling R20: the gateway is the only process that binds a non-loopback address,
+# and everything else is 127.0.0.1 or nothing.
+#
+# The port is fixed rather than random so that what is listening is the same on
+# every machine and a firewall rule or an audit can name it.
+kubeAPI:
+  hostIP: "127.0.0.1"
+  hostPort: "6445"
+
 options:
   k3d:
     wait: true

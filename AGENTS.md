@@ -14,6 +14,7 @@ Row format, one rule per row. `gate` is a shell function or command defined in `
 | No file names where the checkout, home directory or machine lives (LAW 46) | hardcode_scan | tests/fixtures/hardcoded-path.bad.sh | tests/fixtures/hardcoded-path.good.sh |
 | No dependency whose licence blocks a sale; a scan with no licences is not clean (LAW 40) | policy_gate | policy/fixtures/sell-blocking.json | policy/fixtures/clean.json |
 | No scheduled job on this laptop that runs in the sleep window or is never pinged (LAW 28) | policy_gate | policy/fixtures/placement-misplaced.json | policy/fixtures/placement-ok.json |
+| Only the gateway binds a non-loopback address; everything else is 127.0.0.1 or nothing (R20) | bind_audit | tests/fixtures/listeners.bad.txt | tests/fixtures/listeners.good.txt |
 
 Rules that are already types or tools, and so need no row: compose files must parse
 (`docker compose config`), the gateway config must match its release schema
