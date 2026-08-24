@@ -22,6 +22,18 @@ make cluster-down     # delete it; nothing survives, by design
 export KUBECONFIG=$(k3d kubeconfig write estate)
 ```
 
+The API server listens on `127.0.0.1:6445` and nowhere else. k3d's default is to
+publish it on `0.0.0.0` at a port the kernel picks, and on 2026-08-24 that is
+exactly what this cluster did for 40 minutes: `docker port` read
+`6443/tcp -> 0.0.0.0:53145`. Founder ruling R20 says the gateway is the only
+process on this estate that binds a non-loopback address. `make cluster-up` now
+ends by running `bin/bind-audit`, which reads back every listener on the machine
+and fails on anything that is not on a written allow-list, so the same mistake
+cannot be made quietly again.
+
+```
+```
+
 ## What is deliberately not in it
 
 Traefik, servicelb and metrics-server are all switched off, and each one is
