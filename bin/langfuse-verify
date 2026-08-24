@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# Is the observability actually observing? This is the definition of done for
+# Langfuse, written as a command.
+#
+# Reachable is not the same as working. A Langfuse whose worker cannot write to
+# ClickHouse answers 200 on /api/public/health, renders a perfectly good empty
+# dashboard, and silently drops everything sent to it. So this does not probe a
+# port. It sends a real span through the real OTLP endpoint and then reads it
+# back out of the API, which is the only evidence that ingestion works end to
+# end.
+#
+# It does the same for the fallback, because a fallback nobody has ever sent a
+# span to is a hope, not a fallback (LAW 19).
+#
+#   langfuse-verify          check both
+#   langfuse-verify --primary-only
+#
+# Exit 0 only when a span sent in comes back out.
+set -uo pipefail
+
+IDP="$HOME/dev/code/idp"
+ENVF="$IDP/observability/.env"
+JQ=/usr/local/bin/jq
+PRIMARY=http://127.0.0.1:3200
+FALLBACK=http://127.0.0.1:4318
+
+fail=0
+say() { printf '%s\n' "$*"; }
+
+[ -f "$ENVF" ] || { say "FAIL  no $ENVF -- run bin/langfuse-up"; exit 1; }
+pk=$(grep -m1 '^LANGFUSE_INIT_PROJECT_PUBLIC_KEY=' "$ENVF" | cut -d= -f2-)
+sk=$(grep -m1 '^LANGFUSE_INIT_PROJECT_SECRET_KEY=' "$ENVF" | cut -d= -f2-)
+
+# A fresh trace id each run, so a pass can never be last run's data.
+trace_id=$(openssl rand -hex 16)
+span_id=$(openssl rand -hex 8)
+now_ns=$(( $(date +%s) * 1000000000 ))
+end_ns=$(( now_ns + 1000000 ))
+
+payload=$(cat <<JSON
+{"resourceSpans":[{
+  "resource":{"attributes":[
+    {"key":"service.name","value":{"stringValue":"langfuse-verify"}}]},
+  "scopeSpans":[{
+    "scope":{"name":"idp.langfuse-verify"},
+    "spans":[{
+      "traceId":"$trace_id",
+      "spanId":"$span_id",
+      "name":"verify-probe",
+      "kind":1,
+      "startTimeUnixNano":"$now_ns",
+      "endTimeUnixNano":"$end_ns",
+      "attributes":[
+        {"key":"langfuse.observation.type","value":{"stringValue":"span"}},
+        {"key":"probe","value":{"stringValue":"idp-langfuse-verify"}}]
+    }]}]}]}
+JSON
+)
+
+# --- primary: send a span, then read it back ---------------------------------
+say "trace     $trace_id"
+code=$(curl -sS -o /tmp/lf-verify-post.$$ -w '%{http_code}' --max-time 15 \
+  -X POST "$PRIMARY/api/public/otel/v1/traces" \
+  -u "$pk:$sk" -H 'Content-Type: application/json' \
+  -d "$payload" 2>/dev/null || echo 000)
+
+if [ "$code" != "200" ] && [ "$code" != "202" ] && [ "$code" != "204" ]; then
+  say "FAIL      primary rejected the span: HTTP $code"
+  sed 's/^/            /' /tmp/lf-verify-post.$$ 2>/dev/null | head -5
+  fail=1
+else
+  say "primary   span accepted (HTTP $code) -- waiting for the worker to flush"
+  found=""
+  for i in $(seq 1 24); do
+    sleep 5
+    got=$(curl -sS --max-time 10 -u "$pk:$sk" \
+      "$PRIMARY/api/public/traces/$trace_id" 2>/dev/null \
+      | $JQ -r '.id // empty' 2>/dev/null)
+    if [ -n "$got" ]; then found="$got"; break; fi
+    [ $(( i % 4 )) -eq 0 ] && say "          still flushing ($(( i * 5 ))s)"
+  done
+  if [ -n "$found" ]; then
+    say "primary   PASS -- the span came back out of the API after $(( i * 5 ))s"
+  else
+    say "FAIL      primary accepted the span but it never appeared in the API."
+    say "          That is the silent-drop case. Check the worker:"
+    say "            docker logs --tail 40 langfuse-worker"
+    fail=1
+  fi
+fi
+rm -f /tmp/lf-verify-post.$$
+
+[ "${1:-}" = "--primary-only" ] && { say; [ "$fail" -eq 0 ] && say "PASS" || say "FAIL"; exit "$fail"; }
+
+# --- fallback: same span, different receiver ---------------------------------
+before=$(docker exec langfuse-otel-fallback sh -c 'wc -l < /data/traces.jsonl 2>/dev/null || echo 0' 2>/dev/null | tr -d ' \r')
+code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
+  -X POST "$FALLBACK/v1/traces" \
+  -H 'Content-Type: application/json' -d "$payload" 2>/dev/null || echo 000)
+
+if [ "$code" != "200" ]; then
+  say "FAIL      fallback rejected the span: HTTP $code"
+  fail=1
+else
+  # The batch processor holds spans for up to 5s before writing.
+  sleep 8
+  hit=$(docker exec langfuse-otel-fallback sh -c \
+        "grep -c '$trace_id' /data/traces.jsonl 2>/dev/null || echo 0" 2>/dev/null | tr -d ' \r')
+  after=$(docker exec langfuse-otel-fallback sh -c 'wc -l < /data/traces.jsonl 2>/dev/null || echo 0' 2>/dev/null | tr -d ' \r')
+  if [ "${hit:-0}" -ge 1 ]; then
+    say "fallback  PASS -- the same trace id is on disk (${before:-0} -> ${after:-0} batches)"
+  else
+    say "FAIL      fallback accepted the span but it is not in /data/traces.jsonl"
+    fail=1
+  fi
+fi
+
+say
+if [ "$fail" -eq 0 ]; then
+  say "PASS      both receivers took a span and gave it back. Switching between"
+  say "          them is one environment variable, and both are already running."
+else
+  say "FAIL      observability is not proven working"
+fi
+exit "$fail"

@@ -1,0 +1,481 @@
+<title>Why the Schedules Miss</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+:root {
+  --ground: #F1F3F7;
+  --surface: #FFFFFF;
+  --ink: #15181E;
+  --ink-soft: #576073;
+  --ink-faint: #838D9F;
+  --rule: #DBE0E9;
+  --rule-soft: #E9ECF2;
+  --accent: #2C4A7C;
+  --dead: #A0392E;
+  --late: #8A5D12;
+  --live: #2A6551;
+  --dead-bg: #F6E7E4;
+  --late-bg: #F7EEDC;
+  --live-bg: #E2EFE9;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #101319;
+    --surface: #171B22;
+    --ink: #E5E9F0;
+    --ink-soft: #9AA4B6;
+    --ink-faint: #6E788B;
+    --rule: #262C37;
+    --rule-soft: #1E232C;
+    --accent: #86A9DF;
+    --dead: #E58F81;
+    --late: #D9AA51;
+    --live: #74C2A4;
+    --dead-bg: #2A1B18;
+    --late-bg: #2A2216;
+    --live-bg: #16261F;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #101319;
+  --surface: #171B22;
+  --ink: #E5E9F0;
+  --ink-soft: #9AA4B6;
+  --ink-faint: #6E788B;
+  --rule: #262C37;
+  --rule-soft: #1E232C;
+  --accent: #86A9DF;
+  --dead: #E58F81;
+  --late: #D9AA51;
+  --live: #74C2A4;
+  --dead-bg: #2A1B18;
+  --late-bg: #2A2216;
+  --live-bg: #16261F;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16.5px;
+  line-height: 1.62;
+  margin: 0;
+  padding: 0 20px 5rem;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 860px; margin: 0 auto; }
+.prose { max-width: 64ch; }
+
+/* ---------- masthead ---------- */
+
+header { padding: 4.5rem 0 0; }
+
+.eyebrow {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 1.4rem;
+}
+
+h1 {
+  font-family: Fraunces, Georgia, serif;
+  font-variation-settings: "opsz" 120, "SOFT" 0, "WONK" 0;
+  font-weight: 600;
+  font-size: clamp(2.4rem, 7vw, 3.9rem);
+  line-height: 1.02;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+  margin: 0 0 1.3rem;
+}
+
+.standfirst {
+  font-size: 1.14rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  max-width: 56ch;
+  margin: 0 0 3rem;
+}
+
+/* ---------- figure band ---------- */
+
+.figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0;
+  border-top: 1.5px solid var(--ink);
+  border-bottom: 1px solid var(--rule);
+  margin: 0 0 3.5rem;
+}
+.fig { padding: 1.5rem 1.6rem 1.6rem 0; border-right: 1px solid var(--rule-soft); }
+.fig:last-child { border-right: 0; }
+.fig .n {
+  font-family: "IBM Plex Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 2.1rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+.fig .l { font-size: 0.86rem; line-height: 1.4; color: var(--ink-soft); }
+.n.dead { color: var(--dead); }
+.n.late { color: var(--late); }
+.n.live { color: var(--live); }
+
+/* ---------- structure ---------- */
+
+h2 {
+  font-family: Fraunces, Georgia, serif;
+  font-variation-settings: "opsz" 40, "SOFT" 0, "WONK" 0;
+  font-weight: 600;
+  font-size: 1.72rem;
+  line-height: 1.2;
+  letter-spacing: -0.014em;
+  text-wrap: balance;
+  margin: 3.6rem 0 1.1rem;
+  padding-top: 1.6rem;
+  border-top: 1.5px solid var(--ink);
+}
+
+h3 {
+  font-family: "IBM Plex Sans", sans-serif;
+  font-weight: 600;
+  font-size: 1.06rem;
+  line-height: 1.35;
+  margin: 0 0 0.15rem;
+  text-wrap: balance;
+}
+
+p { margin: 0 0 1.05rem; }
+p.prose, ul.prose, ol.prose { max-width: 64ch; }
+
+strong { font-weight: 600; }
+
+code {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.875em;
+  background: var(--rule-soft);
+  padding: 0.13em 0.36em;
+  border-radius: 2px;
+}
+
+/* ---------- improvement entries ---------- */
+
+.item { padding: 1.9rem 0; border-bottom: 1px solid var(--rule); }
+.item:last-child { border-bottom: 0; }
+
+.item-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+}
+
+.chip {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.665rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.24em 0.6em;
+  border-radius: 2px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.chip.done  { background: var(--live-bg); color: var(--live); }
+.chip.next  { background: var(--late-bg); color: var(--late); }
+.chip.yours { background: var(--dead-bg); color: var(--dead); }
+
+.callout {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--late);
+  padding: 1.1rem 1.3rem;
+  margin: 0 0 3.5rem;
+  max-width: 64ch;
+}
+.callout p { margin: 0 0 0.6rem; font-size: 0.94rem; }
+.callout p:last-child { margin-bottom: 0; }
+.callout-title {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.68rem !important;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--late);
+}
+
+.cap {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  margin: 0 0 0.75rem;
+}
+
+.rows { display: grid; gap: 0.55rem; margin: 0 0 1rem; }
+.row { display: grid; grid-template-columns: 5.6rem 1fr; gap: 0.9rem; align-items: start; }
+.row dt {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding-top: 0.28em;
+}
+.row dd { margin: 0; max-width: 62ch; }
+
+@media (max-width: 560px) {
+  .row { grid-template-columns: 1fr; gap: 0.15rem; }
+  .row dt { padding-top: 0; }
+}
+
+/* ---------- evidence table ---------- */
+
+.tablewrap { overflow-x: auto; margin: 1.4rem 0 2rem; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; min-width: 500px; }
+th {
+  text-align: left;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 400;
+  padding: 0 1rem 0.6rem 0;
+  border-bottom: 1px solid var(--ink);
+}
+td { padding: 0.7rem 1rem 0.7rem 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+td.num {
+  font-family: "IBM Plex Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- commands ---------- */
+
+pre {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.83rem;
+  line-height: 1.65;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--accent);
+  padding: 0.95rem 1.1rem;
+  overflow-x: auto;
+  margin: 0 0 1rem;
+  border-radius: 0 2px 2px 0;
+}
+pre code { background: none; padding: 0; font-size: 1em; }
+
+.note {
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+  max-width: 62ch;
+  margin: 0 0 1rem;
+}
+
+footer {
+  margin-top: 4rem;
+  padding-top: 1.6rem;
+  border-top: 1.5px solid var(--ink);
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+  max-width: 62ch;
+}
+footer p { margin-bottom: 0.8rem; }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Platform engineering · measured 24 August 2026, 02:00–03:00</p>
+  <h1>Why the schedules miss</h1>
+  <p class="standfirst">Seven of the ten daily jobs on this estate have never run. Not once. They are not late and they are not broken — they are booked for hours when the laptop is asleep. Here is the class of problem, what changes, and what is still yours to decide.</p>
+</header>
+
+<div class="figures">
+  <div class="fig"><span class="n dead">7 of 10</span><span class="l">daily jobs that have never sent a single ping</span></div>
+  <div class="fig"><span class="n late">10</span><span class="l">checks reading red that <em>ran and failed</em> — a different repair entirely</span></div>
+  <div class="fig"><span class="n live">6 of 6</span><span class="l">improvements tied to a named platform-engineering capability, not invented</span></div>
+</div>
+
+<div class="callout">
+  <p class="callout-title">Corrected since first publication</p>
+  <p>This page first said the audit reports 22 failures. Re-running it an hour later reported 11, and the difference was a defect in my own guard rather than in the estate. It is written up in full below under <em>The guard that got quieter</em>, because a page that quietly restates its numbers is worth less than one that shows where it was wrong.</p>
+</div>
+
+<h2>The class, stated once</h2>
+
+<p class="prose">Every time this comes up it gets treated as a broken job, and one job gets repaired. That is why it keeps coming back. The actual class is <strong>work placed on hardware that cannot honour it, watched by instruments nobody reads, reported under a word that means two different things.</strong></p>
+
+<p class="prose">Three separate failures wearing one name. A MacBook sleeps: a job booked for 03:30 does not run at 03:30, and no amount of fixing the script changes that. A dead-man check that has never received a ping looks identical on a board to one that pinged an hour ago. And a job that ran and exited non-zero is filed under the same phrase as a job that never started.</p>
+
+<h2>What was measured tonight</h2>
+
+<p class="prose">Every number below came from a command run in the last hour, against the live system rather than a document about it.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Finding</th><th>Number</th><th>How it was measured</th></tr></thead>
+  <tbody>
+    <tr><td>Daily jobs that have never pinged</td><td class="num">7 of 10</td><td>Healthchecks API, <code>/api/v3/checks/</code></td></tr>
+    <tr><td>Sub-daily jobs that have never pinged</td><td class="num">4 of 25</td><td>Same call — the only variable is the hour</td></tr>
+    <tr><td>Checks red because the job <em>ran and failed</em></td><td class="num">10</td><td>Cross-checked against <code>launchctl list</code> exit status</td></tr>
+    <tr><td>Scheduled jobs nothing is watching at all</td><td class="num">1</td><td>No <code>hc-wrap.sh</code> wrapper, so no check exists</td></tr>
+    <tr><td>Long-running services that die with the lid</td><td class="num">8</td><td>KeepAlive jobs in <code>~/Library/LaunchAgents</code></td></tr>
+    <tr><td>Licence check passing on an empty scan</td><td class="num">2 of 1,821</td><td>Reported "licences clean" having checked nothing</td></tr>
+    <tr><td>Sessions independently building the same thing</td><td class="num">2</td><td>Caught 25 minutes apart on the estate board</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p class="note">The night schedules, for the record: 03:30, 03:40, 03:50, 04:30, 05:10, 07:15. <code>pmset -g log</code> shows this Mac in maintenance sleep straight through all of them.</p>
+
+<h2>What to expect</h2>
+
+<p class="prose">Six improvements. Three are shipped and provable tonight, two are next, and one is a decision only you can make. Each carries the check that would show it failed.</p>
+
+<div class="item">
+  <div class="item-head"><h3>1. Placement becomes a rule instead of a diagnosis</h3><span class="chip done">Shipped</span></div>
+  <p class="cap">PE capability &middot; Golden paths &mdash; a paved road with guardrails (LAW 38)</p>
+  <dl class="rows">
+    <div class="row"><dt>Was</dt><dd>Nobody could say which of 43 jobs belonged on the laptop and which needed a machine that stays awake. Each missed schedule was triaged on its own.</dd></div>
+    <div class="row"><dt>Now</dt><dd>A job's host is a policy decision, graded by command. Three hard rules: a schedule inside the sleep window, a monitored job that has never pinged, and survival work — backup, restore drill, key escrow — whose only schedule is on the machine it protects.</dd></div>
+    <div class="row"><dt>Expect</dt><dd>The recurring ticket stops. The baseline to beat is 7 of 10 daily jobs dead; a run that reports zero unexplained placements is the finish line.</dd></div>
+    <div class="row"><dt>Check</dt><dd><code>bin/placement-audit</code> — currently 22 failures, 12 warnings across 43 jobs.</dd></div>
+  </dl>
+</div>
+
+<div class="item">
+  <div class="item-head"><h3>2. Guards have to prove they say yes, not just no</h3><span class="chip done">Shipped</span></div>
+  <p class="cap">PE capability &middot; Self-service with guardrails (LAW 38)</p>
+  <dl class="rows">
+    <div class="row"><dt>Was</dt><dd>Guards were tested on the case they refuse. Two consequences, both real this week: the documentation gate refused a push that carried both required files under their real name, twice; and the licence policy passed a scan that found 2 licences in 1,821 packages, printing "licences clean" having checked nothing.</dd></div>
+    <div class="row"><dt>Now</dt><dd>Every policy ships paired controls — a fixture that must pass beside a fixture that must fail — and the runner checks exit codes rather than reading output. The licence policy also now refuses a scan where under 10% of packages carry terms, because a guard that passes on empty input is worse than no guard.</dd></div>
+    <div class="row"><dt>Expect</dt><dd>A guard that starts refusing correct work shows up in a test run instead of in a blocked push at midnight. A guard that starts passing everything shows up at all.</dd></div>
+    <div class="row"><dt>Check</dt><dd><code>bin/policy-test</code> — 5 fixtures, 2 policies, all behaving as specified.</dd></div>
+  </dl>
+</div>
+
+<div class="item">
+  <div class="item-head"><h3>3. One word for two failures becomes two words</h3><span class="chip done">Shipped</span></div>
+  <p class="cap">PE capability &middot; Observability &mdash; signal quality (LAW 28)</p>
+  <dl class="rows">
+    <div class="row"><dt>Was</dt><dd>"Missed schedule" covered both <em>never ran</em> and <em>ran and failed</em>. They need opposite repairs — one is a hosting problem, the other is a bug in the job — so conflating them meant neither got fixed.</dd></div>
+    <div class="row"><dt>Now</dt><dd>Counted and reported separately, and the distinction is written into the audit's output rather than left to whoever reads it. Eleven never ran. Ten ran and failed.</dd></div>
+    <div class="row"><dt>Expect</dt><dd>Two lists that shrink independently, instead of one number that never moves.</dd></div>
+    <div class="row"><dt>Check</dt><dd><code>docs/onboarding/placement.md</code> holds both lists and the reasoning.</dd></div>
+  </dl>
+</div>
+
+<div class="item">
+  <div class="item-head"><h3>4. A signal nobody reads gets a reader or gets deleted</h3><span class="chip next">Next</span></div>
+  <p class="cap">PE capability &middot; Observability &mdash; signal quality (LAW 28)</p>
+  <dl class="rows">
+    <div class="row"><dt>Now</dt><dd>Worked example found tonight: <code>com.founder.sciencecollect</code> runs hourly and exits 1 every hour. Two of its data sources went stale 52 and 56 hours ago. Its error log is zero bytes, because the failure text goes to standard output and only the error stream was being watched. Nobody has ever seen the alarm.</dd></div>
+    <div class="row"><dt>Changes</dt><dd>The ran-and-failed list has to arrive somewhere you actually look, and a check whose failure has never once been read is either wired to a reader or removed. Both options are better than a red light in an empty room.</dd></div>
+    <div class="row"><dt>Expect</dt><dd>Not shipped. Named here so it is a tracked item rather than a thing I noticed.</dd></div>
+  </dl>
+</div>
+
+<div class="item">
+  <div class="item-head"><h3>5. Knowing what the estate already owns, before building it again</h3><span class="chip next">Next</span></div>
+  <p class="cap">PE capability &middot; Inventories to manage assets and prevent duplication (LAW 39)</p>
+  <dl class="rows">
+    <div class="row"><dt>Now</dt><dd>Measured tonight, not hypothetically: two sessions were independently installing the same observability stack, twenty-five minutes apart, and both hit the same port collision separately. It was caught by hand, on the shared board, with minutes to spare.</dd></div>
+    <div class="row"><dt>Changes</dt><dd>Caught by hand is not caught. The general answer is an inventory that answers "who owns this and is it already being built" as a query rather than as a broadcast somebody happens to read in time.</dd></div>
+    <div class="row"><dt>Expect</dt><dd>The immediate duplicate is resolved and the halves are split in writing. The mechanism that would have prevented it is not built.</dd></div>
+  </dl>
+</div>
+
+<div class="item">
+  <div class="item-head"><h3>6. Ten jobs need a machine that stays awake</h3><span class="chip yours">Your decision</span></div>
+  <p class="cap">PE capability &middot; Platform hosting &mdash; not a capability, a decision (LAW 11)</p>
+  <dl class="rows">
+    <div class="row"><dt>Which</dt><dd>Three backups, the offsite copy, the restore drill, the key escrow, the dependency alerts, the guard self-test, the process audit and the bundle push.</dd></div>
+    <div class="row"><dt>Why yours</dt><dd>Choosing the host spends money and commits architecture. I have gone as far as producing the list and the reasoning; picking where it lands is not a script's call to make.</dd></div>
+    <div class="row"><dt>Note</dt><dd>Whatever is chosen inherits the same requirement as everything else here — an exit that has actually been drilled, not assumed. Moving off a sleeping laptop onto a host that could withdraw is a trade, not a fix.</dd></div>
+  </dl>
+</div>
+
+<h2>The guard that got quieter</h2>
+
+<p class="prose">An hour after this page was published, the audit was re-run and reported 11 failures where it had reported 22. Nothing on the estate had improved. The guard had gone blind and stopped talking.</p>
+
+<p class="prose">What happened: the Healthchecks container went unhealthy — its request workers were being killed for exceeding their 30-second limit while the machine sat at load average 7.71. <code>bin/placement-audit</code> could no longer read any check record, so it wrote <code>"check": null</code> against all 34 monitored jobs. The rule that catches a job which has never pinged reads <code>job.check.last_ping == null</code>, and in Rego <code>null.last_ping</code> is <em>undefined</em> rather than null — so the rule body simply failed and the rule stopped matching. Eleven real failures disappeared from the report.</p>
+
+<p class="prose">This is the worst failure shape a guard has, because the output looks like progress. A guard that goes silent when it loses its evidence will be believed exactly when it should not be.</p>
+
+<p class="prose">Fixed: a monitored job whose check cannot be read is now refused outright, with its own message saying the state is unknown rather than fine. Unknown is not pass. And the audit reports BLIND separately from never-pinged, because adding a monitoring outage into a job-failure count makes each look like the other.</p>
+
+<p class="prose">Proven by a fixture that isolates it — one job, breaking that rule and no other, so no other rule can mask a regression:</p>
+
+<pre><code>$ bin/policy-test
+placement-blind.json  1  1  refuses a monitored job whose check could not be
+                            read, so a monitoring outage cannot read as a pass
+
+PASS      every policy allows its good case and refuses its bad ones</code></pre>
+
+<p class="note">This is improvement 2 doing its job on improvement 1, which is the only reason it was caught within the hour rather than at the next incident.</p>
+
+<h2>Is Backstage ready, and is everything in it?</h2>
+
+<p class="prose"><strong>Ready and operational: yes.</strong> Both renderers answer, locally and on the tailnet, which is two angles rather than one:</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Renderer</th><th>Local</th><th>HTTP</th><th>Published</th></tr></thead>
+  <tbody>
+    <tr><td>primary — Backstage</td><td class="num">127.0.0.1:3100</td><td class="num">200</td><td class="num">…ts.net:8443</td></tr>
+    <tr><td>fallback — Datasette</td><td class="num">127.0.0.1:8001</td><td class="num">200</td><td class="num">…ts.net:10000</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p class="prose"><strong>Migrated: 194 assets, in six kinds</strong> — 73 ledgers, 43 scheduled jobs, 32 guards, 23 repositories, 13 drills, 10 data sources. That is the inventory capability of improvement 5, and it is real rather than proposed.</p>
+
+<div class="callout">
+  <p class="callout-title">Corrected again, and this one was mine twice over</p>
+  <p class="prose">This page said there were two inventories on the estate that do not join, and cited the estate's own <code>silos=2</code> finding as agreement. Both halves were wrong, and I found it by reading <code>bin/db-gen</code> instead of trusting my own note.</p>
+  <p class="prose">There is <strong>one</strong> inventory. <code>bin/catalog-gen</code> and <code>bin/db-gen</code> are both adapters over it — one writes Backstage YAML, the other writes SQLite for Datasette. Joined on id, every one of the 204 inventory rows is present in the catalogue. The catalogue holds one extra, <code>zz.probe.badxml</code>, because its snapshot was taken 44 seconds earlier. Two counts that differ are not two silos.</p>
+  <p class="prose">And <code>silos=2</code> counts two findings that have nothing to do with the catalogue: work recorded in 77 ledgers that do not join, and scheduled machinery running from 6 roots. I cited a real number against the wrong subject, which is the more dangerous of the two errors because the number checks out.</p>
+</div>
+
+<p class="prose"><strong>Onboarded: not fully, and here is the actual gap.</strong> Four features carry the demo and onboarding pair the rules require — the IDP itself, supply chain, placement, and Langfuse. The catalogue's 194 contents do not. Onboarding covers the platform's own features, not yet the assets inside it. There is also one fact with two implementations: <code>catalog-gen</code> and <code>db-gen</code> each compute whether a repo has a licence file by checking the same five filenames, because the inventory does not record it. They agree today only because both were written on the same day.</p>
+
+<p class="prose">The architecture is drawn, verified and in the repo at <code>docs/architecture.md</code> — one source, two adapters, two swappable renderers, and where each guard sits in the flow. It did not exist until today, which is its own finding: the platform had six proven improvements and no picture of itself.</p>
+
+<h2>Check any of it yourself</h2>
+
+<p class="prose">Every claim above is a command, so none of it needs taking on trust. From <code>~/dev/code/idp</code>:</p>
+
+<pre><code>bin/placement-audit    # every job, where it runs, whether it ever has
+bin/policy-test        # the guards, on their good case and their bad case
+bin/supply-chain       # what we are made of and what we may sell</code></pre>
+
+<p class="note">And the raw evidence for the headline number, straight from the monitoring system rather than from this page:</p>
+
+<pre><code>curl -s -H "X-Api-Key: $(cat ~/.estate/healthchecks/api_key)" \
+  http://127.0.0.1:8000/api/v3/checks/ \
+  | jq -r '[.checks[]|select(.last_ping==null)|.slug]'</code></pre>
+
+<h2>What this does not fix</h2>
+
+<p class="prose">The audit reads and grades. It does not move a single job, because moving one has a blast radius and that is not a script's decision. No always-on host exists yet, so the ten jobs that need one are still where they were an hour ago — the difference is that they are now on a list with a reason rather than surfacing one at a time as mystery failures.</p>
+
+<p class="prose">The ten checks that ran and failed are entirely untouched by any of this. They are a separate list and they need reading one at a time.</p>
+
+<footer>
+  <p><strong>Method.</strong> Everything on this page was measured between 02:00 and 03:00 on 24 August 2026 against the running system — the Healthchecks API, <code>launchctl list</code>, <code>pmset -g log</code> and the launchd property lists. Where a number could be got two ways it was: the ran-and-failed count agrees between Healthchecks and launchd's own exit statuses.</p>
+  <p><strong>Weaker evidence.</strong> The sleep-window rule uses midnight to 08:00, which is a judgement about when this laptop is realistically shut rather than a measured constant. It is set in one place, <code>policy/placement.rego</code>, and every job it currently catches is also caught by the never-pinged rule — so no job is condemned by that judgement alone.</p>
+</footer>
+
+</div>

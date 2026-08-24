@@ -1,0 +1,13 @@
+$ bin/policy-test
+FIXTURE              EXPECT   GOT      PROVES
+-------------------- -------- -------- ------
+clean.json           0        0        allows an ordinary permissive tree, including packages with no licence metadata
+sell-blocking.json   1        1        refuses AGPL, SSPL, BUSL, Elastic, non-commercial CC and Commons Clause
+broken-scan.json     1        1        refuses a full parts list with no terms in it, instead of calling it clean
+placement-ok.json    0        0        allows short-interval desk jobs that are monitored and awake-hours only
+placement-misplaced.json 1        1        refuses sleep-window schedules, never-pinged jobs and survival work on a laptop
+placement-blind.json 1        1        refuses a monitored job whose check could not be read, so a monitoring outage cannot read as a pass
+
+PASS      every policy allows its good case and refuses its bad ones
+
+exit=0

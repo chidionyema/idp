@@ -1,0 +1,25 @@
+PROOF 3 -- 'ran and failed' is a different state from 'never ran'
+Captured 2026-08-24T02:29:00Z.
+
+Second angle, independent of Healthchecks: launchctl reports each job's own
+last exit status. Estate jobs only (com.apple.*, homebrew.*, com.valvesoftware.*
+and com.ollama.* excluded).
+
+$ launchctl list | awk "non-zero exit, estate labels only"
+  exit=-15   ai.estate.consultd
+  exit=-15   com.chidionyema.maestro
+  exit=-15   com.founder.boardserve
+  exit=1     ai.architect.gateway
+  exit=1     com.estate.costsentinel
+  exit=1     com.founder.board
+  exit=1     com.founder.sciencecollect
+  exit=1     com.prospector.estate-inventory
+  exit=1     com.prospector.launchd-held
+  exit=1     com.prospector.log-rotation
+
+  10 estate jobs last exited non-zero. Each one RAN. None of them missed a schedule.
+
+Negative exit codes are signals (-9 SIGKILL, -15 SIGTERM), which is a process
+that was killed rather than one that failed on its own. Positive codes are the
+job's own failure. hc-wrap.sh pings the exit code, so both land as a 'down'
+check -- and a 'down' check therefore never means a missed schedule.

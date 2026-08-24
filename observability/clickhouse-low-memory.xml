@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<!--
+  ClickHouse sized for a laptop, not a data warehouse.
+
+  Without this it reads the host's total RAM and sizes its caches against that,
+  which on a 16 GiB machine means it tries to use several gigabytes. The
+  mem_limit in langfuse.yml would then not restrain it, it would just get the
+  container OOM-killed, and a container that dies under load is worse than one
+  that runs slowly: the kill looks like a crash and nobody reads it as capacity.
+
+  These numbers assume a few thousand spans a day. If ingest ever grows, raise
+  max_server_memory_usage and the mem_limit together -- changing one alone gets
+  you either an OOM kill or wasted headroom.
+-->
+<clickhouse>
+    <!-- 1000 MB, inside the container's 1200m ceiling with room for overhead. -->
+    <max_server_memory_usage>1000000000</max_server_memory_usage>
+
+    <!-- Caches. Defaults are sized for a dedicated box. -->
+    <mark_cache_size>134217728</mark_cache_size>
+    <uncompressed_cache_size>0</uncompressed_cache_size>
+    <index_mark_cache_size>67108864</index_mark_cache_size>
+    <index_uncompressed_cache_size>0</index_uncompressed_cache_size>
+
+    <!-- Background work. The default pool assumes many cores are idle. -->
+    <background_pool_size>4</background_pool_size>
+    <background_schedule_pool_size>4</background_schedule_pool_size>
+    <background_common_pool_size>4</background_common_pool_size>
+    <max_concurrent_queries>16</max_concurrent_queries>
+
+    <!-- Logs otherwise grow without bound in a volume nobody looks at. -->
+    <logger>
+        <level>warning</level>
+        <size>50M</size>
+        <count>3</count>
+    </logger>
+
+    <profiles>
+        <default>
+            <max_memory_usage>600000000</max_memory_usage>
+            <max_bytes_before_external_group_by>300000000</max_bytes_before_external_group_by>
+        </default>
+    </profiles>
+</clickhouse>

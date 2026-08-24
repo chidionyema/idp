@@ -1,0 +1,10 @@
+{
+  "_comment": "The bad case, one job per deny rule, so a rule that stops firing shows up here rather than in production. Must FAIL. Every entry is modelled on a real job measured on this machine on 2026-08-24.",
+  "jobs": [
+    {"label": "com.example.nightly-drills", "slug": "drills", "schedule": "calendar", "period_seconds": 86400, "hours": [4], "asleep_hours": [4], "command": "hc-wrap.sh drills drills.sh", "check": {"status": "new", "last_ping": null}},
+    {"label": "com.example.offsite-backup", "slug": "offsite-backup", "schedule": "calendar", "period_seconds": 86400, "hours": [3], "asleep_hours": [3], "command": "hc-wrap.sh offsite-backup offsite.sh", "check": {"status": "new", "last_ping": null}},
+    {"label": "com.example.key-escrow", "slug": "key-escrow", "schedule": "calendar", "period_seconds": 86400, "hours": [5], "asleep_hours": [5], "command": "hc-wrap.sh key-escrow escrow.sh", "check": {"status": "new", "last_ping": null}},
+    {"label": "com.example.never-ran", "slug": "process-audit", "schedule": "interval", "period_seconds": 3600, "hours": [], "asleep_hours": [], "command": "hc-wrap.sh process-audit audit.sh", "check": {"status": "new", "last_ping": null}},
+    {"label": "com.example.blinded", "slug": "graphify-sweep", "schedule": "interval", "period_seconds": 3600, "hours": [], "asleep_hours": [], "command": "hc-wrap.sh graphify-sweep sweep.sh", "check": null, "_why": "The monitoring outage case, added 2026-08-24 after it happened for real. Healthchecks went unhealthy, bin/placement-audit wrote check:null for all 34 monitored jobs, and the never-pinged rule silently stopped matching because rego treats null.last_ping as undefined rather than null. Eleven real failures disappeared and the run reported 11 instead of 22 -- the guard got QUIETER when it went blind. This row exists so that can never pass again."}
+  ]
+}

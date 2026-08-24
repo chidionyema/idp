@@ -1,0 +1,15 @@
+{
+  "_comment": "The bad case. Every licence family the policy is meant to stop, one package each, sitting in an otherwise ordinary tree. Must FAIL, and must name each offender.",
+  "packages": [
+    {"name": "react", "version": "18.3.1", "licences": ["MIT"]},
+    {"name": "some-agpl-lib", "version": "2.0.0", "licences": ["AGPL-3.0-only"]},
+    {"name": "some-sspl-db", "version": "6.0.0", "licences": ["SSPL-1.0"]},
+    {"name": "some-busl-tool", "version": "1.4.0", "licences": ["BUSL-1.1"]},
+    {"name": "some-elastic-thing", "version": "8.0.0", "licences": ["Elastic-2.0"]},
+    {"name": "some-nc-asset-pack", "version": "1.0.0", "licences": ["CC-BY-NC-4.0"]},
+    {"name": "some-commons-clause-lib", "version": "3.1.0", "licences": ["Commons-Clause"]},
+    {"name": "readline-sync", "version": "1.4.10", "licences": ["MIT"]},
+    {"name": "chalk", "version": "5.3.0", "licences": ["MIT"]},
+    {"name": "yargs", "version": "17.7.2", "licences": ["MIT"]}
+  ]
+}

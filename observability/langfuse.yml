@@ -1,0 +1,218 @@
+# Langfuse v4, self-hosted, sized for a laptop.
+#
+# Upstream's own guidance is "at least 4 cores and 16 GiB of memory, e.g. a
+# t3.xlarge". That number sizes for production ingest volume. This estate is one
+# founder and six agent sessions, so the volume is a few thousand spans a day,
+# not a few million. Every container therefore carries a hard mem_limit and
+# ClickHouse is given a low-memory config, because an unbounded ClickHouse will
+# happily take everything Docker will give it and this machine has other jobs.
+#
+# Measured before writing this file: Docker had 7.75 GiB allocated with 1.6 GiB
+# already in use by the prospector stack, leaving ~6.1 GiB. The ceilings below
+# total 3.63 GiB, which fits with room left over. If you raise one, check
+# `docker stats` first.
+#
+#   web        1024m   next.js, the only thing published
+#   worker      768m   ingestion
+#   clickhouse 1200m   capped again inside clickhouse-low-memory.xml
+#   minio       256m   S3-compatible event storage, required by v3+
+#   postgres    256m   metadata
+#   redis       128m   queue
+#   otel-fb     128m   the fallback receiver, see below
+#
+# Only 127.0.0.1:3200 is published. Upstream publishes postgres, redis,
+# clickhouse, minio and the worker on the host too; none of that is needed to
+# use Langfuse and every one of them is another door (LAW 21, default closed).
+# It also avoids a port fight -- 3000, 5432, 6379 and 9000 are all in use or
+# claimed on this machine.
+#
+# THE FALLBACK. otel-fallback is a second OTLP receiver that shares no runtime
+# with Langfuse: no node, no ClickHouse, no Postgres. It writes spans straight
+# to JSONL on disk. It runs all the time, exactly like Datasette does beside
+# Backstage, so switching is changing one endpoint rather than starting
+# anything. A broken Langfuse upgrade, a corrupt ClickHouse or a bad migration
+# cannot take it with them, because it has never heard of any of those.
+#
+#   primary   Langfuse         http://127.0.0.1:3200/api/public/otel
+#   fallback  OTel Collector   http://127.0.0.1:4318
+#
+# Secrets come from observability/.env, which bin/langfuse-up generates with
+# openssl and chmods 600. It is gitignored and never printed.
+
+name: langfuse
+
+x-langfuse-env: &langfuse-env
+  NEXTAUTH_URL: http://localhost:3200
+  DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres
+  SALT: ${SALT}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+  # Upstream defaults this to true. Off: this is a private estate and its trace
+  # volume is nobody else's business.
+  TELEMETRY_ENABLED: "false"
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+  LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  REDIS_AUTH: ${REDIS_AUTH}
+  REDIS_TLS_ENABLED: "false"
+
+services:
+  langfuse-web:
+    image: docker.langfuse.com/langfuse/langfuse:4
+    container_name: langfuse-web
+    restart: unless-stopped
+    mem_limit: 1024m
+    depends_on: &deps
+      postgres: {condition: service_healthy}
+      minio: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      clickhouse: {condition: service_healthy}
+    ports:
+      - 127.0.0.1:3200:3000
+    environment:
+      <<: *langfuse-env
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      # These are why nobody has to click through a sign-up wizard. Langfuse
+      # creates the org, the project, the user and a fixed API key pair on
+      # first boot, so the endpoint and keys are known before it starts
+      # rather than copied out of a browser afterwards (LAW 27).
+      LANGFUSE_INIT_ORG_ID: estate
+      LANGFUSE_INIT_ORG_NAME: Estate
+      LANGFUSE_INIT_PROJECT_ID: agents
+      LANGFUSE_INIT_PROJECT_NAME: Agent sessions
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL}
+      LANGFUSE_INIT_USER_NAME: Founder
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/public/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  langfuse-worker:
+    image: docker.langfuse.com/langfuse/langfuse-worker:4
+    container_name: langfuse-worker
+    restart: unless-stopped
+    mem_limit: 768m
+    depends_on: *deps
+    environment:
+      <<: *langfuse-env
+
+  clickhouse:
+    image: docker.io/clickhouse/clickhouse-server:25.12
+    container_name: langfuse-clickhouse
+    restart: unless-stopped
+    mem_limit: 1200m
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+      # mem_limit alone makes ClickHouse get OOM-killed rather than back off.
+      # This file tells it what it is allowed to use so it stays inside.
+      - ./clickhouse-low-memory.xml:/etc/clickhouse-server/config.d/low-memory.xml:ro
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  minio:
+    image: cgr.dev/chainguard/minio
+    container_name: langfuse-minio
+    restart: unless-stopped
+    mem_limit: 256m
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - langfuse_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  redis:
+    image: docker.io/redis:7
+    container_name: langfuse-redis
+    restart: unless-stopped
+    mem_limit: 128m
+    command: >
+      --requirepass ${REDIS_AUTH}
+      --maxmemory-policy noeviction
+      --maxmemory 96mb
+    volumes:
+      - langfuse_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+
+  postgres:
+    image: docker.io/postgres:17-alpine
+    container_name: langfuse-postgres
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  # The fallback. Shares nothing with the six containers above.
+  otel-fallback:
+    image: otel/opentelemetry-collector-contrib:0.159.0
+    container_name: langfuse-otel-fallback
+    restart: unless-stopped
+    mem_limit: 128m
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./otel-fallback.yaml:/etc/otel/config.yaml:ro
+      - langfuse_otel_fallback_data:/data
+    ports:
+      - 127.0.0.1:4318:4318
+
+volumes:
+  langfuse_postgres_data: {driver: local}
+  langfuse_clickhouse_data: {driver: local}
+  langfuse_clickhouse_logs: {driver: local}
+  langfuse_minio_data: {driver: local}
+  langfuse_redis_data: {driver: local}
+  langfuse_otel_fallback_data: {driver: local}

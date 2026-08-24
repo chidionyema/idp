@@ -1,0 +1,14 @@
+02:19:18Z  sbom      scanning /Users/chidionyema/dev/code/idp/backstage/node_modules
+02:20:47Z  sbom      4996 packages, 3081 with a declared licence -> reports/sbom.{syft,spdx,cyclonedx}.json
+02:20:47Z  vulns     scanning the SBOM
+02:20:58Z  vulns     447 findings: 49 critical, 203 high -> reports/vulns.json
+02:20:58Z  licence   reshaping the SBOM for the policy
+02:20:58Z  licence   conftest against policy/licences.rego
+[33mWARN[0m - /Users/chidionyema/dev/code/idp/reports/licences.json - main - 1915 of 4996 packages declare no licence. Usually a metadata gap, but no licence grants nothing -- check any that ship in the product itself.
+[33mWARN[0m - /Users/chidionyema/dev/code/idp/reports/licences.json - main - axe-core@4.13.0 is MPL-2.0 -- copyleft, fine to use, constrains distribution
+[33mWARN[0m - /Users/chidionyema/dev/code/idp/reports/licences.json - main - rollup-plugin-dts@6.5.1 is LGPL-3.0-only -- copyleft, fine to use, constrains distribution
+
+[33m11 tests, 8 passed, 3 warnings, 0 failures, 0 exceptions[0m
+
+PASS      4996 packages (3081 licensed), 447 vulnerabilities (49 critical), nothing sell-blocking
+exit=0

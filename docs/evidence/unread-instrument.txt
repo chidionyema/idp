@@ -1,0 +1,25 @@
+PROOF 4 -- an instrument that fails every hour and nobody has ever read it
+Captured 2026-08-24T02:29:13Z.
+
+$ launchctl list com.founder.sciencecollect | grep -E "LastExitStatus|Interval"
+  	"LastExitStatus" = 256;
+
+$ plutil -convert json -o - <plist> | jq "{out: .StandardOutPath, err: .StandardErrorPath}"
+  {"out":"/Users/chidionyema/.claude/state/logs/science-collect.out.log","err":"/Users/chidionyema/.claude/state/logs/science-collect.err.log"}
+
+$ ls -l on both log paths
+  -rw-r--r--  1 chidionyema  staff  13830 24 Aug 02:33 /Users/chidionyema/.claude/state/logs/science-collect.out.log
+  -rw-r--r--  1 chidionyema  staff  0 24 Aug 00:10 /Users/chidionyema/.claude/state/logs/science-collect.err.log
+
+The error log is where an operator would look. Its size is the finding.
+
+$ tail -6 <the stdout log>
+  spend_daily view:  18 days, $13984.18 total
+  
+  needs attention:
+    - would_have_fired: STALE 52h
+    - decisions: STALE 56h
+  science-collect: ship=0 attention=0 collect=1
+
+It exits 1 on every run, its failure text goes to stdout while only stderr
+was being watched, and its sources are stale. Nobody has ever seen it.
