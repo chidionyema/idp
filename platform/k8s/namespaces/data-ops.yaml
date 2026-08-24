@@ -1,0 +1,101 @@
+# The data-ops namespace: Dagster, Langfuse. The heavy, bursty, third-party half
+# of the estate.
+#
+# Founder, 2026-08-24: "Apply strict ResourceQuota and LimitRange rules to
+# data-ops so a runaway pipeline cannot starve the cluster's brain." That is the
+# Noisy Neighbour, and the caps below are deliberately tighter than platform's.
+# A Dagster run that leaks memory is OOMKilled inside this namespace instead of
+# taking the ingress controller and the API server down with it.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data-ops
+  labels:
+    kubernetes.io/metadata.name: data-ops
+    estate.local/tier: data-ops
+---
+# max.memory 768Mi is the blast door. A pod asking for more is refused at
+# admission with a message naming the LimitRange, before it is ever scheduled --
+# which is a better failure than being OOMKilled an hour into a run.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: defaults
+  namespace: data-ops
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 50m
+        memory: 128Mi
+      max:
+        cpu: "1"
+        memory: 768Mi
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: budget
+  namespace: data-ops
+spec:
+  hard:
+    requests.cpu: 500m
+    requests.memory: 512Mi
+    limits.cpu: "1"
+    limits.memory: 768Mi
+    pods: "15"
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: data-ops
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: data-ops
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: data-ops
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
