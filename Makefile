@@ -34,7 +34,7 @@ spire-proof: ## A pod in the backstage namespace fetches its X.509 SVID from the
 	@KUBECONFIG=$$(k3d kubeconfig write estate) kubectl delete -f platform/spire/proof.yaml --ignore-not-found >/dev/null
 	@KUBECONFIG=$$(k3d kubeconfig write estate) kubectl apply -f platform/spire/proof.yaml >/dev/null
 	@KUBECONFIG=$$(k3d kubeconfig write estate) kubectl -n backstage wait --for=condition=complete job/spiffe-proof --timeout=120s >/dev/null
-	@KUBECONFIG=$$(k3d kubeconfig write estate) kubectl -n backstage logs -l job-name=spiffe-proof --field-selector status.phase=Succeeded | grep -E 'SPIFFE ID|Received|Valid'
+	@KUBECONFIG=$$(k3d kubeconfig write estate) kubectl -n backstage logs $$(KUBECONFIG=$$(k3d kubeconfig write estate) kubectl -n backstage get pods -l job-name=spiffe-proof --field-selector status.phase=Succeeded -o name | head -1) | grep -E 'SPIFFE ID|Received|Valid'
 
 cluster-down: ## Delete the local k3d cluster and everything in it
 	k3d cluster delete estate
