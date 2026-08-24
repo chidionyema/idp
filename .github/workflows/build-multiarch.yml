@@ -78,10 +78,24 @@ jobs:
           cache-from: type=gha,scope=${{ steps.name.outputs.slug }}-${{ steps.name.outputs.arch }}
           cache-to: type=gha,mode=max,scope=${{ steps.name.outputs.slug }}-${{ steps.name.outputs.arch }}
       - if: github.event_name == 'push'
+        env:
+          SLUG: ${{ steps.name.outputs.slug }}
+          IMAGE: ${{ steps.name.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          mkdir -p /tmp/digests/${{ steps.name.outputs.slug }}
-          touch "/tmp/digests/${{ steps.name.outputs.slug }}/${{ steps.build.outputs.digest }}"
-          echo "${{ steps.name.outputs.image }}" > /tmp/digests/${{ steps.name.outputs.slug }}/IMAGE
+          # The file NAME carries the digest, and docker's own example writes it
+          # verbatim -- `touch "$dir/$digest"`, giving `sha256:abc...`. That name
+          # cannot be uploaded: actions/upload-artifact refuses any path
+          # containing a colon, on every runner OS, because the artifact must be
+          # extractable on Windows. Measured 2026-08-25, run 32789829393 on main:
+          # both architectures BUILT and pushed by digest, then the upload step
+          # failed with "The path for one of the files in artifact is not valid
+          # ... Contains the following character:  Colon :", the merge job was
+          # skipped, and no manifest list was ever created. Store the bare hex
+          # and put the algorithm back in the merge job.
+          mkdir -p "/tmp/digests/$SLUG"
+          touch "/tmp/digests/$SLUG/${DIGEST#sha256:}"
+          echo "$IMAGE" > "/tmp/digests/$SLUG/IMAGE"
       - if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
@@ -114,7 +128,11 @@ jobs:
         run: |
           cd /tmp/digests
           image=$(cat IMAGE)
-          digests=$(ls | grep '^sha256:' | sed "s|^|$image@|" | tr '\n' ' ')
+          # Bare hex, one file per architecture, written by the build job above.
+          # The 64-hex match is also what excludes the IMAGE file sitting beside
+          # them; a looser filter would count it as a third digest and trip the
+          # assertion below with a confusing number.
+          digests=$(ls | grep -E '^[0-9a-f]{64}$' | sed "s|^|$image@sha256:|" | tr '\n' ' ')
           n=$(echo "$digests" | wc -w); [ "$n" -eq 2 ] || { echo "R24: expected 2 per-arch digests, found $n"; exit 1; }
           docker buildx imagetools create -t "$image:${{ github.sha }}" $digests
           docker buildx imagetools inspect "$image:${{ github.sha }}" | grep -E 'Platform:' | sort -u
