@@ -26,6 +26,19 @@ spire-server:
   defaultX509SvidTTL: 1h
   defaultJwtSvidTTL: 1h
   controllerManager:
+    # Lease timings are 4x the chart default (15s/10s/2s). Measured 2026-08-24
+    # 23:43: with the host swapping (6.5 GB of 8) k3s's sqlite took ~6 s per
+    # write, the apiserver timed out lease PUTs, and the controller-manager's 2 s
+    # retry loop became a write storm feeding the thing that starved it. One
+    # replica on one node has no election to lose; a slow lease is harmless, a
+    # tight one is an amplifier.
+    leaderElection:
+      leaseDuration: "60s"
+      renewDeadline: "40s"
+      retryPeriod: "10s"
+    resources:
+      requests: { cpu: 20m, memory: 64Mi }
+      limits: { memory: 256Mi }
     # Registers a SPIFFE ID for every pod automatically (ClusterSPIFFEID CRD),
     # so onboarding a workload is a label, not a manual `entry create`.
     identities:
