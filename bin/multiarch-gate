@@ -78,7 +78,7 @@ def coverage_findings(root):
     for d, dirs, fs in os.walk(root):
         dirs[:] = [x for x in dirs if x not in SKIP and x != "tests"]
         for f in fs:
-            if "dockerfile" in f.lower() and not f.endswith(".dockerignore"):
+            if f == "Dockerfile" or f.startswith("Dockerfile.") or f.endswith(".Dockerfile"):
                 rel = os.path.relpath(os.path.join(d, f), root)
                 if rel not in listed and rel not in excluded:
                     out.append(f"{rel}: Dockerfile-shaped file that bin/dockerfiles neither builds nor excludes (R24)")
