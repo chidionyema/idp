@@ -80,7 +80,8 @@ jobs:
       - if: github.event_name == 'push'
         run: |
           mkdir -p /tmp/digests/${{ steps.name.outputs.slug }}
-          touch "/tmp/digests/${{ steps.name.outputs.slug }}/${{ steps.build.outputs.digest }}"
+          # artifact paths may not contain ":" -- store the hex only, re-prefix in merge
+          d="${{ steps.build.outputs.digest }}"; touch "/tmp/digests/${{ steps.name.outputs.slug }}/${d#sha256:}"
           echo "${{ steps.name.outputs.image }}" > /tmp/digests/${{ steps.name.outputs.slug }}/IMAGE
       - if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
@@ -114,7 +115,7 @@ jobs:
         run: |
           cd /tmp/digests
           image=$(cat IMAGE)
-          digests=$(ls | grep '^sha256:' | sed "s|^|$image@|" | tr '\n' ' ')
+          digests=$(ls | grep -E '^[0-9a-f]{64}$' | sed "s|^|$image@sha256:|" | tr '\n' ' ')
           n=$(echo "$digests" | wc -w); [ "$n" -eq 2 ] || { echo "R24: expected 2 per-arch digests, found $n"; exit 1; }
           docker buildx imagetools create -t "$image:${{ github.sha }}" $digests
           docker buildx imagetools inspect "$image:${{ github.sha }}" | grep -E 'Platform:' | sort -u
