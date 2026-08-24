@@ -12,8 +12,9 @@ wrong in a year, this adapter changes its output format and the estate does not.
 """
 import json, os, re, sys
 
-INV = os.path.expanduser("~/.estate/state/inventory.json")
-OUT = os.path.expanduser("~/dev/code/idp/catalog")
+# INV and OUT can be overridden so CI can run this against a fixture (bin/idp-ci).
+INV = os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json")
+OUT = os.environ.get("OUT") or os.path.expanduser("~/dev/code/idp/catalog")
 OWNER = "group:default/platform"
 SYSTEM = "system:default/estate"
 

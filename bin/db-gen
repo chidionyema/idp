@@ -12,7 +12,7 @@ set -euo pipefail
 
 INV="${INV:-$HOME/.estate/state/inventory.json}"
 DB="${DB:-$HOME/dev/code/idp/catalog/estate.db}"
-SU="$HOME/dev/code/idp/.venv/bin/sqlite-utils"
+SU="${SU:-$HOME/dev/code/idp/.venv/bin/sqlite-utils}"   # CI has no venv; bin/idp-ci sets SU
 
 [ -f "$INV" ] || { echo "db-gen: no inventory at $INV" >&2; exit 2; }
 [ -x "$SU" ]  || { echo "db-gen: sqlite-utils missing at $SU" >&2; exit 2; }

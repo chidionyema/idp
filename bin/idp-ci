@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# The offline gate. Everything here runs with no secrets, no Docker daemon and no
+# estate on the machine, so GitHub Actions and a laptop get the same verdict.
+# Live checks (services up, portal matches inventory) stay in bin/idp-verify.
+#
+# Rungs, per ~/AGENTS.md "How to test": one incident test named for the bug it
+# caught, and mechanical checks a tool already provides. No example tests.
+set -uo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+fail=0
+say() { printf '%s\n' "$*"; }
+need() { command -v "$1" >/dev/null || { say "FAIL  $1 is not installed"; exit 2; }; }
+need shellcheck; need docker; need conftest; need check-jsonschema; need sqlite-utils; need jq; need python3
+
+# 1. Every script parses and passes shellcheck at warning level.
+for f in "$IDP"/bin/*; do
+  head -1 "$f" | grep -q bash || continue
+  bash -n "$f" && shellcheck -S warning "$f" >/dev/null \
+    && say "ok    shell    $(basename "$f")" || { say "FAIL  shell    $(basename "$f")"; fail=1; }
+done
+
+# 2. Compose files are valid. Values are placeholders; compose only checks shape.
+for c in llm/litellm.yml observability/langfuse.yml; do
+  # shellcheck disable=SC2046  # NAME=placeholder pairs are meant to split
+  if env $(grep -ho '\${[A-Z_]*}' "$IDP/$c" | tr -d '${}' | sort -u | sed 's/$/=placeholder/') \
+       docker compose -f "$IDP/$c" config -q 2>/dev/null; then say "ok    compose  $c"
+  else say "FAIL  compose  $c"; fail=1; fi
+done
+
+# 3. The licence and placement policies say yes to good fixtures and no to bad ones.
+if "$IDP/bin/policy-test" >/dev/null 2>&1; then say "ok    policy   fixtures pass and fail as expected"
+else say "FAIL  policy   bin/policy-test"; fail=1; fi
+
+# 4. incident_2026_08_24_dropped_assets: N inventory rows must yield N catalog
+#    entities and N database rows. catalog-gen silently dropped slug-colliding
+#    assets and db-gen doubled its table when two runs shared one tmp file.
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+FIX="$IDP/tests/fixtures/inventory.json"
+n=$(jq '.rows|length' "$FIX")
+INV="$FIX" OUT="$tmp" python3 "$IDP/bin/catalog-gen" >/dev/null
+got=$(grep -c '^kind: \(Component\|Resource\)$' "$tmp/catalog-info.yaml")
+INV="$FIX" DB="$tmp/estate.db" SU="$(command -v sqlite-utils)" "$IDP/bin/db-gen" >/dev/null 2>&1 &
+INV="$FIX" DB="$tmp/estate.db" SU="$(command -v sqlite-utils)" "$IDP/bin/db-gen" >/dev/null 2>&1 &
+wait
+rows=$(sqlite3 "$tmp/estate.db" 'select count(*) from assets')
+if [ "$got" -eq "$n" ] && [ "$rows" -eq "$n" ]; then say "ok    incident 2026-08-24 dropped assets: $n rows -> $got entities, $rows db rows (two concurrent db-gens)"
+else say "FAIL  incident 2026-08-24 dropped assets: $n rows -> $got entities, $rows db rows"; fail=1; fi
+
+# 5. Every generated entity validates against the published Backstage schema.
+python3 - "$tmp/catalog-info.yaml" "$tmp/docs" <<'PY'
+import sys, os, yaml, json
+src, out = sys.argv[1], sys.argv[2]; os.makedirs(out)
+for i, d in enumerate(yaml.safe_load_all(open(src))):
+    json.dump(d, open(f"{out}/{i}.json", "w"))
+PY
+if check-jsonschema --schemafile https://json.schemastore.org/catalog-info.json "$tmp"/docs/*.json >/dev/null 2>&1; then
+  say "ok    schema   $(ls "$tmp"/docs | wc -l | tr -d ' ') entity documents valid"
+else say "FAIL  schema   check-jsonschema rejected a generated entity"; fail=1; fi
+
+[ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
+exit "$fail"

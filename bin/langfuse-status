@@ -44,10 +44,12 @@ printf "%-10s %-30s %-6s %s\n" "fallback" "127.0.0.1:4318 otel-col"  "$fallback"
 echo
 echo "CONTAINERS"
 if docker ps --filter 'label=com.docker.compose.project=langfuse' --format '{{.Names}}' 2>/dev/null | grep -q .; then
+  # shellcheck disable=SC2046  # the container list is meant to split into arguments
   docker stats --no-stream \
     --format '  {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}' \
     $(docker ps --filter 'label=com.docker.compose.project=langfuse' --format '{{.Names}}' | tr '\n' ' ') 2>/dev/null \
     | sort | expand -t 34,58
+  # shellcheck disable=SC2046
   total=$(docker stats --no-stream --format '{{.MemUsage}}' \
       $(docker ps --filter 'label=com.docker.compose.project=langfuse' --format '{{.Names}}' | tr '\n' ' ') 2>/dev/null \
       | awk -F'/' '{print $1}' | awk '/MiB/{s+=$1} /GiB/{s+=$1*1024} END{printf "%.0f", s}')
