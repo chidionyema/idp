@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""idp-reconcile: actual docker state equals git state (crew#186 CP3, R22 mechanism 3).
+
+  idp-reconcile            report: exit 1 on any drift, one line per finding
+  idp-reconcile --fix      remove rogue containers, re-apply every idp compose
+                           file (docker compose up -d --remove-orphans), log to
+                           run/reconcile.jsonl
+  idp-reconcile --ps FILE  read `docker ps --format json` lines from FILE
+                           instead of docker (fixtures, CI)
+
+Drift classes: rogue (no owner), config-path (an idp project running from a
+config file outside this checkout, e.g. a worktree), stale (owned by a compose
+file that no longer exists). docker compose is the reconcile primitive for
+owned projects; it cannot see containers outside its project, which is the one
+thing this script adds.
+"""
+import glob
+import json
+import os
+import subprocess
+import sys
+import time
+
+import yaml
+
+IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CODE = os.environ.get("CODE") or os.path.dirname(IDP)
+os.environ.setdefault("IDP", IDP)
+os.environ.setdefault("CODE", CODE)
+SPEC = os.environ.get("RECONCILE_SPEC") or os.path.join(IDP, "catalog", "reconcile.yaml")
+LEDGER = os.environ.get("RECONCILE_LEDGER") or os.path.join(IDP, "run", "reconcile.jsonl")
+
+
+def expand(s: str) -> str:
+    return os.path.expanduser(os.path.expandvars(s))
+
+
+def containers(ps_file):
+    if ps_file:
+        raw = expand(open(ps_file).read())   # fixtures carry $IDP / $CODE, never a literal checkout path
+    else:
+        r = subprocess.run(["docker", "ps", "--format", "json", "--no-trunc"], capture_output=True, text=True)
+        if r.returncode:
+            print("BLIND reconcile docker ps failed: " + r.stderr.strip().splitlines()[-1:][0] if r.stderr.strip() else "BLIND reconcile docker ps failed")
+            sys.exit(2)
+        raw = r.stdout
+    out = []
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        c = json.loads(line)
+        labels = dict(kv.split("=", 1) for kv in c.get("Labels", "").split(",") if "=" in kv)
+        out.append({"name": c["Names"], "id": c.get("ID", ""), "project": labels.get("com.docker.compose.project", ""),
+                    "config": labels.get("com.docker.compose.project.config_files", ""), "ports": c.get("Ports", "")})
+    return out
+
+
+def classify(cs, spec):
+    files = {os.path.realpath(f) for g in spec.get("compose_globs", []) for f in glob.glob(os.path.join(IDP, g))}
+    projects = {}
+    for f in files:
+        d = yaml.safe_load(open(f)) or {}
+        projects[d.get("name") or os.path.basename(os.path.dirname(f))] = f
+    foreign = [expand(x["config_prefix"]) for x in spec.get("foreign", [])]
+    prefixes = [x["prefix"] for x in spec.get("name_prefixes", [])]
+    findings = []
+    for c in cs:
+        cfgs = [os.path.realpath(p) for p in c["config"].split(",") if p]
+        if any(c["name"].startswith(p) for p in prefixes):
+            continue
+        if cfgs and any(cf.startswith(fp) for fp in foreign for cf in cfgs):
+            continue
+        if c["project"] in projects:
+            if cfgs and all(cf == projects[c["project"]] for cf in cfgs):
+                continue
+            findings.append(("config-path", c, f"runs from {c['config']} not {projects[c['project']]}"))
+            continue
+        if cfgs and all(cf.startswith(IDP + os.sep) for cf in cfgs):
+            findings.append(("stale", c, f"compose file {c['config']} is not in the manifest"))
+            continue
+        findings.append(("rogue", c, "no compose file, foreign prefix or name prefix owns it"))
+    return findings, projects
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    fix = "--fix" in argv
+    ps_file = argv[argv.index("--ps") + 1] if "--ps" in argv else None
+    spec = yaml.safe_load(open(SPEC)) or {}
+    findings, projects = classify(containers(ps_file), spec)
+    for kind, c, why in findings:
+        print(f"{'FIX ' if fix else 'FAIL'}  reconcile {kind:<11} {c['name']}: {why}")
+    if fix and not ps_file:
+        os.makedirs(os.path.dirname(LEDGER), exist_ok=True)
+        for kind, c, why in findings:
+            r = subprocess.run(["docker", "rm", "-f", c["name"]], capture_output=True, text=True)
+            rec = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "kind": kind, "container": c["name"],
+                   "why": why, "removed": r.returncode == 0, "ports": c["ports"]}
+            open(LEDGER, "a").write(json.dumps(rec, sort_keys=True) + "\n")
+        for name, f in sorted(projects.items()):
+            r = subprocess.run(["docker", "compose", "-f", f, "up", "-d", "--remove-orphans"], capture_output=True, text=True, cwd=os.path.dirname(f))
+            print(f"{'ok  ' if r.returncode == 0 else 'FAIL'}  reconcile compose     {name}: {(r.stderr.strip().splitlines() or ['up to date'])[-1][:120]}")
+            if r.returncode:
+                findings.append(("compose", {"name": name}, "up failed"))
+    n = len(findings)
+    print(f"{'ok  ' if not n or fix else 'FAIL'}  reconcile {len(projects)} projects, {n} drift{'s' if n != 1 else ''}{' fixed' if fix and n else ''}")
+    return 0 if fix or not n else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

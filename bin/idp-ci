@@ -146,6 +146,12 @@ if ! REG=tests/fixtures/ports-live/ports.yaml INV=tests/fixtures/ports-live/inve
    && REG=tests/fixtures/ports-live/ports.yaml INV=tests/fixtures/ports-live/inventory.good.json COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" --live >/dev/null 2>&1; then
   say "ok    portbind port-gate --live refuses a bind that differs from the declared address and passes a matching one"
 else say "FAIL  portbind port-gate --live does not discriminate on bind address"; fail=1; fi
+# Reconcile (crew#186 CP3): a rogue container is a finding, the clean fixture is not.
+rec_out=$(python3 "$IDP/bin/idp-reconcile" --ps tests/fixtures/reconcile/ps.rogue.jsonl 2>&1)   # grep -q under pipefail would SIGPIPE it
+if [ "$(printf '%s' "$rec_out" | grep -c 'rogue       rogue-redis')" != 1 ] \
+   || ! python3 "$IDP/bin/idp-reconcile" --ps tests/fixtures/reconcile/ps.good.jsonl >/dev/null 2>&1; then
+  say "FAIL  reconcile idp-reconcile does not discriminate rogue from owned"; fail=1
+else say "ok    reconcile idp-reconcile names the rogue fixture and passes the clean one"; fi
 
 # 4d. Migration gate (crew#186 CP1, R22 mechanism 1): the scheduler migration
 #     applies healthy, applies again without changing state, and rolls back to
