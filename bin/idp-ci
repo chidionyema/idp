@@ -28,8 +28,8 @@ for c in llm/litellm.yml observability/langfuse.yml; do
 done
 
 # 3. The licence and placement policies say yes to good fixtures and no to bad ones.
-if "$IDP/bin/policy-test" >/dev/null 2>&1; then say "ok    policy   fixtures pass and fail as expected"
-else say "FAIL  policy   bin/policy-test"; fail=1; fi
+if out=$("$IDP/bin/policy-test" 2>&1); then say "ok    policy   fixtures pass and fail as expected"
+else say "FAIL  policy   bin/policy-test"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
 # 4. incident_2026_08_24_dropped_assets: N inventory rows must yield N catalog
 #    entities and N database rows. catalog-gen silently dropped slug-colliding
