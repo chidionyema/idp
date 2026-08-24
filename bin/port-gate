@@ -72,6 +72,9 @@ def live_rows():
     return rows
 
 
+LOOPBACK = frozenset({"127.0.0.1", "::1", "[::1]"})
+
+
 def main() -> int:
     reg = yaml.safe_load(open(REG)) or {}
     declared = {}
@@ -147,11 +150,15 @@ def main() -> int:
                 bad += 1
             want = (d or {}).get("bind")
             seen = "[::1]" if r.get("bind") == "::1" else r.get("bind")
-            if want and seen != want:
+            # R20 asks loopback-or-not, so 127.0.0.1 and [::1] satisfy a declaration of
+            # either: an ssh -L forward binds both families and lsof reports both. The
+            # equivalence stops there. Declaring 127.0.0.1 and binding * still fails.
+            both_loopback = want in LOOPBACK and seen in LOOPBACK
+            if want and seen != want and not both_loopback:
                 # Declaring 127.0.0.1:7107 and binding *:7107 is the exact shape closed on 2026-08-24.
                 print(f"FAIL  ports    live listener {port} ({r.get('owner')}) binds {seen}; ports.yaml declares {want}")
                 bad += 1
-            if r.get("bind") not in ("127.0.0.1", "[::1]", "::1") and not (d or {}).get("non_loopback"):
+            if r.get("bind") not in LOOPBACK and not (d or {}).get("non_loopback"):
                 if proc != "ssh" or d:   # ssh forwards to k3d etc. are the founder's, listed as not gated
                     print(f"FAIL  ports    live listener {port} ({r.get('owner')}) binds {r.get('bind')}; R20")
                     bad += 1
