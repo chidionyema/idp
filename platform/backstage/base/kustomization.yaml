@@ -1,0 +1,23 @@
+# The estate catalogue on Kubernetes. Phase 2 of docs/decisions/0004: the SAME
+# image backstage/compose.yml builds (idp/backstage:local), unchanged, with the
+# database moved from a compose sidecar to a StatefulSet. Nothing in the image
+# knows which of the two it is running under.
+#
+# What is deliberately absent: an Ingress, a NodePort, a LoadBalancer. The
+# catalogue is reached on 127.0.0.1:3100 through `kubectl port-forward` (R20:
+# only the gateway binds off loopback). bin/idp-ci renders this directory and
+# fails on any Service that is not ClusterIP, so that cannot drift quietly.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: backstage
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - catalogue.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: idp
+    includeSelectors: true
+images:
+  - name: idp/backstage
+    newTag: local
