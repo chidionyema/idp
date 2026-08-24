@@ -78,7 +78,9 @@ services:
     image: docker.langfuse.com/langfuse/langfuse:4
     container_name: langfuse-web
     restart: unless-stopped
-    mem_limit: 1024m
+    # 1024m OOM-killed the web container on 2026-08-24 ('Reached heap limit', 2 restarts);
+    # Node sizes its heap from the cgroup, so the limit and the heap are set together.
+    mem_limit: 1536m
     depends_on: &deps
       postgres: {condition: service_healthy}
       minio: {condition: service_healthy}
@@ -89,6 +91,7 @@ services:
     environment:
       <<: *langfuse-env
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NODE_OPTIONS: --max-old-space-size=1024
       # These are why nobody has to click through a sign-up wizard. Langfuse
       # creates the org, the project, the user and a fixed API key pair on
       # first boot, so the endpoint and keys are known before it starts
@@ -103,7 +106,10 @@ services:
       LANGFUSE_INIT_USER_NAME: Founder
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD}
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/public/health"]
+      # The service name, not localhost or 127.0.0.1: Next binds to the container's own IP
+      # (netstat showed 172.20.0.8:3000 only), so a loopback probe is refused while the
+      # host port serves 200. Measured 2026-08-24, 21-probe failing streak.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://langfuse-web:3000/api/public/health"]
       interval: 10s
       timeout: 5s
       retries: 12

@@ -1,0 +1,100 @@
+# LiteLLM proxy — the estate's one model router, self-hosted, sized for a laptop.
+#
+# Standard: crew/docs/STANDARDS.md "LLM providers". That row said LiteLLM was a CANDIDATE
+# and prospector's operator.py was the component. Founder ruling 2026-08-24 closed it:
+# "the decision is final" — LiteLLM is the router, operator.py's transport half retires.
+#
+# Rejected: keeping operator.py's HTTP layer. It is ~2,100 lines of hand-written urllib,
+# SSE stall detection, per-provider retry and circuit breaking, and every provider schema
+# change is internal dev time. That is the maintenance drag an acquirer prices in.
+# Rejected: OpenRouter as the single upstream — it is one vendor in front of the others,
+# which is the provider SPOF R8 bans. LiteLLM is ours, in our process, on our disk.
+#
+# WHAT STAYS IN PROSPECTOR, AND WHY LITELLM CANNOT TAKE IT.
+#   claude_cli.py (619 lines) and gemini_cli.py (254) drive locally-installed CLI binaries
+#   on a SUBSCRIPTION, not an API key. LiteLLM is an HTTP proxy to APIs; it has no way to
+#   shell out to `claude -p`. That path is the EUR 0 lane R14 depends on, and it is also
+#   `moat_primary`'s trusted tier. It is not debt, it is the moat.
+#   The JSON repair in operator.py (ParseError, balanced-brace recovery) is an output
+#   contract, not routing. A proxy returns whatever the model said; making that parse is
+#   still ours.
+#
+# WHAT IS PUBLISHED. 127.0.0.1:4000 and nothing else. Postgres is not published — LiteLLM
+# needs it for spend accounting and virtual keys, and nothing outside this project reads it
+# (LAW 21, default closed). Upstream's compose publishes it; that is a door we do not need.
+#
+# WHERE TRACES GO. To the collector that already runs, at 127.0.0.1:4318 on the host — the
+# otel-fallback receiver in observability/langfuse.yml. No second database, no second
+# dashboard, no second anything. `host.docker.internal` is pinned via extra_hosts so this
+# works on colima as well as Docker Desktop.
+#
+# MEMORY. observability/langfuse.yml already claims 3.63 GiB of ceilings. These two add
+# 768m, so check `docker stats` before raising either.
+#
+# Secrets come from llm/.env, which bin/litellm-up decrypts from the age vault and chmods
+# 600. It is gitignored and never printed.
+
+name: litellm
+
+services:
+  litellm:
+    # Pinned to a release tag. main-v1.61.20 vanished from ghcr on or before 2026-08-24 and
+    # litellm-up failed with 'not found'; v1.98.0 is the release tag (amd64+arm64 manifest).
+    image: ghcr.io/berriai/litellm-database:v1.98.0
+    container_name: litellm-proxy
+    restart: unless-stopped
+    # 512m and 1024m were both OOM-killed at v1.98.0 (docker events: oom, die 137); the
+    # startup peak sampled at 984 MiB on 2026-08-24. 2g leaves headroom on an 8 GiB VM.
+    mem_limit: 2g
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      DATABASE_URL: postgresql://litellm:${LITELLM_DB_PASSWORD}@litellm-db:5432/litellm
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY}
+      # Upstreams. Every one of these names is already in the age vault; none has a
+      # default here, because a default that works is a credential nobody sets.
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      # Traces to the receiver that already exists.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://host.docker.internal:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SERVICE_NAME: litellm
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - 127.0.0.1:4000:4000
+    depends_on:
+      litellm-db:
+        condition: service_healthy
+    healthcheck:
+      # /health/liveliness needs no key; /health probes every upstream and costs money.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness',timeout=4).status==200 else 1)\""]
+      interval: 15s
+      timeout: 6s
+      retries: 5
+      start_period: 40s
+
+  litellm-db:
+    image: docker.io/postgres:17-alpine
+    container_name: litellm-db
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${LITELLM_DB_PASSWORD}
+      POSTGRES_DB: litellm
+    volumes:
+      - litellm_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  litellm_db_data: {driver: local}

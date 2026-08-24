@@ -33,7 +33,10 @@ say() { printf '%s\n' "$*"; }
 if [ ! -f "$YAML" ]; then
   say "FAIL  no $YAML -- run bin/catalog-gen"; exit 1
 fi
-want=$(grep -c '^kind:' "$YAML")
+# Only asset documents are counted: Domain, System and Group are structure that
+# catalog-gen adds itself and the inventory (and therefore estate.db) never holds.
+# Counting every 'kind:' made 237 vs 239 look like two dropped assets on 2026-08-24.
+want=$(grep -c '^kind: \(Component\|Resource\)$' "$YAML")
 say "source    $want entities in catalog-info.yaml"
 
 # --- schema: catalog-info.yaml validates against Backstage's published schema -

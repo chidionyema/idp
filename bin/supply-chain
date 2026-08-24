@@ -32,7 +32,7 @@ quiet=0
 
 log() { [ "$quiet" -eq 1 ] || printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 
-for t in syft grype conftest; do
+for t in syft grype conftest cyclonedx sbomqs; do
   command -v "$t" >/dev/null || { echo "$t is not installed -- brew install $t"; exit 2; }
 done
 [ -d "$TARGET" ] || { echo "no $TARGET -- the parts list needs an installed tree"; exit 2; }
@@ -56,14 +56,38 @@ mkdir -p "$OUT"
 # syft at node_modules without this flag gets you the lockfile reader and a
 # parts list with no terms in it. Measured 2026-08-24 on backstage/node_modules:
 # without the flag 1821 packages / 2 licences; with it 4996 packages / 3081.
+#
+# sbom.spdx3.json (SPDX-3.0.1, via `-o spdx-json@3`, syft 1.51.0+, anchore/syft#4269)
+# is emitted alongside 2.3 because BSI TR-03183-2 v2.1.0 bans SPDX 2.x and
+# requires CycloneDX 1.6+ or SPDX 3.0.1+ (crew#96). It is UNVALIDATED: nothing
+# on this machine can check it -- sbomqs 2.0.11 errors "unsupported sbom
+# format" on it, spdx-tools 0.8.5 is still 2.x-only, protobom's SPDX3 reader
+# is merged but not in a tagged release. Confirmed 2026-08-24 by running both,
+# not by reading a changelog. sbom.spdx.json (2.3) stays -- our own tooling
+# still reads it, and 3.0.1 is not a replacement, it is the regulator's ask.
 log "sbom      scanning $TARGET"
 syft scan "dir:$TARGET" --select-catalogers "+javascript-package-cataloger" \
                         -o json="$OUT/sbom.syft.json" \
                         -o spdx-json="$OUT/sbom.spdx.json" \
+                        -o spdx-json@3="$OUT/sbom.spdx3.json" \
                         -o cyclonedx-json="$OUT/sbom.cyclonedx.json" -q
 n=$(/usr/local/bin/jq '.artifacts|length' "$OUT/sbom.syft.json")
 lic=$(/usr/local/bin/jq '[.artifacts[]|select((.licenses|length)>0)]|length' "$OUT/sbom.syft.json")
-log "sbom      $n packages, $lic with a declared licence -> reports/sbom.{syft,spdx,cyclonedx}.json"
+log "sbom      $n packages, $lic with a declared licence -> reports/sbom.{syft,spdx,spdx3,cyclonedx}.json"
+log "sbom      sbom.spdx3.json is SPDX-3.0.1, unvalidated -- no tool on this machine checks it (crew#96 AC4)"
+
+# --- 1b. does the SBOM validate --------------------------------------------
+# A 12MB CycloneDX file nothing checks is a metadata slot, not a self-
+# describing asset (crew#96). --fail-on-errors is not optional: without it
+# cyclonedx validate passes on warnings silently. This one is a real gate --
+# set -e stops the script here if the BOM is invalid. sbomqs score and
+# --bsi-v2 compliance are reported, same as the vuln counts below, because
+# neither tool exits non-zero on a low score -- the number is the signal.
+log "sbom      validating against the CycloneDX schema"
+cyclonedx validate --input-file "$OUT/sbom.cyclonedx.json" --fail-on-errors
+score=$(sbomqs score "$OUT/sbom.cyclonedx.json" | head -1 | grep -oE '[0-9]+\.[0-9]+/10\.0' | head -1)
+bsi=$(sbomqs compliance --bsi-v2 --basic "$OUT/sbom.cyclonedx.json" | tail -1)
+log "sbom      valid, quality $score, $bsi"
 
 # --- 2. vulnerabilities -------------------------------------------------------
 # Scanning the SBOM, not the directory again. Same answer, seconds instead of

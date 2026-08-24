@@ -1,0 +1,38 @@
+# The founder's board. AGPL, self-hosted, one container, one SQLite file.
+#
+# WHY IT EXISTS, 2026-08-24. He asked for a visual board because he does not use the
+# command line (LAW 31). A session published one to claude.ai; he opened it and got a 404:
+#   "we need to nove off claude and pbecone agnostic our own prcesses and tooling"
+#   "anything we generate bust be persisted in our patfron, else iot ends upn the void"
+# So it runs on his machine, on his disk, under his docker. No session, no vendor, no account.
+#
+# WHY KANBOARD AND NOT WEKAN. Wekan needs MongoDB because Meteor needs MongoDB. That is a
+# second database class in an estate that already runs Postgres and ClickHouse, plus a second
+# backup and a second thing to break. Kanboard stores everything in one SQLite file. Founder,
+# 2026-08-24: "the one with least frictino ad nintenance overhed".
+#
+# WHY PORT 3300. 8080 is already held on this machine by an ssh forward:
+#   lsof -nP -iTCP:8080 -sTCP:LISTEN  ->  ssh 76583 ... TCP *:8080 (LISTEN)
+#
+# WHY THE MEMORY CAP. He has said three times today that the laptop is too slow.
+#
+# THE BACKUP IS ONE DIRECTORY: ~/dev/code/idp/board/data (gitignored, holds db.sqlite).
+#
+#   docker compose -f ~/dev/code/idp/board/kanboard.yml up -d
+#   open http://localhost:3300
+
+services:
+  kanboard:
+    image: kanboard/kanboard:v1.2.46
+    container_name: kanboard
+    restart: unless-stopped
+    mem_limit: 512m
+    ports:
+      - 127.0.0.1:3300:80
+    volumes:
+      - ./data:/var/www/app/data
+      - ./plugins:/var/www/app/plugins
+    environment:
+      PLUGIN_INSTALLER: "true"
+      # Agents write cards over the JSON-RPC API at /jsonrpc.php. The API token is read
+      # from Settings -> API by the founder and stored in the sops vault, never here.
