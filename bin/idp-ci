@@ -161,6 +161,15 @@ if ! "$ap" tests/fixtures/manifests/no-health.yaml >/dev/null 2>&1 && ! "$ap" te
 else say "FAIL  manifest idp-apply does not discriminate"; fail=1; fi
 unset APPLY_LEDGER
 
+# Catalogue on k8s (Phase 2 of ADR 0004): the base renders, every Service is ClusterIP, no image is :latest;
+# a fixture overlay that flips the catalogue Service to NodePort must be refused.
+kz() { kubectl kustomize --load-restrictor LoadRestrictionsNone "$1" 2>/dev/null; }
+kguard() { local out; out="$(kz "$1")" || return 1; ! grep -q 'type: NodePort\|type: LoadBalancer\|hostPort:\|hostNetwork: true\|:latest' <<<"$out"; }
+if command -v kubectl >/dev/null && kguard platform/backstage/base && ! kguard tests/fixtures/kustomize/nodeport; then
+  say "ok    kustomize platform/backstage/base renders ClusterIP-only; the NodePort fixture is refused"
+elif ! command -v kubectl >/dev/null; then say "skip  kustomize kubectl not installed"
+else say "FAIL  kustomize base does not render clean or the NodePort fixture passed"; fail=1; fi
+
 # 4d. Migration gate (crew#186 CP1, R22 mechanism 1): the scheduler migration
 #     applies healthy, applies again without changing state, and rolls back to
 #     the pre-state, on a pristine temp home. Skipped only if dagster is absent,

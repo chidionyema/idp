@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: backstage
+  labels:
+    # Pod Security Admission, enforced at the namespace so no manifest here can
+    # run privileged, as root, or with a host namespace. Same class of fence as
+    # the caps allow-list in bin/idp-apply.
+    pod-security.kubernetes.io/enforce: restricted

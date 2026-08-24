@@ -1,0 +1,77 @@
+# Postgres for the catalogue. Pinned to a minor (compose.yml pins the same one)
+# and not published anywhere: a ClusterIP Service reachable only inside the
+# namespace network. The password comes from the `backstage-env` Secret, which
+# the overlay generates from a gitignored env file. There is no default.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: postgres
+  ports:
+    - name: pg
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70   # postgres uid in the alpine image
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:17.6-alpine
+          env:
+            - name: POSTGRES_USER
+              value: backstage
+            - name: POSTGRES_DB
+              value: backstage
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          envFrom:
+            - secretRef:
+                name: backstage-env   # POSTGRES_PASSWORD
+          ports:
+            - containerPort: 5432
+              name: pg
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "backstage", "-d", "backstage"]
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
