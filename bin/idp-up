@@ -15,12 +15,22 @@
 # by coincidence. If the portal being down during an upgrade becomes a real
 # problem, the answer is to make the upgrade not take it down.
 #
-#   catalogue   Backstage   node   localhost:3100
+# IN A CONTAINER, NOT `yarn start`. Founder directive the same day: "we also
+# cannot accept the brittle yarn start laptop hack ... containerize the
+# application exactly as it will run in k8s". What this script used to do was
+# source nvm, pin a Node path that exists on exactly one machine, and background
+# a webpack dev server with nohup. The image is built by backstage/Dockerfile and
+# run by backstage/compose.yml; both explain themselves. The k3s cluster takes
+# the same image in Phase 2 and this script loses its compose lines.
+#
+#   catalogue   Backstage   container   127.0.0.1:3100
 set -euo pipefail
 
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 RUN="$IDP/logs"; mkdir -p "$RUN"
 PORT_PRIMARY=3100
+COMPOSE="$IDP/backstage/compose.yml"
+ENVFILE="$IDP/backstage/.env"
 
 log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 
@@ -30,27 +40,26 @@ log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 "$IDP/bin/catalog-gen"
 "$IDP/bin/db-gen"
 
-# 2. The catalogue.
-if [ -d "$IDP/backstage/node_modules" ]; then
-  # localhost, NOT 127.0.0.1. Backstage's app binds [::1] only, so a v4 probe
-  # returns 000 and this script concludes it is down every single time -- then
-  # starts a second `yarn start` on top of a portal that was already serving.
-  # Measured 2026-08-24: curl 127.0.0.1:3100 -> 000, curl localhost:3100 -> 200,
-  # while lsof showed `node 56620 IPv6 TCP [::1]:3100 (LISTEN)`.
-  if ! curl -fsS -o /dev/null "http://localhost:$PORT_PRIMARY" 2>/dev/null; then
-    ( cd "$IDP/backstage"
-      export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh" >/dev/null
-      export PATH="$HOME/.nvm/versions/node/v22.13.1/bin:$PATH"
-      export PORT="$PORT_PRIMARY"
-      nohup yarn start > "$RUN/backstage.log" 2>&1 &
-      echo $! > "$RUN/backstage.pid" )
-    log "catalogue starting on $PORT_PRIMARY (pid $(cat "$RUN/backstage.pid")) -- first boot takes a minute"
-  else
-    log "catalogue already up on $PORT_PRIMARY"
-  fi
-else
-  log "catalogue NOT BUILT ($IDP/backstage/node_modules missing) -- nothing is serving"
+# 2. The database password. Generated once, here, so there is no default
+#    password in any file and nobody has to remember to change one. `umask 077`
+#    rather than a chmod after the fact: the file is never briefly world-readable.
+#    idp/.gitignore covers `**/.env`, and the value is never printed.
+if [ ! -f "$ENVFILE" ]; then
+  ( umask 077; printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -base64 30 | tr -d '\n/+=')" > "$ENVFILE" )
+  log "secret    generated $ENVFILE (not printed, not committed)"
 fi
+
+# 3. The catalogue. `up -d` is idempotent -- compose reconciles to the declared
+#    state, so running this hourly under launchd cannot start a second copy.
+#    That is the whole reason the old probe-then-nohup shape is gone: it probed
+#    127.0.0.1 while the dev server bound [::1], concluded "down" on every run,
+#    and stacked another `yarn start` on a portal that was already serving.
+if ! docker compose -f "$COMPOSE" up -d --wait --wait-timeout 300 2>&1 | sed 's/^/          /'; then
+  log "catalogue FAILED to become healthy -- last 40 lines:"
+  docker compose -f "$COMPOSE" logs --tail 40 catalogue | sed 's/^/          /'
+  exit 1
+fi
+log "catalogue up and healthy on 127.0.0.1:$PORT_PRIMARY"
 
 # 4. Publish on the tailnet. Not the public internet: the catalogue is a map of
 #    every asset the estate owns, and LAW 21 says the default is closed. Going

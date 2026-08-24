@@ -31,8 +31,18 @@ kill_port() {
 }
 
 echo "CATALOGUE"
-kill_port 3100 "Backstage app"
-kill_port 7107 "Backstage backend"
+# `down`, not `down -v`. The Postgres volume holds the ingested catalogue and
+# survives on purpose: bringing the portal back should not mean waiting two
+# minutes for it to re-read the estate. Deleting the data is `docker compose -f
+# backstage/compose.yml down -v`, which is a deliberate sentence to type.
+if [ -f "$IDP/backstage/compose.yml" ]; then
+  docker compose -f "$IDP/backstage/compose.yml" down 2>&1 | sed 's/^/  /'
+  stopped=$((stopped + 1))
+fi
+# The pre-container leftovers. Harmless when nothing holds these; kept because
+# a machine that ran the old bin/idp-up before this change still has them.
+kill_port 3100 "Backstage app (pre-container)"
+kill_port 7107 "Backstage backend (pre-container)"
 
 echo
 echo "PUBLISHED PORTS"
