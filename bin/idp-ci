@@ -79,5 +79,27 @@ if check-jsonschema --schemafile https://json.schemastore.org/catalog-info.json 
   say "ok    schema   $(ls "$tmp"/docs | wc -l | tr -d ' ') entity documents valid"
 else say "FAIL  schema   check-jsonschema rejected a generated entity"; fail=1; fi
 
+# 6. AGENTS.md is the rules table for this repo (crew#180 CP6). Every row names a gate
+#    and two fixtures; the gate must refuse must-fail and pass must-pass in this same run.
+#    A row that is missing, or whose gate cannot tell the fixtures apart, fails here, so a
+#    rule cannot exist without its proof (LAW 44) and no gate refuses good work (LAW 38).
+policy_gate() { conftest test --parser json -p "$IDP/policy" "$1" >/dev/null 2>&1; }
+rows=0
+while IFS='|' read -r _ rule gate bad good _; do
+  rule=$(echo "$rule" | xargs); gate=$(echo "$gate" | xargs); bad=$(echo "$bad" | xargs); good=$(echo "$good" | xargs)
+  [ -n "$gate" ] || continue
+  rows=$((rows+1))
+  if ! declare -F "$gate" >/dev/null; then say "FAIL  agents   row '$rule' names no gate function: $gate"; fail=1; continue; fi
+  if [ ! -f "$IDP/$bad" ] || [ ! -f "$IDP/$good" ]; then say "FAIL  agents   row '$rule' has a missing fixture"; fail=1; continue; fi
+  refused=0; passed=0
+  case "$gate" in
+    hardcode_scan) hardcode_scan "$IDP/$bad" >/dev/null && refused=1; hardcode_scan "$IDP/$good" >/dev/null || passed=1 ;;
+    *)             "$gate" "$IDP/$bad" || refused=1;              "$gate" "$IDP/$good" && passed=1 ;;
+  esac
+  if [ "$refused" -eq 1 ] && [ "$passed" -eq 1 ]; then say "ok    agents   $gate refuses $(basename "$bad"), passes $(basename "$good")"
+  else say "FAIL  agents   row '$rule': refused=$refused passed=$passed"; fail=1; fi
+done < <(grep -E '^\| .* \| .* \| .* \| .* \|$' "$IDP/AGENTS.md" | grep -vE '^\| (rule|---)')
+[ "$rows" -ge 1 ] && say "ok    agents   AGENTS.md: $rows rule rows, each proved both ways" || { say "FAIL  agents   AGENTS.md has no rule rows"; fail=1; }
+
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"
