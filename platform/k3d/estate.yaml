@@ -1,0 +1,55 @@
+# The local Kubernetes cluster the estate proves its manifests on.
+#
+# crew/docs/STANDARDS.md, Substrate row: the exit from launchd is MANAGED
+# Kubernetes, and until that proof is finished everything is proved locally on
+# k3d, for nothing. This file is that local cluster. It is not production and
+# it never will be; what it is for is running the real manifests, the real
+# admission policies and the real restore drills before any of them costs money.
+#
+# Bring it up with `make cluster-up`. Everything below is why it is shaped this
+# way, because the shape is dictated by the machine it runs on: a laptop whose
+# Docker VM has 4 CPUs and 8 GB, already running 17 containers.
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: estate
+
+# One node. Extra nodes on a single Docker VM buy nothing but memory pressure —
+# they are the same kernel, the same disk and the same 4 CPUs. Anything that
+# needs to be proved across real nodes cannot be proved here at all, and has to
+# wait for the managed cluster.
+servers: 1
+agents: 0
+
+options:
+  k3d:
+    wait: true
+    timeout: "300s"
+    # k3d's load balancer is a second container that exists to map ports from
+    # the host onto several nodes. With one node there is nothing to balance.
+    disableLoadbalancer: true
+  k3s:
+    extraArgs:
+      # k3s ships Traefik as its ingress. The estate's ingress decision is not
+      # made yet, and an ingress controller nobody chose is a dependency that
+      # arrives by accident.
+      - arg: --disable=traefik
+        nodeFilters:
+          - server:*
+      # servicelb hands LoadBalancer services a host port. On a laptop that
+      # collides with whatever else holds the port, and the failure reads as a
+      # broken service rather than a taken port.
+      - arg: --disable=servicelb
+        nodeFilters:
+          - server:*
+      # metrics-server scrapes every node every 15s to feed `kubectl top` and
+      # autoscaling. Neither is being proved here, and the scrape is a
+      # background cost on a machine the founder is trying to work on.
+      - arg: --disable=metrics-server
+        nodeFilters:
+          - server:*
+  runtime:
+    # Measured: the server sits at 622 MiB with two nginx pods running. The cap
+    # is the point — without it k3s will take what the VM has, and the VM is
+    # shared with Langfuse, LiteLLM and the prospector stack.
+    serversMemory: 1500m
