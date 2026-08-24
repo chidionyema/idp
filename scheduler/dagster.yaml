@@ -1,0 +1,15 @@
+# Copied into $DAGSTER_HOME (run/dagster) by bin/scheduler-up. Storage is sqlite
+# under that directory; nothing here names a machine.
+run_coordinator:
+  module: dagster.core.run_coordinator
+  class: QueuedRunCoordinator
+  config:
+    max_concurrent_runs: 2
+run_monitoring:
+  enabled: true
+  max_runtime_seconds: 3600
+  free_slots_after_run_end_seconds: 5
+run_retries:
+  enabled: false
+telemetry:
+  enabled: false

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Start the estate scheduler: dagster-daemon (ticks schedules and sensors, runs
+# the queue) and dagster-webserver (the one place to see every job). Idempotent.
+#
+#   primary   dagster-daemon      no port
+#   ui        dagster-webserver   127.0.0.1:3210
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+export DAGSTER_HOME="$IDP/run/dagster"
+mkdir -p "$DAGSTER_HOME"
+cp "$IDP/scheduler/dagster.yaml" "$DAGSTER_HOME/dagster.yaml"
+PORT=3210
+log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
+
+# Fail early if schedule.yml does not load: a scheduler with a broken policy
+# file ticks nothing and says nothing.
+"$IDP/.venv/bin/python" -c "import sys; sys.path.insert(0, '$IDP/scheduler'); from estate_scheduler.definitions import defs; print('schedule.yml ok:', len(list(defs.jobs or [])), 'jobs')"
+
+if ! pgrep -qf "dagster-daemon run.*$IDP/scheduler"; then
+  ( cd "$IDP/scheduler" && nohup "$IDP/.venv/bin/dagster-daemon" run -w workspace.yaml > "$IDP/run/dagster-daemon.out" 2>&1 & echo $! > "$IDP/run/dagster-daemon.pid" )
+  log "daemon    starting (pid $(cat "$IDP/run/dagster-daemon.pid"))"
+else
+  log "daemon    already running"
+fi
+if ! curl -fsS -o /dev/null "http://127.0.0.1:$PORT/server_info" 2>/dev/null; then
+  ( cd "$IDP/scheduler" && nohup "$IDP/.venv/bin/dagster-webserver" -w workspace.yaml -h 127.0.0.1 -p "$PORT" > "$IDP/run/dagster-web.out" 2>&1 & echo $! > "$IDP/run/dagster-web.pid" )
+  log "webserver starting on $PORT (pid $(cat "$IDP/run/dagster-web.pid"))"
+else
+  log "webserver already up on $PORT"
+fi

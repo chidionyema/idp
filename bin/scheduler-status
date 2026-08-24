@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Is the scheduler alive and ticking? Exit 0 only when the daemon reports every
+# daemon healthy AND at least one schedule has ticked in the last 10 minutes.
+set -uo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+export DAGSTER_HOME="$IDP/run/dagster"
+Q='{"query":"{ instance { daemonHealth { allDaemonStatuses { daemonType healthy lastHeartbeatTime } } } }"}'
+body=$(curl -fsS -H 'content-type: application/json' -d "$Q" http://127.0.0.1:3210/graphql 2>/dev/null) || { echo "scheduler: webserver down on 127.0.0.1:3210"; exit 1; }
+printf '%s' "$body" | /usr/local/bin/jq -r '.data.instance.daemonHealth.allDaemonStatuses[] | "\(.daemonType)\t\(if .healthy then "healthy" else "UNHEALTHY" end)"'
+unhealthy=$(printf '%s' "$body" | /usr/local/bin/jq '[.data.instance.daemonHealth.allDaemonStatuses[] | select(.healthy|not)] | length')
+ticks=$("$IDP/.venv/bin/python" - <<'PY'
+import os, time
+from dagster import DagsterInstance
+from dagster._core.scheduler.instigation import TickStatus
+with DagsterInstance.get() as inst:
+    since = time.time() - 600
+    n = 0
+    for state in inst.all_instigator_state():
+        n += len(inst.get_ticks(state.instigator_origin_id, state.selector_id, after=since))
+    print(n)
+PY
+)
+echo "ticks in last 10 min: $ticks"
+[ "$unhealthy" = 0 ] && [ "${ticks:-0}" -gt 0 ]
