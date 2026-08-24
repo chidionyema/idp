@@ -227,6 +227,74 @@ if "$MPY" -c "import dagster" 2>/dev/null; then
   else say "$out"; fail=1; fi
 else say "BLIND migration dagster not importable; gate not run"; fail=1; fi
 
+# 4e. incident_2026_08_24_load_gate_starved_every_backup: the scheduler's load
+#     gate compared the raw 1-minute load average against a flat 6.0 that
+#     import_launchd.py had stamped onto all 40 jobs. On a 12-core laptop
+#     running six agent sessions the load never goes under 6, so the gate
+#     refused correct work continuously: measured from Dagster's own tick
+#     storage after 3h20m of daemon uptime, 541 SKIPPED against 72 SUCCESS, and
+#     30 of 40 schedules with zero run records. A skipped cron tick never
+#     retries, so the low-frequency jobs -- every backup and every audit --
+#     starved completely while the */5 ones got through now and then.
+#
+#     Two rules, and this test proves each of them in both directions, because
+#     a gate only ever seen refusing has never been shown to permit (LAW 38).
+#     The ceiling is per core, so the number means the same thing on the laptop
+#     and on the migration target. And a job that has gone starve_after_periods
+#     of its OWN cron without a success runs anyway, and says on the run why it
+#     fired. Nothing here reads the real load or a real instance: gate() is pure
+#     so the busy case can be tested on an idle machine.
+gatecheck=$("$MPY" - "$IDP" <<'PYGATE'
+import sys, time
+sys.path.insert(0, sys.argv[1] + "/scheduler")
+try:
+    from estate_scheduler.definitions import gate, CORES, LOAD_PER_CORE, RunRequest, SkipReason
+except Exception as exc:
+    print(f"BLIND {exc!r}"); raise SystemExit(0)
+
+now = time.time()
+HOUR = 3600.0
+base = dict(load=1.0, cores=12, last_ok=now, now=now, battery=False, circuit=False, period=2 * HOUR)
+def d(**kw): return gate("t", kw.pop("spec", {}), **{**base, **kw})
+
+cases = [
+  # name                          expect      call
+  ("idle box runs",               RunRequest, d()),
+  ("9.8 on 12 cores is not busy", RunRequest, d(load=9.8)),
+  ("30 on 12 cores still skips",  SkipReason, d(load=30.0)),
+  ("fresh success defers",        SkipReason, d(load=30.0, last_ok=now - HOUR)),
+  ("starved fires anyway",        RunRequest, d(load=30.0, last_ok=now - 9 * HOUR)),
+  ("never succeeded fires",       RunRequest, d(load=30.0, last_ok=None)),
+  ("battery beats starvation",    SkipReason, d(load=30.0, last_ok=None, battery=True)),
+  ("open circuit beats it too",   SkipReason, d(load=30.0, last_ok=None, circuit=True)),
+  ("explicit max_load honoured",  SkipReason, d(load=9.8, spec={"max_load": 6.0})),
+]
+bad = [n for n, want, got in cases if not isinstance(got, want)]
+esc = d(load=30.0, last_ok=now - 9 * HOUR)
+if "estate/starvation_escape" not in (esc.tags or {}):
+    bad.append("escape run carries no reason tag")
+if CORES < 1 or LOAD_PER_CORE <= 0:
+    bad.append(f"bad constants CORES={CORES} LOAD_PER_CORE={LOAD_PER_CORE}")
+print("PASS " + str(len(cases)) if not bad else "FAIL " + "; ".join(bad))
+PYGATE
+)
+case "$gatecheck" in
+  PASS*) say "ok    loadgate ${gatecheck#PASS } gate decisions correct, both directions, escape run carries its reason" ;;
+  BLIND*) say "BLIND loadgate ${gatecheck#BLIND }; load gate not proved"; fail=1 ;;
+  *)     say "FAIL  loadgate ${gatecheck#FAIL }"; fail=1 ;;
+esac
+
+# 4f. The stamped ceiling must not come back. import_launchd.py wrote one number
+#     onto every job it imported; that number was never a decision about any of
+#     them, and re-running the importer would reinstate the starvation.
+if grep -q '"max_load"' "$IDP/scheduler/estate_scheduler/import_launchd.py"; then
+  say "FAIL  loadgate import_launchd.py stamps a load ceiling again"; fail=1
+elif grep -qE '^\s*max_load:' "$IDP/scheduler/schedule.yml"; then
+  say "ok    loadgate schedule.yml carries $(grep -cE '^\s*max_load:' "$IDP/scheduler/schedule.yml") deliberate max_load override(s); importer stamps none"
+else
+  say "ok    loadgate no stamped load ceiling in schedule.yml or the importer"
+fi
+
 # 5. Every generated entity validates against the published Backstage schema.
 python3 - "$tmp/catalog-info.yaml" "$tmp/docs" <<'PY'
 import sys, os, yaml, json
