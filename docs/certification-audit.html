@@ -1,0 +1,260 @@
+<title>Certification Snapshot</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --ground:#F6F7F9; --panel:#FFFFFF; --ink:#161A21; --ink-2:#4A525F; --ink-3:#79828F;
+  --rule:#E0E4EA; --rule-2:#EDF0F4;
+  --brass:#8A5F14; --brass-soft:#F5EEDE;
+  --pass:#1F6B47; --pass-soft:#E4F0EA;
+  --fail:#A32E27; --fail-soft:#F8E7E5;
+  --blind:#5D4A8C; --blind-soft:#EDE9F5;
+  --wait:#7A5A00; --wait-soft:#FAF1D9;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1319; --panel:#161B23; --ink:#E7EAEF; --ink-2:#A6AEBB; --ink-3:#727C8A;
+    --rule:#252C36; --rule-2:#1D232B;
+    --brass:#D6A44A; --brass-soft:#2A2314;
+    --pass:#5FC191; --pass-soft:#12261D;
+    --fail:#E8817A; --fail-soft:#2A1614;
+    --blind:#A793DB; --blind-soft:#1E1930;
+    --wait:#D9B455; --wait-soft:#26200E;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1319; --panel:#161B23; --ink:#E7EAEF; --ink-2:#A6AEBB; --ink-3:#727C8A;
+  --rule:#252C36; --rule-2:#1D232B;
+  --brass:#D6A44A; --brass-soft:#2A2314;
+  --pass:#5FC191; --pass-soft:#12261D;
+  --fail:#E8817A; --fail-soft:#2A1614;
+  --blind:#A793DB; --blind-soft:#1E1930;
+  --wait:#D9B455; --wait-soft:#26200E;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"Source Serif 4",Georgia,serif; font-size:17px; line-height:1.6;
+  margin:0; padding:0;
+}
+.wrap{max-width:900px; margin:0 auto; padding:48px 24px 96px; display:flex; flex-direction:column; gap:44px}
+h1,h2,h3,.lbl,.chip,.num,th{font-family:Archivo,"Helvetica Neue",Arial,sans-serif}
+h1{font-size:clamp(30px,5vw,42px); line-height:1.1; font-weight:700; letter-spacing:-.02em; margin:0; text-wrap:balance}
+h2{font-size:22px; font-weight:700; letter-spacing:-.01em; margin:0 0 4px; text-wrap:balance}
+h3{font-size:15px; font-weight:600; margin:0 0 6px}
+p{margin:0 0 14px; max-width:68ch}
+p:last-child{margin-bottom:0}
+code,.mono{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:.86em}
+code{background:var(--rule-2); padding:1px 5px; border-radius:3px; color:var(--ink)}
+.lbl{font-size:11px; font-weight:600; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3)}
+
+header{display:flex; flex-direction:column; gap:14px; border-bottom:3px solid var(--ink); padding-bottom:22px}
+.sub{color:var(--ink-2); font-size:18px; max-width:64ch; margin:0}
+
+/* verdict */
+.verdict{background:var(--panel); border:1px solid var(--rule); border-left:5px solid var(--fail); border-radius:5px; padding:22px 24px}
+.verdict p{margin:0}
+.verdict .big{font-family:Archivo,sans-serif; font-weight:700; font-size:19px; letter-spacing:-.01em; margin-bottom:8px}
+
+/* score strip */
+.scores{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px}
+.score{background:var(--panel); border:1px solid var(--rule); border-radius:5px; padding:16px 18px; display:flex; flex-direction:column; gap:5px}
+.num{font-size:34px; font-weight:700; letter-spacing:-.03em; line-height:1; font-variant-numeric:tabular-nums}
+.score .cap{font-size:14px; color:var(--ink-2); line-height:1.4}
+
+/* status chips */
+.chip{display:inline-block; font-size:10.5px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; padding:3px 8px; border-radius:3px; white-space:nowrap}
+.c-pass{background:var(--pass-soft); color:var(--pass)}
+.c-fail{background:var(--fail-soft); color:var(--fail)}
+.c-blind{background:var(--blind-soft); color:var(--blind)}
+.c-wait{background:var(--wait-soft); color:var(--wait)}
+
+section{display:flex; flex-direction:column; gap:16px}
+.sechead{display:flex; flex-direction:column; gap:2px; border-bottom:1px solid var(--rule); padding-bottom:10px}
+
+.scroll{overflow-x:auto; border:1px solid var(--rule); border-radius:5px; background:var(--panel)}
+table{border-collapse:collapse; width:100%; min-width:560px; font-size:15px}
+th{text-align:left; font-size:11px; font-weight:600; letter-spacing:.11em; text-transform:uppercase; color:var(--ink-3); padding:11px 14px; border-bottom:1px solid var(--rule); white-space:nowrap}
+td{padding:11px 14px; border-bottom:1px solid var(--rule-2); vertical-align:top}
+tbody tr:last-child td{border-bottom:none}
+td.m{font-family:"JetBrains Mono",monospace; font-size:13px; white-space:nowrap}
+.tnum{font-variant-numeric:tabular-nums; text-align:right}
+
+/* the split */
+.split{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px}
+.side{background:var(--panel); border:1px solid var(--rule); border-radius:5px; padding:18px 20px}
+.side.host{border-top:4px solid var(--pass)}
+.side.vm{border-top:4px solid var(--fail)}
+.side ul{margin:8px 0 0; padding-left:18px; font-size:15px; color:var(--ink-2)}
+.side li{margin-bottom:4px}
+
+/* chain */
+.chain{background:var(--panel); border:1px solid var(--rule); border-radius:5px; padding:6px 0}
+.chain ol{margin:0; padding:0; list-style:none; counter-reset:s}
+.chain li{counter-increment:s; display:grid; grid-template-columns:34px 1fr; gap:12px; padding:13px 20px; border-bottom:1px solid var(--rule-2); font-size:15.5px}
+.chain li:last-child{border-bottom:none}
+.chain li::before{content:counter(s); font-family:Archivo,sans-serif; font-weight:700; font-size:13px; color:var(--brass); background:var(--brass-soft); border-radius:3px; height:24px; display:flex; align-items:center; justify-content:center; margin-top:1px}
+
+/* todo groups */
+.grp{background:var(--panel); border:1px solid var(--rule); border-radius:5px; overflow:hidden}
+.grp>.gh{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; padding:13px 18px; background:var(--rule-2); border-bottom:1px solid var(--rule)}
+.grp>.gh .t{font-family:Archivo,sans-serif; font-weight:600; font-size:15px}
+.grp>.gh .n{margin-left:auto; font-family:"JetBrains Mono",monospace; font-size:12px; color:var(--ink-3)}
+.grp ul{margin:0; padding:10px 18px 14px 36px; font-size:15px; color:var(--ink-2)}
+.grp li{margin-bottom:7px}
+.grp li:last-child{margin-bottom:0}
+.grp li .mono{color:var(--ink); font-size:12.5px}
+
+.callout{border:1px solid var(--rule); border-left:5px solid var(--brass); border-radius:5px; background:var(--panel); padding:18px 22px}
+.callout h3{color:var(--brass); letter-spacing:.06em; text-transform:uppercase; font-size:11.5px}
+
+pre{margin:0; padding:16px 18px; overflow-x:auto; background:var(--panel); border:1px solid var(--rule); border-radius:5px; font-family:"JetBrains Mono",monospace; font-size:13px; line-height:1.65; color:var(--ink-2)}
+footer{border-top:1px solid var(--rule); padding-top:18px; color:var(--ink-3); font-size:14px}
+a{color:var(--brass)}
+</style>
+
+<div class="wrap">
+
+<header>
+  <span class="lbl">Snapshot audit · 2026-08-24 · 03:34 UTC</span>
+  <h1>What is left before the platform is certified</h1>
+  <p class="sub">Every line below was measured this morning against <code>~/dev/code/idp</code> at <code>651747f</code>. Nothing is quoted from a document.</p>
+</header>
+
+<div class="verdict">
+  <p class="big">Not certifiable today — and the first reason is that no one has written down what certified means.</p>
+  <p>The estate has a status page (<code>docs/pe-improvements.html</code>) that reports six improvements as shipped, next, or your decision. That is a report, not a standard: it has no pass condition, so nothing can be measured against it. The second reason is concrete and fixable — <strong>every failing gate is failing for one shared cause</strong>, and it is not the platform's design.</p>
+</div>
+
+<div class="scores">
+  <div class="score"><span class="lbl">Gates exiting 0</span><span class="num">3<span style="color:var(--ink-3);font-size:20px">/6</span></span><span class="cap">Run end to end, not read from a log.</span></div>
+  <div class="score"><span class="lbl">Acceptance criteria ticked</span><span class="num">4<span style="color:var(--ink-3);font-size:20px">/18</span></span><span class="cap">Across crew #93, #96 and #64.</span></div>
+  <div class="score"><span class="lbl">Estate jobs whose state is known</span><span class="num">10<span style="color:var(--ink-3);font-size:20px">/45</span></span><span class="cap">35 are monitored but unreadable right now.</span></div>
+</div>
+
+<section>
+  <div class="sechead"><h2>The six gates, as they ran</h2><span class="lbl">bin/&lt;gate&gt; · exit code captured, not inferred</span></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Gate</th><th>Exit</th><th>Verdict line it printed</th></tr></thead>
+    <tbody>
+      <tr><td class="m">idp-status</td><td class="m tnum">0</td><td>Backstage 200, Datasette 200, both published on the tailnet</td></tr>
+      <tr><td class="m">idp-verify</td><td class="m tnum">0</td><td><span class="chip c-pass">Pass</span> both renderers agree with the inventory: 204 entities</td></tr>
+      <tr><td class="m">policy-test</td><td class="m tnum">0</td><td><span class="chip c-pass">Pass</span> every policy allows its good case and refuses its bad ones</td></tr>
+      <tr><td class="m">placement-audit</td><td class="m tnum">1</td><td><span class="chip c-blind">Blind</span> 35 monitored jobs have no readable check record — Healthchecks did not answer</td></tr>
+      <tr><td class="m">langfuse-status</td><td class="m tnum">1</td><td><span class="chip c-fail">Fail</span> the stack is not up</td></tr>
+      <tr><td class="m">langfuse-verify</td><td class="m tnum">1</td><td><span class="chip c-fail">Fail</span> primary rejected the span: HTTP 000</td></tr>
+    </tbody>
+  </table></div>
+  <p>The fallback receiver is the one piece of good news inside a failing gate: it took a span and gave the same trace id back off disk. Never one thing.</p>
+</section>
+
+<section>
+  <div class="sechead"><h2>Everything green runs on the host. Everything failing runs in the VM.</h2><span class="lbl">The split is the diagnosis</span></div>
+  <div class="split">
+    <div class="side host">
+      <h3>On macOS directly <span class="chip c-pass">Working</span></h3>
+      <ul>
+        <li>Backstage — <span class="mono">127.0.0.1:3100</span>, HTTP 200</li>
+        <li>Datasette fallback — <span class="mono">127.0.0.1:8001</span>, HTTP 200</li>
+        <li>Catalogue — 204 assets, 204 entities, in agreement</li>
+        <li>Policy engine — every rule proved both ways</li>
+      </ul>
+    </div>
+    <div class="side vm">
+      <h3>Inside Colima <span class="chip c-fail">Cannot serve</span></h3>
+      <ul>
+        <li>Healthchecks — <span class="mono">:8000</span>, HTTP 000</li>
+        <li>Langfuse — <span class="mono">:3200</span>, HTTP 000</li>
+        <li>OTel fallback — <span class="mono">:4318</span>, process alive, HTTP 000</li>
+        <li>The Docker daemon itself — <code>docker ps</code> timed out at 60s, <span class="mono">exit 124</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sechead"><h2>One cause, five symptoms</h2><span class="lbl">Attributed with counters, not narrative</span></div>
+  <div class="chain"><ol>
+    <li>The Colima VM has <strong>4 CPUs, 8 GiB and no swap at all</strong>. Right now 234 MiB is free and 6,046 MiB is page cache.</li>
+    <li><code>kswapd0</code>, the kernel's reclaim daemon, is pinned at <strong>94% of a core</strong>. With no swap it can only evict page cache, and it is not keeping up. System time is 56%; idle is 0.0%.</li>
+    <li>Containers therefore accept connections and never get scheduled to answer them. This is why a container can report <em>healthy</em> and return HTTP 000 — the healthcheck proves the process is alive, never that it can do work.</li>
+    <li>Healthchecks is one of those containers. It is what <code>placement-audit</code> reads. So the audit goes <span class="chip c-blind">Blind</span> on 35 of 45 estate jobs — it reports UNKNOWN rather than inventing a verdict, which is correct behaviour and still a hole.</li>
+    <li>Langfuse cannot come up in that VM, so observability stays unproven and three of the six improvements cannot be demonstrated at all.</li>
+  </ol></div>
+</section>
+
+<div class="callout">
+  <h3>A correction, and the instrument that caused it</h3>
+  <p>I told you on crew #85 that this was CPU pressure and <em>"memory is NOT the constraint — 5,987 MB available."</em> That is withdrawn. <code>MemAvailable</code> is an estimate that assumes reclaiming page cache is cheap; kswapd burning 94% of a core is the proof that it is not.</p>
+  <p>Two hypotheses died on the way, both killed by counters rather than argument: a transparent-hugepage compaction storm (<code>compact_stall 0</code>, <code>AnonHugePages 0</code>) and disk wait (<code>%Cpu wa 0.0</code>). A peer session's disk-wait theory is wrong for the same reason.</p>
+  <p><strong>The instrument lied in a way worth remembering.</strong> <code>top -b -n1</code> reports %CPU as an average over the process's whole lifetime, not the moment. Its first frame blamed <code>kcompactd</code> at 60%; a real five-second sample showed kcompactd using <strong>zero</strong> ticks. Only the second frame of <code>top -b -n2</code> tells you what is happening now. That is the fifth instrument this week that answered a question it was never asked.</p>
+</div>
+
+<section>
+  <div class="sechead"><h2>What is left</h2><span class="lbl">18 items · 14 unticked criteria, 3 improvements, 1 decision</span></div>
+
+  <div class="grp">
+    <div class="gh"><span class="t">Blocked on the VM</span><span class="chip c-fail">Blocks 3 of 6 improvements</span><span class="n">1 decision</span></div>
+    <ul>
+      <li>Give the VM more memory. It is <span class="mono">colima stop &amp;&amp; colima start --memory 12</span> and it restarts <em>every</em> container in one go — the prospector stack included. That is the load-255 shape, so it is yours to call, not mine.</li>
+      <li>The cheaper half is already found and needs no restart: healthcheck <code>exec</code> churn is leaving a zombie per probe per interval, 60 of them now. A peer has <code>init: true</code> committed on a branch for the three prospector services. It reclaims PIDs, not memory — a leak repair, not the relief.</li>
+    </ul>
+  </div>
+
+  <div class="grp">
+    <div class="gh"><span class="t">Supply chain — crew #96</span><span class="chip c-wait">Agent working</span><span class="n">6 unticked</span></div>
+    <ul>
+      <li><span class="mono">cyclonedx validate --fail-on-errors</span> exits 0 — measured passing, not yet wired into the gate</li>
+      <li><span class="mono">sbomqs score</span> recorded so the next run can be compared — measured 5.2/10.0 (grade D)</li>
+      <li><span class="mono">sbomqs compliance --bsi-v2</span> exits 0 — measured passing at 3.7/10.0</li>
+      <li>An SPDX 3.0.1 document that validates. <strong>syft 1.51.0 already emits it</strong> via <span class="mono">-o spdx-json@3</span>; we simply never pass the flag. Nothing on this machine can validate 3.0.1 yet, so it ships labelled unvalidated or it does not ship</li>
+      <li><code>licence_file</code> stops being computed in two places — needs a field in the shared inventory</li>
+      <li>Every guard emits the command that validates its own artifact, recorded in <code>architecture.md</code></li>
+    </ul>
+  </div>
+
+  <div class="grp">
+    <div class="gh"><span class="t">Process gates — crew #93</span><span class="chip c-wait">Not started</span><span class="n">5 unticked</span></div>
+    <ul>
+      <li>The ticket exists before the change lands</li>
+      <li>Branch refreshed on <code>origin/main</code> before review</li>
+      <li>A demo and an onboarding page per feature</li>
+      <li>Screenshot evidence attached</li>
+      <li>Followed to merged, then proved running in place</li>
+    </ul>
+  </div>
+
+  <div class="grp">
+    <div class="gh"><span class="t">LAW 24 sweep — crew #64</span><span class="chip c-wait">Not started</span><span class="n">3 unticked</span></div>
+    <ul>
+      <li><code>in-git.py</code> reports a hole for any executed file that <code>git check-ignore</code> refuses</li>
+      <li><code>~/.estate</code> appears in the repos section of a real run</li>
+      <li>A paired control in the same run: one case that must flag, one that must not</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="sechead"><h2>Before any of that: write the standard</h2><span class="lbl">The recommendation</span></div>
+  <p>Certification cannot be scored against a page that has no pass condition. The smallest fix that makes "100% certified" a real sentence is one gate — <code>bin/idp-certify</code> — that runs the six gates above plus the acceptance criteria as commands, prints one line per capability, and exits non-zero if any is unproven or unreadable. Three states, not two: <span class="chip c-pass">Pass</span> <span class="chip c-fail">Fail</span> <span class="chip c-blind">Blind</span>. A guard that loses its evidence must say so rather than return a verdict — that defect has now been found and fixed three separate times this week, in rego, in bash, and in a numeric comparison.</p>
+  <p>Then the answer to your question stops being a document I wrote and becomes a command you can run from your phone.</p>
+</section>
+
+<section>
+  <div class="sechead"><h2>Check any of it yourself</h2><span class="lbl">Every number above came from these</span></div>
+  <pre>cd ~/dev/code/idp
+for g in idp-status idp-verify placement-audit policy-test \
+         langfuse-status langfuse-verify; do
+  bash bin/$g; echo "EXIT=$? ($g)"
+done
+
+# the VM. -n2, and read the SECOND frame -- the first is a lifetime average
+colima ssh -- top -b -n2 -d 3 | awk '/^top -/{f++} f==2'
+colima ssh -- grep -E 'MemFree|MemAvailable' /proc/meminfo
+timeout 60 docker ps -a >/dev/null; echo "docker exit=$?"   # 124 = timed out</pre>
+</section>
+
+<footer>
+  Raw output kept at <code>docs/evidence/certification-audit.txt</code>. Gate verdicts captured 03:30–03:34 UTC on 2026-08-24; the VM readings are from the same window and it was still degrading — load went 26 → 17 after a peer deleted a k3d cluster, then back to 47.
+</footer>
+
+</div>
