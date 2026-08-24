@@ -78,6 +78,18 @@
    "root": "(outside)",
    "coupling": "none",
    "owner": "python3"
+  },
+  {
+   "kind": "listener",
+   "id": "port-9901-b",
+   "port": 9901,
+   "bind": "*",
+   "process": "node",
+   "command": "node other.js",
+   "path": "/usr/bin/node",
+   "root": "(outside)",
+   "coupling": "none",
+   "owner": "node"
   }
  ]
 }
