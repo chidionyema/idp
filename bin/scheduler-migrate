@@ -139,6 +139,13 @@ def apply():
         open(dst, "wb").write(src)
     sched = os.path.join(IDP, "scheduler")
     env = dict(os.environ, DAGSTER_HOME=HOME)
+    # Create the SQLite storage once, before any process starts. Daemon and
+    # webserver initialising a fresh home concurrently raced the alembic stamp
+    # ("more than one head", CI 2026-08-24).
+    r = sh([PY, "-c", "from dagster import DagsterInstance; DagsterInstance.get().get_daemon_statuses()"], env=env)
+    if r.returncode:
+        print("apply      FAIL instance init: " + (r.stderr.strip().splitlines() or ["?"])[-1])
+        return 1
     if daemon_pid() is None:
         pr = subprocess.Popen([exe("dagster-daemon"), "run", "-w", os.path.join(sched, "workspace.yaml")],
                               cwd=sched, env=env, stdout=open(os.path.join(HOME, "daemon.out"), "ab"),
