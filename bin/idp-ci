@@ -141,6 +141,11 @@ if ! COMPOSE_GLOB='tests/fixtures/ports-bad/*.yml' python3 "$IDP/bin/port-gate" 
    && out=$(python3 "$IDP/bin/port-gate" 2>&1); then
   say "ok    portlock $(printf '%s' "$out" | tail -1 | sed 's/^ok *ports *//')"
 else say "FAIL  portlock port-gate is not discriminating or the repo has an undeclared bind"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+# --live must refuse a listener bound to a different address than its row declares, and pass the matching one.
+if ! REG=tests/fixtures/ports-live/ports.yaml INV=tests/fixtures/ports-live/inventory.bad.json COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" --live >/dev/null 2>&1 \
+   && REG=tests/fixtures/ports-live/ports.yaml INV=tests/fixtures/ports-live/inventory.good.json COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" --live >/dev/null 2>&1; then
+  say "ok    portbind port-gate --live refuses a bind that differs from the declared address and passes a matching one"
+else say "FAIL  portbind port-gate --live does not discriminate on bind address"; fail=1; fi
 
 # 4d. Migration gate (crew#186 CP1, R22 mechanism 1): the scheduler migration
 #     applies healthy, applies again without changing state, and rolls back to
