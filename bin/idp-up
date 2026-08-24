@@ -44,6 +44,43 @@ log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 #    password in any file and nobody has to remember to change one. `umask 077`
 #    rather than a chmod after the fact: the file is never briefly world-readable.
 #    idp/.gitignore covers `**/.env`, and the value is never printed.
+#
+#    THE PASSWORD AND THE VOLUME ARE ONE PAIR, AND LOSING HALF BRICKS THE STACK.
+#    Postgres reads POSTGRES_PASSWORD only when it initialises an empty data
+#    directory. After that the password lives in the volume, and .env is the
+#    only copy of the matching half. So a missing .env next to an existing
+#    volume is not a fresh start -- it silently generates a password that
+#    cannot ever match, and every Backstage plugin then fails with `password
+#    authentication failed for user "backstage"`. Measured 2026-08-25: that is
+#    exactly what happened here, and the top-level report was "catalogue FAILED
+#    to become healthy" over 40 lines of plugin stack traces, none of which
+#    named the cause. It cost a full debugging round to attribute.
+#
+#    Refuse only that one combination. .env present is always fine (it matches,
+#    or it initialises); no .env and no volume is a genuine first boot.
+PROJECT="$(basename "$(dirname "$COMPOSE")")"
+PGVOL="${PROJECT}_pgdata"
+
+if [ ! -f "$ENVFILE" ] && docker volume inspect "$PGVOL" >/dev/null 2>&1; then
+  cat >&2 <<EOF
+FATAL  $ENVFILE is missing but the volume $PGVOL already exists.
+
+       Postgres took its password from that file when the volume was created,
+       and the file was the only copy. Generating a new one here would produce
+       a stack where every plugin fails authentication.
+
+       The volume holds no source of truth -- Backstage re-ingests the whole
+       catalogue from catalog/catalog-info.yaml on boot -- so the fix is to
+       discard it and let both halves be created together:
+
+           docker compose -f $COMPOSE down -v
+           $0
+
+       Do that only if you accept losing anything else in $PGVOL.
+EOF
+  exit 1
+fi
+
 if [ ! -f "$ENVFILE" ]; then
   ( umask 077; printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -base64 30 | tr -d '\n/+=')" > "$ENVFILE" )
   log "secret    generated $ENVFILE (not printed, not committed)"
@@ -57,6 +94,13 @@ fi
 if ! docker compose -f "$COMPOSE" up -d --wait --wait-timeout 300 2>&1 | sed 's/^/          /'; then
   log "catalogue FAILED to become healthy -- last 40 lines:"
   docker compose -f "$COMPOSE" logs --tail 40 catalogue | sed 's/^/          /'
+  # Name the one cause the stack traces bury. Backstage reports a database
+  # auth failure once per plugin, so the real line is thirteen frames deep and
+  # reads like a code fault rather than a mismatched credential.
+  if docker compose -f "$COMPOSE" logs catalogue 2>/dev/null | grep -q 'password authentication failed'; then
+    log "cause     the password in $ENVFILE does not match the one inside $PGVOL."
+    log "fix       docker compose -f $COMPOSE down -v && $0"
+  fi
   exit 1
 fi
 log "catalogue up and healthy on 127.0.0.1:$PORT_PRIMARY"
