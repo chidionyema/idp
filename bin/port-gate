@@ -5,7 +5,8 @@
   port-gate --live     plus: every listener the inventory saw is declared or foreign
 
 Exit 0 clean, 1 on any undeclared bind, doubled claim, or non-loopback bind that
-ports.yaml does not mark non_loopback (R20). Prints one line per finding.
+ports.yaml does not mark non_loopback (R20), or a bind address that differs from a
+row's declared `bind:`. Prints one line per finding.
 REG and INV can be overridden so bin/idp-ci can prove it both ways on fixtures.
 """
 import glob
@@ -72,6 +73,12 @@ def main() -> int:
             d = declared.get(port)
             if not d:
                 print(f"FAIL  ports    live listener {port} ({r.get('owner')}) is not in catalog/ports.yaml")
+                bad += 1
+            want = (d or {}).get("bind")
+            seen = "[::1]" if r.get("bind") == "::1" else r.get("bind")
+            if want and seen != want:
+                # Declaring 127.0.0.1:7107 and binding *:7107 is the exact shape closed on 2026-08-24.
+                print(f"FAIL  ports    live listener {port} ({r.get('owner')}) binds {seen}; ports.yaml declares {want}")
                 bad += 1
             if r.get("bind") not in ("127.0.0.1", "[::1]", "::1") and not (d or {}).get("non_loopback"):
                 if proc != "ssh" or d:   # ssh forwards to k3d etc. are the founder's, listed as not gated
