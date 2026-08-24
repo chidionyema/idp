@@ -1,21 +1,61 @@
 # Onboarding: the estate scheduler (Dagster)
 
-Standard: STANDARDS.md row 45 — Dagster used natively; launchd is the substrate's supervisor, not the estate's scheduler. crew#184.
+Standard: STANDARDS.md row 45 — Dagster 1.13 OSS used natively; launchd supervises two Dagster
+processes and nothing else. crew#184. Docs: https://docs.dagster.io/ (each feature below cites its page).
+
+## Layout (production, not `dagster dev`)
+`dagster dev` is documented as local-development only. The estate runs the two supervised processes
+the docs prescribe, both under one `DAGSTER_HOME` (`$IDP/run/dagster`):
+
+| Process | Started by | Log |
+|---|---|---|
+| `dagster-daemon run` — schedules, sensors, run queue, run monitoring | `bin/scheduler-up` via launchd `ai.estate.scheduler` (every 10 min, idempotent) | `run/dagster-daemon.out` |
+| `dagster-webserver -h 127.0.0.1 -p 3210` — the dashboard | same | `run/dagster-web.out` |
+
+Instance config: `scheduler/dagster.yaml` (copied into `DAGSTER_HOME` by `scheduler-up`). Storage is the
+SQLite default under `DAGSTER_HOME`; the documented escalation if lock contention appears is
+`dagster-postgres` (docs: deployment/oss/dagster-yaml).
+
+## Features in use and where each is set
+| Feature | Where | Doc |
+|---|---|---|
+| Cron schedule per job, laptop-local time (`execution_timezone`, env `ESTATE_TZ`) | `definitions.py make_schedule` | guides/automate/schedules |
+| Schedules and sensors ON by default (`default_status=RUNNING`) | `definitions.py` | guides/automate/schedules |
+| Skip with a reason: `max_load` (1-min load), `skip_on_battery` | `schedule.yml` per job; `SkipReason` | guides/automate/schedules |
+| Circuit breaker: 3 consecutive failures → tick skipped until run by hand | `definitions.py circuit_open` | — (estate rule) |
+| Dependencies: `after: <job>` runs on upstream SUCCESS | `run_status_sensor` | guides/automate/sensors |
+| Failure log `run/scheduler-failures.jsonl` | `run_failure_sensor estate_failure_log` | guides/automate/sensors |
+| Run queue: 2 concurrent runs, `dagster/priority` tag from `priority:` | `dagster.yaml run_coordinator`; job tags | deployment/execution/run-coordinators |
+| Runtime cap: `timeout_s` → subprocess timeout and `dagster/max_runtime` tag | `make_op`, `make_job` | deployment/execution/run-monitoring |
+| One automatic retry, then the breaker | `dagster.yaml run_retries` | deployment/execution/run-retries |
+| Tick retention 30/7 days | `dagster.yaml retention` | deployment/oss/dagster-yaml |
+| Telemetry off | `dagster.yaml telemetry` | about/telemetry |
+
+Not used, and why: Declarative Automation and asset freshness policies are for data assets, not
+shell jobs; Alerts and Insights are Dagster+ only — the failure sensor is the OSS path.
+
+## Dashboard — http://127.0.0.1:3210
+- **Overview → Timeline**: every run of every job on one time axis; the load storm would show as 39 bars starting together.
+- **Overview → Schedules / Sensors**: on/off toggles, next tick, tick history with each `SkipReason` (load, battery, circuit open).
+- **Runs**: filter by job or status; a run opens to its stdout/stderr and the Gantt of the step.
+- **Deployment → Daemons**: heartbeat of each daemon; this is what `bin/scheduler-status` reads.
+- **Deployment → Code locations**: press Reload after editing `schedule.yml` or `definitions.py`; no restart needed.
 
 ## Add a job
-1. Add an entry to `scheduler/schedule.yml` (cron, command, max_load, skip_on_battery, timeout_s, optional `after`). Paths use `~`, never a literal home directory.
-2. `bin/scheduler-up` reloads nothing by itself: the daemon re-reads the code location on its next tick; to be sure, `bin/scheduler-down && bin/scheduler-up`.
-3. New schedules start switched off. `cd scheduler && ../.venv/bin/dagster schedule start -w workspace.yaml <name>_schedule` (names: dots and dashes become underscores).
+1. Add an entry to `scheduler/schedule.yml`: `cron`, `command` (list), `max_load`, `skip_on_battery`,
+   `timeout_s`, optional `after`, `priority`, `cwd`, `env`. Paths use `$IDP`, `$CODE` or `~`; never a
+   literal home or checkout directory (LAW 46, enforced by `bin/idp-ci`).
+2. Reload the code location in the dashboard (or `bin/scheduler-down && bin/scheduler-up`).
+3. It is on. Nothing else to start.
 
 ## Move a job off launchd
-`bin/scheduler-import` prints every scheduled launchd job as YAML. Paste the entry, start its schedule, then `launchctl bootout gui/$(id -u)/<label>`. Keep the plist in claude-guards until the Dagster run has been green once.
+`bin/scheduler-import` prints every scheduled launchd job as YAML. Paste the entry, reload, then
+`launchctl bootout gui/$(id -u)/<label>`. Keep the plist in claude-guards until the Dagster run has been green once.
 
-## Where things are
-- Policy: `scheduler/schedule.yml`
-- Code: `scheduler/estate_scheduler/definitions.py`
-- Instance: `run/dagster/` (sqlite; `run/dagster.yaml` copied from `scheduler/dagster.yaml`)
-- Logs: `run/dagster-daemon.out`, `run/dagster-web.out`, failures in `run/scheduler-failures.jsonl`
-- UI: http://127.0.0.1:3210
+## Known limits (from the docs)
+- Non-partitioned schedules do not catch up ticks missed while the laptop slept; the next cron tick runs.
+- `DefaultRunLauncher` cannot detect a crashed run worker; the runtime cap is the protection.
+- SQLite is single-writer; watch `run/dagster-daemon.out` for lock timeouts.
 
 ## Definition of done
-`bin/scheduler-status` exits 0: every Dagster daemon healthy and at least one schedule tick in the last 10 minutes.
+`bin/scheduler-status` exits 0: every Dagster daemon healthy and at least one tick in the last 10 minutes.
