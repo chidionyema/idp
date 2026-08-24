@@ -152,6 +152,14 @@ if [ "$(printf '%s' "$rec_out" | grep -c 'rogue       rogue-redis')" != 1 ] \
    || ! python3 "$IDP/bin/idp-reconcile" --ps tests/fixtures/reconcile/ps.good.jsonl >/dev/null 2>&1; then
   say "FAIL  reconcile idp-reconcile does not discriminate rogue from owned"; fail=1
 else say "ok    reconcile idp-reconcile names the rogue fixture and passes the clean one"; fi
+# Manifest runner (crew#186 CP5): no health endpoint and :latest are refused; a valid manifest with a declared port dry-runs clean.
+ap="$IDP/bin/idp-apply"; export APPLY_LEDGER="$tmp/apply.jsonl"
+if ! "$ap" tests/fixtures/manifests/no-health.yaml >/dev/null 2>&1 && ! "$ap" tests/fixtures/manifests/latest-tag.yaml >/dev/null 2>&1 \
+   && ! "$ap" tests/fixtures/manifests/cp5-caddy.yaml --dry-run >/dev/null 2>&1 \
+   && REG=tests/fixtures/manifests/ports.yaml "$ap" tests/fixtures/manifests/cp5-caddy.yaml --dry-run >/dev/null 2>&1; then
+  say "ok    manifest idp-apply refuses no-health, :latest and an undeclared port; a declared manifest dry-runs clean"
+else say "FAIL  manifest idp-apply does not discriminate"; fail=1; fi
+unset APPLY_LEDGER
 
 # 4d. Migration gate (crew#186 CP1, R22 mechanism 1): the scheduler migration
 #     applies healthy, applies again without changing state, and rolls back to
