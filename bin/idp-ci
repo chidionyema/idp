@@ -96,6 +96,35 @@ if [ "$edges" -gt 0 ] && [ "$vend" -gt 0 ] && [ "$cont" -gt 0 ]; then
   say "ok    graph    $edges entities carry dependsOn: $cont containment, $vend vendor-coupling"
 else say "FAIL  graph    catalogue has no relationship graph (dependsOn=$edges containment=$cont vendor=$vend)"; fail=1; fi
 
+# 4d. Referential integrity, proved both ways. A dependsOn/owner/system reference
+#     that names an entity nobody defined renders in the portal as a live link to a
+#     404, which is indistinguishable from a working graph until someone clicks it.
+#     Measured 2026-08-24 before this check: the hand-written catalog-info.yaml
+#     carried 6 such references (5 platform-layer Resources that were never defined
+#     and group:default/platform-engineering) and the portal showed no error at all.
+#     The same pass refuses a duplicate entity ref, which is how one file silently
+#     overwrote another's component:default/idp.
+refcheck() { python3 "$IDP/bin/catalog-refcheck" "$1" >/dev/null 2>&1; }
+cat > "$tmp/bad-refs.yaml" <<'BADYAML'
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: only-entity
+spec:
+  type: service
+  owner: group:default/platform
+  system: system:default/estate
+  dependsOn:
+    - resource:default/nothing-defines-this
+BADYAML
+if refcheck "$a/catalog-info.yaml" && ! refcheck "$tmp/bad-refs.yaml"; then
+  say "ok    refs     every entity reference resolves; a dangling one is refused ($(python3 "$IDP/bin/catalog-refcheck" "$a/catalog-info.yaml"))"
+else
+  say "FAIL  refs     catalog-refcheck cannot tell a resolvable catalogue from a dangling one:"
+  python3 "$IDP/bin/catalog-refcheck" "$a/catalog-info.yaml" | sed 's/^/      /'
+  fail=1
+fi
+
 # 5. Every generated entity validates against the published Backstage schema.
 python3 - "$tmp/catalog-info.yaml" "$tmp/docs" <<'PY'
 import sys, os, yaml, json

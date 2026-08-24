@@ -1,0 +1,105 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: estate-component
+  title: New estate component
+  description: >-
+    A repository that is already compliant on the day it exists: MkDocs with the
+    four Diataxis folders so TechDocs renders, a catalog-info.yaml so the portal
+    sees it, a licence file, and a CI job. Created because the measured estate
+    had 0 of 26 repos with an mkdocs.yml and 26 of 26 with no template to follow.
+  tags:
+    - estate
+    - diataxis
+    - techdocs
+spec:
+  owner: group:default/platform
+  type: service
+
+  parameters:
+    - title: What is it
+      required: [name, description, owner]
+      properties:
+        name:
+          title: Name
+          type: string
+          description: Lowercase, hyphenated. Becomes the repo name and the entity name.
+          pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+          ui:autofocus: true
+        description:
+          title: Description
+          type: string
+          description: One sentence. It shows on the entity page and in search results.
+        componentType:
+          title: Type
+          type: string
+          default: service
+          enum: [service, website, library, tool]
+          description: >-
+            spec.type on the Component. The estate's 26 existing repos are all
+            typed "service" because nothing measured their type; pick honestly.
+        owner:
+          title: Owner
+          type: string
+          ui:field: OwnerPicker
+          ui:options:
+            catalogFilter:
+              kind: [Group, User]
+        system:
+          title: System
+          type: string
+          default: estate
+          description: Which System it belongs to. Leave as estate unless it is its own stack.
+
+    - title: Where it lives
+      required: [repoUrl]
+      properties:
+        repoUrl:
+          title: Repository
+          type: string
+          ui:field: RepoUrlPicker
+          ui:options:
+            allowedHosts: [github.com]
+            allowedOwners: [chidionyema]
+
+  steps:
+    - id: fetch
+      name: Render the skeleton
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          name: ${{ parameters.name }}
+          description: ${{ parameters.description }}
+          componentType: ${{ parameters.componentType }}
+          owner: ${{ parameters.owner }}
+          system: ${{ parameters.system }}
+          destination: ${{ parameters.repoUrl | parseRepoUrl }}
+
+    - id: publish
+      name: Create the repository
+      action: publish:github
+      input:
+        repoUrl: ${{ parameters.repoUrl }}
+        description: ${{ parameters.description }}
+        defaultBranch: main
+        repoVisibility: private
+        # A repo anyone can push to straight is how the estate ended up with
+        # 6 dirty checkouts and no review trail.
+        protectDefaultBranch: true
+        requireCodeOwnerReviews: false
+
+    - id: register
+      name: Register it in the catalogue
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+
+  output:
+    links:
+      - title: Repository
+        url: ${{ steps.publish.output.remoteUrl }}
+      - title: Open in catalogue
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}

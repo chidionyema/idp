@@ -19,8 +19,10 @@ Rules that are already types or tools, and so need no row: compose files must pa
 (`docker compose config`), the gateway config must match its release schema
 (`check-jsonschema`), every catalog entity must match the Backstage schema, and every
 script must pass `shellcheck`, every generator must be idempotent (two runs over one
-inventory, byte-identical), and the generated catalogue must carry a relationship graph.
-Those run unconditionally in `bin/idp-ci`.
+inventory, byte-identical), the generated catalogue must carry a relationship graph, and
+every entity reference in it must resolve to an entity something defines
+(`bin/catalog-refcheck`, proved both ways in the same run). Those run unconditionally in
+`bin/idp-ci`.
 
 Adding a rule: add a row, add both fixtures, run `bin/idp-ci`. A row whose gate cannot
 tell the fixtures apart fails CI, so a rule cannot be written without its proof.
