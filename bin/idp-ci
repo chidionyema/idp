@@ -134,6 +134,14 @@ if ! INV="$IDP/tests/fixtures/inventory.port-collision.json" OUT="$tmp" python3 
   say "ok    ports    catalog-gen refuses a port claimed twice, passes the clean inventory, emits port entities"
 else say "FAIL  ports    catalog-gen port guard is not discriminating"; fail=1; fi
 
+# 4c. Port lock (crew#186 CP4, R22 mechanism 4): a compose publication not
+#     declared in catalog/ports.yaml, or off loopback without non_loopback (R20),
+#     fails. Proved both ways: the rogue fixture is refused, the repo passes.
+if ! COMPOSE_GLOB='tests/fixtures/ports-bad/*.yml' python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
+   && out=$(python3 "$IDP/bin/port-gate" 2>&1); then
+  say "ok    portlock $(printf '%s' "$out" | tail -1 | sed 's/^ok *ports *//')"
+else say "FAIL  portlock port-gate is not discriminating or the repo has an undeclared bind"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
 # 5. Every generated entity validates against the published Backstage schema.
 python3 - "$tmp/catalog-info.yaml" "$tmp/docs" <<'PY'
 import sys, os, yaml, json
