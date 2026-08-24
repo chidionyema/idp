@@ -51,6 +51,13 @@ FAILURE_LOG = IDP / "run" / "scheduler-failures.jsonl"
 BREAKER_TRIP = 3
 
 
+# $IDP is this checkout and $CODE is the directory that holds every checkout
+# (LAW 46: schedule.yml never names where either lives). Override with the
+# environment; the defaults come from where this file sits.
+os.environ.setdefault("IDP", str(IDP))
+os.environ.setdefault("CODE", os.environ.get("CODE_ROOT", str(IDP.parent)))
+
+
 def _expand(s: str) -> str:
     return os.path.expandvars(os.path.expanduser(s))
 

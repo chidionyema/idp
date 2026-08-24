@@ -13,7 +13,7 @@ Show the policy: `scheduler/schedule.yml`. Every estate job is one entry:
 ```yaml
   com.founder.estatesnapshot:
     cron: 3 0,2,4,6,8,10,12,14,16,18,20,22 * * *
-    command: [~/.claude/scripts/hc-wrap.sh, estatesnapshot, ~/dev/code/crew/scripts/estate-snapshot]
+    command: [~/.claude/scripts/hc-wrap.sh, estatesnapshot, $CODE/crew/scripts/estate-snapshot]
     max_load: 4.0            # skips, with the reason in the UI, while load is above this
     skip_on_battery: true    # skips while the Mac is discharging
     after: com.founder.ingit # optional: also runs when this job succeeds

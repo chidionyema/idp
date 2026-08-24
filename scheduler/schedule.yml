@@ -12,7 +12,7 @@ jobs:
   ai.estate.agent-guard-lint:
     command:
     - /usr/local/bin/python3
-    - ~/dev/code/agent-guard/bin/launchd-lint
+    - $CODE/agent-guard/bin/launchd-lint
     - --broadcast-on-red
     cron: 33 5,11,17,23 * * *
     max_load: 6.0
@@ -53,9 +53,9 @@ jobs:
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - estate-idp
-    - ~/dev/code/idp/bin/idp-up
+    - $IDP/bin/idp-up
     cron: 59 0,2,4,6,8,10,12,14,16,18,20,22 * * *
-    cwd: ~/dev/code/idp
+    cwd: $IDP
     env:
       HOME: '~'
     max_load: 6.0
@@ -114,10 +114,10 @@ jobs:
     - ~/.claude/scripts/hc-wrap.sh
     - graphify-sweep
     - /usr/local/bin/python3
-    - ~/dev/code/prospector-main/scripts/graphify_sweep.py
+    - $CODE/prospector-main/scripts/graphify_sweep.py
     - --fix
     - --root
-    - ~/dev/code
+    - $CODE
     cron: 57 1,7,13,19 * * *
     max_load: 6.0
     skip_on_battery: false
@@ -244,7 +244,7 @@ jobs:
   com.founder.estatelander:
     command:
     - /usr/bin/python3
-    - ~/dev/code/crew/scripts/estate-lander
+    - $CODE/crew/scripts/estate-lander
     - --push
     cron: 29 1,7,13,19 * * *
     max_load: 6.0
@@ -262,10 +262,10 @@ jobs:
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - estate-snapshot
-    - ~/dev/code/.crew-state/scripts/estate-snapshot
+    - $CODE/.crew-state/scripts/estate-snapshot
     - --commit
     cron: 3 0,2,4,6,8,10,12,14,16,18,20,22 * * *
-    cwd: ~/dev/code/.crew-state
+    cwd: $CODE/.crew-state
     max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
@@ -297,9 +297,9 @@ jobs:
     - ~/.estate/guards/bin/estate-gate
     - com.founder.lawenforcement
     - /usr/bin/python3
-    - ~/dev/code/crew/science/law_enforcement.py
+    - $CODE/crew/science/law_enforcement.py
     cron: 51 0,2,4,6,8,10,12,14,16,18,20,22 * * *
-    cwd: ~/dev/code/crew
+    cwd: $CODE/crew
     max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
@@ -307,9 +307,9 @@ jobs:
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - sciencecollect
-    - ~/dev/code/crew/scripts/science-collect
+    - $CODE/crew/scripts/science-collect
     cron: 37 1,7,13,19 * * *
-    cwd: ~/dev/code/crew
+    cwd: $CODE/crew
     max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
