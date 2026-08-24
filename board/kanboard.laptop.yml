@@ -1,0 +1,21 @@
+# Backup-environment overlay. Opens the board on 127.0.0.1:3300 and removes the login.
+#
+# THE TWO CHANGES ARE IN ONE FILE ON PURPOSE. Removing the login is only safe because the
+# port answers to this machine and nothing else, and because anything running on this
+# machine can already read data/db.sqlite directly. The form cost a click and guarded
+# nothing. Founder, 2026-08-24: "in seeing a login scren, too nuch friction, we shoukld
+# take seless security seriously."
+#
+# DO NOT USE THIS FILE ON THE PRODUCTION CLUSTER. It would publish an admin board with no
+# authentication. The cluster keeps a real login; see MIGRATION.md.
+
+services:
+  kanboard:
+    ports:
+      - 127.0.0.1:3300:80
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    environment:
+      REVERSE_PROXY_AUTH: "true"
+      REVERSE_PROXY_USER_HEADER: REMOTE_USER
+      REVERSE_PROXY_DEFAULT_ADMIN: founder
