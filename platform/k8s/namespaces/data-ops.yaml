@@ -26,12 +26,23 @@ metadata:
 spec:
   limits:
     - type: Container
+      # Measured, and the first numbers I wrote were wrong. With a 512Mi default
+      # limit and a 768Mi namespace limits budget, the SECOND pod in this
+      # namespace was refused: "exceeded quota: budget, requested:
+      # limits.memory=512Mi, used: limits.memory=512Mi, limited:
+      # limits.memory=768Mi". A namespace that holds one pod is not a fence, it
+      # is an outage with a quota attached (LAW 38). Dagster alone is a
+      # webserver, a daemon and a run pod.
+      #
+      # 256Mi is the default a container gets for asking for nothing, not a
+      # ceiling: max below is still 768Mi, so a pod that genuinely needs more
+      # says so in its own manifest and a reviewer sees it.
       default:
-        cpu: 500m
-        memory: 512Mi
+        cpu: 250m
+        memory: 256Mi
       defaultRequest:
-        cpu: 50m
-        memory: 128Mi
+        cpu: 25m
+        memory: 64Mi
       max:
         cpu: "1"
         memory: 768Mi
@@ -42,11 +53,16 @@ metadata:
   name: budget
   namespace: data-ops
 spec:
+  # requests are the reservation the scheduler subtracts from the node; limits
+  # are ceilings and are meant to overcommit, so the two numbers are not the
+  # same number twice. requests.memory 512Mi is what data-ops is actually
+  # promised out of the node's 1536Mi. limits.memory 1536Mi lets six
+  # default-sized pods exist, and any one of them is still capped at 768Mi.
   hard:
     requests.cpu: 500m
     requests.memory: 512Mi
-    limits.cpu: "1"
-    limits.memory: 768Mi
+    limits.cpu: "2"
+    limits.memory: 1536Mi
     pods: "15"
 ---
 apiVersion: networking.k8s.io/v1

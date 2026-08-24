@@ -28,12 +28,15 @@ metadata:
 spec:
   limits:
     - type: Container
+      # 256Mi, for the reason recorded in data-ops.yaml: a 512Mi default against
+      # a namespace limits budget of the same order means the namespace holds
+      # one pod, and ArgoCD alone is seven.
       default:
-        cpu: 500m
-        memory: 512Mi
+        cpu: 250m
+        memory: 256Mi
       defaultRequest:
-        cpu: 50m
-        memory: 128Mi
+        cpu: 25m
+        memory: 64Mi
       max:
         cpu: "2"
         memory: 1Gi
@@ -56,7 +59,7 @@ spec:
     requests.cpu: "1"
     requests.memory: 768Mi
     limits.cpu: "3"
-    limits.memory: 1Gi
+    limits.memory: 3Gi
     pods: "30"
 ---
 # Default deny, both directions. Ingress alone leaves a compromised pod free to
