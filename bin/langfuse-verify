@@ -62,7 +62,10 @@ say "trace     $trace_id"
 code=$(curl -sS -o /tmp/lf-verify-post.$$ -w '%{http_code}' --max-time 15 \
   -X POST "$PRIMARY/api/public/otel/v1/traces" \
   -u "$pk:$sk" -H 'Content-Type: application/json' \
-  -d "$payload" 2>/dev/null || echo 000)
+  -d "$payload" 2>/dev/null)
+# curl writes 000 via -w AND exits non-zero when it cannot connect, so a
+# `|| echo 000` here appended a second 000 and the script reported "HTTP 000000".
+code=${code:-000}
 
 if [ "$code" != "200" ] && [ "$code" != "202" ] && [ "$code" != "204" ]; then
   say "FAIL      primary rejected the span: HTTP $code"
@@ -93,10 +96,23 @@ rm -f /tmp/lf-verify-post.$$
 [ "${1:-}" = "--primary-only" ] && { say; [ "$fail" -eq 0 ] && say "PASS" || say "FAIL"; exit "$fail"; }
 
 # --- fallback: same span, different receiver ---------------------------------
-before=$(docker exec langfuse-otel-fallback sh -c 'wc -l < /data/traces.jsonl 2>/dev/null || echo 0' 2>/dev/null | tr -d ' \r')
+#
+# Read the trace file with `docker cp`, not `docker exec sh`. The collector
+# image is distroless: there is no shell in it, so `docker exec ... sh -c` fails
+# and prints its error onto stdout. That error string then landed in a numeric
+# test as `[ "OCIruntimeexec..." -ge 1 ]`, which is a syntax error, and the
+# script fell through to a definite FAIL about evidence it had never read.
+# Found 2026-08-24, and it is the same defect as the rego one: a guard that
+# loses its evidence must say so, not return a verdict.
+read_traces() {
+  docker cp langfuse-otel-fallback:/data/traces.jsonl - 2>/dev/null | tar -xO 2>/dev/null
+}
+
+before=$(read_traces | wc -l | tr -d ' \r')
 code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
   -X POST "$FALLBACK/v1/traces" \
-  -H 'Content-Type: application/json' -d "$payload" 2>/dev/null || echo 000)
+  -H 'Content-Type: application/json' -d "$payload" 2>/dev/null)
+code=${code:-000}
 
 if [ "$code" != "200" ]; then
   say "FAIL      fallback rejected the span: HTTP $code"
@@ -104,14 +120,22 @@ if [ "$code" != "200" ]; then
 else
   # The batch processor holds spans for up to 5s before writing.
   sleep 8
-  hit=$(docker exec langfuse-otel-fallback sh -c \
-        "grep -c '$trace_id' /data/traces.jsonl 2>/dev/null || echo 0" 2>/dev/null | tr -d ' \r')
-  after=$(docker exec langfuse-otel-fallback sh -c 'wc -l < /data/traces.jsonl 2>/dev/null || echo 0' 2>/dev/null | tr -d ' \r')
-  if [ "${hit:-0}" -ge 1 ]; then
-    say "fallback  PASS -- the same trace id is on disk (${before:-0} -> ${after:-0} batches)"
-  else
-    say "FAIL      fallback accepted the span but it is not in /data/traces.jsonl"
+  dump=$(read_traces)
+  if [ -z "$dump" ]; then
+    # No file, or the container would not give it up. That is not a pass and it
+    # is not a proven failure -- it is a blind spot, and it is reported as one.
+    say "BLIND     fallback took the span (HTTP 200) but /data/traces.jsonl"
+    say "          could not be read back, so nothing here is proven either way"
     fail=1
+  else
+    after=$(printf '%s\n' "$dump" | wc -l | tr -d ' \r')
+    if printf '%s\n' "$dump" | grep -q "$trace_id"; then
+      say "fallback  PASS -- the same trace id is on disk (${before:-0} -> ${after:-0} lines)"
+    else
+      say "FAIL      fallback accepted the span but the trace id is not in"
+      say "          /data/traces.jsonl (read back ${after:-0} lines)"
+      fail=1
+    fi
   fi
 fi
 

@@ -1,0 +1,5 @@
+trace     f6f58588ec51cbea05c0dded59fcf05c
+FAIL      primary rejected the span: HTTP 000
+fallback  PASS -- the same trace id is on disk (1 -> 2 lines)
+
+FAIL      observability is not proven working

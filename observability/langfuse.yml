@@ -196,6 +196,26 @@ services:
       timeout: 3s
       retries: 10
 
+  # Give the trace volume to the collector's user before the collector starts.
+  #
+  # A fresh named volume is created root:root, and the collector image runs as
+  # uid 10001. The collector started fine, accepted spans with HTTP 200 and
+  # then dropped every one of them:
+  #
+  #   can't open new logfile /data/traces.jsonl: permission denied
+  #
+  # It logged that at warn and stayed up, so the receiver looked healthy while
+  # nothing was being written. This runs once, exits, and the collector waits
+  # for it. busybox is used because the collector image is distroless and has
+  # no shell to do this itself.
+  otel-fallback-init:
+    image: busybox:1.37
+    container_name: langfuse-otel-fallback-init
+    command: ["sh", "-c", "chown -R 10001:10001 /data && chmod 750 /data"]
+    volumes:
+      - langfuse_otel_fallback_data:/data
+    restart: "no"
+
   # The fallback. Shares nothing with the six containers above.
   otel-fallback:
     image: otel/opentelemetry-collector-contrib:0.159.0
@@ -203,6 +223,9 @@ services:
     restart: unless-stopped
     mem_limit: 128m
     command: ["--config=/etc/otel/config.yaml"]
+    depends_on:
+      otel-fallback-init:
+        condition: service_completed_successfully
     volumes:
       - ./otel-fallback.yaml:/etc/otel/config.yaml:ro
       - langfuse_otel_fallback_data:/data
