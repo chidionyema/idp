@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Render launchd/*.plist.tmpl for this machine and load it. launchd expands no
+# variables, so the tracked file is a template and the absolute paths are
+# written here, once, by envsubst (gettext) rather than committed (LAW 46).
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+command -v envsubst >/dev/null || { echo "envsubst missing -- brew install gettext"; exit 2; }
+DEST="$HOME/Library/LaunchAgents"; mkdir -p "$DEST"
+for t in "$IDP"/launchd/*.plist.tmpl; do
+  name="$(basename "${t%.tmpl}")"
+  IDP="$IDP" HOME="$HOME" PATH="$PATH" envsubst '${IDP} ${HOME} ${PATH}' < "$t" > "$DEST/$name"
+  plutil -lint "$DEST/$name" >/dev/null
+  label="${name%.plist}"
+  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$DEST/$name"
+  echo "loaded  $label  <- $DEST/$name"
+  # Dead-man monitoring (crew#177) is applied by the estate's own migration tool, so an
+  # install never silently drops the Healthchecks wrap it had before.
+  WRAP="$HOME/.claude/scripts/estate/wrap-jobs.py"
+  [ -f "$WRAP" ] && python3 "$WRAP" --fix "$label" | tail -1 || echo "no wrap-jobs.py on this machine; $label is unwrapped"
+done

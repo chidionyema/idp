@@ -5,7 +5,7 @@
 #   langfuse-down --purge    stop AND delete all trace data. Cannot be undone.
 set -euo pipefail
 
-IDP="$HOME/dev/code/idp"
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
 OBS="$IDP/observability"
 COMPOSE=(docker compose --env-file "$OBS/.env" -f "$OBS/langfuse.yml")
 

@@ -20,7 +20,7 @@
 # and it is not this script's to make.
 set -uo pipefail
 
-IDP="$HOME/dev/code/idp"
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$IDP/reports"
 JQ=/usr/local/bin/jq
 AGENTS="$HOME/Library/LaunchAgents"

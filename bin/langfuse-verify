@@ -18,7 +18,7 @@
 # Exit 0 only when a span sent in comes back out.
 set -uo pipefail
 
-IDP="$HOME/dev/code/idp"
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
 ENVF="$IDP/observability/.env"
 JQ=/usr/local/bin/jq
 PRIMARY=http://127.0.0.1:3200

@@ -2,7 +2,7 @@
 # What is serving right now, and where. One line per fact, each from a probe.
 set -uo pipefail
 
-IDP="$HOME/dev/code/idp"
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
 host=$(tailscale status --json 2>/dev/null | /usr/local/bin/jq -r '.Self.DNSName' | sed 's/\.$//')
 
 # curl writes %{http_code} even when it fails -- "000" -- so `|| echo down`

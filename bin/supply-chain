@@ -24,7 +24,7 @@
 # copy that reads as a record (LAW 24 excludes generated output).
 set -euo pipefail
 
-IDP="$HOME/dev/code/idp"
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$IDP/reports"
 TARGET="$IDP/backstage/node_modules"
 quiet=0

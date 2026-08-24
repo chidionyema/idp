@@ -8,7 +8,7 @@
 set -euo pipefail
 
 host=$(tailscale status --json | /usr/local/bin/jq -r '.Self.DNSName' | sed 's/\.$//')
-DB="$HOME/dev/code/idp/catalog/estate.db"
+DB="$(cd "$(dirname "$0")/.." && pwd)/catalog/estate.db"
 
 case "${1:-}" in
   on)

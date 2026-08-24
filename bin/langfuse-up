@@ -12,7 +12,7 @@
 # through and no key to copy out of a browser afterwards.
 set -euo pipefail
 
-IDP="$HOME/dev/code/idp"
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
 OBS="$IDP/observability"
 ENVF="$OBS/.env"
 COMPOSE=(docker compose --env-file "$ENVF" -f "$OBS/langfuse.yml")

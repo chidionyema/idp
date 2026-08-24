@@ -6,7 +6,7 @@
 # deletes an audit trail is the opposite of what this stack is for. --wipe asks for it.
 set -euo pipefail
 
-LLM="$HOME/dev/code/idp/llm"
+LLM="$(cd "$(dirname "$0")/.." && pwd)/llm"
 COMPOSE=(docker compose --env-file "$LLM/.env" -f "$LLM/litellm.yml")
 
 if [ "${1:-}" = "--wipe" ]; then
