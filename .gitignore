@@ -30,3 +30,12 @@ reports/
 **/.env
 site/
 architecture/out/
+
+# Compiled Python. CPython writes bytecode next to the source on every import,
+# so `git add scheduler/` sweeps it in and nothing here said otherwise. One had
+# already reached main: scheduler/estate_scheduler/__pycache__/definitions.cpython-314.pyc,
+# bytecode for interpreter 3.14, which another machine may not have. Measured in
+# the working checkout: 546 __pycache__ directories, 545 of them inside
+# node_modules and virtualenvs, 1 in the source tree.
+__pycache__/
+*.py[cod]
