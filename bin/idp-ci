@@ -35,12 +35,19 @@ done < <(cd "$IDP" && git ls-files bin llm observability mcp launchd '*.py' '*.y
 [ "$hits" -eq 0 ] && say "ok    hardcode 0 files hardcode a checkout path" || fail=1
 
 # 2. Compose files are valid. Values are placeholders; compose only checks shape.
-for c in llm/litellm.yml observability/langfuse.yml; do
+for c in llm/litellm.yml observability/langfuse.yml mcp/agentgateway.yml; do
   # shellcheck disable=SC2046  # NAME=placeholder pairs are meant to split
   if env $(grep -ho '\${[A-Z_]*}' "$IDP/$c" | tr -d '${}' | sort -u | sed 's/$/=placeholder/') \
        docker compose -f "$IDP/$c" config -q 2>/dev/null; then say "ok    compose  $c"
   else say "FAIL  compose  $c"; fail=1; fi
 done
+
+# 2b. The agentgateway config validates against the schema of the pinned release. Same
+#     class as the ClickHouse XML: a config nobody checks before its reader starts.
+AG_TAG=$(grep -o 'agentgateway/agentgateway:v[0-9.]*' "$IDP/mcp/agentgateway.yml" | cut -d: -f2)
+if check-jsonschema --schemafile "https://raw.githubusercontent.com/agentgateway/agentgateway/$AG_TAG/schema/config.json" \
+     "$IDP/mcp/agentgateway.yaml" >/dev/null 2>&1; then say "ok    schema   mcp/agentgateway.yaml against agentgateway $AG_TAG"
+else say "FAIL  schema   mcp/agentgateway.yaml does not match agentgateway $AG_TAG's config schema"; fail=1; fi
 
 # 3. The licence and placement policies say yes to good fixtures and no to bad ones.
 if out=$("$IDP/bin/policy-test" 2>&1); then say "ok    policy   fixtures pass and fail as expected"
