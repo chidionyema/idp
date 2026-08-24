@@ -146,6 +146,13 @@ if ! REG=tests/fixtures/ports-live/ports.yaml INV=tests/fixtures/ports-live/inve
    && REG=tests/fixtures/ports-live/ports.yaml INV=tests/fixtures/ports-live/inventory.good.json COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" --live >/dev/null 2>&1; then
   say "ok    portbind port-gate --live refuses a bind that differs from the declared address and passes a matching one"
 else say "FAIL  portbind port-gate --live does not discriminate on bind address"; fail=1; fi
+# R24 multi-arch: a build step naming fewer than both architectures is refused; the compliant one passes; this repo is clean.
+if ! python3 "$IDP/bin/multiarch-gate" tests/fixtures/multiarch/bad >/dev/null 2>&1 \
+   && python3 "$IDP/bin/multiarch-gate" tests/fixtures/multiarch/good >/dev/null 2>&1 \
+   && python3 "$IDP/bin/multiarch-gate" "$IDP" >/dev/null 2>&1 \
+   && { cp -R "$IDP" "$tmp/ma" && touch "$tmp/ma/mcp/Dockerfile.stray" && ! python3 "$IDP/bin/multiarch-gate" "$tmp/ma" >/dev/null 2>&1; }; then
+  say "ok    multiarch multiarch-gate refuses a single-arch build-push-action, a raw docker build and a Dockerfile-shaped file nothing builds; passes the dual-arch fixture; this repo is clean"
+else say "FAIL  multiarch multiarch-gate does not discriminate, or this repo has a single-arch build (R24)"; python3 "$IDP/bin/multiarch-gate" "$IDP" | sed 's/^/      /'; fail=1; fi
 # Reconcile (crew#186 CP3): a rogue container is a finding, the clean fixture is not.
 rec_out=$(python3 "$IDP/bin/idp-reconcile" --ps tests/fixtures/reconcile/ps.rogue.jsonl 2>&1)   # grep -q under pipefail would SIGPIPE it
 if [ "$(printf '%s' "$rec_out" | grep -c 'rogue       rogue-redis')" != 1 ] \
@@ -160,6 +167,15 @@ if ! "$ap" tests/fixtures/manifests/no-health.yaml >/dev/null 2>&1 && ! "$ap" te
   say "ok    manifest idp-apply refuses no-health, :latest and an undeclared port; a declared manifest dry-runs clean"
 else say "FAIL  manifest idp-apply does not discriminate"; fail=1; fi
 unset APPLY_LEDGER
+
+# Catalogue on k8s (Phase 2 of ADR 0004): the base renders, every Service is ClusterIP, no image is :latest;
+# a fixture overlay that flips the catalogue Service to NodePort must be refused.
+kz() { kubectl kustomize --load-restrictor LoadRestrictionsNone "$1" 2>/dev/null; }
+kguard() { local out; out="$(kz "$1")" || return 1; ! grep -q 'type: NodePort\|type: LoadBalancer\|hostPort:\|hostNetwork: true\|:latest' <<<"$out"; }
+if command -v kubectl >/dev/null && kguard platform/backstage/base && ! kguard tests/fixtures/kustomize/nodeport; then
+  say "ok    kustomize platform/backstage/base renders ClusterIP-only; the NodePort fixture is refused"
+elif ! command -v kubectl >/dev/null; then say "skip  kustomize kubectl not installed"
+else say "FAIL  kustomize base does not render clean or the NodePort fixture passed"; fail=1; fi
 
 # 4d. Migration gate (crew#186 CP1, R22 mechanism 1): the scheduler migration
 #     applies healthy, applies again without changing state, and rolls back to
