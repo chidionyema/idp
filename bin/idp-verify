@@ -163,4 +163,8 @@ if [ "$fail" -eq 0 ]; then
 else
   say "FAIL      the portal does not match the inventory"
 fi
+# Port lock, live half (crew#186 CP4): every listener the inventory saw is declared
+# in catalog/ports.yaml, and nothing but the gateway is off loopback (R20).
+if out=$(python3 "$IDP/bin/port-gate" --live 2>&1); then say "ok        portlock  $(printf '%s' "$out" | tail -1 | sed 's/^ok *ports *//')"
+else say "FAIL      portlock"; printf '%s\n' "$out" | sed 's/^/          /'; fail=1; fi
 exit "$fail"
