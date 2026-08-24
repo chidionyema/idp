@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stop both renderers and unpublish both ports. The off switch LAW 32 requires,
+# Stop the catalogue and unpublish its ports. The off switch LAW 32 requires,
 # and the one thing the founder should be able to run without reading anything.
 #
 # It stops processes and removes tailscale listeners. It deletes nothing: the
@@ -30,10 +30,9 @@ kill_port() {
   stopped=$((stopped + 1))
 }
 
-echo "RENDERERS"
+echo "CATALOGUE"
 kill_port 3100 "Backstage app"
 kill_port 7107 "Backstage backend"
-kill_port 8001 "Datasette"
 
 echo
 echo "PUBLISHED PORTS"
