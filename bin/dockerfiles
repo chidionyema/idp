@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# dockerfiles: the one list of estate images in this repository (R24).
+#
+#   bin/dockerfiles            -> one line per image: <name> <dockerfile> <context>
+#   bin/dockerfiles --json     -> the same as a JSON array of objects
+#
+# `Dockerfile` and `<name>.Dockerfile` both count; a `<name>.Dockerfile` is named
+# by its stem (mcp/estate-mcp.Dockerfile -> estate-mcp), a bare Dockerfile by its
+# directory. build-multiarch.yml builds this list and bin/multiarch-gate checks
+# that nothing Dockerfile-shaped in the tree is missing from it, so an image can
+# not escape R24 by its file name (found by chidionyema-b0, 2026-08-25).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+# Excluded, with the reason. Anything Dockerfile-shaped not listed here and not
+# produced below is a gate finding.
+EXCLUDE='backstage/packages/backend/Dockerfile'   # upstream scaffold: needs a host yarn build and the repo root as context; idp#29 brings backstage/Dockerfile
+rows=()
+while IFS= read -r f; do
+  f=${f#./}
+  case " $EXCLUDE " in *" $f "*) continue ;; esac
+  d=$(dirname "$f"); b=$(basename "$f")
+  if [ "$b" = Dockerfile ]; then n=$(basename "$d"); [ "$n" = "." ] && n=idp; else n=${b%.Dockerfile}; fi
+  rows+=("$n $f $d")
+done < <(find . \( -name Dockerfile -o -name '*.Dockerfile' \) -not -path '*/node_modules/*' -not -path './.git/*' -not -path './tests/*' | sort)
+if [ "${1:-}" = --json ]; then
+  printf '%s\n' "${rows[@]:-}" | grep . | jq -Rc 'split(" ") | {name: .[0], dockerfile: .[1], context: .[2]}' | jq -sc .
+else
+  printf '%s\n' "${rows[@]:-}" | grep . || true
+fi

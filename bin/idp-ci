@@ -149,8 +149,9 @@ else say "FAIL  portbind port-gate --live does not discriminate on bind address"
 # R24 multi-arch: a build step naming fewer than both architectures is refused; the compliant one passes; this repo is clean.
 if ! python3 "$IDP/bin/multiarch-gate" tests/fixtures/multiarch/bad >/dev/null 2>&1 \
    && python3 "$IDP/bin/multiarch-gate" tests/fixtures/multiarch/good >/dev/null 2>&1 \
-   && python3 "$IDP/bin/multiarch-gate" "$IDP" >/dev/null 2>&1; then
-  say "ok    multiarch multiarch-gate refuses a single-arch build-push-action and a raw docker build, passes the dual-arch fixture, and this repo is clean"
+   && python3 "$IDP/bin/multiarch-gate" "$IDP" >/dev/null 2>&1 \
+   && { cp -R "$IDP" "$tmp/ma" && touch "$tmp/ma/mcp/Dockerfile.stray" && ! python3 "$IDP/bin/multiarch-gate" "$tmp/ma" >/dev/null 2>&1; }; then
+  say "ok    multiarch multiarch-gate refuses a single-arch build-push-action, a raw docker build and a Dockerfile-shaped file nothing builds; passes the dual-arch fixture; this repo is clean"
 else say "FAIL  multiarch multiarch-gate does not discriminate, or this repo has a single-arch build (R24)"; python3 "$IDP/bin/multiarch-gate" "$IDP" | sed 's/^/      /'; fail=1; fi
 # Reconcile (crew#186 CP3): a rogue container is a finding, the clean fixture is not.
 rec_out=$(python3 "$IDP/bin/idp-reconcile" --ps tests/fixtures/reconcile/ps.rogue.jsonl 2>&1)   # grep -q under pipefail would SIGPIPE it
