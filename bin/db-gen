@@ -74,6 +74,26 @@ jq -c --arg sha "$inv_sha256" --arg gen_at "$generated_at" --arg inv_path "$INV"
 "$SU" create-view "$tmp" provider_coupling \
   "select coalesce(coupling,'none') as coupling, count(*) as n from assets group by 1 order by n desc" --ignore 2>/dev/null || true
 
-mv "$tmp" "$DB"
+# Publishing by `mv` was a silent-staleness bug, found 2026-08-24. Datasette
+# holds the database open for the life of the process. `mv` puts a NEW inode at
+# the path and leaves the running renderer reading the old, now-deleted one, so
+# the fallback portal served 194 rows for hours while this file held 204 -- and
+# nothing errored, because a renderer serving stale data looks exactly like a
+# renderer serving fresh data.
+#
+# So publish through SQLite's online backup API instead. `.restore` writes into
+# the EXISTING file, taking the same locks a writer would, which means the open
+# reader keeps its file handle, sees the header change counter move, and reloads.
+# Readers mid-query get a consistent snapshot rather than a torn file, which is
+# what a plain `cat tmp > db` would have given them.
+S=$(command -v sqlite3 || echo /usr/bin/sqlite3)
+if [ -f "$DB" ] && [ -x "$S" ]; then
+  "$S" "$DB" ".restore '$tmp'" || { echo "db-gen: restore into $DB failed" >&2; exit 1; }
+  rm -f "$tmp"
+else
+  # First run, or no sqlite3: nothing has the file open, so a move is safe.
+  mv "$tmp" "$DB"
+fi
+
 echo "db-gen: $rows rows -> $DB"
 "$SU" tables "$DB" --counts
