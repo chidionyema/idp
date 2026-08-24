@@ -165,7 +165,7 @@ def apply():
     return 0
 
 
-def healthcheck(wait=90):
+def healthcheck(wait=int(os.environ.get("MIGRATE_HEALTH_WAIT", "90"))):
     deadline = time.time() + wait
     code = ""
     while time.time() < deadline:

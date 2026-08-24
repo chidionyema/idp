@@ -11,12 +11,18 @@ script="${1:?usage: migration-gate <script>}"
 tmp="$(mktemp -d)"
 export DAGSTER_HOME="$tmp/home" MIGRATE_LEDGER="$tmp/migrations.jsonl" MIGRATE_LAUNCHD=0 SCHEDULER_PORT="${GATE_PORT:-3299}"
 say() { printf '%s\n' "$*"; }
-fail() { say "FAIL  migration $script: $*"; "$script" rollback >/dev/null 2>&1; rm -rf "$tmp"; exit 1; }
+fail() {
+  say "FAIL  migration $script: $*"
+  # Print why, or the failure is undiagnosable from CI (LAW 28).
+  [ -n "${out:-}" ] && say "$out"
+  for f in "$DAGSTER_HOME"/*.out; do [ -f "$f" ] && { say "--- $(basename "$f") (tail)"; tail -n 20 "$f"; }; done
+  "$script" rollback >/dev/null 2>&1; rm -rf "$tmp"; exit 1
+}
 
 "$script" can_apply >/dev/null || fail "can_apply refused"
 pre="$("$script" state)"
 "$script" apply >/dev/null || fail "phase 1 apply exited non-zero"
-"$script" healthcheck >/dev/null || fail "phase 1 healthcheck red"
+out="$("$script" healthcheck 2>&1)" || fail "phase 1 healthcheck red"
 s1="$("$script" state)"
 "$script" apply >/dev/null || fail "phase 2 second apply exited non-zero"
 s2="$("$script" state)"
