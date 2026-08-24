@@ -1,60 +1,55 @@
 #!/usr/bin/env bash
-# Start both renderers over one catalogue, then publish them on the tailnet.
+# Start the catalogue and publish it on the tailnet.
 #
-# Two renderers run at once on purpose. That is the 0-second switch: if one is
-# wrong, broken or mid-upgrade, the other is already serving the same facts at
-# its own URL and nobody has to do anything. It is the same shape as Fly and
-# this laptop -- the fallback is not a plan, it is already running.
+# ONE RENDERER. Founder ruling, 2026-08-24: "ive seen 5 ui faces today", and
+# "backstge is for catalog". Backstage is the catalogue and there is no second
+# one. The Datasette fallback this script used to start on 8001 served the same
+# facts under the title "Estate catalogue -- fallback renderer", which meant the
+# owner of the estate met two pages claiming to be the catalogue and had no way
+# to know which one to believe.
 #
-#   primary   Backstage   node    127.0.0.1:3100
-#   fallback  Datasette   python  127.0.0.1:8001
+# The argument it was removed against was availability: a second renderer with
+# no shared runtime survives a broken node_modules or a Backstage upgrade. That
+# is a real property and it is not worth what it cost. A fallback nobody was
+# told about is not availability, it is a second source of truth that is right
+# by coincidence. If the portal being down during an upgrade becomes a real
+# problem, the answer is to make the upgrade not take it down.
 #
-# They share no runtime. A broken node_modules, a bad yarn install or a
-# Backstage upgrade cannot take the fallback down, because the fallback has
-# never heard of node.
+#   catalogue   Backstage   node   localhost:3100
 set -euo pipefail
 
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 RUN="$IDP/logs"; mkdir -p "$RUN"
 PORT_PRIMARY=3100
-PORT_FALLBACK=8001
 
 log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 
-# 1. Regenerate both renderings from the one source.
+# 1. Regenerate the catalogue from the one source. db-gen stays: estate.db is
+#    the queryable copy of the same facts, and dropping a renderer is not a
+#    reason to stop producing the data underneath it.
 "$IDP/bin/catalog-gen"
 "$IDP/bin/db-gen"
 
-# 2. Fallback first. It starts in under a second and has no build step, so if
-#    the primary is broken there is still something serving before we find out.
-if ! curl -fsS -o /dev/null "http://127.0.0.1:$PORT_FALLBACK/-/versions.json" 2>/dev/null; then
-  nohup "$IDP/.venv/bin/datasette" serve "$IDP/catalog/estate.db" \
-      --host 127.0.0.1 --port "$PORT_FALLBACK" \
-      --metadata "$IDP/datasette-metadata.json" \
-      --setting sql_time_limit_ms 5000 \
-      --setting default_page_size 100 \
-      > "$RUN/datasette.log" 2>&1 &
-  echo $! > "$RUN/datasette.pid"
-  log "fallback  starting on $PORT_FALLBACK (pid $(cat "$RUN/datasette.pid"))"
-else
-  log "fallback  already up on $PORT_FALLBACK"
-fi
-
-# 3. Primary.
+# 2. The catalogue.
 if [ -d "$IDP/backstage/node_modules" ]; then
-  if ! curl -fsS -o /dev/null "http://127.0.0.1:$PORT_PRIMARY" 2>/dev/null; then
+  # localhost, NOT 127.0.0.1. Backstage's app binds [::1] only, so a v4 probe
+  # returns 000 and this script concludes it is down every single time -- then
+  # starts a second `yarn start` on top of a portal that was already serving.
+  # Measured 2026-08-24: curl 127.0.0.1:3100 -> 000, curl localhost:3100 -> 200,
+  # while lsof showed `node 56620 IPv6 TCP [::1]:3100 (LISTEN)`.
+  if ! curl -fsS -o /dev/null "http://localhost:$PORT_PRIMARY" 2>/dev/null; then
     ( cd "$IDP/backstage"
       export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh" >/dev/null
       export PATH="$HOME/.nvm/versions/node/v22.13.1/bin:$PATH"
       export PORT="$PORT_PRIMARY"
       nohup yarn start > "$RUN/backstage.log" 2>&1 &
       echo $! > "$RUN/backstage.pid" )
-    log "primary   starting on $PORT_PRIMARY (pid $(cat "$RUN/backstage.pid")) -- first boot takes a minute"
+    log "catalogue starting on $PORT_PRIMARY (pid $(cat "$RUN/backstage.pid")) -- first boot takes a minute"
   else
-    log "primary   already up on $PORT_PRIMARY"
+    log "catalogue already up on $PORT_PRIMARY"
   fi
 else
-  log "primary   NOT BUILT ($IDP/backstage/node_modules missing) -- fallback is serving alone"
+  log "catalogue NOT BUILT ($IDP/backstage/node_modules missing) -- nothing is serving"
 fi
 
 # 4. Publish on the tailnet. Not the public internet: the catalogue is a map of
@@ -62,19 +57,16 @@ fi
 #    public is bin/idp-publish, which is one command and the founder's call.
 if command -v tailscale >/dev/null; then
   # 8443 is only claimed when nothing holds it. This runs hourly under launchd,
-  # and re-pointing it at the primary every hour would silently undo a
-  # bin/idp-switch fallback -- the link would go back on its own, which is the
-  # worst kind of bug because it looks like it worked and then does not.
+  # and re-pointing it every hour would silently undo a hand-made change to
+  # where the published link goes -- the link would move back on its own, which
+  # is the worst kind of bug because it looks like it worked and then does not.
   if tailscale serve status 2>/dev/null | grep -q ':8443'; then
-    log "publish   8443 already points somewhere -- left alone (idp-switch owns it)"
+    log "publish   8443 already points somewhere -- left alone"
   else
     tailscale serve --bg --http=8443 "http://127.0.0.1:$PORT_PRIMARY" >/dev/null 2>&1 || true
   fi
-  # 10000 is the fallback's own address and never moves, so it is always set.
-  tailscale serve --bg --http=10000 "http://127.0.0.1:$PORT_FALLBACK" >/dev/null 2>&1 || true
   host=$(tailscale status --json | /usr/local/bin/jq -r '.Self.DNSName' | sed 's/\.$//')
-  log "primary   http://$host:8443/"
-  log "fallback  http://$host:10000/"
+  log "catalogue http://$host:8443/"
 fi
 
 "$IDP/bin/idp-status"

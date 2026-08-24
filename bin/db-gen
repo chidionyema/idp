@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# Estate inventory -> SQLite, for the fallback renderer.
+# Estate inventory -> SQLite, for commands that need to count it without
+# asking Backstage.
 #
-# The second of two renderings of the same source. bin/catalog-gen writes YAML
-# for Backstage; this writes SQLite for Datasette. Neither is the source: the
-# source is ~/.estate/state/inventory.json, which LAW 39 already produces.
+# This used to be the second of two renderings of the same source, feeding a
+# Datasette fallback portal on 8001. That second portal is gone (founder,
+# 2026-08-24: "ive seen 5 ui faces today"). What is left is a queryable file:
+# bin/idp-status reads it for the asset count, and it answers "how many assets
+# does the inventory hold" without a running service. Neither this nor the
+# YAML is the source -- the source is ~/.estate/state/inventory.json, which
+# LAW 39 already produces.
 #
 # It is deliberately sqlite-utils rather than a Python script. The transform is
 # "put this JSON array in a table", which is the one thing sqlite-utils exists
