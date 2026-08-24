@@ -1,8 +1,14 @@
 name: build-multiarch
 # R24: every Dockerfile in this repository is built for linux/amd64 and linux/arm64
 # and pushed as one manifest list to GHCR on main. Pull requests build both
-# architectures and push nothing. bin/multiarch-gate (run by idp-ci) refuses any
-# build step that names fewer than both.
+# architectures and push nothing.
+#
+# Each architecture builds on its own native runner (ubuntu-24.04 and
+# ubuntu-24.04-arm, free on public repositories) and the merge job joins the two
+# digests into one tag. QEMU emulation was rejected: unpacking build-essential
+# alone took 11+ minutes emulated (chidionyema-b0, 2026-08-25).
+# bin/multiarch-gate resolves `${{ matrix.platform }}` to the union of the matrix
+# and refuses this file if the union is ever less than both.
 on:
   pull_request:
   push:
@@ -10,6 +16,8 @@ on:
 permissions:
   contents: read
   packages: write
+env:
+  REGISTRY: ghcr.io
 jobs:
   discover:
     runs-on: ubuntu-latest
@@ -27,31 +35,82 @@ jobs:
   build:
     needs: discover
     if: needs.discover.outputs.dockerfiles != '[]'
-    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         dockerfile: ${{ fromJson(needs.discover.outputs.dockerfiles) }}
+        platform: [linux/amd64, linux/arm64]
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         if: github.event_name == 'push'
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: name
         run: |
           d=$(dirname "${{ matrix.dockerfile }}"); n=$(basename "$d"); [ "$n" = "." ] && n=idp
-          echo "context=$d" >> "$GITHUB_OUTPUT"; echo "image=ghcr.io/${{ github.repository_owner }}/$n" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v6
+          arch=${{ matrix.platform }}; arch=${arch#linux/}
+          echo "context=$d" >> "$GITHUB_OUTPUT"
+          echo "image=${{ env.REGISTRY }}/${{ github.repository_owner }}/$n" >> "$GITHUB_OUTPUT"
+          echo "arch=$arch" >> "$GITHUB_OUTPUT"
+          echo "slug=$(echo "$n" | tr -c 'a-z0-9\n' '-')" >> "$GITHUB_OUTPUT"
+      - id: build
+        uses: docker/build-push-action@v6
         with:
           context: ${{ steps.name.outputs.context }}
           file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name == 'push' }}
-          tags: ${{ steps.name.outputs.image }}:main,${{ steps.name.outputs.image }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          platforms: ${{ matrix.platform }}
+          # On push: one untagged image per arch, joined by digest in `merge`.
+          outputs: ${{ github.event_name == 'push' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', steps.name.outputs.image) || 'type=image,push=false' }}
+          cache-from: type=gha,scope=${{ steps.name.outputs.slug }}-${{ steps.name.outputs.arch }}
+          cache-to: type=gha,mode=max,scope=${{ steps.name.outputs.slug }}-${{ steps.name.outputs.arch }}
+      - if: github.event_name == 'push'
+        run: |
+          mkdir -p /tmp/digests/${{ steps.name.outputs.slug }}
+          touch "/tmp/digests/${{ steps.name.outputs.slug }}/${{ steps.build.outputs.digest }}"
+          echo "${{ steps.name.outputs.image }}" > /tmp/digests/${{ steps.name.outputs.slug }}/IMAGE
+      - if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ steps.name.outputs.slug }}-${{ steps.name.outputs.arch }}
+          path: /tmp/digests/${{ steps.name.outputs.slug }}/*
+          if-no-files-found: error
+  merge:
+    needs: [discover, build]
+    if: github.event_name == 'push' && needs.discover.outputs.dockerfiles != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dockerfile: ${{ fromJson(needs.discover.outputs.dockerfiles) }}
+    steps:
+      - id: name
+        run: |
+          d=$(dirname "${{ matrix.dockerfile }}"); n=$(basename "$d"); [ "$n" = "." ] && n=idp
+          echo "slug=$(echo "$n" | tr -c 'a-z0-9\n' '-')" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-${{ steps.name.outputs.slug }}-*
+          merge-multiple: true
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: one tag, two architectures
+        run: |
+          cd /tmp/digests
+          image=$(cat IMAGE)
+          digests=$(ls | grep '^sha256:' | sed "s|^|$image@|" | tr '\n' ' ')
+          n=$(echo "$digests" | wc -w); [ "$n" -eq 2 ] || { echo "R24: expected 2 per-arch digests, found $n"; exit 1; }
+          docker buildx imagetools create -t "$image:main" -t "$image:${{ github.sha }}" $digests
+          docker buildx imagetools inspect "$image:main" | grep -E 'Platform:' | sort -u
