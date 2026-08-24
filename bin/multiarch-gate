@@ -60,12 +60,38 @@ def text_findings(path):
     return out
 
 
+def coverage_findings(root):
+    """Every Dockerfile-shaped file in a repository root must be in bin/dockerfiles
+    (built) or its EXCLUDE list (named, with a reason). An image no workflow builds
+    is otherwise the silent miss: a gate over build steps has nothing to grade."""
+    lister = os.path.join(root, "bin", "dockerfiles")
+    if not os.path.isfile(lister):
+        return []
+    import subprocess
+    listed = {l.split()[1] for l in subprocess.run([lister], capture_output=True, text=True).stdout.splitlines() if l.strip()}
+    excluded = set()
+    for line in open(lister):
+        m = re.match(r"EXCLUDE='([^']*)'", line)
+        if m:
+            excluded |= set(m.group(1).split())
+    out = []
+    for d, dirs, fs in os.walk(root):
+        dirs[:] = [x for x in dirs if x not in SKIP and x != "tests"]
+        for f in fs:
+            if f == "Dockerfile" or f.startswith("Dockerfile.") or f.endswith(".Dockerfile"):
+                rel = os.path.relpath(os.path.join(d, f), root)
+                if rel not in listed and rel not in excluded:
+                    out.append(f"{rel}: Dockerfile-shaped file that bin/dockerfiles neither builds nor excludes (R24)")
+    return out
+
+
 def main(roots):
     findings = []
     for root in roots:
         if os.path.isfile(root):
             files = [root]
         else:
+            findings += coverage_findings(root)
             files = []
             for d, dirs, fs in os.walk(root):
                 dirs[:] = [x for x in dirs if x not in SKIP]

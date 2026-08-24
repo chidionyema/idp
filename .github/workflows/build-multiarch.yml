@@ -9,6 +9,13 @@ name: build-multiarch
 # alone took 11+ minutes emulated (chidionyema-b0, 2026-08-25).
 # bin/multiarch-gate resolves `${{ matrix.platform }}` to the union of the matrix
 # and refuses this file if the union is ever less than both.
+#
+# A green run on main that built nothing is not evidence: with zero images in
+# bin/dockerfiles the build and merge jobs are skipped and the run still reports
+# success. Read the discover job's output before citing a green here.
+# Tags are the commit sha only. A moving tag (:main, :latest) makes the running
+# version whichever push won a race and leaves a rollback nothing to roll back
+# to; prospector's container-images.yml states the same rule.
 on:
   pull_request:
   push:
@@ -27,10 +34,7 @@ jobs:
       - uses: actions/checkout@v4
       - id: find
         run: |
-          # backstage/packages/backend/Dockerfile is the upstream scaffold: it needs a host
-          # `yarn build:backend` first and the repo root as context, so it is not a
-          # self-contained estate image. idp#29 adds backstage/Dockerfile, which is.
-          list=$(find . -name Dockerfile -not -path '*/node_modules/*' -not -path './.git/*' -not -path './tests/*' -not -path '*/packages/backend/Dockerfile' | sed 's|^\./||' | jq -R . | jq -sc .)
+          list=$(bin/dockerfiles --json)
           echo "list=$list" >> "$GITHUB_OUTPUT"; echo "dockerfiles: $list"
   build:
     needs: discover
@@ -57,9 +61,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: name
         run: |
-          d=$(dirname "${{ matrix.dockerfile }}"); n=$(basename "$d"); [ "$n" = "." ] && n=idp
+          n='${{ matrix.dockerfile.name }}'
           arch=${{ matrix.platform }}; arch=${arch#linux/}
-          echo "context=$d" >> "$GITHUB_OUTPUT"
+          echo "context=${{ matrix.dockerfile.context }}" >> "$GITHUB_OUTPUT"
           echo "image=${{ env.REGISTRY }}/${{ github.repository_owner }}/$n" >> "$GITHUB_OUTPUT"
           echo "arch=$arch" >> "$GITHUB_OUTPUT"
           echo "slug=$(echo "$n" | tr -c 'a-z0-9\n' '-')" >> "$GITHUB_OUTPUT"
@@ -67,7 +71,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ steps.name.outputs.context }}
-          file: ${{ matrix.dockerfile }}
+          file: ${{ matrix.dockerfile.dockerfile }}
           platforms: ${{ matrix.platform }}
           # On push: one untagged image per arch, joined by digest in `merge`.
           outputs: ${{ github.event_name == 'push' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', steps.name.outputs.image) || 'type=image,push=false' }}
@@ -94,7 +98,7 @@ jobs:
     steps:
       - id: name
         run: |
-          d=$(dirname "${{ matrix.dockerfile }}"); n=$(basename "$d"); [ "$n" = "." ] && n=idp
+          n='${{ matrix.dockerfile.name }}'
           echo "slug=$(echo "$n" | tr -c 'a-z0-9\n' '-')" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
@@ -112,5 +116,5 @@ jobs:
           image=$(cat IMAGE)
           digests=$(ls | grep '^sha256:' | sed "s|^|$image@|" | tr '\n' ' ')
           n=$(echo "$digests" | wc -w); [ "$n" -eq 2 ] || { echo "R24: expected 2 per-arch digests, found $n"; exit 1; }
-          docker buildx imagetools create -t "$image:main" -t "$image:${{ github.sha }}" $digests
-          docker buildx imagetools inspect "$image:main" | grep -E 'Platform:' | sort -u
+          docker buildx imagetools create -t "$image:${{ github.sha }}" $digests
+          docker buildx imagetools inspect "$image:${{ github.sha }}" | grep -E 'Platform:' | sort -u
