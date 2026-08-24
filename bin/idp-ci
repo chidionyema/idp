@@ -134,6 +134,14 @@ if ! INV="$IDP/tests/fixtures/inventory.port-collision.json" OUT="$tmp" python3 
   say "ok    ports    catalog-gen refuses a port claimed twice, passes the clean inventory, emits port entities"
 else say "FAIL  ports    catalog-gen port guard is not discriminating"; fail=1; fi
 
+# 4c. Port lock (crew#186 CP4, R22 mechanism 4): a compose publication not
+#     declared in catalog/ports.yaml, or off loopback without non_loopback (R20),
+#     fails. Proved both ways: the rogue fixture is refused, the repo passes.
+if ! COMPOSE_GLOB='tests/fixtures/ports-bad/*.yml' python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
+   && out=$(python3 "$IDP/bin/port-gate" 2>&1); then
+  say "ok    portlock $(printf '%s' "$out" | tail -1 | sed 's/^ok *ports *//')"
+else say "FAIL  portlock port-gate is not discriminating or the repo has an undeclared bind"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
 # 5. Every generated entity validates against the published Backstage schema.
 python3 - "$tmp/catalog-info.yaml" "$tmp/docs" <<'PY'
 import sys, os, yaml, json
@@ -150,6 +158,7 @@ else say "FAIL  schema   check-jsonschema rejected a generated entity"; fail=1; 
 #    A row that is missing, or whose gate cannot tell the fixtures apart, fails here, so a
 #    rule cannot exist without its proof (LAW 44) and no gate refuses good work (LAW 38).
 policy_gate() { conftest test --parser json -p "$IDP/policy" "$1" >/dev/null 2>&1; }
+bind_audit() { "$IDP/bin/bind-audit" --table "$1" >/dev/null 2>&1; }
 rows=0
 while IFS='|' read -r _ rule gate bad good _; do
   rule=$(echo "$rule" | xargs); gate=$(echo "$gate" | xargs); bad=$(echo "$bad" | xargs); good=$(echo "$good" | xargs)
@@ -166,6 +175,14 @@ while IFS='|' read -r _ rule gate bad good _; do
   else say "FAIL  agents   row '$rule': refused=$refused passed=$passed"; fail=1; fi
 done < <(grep -E '^\| .* \| .* \| .* \| .* \|$' "$IDP/AGENTS.md" | grep -vE '^\| (rule|---)')
 [ "$rows" -ge 1 ] && say "ok    agents   AGENTS.md: $rows rule rows, each proved both ways" || { say "FAIL  agents   AGENTS.md has no rule rows"; fail=1; }
+
+# 7. The bind audit proves itself both ways with no machine under it. R20: the
+#    gateway is the only process that may bind a non-loopback address. The AGENTS.md
+#    row above already runs bind_audit on the two recorded tables; this runs the
+#    script's own selftest, which is the part that would silently rot if the
+#    allow-list parser broke.
+if out=$("$IDP/bin/bind-audit" --selftest 2>&1); then say "ok    binds    bind-audit refuses an unknown listener and permits an allow-listed one"
+else say "FAIL  binds    bin/bind-audit --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"
