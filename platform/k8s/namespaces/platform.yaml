@@ -1,0 +1,121 @@
+# The platform namespace: the estate's own machinery. Traefik, Backstage, ArgoCD.
+#
+# Four objects, and none of them is optional. A namespace with only the first is
+# the flat network the founder described, measured on this cluster on 2026-08-24:
+# a pod in one namespace curled a pod in another by IP, with no credential, and
+# got HTTP 200 in 4ms. crew#191 carries the transcript.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform
+  labels:
+    kubernetes.io/metadata.name: platform
+    estate.local/tier: platform
+---
+# The LimitRange comes before the ResourceQuota, and the order is not cosmetic.
+# A ResourceQuota that counts requests.cpu makes a pod declaring no cpu request
+# UNSCHEDULABLE -- the API server refuses it with "must specify limits.cpu",
+# which reads to whoever wrote the manifest like their manifest is broken. The
+# LimitRange supplies the numbers first, so the quota only ever sees a pod that
+# has them. Quota without LimitRange is a fence that refuses correct work, and a
+# guard that refuses correct work is an outage (LAW 38).
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: defaults
+  namespace: platform
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 50m
+        memory: 128Mi
+      max:
+        cpu: "2"
+        memory: 1Gi
+---
+# Sized against what this node actually has, not a round number. Measured
+# 2026-08-24 on k3d-estate-server-0:
+#   allocatable      4 cpu, 1536Mi        (serversMemory: 1500m in estate.yaml)
+#   already spoken for  0.10 cpu, 70Mi    (coredns, local-path-provisioner)
+# platform 768Mi + data-ops 512Mi + kube-system 70Mi = 1350Mi of 1536Mi.
+# The remaining 186Mi is the headroom, and it is small on purpose: the cap is
+# the point. When ArgoCD and Backstage land, this number and estate.yaml's
+# serversMemory get raised together, with the measurement in the commit.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: budget
+  namespace: platform
+spec:
+  hard:
+    requests.cpu: "1"
+    requests.memory: 768Mi
+    limits.cpu: "3"
+    limits.memory: 1Gi
+    pods: "30"
+---
+# Default deny, both directions. Ingress alone leaves a compromised pod free to
+# reach every other namespace and the internet, which is the half of the
+# backdoor that matters after a breach rather than before it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: platform
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# DNS, and this rule is why the deny above is survivable. With egress denied and
+# no DNS exception, name resolution fails in every pod in the namespace, and the
+# symptom is not "blocked" -- it is a five-second timeout on every outbound call,
+# which reads as the application being slow. Scoped to coredns by namespace and
+# pod label, not to the whole of kube-system.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: platform
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Intra-namespace traffic. Backstage reaching its own database is one namespace's
+# business; it does not need a rule per pair inside the fence.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: platform
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}

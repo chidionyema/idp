@@ -206,6 +206,7 @@ else say "FAIL  schema   check-jsonschema rejected a generated entity"; fail=1; 
 #    rule cannot exist without its proof (LAW 44) and no gate refuses good work (LAW 38).
 policy_gate() { conftest test --parser json -p "$IDP/policy" "$1" >/dev/null 2>&1; }
 bind_audit() { "$IDP/bin/bind-audit" --table "$1" >/dev/null 2>&1; }
+ns_fence_gate() { python3 "$IDP/bin/ns-fence-gate" "$1" >/dev/null 2>&1; }
 rows=0
 while IFS='|' read -r _ rule gate bad good _; do
   rule=$(echo "$rule" | xargs); gate=$(echo "$gate" | xargs); bad=$(echo "$bad" | xargs); good=$(echo "$good" | xargs)
@@ -230,6 +231,16 @@ done < <(grep -E '^\| .* \| .* \| .* \| .* \|$' "$IDP/AGENTS.md" | grep -vE '^\|
 #    allow-list parser broke.
 if out=$("$IDP/bin/bind-audit" --selftest 2>&1); then say "ok    binds    bind-audit refuses an unknown listener and permits an allow-listed one"
 else say "FAIL  binds    bin/bind-audit --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
+# 8. The fences the estate's own namespaces ship with (crew#191). The AGENTS.md row
+#    above proves ns-fence-gate can tell a fenced namespace from a flat one; this
+#    runs it over the manifests that are actually committed, because a gate that
+#    works on fixtures and is never pointed at the real thing protects fixtures.
+#    Measured on `estate` before these existed: a pod in one namespace reached a pod
+#    in another by IP, no credential, HTTP 200 in 4ms.
+if out=$(cd "$IDP" && python3 bin/ns-fence-gate platform/k8s/namespaces 2>&1); then
+  say "ok    fences   $(printf '%s' "$out" | sed 's/^ok *ns-fence-gate: //')"
+else say "FAIL  fences   platform/k8s/namespaces"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"
