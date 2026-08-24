@@ -30,6 +30,8 @@ from pathlib import Path
 import yaml
 from dagster import (
     DagsterRunStatus,
+    DefaultScheduleStatus,
+    DefaultSensorStatus,
     Definitions,
     Failure,
     OpExecutionContext,
@@ -46,6 +48,9 @@ from dagster import (
 )
 
 IDP = Path(__file__).resolve().parents[2]
+# Dagster schedules run in UTC unless told otherwise (docs: guides/automate/schedules).
+# The launchd crons these replaced were laptop-local, so every schedule is too.
+TIMEZONE = os.environ.get("ESTATE_TZ", "Europe/London")
 SCHEDULE_FILE = Path(os.environ.get("ESTATE_SCHEDULE", IDP / "scheduler" / "schedule.yml"))
 FAILURE_LOG = IDP / "run" / "scheduler-failures.jsonl"
 BREAKER_TRIP = 3
@@ -126,7 +131,17 @@ def make_op(label: str, spec: dict):
 def make_job(label: str, spec: dict):
     the_op = make_op(label, spec)
 
-    @job(name=_job_name(label), tags={"estate/label": label})
+    # dagster/max_runtime: run monitoring cancels the run past timeout_s + 60s
+    # (docs: deployment/execution/run-monitoring); dagster/priority orders the
+    # queue (docs: deployment/execution/run-coordinators).
+    @job(
+        name=_job_name(label),
+        tags={
+            "estate/label": label,
+            "dagster/max_runtime": str(int(spec.get("timeout_s", 1800)) + 60),
+            "dagster/priority": str(int(spec.get("priority", 0))),
+        },
+    )
     def _job():
         the_op()
 
@@ -137,7 +152,13 @@ def make_schedule(label: str, spec: dict, the_job):
     max_load = float(spec.get("max_load", 6.0))
     battery = bool(spec.get("skip_on_battery", False))
 
-    @schedule(cron_schedule=spec["cron"], job=the_job, name=f"{_job_name(label)}_schedule")
+    @schedule(
+        cron_schedule=spec["cron"],
+        job=the_job,
+        name=f"{_job_name(label)}_schedule",
+        execution_timezone=TIMEZONE,
+        default_status=DefaultScheduleStatus.RUNNING,
+    )
     def _sched(context):
         current = load1()
         if current > max_load:
@@ -157,6 +178,7 @@ def make_dependency_sensor(label: str, spec: dict, the_job, upstream_job):
         run_status=DagsterRunStatus.SUCCESS,
         monitored_jobs=[upstream_job],
         request_job=the_job,
+        default_status=DefaultSensorStatus.RUNNING,
     )
     def _after(context):
         if circuit_open(context.instance, the_job.name):
@@ -166,7 +188,7 @@ def make_dependency_sensor(label: str, spec: dict, the_job, upstream_job):
     return _after
 
 
-@run_failure_sensor(name="estate_failure_log")
+@run_failure_sensor(name="estate_failure_log", default_status=DefaultSensorStatus.RUNNING)
 def estate_failure_log(context):
     FAILURE_LOG.parent.mkdir(parents=True, exist_ok=True)
     rec = {

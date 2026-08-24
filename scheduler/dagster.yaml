@@ -1,15 +1,47 @@
-# Copied into $DAGSTER_HOME (run/dagster) by bin/scheduler-up. Storage is sqlite
-# under that directory; nothing here names a machine.
+# Instance config for the estate scheduler. bin/scheduler-up copies this into
+# $DAGSTER_HOME (run/dagster). Storage, artifacts and compute logs take Dagster's
+# defaults, which all live under $DAGSTER_HOME, so nothing here names a machine.
+# Reference: https://docs.dagster.io/deployment/oss/dagster-yaml
+run_launcher:
+  module: dagster._core.launcher
+  class: DefaultRunLauncher          # one subprocess per run, on this machine
+
 run_coordinator:
-  module: dagster.core.run_coordinator
+  module: dagster._core.run_coordinator
   class: QueuedRunCoordinator
   config:
-    max_concurrent_runs: 2
+    max_concurrent_runs: 2           # the load-30 storm was 39 jobs at once
+    dequeue_interval_seconds: 5
+    tag_concurrency_limits:
+      - key: "dagster/backfill"
+        value: "true"
+        limit: 1
+
 run_monitoring:
   enabled: true
-  max_runtime_seconds: 3600
+  start_timeout_seconds: 180
+  cancel_timeout_seconds: 180
+  poll_interval_seconds: 60
   free_slots_after_run_end_seconds: 5
+  max_runtime_seconds: 3600          # each job overrides via dagster/max_runtime
+
 run_retries:
-  enabled: false
+  enabled: true
+  max_retries: 1                     # the circuit breaker in definitions.py handles the rest
+
+retention:
+  schedule:
+    purge_after_days: 30
+  sensor:
+    purge_after_days:
+      skipped: 7
+      failure: 30
+      success: 30
+
+python_logs:
+  python_log_level: INFO
+
 telemetry:
+  enabled: false
+nux:
   enabled: false
