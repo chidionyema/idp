@@ -102,8 +102,17 @@ backend:
   baseUrl: http://localhost:7107
   listen:
     port: 7107
-    # Uncomment the following host directive to bind to specific interfaces
-    # host: 127.0.0.1
+    # BIND POLICY, founder ruling R20 (2026-08-24): the gateway is the only process on this
+    # machine that binds a non-loopback address. Everything else binds 127.0.0.1 or nothing.
+    #
+    # Without this line Node binds `::` and lsof shows `*:7107` -- the developer portal, and
+    # its catalog of the whole estate, reachable from anything on the LAN. Measured with
+    # `lsof -nP -iTCP:7107 -sTCP:LISTEN` on 2026-08-24: `node 45258 ... TCP *:7107 (LISTEN)`.
+    #
+    # 127.0.0.1 and not ::1 on purpose. baseUrl says `localhost`, which macOS resolves to ::1
+    # first; Node 20's autoSelectFamily falls back to IPv4, and every probe and script in this
+    # repo dials 127.0.0.1 literally, so the v4 loopback is the one that must answer.
+    host: 127.0.0.1
   csp:
     connect-src: ["'self'", 'http:', 'https:']
     # Content-Security-Policy directives follow the Helmet format: https://helmetjs.github.io/#reference

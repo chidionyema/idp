@@ -18,6 +18,44 @@ OUT = os.environ.get("OUT") or os.path.join(os.path.dirname(os.path.dirname(os.p
 OWNER = "group:default/platform"
 SYSTEM = "system:default/estate"
 
+# ENVIRONMENT. Founder, 2026-08-24: "backstge call this nachine production, this is dev not
+# prod. ens dev, stage prod". Every Component this file emitted carried a literal
+# `lifecycle: production`, so the portal told anyone who opened it that a laptop was the
+# production estate. That is the worst class of catalog error: it is wrong, and it is wrong
+# in the direction that makes someone comfortable.
+#
+# Resolution order, and none of it is a literal in this file (LAW 46):
+#   1. $ESTATE_ENV
+#   2. the first line of $ESTATE_ENV_FILE, else ~/.estate/env
+#   3. "dev"
+# The fallback is "dev" on purpose. If the environment cannot be established, the safe lie is
+# the one that makes you careful, not the one that makes you relaxed.
+VALID_ENVS = ("dev", "stage", "prod")
+# Backstage's own vocabulary for spec.lifecycle is experimental | production | deprecated, so
+# the estate env is mapped onto it rather than invented. The precise env stays readable on the
+# entity as an annotation, which is what anything machine-driven should key off.
+LIFECYCLE_FOR = {"dev": "experimental", "stage": "experimental", "prod": "production"}
+
+
+def resolve_env() -> str:
+    e = (os.environ.get("ESTATE_ENV") or "").strip().lower()
+    if not e:
+        f = os.environ.get("ESTATE_ENV_FILE") or os.path.expanduser("~/.estate/env")
+        try:
+            e = open(f).readline().strip().lower()
+        except OSError:
+            e = ""
+    if not e:
+        return "dev"
+    if e not in VALID_ENVS:
+        sys.exit(f"catalog-gen: ESTATE_ENV={e!r} is not one of {VALID_ENVS}. "
+                 "Refusing to label the estate with an environment nobody defined.")
+    return e
+
+
+ENV = resolve_env()
+LIFECYCLE = LIFECYCLE_FOR[ENV]
+
 # Backstage names: ^[a-zA-Z0-9]([-_.a-zA-Z0-9]*[a-zA-Z0-9])?$, 63 chars max.
 def slug(s: str) -> str:
     s = re.sub(r"[^a-zA-Z0-9._-]", "-", str(s)).strip("-._")
@@ -94,7 +132,7 @@ def entity(kind, name, title, etype, annotations, tags, links=(), depends_on=(),
     out += ["spec:", f"  type: {etype}", f"  owner: {OWNER}",
             f"  system: {system or SYSTEM}"]
     if kind == "Component":
-        out.append("  lifecycle: production")
+        out.append(f"  lifecycle: {LIFECYCLE}")
     # sorted() and not the discovery order. Founder, 2026-08-24: "we need to take
     # idempotency serious across platform". bin/idp-ci runs this twice over one
     # inventory and fails on a single byte of difference.
