@@ -125,6 +125,15 @@ else
   fail=1
 fi
 
+# 4a. Ports: the catalog is the port registry. catalog-gen must refuse an
+#     inventory where two things claim one port and pass one where they do not.
+#     3200 went to the scheduler UI while an ssh forward held it (2026-08-24).
+if ! INV="$IDP/tests/fixtures/inventory.port-collision.json" OUT="$tmp" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1 \
+   && INV="$FIX" OUT="$tmp" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1 \
+   && grep -qE "estate/port: '?9901'?" "$tmp/catalog-info.yaml"; then
+  say "ok    ports    catalog-gen refuses a port claimed twice, passes the clean inventory, emits port entities"
+else say "FAIL  ports    catalog-gen port guard is not discriminating"; fail=1; fi
+
 # 5. Every generated entity validates against the published Backstage schema.
 python3 - "$tmp/catalog-info.yaml" "$tmp/docs" <<'PY'
 import sys, os, yaml, json
