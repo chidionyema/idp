@@ -7,7 +7,6 @@
 # The script must speak the R19 verbs: can_apply apply healthcheck rollback state.
 # Environment is isolated: DAGSTER_HOME, ledger and port are temp; launchd is off.
 set -uo pipefail
-IDP="$(cd "$(dirname "$0")/.." && pwd)"
 script="${1:?usage: migration-gate <script>}"
 tmp="$(mktemp -d)"
 export DAGSTER_HOME="$tmp/home" MIGRATE_LEDGER="$tmp/migrations.jsonl" MIGRATE_LAUNCHD=0 SCHEDULER_PORT="${GATE_PORT:-3299}"
