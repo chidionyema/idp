@@ -1,0 +1,24 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: the docs tree is Diataxis
+        run: |
+          set -e
+          for d in tutorials how-to reference explanation; do
+            test -d "docs/$d" || { echo "docs/$d missing"; exit 1; }
+          done
+          test -f mkdocs.yml
+          echo "ok  docs  four Diataxis folders and an mkdocs.yml"
+      - name: the catalogue can see this repo
+        run: |
+          set -e
+          test -f catalog-info.yaml
+          grep -q 'backstage.io/techdocs-ref' catalog-info.yaml
+          echo "ok  catalog  catalog-info.yaml carries techdocs-ref"

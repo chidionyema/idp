@@ -24,6 +24,19 @@ def slug(s: str) -> str:
     s = re.sub(r"-{2,}", "-", s) or "unnamed"
     return s[:63].strip("-._")
 
+def github_slug(remote):
+    """owner/repo out of a git remote, or None when it is not github.com.
+
+    This exact shape is what Backstage's github.com/project-slug annotation
+    wants, and every GitHub-aware widget in the portal keys off it.
+    https://backstage.io/docs/features/software-catalog/well-known-annotations
+    """
+    if not remote or remote == "(none)":
+        return None
+    m = re.match(r"^(?:https://github\.com/|git@github\.com:)([^/]+/[^/]+?)(?:\.git)?/?$",
+                 str(remote))
+    return m.group(1) if m else None
+
 # kind of estate asset -> (Backstage kind, spec.type)
 MAP = {
     "repo":          ("Component", "service"),
@@ -32,6 +45,7 @@ MAP = {
     "ledger":        ("Resource",  "ledger"),
     "data":          ("Resource",  "data-store"),
     "drill":         ("Resource",  "drill"),
+    "container":     ("Resource",  "container"),
 }
 
 def y(v):
@@ -51,7 +65,8 @@ def y(v):
         return "'" + s.replace("'", "''") + "'"
     return s
 
-def entity(kind, name, title, etype, annotations, tags, links=()):
+def entity(kind, name, title, etype, annotations, tags, links=(), depends_on=(),
+           system=None):
     out = [
         "apiVersion: backstage.io/v1alpha1",
         f"kind: {kind}",
@@ -61,8 +76,13 @@ def entity(kind, name, title, etype, annotations, tags, links=()):
     ]
     if annotations:
         out.append("  annotations:")
-        out += [f"    estate/{k}: {y(v)}" for k, v in sorted(annotations.items())
-                if v not in (None, "")]
+        # A key with a slash is already namespaced -- backstage.io/techdocs-ref is
+        # read by the TechDocs plugin and must not be rewritten. Everything else is
+        # ours and gets the estate/ prefix so it cannot collide with Backstage's.
+        for k, v in sorted(annotations.items()):
+            if v in (None, ""):
+                continue
+            out.append(f"    {k if '/' in k else 'estate/' + k}: {y(v)}")
     if tags:
         out.append("  tags:")
         out += [f"    - {y(slug(t).lower())}" for t in tags if t]
@@ -70,9 +90,16 @@ def entity(kind, name, title, etype, annotations, tags, links=()):
         out.append("  links:")
         for t, u in links:
             out += [f"    - title: {y(t)}", f"      url: {y(u)}"]
-    out += ["spec:", f"  type: {etype}", f"  owner: {OWNER}", f"  system: {SYSTEM}"]
+    out += ["spec:", f"  type: {etype}", f"  owner: {OWNER}",
+            f"  system: {system or SYSTEM}"]
     if kind == "Component":
         out.append("  lifecycle: production")
+    # sorted() and not the discovery order. Founder, 2026-08-24: "we need to take
+    # idempotency serious across platform". bin/idp-ci runs this twice over one
+    # inventory and fails on a single byte of difference.
+    if depends_on:
+        out.append("  dependsOn:")
+        out += [f"    - {r}" for r in sorted(set(depends_on))]
     return "\n".join(out)
 
 
@@ -91,6 +118,60 @@ def main() -> int:
 
     os.makedirs(OUT, exist_ok=True)
     docs, counts, seen = [], {}, set()
+    edges = orphans = techdocs = wellknown = 0
+
+    # ---- pass 1: entity names, and the two relationships the inventory can prove ----
+    #
+    # A relationship this file invents is worse than no relationship: the portal
+    # renders it identically and nobody can tell. So only two are emitted, and both
+    # are read off measured fields rather than guessed from a name.
+    #
+    #   containment -- an asset whose `path` is inside a repo's `path` depends on
+    #     that repo. Longest match wins, because ~/.claude/scripts sits inside
+    #     ~/.claude. Measured on the 2026-08-24T19:00Z inventory: 197 of 215
+    #     non-repo assets resolve; the 18 that do not are tagged outside-any-repo,
+    #     which is LAW 24 made visible instead of silent.
+    #
+    #   coupling -- `coupling: anthropic` is the field the drills already grade
+    #     "what survives losing this vendor". Emitting it as a Resource turns the
+    #     portal's relations graph into the blast radius: click the vendor, see
+    #     every asset that stops. 139 of 241 rows on the same inventory.
+    #
+    # Deliberately NOT emitted: providesApis. No repository in the estate publishes
+    # an OpenAPI document -- measured, 0 of 26 -- so the field would be an empty
+    # promise. It arrives when a service ships a spec, not before.
+    names, repo_index = {}, []
+    for r in rows:
+        if r.get("kind") not in MAP:
+            continue
+        name = slug(r.get("id") or "unnamed")
+        if name in seen:                       # ids collide across roots
+            name = slug(f"{name}-{slug(r.get('root','x'))}")
+        if name in seen:                       # still colliding: never drop an asset (idp-verify counts them)
+            import hashlib
+            name = slug(f"{name[:55]}-{hashlib.sha1(str(r.get('id')).encode()).hexdigest()[:6]}")
+        seen.add(name)
+        names[id(r)] = name
+        if r.get("kind") == "repo" and r.get("path"):
+            repo_index.append((r["path"].rstrip("/"), name))
+    repo_index.sort(key=lambda t: -len(t[0]))  # longest path first: most specific repo wins
+
+    def owning_repo(path):
+        p = (path or "").rstrip("/")
+        for rp, rname in repo_index:
+            if p == rp or p.startswith(rp + os.sep):
+                return rname
+        return None
+
+    couplings = sorted({r.get("coupling") for r in rows
+                        if r.get("coupling") and r.get("coupling") != "none"})
+    for c in couplings:
+        n = sum(1 for r in rows if r.get("coupling") == c)
+        docs.append(entity(
+            "Resource", f"vendor-{slug(c)}", f"Vendor: {c}", "vendor",
+            {"coupling": c, "dependents": n,
+             "why": "every asset tagged with this coupling stops if it does"},
+            ["vendor", f"coupling-{slug(c)}"]))
 
     # Domain and System take no spec.type/spec.system, so they are written out
     # literally rather than through entity(), which exists for the 194 rows.
@@ -109,22 +190,47 @@ def main() -> int:
         "  name: platform", "  title: Platform", "spec:", "  type: team",
         "  children: []"]))
 
+    # One System per running compose project. Backstage's System is "a collection
+    # of resources and components that exposes one or several public APIs", and
+    # until this the whole estate was a single System, which renders as one flat
+    # list of 245 things. A stack is the unit a person actually reasons about:
+    # langfuse is 7 containers and you either have traces or you do not.
+    stacks = sorted({r.get("project") for r in rows
+                     if r.get("kind") == "container" and r.get("project")
+                     and r.get("project") != "(none)"})
+    for st in stacks:
+        members = [r for r in rows if r.get("project") == st]
+        docs.append("\n".join([
+            "apiVersion: backstage.io/v1alpha1", "kind: System", "metadata:",
+            f"  name: stack-{slug(st)}", f"  title: {y(st + ' stack')}",
+            f"  description: {y(str(len(members)) + ' running containers, compose project ' + st)}",
+            "spec:", f"  owner: {OWNER}", "  domain: platform"]))
+
+    # ---- pass 2: the entities ----
     for r in rows:
         k = r.get("kind")
         if k not in MAP:
             continue
         bkind, btype = MAP[k]
-        name = slug(r.get("id") or "unnamed")
-        if name in seen:                       # ids collide across roots
-            name = slug(f"{name}-{slug(r.get('root','x'))}")
-        if name in seen:                       # still colliding: never drop an asset (idp-verify counts them)
-            import hashlib
-            name = slug(f"{name[:55]}-{hashlib.sha1(str(r.get('id')).encode()).hexdigest()[:6]}")
-        seen.add(name)
+        name = names[id(r)]
 
         ann = {"root": r.get("root"), "path": r.get("path"), "coupling": r.get("coupling"),
                "kind": k}
         tags = [k.replace("_", "-"), f"coupling-{r.get('coupling') or 'none'}"]
+
+        deps = []
+        if r.get("coupling") and r.get("coupling") != "none":
+            deps.append(f"resource:default/vendor-{slug(r['coupling'])}")
+        if k != "repo":
+            owner_repo = owning_repo(r.get("path"))
+            if owner_repo:
+                deps.append(f"component:default/{owner_repo}")
+            else:
+                # Load-bearing and in no repository we track: LAW 24. Three of these
+                # run ~/.hermes/scripts/launchd_receipt.py, the estate the founder
+                # killed on 2026-08-22.
+                tags.append("outside-any-repo")
+                orphans += 1
 
         if k == "repo":
             ann.update({"branch": r.get("branch"), "dirty": r.get("dirty"),
@@ -139,6 +245,30 @@ def main() -> int:
             ann["licence-file"] = "present" if lic else "ABSENT"
             if not lic:
                 tags.append("no-licence")
+            # TechDocs renders MkDocs. Annotating a repo that has no mkdocs.yml
+            # gives the portal a Docs tab that 404s, which is the empty-shell
+            # failure again. Measured 2026-08-24: 1 of 26 repos has one.
+            if os.path.exists(os.path.join(r.get("path", ""), "mkdocs.yml")):
+                ann["backstage.io/techdocs-ref"] = "dir:."
+                tags.append("has-docs")
+                techdocs += 1
+            else:
+                tags.append("no-docs")
+            # Well-known keys, not estate/ ones. Backstage's own plugins read
+            # these and read nothing of ours: project-slug drives every GitHub
+            # widget, source-location drives the "View Source" affordance on
+            # each entity page. Measured before this change: 0 of 245 entities
+            # carried a single well-known annotation, so the portal rendered
+            # 245 pages with no way back to the code.
+            gh = github_slug(r.get("remote"))
+            if gh:
+                ann["github.com/project-slug"] = gh
+                # The repository root, not the checked-out branch. A branch URL
+                # 404s the moment that branch merges, and 8 of 26 repos are on a
+                # feature branch right now -- the catalogue would churn on every
+                # checkout for a link that rots.
+                ann["backstage.io/source-location"] = f"url:https://github.com/{gh}/"
+                wellknown += 1
         elif k == "scheduled_job":
             ann.update({"loaded": r.get("loaded"), "last-status": r.get("last_status"),
                         "interval-s": r.get("interval_s")})
@@ -153,18 +283,36 @@ def main() -> int:
                 tags.append("never-run")
             if r.get("stale"):
                 tags.append("stale")
+        elif k == "container":
+            ann.update({"image": r.get("image"), "project": r.get("project"),
+                        "service": r.get("service"), "health": r.get("health"),
+                        "published-ports": r.get("published_ports"),
+                        "image-pinned": r.get("pinned")})
+            if r.get("project") and r.get("project") != "(none)":
+                tags.append(f"stack-{r['project']}")
+            if r.get("health") == "unhealthy":
+                tags.append("unhealthy")
+            if not r.get("pinned"):
+                # A floating tag means two pulls a week apart run different
+                # software. It is a supply-chain finding, so it is a tag a
+                # person can filter on, not a number in a report nobody opens.
+                tags.append("image-not-pinned")
         elif k in ("ledger", "data"):
             ann.update({"rows": r.get("rows"), "mb": r.get("mb"),
                         "referenced": r.get("referenced")})
 
         links = []
-        rem = r.get("remote")
-        if rem and rem != "(none)":
-            links.append(("Remote", rem.replace("git@github.com:", "https://github.com/")
-                          .removesuffix(".git")))
+        gh_link = github_slug(r.get("remote"))
+        if gh_link:
+            links.append(("Source", f"https://github.com/{gh_link}"))
 
-        docs.append(entity(bkind, name, r.get("id") or name, btype, ann, tags, links))
+        sysref = SYSTEM
+        if k == "container" and r.get("project") and r.get("project") != "(none)":
+            sysref = f"system:default/stack-{slug(r['project'])}"
+        docs.append(entity(bkind, name, r.get("id") or name, btype, ann, tags, links,
+                           deps, system=sysref))
         counts[k] = counts.get(k, 0) + 1
+        edges += len(deps)
 
     target = os.path.join(OUT, "catalog-info.yaml")
     with open(target, "w") as fh:
@@ -173,9 +321,15 @@ def main() -> int:
                  "# Do not hand-edit: the next run overwrites it. Fix the inventory instead.\n---\n")
         fh.write("\n---\n".join(docs) + "\n")
 
-    print(f"catalog-gen: {len(docs)} entities -> {target}")
+    print(f"catalog-gen: {len(docs)} entities, {edges} dependsOn edges -> {target}")
     for k in sorted(counts):
         print(f"  {k:14} {counts[k]}")
+    print(f"  {'stacks':14} {len(stacks)}  ({', '.join(stacks) or 'none'})")
+    print(f"  {'vendors':14} {len(couplings)}  ({', '.join(couplings) or 'none'})")
+    print(f"  {'orphans':14} {orphans}  (asset in no tracked repo -- LAW 24)")
+    print(f"  {'techdocs':14} {techdocs}  (repo with an mkdocs.yml)")
+    print(f"  {'well-known':14} {wellknown}  (repo carrying github.com/project-slug"
+          " + backstage.io/source-location)")
     return 0
 
 

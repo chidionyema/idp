@@ -5,7 +5,7 @@
     {"id": "shared name", "kind": "repo", "root": "a", "path": "/tmp/a/shared name", "coupling": null},
     {"id": "shared name", "kind": "repo", "root": "b", "path": "/tmp/b/shared name", "coupling": null},
     {"id": "shared name", "kind": "repo", "root": "b", "path": "/tmp/b2/shared name", "coupling": null},
-    {"id": "ai.example.job", "kind": "scheduled_job", "root": "launchd", "path": "/tmp/x.plist", "plist": "/tmp/x.plist", "interval_s": 3600, "loaded": true, "last_status": "clean", "coupling": "none"},
-    {"id": "ledger.sqlite", "kind": "ledger", "root": "a", "path": "/tmp/a/ledger.sqlite", "coupling": null}
+    {"id": "ai.example.job", "kind": "scheduled_job", "root": "launchd", "path": "/tmp/x.plist", "plist": "/tmp/x.plist", "interval_s": 3600, "loaded": true, "last_status": "clean", "coupling": "anthropic"},
+    {"id": "ledger.sqlite", "kind": "ledger", "root": "a", "path": "/tmp/a/shared name/ledger.sqlite", "coupling": null}
   ]
 }
