@@ -188,10 +188,22 @@ inside the server container, which is what ruled out the load balancer** — one
 reading from the host and one from inside the node, disagreeing with the kubeconfig
 theory in the same direction.
 
-Prod is not like this. Oracle Ampere A1 always-free is 4 OCPU and 24GB, dedicated,
-with no compose estate beside it and no macOS virtualisation layer between the
-kernel and the disk. **A capacity problem here is not evidence of one there, and a
-timing measured here is not a prod timing (see 6).**
+Prod is not more spacious, and this was written wrongly here first. **Oracle halved
+the Always Free Ampere A1 allowance from 4 OCPU / 24GB to 2 OCPU / 12GB, effective
+2026-06-15**, with no blog post and no customer notification; it was found when
+people's instances stopped. Oracle's own fine print adds that a terminated resource
+"may not be possible to recreate ... above the updated Always Free limit", so any
+grandfathering that exists does not survive a teardown — which is what a migration
+is.
+
+So the destination is **smaller in CPU than the dev VM already is**: colima runs
+`cpu: 4`, always-free A1 now gives 2 OCPU. It is 12GB against colima's 8GB, and that
+12GB has to cover whatever runs the control plane too.
+
+**A capacity problem here is not evidence of one there, and a timing measured here
+is not a prod timing (see 6)** — but neither is prod a way out of one. Check the
+current published limit before sizing anything against it; this number moved once
+without warning and the estate believed the old one for a day.
 
 Two things follow, and they are the reason this section exists rather than a note in
 an incident log:
