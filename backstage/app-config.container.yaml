@@ -12,7 +12,12 @@ app:
   # @backstage/plugin-app-backend, so the backend serves the UI: one process,
   # one port, one bind, and CORS between the app and its own API stops being a
   # thing that can be misconfigured.
-  baseUrl: http://localhost:3100
+  #
+  # The origin itself is not this file's to know: it is wherever the platform
+  # publishes the portal, so it comes from the environment (LAW 46). Review on
+  # idp#125: a literal localhost here made every browser catalog call fail on
+  # the cluster. platform/backstage/overlays/oke sets APP_BASE_URL.
+  baseUrl: ${APP_BASE_URL}
 
 auth:
   providers:
@@ -26,16 +31,17 @@ auth:
       # the kind of difference containerising exists to surface.
       #
       # The flag is named "dangerously" because it makes anyone who can reach
-      # the port a signed-in user. Here that is decided one layer out, not by
-      # this file: compose publishes 127.0.0.1 only, and ADR 0003 puts identity
-      # at the gateway, which is what enforces OIDC in front of the tailnet
-      # address. This container is behind that boundary, not acting as it. When
-      # Phase 2 moves the catalogue into k3s the gateway is still the boundary,
-      # and this stays until the OIDC provider is wired directly.
+      # the port a signed-in user. The boundary is one layer out and today it is
+      # the cluster itself: the Service in platform/backstage/base/catalogue.yaml
+      # is ClusterIP, platform/edge carries no route for it, so the only way to
+      # reach the port is `kubectl port-forward` with cluster credentials.
+      # The PR that adds the public route must put identity in front of it in
+      # the same change (ADR 0003, OIDC at the gateway) or turn this flag off;
+      # tests/test_incident_backstage_image_critical_cve.py holds that rule.
       dangerouslyAllowOutsideDevelopment: true
 
 backend:
-  baseUrl: http://localhost:3100
+  baseUrl: ${APP_BASE_URL}
   listen:
     port: 3100
     # 0.0.0.0 INSIDE the container, 127.0.0.1 on the host. These are not in

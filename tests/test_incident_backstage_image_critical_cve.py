@@ -41,3 +41,24 @@ def test_dockerfiles_discovers_backstage_and_skips_its_dockerignore():
     files = {d["dockerfile"] for d in json.loads(out)}
     assert "backstage/Dockerfile" in files
     assert not any(f.endswith(".dockerignore") for f in files), files
+
+
+def test_container_origin_comes_from_the_overlay_not_the_config():
+    """Review on idp#125: a literal localhost baseUrl in the container config broke every
+    browser catalog call on the cluster. The config reads APP_BASE_URL; the OKE overlay sets it."""
+    cfg = (ROOT / "backstage" / "app-config.container.yaml").read_text()
+    assert re.findall(r"^\s*baseUrl: (.*)$", cfg, re.M) == ["${APP_BASE_URL}"] * 2
+    overlay = (ROOT / "platform" / "backstage" / "overlays" / "oke" / "kustomization.yaml").read_text()
+    assert "name: APP_BASE_URL" in overlay
+
+
+def test_guest_outside_development_only_while_no_public_route_exists():
+    """dangerouslyAllowOutsideDevelopment makes anyone who reaches the port a signed-in user.
+    It is acceptable only while the Service is ClusterIP and platform/edge has no route to it."""
+    cfg = (ROOT / "backstage" / "app-config.container.yaml").read_text()
+    if "dangerouslyAllowOutsideDevelopment: true" not in cfg:
+        return
+    edge = "".join(p.read_text() for p in (ROOT / "platform" / "edge").glob("*.yaml"))
+    assert "catalogue" not in edge and "backstage" not in edge, "a route exists: put OIDC in front or turn the flag off"
+    base = (ROOT / "platform" / "backstage" / "base" / "catalogue.yaml").read_text()
+    assert "type: ClusterIP" in base
