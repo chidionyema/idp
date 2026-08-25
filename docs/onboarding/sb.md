@@ -20,6 +20,7 @@
 - `bin/sb root --json` shows the shadow root (`.estate/heads/shadow_main`): the DAG node cp8's sidecar last wrote, and whether the chain from there to genesis still verifies.
 - `sovereign.sidecar.dualread.read(conn, table, rowid)` runs a read against both the legacy DB and the DAG, records a `dualread` receipt, and returns the legacy answer; `dualread.max_overhead_ms` caps the added p95 cost.
 - `bin/sb consensus --json` reports the running legacy/DAG match rate; a mismatch also lands in the cockpit Inbox (`/api/inbox`) as a `consensus_mismatch` alert -- it never blocks the read or stops a service.
+- `bin/sb fork <name> --json` makes a zero-cost branch off production, under `fork.max_ms`; `bin/sb switch <name>` moves the working pointer, `bin/sb drop <name>` removes it (its DAG nodes and receipts stay archived). More than `fork.max_parallel` (default 3) open at once spills new forks to disk instead of memory -- a config key, not a code path.
 
 ## When it breaks
 

@@ -103,8 +103,9 @@ def get_or_create_key() -> tuple[bytes, str]:
     return bytes.fromhex(new_key), "software_file"
 
 
-def _lock_path() -> Path:
-    return config.SB_RECEIPTS.parent / (config.SB_RECEIPTS.name + ".lock")
+def _lock_path(receipts_path: Path | None = None) -> Path:
+    p = receipts_path or config.SB_RECEIPTS
+    return p.parent / (p.name + ".lock")
 
 
 def _head_anchor(counter: int, line_hash: str, key: bytes) -> dict[str, Any]:
@@ -113,34 +114,49 @@ def _head_anchor(counter: int, line_hash: str, key: bytes) -> dict[str, Any]:
     return {"counter": counter, "hash": line_hash, "sig": sig}
 
 
-def _write_head_anchor(anchor: dict[str, Any]) -> None:
+def _write_head_anchor(anchor: dict[str, Any], head_path: Path | None = None) -> None:
     """Called only from inside append()'s own lock, so this never races the
     next append. Written to a tmp file and moved into place with os.replace
     so a crash mid-write leaves the old anchor (a stale-but-valid anchor
     fails closed as "truncated", never a silent pass) rather than a
     half-written one."""
-    config.RECEIPTS_HEAD.parent.mkdir(parents=True, exist_ok=True)
-    tmp = config.RECEIPTS_HEAD.with_suffix(config.RECEIPTS_HEAD.suffix + ".tmp")
+    hp = head_path or config.RECEIPTS_HEAD
+    hp.parent.mkdir(parents=True, exist_ok=True)
+    tmp = hp.with_suffix(hp.suffix + ".tmp")
     tmp.write_text(json.dumps(anchor, sort_keys=True))
-    os.replace(tmp, config.RECEIPTS_HEAD)
+    os.replace(tmp, hp)
 
 
-def _read_head_anchor() -> dict[str, Any] | None:
-    if not config.RECEIPTS_HEAD.exists():
+def _read_head_anchor(head_path: Path | None = None) -> dict[str, Any] | None:
+    hp = head_path or config.RECEIPTS_HEAD
+    if not hp.exists():
         return None
     try:
-        return json.loads(config.RECEIPTS_HEAD.read_text())
+        return json.loads(hp.read_text())
     except (OSError, json.JSONDecodeError):
         return None
 
 
-def append(record: dict[str, Any]) -> dict[str, Any]:
+def append(
+    record: dict[str, Any],
+    receipts_path: Path | None = None,
+    head_path: Path | None = None,
+) -> dict[str, Any]:
     """Append one signed line. `record` carries the caller's fields
     (session_id, kind, by, text, step, status, task, runner, ts, and
     optionally state_hash); counter, prev_hash, hash, sig, backend are
-    computed here under the lock."""
-    config.SB_RECEIPTS.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = _lock_path()
+    computed here under the lock.
+
+    receipts_path/head_path default to production's config.SB_RECEIPTS/
+    config.RECEIPTS_HEAD -- every existing caller is unaffected. cp12
+    passes a fork's own pair so a fork's writes chain into their own
+    file, sharing nothing with production's chain except the same
+    signing key (get_or_create_key() is not itself forked -- a fork's
+    receipts are still verifiable, just never mixed with main's)."""
+    rp = receipts_path or config.SB_RECEIPTS
+    hp = head_path or config.RECEIPTS_HEAD
+    rp.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = _lock_path(rp)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with open(lock_path, "a") as lockf:
         fcntl.flock(lockf, fcntl.LOCK_EX)
@@ -148,8 +164,8 @@ def append(record: dict[str, Any]) -> dict[str, Any]:
             key, backend = get_or_create_key()
             prev_hash = GENESIS_HASH
             counter = 0
-            if config.SB_RECEIPTS.exists():
-                with open(config.SB_RECEIPTS) as f:
+            if rp.exists():
+                with open(rp) as f:
                     last_line = None
                     for raw_line in f:
                         raw_line = raw_line.strip()
@@ -170,9 +186,9 @@ def append(record: dict[str, Any]) -> dict[str, Any]:
             if record.get("signed"):
                 line["hw_sig"], line["hw_backend"] = HardwareTrustAnchor().sign(line_hash)
             line["sig"] = hmac.new(key, line_hash.encode(), hashlib.sha256).hexdigest()
-            with open(config.SB_RECEIPTS, "a") as out:
+            with open(rp, "a") as out:
                 out.write(json.dumps(line, sort_keys=True) + "\n")
-            _write_head_anchor(_head_anchor(counter, line_hash, key))
+            _write_head_anchor(_head_anchor(counter, line_hash, key), hp)
             return line
         finally:
             fcntl.flock(lockf, fcntl.LOCK_UN)
@@ -215,7 +231,7 @@ def episodes(kind: str | None = None) -> list[dict[str, Any]]:
     return out
 
 
-def verify(path: Path | None = None) -> dict[str, Any]:
+def verify(path: Path | None = None, head_path: Path | None = None) -> dict[str, Any]:
     """A hash chain proves nothing about entries missing from its own tail
     (see the module docstring): every prev_hash link among the rows that
     are still present can be perfectly intact while the last N rows were
@@ -249,7 +265,7 @@ def verify(path: Path | None = None) -> dict[str, Any]:
         expected_prev = row["hash"]
 
     last = rows[-1]
-    anchor = _read_head_anchor()
+    anchor = _read_head_anchor(head_path)
     if anchor is None:
         return {"ok": False, "count": len(rows), "first_broken_counter": None, "reason": "no_anchor"}
     expected_anchor = _head_anchor(int(last.get("counter", 0)), str(last.get("hash", "")), key)

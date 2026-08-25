@@ -99,12 +99,29 @@ class DBSidecar:
     features/sovereign-bus/cp8_db_sidecar.feature is INSERT-shaped and is
     covered exactly."""
 
-    def __init__(self, conn: sqlite3.Connection, table: str, dag_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        conn: sqlite3.Connection,
+        table: str,
+        dag_dir: Path | None = None,
+        head_path: Path | None = None,
+        receipts_path: Path | None = None,
+        receipts_head_path: Path | None = None,
+    ) -> None:
+        """head_path/receipts_path/receipts_head_path all default to
+        production's own (shadow_root.head_path(), config.SB_RECEIPTS,
+        config.RECEIPTS_HEAD) -- every existing caller is unaffected.
+        cp12's fork.attach_sidecar() passes a fork's own three files so a
+        fork's drain() advances that fork's root and chains into that
+        fork's own receipts, never production's."""
         if not _IDENT_RE.match(table):
             raise ValueError(f"not a safe table identifier: {table!r}")
         self._conn = conn
         self._table = table
         self._dag_dir = dag_dir or config.SIDECAR_DAG_DIR
+        self._head_path = head_path
+        self._receipts_path = receipts_path
+        self._receipts_head_path = receipts_head_path
         self._lock = threading.Lock()
         self.missed = 0
 
@@ -145,7 +162,11 @@ class DBSidecar:
                 self.missed = len(rows) - processed
                 return processed
             if self.missed:
-                receipts_mod.append({"kind": "sidecar_degraded", "table": self._table, "missed": self.missed})
+                receipts_mod.append(
+                    {"kind": "sidecar_degraded", "table": self._table, "missed": self.missed},
+                    self._receipts_path,
+                    self._receipts_head_path,
+                )
                 self.missed = 0
             return processed
 
@@ -188,7 +209,9 @@ class DBSidecar:
         (self._dag_dir / f"{node_hash}.json").write_text(json.dumps(body, sort_keys=True))
         (self._dag_dir / config.SIDECAR_HEAD_FILENAME).write_text(json.dumps({"hash": node_hash}, sort_keys=True))
         receipts_mod.append(
-            {"kind": "sidecar_write", "table": self._table, "node_hash": node_hash, "op": op, "rowid": rowid}
+            {"kind": "sidecar_write", "table": self._table, "node_hash": node_hash, "op": op, "rowid": rowid},
+            self._receipts_path,
+            self._receipts_head_path,
         )
         # cp9: the shadow root advances exactly once per drained write --
         # after the node + receipt it names both already exist, never
@@ -197,9 +220,12 @@ class DBSidecar:
         # fails, that must not re-queue the row (the write already
         # happened, above) or drain() would double-write the node on
         # retry, so it is swallowed here rather than propagated into
-        # drain()'s except OSError.
+        # drain()'s except OSError. self._head_path is None for
+        # production (update_head() then defaults to shadow_main itself);
+        # cp12's fork sidecars pass their own fork's head file so this
+        # advances that fork's root, never production's.
         try:
-            shadow_root.update_head(node_hash, self._dag_dir)
+            shadow_root.update_head(node_hash, self._dag_dir, self._head_path)
         except OSError:
             pass
 

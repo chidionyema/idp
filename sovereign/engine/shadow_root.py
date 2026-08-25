@@ -31,29 +31,39 @@ from sovereign import config
 GENESIS_NODE_HASH = "0" * config.RECEIPTS_HASH_HEX_LEN
 
 
-def head_path() -> Path:
-    return config.SHADOW_HEADS_DIR / config.SHADOW_HEAD_FILENAME
+def head_path(name: str | None = None) -> Path:
+    """`name` defaults to production's own shadow_main. cp12: a fork is a
+    second file under this same shadow.heads_dir, so head_path("staging")
+    is that fork's head pointer -- the identical file shape, in the
+    identical directory, at a different name."""
+    return config.SHADOW_HEADS_DIR / (name or config.SHADOW_HEAD_FILENAME)
 
 
-def update_head(node_hash: str, dag_dir: Path) -> None:
+def update_head(node_hash: str, dag_dir: Path, head_path_override: Path | None = None) -> None:
     """Called by cp8's DBSidecar right after it writes a DAG node --
     the same "never blocks the legacy write" contract applies here: this
     runs during drain(), after the legacy write already committed, so a
     failure here is a sidecar-side degradation, not a legacy-write
-    failure."""
-    hp = head_path()
+    failure.
+
+    head_path_override defaults to production's own head_path() --
+    every existing caller is unaffected. cp12 passes a fork's own head
+    file so a fork's writes advance that fork's root, never
+    shadow_main's ("production's root is unchanged" while "staging's
+    root advanced")."""
+    hp = head_path_override or head_path()
     hp.parent.mkdir(parents=True, exist_ok=True)
     tmp = hp.with_suffix(hp.suffix + ".tmp")
     tmp.write_text(json.dumps({"root": node_hash, "dag_dir": str(dag_dir)}, sort_keys=True))
     os.replace(tmp, hp)
 
 
-def verify() -> dict[str, Any]:
+def verify(head_path_override: Path | None = None) -> dict[str, Any]:
     """Returns {root, parent, nodes, verified} -- the exact shape
     `bin/sb root --json` reports. `nodes` counts every node walked from
     the head back to (but not including) genesis; `parent` is the root
     node's own prev_node_hash."""
-    hp = head_path()
+    hp = head_path_override or head_path()
     if not hp.exists():
         return {"root": None, "parent": None, "nodes": 0, "verified": False}
     try:
