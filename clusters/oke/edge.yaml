@@ -118,6 +118,12 @@ spec:
       kind: Deployment
       name: prospector-store-web
       namespace: prospector
+  postBuild:
+    substituteFrom:
+      # The Gateway's catalogue and auth listeners name the zone as ${ESTATE_ZONE} (prospector#734).
+      - kind: ConfigMap
+        name: estate-config
+
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
