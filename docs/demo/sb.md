@@ -64,3 +64,7 @@ If the DAG directory goes read-only mid-write the legacy write still lands; the 
     missed=1, no sidecar_write receipt yet
     (permissions restored)
     sidecar_degraded receipt: {"missed": 1, "table": "episodes"}
+
+## Phase 2 — dual-read router (cp10)
+
+Every read runs twice -- legacy DB, then the DAG walk from `shadow_main` -- and a `dualread` receipt records both hashes and both latencies. 1000 drained reads, measured 2026-08-25 on a disposable estate: p50 2.41ms, p95 4.57ms, p99 5.80ms overhead, all under `dualread.max_overhead_ms` (15ms default). An undrained row (write not yet drained into the DAG) is reported as a real mismatch, never a silent pass.
