@@ -85,3 +85,44 @@ Four things broke on the first `platform/oci` apply and are now in the config:
    re-run login and apply.
 
 Each apply is behind the spend guard; Always Free sizes are the founder's sign-off (R14).
+
+## The storefront (mumchimp.com), as wired on 2026-08-25
+
+What runs: `prospector-store-api` (.NET, SQLite on a 10 GiB block volume) and `prospector-store-web`
+(Next.js). The engine is not on the cluster: its core is rewritten next sprint.
+
+Where each piece lives:
+
+| Piece | File | Owner |
+|---|---|---|
+| Edge charts (Traefik, cert-manager, external-dns, Kyverno) | `platform/edge/` | idp |
+| Flux chain: CRDs -> edge -> prospector-platform -> prospector | `clusters/oke/edge.yaml` | idp |
+| Namespace, `ghcr-pull`, API secret files (sops) | `platform/prospector/`, `bin/idp-flux-bootstrap` | idp |
+| Deployments, Gateway, HTTPRoutes, ClusterIssuer, policies | `prospector/deploy/k8s/overlays/oke` | prospector |
+
+The API reads its secrets as files under `/var/run/secrets/prospector`, one file per key, from
+Secret `prospector-store-api-env`. To change one: `sops platform/prospector/store-api-env.sops.yaml`
+with `SOPS_AGE_KEY_FILE` pointing at the cluster key, then push; Flux applies it.
+
+DNS. The zone is on Cloudflare (123-reg holds only the registration). external-dns writes A
+records for the HTTPRoute hostnames from the Traefik load balancer address, with a TXT registry and
+`upsert-only`. It never edits a record it did not create, so the cutover from Fly is one manual
+step: delete the `www` and `api` CNAMEs and the apex A record in the Cloudflare dashboard, and
+external-dns creates the three within a minute. The token it needs is Secret `cloudflare-api-token`
+in namespace `edge`, key `CF_API_TOKEN`, scope Edit zone DNS on mumchimp.com; until it exists the
+external-dns pod stays Pending and `flux get hr -n edge` says so.
+
+Data. The last Fly volume is `~/backups/fly-teardown-2026-08-25/prospector-store-api.data.tgz`
+(not in git). Restore once, before the API's first start, with a pod that mounts the claim:
+
+```
+kubectl -n prospector run restore --image=docker.io/library/busybox:1.37 --restart=Never \
+  --overrides='{"spec":{"containers":[{"name":"r","image":"docker.io/library/busybox:1.37","command":["sleep","600"],"volumeMounts":[{"name":"d","mountPath":"/data"}]}],"volumes":[{"name":"d","persistentVolumeClaim":{"claimName":"prospector-store-api-data"}}]}}'
+kubectl -n prospector cp ~/backups/fly-teardown-2026-08-25/prospector-store-api.data.tgz restore:/tmp/d.tgz
+kubectl -n prospector exec restore -- sh -c 'tar xzf /tmp/d.tgz -C /data && chown -R 10001:10001 /data && ls -la /data'
+kubectl -n prospector delete pod restore
+```
+
+Not held anywhere after the Fly teardown, so off until re-issued: the Mailjet key pair (mail from
+the store) and the Google OAuth client (sign in with Google). The JWT signing key was minted fresh
+on 2026-08-25, so every session issued on Fly is invalid; users sign in again.
