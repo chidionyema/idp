@@ -6,9 +6,12 @@ set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 command -v envsubst >/dev/null || { echo "envsubst missing -- brew install gettext"; exit 2; }
 DEST="$HOME/Library/LaunchAgents"; mkdir -p "$DEST"
+# launchd does not search PATH for ProgramArguments[0]; a bare name exits 78 with an empty
+# log (2026-08-25, ai.estate.temporal). Binaries are resolved here, once, per machine.
+TEMPORAL_BIN="$(command -v temporal || true)"
 for t in "$IDP"/launchd/*.plist.tmpl; do
   name="$(basename "${t%.tmpl}")"
-  IDP="$IDP" HOME="$HOME" PATH="$PATH" envsubst '${IDP} ${HOME} ${PATH}' < "$t" > "$DEST/$name"
+  IDP="$IDP" HOME="$HOME" PATH="$PATH" TEMPORAL_BIN="$TEMPORAL_BIN" envsubst '${IDP} ${HOME} ${PATH} ${TEMPORAL_BIN}' < "$t" > "$DEST/$name"
   plutil -lint "$DEST/$name" >/dev/null
   label="${name%.plist}"
   launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
