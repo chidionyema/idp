@@ -20,16 +20,31 @@
 # here: they are git-ignored and never leave the machine. `gitleaks protect
 # --staged` is the pre-commit fence for what is about to become the codebase.
 #
-#   estate-security-scan            run all three, print the receipt
-#   estate-security-scan --quiet    receipt only, no tool chatter
+#   estate-security-scan                 run all checks on this checkout, print the receipt
+#   estate-security-scan --quiet         receipt only, no tool chatter
+#   estate-security-scan --source DIR    scan another repository (the composite action
+#                                        .github/actions/security-scan runs it this way
+#                                        from every active estate repo)
+#
+# Checks 2 and 3 adapt to the repository: pip-audit runs only where a tracked
+# requirements*.txt exists, npm audit only where a tracked package-lock.json
+# exists, and the policy gate only where bin/security-policy-gate exists. A
+# check with nothing to scan prints "ok ... none tracked", never BLIND.
 set -uo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$IDP" || exit 3
-quiet=0; [ "${1:-}" = "--quiet" ] && quiet=1
+SRC="$IDP"; quiet=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --quiet) quiet=1 ;;
+    --source) SRC="$(cd "$2" && pwd)" || exit 3; shift ;;
+    *) echo "usage: estate-security-scan [--quiet] [--source DIR]" >&2; exit 3 ;;
+  esac; shift
+done
+cd "$SRC" || exit 3
 fail=0; blind=0
 say() { printf '%s\n' "$*"; }
 
-say "SECURITY-SCAN $(date -u +%Y-%m-%dT%H:%M:%SZ) commit=$(git rev-parse HEAD) tree=$(git status --porcelain | wc -l | tr -d ' ')-dirty-paths"
+say "SECURITY-SCAN $(date -u +%Y-%m-%dT%H:%M:%SZ) commit=$(git rev-parse HEAD) tree=$(git status --porcelain | grep -vc '^?? .estate-idp/')-dirty-paths"
 
 # 1. secrets, over git history: every tracked byte in every commit.
 if command -v gitleaks >/dev/null; then
@@ -66,8 +81,30 @@ else
   fi
 fi
 
+# 2b. Node dependencies: every tracked package-lock.json, npm audit at High+.
+locks=$(git ls-files | grep -E '(^|/)package-lock\.json$')
+if [ -z "$locks" ]; then
+  say "ok    npm       no package-lock.json tracked"
+elif ! command -v npm >/dev/null; then
+  say "BLIND npm       npm not on PATH"; blind=1
+else
+  nfail=0
+  for l in $locks; do
+    d=$(dirname "$l")
+    if ! out=$(cd "$d" && timeout 120 npm audit --package-lock-only --audit-level=high 2>&1); then
+      rc=$?
+      if [ $rc = 124 ]; then say "BLIND npm       $d: npm audit exceeded 120s (network); rerun"; blind=1
+      else say "FAIL  npm       $d: high or critical advisories"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'; nfail=1; fi
+    fi
+  done
+  [ $nfail = 1 ] && fail=1
+  [ $nfail = 0 ] && say "ok    npm       npm audit over $(echo "$locks" | wc -l | tr -d ' ') package-lock.json: no high or critical advisories"
+fi
+
 # 3. policy: every control row on the security policy page names a proof that exists.
-if out=$(python3 bin/security-policy-gate 2>&1); then
+if [ ! -x bin/security-policy-gate ]; then
+  say "ok    policy    no bin/security-policy-gate in this repository (idp carries the estate policy)"
+elif out=$(python3 bin/security-policy-gate 2>&1); then
   say "ok    policy    security-policy-gate: every control row has a proof"
 else
   say "FAIL  policy    security-policy-gate"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -10 | sed 's/^/      /'; fail=1
