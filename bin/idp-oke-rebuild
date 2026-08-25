@@ -29,7 +29,7 @@ step() { # name, then the command; prints one receipt line, records failures, ne
   local name="$1"; shift; local s out rc; s=$(date +%s)
   out=$("$@" 2>&1); rc=$?
   printf '%-5s %-18s rc=%-3s %4ss  %s\n' "$([ $rc -eq 0 ] && echo ok || echo FAIL)" "$name" "$rc" "$(( $(date +%s) - s ))" "$(printf %s "$out" | tail -1 | cut -c1-100)"
-  [ $rc -eq 0 ] || { FAILED="$FAILED $name"; printf %s "$out" | tail -8 | sed 's/^/      | /'; }   # the failing step's own words, not a 100-char tail
+  [ $rc -eq 0 ] || { FAILED="$FAILED $name"; printf '%s\n' "$out" | tail -8 | sed 's/^/      | /'; }   # the failing step's own words, not a 100-char tail
   return $rc
 }
 blind() { printf 'BLIND %-18s %s\n' "$1" "$2"; FAILED="$FAILED $1"; }
