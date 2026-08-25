@@ -30,9 +30,17 @@ TENANCY_NAME="${OCI_TENANCY_NAME:-$(vget OCI_TENANCY_NAME || true)}"
 [ -n "$TENANCY_NAME" ] || { echo "need OCI_TENANCY_NAME (vault or env): the console tenancy name"; exit 2; }
 
 PROFILE=estate-bootstrap
-echo "login   browser opens once; sign in as the tenancy owner (token lives 1 hour)"
-oci session authenticate --region "$REGION" --tenancy-name "$TENANCY_NAME" --profile-name "$PROFILE" >/dev/null
 O=(--auth security_token --profile "$PROFILE" --region "$REGION")
+if oci iam region-subscription list "${O[@]}" >/dev/null 2>&1; then echo "login   session token still valid, no browser needed"
+else
+  echo "login   browser opens once; sign in as the tenancy owner (token lives 1 hour)"
+  oci session authenticate --region "$REGION" --tenancy-name "$TENANCY_NAME" --profile-name "$PROFILE" >/dev/null
+fi
+# IDCS-backed tenancies refuse a user without a primary email (incident 2026-08-25:
+# error.identity.user.primaryEmailNotSpecified). The address is an identifier; Oracle mails it a
+# welcome message, nothing else depends on it.
+SVC_EMAIL="${OCI_SERVICE_USER_EMAIL:-$(vget OCI_SERVICE_USER_EMAIL || true)}"
+[ -n "$SVC_EMAIL" ] || { echo "need OCI_SERVICE_USER_EMAIL (vault or env): mailbox for the estate-tofu service user"; exit 2; }
 
 # --- IAM, idempotent ------------------------------------------------------------------
 ensure() { # kind name -> ocid   (compartment|group|user)
@@ -43,8 +51,10 @@ ensure() { # kind name -> ocid   (compartment|group|user)
     group) id=$(oci iam group list "${O[@]}" --compartment-id "$TENANCY" --name "$name" --query 'data[0].id' --raw-output 2>/dev/null || true)
       [ -n "$id" ] && [ "$id" != null ] || id=$(oci iam group create "${O[@]}" --compartment-id "$TENANCY" --name "$name" --description "may manage the estate compartment only" --query data.id --raw-output);;
     user) id=$(oci iam user list "${O[@]}" --compartment-id "$TENANCY" --name "$name" --query 'data[0].id' --raw-output 2>/dev/null || true)
-      [ -n "$id" ] && [ "$id" != null ] || id=$(oci iam user create "${O[@]}" --compartment-id "$TENANCY" --name "$name" --description "OpenTofu service user; API key only, no console" --query data.id --raw-output);;
-  esac; echo "$id"
+      [ -n "$id" ] && [ "$id" != null ] || id=$(oci iam user create "${O[@]}" --compartment-id "$TENANCY" --name "$name" --email "$SVC_EMAIL" --description "OpenTofu service user; API key only, no console" --query data.id --raw-output);;
+  esac
+  [ -n "$id" ] && [ "$id" != null ] || { echo "FAIL    $kind $name: no OCID returned" >&2; return 1; }
+  echo "$id"
 }
 COMP=$(ensure compartment estate);   echo "iam     compartment estate"
 GROUP=$(ensure group estate-operators); echo "iam     group estate-operators"
