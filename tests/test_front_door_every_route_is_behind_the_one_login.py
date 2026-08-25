@@ -17,6 +17,7 @@ import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ESTATE_CODE = pathlib.Path(os.environ.get("ESTATE_CODE", ROOT.parent))
+TRAEFIK_HTTPS_PORT = 8443  # the chart's websecure entrypoint; platform/edge/traefik.yaml keeps it
 EDGE = ESTATE_CODE / "prospector-main" / "deploy" / "k8s" / "base" / "edge.yaml"
 
 
@@ -68,6 +69,10 @@ def test_every_section_name_is_a_listener_on_the_shared_gateway(f, route):
         assert l["allowedRoutes"]["namespaces"]["from"] == "Selector", f"{p['sectionName']}: routes from other namespaces not allowed"
         host = route["spec"]["hostnames"][0].split(".")[0]
         assert l["hostname"].startswith(host + "."), f"{p['sectionName']} hostname {l['hostname']} != {host}.*"
+        # Live 2026-08-26: prospector#734 added these listeners on port 443 and Traefik reported
+        # PortUnavailable, because its entrypoints are 8000/8443 on every cluster (idp
+        # platform/edge/traefik.yaml) and the overlay patched ports by listener index.
+        assert l["port"] == TRAEFIK_HTTPS_PORT, f"{p['sectionName']}: port {l['port']} is no Traefik entrypoint"
 
 
 def test_the_unguarded_shape_is_refused():
