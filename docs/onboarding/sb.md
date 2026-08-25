@@ -20,6 +20,7 @@
 - `bin/sb root --json` shows the shadow root (`.estate/heads/shadow_main`): the DAG node cp8's sidecar last wrote, and whether the chain from there to genesis still verifies.
 - `sovereign.sidecar.dualread.read(conn, table, rowid)` runs a read against both the legacy DB and the DAG, records a `dualread` receipt, and returns the legacy answer; `dualread.max_overhead_ms` caps the added p95 cost.
 - `bin/sb consensus --json` reports the running legacy/DAG match rate; a mismatch also lands in the cockpit Inbox (`/api/inbox`) as a `consensus_mismatch` alert -- it never blocks the read or stops a service.
+- `bin/sb flip --by <who> --signed --json` chmods the legacy DB read-only and records a signed receipt naming the DAG root and the file's own sha256; `bin/sb flip --rollback --by <who> --signed --json` restores write access, refusing (`FlipError`) if that hash no longer matches -- a legacy file changed while flipped is never rolled back onto silently.
 
 ## When it breaks
 

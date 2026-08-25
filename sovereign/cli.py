@@ -115,6 +115,23 @@ def cmd_consensus(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_flip(args: argparse.Namespace) -> int:
+    """cp13: `sb flip --by <who> --signed` sets the legacy DB read-only
+    and signs one "flip" receipt; `sb flip --rollback --by <who> --signed`
+    restores write access if nothing wrote to the file while flipped."""
+    from sovereign.engine import flip
+
+    try:
+        if args.rollback:
+            _emit(flip.rollback(by=args.by, signed=args.signed), args.json)
+        else:
+            _emit(flip.flip(by=args.by, signed=args.signed), args.json)
+        return 0
+    except flip.FlipError as exc:
+        print(f"flip refused: {exc}", file=sys.stderr)
+        return config.CLI_EXIT_USAGE_ERROR
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     res = asyncio.run(engine_client.list_sessions())
     _emit(res, args.json)
@@ -383,6 +400,13 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("consensus", help="cp11 -- legacy versus DAG dual-read match rate")
     _add_json(p)
     p.set_defaults(func=cmd_consensus)
+
+    p = sub.add_parser("flip", help="cp13 -- flip the DAG to primary, legacy DB to read-only (or --rollback)")
+    p.add_argument("--rollback", action="store_true")
+    p.add_argument("--by", required=True)
+    p.add_argument("--signed", action="store_true")
+    _add_json(p)
+    p.set_defaults(func=cmd_flip)
 
     p = sub.add_parser("list", help="list sessions")
     _add_json(p)
