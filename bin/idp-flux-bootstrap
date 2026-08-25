@@ -19,8 +19,9 @@ oci ce cluster create-kubeconfig --cluster-id "$CLUSTER" --file "$KUBECONFIG" --
 chmod 600 "$KUBECONFIG"
 kubectl get --raw /readyz >/dev/null && echo "ok      apiserver ready"
 kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-kubectl -n flux-system create secret generic sops-age --from-file=age.agekey="$SOPS_AGE_KEY_FILE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-echo "ok      sops-age secret in flux-system"
+# crew#227 CP3, 2026-08-25: the last sops file left platform/ (idp#120); workload secrets come from
+# OCI Vault through External Secrets. The age key never enters the cluster again.
+kubectl -n flux-system delete secret sops-age --ignore-not-found >/dev/null && echo "ok      no sops-age secret in flux-system (secrets come from OCI Vault)"
 # crew#227 CP3: the ClusterSecretStore (platform/secret-store) reads the vault OCID and region from
 # this ConfigMap through Flux postBuild substitution, so no tenancy identifier is typed in git.
 VAULT_ID=$(cd "$IDP/platform/oci" && tofu output -raw vault_id 2>/dev/null || true)

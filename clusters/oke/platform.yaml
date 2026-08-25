@@ -1,6 +1,6 @@
 # ADR 0004 step 3. `flux bootstrap github --path clusters/oke` writes flux-system/ beside this
-# file; everything below is what Flux then reconciles. Secrets are sops+age files decrypted in
-# cluster by the `sops-age` Secret that bin/idp-flux-bootstrap creates from the vault key.
+# file; everything below is what Flux then reconciles. Secrets reach the
+# cluster from OCI Vault through External Secrets (platform/secret-store); no sops key in cluster.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -15,10 +15,6 @@ spec:
   prune: true
   wait: true
   timeout: 5m
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
