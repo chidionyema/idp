@@ -77,3 +77,22 @@ A dual-read mismatch is an alert, never a freeze -- one `consensus_mismatch` lin
     {"matches": 1, "mismatches": 1, "rate": 0.5, "reads": 2}
     $ cat $ESTATE_HOME/alerts/inbox.jsonl
     {"kind": "consensus_mismatch", "table": "episodes", "rowid": 2, "query": {"table": "episodes", "rowid": 2}, "legacy_hash": "69d8071…", "dag_hash": "bf81b47…", "ts": 1787631765.74}
+
+## Phase 2 — projection views (cp14)
+
+`sb rebuild` deletes nothing itself but always replays the whole DAG from genesis and rewrites the projection store -- a plain JSON file keyed by table then rowid, `projection.store_path`. Every read the store answers came from the DAG, never from a copy trusted to survive on its own. Measured 2026-08-25 on a disposable estate, two rows inserted and drained:
+
+    $ bin/sb rebuild --by founder --json
+    {"root": "0f49efca8af8c8992712f0b135664864630cbc7ba7afc1e9387d84c3970473f0", "rows": 2, "tables": ["episodes"], "verified": true}
+    $ rm $ESTATE_HOME/sovereign/projection.json && bin/sb rebuild --by founder --json
+    {"root": "0f49efca8af8c8992712f0b135664864630cbc7ba7afc1e9387d84c3970473f0", "rows": 2, "tables": ["episodes"], "verified": true}
+
+Same root both times -- deleting and rebuilding the store is deterministic, exactly "the views match the root hash" the feature file names.
+
+The boot check (`sb up`, before temporal/the worker start) compares the store's own recorded root against the current DAG head and rebuilds automatically on any mismatch, writing a `"[✓] REBUILD | root:<hash>"` receipt:
+
+    $ # a row lands in the DAG without a rebuild
+    read before boot: None
+    $ # ensure_fresh() is what `sb up` calls at boot
+    ensure_fresh (boot check): {'root': '3c706a84…', 'verified': True, 'tables': ['episodes'], 'rows': 3, 'rebuilt': True}
+    read after boot: {'id': 'c', 'lane': 'ops', 'note': 'n3'}

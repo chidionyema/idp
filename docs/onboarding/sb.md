@@ -20,6 +20,7 @@
 - `bin/sb root --json` shows the shadow root (`.estate/heads/shadow_main`): the DAG node cp8's sidecar last wrote, and whether the chain from there to genesis still verifies.
 - `sovereign.sidecar.dualread.read(conn, table, rowid)` runs a read against both the legacy DB and the DAG, records a `dualread` receipt, and returns the legacy answer; `dualread.max_overhead_ms` caps the added p95 cost.
 - `bin/sb consensus --json` reports the running legacy/DAG match rate; a mismatch also lands in the cockpit Inbox (`/api/inbox`) as a `consensus_mismatch` alert -- it never blocks the read or stops a service.
+- `bin/sb rebuild --by <who> --json` replays the whole DAG from genesis and rewrites the projection store (`projection.store_path`); `sb up` runs the same check at boot and rebuilds automatically whenever the store's own root has fallen behind the current DAG head.
 
 ## When it breaks
 
