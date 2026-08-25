@@ -18,13 +18,17 @@ receivers:
     protocols:
       http:
         endpoint: ${env:OTEL_OTLP_HTTP_ENDPOINT}
-  kubeletstats: {}            # layer 4: pod CPU throttling, memory, restarts   (CP3)
-  k8s_cluster: {}             # layer 4: OOMKills, ImagePullBackOff, readiness   (CP3)
-  postgresql: {}              # layer 3: deadlocks, pool saturation, slow queries (CP3)
-  prometheus: {}              # layer 3: Flux reconcile latency, drift            (CP3)
-  github: {}                  # layer 3: Actions queue depth, step time, retries  (CP3)
-  # layer 2 (ingress, Cloudflare Logpush, Ephemeral Library) arrives as OTLP   (CP4)
-  # layer 5 (founder approvals, alert click-through) arrives as OTLP events     (CP4)
+  # Receivers below are added by the crew#258 checkpoint that configures them.
+  # A receiver with an empty config makes the collector refuse to start, so
+  # none is declared before it is wired. Planned keys (the contract with
+  # crew science/sources.json `receiver`):
+  #   kubeletstats  layer 4: pod CPU throttling, memory, restarts        CP3
+  #   k8s_cluster   layer 4: OOMKills, ImagePullBackOff, readiness        CP3
+  #   postgresql    layer 3: deadlocks, pool saturation, slow queries     CP3
+  #   prometheus    layer 3: Flux reconcile latency, drift                CP3
+  #   github        layer 3: Actions queue depth, step time, retries      CP3
+  #   layer 2 (ingress, Cloudflare Logpush, Ephemeral Library) via otlp   CP4
+  #   layer 5 (founder approvals, alert click-through) via otlp events    CP4
 
 processors:
   memory_limiter:
@@ -48,7 +52,7 @@ service:
       processors: [memory_limiter, batch]
       exporters: [otlphttp/signoz, otlphttp/langfuse]
     metrics:
-      receivers: [otlp, kubeletstats, k8s_cluster, postgresql, prometheus, github]
+      receivers: [otlp]
       processors: [memory_limiter, batch]
       exporters: [otlphttp/signoz]
     logs:
