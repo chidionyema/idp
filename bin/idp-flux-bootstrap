@@ -4,6 +4,7 @@
 # re-applies the same components. Needs bin/idp-oci-login to have run (kubeconfig comes from
 # the OKE cluster id in platform/oci state) and the vault entries GITHUB_TOKEN and the age key.
 set -euo pipefail
+export SUPPRESS_LABEL_WARNING=True
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 VAULT="${ESTATE_SECRETS:-$(dirname "$IDP")/estate-secrets}"
 export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
