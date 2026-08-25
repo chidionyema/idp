@@ -13,6 +13,12 @@ spec:
     name: flux-system
   path: ./platform/backstage/overlays/oke
   prune: true
+  postBuild:
+    substituteFrom:
+      # ESTATE_ZONE (idp#140): the zone is one value in clusters/oke/estate-config.yaml; not
+      # optional, a missing ConfigMap must fail the row rather than publish '${ESTATE_ZONE}'.
+      - kind: ConfigMap
+        name: estate-config
   wait: true
   timeout: 5m
   healthChecks:
@@ -90,3 +96,34 @@ spec:
       kind: HelmRelease
       name: signoz
       namespace: observability
+---
+# The estate's one login (ADR 0003, crew#269). After edge (Gateway, cert-manager, Traefik CRD
+# provider) and secret-store (the vault). Health-checked at 10m like every other row.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: identity
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/identity
+  prune: true
+  dependsOn:
+    - name: edge
+    - name: secret-store
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: authelia
+      namespace: identity
+  postBuild:
+    substituteFrom:
+      # ESTATE_ZONE (idp#140): the zone is one value in clusters/oke/estate-config.yaml; not
+      # optional, a missing ConfigMap must fail the row rather than publish '${ESTATE_ZONE}'.
+      - kind: ConfigMap
+        name: estate-config

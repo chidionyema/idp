@@ -1,0 +1,35 @@
+# The catalogue's one hostname (crew#269): the founder never asks for a URL again. Every request
+# is subrequested to Authelia first (ADR 0003); Traefik's ForwardAuth is the ExtensionRef filter
+# and must live in this namespace (Traefik Gateway API reference, read 2026-08-25).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: authelia-forward-auth
+  namespace: backstage
+spec:
+  forwardAuth:
+    address: http://authelia.identity.svc.cluster.local/api/authz/forward-auth
+    authResponseHeaders: [Remote-User, Remote-Groups, Remote-Name, Remote-Email]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: catalogue
+  namespace: backstage
+spec:
+  parentRefs:
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-catalogue
+  hostnames:
+    - "catalogue.${ESTATE_ZONE}"
+  rules:
+    - filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: authelia-forward-auth
+      backendRefs:
+        - name: catalogue
+          port: 3100
