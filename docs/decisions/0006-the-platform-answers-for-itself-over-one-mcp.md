@@ -2,9 +2,9 @@
 
 - Status: DECIDED 2026-08-25. Founder: "the platform should be self aware ... it has all the maps
   and internal state to be able to answer any question about itself ... one interface, MCP or
-  otherwise, where you could just query and it responds accurately." Tracked in crew as the
-  self-aware platform ticket (filed the same day; the checkpoints live in
-  `features/self-aware-platform/`).
+  otherwise, where you could just query and it responds accurately." Tracked as crew#216
+  (https://github.com/chidionyema/crew/issues/216); the checkpoints live in
+  `features/self-aware-platform/`.
 - Date: 2026-08-25
 - Deciders: founder (asked), session 130c903b (recorded)
 - Affects: `mcp/` (the estate MCP server), `crew/STATE.md` (the hourly snapshot), the Sovereign Bus
