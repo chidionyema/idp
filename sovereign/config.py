@@ -12,9 +12,11 @@ resolved snapshot for convenience (recomputed at import time only).
 from __future__ import annotations
 
 import ast
+import fcntl
 import json
 import os
 import socket
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -424,6 +426,24 @@ def canonical_json(d: dict) -> bytes:
     so write-time and verify-time can never disagree (cp19)."""
     return json.dumps(d, sort_keys=True, separators=RECEIPTS_JSON_SEPARATORS).encode()
 ESTATE_ALERT_INBOX: Path = Path(_R["estate.alert_inbox"].value)
+
+
+def append_alert(obj: dict) -> None:
+    """cp11: appends one JSON line to ESTATE_ALERT_INBOX, the file the
+    cockpit's `/api/inbox` already tails (sovereign/cockpit/server.py).
+    File-locked the same way sovereign.engine.receipts.append() locks the
+    receipt file, since more than one process (worker, CLI) can append
+    here. Alerts are informational, not the signed receipt chain -- no
+    hash, no signature -- so a lost alert is a missed notification, never
+    a broken audit trail."""
+    ESTATE_ALERT_INBOX.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps({**obj, "ts": time.time()}, sort_keys=True, default=str)
+    with open(ESTATE_ALERT_INBOX, "a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            f.write(line + "\n")
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 TELEGRAM_BOT_TOKEN: str | None = _R["telegram.bot_token"].value
 TELEGRAM_HOME_CHANNEL: str | None = _R["telegram.home_channel"].value
