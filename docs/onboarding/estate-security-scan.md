@@ -2,6 +2,13 @@
 
 ## What it is
 
+`--source DIR` scans another repository; the composite action
+`.github/actions/security-scan` runs it that way from every active estate
+repository. Checks adapt to what the repository tracks: pip-audit only where a
+`requirements*.txt` exists, `npm audit --audit-level=high` only where a
+`package-lock.json` exists, the policy gate only where `bin/security-policy-gate`
+exists. Nothing to scan prints `ok ... none tracked`, never BLIND.
+
 `bin/estate-security-scan [--quiet]` runs three checks and prints one receipt
 with a timestamp and commit hash:
 

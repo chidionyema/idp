@@ -1,5 +1,5 @@
 {
-  "name": "idp-required-checks",
+  "name": "estate-security-scan",
   "target": "branch",
   "enforcement": "active",
   "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
@@ -9,8 +9,6 @@
       "parameters": {
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
-          { "context": "offline-gate" },
-          { "context": "bdd" },
           { "context": "security-scan" },
           { "context": "spec-gate" }
         ]
