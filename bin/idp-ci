@@ -448,6 +448,8 @@ else say "FAIL  binds    bin/bind-audit --selftest"; printf '%s\n' "$out" | sed 
 if out=$("$MPY" "$IDP/tests/test_cp1_estate_inventory.py" 2>&1); then
   say "ok    cp1      $(printf '%s' "$out" | grep -c '^ok    ') property/incident checks pass (crew#216)"
 else say "FAIL  cp1      tests/test_cp1_estate_inventory.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+if out=$("$MPY" "$IDP/tests/test_estate_diagram.py" 2>&1); then say "ok    diagram  tests/test_estate_diagram.py"
+else say "FAIL  diagram  tests/test_estate_diagram.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
 # 9. crew#216 CP2: the get_workload_state(app) MCP tool. Property (byte ceiling holds
 #    over >=500 (dependency-count x metric-sample-count x ceiling) combinations) and

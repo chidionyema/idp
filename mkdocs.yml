@@ -7,7 +7,9 @@ plugins:
 nav:
   - Home: index.md
   - Definition of Done: policy/definition-of-done.md
-  - Architecture: architecture/index.md
+  - Architecture:
+      - architecture/index.md
+      - Live estate: architecture/live.md
   - Decisions:
       - 0001 Gateway API is the routing standard: decisions/0001-gateway-api-is-the-routing-standard.md
       - 0002 Documentation is code: decisions/0002-documentation-is-code-and-the-portal-renders-it.md
@@ -44,6 +46,7 @@ nav:
       - Estate security scan: demo/estate-security-scan.md
       - Estate security rollout: demo/estate-security-rollout.md
       - Spec gate: demo/spec-gate.md
+      - Estate diagram: demo/estate-diagram.md
       - owner-account: demo/owner-account.md
       - static-secret: demo/static-secret.md
       - Bind audit: demo/bind-audit.md
@@ -81,6 +84,7 @@ nav:
       - Estate security scan: onboarding/estate-security-scan.md
       - Estate security rollout: onboarding/estate-security-rollout.md
       - Spec gate: onboarding/spec-gate.md
+      - Estate diagram: onboarding/estate-diagram.md
       - owner-account: onboarding/owner-account.md
       - static-secret: onboarding/static-secret.md
       - Bind audit: onboarding/bind-audit.md

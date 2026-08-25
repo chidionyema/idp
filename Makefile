@@ -1,7 +1,8 @@
 
 .PHONY: diagrams
-diagrams: ## Re-render the C4 views from architecture/workspace.dsl
+diagrams: ## Re-render the C4 views from architecture/workspace.dsl and the live page from the catalogue
 	./architecture/render
+	./bin/estate-diagram
 
 .PHONY: cluster-up cluster-down cluster-status catalogue-deploy spire-up spire-status spire-proof
 cluster-up: ## Create the local k3d cluster from platform/k3d/estate.yaml
