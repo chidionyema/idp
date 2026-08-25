@@ -308,7 +308,9 @@ else say "FAIL  law32    a feature shipped without demo/onboarding, or a page is
 # launchd templates (idp#49 incident): every launchd/*.plist.tmpl renders to a plist that parses.
 if python3 "$IDP/bin/plist-gate" >/dev/null 2>&1 \
    && ! python3 "$IDP/bin/plist-gate" tests/fixtures/plist/bad.plist.tmpl >/dev/null 2>&1 \
-   && ! python3 "$IDP/bin/plist-gate" tests/fixtures/plist/bare-argv.plist.tmpl >/dev/null 2>&1; then
+   && ! python3 "$IDP/bin/plist-gate" tests/fixtures/plist/bare-argv.plist.tmpl >/dev/null 2>&1 \
+   && ! python3 "$IDP/bin/plist-gate" tests/fixtures/plist/orphaned-children.plist.tmpl >/dev/null 2>&1 \
+   && python3 "$IDP/bin/plist-gate" tests/fixtures/plist/abandoned-children.plist.tmpl >/dev/null 2>&1; then
   say "ok    plist    every launchd template renders to a plist that parses and names its job; gate proved both ways"
 else say "FAIL  plist    a launchd template does not render to a valid plist, or the gate does not discriminate"; python3 "$IDP/bin/plist-gate" | sed 's/^/      /'; fail=1; fi
 
