@@ -49,3 +49,18 @@ The cockpit serves the same sessions the CLI lists, and refuses a bad Telegram s
     healthz: ok
     sessions match sb list
     bad initData -> 401
+
+## Phase 2 — the DB sidecar and the shadow root (cp8, cp9)
+
+Recorded 2026-08-25 on a disposable estate, `sidecar.target` pointed at a throwaway sqlite file. The sidecar sits on maestro's `episodes` table (`sidecar.target` in `bin/sb config --json`) via `sovereign.sidecar.attach(conn, "episodes")`; every drained write appends one Merkle DAG node, one `sidecar_write` receipt, and advances `.estate/heads/shadow_main`:
+
+    $ bin/sb config --json | python3 -c "import json,sys; print(json.load(sys.stdin)['sidecar.target'])"
+    /Users/…/.maestro/experience_graph.db#episodes
+    $ bin/sb root --json
+    {"nodes": 3, "parent": "d06f199642e…", "root": "62c576b6692…", "verified": true}
+
+If the DAG directory goes read-only mid-write the legacy write still lands; the sidecar catches up and flags the gap once it can write again:
+
+    missed=1, no sidecar_write receipt yet
+    (permissions restored)
+    sidecar_degraded receipt: {"missed": 1, "table": "episodes"}
