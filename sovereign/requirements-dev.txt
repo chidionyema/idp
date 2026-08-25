@@ -7,3 +7,4 @@
 # runner. behave would be a second runner with its own reporting.
 pytest>=8.0
 pytest-bdd>=8.0
+-r requirements.txt

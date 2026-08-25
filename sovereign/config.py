@@ -291,6 +291,13 @@ try:
 except ImportError:
     pass
 
+try:
+    from sovereign.intake.config_keys import INTAKE_KEYS
+
+    _merge_external_keys(INTAKE_KEYS)
+except ImportError:
+    pass
+
 
 _SECRET_LAST_SEGMENTS = ("token", "secret", "password", "api_key")
 
