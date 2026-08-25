@@ -43,7 +43,19 @@ import os
 import re
 
 import yaml
-from datasette import hookimpl
+
+# datasette is present in the estate-mcp image (estate-mcp.Dockerfile) but not in the
+# offline CI venv that runs tests/test_cp1_estate_inventory.py (bin/idp-ci) -- that gate
+# has no docker daemon and installs nothing beyond this repo's own .venv, so it must be
+# able to import this module for the pure functions alone. hookimpl falls back to an
+# identity decorator when datasette is absent: register_mcp_tools still defines fine,
+# it is simply never called by a plugin manager that does not exist to call it. Where it
+# actually runs -- inside the container -- the real decorator is always the one imported.
+try:
+    from datasette import hookimpl
+except ImportError:  # pragma: no cover - exercised only in the datasette-less CI venv
+    def hookimpl(fn):
+        return fn
 
 _STATE_MD_TS_RE = re.compile(r"\*\*Generated (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) UTC\*\*")
 
