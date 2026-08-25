@@ -1,4 +1,5 @@
-# Edge row. Gateway API CRDs come from the upstream release tag, then the three platform charts,
+# Edge row. Gateway API CRDs come from the upstream release tag (the experimental channel:
+# Traefik's provider lists TLSRoute and TCPRoute and never accepts the GatewayClass without them), then the three platform charts,
 # then prospector's own manifests from its repo. Each step waits for the one before it.
 # external-dns is a leaf (Kustomization dns, below): nothing waits on it, because it cannot be
 # Ready until the Cloudflare token exists, and the shop must not be held behind DNS.
@@ -26,7 +27,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: gateway-api
-  path: ./config/crd
+  path: ./config/crd/experimental
   prune: false
   wait: true
 ---
