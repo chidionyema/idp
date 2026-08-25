@@ -56,3 +56,19 @@ variable "cluster_name" {
   type    = string
   default = "estate"
 }
+
+variable "oci_auth" {
+  description = "Provider auth: APIKey on a laptop (bin/idp-oci-login), SecurityToken under GitHub OIDC."
+  type        = string
+  default     = "APIKey"
+  validation {
+    condition     = contains(["APIKey", "SecurityToken"], var.oci_auth)
+    error_message = "oci_auth is APIKey or SecurityToken."
+  }
+}
+
+variable "oci_profile" {
+  description = "Profile in ~/.oci/config that holds the credential."
+  type        = string
+  default     = "DEFAULT"
+}

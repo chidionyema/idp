@@ -67,8 +67,18 @@ nodes_ready() { local o n; o=$($K get nodes --no-headers) || return 1; n=$(print
 flux_ready() { local o n bad; o=$($K get kustomizations -A --no-headers) || return 1; n=$(printf '%s\n' "$o" | grep -c '^[^ ]'); [ "$n" -ge 1 ] || { echo "0 Kustomizations"; return 1; }; bad=$(printf '%s\n' "$o" | awk '$4!="True"{print $2}' | tr '\n' ' '); [ -z "$bad" ] && echo "$n Kustomizations ready" || { echo "not ready: $bad"; return 1; }; }
 site_200()  { local c; c=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' "https://$HOST/") && [ "$c" = 200 ] && echo "https://$HOST/ $c, cert valid" || { echo "https://$HOST/ -> ${c:-no answer}"; return 1; }; }
 packs()     { local n; n=$(curl -sS -m 20 "https://$API/catalog" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(len(d) if isinstance(d,list) else len(d.get("packs",d)))') && [ "$n" = "$WANT_PACKS" ] && echo "$n packs" || { echo "catalog: ${n:-unreadable}, want $WANT_PACKS"; return 1; }; }
-step nodes nodes_ready
-step flux flux_ready
+# A GitHub runner is outside control_plane_allowed_cidrs, so it has no kube path. Nodes are then
+# measured through the OCI API (same fact, other door); Flux state is not reachable from there
+# and the site and catalog rows stand in for it. Said as n/a, never as ok (crew#227 CP2).
+nodes_oci() { local o; o=$(oci ce node-pool list --compartment-id "$(awk -F'"' '/^compartment_ocid/{print $2}' terraform.tfvars)" --query 'data[].{n:name,s:"lifecycle-state"}' --output json) || return 1
+  python3 -c 'import sys,json;d=json.load(sys.stdin);bad=[p["n"] for p in d if p["s"]!="ACTIVE"];print(f"{len(d)} node pool(s) ACTIVE (OCI API)" if d and not bad else f"node pools not ACTIVE: {bad or \"none found\"}");sys.exit(1 if not d or bad else 0)' <<<"$o"; }
+if [ -f "$KUBECONFIG" ]; then
+  step nodes nodes_ready
+  step flux flux_ready
+else
+  step nodes nodes_oci
+  printf 'n/a   %-18s %s\n' flux "no kube path from this host (outside control_plane_allowed_cidrs); site and catalog rows stand in"
+fi
 step site site_200
 step catalog packs
 
