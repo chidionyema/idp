@@ -74,9 +74,41 @@ jobs:
           file: ${{ matrix.dockerfile.dockerfile }}
           platforms: ${{ matrix.platform }}
           # On push: one untagged image per arch, joined by digest in `merge`.
-          outputs: ${{ github.event_name == 'push' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', steps.name.outputs.image) || 'type=image,push=false' }}
+          # TWO EXPORTERS, ONE BUILD. The first is unchanged: on a push each
+          # architecture is pushed to GHCR by digest and untagged, and `merge`
+          # joins the two. The second writes the same image to a tarball so
+          # Trivy scans the exact bytes that were pushed rather than a second
+          # build of the same Dockerfile. Verified locally on buildx v0.36.1:
+          # `--output type=cacheonly --output type=docker,dest=...` in one
+          # invocation exports both. `type=docker` is single-platform only,
+          # which is fine because each matrix leg is one platform.
+          outputs: |
+            ${{ github.event_name == 'push' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', steps.name.outputs.image) || 'type=cacheonly' }}
+            type=docker,dest=/tmp/scan.tar
           cache-from: type=gha,scope=${{ steps.name.outputs.slug }}-${{ steps.name.outputs.arch }}
           cache-to: type=gha,mode=max,scope=${{ steps.name.outputs.slug }}-${{ steps.name.outputs.arch }}
+      # NO CRITICAL VULNERABILITY GETS A TAG.
+      #
+      # This runs after the per-arch push, which looks backwards and is not. The
+      # push is push-by-digest and untagged: nothing can pull it by name, and
+      # GHCR garbage-collects an untagged digest. A CRITICAL finding fails this
+      # job, `merge` needs `build`, so `imagetools create` never runs and no tag
+      # ever points at the image. Scanning before the push would need a second
+      # build; this way the bytes scanned are the bytes pushed.
+      #
+      # CRITICAL only, and `ignore-unfixed`. A gate that fires on findings
+      # nobody can act on gets switched off within a week, and then it is
+      # protecting nothing (LAW 38). HIGH and below are Dependabot's job, which
+      # opens a PR a human reads. Raise this bar when the CRITICAL count has
+      # been zero for a month, not before.
+      - name: no CRITICAL vulnerability ships
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          input: /tmp/scan.tar
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
       - if: github.event_name == 'push'
         run: |
           mkdir -p /tmp/digests/${{ steps.name.outputs.slug }}
@@ -93,6 +125,14 @@ jobs:
     needs: [discover, build]
     if: github.event_name == 'push' && needs.discover.outputs.dockerfiles != '[]'
     runs-on: ubuntu-latest
+    # id-token is what makes the signature keyless. Cosign exchanges this run's
+    # OIDC token for a short-lived Fulcio certificate, so there is no signing
+    # key to store, rotate or leak -- the identity in the certificate is this
+    # repository and this workflow, and it cannot be reproduced anywhere else.
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     strategy:
       matrix:
         dockerfile: ${{ fromJson(needs.discover.outputs.dockerfiles) }}
@@ -111,7 +151,9 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: one tag, two architectures
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - id: tag
+        name: one tag, two architectures
         run: |
           cd /tmp/digests
           image=$(cat IMAGE)
@@ -119,3 +161,27 @@ jobs:
           n=$(echo "$digests" | wc -w); [ "$n" -eq 2 ] || { echo "R24: expected 2 per-arch digests, found $n"; exit 1; }
           docker buildx imagetools create -t "$image:${{ github.sha }}" $digests
           docker buildx imagetools inspect "$image:${{ github.sha }}" | grep -E 'Platform:' | sort -u
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+      # WHO BUILT THIS, PROVED BY SOMETHING OTHER THAN THE REGISTRY.
+      #
+      # A tag in GHCR says only that someone with push rights put it there. A
+      # cosign signature says which repository, which workflow file and which
+      # commit produced it, and the record is in a public transparency log, so
+      # it cannot be backdated or quietly replaced.
+      #
+      # Signed by DIGEST, never by tag. A tag is a moving pointer -- signing
+      # `:sha` would attest to whatever that name resolves to at verification
+      # time, which is exactly the property the signature is supposed to remove.
+      # The manifest-list digest covers both architectures, so one signature
+      # serves amd64 and arm64.
+      - name: sign the manifest list
+        run: |
+          image='${{ steps.tag.outputs.image }}'
+          digest=$(docker buildx imagetools inspect "$image:${{ github.sha }}" --format '{{.Manifest.Digest}}')
+          cosign sign --yes "$image@$digest"
+          echo "signed $image@$digest"
+          echo
+          echo "verify with:"
+          echo "  cosign verify $image@$digest \\"
+          echo "    --certificate-identity-regexp '^https://github.com/${{ github.repository }}/' \\"
+          echo "    --certificate-oidc-issuer https://token.actions.githubusercontent.com" 
