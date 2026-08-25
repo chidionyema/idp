@@ -62,3 +62,18 @@ def test_guest_outside_development_only_while_no_public_route_exists():
     assert "catalogue" not in edge and "backstage" not in edge, "a route exists: put OIDC in front or turn the flag off"
     base = (ROOT / "platform" / "backstage" / "base" / "catalogue.yaml").read_text()
     assert "type: ClusterIP" in base
+
+
+def test_oke_overlay_pulls_an_image_build_multiarch_actually_pushes():
+    """Incident 2026-08-25: the overlay named ghcr.io/chidionyema/idp/backstage:main; the workflow
+    pushes ghcr.io/chidionyema/<name>:<sha> only (build-multiarch.yml header). ImagePullBackOff."""
+    import re
+    import yaml
+    k = yaml.safe_load((ROOT / "platform/backstage/overlays/oke/kustomization.yaml").read_text())
+    names = {line.split()[0] for line in subprocess.run(["bin/dockerfiles"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.splitlines() if line.strip()}
+    ours = [img for img in k["images"] if not img["newName"].startswith("docker.io/")]  # postgres is upstream
+    assert ours, "no estate image in the overlay"
+    for img in ours:
+        assert img["newName"].startswith("ghcr.io/chidionyema/"), img
+        assert img["newName"].rsplit("/", 1)[1] in names, f"{img['newName']}: not an image bin/dockerfiles produces ({sorted(names)})"
+        assert re.fullmatch(r"[0-9a-f]{40}", str(img.get("newTag", ""))), f"{img}: tag is not a commit sha"
