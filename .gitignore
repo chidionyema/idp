@@ -42,3 +42,6 @@ __pycache__/
 platform/oci/.terraform/
 platform/oci/*.tfvars
 platform/oci/*.tfstate*
+
+# sb attach writes runtime state here (mount hash, receipts); never committed
+.estate/
