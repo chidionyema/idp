@@ -33,6 +33,20 @@ nav:
       - Security policy: demo/security-policy.md
       - EU AI Act: demo/ai-act.md
       - LAW 32 gate: demo/law32.md
+      - Actions pinned: demo/actions-pinned.md
+      - Bind audit: demo/bind-audit.md
+      - Build image: demo/build-image.md
+      - Catalog: demo/catalog.md
+      - Conformity report: demo/conformity.md
+      - DB gen: demo/db-gen.md
+      - Dockerfiles: demo/dockerfiles.md
+      - Langfuse: demo/langfuse.md
+      - LiteLLM: demo/litellm.md
+      - Migration gate: demo/migration.md
+      - Multiarch gate: demo/multiarch.md
+      - Policy test: demo/policy-test.md
+      - Port gate: demo/port.md
+      - Repo rulesets: demo/repo-rulesets.md
   - Onboarding:
       - Portal: onboarding/idp.md
       - Plist gate: onboarding/plist.md
@@ -47,3 +61,16 @@ nav:
       - Security policy: onboarding/security-policy.md
       - EU AI Act: onboarding/ai-act.md
       - LAW 32 gate: onboarding/law32.md
+      - Actions pinned: onboarding/actions-pinned.md
+      - Bind audit: onboarding/bind-audit.md
+      - Build image: onboarding/build-image.md
+      - Catalog: onboarding/catalog.md
+      - Conformity report: onboarding/conformity.md
+      - DB gen: onboarding/db-gen.md
+      - Dockerfiles: onboarding/dockerfiles.md
+      - LiteLLM: onboarding/litellm.md
+      - Migration gate: onboarding/migration.md
+      - Multiarch gate: onboarding/multiarch.md
+      - Policy test: onboarding/policy-test.md
+      - Port gate: onboarding/port.md
+      - Repo rulesets: onboarding/repo-rulesets.md
