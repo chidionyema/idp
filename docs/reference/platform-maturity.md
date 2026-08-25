@@ -151,3 +151,72 @@ buyer finds them in.
 
 Row 1 is the only one that needs a founder decision — who the portal
 authenticates against.
+
+## The cheapest half of that list is already installed and switched off
+
+The gaps above read as work. Some of them are not. Dagster and Backstage are
+both mature platforms, and this estate runs each as a thin shell around the one
+feature it was first reached for: Dagster as a cron replacement, Backstage as a
+list of things. Two of the six gaps have their fix sitting in the venv and the
+`package.json`, unused.
+
+### Dagster: 41 schedules, 0 assets
+
+| What it offers | Used here | Receipt |
+|---|---|---|
+| Assets — declare the artifact, get lineage, staleness and a graph | **No.** Every job is an `@op` that shells out and scrapes stdout | `grep -c '@asset' scheduler/estate_scheduler/definitions.py` → `0`; 19 `op`, 41 `schedule` |
+| **Freshness policies** — an asset is red when it has not been produced in time | **No** | superseded freshness checks in 1.12; nothing declares one |
+| Asset checks — pass/fail with severity, attached to the artifact | **No.** These checks exist, in `bin/idp-ci`, and only run in CI | `bin/idp-ci` is 350 lines of exactly this |
+| Declarative Automation (`AutomationCondition`) — run when upstream changed | **No.** 41 fixed crons instead | `grep -c AutomationCondition` → `0` |
+| **`dagster-pipes`** — the supported way to run an external script and get structured logs, metadata and materializations back | **No — and it is installed** | `pip list \| grep dagster-pipes` → `1.13.19`; `grep -c pipes definitions.py` → `0`; `grep -c subprocess.run` → `2` |
+| Per-op `RetryPolicy` | **No.** One global `max_retries: 1` for a network fetch and a migration alike | `grep -c RetryPolicy definitions.py` → `0`; `scheduler/dagster.yaml:run_retries` |
+| Partitions and backfills | Barely — 1 reference | daily audits are unpartitioned |
+| `dagster-graphql` — the run history is queryable | **Installed, nothing queries it** | this is where DORA numbers come from |
+| `run_status_sensor` | **Yes** — job chaining and a circuit breaker | `definitions.py:229` |
+
+The one that matters most: **a freshness policy is the dead-man's switch that
+gap 4 says is missing.** `ai.estate.idp` failed for a day and told nobody
+because Dagster was asked "did this script exit 0" instead of "does
+`catalog/catalog-info.yaml` exist and is it younger than an hour". The first
+question cannot detect a job that never ran. The second cannot miss it.
+
+`dagster-pipes` is the sharper embarrassment. It was installed, and then the
+same job was hand-rolled with `subprocess.run` and `context.log.info(proc.stdout[-20000:])`.
+That is LAW 43 inside our own dependency list.
+
+### Backstage: 280 entities, 1 of them documented
+
+| What it offers | Used here | Receipt |
+|---|---|---|
+| Software catalog | **Yes**, and well — 254 Resource, 26 Component, 5 System, 1 Domain, 233 `dependsOn` | `grep -c '^kind:' catalog/catalog-info.yaml` |
+| TechDocs | **1 entity out of 280 carries a `techdocs-ref`** — the `idp` component | `grep -c 'backstage.io/techdocs-ref'` → `1` |
+| `kind: API` + api-docs plugin | **Plugin installed, zero APIs registered** | `grep -c '^kind: API'` → `0`; `providesApis` → `0` |
+| Scaffolder golden paths | **One template** | `backstage/templates/estate-component/` |
+| Kubernetes plugin | **Installed front and back, renders nothing** — the cluster is `0/1` | `k3d cluster list` |
+| **Notifications + Signals backend** | **Installed, nothing sends one** | `backend/src/index.ts:66-67`; no caller in `bin/`, `scheduler/`, `.github/` |
+| `mcp-actions-backend` — the portal as an MCP server for agents | **Added, no client configured** | `index.ts:70`; only the vendor's own comments in `app-config.yaml` |
+| Tech-Insights / Scorecards | **Not installed** — this is gap 3 | not in either `package.json` |
+| Permission framework | **`allow-all-policy`** — gap 1 | `index.ts:44` |
+| Catalog graph | Installed, and there is real graph data to draw | 233 `dependsOn` |
+
+Same shape as Dagster. **The notifications backend is the missing alert channel
+from gap 4, already running.** The portal has a notification system, the
+scheduler has a run-status sensor, and the failing job told nobody — because the
+two were never connected, not because either was absent.
+
+### What to do about it, in one line each
+
+1. Turn the six things `bin/idp-up` produces into Dagster **assets** with
+   **freshness policies**. That is gap 4 closed with a feature we already pay
+   for, and it makes "is the catalogue stale?" a probe instead of an opinion.
+2. Move the `bin/idp-ci` checks that grade *artifacts* (not code) into **asset
+   checks**, so they run against production and not only against a pull request.
+3. Wire `run_status_sensor` failures into the **Backstage notifications
+   backend**. One sender, and every gap-4 silence becomes a message.
+4. Add `techdocs-ref` to the 26 Components. TechDocs is running for one entity.
+5. Install **Tech Insights**, and make the first scorecard the six checks in
+   this document. Gap 3 stops being "nothing measures".
+6. Replace the `subprocess.run` op factory with **`dagster-pipes`**, which is
+   already in the venv.
+
+None of these is a build. Every one is switching on something bought.
