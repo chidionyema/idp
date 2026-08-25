@@ -23,3 +23,25 @@ nav:
       - ai-systems/index.md
       - Prospector technical file: ai-systems/prospector/technical-file.md
   - Explanation: explanation/index.md
+  - Demo:
+      - Portal: demo/idp.md
+      - MCP: demo/mcp.md
+      - Placement: demo/placement.md
+      - Scheduler: demo/scheduler.md
+      - Supply chain: demo/supply-chain.md
+      - Security policy: demo/security-policy.md
+      - EU AI Act: demo/ai-act.md
+      - LAW 32 gate: demo/law32.md
+  - Onboarding:
+      - Portal: onboarding/idp.md
+      - Langfuse: onboarding/langfuse.md
+      - Manifests: onboarding/manifests.md
+      - MCP: onboarding/mcp.md
+      - Placement: onboarding/placement.md
+      - Ports: onboarding/ports.md
+      - Reconcile: onboarding/reconcile.md
+      - Scheduler: onboarding/scheduler.md
+      - Supply chain: onboarding/supply-chain.md
+      - Security policy: onboarding/security-policy.md
+      - EU AI Act: onboarding/ai-act.md
+      - LAW 32 gate: onboarding/law32.md
