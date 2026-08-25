@@ -77,3 +77,21 @@ A dual-read mismatch is an alert, never a freeze -- one `consensus_mismatch` lin
     {"matches": 1, "mismatches": 1, "rate": 0.5, "reads": 2}
     $ cat $ESTATE_HOME/alerts/inbox.jsonl
     {"kind": "consensus_mismatch", "table": "episodes", "rowid": 2, "query": {"table": "episodes", "rowid": 2}, "legacy_hash": "69d8071…", "dag_hash": "bf81b47…", "ts": 1787631765.74}
+
+## Phase 2 — AI sandbox / zero-cost forks (cp12)
+
+A fork is a second head pointer under `.estate/heads/<name>`, copied from `shadow_main`'s current root -- one small JSON file, never a row of the legacy DB. Measured 2026-08-25 on a disposable estate:
+
+    $ bin/sb fork staging --json
+    {"elapsed_ms": 0.9058319992618635, "name": "staging", "root": null, "storage": "memory"}
+    $ cat $ESTATE_HOME/.estate/heads/staging
+    {"root": null, "storage": "memory"}
+
+Writes an agent makes against a fork's own connection (`sovereign.engine.fork.attach_sidecar(name, table)`) advance that fork's own root and chain into that fork's own receipts file (`fork.fork_receipts_paths(name)`) -- `sovereign.engine.receipts.append()`/`verify()` and `sovereign.engine.shadow_root.update_head()`/`verify()` all take the fork's paths as overrides now, so production's `shadow_main` and `receipts.jsonl` never move. The cap is a key, `fork.max_parallel` (default 3): the 4th fork open at once gets `"storage": "disk"` (`fork.dir`) instead of an in-memory connection, never a code change.
+
+    $ bin/sb switch staging --json
+    {"working": "staging"}
+    $ bin/sb drop staging --json
+    {"dropped": "staging"}
+
+`drop` removes only the pointer file; every DAG node and receipt line the fork ever wrote stays on disk, archived -- deleting a Merkle DAG node another branch's history might still reference is exactly the class of edit a hash chain exists to catch.
