@@ -1,3 +1,6 @@
+# R35 scenarios (rebuild confidently, no error recurs). R36 (features/cloud-agnostic/) adds the
+# cloud-agnostic scope on top; where the two disagree R36 wins, because a rebuild of the same
+# cloud faster "is just automating our own lock-in" (founder, 2026-08-25).
 # Founder, 2026-08-25 (crew#250, R35): "at the end of this we need to be able to tear down and
 # rebuild confidently and make it impossible for errors to reoccur"; "missing out any part of the
 # estate is novice"; "by the time you conclude I expect exponential improvement".

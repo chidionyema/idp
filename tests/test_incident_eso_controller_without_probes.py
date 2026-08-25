@@ -23,7 +23,7 @@ def test_incident_eso_controller_probes_enabled() -> None:
 def test_cloudflare_token_comes_from_oci_vault_not_sops() -> None:
     d = yaml.safe_load((ROOT / "platform/prospector/cloudflare-external-secret.yaml").read_text())
     assert d["kind"] == "ExternalSecret"
-    assert d["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": "oci-vault"}
+    assert d["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": "estate-vault"}
     assert not (ROOT / "platform/prospector/cloudflare.sops.yaml").exists()
 
 
@@ -32,13 +32,13 @@ def test_no_sops_files_remain_under_platform() -> None:
     assert not list(ROOT.glob("platform/**/*.sops.yaml"))
 
 
-def test_every_platform_external_secret_uses_oci_vault() -> None:
+def test_every_platform_external_secret_uses_estate_vault() -> None:
     files = list(ROOT.glob("platform/**/*external-secret.yaml"))
     assert len(files) >= 3
     for f in files:
         d = yaml.safe_load(f.read_text())
         assert d["kind"] == "ExternalSecret", f
-        assert d["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": "oci-vault"}, f
+        assert d["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": "estate-vault"}, f
 
 def test_no_flux_kustomization_decrypts_with_sops() -> None:
     # crew#227 CP3: with no sops files left, a decryption block is a dangling key reference.

@@ -243,6 +243,14 @@ else say "FAIL  incident 2026-08-25 containment through a link: in-worktree=$(st
 # 4c. Port lock (crew#186 CP4, R22 mechanism 4): a compose publication not
 #     declared in catalog/ports.yaml, or off loopback without non_loopback (R20),
 #     fails. Proved both ways: the rogue fixture is refused, the repo passes.
+# R36 (crew#250): no provider-specific annotation or service outside the compute provisioner.
+# Proved both ways on fixtures, then run on the repo.
+if ! CLOUD_AGNOSTIC_ROOT="$IDP/tests/fixtures/cloud-agnostic/bad" python3 "$IDP/bin/cloud-agnostic-gate" >/dev/null 2>&1 \
+   && CLOUD_AGNOSTIC_ROOT="$IDP/tests/fixtures/cloud-agnostic/good" python3 "$IDP/bin/cloud-agnostic-gate" >/dev/null 2>&1 \
+   && out=$(python3 "$IDP/bin/cloud-agnostic-gate" 2>&1); then
+  say "ok    agnostic cloud-agnostic-gate refuses a provider annotation, permits a plain Service, and the repo is clean"
+else say "FAIL  agnostic cloud-agnostic-gate is not discriminating or the platform names a cloud outside platform/oci"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
 if ! COMPOSE_GLOB='tests/fixtures/ports-bad/*.yml' python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
    && out=$(python3 "$IDP/bin/port-gate" 2>&1); then
   say "ok    portlock $(printf '%s' "$out" | tail -1 | sed 's/^ok *ports *//')"
