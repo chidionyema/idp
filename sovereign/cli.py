@@ -583,7 +583,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Plug-in hook: otto and cockpit register their own subcommands here if
     # their package is present. Absence of either is not an error (cp6).
-    for modname in ("sovereign.otto.cli", "sovereign.cockpit.cli", "sovereign.attach.cli"):
+    for modname in ("sovereign.otto.cli", "sovereign.cockpit.cli", "sovereign.attach.cli", "sovereign.intake.cli"):
         try:
             mod = importlib.import_module(modname)
         except ImportError:
