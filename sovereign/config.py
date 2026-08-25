@@ -318,6 +318,8 @@ KEYS: dict[str, KeySpec] = {
     "flip.receipt_template": KeySpec("[✓] FLIP | root:{root} | legacy:readonly", "str", "SB_FLIP_RECEIPT_TEMPLATE", "cp13 receipt line, exact format"),
     "flip.rollback_receipt_template": KeySpec("[✓] FLIP_ROLLBACK | root:{root} | legacy:writable", "str", "SB_FLIP_ROLLBACK_RECEIPT_TEMPLATE", "cp13 receipt line, exact format"),
     "flip.hash_chunk_bytes": KeySpec(65536, "int", None, "cp13: read chunk size for the legacy DB's sha256 in flip.py -- a lint-exempt literal would trip config.py's own numeric-literal rule"),
+    "projection.store_path": KeySpec(str(_estate_home() / "sovereign" / "projection.json"), "path", "SB_PROJECTION_STORE_PATH", "cp14: the hot store rebuilt from the DAG, one JSON file keyed by table then rowid"),
+    "rebuild.receipt_template": KeySpec("[✓] REBUILD | root:{root}", "str", "SB_REBUILD_RECEIPT_TEMPLATE", "cp14 receipt line, exact format from features/sovereign-bus/cp14_projection_views.feature"),
 }
 
 # ---------------------------------------------------------------------------
@@ -758,6 +760,8 @@ FLIP_MAX_DOWNTIME_MS: int = _R["flip.max_downtime_ms"].value
 FLIP_RECEIPT_TEMPLATE: str = _R["flip.receipt_template"].value
 FLIP_ROLLBACK_RECEIPT_TEMPLATE: str = _R["flip.rollback_receipt_template"].value
 FLIP_HASH_CHUNK_BYTES: int = _R["flip.hash_chunk_bytes"].value
+PROJECTION_STORE_PATH: Path = Path(_R["projection.store_path"].value)
+REBUILD_RECEIPT_TEMPLATE: str = _R["rebuild.receipt_template"].value
 
 TEMPORAL_PID_FILE: Path = ESTATE_HOME / "temporal" / "dev-server.pid"
 WORKER_PID_FILE: Path = SOVEREIGN_HOME / "worker.pid"
