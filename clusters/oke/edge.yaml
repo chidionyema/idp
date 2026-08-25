@@ -1,0 +1,106 @@
+# Edge row. Gateway API CRDs come from the upstream release tag, then the four platform charts,
+# then prospector's own manifests from its repo. Each step waits for the one before it.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: gateway-api
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://github.com/kubernetes-sigs/gateway-api
+  ref:
+    tag: v1.4.0
+  ignore: |
+    /*
+    !/config/crd/
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gateway-api-crds
+  namespace: flux-system
+spec:
+  interval: 24h
+  sourceRef:
+    kind: GitRepository
+    name: gateway-api
+  path: ./config/crd
+  prune: false
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: edge
+  namespace: flux-system
+spec:
+  interval: 1h
+  dependsOn:
+    - name: gateway-api-crds
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/edge
+  prune: true
+  wait: true
+  timeout: 10m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: prospector-platform
+  namespace: flux-system
+spec:
+  interval: 1h
+  dependsOn:
+    - name: edge
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/prospector
+  prune: true
+  wait: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: prospector
+  namespace: flux-system
+spec:
+  interval: 5m
+  url: https://github.com/chidionyema/prospector
+  ref:
+    branch: main
+  ignore: |
+    /*
+    !/deploy/k8s/
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: prospector
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: prospector-platform
+  sourceRef:
+    kind: GitRepository
+    name: prospector
+  path: ./deploy/k8s/overlays/oke
+  prune: true
+  wait: true
+  timeout: 5m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: prospector-store-api
+      namespace: prospector
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: prospector-store-web
+      namespace: prospector

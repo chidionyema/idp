@@ -1,0 +1,59 @@
+# Traefik is the Gateway API implementation. GatewayClass `traefik` is what
+# prospector/deploy/k8s/base/edge.yaml names. The chart's own default Gateway is off: each product
+# owns its Gateway in its own namespace. Entrypoint ports stay at the chart's 8000/8443 (the pod
+# is non-root); the Service maps them to 80/443 on the load balancer, and a product's Gateway
+# listeners name 8000/8443.
+#
+# The Service annotations ask OCI for the one flexible load balancer the Always Free tier
+# includes (10 Mbps minimum and maximum, so the shape can never grow into a bill).
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: traefik
+  namespace: edge
+spec:
+  interval: 24h
+  url: https://traefik.github.io/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: traefik
+  namespace: edge
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: traefik
+      version: 41.3.0
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+  values:
+    deployment:
+      replicas: 1
+    providers:
+      kubernetesGateway:
+        enabled: true
+      kubernetesIngress:
+        enabled: false
+      kubernetesCRD:
+        enabled: false
+    gateway:
+      enabled: false
+    ingressRoute:
+      dashboard:
+        enabled: false
+    service:
+      type: LoadBalancer
+      annotations:
+        oci.oraclecloud.com/load-balancer-type: lb
+        service.beta.kubernetes.io/oci-load-balancer-shape: flexible
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "10"
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
