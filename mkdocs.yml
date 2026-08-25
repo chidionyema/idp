@@ -29,6 +29,7 @@ nav:
       - Oracle identity: demo/oci.md
       - Flux on OKE: demo/oke.md
       - MCP: demo/mcp.md
+      - Sovereign bus: demo/sb.md
       - Placement: demo/placement.md
       - Scheduler: demo/scheduler.md
       - Supply chain: demo/supply-chain.md
@@ -57,6 +58,7 @@ nav:
       - Langfuse: onboarding/langfuse.md
       - Manifests: onboarding/manifests.md
       - MCP: onboarding/mcp.md
+      - Sovereign bus: onboarding/sb.md
       - Placement: onboarding/placement.md
       - Ports: onboarding/ports.md
       - Reconcile: onboarding/reconcile.md

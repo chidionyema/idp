@@ -33,6 +33,7 @@ ports:
   - {port: 8766, service: kimi_bridge,          compose: none}
   - {port: 8767, service: kimi_bridge,          compose: none}
   - {port: 8787, service: board_serve,          compose: none}
+  - {port: 8788, service: sovereign-cockpit,    compose: none, bind: 127.0.0.1}
   - {port: 11434, service: ollama,              compose: none}
 # Not ours, not gated: 53/54861 (lima), 5000/7000 (macOS ControlCenter), 49248 (rapportd),
 # 49xxx ephemeral. The k3d API forward is 6445 and is declared above, not exempted here:
