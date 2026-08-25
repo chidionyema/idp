@@ -6,5 +6,6 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - store-api-env.sops.yaml
-  # cloudflare.sops.yaml (Secret cloudflare-api-token, namespace edge, key CF_API_TOKEN) is added
-  # the day the founder issues the token; until then external-dns waits on it and says so.
+  # Secret cloudflare-api-token, namespace edge, key CF_API_TOKEN: the token survival-stack
+  # issued (scripts/migrate.sh, kept in the login keychain as survival-stack-cloudflare-token).
+  - cloudflare.sops.yaml
