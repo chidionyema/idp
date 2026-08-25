@@ -12,6 +12,7 @@ from temporalio.client import Client, WorkflowFailureError, WorkflowHandle
 from temporalio.service import RPCError
 
 from sovereign import config
+from sovereign.engine import fsm
 from sovereign.engine import receipts as receipts_mod
 
 _client: Client | None = None
@@ -54,6 +55,15 @@ async def start(
         "step_heartbeat_s": config.STEP_HEARTBEAT_S,
         "step_activity_retry_max_attempts": config.STEP_ACTIVITY_RETRY_MAX_ATTEMPTS,
         "last_output_max_chars": config.SESSION_LAST_OUTPUT_MAX_CHARS,
+        # R28/R30: the FSM's ordered states and its cycle limit travel as
+        # params for the same reason every other tuning value does --
+        # workflow.py may not import sovereign.config inside the Temporal
+        # sandbox. sovereign.engine.fsm is the canonical machine and is
+        # imported here, in the process that already owns config.
+        "fsm_states": list(fsm.STATES),
+        "fsm_max_cycles": config.FSM_MAX_CYCLES,
+        "budget_activity_timeout_s": config.RECEIPT_ACTIVITY_TIMEOUT_S,
+        "budget_retry_max_attempts": config.RECEIPT_RETRY_MAX_ATTEMPTS,
     }
     await client.start_workflow(
         WORKFLOW,
