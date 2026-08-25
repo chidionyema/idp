@@ -59,6 +59,16 @@ def cmd_start(args: argparse.Namespace) -> int:
         from sovereign.attach import core as attach_core  # noqa: F401
 
         args.repo = args.repo or args.estate
+    if getattr(args, "branches", None) and int(args.branches) > 1:
+        from sovereign.shadow import branching
+
+        res = asyncio.run(
+            branching.start_on_estate(
+                args.task, runner=args.runner, repo=args.repo, budget=int(budget_resolved.value), count=int(args.branches)
+            )
+        )
+        _emit(res, args.json)
+        return 0
     res = asyncio.run(
         engine_client.start(
             args.task, runner=args.runner, repo=args.repo, by=args.by, budget=int(budget_resolved.value)
@@ -539,6 +549,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--by", default="cli")
     p.add_argument("--budget", type=int, default=None)
     p.add_argument("--estate", default=None, help="attach root; repo defaults to it, receipts chain under its estate dir")
+    p.add_argument("--branches", type=int, default=None, help="R19: fork this many silent child sessions instead of one (sovereign/shadow)")
     _add_json(p)
     p.set_defaults(func=cmd_start)
 
@@ -674,7 +685,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Plug-in hook: otto and cockpit register their own subcommands here if
     # their package is present. Absence of either is not an error (cp6).
-    for modname in ("sovereign.otto.cli", "sovereign.cockpit.cli", "sovereign.attach.cli", "sovereign.intake.cli", "sovereign.presence.cli"):
+    for modname in ("sovereign.otto.cli", "sovereign.cockpit.cli", "sovereign.attach.cli", "sovereign.intake.cli", "sovereign.presence.cli", "sovereign.shadow.cli"):
         try:
             mod = importlib.import_module(modname)
         except ImportError:

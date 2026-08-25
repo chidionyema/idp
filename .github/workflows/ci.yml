@@ -17,6 +17,11 @@ jobs:
           pip install -q check-jsonschema sqlite-utils pyyaml dagster dagster-webserver
           pip install -q -r sovereign/requirements-dev.txt   # crew#219 R39: the bdd acceptance leg
           curl -sSL https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
+      - name: temporal cli (bin/idp-ci runs the same bdd suite; cp27 needs the dev server)
+        run: |
+          curl -sSf https://temporal.download/cli.sh | sh -s -- --version 1.8.2
+          echo "$HOME/.temporalio/bin" >> "$GITHUB_PATH"
+          "$HOME/.temporalio/bin/temporal" --version
       - run: bin/idp-ci
         env:
           MIGRATE_HEALTH_WAIT: "240"
@@ -38,6 +43,11 @@ jobs:
         run: |
           pip install -q -r sovereign/requirements.txt -r sovereign/requirements-dev.txt
           curl -sSL https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
+      - name: temporal cli (cp27 runs branch workflows on the SDK's local dev server)
+        run: |
+          curl -sSf https://temporal.download/cli.sh | sh -s -- --version 1.8.2
+          echo "$HOME/.temporalio/bin" >> "$GITHUB_PATH"
+          "$HOME/.temporalio/bin/temporal" --version
       - name: acceptance suite (strict on PRs to main)
         env:
           SB_BDD_STRICT: ${{ github.base_ref == 'main' && '1' || '0' }}

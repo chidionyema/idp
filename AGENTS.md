@@ -63,7 +63,7 @@ usual env override (`sb config --lint` lists them).
 
 ```toml
 [capabilities]
-nondestructive = ["fs_commit", "fs_read", "git_status", "tool_result", "doc_commit"]
+nondestructive = ["fs_commit", "fs_read", "git_status", "tool_result", "doc_commit", "budget_refill"]
 destructive = ["fs_delete", "git_push_force", "db_drop", "service_destroy", "rewind"]
 engine = ["fs_read", "fs_commit", "git_status", "tool_result", "doc_commit"]
 intake = ["fs_commit", "doc_commit"]
