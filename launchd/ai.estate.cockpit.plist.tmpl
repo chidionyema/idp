@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The Otto cockpit: one screen over the sovereign bus (sovereign/cockpit/README.md).
+  `bin/sb cockpit` blocks serving http.server forever, so unlike ai.estate.idp this
+  job needs KeepAlive -- launchd is the only thing bringing it back after a crash
+  or a reboot, and there is no self-restarting parent process to rely on instead.
+
+  Install:    bin/idp-install-launchd
+  Remove:     launchctl bootout gui/$(id -u)/ai.estate.cockpit
+-->
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>${PATH}</string>
+		<key>HOME</key>
+		<string>${HOME}</string>
+	</dict>
+	<key>Label</key>
+	<string>ai.estate.cockpit</string>
+	<key>Nice</key>
+	<integer>5</integer>
+	<key>ProgramArguments</key>
+	<array>
+		<string>${IDP}/bin/sb</string>
+		<string>cockpit</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>StandardErrorPath</key>
+	<string>${IDP}/run/cockpit-launchd.log</string>
+	<key>StandardOutPath</key>
+	<string>${IDP}/run/cockpit-launchd.log</string>
+	<key>WorkingDirectory</key>
+	<string>${IDP}</string>
+</dict>
+</plist>

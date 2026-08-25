@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Otto</title>
+<!-- Telegram's own script, guarded: the cockpit runs standalone in a laptop
+     browser too, where this file 404s or is blocked and nothing below may
+     depend on it having loaded. -->
+<script src="https://telegram.org/js/telegram-web-app.js" onerror="window.__tgFailed=true"></script>
+<style>
+  :root{
+    --bg:#f4f5f7; --panel:#ffffff; --text:#111318; --sub:#5b6270; --border:#e2e4e9;
+    --accent:#2f6fed; --danger:#d1453b; --ok:#1a9b5c; --warn:#c8860a; --pill-bg:#eef1f6;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1115; --panel:#181b21; --text:#eef0f4; --sub:#9aa1ad; --border:#2a2e37;
+      --accent:#5b8dfc; --danger:#ff6b62; --ok:#3fce8f; --warn:#f0ad4e; --pill-bg:#20242c;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding-bottom:24px;}
+  header{position:sticky;top:0;z-index:5;display:flex;align-items:center;
+    justify-content:space-between;padding:14px 16px;background:var(--panel);
+    border-bottom:1px solid var(--border);}
+  header h1{font-size:18px;margin:0;font-weight:700}
+  header .counts{font-size:13px;color:var(--sub)}
+  main{display:flex;flex-direction:column;gap:14px;padding:14px;max-width:1200px;margin:0 auto}
+  @media (min-width:900px){ main{flex-direction:row;align-items:flex-start} .panel{flex:1;min-width:0} }
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .panel > h2{margin:0;padding:12px 14px;font-size:13px;text-transform:uppercase;
+    letter-spacing:.04em;color:var(--sub);border-bottom:1px solid var(--border);
+    display:flex;justify-content:space-between;cursor:pointer;user-select:none}
+  .panel .body{padding:8px}
+  .panel .body.collapsed{display:none}
+  .empty{padding:16px;color:var(--sub);font-size:13px}
+  .card{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:6px 0}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+  .title{font-weight:600;font-size:14px}
+  .task{color:var(--sub);font-size:13px;margin-top:2px;word-break:break-word}
+  .step{color:var(--sub);font-size:12px;margin-top:2px}
+  .pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;
+    background:var(--pill-bg);color:var(--sub);text-transform:uppercase;white-space:nowrap}
+  .pill.running{color:var(--accent)} .pill.waiting{color:var(--warn)}
+  .pill.stopped,.pill.denied{color:var(--danger)} .pill.done{color:var(--ok)}
+  .pill.failed{color:var(--danger)}
+  .actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+  button{appearance:none;border:1px solid var(--border);background:var(--pill-bg);
+    color:var(--text);border-radius:9px;padding:10px 14px;font-size:13px;font-weight:600;
+    min-height:40px;min-width:64px;cursor:pointer}
+  button:active{opacity:.7} button:disabled{opacity:.4;cursor:default}
+  button.stop,button.deny{color:var(--danger);border-color:var(--danger)}
+  button.approve{color:var(--ok);border-color:var(--ok)}
+  button.steer{color:var(--accent);border-color:var(--accent)}
+  .ask{font-size:13px;margin:4px 0 8px;padding:8px 10px;background:var(--bg);border-radius:8px}
+  .inbox-item{border-bottom:1px solid var(--border);padding:8px 4px}
+  .inbox-item:last-child{border-bottom:none}
+  .inbox-src{font-size:11px;color:var(--sub);text-transform:uppercase;letter-spacing:.03em}
+  .inbox-text{font-size:13px;margin-top:2px;white-space:pre-wrap;word-break:break-word}
+  .err{color:var(--danger);font-size:12px;margin-top:6px}
+  .chev{transition:transform .15s} .collapsed + .chev, h2.collapsed-title .chev{transform:rotate(-90deg)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Otto</h1>
+  <div class="counts" id="counts">loading…</div>
+</header>
+<main>
+  <section class="panel" id="panel-sessions">
+    <h2 onclick="toggle('sessions')">Sessions <span id="count-sessions"></span><span class="chev">▾</span></h2>
+    <div class="body" id="body-sessions"><div class="empty">loading…</div></div>
+  </section>
+  <section class="panel" id="panel-decisions">
+    <h2 onclick="toggle('decisions')">Decisions <span id="count-decisions"></span><span class="chev">▾</span></h2>
+    <div class="body" id="body-decisions"><div class="empty">no sessions waiting</div></div>
+  </section>
+  <section class="panel" id="panel-inbox">
+    <h2 onclick="toggle('inbox')">Inbox <span id="count-inbox"></span><span class="chev">▾</span></h2>
+    <div class="body" id="body-inbox"><div class="empty">loading…</div></div>
+  </section>
+</main>
+<script>
+"use strict";
+let POLL_MS = 3000; // cp22: overwritten by GET /api/config's cockpit.poll_s before the first poll
+const FOCUS_ID = (location.pathname.match(/^\/s\/([A-Za-z0-9_-]+)/) || [])[1] || null;
+let tg = null;
+if (window.Telegram && window.Telegram.WebApp) {
+  tg = window.Telegram.WebApp;
+  try {
+    tg.ready(); tg.expand();
+    const t = tg.themeParams || {};
+    const root = document.documentElement.style;
+    if (t.bg_color) root.setProperty("--bg", t.bg_color);
+    if (t.secondary_bg_color) root.setProperty("--panel", t.secondary_bg_color);
+    if (t.text_color) root.setProperty("--text", t.text_color);
+    if (t.hint_color) root.setProperty("--sub", t.hint_color);
+    if (t.button_color) root.setProperty("--accent", t.button_color);
+  } catch (e) { /* Telegram not actually hosting us; ignore */ }
+}
+
+function collapsedKey(name){ return "cockpit-collapsed-" + name; }
+function toggle(name){
+  const body = document.getElementById("body-" + name);
+  const collapsed = body.classList.toggle("collapsed");
+  localStorage.setItem(collapsedKey(name), collapsed ? "1" : "0");
+}
+["sessions", "decisions", "inbox"].forEach(name => {
+  if (localStorage.getItem(collapsedKey(name)) === "1") {
+    document.getElementById("body-" + name).classList.add("collapsed");
+  }
+});
+
+async function api(path, opts){
+  opts = opts || {};
+  const headers = Object.assign({}, opts.headers || {});
+  if (tg && tg.initData) headers["X-Telegram-Init-Data"] = tg.initData;
+  if (opts.body) headers["Content-Type"] = "application/json";
+  const res = await fetch(path, Object.assign({}, opts, { headers }));
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error("HTTP " + res.status + ": " + text);
+  }
+  const ct = res.headers.get("content-type") || "";
+  return ct.includes("application/json") ? res.json() : res.text();
+}
+
+function esc(s){
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => (
+    {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function sessionCard(s, opts){
+  opts = opts || {};
+  const busy = opts.busy || {};
+  const focused = FOCUS_ID && s.session_id === FOCUS_ID;
+  let html = `<div class="card" data-id="${esc(s.session_id)}" style="${focused ? "border-color:var(--accent)" : ""}">`;
+  html += `<div class="row"><div><div class="title">${esc(s.repo || "(no repo)")}</div>`;
+  html += `<div class="task">${esc(s.task)}</div></div>`;
+  html += `<span class="pill ${esc(s.status)}">${esc(s.status)}</span></div>`;
+  html += `<div class="step">step ${esc(s.step != null ? s.step : "-")} · ${esc(s.runner || "")}</div>`;
+  if (s.status === "waiting" && s.asking) {
+    html += `<div class="ask">asks: ${esc(s.asking)}</div>`;
+  }
+  if (opts.decisionButtons) {
+    html += `<div class="actions">
+      <button class="approve" ${busy.approve ? "disabled" : ""} onclick="act('${s.session_id}','approve')">Approve</button>
+      <button class="deny" ${busy.deny ? "disabled" : ""} onclick="act('${s.session_id}','deny')">Deny</button>
+    </div>`;
+  } else {
+    const live = ["running", "waiting"].includes(s.status);
+    html += `<div class="actions">
+      <button class="stop" ${!live || busy.stop ? "disabled" : ""} onclick="act('${s.session_id}','stop')">Stop</button>
+      <button class="steer" ${!live || busy.steer ? "disabled" : ""} onclick="steer('${s.session_id}')">Steer</button>
+    </div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+const busyState = {};
+
+async function act(id, kind, text){
+  busyState[id] = Object.assign({}, busyState[id], { [kind]: true });
+  render();
+  try {
+    await api(`/api/sessions/${id}/${kind}`, {
+      method: "POST",
+      body: JSON.stringify({ by: "founder", text: text || "" }),
+    });
+  } catch (e) {
+    console.error(e);
+  } finally {
+    busyState[id] = Object.assign({}, busyState[id], { [kind]: false });
+    await refresh();
+  }
+}
+
+function steer(id){
+  const text = window.prompt("Steer this session:");
+  if (text != null && text.trim() !== "") act(id, "steer", text.trim());
+}
+
+let lastSessions = [];
+let lastInbox = [];
+
+function render(){
+  const running = lastSessions.filter(s => s.status === "running").length;
+  const waiting = lastSessions.filter(s => s.status === "waiting").length;
+  document.getElementById("counts").textContent =
+    `${running} running · ${waiting} waiting · ${lastSessions.length} total`;
+  document.getElementById("count-sessions").textContent = `(${lastSessions.length})`;
+
+  const sBody = document.getElementById("body-sessions");
+  sBody.classList.remove("collapsed");
+  if (localStorage.getItem(collapsedKey("sessions")) === "1") sBody.classList.add("collapsed");
+  sBody.innerHTML = lastSessions.length
+    ? lastSessions.map(s => sessionCard(s, { busy: busyState[s.session_id] })).join("")
+    : `<div class="empty">no sessions</div>`;
+
+  const decisions = lastSessions.filter(s => s.status === "waiting");
+  document.getElementById("count-decisions").textContent = `(${decisions.length})`;
+  const dBody = document.getElementById("body-decisions");
+  if (localStorage.getItem(collapsedKey("decisions")) === "1") dBody.classList.add("collapsed");
+  dBody.innerHTML = decisions.length
+    ? decisions.map(s => sessionCard(s, { decisionButtons: true, busy: busyState[s.session_id] })).join("")
+    : `<div class="empty">no sessions waiting</div>`;
+
+  document.getElementById("count-inbox").textContent = `(${lastInbox.length})`;
+  const iBody = document.getElementById("body-inbox");
+  if (localStorage.getItem(collapsedKey("inbox")) === "1") iBody.classList.add("collapsed");
+  iBody.innerHTML = lastInbox.length
+    ? lastInbox.map(item => `<div class="inbox-item">
+        <div class="inbox-src">${esc(item.source || item.kind || "alert")}</div>
+        <div class="inbox-text">${esc(item.text || item.raw || JSON.stringify(item))}</div>
+      </div>`).join("")
+    : `<div class="empty">inbox is empty</div>`;
+}
+
+async function refresh(){
+  try {
+    const [sessions, inbox] = await Promise.all([api("/api/sessions"), api("/api/inbox")]);
+    lastSessions = sessions || [];
+    lastInbox = inbox || [];
+    render();
+  } catch (e) {
+    document.getElementById("counts").textContent = "error: " + e.message;
+    console.error(e);
+  }
+}
+
+async function boot(){
+  try {
+    const cfg = await api("/api/config");
+    if (cfg && typeof cfg["cockpit.poll_s"] === "number") {
+      POLL_MS = cfg["cockpit.poll_s"] * 1000;
+    }
+  } catch (e) {
+    console.error("config fetch failed, using default poll interval", e);
+  }
+  await refresh();
+  setInterval(refresh, POLL_MS);
+}
+boot();
+</script>
+</body>
+</html>
