@@ -52,7 +52,7 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
 @pytest.mark.parametrize("f,route", ROUTES, ids=[d["metadata"]["name"] for _, d in ROUTES])
 def test_hostnames_carry_no_zone_literal(f, route):
     for h in route["spec"]["hostnames"]:
-        assert re.fullmatch(r"[a-z0-9-]+\.\$\{ESTATE_ZONE(:=[a-z0-9.-]+)?\}", h), f"{f}: {h}"
+        assert re.fullmatch(r"[a-z0-9-]+\.\$\{ESTATE_ZONE\}", h), f"{f}: {h}"
 
 
 @pytest.mark.parametrize("f,route", ROUTES, ids=[d["metadata"]["name"] for _, d in ROUTES])

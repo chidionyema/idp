@@ -11,7 +11,7 @@ spec:
       namespace: prospector
       sectionName: https-auth
   hostnames:
-    - "auth.${ESTATE_ZONE:=mumchimp.com}"
+    - "auth.${ESTATE_ZONE}"
   rules:
     - backendRefs:
         - name: authelia

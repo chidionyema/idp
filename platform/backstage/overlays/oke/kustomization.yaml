@@ -43,6 +43,6 @@ patches:
       # (ADR 0003). ESTATE_ZONE is substituted by Flux from estate-vars when set.
       - op: add
         path: /spec/template/spec/containers/0/env/-
-        value: {name: APP_BASE_URL, value: "https://catalogue.${ESTATE_ZONE:=mumchimp.com}"}
+        value: {name: APP_BASE_URL, value: "https://catalogue.${ESTATE_ZONE}"}
 generatorOptions:
   disableNameSuffixHash: true

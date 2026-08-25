@@ -15,9 +15,10 @@ spec:
   prune: true
   postBuild:
     substituteFrom:
+      # ESTATE_ZONE (idp#140): the zone is one value in clusters/oke/estate-config.yaml; not
+      # optional, a missing ConfigMap must fail the row rather than publish '${ESTATE_ZONE}'.
       - kind: ConfigMap
-        name: estate-vars
-        optional: true
+        name: estate-config
   wait: true
   timeout: 5m
   healthChecks:
@@ -122,6 +123,7 @@ spec:
       namespace: identity
   postBuild:
     substituteFrom:
+      # ESTATE_ZONE (idp#140): the zone is one value in clusters/oke/estate-config.yaml; not
+      # optional, a missing ConfigMap must fail the row rather than publish '${ESTATE_ZONE}'.
       - kind: ConfigMap
-        name: estate-vars
-        optional: true
+        name: estate-config

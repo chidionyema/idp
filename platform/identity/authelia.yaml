@@ -87,13 +87,13 @@ spec:
       access_control:
         default_policy: deny
         rules:
-          - domain: ["catalogue.${ESTATE_ZONE:=mumchimp.com}"]
+          - domain: ["catalogue.${ESTATE_ZONE}"]
             policy: one_factor
       session:
         cookies:
-          - domain: "${ESTATE_ZONE:=mumchimp.com}"
+          - domain: "${ESTATE_ZONE}"
             subdomain: auth
-            default_redirection_url: "https://catalogue.${ESTATE_ZONE:=mumchimp.com}"
+            default_redirection_url: "https://catalogue.${ESTATE_ZONE}"
       storage:
         local:
           enabled: true

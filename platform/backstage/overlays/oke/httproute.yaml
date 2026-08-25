@@ -22,7 +22,7 @@ spec:
       namespace: prospector
       sectionName: https-catalogue
   hostnames:
-    - "catalogue.${ESTATE_ZONE:=mumchimp.com}"
+    - "catalogue.${ESTATE_ZONE}"
   rules:
     - filters:
         - type: ExtensionRef
