@@ -14,12 +14,14 @@ probe() {
   case "$c" in ""|000) echo "down" ;; *) echo "$c" ;; esac
 }
 
-primary=$(probe http://127.0.0.1:3100)
-fallback=$(probe http://127.0.0.1:8001/-/versions.json)
+# localhost, NOT 127.0.0.1. Backstage's app binds [::1] only, so a v4 probe
+# returns 000 and this command reports the catalogue down while a browser on
+# the same machine is reading it. Measured 2026-08-24: curl 127.0.0.1:3100
+# -> 000, curl localhost:3100 -> 200, lsof: node IPv6 TCP [::1]:3100 (LISTEN).
+catalogue=$(probe http://localhost:3100)
 
-echo "RENDERER   LOCAL                  HTTP   PUBLISHED"
-printf "%-10s %-22s %-6s %s\n" "primary"  "127.0.0.1:3100 backstage" "$primary"  "http://$host:8443/"
-printf "%-10s %-22s %-6s %s\n" "fallback" "127.0.0.1:8001 datasette" "$fallback" "http://$host:10000/"
+echo "SURFACE    LOCAL                  HTTP   PUBLISHED"
+printf "%-10s %-22s %-6s %s\n" "catalogue" "localhost:3100 backstage" "$catalogue" "http://$host:8443/"
 
 echo
 echo "CATALOGUE"
@@ -44,8 +46,8 @@ else
   echo "  tailnet only -- not reachable from the public internet"
 fi
 
-# Exit non-zero when NOTHING is serving. One renderer down is the design
-# working; both down is an outage, and a status command that returns 0 either
-# way cannot be used as a check.
-[ "$primary" = "down" ] && [ "$fallback" = "down" ] && exit 1
+# Exit non-zero when the catalogue is not serving. There is one surface now,
+# so "down" is an outage with no second opinion to soften it, and a status
+# command that returns 0 anyway cannot be used as a check.
+[ "$catalogue" = "down" ] && exit 1
 exit 0

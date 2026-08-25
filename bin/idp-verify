@@ -12,15 +12,15 @@
 #   idp-verify          check once
 #   idp-verify --wait   allow up to 180s for Backstage to finish ingesting
 #
-# Exit 0 only when every entity in the generated file is present in both
-# renderers.
+# Exit 0 only when every entity in the generated file is present in the
+# catalogue. There is one catalogue: Backstage. Founder ruling 2026-08-24,
+# "backstge is for catalog" and "ive seen 5 ui faces today" -- the Datasette
+# fallback this script used to check as a second renderer is gone.
 set -uo pipefail
 
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 YAML="$IDP/catalog/catalog-info.yaml"
-DB="$IDP/catalog/estate.db"
 BACKEND="http://127.0.0.1:7107"
-FALLBACK="http://127.0.0.1:8001"
 JQ=/usr/local/bin/jq
 
 deadline=0
@@ -95,22 +95,7 @@ PY
   rm -rf "$split_dir"
 fi
 
-# --- fallback renderer --------------------------------------------------------
-db_rows=$(sqlite3 "$DB" "select count(*) from assets" 2>/dev/null || echo 0)
-http_rows=$(curl -sS --max-time 10 "$FALLBACK/estate/assets.json?_shape=array&_size=0" \
-  -o /dev/null -w '%{http_code}' 2>/dev/null || echo 000)
-# The row count the generator wrote and the row count Datasette serves are two
-# different facts. 194 in the file and 194 over HTTP is what proves it serving.
-served=$(curl -sS --max-time 10 "$FALLBACK/estate.json?sql=select+count(*)+as+n+from+assets&_shape=array" \
-  2>/dev/null | $JQ -r '.[0].n // "none"' 2>/dev/null || echo none)
-if [ "$served" = "$want" ]; then
-  say "fallback  $served rows served over HTTP -- matches"
-else
-  say "FAIL      fallback serves '$served', expected $want (db has $db_rows, HTTP $http_rows)"
-  fail=1
-fi
-
-# --- primary renderer ---------------------------------------------------------
+# --- the catalogue ------------------------------------------------------------
 ingested_names() {
   local tok
   tok=$(curl -sS --max-time 8 -X POST "$BACKEND/api/auth/guest/refresh" 2>/dev/null \
@@ -128,11 +113,12 @@ wanted_names() {
   ' "$YAML"
 }
 
+# There is no second renderer to fall back to, so a backend that is not
+# answering is a failing verification, not a partial one. This used to exit 0
+# on the strength of Datasette serving the same rows.
 if ! curl -sS -o /dev/null --max-time 4 "$BACKEND/api/catalog/entities" 2>/dev/null; then
-  say "SKIP      primary (Backstage backend on 7107 is not answering)"
-  say
-  [ "$fail" -eq 0 ] && say "PARTIAL   fallback verified, primary not running" || say "FAIL"
-  exit "$fail"
+  say "FAIL      the Backstage backend on 7107 is not answering -- nothing is serving the catalogue"
+  exit 1
 fi
 
 tmp_w=$(mktemp); tmp_i=$(mktemp)
@@ -159,7 +145,7 @@ rm -f "$tmp_w" "$tmp_i"
 
 say
 if [ "$fail" -eq 0 ]; then
-  say "PASS      both renderers agree with the inventory: $want entities"
+  say "PASS      the catalogue matches the inventory: $want entities"
 else
   say "FAIL      the portal does not match the inventory"
 fi
