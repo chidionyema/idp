@@ -25,6 +25,7 @@ nav:
   - Explanation: explanation/index.md
   - Demo:
       - Portal: demo/idp.md
+      - Plist gate: demo/plist.md
       - MCP: demo/mcp.md
       - Placement: demo/placement.md
       - Scheduler: demo/scheduler.md
@@ -34,6 +35,7 @@ nav:
       - LAW 32 gate: demo/law32.md
   - Onboarding:
       - Portal: onboarding/idp.md
+      - Plist gate: onboarding/plist.md
       - Langfuse: onboarding/langfuse.md
       - Manifests: onboarding/manifests.md
       - MCP: onboarding/mcp.md
