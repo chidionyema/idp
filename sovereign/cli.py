@@ -192,14 +192,17 @@ def cmd_recover(args: argparse.Namespace) -> int:
 
 
 def cmd_root(args: argparse.Namespace) -> int:
-    """cp9: `sb root --json` reports {root, parent, nodes, verified} for
-    .estate/heads/shadow_main -- the branch pointer cp8's sidecar advances
-    once per write."""
-    from sovereign.engine import shadow_root
+    """cp9/cp15: `sb root --json` reports the cross-stack composite root
+    -- {root, code_root, db_root, policy_root, ai_policy_root} -- plus
+    cp9's own DB-chain diagnostics (db_nodes, db_parent, db_verified).
+    db_root IS .estate/heads/shadow_main, the branch pointer cp8's
+    sidecar advances once per write; the other three children are cp15's
+    (git HEAD, the attach policy config, the trust/presence config)."""
+    from sovereign.engine import cross_stack
 
-    res = shadow_root.verify()
+    res = cross_stack.root()
     _emit(res, args.json)
-    return 0 if res.get("verified") else 1
+    return 0 if res.get("db_verified") else 1
 
 
 def cmd_consensus(args: argparse.Namespace) -> int:
