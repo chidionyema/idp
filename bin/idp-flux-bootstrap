@@ -23,10 +23,10 @@ kubectl -n flux-system create secret generic sops-age --from-file=age.agekey="$S
 echo "ok      sops-age secret in flux-system"
 # ghcr packages are private; the OCIRepository (flux-system) and the catalogue pod (backstage)
 # both pull with this. Token needs read:packages; write:packages for bin/idp-catalog-push.
-for ns in flux-system backstage prospector; do
+for ns in flux-system backstage prospector edge; do
   kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   vget GITHUB_TOKEN | kubectl -n "$ns" create secret docker-registry ghcr-pull --docker-server=ghcr.io --docker-username=chidionyema --docker-password="$(cat)" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 done
-echo "ok      ghcr-pull secret in flux-system, backstage and prospector"
+echo "ok      ghcr-pull secret in flux-system, backstage, prospector and edge"
 GITHUB_TOKEN="$(vget GITHUB_TOKEN)" flux bootstrap github --owner chidionyema --repository idp --branch main --path clusters/oke --personal --read-write-key=false
 flux get kustomizations
