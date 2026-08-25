@@ -62,15 +62,19 @@ spec:
             readOnlyRootFilesystem: true   # require-ro-rootfs; the backend writes only to /tmp
             capabilities:
               drop: ["ALL"]
+          # Incident 2026-08-25: /healthcheck does not exist in the new backend system; the
+          # app-backend catch-all answered it with index.html (200, text/html), so a pod whose
+          # plugins had not mounted still read Ready. Measured: /nonsense-path also returned 200.
+          # The backend's own endpoints answer JSON and only once the plugins are up.
           startupProbe:
-            httpGet: { path: /healthcheck, port: http }
+            httpGet: { path: /.backstage/health/v1/readiness, port: http }
             periodSeconds: 5
             failureThreshold: 36   # 180s; compose.yml gives start_period 120s
           readinessProbe:
-            httpGet: { path: /healthcheck, port: http }
+            httpGet: { path: /.backstage/health/v1/readiness, port: http }
             periodSeconds: 15
           livenessProbe:
-            httpGet: { path: /healthcheck, port: http }
+            httpGet: { path: /.backstage/health/v1/liveness, port: http }
             periodSeconds: 30
           resources:
             requests: { cpu: 250m, memory: 512Mi }
