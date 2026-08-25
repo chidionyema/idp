@@ -23,6 +23,7 @@ ports:
   - {port: 4000, service: litellm,              compose: llm/litellm.yml}
   - {port: 4318, service: otel-fallback,        compose: observability/langfuse.yml}
   - {port: 5291, service: prospector-store-api, compose: prospector}
+  - {port: 6445, service: k3d-estate-server-0, compose: none, bind: 127.0.0.1}
   - {port: 7107, service: backstage-backend,    compose: none, bind: 127.0.0.1}
   - {port: 8001, service: datasette,            compose: none}
   - {port: 8080, service: prospector-edge,      compose: prospector, bind: 127.0.0.1}
