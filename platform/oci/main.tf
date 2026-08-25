@@ -30,6 +30,7 @@ module "oke" {
       memory           = var.worker_memory_gb
       size             = 1
       boot_volume_size = 50
+      placement_ads    = [1, 2] # 2026-08-25 apply failed: "Node shape is unavailable in subnet availability domain(s)"; VM.Standard.A1.Flex is offered in AD-1 and AD-2 only (oci compute shape list per AD)
     }
   }
 }
