@@ -106,6 +106,15 @@ def cmd_root(args: argparse.Namespace) -> int:
     return 0 if res.get("verified") else 1
 
 
+def cmd_consensus(args: argparse.Namespace) -> int:
+    """cp11: `sb consensus --json` -- {reads, matches, mismatches, rate}
+    aggregated from every cp10 dualread receipt on disk."""
+    from sovereign.sidecar import dualread
+
+    _emit(dualread.summary(), args.json)
+    return 0
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     res = asyncio.run(engine_client.list_sessions())
     _emit(res, args.json)
@@ -370,6 +379,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("root", help="cp9 -- show and verify the shadow Merkle root, the shadow_main head")
     _add_json(p)
     p.set_defaults(func=cmd_root)
+
+    p = sub.add_parser("consensus", help="cp11 -- legacy versus DAG dual-read match rate")
+    _add_json(p)
+    p.set_defaults(func=cmd_consensus)
 
     p = sub.add_parser("list", help="list sessions")
     _add_json(p)
