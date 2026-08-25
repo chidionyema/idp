@@ -1,5 +1,7 @@
-# Edge row. Gateway API CRDs come from the upstream release tag, then the four platform charts,
+# Edge row. Gateway API CRDs come from the upstream release tag, then the three platform charts,
 # then prospector's own manifests from its repo. Each step waits for the one before it.
+# external-dns is a leaf (Kustomization dns, below): nothing waits on it, because it cannot be
+# Ready until the Cloudflare token exists, and the shop must not be held behind DNS.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
@@ -104,3 +106,20 @@ spec:
       kind: Deployment
       name: prospector-store-web
       namespace: prospector
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: dns
+  namespace: flux-system
+spec:
+  interval: 1h
+  dependsOn:
+    - name: edge
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/dns
+  prune: true
+  wait: true
+  timeout: 5m
