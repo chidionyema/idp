@@ -290,6 +290,7 @@ else say "FAIL  schema   check-jsonschema rejected a generated entity"; fail=1; 
 #    rule cannot exist without its proof (LAW 44) and no gate refuses good work (LAW 38).
 policy_gate() { conftest test --parser json -p "$IDP/policy" "$1" >/dev/null 2>&1; }
 bind_audit() { "$IDP/bin/bind-audit" --table "$1" >/dev/null 2>&1; }
+job_described() { ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe "$1" ) >/dev/null 2>&1; }
 rows=0
 while IFS='|' read -r _ rule gate bad good _; do
   rule=$(echo "$rule" | xargs); gate=$(echo "$gate" | xargs); bad=$(echo "$bad" | xargs); good=$(echo "$good" | xargs)
@@ -312,6 +313,15 @@ done < <(grep -E '^\| .* \| .* \| .* \| .* \|$' "$IDP/AGENTS.md" | grep -vE '^\|
 #    row above already runs bind_audit on the two recorded tables; this runs the
 #    script's own selftest, which is the part that would silently rot if the
 #    allow-list parser broke.
+# 7. A scheduled job with no description is a job nobody can act on: the Dagster UI
+#    shows 40 names like com_founder_estateaudit and nothing else. The description is
+#    derived from the target script's docstring, so the selftest checks the derivation
+#    -- that it looks behind a wrapper, and that it refuses to invent prose from a
+#    command line. Coverage over the real 40 needs the scripts, so it lives in idp-verify.
+if out=$( ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe --selftest ) 2>&1); then
+  say "ok    describe job descriptions derive from the script, and are refused when absent"
+else say "FAIL  describe estate_scheduler.describe --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
 if out=$("$IDP/bin/bind-audit" --selftest 2>&1); then say "ok    binds    bind-audit refuses an unknown listener and permits an allow-listed one"
 else say "FAIL  binds    bin/bind-audit --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 

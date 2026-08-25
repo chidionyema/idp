@@ -153,4 +153,10 @@ fi
 # in catalog/ports.yaml, and nothing but the gateway is off loopback (R20).
 if out=$(python3 "$IDP/bin/port-gate" --live 2>&1); then say "ok        portlock  $(printf '%s' "$out" | tail -1 | sed 's/^ok *ports *//')"
 else say "FAIL      portlock"; printf '%s\n' "$out" | sed 's/^/          /'; fail=1; fi
+# Every scheduled job carries a description in the Dagster UI. This is the live half:
+# it needs the scripts the jobs actually run, which a CI runner does not have.
+if out=$( ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe ) 2>&1); then
+  say "ok        describe  $(printf '%s' "$out" | tail -1)"
+else say "FAIL      describe  a scheduled job would reach the UI with no description"
+  printf '%s\n' "$out" | grep '^FAIL' | sed 's/^/          /'; fail=1; fi
 exit "$fail"
