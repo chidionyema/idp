@@ -6,6 +6,7 @@ plugins:
   - techdocs-core
 nav:
   - Home: index.md
+  - Definition of Done: policy/definition-of-done.md
   - Architecture: architecture/index.md
   - Decisions:
       - 0001 Gateway API is the routing standard: decisions/0001-gateway-api-is-the-routing-standard.md
