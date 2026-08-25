@@ -1,0 +1,18 @@
+# The OKE overlay: base, backstage-env as a sops file Flux decrypts in cluster
+# (clusters/oke/platform.yaml, decryption.provider: sops). The estate-catalog ConfigMap is NOT
+# here: catalog/catalog-info.yaml is generated from this machine's inventory and gitignored, so
+# bin/idp-catalog-push publishes it as an OCI artifact and clusters/oke/catalog.yaml pulls it.
+# Image: base pins idp/backstage:local, which only k3d can import. OKE needs the image in ghcr
+# for arm64; that build is idp#29 (backstage/Dockerfile + bin/dockerfiles). Until it merges
+# this overlay renders but the Deployment cannot pull, and the Flux healthCheck reports it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - backstage-env.sops.yaml
+images:
+  - name: idp/backstage
+    newName: ghcr.io/chidionyema/idp/backstage
+    newTag: main
+generatorOptions:
+  disableNameSuffixHash: true
