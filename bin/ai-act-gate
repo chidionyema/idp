@@ -40,6 +40,9 @@ for s in systems:
         f.append(f"system {n}: risk_tier must be one of {sorted(TIERS)}")
     if s.get("risk_tier") == "prohibited":
         f.append(f"system {n}: prohibited tier is a refusal, not a registration (Art. 5)")
+    roles = s.get("role") if isinstance(s.get("role"), list) else [s.get("role")]
+    if not set(roles) <= {"provider", "deployer"} or not roles:
+        f.append(f"system {n}: role must be provider and/or deployer (Art. 3)")
     if not s.get("owner"):
         f.append(f"system {n}: owner missing")
     tf = s.get("technical_file") or ""

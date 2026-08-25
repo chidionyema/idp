@@ -7,7 +7,7 @@ IDP="$(cd "$(dirname "$0")/.." && pwd)"
 d="${TODAY:-$(date +%F)}"
 echo "# Conformity assessment by internal control (Annex VI), $d"
 echo
-echo "Voluntary, for minimal-risk systems. Each line is a gate's own output."
+echo "Voluntary, for systems below the high-risk tier. Each line is a gate's own output."
 echo
 echo '```'
 python3 "$IDP/bin/ai-act-gate" "$IDP" 2>&1

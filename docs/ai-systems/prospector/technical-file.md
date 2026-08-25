@@ -1,6 +1,6 @@
 # Prospector: technical documentation (Annex IV)
 
-Kept voluntarily to Annex IV shape for a minimal-risk system (founder, 2026-08-25).
+Kept voluntarily to Annex IV shape for a limited-risk system (founder, 2026-08-25).
 Section numbers follow Annex IV of Regulation (EU) 2024/1689; the structure follows
 aai-institute/practical-ai-act. `bin/ai-act-gate` refuses this file if a section is
 missing. Owner: chidionyema. Last reviewed: 2026-08-25.
@@ -8,8 +8,11 @@ missing. Owner: chidionyema. Last reviewed: 2026-08-25.
 ## 1. General description
 
 Prospector researches companies and contacts from public sources and drafts B2B
-outreach for a human to send. Deployer: the estate (Art. 3(4)). Model providers
-carry the GPAI duties. Risk tier: **minimal** (Art. 6; no Annex III area applies:
+outreach for a human to send. The estate is its **provider** (Art. 3(3): placed on
+the market under our name) and its **deployer** (Art. 3(4)). Model vendors carry
+only the Ch. V model duties; calling their API transfers no system duty to them.
+Risk tier: **limited** (Art. 50: generated text reaches natural persons, so a
+disclosure is owed; no Annex III area applies:
 not biometrics, critical infrastructure, education, employment, essential services,
 law enforcement, migration or justice). Intended user: the founder and sales staff.
 Not intended for: automated sending, decisions about individuals, consumer targeting.
@@ -58,7 +61,7 @@ frame, noting it is not a harmonised standard under the Act.
 
 ## 8. Declaration of conformity
 
-Not required for a minimal-risk system. `bin/conformity-report` renders the Annex
+Not required for a limited-risk system. `bin/conformity-report` renders the Annex
 VI internal-control assessment from the gates' output on demand; it is generated,
 never hand-written.
 

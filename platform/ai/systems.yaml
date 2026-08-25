@@ -5,8 +5,8 @@
 systems:
   - name: prospector
     owner: chidionyema
-    role: deployer            # Art. 3(4); provider duties sit with the model vendors
-    risk_tier: minimal
+    role: [provider, deployer]  # Art. 3(3): sold under our name, so provider; Art. 3(4): we run it. Model vendors carry only Ch. V model duties
+    risk_tier: limited        # Art. 50: text generated for natural persons; disclosure duty, nothing more
     purpose: B2B lead research and outreach drafting for UK/EU sales prospecting
     technical_file: docs/ai-systems/prospector/technical-file.md
     models:
