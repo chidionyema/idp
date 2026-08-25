@@ -3,7 +3,10 @@
 # platform/github/ruleset.default-branch.json, and a repository named in an
 # overlay file platform/github/ruleset.<repo>.<name>.json carries that ruleset
 # too (idp: ruleset.idp.required-checks.json makes offline-gate, bdd and
-# security-scan required before anything lands on main). Report mode by default.
+# security-scan required before anything lands on main). An overlay named
+# ruleset.@active.<name>.json applies to every repository pushed in the last
+# ACTIVE_DAYS (30) days: the estate-wide gates security-scan and spec-gate,
+# which bin/estate-security-rollout installs first. Report mode by default.
 #
 # Why per repo: the account is a User (gh api /users/<owner> -q .type), and
 # org-wide rulesets ("~ALL") exist only on organizations. On the free plan a
@@ -31,11 +34,18 @@ apply_spec() {
     echo "MISSING $repo: no ruleset $NAME"; drift=$((drift+1))
   fi
 }
-while read -r repo; do apply_spec "$repo" "$DEFAULT"; done < <(gh repo list "$OWNER" --limit 200 --no-archived --json name -q '.[].name' | sort)
+ACTIVE_DAYS="${ACTIVE_DAYS:-30}"
+since="$(date -u -v-"${ACTIVE_DAYS}"d +%Y-%m-%d 2>/dev/null || date -u -d "-${ACTIVE_DAYS} days" +%Y-%m-%d)"
+repos="$(gh repo list "$OWNER" --limit 200 --no-archived --json name,pushedAt -q '.[] | .name+" "+.pushedAt[:10]' | sort)"
+while read -r repo _; do apply_spec "$repo" "$DEFAULT"; done <<< "$repos"
 for f in "$IDP"/platform/github/ruleset.*.*.json; do
   [ -e "$f" ] || break
   r="$(basename "$f")"; r="${r#ruleset.}"; r="${r%%.*}"
-  apply_spec "$r" "$f"
+  if [ "$r" = "@active" ]; then
+    while read -r repo pushed; do [ "$pushed" \> "$since" ] && apply_spec "$repo" "$f"; done <<< "$repos"
+  else
+    apply_spec "$r" "$f"
+  fi
 done
 echo "$([ $drift = 0 ] && echo 'ok  ' || echo FAIL)  rulesets $ok in place, $drift missing or drifted, $blocked private repos blocked by plan"
 [ $drift = 0 ]
