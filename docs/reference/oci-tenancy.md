@@ -17,11 +17,14 @@ here grants access. API keys and the private key live in the sops vault
 | Plan | Free Tier; Always Free resources only (ruling R23) |
 | Always Free A1 allowance | 2 OCPU / 12 GB since 2026-06-15 (was 4 / 24); not restored after a teardown |
 
-## What is not yet true
+## What is true now (measured 2026-08-25, commands in `crew/STATE.md`)
 
-- No `oci` CLI is configured on any machine in the estate, and no API key exists.
-- Nothing is provisioned. R23: local `idp-verify` goes green before any OCI resource is created.
-- A1 (Ampere) capacity in `uk-london-1` has not been checked; that check is step 1 of ADR 0004.
+- `oci` CLI is configured on the login machine from the sops vault (`bin/idp-oci-login`); key `estate-tofu`.
+- OKE cluster `estate` is ACTIVE, v1.35.2, one A1 node Ready, in compartment `estate`. Flux delivers
+  `platform/oke` from `main`. Live state is the `OKE nodes` and `OKE flux` rows of `crew/STATE.md`,
+  regenerated hourly. Do not read this page for state; run
+  `KUBECONFIG=~/.kube/oke-estate kubectl get nodes,kustomizations -A`.
+- R26 (2026-08-25): no VM runs on the founder's Mac. Containers and k8s are here, on OKE.
 
 ## How to update this page
 
