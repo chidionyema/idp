@@ -31,13 +31,13 @@ spec.loader.exec_module(mod)
 def synth(rng: random.Random) -> list:
     comps = [f"repo-{i}" for i in range(rng.randint(1, 6))]
     docs = [{"apiVersion": "backstage.io/v1alpha1", "kind": "Component",
-             "metadata": {"name": c, "annotations": {"estate/path": f"/home/x/{c}", "estate/coupling": rng.choice(["none", "anthropic", "openai"])}},
+             "metadata": {"name": c, "annotations": {"estate/path": f"checkout-{c}", "estate/coupling": rng.choice(["none", "anthropic", "openai"])}},
              "spec": {"type": "service"}} for c in comps]
     for t in ("scheduled-job", "guard", "ledger", "port", "drill"):
         for i in range(rng.randint(0, 5)):
             ann = {"estate/interval-s": str(rng.choice([30, 60, 3600])), "estate/last-status": rng.choice(["0", "1"]), "estate/loaded": "yes"}
             if t == "port":
-                ann = {"estate/port": str(1000 + i), "estate/owner": "python", "estate/bind": "127.0.0.1", "estate/command": f"/home/x/{rng.choice(comps)}/run"}
+                ann = {"estate/port": str(1000 + i), "estate/owner": "python", "estate/bind": "127.0.0.1", "estate/command": f"checkout-{rng.choice(comps)}/run"}
             docs.append({"kind": "Resource", "metadata": {"name": f"{t}-{i}", "annotations": ann},
                          "spec": {"type": t, "dependsOn": [] if t == "port" else [f"component:default/{rng.choice(comps)}"]}})
     return docs
