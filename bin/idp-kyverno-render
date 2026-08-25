@@ -50,6 +50,13 @@ while read -r name ns npatch; do
   python3 - "$S/$name.final.yaml" <<'PY'
 import sys, yaml
 p = sys.argv[1]; docs = [d for d in yaml.safe_load_all(open(p)) if d and "helm.sh/hook" not in (d["metadata"].get("annotations") or {})]
+# Kyverno autogen covers Deployment/StatefulSet/DaemonSet but not Job/CronJob, so the CLI passed a
+# migrator Job whose Pod admission then refused (2026-08-25, require-pod-probes). Judge the Pod
+# a Job or CronJob would create, with the ownerReference admission would see.
+for d in list(docs):
+    tpl = d["spec"]["template"] if d["kind"] == "Job" else d["spec"]["jobTemplate"]["spec"]["template"] if d["kind"] == "CronJob" else None
+    if tpl: docs.append({"apiVersion": "v1", "kind": "Pod", "metadata": {"name": d["metadata"]["name"] + "-pod", "namespace": d["metadata"].get("namespace"),
+        "labels": (tpl.get("metadata") or {}).get("labels") or {}, "ownerReferences": [{"apiVersion": "batch/v1", "kind": "Job", "name": d["metadata"]["name"], "uid": "offline"}]}, "spec": tpl["spec"]})
 open(p, "w").write(yaml.safe_dump_all(docs))
 PY
   out=$(kyverno apply "$S/policies.yaml" --resource "$S/$name.final.yaml" 2>&1 || true)

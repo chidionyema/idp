@@ -12,6 +12,10 @@ clickhouse:
     size: 20Gi
   zookeeper:
     replicaCount: 1
+    # the chart leaves this image unqualified (signoz/zookeeper:3.7.1); the node runtime enforces
+    # short-name mode and refused it with ImageInspectError on 2026-08-25
+    image:
+      registry: docker.io
     resources:
       requests: { cpu: 50m, memory: 128Mi }
       limits: { cpu: 250m, memory: 512Mi }
