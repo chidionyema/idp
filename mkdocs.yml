@@ -40,6 +40,8 @@ nav:
       - EU AI Act: demo/ai-act.md
       - LAW 32 gate: demo/law32.md
       - Actions pinned: demo/actions-pinned.md
+      - owner-account: demo/owner-account.md
+      - static-secret: demo/static-secret.md
       - Bind audit: demo/bind-audit.md
       - Build image: demo/build-image.md
       - Catalog: demo/catalog.md
@@ -72,6 +74,8 @@ nav:
       - EU AI Act: onboarding/ai-act.md
       - LAW 32 gate: onboarding/law32.md
       - Actions pinned: onboarding/actions-pinned.md
+      - owner-account: onboarding/owner-account.md
+      - static-secret: onboarding/static-secret.md
       - Bind audit: onboarding/bind-audit.md
       - Build image: onboarding/build-image.md
       - Catalog: onboarding/catalog.md
