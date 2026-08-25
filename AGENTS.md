@@ -16,6 +16,7 @@ Row format, one rule per row. `gate` is a shell function or command defined in `
 | No scheduled job on this laptop that runs in the sleep window or is never pinged (LAW 28) | policy_gate | policy/fixtures/placement-misplaced.json | policy/fixtures/placement-ok.json |
 | Only the gateway binds a non-loopback address; everything else is 127.0.0.1 or nothing (R20) | bind_audit | tests/fixtures/listeners.bad.txt | tests/fixtures/listeners.good.txt |
 | Every scheduled job reaches the Dagster UI with a description of what it does (LAW 28) | job_described | tests/fixtures/schedule-undescribed.yml | tests/fixtures/schedule-described.yml |
+| A code location loads the way workspace.yaml loads it: by file path, not as a package (LAW 45) | defs_validate | tests/fixtures/definitions/relative-import.py | tests/fixtures/definitions/loads-by-path.py |
 
 Rules that are already types or tools, and so need no row: compose files must parse
 (`docker compose config`), the gateway config must match its release schema

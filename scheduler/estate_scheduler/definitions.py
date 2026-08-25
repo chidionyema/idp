@@ -24,6 +24,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -63,7 +64,16 @@ os.environ.setdefault("IDP", str(IDP))
 os.environ.setdefault("CODE", os.environ.get("CODE_ROOT", str(IDP.parent)))
 
 
-from .describe import describe as describe_job
+# workspace.yaml loads this file by path, so it is a top-level module and not a
+# package member, and the working directory it resolves imports against is not
+# ours to choose -- the running webserver resolved them against a directory
+# that does not exist. Put this file's own directory on the path and the import
+# works under any of them.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from .describe import describe as describe_job
+except ImportError:  # loaded as a file, not as a package member
+    from describe import describe as describe_job
 
 
 def _expand(s: str) -> str:
