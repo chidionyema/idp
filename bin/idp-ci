@@ -512,5 +512,16 @@ else
   fi
 fi
 
+# 9. Every Flux HelmRelease under platform/ renders clean against the cluster's Kyverno
+#    ClusterPolicies (helm template + the release's own postRenderers), both ways: the
+#    unpatched-chart fixture must be refused. Kyverno judges at admission, after merge;
+#    this judges before the PR. BLIND (rc 2) when helm/kyverno are missing, never a pass.
+if command -v kyverno >/dev/null && command -v helm >/dev/null; then
+  dirs=$(cd "$IDP" && grep -lE '^kind: HelmRelease' platform/*/*.yaml platform/*/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && grep -q postRenderers "$d"/*.yaml && echo "$d"; done)
+  if [ -n "$dirs" ] && (cd "$IDP" && bin/idp-kyverno-render $dirs) && ! (cd "$IDP" && bin/idp-kyverno-render tests/fixtures/kyverno/must-fail >/dev/null 2>&1); then
+    say "ok    kyverno  $(echo "$dirs" | tr '\n' ' ')render clean; the unpatched-chart fixture is refused"
+  else say "FAIL  kyverno  a HelmRelease render fails admission policy, or the must-fail fixture passed"; fail=1; fi
+else say "BLIND kyverno  helm or kyverno CLI not installed; HelmRelease renders were not judged"; fail=1; fi
+
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"

@@ -35,3 +35,27 @@ spec:
     name: flux-system
   path: ./platform/chaos
   prune: true
+---
+# crew#258 CP2: SigNoz, the one metrics/traces/logs store (crew/docs/STANDARDS.md "Observability").
+# Ordered after backstage so the portal keeps first claim on the single node's CPU.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: observability
+  namespace: flux-system
+spec:
+  interval: 1h
+  dependsOn:
+    - name: backstage
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/observability
+  prune: true
+  wait: true
+  timeout: 20m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: signoz
+      namespace: observability
