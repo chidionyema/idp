@@ -528,21 +528,6 @@ def cmd_worker(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_install_plugin(args: argparse.Namespace) -> int:
-    try:
-        otto_cli = importlib.import_module("sovereign.otto.cli")
-    except ImportError:
-        _emit({"status": "not-installed", "reason": "sovereign.otto is not present on this checkout"}, args.json)
-        return 0
-    fn = getattr(otto_cli, "install_plugin", None)
-    if fn is None:
-        _emit({"status": "not-installed", "reason": "sovereign.otto.cli has no install_plugin()"}, args.json)
-        return 0
-    res = fn()
-    _emit(res, args.json)
-    return 0
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="sb", description="Sovereign Bus")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -689,7 +674,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Plug-in hook: otto and cockpit register their own subcommands here if
     # their package is present. Absence of either is not an error (cp6).
-    for modname in ("sovereign.otto.cli", "sovereign.cockpit.cli", "sovereign.attach.cli", "sovereign.intake.cli"):
+    for modname in ("sovereign.otto.cli", "sovereign.cockpit.cli", "sovereign.attach.cli", "sovereign.intake.cli", "sovereign.presence.cli"):
         try:
             mod = importlib.import_module(modname)
         except ImportError:

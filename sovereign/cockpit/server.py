@@ -56,6 +56,15 @@ _ROUTE_HEALTHZ = config_keys.resolve("cockpit.route_healthz", config)
 _ROUTE_ROOT = config_keys.resolve("cockpit.route_root", config)
 _ROUTE_API_SESSIONS = config_keys.resolve("cockpit.route_api_sessions", config)
 _ROUTE_API_INBOX = config_keys.resolve("cockpit.route_api_inbox", config)
+# W3 presence routes (spec 2.1 Spatial, 2.6 Siri): the status counts the
+# shortcut speaks and the graph the Spatial view draws, both shaped by
+# sovereign.presence from the same engine rows /api/sessions serves.
+from sovereign.presence import config_keys as presence_keys  # noqa: E402
+from sovereign.presence import spatial as presence_spatial  # noqa: E402
+from sovereign.presence import status as presence_status  # noqa: E402
+
+_ROUTE_API_STATUS = presence_keys.resolve("presence.route_api_status", config)
+_ROUTE_API_SPATIAL = presence_keys.resolve("presence.route_api_spatial", config)
 _ROUTE_API_CONFIG = config_keys.resolve("cockpit.route_api_config", config)
 
 _CT_JSON = config_keys.resolve("cockpit.content_type_json", config)
@@ -167,6 +176,14 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == _ROUTE_API_INBOX:
             self._send_json(_HTTP_OK, _tail_inbox(int(config_keys.resolve("cockpit.inbox_tail", config))))
+            return
+        if path in (_ROUTE_API_STATUS, _ROUTE_API_SPATIAL):
+            if engine_client is None:
+                self._send_json(_HTTP_UNAVAILABLE, {"error": "engine not available"})
+                return
+            sessions = _run(engine_client.list_sessions())
+            shaped = presence_status.summarize(sessions) if path == _ROUTE_API_STATUS else presence_spatial.graph(sessions)
+            self._send_json(_HTTP_OK, shaped)
             return
         if path == _ROUTE_API_CONFIG:
             self._send_json(_HTTP_OK, config_keys.non_secret_dict(config))
