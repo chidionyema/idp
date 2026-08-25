@@ -73,7 +73,7 @@ PID=$(oci iam policy list "${O[@]}" --compartment-id "$TENANCY" --name "$POLICY_
 if [ -z "$PID" ] || [ "$PID" = null ]; then
   oci iam policy create "${O[@]}" --compartment-id "$TENANCY" --name "$POLICY_NAME" --description "least privilege for platform/oci (ADR 0004)" --statements "$STATEMENTS" >/dev/null
 elif [ "$(oci iam policy get "${O[@]}" --policy-id "$PID" --query 'data.statements' 2>/dev/null | jq -c .)" != "$(printf %s "$STATEMENTS" | jq -c .)" ]; then
-  oci iam policy update "${O[@]}" --policy-id "$PID" --statements "$STATEMENTS" --force >/dev/null; echo "iam     policy statements updated"
+  oci iam policy update "${O[@]}" --policy-id "$PID" --statements "$STATEMENTS" --version-date "" --force >/dev/null; echo "iam     policy statements updated"
 fi
 echo "iam     policy $POLICY_NAME"
 
