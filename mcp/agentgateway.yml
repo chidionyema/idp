@@ -18,6 +18,13 @@
 #                 catalog/estate.db mounted :ro and opened with -i (immutable). Its tools
 #                 are read-only by construction: execute_sql goes through Datasette's
 #                 validate_sql_select(), so a write is refused before it reaches SQLite.
+#                 crew#216 CP1 adds a fourth tool, get_estate_inventory, from
+#                 plugins/estate_inventory.py loaded with --plugins-dir (ADR 0006: the
+#                 estate answers for itself over this one server, never a second one).
+#                 It reads catalog-info.yaml and crew/STATE.md, both mounted :ro next to
+#                 estate.db, and returns kind/name/owner/repo per catalog entity plus the
+#                 snapshot's own age -- see mcp/plugins/estate_inventory.py for the field
+#                 list and the byte-ceiling/staleness config keys.
 #     Rejected: modelcontextprotocol's reference mcp-server-sqlite -- moved to
 #       servers-archived, last release 2025.4.25, unpatched SQL injection.
 #     Rejected: panasenco/mcp-sqlite -- stdio only (no HTTP transport, so it would have
@@ -82,9 +89,27 @@ services:
     restart: unless-stopped
     mem_limit: 256m
     # -i opens the file immutable; the mount is :ro as well, so two layers say no to writes.
-    command: ["datasette", "serve", "-i", "/data/estate.db", "-h", "0.0.0.0", "-p", "8001"]
+    # --plugins-dir loads plugins/estate_inventory.py (crew#216 CP1), a Datasette
+    # "one-off plugin" (docs.datasette.io/en/latest/writing_plugins.html#writing-one-off-plugins)
+    # -- no packaging, just a .py file the server reads at start. It adds one tool,
+    # get_estate_inventory, through datasette-mcp's register_mcp_tools hook: still the
+    # one estate MCP server, per ADR 0006 ("no second server").
+    command: ["datasette", "serve", "-i", "/data/estate.db", "-h", "0.0.0.0", "-p", "8001", "--plugins-dir", "/app/plugins"]
     volumes:
       - ../catalog/estate.db:/data/estate.db:ro
+      # catalog-info.yaml and STATE.md are read-only inputs to get_estate_inventory
+      # only; execute_sql/list_databases/get_database_schema never see them. Both
+      # generated files, both :ro, same shape as the estate.db mount above. The host
+      # paths are relative (idp and crew are sibling checkouts, the same assumption
+      # bin/mcp-up already makes for AGE_BLOB) and overridable, so no checkout or home
+      # directory is a literal here (LAW 46).
+      - ${ESTATE_CATALOG_HOST_PATH:-../catalog/catalog-info.yaml}:/data/catalog-info.yaml:ro
+      - ${ESTATE_STATE_MD_HOST_PATH:-../../crew/STATE.md}:/data/STATE.md:ro
+    environment:
+      ESTATE_CATALOG_PATH: /data/catalog-info.yaml
+      ESTATE_STATE_MD_PATH: /data/STATE.md
+      ESTATE_INVENTORY_BYTE_CEILING: ${ESTATE_INVENTORY_BYTE_CEILING:-8000}
+      ESTATE_INVENTORY_STALE_MINUTES: ${ESTATE_INVENTORY_STALE_MINUTES:-90}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/-/versions.json',timeout=4).status==200 else 1)"]
       interval: 15s
