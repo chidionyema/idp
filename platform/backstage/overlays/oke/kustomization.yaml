@@ -28,5 +28,10 @@ patches:
       - op: add
         path: /spec/template/spec/imagePullSecrets
         value: [{name: ghcr-pull}]
+      # base pins Never for the k3d-imported image; on OKE the image only exists in ghcr
+      # (ErrImageNeverPull, 2026-08-25).
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
 generatorOptions:
   disableNameSuffixHash: true
