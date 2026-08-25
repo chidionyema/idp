@@ -98,6 +98,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && \
     apt-get install -y --no-install-recommends libsqlite3-dev && \
     rm -rf /var/lib/apt/lists/*
+# The runtime never runs npm, and the npm the base image bundles carries its own
+# node-tar. Incident 2026-08-25 (idp#125): Trivy failed the build on
+# CVE-2026-59873 in three copies of tar 6.2.1, one of them
+# /usr/local/lib/node_modules/npm/node_modules/tar. The app's two copies are
+# pinned by the `tar` entry under resolutions in package.json; this one is
+# removed with the tool that owns it. A CVE in a tool the image never runs is
+# still a red gate and a finding in diligence.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 # Least privilege. `node` is uid 1000 in this image and owns nothing it does not
 # need; the catalogue file is mounted read-only from the host.
 USER node
