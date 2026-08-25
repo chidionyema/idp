@@ -30,14 +30,11 @@ else
   D="$HOME/.oci"; mkdir -p "$D"; chmod 700 "$D"
   KEY="$D/estate-tofu.pem"; umask 077
   vget OCI_API_PRIVATE_KEY > "$KEY"; chmod 600 "$KEY"   # no OCI_API_KEY marker: the oci CLI suggests it, the OpenTofu provider rejects the file with it (2026-08-25)
-  cat > "$D/config" <<CFG
-[DEFAULT]
-user=$(vget OCI_USER_OCID)
-fingerprint=$(vget OCI_FINGERPRINT)
-tenancy=$(vget OCI_TENANCY_OCID)
-region=$(vget OCI_REGION)
-key_file=$KEY
-CFG
+  # Only [DEFAULT] is ours. Other profiles (the bootstrap session token) are kept: this script
+  # used to overwrite the whole file and dropped [estate-bootstrap] twice on 2026-08-25.
+  OTHERS=$([ -f "$D/config" ] && awk '/^\[/{keep=($0!="[DEFAULT]")} keep' "$D/config" || true)
+  { printf '[DEFAULT]\nuser=%s\nfingerprint=%s\ntenancy=%s\nregion=%s\nkey_file=%s\n' "$(vget OCI_USER_OCID)" "$(vget OCI_FINGERPRINT)" "$(vget OCI_TENANCY_OCID)" "$(vget OCI_REGION)" "$KEY"
+    [ -n "$OTHERS" ] && printf '\n%s\n' "$OTHERS"; } > "$D/config"
   chmod 600 "$D/config"
 fi
 COMP="$(vget OCI_COMPARTMENT_OCID)"

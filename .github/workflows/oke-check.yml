@@ -29,6 +29,18 @@ jobs:
       - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
       - name: oci cli
         run: pip install -q oci-cli
+      - name: token exchange receipt (claims of the job token, and the domain's answer; never the tokens)
+        env:
+          OIDC: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          EP: ${{ vars.DOMAIN_BASE_URL }}
+        run: |
+          JWT=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://cloud.oracle.com" | jq -r .value)
+          printf '%s' "$JWT" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null | jq -c '{iss,aud,sub,repository,ref,event_name}'
+          PUB=$(openssl genrsa 2048 2>/dev/null | openssl rsa -pubout -outform DER 2>/dev/null | base64 -w0)
+          curl -sS -o /tmp/x.json -w 'exchange http %{http_code}\n' -u "$OIDC" "$EP/oauth2/v1/token" \
+            --data-urlencode grant_type=urn:ietf:params:oauth:grant-type:token-exchange --data-urlencode requested_token_type=urn:oci:token-type:oci-upst \
+            --data-urlencode public_key="$PUB" --data-urlencode subject_token="$JWT" --data-urlencode subject_token_type=jwt
+          jq -c 'del(.token, .access_token, .id_token)' /tmp/x.json; rm -f /tmp/x.json
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
