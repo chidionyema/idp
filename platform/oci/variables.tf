@@ -41,5 +41,11 @@ variable "worker_memory_gb" {
 
 variable "kubernetes_version" {
   type    = string
-  default = "v1.35.2"   # in both `oci ce cluster-options get` and the aarch64 OKE image list (`oci ce node-pool-options get`), 2026-08-25
+  default = "v1.35.2" # in both `oci ce cluster-options get` and the aarch64 OKE image list (`oci ce node-pool-options get`), 2026-08-25
+}
+
+variable "control_plane_allowed_cidrs" {
+  type        = list(string)
+  description = "CIDRs admitted to the Kubernetes API endpoint. Written by bin/idp-oci-login from the measured egress IP."
+  default     = []
 }

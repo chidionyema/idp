@@ -16,7 +16,8 @@ module "oke" {
 
   # Public API endpoint so Flux bootstrap and idp-verify reach it from the Mac; workers private.
   control_plane_is_public           = true
-  assign_public_ip_to_control_plane = true # 2026-08-25: without it the module creates a private endpoint only (is_public_ip_enabled = both)
+  assign_public_ip_to_control_plane = true                            # 2026-08-25: without it the module creates a private endpoint only (is_public_ip_enabled = both)
+  control_plane_allowed_cidrs       = var.control_plane_allowed_cidrs # 2026-08-25: default [] admitted nobody; flux bootstrap timed out
   worker_is_public                  = false
   create_bastion                    = false
   create_operator                   = false
