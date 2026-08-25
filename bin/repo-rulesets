@@ -34,6 +34,11 @@ apply_spec() {
     echo "MISSING $repo: no ruleset $NAME"; drift=$((drift+1))
   fi
 }
+jobs_on_main() {  # true when the caller workflow, or a ci.yml carrying both jobs, is on the default branch
+  gh api "/repos/$OWNER/$1/contents/.github/workflows/security-scan.yml" -q .sha >/dev/null 2>&1 && return 0
+  gh api "/repos/$OWNER/$1/contents/.github/workflows/ci.yml" -q .content 2>/dev/null | base64 -d 2>/dev/null | grep -q '^  spec-gate:'
+}
+waiting=0
 ACTIVE_DAYS="${ACTIVE_DAYS:-30}"
 since="$(date -u -v-"${ACTIVE_DAYS}"d +%Y-%m-%d 2>/dev/null || date -u -d "-${ACTIVE_DAYS} days" +%Y-%m-%d)"
 repos="$(gh repo list "$OWNER" --limit 200 --no-archived --json name,pushedAt -q '.[] | .name+" "+.pushedAt[:10]' | sort)"
@@ -42,10 +47,16 @@ for f in "$IDP"/platform/github/ruleset.*.*.json; do
   [ -e "$f" ] || break
   r="$(basename "$f")"; r="${r#ruleset.}"; r="${r%%.*}"
   if [ "$r" = "@active" ]; then
-    while read -r repo pushed; do [ "$pushed" \> "$since" ] && apply_spec "$repo" "$f"; done <<< "$repos"
+    # A required check that never reports blocks every merge (LAW 38). The overlay
+    # is applied only where the jobs it requires exist on the default branch.
+    while read -r repo pushed; do
+      [ "$pushed" \> "$since" ] || continue
+      if jobs_on_main "$repo"; then apply_spec "$repo" "$f"
+      else echo "WAITING $repo: $(jq -r .name "$f") not applied; .github/workflows/security-scan.yml is not on the default branch yet (bin/estate-security-rollout)"; waiting=$((waiting+1)); fi
+    done <<< "$repos"
   else
     apply_spec "$r" "$f"
   fi
 done
-echo "$([ $drift = 0 ] && echo 'ok  ' || echo FAIL)  rulesets $ok in place, $drift missing or drifted, $blocked private repos blocked by plan"
+echo "$([ $drift = 0 ] && echo 'ok  ' || echo FAIL)  rulesets $ok in place, $drift missing or drifted, $blocked private repos blocked by plan, $waiting active repos waiting for the rollout"
 [ $drift = 0 ]

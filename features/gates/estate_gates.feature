@@ -24,3 +24,9 @@ Feature: Every active estate repository runs the same merge-blocking gates
     When bin/estate-security-rollout --apply runs
     Then every active repository without the caller workflow gets one pull request
     And bin/repo-rulesets --apply then requires both checks on each of them
+
+  Scenario: A required check that cannot report never blocks a repository
+    Given an active repository whose default branch has no .github/workflows/security-scan.yml
+    When bin/repo-rulesets runs
+    Then that repository is printed as WAITING and the estate-security-scan ruleset is not applied to it
+    And a repository with the workflow on its default branch gets the ruleset
