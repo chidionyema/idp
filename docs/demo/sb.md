@@ -68,3 +68,12 @@ If the DAG directory goes read-only mid-write the legacy write still lands; the 
 ## Phase 2 — dual-read router (cp10)
 
 Every read runs twice -- legacy DB, then the DAG walk from `shadow_main` -- and a `dualread` receipt records both hashes and both latencies. 1000 drained reads, measured 2026-08-25 on a disposable estate: p50 2.41ms, p95 4.57ms, p99 5.80ms overhead, all under `dualread.max_overhead_ms` (15ms default). An undrained row (write not yet drained into the DAG) is reported as a real mismatch, never a silent pass.
+
+## Phase 2 — consensus check (cp11)
+
+A dual-read mismatch is an alert, never a freeze -- one `consensus_mismatch` line lands in the cockpit's existing Inbox (`ESTATE_ALERT_INBOX`, served at `/api/inbox`) with both hashes and the query, and the caller still gets the legacy answer, unblocked:
+
+    $ bin/sb consensus --json
+    {"matches": 1, "mismatches": 1, "rate": 0.5, "reads": 2}
+    $ cat $ESTATE_HOME/alerts/inbox.jsonl
+    {"kind": "consensus_mismatch", "table": "episodes", "rowid": 2, "query": {"table": "episodes", "rowid": 2}, "legacy_hash": "69d8071…", "dag_hash": "bf81b47…", "ts": 1787631765.74}

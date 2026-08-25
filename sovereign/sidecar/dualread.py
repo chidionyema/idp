@@ -13,6 +13,13 @@ Row identity is the sqlite rowid, the same identity cp8's DAG nodes
 already carry (sovereign/sidecar/core.py) -- the DAG walk here looks for
 the first node for (table, rowid) walking backward from the shadow root,
 which is exactly the DAG's current-state view of that row.
+
+cp11: a mismatch is an alert, never a freeze. read() appends one line to
+config.ESTATE_ALERT_INBOX (the file the cockpit's /api/inbox already
+tails) carrying both hashes and the query -- it never raises, never
+retries, never stops anything; the legacy answer above is still what the
+caller gets. summary() aggregates every dualread receipt on disk into
+{reads, matches, mismatches, rate} for `bin/sb consensus --json`.
 """
 from __future__ import annotations
 
@@ -112,6 +119,20 @@ def read(conn: sqlite3.Connection, table: str, rowid: int, dag_dir: Path | None 
         }
     )
 
+    if not match:
+        # cp11: an alert, never a freeze -- no exception, no service
+        # stopped, the legacy row above is still returned untouched.
+        config.append_alert(
+            {
+                "kind": "consensus_mismatch",
+                "table": table,
+                "rowid": rowid,
+                "query": {"table": table, "rowid": rowid},
+                "legacy_hash": legacy_hash,
+                "dag_hash": dag_hash,
+            }
+        )
+
     overhead_ms = (time.perf_counter() - start) * config.MS_PER_SECOND - legacy_ms
     return {
         "row": legacy_row,
@@ -120,3 +141,15 @@ def read(conn: sqlite3.Connection, table: str, rowid: int, dag_dir: Path | None 
         "dag_ms": dag_ms,
         "overhead_ms": overhead_ms,
     }
+
+
+def summary() -> dict[str, Any]:
+    """cp11: `bin/sb consensus --json` -- {reads, matches, mismatches,
+    rate} aggregated over every dualread receipt currently on disk.
+    rate is 1.0 on zero reads (nothing has disagreed, vacuously)."""
+    rows = [r for r in receipts_mod.read_all() if r.get("kind") == "dualread"]
+    reads = len(rows)
+    matches = sum(1 for r in rows if r.get("match"))
+    mismatches = reads - matches
+    rate = (matches / reads) if reads else 1.0
+    return {"reads": reads, "matches": matches, "mismatches": mismatches, "rate": rate}
