@@ -457,5 +457,36 @@ if out=$("$MPY" "$IDP/tests/test_cp3_workload_logs.py" 2>&1); then
   say "ok    cp3      $(printf '%s' "$out" | grep -c '^ok    ') property/incident checks pass (crew#216)"
 else say "FAIL  cp3      tests/test_cp3_workload_logs.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
+
+# 11. crew#219 R39: the acceptance suite is executable. The 35 Gherkin files in
+#     features/sovereign-bus/ were prose until now -- crew#200 measured "61
+#     .feature files in idp, 0 step dirs". pytest-bdd binds them to pytest, so
+#     this is one more leg of the gate that already exists and not a second
+#     runner (the tool rejected is behave, which brings its own).
+#
+#     Proved both ways in the same run, because a gate only ever seen passing
+#     has never been shown to refuse (LAW 38): the unbound fixture must fail
+#     with StepDefinitionNotFoundError -- not merely fail, or a typo in a
+#     feature path would satisfy the guard -- and the real suite must pass.
+BDD_PY="$MPY"
+"$BDD_PY" -c 'import pytest_bdd' >/dev/null 2>&1 || BDD_PY=python3
+if ! "$BDD_PY" -c 'import pytest_bdd' >/dev/null 2>&1; then
+  say "FAIL  bdd      pytest-bdd is not installed: pip install -r sovereign/requirements-dev.txt"; fail=1
+else
+  # Captured, never piped into grep: this script sets pipefail and pytest exits
+  # non-zero on purpose here, which is the incident guard 1c is about.
+  bdd_bad=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/fixtures/bdd/unbound" -q 2>&1)
+  bdd_good=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/bdd" -q 2>&1); bdd_good_rc=$?
+  if printf '%s' "$bdd_bad" | grep -q 'StepDefinitionNotFoundError' && [ "$bdd_good_rc" -eq 0 ]; then
+    say "ok    bdd      $(printf '%s' "$bdd_good" | grep -oE '[0-9]+ passed' | head -1), $(printf '%s' "$bdd_good" | grep -c '^  pending ') feature(s) pending; an unbound step is refused"
+    printf '%s' "$bdd_good" | grep '^  pending ' | sed 's/^/      /'
+  else
+    say "FAIL  bdd      sovereign/tests/bdd (rc=$bdd_good_rc), or the unbound fixture was not refused for the right reason"
+    printf '%s\n' "$bdd_good" | tail -25 | sed 's/^/      /'
+    printf '%s\n' "$bdd_bad" | tail -5 | sed 's/^/  bad /'
+    fail=1
+  fi
+fi
+
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"
