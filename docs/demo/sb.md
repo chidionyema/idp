@@ -77,3 +77,15 @@ A dual-read mismatch is an alert, never a freeze -- one `consensus_mismatch` lin
     {"matches": 1, "mismatches": 1, "rate": 0.5, "reads": 2}
     $ cat $ESTATE_HOME/alerts/inbox.jsonl
     {"kind": "consensus_mismatch", "table": "episodes", "rowid": 2, "query": {"table": "episodes", "rowid": 2}, "legacy_hash": "69d8071…", "dag_hash": "bf81b47…", "ts": 1787631765.74}
+
+## Phase 2 — cross-stack root (cp15)
+
+`bin/sb root --json` now reports one composite root over four children -- `code_root` (`git rev-parse HEAD`), `db_root` (cp9's shadow root, unchanged), `policy_root` (the resolved `sovereign.attach` policy: destructive patterns, write-verb lists, quorum), `ai_policy_root` (the resolved `sovereign.trust` policy: backend, presence timeout) -- so a single number moves the moment any one of the four does. Measured 2026-08-25 on a disposable estate, two rows inserted and drained one at a time:
+
+    $ bin/sb root --json
+    {"ai_policy_root": "ebe0f3054e844927f6183fa11aa92fc782bf07ddcbf4e5110d61995eff381cd5", "code_root": "d78b7d58a379f82488ef0af2491fec03ad71025a", "db_nodes": 1, "db_parent": "0000…", "db_root": "b3449ed6bd317b5f1a8b4ff3dba073eaa9488369c77e57b60950543fdc3f4f68", "db_verified": true, "policy_root": "ef9ada93f556b351aab13d6d9c12e0e8e6d4082a63f58c9184d353de42a18eed", "root": "04da929c9cc748fe9e1750c7b359a7b6272a43ff575cd45bd48a423b5afc94ad"}
+    $ # a second row drained, code/policy/ai_policy untouched
+    $ bin/sb root --json
+    {"ai_policy_root": "ebe0f3054e844927f6183fa11aa92fc782bf07ddcbf4e5110d61995eff381cd5", "code_root": "d78b7d58a379f82488ef0af2491fec03ad71025a", "db_nodes": 2, "db_parent": "b3449ed6bd317b5f1a8b4ff3dba073eaa9488369c77e57b60950543fdc3f4f68", "db_root": "bef2735bffd3ab589af9550c1289fbac088b06ae29bb528b173b8f50fc3adec1", "db_verified": true, "policy_root": "ef9ada93f556b351aab13d6d9c12e0e8e6d4082a63f58c9184d353de42a18eed", "root": "7688b96c2e4cf324dc991ae80b61bd45a1e95ea096a04be01aa7881d439e064f"}
+
+`code_root`, `policy_root` and `ai_policy_root` held identical across both calls; only `db_root` and the composite `root` moved -- proving the composite genuinely covers `db_root` rather than silently dropping it (`sovereign/engine/test_cross_stack.py::test_incident_cp15_composite_root_changes_when_db_root_changes`).

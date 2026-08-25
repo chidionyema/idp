@@ -198,6 +198,7 @@ KEYS: dict[str, KeySpec] = {
     "cli.exit_usage_error": KeySpec(2, "int", "SB_EXIT_USAGE_ERROR", "exit code for a refused command, e.g. missing budget"),
     "client.query_timeout_s": KeySpec(5, "float", "SB_QUERY_TIMEOUT_S", "client-side timeout on a single workflow query, so one stuck session never hangs `sb list`"),
     "log.bot_token_redact_pattern": KeySpec(r"bot\d+:[A-Za-z0-9_-]+", "str", None, "regex matching a Telegram bot token as it appears in a URL (LAW 21)"),
+    "cross_stack.git_timeout_s": KeySpec(5, "int", "SB_CROSS_STACK_GIT_TIMEOUT_S", "cp15: timeout for the `git rev-parse HEAD` subprocess call that produces code_root"),
 }
 
 # ---------------------------------------------------------------------------
@@ -490,6 +491,7 @@ STEP_ACTIVITY_RETRY_MAX_ATTEMPTS: int = _R["step.activity_retry_max_attempts"].v
 CLI_EXIT_USAGE_ERROR: int = _R["cli.exit_usage_error"].value
 CLIENT_QUERY_TIMEOUT_S: float = _R["client.query_timeout_s"].value
 LOG_BOT_TOKEN_REDACT_PATTERN: str = _R["log.bot_token_redact_pattern"].value
+CROSS_STACK_GIT_TIMEOUT_S: int = _R["cross_stack.git_timeout_s"].value
 
 TEMPORAL_PID_FILE: Path = ESTATE_HOME / "temporal" / "dev-server.pid"
 WORKER_PID_FILE: Path = SOVEREIGN_HOME / "worker.pid"

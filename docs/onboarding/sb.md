@@ -17,7 +17,7 @@
 - `bin/sb attach <repo>` mounts any repository as an estate and scaffolds its `AGENTS.md`; `bin/sb status`, `bin/sb halt --all`.
 - `bin/sb audit --verify` walks the signed receipt chain; `bin/sb episodes --kind stop` reads what happened.
 - `bin/sb config --json`, `bin/sb config set <key> <value>`, `bin/sb config --lint` (must print 0).
-- `bin/sb root --json` shows the shadow root (`.estate/heads/shadow_main`): the DAG node cp8's sidecar last wrote, and whether the chain from there to genesis still verifies.
+- `bin/sb root --json` shows the cross-stack composite root (cp15): `{root, code_root, db_root, policy_root, ai_policy_root}` plus cp9's own `db_nodes`/`db_parent`/`db_verified` diagnostics for the DAG chain from `.estate/heads/shadow_main`. `code_root` is `git rev-parse HEAD`; `policy_root`/`ai_policy_root` hash the resolved `sovereign.attach`/`sovereign.trust` config. The command exits 1 whenever `db_verified` is false.
 - `sovereign.sidecar.dualread.read(conn, table, rowid)` runs a read against both the legacy DB and the DAG, records a `dualread` receipt, and returns the legacy answer; `dualread.max_overhead_ms` caps the added p95 cost.
 - `bin/sb consensus --json` reports the running legacy/DAG match rate; a mismatch also lands in the cockpit Inbox (`/api/inbox`) as a `consensus_mismatch` alert -- it never blocks the read or stops a service.
 
