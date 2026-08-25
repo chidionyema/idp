@@ -39,6 +39,9 @@ docker info >/dev/null 2>&1 || {
 # error (docker-mounts-home-only-bind-becomes-dir, same class): caught here instead.
 STATE_MD_HOST="${ESTATE_STATE_MD_HOST_PATH:-$(dirname "$IDP")/crew/STATE.md}"
 [ -r "$STATE_MD_HOST" ] || { echo "FAIL  $STATE_MD_HOST is missing -- scripts/estate-snapshot (crew repo) builds it, or set ESTATE_STATE_MD_HOST_PATH"; exit 2; }
+# A source the VM cannot see mounts as an empty directory, silently (2026-08-25: a
+# worktree under /private/tmp took the stack down). Refuse before compose runs.
+"$IDP/bin/vm-shared-path" "$IDP" "$STATE_MD_HOST" "${ESTATE_CATALOG_HOST_PATH:-$IDP/catalog/catalog-info.yaml}" || exit 2
 
 # Validate the config the service will refuse to start without (same class as the
 # ClickHouse XML and the LiteLLM YAML: a config never checked before its reader starts).

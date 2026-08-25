@@ -15,6 +15,8 @@
 set -euo pipefail
 
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
+# A bind-mount source the container VM cannot see mounts as an empty directory (2026-08-25).
+"$IDP/bin/vm-shared-path" "$IDP" || exit 2
 LLM="$IDP/llm"
 ENVF="$LLM/.env"
 AGE_BLOB="${AGE_BLOB:-$(dirname "$IDP")/prospector-main/deploy/secrets.env.age}"   # sibling checkout; migration source until the sops vault lands
