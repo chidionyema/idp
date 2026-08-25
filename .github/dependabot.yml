@@ -1,0 +1,37 @@
+# Dependabot, for the estate's GitHub Actions.
+#
+# WHY THIS EXISTS. Every `uses:` in this repo is pinned to a 40-hex commit SHA,
+# enforced by `bin/actions-pinned` (crew#197). A SHA cannot be moved by the
+# action's owner the way a tag can -- which is the attack tj-actions took in
+# March 2025, when v1 was repointed at a commit that dumped runner memory into
+# the build log. But a pin that nobody advances is a different problem: it
+# freezes us on whatever the action shipped the day we pinned it, including its
+# unpatched bugs. Pinning without an update path trades one risk for another.
+#
+# Dependabot is the update path. It reads the `# v4.2.2` comment that pinact
+# writes next to each SHA, finds the newer release, and opens a pull request
+# that moves the SHA and the comment together. So the comment is not decoration
+# -- it is the only thing that tells Dependabot which version a bare hash is,
+# and deleting it silently stops updates for that action.
+#
+# GROUPED, DELIBERATELY. One pull request a week carrying every action bump,
+# rather than one per action. Ungrouped, sixteen actions produce enough weekly
+# noise that the pull requests stop being read, and an update nobody reads is
+# not an update path (LAW 28).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "security"
+    labels:
+      - security
+      - dependencies
