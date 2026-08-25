@@ -1,0 +1,13 @@
+# The one ClusterSecretStore. Vault OCID and region are substituted by Flux from the
+# `estate-vars` ConfigMap that bin/idp-flux-bootstrap writes from tofu outputs (LAW 46: no
+# identifier for this tenancy is typed here).
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: oci-vault
+spec:
+  provider:
+    oracle:
+      vault: ${OCI_VAULT_ID}
+      region: ${OCI_REGION}
+      principalType: InstancePrincipal
