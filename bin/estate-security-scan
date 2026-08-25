@@ -99,8 +99,10 @@ else
       rc=$?
       if [ $rc = 124 ]; then say "BLIND npm       $d: npm audit exceeded 120s (network); rerun"; blind=1
       else say "FAIL  npm       $d: high or critical advisories in shipped dependencies"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'; nfail=1; fi
-    elif ! (cd "$d" && timeout 120 npm audit --package-lock-only --audit-level=high >/dev/null 2>&1); then
-      say "WARN  npm       $d: high or critical advisories in devDependencies only (not shipped; not gating)"
+    else
+      (cd "$d" && timeout 120 npm audit --package-lock-only --audit-level=high >/dev/null 2>&1); rc=$?
+      if [ $rc = 124 ]; then say "BLIND npm       $d: all-deps npm audit exceeded 120s (network); dev advisories unmeasured"; blind=1
+      elif [ $rc != 0 ]; then say "WARN  npm       $d: high or critical advisories in devDependencies only (not shipped; not gating)"; fi
     fi
   done
   [ $nfail = 1 ] && fail=1

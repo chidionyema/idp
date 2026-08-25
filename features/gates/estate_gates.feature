@@ -61,3 +61,4 @@ Feature: Every active estate repository runs the same merge-blocking gates
     Given a repository whose only high advisories are in devDependencies
     When bin/estate-security-scan runs
     Then it prints "WARN  npm ... devDependencies only" and the scan does not fail on npm
+    And when the all-dependencies audit times out it prints "BLIND npm" and the scan is BLIND, never a WARN
