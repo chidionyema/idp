@@ -51,12 +51,14 @@ class SessionWorkflow:
         self._step_heartbeat_s: int = 0
         self._step_activity_retry_max_attempts: int = 0
         self._last_output_max_chars: int = 0
+        self._approval_timeout_min: int = 0
 
         self._steer_texts: list[str] = []
         self._pending_receipts: list[dict[str, Any]] = []
         self._stop_requested = False
         self._decision: str | None = None
         self._decision_by: str = ""
+        self._decision_attestation: str = ""
         self._active_activity_handle: workflow.ActivityHandle | None = None
         self._refill: dict[str, Any] | None = None
 
@@ -71,10 +73,18 @@ class SessionWorkflow:
             self._active_activity_handle.cancel()
 
     @workflow.signal
-    def approve(self, by: str) -> None:
+    def approve(self, by: str, attestation: str = "") -> None:
+        """`attestation` names the root of trust that verified the
+        signature -- "hardware" or "fallback" (R11/R22, R24). Verification
+        happens client-side in sovereign/trust/approval.py, because the
+        private key is on this Mac and the workflow runs inside Temporal's
+        deterministic sandbox where no subprocess, socket or Keychain call
+        is allowed. What the workflow records is which root of trust said
+        yes, and it records it on the approve receipt."""
         if self.status == "waiting":
             self._decision = "approve"
             self._decision_by = by
+            self._decision_attestation = attestation
 
     @workflow.signal
     def deny(self, by: str) -> None:
@@ -190,6 +200,7 @@ class SessionWorkflow:
         self._step_heartbeat_s = int(params["step_heartbeat_s"])
         self._step_activity_retry_max_attempts = int(params["step_activity_retry_max_attempts"])
         self._last_output_max_chars = int(params["last_output_max_chars"])
+        self._approval_timeout_min = int(params.get("approval_timeout_min", 0))
         self.started_at = workflow.now().isoformat()
         self.updated_at = self.started_at
 
@@ -272,14 +283,44 @@ class SessionWorkflow:
                 self.updated_at = workflow.now().isoformat()
                 await self._notify()
 
+                # R12 default-deny. cp3 already refused to proceed on
+                # silence; silence still parked the session in "waiting"
+                # for ever, and a session waiting for ever holds its
+                # budget, its worker slot and the founder's attention.
+                # The deadline is a real wall-clock deadline held by
+                # Temporal (workflow.wait_condition's own timeout), which
+                # survives a worker restart -- a timer thread here would
+                # not, and would also be non-deterministic inside the
+                # workflow sandbox.
+                #
+                # It halts rather than denies on purpose: "denied" ends
+                # the session and throws the work away, and an unanswered
+                # request usually means the founder was in a meeting, not
+                # that he refused. Halted keeps the state and still needs
+                # a signed act to leave.
+                deadline = timedelta(minutes=self._approval_timeout_min) if self._approval_timeout_min else None
+                timed_out = False
                 while True:
-                    await workflow.wait_condition(
-                        lambda: self._decision is not None or self._stop_requested or bool(self._pending_receipts)
-                    )
+                    try:
+                        await workflow.wait_condition(
+                            lambda: self._decision is not None or self._stop_requested or bool(self._pending_receipts),
+                            timeout=deadline,
+                        )
+                    except asyncio.TimeoutError:
+                        timed_out = True
+                        break
                     if self._pending_receipts:
                         await self._drain_pending_receipts()
                         continue
                     break
+
+                if timed_out and self._decision is None and not self._stop_requested:
+                    self.status = "halted"
+                    self.reason = "default-deny"
+                    self.updated_at = workflow.now().isoformat()
+                    await self._receipt("halt", "engine", self.reason)
+                    await self._notify()
+                    return self._state()
 
                 if self._stop_requested:
                     self.status = "stopped"
@@ -294,9 +335,10 @@ class SessionWorkflow:
                 # approve: continue the loop for the next step
                 self.status = "running"
                 self.asking = None
-                await self._receipt("approve", self._decision_by, "")
+                await self._receipt("approve", self._decision_by, self._decision_attestation)
                 self._decision = None
                 self._decision_by = ""
+                self._decision_attestation = ""
                 continue
 
             if result.get("done"):

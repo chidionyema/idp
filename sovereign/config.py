@@ -175,6 +175,8 @@ KEYS: dict[str, KeySpec] = {
     "blind.halt_after_min": KeySpec(5, "int", "SB_BLIND_HALT_AFTER_MIN", ""),
     "alerts.digest_over_per_hour": KeySpec(50, "int", "SB_ALERTS_DIGEST_OVER_PER_HOUR", ""),
     "card.poll_s": KeySpec(3, "int", "SB_CARD_POLL_S", ""),
+    "approval.timeout_min": KeySpec(15, "int", "SB_APPROVAL_TIMEOUT_MIN", "R12 default-deny: minutes an approval request may go unanswered before the workflow halts itself. Silence is not consent, so this halts rather than denies -- a denial would end the session and lose the work, and the founder who was in a meeting can still refill/approve"),
+    "trust.require_signed_approval": KeySpec(True, "bool", "SB_REQUIRE_SIGNED_APPROVAL", "R11/R22: refuse `sb approve` without a verified signature. Off only for a host with no trust anchor at all, and the receipt records which"),
     "trust.backend": KeySpec("auto", "str", "SB_TRUST_BACKEND", ""),
     "presence.default": KeySpec("ghost", "str", "SB_PRESENCE_DEFAULT", ""),
 
@@ -245,6 +247,20 @@ try:
     from sovereign.attach.config_keys import ATTACH_KEYS
 
     _merge_external_keys(ATTACH_KEYS)
+except ImportError:
+    pass
+
+try:
+    from sovereign.consensus.config_keys import CONSENSUS_KEYS
+
+    _merge_external_keys(CONSENSUS_KEYS)
+except ImportError:
+    pass
+
+try:
+    from sovereign.engine.config_keys import TERMINATION_KEYS
+
+    _merge_external_keys(TERMINATION_KEYS)
 except ImportError:
     pass
 
@@ -487,6 +503,8 @@ RECEIPT_RETRY_MAX_ATTEMPTS: int = _R["receipt.retry_max_attempts"].value
 NOTIFY_ACTIVITY_TIMEOUT_S: int = _R["notify.activity_timeout_s"].value
 NOTIFY_RETRY_MAX_ATTEMPTS: int = _R["notify.retry_max_attempts"].value
 STEP_ACTIVITY_RETRY_MAX_ATTEMPTS: int = _R["step.activity_retry_max_attempts"].value
+APPROVAL_TIMEOUT_MIN: int = _R["approval.timeout_min"].value
+REQUIRE_SIGNED_APPROVAL: bool = _R["trust.require_signed_approval"].value
 CLI_EXIT_USAGE_ERROR: int = _R["cli.exit_usage_error"].value
 CLIENT_QUERY_TIMEOUT_S: float = _R["client.query_timeout_s"].value
 LOG_BOT_TOKEN_REDACT_PATTERN: str = _R["log.bot_token_redact_pattern"].value

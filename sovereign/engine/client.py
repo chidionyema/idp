@@ -54,6 +54,7 @@ async def start(
         "step_heartbeat_s": config.STEP_HEARTBEAT_S,
         "step_activity_retry_max_attempts": config.STEP_ACTIVITY_RETRY_MAX_ATTEMPTS,
         "last_output_max_chars": config.SESSION_LAST_OUTPUT_MAX_CHARS,
+        "approval_timeout_min": config.APPROVAL_TIMEOUT_MIN,
     }
     await client.start_workflow(
         WORKFLOW,
@@ -151,13 +152,14 @@ async def signal(
     text: str = "",
     tokens: int = 0,
     signed: bool = False,
+    attestation: str = "",
 ) -> dict[str, Any]:
     client = await get_client()
     handle = client.get_workflow_handle(session_id)
     if kind == "stop":
         await handle.signal("stop", args=[by, text])
     elif kind == "approve":
-        await handle.signal("approve", args=[by])
+        await handle.signal("approve", args=[by, attestation])
     elif kind == "deny":
         await handle.signal("deny", args=[by])
     elif kind == "steer":
