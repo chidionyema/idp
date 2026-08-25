@@ -80,6 +80,19 @@ Enforcement: a handoff missing any item is routed back to the sender with a
 `handoff_incomplete` receipt. In agent replies the five items are the lines `Built:`, `Use:`,
 `Expect:`, `Not done:`, `Evidence:`; `dod-guard.py` refuses an `INVENTORY:` reply without them.
 
+#### Architecture laws block (in every PR body)
+
+Four rows from the founder's Living Estate doc (2026-08-25), one line each; `n/a: <why>` is
+an answer, a missing row is not. Source of record for the `## Architecture laws` section
+that `dod-guard` expects.
+
+- **LAW 1 zero-gravity:** does the change add a cloud-provider, machine or account string?
+  Receipt: `bin/cloud-agnostic-gate` (idp) or the repo's equivalent.
+- **LAW 2 fractal:** does a changed service keep the same shape as every other service:
+  catalog entity, real health probes, traces to the estate collector?
+- **LAW 3 nervous system:** which alert, trace or test tells us when this breaks?
+- **LAW 4 calibration:** what number did the PR predict, and what was measured?
+
 ### Gate 5: Exceptional Quality Standard
 
 "Good enough" is not done. The feature must meet this bar:

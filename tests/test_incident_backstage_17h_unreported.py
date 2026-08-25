@@ -18,6 +18,19 @@ def _docs(pattern):
                 yield f, d
 
 
+def _namespace_of(path, doc):
+    """metadata.namespace, or the `namespace:` the directory's kustomization stamps on it
+    (idp#133 signoz: the HelmRelease carries none, kustomize sets observability)."""
+    if "namespace" in doc["metadata"]:
+        return doc["metadata"]["namespace"]
+    k = pathlib.Path(path).parent / "kustomization.yaml"
+    if k.exists():
+        stamped = yaml.safe_load(k.read_text()).get("namespace")
+        if stamped:
+            return stamped
+    raise AssertionError(f"{path}: HelmRelease {doc['metadata']['name']} has no namespace anywhere")
+
+
 def test_every_cluster_kustomization_with_health_checks_waits():
     for f, d in _docs("clusters/*/*.yaml"):
         if d.get("kind") == "Kustomization" and d["spec"].get("healthChecks"):
@@ -45,7 +58,7 @@ def test_alert_covers_every_namespace_that_holds_a_helmrelease():
     assert alerts, "no Alert in platform/alerts"
     covered = {(s["kind"], s.get("namespace")) for a in alerts for s in a["spec"]["eventSources"] if s["name"] == "*"}
     assert ("Kustomization", "flux-system") in covered
-    hr_namespaces = {d["metadata"]["namespace"] for _, d in _docs("platform/**/*.yaml") if d.get("kind") == "HelmRelease"}
+    hr_namespaces = {_namespace_of(f, d) for f, d in _docs("platform/**/*.yaml") if d.get("kind") == "HelmRelease"}
     missing = {ns for ns in hr_namespaces if ("HelmRelease", ns) not in covered}
     assert not missing, f"HelmRelease namespaces with no alert: {sorted(missing)}"
     assert all(a["spec"]["eventSeverity"] == "error" for a in alerts)

@@ -36,3 +36,7 @@ spec:
       runtime: containerd
       socketPath: /run/containerd/containerd.sock
     enableFilterNamespace: true
+    # No DNS chaos planned; the chart's dns-server requests 100m CPU (chart 2.8.4 values), a
+    # third of the single node's headroom measured 2026-08-25 (310m with Backstage running).
+    dnsServer:
+      create: false
