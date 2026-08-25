@@ -16,6 +16,10 @@ RUN pip install --no-cache-dir "datasette==1.0a38" "datasette-mcp==0.1a0" "pyyam
 # crew#216 CP2 adds a second plugin, plugins/workload_state.py, through the same
 # --plugins-dir mechanism. It needs no new dependency: sqlite3 is stdlib, and it reads
 # the estate.db already mounted below for execute_sql/list_databases.
+# crew#216 CP3 adds a third plugin, plugins/workload_logs.py -- also no new
+# dependency (plistlib is stdlib). It reads a scheduled_job asset's own launchd
+# plist path, which is not mounted into this image; see the plugin's own docstring
+# for the residual.
 COPY plugins /app/plugins
 USER datasette
 EXPOSE 8001

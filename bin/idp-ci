@@ -441,5 +441,16 @@ if out=$("$MPY" "$IDP/tests/test_cp2_workload_state.py" 2>&1); then
   say "ok    cp2      $(printf '%s' "$out" | grep -c '^ok    ') property/incident checks pass (crew#216)"
 else say "FAIL  cp2      tests/test_cp2_workload_state.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
+# 10. crew#216 CP3: the get_workload_logs(app, tail=50) MCP tool, the separate
+#     drill-down get_workload_state's docstring names. Differential (tail_lines vs
+#     a naive whole-file reference), property (tail bound holds over line-count x
+#     requested-tail combinations, including a 1,000,000-line request) and incident
+#     (a scheduled_job's own plist resolves to its log in one call; a non-job asset
+#     degrades; the two tools are registered separately) tests -- offline, no
+#     docker daemon needed. Live round-trip through the gateway is bin/mcp-status.
+if out=$("$MPY" "$IDP/tests/test_cp3_workload_logs.py" 2>&1); then
+  say "ok    cp3      $(printf '%s' "$out" | grep -c '^ok    ') property/incident checks pass (crew#216)"
+else say "FAIL  cp3      tests/test_cp3_workload_logs.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"

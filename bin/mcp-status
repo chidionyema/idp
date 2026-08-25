@@ -70,6 +70,9 @@ check estate-inventory estate \
 check workload-state estate \
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_workload_state","arguments":{"app":"idp"}}}' \
   "get_workload_state(idp): crew#216 CP2, catalog + desired/actual + metrics in one call"
+check workload-logs estate \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_workload_logs","arguments":{"app":"idp","tail":10}}}' \
+  "get_workload_logs(idp): crew#216 CP3 -- degrades (no plist mount yet) rather than erroring"
 check github github \
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_issues","arguments":{"owner":"chidionyema","repo":"crew","state":"OPEN","perPage":1}}}' \
   "list_issues on chidionyema/crew (the board)"

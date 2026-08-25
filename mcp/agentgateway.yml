@@ -33,6 +33,18 @@
 #                 mcp/plugins/workload_state.py for the field list, the join key
 #                 (estate/path annotation), and why metrics are an explicit stub
 #                 pending crew#180.
+#                 crew#216 CP3 adds a sixth tool, get_workload_logs(app, tail=50),
+#                 from plugins/workload_logs.py -- the separate drill-down tool
+#                 CP2's own docstring names, registered independently (not a flag
+#                 on get_workload_state). It resolves a scheduled_job asset's own
+#                 launchd plist (named in estate.db) to that job's
+#                 StandardOutPath/StandardErrorPath and tails it, bounded by
+#                 ESTATE_LOGS_MAX_TAIL. RESIDUAL: the plist paths estate.db names
+#                 (~/Library/LaunchAgents/*.plist) are host paths, not mounted into
+#                 this container, so a live call degrades with "plist unreadable"
+#                 for every asset until that mount is added -- an infra decision
+#                 (which host directories, how broad) outside this checkpoint's
+#                 diff. See mcp/plugins/workload_logs.py for the full residual.
 #     Rejected: modelcontextprotocol's reference mcp-server-sqlite -- moved to
 #       servers-archived, last release 2025.4.25, unpatched SQL injection.
 #     Rejected: panasenco/mcp-sqlite -- stdio only (no HTTP transport, so it would have
@@ -120,6 +132,7 @@ services:
       ESTATE_INVENTORY_BYTE_CEILING: ${ESTATE_INVENTORY_BYTE_CEILING:-8000}
       ESTATE_INVENTORY_STALE_MINUTES: ${ESTATE_INVENTORY_STALE_MINUTES:-90}
       ESTATE_WORKLOAD_BYTE_CEILING: ${ESTATE_WORKLOAD_BYTE_CEILING:-8000}
+      ESTATE_LOGS_MAX_TAIL: ${ESTATE_LOGS_MAX_TAIL:-500}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/-/versions.json',timeout=4).status==200 else 1)"]
       interval: 15s
