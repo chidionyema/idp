@@ -9,6 +9,7 @@ Needs the kyverno and helm CLIs and the prospector policy checkout named by ESTA
 them the test is BLIND and says so, never green."""
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 
@@ -50,15 +51,19 @@ def _render_chart(tmp_path):
     return out
 
 
-def _apply(tmp_path, resource, exception):
+def _apply(tmp_path, resource, exception=None):
     policies = tmp_path / "policies.yaml"
     policies.write_text(subprocess.run(["kubectl", "kustomize", str(POLICIES)], check=True,
                                        capture_output=True, text=True).stdout)
-    out = subprocess.run(["kyverno", "apply", str(policies), "--resource", str(resource), "--exception", str(exception)],
-                         capture_output=True, text=True).stdout
+    cmd = ["kyverno", "apply", str(policies), "--resource", str(resource)]
+    if exception:
+        cmd += ["--exception", str(exception)]
+    out = subprocess.run(cmd, capture_output=True, text=True).stdout
     summary = [line for line in out.splitlines() if line.startswith("pass:")]
     assert summary, out
-    return {k.strip(): int(v) for k, v in (kv.split(": ") for kv in summary[-1].split(","))}
+    counts = {k.strip(): int(v) for k, v in (kv.split(": ") for kv in summary[-1].split(","))}
+    counts["failing_policies"] = set(re.findall(r"policy ([a-z0-9-]+) -> resource \S+ failed", out))
+    return counts
 
 
 def test_chaos_mesh_is_admitted_with_its_exception_and_refused_without(tmp_path):
@@ -84,3 +89,13 @@ def test_kyverno_honours_exceptions_from_the_namespace_the_row_uses():
     assert feat["namespace"] == exc["metadata"]["namespace"], (feat, exc["metadata"])
     assert "chaos-mesh" in exc["spec"]["match"]["any"][0]["resources"]["namespaces"]
     assert "exception.yaml" in (MESH / "kustomization.yaml").read_text()
+
+
+def test_the_exception_waives_exactly_the_policies_the_chart_fails(tmp_path):
+    """idp#141 review (code-0d): the first draft waived all 26 policies while the chart failed 13.
+    A waiver for a policy the workload already passes is a hole nobody measured."""
+    _blind()
+    rendered = _render_chart(tmp_path)
+    failing = _apply(tmp_path, rendered)["failing_policies"]
+    excepted = {e["policyName"] for e in _docs(MESH / "exception.yaml")[0]["spec"]["exceptions"]}
+    assert excepted == failing, {"waived for nothing": sorted(excepted - failing), "missing": sorted(failing - excepted)}

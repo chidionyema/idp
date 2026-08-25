@@ -2,12 +2,14 @@
 # into the container runtime (hostPID, a hostPath to the containerd socket, privileged, extra
 # capabilities) to inject the faults ADR 0005 chose it for. Incident 2026-08-26: idp#139
 # installed the HelmRelease and Kyverno refused chaos-daemon and chaos-controller-manager
-# (22 rule failures, kyverno CLI 1.19.0 against the prospector policy set); the chaos-mesh row
+# (22 rule failures across 13 policies, kyverno CLI 1.19.0 against the prospector policy set); the chaos-mesh row
 # stalled and no pod ever ran.
 #
 # The exception is Kyverno's own mechanism for this (kyverno.io/docs/writing-policies/exceptions)
 # and is scoped to one namespace, so nothing outside chaos-mesh is loosened: the same object
 # with another namespace still refuses all 22 (tests/test_incident_chaos_mesh_refused_by_kyverno.py).
+# Only the policies the rendered chart fails are listed; the incident test refuses a waiver
+# for a policy the chart already passes.
 # It lives in namespace kyverno because platform/edge/kyverno.yaml restricts exceptions to that
 # namespace; an exception a workload namespace could write for itself would not be a guard.
 apiVersion: kyverno.io/v2
@@ -31,31 +33,15 @@ spec:
       ruleNames: ['*']
     - policyName: disallow-capabilities-strict
       ruleNames: ['*']
-    - policyName: disallow-default-namespace
-      ruleNames: ['*']
     - policyName: disallow-host-namespaces
       ruleNames: ['*']
     - policyName: disallow-host-path
-      ruleNames: ['*']
-    - policyName: disallow-host-ports
-      ruleNames: ['*']
-    - policyName: disallow-host-process
-      ruleNames: ['*']
-    - policyName: disallow-latest-tag
       ruleNames: ['*']
     - policyName: disallow-privilege-escalation
       ruleNames: ['*']
     - policyName: disallow-privileged-containers
       ruleNames: ['*']
-    - policyName: disallow-proc-mount
-      ruleNames: ['*']
-    - policyName: disallow-selinux
-      ruleNames: ['*']
     - policyName: drop-all-capabilities
-      ruleNames: ['*']
-    - policyName: money-rail-single-writer
-      ruleNames: ['*']
-    - policyName: no-optional-secret-references
       ruleNames: ['*']
     - policyName: require-pod-probes
       ruleNames: ['*']
@@ -63,19 +49,9 @@ spec:
       ruleNames: ['*']
     - policyName: require-ro-rootfs
       ruleNames: ['*']
-    - policyName: require-run-as-non-root-user
-      ruleNames: ['*']
     - policyName: require-run-as-nonroot
-      ruleNames: ['*']
-    - policyName: restrict-apparmor-profiles
-      ruleNames: ['*']
-    - policyName: restrict-seccomp
       ruleNames: ['*']
     - policyName: restrict-seccomp-strict
       ruleNames: ['*']
-    - policyName: restrict-sysctls
-      ruleNames: ['*']
     - policyName: restrict-volume-types
-      ruleNames: ['*']
-    - policyName: secrets-not-from-env-vars
       ruleNames: ['*']
