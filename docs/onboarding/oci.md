@@ -66,3 +66,18 @@ Two things broke on the first run and are now guarded:
 
 If the token expires mid-run, re-run the script: it reuses a live session, otherwise opens
 the browser again, and every IAM step is idempotent.
+
+## Cluster, as run on 2026-08-25
+
+Three things broke on the first `platform/oci` apply and are now in the config:
+
+1. `Node shape is unavailable in subnet availability domain(s)` -- A1 exists only in AD-1 and
+   AD-2 of uk-london-1, so the worker pool carries `placement_ads = [1, 2]` (#64).
+2. No aarch64 OKE image for the default Kubernetes version; `kubernetes_version` is v1.35.2.
+3. `control_plane_is_public = true` alone gives a private endpoint. The module also needs
+   `assign_public_ip_to_control_plane = true` (#66). Flipping it on an existing cluster is an
+   in-place change, but the module's kube-config data source asks for the public endpoint
+   before it exists, so the plan errors. Apply the cluster first, then everything:
+   `tofu apply -target=module.oke.module.cluster`, then a normal plan and apply.
+
+Each apply is behind the spend guard; Always Free sizes are the founder's sign-off (R14).
