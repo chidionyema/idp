@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""LAW 32 at the pull request: a feature ships with a demo and an onboarding.
+
+Founder, 2026-08-25: "where tf is proof demo, founder onboarding, we breaking rules again"
+and "we need to start enforcing more, at PR". The pre-push hook (law32-default in
+claude-guards) only looked at `feat:` subjects; tonight's five features landed under
+`security:` and `catalog:` and it never fired. This runs in bin/idp-ci on every PR.
+
+Three checks:
+  1. Every executable added under bin/ in this PR names a feature that has
+     docs/demo/<n>.md AND docs/onboarding/<n>.md, where <n> is the file's stem
+     (minus -gate/-report) or a prefix of it before a hyphen (scheduler-up -> scheduler).
+  2. Every page under docs/demo and docs/onboarding carries >= 200 characters of prose
+     once headings and blank lines are stripped (LAW 32's floor).
+  3. Every page under docs/demo and docs/onboarding is in the mkdocs nav. Measured
+     2026-08-25: nine onboarding pages and five demos existed and none was in the nav,
+     so the portal showed the founder no proof at all.
+
+Added files come from `git diff --diff-filter=A --name-only <base>...HEAD -- bin`, base
+being the merge-base with origin/main (or BASE env). `--added f1 f2` overrides the list so
+the gate is proved both ways in CI without a second repository.
+
+Exit 0 ok, 1 FAIL, 2 BLIND (no git history to diff against; the other two checks still run).
+"""
+import os, re, subprocess, sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FLOOR = 200
+
+
+def prose_chars(path):
+    n = 0
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            if line.strip() and not line.lstrip().startswith("#"):
+                n += len(line.rstrip("\n"))
+    return n
+
+
+def feature_names():
+    out = set()
+    for d in ("demo", "onboarding"):
+        p = os.path.join(ROOT, "docs", d)
+        if os.path.isdir(p):
+            out |= {f[:-3] for f in os.listdir(p) if f.endswith(".md")}
+    return out
+
+
+def has_pair(stem, names):
+    stem = re.sub(r"-(gate|report)$", "", stem)
+    cands = [n for n in names if stem == n or stem.startswith(n + "-")]
+    for n in sorted(cands, key=len, reverse=True):
+        if all(os.path.isfile(os.path.join(ROOT, "docs", d, n + ".md")) for d in ("demo", "onboarding")):
+            return n
+    return None
+
+
+def added_bin_files():
+    base = os.environ.get("BASE")
+    try:
+        if not base:
+            base = subprocess.run(["git", "-C", ROOT, "merge-base", "origin/main", "HEAD"],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+        r = subprocess.run(["git", "-C", ROOT, "diff", "--diff-filter=A", "--name-only", f"{base}...HEAD", "--", "bin"],
+                           capture_output=True, text=True, check=True)
+        return [l.strip() for l in r.stdout.splitlines() if l.strip()], None
+    except subprocess.CalledProcessError as e:
+        return [], (e.stderr or "").strip().splitlines()[-1:] or ["git failed"]
+
+
+def main(argv):
+    fails, blind = [], None
+    if argv[1:2] == ["--added"]:
+        added = argv[2:]
+    else:
+        added, err = added_bin_files()
+        if err:
+            blind = f"BLIND law32 cannot diff against origin/main ({err[0]}); new-bin check skipped"
+    names = feature_names()
+    for f in added:
+        stem = os.path.basename(f)
+        if not has_pair(stem, names):
+            fails.append(f"{f}: no docs/demo/<n>.md + docs/onboarding/<n>.md for a feature named <n> where <n> is '{stem}' or a hyphen-prefix of it")
+    mk = os.path.join(ROOT, "mkdocs.yml")
+    nav = open(mk, encoding="utf-8").read() if os.path.isfile(mk) else ""
+    pages = 0
+    for d in ("demo", "onboarding"):
+        p = os.path.join(ROOT, "docs", d)
+        for f in sorted(os.listdir(p)) if os.path.isdir(p) else []:
+            if not f.endswith(".md"):
+                continue
+            pages += 1
+            rel = f"{d}/{f}"
+            c = prose_chars(os.path.join(p, f))
+            if c < FLOOR:
+                fails.append(f"docs/{rel}: {c} characters of prose, the floor is {FLOOR}")
+            if rel not in nav:
+                fails.append(f"docs/{rel}: not in mkdocs.yml nav, so the portal never shows it")
+    for m in fails:
+        print(f"FAIL  law32 {m}")
+    if fails:
+        return 1
+    if blind:
+        print(blind)
+        return 2
+    print(f"ok    law32 {len(added)} new bin file(s) carry a demo+onboarding pair; {pages} page(s) above the {FLOOR}-char floor and in the nav")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

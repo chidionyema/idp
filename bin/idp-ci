@@ -236,6 +236,14 @@ if ! TODAY=2026-08-25 python3 "$IDP/bin/ai-act-gate" tests/fixtures/ai-act/bad >
    && python3 "$IDP/bin/ai-act-gate" "$IDP" >/dev/null 2>&1; then
   say "ok    ai-act   every registered AI system has its Annex IV file, risk entries and declared data; gate proved both ways"
 else say "FAIL  ai-act   gate does not discriminate, or a registered system has a gap"; python3 "$IDP/bin/ai-act-gate" "$IDP" | sed 's/^/      /'; fail=1; fi
+# LAW 32 at the PR (founder, 2026-08-25): a new bin file needs docs/demo + docs/onboarding;
+# every such page has 200 chars of prose and is in the nav. Proved both ways in one run.
+if python3 "$IDP/bin/law32-gate" --added bin/supply-chain >/dev/null 2>&1 \
+   && ! python3 "$IDP/bin/law32-gate" --added bin/feature-with-no-pages >/dev/null 2>&1 \
+   && python3 "$IDP/bin/law32-gate" >/dev/null 2>&1; then
+  say "ok    law32    every new bin file has its demo and onboarding; every page is above the prose floor and in the nav; gate proved both ways"
+else say "FAIL  law32    a feature shipped without demo/onboarding, or a page is thin or unlisted"; python3 "$IDP/bin/law32-gate" | sed 's/^/      /'; fail=1; fi
+
 # Reconcile (crew#186 CP3): a rogue container is a finding, the clean fixture is not.
 rec_out=$(python3 "$IDP/bin/idp-reconcile" --ps tests/fixtures/reconcile/ps.rogue.jsonl 2>&1)   # grep -q under pipefail would SIGPIPE it
 if [ "$(printf '%s' "$rec_out" | grep -c 'rogue       rogue-redis')" != 1 ] \
