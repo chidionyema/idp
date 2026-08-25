@@ -19,6 +19,9 @@ spec:
       namespace: chaos-mesh
     - kind: HelmRelease
       name: "*"
+      namespace: observability
+    - kind: HelmRelease
+      name: "*"
       namespace: edge
     - kind: HelmRelease
       name: "*"

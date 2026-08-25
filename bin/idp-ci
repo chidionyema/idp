@@ -512,6 +512,19 @@ else
   fi
 fi
 
+# 8b. Every incident test (rung 4, one per bug, named for it). Incident 2026-08-25: six
+#     tests/test_incident_*.py files existed and none ran anywhere -- this script ran four
+#     named files and the bdd suite, ci.yml ran sovereign/tests/bdd. A PR body that says
+#     "bin/idp-ci runs the incident test on every PR" was a claim with no receipt. Tests
+#     that need kyverno or a sibling checkout skip as BLIND and say so; a skip is printed.
+inc=$("$BDD_PY" -m pytest -q -p no:cacheprovider "$IDP"/tests/test_incident_*.py 2>&1); inc_rc=$?
+if [ "$inc_rc" -eq 0 ]; then
+  say "ok    incident $(printf '%s' "$inc" | grep -oE '[0-9]+ passed' | head -1), $(printf '%s' "$inc" | grep -oE '[0-9]+ skipped' | head -1 || printf '0 skipped') (BLIND skips)"
+  printf '%s\n' "$inc" | grep -oE 'BLIND: [^)]*' | sort -u | sed 's/^/      /'
+else
+  say "FAIL  incident tests/test_incident_*.py (rc=$inc_rc)"; printf '%s\n' "$inc" | tail -20 | sed 's/^/      /'; fail=1
+fi
+
 # 9. Every Flux HelmRelease under platform/ renders clean against the cluster's Kyverno
 #    ClusterPolicies (helm template + the release's own postRenderers), both ways: the
 #    unpatched-chart fixture must be refused. Kyverno judges at admission, after merge;

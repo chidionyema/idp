@@ -24,12 +24,36 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: chaos-mesh
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: backstage
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/chaos/mesh
+  prune: true
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: chaos-mesh
+      namespace: chaos-mesh
+---
+# The schedules. Split from the install (incident 2026-08-25): Flux dry-runs a row as one
+# unit, and a Schedule cannot be dry-run before chaos-mesh.org CRDs exist.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: chaos
   namespace: flux-system
 spec:
-  interval: 1h
+  interval: 10m
   dependsOn:
-    - name: backstage
+    - name: chaos-mesh
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -48,7 +72,10 @@ spec:
   # from 1270m to 1830m requested, which left Backstage postgres Pending on CPU. It comes back when
   # the node pool grows (platform/oci, founder decision R14, code-c1) by flipping this one line.
   suspend: true
-  interval: 1h
+  # 10m so a broken workload is reported within ten minutes (tests/test_incident_backstage_17h_unreported.py).
+  # After unsuspend the HelmRelease has a 15m timeout, so a cold ClickHouse shows "not ready" for the
+  # first two ticks; that is the install, not an incident (code-37, 2026-08-25).
+  interval: 10m
   dependsOn:
     - name: backstage
   sourceRef:
