@@ -162,6 +162,8 @@ KEYS: dict[str, KeySpec] = {
     "undo.git_timeout_s": KeySpec(30, "int", "SB_UNDO_GIT_TIMEOUT_S", "R7: timeout on one git subprocess call made by undo/rewind"),
     "undo.parent_suffix": KeySpec("^", "str", None, "R7: git revision suffix naming a commit's first parent"),
     "recover.start_services": KeySpec(True, "bool", "SB_RECOVER_START_SERVICES", "cp35: whether `sb recover` also brings the worker and Temporal back up"),
+    "views.dir": KeySpec(str(_estate_home() / "sovereign" / "views"), "path", "SB_VIEWS_DIR", "cp33/cp35: dir holding the projection views rebuilt from the DAG by rewind and recover"),
+    "views.main_filename": KeySpec("main.json", "str", None, "cp33/cp35: the projection view of heads/main, materialized state plus the root it came from"),
 
     "dualread.max_overhead_ms": KeySpec(15, "int", "SB_DUALREAD_MAX_OVERHEAD_MS", "cp10: p95 budget for the dual-read router's added cost (DAG walk + receipt) over the legacy-only read, measured over 1000 reads"),
     "dualread.latency_round_ndigits": KeySpec(4, "int", None, "cp10: decimal places dual-read latencies are rounded to before entering a receipt"),
@@ -480,6 +482,8 @@ RECEIPTS_COUNTER: Path = Path(_R["receipts.head_dir"].value) / _R["receipts.coun
 UNDO_GIT_TIMEOUT_S: int = _R["undo.git_timeout_s"].value
 UNDO_PARENT_SUFFIX: str = _R["undo.parent_suffix"].value
 RECOVER_START_SERVICES: bool = _R["recover.start_services"].value
+VIEWS_DIR: Path = Path(_R["views.dir"].value)
+VIEWS_MAIN_FILENAME: str = _R["views.main_filename"].value
 DUALREAD_MAX_OVERHEAD_MS: int = _R["dualread.max_overhead_ms"].value
 DUALREAD_LATENCY_ROUND_NDIGITS: int = _R["dualread.latency_round_ndigits"].value
 MS_PER_SECOND: int = _R["time.ms_per_second"].value
