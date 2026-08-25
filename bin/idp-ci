@@ -426,6 +426,14 @@ if out=$(VM_SHARED_ROOTS="$HOME" "$IDP/bin/vm-shared-path" "$HOME" 2>&1) \
    && ! VM_SHARED_ROOTS="$HOME" "$IDP/bin/vm-shared-path" /private/tmp >/dev/null 2>&1; then
   say "ok    vmmount  vm-shared-path permits a path under the shared root and refuses one outside it"
 else say "FAIL  vmmount  bin/vm-shared-path selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
+# Zero static secrets (security-policy.md row, kini-master-spec 4.1/4.4, crew#227). Proved both
+# ways on fixtures; the live host count is reported by bin/idp-verify, not gated here, because
+# it is an open incident until crew#227 lands and a gate that refuses correct work is an outage.
+if STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/good ESTATE_SECRETS=/nonexistent bin/static-secret-gate >/dev/null \
+   && ! STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/bad ESTATE_SECRETS=/nonexistent bin/static-secret-gate >/dev/null; then
+  say "ok    secrets  static-secret-gate passes the empty fixture and refuses the one with a key and a .env"
+else say "FAIL  secrets  bin/static-secret-gate fixtures"; fail=1; fi
 if out=$("$IDP/bin/bind-audit" --selftest 2>&1); then say "ok    binds    bind-audit refuses an unknown listener and permits an allow-listed one"
 else say "FAIL  binds    bin/bind-audit --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
