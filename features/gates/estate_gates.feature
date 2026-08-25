@@ -62,3 +62,10 @@ Feature: Every active estate repository runs the same merge-blocking gates
     When bin/estate-security-scan runs
     Then it prints "WARN  npm ... devDependencies only" and the scan does not fail on npm
     And when the all-dependencies audit times out it prints "BLIND npm" and the scan is BLIND, never a WARN
+
+  Scenario: The pip-audit gate reports an advisory, never a broken build environment
+    Given a requirements file whose pins cannot be installed on the runner (a pin that is not on the index, or a source package that needs Cython)
+    When bin/estate-security-scan runs
+    Then it audits the pins as written, without resolving or installing, and prints "ok    deps" when they carry no known vulnerability
+    And it prints "FAIL  deps" when a pin carries a known vulnerability
+    And when a requirements file is not fully pinned it prints "BLIND deps" and the scan is BLIND, never a FAIL
