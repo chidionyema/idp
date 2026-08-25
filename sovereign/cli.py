@@ -133,10 +133,128 @@ def cmd_stop(args: argparse.Namespace) -> int:
     return 0
 
 
+APPROVE_ACTION = "approve"
+
+
 def cmd_approve(args: argparse.Namespace) -> int:
-    res = asyncio.run(engine_client.signal(args.session_id, "approve", args.by))
-    _emit(res, args.json)
+    """R11/R22: no signature, no act (cp29).
+
+    `--sign` mints a challenge and signs it here and now -- Touch ID
+    through presence_helper.swift when this Mac has an enclave, and the
+    configured 2-of-3 signer set when it does not (cp29 scenario 3, R24).
+    `--signature` takes an envelope somebody else already signed, as JSON
+    or as a path to it.
+
+    With neither, and trust.require_signed_approval left on, the command
+    refuses. That refusal is the requirement: before it, the founder's
+    name in `--by` was the only credential on a destructive override, and
+    a name is not a secret."""
+    from sovereign.engine import receipts as receipts_mod
+    from sovereign.trust import approval
+    from sovereign.trust.anchor import HardwareTrustAnchor
+
+    envelope = approval.load(args.signature)
+
+    if envelope is None and args.sign:
+        trust_anchor = HardwareTrustAnchor()
+        challenge = approval.challenge(args.session_id, APPROVE_ACTION, args.by)
+        if trust_anchor.backend == "secure_enclave":
+            envelope = approval.sign(challenge, trust_anchor)
+        else:
+            # cp29 scenario 3: degraded mode is logged, not silent. The
+            # fallback happens automatically because refusing outright
+            # would make every non-Mac host unable to approve anything,
+            # and a guard that refuses correct work is an outage (LAW 38).
+            envelope = approval.sign_fallback(challenge)
+
+    if envelope is None and not config.REQUIRE_SIGNED_APPROVAL:
+        res = asyncio.run(engine_client.signal(args.session_id, APPROVE_ACTION, args.by))
+        _emit(res, args.json)
+        return 0
+
+    verdict = approval.verify(envelope)
+    if not verdict["ok"]:
+        print(verdict["reason"], file=sys.stderr)
+        return config.CLI_EXIT_USAGE_ERROR
+
+    # Spend the counter before acting, never after: a crash between the
+    # two must leave an approval that cannot be replayed, not one that can.
+    approval.spend(int(verdict["counter"]))
+    entry = receipts_mod.append(
+        {
+            "session_id": args.session_id,
+            "kind": "intervention",
+            "by": args.by,
+            "text": APPROVE_ACTION,
+            "step": 0,
+            "status": APPROVE_ACTION,
+            "task": "",
+            "runner": "",
+            "attestation": verdict["attestation"],
+            "approval_counter": int(verdict["counter"]),
+            "approval_sig": envelope.get("sig") or envelope.get("signers"),
+            "approval_backend": envelope.get("backend"),
+            "approval_signers": verdict["signers"],
+        }
+    )
+    res = asyncio.run(
+        engine_client.signal(args.session_id, APPROVE_ACTION, args.by, attestation=verdict["attestation"])
+    )
+    _emit(
+        {**res, "attestation": verdict["attestation"], "counter": entry["counter"], "hash": entry["hash"]},
+        args.json,
+    )
     return 0
+
+
+def cmd_model_consensus(args: argparse.Namespace) -> int:
+    """cp30: three models vote through LiteLLM, and policy overrules them.
+
+    Deliberately NOT folded into `sb consensus`, which is cp11's
+    DB-versus-DAG dual read. Same English word, two unrelated questions."""
+    from sovereign.consensus import decide as decide_mod
+
+    destructive = True if args.destructive else (False if args.non_destructive else None)
+    res = decide_mod.decide(args.op, destructive=destructive)
+    _emit(res, args.json)
+    return 0 if res["ok"] else 1
+
+
+def cmd_identity(args: argparse.Namespace) -> int:
+    """R31: this agent's SPIFFE identity, and the heartbeat registry that
+    revokes a ghost after 3 missed beats."""
+    from sovereign.trust import spiffe
+
+    if args.beat:
+        _emit(spiffe.beat(args.beat), args.json)
+        return 0
+    if args.miss:
+        _emit(spiffe.miss(args.miss), args.json)
+        return 0
+    if args.sweep:
+        _emit({"revoked": spiffe.sweep()}, args.json)
+        return 0
+    me = spiffe.identity()
+    _emit({**me, "revoked": spiffe.is_revoked(me["spiffe_id"]), "registry": spiffe.status()}, args.json)
+    return 0 if me["trusted"] else 1
+
+
+def cmd_self_check(args: argparse.Namespace) -> int:
+    """R32: evaluate the self-termination conditions from spec section 5
+    against what is observable right now, and print the action they ask
+    for. Reports; it does not halt anything by itself."""
+    from sovereign.engine import termination
+
+    signals = termination.Signals(
+        low_confidence_streak=args.low_confidence_streak,
+        last_latency_s=args.last_latency_s,
+        latency_retries_used=args.latency_retries_used,
+        langfuse_blind_s=termination.langfuse_blind_seconds(),
+        alerts_last_hour=termination.alerts_in_last_hour(),
+    )
+    res = termination.evaluate(signals)
+    _emit({**res, "signals": vars(signals)}, args.json)
+    return 0 if res["action"] == termination.ACTIONS[0] else 1
 
 
 def cmd_deny(args: argparse.Namespace) -> int:
@@ -400,11 +518,34 @@ def main(argv: list[str] | None = None) -> int:
     _add_json(p)
     p.set_defaults(func=cmd_stop)
 
-    p = sub.add_parser("approve", help="approve a waiting session")
+    p = sub.add_parser("approve", help="approve a waiting session (requires a signature)")
     p.add_argument("session_id")
     p.add_argument("--by", required=True)
+    p.add_argument("--sign", action="store_true", help="sign here and now with Touch ID, or with the 2-of-3 fallback set")
+    p.add_argument("--signature", default=None, help="a signed approval envelope, as JSON or a path to it")
     _add_json(p)
     p.set_defaults(func=cmd_approve)
+
+    p = sub.add_parser("model-consensus", help="cp30 -- three models vote via LiteLLM, policy overrules them")
+    p.add_argument("--op", required=True, help="the operation to put to the models")
+    p.add_argument("--destructive", action="store_true", help="force the 3-model path")
+    p.add_argument("--non-destructive", action="store_true", dest="non_destructive", help="force the single cheap model")
+    _add_json(p)
+    p.set_defaults(func=cmd_model_consensus)
+
+    p = sub.add_parser("identity", help="R31 -- this agent's SPIFFE identity and heartbeat state")
+    p.add_argument("--beat", default=None, help="record a heartbeat for this SPIFFE ID")
+    p.add_argument("--miss", default=None, help="record a missed heartbeat for this SPIFFE ID")
+    p.add_argument("--sweep", action="store_true", help="charge a missed beat to every stale identity")
+    _add_json(p)
+    p.set_defaults(func=cmd_identity)
+
+    p = sub.add_parser("self-check", help="R32 -- evaluate the self-termination conditions")
+    p.add_argument("--low-confidence-streak", type=int, default=0, dest="low_confidence_streak")
+    p.add_argument("--last-latency-s", type=float, default=0.0, dest="last_latency_s")
+    p.add_argument("--latency-retries-used", type=int, default=0, dest="latency_retries_used")
+    _add_json(p)
+    p.set_defaults(func=cmd_self_check)
 
     p = sub.add_parser("deny", help="deny a waiting session")
     p.add_argument("session_id")

@@ -64,6 +64,7 @@ async def start(
         "fsm_max_cycles": config.FSM_MAX_CYCLES,
         "budget_activity_timeout_s": config.RECEIPT_ACTIVITY_TIMEOUT_S,
         "budget_retry_max_attempts": config.RECEIPT_RETRY_MAX_ATTEMPTS,
+        "approval_timeout_min": config.APPROVAL_TIMEOUT_MIN,
     }
     await client.start_workflow(
         WORKFLOW,
@@ -161,13 +162,14 @@ async def signal(
     text: str = "",
     tokens: int = 0,
     signed: bool = False,
+    attestation: str = "",
 ) -> dict[str, Any]:
     client = await get_client()
     handle = client.get_workflow_handle(session_id)
     if kind == "stop":
         await handle.signal("stop", args=[by, text])
     elif kind == "approve":
-        await handle.signal("approve", args=[by])
+        await handle.signal("approve", args=[by, attestation])
     elif kind == "deny":
         await handle.signal("deny", args=[by])
     elif kind == "steer":
