@@ -47,6 +47,21 @@ spec:
   prune: true
   wait: true
   timeout: 10m
+  # The only place OKE's load balancer is named (R36): platform/edge stays provider-free.
+  patches:
+    - target: { kind: HelmRelease, name: traefik, namespace: edge }
+      patch: |
+        apiVersion: helm.toolkit.fluxcd.io/v2
+        kind: HelmRelease
+        metadata: { name: traefik, namespace: edge }
+        spec:
+          values:
+            service:
+              annotations:
+                oci.oraclecloud.com/load-balancer-type: lb
+                service.beta.kubernetes.io/oci-load-balancer-shape: flexible
+                service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+                service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "10"
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
