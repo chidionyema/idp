@@ -4,7 +4,8 @@
 
 `bin/static-secret-gate` counts long-lived credentials on the host it runs on and in the sops
 vault, and exits 1 while the count is above 0. `STATIC_SECRET_GATE_ROOT` points it at another
-tree (the CI fixtures use this), `ESTATE_SECRETS` at the vault.
+home directory, `ESTATE_CODE` at the directory holding the checkouts, `ESTATE_SECRETS` at the vault
+(the CI fixtures use all three; no path in the script names this machine, LAW 46).
 
 ## Why it exists
 
