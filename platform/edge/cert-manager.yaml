@@ -1,0 +1,47 @@
+# cert-manager with the Gateway API solver enabled, which is what the http01.gatewayHTTPRoute
+# solver in prospector's ClusterIssuer needs. CRDs are managed by the chart so a version bump
+# here carries them.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: jetstack
+  namespace: cert-manager
+spec:
+  interval: 24h
+  url: https://charts.jetstack.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cert-manager
+  namespace: cert-manager
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: cert-manager
+      version: v1.21.1
+      sourceRef:
+        kind: HelmRepository
+        name: jetstack
+  values:
+    crds:
+      enabled: true
+    config:
+      apiVersion: controller.config.cert-manager.io/v1alpha1
+      kind: ControllerConfiguration
+      enableGatewayAPI: true
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+    webhook:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+    cainjector:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi

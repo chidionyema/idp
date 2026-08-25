@@ -1,0 +1,10 @@
+# What the platform hands prospector before its own manifests apply: the namespace, the registry
+# pull secret, and the API's secret files. The product repo holds no credential and no reference
+# to where one lives (LAW 21, LAW 46).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - store-api-env.sops.yaml
+  # cloudflare.sops.yaml (Secret cloudflare-api-token, namespace edge, key CF_API_TOKEN) is added
+  # the day the founder issues the token; until then external-dns waits on it and says so.

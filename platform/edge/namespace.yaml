@@ -1,0 +1,17 @@
+# The edge row of crew/docs/STANDARDS.md: one ingress, one certificate issuer, one DNS writer,
+# one policy engine, for every product on the cluster. A product ships Gateway API objects and
+# nothing else; the four charts below are the platform's, not the product's.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: edge
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno
