@@ -15,10 +15,11 @@ module "oke" {
   cni_type           = "flannel"
 
   # Public API endpoint so Flux bootstrap and idp-verify reach it from the Mac; workers private.
-  control_plane_is_public = true
-  worker_is_public        = false
-  create_bastion          = false
-  create_operator         = false
+  control_plane_is_public           = true
+  assign_public_ip_to_control_plane = true # 2026-08-25: without it the module creates a private endpoint only (is_public_ip_enabled = both)
+  worker_is_public                  = false
+  create_bastion                    = false
+  create_operator                   = false
 
   ssh_public_key = var.ssh_public_key
 
