@@ -1,0 +1,45 @@
+# ADR 0005 first experiment: kill one Backstage pod while a steady-state probe watches.
+# The namespace must carry the label chaos-mesh.org/inject=enabled.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Schedule
+metadata:
+  name: backstage-pod-kill
+  namespace: backstage
+spec:
+  schedule: "0 3 * * 1"
+  type: Workflow
+  concurrencyPolicy: Forbid
+  historyLimit: 5
+  workflow:
+    entry: entry
+    templates:
+      - name: entry
+        templateType: Parallel
+        deadline: 90s
+        children: [steady-state, kill-one]
+      - name: steady-state
+        templateType: StatusCheck
+        deadline: 90s
+        abortWithStatusCheck: true
+        statusCheck:
+          mode: Continuous
+          type: HTTP
+          intervalSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 1
+          http:
+            url: http://backstage.backstage.svc:7007/healthcheck
+            method: GET
+            criteria:
+              statusCode: "200"
+      - name: kill-one
+        templateType: PodChaos
+        deadline: 60s
+        podChaos:
+          action: pod-kill
+          mode: one
+          selector:
+            namespaces: [backstage]
+            labelSelectors:
+              app.kubernetes.io/name: backstage
