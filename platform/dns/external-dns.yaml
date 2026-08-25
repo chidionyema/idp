@@ -44,13 +44,22 @@ spec:
     txtOwnerId: oke-estate
     domainFilters:
       - mumchimp.com
+    # Kyverno (prospector policies) refuses secrets as env vars and pods without limits.
+    # external-dns reads the token from a file when the env value is file:<path>.
     env:
       - name: CF_API_TOKEN
-        valueFrom:
-          secretKeyRef:
-            name: cloudflare-api-token
-            key: CF_API_TOKEN
+        value: file:/var/run/secrets/cloudflare/CF_API_TOKEN
+    extraVolumes:
+      - name: cloudflare
+        secret:
+          secretName: cloudflare-api-token
+    extraVolumeMounts:
+      - name: cloudflare
+        mountPath: /var/run/secrets/cloudflare
+        readOnly: true
     resources:
       requests:
         cpu: 10m
         memory: 32Mi
+      limits:
+        memory: 128Mi

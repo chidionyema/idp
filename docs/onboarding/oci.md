@@ -113,13 +113,18 @@ in namespace `edge`, key `CF_API_TOKEN`, scope Edit zone DNS on mumchimp.com; un
 external-dns pod stays Pending and `flux get hr -n edge` says so.
 
 Data. The last Fly volume is `~/backups/fly-teardown-2026-08-25/prospector-store-api.data.tgz`
-(not in git). Restore once, before the API's first start, with a pod that mounts the claim:
+(not in git). Restore with the API scaled to 0 (`kubectl -n prospector scale deploy prospector-store-api --replicas=0`), with a pod that mounts
+the claim. The pod spec is the Kyverno-compliant one (seccomp, probes, non-root, read-only root); a bare busybox is refused.
+The `rm -f` matters: if the API ever started against an empty claim it left a `store.db-wal`, and SQLite replays a
+stale WAL over a restored `store.db`, which reads as an empty catalogue (2026-08-25: `/catalog` returned `[]` with 78
+listed packs on disk). The md5 must match `md5 -q` of `store.db` inside the tarball.
 
 ```
 kubectl -n prospector run restore --image=docker.io/library/busybox:1.37 --restart=Never \
-  --overrides='{"spec":{"containers":[{"name":"r","image":"docker.io/library/busybox:1.37","command":["sleep","600"],"volumeMounts":[{"name":"d","mountPath":"/data"}]}],"volumes":[{"name":"d","persistentVolumeClaim":{"claimName":"prospector-store-api-data"}}]}}'
+  --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":10001,"runAsGroup":10001,"fsGroup":10001,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"r","image":"docker.io/library/busybox:1.37","command":["sleep","900"],"securityContext":{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]},"seccompProfile":{"type":"RuntimeDefault"}},"resources":{"requests":{"cpu":"10m","memory":"32Mi"},"limits":{"cpu":"200m","memory":"128Mi"}},"volumeMounts":[{"name":"d","mountPath":"/data"},{"name":"t","mountPath":"/tmp"}],"livenessProbe":{"exec":{"command":["true"]},"periodSeconds":10},"readinessProbe":{"exec":{"command":["true"]},"periodSeconds":10}}],"volumes":[{"name":"d","persistentVolumeClaim":{"claimName":"prospector-store-api-data"}},{"name":"t","emptyDir":{}}]}}'
+kubectl -n prospector wait --for=condition=Ready pod/restore --timeout=120s
 kubectl -n prospector cp ~/backups/fly-teardown-2026-08-25/prospector-store-api.data.tgz restore:/tmp/d.tgz
-kubectl -n prospector exec restore -- sh -c 'tar xzf /tmp/d.tgz -C /data && chown -R 10001:10001 /data && ls -la /data'
+kubectl -n prospector exec restore -- sh -c 'rm -f /data/store.db /data/store.db-wal /data/store.db-shm && mkdir -p /tmp/x && tar xzf /tmp/d.tgz -C /tmp/x && cp -a /tmp/x/data/. /data/ && ls -la /data && md5sum /data/store.db'
 kubectl -n prospector delete pod restore
 ```
 
