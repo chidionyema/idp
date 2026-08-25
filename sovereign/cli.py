@@ -59,6 +59,16 @@ def cmd_start(args: argparse.Namespace) -> int:
         from sovereign.attach import core as attach_core  # noqa: F401
 
         args.repo = args.repo or args.estate
+    if getattr(args, "branches", None) and int(args.branches) > 1:
+        from sovereign.shadow import branching
+
+        res = asyncio.run(
+            branching.start_on_estate(
+                args.task, runner=args.runner, repo=args.repo, budget=int(budget_resolved.value), count=int(args.branches)
+            )
+        )
+        _emit(res, args.json)
+        return 0
     res = asyncio.run(
         engine_client.start(
             args.task, runner=args.runner, repo=args.repo, by=args.by, budget=int(budget_resolved.value)
@@ -464,6 +474,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--by", default="cli")
     p.add_argument("--budget", type=int, default=None)
     p.add_argument("--estate", default=None, help="attach root; repo defaults to it, receipts chain under its estate dir")
+    p.add_argument("--branches", type=int, default=None, help="R19: fork this many silent child sessions instead of one (sovereign/shadow)")
     _add_json(p)
     p.set_defaults(func=cmd_start)
 
@@ -577,13 +588,9 @@ def main(argv: list[str] | None = None) -> int:
     _add_json(p)
     p.set_defaults(func=cmd_worker)
 
-    p = sub.add_parser("install-plugin", help="install the hermes plugin (delegates to otto.cli)")
-    _add_json(p)
-    p.set_defaults(func=cmd_install_plugin)
-
     # Plug-in hook: otto and cockpit register their own subcommands here if
     # their package is present. Absence of either is not an error (cp6).
-    for modname in ("sovereign.otto.cli", "sovereign.cockpit.cli", "sovereign.attach.cli"):
+    for modname in ("sovereign.otto.cli", "sovereign.cockpit.cli", "sovereign.attach.cli", "sovereign.shadow.cli"):
         try:
             mod = importlib.import_module(modname)
         except ImportError:
@@ -591,6 +598,14 @@ def main(argv: list[str] | None = None) -> int:
         register = getattr(mod, "register", None)
         if callable(register):
             register(sub)
+
+    # otto.cli registers install-plugin itself when present; this fallback
+    # reports "not-installed" when it is absent. argparse raises on a
+    # duplicate subcommand, so it is added only when nothing else did.
+    if "install-plugin" not in sub.choices:
+        p = sub.add_parser("install-plugin", help="install the hermes plugin (delegates to otto.cli)")
+        _add_json(p)
+        p.set_defaults(func=cmd_install_plugin)
 
     args = parser.parse_args(argv)
     return args.func(args)
