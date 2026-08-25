@@ -29,6 +29,13 @@ spec:
         kind: HelmRepository
         name: external-dns
   values:
+    # registry.k8s.io blobs return HTTP 400 from the OKE node (CDN redirect); this is the
+    # upstream multi-arch image copied verbatim with `crane copy`, pinned by digest.
+    image:
+      repository: ghcr.io/chidionyema/mirror/external-dns
+      tag: v0.21.0@sha256:f53faaf71cb270d1ca9dce6ea0c94bfebf1a18696263487f0fbc74b9bf2bd7ff
+    imagePullSecrets:
+      - name: ghcr-pull
     provider:
       name: cloudflare
     sources:
