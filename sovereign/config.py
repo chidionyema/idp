@@ -301,6 +301,40 @@ except ImportError:
     pass
 
 
+# ---------------------------------------------------------------------------
+# crew#219 R38/R40: the living policy. AGENTS.md at the repository root is the
+# one place the per-day budgets, the cost contract, the routing table and the
+# merge criteria are written; sovereign/policy.py parses its toml block and
+# the keys below are built from it, so the doc cannot drift from the code.
+# A missing or unparseable block raises here, on import, rather than
+# defaulting: config with no policy behind it is the thing R38 exists to end.
+# ---------------------------------------------------------------------------
+
+from sovereign.policy import load as _load_policy  # noqa: E402
+
+POLICY = _load_policy()
+
+
+def _env_name(prefix: str, name: str) -> str:
+    return prefix + name.upper().replace(".", "_").replace("-", "_")
+
+
+for _name, _usd in POLICY.budget_usd_per_day.items():
+    KEYS[f"budget.usd_per_day.{_name}"] = KeySpec(
+        float(_usd), "float", _env_name("SB_BUDGET_USD_PER_DAY_", _name),
+        f"R40: default USD per day {_name} may spend; the sum over cost.days_per_month sits inside the cost contract (AGENTS.md)")
+KEYS["cost.contract_min_usd_month"] = KeySpec(float(POLICY.cost["contract_min_usd_month"]), "float", "SB_COST_CONTRACT_MIN_USD_MONTH", "R40: spec section 8 floor of direct monthly cost (AGENTS.md)")
+KEYS["cost.contract_max_usd_month"] = KeySpec(float(POLICY.cost["contract_max_usd_month"]), "float", "SB_COST_CONTRACT_MAX_USD_MONTH", "R40: spec section 8 ceiling of direct monthly cost (AGENTS.md)")
+KEYS["cost.days_per_month"] = KeySpec(int(POLICY.cost["days_per_month"]), "int", "SB_COST_DAYS_PER_MONTH", "R40: days the per-day budgets are summed over (AGENTS.md)")
+for _purpose, _alias in POLICY.routing.items():
+    KEYS[f"routing.{_purpose}"] = KeySpec(
+        list(_alias) if isinstance(_alias, list) else str(_alias), "list" if isinstance(_alias, list) else "str",
+        _env_name("SB_ROUTING_", _purpose), f"R38: LiteLLM alias(es) used for {_purpose} (AGENTS.md routing table)")
+KEYS["merge.strict_branches"] = KeySpec(list(POLICY.merge["strict_branches"]), "list", "SB_MERGE_STRICT_BRANCHES", "R41: branches whose PRs fail on any pending feature (AGENTS.md)")
+KEYS["merge.require_bdd_green"] = KeySpec(bool(POLICY.merge["require_bdd_green"]), "bool", "SB_MERGE_REQUIRE_BDD_GREEN", "R41: a PR needs sovereign/tests/bdd green (AGENTS.md)")
+KEYS["merge.pending_owner_required_on"] = KeySpec(list(POLICY.merge["pending_owner_required_on"]), "list", "SB_MERGE_PENDING_OWNER_REQUIRED_ON", "R39: branches where a pending mark must name a real owner (AGENTS.md)")
+
+
 _SECRET_LAST_SEGMENTS = ("token", "secret", "password", "api_key")
 
 

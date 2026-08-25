@@ -233,6 +233,7 @@ def cmd_approve(args: argparse.Namespace) -> int:
     refuses. That refusal is the requirement: before it, the founder's
     name in `--by` was the only credential on a destructive override, and
     a name is not a secret."""
+    from sovereign.engine import interventions as interventions_mod
     from sovereign.engine import receipts as receipts_mod
     from sovereign.trust import approval
     from sovereign.trust.anchor import HardwareTrustAnchor
@@ -267,7 +268,11 @@ def cmd_approve(args: argparse.Namespace) -> int:
     entry = receipts_mod.append(
         {
             "session_id": args.session_id,
-            "kind": "intervention",
+            # kind is the action name so interventions.is_intervention()
+            # recognises the line; "intervention" was not in
+            # interventions.kinds and the approve never reached the
+            # interventions/ view cp29 reads (found writing its steps).
+            "kind": APPROVE_ACTION,
             "by": args.by,
             "text": APPROVE_ACTION,
             "step": 0,
@@ -281,6 +286,7 @@ def cmd_approve(args: argparse.Namespace) -> int:
             "approval_signers": verdict["signers"],
         }
     )
+    interventions_mod.mirror(entry)
     res = asyncio.run(
         engine_client.signal(args.session_id, APPROVE_ACTION, args.by, attestation=verdict["attestation"])
     )
