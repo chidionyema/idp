@@ -40,6 +40,17 @@ Conventions for the five other builders writing step definitions here
 
 * Carry state between steps in the `context` dict, or return a value with
   `target_fixture=` when the value is what the next step is about.
+
+Branch policy (crew#219 R39/R41, AGENTS.md [merge])
+---------------------------------------------------
+`dev` is permissive: a pending feature is skipped and counted. `main` is
+strict: with SB_BDD_STRICT=1 in the environment every pending feature is a
+failure, and so is a pending mark with no owner or owner "unclaimed".
+`.github/workflows/ci.yml` sets the variable from the pull request's base
+branch, so the same suite is the gate on both branches and only the
+verdict on a skip changes. The fixture directory
+sovereign/tests/fixtures/bdd/pending_unclaimed is the must-fail half of
+that guard, and sovereign/tests/bdd/test_branch_policy.py runs it both ways.
 """
 from __future__ import annotations
 
@@ -89,8 +100,32 @@ def pytest_configure(config: pytest.Config) -> None:
                 config.addinivalue_line("markers", f"{tag}: Gherkin tag, declared in {feature.name}")
 
 
+STRICT_ENV = "SB_BDD_STRICT"
+UNCLAIMED = "unclaimed"
+
+
+def strict_branch_policy() -> bool:
+    """True when this run is the gate for a strict branch (AGENTS.md
+    [merge].strict_branches, today `main`)."""
+    return os.environ.get(STRICT_ENV, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def pending_verdict(mark: pytest.Mark, strict: bool) -> tuple[str, str]:
+    """("skip" | "fail", reason) for one pending mark under one policy.
+    Pure, so test_branch_policy.py can check the rule without a subprocess
+    as well as with one."""
+    req = mark.args[0] if mark.args else "?"
+    owner = str(mark.kwargs.get("owner") or "")
+    if not strict:
+        return "skip", f"{req}: steps not bound yet, owner {owner or '?'}"
+    if not owner or owner == UNCLAIMED:
+        return "fail", f"{req}: pending mark has no owner (got {owner or 'none'!r}); a strict branch needs a named workstream"
+    return "fail", f"{req}: steps not bound yet (owner {owner}); pending is not allowed on a strict branch"
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     pending: dict[str, str] = {}
+    strict = strict_branch_policy()
     for item in items:
         mark = item.get_closest_marker("pending")
         if mark is None:
@@ -98,8 +133,19 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         req = mark.args[0] if mark.args else "?"
         owner = mark.kwargs.get("owner", "?")
         pending[item.nodeid.split("::")[0]] = f"{req} ({owner})"
-        item.add_marker(pytest.mark.skip(reason=f"{req}: steps not bound yet, owner {owner}"))
+        verdict, reason = pending_verdict(mark, strict)
+        if verdict == "skip":
+            item.add_marker(pytest.mark.skip(reason=reason))
     config.stash[_PENDING] = pending
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    mark = item.get_closest_marker("pending")
+    if mark is None or not strict_branch_policy():
+        return
+    verdict, reason = pending_verdict(mark, strict=True)
+    if verdict == "fail":
+        pytest.fail(reason, pytrace=False)
 
 
 _PENDING: pytest.StashKey[dict[str, str]] = pytest.StashKey()
@@ -109,7 +155,8 @@ def pytest_terminal_summary(terminalreporter: Any, exitstatus: int, config: pyte
     pending = config.stash.get(_PENDING, {})
     if not pending:
         return
-    terminalreporter.write_sep("-", f"{len(pending)} feature(s) pending step definitions")
+    mode = "strict: each one fails" if strict_branch_policy() else "permissive: each one skips"
+    terminalreporter.write_sep("-", f"{len(pending)} feature(s) pending step definitions ({mode})")
     for path, who in sorted(pending.items()):
         terminalreporter.write_line(f"  pending  {path}  {who}")
 
@@ -132,6 +179,12 @@ def estate_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("ESTATE_ENV", str(tmp_path / "absent" / "estate.env"))
     monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
     (tmp_path / "fakehome").mkdir(exist_ok=True)
+    # Touch ID and the macOS Keychain are true external boundaries. With
+    # trust.backend left on "auto" a receipt written on this Mac would read
+    # the founder's real Keychain item; software_key keeps every signature a
+    # scenario makes inside the temporary estate. A scenario that needs the
+    # enclave (cp29) pins secure_enclave itself and fakes the swift helper.
+    monkeypatch.setenv("SB_TRUST_BACKEND", "software_key")
     config = importlib.import_module("sovereign.config")
     importlib.reload(config)
     yield home
@@ -369,11 +422,19 @@ def sb(estate_home: Path, tmp_path: Path) -> Callable[..., SbResult]:
     """Run `bin/sb <args>` with ESTATE_HOME pointed at the scenario's estate."""
 
     def _run(*args: str, cwd: Path | None = None, timeout: int = 60) -> SbResult:
-        argv = [str(REPO_ROOT / "bin" / "sb"), *args]
+        # bin/sb builds sovereign/.venv on first use (a pip install). When
+        # that venv is absent -- a fresh worktree, CI -- run the same
+        # entrypoint, `python -m sovereign.cli`, under this interpreter,
+        # which already has sovereign/requirements.txt installed.
+        venv_python = REPO_ROOT / "sovereign" / ".venv" / "bin" / "python"
+        if venv_python.exists():
+            argv = [str(REPO_ROOT / "bin" / "sb"), *args]
+        else:
+            argv = [sys.executable, "-m", "sovereign.cli", *args]
         proc = subprocess.run(
             argv,
             cwd=str(cwd or REPO_ROOT),
-            env={**os.environ, "ESTATE_HOME": str(estate_home)},
+            env={**os.environ, "ESTATE_HOME": str(estate_home), "PYTHONPATH": str(REPO_ROOT)},
             capture_output=True,
             text=True,
             timeout=timeout,
