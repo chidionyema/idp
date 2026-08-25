@@ -49,3 +49,16 @@ def test_alert_covers_every_namespace_that_holds_a_helmrelease():
     missing = {ns for ns in hr_namespaces if ("HelmRelease", ns) not in covered}
     assert not missing, f"HelmRelease namespaces with no alert: {sorted(missing)}"
     assert all(a["spec"]["eventSeverity"] == "error" for a in alerts)
+
+
+def test_telegram_channel_survives_substitution_as_a_string():
+    """Live incident 2026-08-25: kustomize dropped the quotes around `${channel}`, the
+    numeric chat id substituted in as a YAML integer and the Provider dry-run refused it.
+    The synced Secret value carries its own quotes; the Provider leaves the scalar bare."""
+    es = next(d for d in yaml.safe_load_all(open(ROOT / "platform" / "secret-store" / "flux-telegram.yaml")))
+    channel = es["spec"]["target"]["template"]["data"]["channel"]
+    assert channel.startswith('"') and channel.endswith('"'), channel
+    prov = (ROOT / "platform" / "alerts" / "provider.yaml").read_text()
+    assert "channel: ${channel}" in prov and 'channel: "${channel}"' not in prov
+    rendered = "channel: ${channel}".replace("${channel}", '"123"')
+    assert isinstance(yaml.safe_load(rendered)["channel"], str)
