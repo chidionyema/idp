@@ -34,6 +34,7 @@ nav:
       - Oracle identity: demo/oci.md
       - Flux on OKE: demo/oke.md
       - Cloud-agnostic: demo/cloud-agnostic.md
+      - Estate zone: demo/estate-zone.md
       - MCP: demo/mcp.md
       - Sovereign bus: demo/sb.md
       - VM-shared path guard: demo/vm-shared-path.md
@@ -70,6 +71,7 @@ nav:
       - Oracle identity: onboarding/oci.md
       - Flux on OKE: onboarding/oke.md
       - Cloud-agnostic: onboarding/cloud-agnostic.md
+      - Estate zone: onboarding/estate-zone.md
       - Langfuse: onboarding/langfuse.md
       - Manifests: onboarding/manifests.md
       - MCP: onboarding/mcp.md
