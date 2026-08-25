@@ -22,6 +22,9 @@ spec:
       namespace: observability
     - kind: HelmRelease
       name: "*"
+      namespace: identity
+    - kind: HelmRelease
+      name: "*"
       namespace: edge
     - kind: HelmRelease
       name: "*"
