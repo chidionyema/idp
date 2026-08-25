@@ -1,5 +1,5 @@
 # ADR 0004 step 3. `flux bootstrap github --path clusters/oke` writes flux-system/ beside this
-# file; everything below is what Flux then reconciles. Secrets are sops+age files decrypted in
+# file; everything below is what Flux then reconciles. Secrets reach the
 # cluster from OCI Vault through External Secrets (platform/secret-store); no sops key in cluster.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
