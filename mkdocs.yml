@@ -19,6 +19,7 @@ nav:
       - Oracle tenancy: reference/oci-tenancy.md
       - Security policy: reference/security-policy.md
       - EU AI Act: reference/eu-ai-act.md
+      - Platform maturity: reference/platform-maturity.md
   - AI systems:
       - ai-systems/index.md
       - Prospector technical file: ai-systems/prospector/technical-file.md
