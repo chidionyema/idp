@@ -5,7 +5,7 @@
   port-gate --live     plus: every listener ON THIS MACHINE RIGHT NOW is declared,
                        read with lsof at the moment the check runs
 
-Exit 0 clean, 1 on any undeclared bind, doubled claim, or non-loopback bind that
+Exit 0 clean, 1 on any undeclared bind, undeclared probe, doubled claim, or non-loopback bind that
 ports.yaml does not mark non_loopback (R20), or a bind address that differs from a
 row's declared `bind:`. Prints one line per finding.
 REG and INV can be overridden so bin/idp-ci can prove it both ways on fixtures.
@@ -24,8 +24,18 @@ IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REG = os.environ.get("REG") or os.path.join(IDP, "catalog", "ports.yaml")
 INV = os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json")
 COMPOSE = os.environ.get("COMPOSE_GLOB") or "board/*.yml llm/*.yml mcp/*.yml observability/*.yml"
+# Overridable for the same reason REG and INV are: bin/idp-ci proves the probe
+# check on a copy of bin/ it is allowed to edit. BIN_DIR=none skips the scan --
+# the other fixture tests hand this gate a three-line ledger to exercise a
+# different rule, and scanning the real bin/ against it would fail every one of
+# them for a reason the test is not about (LAW 38).
+BIN = os.environ.get("BIN_DIR") or os.path.join(IDP, "bin")
 FOREIGN = {"limactl", "ControlCenter", "rapportd", "launchd", "sharingd"}
 PUB = re.compile(r'^\s*-\s*"?(?:(?P<host>[\d.]+):)?(?P<port>\d+):\d+"?\s*$')
+# A loopback URL written into a script. `curl http://127.0.0.1:8001/...` is this
+# repo saying it expects something to be listening there, which is the same claim
+# a compose publication makes and belongs in the same ledger.
+PROBE = re.compile(r'(?:127\.0\.0\.1|localhost|\[::1\]):(\d{2,5})')
 STALE_S = 120
 
 
@@ -118,6 +128,41 @@ def main() -> int:
                     bad += 1
                 if host not in ("127.0.0.1", "::1") and not (d or {}).get("non_loopback"):
                     print(f"FAIL  ports    {rel}:{n} binds {host}:{port}; R20 allows only the gateway off loopback")
+                    bad += 1
+
+    # static: ports the repo's own scripts expect something to answer on.
+    #
+    # THE DIRECTION THAT WAS MISSING. The two checks above read what this repo
+    # STARTS. Neither reads what it PROBES, and a probe is the half that outlives
+    # a deletion: on 2026-08-24 the founder ruled one renderer and the Datasette
+    # fallback was deleted from bin/idp-up, but bin/idp-verify kept curling
+    # 127.0.0.1:8001. Nothing served it, idp-verify failed every run, and because
+    # bin/idp-up ends with idp-verify the hourly ai.estate.idp job exited non-zero
+    # for a day with the portal answering 200 the whole time. The class is a
+    # surface removed in one file and still probed from another; the fix is that
+    # a script may only probe a port the ledger declares, so deleting the ledger
+    # row fails CI and names the file that was missed.
+    #
+    # Comment lines are skipped: prose about a port that no longer exists is
+    # documentation, and refusing it would make explaining a deletion impossible
+    # (LAW 38).
+    for f in ([] if BIN == "none" else sorted(glob.glob(os.path.join(BIN, "*")))):
+        if not os.path.isfile(f):
+            continue
+        # Relative to the repo when the file is in it; a fixture copy lives
+        # elsewhere and a ../../.. path helps nobody read the failure.
+        rel = os.path.relpath(f, IDP) if f.startswith(IDP + os.sep) else f
+        try:
+            lines = open(f, encoding="utf-8").read().splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for n, line in enumerate(lines, 1):
+            if line.lstrip().startswith("#"):
+                continue
+            for m in PROBE.finditer(line):
+                port = int(m.group(1))
+                if port not in declared:
+                    print(f"FAIL  ports    {rel}:{n} probes 127.0.0.1:{port}: not in catalog/ports.yaml")
                     bad += 1
 
     if "--live" in sys.argv:

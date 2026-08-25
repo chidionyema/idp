@@ -34,6 +34,41 @@ while IFS= read -r f; do
 done < <(cd "$IDP" && git ls-files bin llm observability mcp launchd '*.py' '*.yml' '*.yaml' '*.json' 2>/dev/null | grep -v '^tests/fixtures/')
 [ "$hits" -eq 0 ] && say "ok    hardcode 0 files hardcode a checkout path" || fail=1
 
+# 1c. A conditional whose verdict is a pipeline into grep, in a script that sets
+#     `pipefail`. Incident 2026-08-25: the portprobe test read
+#     `port-gate | grep -q '<message>'`, port-gate exited 1 on purpose, pipefail
+#     reported that 1, and the leg failed with the message exactly right -- it
+#     cost a debugging round to attribute. The class is wider than one test: the
+#     same shape decides whether bin/idp-up re-points the tailnet link and
+#     whether bin/langfuse-status calls Langfuse down, and there a failing
+#     left-hand command inverts the answer silently.
+#
+#     A pipeline inside `$( )` is legal: its VALUE is the test, not its status.
+#     So is one whose left side is printf/echo/cat/head, which is the fix shape.
+#     Refusing those would refuse correct work (LAW 38).
+# The `([0-9]+:)?` prefix is not decoration: grep -n stamps a line number on
+# every line, and an anchored pattern without it silently matches nothing on the
+# second pass -- which is a guard that never refuses anything.
+PIPEVERDICT='^([0-9]+:)?[[:space:]]*(if|elif|while)[[:space:]].*\|[[:space:]]*(/usr/bin/)?grep[[:space:]]+-[a-zA-Z]*[qc]'
+pipeverdict_scan() {
+  /usr/bin/grep -q 'pipefail' "$1" || return 1
+  # `$( ... )` spans are removed first: a pipeline in a command substitution is
+  # graded by its output, and the enclosing test is what decides the branch.
+  grep -nE "$PIPEVERDICT" "$1" \
+    | sed 's/\$([^)]*)//g' \
+    | grep -E "$PIPEVERDICT" \
+    | grep -vE '^[0-9]+:[[:space:]]*(if|elif|while)[[:space:]]+(!?[[:space:]]*)?(printf|echo|cat|head)[[:space:]]'
+}
+if pipeverdict_scan "$IDP/tests/fixtures/pipefail-verdict.bad.sh" >/dev/null && ! pipeverdict_scan "$IDP/tests/fixtures/pipefail-verdict.good.sh" >/dev/null; then
+  say "ok    guard    pipefail-verdict guard refuses the bad fixture and passes the good one"
+else say "FAIL  guard    pipefail-verdict guard is not discriminating"; fail=1; fi
+pv=0
+for f in "$IDP"/bin/*; do
+  [ -f "$f" ] || continue
+  if out=$(pipeverdict_scan "$f"); then say "FAIL  pipeverdict $(basename "$f")"; printf '%s\n' "$out" | sed 's/^/      /'; pv=$((pv+1)); fi
+done
+[ "$pv" -eq 0 ] && say "ok    pipeverdict 0 scripts let a pipeline's exit status stand in for a grep match" || fail=1
+
 # 2. Compose files are valid. Values are placeholders; compose only checks shape.
 for c in llm/litellm.yml observability/langfuse.yml mcp/agentgateway.yml; do
   # shellcheck disable=SC2046  # NAME=placeholder pairs are meant to split
@@ -211,10 +246,34 @@ if ! COMPOSE_GLOB='tests/fixtures/ports-bad/*.yml' python3 "$IDP/bin/port-gate" 
   say "ok    portlock $(printf '%s' "$out" | tail -1 | sed 's/^ok *ports *//')"
 else say "FAIL  portlock port-gate is not discriminating or the repo has an undeclared bind"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 # --live must refuse a listener bound to a different address than its row declares, and pass the matching one.
-if ! REG=tests/fixtures/ports-live/ports.yaml INV=tests/fixtures/ports-live/inventory.bad.json COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" --live >/dev/null 2>&1 \
-   && REG=tests/fixtures/ports-live/ports.yaml INV=tests/fixtures/ports-live/inventory.good.json COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" --live >/dev/null 2>&1; then
+if ! REG=tests/fixtures/ports-live/ports.yaml INV=tests/fixtures/ports-live/inventory.bad.json COMPOSE_GLOB=none BIN_DIR=none python3 "$IDP/bin/port-gate" --live >/dev/null 2>&1 \
+   && REG=tests/fixtures/ports-live/ports.yaml INV=tests/fixtures/ports-live/inventory.good.json COMPOSE_GLOB=none BIN_DIR=none python3 "$IDP/bin/port-gate" --live >/dev/null 2>&1; then
   say "ok    portbind port-gate --live refuses a bind that differs from the declared address and passes a matching one"
 else say "FAIL  portbind port-gate --live does not discriminate on bind address"; fail=1; fi
+# Incident 2026-08-25: the hourly ai.estate.idp job exited non-zero for a day
+#     because bin/idp-verify curled 127.0.0.1:8001 after the one-renderer ruling
+#     (#22) deleted the thing that served it. The class is a surface removed in
+#     one file and still probed from another. Proved three ways, because a guard
+#     seen only refusing has not been shown to permit (LAW 38): the ledger with a
+#     row removed must FAIL and name the probing file, the real ledger must pass,
+#     and prose about a dead port in a comment must stay legal.
+probe_reg=$(mktemp); grep -v 'port: 8000' "$IDP/catalog/ports.yaml" > "$probe_reg"
+probe_cmt="$tmp/probe-comment"; cp -R "$IDP/bin" "$probe_cmt"
+# The port is passed as an argument rather than written inline: this file is
+# itself scanned by the gate, and a literal loopback URL on a non-comment line
+# here is a probe of an undeclared port -- which the gate correctly refuses.
+printf '\n# historical: 127.0.0.1:%s was the old thing, deleted 2026-08-25\n' 9999 >> "$probe_cmt/idp-status"
+# The output is captured before it is matched, not piped into grep: this file
+# runs under `set -o pipefail`, so `port-gate | grep -q` reports port-gate's
+# deliberate exit 1 and the leg fails even when the message is exactly right.
+probe_out=$(REG="$probe_reg" COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" 2>&1)
+if printf '%s' "$probe_out" | grep -q 'placement-audit.*probes 127.0.0.1:8000' \
+   && ! REG="$probe_reg" COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
+   && COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
+   && BIN_DIR="$probe_cmt" COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" >/dev/null 2>&1; then
+  say "ok    portprobe incident 2026-08-25: a script may only probe a declared port; the gate names the probing file, passes the real ledger, and a comment about a dead port stays legal"
+else say "FAIL  portprobe port-gate does not catch a script probing an undeclared port, or refuses the real ledger"; fail=1; fi
+rm -f "$probe_reg"
 # R24 multi-arch: a build step naming fewer than both architectures is refused; the compliant one passes; this repo is clean.
 if ! python3 "$IDP/bin/multiarch-gate" tests/fixtures/multiarch/bad >/dev/null 2>&1 \
    && python3 "$IDP/bin/multiarch-gate" tests/fixtures/multiarch/good >/dev/null 2>&1 \
@@ -258,7 +317,8 @@ else say "FAIL  plist    a launchd template does not render to a valid plist, or
 poison="$tmp/poisonhome"; mkdir -p "$poison/.estate/state"
 printf '{"rows":[{"kind":"listener","port":7107,"bind":"*","process":"node","owner":"poison"}]}\n' \
   > "$poison/.estate/state/inventory.json"
-if HOME="$poison" python3 "$IDP/bin/port-gate" --live 2>&1 | grep -q 'poison'; then
+poison_out=$(HOME="$poison" python3 "$IDP/bin/port-gate" --live 2>&1)   # captured: pipefail would report port-gate's status, not grep's
+if printf '%s' "$poison_out" | grep -q 'poison'; then
   say "FAIL  portlive port-gate --live is reading ~/.estate/state/inventory.json, not the machine"; fail=1
 else say "ok    portlive port-gate --live reads the machine, not a saved inventory"; fi
 # Reconcile (crew#186 CP3): a rogue container is a finding, the clean fixture is not.
