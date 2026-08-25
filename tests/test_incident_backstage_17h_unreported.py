@@ -25,6 +25,21 @@ def test_every_cluster_kustomization_with_health_checks_waits():
             assert d["spec"].get("timeout"), f"{f}: {d['metadata']['name']} has no timeout, so it never stalls"
 
 
+def test_every_health_checked_kustomization_reconciles_within_ten_minutes():
+    """The ten-minute claim (R35 scenario 4) only holds if the row re-checks health at least
+    that often: a pod that breaks between reconciles is only seen at the next one."""
+    slow = []
+    for f in sorted(glob.glob(str(ROOT / "clusters" / "*" / "*.yaml"))):
+        for d in yaml.safe_load_all(open(f)):
+            if d and d.get("kind") == "Kustomization" and (
+                d["spec"].get("healthChecks") or d["spec"].get("wait")
+            ):
+                iv = d["spec"]["interval"]
+                if not iv.endswith("m") or int(iv[:-1]) > 10:
+                    slow.append((d["metadata"]["name"], iv))
+    assert slow == [], slow
+
+
 def test_alert_covers_every_namespace_that_holds_a_helmrelease():
     alerts = [d for _, d in _docs("platform/alerts/*.yaml") if d.get("kind") == "Alert"]
     assert alerts, "no Alert in platform/alerts"

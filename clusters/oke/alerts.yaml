@@ -6,7 +6,7 @@ metadata:
   name: alerts
   namespace: flux-system
 spec:
-  interval: 1h
+  interval: 10m
   dependsOn:
     - name: secret-store
   sourceRef:
@@ -20,4 +20,3 @@ spec:
     substituteFrom:
       - kind: Secret
         name: flux-telegram
-        optional: true
