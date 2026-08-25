@@ -94,7 +94,7 @@ def _default_sidecar_target() -> str:
     (same env var, same fallback) rather than a second hardcoded copy of
     that default -- maestro is the only live experience-graph database on
     this estate (crew note, 2026-08-24: "two maestros share one database,
-    only ~/dev/code/maestro is live"). `episodes` is maestro's
+    only the maestro checkout is live"). `episodes` is maestro's
     highest-write-volume table and the one _connect() in maestro.py calls
     "the one place a connection ... is opened" writes through."""
     db = os.path.expanduser(os.environ.get("MAESTRO_DB", "~/.maestro/experience_graph.db"))
