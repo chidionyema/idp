@@ -39,3 +39,6 @@ architecture/out/
 # node_modules and virtualenvs, 1 in the source tree.
 __pycache__/
 *.py[cod]
+platform/oci/.terraform/
+platform/oci/*.tfvars
+platform/oci/*.tfstate*
