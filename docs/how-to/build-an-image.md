@@ -1,5 +1,7 @@
 # Build an image
 
+Demo: `bin/multiarch-gate` on main prints `ok    multiarch 0 findings across 1 root(s)`.
+
 Ruling R24 (2026-08-25): every estate image carries `linux/amd64` and `linux/arm64` under one
 tag. The Mac (x86_64) pulls amd64; OKE (Ampere) pulls arm64; nobody configures anything.
 
