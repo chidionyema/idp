@@ -134,11 +134,17 @@ if [ -z "$APP_ID" ]; then
 else echo "wif     app estate-github-oidc"; fi
 CLIENT_ID="$(vget OCI_OIDC_CLIENT_ID)"; [ -n "$CLIENT_ID" ] || { echo "FAIL    app exists but OCI_OIDC_CLIENT_ID is not in the vault; delete the app in the console and re-run"; exit 1; }
 REPO="${GITHUB_REPO:-$(git -C "$IDP" remote get-url origin | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#')}"
+# GitHub's OIDC `sub` carries numeric ids: repo:<owner>@<owner id>/<repo>@<repo id>:<context>
+# (measured 2026-08-25 in run 32883584446; a rule on the bare name matches nothing).
+SUB_PREFIX=$(gh api "repos/$REPO" -q '"repo:\(.owner.login)@\(.owner.id)/\(.name)@\(.id):"' 2>/dev/null) || { echo "FAIL    gh cannot read repos/$REPO for the OIDC subject ids"; exit 1; }
 TR_ID=$(scim_find identity-propagation-trusts 'name eq "github-actions-estate"')
 if [ -z "$TR_ID" ]; then
-  jq -n --arg c "$CLIENT_ID" --arg u "$CI_UID" --arg r "sub eq repo:$REPO:*" '{"schemas":["urn:ietf:params:scim:schemas:oracle:idcs:IdentityPropagationTrust"],"name":"github-actions-estate","type":"JWT","issuer":"https://token.actions.githubusercontent.com","active":true,"subjectType":"User","publicKeyEndpoint":"https://token.actions.githubusercontent.com/.well-known/jwks","oauthClients":[$c],"clientClaimName":"aud","clientClaimValues":["https://cloud.oracle.com"],"allowImpersonation":true,"impersonationServiceUsers":[{"rule":$r,"value":$u}]}' > "$T2/t.json"
+  jq -n --arg c "$CLIENT_ID" --arg u "$CI_UID" --arg r "sub eq ${SUB_PREFIX}*" '{"schemas":["urn:ietf:params:scim:schemas:oracle:idcs:IdentityPropagationTrust"],"name":"github-actions-estate","type":"JWT","issuer":"https://token.actions.githubusercontent.com","active":true,"subjectType":"User","subjectClaimName":"sub","publicKeyEndpoint":"https://token.actions.githubusercontent.com/.well-known/jwks","oauthClients":[$c],"clientClaimName":"aud","clientClaimValues":["https://cloud.oracle.com"],"allowImpersonation":true,"impersonationServiceUsers":[{"rule":$r,"value":$u}]}' > "$T2/t.json"
   scim POST IdentityPropagationTrusts --request-body "file://$T2/t.json" | jq -e .data.id >/dev/null; echo "wif     trust github-actions-estate created for $REPO"
-else echo "wif     trust github-actions-estate"; fi
+else
+  jq -n --arg u "$CI_UID" --arg r "sub eq ${SUB_PREFIX}*" '{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"replace","path":"impersonationServiceUsers","value":[{"rule":$r,"value":$u}]}]}' > "$T2/tp.json"
+  scim PATCH "IdentityPropagationTrusts/$TR_ID" --request-body "file://$T2/tp.json" | jq -e .data.id >/dev/null && echo "wif     trust github-actions-estate rule reconciled"
+fi
 if command -v gh >/dev/null && gh repo view "$REPO" >/dev/null 2>&1; then
   printf %s "$CLIENT_ID:$(vget OCI_OIDC_CLIENT_SECRET)" | gh secret set OIDC_CLIENT_IDENTIFIER -R "$REPO"
   printf %s "$TENANCY" | gh secret set OCI_TENANCY_OCID -R "$REPO"
