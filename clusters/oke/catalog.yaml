@@ -1,0 +1,29 @@
+# The estate catalog reaches the cluster as an OCI artifact, not a git file: it is generated
+# from the laptop inventory (bin/catalog-gen) and gitignored. bin/idp-catalog-push builds the
+# ConfigMap and runs `flux push artifact`; this pulls it. Backstage rolls when the digest moves.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: estate-catalog
+  namespace: flux-system
+spec:
+  interval: 10m
+  url: oci://ghcr.io/chidionyema/idp/estate-catalog
+  ref:
+    tag: latest
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: estate-catalog
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: OCIRepository
+    name: estate-catalog
+  path: ./
+  prune: true
+  targetNamespace: backstage

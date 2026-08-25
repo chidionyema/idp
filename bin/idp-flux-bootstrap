@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# ADR 0004 step 3: connect Flux to the OKE cluster. Wraps `flux bootstrap github` (the mature
+# tool; rejected: hand-applying manifests, which has no reconciler). Idempotent: re-running
+# re-applies the same components. Needs bin/idp-oci-login to have run (kubeconfig comes from
+# the OKE cluster id in platform/oci state) and the vault entries GITHUB_TOKEN and the age key.
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+VAULT="${ESTATE_SECRETS:-$(dirname "$IDP")/estate-secrets}"
+export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
+ENV_NAME="${OCI_ENV:-dev}"
+for t in flux oci kubectl tofu sops; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
+vget() { sops -d --extract "[\"$1\"]" "$VAULT/secrets/$ENV_NAME/$1.yaml" 2>/dev/null; }
+[ -f "$SOPS_AGE_KEY_FILE" ] || { echo "BLIND age key not at $SOPS_AGE_KEY_FILE"; exit 2; }
+CLUSTER=$(cd "$IDP/platform/oci" && tofu output -raw cluster_id 2>/dev/null || true)
+[ -n "$CLUSTER" ] || { echo "BLIND no OKE cluster id in platform/oci state; run tofu apply first"; exit 2; }
+export KUBECONFIG="$HOME/.kube/oke-estate"
+oci ce cluster create-kubeconfig --cluster-id "$CLUSTER" --file "$KUBECONFIG" --region "$(vget OCI_REGION)" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT >/dev/null
+chmod 600 "$KUBECONFIG"
+kubectl get --raw /readyz >/dev/null && echo "ok      apiserver ready"
+kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+kubectl -n flux-system create secret generic sops-age --from-file=age.agekey="$SOPS_AGE_KEY_FILE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+echo "ok      sops-age secret in flux-system"
+GITHUB_TOKEN="$(vget GITHUB_TOKEN)" flux bootstrap github --owner chidionyema --repository idp --branch main --path clusters/oke --personal --read-write-key=false
+flux get kustomizations

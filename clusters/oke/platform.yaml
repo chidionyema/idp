@@ -1,0 +1,41 @@
+# ADR 0004 step 3. `flux bootstrap github --path clusters/oke` writes flux-system/ beside this
+# file; everything below is what Flux then reconciles. Secrets are sops+age files decrypted in
+# cluster by the `sops-age` Secret that bin/idp-flux-bootstrap creates from the vault key.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: backstage
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/backstage/overlays/oke
+  prune: true
+  wait: true
+  timeout: 5m
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: catalogue
+      namespace: backstage
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: chaos
+  namespace: flux-system
+spec:
+  interval: 1h
+  dependsOn:
+    - name: backstage
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/chaos
+  prune: true
