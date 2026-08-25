@@ -5,7 +5,7 @@
 # no OCI key yet. Also writes platform/oci/terraform.tfvars (identifiers only, gitignored).
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-VAULT="${ESTATE_SECRETS:-$HOME/dev/code/estate-secrets}"
+VAULT="${ESTATE_SECRETS:-$(dirname "$IDP")/estate-secrets}"
 export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
 ENV_NAME="${OCI_ENV:-dev}"
 for t in oci sops; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done

@@ -11,7 +11,7 @@
 # Re-running is safe: existing IAM objects are reused; a new key is added only with --rotate.
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-VAULT="${ESTATE_SECRETS:-$HOME/dev/code/estate-secrets}"
+VAULT="${ESTATE_SECRETS:-$(dirname "$IDP")/estate-secrets}"
 export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
 ENV_NAME="${OCI_ENV:-dev}"
 for t in oci sops openssl jq; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
