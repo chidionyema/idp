@@ -33,6 +33,7 @@ nav:
       - Plist gate: demo/plist.md
       - Oracle identity: demo/oci.md
       - Flux on OKE: demo/oke.md
+      - Cloud-agnostic: demo/cloud-agnostic.md
       - MCP: demo/mcp.md
       - Sovereign bus: demo/sb.md
       - VM-shared path guard: demo/vm-shared-path.md
@@ -68,6 +69,7 @@ nav:
       - Plist gate: onboarding/plist.md
       - Oracle identity: onboarding/oci.md
       - Flux on OKE: onboarding/oke.md
+      - Cloud-agnostic: onboarding/cloud-agnostic.md
       - Langfuse: onboarding/langfuse.md
       - Manifests: onboarding/manifests.md
       - MCP: onboarding/mcp.md
