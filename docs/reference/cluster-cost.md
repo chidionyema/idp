@@ -35,6 +35,13 @@ fallback (k3s on the same free VMs) that is worse but certain and changes nothin
 that the *other* obvious fallback, Hetzner's ARM CAX line, cannot be ordered at all today --
 see the market table below.
 
+**And a reason to decide now rather than later.** OVHcloud raised VPS prices 42.9-49% on 1 April
+2026, Netcup raised new orders 24.33% on 19 March, and Scaleway raised networking 18-46% on 1 June
+-- each announced on their own site, each blaming the same 2025 memory shortage. The cheap-VPS
+prices in this document are already the post-increase ones. A plan whose cost model rests on
+European VPS list prices has a term in it that moved by a quarter to a half in five months. A plan
+that rests on a free tier does not.
+
 **What I am not doing:** provisioning anything. Ruling R14 says no paid infrastructure without your
 sign-off and ruling R23 says local green first, then prepare, then move. This is the "prepare" step
 and it cost nothing to produce.
@@ -191,11 +198,11 @@ rent Linux in Europe and it will never manage Kubernetes for you.
 | option | what you get | price/month | egress | who runs Kubernetes |
 |---|---|---|---|---|
 | **Oracle Always Free** | 2 OCPU ARM, 12 GB, 200 GB, 1 LB | **$0.00** | 10 TB incl. | Oracle (OKE Basic) |
-| Contabo Cloud VPS 4 | 4 vCPU, 8 GB, 100 GB SSD | $6.60 | "unlimited", fair-use | you |
-| Netcup VPS 1000 G12 | 4 cores, 8 GB DDR5 ECC, 256 GB NVMe | €10.37 incl. VAT | included | you |
+| Contabo Cloud VPS 4 | 4 vCPU, 8 GB, 100 GB SSD | $6.60 **on 24-month prepay** | "unlimited", fair-use | you |
+| Netcup VPS 1000 G12 | 4 cores, 8 GB DDR5 ECC, 256 GB NVMe | €10.37 incl. **German** VAT, 12-month term | included | you |
 | **Kimsufi KS-B** | **4c/8t dedicated, 32 GB ECC**, 120 GB SSD | **€11.99 incl. VAT** + €9.99 once | unmetered, 500 Mbps | you |
 | OVHcloud VPS-3 | 4 vCore, 8 GB, NVMe | $12.32 | unmetered | you |
-| Hetzner CAX21 (ARM) | 4 vCPU, 8 GB, 80 GB + 100 GB volume | €15.39 all-in | 20 TB incl., then €1/TB | you |
+| Hetzner CAX21 (ARM) | 4 vCPU, 8 GB, 80 GB + 100 GB volume | €15.39 all-in | 20 TB incl., then €0.50-€1.00/TB (sources disagree) | you |
 | Scaleway DEV1-L | 4 vCPU, 8 GB + 100 GB + IP | €44.41 | unmetered, in the price | you |
 | Scaleway Kapsule | the same, plus a €16.79 LB | €61.20 | unmetered | Scaleway |
 | Civo Large | 4 vCPU, 8 GB, 100 GB NVMe + $10.86 LB | ≥$65.31 | unlimited, free | Civo |
@@ -304,7 +311,7 @@ Against that, the allowances:
 
 | vendor | included egress | over |
 |---|---|---|
-| Hetzner | 20 TB (EU) | €1.00/TB EU and US, **€7.40/TB Singapore** |
+| Hetzner | 20 TB (EU) | **sources disagree: €0.50/TB** quoted from hetzner.com/cloud/cost-optimized/, **€1.00/TB** from the price feed; €7.40/TB Singapore |
 | **Oracle Always Free** | **10 TB/month** | $0.0085/GB = $8.70/TB |
 | DigitalOcean | 5 TB pooled | $0.01/GB = $10/TB |
 | Linode/Akamai | pooled per plan | $0.005/GB = $5/TB |
@@ -372,7 +379,88 @@ more than the managed control plane we can have for nothing.
 ## Not just today: where the price bends
 
 You said we are expanding, so the number that matters is not this month's bill, it is the shape of
-the curve. There are three bends in it and only one of them is the compute price.
+the curve. There are four bends in it and only one of them is the compute price. The first one is
+the one I did not expect and it is the reason this section is not a straight-line extrapolation.
+
+### Bend 0: the list prices themselves are rising, and it is documented
+
+Three of the vendors in the table above have already raised prices in this exact window, each with
+a signed announcement on their own site, and all three name the same cause -- the 2025 DRAM
+shortage, memory fabs redirected to AI GPUs.
+
+| vendor | increase | effective | their words |
+|---|---|---|---|
+| **OVHcloud** | **VPS +42.9% to +49%** (VPS-1 €4.49 -> €6.49; VPS-4 €24.99 -> €36.99); new Public Cloud and Bare Metal +9-11%; existing pre-2025 services +2-6% | 1 Apr 2026 | memory manufacturers "redirected a significant portion of their production capacity to meet the massive demand for GPUs" |
+| **Netcup** | **new orders +24.33%**, existing contracts +18.51%, storage add-ons +21.52%; customers given a 3-month special termination right | 19 Mar 2026 (new), 1 May 2026 (existing) | suppliers "demanding a triple-digit percentage surcharge to secure server orders" |
+| **Scaleway** | block storage +10%, GP1 +2%, networking (load balancers, gateways) **+18-46%**, **DNS zones +600%** (€0.001 -> €0.007/hr), Elastic Metal +4-14% | 1 Jun 2026 | published as "a transparent update on Scaleway pricing", 27 Apr 2026 |
+| Hetzner | AX dedicated line reportedly +3-21% plus a 15 Jun 2026 restructuring | ~Apr/Jun 2026 | **third-party reports only -- no Hetzner-owned announcement found** on their blog, changelog, status page or community. Treat as unconfirmed. |
+
+Every OVHcloud and Netcup price in this document is the **new, higher** one; they were fetched
+after the increases took effect. That is not reassurance, it is the opposite: it means the
+direction is established and the cause has not gone away.
+
+**What this does to the decision.** A cost model built on European VPS list prices has a term in it
+that moved 25-49% in five months. A cost model built on a free tier does not. That is a second,
+independent reason to take Oracle Always Free now and treat every paid row here as a fallback to be
+re-priced on the day we need it, not a plan.
+
+### The whole market at three sizes
+
+Same three tiers as below, priced across the market on 2026-08-25, cheapest sourced fit first.
+
+| | TIER A -- 8 GB / 4 vCPU / 100 GB / 1 TB | TIER B -- 24 GB / 12 vCPU / 500 GB / 5 TB | TIER C -- 80 GB / 40 vCPU / 2 TB / 20 TB |
+|---|---|---|---|
+| **Oracle Always Free + top-up** | **$0.00** | **$93.79** | $397.76 |
+| Contabo | $6.60 (24-mo prepay) | not priced | $839.00 first year, $755.10 after (64c/192GB/2TB) |
+| Hetzner cloud | €8.49 (CX33) | €100.49 (CPX52) | €853.49 (CCX63, 960 GB short of 2 TB) |
+| Netcup | €10.37 incl. VAT | €32.41 incl. VAT (exceeds spec) | **€143.85 incl. VAT** (3x VPS 8000 G12, 48 vCPU/192 GB/6 TB) |
+| OVHcloud | £6.29 ex VAT (75 GB, short) | no clean fit; bare metal RISE-3 £81.99 | £171.99 ex VAT (ADVANCE-3, short on both) |
+| Hetzner dedicated | -- | -- | €612.30 ex VAT + €304 setup (AX162, unlimited traffic) |
+| Vultr | $40.00 | $144.00 | $1,200.00 + unpriced storage |
+| Civo | $43.45 | $152.35 | $549.78 |
+| DigitalOcean | $48.00 | $366.00 | $1,148.00 |
+| Linode/Akamai | $48.00 | $288.00 | $872.00 |
+| Scaleway | €40.76 | not priced | €1,214.16 |
+| **AWS eu-west-2** | **$179.44 ex VAT** | **$838.53** | **$3,334.86** |
+
+Currencies are the vendors' own and no FX rate was fetched, so cross-currency ranking is
+indicative. The number that needs no conversion is the spread: **at 10x our current size the
+cheapest sourced fit is about €144 and AWS is $3,335 — roughly 25 times.** Over half of AWS's
+Tier C bill is egress alone ($1,783.50 of it), which is the whole argument in one line.
+
+Two smaller items from the same sweep, both easy to miss:
+
+- **AWS charges $0.005/hour for every public IPv4 address, attached or not**, since 1 Feb 2024.
+  That is about $3.65/month per instance and it is not in the totals above.
+- **OVHcloud's Asia-Pacific regions are the only other real egress cliff:** 1 TB/month on VPS-1
+  and VPS-2, then a hard throttle to 10 Mbps. Their European and North American VPS are unmetered.
+
+### Where dedicated hardware starts beating cloud VMs
+
+Worth knowing before we scale, because the crossover is much earlier than people assume.
+
+- **Hetzner: almost immediately.** AX41 at €57.30/mo gives 64 GB and 6 dedicated cores; CCX23 at
+  €85.99/mo gives 16 GB and 4 vCPU. Four times the RAM for a third less money. At Tier C size,
+  AX162 (€612.30) beats CCX63 (€853.49) by 28% with four times the disk and unlimited traffic.
+- **Netcup: never.** Their VPS undercuts their own Root Server at every matched spec (VPS 4000 G12
+  €32.41 vs RS 4000 G12 €39.92, identical 12 vCPU/32 GB/1 TB). Dedicated only helps above 24 cores,
+  where VPS does not reach.
+- **OVHcloud: never on price.** VPS-4 is £0.72 per GB of RAM; the cheapest dedicated above it,
+  RISE-1, is £1.59 per GB. Dedicated is a forced step past VPS-4's 24 GB ceiling, not a saving.
+
+### One correction to the ARM argument
+
+The section above argues for ARM, and for our purposes it holds: Oracle's free tier is ARM, so
+ARM is what free costs. But **ARM is not universally cheaper**, and I should not leave that
+implication standing. At Hetzner, matched at 16 vCPU / 32 GB, the x86 CX53 is €0.922 per GB of RAM
+against the ARM CAX41 at €1.281 — **x86 is 28% cheaper**, and the gap holds at every matched size.
+ARM only beats Hetzner's dearer CPX and CCX lines. At AWS it is the other way: Graviton m7g is
+19.05% cheaper per GB than the x86 m7i in the same generation and region.
+
+So the reason to build multi-arch images is **portability** -- it is what lets us take a free tier
+that happens to be ARM, and leave it later without a rebuild. It is not that ARM is cheaper per se.
+
+
 
 **Bend 1, at roughly 2x: we leave the free tier.** Today's 4.12 GB fits inside 12 GB with the
 control plane free. Double the workload and it still fits. Triple it and it does not -- and the
@@ -413,6 +501,13 @@ rather than a change of cloud. Worth knowing now rather than the week someone im
 - **Do not plan around Hetzner's ARM line.** It is the cheapest ARM in Europe on paper and it has
   been unorderable site-wide since at least 2026-08-25. Verify availability before it appears in
   any plan as a fallback.
+- **Treat every paid price in this document as a quote with a shelf life.** Three of the four
+  cheapest European vendors raised prices between March and June 2026 and said why. Re-fetch before
+  committing to any of them; do not carry a number from this page into a decision months from now.
+- **Remember what Contabo's and Netcup's headline prices are.** Contabo's $6.60 is the 24-month
+  prepay rate and the one-month rate is not published. Netcup's €10.37 includes 19% German VAT on a
+  12-month term, and no Netcup page states how a UK buyer is treated -- the real net could be lower,
+  or it could not. Neither is a monthly-cancellable price as shown.
 - **Settle the 2-versus-4 OCPU question with one email.** Oracle's own two pages disagree about
   whether a Pay-As-You-Go tenancy keeps the old 4 OCPU / 24 GB allowance. It is worth about
   $30/month and it is a question, not a project.
