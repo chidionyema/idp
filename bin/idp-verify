@@ -172,10 +172,10 @@ else say "FAIL      describe  a scheduled job would reach the UI with no descrip
 # two stores. This is the comparison: one real login against auth.<zone> with the sops value.
 # BLIND without the sops vault or the age key; a 401 is a FAIL, never a wait.
 zone=$(sed -n 's/^  ESTATE_ZONE: *//p' "$IDP/clusters/oke/estate-config.yaml" | head -1)
-sec="${ESTATE_SECRETS:-$HOME/dev/code/estate-secrets}/secrets/dev/CATALOGUE_FOUNDER_PASSWORD.yaml"
-if [ -z "$zone" ] || [ ! -f "$sec" ] || ! command -v sops >/dev/null 2>&1; then
-  say "BLIND     login     no estate-config zone, no sops, or no $sec"
-elif pw=$(SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}" sops -d --extract '["CATALOGUE_FOUNDER_PASSWORD"]' "$sec" 2>/dev/null) && [ -n "$pw" ]; then
+sec="${ESTATE_SECRETS:-}/secrets/dev/CATALOGUE_FOUNDER_PASSWORD.yaml"   # ESTATE_SECRETS and SOPS_AGE_KEY_FILE come from the environment (LAW 46)
+if [ -z "$zone" ] || [ -z "${ESTATE_SECRETS:-}" ] || [ -z "${SOPS_AGE_KEY_FILE:-}" ] || [ ! -f "$sec" ] || ! command -v sops >/dev/null 2>&1; then
+  say "BLIND     login     needs ESTATE_SECRETS, SOPS_AGE_KEY_FILE, sops and the estate-config zone"
+elif pw=$(sops -d --extract '["CATALOGUE_FOUNDER_PASSWORD"]' "$sec" 2>/dev/null) && [ -n "$pw" ]; then
   code=$(printf '{"username":"founder","password":%s,"keepMeLoggedIn":false}' "$(printf '%s' "$pw" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" \
     | curl -sS -o /dev/null -w '%{http_code}' --max-time 10 -H 'Content-Type: application/json' -X POST "https://auth.$zone/api/firstfactor" --data-binary @- 2>/dev/null)
   unset pw
