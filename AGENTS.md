@@ -29,3 +29,12 @@ every entity reference in it must resolve to an entity something defines
 
 Adding a rule: add a row, add both fixtures, run `bin/idp-ci`. A row whose gate cannot
 tell the fixtures apart fails CI, so a rule cannot be written without its proof.
+
+## Platform queries go through the estate MCP server (ADR 0006)
+
+Founder, 2026-08-25: the platform is self-aware; one interface answers questions about it. So: a
+question about estate state is one `mcp__estate__*` tool call, not a shell recon. A new query tool
+summarises by default and drills only on request, under a byte ceiling. Any tool that changes state
+is two calls, propose then execute, and execute refuses when the state hash in the proposal no longer
+matches. Events reach agents debounced through the Sovereign Bus, never raw. Extend `mcp/`; never add
+a second server. Full text: `docs/decisions/0006-the-platform-answers-for-itself-over-one-mcp.md`.

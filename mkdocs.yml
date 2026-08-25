@@ -12,6 +12,8 @@ nav:
       - 0002 Documentation is code: decisions/0002-documentation-is-code-and-the-portal-renders-it.md
       - 0003 Identity is OIDC and the gateway enforces it: decisions/0003-identity-is-oidc-and-the-gateway-enforces-it.md
       - 0004 Oracle OKE is the Kubernetes target: decisions/0004-oracle-oke-is-the-kubernetes-target.md
+      - 0005 Chaos Mesh is the chaos framework: decisions/0005-chaos-mesh-is-the-chaos-framework.md
+      - 0006 The platform answers for itself over one MCP: decisions/0006-the-platform-answers-for-itself-over-one-mcp.md
   - Tutorials: tutorials/index.md
   - How-to: how-to/index.md
   - Reference:
