@@ -15,18 +15,25 @@ rather than guessing.
 with room to spare. Budget $14.60/month for the first top-up and about $94/month at three times
 today's size.**
 
-The single reason it wins is not the free VMs -- other people give away VMs. It is that **the
-managed Kubernetes control plane is free**, and a self-managed control plane is the most expensive
-thing in every alternative: k3s's own documentation measures a server node at 1,428-1,606 MB of RAM
-before it runs any of our code, and an honest highly-available one needs three of them. On a 12 GB
-free allowance, self-managing costs 13% of everything we have, to run Kubernetes rather than to run
-the product.
+**Why it wins, stated honestly, because my first draft of this line was wrong.** I assumed the
+free managed control plane was Oracle's edge. It is not: DigitalOcean, Linode, Civo, Vultr,
+Scaleway, OVHcloud, Exoscale and UpCloud all give the control plane away too, and only Google
+charges for it ($73/month). **Oracle's actual edge is that the worker nodes are free as well, plus
+10 TB of egress a month.** Everywhere else the machines cost $40-$70 for the size we need.
+
+The free control plane still matters, just not as a differentiator -- it matters against
+*self-hosting*. k3s's own documentation measures a server node at 1,428-1,606 MB of RAM before it
+runs any of our code, and an honest highly-available control plane needs three of them. On a 12 GB
+free allowance that is 13% of everything we have, spent running Kubernetes rather than running the
+product. So: managed, and the cheapest managed offer where the nodes are free too.
 
 **The risk, in two sentences, because one would be dishonest.** Oracle's free ARM capacity is
 genuinely scarce -- "out of host capacity" is a well-documented, unacknowledged, longstanding
 problem. And Oracle's own worker-node documentation neither confirms nor forbids running managed
 OKE nodes on the free A1 shape, so step one is a check that costs an afternoon, with a known
-fallback (k3s on the same free VMs) that is worse but certain and changes nothing else.
+fallback (k3s on the same free VMs) that is worse but certain and changes nothing else. Note
+that the *other* obvious fallback, Hetzner's ARM CAX line, cannot be ordered at all today --
+see the market table below.
 
 **What I am not doing:** provisioning anything. Ruling R14 says no paid infrastructure without your
 sign-off and ruling R23 says local green first, then prepare, then move. This is the "prepare" step
@@ -145,6 +152,95 @@ is a capacity check before a single line of OpenTofu.
 applies to A1 shapes specifically). All three must be true, and measured we are clear on two of
 them: 1.51 cores against 2 OCPU is 75%, and 4.12 GB against 12 GB is 34%. Worth knowing it exists before someone "optimises" the cluster into being
 reclaimed.
+## Managed against self-provisioned, priced across the market
+
+You asked me to look wide rather than confirm the answer we already had. Everything below is a
+reference workload of the same size at every vendor -- **4 vCPU, 8 GB RAM, 100 GB storage, one
+IPv4, one load balancer, 1 TB of egress** -- fetched from vendor pages and price feeds on
+2026-08-25. Cells I could not source say so instead of carrying a guess.
+
+### The finding that reframes the choice: a free control plane is not rare
+
+I expected the free managed control plane to be Oracle's edge. It is not.
+
+| managed Kubernetes | control plane |
+|---|---|
+| Oracle OKE **Basic** | free |
+| DigitalOcean DOKS | free (HA add-on +$40/mo) |
+| Linode/Akamai LKE | free (HA add-on from +$60/mo; LKE Enterprise $300/mo) |
+| Civo | free |
+| Scaleway Kapsule | free -- "The K8s control plane is provided without additional costs" |
+| Vultr VKE | free (HA add-on $40-50, exact figure not sourced) |
+| OVHcloud Managed K8s | free on the Free plan; €65.70/mo on Standard |
+| Exoscale SKS | free on Starter |
+| UpCloud UKS | free on Development |
+| Google GKE (Standard *and* Autopilot) | **$0.10/cluster/hour, $73/mo**, one zonal cluster covered by a $74.40/mo free-tier credit |
+| Oracle OKE **Enhanced** | $0.10/hour, $73.00/mo |
+| **Hetzner** | **no managed Kubernetes product exists** |
+
+Nine vendors give the control plane away. **What actually distinguishes Oracle is that the worker
+nodes are free as well**, and that is the whole of its advantage -- not the control plane. Say it
+that way to anyone who asks, because the control-plane argument does not survive contact with the
+market.
+
+Hetzner's absence from that list is the other thing worth carrying: it is the cheapest place to
+rent Linux in Europe and it will never manage Kubernetes for you.
+
+### The machines, cheapest first
+
+| option | what you get | price/month | egress | who runs Kubernetes |
+|---|---|---|---|---|
+| **Oracle Always Free** | 2 OCPU ARM, 12 GB, 200 GB, 1 LB | **$0.00** | 10 TB incl. | Oracle (OKE Basic) |
+| Contabo Cloud VPS 4 | 4 vCPU, 8 GB, 100 GB SSD | $6.60 | "unlimited", fair-use | you |
+| Netcup VPS 1000 G12 | 4 cores, 8 GB DDR5 ECC, 256 GB NVMe | €10.37 incl. VAT | included | you |
+| **Kimsufi KS-B** | **4c/8t dedicated, 32 GB ECC**, 120 GB SSD | **€11.99 incl. VAT** + €9.99 once | unmetered, 500 Mbps | you |
+| OVHcloud VPS-3 | 4 vCore, 8 GB, NVMe | $12.32 | unmetered | you |
+| Hetzner CAX21 (ARM) | 4 vCPU, 8 GB, 80 GB + 100 GB volume | €15.39 all-in | 20 TB incl., then €1/TB | you |
+| Scaleway DEV1-L | 4 vCPU, 8 GB + 100 GB + IP | €44.41 | unmetered, in the price | you |
+| Scaleway Kapsule | the same, plus a €16.79 LB | €61.20 | unmetered | Scaleway |
+| Civo Large | 4 vCPU, 8 GB, 100 GB NVMe + $10.86 LB | ≥$65.31 | unlimited, free | Civo |
+| DigitalOcean DOKS | 4 vCPU/8 GiB $48 + $10 storage + $12 LB | ≥$70.00 | 5 TB pooled, then $0.01/GB | DigitalOcean |
+| Linode LKE | 8 GB $48 + $10 storage + $10 LB | ≥$70.00 | pooled, then $0.005/GB | Akamai |
+| OVHcloud Managed K8s | €66.65 nodes + €4.20 + €6.00 LB | €76.85 | included | OVHcloud |
+
+Three rows there are worth more than their price.
+
+**Hetzner's ARM line cannot be ordered today.** Every CAX card on hetzner.com carried a site-wide
+"This product is currently unavailable. Please check back later." on 2026-08-25. CPX and CCX are
+unaffected. CAX is also **EU-only** -- Nuremberg, Falkenstein, Helsinki, no US location. So the
+obvious cheap-ARM fallback, the one I would have named without checking, is not currently
+purchasable. That is exactly the kind of assumption that breaks a migration plan in week three.
+
+**Kimsufi KS-B is the outlier and it deserves a serious look.** €11.99 a month including VAT for
+**32 GB of ECC RAM on dedicated hardware** -- nearly three times Oracle's entire free allowance,
+for less than Oracle's first paid top-up of $14.60. The catch is real and I am not burying it:
+2013-era Xeon on DDR3, one 120 GB SSD with no redundancy, a €9.99 one-off setup fee, and you run
+the control plane yourself. As a *second* machine holding the things that only want RAM --
+ClickHouse, Postgres, model caches -- nothing else on this page is close.
+
+**The managed tier is a cliff, not a slope.** DigitalOcean, Linode, Civo and Scaleway all land
+between $60 and $77 for the machine Contabo and OVH sell for under $13. You are not paying for the
+control plane at any of them; it is free. You are paying about 5x for the VM.
+
+### What the free control plane is actually saving you
+
+Run Kubernetes yourself and the control plane is not free, it is just not itemised. k3s needs
+**1,428-1,606 MB per server node with no workload on it** (docs.k3s.io/reference/resource-profiling),
+and etcd quorum means **three server nodes, an odd number, minimum**. No vendor sells a
+control-plane-sized box, so honest HA is three of the reference VM:
+
+| self-hosted HA control plane | 3 nodes, compute only |
+|---|---|
+| Contabo | ~$19.80 |
+| Netcup | ~€31.11 |
+| Hetzner CAX21 | ~€31.47 |
+| OVH VPS-3 | ~$36.96 |
+| Scaleway | ~€93.81 |
+
+Plus a worker for the actual workload if the servers stay unschedulable. **That is the number a
+free managed control plane deletes**, and it is why "self-host on the cheapest VPS" is not
+automatically the shrewd answer: at Contabo prices it saves money, at Scaleway prices it costs more
+than Kapsule.
 ## ARM is the cheapest single decision available, and we are one step from it
 
 Every cheap option on the table -- Oracle's Always Free A1, Hetzner's CAX line -- is ARM. ARM is
@@ -206,14 +302,21 @@ will be a fraction of it.
 
 Against that, the allowances:
 
-| | included egress | cost of the first TB over |
+| vendor | included egress | over |
 |---|---|---|
-| Oracle Always Free | **10 TB/month** | $0.0085/GB = $8.70 |
-| AWS / GCP | 100 GB/month account-wide | $0.09/GB = ~$92 |
+| Hetzner | 20 TB (EU) | €1.00/TB EU and US, **€7.40/TB Singapore** |
+| **Oracle Always Free** | **10 TB/month** | $0.0085/GB = $8.70/TB |
+| DigitalOcean | 5 TB pooled | $0.01/GB = $10/TB |
+| Linode/Akamai | pooled per plan | $0.005/GB = $5/TB |
+| Scaleway | inside the list price | -- |
+| Contabo, Netcup, OVHcloud, Civo | unmetered / "unlimited", fair-use | -- |
+| AWS / GCP paid | 100 GB/month account-wide | $0.09/GB = about $92/TB |
+| **GCP free tier** | **1 GB/month, North America only** | everything else billed |
 
-At 360 GB a month we are inside every free allowance on the market, including AWS's. Egress is
-therefore **not** what makes this decision today -- but it is what makes it at 10x, which is why
-the table below prices 20 TB as well as 1 TB.
+At 360 GB a month we are inside every free allowance on that table except Google's free tier,
+which would not survive a single day. Egress is therefore **not** what decides this today -- but it
+is what decides it at 10x, and the hyperscaler row is why: the same terabyte costs $8.70 at Oracle,
+€1.00 at Hetzner and about $92 at AWS.
 ## The line items nobody puts in the estimate
 
 A cluster bill is never just the machine. These are the four that turn a £5 plan into a £40 one,
@@ -303,6 +406,27 @@ rather than a change of cloud. Worth knowing now rather than the week someone im
 - **Do not pay for backup egress.** Cloudflare R2 charges nothing to download at any volume; AWS
   charges enough that people quietly stop testing restores. A backup you are discouraged from
   testing is not a backup.
+- **If we need RAM more than we need cores, buy RAM, not a bigger cloud VM.** Kimsufi KS-B is
+  32 GB of dedicated ECC for €11.99/month including VAT -- less than Oracle's first top-up, for
+  nearly three times the free tier's memory. Old hardware, one disk, no redundancy: correct for a
+  ClickHouse or model cache, wrong for anything whose loss would hurt.
+- **Do not plan around Hetzner's ARM line.** It is the cheapest ARM in Europe on paper and it has
+  been unorderable site-wide since at least 2026-08-25. Verify availability before it appears in
+  any plan as a fallback.
 - **Settle the 2-versus-4 OCPU question with one email.** Oracle's own two pages disagree about
   whether a Pay-As-You-Go tenancy keeps the old 4 OCPU / 24 GB allowance. It is worth about
   $30/month and it is a question, not a project.
+## How these numbers were produced
+
+Sizing came from `docker stats --no-stream` and `docker system df` on this laptop on 2026-08-25.
+Oracle's figures came from oracle.com/cloud/free and the Always Free documentation, fetched the
+same day. The market table came from four parallel research passes against vendor pricing pages
+and, where a page blocked automated fetching or rendered its prices in JavaScript, the vendor's own
+price API or feed -- Hetzner's live price feed and Vultr's `/v2/plans` endpoint in particular.
+
+Three things I could not source and have left blank rather than filled in: Hetzner's block-storage
+€/GB/month, Vultr's and UpCloud's totals (both sites returned 403 to automated fetches), and
+Contabo's VPS-8 price, which came back as €16.80 on one fetch and €14.00 on another and is
+therefore not reported at all. Two prices in the market are time-limited promotions and are
+deliberately excluded: RackNerd's $119.99/year is a countdown flash sale, and Hostinger's headline
+price requires a two-year commitment and renews at 2.2-2.4x.
