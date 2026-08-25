@@ -134,6 +134,75 @@ if ! INV="$IDP/tests/fixtures/inventory.port-collision.json" OUT="$tmp" python3 
   say "ok    ports    catalog-gen refuses a port claimed twice, passes the clean inventory, emits port entities"
 else say "FAIL  ports    catalog-gen port guard is not discriminating"; fail=1; fi
 
+# 4e. incident_2026_08_25_false_port_collision. A container's published port and
+#     the listener the inventory already attributed to that container
+#     (~/.estate/scripts/inventory.py:690 sets listener.owner) are ONE claim.
+#     catalog-gen counted them as two, exempting only `process == "ssh"` -- which
+#     graded which program holds the socket instead of whether the inventory had
+#     attributed it. Nine of the ten published ports here are ssh-forwarded, so
+#     the exemption hid it; colima forwards 80 and 443 through `limactl
+#     hostagent`, fell outside it, and the generator refused the entire catalogue
+#     over two ports with exactly one owner each. `ai.estate.idp` last exit status
+#     3, catalog/catalog-info.yaml frozen at 2026-08-24 22:10 while the hourly job
+#     kept failing. Both ways, because a guard only ever seen refusing has never
+#     been shown to permit (LAW 38): the attributed fixture must generate, and
+#     inventory.port-collision.json (where a second, unattributed process claims
+#     the same port) must still be refused.
+if INV="$IDP/tests/fixtures/inventory.published-port.json" OUT="$tmp/pub" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1 \
+   && ! INV="$IDP/tests/fixtures/inventory.port-collision.json" OUT="$tmp/pub2" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1; then
+  say "ok    incident 2026-08-25 false port collision: an attributed listener is one claim with its container, an unattributed one is still two"
+else say "FAIL  incident 2026-08-25 false port collision: catalog-gen cannot tell a container's own forward from a second claimant"; fail=1; fi
+
+# 4f. incident_2026_08_25_containment_through_a_link. owning_repo() compared
+#     paths as strings, so an asset that reaches its repository through a linked
+#     worktree or a symlink read as untracked and got the outside-any-repo tag --
+#     which is how LAW 24 is surfaced, so it read as "load-bearing and in no
+#     repository we track". Measured on the 2026-08-24T21:49:59Z inventory: 14 of
+#     47. A real repository with a real linked worktree and a real symlink is
+#     built here rather than a hand-written .git file, because the claim under
+#     test is that git resolves them, not that a parser of mine does.
+wt="$tmp/wt"; mkdir -p "$wt"
+(
+  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
+  export GIT_AUTHOR_NAME=ci GIT_AUTHOR_EMAIL=ci@ci GIT_COMMITTER_NAME=ci GIT_COMMITTER_EMAIL=ci@ci
+  git init -q -b main "$wt/myrepo"
+  : > "$wt/myrepo/README"
+  git -C "$wt/myrepo" add README && git -C "$wt/myrepo" commit -qm init
+  git -C "$wt/myrepo" worktree add -q -b live "$wt/myrepo-live"
+) >/dev/null 2>&1
+ln -s "$wt/myrepo" "$wt/myrepo-link"
+mkdir -p "$wt/myrepo-live/deploy" "$wt/myrepo-link/sub" "$wt/nowhere"
+python3 - "$wt" > "$wt/inv.json" <<'PYFIX'
+import json, sys
+w = sys.argv[1]
+def c(i, path): return {"kind": "container", "id": i, "path": path, "root": "(outside)",
+                        "image": "e:1", "project": "p", "service": i, "health": "none",
+                        "running": True, "published_ports": "", "pinned": True, "coupling": "none"}
+print(json.dumps({"at": "2026-08-25T00:00:00Z", "findings": [], "rows": [
+    {"kind": "repo", "id": "myrepo", "path": w + "/myrepo", "root": "(outside)", "remote": "",
+     "offsite": False, "branch": "main", "tracked_files": 1, "dirty": 0, "coupling": "none"},
+    c("in-worktree", w + "/myrepo-live/deploy"),
+    c("through-symlink", w + "/myrepo-link/sub"),
+    c("really-orphaned", w + "/nowhere"),
+]}))
+PYFIX
+INV="$wt/inv.json" OUT="$wt/out" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1
+tagged() { python3 - "$wt/out/catalog-info.yaml" "$1" <<'PYT'
+import re, sys
+for d in open(sys.argv[1]).read().split('\n---\n'):
+    if re.search(r"^  name: '?%s'?$" % re.escape(sys.argv[2]), d, re.M):
+        sys.exit(0 if 'outside-any-repo' in d else 1)
+sys.exit(2)
+PYT
+}
+st() { tagged "$1" >/dev/null 2>&1; echo $?; }   # 0 tagged, 1 not tagged, 2 entity missing
+# Compared exactly, never with `!`: a negated call accepts 2 as well as 1, so a
+# vanished entity would read as a pass. That silent-miss shape has cost this repo
+# before (bin/idp-ci "incident 2026-08-24 dropped assets").
+if [ "$(st in-worktree)" = 1 ] && [ "$(st through-symlink)" = 1 ] && [ "$(st really-orphaned)" = 0 ]; then
+  say "ok    incident 2026-08-25 containment through a link: a worktree and a symlink resolve to their repo, a genuine orphan keeps outside-any-repo"
+else say "FAIL  incident 2026-08-25 containment through a link: in-worktree=$(st in-worktree) through-symlink=$(st through-symlink) really-orphaned=$(st really-orphaned), want 1 1 0 (0 tagged, 1 not tagged, 2 entity missing)"; fail=1; fi
+
 # 4c. Port lock (crew#186 CP4, R22 mechanism 4): a compose publication not
 #     declared in catalog/ports.yaml, or off loopback without non_loopback (R20),
 #     fails. Proved both ways: the rogue fixture is refused, the repo passes.

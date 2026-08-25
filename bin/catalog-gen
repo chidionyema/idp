@@ -10,7 +10,7 @@ That is the whole point. The catalogue is the asset, the portal is a renderer, a
 a renderer you can replace in one command is not a dependency. If Backstage is
 wrong in a year, this adapter changes its output format and the estate does not.
 """
-import json, os, re, sys
+import json, os, re, subprocess, sys
 
 # INV and OUT can be overridden so CI can run this against a fixture (bin/idp-ci).
 INV = os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json")
@@ -193,13 +193,81 @@ def main() -> int:
         names[id(r)] = name
         if r.get("kind") == "repo" and r.get("path"):
             repo_index.append((r["path"].rstrip("/"), name))
-    repo_index.sort(key=lambda t: -len(t[0]))  # longest path first: most specific repo wins
+    real_index = {os.path.realpath(rp).rstrip('/'): rn for rp, rn in repo_index}
+    repo_index.sort(key=lambda t: (-len(t[0]), t[0]))  # longest path first: most specific repo wins;
+    # then by path, so two checkouts whose paths are the same length cannot swap places between
+    # runs and produce a one-byte diff in an otherwise identical catalogue.
+
+    # dir -> main checkout path, or None. Cached because the 47 unresolved rows
+    # of one inventory share far fewer directories than that, and because a
+    # second call must return the same answer for idempotency (bin/idp-ci runs
+    # this twice over one inventory and fails on a byte of difference).
+    _common = {}
+
+    def common_checkout(path):
+        d = path if os.path.isdir(path) else os.path.dirname(path)
+        if not d or not os.path.isdir(d):
+            return None
+        if d in _common:
+            return _common[d]
+        out = None
+        try:
+            r = subprocess.run(["git", "-C", d, "rev-parse", "--git-common-dir"],
+                               capture_output=True, text=True, timeout=10)
+            if r.returncode == 0 and r.stdout.strip():
+                g = r.stdout.strip()
+                # Relative to d when git reports a bare ".git" (git < 2.31 does
+                # this for the main checkout), absolute for a linked worktree.
+                if not os.path.isabs(g):
+                    g = os.path.join(d, g)
+                out = os.path.dirname(os.path.realpath(g)).rstrip("/")
+        except (OSError, subprocess.SubprocessError):
+            # No git on PATH, or a directory git refuses to read. An asset whose
+            # repository cannot be established keeps the outside-any-repo tag,
+            # which is the careful direction to be wrong in.
+            out = None
+        _common[d] = out
+        return out
 
     def owning_repo(path):
         p = (path or "").rstrip("/")
         for rp, rname in repo_index:
             if p == rp or p.startswith(rp + os.sep):
                 return rname
+        # Not under any checkout the inventory listed -- but the comparison above
+        # is a string prefix test, and a path can reach a tracked repository by a
+        # route that string never sees.
+        #
+        #   A LINKED WORKTREE. The inventory finds repositories by testing
+        #     isdir(c/".git"); in a linked worktree .git is a FILE, so every
+        #     worktree is invisible to it. ~/dev/code/prospector-main (a worktree
+        #     of ~/Documents/code/prospector) and ~/dev/code/.crew-state (of crew)
+        #     are where those two are actually worked on.
+        #   A SYMLINK. ~/.hermes is a symlink to ~/Documents/code/hermes, and ten
+        #     launchd jobs run ~/.hermes/scripts/launchd_receipt.py.
+        #
+        # Measured on the 2026-08-24T21:49:59Z inventory: 14 of the 47 assets
+        # carrying outside-any-repo were sitting in a tracked repository -- 4
+        # prospector containers, com.chidionyema.graphify-sweep,
+        # com.founder.estatesnapshot and 8 launchd jobs under ~/.hermes.
+        #
+        # That tag is how LAW 24 is made visible: it means "load-bearing and in no
+        # repository we track". Reporting it for 14 assets that ARE tracked is a
+        # false alarm, and a false alarm costs a session every time someone
+        # believes it.
+        #
+        # git is asked rather than the gitfile parsed by hand: `rev-parse
+        # --git-common-dir` is the documented way to get from any working tree to
+        # its repository, and a second copy of that format here would be a worse
+        # one (LAW 43).
+        main = common_checkout(p)
+        if main:
+            # Both sides realpath'd. git always answers with symlinks resolved,
+            # and the inventory records the path as it was walked. On macOS /tmp
+            # is a symlink to /private/tmp and /var to /private/var, so a
+            # checkout under either answers "/private/..." to git and "/..." to
+            # the inventory, and a raw string compare silently never matches.
+            return real_index.get(main)
         return None
 
     couplings = sorted({r.get("coupling") for r in rows
@@ -254,8 +322,29 @@ def main() -> int:
         if r.get("kind") == "container" and r.get("published_ports") not in (None, "", "(none)"):
             for prt in str(r["published_ports"]).split(","):
                 claims.setdefault(int(prt), set()).add(r["id"])
-        elif r.get("kind") == "listener" and r.get("process") != "ssh":
-            claims.setdefault(int(r["port"]), set()).add(r.get("process") or r["id"])
+        elif r.get("kind") == "listener":
+            # A listener's claim is its OWNER, not the program holding the socket.
+            # The inventory has already mapped every published port to the
+            # container that published it (~/.estate/scripts/inventory.py:690),
+            # so the container row and the listener row are one claim, not two.
+            #
+            # This used to read `process != "ssh"`, which graded a proxy: it asked
+            # which program happens to hold the socket rather than whether the
+            # inventory had attributed it. Nine of the ten published ports on this
+            # machine are forwarded by ssh, so the exemption covered them and the
+            # bug stayed invisible. Ports 80 and 443 come through colima's
+            # `limactl hostagent` instead, fell outside the exemption, and the
+            # generator refused the whole catalogue over a port with exactly one
+            # owner. Measured: `ai.estate.idp` last exit status 3, and
+            # catalog/catalog-info.yaml frozen at 2026-08-24 22:10 while the
+            # hourly job kept failing.
+            #
+            # Reading owner keeps every real collision. Something that binds a
+            # port with no container behind it is named by its own process, so it
+            # still collides with a container publishing the same port -- which is
+            # the 3200 incident this guard was written for.
+            claims.setdefault(int(r["port"]), set()).add(
+                r.get("owner") or r.get("process") or r["id"])
     collisions = {prt: who for prt, who in claims.items() if len(who) > 1}
     if collisions:
         for prt, who in sorted(collisions.items()):
