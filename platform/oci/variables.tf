@@ -49,3 +49,10 @@ variable "control_plane_allowed_cidrs" {
   description = "CIDRs admitted to the Kubernetes API endpoint. Written by bin/idp-oci-login from the measured egress IP."
   default     = []
 }
+
+# crew#220 hand step 2: the name was the literal "estate", so a second cluster (a drill target,
+# a blue/green move) could not exist. Pass -var cluster_name=estate-drill from bin/idp-oke-rebuild.
+variable "cluster_name" {
+  type    = string
+  default = "estate"
+}

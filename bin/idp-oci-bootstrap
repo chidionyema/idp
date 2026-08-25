@@ -21,7 +21,11 @@ vget() { sops -d --extract "[\"$1\"]" "$VAULT/secrets/$ENV_NAME/$1.yaml" 2>/dev/
 vput() { # name on argv, VALUE ON STDIN ONLY
   local f="$VAULT/secrets/$ENV_NAME/$1.yaml"
   if [ -e "$f" ] && [ "${2:-}" != replace ]; then cat >/dev/null; echo "vault   $1 kept"; return; fi
-  SECRET_REPLACE=1 "$VAULT/scripts/secret-add" "$ENV_NAME" "$1" "$1" >/dev/null && echo "vault   $1 written"
+  # 2026-08-25: vget returned "" (SOPS_AGE_KEY_FILE unset) and vput wrote two EMPTY secrets to
+  # the vault. An empty value is never a secret; refuse it instead of recording a blank verdict.
+  local v; v="$(cat)"
+  [ -n "$v" ] || { echo "FAIL    vault $1: refusing to write an empty value" >&2; return 1; }
+  printf %s "$v" | SECRET_REPLACE=1 "$VAULT/scripts/secret-add" "$ENV_NAME" "$1" "$1" >/dev/null && echo "vault   $1 written"
 }
 
 REGION="$(vget OCI_REGION)"; TENANCY="$(vget OCI_TENANCY_OCID)"
@@ -64,7 +68,7 @@ POLICY_NAME=estate-operators-manage-estate
 # Statements are reconciled, not only created: a re-run after a statement is added here updates
 # the live policy (2026-08-25: `read all-resources` does not cover the limits service; capacity
 # checks need `inspect limits`).
-STATEMENTS='["Allow group estate-operators to manage cluster-family in compartment estate","Allow group estate-operators to use cluster-node-pools in compartment estate","Allow group estate-operators to manage virtual-network-family in compartment estate","Allow group estate-operators to manage instance-family in compartment estate","Allow group estate-operators to manage volume-family in compartment estate","Allow group estate-operators to use subnets in compartment estate","Allow group estate-operators to use vnics in compartment estate","Allow group estate-operators to use network-security-groups in compartment estate","Allow group estate-operators to use private-ips in compartment estate","Allow group estate-operators to manage public-ips in compartment estate","Allow group estate-operators to inspect compartments in tenancy","Allow group estate-operators to read all-resources in tenancy","Allow group estate-operators to inspect limits in tenancy","Allow group estate-operators to use tag-namespaces in tenancy"]'   # docs.oracle.com ContEng contengpolicyconfig, 2026-08-25
+STATEMENTS='["Allow group estate-operators to manage cluster-family in compartment estate","Allow group estate-operators to use cluster-node-pools in compartment estate","Allow group estate-operators to manage virtual-network-family in compartment estate","Allow group estate-operators to manage instance-family in compartment estate","Allow group estate-operators to manage volume-family in compartment estate","Allow group estate-operators to use subnets in compartment estate","Allow group estate-operators to use vnics in compartment estate","Allow group estate-operators to use network-security-groups in compartment estate","Allow group estate-operators to use private-ips in compartment estate","Allow group estate-operators to manage public-ips in compartment estate","Allow group estate-operators to inspect compartments in tenancy","Allow group estate-operators to read all-resources in tenancy","Allow group estate-operators to inspect limits in tenancy","Allow group estate-operators to use tag-namespaces in tenancy","Allow group estate-operators to read buckets in compartment estate","Allow group estate-operators to manage objects in compartment estate where target.bucket.name='estate-tofu-state'"]'   # docs.oracle.com ContEng contengpolicyconfig, 2026-08-25
 PID=$(oci iam policy list "${O[@]}" --compartment-id "$TENANCY" --name "$POLICY_NAME" --query 'data[0].id' --raw-output 2>/dev/null || true)
 if [ -z "$PID" ] || [ "$PID" = null ]; then
   oci iam policy create "${O[@]}" --compartment-id "$TENANCY" --name "$POLICY_NAME" --description "least privilege for platform/oci (ADR 0004)" --statements "$STATEMENTS" >/dev/null
@@ -72,6 +76,22 @@ elif [ "$(oci iam policy get "${O[@]}" --policy-id "$PID" --query 'data.statemen
   oci iam policy update "${O[@]}" --policy-id "$PID" --statements "$STATEMENTS" --force >/dev/null; echo "iam     policy statements updated"
 fi
 echo "iam     policy $POLICY_NAME"
+
+# crew#220 hand step 1: the remote-state bucket. Versioned so a bad apply can be rolled back to
+# the previous state object. Created here, under the bootstrap identity, because the operator
+# policy above deliberately cannot create buckets (2026-08-25: BucketAlreadyExists-or-unauthorised).
+if ! oci os bucket get "${O[@]}" -bn estate-tofu-state >/dev/null 2>&1; then
+  oci os bucket create "${O[@]}" --compartment-id "$COMP" --name estate-tofu-state --versioning Enabled --public-access-type NoPublicAccess >/dev/null
+  echo "os      bucket estate-tofu-state created (versioned)"
+else
+  echo "os      bucket estate-tofu-state"
+fi
+NS_VAL=$(oci os ns get "${O[@]}" --query data --raw-output); printf %s "$NS_VAL" | vput OCI_OS_NAMESPACE
+if [ ! -e "$VAULT/secrets/$ENV_NAME/OCI_S3_SECRET_KEY.yaml" ]; then
+  SK=$(oci iam customer-secret-key create "${O[@]}" --user-id "$USER_ID" --display-name estate-tofu-state)
+  printf %s "$SK" | jq -r '.data.id'  | vput OCI_S3_ACCESS_KEY
+  printf %s "$SK" | jq -r '.data.key' | vput OCI_S3_SECRET_KEY
+else echo "vault   OCI_S3_SECRET_KEY kept"; fi
 
 # --- key pair: generated here, public half registered, private half vaulted -----------
 if [ -e "$VAULT/secrets/$ENV_NAME/OCI_FINGERPRINT.yaml" ] && [ "${1:-}" != --rotate ]; then
