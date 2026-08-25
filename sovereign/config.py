@@ -134,6 +134,10 @@ KEYS: dict[str, KeySpec] = {
     "shadow.heads_dir": KeySpec(str(_estate_home() / ".estate" / "heads"), "path", "SB_SHADOW_HEADS_DIR", "cp9: dir holding the shadow branch-pointer files"),
     "shadow.head_filename": KeySpec("shadow_main", "str", None, "cp9: shadow_main -- the head that always names the DAG root equal to the legacy DB's current state"),
 
+    "dualread.max_overhead_ms": KeySpec(15, "int", "SB_DUALREAD_MAX_OVERHEAD_MS", "cp10: p95 budget for the dual-read router's added cost (DAG walk + receipt) over the legacy-only read, measured over 1000 reads"),
+    "dualread.latency_round_ndigits": KeySpec(4, "int", None, "cp10: decimal places dual-read latencies are rounded to before entering a receipt"),
+    "time.ms_per_second": KeySpec(1000, "int", None, "milliseconds per second, for every perf_counter() duration reported in ms"),
+
     "telegram.bot_token": KeySpec(_ENV_FILE_VALUES.get("TELEGRAM_BOT_TOKEN"), "str", "TELEGRAM_BOT_TOKEN", "", secret=True),
     "telegram.home_channel": KeySpec(_ENV_FILE_VALUES.get("TELEGRAM_HOME_CHANNEL"), "str", "TELEGRAM_HOME_CHANNEL", ""),
 
@@ -402,6 +406,9 @@ SIDECAR_DAG_DIR: Path = Path(_R["sidecar.dag_dir"].value)
 SIDECAR_HEAD_FILENAME: str = _R["sidecar.head_filename"].value
 SHADOW_HEADS_DIR: Path = Path(_R["shadow.heads_dir"].value)
 SHADOW_HEAD_FILENAME: str = _R["shadow.head_filename"].value
+DUALREAD_MAX_OVERHEAD_MS: int = _R["dualread.max_overhead_ms"].value
+DUALREAD_LATENCY_ROUND_NDIGITS: int = _R["dualread.latency_round_ndigits"].value
+MS_PER_SECOND: int = _R["time.ms_per_second"].value
 RECEIPTS_KEYCHAIN_SERVICE: str = _R["receipts.keychain_service"].value
 RECEIPTS_KEYCHAIN_ACCOUNT: str = _R["receipts.keychain_account"].value
 RECEIPTS_KEYCHAIN_TIMEOUT_S: int = _R["receipts.keychain_timeout_s"].value
