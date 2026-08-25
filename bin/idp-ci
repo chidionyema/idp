@@ -432,5 +432,14 @@ if out=$("$MPY" "$IDP/tests/test_cp1_estate_inventory.py" 2>&1); then
   say "ok    cp1      $(printf '%s' "$out" | grep -c '^ok    ') property/incident checks pass (crew#216)"
 else say "FAIL  cp1      tests/test_cp1_estate_inventory.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
+# 9. crew#216 CP2: the get_workload_state(app) MCP tool. Property (byte ceiling holds
+#    over >=500 (dependency-count x metric-sample-count x ceiling) combinations) and
+#    incident (no raw log/timeseries array ever leaves the payload, an unknown app
+#    degrades rather than raises) tests against the plugin's pure functions -- offline,
+#    no docker daemon needed. Live round-trip through the gateway is bin/mcp-status.
+if out=$("$MPY" "$IDP/tests/test_cp2_workload_state.py" 2>&1); then
+  say "ok    cp2      $(printf '%s' "$out" | grep -c '^ok    ') property/incident checks pass (crew#216)"
+else say "FAIL  cp2      tests/test_cp2_workload_state.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"

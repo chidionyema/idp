@@ -25,6 +25,14 @@
 #                 estate.db, and returns kind/name/owner/repo per catalog entity plus the
 #                 snapshot's own age -- see mcp/plugins/estate_inventory.py for the field
 #                 list and the byte-ceiling/staleness config keys.
+#                 crew#216 CP2 adds a fifth tool, get_workload_state(app), from
+#                 plugins/workload_state.py -- same --plugins-dir mechanism, no new
+#                 mount: it reads the same catalog-info.yaml plus the estate.db already
+#                 mounted below, and returns one app's catalog entry (owner/repo/
+#                 dependencies), desired-vs-actual state, and summarized metrics. See
+#                 mcp/plugins/workload_state.py for the field list, the join key
+#                 (estate/path annotation), and why metrics are an explicit stub
+#                 pending crew#180.
 #     Rejected: modelcontextprotocol's reference mcp-server-sqlite -- moved to
 #       servers-archived, last release 2025.4.25, unpatched SQL injection.
 #     Rejected: panasenco/mcp-sqlite -- stdio only (no HTTP transport, so it would have
@@ -108,8 +116,10 @@ services:
     environment:
       ESTATE_CATALOG_PATH: /data/catalog-info.yaml
       ESTATE_STATE_MD_PATH: /data/STATE.md
+      ESTATE_DB_PATH: /data/estate.db
       ESTATE_INVENTORY_BYTE_CEILING: ${ESTATE_INVENTORY_BYTE_CEILING:-8000}
       ESTATE_INVENTORY_STALE_MINUTES: ${ESTATE_INVENTORY_STALE_MINUTES:-90}
+      ESTATE_WORKLOAD_BYTE_CEILING: ${ESTATE_WORKLOAD_BYTE_CEILING:-8000}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/-/versions.json',timeout=4).status==200 else 1)"]
       interval: 15s
