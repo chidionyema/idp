@@ -101,7 +101,7 @@ probe_state_write() { # $1 bucket, $2 the estate-tofu user OCID the policy was w
   local bucket="$1" want="$2" profile="${OCI_TOFU_PROFILE:-DEFAULT}" cfg="${OCI_CLI_CONFIG_FILE:-$HOME/.oci/config}" have
   # bin/idp-oci-login writes [DEFAULT] as estate-tofu; prove it is that user, not the tenancy owner,
   # or the probe exercises the wrong identity and passes regardless of the policy (idp#119 review).
-  have=$(awk -v p="[$profile]" '$0==p{f=1;next} /^\[/{f=0} f&&/^user=/{sub(/^user=/,"");print}' "$cfg" 2>/dev/null)
+  have=$(awk -v p="[$profile]" '$0==p{f=1;next} /^\[/{f=0} f&&/^user[ \t]*=/{sub(/^user[ \t]*=[ \t]*/,"");print}' "$cfg" 2>/dev/null)
   [ -n "$have" ] || { echo "BLIND   state-write probe: no profile $profile in $cfg yet (bin/idp-oci-login); policy unexercised"; return 0; }
   [ "$have" = "$want" ] || { echo "BLIND   state-write probe: profile $profile is not estate-tofu (${have:0:24}...); policy unexercised"; return 0; }
   if printf ok | oci os object put --profile "$profile" -bn "$bucket" --name .write-probe --file - --force >/dev/null 2>&1; then
@@ -109,13 +109,6 @@ probe_state_write() { # $1 bucket, $2 the estate-tofu user OCID the policy was w
     echo "os      state-write probe ok: estate-tofu ($profile) can PutObject on $bucket"; return 0
   fi
   echo "FAIL    state-write probe: estate-tofu ($profile) cannot PutObject on $bucket; the objects policy statement is not in force (2026-08-25: OCI strips quotes from a where clause)" >&2
-  return 1
-}
-  if printf ok | oci os object put --profile "$profile" -bn "$bucket" --name .write-probe --file - --force >/dev/null 2>&1; then
-    oci os object delete --profile "$profile" -bn "$bucket" --name .write-probe --force >/dev/null 2>&1 || true
-    echo "os      state-write probe ok: $profile can PutObject on $bucket"; return 0
-  fi
-  echo "FAIL    state-write probe: $profile cannot PutObject on $bucket; the objects policy statement is not in force (2026-08-25: OCI strips quotes from a where clause)" >&2
   return 1
 }
 probe_state_write estate-tofu-state "$USER_ID"
