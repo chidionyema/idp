@@ -95,6 +95,17 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return cmd_verify_receipts(args)
 
 
+def cmd_root(args: argparse.Namespace) -> int:
+    """cp9: `sb root --json` reports {root, parent, nodes, verified} for
+    .estate/heads/shadow_main -- the branch pointer cp8's sidecar advances
+    once per write."""
+    from sovereign.engine import shadow_root
+
+    res = shadow_root.verify()
+    _emit(res, args.json)
+    return 0 if res.get("verified") else 1
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     res = asyncio.run(engine_client.list_sessions())
     _emit(res, args.json)
@@ -355,6 +366,10 @@ def main(argv: list[str] | None = None) -> int:
     p_set.add_argument("value")
     p_set.add_argument("--by", required=True)
     p.set_defaults(func=cmd_config)
+
+    p = sub.add_parser("root", help="cp9 -- show and verify the shadow Merkle root, the shadow_main head")
+    _add_json(p)
+    p.set_defaults(func=cmd_root)
 
     p = sub.add_parser("list", help="list sessions")
     _add_json(p)

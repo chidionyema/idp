@@ -88,6 +88,19 @@ def _default_temporal_address() -> str:
     return f"{os.environ.get('TEMPORAL_HOST', 'localhost')}:{os.environ.get('TEMPORAL_PORT', '7233')}"
 
 
+def _default_sidecar_target() -> str:
+    """cp8: names the one legacy DB and write path this estate's sidecar
+    mirrors. Mirrors maestro.py's own Config.DB_PATH resolution exactly
+    (same env var, same fallback) rather than a second hardcoded copy of
+    that default -- maestro is the only live experience-graph database on
+    this estate (crew note, 2026-08-24: "two maestros share one database,
+    only ~/dev/code/maestro is live"). `episodes` is maestro's
+    highest-write-volume table and the one _connect() in maestro.py calls
+    "the one place a connection ... is opened" writes through."""
+    db = os.path.expanduser(os.environ.get("MAESTRO_DB", "~/.maestro/experience_graph.db"))
+    return f"{db}#episodes"
+
+
 KEYS: dict[str, KeySpec] = {
     "estate.home": KeySpec(str(_estate_home()), "path", "ESTATE_HOME", "estate state root"),
     "estate.env_file": KeySpec(str(_env_file_path()), "path", "ESTATE_ENV", "estate.env location"),
@@ -113,6 +126,13 @@ KEYS: dict[str, KeySpec] = {
     "receipts.json_kv_sep": KeySpec(":", "str", None, "canonical json.dumps separators[1]"),
     "receipts.head_dir": KeySpec(str(_estate_home() / "sovereign"), "path", None, "dir for the signed head anchor (cp19 tail-truncation defense)"),
     "receipts.head_filename": KeySpec("receipts.head", "str", "SB_RECEIPTS_HEAD_FILENAME", "signed head-anchor filename, rewritten after every append"),
+
+    "sidecar.target": KeySpec(_default_sidecar_target(), "str", "SB_SIDECAR_TARGET", "cp8: '<db path>#<table>' this sidecar mirrors, DB logic never changed"),
+    "sidecar.dag_dir": KeySpec(str(_estate_home() / "sovereign" / "dag"), "path", "SB_SIDECAR_DAG_DIR", "cp8: Merkle DAG node directory, one JSON file per observed write"),
+    "sidecar.head_filename": KeySpec("HEAD.json", "str", None, "cp8: current DAG head marker filename inside sidecar.dag_dir"),
+
+    "shadow.heads_dir": KeySpec(str(_estate_home() / ".estate" / "heads"), "path", "SB_SHADOW_HEADS_DIR", "cp9: dir holding the shadow branch-pointer files"),
+    "shadow.head_filename": KeySpec("shadow_main", "str", None, "cp9: shadow_main -- the head that always names the DAG root equal to the legacy DB's current state"),
 
     "telegram.bot_token": KeySpec(_ENV_FILE_VALUES.get("TELEGRAM_BOT_TOKEN"), "str", "TELEGRAM_BOT_TOKEN", "", secret=True),
     "telegram.home_channel": KeySpec(_ENV_FILE_VALUES.get("TELEGRAM_HOME_CHANNEL"), "str", "TELEGRAM_HOME_CHANNEL", ""),
@@ -377,6 +397,11 @@ TEMPORAL_DB: Path = Path(_R["temporal.db_filename"].value)
 
 SB_RECEIPTS: Path = Path(_R["receipts.path"].value)
 RECEIPTS_HEAD: Path = Path(_R["receipts.head_dir"].value) / _R["receipts.head_filename"].value
+SIDECAR_TARGET: str = _R["sidecar.target"].value
+SIDECAR_DAG_DIR: Path = Path(_R["sidecar.dag_dir"].value)
+SIDECAR_HEAD_FILENAME: str = _R["sidecar.head_filename"].value
+SHADOW_HEADS_DIR: Path = Path(_R["shadow.heads_dir"].value)
+SHADOW_HEAD_FILENAME: str = _R["shadow.head_filename"].value
 RECEIPTS_KEYCHAIN_SERVICE: str = _R["receipts.keychain_service"].value
 RECEIPTS_KEYCHAIN_ACCOUNT: str = _R["receipts.keychain_account"].value
 RECEIPTS_KEYCHAIN_TIMEOUT_S: int = _R["receipts.keychain_timeout_s"].value
