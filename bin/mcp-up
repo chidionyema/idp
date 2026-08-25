@@ -32,6 +32,13 @@ docker info >/dev/null 2>&1 || {
   exit 2
 }
 [ -r "$IDP/catalog/estate.db" ] || { echo "FAIL  $IDP/catalog/estate.db is missing -- bin/idp-up builds it"; exit 2; }
+[ -r "$IDP/catalog/catalog-info.yaml" ] || { echo "FAIL  $IDP/catalog/catalog-info.yaml is missing -- bin/idp-up builds it"; exit 2; }
+# crew#216 CP1: get_estate_inventory reads the hourly snapshot from the sibling crew
+# checkout (the same "sibling checkout" assumption AGE_BLOB above already makes). A
+# missing bind-mount source becomes an empty directory inside the container, not an
+# error (docker-mounts-home-only-bind-becomes-dir, same class): caught here instead.
+STATE_MD_HOST="${ESTATE_STATE_MD_HOST_PATH:-$(dirname "$IDP")/crew/STATE.md}"
+[ -r "$STATE_MD_HOST" ] || { echo "FAIL  $STATE_MD_HOST is missing -- scripts/estate-snapshot (crew repo) builds it, or set ESTATE_STATE_MD_HOST_PATH"; exit 2; }
 
 # Validate the config the service will refuse to start without (same class as the
 # ClickHouse XML and the LiteLLM YAML: a config never checked before its reader starts).

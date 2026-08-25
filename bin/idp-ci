@@ -424,5 +424,13 @@ else say "FAIL  describe estate_scheduler.describe --selftest"; printf '%s\n' "$
 if out=$("$IDP/bin/bind-audit" --selftest 2>&1); then say "ok    binds    bind-audit refuses an unknown listener and permits an allow-listed one"
 else say "FAIL  binds    bin/bind-audit --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
+# 8. crew#216 CP1: the get_estate_inventory MCP tool. Property (byte ceiling holds over
+#    many synthetic catalog sizes) and incident (stale snapshot disclosed, proved both
+#    ways) tests against the plugin's pure functions -- offline, no docker daemon needed.
+#    Live round-trip through the gateway is bin/mcp-status, which idp-verify runs.
+if out=$("$MPY" "$IDP/tests/test_cp1_estate_inventory.py" 2>&1); then
+  say "ok    cp1      $(printf '%s' "$out" | grep -c '^ok    ') property/incident checks pass (crew#216)"
+else say "FAIL  cp1      tests/test_cp1_estate_inventory.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"

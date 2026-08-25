@@ -64,6 +64,9 @@ echo "ROUND-TRIP THROUGH THE GATEWAY"
 check estate estate \
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"execute_sql","arguments":{"database":"estate","sql":"select count(*) as n from assets"}}}' \
   "execute_sql on catalog/estate.db"
+check estate-inventory estate \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_estate_inventory","arguments":{}}}' \
+  "get_estate_inventory: crew#216 CP1, catalog + crew/STATE.md in one call"
 check github github \
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_issues","arguments":{"owner":"chidionyema","repo":"crew","state":"OPEN","perPage":1}}}' \
   "list_issues on chidionyema/crew (the board)"
