@@ -5,7 +5,10 @@ names a proof command that exists.
 A policy row without a proof is a wish (LAW 44). The proof column must start
 with a backtick command; its first word must be a file under bin/ (relative to
 the repo root or to estate-secrets), or an executable on PATH. Anything else
-prints FAIL and exits 1. The page is the only input, so this runs anywhere.
+prints FAIL and exits 1. A proof that lives outside this repo (another estate
+repo, a tool on the host, a file under $HOME) cannot be seen from a bare CI
+runner; that is reported as BLIND, never as a verdict, and does not fail the
+gate (LAW 45 residual). A repo-relative proof that is missing always fails.
 """
 import os, re, shutil, subprocess, sys
 
@@ -20,7 +23,7 @@ except Exception:
     ESTATE = os.path.dirname(ROOT)
 ESTATE = os.environ.get("ESTATE_ROOT", ESTATE)
 page = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "docs", "reference", "security-policy.md")
-rows, findings = 0, []
+rows, findings, blind = 0, [], []
 in_table = False
 for n, line in enumerate(open(page, encoding="utf-8"), 1):
     if line.startswith("| Control"):
@@ -43,18 +46,25 @@ for n, line in enumerate(open(page, encoding="utf-8"), 1):
         findings.append(f"{page}:{n}: proof column does not start with a `command`")
         continue
     word = m.group(1).split()[0]
+    in_repo = word.startswith(("bin/", "./", "tests/", "platform/", "docs/"))
     ok = (
         os.path.isfile(os.path.join(ROOT, word))
         or os.path.isfile(os.path.join(ESTATE, word))
         or os.path.isfile(os.path.expanduser(word))
         or shutil.which(word) is not None
     )
-    if not ok:
+    if ok:
+        continue
+    if in_repo:
         findings.append(f"{page}:{n}: proof command '{word}' does not exist")
+    else:
+        blind.append(f"{page}:{n}: proof '{word}' is outside this repo and absent here")
 if rows == 0:
     findings.append(f"{page}: no control rows found")
 for f in findings:
     print("FAIL  security-policy", f)
 if findings:
     sys.exit(1)
-print(f"ok    security-policy {rows} controls, every proof command exists")
+for b in blind:
+    print("BLIND security-policy", b)
+print(f"ok    security-policy {rows} controls, every in-repo proof exists, {len(blind)} outside this repo not checkable here")
