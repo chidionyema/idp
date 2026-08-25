@@ -38,3 +38,11 @@ Feature: Every active estate repository runs the same merge-blocking gates
     And the counts on each repository node equal the dependsOn edges pointing at it
     And rendering the same catalogue twice gives the same bytes
     And bin/estate-diagram --check exits 1 while the page on disk differs from the catalogue and 0 after a render
+
+  Scenario: The live architecture page reaches main on a schedule, through a pull request
+    Given scheduler/schedule.yml holds com.estate.catalog-render with after: com.estate.inventory
+    When the inventory job finishes
+    Then bin/catalog-render renders the catalogue and the page in a detached worktree at origin/main
+    And a changed page is pushed to branch state/live-diagram and its pull request is set to auto-merge
+    And an unchanged page commits nothing
+    And a missing inventory exits 3 BLIND instead of rendering an empty page
