@@ -32,6 +32,10 @@ PRESENCE_KEYS: dict[str, tuple[Any, type, str, str]] = {
         6, int, "SB_PRESENCE_DIGEST_MAX_LINES",
         "hard cap on digest lines, hash line included (spec 2.5: max 6 lines)",
     ),
+    "presence.digest_window_s": (
+        86400, int, "SB_PRESENCE_DIGEST_WINDOW_S",
+        "how far back the digest counts receipts (one day)",
+    ),
     "presence.digest_label": (
         "estate.digest", str, "SB_PRESENCE_DIGEST_LABEL",
         "launchd label for the 09:00 digest job printed by `sb digest --launchd`",

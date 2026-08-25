@@ -67,7 +67,7 @@ def format_line(
         fields.append(f"file:{_one_token(file)}")
     fields.append(f"hash:{_one_token(hash)[:hash_chars]}")
     if tags:
-        fields.append("tags:" + ",".join(_tag(t) for t in tags))
+        fields.append(f"tags:{','.join(_tag(t) for t in tags)}")
     fields.append(f"budget:{humanize_delta(budget_delta)}")
     fields.append(f"state:{_one_token(state)[:state_chars]}")
     return sep.join(fields)

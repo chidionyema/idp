@@ -11,5 +11,5 @@
     {"action": "Get Dictionary Value", "key": "spoken"},
     {"action": "Speak Text"}
   ],
-  "fallback_cli": "bin/sb status"
+  "fallback_cli": "bin/sb presence status"
 }

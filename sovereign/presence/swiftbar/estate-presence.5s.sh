@@ -33,6 +33,5 @@ fi
 echo "● | color=$dot"
 echo "---"
 echo "presence: $state"
-echo "Open Spatial | bash='$IDP/bin/sb' param1=presence param2=--json terminal=false"
-echo "Estate status | bash='$IDP/bin/sb' param1=status terminal=true"
+echo "Estate status | bash='$IDP/bin/sb' param1=presence param2=status terminal=true"
 echo "Digest | bash='$IDP/bin/sb' param1=digest terminal=true"

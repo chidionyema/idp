@@ -25,7 +25,6 @@ from sovereign.presence.chat import Digest
 
 _TERMINAL_OK = ("done",)
 _TERMINAL_BAD = ("halted", "failed", "denied", "stopped", "error")
-_DAY_S = 86400
 
 
 def receipts_file_hash(path: Path | None = None) -> str:
@@ -52,7 +51,7 @@ def _ts(row: dict[str, Any]) -> float:
         try:
             from datetime import datetime
 
-            return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
+            return datetime.fromisoformat(raw).timestamp()
         except ValueError:
             return 0.0
     return 0.0
@@ -62,7 +61,8 @@ def build(now: float | None = None, path: Path | None = None) -> Digest:
     """The digest for the day ending at `now` (default: the wall clock)."""
     now = time.time() if now is None else now
     rows = receipts_mod.read_all(path)
-    recent = [r for r in rows if now - _ts(r) <= _DAY_S] or rows
+    window_s = int(config_keys.resolve("presence.digest_window_s"))
+    recent = [r for r in rows if now - _ts(r) <= window_s] or rows
     sessions: dict[str, dict[str, Any]] = {}
     tokens = 0
     for r in recent:

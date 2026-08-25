@@ -16,7 +16,7 @@ record of that binding (the BDD test reads it and hits the same route).
 
 The sentence is composed by `sovereign/presence/status.py` from the
 `presence.speak_template` config key, so the shortcut holds no words of
-its own. On the Mac, `bin/sb status` prints the same sentence.
+its own. On the Mac, `bin/sb presence status` prints the same sentence.
 
 ## What is not here
 

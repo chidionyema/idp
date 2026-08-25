@@ -57,3 +57,11 @@ def read() -> dict[str, Any]:
     if not path.exists():
         return {"state": "ghost", "dot": str(config_keys.resolve("presence.dot_ghost")), "ts": None}
     return json.loads(path.read_text())
+
+
+class FilePresence:
+    """The live presence state as sovereign.intake's PresenceGate reads it:
+    `current()` is the state name from the file the kernel writes."""
+
+    def current(self) -> str:
+        return str(read()["state"])

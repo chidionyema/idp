@@ -1,13 +1,16 @@
 """sovereign.presence.cli -- subcommands registered onto bin/sb by
 sovereign.cli's discovery loop.
 
-  digest [--json] [--launchd]   the signed daily digest (spec 2.5); --launchd
-                                prints the launchd plist that runs it at
-                                presence.digest_hour
-  status [--json]               running / waiting / burn counts and the
-                                sentence Siri speaks (spec 2.6)
-  presence [--json]             the current presence state and dot colour
-                                (what the SwiftBar plugin shows)
+  digest [--json] [--send] [--launchd]
+        the signed daily digest (spec 2.5). --send also posts it to the
+        founder chat, which is what the launchd job does at
+        presence.digest_hour. --launchd prints that job's plist.
+  presence [--json]
+        the current presence state and menu bar dot colour (what the
+        SwiftBar plugin shows).
+  presence status [--json]
+        running, waiting and burn counts and the sentence Siri speaks
+        (spec 2.6). `status` on its own is sovereign.attach's command.
 """
 from __future__ import annotations
 
@@ -34,7 +37,7 @@ def _launchd_plist() -> str:
     typed (LAW 46)."""
     label = str(config_keys.resolve("presence.digest_label", config))
     hour = int(config_keys.resolve("presence.digest_hour", config))
-    sb = Path(__file__).resolve().parents[2] / "bin" / "sb"
+    sb = Path(__file__).resolve().parent.parent.parent / "bin" / "sb"
     log = config.SOVEREIGN_HOME / "logs" / "digest.log"
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -63,13 +66,13 @@ def cmd_digest(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_status(args: argparse.Namespace) -> int:
+def cmd_presence_status(args: argparse.Namespace) -> int:
     from sovereign.engine import client as engine_client
 
     try:
         sessions = asyncio.run(engine_client.list_sessions())
     except Exception as exc:
-        print(f"status: engine unreachable: {exc}", file=sys.stderr)
+        print(f"presence status: engine unreachable: {exc}", file=sys.stderr)
         return 1
     summary = status_mod.summarize(sessions)
     _emit(summary, args.json, summary["spoken"])
@@ -77,6 +80,8 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_presence(args: argparse.Namespace) -> int:
+    if getattr(args, "presence_command", None) == "status":
+        return cmd_presence_status(args)
     current = state_mod.read()
     _emit(current, args.json, f"{current['state']} ({current['dot']})")
     return 0
@@ -85,14 +90,13 @@ def cmd_presence(args: argparse.Namespace) -> int:
 def register(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("digest", help="R13 -- the signed daily digest, at most six lines")
     p.add_argument("--json", action="store_true")
-    p.add_argument("--send", action="store_true", help="also send it to the founder chat (the 09:00 job does this)")
-    p.add_argument("--launchd", action="store_true", help="print the launchd plist for the 09:00 digest")
+    p.add_argument("--send", action="store_true", help="also send it to the founder chat, as the scheduled job does")
+    p.add_argument("--launchd", action="store_true", help="print the launchd plist for the scheduled digest")
     p.set_defaults(func=cmd_digest)
 
-    p = subparsers.add_parser("status", help="R14 -- running, waiting and burn counts; what Siri speaks")
+    p = subparsers.add_parser("presence", help="R2, R3, R14 -- the presence state, the dot colour, and what Siri speaks")
     p.add_argument("--json", action="store_true")
-    p.set_defaults(func=cmd_status)
-
-    p = subparsers.add_parser("presence", help="R2/R3 -- the current presence state and menu bar dot colour")
-    p.add_argument("--json", action="store_true")
+    presence_sub = p.add_subparsers(dest="presence_command")
+    p_status = presence_sub.add_parser("status", help="running, waiting and burn counts; the Siri sentence")
+    p_status.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_presence)
