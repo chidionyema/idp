@@ -142,7 +142,7 @@ KEYS: dict[str, KeySpec] = {
 
     "ops.fs_commit_tokens": KeySpec(200, "int", "SB_OPS_FS_COMMIT_TOKENS", "R9: tokens charged for one fs_commit (spec 3.1 checkpoint example: added_tokens 200)"),
     "ops.default_tokens": KeySpec(100, "int", "SB_OPS_DEFAULT_TOKENS", "R9: tokens charged for an op with no entry of its own"),
-    "ops.nondestructive": KeySpec(["fs_commit", "fs_read", "git_status", "tool_result", "doc_commit"], "list", "SB_OPS_NONDESTRUCTIVE", "R9: ops that need budget only -- no quorum, no hardware signature (spec 2.3 step 3)"),
+    "ops.nondestructive": KeySpec(["fs_commit", "fs_read", "git_status", "tool_result", "doc_commit", "budget_refill"], "list", "SB_OPS_NONDESTRUCTIVE", "R9: ops that need budget only -- no quorum, no hardware signature (spec 2.3 step 3)"),
     "ops.destructive": KeySpec(["fs_delete", "git_push_force", "db_drop", "service_destroy", "rewind"], "list", "SB_OPS_DESTRUCTIVE", "R9: ops that need quorum and a hardware signature on top of budget"),
 
     "budget.db_filename": KeySpec(str(_estate_home() / "sovereign" / "budget.db"), "path", "SB_BUDGET_DB", "R29: sqlite file holding one versioned budget row per session, the optimistic lock"),
@@ -288,6 +288,13 @@ try:
     from sovereign.engine.config_keys import TERMINATION_KEYS
 
     _merge_external_keys(TERMINATION_KEYS)
+except ImportError:
+    pass
+
+try:
+    from sovereign.shadow.config_keys import SHADOW_KEYS
+
+    _merge_external_keys(SHADOW_KEYS)
 except ImportError:
     pass
 
