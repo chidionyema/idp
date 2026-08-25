@@ -13,6 +13,9 @@
 FROM docker.io/python:3.13-slim
 RUN pip install --no-cache-dir "datasette==1.0a38" "datasette-mcp==0.1a0" "pyyaml==6.0.3" \
  && useradd --system --uid 10001 datasette
+# crew#216 CP2 adds a second plugin, plugins/workload_state.py, through the same
+# --plugins-dir mechanism. It needs no new dependency: sqlite3 is stdlib, and it reads
+# the estate.db already mounted below for execute_sql/list_databases.
 COPY plugins /app/plugins
 USER datasette
 EXPOSE 8001

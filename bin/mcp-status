@@ -67,6 +67,9 @@ check estate estate \
 check estate-inventory estate \
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_estate_inventory","arguments":{}}}' \
   "get_estate_inventory: crew#216 CP1, catalog + crew/STATE.md in one call"
+check workload-state estate \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_workload_state","arguments":{"app":"idp"}}}' \
+  "get_workload_state(idp): crew#216 CP2, catalog + desired/actual + metrics in one call"
 check github github \
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_issues","arguments":{"owner":"chidionyema","repo":"crew","state":"OPEN","perPage":1}}}' \
   "list_issues on chidionyema/crew (the board)"
