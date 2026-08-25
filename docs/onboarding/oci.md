@@ -97,7 +97,7 @@ Where each piece lives:
 |---|---|---|
 | Edge charts (Traefik, cert-manager, external-dns, Kyverno) | `platform/edge/` | idp |
 | Flux chain: CRDs -> edge -> prospector-platform -> prospector | `clusters/oke/edge.yaml` | idp |
-| Namespace, `ghcr-pull`, API secret files (sops) | `platform/prospector/`, `bin/idp-flux-bootstrap` | idp |
+| Namespace, `ghcr-pull`, API secret files (OCI Vault via ExternalSecret) | `platform/prospector/`, `bin/idp-flux-bootstrap` | idp |
 | Deployments, Gateway, HTTPRoutes, ClusterIssuer, policies | `prospector/deploy/k8s/overlays/oke` | prospector |
 
 The API reads its secrets as files under `/var/run/secrets/prospector`, one file per key, from
