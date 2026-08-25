@@ -19,5 +19,5 @@ Feature: Cross-platform — macOS and Windows, one trust anchor, one presence ga
 
   Scenario: The engine runs on Windows
     Given a Windows machine with Python and the Temporal CLI
-    When I run "bin/sb.ps1 up" and "bin/sb.ps1 start --runner echo --task x --budget 100 --json"
+    When I run "bin/sb-windows.ps1 up" and "bin/sb-windows.ps1 start --runner echo --task x --budget 100 --json"
     Then the session reaches "done"

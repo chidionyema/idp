@@ -247,18 +247,41 @@ def cmd_up(args: argparse.Namespace) -> int:
     return 0
 
 
+def _stop_by_pid(pid: int) -> None:
+    """Signals exactly this one pid -- never a process group, never a
+    `pkill` pattern match. A process-group kill (os.killpg(os.getpgid(pid),
+    ...)) is only as safe as the pid it is handed: a stale or reused pid --
+    the recorded process already exited and the OS gave that number to
+    something else, e.g. the very shell that is running `sb down` -- puts
+    that shell's own process group on the receiving end, which is exactly
+    what happened (2026-08-25: `bin/sb down` printed "Terminated: 15" for
+    the calling shell while the real Temporal dev server, a different pid
+    the stale pid file never recorded, kept running). Signaling only the
+    literal pid removes that failure mode: the worst case is a no-op
+    ProcessLookupError, never a group we do not own."""
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError, OSError):
+        return
+    deadline = time.time() + config.CLI_DOWN_WAIT_DEADLINE_S
+    while time.time() < deadline and _alive(pid):
+        time.sleep(config.CLI_UP_POLL_INTERVAL_S)
+    if _alive(pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+
+
 def cmd_down(args: argparse.Namespace) -> int:
     result = {}
     for name, pid_path in (("worker", config.WORKER_PID_FILE), ("temporal", config.TEMPORAL_PID_FILE)):
         pid = _read_pid(pid_path)
+        if pid is None:
+            result[name] = "not-running"
+            continue
         if _alive(pid):
-            try:
-                os.killpg(os.getpgid(pid), signal.SIGTERM)
-            except (ProcessLookupError, PermissionError, OSError):
-                try:
-                    os.kill(pid, signal.SIGTERM)
-                except (ProcessLookupError, PermissionError, OSError):
-                    pass
+            _stop_by_pid(pid)
             result[name] = f"stopped pid={pid}"
         else:
             result[name] = "not-running"

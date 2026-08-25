@@ -3,7 +3,7 @@
 <!--
   The Otto cockpit: one screen over the sovereign bus (sovereign/cockpit/README.md).
   `bin/sb cockpit` blocks serving http.server forever, so unlike ai.estate.idp this
-  job needs KeepAlive -- launchd is the only thing bringing it back after a crash
+  job needs KeepAlive, launchd is the only thing bringing it back after a crash
   or a reboot, and there is no self-restarting parent process to rely on instead.
 
   Install:    bin/idp-install-launchd

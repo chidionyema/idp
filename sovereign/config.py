@@ -155,6 +155,7 @@ KEYS: dict[str, KeySpec] = {
     "cli.port_probe_timeout_s": KeySpec(0.3, "float", "SB_PORT_PROBE_TIMEOUT_S", "socket connect_ex timeout when probing a port"),
     "cli.up_wait_deadline_s": KeySpec(20, "int", "SB_UP_WAIT_DEADLINE_S", "seconds `sb up` waits for temporal's port to open"),
     "cli.up_poll_interval_s": KeySpec(0.5, "float", "SB_UP_POLL_INTERVAL_S", "poll interval while `sb up` waits"),
+    "cli.down_wait_deadline_s": KeySpec(10, "int", "SB_DOWN_WAIT_DEADLINE_S", "seconds `sb down` waits for a SIGTERM'd pid to exit before SIGKILL"),
     "net.host_port_sep": KeySpec(":", "str", None, "separator between host and port in an address string"),
     "session.id_hex_len": KeySpec(8, "int", "SB_SESSION_ID_HEX_LEN", "hex chars from uuid4 used for a session id"),
     "session.last_output_max_chars": KeySpec(500, "int", "SB_LAST_OUTPUT_MAX_CHARS", "last_output truncation length"),
@@ -420,6 +421,7 @@ BURN_TOKENS_PER_STEP: int = _R["burn.tokens_per_step"].value
 CLI_PORT_PROBE_TIMEOUT_S: float = _R["cli.port_probe_timeout_s"].value
 CLI_UP_WAIT_DEADLINE_S: int = _R["cli.up_wait_deadline_s"].value
 CLI_UP_POLL_INTERVAL_S: float = _R["cli.up_poll_interval_s"].value
+CLI_DOWN_WAIT_DEADLINE_S: int = _R["cli.down_wait_deadline_s"].value
 NET_HOST_PORT_SEP: str = _R["net.host_port_sep"].value
 SESSION_ID_HEX_LEN: int = _R["session.id_hex_len"].value
 SESSION_LAST_OUTPUT_MAX_CHARS: int = _R["session.last_output_max_chars"].value
