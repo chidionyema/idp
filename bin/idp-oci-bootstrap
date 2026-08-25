@@ -109,5 +109,7 @@ printf %s "$USER_ID" | vput OCI_USER_OCID replace
 printf %s "$COMP"    | vput OCI_COMPARTMENT_OCID replace
 printf %s "$TENANCY_NAME" | vput OCI_TENANCY_NAME
 ( cd "$VAULT" && git add -- "secrets/$ENV_NAME" && git commit -q -m "$ENV_NAME: OCI estate-tofu user, key and compartment (bin/idp-oci-bootstrap)" && git push -q ) && echo "vault   committed and pushed"
-rm -rf "$HOME/.oci/sessions/$PROFILE" 2>/dev/null || true
+# The session token stays for its hour so follow-up steps (bucket, OIDC trust) reuse it.
+# 2026-08-25: deleting it here cost the founder a second browser sign-in.
+echo "login   session token kept for the remaining hour: profile $PROFILE"
 echo "done    next: bin/idp-oci-login"
