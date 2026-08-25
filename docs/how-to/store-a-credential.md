@@ -1,5 +1,7 @@
 # Store a credential
 
+Demo: `ls secrets/dev` in the `estate-secrets` checkout lists one encrypted file per secret; no value is printed.
+
 The standard is the sops+age directory vault, `estate-secrets`, one file per secret
 (`crew/docs/STANDARDS.md`, Secrets row; founder ruling 2026-08-24). A downloaded key file is a
 credential on one laptop; it becomes an estate credential only when it is in the vault.
