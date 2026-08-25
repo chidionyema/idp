@@ -47,6 +47,7 @@ nav:
       - Estate security rollout: demo/estate-security-rollout.md
       - Spec gate: demo/spec-gate.md
       - Estate diagram: demo/estate-diagram.md
+      - Catalog render: demo/catalog-render.md
       - owner-account: demo/owner-account.md
       - static-secret: demo/static-secret.md
       - Bind audit: demo/bind-audit.md
@@ -85,6 +86,7 @@ nav:
       - Estate security rollout: onboarding/estate-security-rollout.md
       - Spec gate: onboarding/spec-gate.md
       - Estate diagram: onboarding/estate-diagram.md
+      - Catalog render: onboarding/catalog-render.md
       - owner-account: onboarding/owner-account.md
       - static-secret: onboarding/static-secret.md
       - Bind audit: onboarding/bind-audit.md
