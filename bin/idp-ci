@@ -434,6 +434,10 @@ if STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/good ESTATE_SECRETS=/non
    && ! STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/bad ESTATE_SECRETS=/nonexistent bin/static-secret-gate >/dev/null; then
   say "ok    secrets  static-secret-gate passes the empty fixture and refuses the one with a key and a .env"
 else say "FAIL  secrets  bin/static-secret-gate fixtures"; fail=1; fi
+if bin/owner-account-gate tests/fixtures/owner-accounts/good.yaml >/dev/null \
+   && ! bin/owner-account-gate tests/fixtures/owner-accounts/bad.yaml >/dev/null; then
+  say "ok    owners   owner-account-gate passes a provider with a second owner and refuses one without"
+else say "FAIL  owners   bin/owner-account-gate fixtures"; fail=1; fi
 if out=$("$IDP/bin/bind-audit" --selftest 2>&1); then say "ok    binds    bind-audit refuses an unknown listener and permits an allow-listed one"
 else say "FAIL  binds    bin/bind-audit --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
