@@ -73,7 +73,10 @@ backend:
       host: ${POSTGRES_HOST}
       port: ${POSTGRES_PORT}
       user: ${POSTGRES_USER}
-      password: ${POSTGRES_PASSWORD}
+      # Read from the Secret volume, not the environment: the estate policy
+      # secrets-not-from-env-vars refuses envFrom/secretKeyRef (2026-08-25).
+      password:
+        $file: /run/secrets/backstage/POSTGRES_PASSWORD
       database: ${POSTGRES_DB}
 
 catalog:
