@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""ai-act-gate [ROOT]: every registered AI system has an Annex IV technical file
+with all nine sections, at least one risk in the register with every field and a
+review that is not overdue, and every data source declared with provenance,
+lawful basis, personal-data class and retention (Arts. 9, 10, 11, kept
+voluntarily). Exit 1 with FAIL lines, else ok. TODAY=YYYY-MM-DD overrides the
+clock so the fixtures and CI grade the same way."""
+import datetime, os, re, sys
+import yaml
+
+ROOT = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+today = datetime.date.fromisoformat(os.environ.get("TODAY") or datetime.date.today().isoformat())
+SECTIONS = ["## 1.", "## 2.", "## 3.", "## 4.", "## 5.", "## 6.", "## 7.", "## 8.", "## 9."]
+RISK_FIELDS = ["id", "system", "hazard", "article", "owner", "likelihood", "impact", "mitigation", "control", "status", "review_due"]
+SOURCE_FIELDS = ["name", "url", "provenance", "lawful_basis", "personal_data", "retention"]
+TIERS = {"minimal", "limited", "high", "prohibited"}
+f = []
+
+def load(rel):
+    p = os.path.join(ROOT, rel)
+    if not os.path.isfile(p):
+        f.append(f"{rel}: missing"); return {}
+    return yaml.safe_load(open(p, encoding="utf-8")) or {}
+
+systems = load("platform/ai/systems.yaml").get("systems") or []
+risks = load("platform/ai/risk-register.yaml").get("risks") or []
+if not systems:
+    f.append("platform/ai/systems.yaml: no systems registered")
+by_system = {}
+for r in risks:
+    for k in RISK_FIELDS:
+        if not r.get(k):
+            f.append(f"risk {r.get('id','?')}: field '{k}' missing")
+    if r.get("review_due") and r["review_due"] < today:
+        f.append(f"risk {r.get('id')}: review overdue ({r['review_due']} < {today})")
+    by_system.setdefault(r.get("system"), []).append(r)
+for s in systems:
+    n = s.get("name", "?")
+    if s.get("risk_tier") not in TIERS:
+        f.append(f"system {n}: risk_tier must be one of {sorted(TIERS)}")
+    if s.get("risk_tier") == "prohibited":
+        f.append(f"system {n}: prohibited tier is a refusal, not a registration (Art. 5)")
+    if not s.get("owner"):
+        f.append(f"system {n}: owner missing")
+    tf = s.get("technical_file") or ""
+    p = os.path.join(ROOT, tf)
+    if not tf or not os.path.isfile(p):
+        f.append(f"system {n}: technical_file '{tf}' missing")
+    else:
+        text = open(p, encoding="utf-8").read()
+        for sec in SECTIONS:
+            if not re.search(rf"^{re.escape(sec)}", text, re.M):
+                f.append(f"system {n}: {tf} lacks Annex IV section '{sec}'")
+    if not by_system.get(n):
+        f.append(f"system {n}: no entry in the risk register (Art. 9)")
+    if not s.get("data_sources"):
+        f.append(f"system {n}: no data_sources declared (Art. 10)")
+    for d in s.get("data_sources") or []:
+        for k in SOURCE_FIELDS:
+            if not d.get(k):
+                f.append(f"system {n}: data source {d.get('name','?')} field '{k}' missing")
+    if s.get("review_due") and s["review_due"] < today:
+        f.append(f"system {n}: review overdue ({s['review_due']} < {today})")
+for x in f:
+    print("FAIL  ai-act", x)
+if f:
+    sys.exit(1)
+print(f"ok    ai-act {len(systems)} system(s), {len(risks)} risk(s), every Annex IV section, risk field and data source present")

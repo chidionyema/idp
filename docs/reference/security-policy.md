@@ -27,6 +27,7 @@ A row whose proof prints FAIL or BLIND is an open incident, not a policy.
 | Every repository's default branch refuses deletion and force-push | A.8.4 | `bin/repo-rulesets` | 47 of 48; 1 missing, 2 private BLOCKED by plan | fix the one; required checks per repo (crew#199) |
 | The founder's account has MFA; each agent acts as its own identity | A.5.17 | `gh api /user -q .two_factor_authentication` | BLIND, field needs `read:user` scope | machine identity per agent (crew#199) |
 | Data has a versioned, encrypted, off-host backup with a monthly restore drill | A.8.13 | `restic snapshots` | not configured; Fly teardown backups sit unencrypted in `~/backups` | restic to OCI object storage (crew#78) |
+| Every AI system is registered with an Annex IV technical file, a risk register entry and declared data sources (Arts. 9, 10, 11 voluntary; Annex VI report on demand) | A.5.8 | `bin/ai-act-gate` | ok, prospector: 5 risks, 4 sources | outreach disclosure gate and Langfuse onboarding (crew#202) |
 | Every mistake becomes a guard no session can walk past, swept across the estate | A.5.27 | `bin/idp-ci` (incident rows) | ok, each incident row named for its bug | none |
 | Security incidents are logged with cause, cost and the guard that closed them | A.5.24 | `~/.claude/LAWS-INCIDENTS.md` (repo claude-guards) | exists, prose | move to crew issues with the `security` label |
 

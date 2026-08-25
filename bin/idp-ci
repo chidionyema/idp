@@ -160,6 +160,13 @@ if ! python3 "$IDP/bin/security-policy-gate" tests/fixtures/security-policy/bad.
    && python3 "$IDP/bin/security-policy-gate" >/dev/null 2>&1; then
   say "ok    security-policy every control on docs/reference/security-policy.md names a proof command that exists; gate proved both ways"
 else say "FAIL  security-policy gate does not discriminate, or a control has no proof"; python3 "$IDP/bin/security-policy-gate" | sed 's/^/      /'; fail=1; fi
+# AI Act (crew#202): Arts. 9, 10, 11 kept voluntarily. Proved both ways: the bad
+#     fixture has an overdue risk review and a technical file missing section 9.
+if ! TODAY=2026-08-25 python3 "$IDP/bin/ai-act-gate" tests/fixtures/ai-act/bad >/dev/null 2>&1 \
+   && TODAY=2026-08-25 python3 "$IDP/bin/ai-act-gate" tests/fixtures/ai-act/good >/dev/null 2>&1 \
+   && python3 "$IDP/bin/ai-act-gate" "$IDP" >/dev/null 2>&1; then
+  say "ok    ai-act   every registered AI system has its Annex IV file, risk entries and declared data; gate proved both ways"
+else say "FAIL  ai-act   gate does not discriminate, or a registered system has a gap"; python3 "$IDP/bin/ai-act-gate" "$IDP" | sed 's/^/      /'; fail=1; fi
 # Reconcile (crew#186 CP3): a rogue container is a finding, the clean fixture is not.
 rec_out=$(python3 "$IDP/bin/idp-reconcile" --ps tests/fixtures/reconcile/ps.rogue.jsonl 2>&1)   # grep -q under pipefail would SIGPIPE it
 if [ "$(printf '%s' "$rec_out" | grep -c 'rogue       rogue-redis')" != 1 ] \
