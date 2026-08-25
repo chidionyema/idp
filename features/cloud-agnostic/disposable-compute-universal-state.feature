@@ -1,5 +1,5 @@
 # Founder, 2026-08-25 (crew#250): "Rebuilding the same Oracle cluster faster is just automating
-# our own lock-in." Replaces features/estate-rebuild/rebuild-and-gates.feature. The platform must
+# our own lock-in." Sits beside features/estate-rebuild/rebuild-and-gates.feature (R35) and outranks it where they disagree. The platform must
 # not know or care who owns the servers it runs on: GitOps-only hydration, abstracted secrets,
 # S3-compatible and Postgres wire-protocol data only, provider-agnostic ingress.
 Feature: Disposable compute, universal state
