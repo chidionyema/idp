@@ -4,7 +4,8 @@ Founder, 2026-08-26 (crew#269): "as always configurable". Every other platform f
 as ${ESTATE_ZONE}, substituted by Flux postBuild, so a zone migration is one value and a reconcile.
 Spec: features/gates/estate-zone.feature.
 Scanned: platform/** (same suffixes as cloud-agnostic-gate). Exempt: platform/oci (the compute
-provisioner records the host it measured) and clusters/* (where the value lives). Comment lines are
+provisioner records the host it measured), clusters/* (where the value lives) and platform/ai (the AI Act
+register is data read by bin/ai-act-gate and bin/conformity-report, never substituted by Flux). Comment lines are
 not counted. Exit 0 clean, 1 with each literal printed, 2 (BLIND) when no config declares a zone
 or the root cannot be read: a gate that lost its evidence reports BLIND, never a verdict.
 Proved both ways in bin/idp-ci on tests/fixtures/estate-zone/{good,bad}.
@@ -16,7 +17,7 @@ import sys
 
 ROOT = pathlib.Path(os.environ.get("ESTATE_ZONE_ROOT") or pathlib.Path(__file__).resolve().parents[1])
 SCAN = ["platform"]
-EXEMPT = ("platform/oci/", "clusters/")
+EXEMPT = ("platform/oci/", "clusters/", "platform/ai/")  # platform/ai: the AI Act register, read as data by ai-act-gate and conformity-report, never templated by Flux; it records the URL of a live system
 SUFFIXES = {".yaml", ".yml", ".py", ".ts", ".tf", ".sh", ".json", ".env"}
 ZONE_KEY = re.compile(r"^\s*ESTATE_ZONE:\s*['\"]?([A-Za-z0-9.-]+)['\"]?\s*$", re.M)
 
