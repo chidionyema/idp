@@ -1,4 +1,4 @@
-# The OKE overlay: base, backstage-env as a sops file Flux decrypts in cluster
+# The OKE overlay: base, backstage-env as an ExternalSecret from OCI Vault (platform/secret-store)
 # (clusters/oke/platform.yaml, decryption.provider: sops). The estate-catalog ConfigMap is NOT
 # here: catalog/catalog-info.yaml is generated from this machine's inventory and gitignored, so
 # bin/idp-catalog-push publishes it as an OCI artifact and clusters/oke/catalog.yaml pulls it.
@@ -9,7 +9,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base
-  - backstage-env.sops.yaml
+  - backstage-external-secret.yaml
 images:
   - name: idp/backstage
     newName: ghcr.io/chidionyema/idp/backstage

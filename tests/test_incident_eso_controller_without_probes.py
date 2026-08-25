@@ -25,3 +25,17 @@ def test_cloudflare_token_comes_from_oci_vault_not_sops() -> None:
     assert d["kind"] == "ExternalSecret"
     assert d["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": "oci-vault"}
     assert not (ROOT / "platform/prospector/cloudflare.sops.yaml").exists()
+
+
+def test_no_sops_files_remain_under_platform() -> None:
+    # crew#227 CP3: the sops-age key goes when the last sops file is gone.
+    assert not list(ROOT.glob("platform/**/*.sops.yaml"))
+
+
+def test_every_platform_external_secret_uses_oci_vault() -> None:
+    files = list(ROOT.glob("platform/**/*external-secret.yaml"))
+    assert len(files) >= 3
+    for f in files:
+        d = yaml.safe_load(f.read_text())
+        assert d["kind"] == "ExternalSecret", f
+        assert d["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": "oci-vault"}, f
