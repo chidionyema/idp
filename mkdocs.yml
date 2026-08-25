@@ -14,5 +14,12 @@ nav:
       - 0004 Oracle OKE is the Kubernetes target: decisions/0004-oracle-oke-is-the-kubernetes-target.md
   - Tutorials: tutorials/index.md
   - How-to: how-to/index.md
-  - Reference: reference/index.md
+  - Reference:
+      - reference/index.md
+      - Oracle tenancy: reference/oci-tenancy.md
+      - Security policy: reference/security-policy.md
+      - EU AI Act: reference/eu-ai-act.md
+  - AI systems:
+      - ai-systems/index.md
+      - Prospector technical file: ai-systems/prospector/technical-file.md
   - Explanation: explanation/index.md
