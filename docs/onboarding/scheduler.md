@@ -30,6 +30,9 @@ SQLite default under `DAGSTER_HOME`; the documented escalation if lock contentio
 | One automatic retry, then the breaker | `dagster.yaml run_retries` | deployment/execution/run-retries |
 | Tick retention 30/7 days | `dagster.yaml retention` | deployment/oss/dagster-yaml |
 | Telemetry off | `dagster.yaml telemetry` | about/telemetry |
+| Description on every job, op and schedule, derived from the target script's docstring | `estate_scheduler/describe.py`; `make_job`, `make_op`, `make_schedule` | concepts/ops-jobs-graphs |
+| Metadata on every job: command, cron, timeout, cwd, what it skips on, which file described it | `_job_metadata` | concepts/metadata-tags |
+| Owner tag `estate/owner` from the label's second segment, so the UI filters by owner | `make_job` | concepts/metadata-tags |
 
 Not used, and why: Declarative Automation and asset freshness policies are for data assets, not
 shell jobs; Alerts and Insights are Dagster+ only — the failure sensor is the OSS path.
@@ -45,8 +48,17 @@ shell jobs; Alerts and Insights are Dagster+ only — the failure sensor is the 
 1. Add an entry to `scheduler/schedule.yml`: `cron`, `command` (list), `max_load`, `skip_on_battery`,
    `timeout_s`, optional `after`, `priority`, `cwd`, `env`. Paths use `$IDP`, `$CODE` or `~`; never a
    literal home or checkout directory (LAW 46, enforced by `bin/idp-ci`).
-2. Reload the code location in the dashboard (or `bin/scheduler-down && bin/scheduler-up`).
-3. It is on. Nothing else to start.
+2. Give the script a module docstring whose first paragraph says what the job does. That paragraph is
+   the description the dashboard shows, so there is nothing to write here and nothing to keep in step;
+   whoever changes the behaviour edits the sentence. A job whose script has no docstring is refused by
+   `bin/idp-verify`, and the dashboard names the file to fix. A command that is not a script we own
+   (`/bin/echo`, a vendor binary) may carry `description:` in `schedule.yml` instead.
+3. Reload the code location in the dashboard (or `bin/scheduler-down && bin/scheduler-up`).
+4. It is on. Nothing else to start.
+
+Check what the dashboard will show before you reload:
+
+    cd scheduler && python3 -m estate_scheduler.describe
 
 ## Move a job off launchd
 `bin/scheduler-import` prints every scheduled launchd job as YAML. Paste the entry, reload, then

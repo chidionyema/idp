@@ -63,6 +63,9 @@ os.environ.setdefault("IDP", str(IDP))
 os.environ.setdefault("CODE", os.environ.get("CODE_ROOT", str(IDP.parent)))
 
 
+from .describe import describe as describe_job
+
+
 def _expand(s: str) -> str:
     return os.path.expandvars(os.path.expanduser(s))
 
@@ -102,7 +105,9 @@ def circuit_open(instance, job_name: str) -> bool:
 
 
 def make_op(label: str, spec: dict):
-    @op(name=f"run_{_job_name(label)}")
+    text, _ = describe_job(label, spec)
+
+    @op(name=f"run_{_job_name(label)}", description=text)
     def _run(context) -> None:
         cmd = [_expand(a) for a in spec["command"]]
         cwd = _expand(spec["cwd"]) if spec.get("cwd") else None
@@ -128,16 +133,50 @@ def make_op(label: str, spec: dict):
     return _run
 
 
+def _job_metadata(label: str, spec: dict, source: str) -> dict:
+    """The facts a person opening the Dagster UI needs before they touch a job.
+
+    Everything here is read from schedule.yml, so it cannot drift from what
+    actually runs the way a hand-written note would.
+    """
+    md = {
+        "command": shlex.join([str(a) for a in spec["command"]]),
+        "described by": source or "nothing -- see the description",
+        "defined in": "scheduler/schedule.yml",
+        "timeout": f"{int(spec.get('timeout_s', 1800))}s",
+    }
+    if spec.get("cron"):
+        md["cron"] = f"{spec['cron']} ({TIMEZONE})"
+    if spec.get("after"):
+        md["runs after"] = spec["after"]
+    if spec.get("cwd"):
+        md["cwd"] = str(spec["cwd"])
+    md["skipped when"] = _skip_note(spec)
+    return md
+
+
+def _skip_note(spec: dict) -> str:
+    parts = [f"1-minute load average is above {float(spec.get('max_load', 6.0)):.1f}"]
+    if spec.get("skip_on_battery"):
+        parts.append("the laptop is on battery")
+    parts.append(f"the breaker is open after {BREAKER_TRIP} consecutive failures")
+    return "; ".join(parts)
+
+
 def make_job(label: str, spec: dict):
     the_op = make_op(label, spec)
+    text, source = describe_job(label, spec)
 
     # dagster/max_runtime: run monitoring cancels the run past timeout_s + 60s
     # (docs: deployment/execution/run-monitoring); dagster/priority orders the
     # queue (docs: deployment/execution/run-coordinators).
     @job(
         name=_job_name(label),
+        description=text,
+        metadata=_job_metadata(label, spec, source),
         tags={
             "estate/label": label,
+            "estate/owner": label.split(".")[1] if label.count(".") >= 2 else label.split(".")[0],
             "dagster/max_runtime": str(int(spec.get("timeout_s", 1800)) + 60),
             "dagster/priority": str(int(spec.get("priority", 0))),
         },
@@ -152,10 +191,14 @@ def make_schedule(label: str, spec: dict, the_job):
     max_load = float(spec.get("max_load", 6.0))
     battery = bool(spec.get("skip_on_battery", False))
 
+    text, _ = describe_job(label, spec)
+
     @schedule(
         cron_schedule=spec["cron"],
         job=the_job,
         name=f"{_job_name(label)}_schedule",
+        description=(f"{spec['cron']} in {TIMEZONE}. {text} "
+                     f"Skipped when {_skip_note(spec)}."),
         execution_timezone=TIMEZONE,
         default_status=DefaultScheduleStatus.RUNNING,
     )
