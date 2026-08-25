@@ -13,6 +13,8 @@
 set -euo pipefail
 
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
+# A bind-mount source the container VM cannot see mounts as an empty directory (2026-08-25).
+"$IDP/bin/vm-shared-path" "$IDP" || exit 2
 OBS="$IDP/observability"
 ENVF="$OBS/.env"
 COMPOSE=(docker compose --env-file "$ENVF" -f "$OBS/langfuse.yml")

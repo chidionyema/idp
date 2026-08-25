@@ -421,6 +421,11 @@ if out=$( ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe --selfte
   say "ok    describe job descriptions derive from the script, and are refused when absent"
 else say "FAIL  describe estate_scheduler.describe --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
+# vm-shared-path must refuse a source outside the VM-shared tree and permit one inside it.
+if out=$(VM_SHARED_ROOTS="$HOME" "$IDP/bin/vm-shared-path" "$HOME" 2>&1) \
+   && ! VM_SHARED_ROOTS="$HOME" "$IDP/bin/vm-shared-path" /private/tmp >/dev/null 2>&1; then
+  say "ok    vmmount  vm-shared-path permits a path under the shared root and refuses one outside it"
+else say "FAIL  vmmount  bin/vm-shared-path selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 if out=$("$IDP/bin/bind-audit" --selftest 2>&1); then say "ok    binds    bind-audit refuses an unknown listener and permits an allow-listed one"
 else say "FAIL  binds    bin/bind-audit --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
