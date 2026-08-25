@@ -44,6 +44,10 @@ metadata:
   name: observability
   namespace: flux-system
 spec:
+  # Suspended on 2026-08-25: the canary ran (clickhouse, signoz, operator Ready) and took the node
+  # from 1270m to 1830m requested, which left Backstage postgres Pending on CPU. It comes back when
+  # the node pool grows (platform/oci, founder decision R14, code-c1) by flipping this one line.
+  suspend: true
   interval: 1h
   dependsOn:
     - name: backstage

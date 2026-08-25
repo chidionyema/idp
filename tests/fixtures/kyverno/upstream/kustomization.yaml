@@ -1,7 +1,9 @@
 # CI fallback for bin/idp-kyverno-render when the prospector checkout is absent: the same pinned
 # upstream policies prospector/deploy/k8s/policies/kustomization.yaml names, minus its two
 # estate-only policies (money-rail-single-writer, no-optional-secret-references). Source of truth
-# is that file; this one only repeats its URLs.
+# is that file; this one repeats its URLs and its two patch files, which CI cannot fetch from a
+# private repo. Incident 2026-08-25: the copy lacked admit-job-pods.yaml (prospector#733) and CI
+# refused the migrator pod the cluster would have admitted.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
@@ -19,6 +21,18 @@ patches:
       group: kyverno.io
       version: v1
       kind: ClusterPolicy
+    target:
+      group: kyverno.io
+      version: v1
+      kind: ClusterPolicy
+      name: require-pod-probes
+  - path: admit-acme-solver.yaml
+    target:
+      group: kyverno.io
+      version: v1
+      kind: ClusterPolicy
+      name: require-pod-probes
+  - path: admit-job-pods.yaml   # after admit-acme-solver.yaml, as in the source kustomization
     target:
       group: kyverno.io
       version: v1
