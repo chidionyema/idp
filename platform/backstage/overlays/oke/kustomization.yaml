@@ -33,5 +33,12 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: IfNotPresent
+      # The portal's origin. No route exists in platform/edge yet, so the only
+      # path is `kubectl -n backstage port-forward svc/catalogue 3100:3100` and
+      # this is the origin the browser then sees. The route PR changes this one
+      # value to the published hostname (and adds OIDC in front, ADR 0003).
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: APP_BASE_URL, value: "http://localhost:3100"}
 generatorOptions:
   disableNameSuffixHash: true
