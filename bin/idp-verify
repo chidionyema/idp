@@ -167,4 +167,21 @@ if out=$( ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe ) 2>&1);
   say "ok        describe  $(printf '%s' "$out" | tail -1)"
 else say "FAIL      describe  a scheduled job would reach the UI with no description"
   printf '%s\n' "$out" | grep '^FAIL' | sed 's/^/          /'; fail=1; fi
+# Front door login (crew#269, incident 2026-08-26): the argon2 hash in the cluster vault did not
+# match the password in the sops vault and the first founder login was a 401. Nothing compared the
+# two stores. This is the comparison: one real login against auth.<zone> with the sops value.
+# BLIND without the sops vault or the age key; a 401 is a FAIL, never a wait.
+zone=$(sed -n 's/^  ESTATE_ZONE: *//p' "$IDP/clusters/oke/estate-config.yaml" | head -1)
+sec="${ESTATE_SECRETS:-$HOME/dev/code/estate-secrets}/secrets/dev/CATALOGUE_FOUNDER_PASSWORD.yaml"
+if [ -z "$zone" ] || [ ! -f "$sec" ] || ! command -v sops >/dev/null 2>&1; then
+  say "BLIND     login     no estate-config zone, no sops, or no $sec"
+elif pw=$(SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}" sops -d --extract '["CATALOGUE_FOUNDER_PASSWORD"]' "$sec" 2>/dev/null) && [ -n "$pw" ]; then
+  code=$(printf '{"username":"founder","password":%s,"keepMeLoggedIn":false}' "$(printf '%s' "$pw" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" \
+    | curl -sS -o /dev/null -w '%{http_code}' --max-time 10 -H 'Content-Type: application/json' -X POST "https://auth.$zone/api/firstfactor" --data-binary @- 2>/dev/null)
+  unset pw
+  if [ "$code" = 200 ]; then say "ok        login     founder signs in at https://auth.$zone (vault hash matches the sops password)"
+  else say "FAIL      login     https://auth.$zone/api/firstfactor -> $code (re-hash the sops password into vault authelia-users: bin/idp-vault-put)"; fail=1; fi
+else
+  say "BLIND     login     sops could not decrypt $sec (SOPS_AGE_KEY_FILE?)"
+fi
 exit "$fail"
