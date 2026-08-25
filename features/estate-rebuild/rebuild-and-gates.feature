@@ -10,7 +10,7 @@ Feature: The estate can be torn down and rebuilt from the phone, and no past err
     And every component in it names its build, its deploy, its health alert and its rebuild step
 
   Scenario: Every component of the estate is covered, or a command says which is not
-    When I run "bin/estate-gates"
+    When I run "bin/estate-coverage"
     Then it prints one line per component with build, deploy, alert and rebuild each marked ok
     And it prints zero lines marked GAP
     And CI fails a pull request that adds a workload without a row in the inventory
@@ -37,7 +37,7 @@ Feature: The estate can be torn down and rebuilt from the phone, and no past err
 
   Scenario: Every past incident is a gate proved both ways
     Given the incident record lists every failure that has happened on this estate
-    When I run "bin/estate-gates --incidents"
+    When I run "bin/estate-coverage --incidents"
     Then it prints one line per incident naming the gate that refuses that class of error
     And each gate has a recorded proof that it refuses the bad case and permits the good case
     And it prints zero incidents without a gate
