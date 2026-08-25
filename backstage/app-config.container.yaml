@@ -1,0 +1,96 @@
+# What changes when the catalogue runs in a container instead of `yarn start`.
+#
+# Layered on top of app-config.yaml, which stays the source for everything that
+# is the same in both. Backstage replaces arrays rather than merging them, so
+# every `catalog.locations` entry has to be restated here, not just the one that
+# moves.
+
+app:
+  # One origin. Under `yarn start` the app was a separate dev server on 3100 and
+  # the backend was on 7107, which is why this repo carried two ports, two
+  # health probes and a CORS rule between its own halves. The image runs
+  # @backstage/plugin-app-backend, so the backend serves the UI: one process,
+  # one port, one bind, and CORS between the app and its own API stops being a
+  # thing that can be misconfigured.
+  baseUrl: http://localhost:3100
+
+auth:
+  providers:
+    guest:
+      # The image sets NODE_ENV=production, and Backstage refuses the guest
+      # provider outside development unless this is set. Measured on the first
+      # container boot, 2026-08-24: `POST /api/auth/guest/refresh` returned 403
+      # and every catalog read returned 401, while `GET /` returned 200 -- a
+      # portal that renders, serves no data, and cannot be signed into. Under
+      # `yarn start` NODE_ENV was development and this never appeared, which is
+      # the kind of difference containerising exists to surface.
+      #
+      # The flag is named "dangerously" because it makes anyone who can reach
+      # the port a signed-in user. Here that is decided one layer out, not by
+      # this file: compose publishes 127.0.0.1 only, and ADR 0003 puts identity
+      # at the gateway, which is what enforces OIDC in front of the tailnet
+      # address. This container is behind that boundary, not acting as it. When
+      # Phase 2 moves the catalogue into k3s the gateway is still the boundary,
+      # and this stays until the OIDC provider is wired directly.
+      dangerouslyAllowOutsideDevelopment: true
+
+backend:
+  baseUrl: http://localhost:3100
+  listen:
+    port: 3100
+    # 0.0.0.0 INSIDE the container, 127.0.0.1 on the host. These are not in
+    # conflict and the distinction is the whole point of R20 (the gateway is the
+    # only process that binds a non-loopback address).
+    #
+    # The container's network namespace is not the host's. A process that binds
+    # 127.0.0.1 inside a container is reachable only from that container -- the
+    # published port cannot forward to it and `docker compose up` produces a
+    # service nothing can reach. What R20 governs is the HOST bind, and compose.yml
+    # publishes `127.0.0.1:3100:3100`, so `lsof` on this machine sees the loopback
+    # and nothing on the LAN can reach the catalogue.
+    #
+    # It also removes the [::1] versus 127.0.0.1 split that made `curl
+    # 127.0.0.1:3100` return 000 while a browser on the same machine got 200.
+    host: 0.0.0.0
+  csp:
+    connect-src: ["'self'", 'http:', 'https:']
+  database:
+    # Postgres, not the in-memory sqlite of app-config.yaml. Two reasons, and
+    # neither is preference. `:memory:` means every restart re-ingests the whole
+    # estate from files and serves an empty catalogue until it finishes --
+    # measured 2026-08-24, ingestion took 124 seconds after boot, during which
+    # the portal renders and looks correct with nothing in it. And Postgres is
+    # what the k8s deployment will use, so Phase 2 changes where the database
+    # runs, not which database it is.
+    client: pg
+    connection:
+      host: ${POSTGRES_HOST}
+      port: ${POSTGRES_PORT}
+      user: ${POSTGRES_USER}
+      password: ${POSTGRES_PASSWORD}
+      database: ${POSTGRES_DB}
+
+catalog:
+  locations:
+    # The estate. Generated on the host by bin/catalog-gen from the LAW 39
+    # inventory, and bind-mounted read-only at /estate. It is deliberately not
+    # baked into the image: the image is a build artefact that Phase 2 ships to
+    # k8s unchanged, and the inventory changes hourly. Baking it in would make
+    # every inventory refresh an image rebuild.
+    - type: file
+      target: /estate/catalog-info.yaml
+      rules:
+        - allow: [Component, Resource, Domain, System, Group]
+
+    # The only scaffolder template the portal offers.
+    - type: file
+      target: /app/templates/estate-component/template.yaml
+      rules:
+        - allow: [Template]
+
+    # user:default/guest. The guest auth provider resolves it through the
+    # catalog, so this is sign-in, not example data.
+    - type: file
+      target: /app/examples/org.yaml
+      rules:
+        - allow: [User, Group]
