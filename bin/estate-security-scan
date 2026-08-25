@@ -24,7 +24,7 @@
 #   estate-security-scan --quiet    receipt only, no tool chatter
 set -uo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$IDP"
+cd "$IDP" || exit 3
 quiet=0; [ "${1:-}" = "--quiet" ] && quiet=1
 fail=0; blind=0
 say() { printf '%s\n' "$*"; }
@@ -54,10 +54,11 @@ elif [ -z "$reqs" ]; then
 else
   # one resolver run over every file: per-file runs each re-resolve the tree
   # and the three together exceeded five minutes on the founder machine.
-  args=""; for r in $reqs; do args="$args -r $r"; done
-  out=$(timeout 240 $PA $args --progress-spinner off 2>&1); rc=$?
+  args=(); for r in $reqs; do args+=(-r "$r"); done
+  # shellcheck disable=SC2086  # $PA is "pip-audit" or "uvx pip-audit": two words on purpose
+  out=$(timeout 240 $PA "${args[@]}" --progress-spinner off 2>&1); rc=$?
   if [ $rc = 0 ]; then
-    say "ok    deps      pip-audit over $(echo $reqs | wc -w | tr -d ' ') requirements files: no known vulnerabilities"
+    say "ok    deps      pip-audit over $(( ${#args[@]} / 2 )) requirements files: no known vulnerabilities"
   elif [ $rc = 124 ]; then
     say "BLIND deps      pip-audit exceeded 240s (network); rerun"; blind=1
   else
