@@ -153,6 +153,11 @@ fi
 # in catalog/ports.yaml, and nothing but the gateway is off loopback (R20).
 if out=$(python3 "$IDP/bin/port-gate" --live 2>&1); then say "ok        portlock  $(printf '%s' "$out" | tail -1 | sed 's/^ok *ports *//')"
 else say "FAIL      portlock"; printf '%s\n' "$out" | sed 's/^/          /'; fail=1; fi
+# Oracle identity drill (ADR 0004 step 1, founder 2026-08-25 "added to drill"): the vaulted key
+# must still open the tenancy. BLIND until bin/idp-oci-bootstrap has run once.
+if out=$("$IDP/bin/idp-oci-login" --check 2>&1); then say "$(printf '%s' "$out" | tail -1)"
+elif [ $? = 2 ]; then say "$(printf '%s' "$out" | tail -1)"
+else say "FAIL      oci     $(printf '%s' "$out" | tail -1)"; fail=1; fi
 # The VM's config is a repo file (crew#212): drift here means the machine runs a VM nobody reviewed.
 if out=$("$IDP/bin/idp-install-colima" --check 2>&1); then say "ok        colima    live profile matches substrate/colima.yaml"
 else say "FAIL      colima    $(printf '%s' "$out" | head -1)"; fail=1; fi

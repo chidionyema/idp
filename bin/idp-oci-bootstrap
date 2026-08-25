@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# One-time tenancy bootstrap for ADR 0004, repeatable and unattended except for one browser
+# login. Rejected: `oci setup config` (interactive, writes the private key unvaulted to disk,
+# and puts the key on the founder's own admin user). This script:
+#   1. logs in once through the browser (oci session authenticate, token lives one hour);
+#   2. creates compartment `estate`, group `estate-operators`, user `estate-tofu` and one
+#      least-privilege policy, all idempotent;
+#   3. generates the API key pair here, registers the PUBLIC half on estate-tofu, and stores
+#      the private half in the sops vault. The private key is never in Downloads, never in
+#      argv, never printed (LAW 21).
+# Re-running is safe: existing IAM objects are reused; a new key is added only with --rotate.
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+VAULT="${ESTATE_SECRETS:-$(dirname "$IDP")/estate-secrets}"
+export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
+ENV_NAME="${OCI_ENV:-dev}"
+for t in oci sops openssl jq; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
+[ -d "$VAULT/secrets/$ENV_NAME" ] || { echo "BLIND vault not at $VAULT"; exit 2; }
+
+vget() { sops -d --extract "[\"$1\"]" "$VAULT/secrets/$ENV_NAME/$1.yaml" 2>/dev/null; }
+vput() { # name on argv, VALUE ON STDIN ONLY
+  local f="$VAULT/secrets/$ENV_NAME/$1.yaml"
+  if [ -e "$f" ] && [ "${2:-}" != replace ]; then cat >/dev/null; echo "vault   $1 kept"; return; fi
+  SECRET_REPLACE=1 "$VAULT/scripts/secret-add" "$ENV_NAME" "$1" "$1" >/dev/null && echo "vault   $1 written"
+}
+
+REGION="$(vget OCI_REGION)"; TENANCY="$(vget OCI_TENANCY_OCID)"
+TENANCY_NAME="${OCI_TENANCY_NAME:-$(vget OCI_TENANCY_NAME || true)}"
+[ -n "$REGION" ] && [ -n "$TENANCY" ] || { echo "BLIND vault lacks OCI_REGION / OCI_TENANCY_OCID"; exit 2; }
+[ -n "$TENANCY_NAME" ] || { echo "need OCI_TENANCY_NAME (vault or env): the console tenancy name"; exit 2; }
+
+PROFILE=estate-bootstrap
+echo "login   browser opens once; sign in as the tenancy owner (token lives 1 hour)"
+oci session authenticate --region "$REGION" --tenancy-name "$TENANCY_NAME" --profile-name "$PROFILE" >/dev/null
+O=(--auth security_token --profile "$PROFILE" --region "$REGION")
+
+# --- IAM, idempotent ------------------------------------------------------------------
+ensure() { # kind name -> ocid   (compartment|group|user)
+  local kind="$1" name="$2" id
+  case "$kind" in
+    compartment) id=$(oci iam compartment list "${O[@]}" --compartment-id "$TENANCY" --name "$name" --lifecycle-state ACTIVE --query 'data[0].id' --raw-output 2>/dev/null || true)
+      [ -n "$id" ] && [ "$id" != null ] || id=$(oci iam compartment create "${O[@]}" --compartment-id "$TENANCY" --name "$name" --description "estate platform (ADR 0004)" --query data.id --raw-output);;
+    group) id=$(oci iam group list "${O[@]}" --compartment-id "$TENANCY" --name "$name" --query 'data[0].id' --raw-output 2>/dev/null || true)
+      [ -n "$id" ] && [ "$id" != null ] || id=$(oci iam group create "${O[@]}" --compartment-id "$TENANCY" --name "$name" --description "may manage the estate compartment only" --query data.id --raw-output);;
+    user) id=$(oci iam user list "${O[@]}" --compartment-id "$TENANCY" --name "$name" --query 'data[0].id' --raw-output 2>/dev/null || true)
+      [ -n "$id" ] && [ "$id" != null ] || id=$(oci iam user create "${O[@]}" --compartment-id "$TENANCY" --name "$name" --description "OpenTofu service user; API key only, no console" --query data.id --raw-output);;
+  esac; echo "$id"
+}
+COMP=$(ensure compartment estate);   echo "iam     compartment estate"
+GROUP=$(ensure group estate-operators); echo "iam     group estate-operators"
+USER_ID=$(ensure user estate-tofu);   echo "iam     user estate-tofu"
+oci iam group add-user "${O[@]}" --group-id "$GROUP" --user-id "$USER_ID" >/dev/null 2>&1 || true
+POLICY_NAME=estate-operators-manage-estate
+if [ "$(oci iam policy list "${O[@]}" --compartment-id "$TENANCY" --name "$POLICY_NAME" --query 'length(data)' --raw-output 2>/dev/null || echo 0)" = 0 ]; then
+  oci iam policy create "${O[@]}" --compartment-id "$TENANCY" --name "$POLICY_NAME" \
+    --description "least privilege for platform/oci (ADR 0004)" \
+    --statements "[\"Allow group estate-operators to manage cluster-family in compartment estate\",\"Allow group estate-operators to manage virtual-network-family in compartment estate\",\"Allow group estate-operators to manage instance-family in compartment estate\",\"Allow group estate-operators to read all-resources in tenancy\",\"Allow group estate-operators to use tag-namespaces in tenancy\"]" >/dev/null
+fi; echo "iam     policy $POLICY_NAME"
+
+# --- key pair: generated here, public half registered, private half vaulted -----------
+if [ -e "$VAULT/secrets/$ENV_NAME/OCI_FINGERPRINT.yaml" ] && [ "${1:-}" != --rotate ]; then
+  echo "key     OCI_FINGERPRINT already in the vault; pass --rotate to add a new key"
+else
+  T=$(mktemp -d); chmod 700 "$T"; trap 'rm -rf "$T"' EXIT
+  openssl genrsa -out "$T/key.pem" 2048 2>/dev/null; chmod 600 "$T/key.pem"
+  openssl rsa -in "$T/key.pem" -pubout -out "$T/pub.pem" 2>/dev/null
+  FP=$(oci iam user api-key upload "${O[@]}" --user-id "$USER_ID" --key-file "$T/pub.pem" --query data.fingerprint --raw-output)
+  vput OCI_API_PRIVATE_KEY replace < "$T/key.pem"
+  printf %s "$FP" | vput OCI_FINGERPRINT replace
+  echo "key     registered on estate-tofu, fingerprint ${FP:0:8}..."
+fi
+printf %s "$USER_ID" | vput OCI_USER_OCID replace
+printf %s "$COMP"    | vput OCI_COMPARTMENT_OCID replace
+printf %s "$TENANCY_NAME" | vput OCI_TENANCY_NAME
+( cd "$VAULT" && git add -- "secrets/$ENV_NAME" && git commit -q -m "$ENV_NAME: OCI estate-tofu user, key and compartment (bin/idp-oci-bootstrap)" && git push -q ) && echo "vault   committed and pushed"
+rm -rf "$HOME/.oci/sessions/$PROFILE" 2>/dev/null || true
+echo "done    next: bin/idp-oci-login"

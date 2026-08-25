@@ -26,6 +26,7 @@ nav:
   - Demo:
       - Portal: demo/idp.md
       - Plist gate: demo/plist.md
+      - Oracle identity: demo/oci.md
       - MCP: demo/mcp.md
       - Placement: demo/placement.md
       - Scheduler: demo/scheduler.md
@@ -36,6 +37,7 @@ nav:
   - Onboarding:
       - Portal: onboarding/idp.md
       - Plist gate: onboarding/plist.md
+      - Oracle identity: onboarding/oci.md
       - Langfuse: onboarding/langfuse.md
       - Manifests: onboarding/manifests.md
       - MCP: onboarding/mcp.md
