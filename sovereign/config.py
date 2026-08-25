@@ -291,6 +291,13 @@ try:
 except ImportError:
     pass
 
+try:
+    from sovereign.intake.config_keys import INTAKE_KEYS
+
+    _merge_external_keys(INTAKE_KEYS)
+except ImportError:
+    pass
+
 
 # ---------------------------------------------------------------------------
 # crew#219 R38/R40: the living policy. AGENTS.md at the repository root is the
