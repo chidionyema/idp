@@ -37,7 +37,10 @@ kill_port 7107 "Backstage backend"
 echo
 echo "PUBLISHED PORTS"
 for p in 8443 10000; do
-  if tailscale serve status 2>/dev/null | grep -q ":$p"; then
+  # Captured, not piped: this script runs under `set -o pipefail`, so a failing
+  # `tailscale serve status` would decide the branch instead of the match.
+  serve_status=$(tailscale serve status 2>/dev/null || true)
+  if printf '%s' "$serve_status" | grep -q ":$p"; then
     tailscale serve --http="$p" off >/dev/null 2>&1 \
       && echo "  $p: unpublished" \
       || echo "  $p: could not unpublish -- check 'tailscale serve status'"
