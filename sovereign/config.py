@@ -293,6 +293,20 @@ try:
 except ImportError:
     pass
 
+# ---------------------------------------------------------------------------
+# Presence block (W3, master spec 2.1, 2.2, 2.5, 2.6). Every presence.* key
+# -- the state file the menu bar dot reads, the digest hour and line cap,
+# the receipt format, the haptic switch, the Spatial colours, the Siri
+# sentence -- is defined once in sovereign/presence/config_keys.py and
+# merged here. Nothing under sovereign/presence/ types a literal.
+# ---------------------------------------------------------------------------
+try:
+    from sovereign.presence.config_keys import PRESENCE_KEYS
+
+    _merge_external_keys(PRESENCE_KEYS)
+except ImportError:
+    pass
+
 try:
     from sovereign.shadow.config_keys import SHADOW_KEYS
 
