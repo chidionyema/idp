@@ -12,6 +12,8 @@ say() { printf '%s\n' "$*"; }
 need() { command -v "$1" >/dev/null || { say "FAIL  $1 is not installed"; exit 2; }; }
 need shellcheck; need docker; need conftest; need check-jsonschema; need sqlite-utils; need jq; need python3
 
+MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
+
 # 1. Every script parses and passes shellcheck at warning level.
 for f in "$IDP"/bin/*; do
   head -1 "$f" | grep -q bash || continue
@@ -278,7 +280,6 @@ else say "FAIL  kustomize base does not render clean or the NodePort fixture pas
 #     applies healthy, applies again without changing state, and rolls back to
 #     the pre-state, on a pristine temp home. Skipped only if dagster is absent,
 #     and then it says BLIND rather than ok.
-MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
 if "$IDP/bin/migration-gate" "$IDP/tests/fixtures/migration-not-idempotent" >/dev/null 2>&1; then
   say "FAIL  migration gate accepted a migration whose second apply adds a resource"; fail=1
 else say "ok    migration gate refuses the non-idempotent fixture"; fi
@@ -305,6 +306,11 @@ else say "FAIL  schema   check-jsonschema rejected a generated entity"; fail=1; 
 policy_gate() { conftest test --parser json -p "$IDP/policy" "$1" >/dev/null 2>&1; }
 bind_audit() { "$IDP/bin/bind-audit" --table "$1" >/dev/null 2>&1; }
 job_described() { ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe "$1" ) >/dev/null 2>&1; }
+# A code location is loaded by PATH by workspace.yaml, never as a package. Loading
+# it any other way here would grade a proxy: on 2026-08-25 definitions.py imported a
+# sibling with `from .describe import`, passed every offline check, and put the live
+# code location in PythonError the moment it reloaded. So: load it the way it runs.
+defs_validate() { ( cd "$(dirname "$1")" && DAGSTER_HOME="$(mktemp -d)" "$MPY" -m dagster definitions validate -f "$(basename "$1")" ) >/dev/null 2>&1; }
 rows=0
 while IFS='|' read -r _ rule gate bad good _; do
   rule=$(echo "$rule" | xargs); gate=$(echo "$gate" | xargs); bad=$(echo "$bad" | xargs); good=$(echo "$good" | xargs)
@@ -332,6 +338,13 @@ done < <(grep -E '^\| .* \| .* \| .* \| .* \|$' "$IDP/AGENTS.md" | grep -vE '^\|
 #    derived from the target script's docstring, so the selftest checks the derivation
 #    -- that it looks behind a wrapper, and that it refuses to invent prose from a
 #    command line. Coverage over the real 40 needs the scripts, so it lives in idp-verify.
+# 7b. The real code location loads the way workspace.yaml loads it: by file path.
+if ! "$MPY" -c "import dagster" 2>/dev/null; then
+  say "BLIND codeloc dagster not importable; the code location was not loaded"; fail=1
+elif defs_validate "$IDP/scheduler/estate_scheduler/definitions.py"; then
+  say "ok    codeloc  scheduler/estate_scheduler/definitions.py loads by file path, as workspace.yaml loads it"
+else say "FAIL  codeloc  the code location does not load by file path -- the dashboard will show PythonError"; fail=1; fi
+
 if out=$( ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe --selftest ) 2>&1); then
   say "ok    describe job descriptions derive from the script, and are refused when absent"
 else say "FAIL  describe estate_scheduler.describe --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
