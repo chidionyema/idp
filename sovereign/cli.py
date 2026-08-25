@@ -87,12 +87,96 @@ def cmd_verify_receipts(args: argparse.Namespace) -> int:
 
 
 def cmd_audit(args: argparse.Namespace) -> int:
-    """cp34: `sb audit --verify` -- phase 1's audit chain IS the signed
-    receipt chain (cp19), so this is a thin alias of verify-receipts, not a
-    second implementation. --verify is accepted (and currently the only
-    mode) for cp34's exact CLI shape; audit with no flag also verifies,
-    since phase 1 has no other audit action yet."""
-    return cmd_verify_receipts(args)
+    """cp34: the audit log IS the signed receipt chain (cp19), plus the
+    DAG under heads/main. `--verify` checks every signature, the monotonic
+    counter and the head anchor, then walks heads/main to genesis, and
+    exits non-zero on the first break. `--at <hash>` answers who did what,
+    when, under which policy, and which trust backend signed it, for one
+    chain line. With neither flag, verify."""
+    from sovereign.engine import checkpoint
+
+    if args.at:
+        res = checkpoint.audit_at(args.at)
+        if res is None:
+            print(f"no receipt with hash {args.at}", file=sys.stderr)
+            return config.CLI_EXIT_USAGE_ERROR
+        _emit(res, args.json)
+        return 0 if res["chain_ok"] else 1
+    res = checkpoint.audit_verify()
+    _emit(res, args.json)
+    return 0 if res["ok"] else 1
+
+
+def cmd_undo(args: argparse.Namespace) -> int:
+    """R7: revert the commit a receipt names, by walking the chain back to
+    that receipt (`--to <receipt hash>`) or to the session's newest receipt
+    that carries a commit. One receipt of kind "undo" is written."""
+    from sovereign.engine import undo as undo_mod
+
+    try:
+        res = undo_mod.undo(args.session_id, args.by, receipt_hash=args.to)
+    except undo_mod.NothingToUndo as exc:
+        print(str(exc), file=sys.stderr)
+        return config.CLI_EXIT_USAGE_ERROR
+    _emit(res, args.json)
+    return 0
+
+
+def _services_down() -> dict[str, str]:
+    """Stop the worker and Temporal by their pid files; the same code path
+    as `sb down`, so rewind stops exactly what up started."""
+    ns = argparse.Namespace(json=True)
+    import contextlib
+    import io
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        cmd_down(ns)
+    return json.loads(buf.getvalue())
+
+
+def _services_up() -> dict[str, str]:
+    ns = argparse.Namespace(json=True)
+    import contextlib
+    import io
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        cmd_up(ns)
+    return json.loads(buf.getvalue())
+
+
+def cmd_rewind(args: argparse.Namespace) -> int:
+    """cp33: stop services, move heads/main to the named hash, rebuild the
+    projection view from the DAG, write one signed REWIND receipt. Nothing
+    after the hash is deleted. Services are brought back up afterwards
+    when recover.start_services is on, the same switch `sb recover` uses."""
+    from sovereign.engine import checkpoint
+
+    if not args.signed:
+        print("rewind is a destructive op and needs --signed", file=sys.stderr)
+        return config.CLI_EXIT_USAGE_ERROR
+    stopped = _services_down()
+    try:
+        res = checkpoint.rewind(args.hash, args.by, signed=True)
+    except checkpoint.UnknownRoot as exc:
+        print(str(exc), file=sys.stderr)
+        return config.CLI_EXIT_USAGE_ERROR
+    started = _services_up() if config.RECOVER_START_SERVICES else {}
+    _emit({**res, "services_stopped": stopped, "services_started": started}, args.json)
+    return 0
+
+
+def cmd_recover(args: argparse.Namespace) -> int:
+    """cp35: point heads/main at the last fully committed root, rebuild
+    the projection view, bring the services back, write one RECOVER
+    receipt."""
+    from sovereign.engine import checkpoint
+
+    res = checkpoint.recover(args.by)
+    started = _services_up() if config.RECOVER_START_SERVICES else {}
+    _emit({**res, "services": started, "services_started": bool(config.RECOVER_START_SERVICES)}, args.json)
+    return 0
 
 
 def cmd_root(args: argparse.Namespace) -> int:
@@ -479,10 +563,30 @@ def main(argv: list[str] | None = None) -> int:
     _add_json(p)
     p.set_defaults(func=cmd_verify_receipts)
 
-    p = sub.add_parser("audit", help="cp34 -- verify the audit chain (alias of verify-receipts in phase 1)")
-    p.add_argument("--verify", action="store_true", help="verify the chain (the only mode phase 1 has)")
+    p = sub.add_parser("audit", help="cp34 -- verify the signed receipt chain and the DAG, or explain one receipt")
+    p.add_argument("--verify", action="store_true", help="verify every signature, the counter, the anchor and heads/main")
+    p.add_argument("--at", default=None, help="explain the receipt with this chain hash")
     _add_json(p)
     p.set_defaults(func=cmd_audit)
+
+    p = sub.add_parser("undo", help="R7 -- revert the commit a session's receipt names")
+    p.add_argument("session_id")
+    p.add_argument("--by", required=True)
+    p.add_argument("--to", default=None, help="receipt hash to walk the chain back to; default is the newest with a commit")
+    _add_json(p)
+    p.set_defaults(func=cmd_undo)
+
+    p = sub.add_parser("rewind", help="cp33 -- move heads/main to a DAG hash and rebuild the views")
+    p.add_argument("hash")
+    p.add_argument("--by", required=True)
+    p.add_argument("--signed", action="store_true", help="sign the receipt with the trust anchor (required)")
+    _add_json(p)
+    p.set_defaults(func=cmd_rewind)
+
+    p = sub.add_parser("recover", help="cp35 -- point heads/main at the last fully committed root and rebuild")
+    p.add_argument("--by", default="recover")
+    _add_json(p)
+    p.set_defaults(func=cmd_recover)
 
     p = sub.add_parser("config", help="show or change engine configuration")
     _add_json(p)
@@ -577,10 +681,6 @@ def main(argv: list[str] | None = None) -> int:
     _add_json(p)
     p.set_defaults(func=cmd_worker)
 
-    p = sub.add_parser("install-plugin", help="install the hermes plugin (delegates to otto.cli)")
-    _add_json(p)
-    p.set_defaults(func=cmd_install_plugin)
-
     # Plug-in hook: otto and cockpit register their own subcommands here if
     # their package is present. Absence of either is not an error (cp6).
     for modname in ("sovereign.otto.cli", "sovereign.cockpit.cli", "sovereign.attach.cli"):
@@ -591,6 +691,16 @@ def main(argv: list[str] | None = None) -> int:
         register = getattr(mod, "register", None)
         if callable(register):
             register(sub)
+
+    # otto.cli registers its own `install-plugin`. This fallback exists for
+    # a checkout without otto, and it is added after the hook because
+    # argparse on Python 3.11+ raises "conflicting subparser" for a second
+    # parser of the same name -- which broke every `bin/sb` command under
+    # a 3.11+ venv while the 3.10 venv accepted the duplicate silently.
+    if "install-plugin" not in sub.choices:
+        p = sub.add_parser("install-plugin", help="install the hermes plugin (delegates to otto.cli)")
+        _add_json(p)
+        p.set_defaults(func=cmd_install_plugin)
 
     args = parser.parse_args(argv)
     return args.func(args)
