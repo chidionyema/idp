@@ -14,11 +14,12 @@ import os, plistlib, re, sys
 from pathlib import Path
 
 ROOT = Path(os.environ.get("IDP") or Path(__file__).resolve().parent.parent)
-SUBST = {"IDP": str(ROOT), "HOME": os.environ.get("HOME", "/nonexistent"),
+SUBST = {"TEMPORAL_BIN": "/opt/rendered/temporal",
+         "IDP": str(ROOT), "HOME": os.environ.get("HOME", "/nonexistent"),
          "PATH": os.environ.get("PATH", "/usr/bin")}
 
 def render(text: str) -> str:
-    return re.sub(r"\$\{(IDP|HOME|PATH)\}", lambda m: SUBST[m.group(1)], text)
+    return re.sub(r"\$\{(IDP|HOME|PATH|TEMPORAL_BIN)\}", lambda m: SUBST[m.group(1)], text)
 
 def grade(path: Path) -> str | None:
     raw = path.read_text()
@@ -33,6 +34,11 @@ def grade(path: Path) -> str | None:
             return f"missing {key}"
     if d["Label"] != path.name.removesuffix(".plist.tmpl"):
         return f"Label {d['Label']!r} does not match the file name"
+    argv0 = (d["ProgramArguments"] or [""])[0]
+    if not str(argv0).startswith("/"):
+        # launchd never searches PATH for argv[0]; a bare name exits 78 with an empty log
+        # (2026-08-25, ai.estate.temporal). Template it as ${IDP}/... or a resolved ${*_BIN}.
+        return f"ProgramArguments[0] {argv0!r} is not an absolute path"
     return None
 
 def main(argv: list[str]) -> int:
