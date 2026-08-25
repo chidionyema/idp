@@ -53,3 +53,12 @@ Feature: Every active estate repository runs the same merge-blocking gates
     Then it fails unless the job declares AbandonProcessGroup or KeepAlive
     And the same template with AbandonProcessGroup true passes
     And ai.estate.scheduler carries AbandonProcessGroup, so dagster-daemon outlives scheduler-up
+
+  Scenario: The npm audit gate is about what ships
+    Given a repository whose package-lock.json has a high advisory in a shipped dependency
+    When bin/estate-security-scan runs
+    Then it prints "FAIL  npm" and the scan fails
+    Given a repository whose only high advisories are in devDependencies
+    When bin/estate-security-scan runs
+    Then it prints "WARN  npm ... devDependencies only" and the scan does not fail on npm
+    And when the all-dependencies audit times out it prints "BLIND npm" and the scan is BLIND, never a WARN

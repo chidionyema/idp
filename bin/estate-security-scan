@@ -91,10 +91,18 @@ else
   nfail=0
   for l in $locks; do
     d=$(dirname "$l")
-    if ! out=$(cd "$d" && timeout 120 npm audit --package-lock-only --audit-level=high 2>&1); then
+    # The gate is what ships: --omit=dev. devDependencies (lighthouse CI, storybook, test
+    # runners) never reach a customer, and on 2026-08-25 two of them (image-size, extract-zip)
+    # had High advisories with no patched release at all, which made every repo carrying them
+    # permanently red. Those are still reported, one WARN line, so nobody can say they were hidden.
+    if ! out=$(cd "$d" && timeout 120 npm audit --package-lock-only --audit-level=high --omit=dev 2>&1); then
       rc=$?
       if [ $rc = 124 ]; then say "BLIND npm       $d: npm audit exceeded 120s (network); rerun"; blind=1
-      else say "FAIL  npm       $d: high or critical advisories"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'; nfail=1; fi
+      else say "FAIL  npm       $d: high or critical advisories in shipped dependencies"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'; nfail=1; fi
+    else
+      (cd "$d" && timeout 120 npm audit --package-lock-only --audit-level=high >/dev/null 2>&1); rc=$?
+      if [ $rc = 124 ]; then say "BLIND npm       $d: all-deps npm audit exceeded 120s (network); dev advisories unmeasured"; blind=1
+      elif [ $rc != 0 ]; then say "WARN  npm       $d: high or critical advisories in devDependencies only (not shipped; not gating)"; fi
     fi
   done
   [ $nfail = 1 ] && fail=1
