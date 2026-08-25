@@ -8,13 +8,14 @@ IDP="$(cd "$(dirname "$0")/.." && pwd)"
 VAULT="${ESTATE_SECRETS:-$(dirname "$IDP")/estate-secrets}"
 export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
 ENV_NAME="${OCI_ENV:-dev}"
+export SUPPRESS_LABEL_WARNING=True   # the OCI_API_KEY marker the CLI wants breaks the OpenTofu provider
 for t in oci sops; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
 vget() { sops -d --extract "[\"$1\"]" "$VAULT/secrets/$ENV_NAME/$1.yaml" 2>/dev/null; }
 [ -e "$VAULT/secrets/$ENV_NAME/OCI_FINGERPRINT.yaml" ] || { echo "BLIND oci     no API key in the vault yet; run bin/idp-oci-bootstrap"; exit 2; }
 
 D="$HOME/.oci"; mkdir -p "$D"; chmod 700 "$D"
 KEY="$D/estate-tofu.pem"; umask 077
-{ vget OCI_API_PRIVATE_KEY; echo OCI_API_KEY; } > "$KEY"; chmod 600 "$KEY"   # trailing marker: oci warns without it
+vget OCI_API_PRIVATE_KEY > "$KEY"; chmod 600 "$KEY"   # no OCI_API_KEY marker: the oci CLI suggests it, the OpenTofu provider rejects the file with it (2026-08-25)
 cat > "$D/config" <<CFG
 [DEFAULT]
 user=$(vget OCI_USER_OCID)
@@ -25,11 +26,14 @@ key_file=$KEY
 CFG
 chmod 600 "$D/config"
 COMP="$(vget OCI_COMPARTMENT_OCID)"
+# Worker SSH key: a dedicated pair, created once, private half stays on this machine only.
+SSH_PUB="${OCI_SSH_PUBKEY:-$HOME/.ssh/oke-estate.pub}"
+[ -f "$SSH_PUB" ] || ssh-keygen -q -t ed25519 -N "" -C oke-estate -f "${SSH_PUB%.pub}"
 cat > "$IDP/platform/oci/terraform.tfvars" <<TFV
 tenancy_ocid     = "$(vget OCI_TENANCY_OCID)"
 compartment_ocid = "$COMP"
 region           = "$(vget OCI_REGION)"
-ssh_public_key   = "$(cat "${OCI_SSH_PUBKEY:-$HOME/.ssh/id_ed25519.pub}" 2>/dev/null || true)"
+ssh_public_key   = "$(cat "$SSH_PUB")"
 TFV
 
 # A key uploaded seconds ago answers 401 for a few minutes (measured 2026-08-25: ~6 min

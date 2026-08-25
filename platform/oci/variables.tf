@@ -41,5 +41,5 @@ variable "worker_memory_gb" {
 
 variable "kubernetes_version" {
   type    = string
-  default = "v1.31.1"
+  default = "v1.34.10"   # from `oci ce cluster-options get --cluster-option-id all`, 2026-08-25; v1.31 is no longer offered
 }
