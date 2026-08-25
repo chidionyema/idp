@@ -1,0 +1,13 @@
+# Bot token and home channel id from the vault (one JSON secret `flux-telegram` with keys
+# token and channel), through the one ClusterSecretStore. No literal names a chat or a bot.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: flux-telegram
+  namespace: flux-system
+spec:
+  refreshInterval: 1h
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target: { name: flux-telegram, creationPolicy: Owner }
+  dataFrom:
+    - extract: { key: flux-telegram }

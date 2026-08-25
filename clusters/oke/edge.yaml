@@ -23,7 +23,7 @@ metadata:
   name: gateway-api-crds
   namespace: flux-system
 spec:
-  interval: 24h
+  interval: 10m
   sourceRef:
     kind: GitRepository
     name: gateway-api
@@ -37,7 +37,7 @@ metadata:
   name: edge
   namespace: flux-system
 spec:
-  interval: 1h
+  interval: 10m
   dependsOn:
     - name: gateway-api-crds
   sourceRef:
@@ -69,7 +69,7 @@ metadata:
   name: prospector-platform
   namespace: flux-system
 spec:
-  interval: 1h
+  interval: 10m
   dependsOn:
     - name: edge
   sourceRef:
@@ -125,7 +125,7 @@ metadata:
   name: dns
   namespace: flux-system
 spec:
-  interval: 1h
+  interval: 10m
   dependsOn:
     - name: edge
   sourceRef:
