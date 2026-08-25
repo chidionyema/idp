@@ -71,7 +71,7 @@ packs()     { local n; n=$(curl -sS -m 20 "https://$API/catalog" | python3 -c 'i
 # measured through the OCI API (same fact, other door); Flux state is not reachable from there
 # and the site and catalog rows stand in for it. Said as n/a, never as ok (crew#227 CP2).
 nodes_oci() { local o; o=$(oci ce node-pool list --compartment-id "$(awk -F'"' '/^compartment_ocid/{print $2}' terraform.tfvars)" --query 'data[].{n:name,s:"lifecycle-state"}' --output json) || return 1
-  python3 -c 'import sys,json;d=json.load(sys.stdin);bad=[p["n"] for p in d if p["s"]!="ACTIVE"];print(f"{len(d)} node pool(s) ACTIVE (OCI API)" if d and not bad else f"node pools not ACTIVE: {bad or \"none found\"}");sys.exit(1 if not d or bad else 0)' <<<"$o"; }
+  jq -er 'if length==0 then "no node pools" | halt_error(1) else (map(select(.s!="ACTIVE")) as $bad | if ($bad|length)>0 then "node pools not ACTIVE: \($bad|map(.n)|join(" "))" | halt_error(1) else "\(length) node pool(s) ACTIVE (OCI API)" end) end' <<<"$o"; }
 if [ -f "$KUBECONFIG" ]; then
   step nodes nodes_ready
   step flux flux_ready
