@@ -14,5 +14,19 @@ images:
   - name: idp/backstage
     newName: ghcr.io/chidionyema/idp/backstage
     newTag: main
+  # OKE's CRI-O enforces fully qualified names: `postgres:17.6-alpine` failed with
+  # "short name mode is enforcing" on 2026-08-25. k3d resolves either form.
+  - name: postgres
+    newName: docker.io/library/postgres
+patches:
+  # ghcr packages under this account are private (anonymous manifest GET: 403, 2026-08-25).
+  # idp-flux-bootstrap writes ghcr-pull in every namespace that pulls; catalog.yaml uses it too.
+  - target:
+      kind: Deployment
+      name: catalogue
+    patch: |
+      - op: add
+        path: /spec/template/spec/imagePullSecrets
+        value: [{name: ghcr-pull}]
 generatorOptions:
   disableNameSuffixHash: true
