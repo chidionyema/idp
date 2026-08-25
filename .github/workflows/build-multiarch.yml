@@ -63,10 +63,12 @@ jobs:
         run: |
           n='${{ matrix.dockerfile.name }}'
           arch=${{ matrix.platform }}; arch=${arch#linux/}
-          echo "context=${{ matrix.dockerfile.context }}" >> "$GITHUB_OUTPUT"
-          echo "image=${{ env.REGISTRY }}/${{ github.repository_owner }}/$n" >> "$GITHUB_OUTPUT"
-          echo "arch=$arch" >> "$GITHUB_OUTPUT"
-          echo "slug=$(echo "$n" | tr -c 'a-z0-9\n' '-')" >> "$GITHUB_OUTPUT"
+          {
+            echo "context=${{ matrix.dockerfile.context }}"
+            echo "image=${{ env.REGISTRY }}/${{ github.repository_owner }}/$n"
+            echo "arch=$arch"
+            echo "slug=$(echo "$n" | tr -c 'a-z0-9\n' '-')"
+          } >> "$GITHUB_OUTPUT"
       - id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
@@ -157,8 +159,20 @@ jobs:
         run: |
           cd /tmp/digests
           image=$(cat IMAGE)
-          digests=$(ls | grep -E '^[0-9a-f]{64}$' | sed "s|^|$image@sha256:|" | tr '\n' ' ')
-          n=$(echo "$digests" | wc -w); [ "$n" -eq 2 ] || { echo "R24: expected 2 per-arch digests, found $n"; exit 1; }
+          # A glob and a case guard rather than `ls | grep`. The build job writes
+          # one empty file per architecture named for its digest, so the filter
+          # is "64 hex characters"; parsing ls to get there breaks on any name
+          # that is not one (shellcheck SC2010).
+          digests=""
+          for f in *; do
+            case "$f" in *[!0-9a-f]*) continue ;; esac
+            [ "${#f}" -eq 64 ] || continue
+            digests="$digests $image@sha256:$f"
+          done
+          n=$(echo "$digests" | wc -w)
+          [ "$n" -eq 2 ] || { echo "R24: expected 2 per-arch digests, found $n"; exit 1; }
+          # shellcheck disable=SC2086
+          # $digests is a list of image references and must word-split here.
           docker buildx imagetools create -t "$image:${{ github.sha }}" $digests
           docker buildx imagetools inspect "$image:${{ github.sha }}" | grep -E 'Platform:' | sort -u
           echo "image=$image" >> "$GITHUB_OUTPUT"
@@ -180,8 +194,26 @@ jobs:
           digest=$(docker buildx imagetools inspect "$image:${{ github.sha }}" --format '{{.Manifest.Digest}}')
           cosign sign --yes "$image@$digest"
           echo "signed $image@$digest"
+
+          # VERIFY IT HERE, IN THIS RUN.
+          #
+          # `cosign sign` exiting 0 says a signature was uploaded. It does not
+          # say the signature verifies, that the certificate carries the identity
+          # we expect, or that Rekor accepted the entry -- and a signature nobody
+          # checks is a claim, not a proof. This step is what turns it into one,
+          # and it fails the job if it does not hold.
+          #
+          # The identity regexp is anchored to this repository, and that anchor
+          # is the whole check. Without it `cosign verify` accepts any identity
+          # in the public Fulcio root -- which is every GitHub repository there
+          # is, so it would pass on an image signed by a stranger.
+          cosign verify "$image@$digest" \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            > /tmp/cosign-verify.json
+          echo "verified $image@$digest"
           echo
-          echo "verify with:"
+          echo "anyone can repeat that with:"
           echo "  cosign verify $image@$digest \\"
           echo "    --certificate-identity-regexp '^https://github.com/${{ github.repository }}/' \\"
           echo "    --certificate-oidc-issuer https://token.actions.githubusercontent.com" 
