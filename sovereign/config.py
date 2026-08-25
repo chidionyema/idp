@@ -162,6 +162,8 @@ KEYS: dict[str, KeySpec] = {
     "undo.git_timeout_s": KeySpec(30, "int", "SB_UNDO_GIT_TIMEOUT_S", "R7: timeout on one git subprocess call made by undo/rewind"),
     "undo.parent_suffix": KeySpec("^", "str", None, "R7: git revision suffix naming a commit's first parent"),
     "recover.start_services": KeySpec(True, "bool", "SB_RECOVER_START_SERVICES", "cp35: whether `sb recover` also brings the worker and Temporal back up"),
+    "views.dir": KeySpec(str(_estate_home() / "sovereign" / "views"), "path", "SB_VIEWS_DIR", "cp33/cp35: dir holding the projection views rebuilt from the DAG by rewind and recover"),
+    "views.main_filename": KeySpec("main.json", "str", None, "cp33/cp35: the projection view of heads/main, materialized state plus the root it came from"),
 
     "dualread.max_overhead_ms": KeySpec(15, "int", "SB_DUALREAD_MAX_OVERHEAD_MS", "cp10: p95 budget for the dual-read router's added cost (DAG walk + receipt) over the legacy-only read, measured over 1000 reads"),
     "dualread.latency_round_ndigits": KeySpec(4, "int", None, "cp10: decimal places dual-read latencies are rounded to before entering a receipt"),
@@ -297,6 +299,47 @@ try:
     _merge_external_keys(SHADOW_KEYS)
 except ImportError:
     pass
+
+try:
+    from sovereign.intake.config_keys import INTAKE_KEYS
+
+    _merge_external_keys(INTAKE_KEYS)
+except ImportError:
+    pass
+
+
+# ---------------------------------------------------------------------------
+# crew#219 R38/R40: the living policy. AGENTS.md at the repository root is the
+# one place the per-day budgets, the cost contract, the routing table and the
+# merge criteria are written; sovereign/policy.py parses its toml block and
+# the keys below are built from it, so the doc cannot drift from the code.
+# A missing or unparseable block raises here, on import, rather than
+# defaulting: config with no policy behind it is the thing R38 exists to end.
+# ---------------------------------------------------------------------------
+
+from sovereign.policy import load as _load_policy  # noqa: E402
+
+POLICY = _load_policy()
+
+
+def _env_name(prefix: str, name: str) -> str:
+    return prefix + name.upper().replace(".", "_").replace("-", "_")
+
+
+for _name, _usd in POLICY.budget_usd_per_day.items():
+    KEYS[f"budget.usd_per_day.{_name}"] = KeySpec(
+        float(_usd), "float", _env_name("SB_BUDGET_USD_PER_DAY_", _name),
+        f"R40: default USD per day {_name} may spend; the sum over cost.days_per_month sits inside the cost contract (AGENTS.md)")
+KEYS["cost.contract_min_usd_month"] = KeySpec(float(POLICY.cost["contract_min_usd_month"]), "float", "SB_COST_CONTRACT_MIN_USD_MONTH", "R40: spec section 8 floor of direct monthly cost (AGENTS.md)")
+KEYS["cost.contract_max_usd_month"] = KeySpec(float(POLICY.cost["contract_max_usd_month"]), "float", "SB_COST_CONTRACT_MAX_USD_MONTH", "R40: spec section 8 ceiling of direct monthly cost (AGENTS.md)")
+KEYS["cost.days_per_month"] = KeySpec(int(POLICY.cost["days_per_month"]), "int", "SB_COST_DAYS_PER_MONTH", "R40: days the per-day budgets are summed over (AGENTS.md)")
+for _purpose, _alias in POLICY.routing.items():
+    KEYS[f"routing.{_purpose}"] = KeySpec(
+        list(_alias) if isinstance(_alias, list) else str(_alias), "list" if isinstance(_alias, list) else "str",
+        _env_name("SB_ROUTING_", _purpose), f"R38: LiteLLM alias(es) used for {_purpose} (AGENTS.md routing table)")
+KEYS["merge.strict_branches"] = KeySpec(list(POLICY.merge["strict_branches"]), "list", "SB_MERGE_STRICT_BRANCHES", "R41: branches whose PRs fail on any pending feature (AGENTS.md)")
+KEYS["merge.require_bdd_green"] = KeySpec(bool(POLICY.merge["require_bdd_green"]), "bool", "SB_MERGE_REQUIRE_BDD_GREEN", "R41: a PR needs sovereign/tests/bdd green (AGENTS.md)")
+KEYS["merge.pending_owner_required_on"] = KeySpec(list(POLICY.merge["pending_owner_required_on"]), "list", "SB_MERGE_PENDING_OWNER_REQUIRED_ON", "R39: branches where a pending mark must name a real owner (AGENTS.md)")
 
 
 _SECRET_LAST_SEGMENTS = ("token", "secret", "password", "api_key")
@@ -480,6 +523,8 @@ RECEIPTS_COUNTER: Path = Path(_R["receipts.head_dir"].value) / _R["receipts.coun
 UNDO_GIT_TIMEOUT_S: int = _R["undo.git_timeout_s"].value
 UNDO_PARENT_SUFFIX: str = _R["undo.parent_suffix"].value
 RECOVER_START_SERVICES: bool = _R["recover.start_services"].value
+VIEWS_DIR: Path = Path(_R["views.dir"].value)
+VIEWS_MAIN_FILENAME: str = _R["views.main_filename"].value
 DUALREAD_MAX_OVERHEAD_MS: int = _R["dualread.max_overhead_ms"].value
 DUALREAD_LATENCY_ROUND_NDIGITS: int = _R["dualread.latency_round_ndigits"].value
 MS_PER_SECOND: int = _R["time.ms_per_second"].value
