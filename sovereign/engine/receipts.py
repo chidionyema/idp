@@ -45,6 +45,15 @@ from sovereign import config
 from sovereign.trust import HardwareTrustAnchor
 
 GENESIS_HASH = "0" * config.RECEIPTS_HASH_HEX_LEN
+
+# Fields a line's own hash does not cover. hash and sig are derived from
+# the body; hw_sig and hw_backend (a `signed` record, cp20) are a hardware
+# signature OVER that hash and so can only be added after it exists.
+# append() and verify() both exclude exactly this tuple -- before it was
+# one tuple, verify() excluded only (hash, sig), recomputed the hash over a
+# body that now also held hw_sig, and reported every signed line as
+# "broken" (found by cp33/cp34's first run, 2026-08-25).
+UNHASHED_FIELDS: tuple[str, ...] = ("hash", "sig", "hw_sig", "hw_backend")
 _canonical = config.canonical_json
 
 
@@ -230,7 +239,7 @@ def append(record: dict[str, Any]) -> dict[str, Any]:
             line["counter"] = counter
             line["prev_hash"] = prev_hash
             line["backend"] = backend
-            body = {k: v for k, v in line.items() if k not in ("hash", "sig")}
+            body = {k: v for k, v in line.items() if k not in UNHASHED_FIELDS}
             line_hash = hashlib.sha256(_canonical(body)).hexdigest()
             line["hash"] = line_hash
             if record.get("signed"):
@@ -310,7 +319,7 @@ def verify(path: Path | None = None) -> dict[str, Any]:
             return {"ok": False, "count": len(rows), "first_broken_counter": expected_counter, "reason": "broken"}
         if row.get("prev_hash") != expected_prev:
             return {"ok": False, "count": len(rows), "first_broken_counter": counter, "reason": "broken"}
-        body = {k: v for k, v in row.items() if k not in ("hash", "sig")}
+        body = {k: v for k, v in row.items() if k not in UNHASHED_FIELDS}
         recomputed = hashlib.sha256(_canonical(body)).hexdigest()
         if recomputed != row.get("hash"):
             return {"ok": False, "count": len(rows), "first_broken_counter": counter, "reason": "broken"}
