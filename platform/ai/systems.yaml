@@ -36,7 +36,7 @@ systems:
         personal_data: none
         retention: not stored
       - name: mumchimp-store
-        url: https://api.mumchimp.com
+        url: https://api.${ESTATE_ZONE}
         provenance: own product database
         lawful_basis: contract (UK GDPR Art. 6(1)(b))
         personal_data: customer orders and contact details

@@ -135,3 +135,7 @@ spec:
   prune: true
   wait: true
   timeout: 5m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
