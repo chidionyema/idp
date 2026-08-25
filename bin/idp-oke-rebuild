@@ -4,7 +4,7 @@
 #
 # One script, three modes, every step idempotent, every step a receipt line "ok|FAIL|BLIND name rc
 # seconds". Exit 0 only when the platform answers: nodes Ready, every Flux Kustomization ready,
-# https://<host>/ 200 with a valid certificate, /catalog holds $WANT_PACKS packs.
+# https://<host>/ 200 with a valid certificate, /catalog holds the pack count in platform/oci/clusters/<name>.env.
 #
 #   --check              zero-downtime drill (daily): no drift in tofu, cluster serving. Default.
 #   --apply              one-shot bring-up or converge: login, tofu apply, flux bootstrap, verify.
@@ -21,7 +21,12 @@ IDP="$(cd "$(dirname "$0")/.." && pwd)"
 TF="$IDP/platform/oci"
 MODE="${1:---check}"
 export OCI_CLUSTER_NAME="${OCI_CLUSTER_NAME:-estate}"
-HOST="${OKE_HOST:-mumchimp.com}"; API="${OKE_API_HOST:-api.mumchimp.com}"; WANT_PACKS="${WANT_PACKS:-77}"
+# LAW 46: no product hostname or pack count in this script. Each cluster's expectations live in
+# platform/oci/clusters/<name>.env; env vars override; nothing known means the row is BLIND, never a
+# measurement of production while a drill cluster serves nothing (review idp#96, 2026-08-25).
+CL="$TF/clusters/$OCI_CLUSTER_NAME.env"
+if [ -f "$CL" ]; then while IFS='=' read -r k v; do case "$k" in ''|'#'*) ;; *) [ -n "${!k:-}" ] || export "$k=$v";; esac; done <"$CL"; fi
+HOST="${OKE_HOST:-}"; API="${OKE_API_HOST:-}"; WANT_PACKS="${WANT_PACKS:-}"
 export KUBECONFIG="$HOME/.kube/oke-$OCI_CLUSTER_NAME"
 K="kubectl --request-timeout=90s"   # 20s was blown by a loaded laptop (2026-08-25) and reported the cluster down
 T0=$(date +%s); FAILED=""
@@ -79,8 +84,8 @@ else
   step nodes nodes_oci
   printf 'n/a   %-18s %s\n' flux "no kube path from this host (outside control_plane_allowed_cidrs); site and catalog rows stand in"
 fi
-step site site_200
-step catalog packs
+if [ -n "$HOST" ] && [ -n "$API" ] && [ -n "$WANT_PACKS" ]; then step site site_200; step catalog packs
+else blind site "no OKE_HOST/OKE_API_HOST/WANT_PACKS for cluster $OCI_CLUSTER_NAME: add $TF/clusters/$OCI_CLUSTER_NAME.env"; blind catalog "same"; fi
 
 echo "---"
 if [ -z "$FAILED" ]; then echo "PASS  $MODE cluster=$OCI_CLUSTER_NAME $(( $(date +%s) - T0 ))s"; exit 0; fi
