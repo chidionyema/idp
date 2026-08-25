@@ -39,3 +39,10 @@ def test_every_platform_external_secret_uses_oci_vault() -> None:
         d = yaml.safe_load(f.read_text())
         assert d["kind"] == "ExternalSecret", f
         assert d["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": "oci-vault"}, f
+
+def test_no_flux_kustomization_decrypts_with_sops() -> None:
+    # crew#227 CP3: with no sops files left, a decryption block is a dangling key reference.
+    for f in ROOT.glob("clusters/oke/*.yaml"):
+        for d in yaml.safe_load_all(f.read_text()):
+            if d and d.get("kind") == "Kustomization":
+                assert "decryption" not in d["spec"], f
