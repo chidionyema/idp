@@ -30,9 +30,17 @@ TENANCY_NAME="${OCI_TENANCY_NAME:-$(vget OCI_TENANCY_NAME || true)}"
 [ -n "$TENANCY_NAME" ] || { echo "need OCI_TENANCY_NAME (vault or env): the console tenancy name"; exit 2; }
 
 PROFILE=estate-bootstrap
-echo "login   browser opens once; sign in as the tenancy owner (token lives 1 hour)"
-oci session authenticate --region "$REGION" --tenancy-name "$TENANCY_NAME" --profile-name "$PROFILE" >/dev/null
 O=(--auth security_token --profile "$PROFILE" --region "$REGION")
+if oci iam region-subscription list "${O[@]}" >/dev/null 2>&1; then echo "login   session token still valid, no browser needed"
+else
+  echo "login   browser opens once; sign in as the tenancy owner (token lives 1 hour)"
+  oci session authenticate --region "$REGION" --tenancy-name "$TENANCY_NAME" --profile-name "$PROFILE" >/dev/null
+fi
+# IDCS-backed tenancies refuse a user without a primary email (incident 2026-08-25:
+# error.identity.user.primaryEmailNotSpecified). The address is an identifier; Oracle mails it a
+# welcome message, nothing else depends on it.
+SVC_EMAIL="${OCI_SERVICE_USER_EMAIL:-$(vget OCI_SERVICE_USER_EMAIL || true)}"
+[ -n "$SVC_EMAIL" ] || { echo "need OCI_SERVICE_USER_EMAIL (vault or env): mailbox for the estate-tofu service user"; exit 2; }
 
 # --- IAM, idempotent ------------------------------------------------------------------
 ensure() { # kind name -> ocid   (compartment|group|user)
@@ -43,19 +51,27 @@ ensure() { # kind name -> ocid   (compartment|group|user)
     group) id=$(oci iam group list "${O[@]}" --compartment-id "$TENANCY" --name "$name" --query 'data[0].id' --raw-output 2>/dev/null || true)
       [ -n "$id" ] && [ "$id" != null ] || id=$(oci iam group create "${O[@]}" --compartment-id "$TENANCY" --name "$name" --description "may manage the estate compartment only" --query data.id --raw-output);;
     user) id=$(oci iam user list "${O[@]}" --compartment-id "$TENANCY" --name "$name" --query 'data[0].id' --raw-output 2>/dev/null || true)
-      [ -n "$id" ] && [ "$id" != null ] || id=$(oci iam user create "${O[@]}" --compartment-id "$TENANCY" --name "$name" --description "OpenTofu service user; API key only, no console" --query data.id --raw-output);;
-  esac; echo "$id"
+      [ -n "$id" ] && [ "$id" != null ] || id=$(oci iam user create "${O[@]}" --compartment-id "$TENANCY" --name "$name" --email "$SVC_EMAIL" --description "OpenTofu service user; API key only, no console" --query data.id --raw-output);;
+  esac
+  [ -n "$id" ] && [ "$id" != null ] || { echo "FAIL    $kind $name: no OCID returned" >&2; return 1; }
+  echo "$id"
 }
 COMP=$(ensure compartment estate);   echo "iam     compartment estate"
 GROUP=$(ensure group estate-operators); echo "iam     group estate-operators"
 USER_ID=$(ensure user estate-tofu);   echo "iam     user estate-tofu"
 oci iam group add-user "${O[@]}" --group-id "$GROUP" --user-id "$USER_ID" >/dev/null 2>&1 || true
 POLICY_NAME=estate-operators-manage-estate
-if [ "$(oci iam policy list "${O[@]}" --compartment-id "$TENANCY" --name "$POLICY_NAME" --query 'length(data)' --raw-output 2>/dev/null || echo 0)" = 0 ]; then
-  oci iam policy create "${O[@]}" --compartment-id "$TENANCY" --name "$POLICY_NAME" \
-    --description "least privilege for platform/oci (ADR 0004)" \
-    --statements "[\"Allow group estate-operators to manage cluster-family in compartment estate\",\"Allow group estate-operators to manage virtual-network-family in compartment estate\",\"Allow group estate-operators to manage instance-family in compartment estate\",\"Allow group estate-operators to read all-resources in tenancy\",\"Allow group estate-operators to use tag-namespaces in tenancy\"]" >/dev/null
-fi; echo "iam     policy $POLICY_NAME"
+# Statements are reconciled, not only created: a re-run after a statement is added here updates
+# the live policy (2026-08-25: `read all-resources` does not cover the limits service; capacity
+# checks need `inspect limits`).
+STATEMENTS='["Allow group estate-operators to manage cluster-family in compartment estate","Allow group estate-operators to use cluster-node-pools in compartment estate","Allow group estate-operators to manage virtual-network-family in compartment estate","Allow group estate-operators to manage instance-family in compartment estate","Allow group estate-operators to manage volume-family in compartment estate","Allow group estate-operators to use subnets in compartment estate","Allow group estate-operators to use vnics in compartment estate","Allow group estate-operators to use network-security-groups in compartment estate","Allow group estate-operators to use private-ips in compartment estate","Allow group estate-operators to manage public-ips in compartment estate","Allow group estate-operators to inspect compartments in tenancy","Allow group estate-operators to read all-resources in tenancy","Allow group estate-operators to inspect limits in tenancy","Allow group estate-operators to use tag-namespaces in tenancy"]'   # docs.oracle.com ContEng contengpolicyconfig, 2026-08-25
+PID=$(oci iam policy list "${O[@]}" --compartment-id "$TENANCY" --name "$POLICY_NAME" --query 'data[0].id' --raw-output 2>/dev/null || true)
+if [ -z "$PID" ] || [ "$PID" = null ]; then
+  oci iam policy create "${O[@]}" --compartment-id "$TENANCY" --name "$POLICY_NAME" --description "least privilege for platform/oci (ADR 0004)" --statements "$STATEMENTS" >/dev/null
+elif [ "$(oci iam policy get "${O[@]}" --policy-id "$PID" --query 'data.statements' 2>/dev/null | jq -c .)" != "$(printf %s "$STATEMENTS" | jq -c .)" ]; then
+  oci iam policy update "${O[@]}" --policy-id "$PID" --statements "$STATEMENTS" --force >/dev/null; echo "iam     policy statements updated"
+fi
+echo "iam     policy $POLICY_NAME"
 
 # --- key pair: generated here, public half registered, private half vaulted -----------
 if [ -e "$VAULT/secrets/$ENV_NAME/OCI_FINGERPRINT.yaml" ] && [ "${1:-}" != --rotate ]; then
