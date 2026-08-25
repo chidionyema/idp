@@ -26,7 +26,7 @@ export KUBECONFIG="$HOME/.kube/oke-$OCI_CLUSTER_NAME"
 K="kubectl --request-timeout=90s"   # 20s was blown by a loaded laptop (2026-08-25) and reported the cluster down
 T0=$(date +%s); FAILED=""
 step() { # name, then the command; prints one receipt line, records failures, never exits early on FAIL
-  local name="$1"; shift; local s=$(date +%s); local out rc
+  local name="$1"; shift; local s out rc; s=$(date +%s)
   out=$("$@" 2>&1); rc=$?
   printf '%-5s %-18s rc=%-3s %4ss  %s\n' "$([ $rc -eq 0 ] && echo ok || echo FAIL)" "$name" "$rc" "$(( $(date +%s) - s ))" "$(printf %s "$out" | tail -1 | cut -c1-100)"
   [ $rc -eq 0 ] || FAILED="$FAILED $name"
@@ -39,7 +39,7 @@ for t in oci tofu flux kubectl curl python3; do command -v "$t" >/dev/null || { 
 step login "$IDP/bin/idp-oci-login" || { echo "exit 2: no OCI identity"; exit 2; }
 
 # --- state backend: remote when the bucket exists, else local and said so ---------------------
-cd "$TF"
+cd "$TF" || { echo "FAIL  cd $TF"; exit 2; }
 if [ -f backend_override.tf ]; then
   step state-remote tofu init -input=false -no-color -migrate-state -force-copy
 else
