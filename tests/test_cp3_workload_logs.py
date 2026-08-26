@@ -166,5 +166,12 @@ with tempfile.TemporaryDirectory() as td:
     check("cp3-unknown-app-degrades", unknown["found"] is False
           and unknown["error"] is not None and unknown["lines"] == [], f"got {unknown}")
 
-print("PASS  cp3-workload-logs" if not fail else "FAIL  cp3-workload-logs")
-sys.exit(1 if fail else 0)
+
+def test_cp3_workload_logs():
+    """pytest entry: the checks above ran at import; this is their verdict (crew#325 step 2)."""
+    assert not fail, "cp3-workload-logs: a check above printed FAIL"
+
+
+if __name__ == "__main__":
+    print("PASS  cp3-workload-logs" if not fail else "FAIL  cp3-workload-logs")
+    sys.exit(1 if fail else 0)

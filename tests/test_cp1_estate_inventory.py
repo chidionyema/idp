@@ -136,5 +136,12 @@ with tempfile.TemporaryDirectory() as td:
           and len(missing_payload["entities"]) == 3,
           f"got error={missing_payload['snapshot_error']!r}")
 
-print("PASS  cp1-estate-inventory" if not fail else "FAIL  cp1-estate-inventory")
-sys.exit(1 if fail else 0)
+
+def test_cp1_estate_inventory():
+    """pytest entry: the checks above ran at import; this is their verdict (crew#325 step 2)."""
+    assert not fail, "cp1-estate-inventory: a check above printed FAIL"
+
+
+if __name__ == "__main__":
+    print("PASS  cp1-estate-inventory" if not fail else "FAIL  cp1-estate-inventory")
+    sys.exit(1 if fail else 0)

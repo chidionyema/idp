@@ -190,5 +190,12 @@ with tempfile.TemporaryDirectory() as td:
           f"got {unknown}")
     check("cp2-known-app-not-degraded", found["found"] is True and found["catalog_error"] is None)
 
-print("PASS  cp2-workload-state" if not fail else "FAIL  cp2-workload-state")
-sys.exit(1 if fail else 0)
+
+def test_cp2_workload_state():
+    """pytest entry: the checks above ran at import; this is their verdict (crew#325 step 2)."""
+    assert not fail, "cp2-workload-state: a check above printed FAIL"
+
+
+if __name__ == "__main__":
+    print("PASS  cp2-workload-state" if not fail else "FAIL  cp2-workload-state")
+    sys.exit(1 if fail else 0)
