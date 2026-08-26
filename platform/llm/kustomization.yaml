@@ -4,6 +4,7 @@ namespace: llm
 resources:
   - namespace.yaml
   - external-secret.yaml
+  - postgres.yaml
   - litellm.yaml
   - httproute.yaml
 configMapGenerator:
