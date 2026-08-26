@@ -13,7 +13,7 @@ spec:
   forwardAuth:
     address: http://oauth2-proxy.identity.svc.cluster.local/
     trustForwardHeader: true
-    authResponseHeaders: [X-Auth-Request-User, X-Auth-Request-Email]
+    authResponseHeaders: [X-Auth-Request-User, X-Auth-Request-Email, X-Auth-Request-Preferred-Username]
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

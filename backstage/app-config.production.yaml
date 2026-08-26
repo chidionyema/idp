@@ -30,7 +30,9 @@ backend:
 
 auth:
   providers:
-    guest: {}
+    # The estate front door (oauth2-proxy behind Traefik) signs people in; see
+    # packages/backend/src/auth. No guest provider: nobody enters without the domain.
+    oauth2Proxy: {}
 
 catalog:
   # Overrides the default list locations from app-config.yaml as these contain example data.

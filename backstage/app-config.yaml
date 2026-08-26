@@ -164,8 +164,9 @@ techdocs:
 auth:
   # see https://backstage.io/docs/auth/ to learn about auth providers
   providers:
-    # See https://backstage.io/docs/auth/guest/provider
-    guest: {}
+    # Local dev only: the proxied provider needs the front door's headers, so run
+    # behind it or set them by hand. Production config is app-config.production.yaml.
+    oauth2Proxy: {}
   # see https://backstage.io/docs/ai/mcp-actions#client-id-metadata-documents
   # to learn more about client id metadata documents
   clientIdMetadataDocuments:

@@ -40,6 +40,7 @@ The word after `FAIL    login-drill` is the stage, and the stage is the layer to
   the account out of Terraform's hands. Re-apply, or clear the must-change flag on the user.
 - `session` — sign-in worked but the browser did not come back to the catalogue host.
 - `catalogue` — the session is good and Backstage is not rendering. That is a Backstage problem.
+- `identity` — the catalogue rendered but Backstage did not take the door's identity: it showed a guest sign-in page, or its `oauth2Proxy` provider did not return a `user:` ref. Look at the ForwardAuth middleware headers and `packages/backend/src/auth`.
 
 ## What it never does
 
