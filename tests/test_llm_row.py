@@ -41,7 +41,7 @@ def test_vision_alias_names_a_capability() -> None:
 
 def test_image_version_matches_laptop_compose() -> None:
     laptop = re.search(r"image:\s*ghcr\.io/berriai/litellm-database:(\S+)", (ROOT / "llm" / "litellm.yml").read_text())
-    cluster = re.search(r"image:\s*ghcr\.io/berriai/litellm:(\S+)", (CLUSTER / "litellm.yaml").read_text())
+    cluster = re.search(r"image:\s*ghcr\.io/berriai/litellm-database:(\S+)", (CLUSTER / "litellm.yaml").read_text())
     assert laptop and cluster and laptop.group(1) == cluster.group(1)
 
 
