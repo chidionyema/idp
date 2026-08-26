@@ -44,6 +44,14 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
     ns = route["metadata"]["namespace"]
     if ns == "identity":
         return
+    # A machine API (the model router, crew#284, idp#225) cannot sit behind a browser login. It may
+    # skip oauth2-proxy only when the route says so AND its own config proves the key is enforced;
+    # the same two-part proof the BDD gate (sovereign/tests/bdd/test_gate_front_door_login.py) takes.
+    if (route["metadata"].get("annotations") or {}).get("idp.estate/auth") == "bearer-master-key":
+        cfg = pathlib.Path(f).parent / "config.yaml"
+        assert cfg.exists() and "master_key: os.environ/" in cfg.read_text(), \
+            f"{f}: annotated bearer-master-key but {cfg} enforces no master_key"
+        return
     guarded = 0
     for rule in route["spec"]["rules"]:
         refs = [flt["extensionRef"] for flt in rule.get("filters", []) if flt.get("type") == "ExtensionRef"]

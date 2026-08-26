@@ -91,3 +91,7 @@ jobs:
         run: |
           echo "base_ref=${{ github.base_ref }} SB_BDD_STRICT=$SB_BDD_STRICT"
           cd sovereign && python -m pytest tests/bdd -q -p no:cacheprovider
+      - name: ruff (crew#325 step 3; the rule set is pyproject.toml)
+        run: pip install -q ruff==0.15.18 && ruff check .
+      - name: pytest tests (crew#325 step 2, every file under tests/ in one run)
+        run: python -m pytest tests -q -p no:cacheprovider

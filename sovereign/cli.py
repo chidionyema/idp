@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from sovereign import config
 from sovereign.engine import client as engine_client
@@ -707,6 +708,12 @@ def main(argv: list[str] | None = None) -> int:
     # argparse on Python 3.11+ raises "conflicting subparser" for a second
     # parser of the same name -- which broke every `bin/sb` command under
     # a 3.11+ venv while the 3.10 venv accepted the duplicate silently.
+    def cmd_install_plugin(args: argparse.Namespace) -> int:
+        # otto is not importable in this checkout, so there is nothing to delegate to. Say so;
+        # a NameError here (crew#325, ruff F821) used to be the only message.
+        _emit({"ok": False, "error": "install-plugin needs sovereign.otto, which this checkout does not import"}, args.json)
+        return 2
+
     if "install-plugin" not in sub.choices:
         p = sub.add_parser("install-plugin", help="install the hermes plugin (delegates to otto.cli)")
         _add_json(p)

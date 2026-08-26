@@ -1,0 +1,15 @@
+# Lint and type configuration for every Python file in idp (crew#325 step 3).
+# ci.yml runs `ruff check .`; the selected set is the one that finds real defects
+# (syntax errors, undefined names, misused comparisons). Widening it to ruff's default
+# set is a separate change: measured 2026-08-26 it adds 91 findings, 44 of them E702.
+[tool.ruff]
+target-version = "py312"
+extend-exclude = ["backstage", "node_modules", ".venv", ".claude"]
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.pyright]
+include = ["tests"]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"

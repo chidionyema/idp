@@ -56,7 +56,10 @@ def _run_sb(*args: str) -> tuple[bool, object]:
     out = proc.stdout.strip()
     if proc.returncode != 0:
         err_max = ck.get("otto.plugin_error_max_chars")
-        return False, (proc.stderr.strip() or out or f"sb exited {proc.returncode}")[:err_max]
+        # The tail, not the head: a Python traceback puts the exception on its last line, and
+        # the first 500 chars of one are the import chain (crew#313: the photo refusal read
+        # "Traceback (most recent call last): File ..." and never said the router was down).
+        return False, (proc.stderr.strip() or out or f"sb exited {proc.returncode}")[-err_max:]
     try:
         return True, json.loads(out)
     except (json.JSONDecodeError, ValueError):

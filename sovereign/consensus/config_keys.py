@@ -17,9 +17,9 @@ from typing import Any
 
 CONSENSUS_KEYS: dict[str, tuple[Any, type, str, str]] = {
     "consensus.cheap_model": (
-        "ollama", str, "SB_CONSENSUS_CHEAP_MODEL",
-        "Single model used for a non-destructive op: the last entry of every fallback "
-        "chain in llm/config.yaml, and the only local (zero marginal cost) one"),
+        "deepseek", str, "SB_CONSENSUS_CHEAP_MODEL",
+        "Single model used for a non-destructive op: the cheapest entry the estate router "
+        "serves (idp platform/llm/config.yaml; the local ollama lane is laptop-only, crew#313)"),
     "consensus.request_timeout_s": (
         30, float, "SB_CONSENSUS_REQUEST_TIMEOUT_S",
         "Per-model HTTP timeout for one vote through the LiteLLM proxy"),
