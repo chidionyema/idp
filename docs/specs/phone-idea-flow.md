@@ -28,7 +28,7 @@ restated against the real component:
 
 | MiniMax said | This estate actually has |
 |---|---|
-| Aider drives the laptop sessions | Claude Code sessions, launched from the crew CLI or by hand |
+| Aider drives the laptop sessions | Coding sessions in any runtime (Claude Code, Codex, Gemini, OpenCode), launched by the hermes-v2 gateway over ACP or by hand |
 | "Foreman" dispatches queued work | `maestro` at `~/dev/code/maestro` — see "Measured state" below for what it actually does today |
 | Plane.so holds the board | GitHub issues/PRs in `chidionyema/crew` (STANDARDS row 27; Kanboard retired 2026-08-26, crew#282), per the standing founder ruling that nothing generated may live only in vendor tooling |
 
@@ -95,13 +95,29 @@ this flow, because that would be a second board next to the crew repo, which is
 exactly the stitching the headline forbids. Any board-write hermes-v2 performs
 for this flow targets `idp/board`.
 
+## Glossary — words that were read as one vendor's product
+
+Founder ruling, 2026-08-26 (crew#182, crew#273): "the spec is model agnostic, as per our
+principles." LAW 34. These words mean the same thing in every checkpoint below.
+
+- **session**: one git worktree on one branch with one running agent runtime. The runtime is
+  any of Claude Code, Codex, Gemini, OpenCode or a later one; the spec never means "Claude Code
+  session". A checkpoint that can only pass on one runtime is failed.
+- **transport**: the channel the founder types into. Today Telegram; the flow's logic reads
+  and writes through the transport adapter (CP5a), never through one vendor's message shape.
+- **confirmation prompt**: a message with three named choices (To Do / Icebox / Drop) that the
+  transport adapter renders. On Telegram that is inline buttons; on another transport it is
+  whatever that transport offers. The choice names are the contract, the widget is not.
+- **front door**: the hermes-v2 gateway. No vendor's own remote channel (Anthropic Remote
+  Control, a vendor's mobile app) is a step, a fallback or a requirement of this flow.
+
 ## Checkpoints
 
 ### CP1 — R1 continuity: the active laptop session is never touched
 
 The founder's rule: leaving the laptop mid-session must not interrupt it.
 
-**Requirement:** an active Claude Code session on the laptop keeps running
+**Requirement:** an active laptop session (any runtime, see Glossary) keeps running
 after he leaves. When the work finishes, it commits on its own branch, opens
 a PR, and stops. The board card tracking that work reflects the PR. No
 message or file originating from the phone flow is ever injected into that
@@ -156,13 +172,25 @@ on the board. That's a simple solve."
 
 **Requirement:** hermes-v2 never creates or moves a board card on its own
 initiative. It shows the draft (feature file or RFC) in the Telegram chat and
-asks for a destination with one-tap inline buttons: To Do / Icebox / Drop.
+asks for a destination with a confirmation prompt offering To Do / Icebox / Drop
+(rendered by the transport adapter, CP5a; inline buttons on Telegram).
 Only after he taps one does it call the board-write tool, and only with the
 column he chose.
 
-**Done when:** a drafted idea produces zero board writes until an inline
-button is tapped, and the column written matches the button tapped, for all
-three buttons.
+**Done when:** a drafted idea produces zero board writes until a choice is
+made on the confirmation prompt, and the column written matches the choice,
+for all three choices.
+
+### CP5a — transport adapter interface
+
+**Requirement:** the flow talks to the founder through one adapter interface:
+`send(text)`, `ask(text, choices) -> choice`, `receive() -> message`. The
+Telegram adapter implements it with inline buttons. Mode detection (CP4), the
+dedup check (CP3) and the confirmation gate (CP5) import only that interface.
+
+**Done when:** a second adapter (a stub that answers from a file is enough)
+runs CP4 and CP5 end to end with no change to the flow's code, and `grep` of
+the flow's modules for the word `telegram` returns only the adapter.
 
 ### CP6 — R6 icebox: exploratory ideas are kept without entering the queue
 
@@ -177,7 +205,8 @@ cycle, is never claimed, worktreed, or started.
 
 **Requirement:** when the laptop is awake, a new card in the watched column
 ("To Do") is picked up, gets an isolated git worktree and branch, and starts
-a separate agent session. When the laptop is asleep, the card waits in that
+a new session in whichever runtime the card or the estate default names
+(any runtime, see Glossary). When the laptop is asleep, the card waits in that
 column; nothing is lost or silently dropped.
 
 **Done when:** a card placed in "To Do" while the laptop is awake results in
@@ -204,7 +233,7 @@ confirmation exactly as a fresh idea would be.
 
 **Done when:** referencing a specific Icebox card by name produces a feature
 file drafted from that RFC's content, and the card only moves to "To Do"
-after the same inline-button confirmation as CP5.
+after the same confirmation prompt as CP5.
 
 ### CP10 — R10 urgency: open decision, default recorded
 
@@ -247,3 +276,16 @@ shape.
 interface this flow's ingress uses, and the flow's mode-detection and
 confirmation-gate code carries no import naming one model provider or one
 messaging vendor directly.
+
+### CP13 — R13 model-agnostic routing proof
+
+**Requirement:** the model behind hermes-v2 and the runtime that CP7 starts are
+both chosen by configuration (`hermes-v2/config.yaml` `model.provider` and the
+card's or the estate's default runtime), never by code. No module in the flow
+imports one model vendor's client.
+
+**Done when:** CP2 through CP9 pass once with the estate default and once more
+after only the config is changed to a non-Anthropic provider and a non-Claude
+runtime, with no code change between the two runs; and a source scan of the
+flow's modules for `anthropic`, `openai`, `google.generativeai` and vendor SDK
+imports returns only the provider layer in `hermes-agent`.
