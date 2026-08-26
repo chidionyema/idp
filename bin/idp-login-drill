@@ -238,20 +238,37 @@ with sync_playwright() as p:
     # 2026-08-26 (crew#307): /catalog rendered "ERROR 404: PAGE NOT FOUND" inside a healthy shell
     # while this drill, visiting "/" and grading the word "Catalog" in the sidebar, stayed green.
     # Every published path is visited and graded on its own content, not on the shell.
-    for path, must_see in (("catalog", "text=Owner"), ("catalog-graph", "text=Catalog Graph")):
+    # Every path the sidebar publishes, graded on a string only that page renders. A path that
+    # is not in this table is not published; adding a plugin means adding its row here.
+    PUBLISHED = (
+        ("catalog", "text=Owner"),
+        ("catalog-graph", "text=Catalog Graph"),
+        ("catalog-import", "text=Register an existing component"),
+        ("api-docs", "text=APIs"),
+        ("docs", "text=Documentation"),
+        ("create", "text=Create a new component"),
+        ("search", "text=Search"),
+        ("settings", "text=Settings"),
+        ("visualizer", "text=Visualizer"),
+    )
+    broken = []
+    for path, must_see in PUBLISHED:
         try:
             r = page.goto(f"{HOME}{path}", wait_until="domcontentloaded")
         except PWError as e:
-            fail("path", f"{HOME}{path} did not load: {e}")
+            broken.append(f"{path}: did not load ({str(e)[:60]})"); continue
         if r is None or r.status != 200:
-            fail("path", f"{HOME}{path} answered {getattr(r, 'status', 'no response')}")
+            broken.append(f"{path}: answered {getattr(r, 'status', 'no response')}"); continue
         body = page.locator("body").inner_text()
         if "PAGE NOT FOUND" in body or "ERROR 404" in body:
-            fail("path", f"{HOME}{path} is a client-side 404 inside the shell (no route serves it)")
+            broken.append(f"{path}: client-side 404 inside the shell"); continue
         try:
             page.locator(must_see).first.wait_for(state="visible", timeout=TIMEOUT)
         except PWError:
-            fail("path", f"{HOME}{path} rendered but not its own content ({must_see} never appeared)")
+            broken.append(f"{path}: rendered but not its own content ({must_see} never appeared)")
+    print(f"paths   login-drill  {len(PUBLISHED) - len(broken)}/{len(PUBLISHED)} published paths render their own content")
+    if broken:
+        fail("path", f"{len(broken)} of {len(PUBLISHED)} published paths broken: " + "; ".join(broken))
 
     for marker in ("Something went wrong", "Unexpected error", "Internal Server Error", "Failed to sign in", "PAGE NOT FOUND"):
         if marker in body_text:
