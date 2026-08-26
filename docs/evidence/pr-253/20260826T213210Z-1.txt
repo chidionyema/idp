@@ -1,0 +1,5 @@
+kyverno both ways, 2026-08-26
+-- origin/main:
+pass: 27, fail: 2, warn: 0, error: 0, skip: 0 
+-- 538403d:
+pass: 29, fail: 0, warn: 0, error: 0, skip: 0 
