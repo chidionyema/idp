@@ -114,7 +114,10 @@ if [ -n "$started" ]; then
   cfg_epoch=$(stat -f %m "$CFG" 2>/dev/null || stat -c %Y "$CFG")
   if [ "$cfg_epoch" -gt "$started_epoch" ]; then
     log "config.yaml is newer than the running proxy; restarting it so the change is read"
-    "${COMPOSE[@]}" restart litellm-proxy >/dev/null
+    # The compose service is `litellm`; `litellm-proxy` is only the container_name.
+    # A silent `restart` against the wrong name logged the restart and did nothing
+    # (first proof run, 2026-08-26), so the failure is loud.
+    "${COMPOSE[@]}" restart litellm || { echo "FAIL  compose restart litellm failed; the proxy still runs the old config"; exit 2; }
   else
     log "proxy started after the last config.yaml change; no restart"
   fi
