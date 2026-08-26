@@ -219,7 +219,7 @@ fi
 # named but not merged yet: they print n/a and never FAIL, so the catalogue can carry the drill
 # the estate is missing instead of staying quiet about it.
 drills_out=$(python3 - "$IDP/drills/catalogue.yaml" "$IDP" <<'DRILLPY'
-import json, subprocess, sys
+import json, os, subprocess, sys
 from datetime import datetime, timezone
 
 import yaml
@@ -272,6 +272,13 @@ for d in entries:
         row("n/a", "%-22s %s not merged yet -- declared in the catalogue, never graded" % (label, wf))
         continue
     graded += 1
+    # GitHub keeps run history for a deleted workflow, so a retired file still answers "last
+    # green 0.2h ago" for a while (idp#178 review, 2026-08-26: access-apply.yml was retired in
+    # #167 and the row kept grading its corpse). The file on disk is the only honest source.
+    if not os.path.isfile(os.path.join(root, ".github", "workflows", wf)):
+        stale.append(name)
+        row("FAIL", "%-22s .github/workflows/%s does not exist -- the catalogue names a retired workflow; fix the entry or the file" % (label, wf))
+        continue
     try:
         r = gh(["run", "list", "--workflow", wf, "--status", "success", "--limit", "1",
                 "--json", "updatedAt"])

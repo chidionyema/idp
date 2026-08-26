@@ -68,3 +68,10 @@ Feature: Every scheduled drill has run recently, and the catalogue says which dr
     And a "Drill:" line naming nothing in drills/catalogue.yaml is refused with rule=drill_named
     And a "Drill:" line naming a catalogued drill passes
     And the gate reads the catalogue names itself; a PR cannot invent one
+
+  Scenario: The catalogue names a workflow that was retired
+    Given an entry whose workflow file no longer exists under .github/workflows
+    And GitHub still lists a green run for that workflow name from before it was deleted
+    When bin/idp-verify runs
+    Then the drills row prints FAIL naming the missing file
+    And the old run history is never consulted

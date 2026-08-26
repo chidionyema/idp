@@ -33,19 +33,6 @@ drills:
       A machine identity with no OCI API key can still exchange its GitHub OIDC token for an
       OCI session and read the live cluster, so the platform can be rebuilt without a laptop.
 
-  - name: access-apply
-    workflow: access-apply.yml
-    job: apply
-    schedule: "23 * * * *"
-    max_age_hours: 3
-    proves: >-
-      The front door's OIDC client is reapplied from the repository by the machine identity on
-      every tick, so the door's configuration is what the repository says and not what a console
-      was once clicked into.
-
-  # Added by crew#292 CP2 before the job exists, so the catalogue names the drill the estate is
-  # missing rather than staying silent about it. A sibling worker adds the login-drill job to
-  # oke-check.yml on branch feat/login-drill; drop `pending` when that merges.
   - name: login-drill
     workflow: oke-check.yml
     job: login-drill
