@@ -48,3 +48,6 @@ def test_incident_crew284_router_survives_its_migration_window():
     s = c["startupProbe"]
     assert s["periodSeconds"] * s["failureThreshold"] >= 180
     assert s["timeoutSeconds"] >= 3 and c["livenessProbe"]["timeoutSeconds"] >= 3
+    # Second cause, same incident: OOMKilled at 1Gi 19s after start (lastState.terminated.reason).
+    mem = c["resources"]["limits"]["memory"]
+    assert mem.endswith("Gi") and int(mem[:-2]) >= 2, mem
