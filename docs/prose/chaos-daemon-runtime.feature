@@ -1,3 +1,4 @@
+# Prose until a drill runs it: both scenarios need the live OKE node and the daemon pod (crew#297).
 # Incident 2026-08-26 (crew#268 lane, found while working crew#282): chaos-daemon on OKE was
 # CrashLoopBackOff with 24 restarts. The chart value said runtime containerd; the node reports
 # cri-o://1.35.2. A chaos daemon that cannot reach the container runtime injects nothing, and the
