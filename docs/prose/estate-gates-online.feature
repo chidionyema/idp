@@ -1,3 +1,4 @@
+# Prose until a drill runs them: these seven scenarios need GitHub or the live estate.
 Feature: Every active estate repository runs the same merge-blocking gates
   Founder, 2026-08-25: the security scan and the executable-spec rule (R29)
   apply estate-wide, to every repository pushed in the last 30 days, not to
@@ -38,13 +39,6 @@ Feature: Every active estate repository runs the same merge-blocking gates
     And a changed page is pushed to branch state/live-diagram and its pull request is set to auto-merge
     And an unchanged page commits nothing
     And a missing inventory exits 3 BLIND instead of rendering an empty page
-
-  Scenario: A launchd job that backgrounds children declares AbandonProcessGroup
-    Given a launchd template whose program starts a child with nohup, setsid or disown and then exits
-    When bin/plist-gate grades it
-    Then it fails unless the job declares AbandonProcessGroup or KeepAlive
-    And the same template with AbandonProcessGroup true passes
-    And ai.estate.scheduler carries AbandonProcessGroup, so dagster-daemon outlives scheduler-up
 
   Scenario: The npm audit gate is about what ships
     Given a repository whose package-lock.json has a high advisory in a shipped dependency
