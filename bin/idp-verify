@@ -38,6 +38,10 @@ fi
 # Counting every 'kind:' made 237 vs 239 look like two dropped assets on 2026-08-24.
 want=$(grep -c '^kind: \(Component\|Resource\)$' "$YAML")
 say "source    $want entities in catalog-info.yaml"
+# crew#269 row 3: every Component carries a URL a person can open. Offenders are named;
+# a repo with no github remote is the usual cause (LAW 24).
+if lk=$(python3 "$IDP/bin/catalog-links-check" "$YAML" 2>&1); then say "ok        links     $lk"
+else say "FAIL      links     $(printf '%s' "$lk" | head -1)"; printf '%s\n' "$lk" | tail -n +2 | sed 's/^/          /'; fail=1; fi
 
 # --- schema: catalog-info.yaml validates against Backstage's published schema -
 # Backstage's own schema lives at github.com/backstage/backstage under

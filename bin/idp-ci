@@ -544,5 +544,17 @@ if command -v kyverno >/dev/null && command -v helm >/dev/null; then
   else say "FAIL  kyverno  a HelmRelease render fails admission policy, or the must-fail fixture passed"; fail=1; fi
 else say "BLIND kyverno  helm or kyverno CLI not installed; HelmRelease renders were not judged"; fail=1; fi
 
+# 10. crew#269 row 3: a Component with no URL a person can open fails the PR, both ways.
+#     The clean fixture must pass bin/catalog-links-check and a checkout with no remote
+#     must be refused. Row 2 made every route an Open link; this keeps a linkless
+#     entity from landing again (sweep on the live inventory before this: N=2).
+lk="$tmp/links-bad"; mkdir -p "$lk"
+if INV="$FIX" OUT="$a" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1 \
+   && lk_ok=$(python3 "$IDP/bin/catalog-links-check" "$a/catalog-info.yaml") \
+   && INV="$IDP/tests/fixtures/inventory.no-remote.json" OUT="$lk" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1 \
+   && ! python3 "$IDP/bin/catalog-links-check" "$lk/catalog-info.yaml" >/dev/null 2>&1; then
+  say "ok    links    $lk_ok; a checkout with no remote is refused"
+else say "FAIL  links    catalog-links-check passed a linkless Component or refused the clean fixture"; fail=1; fi
+
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"
