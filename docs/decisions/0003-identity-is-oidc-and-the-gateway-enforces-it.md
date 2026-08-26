@@ -74,7 +74,7 @@ Figures read from the GitHub API on 2026-08-24.
   Keycloak changes an issuer URL and a client secret. It does not touch one route.
 - **Zitadel** (14,844 stars, v4.17.1 on 2026-08-14) is **AGPL-3.0**. We are selling this platform.
   An AGPL component in a *platform layer* the buyer inherits is a question their lawyer asks and we
-  cannot answer cheaply. Kanboard is AGPL and that is accepted, because a product a buyer may
+  cannot answer cheaply. Kanboard was AGPL and that was accepted while it ran (retired 2026-08-26, crew#282, STANDARDS row 27: the board is GitHub Issues), because a product a buyer may
   replace is not the same risk as a layer everything runs on.
 - **oauth2-proxy** (14,870 stars, MIT) is only the enforcement half. Choosing it still leaves the
   IdP unchosen, which is the question this ADR exists to close.
@@ -85,7 +85,7 @@ Figures read from the GitHub API on 2026-08-24.
 
 ## What this immediately fixes, using both products as documented
 
-Kanboard's own `config.default.php`, read on 2026-08-24, carries the seam already:
+Worked example, kept for the record (Kanboard was retired on 2026-08-26, crew#282). Kanboard's own `config.default.php`, read on 2026-08-24, carried the seam already:
 
 ```php
 define('REVERSE_PROXY_AUTH', false);              // -> true

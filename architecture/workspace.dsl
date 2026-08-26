@@ -21,7 +21,7 @@ workspace "Estate" "The platform, the products under it, and the substrate under
         agent   = person "Agent session" "Six of them, stateless, cannot see each other. Bound by ~/AGENTS.md."
 
         platform = softwareSystem "idp — the platform" "One of each layer. Products are onboarded onto it, they do not carry copies of it." {
-            board    = container "Board" "Kanboard 1.2.46, SQLite" "The single door. R16 governance rendered as columns; moving a card is an act."
+            board    = container "Board" "GitHub Issues, chidionyema/crew" "STANDARDS row 27. R16 governance as checkbox rows; ticking a box is an act. Kanboard retired 2026-08-26 (crew#282)."
             portal   = container "Portal" "Backstage" "Service catalog and TechDocs. Renders the catalog and the docs; it does not discover them."
             gateway  = container "Gateway" "Gateway API v1.6.0 / Traefik" "One front door. No service publishes a host port."
             routing  = container "Model routing" "LiteLLM" "One model gateway with one budget."
@@ -43,7 +43,6 @@ workspace "Estate" "The platform, the products under it, and the substrate under
         agent   -> platform.board "Writes the Observation column and the two agent lanes. Never the approval column."
         agent   -> platform.ci "Opens the PR. The gate decides, not the agent."
 
-        platform.gateway -> platform.board  "routes"
         platform.gateway -> platform.portal "routes"
         platform.gateway -> platform.traces "routes"
         platform.gateway -> platform.routing "routes"
@@ -66,7 +65,6 @@ workspace "Estate" "The platform, the products under it, and the substrate under
         deploymentEnvironment "Laptop — backup environment" {
             deploymentNode "MacBook" "darwin 23.5.0" "The substrate until k8s. Proves things work; it is not production." {
                 deploymentNode "colima" "Docker engine" {
-                    containerInstance platform.board
                     containerInstance platform.portal
                     containerInstance platform.routing
                     containerInstance platform.traces
@@ -80,7 +78,6 @@ workspace "Estate" "The platform, the products under it, and the substrate under
                 deploymentNode "Gateway API" "HTTPRoute, portable across 16 conformant implementations" {
                     containerInstance platform.gateway
                 }
-                containerInstance platform.board
                 containerInstance platform.portal
             }
         }
