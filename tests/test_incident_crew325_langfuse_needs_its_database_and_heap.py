@@ -83,3 +83,16 @@ def test_incident_crew325_otel_collector_can_write_the_paths_it_writes() -> None
     assert collector["securityContext"]["readOnlyRootFilesystem"] is True
     mounts = {m["mountPath"] for m in collector["volumeMounts"]}
     assert {"/tmp", "/var/tmp"} <= mounts
+
+
+def test_incident_crew325_langfuse_accepts_the_legacy_ingestion_the_router_uses() -> None:
+    # Langfuse 4.x rejects trace events on /api/public/ingestion unless the write mode is legacy
+    # or dual; the router's `langfuse` callback posts exactly there (platform/llm/config.yaml).
+    router = yaml.safe_load((ROOT / "platform/llm/config.yaml").read_text())
+    callbacks = set(router["litellm_settings"]["success_callback"])
+    env = {e["name"]: e["value"] for e in _values()["langfuse"].get("additionalEnv", [])}
+    if "langfuse" in callbacks:
+        assert env.get("LANGFUSE_MIGRATION_V4_WRITE_MODE") in {"dual", "legacy"}, \
+            "events_only drops every trace the legacy callback sends"
+    else:
+        assert "langfuse_otel" in callbacks
