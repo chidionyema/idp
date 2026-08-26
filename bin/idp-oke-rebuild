@@ -96,6 +96,8 @@ case "$MODE" in
     fi
     rm -f "$TF/check.tfplan" ;;
   --apply)
+    # a create of a resource whose live namesake exists is a lost-state re-create: import, never apply
+    step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" || { echo "exit 3: recreate-guard refused; import the live resource"; exit 3; }
     step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
     # A runner has no kube path (outside control_plane_allowed_cidrs) and a node-pool change needs
     # no Flux bootstrap: Flux is already on the cluster and reconciles the new node itself (crew#289).
@@ -103,6 +105,7 @@ case "$MODE" in
     else step flux-bootstrap "$IDP/bin/idp-flux-bootstrap"; fi ;;
   --teardown-rebuild)
     step tofu-destroy tofu destroy -auto-approve "${TFVARS[@]}"
+    step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" || { echo "exit 3: recreate-guard refused; import the live resource"; exit 3; }
     step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
     step flux-bootstrap "$IDP/bin/idp-flux-bootstrap" ;;
   *) echo "usage: $0 [--check|--apply|--teardown-rebuild|--plan-pool]"; exit 64 ;;

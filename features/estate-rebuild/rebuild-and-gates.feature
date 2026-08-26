@@ -71,3 +71,10 @@ Feature: The estate can be torn down and rebuilt from the phone, and no past err
     Then the planned resource changes are printed and the check passes
     And on schedule or workflow_dispatch the same exit 2 is drift and the check fails
     And exit 1 never passes on any event
+
+  Scenario: a lost-state apply never re-creates a vault that already exists (incident 2026-08-26 02:26Z)
+    Given the shared state no longer holds oci_kms_vault.estate
+    And an ACTIVE vault named estate-secrets holds the estate's secrets
+    When bin/idp-oke-rebuild --apply runs
+    Then bin/idp-recreate-guard refuses with the exact "tofu import" command and no vault is created
+    And a plan that creates nothing, or a create with no live namesake, passes
