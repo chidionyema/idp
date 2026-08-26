@@ -42,8 +42,12 @@ def test_router_reports_every_call_to_langfuse():
     c = dep["spec"]["template"]["spec"]["containers"][0]
     env = {e["name"]: e.get("value") for e in c["env"]}
     assert env["LANGFUSE_HOST"] == "http://langfuse-web.observability.svc:3000"
-    refs = {r["secretRef"]["name"]: r["secretRef"].get("optional", False) for r in c["envFrom"]}
-    assert refs["litellm-langfuse"] is True, "the router must start without the Langfuse keys (LAW 38)"
+    # idp#253: the cluster policy no-optional-secret-references refused `optional: true` (crew#284), so
+    # the keys arrive as a mounted, required volume; the vault holds them (langfuse-init above).
+    vols = {v["name"]: v for v in dep["spec"]["template"]["spec"]["volumes"]}
+    assert vols["langfuse"]["secret"]["secretName"] == "litellm-langfuse"
+    assert not vols["langfuse"]["secret"].get("optional", False)
+    assert "envFrom" not in c
 
 
 def test_incident_crew325_observability_row_runs_on_the_replaced_node():

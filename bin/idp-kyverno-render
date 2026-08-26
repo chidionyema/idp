@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Renders every Flux HelmRelease under platform/ the way helm-controller will (helm template,
 # then the HelmRelease's own postRenderers patches) and judges the result with the cluster's
-# admission policies through the Kyverno CLI. Kyverno judges pods at admission, after merge,
+# admission policies through the Kyverno CLI. Plain workloads the directory ships as YAML
+# (Deployment, StatefulSet, DaemonSet, Job, CronJob, Pod) are judged the same way: until
+# 2026-08-26 only HelmReleases were, and platform/llm/litellm.yaml, a plain Deployment, merged
+# with an envFrom secretRef the cluster then refused for a day (crew#284). Kyverno judges pods at admission, after merge,
 # which is too late; this runs the same ClusterPolicies before the PR is opened.
 #
 # Usage: bin/idp-kyverno-render <dir-with-kustomization> [more dirs...]
@@ -51,7 +54,25 @@ for hr in (d for d in docs if d["kind"] == "HelmRelease"):
         "namespace": ns, "resources": ["render.yaml"], "patches": patches}))
     print(f"{name} {ns} {len(patches)}")
 PY
+  # Plain workloads in the same kustomize output, judged as they are.
+  python3 - "$S/kz.yaml" "$S/plain-$(echo "$dir" | tr '/' '_').yaml" <<'PY2'
+import sys, yaml
+kinds = {"Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Pod"}
+docs = [d for d in yaml.safe_load_all(open(sys.argv[1])) if d and d.get("kind") in kinds]
+open(sys.argv[2], "w").write(yaml.safe_dump_all(docs) if docs else "")
+PY2
 done > "$S/releases.txt"
+for plain in "$S"/plain-*.yaml; do
+  [ -s "$plain" ] || continue
+  label=$(basename "$plain" .yaml | sed 's/^plain-//; s/_/\//g')
+  exc=(); for x in "$S"/exceptions/*.yaml; do [ -f "$x" ] && exc+=(--exception "$x"); done
+  out=$(kyverno apply "$S/policies.yaml" --resource "$plain" "${exc[@]}" 2>&1 || true)
+  summary=$(printf '%s\n' "$out" | grep -E '^pass:' | tail -1)
+  if printf '%s\n' "$out" | grep -qE '^policy .* failed'; then
+    echo "FAIL  plain    $label: $summary"
+    printf '%s\n' "$out" | grep -E '^policy .* failed' | sed 's/^/      /'; rc=1
+  else echo "ok    plain    $label: $summary"; fi
+done
 while read -r name ns npatch; do
   kubectl kustomize "$S/$name.kz" > "$S/$name.final.yaml"
   # helm test hooks never reach the cluster (HelmRelease test.enable is off); drop them before judging
