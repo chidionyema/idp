@@ -1,18 +1,18 @@
 # ADR 0007 (crew#269, founder 2026-08-26: "seamless and secure"): the front door federates to
-# GitHub and the estate holds no password for a person. Probe: the `login` row of bin/idp-verify,
+# the estate identity domain (platform/oci/identity) and the estate holds no password for a person. Probe: the `login` row of bin/idp-verify,
 # which follows the redirect chain a browser would and never carries a credential.
 Feature: The front door is a federated login with no local password
   A door with its own password has a password that must travel, and every route it travels is a
   place it leaks. The door redirects to an identity the founder already holds.
 
-  Scenario: An unauthenticated request is sent to GitHub
+  Scenario: An unauthenticated request is sent to the identity domain
     Given the estate zone in clusters/oke/estate-config.yaml
     When bin/idp-verify runs
     Then https://catalogue.<zone>/ answers 302 to https://github.com/login/oauth/authorize, directly or via /oauth2/start
     And the login row prints ok
 
   Scenario: The door answers anything else
-    Given the catalogue answers 200, 401, 500, or a Location that is not GitHub
+    Given the catalogue answers 200, 401, 500, or a Location that is not the identity domain
     When bin/idp-verify runs
     Then the login row prints FAIL and names the Middleware and the identity pods
     And bin/idp-verify exits 1
@@ -36,7 +36,7 @@ Feature: The front door is a federated login with no local password
     And the same values with the chart's env-var wiring turned on are refused by secrets-not-from-env-vars
 
   Scenario: the login row refuses a placeholder client id (idp#149 review, 2026-08-26)
-    Given the catalogue answers 302 to GitHub's authorize page
+    Given the catalogue answers 302 to the identity domain's authorize page
     And the client_id in that Location is empty or "replace-in-console"
     When bin/idp-verify runs the login row
     Then the row is FAIL and names the FOUNDER ACTION that fills the vault secrets
