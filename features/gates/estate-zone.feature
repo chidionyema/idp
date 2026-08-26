@@ -1,6 +1,6 @@
 # Founder, 2026-08-25 (crew#269): "how do i know what the backstage url is ... what if we migrate
 # in the future"; 2026-08-26: "as always configurable". Gate: bin/estate-zone-gate, proved both
-# ways in bin/idp-ci.
+# ways in bin/idp-ci. Bound by sovereign/tests/bdd/test_gate_estate_zone.py.
 Feature: The estate zone is one configurable value
   Every hostname the platform publishes is <service>.<zone>. The zone is written once, in
   clusters/<cluster>/estate-config.yaml, and substituted by Flux; a migration changes one value.
