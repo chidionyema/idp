@@ -1,23 +1,29 @@
-# Incident 2026-08-26 (crew#269): the first founder login at auth.<zone> was a 401. The argon2
-# hash in the cluster vault was made from a different value than the password in the sops vault,
-# and nothing compared the two stores. Probe: the `login` row of bin/idp-verify, proved both ways
-# on idp#144.
-Feature: The vault hash and the sops password agree
-  A credential kept as a hash in one store and as plaintext in another is only proven when a real
-  login with the plaintext succeeds. bin/idp-verify performs that login on every operator run.
+# ADR 0007 (crew#269, founder 2026-08-26: "seamless and secure"): the front door federates to
+# GitHub and the estate holds no password for a person. Probe: the `login` row of bin/idp-verify,
+# which follows the redirect chain a browser would and never carries a credential.
+Feature: The front door is a federated login with no local password
+  A door with its own password has a password that must travel, and every route it travels is a
+  place it leaks. The door redirects to an identity the founder already holds.
 
-  Scenario: The sops password opens the front door
-    Given secrets/dev/CATALOGUE_FOUNDER_PASSWORD.yaml decrypts to the password behind vault authelia-users
+  Scenario: An unauthenticated request is sent to GitHub
+    Given the estate zone in clusters/oke/estate-config.yaml
     When bin/idp-verify runs
-    Then the login row prints ok with the auth hostname of the estate zone
+    Then https://catalogue.<zone>/ answers 302 to https://catalogue.<zone>/oauth2/start
+    And that URL answers 302 to https://github.com/login/oauth/authorize
+    And the login row prints ok
 
-  Scenario: The sops password no longer matches the vault hash
-    Given the sops file decrypts to a value the vault hash was not made from
+  Scenario: The door answers anything else
+    Given the catalogue answers 200, 401, or a Location that is not /oauth2/start
     When bin/idp-verify runs
-    Then the login row prints FAIL with the 401 and names bin/idp-vault-put as the repair
+    Then the login row prints FAIL and names the Middleware and the identity pods
     And bin/idp-verify exits 1
 
-  Scenario: No sops key on this machine
-    Given no age key or no estate-secrets checkout is present
+  Scenario: No zone is configured
+    Given clusters/oke/estate-config.yaml has no ESTATE_ZONE
     When bin/idp-verify runs
     Then the login row prints BLIND and never ok
+
+  Scenario: No manifest holds a user database
+    Given every file under platform/
+    Then no ExternalSecret renders a users file and no ForwardAuth points at authelia
+    And the Middleware in front of every route outside identity points at oauth2-proxy

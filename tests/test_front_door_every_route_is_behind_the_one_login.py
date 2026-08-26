@@ -1,8 +1,11 @@
-"""crew#269 / ADR 0003: one hostname per service, one login in front of all of them.
+"""crew#269 / ADR 0003 + ADR 0007: one hostname per service, one federated login in front of all of them.
 
 Rules (rung 2, properties over every manifest under platform/):
-  1. every HTTPRoute outside the identity namespace carries a ForwardAuth ExtensionRef whose
-     Middleware exists in the same namespace and points at Authelia;
+  1. every rule of every HTTPRoute outside the identity namespace carries a ForwardAuth ExtensionRef
+     whose Middleware exists in the same namespace and points at oauth2-proxy; the one rule allowed
+     without it is the /oauth2/ path that sends the login redirect to oauth2-proxy itself;
+  1b. no manifest holds a user database (ADR 0007): no ExternalSecret templates a users file and no
+     Middleware names authelia;
   2. no hostname carries a zone literal: it is `<name>.${ESTATE_ZONE:=...}` (LAW 46);
   3. every parentRef sectionName names a listener on the shared Gateway
      (prospector-main/deploy/k8s/base/edge.yaml); BLIND without that checkout, never green.
@@ -41,13 +44,31 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
     ns = route["metadata"]["namespace"]
     if ns == "identity":
         return
-    refs = [flt["extensionRef"] for rule in route["spec"]["rules"] for flt in rule.get("filters", [])
-            if flt.get("type") == "ExtensionRef"]
-    assert refs, f"{f}: route {route['metadata']['name']} has no ExtensionRef filter"
-    for ref in refs:
-        mw = MIDDLEWARES.get((ns, ref["name"]))
-        assert mw, f"{f}: Middleware {ns}/{ref['name']} not found in the route's namespace"
-        assert "authelia" in mw["spec"]["forwardAuth"]["address"], mw["spec"]
+    guarded = 0
+    for rule in route["spec"]["rules"]:
+        refs = [flt["extensionRef"] for flt in rule.get("filters", []) if flt.get("type") == "ExtensionRef"]
+        if not refs:
+            paths = [m.get("path", {}) for m in rule.get("matches", [])]
+            assert paths and all(p == {"type": "PathPrefix", "value": "/oauth2/"} for p in paths), \
+                f"{f}: route {route['metadata']['name']} has a rule with no ExtensionRef that is not the /oauth2/ login path"
+            assert all(b["name"] == "oauth2-proxy" and b.get("namespace") == "identity" for b in rule["backendRefs"]), \
+                f"{f}: the /oauth2/ path must go to identity/oauth2-proxy, nowhere else"
+            continue
+        guarded += 1
+        for ref in refs:
+            mw = MIDDLEWARES.get((ns, ref["name"]))
+            assert mw, f"{f}: Middleware {ns}/{ref['name']} not found in the route's namespace"
+            assert "oauth2-proxy.identity" in mw["spec"]["forwardAuth"]["address"], mw["spec"]
+    assert guarded, f"{f}: route {route['metadata']['name']} has no guarded rule"
+
+
+def test_no_manifest_holds_a_user_database():
+    """ADR 0007: the estate holds no password for a person."""
+    for f, d in _docs():
+        text = yaml.safe_dump(d)
+        assert "users_database" not in text and "password_hash" not in text, f"{f}: a user database"
+        if d.get("kind") == "Middleware":
+            assert "authelia" not in text, f"{f}: Middleware still points at authelia"
 
 
 @pytest.mark.parametrize("f,route", ROUTES, ids=[d["metadata"]["name"] for _, d in ROUTES])
@@ -80,3 +101,8 @@ def test_the_unguarded_shape_is_refused():
     bad = {"metadata": {"name": "x", "namespace": "backstage"}, "spec": {"rules": [{"backendRefs": []}]}}
     with pytest.raises(AssertionError):
         test_every_route_outside_identity_is_behind_forward_auth("fixture", bad)
+    # an unguarded path that is not the login path, and a login path sent anywhere but oauth2-proxy
+    for rule in ({"matches": [{"path": {"type": "PathPrefix", "value": "/api/"}}], "backendRefs": [{"name": "oauth2-proxy", "namespace": "identity"}]},
+                 {"matches": [{"path": {"type": "PathPrefix", "value": "/oauth2/"}}], "backendRefs": [{"name": "catalogue"}]}):
+        with pytest.raises(AssertionError):
+            test_every_route_outside_identity_is_behind_forward_auth("fixture", {"metadata": bad["metadata"], "spec": {"rules": [rule]}})
