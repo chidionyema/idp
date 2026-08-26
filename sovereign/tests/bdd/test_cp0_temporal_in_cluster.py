@@ -50,7 +50,7 @@ def _hooks(state: dict) -> None:
 @then("both persistence stores point at the temporal-db Service with a password from the vault Secret")
 def _stores(state: dict) -> None:
     ds = state["hr"]["spec"]["values"]["server"]["config"]["persistence"]["datastores"]
-    es = next(d for d in state["docs"] if d["kind"] == "ExternalSecret")
+    es = next(d for d in state["docs"] if d["kind"] == "ExternalSecret" and d["metadata"]["name"] == "temporal-db")
     svc = next(d for d in state["docs"] if d["kind"] == "Service")
     for name in ("default", "visibility"):
         sql = ds[name]["sql"]

@@ -197,6 +197,7 @@ spec:
   dependsOn:
     - name: edge
     - name: secret-store
+    - name: image-automation   # ClusterSecretStore ghcr-pull, mirrored into this namespace (step 2)
   sourceRef:
     kind: GitRepository
     name: flux-system

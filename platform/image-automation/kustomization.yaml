@@ -1,3 +1,5 @@
 resources:
   - flux-writer.yaml
   - backstage.yaml
+  - pull-secret.yaml
+  - sovereign-worker.yaml
