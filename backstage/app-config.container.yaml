@@ -91,6 +91,14 @@ catalog:
       rules:
         - allow: [Component, Resource, Domain, System, Group]
 
+    # Products are onboarded, never copied in (crew#282). Each product repo carries its own
+    # catalog-info.yaml naming its UIs and their URLs; the platform reads it by URL. The repo is
+    # public, so no token is needed. Adding a product is one line here, not a platform change.
+    - type: url
+      target: https://github.com/chidionyema/prospector/blob/main/catalog-info.yaml
+      rules:
+        - allow: [Component, System]
+
     # The only scaffolder template the portal offers.
     - type: file
       target: /app/templates/estate-component/template.yaml
