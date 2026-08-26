@@ -158,7 +158,7 @@ def _receipt_line(op: str, sid: str) -> str:
         receipt_mod = importlib.import_module("sovereign.presence.receipt")
         return receipt_mod.from_record(row).text
     except Exception as exc:  # the chain is the truth; the formatter is a convenience
-        return f"[?] {op.upper()} | hash:{str(row.get('hash', ''))[:8]} | formatter:{type(exc).__name__}"
+        return f"[?] {op.upper()} | hash:{row.get('hash', '')} | formatter:{type(exc).__name__}"
 
 
 def sb_undo(raw_args: str) -> Optional[str]:
