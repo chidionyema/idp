@@ -38,7 +38,6 @@ drills:
     job: login-drill
     schedule: "17 6 * * *"
     max_age_hours: 26
-    pending: true
     proves: >-
       A sign-in to the front door completes end to end from a runner that holds no password,
       so the federated login is exercised daily rather than only when the founder tries it.
