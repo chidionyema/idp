@@ -13,16 +13,14 @@
 #
 #   ok      identity     session subject is service user estate-ci (token exchange, no login)
 #   ok      cluster      1 cluster ACTIVE, 1/1 node pool(s) ACTIVE
-#   ok      receipt      ok cluster-health at ... nodes 1/1 Ready ... (0.3h old, max 2h)
+#   ok      receipt      ok cluster-state ... nodes=1 ready=1 ... (12 min ago)
 #   ok      verify-drill 3/3 rows green
 #
-# The receipt row is the cluster's own word, written hourly from inside by
-# platform/health/cluster-health-receipt.yaml on the node's instance principal; a runner has
-# no kube path and this is the door it reads through (same as bin/idp-chaos-drill).
+# The receipt row is the cluster's own word, written every 15 minutes from inside by
+# platform/state/cluster-state.yaml on the node's instance principal and graded by
+# bin/idp-cluster-state (idp#267); a runner has no kube path and this is the door it reads through.
 # FAIL when any row is red, BLIND (exit 2) when a row cannot be measured. Never asks anything.
 set -uo pipefail
-BUCKET="${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}"
-MAX_H="${HEALTH_MAX_AGE_HOURS:-2}"
 COMP="${OCI_COMPARTMENT_OCID:?OCI_COMPARTMENT_OCID}"
 EXPECT_USER="${ESTATE_CI_USER:-estate-ci}"
 red=0; blind=0
@@ -66,36 +64,14 @@ else
   fi
 fi
 
-# --- receipt: the cluster's own hourly verdict, graded for content and age ------------------
-ns=(); [ -n "${OCI_OS_NAMESPACE:-}" ] && ns=(--namespace-name "$OCI_OS_NAMESPACE")
-head=$(oci os object head "${ns[@]}" --bucket-name "$BUCKET" --name health/cluster 2>&1); rc=$?
-if [ $rc -ne 0 ]; then
-  case "$head" in
-    *"404"*|*NotFound*|*"not found"*) fail receipt "no object health/cluster in bucket $BUCKET: the CronJob health/cluster-health-receipt has never written one (or the health row is not reconciled yet)" ;;
-    *) bl receipt "oci os object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
-  esac
-else
-  body=$(oci os object get "${ns[@]}" --bucket-name "$BUCKET" --name health/cluster --file - 2>/dev/null | head -1)
-  line=$(python3 - "$head" "$body" "$MAX_H" <<'PY'
-import json, sys
-from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
-head, body, max_h = sys.argv[1], sys.argv[2].strip(), float(sys.argv[3])
-try:
-    lm = json.loads(head)["last-modified"]
-except Exception as e:  # noqa: BLE001
-    print(f"BLIND object head carried no last-modified: {e}"); sys.exit(0)
-age = (datetime.now(timezone.utc) - parsedate_to_datetime(lm)).total_seconds() / 3600
-if not body.startswith("ok "):
-    print(f"FAIL the cluster's own verdict is red: {body[:160]!r}")
-elif age > max_h:
-    print(f"FAIL receipt is {age:.1f}h old (max {max_h:.0f}h): the CronJob stopped writing; {body[:120]}")
-else:
-    print(f"ok {body[:140]} ({age:.1f}h old, max {max_h:.0f}h)")
-PY
-  )
-  case "$line" in ok\ *) say ok receipt "${line#ok }";; FAIL\ *) fail receipt "${line#FAIL }";; *) bl receipt "${line#BLIND }";; esac
-fi
+# --- receipt: the cluster's own verdict, written every 15 min by platform/state (idp#267) and
+# graded by bin/idp-cluster-state for freshness and Ready. One writer, one reader, reused here.
+line=$("$(dirname "$0")/idp-cluster-state" 2>&1 | tail -1)
+case "$line" in
+  ok*)    say ok receipt "$(printf '%s' "$line" | sed -E 's/^ok +cluster-state +//')";;
+  FAIL*)  fail receipt "$(printf '%s' "$line" | sed -E 's/^FAIL +cluster-state +//')";;
+  *)      bl receipt "$(printf '%s' "$line" | sed -E 's/^BLIND +cluster-state +//')";;
+esac
 
 if [ "$red" -gt 0 ]; then say FAIL verify-drill "$red row(s) red, $blind blind"; exit 1; fi
 if [ "$blind" -gt 0 ]; then say BLIND verify-drill "$blind row(s) not measured"; exit 2; fi

@@ -3,7 +3,7 @@ night because the laptop's OCI browser session had expired. Measured: a browser 
 a 60-minute JWT (exp - iat), refreshable to 24 h from the login; a `--no-browser` token-exchange
 session has sess_exp == exp and cannot be refreshed at all. The rule (rung 4, incident test):
 the platform's hourly health verification runs on the estate-ci machine identity from a runner,
-the kube read happens inside the cluster on the node's instance principal, and no scheduled path
+the kube read happens inside the cluster on the node's instance principal (platform/state, idp#267), and no scheduled path
 anywhere in this repository asks a person to log in."""
 import re
 from pathlib import Path
@@ -12,7 +12,6 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WF = ROOT / ".github" / "workflows"
-HEALTH = ROOT / "platform" / "health" / "cluster-health-receipt.yaml"
 TOKEN_EXCHANGE = "gtrevorrow/oci-token-exchange-action"
 
 
@@ -52,34 +51,17 @@ def test_the_drill_script_refuses_a_person_and_a_browser_login_as_the_subject() 
     assert not re.search(r"ocid1\.[a-z]+\.oc1\.[a-z0-9.-]*\.[a-z0-9]{20,}", script), "an OCID literal (LAW 46)"
 
 
-def test_the_health_receipt_is_written_hourly_from_inside_on_the_node_identity_read_only() -> None:
-    docs = {(d["kind"], d["metadata"]["name"]): d for d in _docs(HEALTH)}
-    cj = docs[("CronJob", "cluster-health-receipt")]
-    assert cj["spec"]["schedule"] == "7 * * * *"
-    pod = cj["spec"]["jobTemplate"]["spec"]["template"]["spec"]
-    receipt = next(c for c in pod["containers"] if c["name"] == "receipt")
-    assert "--auth instance_principal" in receipt["args"][0]
-    assert "--name health/cluster" in receipt["args"][0] and "estate-drill-receipts" in receipt["args"][0]
-    for c in pod["initContainers"] + pod["containers"]:
-        sc = c["securityContext"]
-        assert sc["runAsNonRoot"] and sc["readOnlyRootFilesystem"] and sc["capabilities"] == {"drop": ["ALL"]}, c["name"]
-        assert not sc["allowPrivilegeEscalation"], c["name"]
-        assert c["resources"]["limits"] and c["resources"]["requests"], c["name"]
-        assert ":latest" not in c["image"] and ":" in c["image"], c["image"]
-        assert "envFrom" not in c and not any("valueFrom" in e for e in c.get("env", [])), "a secret in the pod (crew#341)"
-    role = docs[("ClusterRole", "cluster-health-receipt")]
-    verbs = {v for r in role["rules"] for v in r["verbs"]}
-    assert verbs == {"get", "list"}, verbs
-    resources = {res for r in role["rules"] for res in r["resources"]}
-    assert resources == {"nodes", "kustomizations", "helmreleases"}, resources
-    assert docs[("ServiceAccount", "cluster-health-receipt")]["automountServiceAccountToken"] is False
-
-
-def test_the_health_row_is_reconciled_by_flux() -> None:
+def test_the_receipt_row_reuses_the_one_in_cluster_writer_and_its_reader() -> None:
+    """One writer (platform/state, idp#267), one reader (bin/idp-cluster-state). A second CronJob
+    or a second bucket reader for the same fact is the stitching the headline forbids."""
+    script = (ROOT / "bin" / "idp-verify-drill").read_text()
+    assert 'idp-cluster-state' in script and "oci os object" not in script
+    assert not (ROOT / "platform" / "health").exists(), "a second health CronJob next to platform/state"
     rows = _docs(ROOT / "clusters" / "oke" / "platform.yaml")
-    health = next(d for d in rows if d["kind"] == "Kustomization" and d["metadata"]["name"] == "health")
-    assert health["spec"]["path"] == "./platform/health"
-    assert health["spec"]["prune"] is True
+    state = next(d for d in rows if d["kind"] == "Kustomization" and d["metadata"]["name"] == "cluster-state")
+    assert state["spec"]["path"] == "./platform/state"
+    wf = (WF / "verify-drill.yml").read_text()
+    assert "platform/state/**" in wf and "bin/idp-cluster-state" in wf
 
 
 def test_no_scheduled_workflow_asks_a_person_to_log_in() -> None:
@@ -90,4 +72,6 @@ def test_no_scheduled_workflow_asks_a_person_to_log_in() -> None:
         if "schedule" not in (wf.get(True) or {}) or "OCI_CLI_AUTH" not in text:
             continue
         assert TOKEN_EXCHANGE in text, f"{f.name} is scheduled, talks to OCI, and exchanges no OIDC token"
-        assert "oci session authenticate" not in text, f"{f.name} asks for a browser login"
+        # graded on what runs, not on comments: oke-check.yml names the command it replaces (idp#267)
+        code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+        assert "oci session authenticate" not in code, f"{f.name} asks for a browser login"

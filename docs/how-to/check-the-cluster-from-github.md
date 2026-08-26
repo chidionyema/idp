@@ -35,8 +35,8 @@ dead; a `--no-browser` token-exchange session cannot be refreshed at all (measur
 crew#345). So no scheduled verification runs from a laptop. `verify-drill.yml` runs every hour
 on the same `estate-ci` identity as above and `bin/idp-verify-drill` prints three rows: the
 session subject is `estate-ci` and a token exchange (a person's OCID or a browser login is a
-red row), the cluster and node pools are ACTIVE, and the cluster's own receipt
-`health/cluster` is green and under two hours old. That receipt is written from inside by the
-CronJob `health/cluster-health-receipt` (`platform/health/`) on the worker node's instance
-principal, through a read-only ClusterRole over nodes, Kustomizations and HelmReleases. The
-proof of the ticket is 24 consecutive green scheduled runs, counted by crew's estate snapshot.
+red row), the cluster and node pools are ACTIVE, and the cluster's own receipt `state/cluster`
+grades green through `bin/idp-cluster-state` (fresh, every node Ready). That receipt is written
+from inside every 15 minutes by the CronJob `cluster-state` (`platform/state/`, idp#267) on the
+worker node's instance principal. The proof of the ticket is 24 consecutive green scheduled
+runs, counted by crew's estate snapshot.

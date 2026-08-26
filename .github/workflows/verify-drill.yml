@@ -1,19 +1,20 @@
 # crew#345: the platform proves its own health every hour on a machine identity, with no person
 # logged in anywhere. The job exchanges its GitHub OIDC token for a one-hour OCI session that
 # impersonates the service user estate-ci (the identity oke-check.yml already runs on) and runs
-# bin/idp-verify-drill: identity, cluster, and the cluster's own hourly receipt. 24 consecutive
+# bin/idp-verify-drill: identity, cluster, and the cluster's own receipt (bin/idp-cluster-state). 24 consecutive
 # green scheduled runs is the ticket's acceptance criterion, measured by crew's estate snapshot
 # and by the drills row of bin/idp-verify (drills/catalogue.yaml, max_age_hours 3).
 name: verify-drill
 on:
   schedule:
-    - cron: "23 * * * *"   # hourly; the in-cluster receipt lands at :07, this reads it at :23
+    - cron: "23 * * * *"   # hourly; the in-cluster receipt (platform/state) lands every 15 minutes
   workflow_dispatch: {}
   push:
     branches: [main]
     paths:
-      - platform/health/**
+      - platform/state/**
       - bin/idp-verify-drill
+      - bin/idp-cluster-state
       - .github/workflows/verify-drill.yml
 permissions:
   id-token: write   # the OIDC token this job trades for OCI access
