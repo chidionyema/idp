@@ -27,3 +27,9 @@ Feature: The operating model is a gate on every pull request
     When bin/policy-test runs
     Then the opmodel-ok row is 0 and the five opmodel-* refusals are 1
     And a refused PR in CI carries one comment listing each rule= line and its fix
+
+  Scenario: The gate runs only where a pull request exists
+    Given ci.yml also runs on push to main, where github.event.pull_request.number is empty
+    When the operating-model-gate job is evaluated for a push event
+    Then the job is skipped by `if: github.event_name == 'pull_request'` and main stays green
+    # Incident: run 32922679927 on 5dac18e failed with `bin/pr-report: line 13: 1: pr number`.
