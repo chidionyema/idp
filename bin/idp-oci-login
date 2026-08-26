@@ -17,7 +17,7 @@ command -v oci >/dev/null || { echo "BLIND oci missing"; exit 2; }
 # Otherwise: the laptop path, API key rendered from the sops vault.
 AUTH=APIKey; PROFILE=DEFAULT
 if [ "${OCI_CI:-}" = 1 ]; then
-  for v in OCI_TENANCY_OCID OCI_COMPARTMENT_OCID OCI_REGION OCI_OS_NAMESPACE OCI_S3_ACCESS_KEY OCI_S3_SECRET_KEY OKE_SSH_PUBKEY_TEXT OKE_ALLOWED_CIDRS; do
+  for v in OCI_TENANCY_OCID OCI_COMPARTMENT_OCID OCI_REGION OCI_OS_NAMESPACE OCI_S3_ACCESS_KEY OCI_S3_SECRET_KEY OKE_SSH_PUBKEY_TEXT OKE_ALLOWED_CIDRS ESTATE_FOUNDER_EMAIL; do
     [ -n "${!v:-}" ] || { echo "BLIND oci     OCI_CI=1 but $v is unset"; exit 2; }
   done
   vget() { printf %s "${!1}"; }
@@ -97,6 +97,7 @@ ssh_public_key              = "$SSH_PUB_TEXT"
 control_plane_allowed_cidrs = [$CIDRS]
 oci_auth                    = "$AUTH"
 oci_profile                 = "$PROFILE"
+${ESTATE_FOUNDER_EMAIL:+founder_email               = "$ESTATE_FOUNDER_EMAIL"}
 TFV
 
 # A key uploaded seconds ago answers 401 for a few minutes (measured 2026-08-25: ~6 min
