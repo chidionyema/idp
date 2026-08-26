@@ -7,7 +7,7 @@ set -euo pipefail
 # permanent checkout (crew#280: two jobs were installed from /tmp/claude-501/wt-idp-oke
 # and died with it). Optional label args limit the install to those jobs.
 IDP="${IDP_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-case "$IDP" in /tmp/*|/private/tmp/*|*/.wt-*) echo "refusing: $IDP is a temporary checkout; set IDP_ROOT to the permanent one (LAW 46)"; exit 2;; esac
+case "$IDP" in /tmp/*|/private/tmp/*|/var/folders/*|*/.wt-*) echo "refusing: $IDP is a temporary checkout; set IDP_ROOT to the permanent one (LAW 46)"; exit 2;; esac
 ONLY=("$@")
 command -v envsubst >/dev/null || { echo "envsubst missing -- brew install gettext"; exit 2; }
 DEST="$HOME/Library/LaunchAgents"; mkdir -p "$DEST"
