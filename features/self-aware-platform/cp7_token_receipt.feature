@@ -31,3 +31,11 @@ Feature: Token receipt — the waste the founder named, measured before and afte
       for before-tool-calls, after-tool-calls, before-tokens, after-tokens
     And the script's exit code is nonzero if any "after" row fails to
       complete, so a broken measurement cannot print a comparison
+
+  Scenario: The laptop path renders no key
+    Given bin/idp-oci-login runs without OCI_CI=1
+    And OCI_LAPTOP_KEY is not set
+    Then it prints BLIND naming gh workflow run oke-check.yml as the way to run the platform
+    And no file is written under ~/.oci
+    When OCI_LAPTOP_KEY=1 is set
+    Then the API key path still renders, until crew#227 deletes the key
