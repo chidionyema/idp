@@ -14,8 +14,12 @@ resource "oci_identity_domains_app" "front_door" {
   allowed_grants            = ["authorization_code"]
   redirect_uris             = ["https://auth.${var.zone}/oauth2/callback"]
   post_logout_redirect_uris = ["https://catalogue.${var.zone}/"]
-  show_in_my_apps           = false
-  attribute_sets            = ["all"]
+  show_in_my_apps = false
+  attribute_sets  = ["all"]
+  lifecycle {
+    # OCI appends its OCITags extension to schemas after create; without this every plan drifts.
+    ignore_changes = [schemas]
+  }
 }
 
 # The allow-list is the domain's grant table: a user the domain has not granted this app is

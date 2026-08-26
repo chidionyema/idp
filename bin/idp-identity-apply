@@ -23,6 +23,19 @@ CSEC=$(oci vault secret list --compartment-id "$C" --name oauth2-proxy-client-se
 [ -n "$CID" ] || { echo "FAIL    identity vault secret oauth2-proxy-client-id not found in compartment; platform/identity has never been bootstrapped"; exit 2; }
 V=$(oci vault secret get --secret-id "$CID" --query 'data."vault-id"' --raw-output)
 K=$(oci vault secret get --secret-id "$CID" --query 'data."key-id"' --raw-output)
+# Incident 2026-08-26 02:31Z (crew#269): the first sign-in returned 500. oauth2-proxy read
+# /admin/v1/SigningCert/jwk to verify the id_token and the domain answered 401: a new domain keeps its
+# signing certificate private. The OpenTofu resource cannot set one flag (PutSetting replaces the
+# whole object and the domain refuses a partial one, measured 400), so the flag is a SCIM PATCH here,
+# idempotent, and part of provisioning the client rather than a console toggle.
+sc=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Settings/Settings?attributes=signingCertPublicAccess" 2>/dev/null | jq -r '.data.signingCertPublicAccess // false')
+if [ "$sc" != "true" ]; then
+  T=$(mktemp -d); chmod 700 "$T"; trap 'rm -rf "$T"' EXIT
+  printf '%s' '{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"replace","path":"signingCertPublicAccess","value":true}]}' > "$T/s.json"
+  pr=$(oci raw-request --http-method PATCH --target-uri "$DOMAIN_BASE_URL/admin/v1/Settings/Settings" --request-body "file://$T/s.json" 2>&1)
+  if printf '%s' "$pr" | jq -e '.data.signingCertPublicAccess == true' >/dev/null 2>&1; then echo "ok      identity domain signing certificate is public (JWKS readable by oauth2-proxy)"
+  else echo "FAIL    identity domain Settings PATCH refused: $(printf '%s' "$pr" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; fi
+else echo "ok      identity domain signing certificate is public"; fi
 M="$IDP/platform/oci/identity"
 if [ -f "$M/backend_override.tf" ]; then tofu -chdir="$M" init -input=false -migrate-state -force-copy >/dev/null
 else echo "BLIND   state   platform/oci/identity/backend_override.tf missing: local state; run bin/idp-oci-login"; tofu -chdir="$M" init -input=false >/dev/null; fi
