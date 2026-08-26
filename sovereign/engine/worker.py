@@ -15,6 +15,8 @@ from temporalio.worker import Worker
 from sovereign import config
 from sovereign.engine import activities
 from sovereign.engine.workflow import SessionWorkflow
+from sovereign.shadow import activities as shadow_activities
+from sovereign.shadow.workflow import BranchChildWorkflow, BranchParentWorkflow
 
 log = logging.getLogger("sovereign.worker")
 
@@ -39,6 +41,20 @@ class _RedactBotTokenFilter(logging.Filter):
         return True
 
 
+# Everything the CLI can start on config.TEMPORAL_TASK_QUEUE must be listed
+# here, or the start succeeds and the run sits unpicked forever (crew#284 CP3:
+# `sb run --branches 3` started BranchParentWorkflow while the worker only
+# served SessionWorkflow). tests/bdd/test_cp3_worker_registry.py holds the rule.
+WORKFLOWS = [SessionWorkflow, BranchParentWorkflow, BranchChildWorkflow]
+ACTIVITIES = [
+    activities.run_step,
+    activities.append_receipt,
+    activities.notify_change,
+    activities.budget_op,
+    *shadow_activities.ACTIVITIES,
+]
+
+
 async def run_worker() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     redact = _RedactBotTokenFilter()
@@ -56,8 +72,8 @@ async def run_worker() -> None:
     worker = Worker(
         client,
         task_queue=config.TEMPORAL_TASK_QUEUE,
-        workflows=[SessionWorkflow],
-        activities=[activities.run_step, activities.append_receipt, activities.notify_change, activities.budget_op],
+        workflows=WORKFLOWS,
+        activities=ACTIVITIES,
     )
     log.info(
         "sovereign worker starting: address=%s namespace=%s task_queue=%s",
