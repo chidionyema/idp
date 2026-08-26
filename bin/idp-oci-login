@@ -89,6 +89,7 @@ BK
 else
   rm -f "$IDP/platform/oci/backend_override.tf" "$IDP/platform/oci/identity/backend_override.tf"; echo "BLIND   state   no OCI_S3_* in the vault: local state (crew#220 hand step 1; run bin/idp-oci-bootstrap)"
 fi
+FE_LINE=""; [ -z "${ESTATE_FOUNDER_EMAIL:-}" ] || FE_LINE="founder_email               = \"$ESTATE_FOUNDER_EMAIL\""
 cat > "$IDP/platform/oci/terraform.tfvars" <<TFV
 tenancy_ocid                = "$(vget OCI_TENANCY_OCID)"
 compartment_ocid            = "$COMP"
@@ -97,7 +98,7 @@ ssh_public_key              = "$SSH_PUB_TEXT"
 control_plane_allowed_cidrs = [$CIDRS]
 oci_auth                    = "$AUTH"
 oci_profile                 = "$PROFILE"
-${ESTATE_FOUNDER_EMAIL:+founder_email               = "$ESTATE_FOUNDER_EMAIL"}
+$FE_LINE
 TFV
 
 # A key uploaded seconds ago answers 401 for a few minutes (measured 2026-08-25: ~6 min
