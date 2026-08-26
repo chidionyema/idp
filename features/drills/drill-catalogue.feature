@@ -75,3 +75,9 @@ Feature: Every scheduled drill has run recently, and the catalogue says which dr
     When bin/idp-verify runs
     Then the drills row prints FAIL naming the missing file
     And the old run history is never consulted
+
+  Scenario: login-drill is graded, not pending
+    Given drills/catalogue.yaml has no pending flag on login-drill
+    When bin/idp-verify runs
+    Then the drills row grades login-drill by the age of its last green oke-check.yml run
+    And a run older than 26 hours is a FAIL, never n/a
