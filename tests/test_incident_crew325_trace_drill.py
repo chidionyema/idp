@@ -60,3 +60,20 @@ def test_github_app_installation_step_runs_even_when_a_drill_row_is_red() -> Non
     assert len(steps) == 1, steps
     cond = str(steps[0]["if"])
     assert "always()" in cond and "inputs.mode == 'apply'" in cond, cond
+
+
+def test_litellm_upstream_seed_step_runs_on_apply_and_never_echoes_a_value() -> None:
+    """trace-drill run 33007689530: the ACTIVE vault secret litellm-upstream held a raw value, not the
+    JSON envelope ExternalSecret llm/litellm-upstream extracts. The apply job re-puts it through
+    bin/idp-vault-put from SEED_* secrets; the step is always()-gated, exits 0 with no seed, and no
+    line echoes a key variable."""
+    wf = yaml.safe_load((ROOT / ".github" / "workflows" / "oke-check.yml").read_text())
+    steps = [s for j in wf["jobs"].values() for s in j.get("steps", []) if "idp-vault-put litellm-upstream" in s.get("name", "")]
+    assert len(steps) == 1, steps
+    step = steps[0]
+    assert "always()" in str(step["if"]) and "inputs.mode == 'apply'" in str(step["if"])
+    assert step["env"]["LITELLM_MASTER_KEY"] == "${{ secrets.SEED_LITELLM_MASTER_KEY }}"
+    run = step["run"]
+    assert "bin/idp-vault-put litellm-upstream" in run and "LITELLM_MASTER_KEY=LITELLM_MASTER_KEY" in run
+    assert 'exit 0' in run.split("\n")[0], "no seed -> n/a and exit 0"
+    assert not re.search(r"echo[^\n]*\$\{?(MINIMAX|DEEPSEEK|OPENROUTER|GEMINI|LITELLM)_", run), "a value echoed"
