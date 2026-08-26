@@ -63,6 +63,14 @@ model_list:
       model: ollama/gemma3:4b
       api_base: http://host.docker.internal:11434
       timeout: 300
+  # Second local voter for the kernel's 3-model consensus (kini spec 4.2:
+  # "Ollama handles 2/3 quorum load"); a different family from `ollama`, so two
+  # local votes are not one model voting twice.
+  - model_name: ollama-llama
+    litellm_params:
+      model: ollama/llama3.2:latest
+      api_base: http://host.docker.internal:11434
+      timeout: 300
 
 router_settings:
   # The chain prospector's `noncritical_operator:` already declares, expressed once here

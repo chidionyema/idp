@@ -187,7 +187,7 @@ KEYS: dict[str, KeySpec] = {
     "runner.default": KeySpec("echo", "str", "SB_DEFAULT_RUNNER", ""),
     "model.default": KeySpec("ollama", "str", "SB_MODEL", "LiteLLM alias for the llm runner"),
     "model.vision": KeySpec("ollama-vision", "str", "SB_MODEL_VISION", "LiteLLM alias, vision-capable"),
-    "model.consensus": KeySpec(["ollama", "ollama", "ollama"], "list", "SB_MODEL_CONSENSUS", "comma-separated aliases"),
+    "model.consensus": KeySpec(["ollama", "ollama-llama", "deepseek"], "list", "SB_MODEL_CONSENSUS", "comma-separated aliases; three different models (spec 4.2), two local, one frontier"),
 
     "step.start_to_close_min": KeySpec(30, "int", "SB_STEP_TIMEOUT_MIN", "activity start-to-close timeout"),
     "step.heartbeat_s": KeySpec(10, "int", "SB_HEARTBEAT_S", "activity heartbeat timeout"),

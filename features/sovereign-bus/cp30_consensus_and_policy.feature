@@ -22,3 +22,8 @@ Feature: Cross-model consensus under a policy invariant
   Scenario: Non-destructive ops use one cheap model
     Given a non-destructive op
     Then exactly one model is called, the cheapest in the LiteLLM fallback chain
+
+  Scenario: The default voters are three different models
+    Given the shipped configuration with no consensus override
+    Then the consensus list names three aliases and no alias appears twice
+    And every alias is a model_name the LiteLLM proxy config serves
