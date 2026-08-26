@@ -72,6 +72,7 @@ jobs:
           OKE_SSH_PUBKEY_TEXT: ${{ vars.OKE_SSH_PUBKEY }}
           OKE_ALLOWED_CIDRS: ${{ vars.OKE_ALLOWED_CIDRS }}
           ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}   # platform/oci/langfuse.tf seeds the Langfuse login
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # bin/idp-drill-heartbeat reads login-drill runs; without it the row is BLIND (run 32988930880)
         run: bin/idp-oke-rebuild --${{ inputs.mode || 'check' }}
       # crew#267: the Flux GitRepository idp-writer needs githubAppInstallationID in the vault secret
       # github-app. This ran once from a founder laptop (bin/idp-github-app installation); now the
