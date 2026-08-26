@@ -245,7 +245,7 @@ with sync_playwright() as p:
         ("catalog-graph", "text=Catalog Graph"),
         ("catalog-import", "text=Register an existing component"),
         ("api-docs", "text=APIs"),
-        ("docs", "text=Documentation"),
+        ("docs", "text=Owned"),  # the TechDocs index heading is "Docs" (shell text too); "Owned" is its ownership picker, "Documentation" was Backstage 1.x
         ("create", "text=Templates"),  # the scaffolder page heading is "Templates"; "Create a new component" was Backstage 1.x
         ("search", "text=Search"),
         ("settings", "text=Settings"),

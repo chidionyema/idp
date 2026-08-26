@@ -74,3 +74,17 @@ def test_incident_crew307_material_table_keeps_its_own_uuid():
     assert pkg["resolutions"]["@material-table/core/uuid"].startswith("^3.")
     lock = (ROOT / "backstage" / "yarn.lock").read_text()
     assert '"uuid@npm:^3.4.0":' in lock
+
+
+def test_incident_crew307_no_drill_row_expects_a_backstage_1x_heading():
+    """crew#307: docs was graded on 'Documentation' and create on 'Create a new component',
+    both Backstage 1.x headings the new frontend no longer renders. Run 33010230737 read
+    8/9 with only docs red for that reason."""
+    import ast
+    src = (ROOT / "bin" / "idp-login-drill").read_text()
+    block = re.search(r"PUBLISHED = (\((?:.|\n)*?\n    \))", src)
+    assert block, "PUBLISHED tuple not found"
+    rows = dict(ast.literal_eval(block.group(1)))
+    retired_1x = {"text=Documentation", "text=Create a new component"}
+    assert not retired_1x & set(rows.values()), rows
+    assert rows["docs"] == "text=Owned"
