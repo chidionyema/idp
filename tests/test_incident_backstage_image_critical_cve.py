@@ -76,4 +76,6 @@ def test_oke_overlay_pulls_an_image_build_multiarch_actually_pushes():
     for img in ours:
         assert img["newName"].startswith("ghcr.io/chidionyema/"), img
         assert img["newName"].rsplit("/", 1)[1] in names, f"{img['newName']}: not an image bin/dockerfiles produces ({sorted(names)})"
-        assert re.fullmatch(r"[0-9a-f]{40}", str(img.get("newTag", ""))), f"{img}: tag is not a commit sha"
+        # build-multiarch pushes both :<sha> and :main-<run>-<sha> (crew#267); the Flux
+        # ImagePolicy can only order the second form, so both are tags the workflow pushed.
+        assert re.fullmatch(r"(main-[0-9]+-)?[0-9a-f]{40}", str(img.get("newTag", ""))), f"{img}: tag is not a pushed commit sha form"
