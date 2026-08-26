@@ -1,3 +1,19 @@
-{"pr": {"number": 2, "files": ["platform/oci/identity/main.tf"],
- "added": "+resource \"oci_identity_domains_app\" \"front_door\" {\n",
- "body": "Approval-word: x\nCost-delta-usd-month: 0\n", "labels": ["canary"]}, "budget_monthly_usd": 50}
+{
+ "pr": {
+  "number": 2,
+  "files": [
+   "platform/oci/identity/main.tf"
+  ],
+  "added": "+resource \"oci_identity_domains_app\" \"front_door\" {\n",
+  "body": "Approval-word: x\nCost-delta-usd-month: 0\n\nDrill: oke-check\n",
+  "labels": [
+   "canary"
+  ]
+ },
+ "budget_monthly_usd": 50,
+ "drills": [
+  "oke-check",
+  "access-apply",
+  "login-drill"
+ ]
+}

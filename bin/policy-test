@@ -33,6 +33,8 @@ cases=(
   "opmodel-no-approval.json:1:refuses a founder-facing change with no Approval-word line"
   "opmodel-over-budget.json:1:refuses a platform/oci change whose declared monthly cost beats the budget"
   "opmodel-no-canary.json:1:refuses a platform/oci change with no canary label"
+  "opmodel-no-drill.json:1:refuses a platform/ or clusters/ change that names no drill (founder 2026-08-26: test discipline)"
+  "opmodel-unknown-drill.json:1:refuses a Drill: line naming nothing in drills/catalogue.yaml"
 )
 
 printf '%-20s %-8s %-8s %s\n' FIXTURE EXPECT GOT PROVES

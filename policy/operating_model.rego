@@ -137,3 +137,35 @@ deny contains msg if {
 	not "canary" in input.pr.labels
 	msg := "rule=canary | a platform/oci change carries no `canary` label | fix: `gh pr edit <n> --add-label canary` once the plan names its canary step (dev subnet, one node, or `--check` only)"
 }
+
+# --- drill_named -------------------------------------------------------------------------
+# Founder, 2026-08-26, after the front door failed three times in a row on first use: "we need
+# test discipline". A platform layer is not changed on the strength of a plan and a green unit
+# suite; the PR names the drill in drills/catalogue.yaml that signs in, rebuilds or restores
+# through the layer it touches. A layer no drill covers gets its drill in the same PR.
+
+drilled_prefixes := {"platform/", "clusters/"}
+
+touches_drilled_layer if {
+	some f in input.pr.files
+	some p in drilled_prefixes
+	startswith(f, p)
+}
+
+drill_line := m[0][1] if {
+	m := regex.find_all_string_submatch_n(`(?m)^Drill:\s*(\S+)`, input.pr.body, 1)
+	count(m) == 1
+}
+
+deny contains msg if {
+	touches_drilled_layer
+	not drill_line
+	msg := "rule=drill_named | the PR changes a platform layer (platform/, clusters/) and names no drill that exercises it | fix: add `Drill: <name>` to the PR body, naming an entry in drills/catalogue.yaml (add the drill in this PR if none covers the layer)"
+}
+
+deny contains msg if {
+	touches_drilled_layer
+	drill_line
+	not drill_line in input.drills
+	msg := sprintf("rule=drill_named | `Drill: %s` names no entry in drills/catalogue.yaml | fix: use a catalogued drill name, or add the drill to the catalogue in this PR", [drill_line])
+}
