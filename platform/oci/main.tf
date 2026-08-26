@@ -32,18 +32,19 @@ module "oke" {
       memory           = var.worker_memory_gb
       size             = 1
       boot_volume_size = 50
-      # crew#289: a shape change reaches only new nodes. On 2026-08-26 the apply moved the pool to
-      # 4 OCPU / 24 GB while the running node stayed at 2 / 12 (`oci compute instance list`, kubectl
-      # allocatable 1830m). Cycling replaces the node: surge 1 brings the new node Ready first,
-      # unavailable 0 drains the old one only then. Same module setting the OKE docs call node cycling.
-      node_cycling_enabled         = true
-      node_cycling_max_surge       = 1
-      node_cycling_max_unavailable = 0
+      # crew#289 (2026-08-26): a shape change reaches only new nodes; the running node stayed at
+      # 2 OCPU / 12 GB after the pool moved to 4 / 24. node_cycling_* was tried and UpdateNodePool
+      # refused it in run 32930359052: the cluster is BASIC_CLUSTER (`oci ce cluster get`), and OKE
+      # offers node cycling on enhanced clusters only
+      # (docs.oracle.com/en-us/iaas/Content/ContEng/Tasks/contengcomparingenhancedwithbasicclusters_topic.htm).
+      # Replacing a node on this cluster is a surge: `oci ce node-pool update --size 2 --force`, wait
+      # for the new node Ready, then `delete-node --is-decrement-size true` on the old one.
       # AD-1 only (crew#289, 2026-08-26): the two block-volume PVs (backstage/pgdata-postgres-0,
-      # prospector/prospector-store-api-data) carry nodeAffinity UK-LONDON-1-AD-1; a cycled node in
-      # AD-2 could never mount them. A1.Flex is offered in AD-1 and AD-2 only, and the 2026-08-25
-      # "Node shape is unavailable in subnet availability domain(s)" failure was AD-3.
-      placement_ads    = [1]
+      # prospector/prospector-store-api-data) carry nodeAffinity UK-LONDON-1-AD-1; a node in AD-2
+      # could never mount them. A1.Flex is offered in AD-1 and AD-2 only, and the 2026-08-25
+      # "Node shape is unavailable in subnet availability domain(s)" failure was AD-3. The module
+      # ignores changes to this after creation, so it binds fresh creates (--teardown-rebuild) only.
+      placement_ads = [1]
     }
   }
 }

@@ -34,7 +34,9 @@ step() { # name, then the command; prints one receipt line, records failures, ne
   local name="$1"; shift; local s out rc; s=$(date +%s)
   out=$("$@" 2>&1); rc=$?
   printf '%-5s %-18s rc=%-3s %4ss  %s\n' "$([ $rc -eq 0 ] && echo ok || echo FAIL)" "$name" "$rc" "$(( $(date +%s) - s ))" "$(printf %s "$out" | tail -1 | cut -c1-100)"
-  [ $rc -eq 0 ] || { FAILED="$FAILED $name"; printf '%s\n' "$out" | tail -8 | sed 's/^/      | /'; }   # the failing step's own words, not a 100-char tail
+  # the failing step's own words: any Error/Message line first (an OCI 400 sits above tofu's 8-line
+  # footer and was hidden in run 32930359052, crew#289), then the tail
+  [ $rc -eq 0 ] || { FAILED="$FAILED $name"; { printf '%s\n' "$out" | grep -iE '(^|[^a-z])(error|message)[^a-z]' | head -6; printf '%s\n' "$out" | tail -8; } | awk '!seen[$0]++' | sed 's/^/      | /'; }
   return $rc
 }
 blind() { printf 'BLIND %-18s %s\n' "$1" "$2"; FAILED="$FAILED $1"; }
