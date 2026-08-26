@@ -29,3 +29,20 @@ def test_incident_crew307_drill_grades_every_published_path():
         assert must_see.startswith("text=") and len(must_see) > len("text=x"), path
     assert "catalog" in dict(published)
     assert "published paths broken" in src
+
+
+def test_incident_crew307_oke_tag_is_orderable():
+    """The OKE overlay pins an orderable main-<run>-<sha> tag (features/hard_execution_chain.feature).
+
+    Flux ImagePolicy (platform/image-automation/backstage.yaml) only orders tags matching
+    ^main-(?P<run>[0-9]+)-[0-9a-f]{40}$. A bare sha pin is invisible to it, so the automation
+    can never move a bare pin and the catalogue fix never rolls (crew#307, 2026-08-26).
+    """
+    import re
+    from pathlib import Path
+
+    text = Path(__file__).resolve().parents[1].joinpath(
+        "platform/backstage/overlays/oke/kustomization.yaml").read_text()
+    m = re.search(r"newTag:\s*(\S+)\s*#\s*\{\"\$imagepolicy\"", text)
+    assert m, "backstage newTag with the $imagepolicy marker is missing"
+    assert re.fullmatch(r"main-[0-9]+-[0-9a-f]{40}", m.group(1)), m.group(1)
