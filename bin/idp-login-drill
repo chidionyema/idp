@@ -253,6 +253,7 @@ with sync_playwright() as p:
     )
     broken = []
     for path, must_see in PUBLISHED:
+        before = len(page_errors)
         try:
             r = page.goto(f"{HOME}{path}", wait_until="domcontentloaded")
         except PWError as e:
@@ -268,10 +269,14 @@ with sync_playwright() as p:
             # Say what the page did render, so a broken row can be graded from the log alone
             # (LAW 28): a locator that drifted reads differently from a plugin that never loaded.
             try:
-                seen = " ".join(page.locator("body").inner_text(timeout=3000).split())[:160]
+                seen = " ".join(page.locator("body").inner_text(timeout=3000).split())[:400]
             except PWError:
                 seen = ""
-            broken.append(f"{path}: rendered but not its own content ({must_see} never appeared); page says: {seen}")
+            # A plugin's error boundary prints "Error in catalog" and swallows the stack; the
+            # JavaScript error itself is what names the bug (run 33000031203 showed "TypeEr").
+            errs = "; ".join(e[:300] for e in page_errors[before:]) or "none"
+            broken.append(f"{path}: rendered but not its own content ({must_see} never appeared); "
+                          f"page says: {seen}; js errors: {errs}")
     print(f"paths   login-drill  {len(PUBLISHED) - len(broken)}/{len(PUBLISHED)} published paths render their own content")
     if broken:
         # One line per path: fail() caps its detail at 200 chars, which hid the third
