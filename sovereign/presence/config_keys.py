@@ -137,6 +137,16 @@ PRESENCE_KEYS: dict[str, tuple[Any, type, str, str]] = {
         str, "SB_PRESENCE_SPEAK_TEMPLATE",
         "what Siri says for 'estate status' (spec 2.6)",
     ),
+    "presence.ghost_line_template": (
+        "{total} sessions · {budget_remaining} budget remaining · {last_hash} last receipt",
+        str, "SB_PRESENCE_GHOST_LINE_TEMPLATE",
+        "the one line Ghost may show under the dot (spec 2.1: nothing else renders)",
+    ),
+    "presence.emergency_line_template": (
+        "EMERGENCY — integrity check required. Run: {remediation}",
+        str, "SB_PRESENCE_EMERGENCY_LINE_TEMPLATE",
+        "the one line Ghost shows when the dot is red (catastrophe raised Spatial)",
+    ),
 }
 
 _TRUE_WORDS = ("1", "true", "yes", "on")

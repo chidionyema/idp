@@ -129,6 +129,15 @@ COCKPIT_KEYS: dict[str, tuple[Any, type, str, str]] = {
         "text/plain; charset=utf-8", str, "COCKPIT_CONTENT_TYPE_TEXT",
         "Content-Type for /healthz",
     ),
+    "cockpit.content_type_js": (
+        "application/javascript; charset=utf-8", str, "COCKPIT_CONTENT_TYPE_JS",
+        "Content-Type for a vendored asset under /vendor/",
+    ),
+    "cockpit.route_vendor_pattern": (
+        r"^/vendor/([A-Za-z0-9_.-]+)$", str, "COCKPIT_ROUTE_VENDOR_PATTERN",
+        "Regex matching GET /vendor/<file> -- served only from sovereign/cockpit/vendor/, "
+        "no auth (same trust level as index.html: no secret, no session data)",
+    ),
     "cockpit.route_healthz": (
         "/healthz", str, "COCKPIT_ROUTE_HEALTHZ",
         "Liveness probe path, no auth required",
