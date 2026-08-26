@@ -37,7 +37,7 @@ if [ "$sc" != "true" ]; then
   else echo "FAIL    identity domain Settings PATCH refused: $(printf '%s' "$pr" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; fi
 else echo "ok      identity domain signing certificate is public"; fi
 M="$IDP/platform/oci/identity"
-if [ -f "$M/backend_override.tf" ]; then tofu -chdir="$M" init -input=false -migrate-state -force-copy >/dev/null
+if [ -f "$M/backend_override.tf" ]; then "$IDP/bin/idp-state-guard" "$M"; tofu -chdir="$M" init -input=false -reconfigure >/dev/null
 else echo "BLIND   state   platform/oci/identity/backend_override.tf missing: local state; run bin/idp-oci-login"; tofu -chdir="$M" init -input=false >/dev/null; fi
 tofu -chdir="$M" "${1:-plan}" -input=false "${@:2}" \
   -var "idcs_endpoint=$DOMAIN_BASE_URL" -var "zone=$zone" -var "founder_emails=[\"$ESTATE_FOUNDER_EMAIL\"]" \

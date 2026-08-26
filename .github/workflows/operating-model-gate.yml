@@ -1,0 +1,79 @@
+# The Estate-as-Platform operating model gate, as one reusable workflow every active
+# estate repo calls (crew#292 CP3).
+#
+# Before this file the gate lived only in idp's ci.yml. Copying those four steps into
+# hermes-v2 and crew would have been three copies of one policy, which is the stitching
+# the headline refuses. There is one copy of the steps here, one copy of the rego in
+# idp policy/operating_model.rego, and one copy of the budget in idp estate-defaults.yaml.
+#
+# A caller adds .github/workflows/operating-model-gate.yml with:
+#
+#   on: pull_request
+#   jobs:
+#     operating-model-gate:
+#       uses: chidionyema/idp/.github/workflows/operating-model-gate.yml@main
+#       permissions: { contents: read, pull-requests: write }
+#
+# HOW THE TWO CHECKOUTS SPLIT THE WORK. The caller repo is checked out to `.` so that
+# `gh pr view` and `gh pr diff` inside bin/pr-report resolve to the caller's pull request
+# from the working directory. idp is checked out to `.idp` and passed as IDP_ROOT, so the
+# policy and the budget come from idp no matter which repo is being judged. idp is public,
+# so the caller's own GITHUB_TOKEN can read it and no secret is inherited.
+#
+# `if: github.event_name == 'pull_request'` is on the job, not the caller: bin/pr-report
+# needs a PR number and a push to main has none. Incident: idp run 32922679927 failed with
+# `bin/pr-report: line 13: 1: pr number` and turned main red.
+name: operating-model-gate
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        description: "Pull request to judge. Defaults to the calling event's PR number."
+        required: false
+        type: string
+        default: ""
+      idp_ref:
+        description: "Ref of chidionyema/idp holding the policy. Pin it to freeze a gate."
+        required: false
+        type: string
+        default: "main"
+      comment:
+        description: "Post the deny lines back on the PR as one comment."
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  operating-model-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pull-requests: write }
+    steps:
+      - name: the caller repo, so gh reads the caller's pull request
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: idp, so the policy and the budget have one copy
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: chidionyema/idp
+          ref: ${{ inputs.idp_ref }}
+          path: .idp
+
+      - name: conftest
+        run: curl -sSL https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
+
+      - name: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IDP_ROOT: ${{ github.workspace }}/.idp
+          PR_REPORT_DIR: ${{ runner.temp }}/pr-report
+          PR_NUMBER: ${{ inputs.pr_number != '' && inputs.pr_number || github.event.pull_request.number }}
+          COMMENT: ${{ inputs.comment && '--comment' || '' }}
+        run: |
+          pip install -q pyyaml
+          "$IDP_ROOT/bin/pr-report" "$PR_NUMBER" $COMMENT

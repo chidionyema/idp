@@ -27,3 +27,9 @@ Feature: the front door's OIDC client lives in the estate's own identity domain 
     Then he is sent to the identity domain's sign-in page, not to GitHub
     And after signing in the catalogue renders
     And a user the domain has not granted the app is refused at the identity provider
+
+  Scenario: the Cloudflare broker is gone and nothing names it (crew#288 CP3)
+    Given the repository at HEAD
+    Then the directory platform/access does not exist
+    And .github/workflows/access-apply.yml and bin/idp-access-apply do not exist
+    And no tracked file names platform/access, access-apply or ESTATE_LOGIN_GITHUB_USER, except this feature and the decision record that retires them

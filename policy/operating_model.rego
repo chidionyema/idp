@@ -130,7 +130,7 @@ deny contains msg if {
 # --- canary ------------------------------------------------------------------------------
 # An infra plan is applied to the canary target first. The label is what the merge gate
 # can see; the workflow that honours it (apply canary, verify, apply the rest) is
-# access-apply.yml's shape.
+# oke-check.yml's shape (mode=apply after the STAGED timer).
 
 deny contains msg if {
 	infra_change
