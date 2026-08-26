@@ -70,3 +70,16 @@ def test_incident_crew325_langfuse_release_waits_for_the_clickhouse_it_uses() ->
     signoz = next(d for d in docs if d["kind"] == "HelmRelease" and d["metadata"]["name"] == "signoz")
     assert values["clickhouse"]["host"] == "signoz-clickhouse"
     assert [d["name"] for d in langfuse["spec"]["dependsOn"]] == [signoz["metadata"]["name"]]
+
+
+def test_incident_crew325_otel_collector_can_write_the_paths_it_writes() -> None:
+    # signoz-otel-collector copies its config to /var/tmp at start (signozotelcollector/main.go).
+    docs = _rendered()
+    hr = next(d for d in docs if d["kind"] == "HelmRelease" and d["metadata"]["name"] == "signoz")
+    patch = next(p for p in hr["spec"]["postRenderers"][0]["kustomize"]["patches"]
+                 if p["target"].get("name") == "signoz-otel-collector")
+    spec = yaml.safe_load(patch["patch"])["spec"]["template"]["spec"]
+    collector = next(c for c in spec["containers"] if c["name"] == "collector")
+    assert collector["securityContext"]["readOnlyRootFilesystem"] is True
+    mounts = {m["mountPath"] for m in collector["volumeMounts"]}
+    assert {"/tmp", "/var/tmp"} <= mounts
