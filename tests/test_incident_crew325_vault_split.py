@@ -54,3 +54,8 @@ def test_rebuild_runs_the_guard_in_check_and_apply() -> None:
     s = (ROOT / "bin" / "idp-oke-rebuild").read_text()
     i = s.index('step vault-split "$IDP/bin/idp-vault-split-guard"')
     assert i < s.index('case "$MODE" in'), "the row runs before the mode switch, so --check and --apply both print it"
+
+
+def test_trace_drill_refuses_a_name_active_in_two_vaults() -> None:
+    s = (ROOT / "bin" / "idp-trace-drill").read_text()
+    assert "lifecycle-state\\\"=='ACTIVE'].id\"" in s and "-le 1 ] || fail vault" in s and "split store" in s
