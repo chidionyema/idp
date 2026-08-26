@@ -26,7 +26,7 @@ module "oke" {
 
   worker_pools = {
     a1 = {
-      description      = "the whole Always Free A1 allowance, one node"
+      description      = "one A1 node: the Always Free allowance plus paid growth under the estate-defaults cap"
       shape            = "VM.Standard.A1.Flex"
       ocpus            = var.worker_ocpus
       memory           = var.worker_memory_gb
@@ -43,4 +43,37 @@ output "cluster_id" {
 
 output "cluster_endpoints" {
   value = module.oke.cluster_endpoints
+}
+
+# Paid capacity stays under the cap the founder wrote (estate-defaults.yaml, crew#281). The
+# estimate is (paid OCPU x price + paid GB x price) x 730 hours; policy/capacity.rego computes
+# the same number from the `capacity` output below, and the fixtures pin both.
+locals {
+  estate_defaults      = yamldecode(file("${path.module}/../../estate-defaults.yaml"))
+  monthly_cap_usd      = local.estate_defaults.infrastructure.monthly_cap_usd
+  paid_ocpus           = max(0, var.worker_ocpus - var.free_ocpus)
+  paid_memory_gb       = max(0, var.worker_memory_gb - var.free_memory_gb)
+  capacity_monthly_usd = (local.paid_ocpus * var.a1_ocpu_usd_per_hour + local.paid_memory_gb * var.a1_memory_gb_usd_per_hour) * 730
+}
+
+resource "terraform_data" "capacity_cap" {
+  input = local.capacity_monthly_usd
+  lifecycle {
+    precondition {
+      condition     = local.capacity_monthly_usd <= local.monthly_cap_usd
+      error_message = "Node pool ${var.worker_ocpus} OCPU / ${var.worker_memory_gb} GB is an estimated USD ${local.capacity_monthly_usd} a month, over the estate-defaults cap of USD ${local.monthly_cap_usd}. A paid billing authorisation is FOUNDER ACTION, not STAGED."
+    }
+  }
+}
+
+output "capacity" {
+  description = "Input for policy/capacity.rego: `tofu output -json capacity > reports/capacity.json`."
+  value = {
+    ocpus           = var.worker_ocpus
+    memory_gb       = var.worker_memory_gb
+    free            = { ocpus = var.free_ocpus, memory_gb = var.free_memory_gb }
+    price_usd_hr    = { ocpu = var.a1_ocpu_usd_per_hour, memory_gb = var.a1_memory_gb_usd_per_hour }
+    monthly_cap_usd = local.monthly_cap_usd
+    monthly_usd     = local.capacity_monthly_usd
+  }
 }

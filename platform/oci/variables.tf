@@ -19,24 +19,45 @@ variable "ssh_public_key" {
   type        = string
 }
 
-# Always Free A1 allowance since 2026-06-15: 2 OCPU / 12 GB in total (ADR 0004). One node
-# holds all of it; a second pool or a bigger node is a paid resource and refused by R14.
+# Always Free A1 allowance since 2026-06-15: 2 OCPU / 12 GB in total (ADR 0004). Anything
+# above it is paid, and paid capacity is auto-defaulted up to estate-defaults.yaml
+# monthly_cap_usd (crew#281, founder 2026-08-26: compute_tier auto-scale-paid). The cap is the
+# founder's sign-off that ruling R14 asked for, written once; the precondition on
+# terraform_data.capacity_cap in main.tf refuses a plan over it, and policy/capacity.rego is
+# the same rule over `tofu output -json capacity`.
 variable "worker_ocpus" {
   type    = number
-  default = 2
-  validation {
-    condition     = var.worker_ocpus <= 2
-    error_message = "Always Free A1 is 2 OCPU total (ADR 0004). More is paid infra, refused by ruling R14."
-  }
+  default = 4
 }
 
 variable "worker_memory_gb" {
   type    = number
-  default = 12
-  validation {
-    condition     = var.worker_memory_gb <= 12
-    error_message = "Always Free A1 is 12 GB total (ADR 0004). More is paid infra, refused by ruling R14."
-  }
+  default = 24
+}
+
+variable "free_ocpus" {
+  description = "Always Free A1 OCPU allowance (ADR 0004)."
+  type        = number
+  default     = 2
+}
+
+variable "free_memory_gb" {
+  description = "Always Free A1 memory allowance in GB (ADR 0004)."
+  type        = number
+  default     = 12
+}
+
+# Oracle public price list, read 2026-08-26 from
+# apexapps.oracle.com/pls/apex/cetools/api/v1/products/: part B93297 (A1 OCPU) and
+# B93298 (A1 memory), PAY_AS_YOU_GO. Re-read them when the list changes; never from memory.
+variable "a1_ocpu_usd_per_hour" {
+  type    = number
+  default = 0.01
+}
+
+variable "a1_memory_gb_usd_per_hour" {
+  type    = number
+  default = 0.0015
 }
 
 variable "kubernetes_version" {
