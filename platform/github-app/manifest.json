@@ -1,0 +1,18 @@
+{
+  "name": "estate-agents",
+  "url": "{{REPO_URL}}",
+  "description": "Estate agent sessions act through this App, one installation token per lane, never a person's token (crew#286 CP7).",
+  "public": false,
+  "redirect_url": "{{REDIRECT_URL}}",
+  "hook_attributes": { "url": "{{REPO_URL}}", "active": false },
+  "default_events": [],
+  "default_permissions": {
+    "metadata": "read",
+    "contents": "write",
+    "pull_requests": "write",
+    "issues": "write",
+    "workflows": "write",
+    "actions": "write",
+    "checks": "read"
+  }
+}

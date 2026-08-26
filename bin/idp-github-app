@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# One GitHub App for the estate's agents; one installation token per lane (crew#286 CP7).
+#   bin/idp-github-app manifest        print the one-tap URL that creates the App (founder taps Create once)
+#   bin/idp-github-app convert <code>  exchange the manifest code for the App and store it in the estate vault
+#   bin/idp-github-app token <lane>    mint an installation token narrowed to platform/github-app/lanes.json
+#   bin/idp-github-app status          which identity gh acts as, and whether it is the App
+# GitHub creates Apps only through the manifest flow, which ends in a browser redirect (crew#288);
+# that single Create tap is the one hand step. Everything after it is API.
+# Tokens: JWT from `gh token` (Link-/gh-token), narrowed via the REST API; nothing is printed but the token,
+# on request, and only when stdout is not a terminal.
+set -euo pipefail
+IDP=$(cd "$(dirname "$0")/.." && pwd)
+D="$IDP/platform/github-app"
+SECRET=github-app
+cmd=${1:-}; shift || true
+
+repo_url() { gh repo view --json url -q .url; }
+
+case "$cmd" in
+manifest)
+  url=$(repo_url); redirect="${GITHUB_APP_REDIRECT_URL:-$url/issues}"
+  m=$(sed -e "s#{{REPO_URL}}#$url#g" -e "s#{{REDIRECT_URL}}#$redirect#g" "$D/manifest.json" | jq -c .)
+  html=$(python3 - "$m" <<'PY'
+import sys,html,base64
+m=sys.argv[1]
+page=('<!doctype html><meta charset=utf-8><title>estate-agents</title>'
+      '<form id=f method=post action="https://github.com/settings/apps/new">'
+      f'<input type=hidden name=manifest value="{html.escape(m, quote=True)}">'
+      '<button>Create the estate-agents GitHub App</button></form>'
+      '<script>document.getElementById("f").submit()</script>')
+print("data:text/html;base64,"+base64.b64encode(page.encode()).decode())
+PY
+)
+  echo "$html"
+  ;;
+convert)
+  code=${1:?manifest code from the redirect URL}
+  out=$(gh api -X POST "/app-manifests/$code/conversions")
+  tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT; chmod 600 "$tmp"
+  jq -r '"GITHUB_APP_ID=\(.id)\nGITHUB_APP_SLUG=\(.slug)\nGITHUB_APP_CLIENT_ID=\(.client_id)\nGITHUB_APP_PEM_B64=\(.pem|@base64)"' <<<"$out" > "$tmp"
+  ESTATE_ENV_FILE="$tmp" "$IDP/bin/idp-vault-put" "$SECRET" app_id=GITHUB_APP_ID slug=GITHUB_APP_SLUG client_id=GITHUB_APP_CLIENT_ID pem_b64=GITHUB_APP_PEM_B64
+  echo "ok      github-app $(jq -r .slug <<<"$out") (id $(jq -r .id <<<"$out")) in vault secret $SECRET; install it on the org/user once: $(jq -r .html_url <<<"$out")/installations/new"
+  ;;
+token)
+  lane=${1:?lane name from platform/github-app/lanes.json}
+  perms=$(jq -c --arg l "$lane" '.[$l] // empty' "$D/lanes.json"); [ -n "$perms" ] || { echo "REFUSED: no lane '$lane' in $D/lanes.json"; exit 2; }
+  export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
+  C=$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$IDP/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")
+  V=$(cd "$IDP/platform/oci" && tofu output -raw vault_id)
+  sid=$(oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"secret-name\"=='$SECRET' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output)
+  [ -n "$sid" ] && [ "$sid" != null ] || { echo "BLIND   github-app no vault secret $SECRET; run: bin/idp-github-app convert <code>"; exit 2; }
+  bundle=$(oci secrets secret-bundle get --secret-id "$sid" --query 'data."secret-bundle-content".content' --raw-output | base64 -d)
+  app_id=$(jq -r .app_id <<<"$bundle"); pem_b64=$(jq -r .pem_b64 <<<"$bundle")
+  jwt=$(gh token generate --jwt --app-id "$app_id" --base64-key "$pem_b64" --token-only)
+  inst=$(GH_TOKEN="$jwt" gh api /app/installations -q '.[0].id')
+  [ -n "$inst" ] && [ "$inst" != null ] || { echo "BLIND   github-app App $app_id has no installation yet"; exit 2; }
+  tok=$(GH_TOKEN="$jwt" gh api -X POST "/app/installations/$inst/access_tokens" --input <(jq -n --argjson p "$perms" '{permissions:$p}') -q .token)
+  if [ -t 1 ]; then echo "ok      github-app token minted for lane $lane (installation $inst, expires in 1h); pipe it: bin/idp-github-app token $lane | gh auth login --with-token"; else printf %s "$tok"; fi
+  ;;
+status)
+  who=$(gh api /user -q .login 2>/dev/null || true)
+  if [ -n "$who" ]; then echo "FAIL    github-app gh acts as the person $who, not the App"; exit 1; fi
+  n=$(gh api /installation/repositories -q .total_count 2>/dev/null) || { echo "BLIND   github-app token is neither a person nor an installation token"; exit 2; }
+  echo "ok      github-app gh acts as the App installation ($n repositories)"
+  ;;
+*) sed -n 2,7p "$0"; exit 2 ;;
+esac
