@@ -171,21 +171,21 @@ if out=$( ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe ) 2>&1);
   say "ok        describe  $(printf '%s' "$out" | tail -1)"
 else say "FAIL      describe  a scheduled job would reach the UI with no description"
   printf '%s\n' "$out" | grep '^FAIL' | sed 's/^/          /'; fail=1; fi
-# Front door login (crew#269, incident 2026-08-26): the argon2 hash in the cluster vault did not
-# match the password in the sops vault and the first founder login was a 401. Nothing compared the
-# two stores. This is the comparison: one real login against auth.<zone> with the sops value.
-# BLIND without the sops vault or the age key; a 401 is a FAIL, never a wait.
+# Front door login (crew#269, ADR 0007): no password exists to try, so the proof is the redirect
+# chain a browser would follow. Unauthenticated -> 302 to /oauth2/start on the catalogue host ->
+# 302 to GitHub's authorize page. A 401, a 200 or any other Location is a FAIL, never a wait.
 zone=$(sed -n 's/^  ESTATE_ZONE: *//p' "$IDP/clusters/oke/estate-config.yaml" | head -1)
-sec="${ESTATE_SECRETS:-}/secrets/dev/CATALOGUE_FOUNDER_PASSWORD.yaml"   # ESTATE_SECRETS and SOPS_AGE_KEY_FILE come from the environment (LAW 46)
-if [ -z "$zone" ] || [ -z "${ESTATE_SECRETS:-}" ] || [ -z "${SOPS_AGE_KEY_FILE:-}" ] || [ ! -f "$sec" ] || ! command -v sops >/dev/null 2>&1; then
-  say "BLIND     login     needs ESTATE_SECRETS, SOPS_AGE_KEY_FILE, sops and the estate-config zone"
-elif pw=$(sops -d --extract '["CATALOGUE_FOUNDER_PASSWORD"]' "$sec" 2>/dev/null) && [ -n "$pw" ]; then
-  code=$(printf '{"username":"founder","password":%s,"keepMeLoggedIn":false}' "$(printf '%s' "$pw" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" \
-    | curl -sS -o /dev/null -w '%{http_code}' --max-time 10 -H 'Content-Type: application/json' -X POST "https://auth.$zone/api/firstfactor" --data-binary @- 2>/dev/null)
-  unset pw
-  if [ "$code" = 200 ]; then say "ok        login     founder signs in at https://auth.$zone (vault hash matches the sops password)"
-  else say "FAIL      login     https://auth.$zone/api/firstfactor -> $code (re-hash the sops password into vault authelia-users: bin/idp-vault-put)"; fail=1; fi
+if [ -z "$zone" ]; then say "BLIND     login     no ESTATE_ZONE in clusters/oke/estate-config.yaml"
 else
-  say "BLIND     login     sops could not decrypt $sec (SOPS_AGE_KEY_FILE?)"
+  loc1=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 10 "https://catalogue.$zone/" 2>/dev/null || echo "000")
+  case "$loc1" in
+    "302 https://catalogue.$zone/oauth2/start"*)
+      loc2=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 10 "${loc1#302 }" 2>/dev/null || echo "000")
+      case "$loc2" in
+        "302 https://github.com/login/oauth/authorize"*) say "ok        login     https://catalogue.$zone -> /oauth2/start -> GitHub (no password anywhere, ADR 0007)" ;;
+        *) say "FAIL      login     /oauth2/start -> ${loc2%% *} ${loc2#* } (vault oauth2-proxy-client-id/-client-secret/-cookie-secret; kubectl -n identity get externalsecret oauth2-proxy)"; fail=1 ;;
+      esac ;;
+    *) say "FAIL      login     https://catalogue.$zone -> ${loc1%% *} ${loc1#* } (want 302 to /oauth2/start; kubectl -n backstage get middleware login-forward-auth; kubectl -n identity get pods)"; fail=1 ;;
+  esac
 fi
 exit "$fail"

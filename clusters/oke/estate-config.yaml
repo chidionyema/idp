@@ -9,3 +9,6 @@ metadata:
   namespace: flux-system
 data:
   ESTATE_ZONE: mumchimp.com
+  # The GitHub login allowed through the front door (ADR 0007). One value, one place; a second
+  # person is a second value here, never a user database.
+  ESTATE_LOGIN_GITHUB_USER: chidionyema

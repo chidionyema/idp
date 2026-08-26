@@ -1,4 +1,4 @@
-# The estate's one login (ADR 0003). `idp.estate/edge-attach` is the label the shared Gateway's
+# The estate's one login (ADR 0007). `idp.estate/edge-attach` is the label the shared Gateway's
 # catalogue and auth listeners select routes from (prospector-main deploy/k8s/base/edge.yaml).
 apiVersion: v1
 kind: Namespace

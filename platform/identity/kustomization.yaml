@@ -2,7 +2,6 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - namespace.yaml
-  - authelia.yaml
+  - oauth2-proxy.yaml
   - external-secret.yaml
-  - external-secret-users.yaml
   - httproute.yaml
