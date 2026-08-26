@@ -65,8 +65,9 @@ def test_trace_drill_refuses_a_name_active_in_two_vaults() -> None:
 def test_incident_crew325_optional_app_secret_does_not_sit_in_secret_store() -> None:
     """secret-store is what every workload row waits on (wait: true). A credential that only exists
     after a founder click (the GitHub App) froze llm/identity/alerts from 14:59Z; it lives with its
-    consumer, image-automation, and secret-store carries only the store and flux-telegram."""
+    consumer, image-automation, and secret-store carries only the store (flux-telegram moved to
+    alerts-secret in crew#284 for the same reason)."""
     store = (ROOT / "platform/secret-store/kustomization.yaml").read_text()
-    assert "github-app" not in store and "flux-telegram.yaml" in store and "store.yaml" in store
+    assert "github-app" not in store and "flux-telegram.yaml" not in store and "store.yaml" in store
     assert (ROOT / "platform/image-automation/flux-writer.yaml").exists()
     assert "flux-writer.yaml" in (ROOT / "platform/image-automation/kustomization.yaml").read_text()
