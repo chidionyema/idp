@@ -32,13 +32,22 @@ spec:
         - name: litellm
           # Same line as llm/litellm.yml minus the -database suffix; tests hold the version equal.
           image: ghcr.io/berriai/litellm:v1.98.0
-          args: ["--config", "/etc/litellm/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+          # Kyverno (secrets-not-from-env-vars, no-optional-secret-references) refused the first
+          # shape of this Deployment on 2026-08-26: envFrom secretRef, one of them optional. The
+          # llm Kustomization sat "dry-run failed" and llm.mumchimp.com never got a record
+          # (crew#284). Secrets are mounted as files and exported by the container itself, which
+          # is what `os.environ/...` in config.yaml reads; neither Secret is optional, so a missing
+          # vault entry keeps the pod Pending naming it instead of starting a half-keyed router.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              for f in /run/secrets/litellm/*/*; do
+                export "$(basename "$f")=$(cat "$f")"
+              done
+              exec litellm --config /etc/litellm/config.yaml --port 4000 --host 0.0.0.0
           ports:
             - { name: http, containerPort: 4000 }
-          envFrom:
-            - secretRef: { name: litellm-upstream }
-            # optional: the router must start even if the Langfuse keys are not in the vault yet.
-            - secretRef: { name: litellm-langfuse, optional: true }
           env:
             - { name: HOME, value: /tmp }
             - { name: LITELLM_LOG, value: INFO }
@@ -47,6 +56,8 @@ spec:
             - { name: LANGFUSE_HOST, value: "http://langfuse-web.observability.svc:3000" }
           volumeMounts:
             - { name: config, mountPath: /etc/litellm, readOnly: true }
+            - { name: upstream, mountPath: /run/secrets/litellm/upstream, readOnly: true }
+            - { name: langfuse, mountPath: /run/secrets/litellm/langfuse, readOnly: true }
             - { name: tmp, mountPath: /tmp }
           resources:
             requests: { cpu: 100m, memory: 256Mi }
@@ -65,6 +76,10 @@ spec:
       volumes:
         - name: config
           configMap: { name: litellm-config }
+        - name: upstream
+          secret: { secretName: litellm-upstream }
+        - name: langfuse
+          secret: { secretName: litellm-langfuse }
         - name: tmp
           emptyDir: { sizeLimit: 256Mi }
 ---
