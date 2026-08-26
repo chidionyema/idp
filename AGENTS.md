@@ -91,7 +91,7 @@ days_per_month = 31   # the longest month, so a sum under the cap holds in every
 default = "ollama"
 vision = "ollama-vision"
 cheap = "ollama"
-consensus = ["ollama", "ollama-llama", "deepseek"]
+consensus = ["ollama", "deepseek", "minimax"]
 
 [merge]
 strict_branches = ["main"]
