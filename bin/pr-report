@@ -24,8 +24,9 @@ mkdir -p "$REPORTS"
 budget=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['infrastructure']['monthly_cap_usd'])" "$IDP/estate-defaults.yaml")
 gh pr view "$n" --json number,body,labels,files -q '{number: .number, body: .body, labels: [.labels[].name], files: [.files[].path]}' > "$REPORTS/pr-meta.json" || exit 2
 gh pr diff "$n" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true
-jq -n --slurpfile m "$REPORTS/pr-meta.json" --rawfile a "$REPORTS/pr-added.txt" --argjson b "$budget" \
-  '{pr: ($m[0] + {added: $a}), budget_monthly_usd: $b}' > "$REPORTS/pr.json"
+drills=$(python3 -c "import yaml,sys,json; print(json.dumps([d['name'] for d in (yaml.safe_load(open(sys.argv[1])) or {}).get('drills', [])]))" "$IDP/drills/catalogue.yaml" 2>/dev/null || echo '[]')
+jq -n --slurpfile m "$REPORTS/pr-meta.json" --rawfile a "$REPORTS/pr-added.txt" --argjson b "$budget" --argjson d "$drills" \
+  '{pr: ($m[0] + {added: $a}), budget_monthly_usd: $b, drills: $d}' > "$REPORTS/pr.json"
 out=$(conftest test --parser json -p "$IDP/policy" "$REPORTS/pr.json" 2>&1); rc=$?
 printf '%s\n' "$out" | grep -E 'FAIL|rule=' | sed 's/^.*FAIL - [^-]*- main - //'
 if [ "$rc" -ne 0 ] && [ "$comment" = "--comment" ]; then
