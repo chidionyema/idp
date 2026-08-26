@@ -66,9 +66,27 @@
         <count>3</count>
     </logger>
 
+    <!--
+      crew#340: on a 2 vCPU host the sampling profiler and the per-second metric
+      tables were the load. With 6 rows of trace data stored, trace_log held 6.6
+      million rows (129 MiB), asynchronous_metric_log 11.5 million, and the server
+      sat at 88 percent CPU idle; a 44 MiB insert into events_full then took 15 to
+      39 seconds and hit TIMEOUT_EXCEEDED on the events_core_mv push. These are
+      diagnostics for a warehouse team; nobody reads them here. query_log stays,
+      it is what bin/langfuse-verify and this incident were diagnosed from.
+    -->
+    <trace_log remove="remove"/>
+    <metric_log remove="remove"/>
+    <asynchronous_metric_log remove="remove"/>
+    <processors_profile_log remove="remove"/>
+    <latency_log remove="remove"/>
+    <error_log remove="remove"/>
+
     <profiles>
         <default>
             <max_memory_usage>600000000</max_memory_usage>
+            <query_profiler_real_time_period_ns>0</query_profiler_real_time_period_ns>
+            <query_profiler_cpu_time_period_ns>0</query_profiler_cpu_time_period_ns>
             <max_bytes_before_external_group_by>300000000</max_bytes_before_external_group_by>
         </default>
     </profiles>
