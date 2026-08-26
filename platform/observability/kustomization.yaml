@@ -5,6 +5,7 @@ resources:
   - namespace.yaml
   - signoz.yaml
   - langfuse.yaml
+  - httproute.yaml
 configMapGenerator:
   - name: signoz-values
     files:

@@ -82,7 +82,8 @@ def master_key() -> None:
 
 @given("the vault holds one JSON secret litellm-upstream", target_fixture="external_secret")
 def external_secret() -> dict:
-    es = yaml.safe_load((CLUSTER / "external-secret.yaml").read_text())
+    # Two ExternalSecrets live in the file since the Langfuse callback (crew#325); the rule is about the upstream one.
+    es = next(d for d in yaml.safe_load_all((CLUSTER / "external-secret.yaml").read_text()) if d["metadata"]["name"] == "litellm-upstream")
     assert es["spec"]["dataFrom"][0]["extract"]["key"] == "litellm-upstream"
     return es
 

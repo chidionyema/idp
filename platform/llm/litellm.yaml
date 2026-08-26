@@ -37,11 +37,14 @@ spec:
             - { name: http, containerPort: 4000 }
           envFrom:
             - secretRef: { name: litellm-upstream }
+            # optional: the router must start even if the Langfuse keys are not in the vault yet.
+            - secretRef: { name: litellm-langfuse, optional: true }
           env:
             - { name: HOME, value: /tmp }
             - { name: LITELLM_LOG, value: INFO }
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
             - { name: OTEL_EXPORTER, value: otlp_http }
+            - { name: LANGFUSE_HOST, value: "http://langfuse-web.observability.svc:3000" }
           volumeMounts:
             - { name: config, mountPath: /etc/litellm, readOnly: true }
             - { name: tmp, mountPath: /tmp }

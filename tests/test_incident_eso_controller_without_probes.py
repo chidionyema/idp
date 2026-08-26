@@ -36,9 +36,13 @@ def test_every_platform_external_secret_uses_estate_vault() -> None:
     files = list(ROOT.glob("platform/**/*external-secret.yaml"))
     assert len(files) >= 3
     for f in files:
-        d = yaml.safe_load(f.read_text())
-        assert d["kind"] == "ExternalSecret", f
-        assert d["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": "estate-vault"}, f
+        # crew#325: a secret file may hold several documents (ExternalSecret + its sibling
+        # objects); grade every ExternalSecret in it, and require at least one.
+        docs = [d for d in yaml.safe_load_all(f.read_text()) if d]
+        externals = [d for d in docs if d.get("kind") == "ExternalSecret"]
+        assert externals, f
+        for d in externals:
+            assert d["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": "estate-vault"}, f
 
 def test_no_flux_kustomization_decrypts_with_sops() -> None:
     # crew#227 CP3: with no sops files left, a decryption block is a dangling key reference.
