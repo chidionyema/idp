@@ -69,3 +69,11 @@ Feature: Every active estate repository runs the same merge-blocking gates
     Then it audits the pins as written, without resolving or installing, and prints "ok    deps" when they carry no known vulnerability
     And it prints "FAIL  deps" when a pin carries a known vulnerability
     And when a requirements file is not fully pinned it prints "BLIND deps" and the scan is BLIND, never a FAIL
+
+  # crew#297: 63 of 79 feature files were named by no test and the gate passed PRs that only touched them.
+  Scenario: The spec gate counts a feature file only when a test names it
+    Given a PR that changes code and a *.feature file no tracked test names
+    When bin/spec-gate runs
+    Then the feature does not count as executable spec and the gate prints FAIL
+    And a new *.feature file no test names is refused with the pytest-bdd binding shown
+    And every run prints "residual spec-gate N feature file(s) named by no test"

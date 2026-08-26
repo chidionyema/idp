@@ -10,6 +10,13 @@
 #          a file named test_*.py, *_test.*, *.test.*, *.spec.*; the live
 #          diagram generator bin/estate-diagram.
 #
+# Bound    a *.feature file is executable only when a tracked test file names it
+#          (pytest-bdd `scenarios("features/x.feature")`, or any test under the
+#          spec paths above). crew#297, 2026-08-26: 63 of 79 idp feature files were
+#          named by nothing, and the gate passed PRs that only touched them. A
+#          changed feature nobody runs is prose and does not count; a new one is
+#          refused. The unbound total prints as the residual on every run.
+#
 # Compares BASE_REF (default: origin/main, or the PR base in CI) to HEAD.
 # Exit 0 when no code changed or a spec changed with it; 1 when code changed
 # alone; 3 (BLIND) when the base ref cannot be resolved. Runs in every active
@@ -22,6 +29,27 @@ changed="$(git diff --name-only "$mb" HEAD)"
 spec_re='(^|/)(tests?|spec|features)/|\.feature$|(^|/)test_[^/]*\.py$|_test\.[a-z]+$|\.test\.[a-z]+$|\.spec\.[a-z]+$|(^|/)bin/estate-diagram$'
 code_re='\.(py|ts|tsx|js|jsx|go|rs|sh|rb|java|kt|swift)$|(^|/)bin/[^/]+$'
 specs="$(printf '%s\n' "$changed" | grep -E "$spec_re" || true)"
+# A feature file is bound when a tracked test file (not a feature) names its path or basename.
+tests_list="$(git ls-files | grep -E "$spec_re" | grep -v '\.feature$' || true)"
+bound() { [ -n "$tests_list" ] && printf '%s\n' "$tests_list" | xargs grep -lF -e "$1" -e "$(basename "$1")" -- 2>/dev/null | grep -q .; }
+unbound_changed=""; new_unbound=""
+for f in $(printf '%s\n' "$specs" | grep '\.feature$' || true); do
+  git cat-file -e "HEAD:$f" 2>/dev/null || continue   # deleted
+  if ! bound "$f"; then
+    unbound_changed="$unbound_changed$f\n"
+    git cat-file -e "$mb:$f" 2>/dev/null || new_unbound="$new_unbound$f\n"
+  fi
+done
+[ -n "$unbound_changed" ] && specs="$(printf '%s\n' "$specs" | grep -vxF -f <(printf "$unbound_changed") || true)"
+nunbound=0; for f in $(git ls-files -- '*.feature'); do bound "$f" || nunbound=$((nunbound+1)); done
+echo "residual spec-gate $nunbound feature file(s) named by no test (crew#297)"
+if [ -n "$new_unbound" ]; then
+  echo "FAIL  spec-gate new *.feature file(s) that no test names; a scenario nobody runs is prose (R29, crew#297):"
+  printf "$new_unbound" | sed 's/^/      /'
+  echo "      bind it: scenarios(\"<path>\") in a pytest-bdd test, or put it under docs/"
+  exit 1
+fi
+[ -n "$unbound_changed" ] && { echo "note  spec-gate changed *.feature file(s) named by no test do not count as executable spec:"; printf "$unbound_changed" | sed 's/^/      /'; }
 code="$(printf '%s\n' "$changed" | grep -Ev "$spec_re" | grep -E "$code_re" || true)"
 ncode=$(printf '%s' "$code" | grep -c . || true); nspec=$(printf '%s' "$specs" | grep -c . || true)
 if [ "$ncode" = 0 ]; then echo "ok    spec-gate no code changed since $mb ($(printf '%s' "$changed" | grep -c . || true) files)"; exit 0; fi
