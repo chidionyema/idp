@@ -22,9 +22,16 @@ langfuse:
   securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: false, capabilities: { drop: [ALL] } }
   web:
     replicas: 1
+    # Incident 2026-08-26 (crew#325): langfuse-web died on its first ClickHouse migration with
+    # "FATAL ERROR: Ineffective mark-compacts near heap limit" at 500 MB, under a 1Gi pod limit.
+    # Node caps the V8 heap below the cgroup limit unless told otherwise, so the limit alone is
+    # not the fix: set the heap explicitly and give the pod room above it.
+    additionalEnv:
+      - name: NODE_OPTIONS
+        value: --max-old-space-size=1536
     resources:
-      requests: { cpu: 100m, memory: 512Mi }
-      limits: { cpu: 1000m, memory: 1Gi }
+      requests: { cpu: 100m, memory: 1Gi }
+      limits: { cpu: 1000m, memory: 2Gi }
   worker:
     replicas: 1
     resources:
