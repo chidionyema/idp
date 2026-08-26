@@ -83,8 +83,17 @@ case "$MODE" in
   --check)
     # rc=2 is drift. Say which resources, not the plan's closing note: a tail nobody can read is
     # not an instrument (LAW 28; every run 02:22Z-02:28Z on 2026-08-26 failed with a hidden diff).
-    step tofu-plan tofu plan -detailed-exitcode -lock=false -out="$TF/check.tfplan" "${TFVARS[@]}" \
-      || { [ -f "$TF/check.tfplan" ] && tofu show -no-color "$TF/check.tfplan" | grep -E '^\s*# .* (will|must) be |^Plan:' | sed 's/^/      | drift: /'; }
+    # On a pull_request the planned changes ARE the PR (oke-check.yml sets OKE_CHECK_EXPECT_CHANGES=1):
+    # rc=2 is shown and passes. On schedule/dispatch rc=2 is drift and fails (run 32925504695 on
+    # 2026-08-26 failed #160 on its own capacity change, and rule-guard blocks merges on a red check).
+    if step tofu-plan tofu plan -detailed-exitcode -lock=false -out="$TF/check.tfplan" "${TFVARS[@]}"; then :; else
+      rc=$?
+      [ -f "$TF/check.tfplan" ] && tofu show -no-color "$TF/check.tfplan" | grep -E '^\s*# .* (will|must) be |^Plan:' | sed 's/^/      | drift: /'
+      if [ "$rc" -eq 2 ] && [ "${OKE_CHECK_EXPECT_CHANGES:-0}" = "1" ]; then
+        FAILED="${FAILED% tofu-plan}"
+        printf '%-5s %-18s rc=%-3s %4ss  %s\n' ok tofu-plan 2 0 "pull_request: the changes above are this PR, not drift"
+      fi
+    fi
     rm -f "$TF/check.tfplan" ;;
   --apply)
     step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"

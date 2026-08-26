@@ -63,3 +63,11 @@ Feature: The estate can be torn down and rebuilt from the phone, and no past err
     Then the local file is moved aside as <name>.quarantine-<utc> and printed
     And init runs with -reconfigure, never with -migrate-state or -force-copy
     And tests/test_incident_state_force_copied_over_remote.py proves both ways
+
+  Scenario: a pull request's planned changes are the PR, not drift (incident 2026-08-26, run 32925504695)
+    Given oke-check runs bin/idp-oke-rebuild --check on a pull_request touching platform/oci
+    And the workflow sets OKE_CHECK_EXPECT_CHANGES=1 only for pull_request events
+    When tofu plan exits 2
+    Then the planned resource changes are printed and the check passes
+    And on schedule or workflow_dispatch the same exit 2 is drift and the check fails
+    And exit 1 never passes on any event
