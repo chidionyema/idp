@@ -5,8 +5,11 @@
 # authenticate as "estate-bootstrap", the interactive `oci session authenticate` flow
 # landed the session under a different profile name ("otto"), and nothing surfaced
 # that mismatch until a manual `ls ~/.oci/sessions/` found it. Login itself cannot be
-# automated (LAW: no agent proves identity to a platform in a browser as the founder)
-# -- but discovering which profile a completed login used, and exporting it for every
+# automated (LAW: no agent proves identity to a platform in a browser as the founder),
+# and since crew#345 no session needs one: cluster and drill state are receipts in the
+# drill bucket, read by bin/idp-cluster-state and `gh workflow run oke-check.yml -f mode=check`
+# on the runner's OIDC identity. A laptop session token is the founder's bootstrap path only.
+# Discovering which profile a completed login used, and exporting it for every
 # other script in this repo to pick up via OCI_CLI_PROFILE/OCI_CLI_AUTH (the same env
 # vars idp-oci-login already reads, per crew#227 CP2), is not a login action and can
 # be fully automatic.
@@ -16,7 +19,7 @@
 set -uo pipefail
 
 SESSIONS_DIR="$HOME/.oci/sessions"
-[ -d "$SESSIONS_DIR" ] || { echo "BLIND   oci-whoami: no $SESSIONS_DIR; run oci session authenticate first"; exit 2; }
+[ -d "$SESSIONS_DIR" ] || { echo "BLIND   oci-whoami: no $SESSIONS_DIR on this machine; sessions read state through bin/idp-cluster-state or gh workflow run oke-check.yml -f mode=check (crew#345), no login"; exit 2; }
 
 live=""
 newest_mtime=0
@@ -53,7 +56,7 @@ if [ -z "$live" ]; then
 fi
 
 if [ -z "$live" ]; then
-  echo "BLIND   oci-whoami: no valid session found under any profile in $SESSIONS_DIR; run: oci session authenticate --region <region>"
+  echo "BLIND   oci-whoami: no valid session under any profile in $SESSIONS_DIR; sessions read state through bin/idp-cluster-state or gh workflow run oke-check.yml -f mode=check (crew#345), no login"
   exit 2
 fi
 
