@@ -22,7 +22,10 @@ def test_incident_crew284_cluster_router_has_its_database():
     c = dep["spec"]["template"]["spec"]["containers"][0]
     assert c["image"].startswith("ghcr.io/berriai/litellm-database:")
     script = c["args"][0]
-    assert 'export DATABASE_URL="postgresql://litellm:${LITELLM_DB_PASSWORD}@litellm-db' in script
+    # idp#262 shipped `${LITELLM_DB_PASSWORD}` here and Flux's strict envsubst refused the build
+    # ("variable not set (strict mode)"); the shell reads the file instead, `$(...)` is not a Flux variable.
+    assert 'export DATABASE_URL="postgresql://litellm:$(cat /run/secrets/litellm/upstream/LITELLM_DB_PASSWORD)@litellm-db' in script
+    assert "${LITELLM_DB_PASSWORD}" not in script
     assert "DATABASE_URL" not in {e["name"] for e in c["env"]}, "the URL holds the password; it is composed, not declared"
 
     sts = next(d for d in _docs("postgres.yaml") if d["kind"] == "StatefulSet")

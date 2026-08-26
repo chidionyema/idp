@@ -46,7 +46,7 @@ spec:
               for f in /run/secrets/litellm/*/*; do
                 export "$(basename "$f")=$(cat "$f")"
               done
-              export DATABASE_URL="postgresql://litellm:${LITELLM_DB_PASSWORD}@litellm-db.llm.svc:5432/litellm"
+              export DATABASE_URL="postgresql://litellm:$(cat /run/secrets/litellm/upstream/LITELLM_DB_PASSWORD)@litellm-db.llm.svc:5432/litellm"
               exec litellm --config /etc/litellm/config.yaml --port 4000 --host 0.0.0.0
           ports:
             - { name: http, containerPort: 4000 }
