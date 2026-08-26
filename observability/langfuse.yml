@@ -72,6 +72,11 @@ x-langfuse-env: &langfuse-env
   REDIS_PORT: 6379
   REDIS_AUTH: ${REDIS_AUTH}
   REDIS_TLS_ENABLED: "false"
+  # crew#340: the worker's ioredis watchdog defaults to 30s and, on this 2-vCPU host, fired
+  # "Redis Socket Timeout" every few minutes and reconnected mid-queue, dropping the flush.
+  # 0 disables the watchdog (https://langfuse.com/self-hosting/deployment/infrastructure/cache,
+  # langfuse#13601); the healthcheck on the redis service already covers a dead Redis.
+  REDIS_SOCKET_TIMEOUT_MS: "0"
 
 services:
   langfuse-web:
