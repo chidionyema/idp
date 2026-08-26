@@ -138,3 +138,25 @@ def _two_sources(state: dict) -> None:
 def _passes(state: dict) -> None:
     r = state["runs"]["opmodel-drill-added-in-pr.json"]
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+# --- architecture_laws (crew#254) ------------------------------------------------------------
+
+
+@given('a PR body with no "## Architecture laws" section, or one whose law line is a sentence')
+def _laws_bad(state: dict) -> None:
+    assert "## Architecture laws" not in _fx("opmodel-no-laws.json")["pr"]["body"]
+    assert "- LAW 3 nervous system: we will wire tracing later" in _fx("opmodel-laws-sentence.json")["pr"]["body"]
+    state["fixtures"] += ["opmodel-no-laws.json", "opmodel-laws-sentence.json", "opmodel-ok.json"]
+
+
+@then("it exits 1 with rule=architecture_laws")
+def _laws_refused(state: dict) -> None:
+    _refused_with(state, "opmodel-no-laws.json", "architecture_laws")
+    _refused_with(state, "opmodel-laws-sentence.json", "architecture_laws")
+
+
+@then("a body whose four law lines are commands, paths or n/a with a reason passes")
+def _laws_pass(state: dict) -> None:
+    r = state["runs"]["opmodel-ok.json"]
+    assert r.returncode == 0, r.stdout

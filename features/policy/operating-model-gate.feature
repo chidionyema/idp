@@ -35,3 +35,10 @@ Feature: The operating model is a gate on every pull request
     When bin/pr-report judges it
     Then the drill names come from the catalogue on main and the catalogue at the PR head
     And the gate passes
+
+  # crew#254: the four Living Estate laws (crew/docs/ARCHITECTURE_LAWS.md) on every PR body.
+  Scenario: Every pull request answers the four architecture laws
+    Given a PR body with no "## Architecture laws" section, or one whose law line is a sentence
+    When bin/pr-report runs
+    Then it exits 1 with rule=architecture_laws
+    And a body whose four law lines are commands, paths or n/a with a reason passes
