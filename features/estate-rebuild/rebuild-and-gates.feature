@@ -82,3 +82,14 @@ Feature: The estate can be torn down and rebuilt from the phone, and no past err
     Given flux-system/estate-vars names a vault that holds ACTIVE secrets
     When bin/idp-flux-bootstrap sees a different vault_id in the tofu outputs
     Then it refuses with rc 3 and names the import, and switches only when the current vault is empty
+
+  Scenario: a failing rebuild step shows its cause, not only its footer (incident 2026-08-26, run 32930359052)
+    Given a step whose output has an Error line followed by ten footer lines
+    When the step fails
+    Then the Error line and the footer are both on screen
+    And a passing step prints one receipt line and nothing else
+
+  Scenario: node cycling is never asked of a BASIC cluster (incident 2026-08-26, run 32930359052)
+    Given the estate cluster type is BASIC_CLUSTER
+    Then the a1 node pool carries no node_cycling_* keys
+    And a node is replaced by surging the pool to 2 and deleting the old node
