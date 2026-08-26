@@ -165,6 +165,11 @@ apiVersion: kyverno.io/v2
 kind: PolicyException
 metadata:
   name: langfuse-secrets-from-env
+  # Incident 2026-08-26 (crew#325): Kyverno runs with --exceptionNamespace=kyverno
+  # (platform/edge/kyverno.yaml); an exception in `observability` is ignored and langfuse-web
+  # stayed refused for 2.5 hours after this object was applied. Same rule as
+  # platform/chaos/mesh/exception.yaml.
+  namespace: kyverno
 spec:
   exceptions:
     - policyName: secrets-not-from-env-vars

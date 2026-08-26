@@ -21,8 +21,7 @@ Feature: get_workload_state — one fat tool call, catalog plus metrics plus des
     And numeric metrics are pre-aggregated (min, max, mean, last, or similar)
 
   Scenario: Payload stays under the byte ceiling regardless of workload size
-    Given a property test generating workloads with 1 to 100,000 log lines,
-      0 to 500 dependencies, and 0 to 10,000 metric samples
+    Given a property test generating workloads with 1 to 100,000 log lines, 0 to 500 dependencies, and 0 to 10,000 metric samples
     When get_workload_state is called for each generated workload
     Then every response body is under the configured byte ceiling
     And this holds for at least 500 generated cases in one property-test run
