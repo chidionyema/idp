@@ -68,5 +68,5 @@ def test_incident_crew325_optional_app_secret_does_not_sit_in_secret_store() -> 
     consumer, image-automation, and secret-store carries only the store and flux-telegram."""
     store = (ROOT / "platform/secret-store/kustomization.yaml").read_text()
     assert "github-app" not in store and "flux-telegram.yaml" in store and "store.yaml" in store
-    assert (ROOT / "platform/image-automation/github-app.yaml").exists()
-    assert "github-app.yaml" in (ROOT / "platform/image-automation/kustomization.yaml").read_text()
+    assert (ROOT / "platform/image-automation/flux-writer.yaml").exists()
+    assert "flux-writer.yaml" in (ROOT / "platform/image-automation/kustomization.yaml").read_text()
