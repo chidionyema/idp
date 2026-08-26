@@ -39,7 +39,12 @@ module "oke" {
       # (docs.oracle.com/en-us/iaas/Content/ContEng/Tasks/contengcomparingenhancedwithbasicclusters_topic.htm).
       # Replacing a node on this cluster is a surge: `oci ce node-pool update --size 2 --force`, wait
       # for the new node Ready, then `delete-node --is-decrement-size true` on the old one.
-      # placement_ads is not set either: the module ignores changes to it after creation.
+      # AD-1 only (crew#289, 2026-08-26): the two block-volume PVs (backstage/pgdata-postgres-0,
+      # prospector/prospector-store-api-data) carry nodeAffinity UK-LONDON-1-AD-1; a node in AD-2
+      # could never mount them. A1.Flex is offered in AD-1 and AD-2 only, and the 2026-08-25
+      # "Node shape is unavailable in subnet availability domain(s)" failure was AD-3. The module
+      # ignores changes to this after creation, so it binds fresh creates (--teardown-rebuild) only.
+      placement_ads = [1]
     }
   }
 }

@@ -42,5 +42,7 @@ def test_a_passing_step_prints_one_line_only():
 
 def test_the_cycling_keys_are_gone_from_the_basic_cluster_pool():
     tf = (ROOT / "platform" / "oci" / "main.tf").read_text()
-    for key in ("node_cycling_enabled", "node_cycling_max_surge", "placement_ads    ="):
-        assert not re.search(rf"^\s*{re.escape(key)}", tf, re.M), key
+    for key in ("node_cycling_enabled", "node_cycling_max_surge", "node_cycling_max_unavailable"):
+        assert not re.search(rf"^\s*{re.escape(key)}\s*=", tf, re.M), key
+    # placement_ads stays: A1.Flex is not offered in AD-3 and the PVs pin AD-1 (review idp#186 #1)
+    assert re.search(r"^\s*placement_ads\s*=\s*\[1\]", tf, re.M)
