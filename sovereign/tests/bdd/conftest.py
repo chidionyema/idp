@@ -177,6 +177,9 @@ def estate_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (home / "sovereign").mkdir(parents=True)
     monkeypatch.setenv("ESTATE_HOME", str(home))
     monkeypatch.setenv("ESTATE_ENV", str(tmp_path / "absent" / "estate.env"))
+    # The secret store is the other credential source (config._vault_get);
+    # point it at nothing too, or the real LiteLLM key reaches every test.
+    monkeypatch.setenv("ESTATE_SECRETS", str(tmp_path / "absent" / "estate-secrets"))
     monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
     (tmp_path / "fakehome").mkdir(exist_ok=True)
     # Touch ID and the macOS Keychain are true external boundaries. With

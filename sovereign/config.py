@@ -16,6 +16,7 @@ import fcntl
 import json
 import os
 import socket
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -70,6 +71,57 @@ ESTATE_HOME: Path = _estate_home()
 SOVEREIGN_HOME: Path = ESTATE_HOME / "sovereign"
 ESTATE_TOML: Path = ESTATE_HOME / "estate.toml"
 _ENV_FILE_VALUES = _load_env_file(_env_file_path())
+
+
+def _vault_dir() -> Path:
+    """The estate secret store: the sops+age directory vault (crew#119 ruling,
+    STANDARDS "Secrets" row). Located the way bin/idp-vault-put locates it:
+    $ESTATE_SECRETS, else $ESTATE_CODE/estate-secrets, else the sibling
+    checkout of this one. Never a literal path (LAW 46)."""
+    if os.environ.get("ESTATE_SECRETS"):
+        return Path(os.environ["ESTATE_SECRETS"])
+    code = os.environ.get("ESTATE_CODE") or str(Path(__file__).resolve().parents[2])
+    return Path(code) / "estate-secrets"
+
+
+def _vault_env_name() -> str:
+    """Which secrets/<env>/ directory this host reads: ESTATE_HOME/env, the
+    same file bin/catalog-gen resolves the lifecycle label from; dev otherwise."""
+    try:
+        name = (ESTATE_HOME / "env").read_text().strip().lower()
+    except OSError:
+        name = ""
+    return name or "dev"
+
+
+def _vault_get(key: str) -> str | None:
+    """One value from the secret store through its one egress,
+    scripts/secret-load, or None when the vault, the file or the age identity
+    is absent. Never raises: no vault is the CI case, and the key then reads
+    unset exactly as it did before the vault existed."""
+    loader = _vault_dir() / "scripts" / "secret-load"
+    if not loader.is_file():
+        return None
+    try:
+        run = subprocess.run(
+            [str(loader), _vault_env_name(), key, key],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return run.stdout if run.returncode == 0 and run.stdout else None
+
+
+def _secret(key: str) -> str | None:
+    """Default for a credential KeySpec: the secret store first, the
+    operator's estate.env second. The store wins so a stale copy in the env
+    file cannot outlive a rotation (crew#284 CP2: LITELLM_BASE_URL "set from
+    the secret store"). Skipped entirely when the process env already
+    carries the key, because KeySpec lets the env var win and the sops
+    decrypt would be a wasted subprocess."""
+    if os.environ.get(key):
+        return None
+    return _vault_get(key) or _ENV_FILE_VALUES.get(key)
 
 
 # ---------------------------------------------------------------------------
@@ -179,8 +231,8 @@ KEYS: dict[str, KeySpec] = {
     "langfuse.public_key": KeySpec(_ENV_FILE_VALUES.get("LANGFUSE_PUBLIC_KEY"), "str", "LANGFUSE_PUBLIC_KEY", "", secret=True),
     "langfuse.secret_key": KeySpec(_ENV_FILE_VALUES.get("LANGFUSE_SECRET_KEY"), "str", "LANGFUSE_SECRET_KEY", "", secret=True),
 
-    "litellm.base_url": KeySpec(_ENV_FILE_VALUES.get("LITELLM_BASE_URL"), "str", "LITELLM_BASE_URL", ""),
-    "litellm.api_key": KeySpec(_ENV_FILE_VALUES.get("LITELLM_API_KEY"), "str", "LITELLM_API_KEY", "", secret=True),
+    "litellm.base_url": KeySpec(_secret("LITELLM_BASE_URL"), "str", "LITELLM_BASE_URL", "from the estate secret store (secrets/<env>/LITELLM_BASE_URL.yaml), estate.env as the fallback"),
+    "litellm.api_key": KeySpec(_secret("LITELLM_API_KEY"), "str", "LITELLM_API_KEY", "a budgeted LiteLLM virtual key (alias sovereign-kernel), never the proxy master key; from the secret store", secret=True),
     "litellm.chat_completions_path": KeySpec("/chat/completions", "str", "LITELLM_CHAT_COMPLETIONS_PATH", ""),
 
     "budget.default": KeySpec(None, "int", "SB_DEFAULT_BUDGET", "tokens; None means budget is required at start"),

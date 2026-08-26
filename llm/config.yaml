@@ -56,6 +56,11 @@ model_list:
       model: ollama/qwen2.5-coder:7b
       api_base: http://host.docker.internal:11434
       timeout: 300
+      # Keep the weights resident. Ollama unloads a model 5 minutes after its last
+      # call, and reloading 7B cost the consensus vote its 30 s deadline every time
+      # (measured 2026-08-26: 30.8 s cold, 16.9 s warm, crew#284 CP2). The proxy is
+      # the only caller, so it owns the residency.
+      keep_alive: 24h
   # routing.vision in AGENTS.md (sovereign model.vision, R8: an alias, never a
   # provider model name). gemma3:4b is multimodal and is already pulled locally.
   # Through Ollama's OpenAI-compatible endpoint, not the ollama/ provider: the
@@ -76,6 +81,7 @@ model_list:
       model: ollama/llama3.2:latest
       api_base: http://host.docker.internal:11434
       timeout: 300
+      keep_alive: 24h
 
 router_settings:
   # The chain prospector's `noncritical_operator:` already declares, expressed once here
