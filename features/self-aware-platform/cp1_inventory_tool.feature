@@ -16,8 +16,7 @@ Feature: Inventory tool — one call answers what the estate is
   Scenario: The tool never shells out
     Given the estate MCP server source for get_estate_inventory
     Then it contains no subprocess call, no shell="true", and no os.system
-    And every fact in its response traces to crew/STATE.md or the Backstage
-      catalog API, not a fresh probe of a running process
+    And every fact in its response traces to crew/STATE.md or the Backstage catalog API, not a fresh probe of a running process
 
   Scenario: A stale snapshot is disclosed, not hidden
     Given crew/STATE.md is older than the freshness threshold in its own header
