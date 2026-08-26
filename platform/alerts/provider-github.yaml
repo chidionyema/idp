@@ -1,0 +1,17 @@
+# Reconcile ledger (crew#325): a runner has no kube path, so on 2026-08-26 the https-llm and
+# https-langfuse listeners sat unpublished for ~90 minutes and no session could read why. Flux's
+# own notification-controller answers it: every Kustomization event becomes a repository_dispatch
+# on idp, and .github/workflows/flux-events.yml prints it as a run any session can read.
+# Auth is the estate-agents GitHub App (platform/secret-store/github-app.yaml), whose
+# contents:write is what a dispatch needs; commit statuses would need a permission the App
+# does not hold, and granting one is a founder click.
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: github-dispatch
+  namespace: flux-system
+spec:
+  type: githubdispatch
+  address: https://github.com/chidionyema/idp
+  secretRef:
+    name: github-app
