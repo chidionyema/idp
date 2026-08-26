@@ -20,5 +20,6 @@
   "Allow group estate-operators to manage vaults in compartment estate",
   "Allow group estate-operators to manage keys in compartment estate",
   "Allow group estate-operators to manage secret-family in compartment estate",
-  "Allow group estate-operators to manage domains in tenancy"
+  "Allow group estate-operators to manage domains in tenancy",
+  "Allow group estate-operators to read audit-events in compartment estate"
 ]
