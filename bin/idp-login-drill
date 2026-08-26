@@ -208,6 +208,7 @@ with sync_playwright() as p:
         fail("identity", f"auth provider oauth2Proxy answered {who.status} to the door's session: {who.text()[:240]}")
     try:
         ref = who.json()["backstageIdentity"]["identity"]["userEntityRef"]
+        token = who.json()["backstageIdentity"]["token"]
     except (ValueError, KeyError, TypeError):
         fail("identity", f"auth provider oauth2Proxy answered 200 without a Backstage identity: {who.text()[:240]}")
     if "guest" in ref or not ref.startswith("user:"):
@@ -218,7 +219,9 @@ with sync_playwright() as p:
     # through the API, the page must have thrown no JavaScript error, and no error page may
     # be on screen. Each is a separate stage so the FAIL line names the layer.
     try:
-        ents = page.request.get(f"{HOME}api/catalog/entities?limit=5")
+        # The door cookie opens the proxy; the catalogue API wants the Backstage token the
+        # refresh call issued (run 32968658397 answered 401 Missing credentials without it).
+        ents = page.request.get(f"{HOME}api/catalog/entities?limit=5", headers={"Authorization": f"Bearer {token}"})
     except PWError as e:
         fail("entities", f"catalogue API did not answer the signed-in session: {e}")
     if ents.status != 200:

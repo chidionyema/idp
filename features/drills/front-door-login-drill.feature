@@ -89,7 +89,7 @@ Feature: A drill signs in at the front door and sees the catalogue
 
   Scenario: The drill reads the catalogue and sees no error, not only a shell
     Given the drill is signed in with a Backstage identity
-    Then GET /api/catalog/entities?limit=5 with the session answers 200 and a non-empty list
+    Then GET /api/catalog/entities?limit=5 with the door session and the Backstage token as Bearer answers 200 and a non-empty list
     And the page raised no JavaScript error while rendering
     And the page shows none of "Something went wrong", "Unexpected error", "Internal Server Error", "Failed to sign in"
     And the ok line names the entity count and "0 js errors"
