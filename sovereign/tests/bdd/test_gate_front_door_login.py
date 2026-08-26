@@ -46,7 +46,7 @@ def _no_user_db(state: dict) -> None:
             assert "authelia" not in addr, f"{p}: {d['metadata']['name']} forwards auth to authelia"
 
 
-@then("the Middleware in front of every route outside identity points at oauth2-proxy")
+@then("every route outside identity is behind oauth2-proxy, or is a machine API whose own config proves a bearer master key")
 def _oauth2_proxy_in_front(state: dict) -> None:
     middlewares = {d["metadata"]["name"]: str(d.get("spec", {}).get("forwardAuth", {}).get("address", ""))
                    for _, d in state["docs"] if d["kind"] == "Middleware"}
@@ -54,4 +54,12 @@ def _oauth2_proxy_in_front(state: dict) -> None:
     assert routes, "no HTTPRoute outside platform/identity"
     for p, d in routes:
         refs = [f.get("extensionRef", {}).get("name") for r in d.get("spec", {}).get("rules", []) for f in r.get("filters", [])]
-        assert any("oauth2-proxy" in middlewares.get(n, "") for n in refs), f"{p}: route {d['metadata']['name']} has no oauth2-proxy Middleware in front ({refs})"
+        if any("oauth2-proxy" in middlewares.get(n, "") for n in refs):
+            continue
+        # A machine API (the model router, crew#284) cannot sit behind a browser login. It may skip
+        # oauth2-proxy only when it says so on the route AND its own config shows the key is enforced;
+        # the annotation alone is a label, and a label is not a proof.
+        auth = (d["metadata"].get("annotations") or {}).get("idp.estate/auth")
+        assert auth == "bearer-master-key", f"{p}: route {d['metadata']['name']} has no oauth2-proxy Middleware in front ({refs}) and no idp.estate/auth annotation"
+        cfg = p.parent / "config.yaml"
+        assert cfg.exists() and "master_key: os.environ/" in cfg.read_text(), f"{p}: annotated bearer-master-key but {cfg} enforces no master_key"

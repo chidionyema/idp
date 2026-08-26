@@ -6,6 +6,9 @@ kind: HTTPRoute
 metadata:
   name: litellm
   namespace: llm
+  annotations:
+    # The front-door gate accepts this only because platform/llm/config.yaml proves a master key.
+    idp.estate/auth: bearer-master-key
 spec:
   parentRefs:
     - name: prospector-edge
