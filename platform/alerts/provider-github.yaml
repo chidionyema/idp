@@ -2,7 +2,7 @@
 # https-langfuse listeners sat unpublished for ~90 minutes and no session could read why. Flux's
 # own notification-controller answers it: every Kustomization event becomes a repository_dispatch
 # on idp, and .github/workflows/flux-events.yml prints it as a run any session can read.
-# Auth is the estate-agents GitHub App (platform/image-automation/github-app.yaml), whose
+# Auth is the estate-agents GitHub App (vault secret github-app, bin/idp-github-app; Flux's writer itself uses a deploy key, platform/image-automation/flux-writer.yaml), whose
 # contents:write is what a dispatch needs; commit statuses would need a permission the App
 # does not hold, and granting one is a founder click.
 apiVersion: notification.toolkit.fluxcd.io/v1beta3

@@ -8,7 +8,7 @@ Feature: the estate vault is seeded by the machine identity, never from a laptop
   Scenario: every key the vault entries need arrives as a SEED_ secret
     Given .github/workflows/vault-seed.yml
     Then every KEY=KEY pair passed to bin/idp-vault-put has a SEED_KEY in the step's env
-    And the workflow is dispatch-only with entries all, prospector-engine-env and github-app
+    And the workflow is dispatch-only with entries all, prospector-engine-env, github-app and flux-writer
 
   Scenario: no value can reach the log
     Given .github/workflows/vault-seed.yml
@@ -16,4 +16,4 @@ Feature: the estate vault is seeded by the machine identity, never from a laptop
 
   Scenario: the git-writer credential never holds the LLM (crew#284)
     Given clusters/oke/platform.yaml and clusters/oke/image-automation.yaml
-    Then the github-app ExternalSecret is a resource of platform/image-automation, not platform/secret-store
+    Then the git-writer ExternalSecret is a resource of platform/image-automation, not platform/secret-store

@@ -39,14 +39,21 @@ def test_kustomization_carries_the_policy_marker():
     assert BY_KIND["ImageUpdateAutomation"]["spec"]["update"] == {"path": "./platform/backstage/overlays/oke", "strategy": "Setters"}
 
 
-def test_controllers_are_installed_and_the_writer_is_the_app():
+def test_controllers_are_installed_and_the_writer_is_a_deploy_key():
+    """crew#325: the writer was the estate-agents GitHub App, which needed a person to tap Create; a day
+    went by with every session calling that a founder action. A deploy key needs no person."""
     gotk = (ROOT / "clusters/oke/flux-system/gotk-components.yaml").read_text()
     deployments = {d["metadata"]["name"] for d in yaml.safe_load_all(gotk) if d and d["kind"] == "Deployment"}
     assert {"image-reflector-controller", "image-automation-controller"} <= deployments, deployments
     writer = BY_KIND["GitRepository"]
-    assert writer["spec"]["provider"] == "github" and writer["spec"]["secretRef"] == {"name": "github-app"}
-    es = yaml.safe_load((ROOT / "platform/image-automation/github-app.yaml").read_text())
-    assert set(es["spec"]["target"]["template"]["data"]) == {"githubAppID", "githubAppInstallationID", "githubAppPrivateKey"}
+    assert writer["spec"]["url"].startswith("ssh://git@github.com/") and "provider" not in writer["spec"]
+    assert writer["spec"]["secretRef"] == {"name": "flux-writer"}
+    es = yaml.safe_load((ROOT / "platform/image-automation/flux-writer.yaml").read_text())
+    assert set(es["spec"]["target"]["template"]["data"]) == {"identity", "identity.pub", "known_hosts"}
+    assert es["spec"]["dataFrom"] == [{"extract": {"key": "flux-writer"}}]
+    seed = (ROOT / ".github/workflows/vault-seed.yml").read_text()
+    assert "put flux-writer identity_b64=FLUX_WRITER_IDENTITY_B64 pub=FLUX_WRITER_PUB" in seed
+    assert not (ROOT / "platform/image-automation/github-app.yaml").exists(), "the App is off the writer path"
     assert BY_KIND["ImageUpdateAutomation"]["spec"]["sourceRef"]["name"] == writer["metadata"]["name"]
 
 

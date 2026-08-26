@@ -1,0 +1,30 @@
+# Flux's git writer credential is a repository deploy key, not a GitHub App (crew#325, 2026-08-26).
+# The estate-agents App (crew#267) needed a person to tap Create on github.com, and four sessions
+# each wrote "founder action" for it while llm/identity/alerts/image-automation sat frozen for a
+# day. A deploy key needs nobody: any session with repo admin runs
+#   ssh-keygen -t ed25519 -N "" -f flux-writer && gh api repos/chidionyema/idp/keys -f title=flux-writer -f key=@flux-writer.pub -F read_only=false
+# stores the pair as SEED_FLUX_WRITER_IDENTITY_B64 / SEED_FLUX_WRITER_PUB, and
+#   gh workflow run vault-seed.yml -f entry=flux-writer
+# writes vault secret `flux-writer` (keys identity_b64, pub). This renders it into the three keys
+# source-controller reads for an ssh:// GitRepository. known_hosts is GitHub's published ed25519
+# host key (ssh-keyscan -t ed25519 github.com), public, so it lives here and not in the vault.
+# The bootstrap key (flux-system, bin/idp-flux-bootstrap --read-write-key=false) stays read-only.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: flux-writer
+  namespace: flux-system
+spec:
+  refreshInterval: 1h
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: flux-writer
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        identity: "{{ .identity_b64 | b64dec }}"
+        identity.pub: "{{ .pub }}"
+        known_hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+  dataFrom:
+    - extract: { key: flux-writer }
