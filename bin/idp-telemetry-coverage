@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# crew#320 / LAW 50: read the cluster's telemetry-coverage receipt from Object Storage. The CronJob
+# in platform/observability/telemetry-coverage.yaml diffs Running pods (API server) against pods
+# seen in ClickHouse (SigNoz logs and metrics, last hour) every 15 minutes and writes
+# state/telemetry-coverage from the node's instance principal; this reads it with whatever OCI
+# auth the caller has (a runner's exchanged OIDC session in oke-check.yml). Same grading shape as
+# bin/idp-cluster-state, which it was copied from.
+#   ok      telemetry-coverage  <line 1 of the receipt>   -- fresh, missing=0
+#   FAIL    telemetry-coverage  <why>                     -- receipt missing, stale, or a Running pod the backend never saw
+#   BLIND   telemetry-coverage  <why>                     -- no oci CLI, no session, or the backend could not be queried
+# Print the JSON body (the missing pods) with --json. Max age 60 min. Override TELEMETRY_COVERAGE_MAX_AGE_MIN.
+set -uo pipefail
+BUCKET="${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}"
+MAX_MIN="${TELEMETRY_COVERAGE_MAX_AGE_MIN:-60}"
+blind() { printf 'BLIND   telemetry-coverage  %s\n' "$1"; exit 2; }
+fail()  { printf 'FAIL    telemetry-coverage  %s\n' "$1"; exit 1; }
+command -v oci >/dev/null || blind "oci CLI is not installed"
+command -v python3 >/dev/null || blind "python3 is not installed"
+ns=(); [ -n "${OCI_OS_NAMESPACE:-}" ] && ns=(--namespace-name "$OCI_OS_NAMESPACE")
+head=$(oci os object head "${ns[@]}" --bucket-name "$BUCKET" --name state/telemetry-coverage 2>&1)
+rc=$?
+if [ $rc -ne 0 ]; then
+  case "$head" in
+    *"404"*|*NotFound*|*"not found"*) fail "no receipt state/telemetry-coverage in bucket $BUCKET: the CronJob has never completed (Flux row telemetry-coverage not reconciled, or the bucket is not applied yet)" ;;
+    *) blind "oci os object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
+  esac
+fi
+body=$(oci os object get "${ns[@]}" --bucket-name "$BUCKET" --name state/telemetry-coverage --file - 2>/dev/null)
+python3 - "$head" "$body" "$MAX_MIN" "${1:-}" <<'PY'
+import json, re, sys
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+head, body, max_min, flag = sys.argv[1], sys.argv[2].strip(), float(sys.argv[3]), sys.argv[4]
+line1, _, rest = body.partition("\n")
+try:
+    lm = json.loads(head)["last-modified"]
+except Exception as e:
+    print(f"BLIND   telemetry-coverage  object head carried no last-modified: {e}"); sys.exit(2)
+age = (datetime.now(timezone.utc) - parsedate_to_datetime(lm)).total_seconds() / 60
+if line1.startswith("BLIND "):
+    print(f"BLIND   telemetry-coverage  {line1[:160]}"); sys.exit(2)
+if not line1.startswith("ok "):
+    print(f"FAIL    telemetry-coverage  receipt does not start with ok: {line1[:120]!r}"); sys.exit(1)
+if age > max_min:
+    print(f"FAIL    telemetry-coverage  receipt is {age:.0f} min old (max {max_min:.0f}): {line1[:120]}"); sys.exit(1)
+kv = dict(m.groups() for m in re.finditer(r"(\w+)=(\d+)", line1))
+if kv.get("missing") != "0" or int(kv.get("pods", 0)) == 0:
+    print(f"FAIL    telemetry-coverage  pods={kv.get('pods')} missing={kv.get('missing')}: {line1[:120]}"); sys.exit(1)
+print(f"ok      telemetry-coverage  {line1} ({age:.0f} min ago)")
+if flag == "--json":
+    print(rest)
+PY
