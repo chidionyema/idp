@@ -46,7 +46,7 @@ token)
   lane=${1:?lane name from platform/github-app/lanes.json}
   perms=$(jq -c --arg l "$lane" '.[$l] // empty' "$D/lanes.json"); [ -n "$perms" ] || { echo "REFUSED: no lane '$lane' in $D/lanes.json"; exit 2; }
   export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-  C=$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$IDP/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")
+  C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$IDP/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
   V=$(cd "$IDP/platform/oci" && tofu output -raw vault_id)
   sid=$(oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"secret-name\"=='$SECRET' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output)
   [ -n "$sid" ] && [ "$sid" != null ] || { echo "BLIND   github-app no vault secret $SECRET; run: bin/idp-github-app convert <code>"; exit 2; }
@@ -63,7 +63,7 @@ installation)
   # githubAppInstallationID beside the id and key; platform/secret-store/github-app.yaml reads all
   # three from this one vault secret. Re-puts the secret with every existing key plus installation_id.
   export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-  C=$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$IDP/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")
+  C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$IDP/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
   V=$(cd "$IDP/platform/oci" && tofu output -raw vault_id)
   sid=$(oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"secret-name\"=='$SECRET' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output)
   [ -n "$sid" ] && [ "$sid" != null ] || { echo "BLIND   github-app no vault secret $SECRET; run: bin/idp-github-app convert <code>"; exit 2; }
