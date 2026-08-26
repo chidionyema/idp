@@ -52,7 +52,7 @@
 #       with no read-only mode.
 #     Residual: datasette-mcp is a 0.1 alpha on a Datasette 1.0 alpha. Both are pinned.
 #
-# PORTS. 3300 is taken on this laptop by kanboard, so the gateway is 127.0.0.1:3310.
+# PORTS. The gateway is 127.0.0.1:3310 (3300 was Kanboard's until it was retired, crew#282).
 # 3100/3200/4000/4318/7107/8000/8001 are the other published ports in this repo.
 #
 # AUTH. Agentgateway's standalone runtime supports static API keys (`apiKey` policy,

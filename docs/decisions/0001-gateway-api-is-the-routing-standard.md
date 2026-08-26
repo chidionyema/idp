@@ -65,7 +65,7 @@ young project, and a buyer's engineer will ask why the front door rests on it.
 The identity proxy is not chosen. Gateway API expresses authentication as a filter or an
 extension, so the standard does not pick one for us. Until it is chosen, the board's login
 is removed only on a loopback-bound port in the backup environment, and
-`idp/board/MIGRATION.md` records that as the blocker. This ADR does not pick it either,
+`idp/board/MIGRATION.md` recorded that as the blocker (Kanboard and that file were retired on 2026-08-26, crew#282). This ADR does not pick it either,
 because it is one row in `crew/docs/STANDARDS.md` chosen once for the whole estate.
 
 ## Consequences
