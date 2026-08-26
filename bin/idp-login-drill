@@ -171,7 +171,15 @@ with sync_playwright() as p:
 
     landed = urlparse(page.url).hostname or ""
     if landed != f"catalogue.{ZONE}":
-        fail("session", f"signed in but landed on {landed}, expected catalogue.{ZONE}")
+        page.wait_for_timeout(5000)
+        landed = urlparse(page.url).hostname or ""
+    if landed != f"catalogue.{ZONE}":
+        body = ""
+        try:
+            body = " ".join(page.locator("body").inner_text(timeout=3000).split())[:240]
+        except PWError:
+            pass
+        fail("session", f"signed in but landed on {page.url.split('?')[0]}, expected catalogue.{ZONE}; page says: {body}")
 
     # 4. the session must actually serve the catalogue: 200 and the Backstage shell
     try:

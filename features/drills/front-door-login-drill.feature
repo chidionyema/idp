@@ -33,11 +33,26 @@ Feature: A drill signs in at the front door and sees the catalogue
     And bin/idp-login-drill exits non-zero
 
   Scenario: The domain demands a password change on first login
-    Given the identity domain shows estate-drill a change-password page after a correct password
-    When bin/idp-login-drill runs
-    Then the script prints "FAIL    login-drill  password-change" and names the page it was sent to
-    And it does not set a new password, because the credential belongs to Terraform
-    And bin/idp-login-drill exits non-zero
+    Given the identity domain sets mustChange=true on the password Terraform supplied at create
+    And that flag is read-only on the user and no password policy switches it off
+    When bin/idp-identity-apply apply runs
+    Then it sets the vault password on estate-drill once through the admin UserPasswordChanger
+    And prints "ok      drill user password settled" and the flag reads false
+    And a second run prints "ok      drill user password already settled" and changes nothing
+    And if the drill still meets a change-password page it prints "FAIL    login-drill  password-change"
+    And it does not set a new password itself, because the credential belongs to Terraform
+
+  Scenario: The domain asks the drill user to consent to the front door
+    Given the front-door application in platform/oci/identity sets bypass_consent = true
+    When bin/idp-login-drill signs in
+    Then the browser is never parked on /ui/v1/myconsole/consent
+    And when it is, the FAIL line names that URL and the first words on the page
+
+  Scenario: A later apply never overwrites the live drill password
+    Given the drill user's password, schemas and write-only user extension are in ignore_changes
+    When bin/idp-identity-apply plan runs after the drill is green
+    Then it prints "No changes. Your infrastructure matches the configuration."
+    And bin/idp-login-drill still signs in with the vault password
 
   Scenario: The JWKS the door validates against is private
     Given the identity domain's JWKS endpoint is unreachable or requires a credential
