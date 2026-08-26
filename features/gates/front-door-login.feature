@@ -8,12 +8,11 @@ Feature: The front door is a federated login with no local password
   Scenario: An unauthenticated request is sent to GitHub
     Given the estate zone in clusters/oke/estate-config.yaml
     When bin/idp-verify runs
-    Then https://catalogue.<zone>/ answers 302 to https://catalogue.<zone>/oauth2/start
-    And that URL answers 302 to https://github.com/login/oauth/authorize
+    Then https://catalogue.<zone>/ answers 302 to https://github.com/login/oauth/authorize, directly or via /oauth2/start
     And the login row prints ok
 
   Scenario: The door answers anything else
-    Given the catalogue answers 200, 401, or a Location that is not /oauth2/start
+    Given the catalogue answers 200, 401, 500, or a Location that is not GitHub
     When bin/idp-verify runs
     Then the login row prints FAIL and names the Middleware and the identity pods
     And bin/idp-verify exits 1
@@ -35,3 +34,11 @@ Feature: The front door is a federated login with no local password
     When the chart is rendered and the cluster policy set is applied to it
     Then no rule fails
     And the same values with the chart's env-var wiring turned on are refused by secrets-not-from-env-vars
+
+  Scenario: the login row refuses a placeholder client id (idp#149 review, 2026-08-26)
+    Given the catalogue answers 302 to GitHub's authorize page
+    And the client_id in that Location is empty or "replace-in-console"
+    When bin/idp-verify runs the login row
+    Then the row is FAIL and names the FOUNDER ACTION that fills the vault secrets
+    And a 302 carrying any other client_id is ok
+
