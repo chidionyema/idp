@@ -1,8 +1,9 @@
 Feature: paid capacity is auto-defaulted up to the founder's cap and refused above it
-  estate-defaults.yaml (crew#281) says compute_tier auto-scale-paid with monthly_cap_usd 50.
+  estate-defaults.yaml (crew#281) says compute_tier auto-scale-paid; crew#289 adds node_pool.prefer_free and
+  node_pool.budget_monthly_usd 50.
   Ruling R14 said no paid infra without explicit sign-off; the cap is that sign-off, written
-  once. The gate is policy/capacity.rego over reports/capacity.json, and platform/oci computes
-  the same estimate as `tofu output -json capacity`, so the two cannot drift without a fixture
+  once. The gate is policy/node_pool.rego over reports/capacity.json, which
+  `bin/idp-oke-rebuild --plan-pool` writes from platform/oci's own estimate, so the two cannot drift without a fixture
   failing. bin/idp-ci proves the row both ways from the AGENTS.md table.
 
   Scenario: a node pool under the cap is STAGED, never asked

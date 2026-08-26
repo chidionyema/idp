@@ -21,9 +21,9 @@ variable "ssh_public_key" {
 
 # Always Free A1 allowance since 2026-06-15: 2 OCPU / 12 GB in total (ADR 0004). Anything
 # above it is paid, and paid capacity is auto-defaulted up to estate-defaults.yaml
-# monthly_cap_usd (crew#281, founder 2026-08-26: compute_tier auto-scale-paid). The cap is the
+# node_pool.budget_monthly_usd (crew#281 compute_tier auto-scale-paid; crew#289 the keys). The cap is the
 # founder's sign-off that ruling R14 asked for, written once; the precondition on
-# terraform_data.capacity_cap in main.tf refuses a plan over it, and policy/capacity.rego is
+# terraform_data.capacity_cap in main.tf refuses a plan over it, and policy/node_pool.rego is
 # the same rule over `tofu output -json capacity`.
 variable "worker_ocpus" {
   type    = number

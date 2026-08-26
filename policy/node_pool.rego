@@ -1,13 +1,13 @@
 # Paid capacity is auto-defaulted up to the cap the founder wrote, never asked and never
 # unbounded.
 #
-# estate-defaults.yaml (crew#281, founder 2026-08-26): `compute_tier: auto-scale-paid` and
-# `monthly_cap_usd: 50`. Ruling R14 (2026-08-24) said no paid infra without explicit founder
+# estate-defaults.yaml (crew#281, founder 2026-08-26): `compute_tier: auto-scale-paid`, and crew#289
+# adds `node_pool.prefer_free: true` and `node_pool.budget_monthly_usd: 50`. Ruling R14 (2026-08-24) said no paid infra without explicit founder
 # sign-off; the cap is that sign-off, written once, so a session stops asking him about a
 # node pool he has already priced. Under the cap a pool change is STAGED (60 minutes, 'hold'
 # cancels). Over it, the change is a paid billing authorisation: FOUNDER ACTION, not STAGED.
 #
-# Input is reports/capacity.json, written by `tofu output -json capacity` in platform/oci,
+# Input is reports/capacity.json, written by `bin/idp-oke-rebuild --plan-pool` (from `local.capacity` in platform/oci),
 # which computes the same estimate from the same variables (one rule, two executable copies
 # that must agree; the fixtures pin both):
 #
@@ -40,7 +40,7 @@ deny contains msg if {
 	input.capacity
 	monthly_usd > input.capacity.monthly_cap_usd
 	msg := sprintf(
-		"node pool %v OCPU / %v GB is an estimated USD %.2f a month, over the estate-defaults cap of USD %v. That is a paid billing authorisation: FOUNDER ACTION, not STAGED.",
+		"node pool %v OCPU / %v GB is an estimated USD %.2f a month, over estate-defaults node_pool.budget_monthly_usd %v. That is a paid billing authorisation: FOUNDER ACTION, not STAGED.",
 		[input.capacity.ocpus, input.capacity.memory_gb, monthly_usd, input.capacity.monthly_cap_usd],
 	)
 }
@@ -54,5 +54,5 @@ deny contains msg if {
 deny contains msg if {
 	input.capacity
 	not input.capacity.monthly_cap_usd
-	msg := "capacity input carries no monthly_cap_usd; read it from estate-defaults.yaml, never default it"
+	msg := "capacity input carries no monthly_cap_usd; read it from estate-defaults.yaml node_pool.budget_monthly_usd, never default it"
 }
