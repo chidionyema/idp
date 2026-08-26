@@ -26,3 +26,10 @@ Feature: Auto-termination acts, it does not only report
   Scenario: The check is a row on the estate scheduler
     Given scheduler/schedule.yml
     Then ai.estate.sovereign-self-check runs `sovereign.cli self-check --enforce --json` every five minutes
+
+  Scenario: A critical session survives self-termination
+    Given a running session started with --critical
+    And a running session started without it
+    When the verdict is halt or soft_halt
+    Then only the session without the marker receives stop
+    And the receipt lists the critical session under kept

@@ -166,9 +166,9 @@ STOPPING_ACTIONS = ("soft_halt", "halt")
 def enforce(verdict: dict[str, Any], *, by: str = "kernel") -> dict[str, Any]:
     """Act on evaluate()'s verdict (spec section 5, crew#284 CP6).
 
-    halt / soft_halt: signal `stop` to every session whose status is running,
-    asking or waiting. There is no critical marker on a session yet, so every
-    session counts as non-critical; the residual is recorded on the ticket.
+    halt / soft_halt: signal `stop` to every non-critical session whose status
+    is running, asking or waiting. A session started with `--critical` is
+    skipped and listed under "kept" so the receipt says what survived.
     digest: build the signed digest and post it once instead of the flood.
     continue / retry_fallback: nothing to do here; the runner retries.
     Returns what was done so the receipt records the action, not just the
@@ -182,13 +182,19 @@ def enforce(verdict: dict[str, Any], *, by: str = "kernel") -> dict[str, Any]:
 
         async def _stop_all() -> list[str]:
             stopped: list[str] = []
+            kept: list[str] = []
             for row in await engine_client.list_sessions():
-                if row.get("status") in ("running", "asking", "waiting"):
-                    await engine_client.signal(row["session_id"], "stop", by, f"self-termination:{reason}")
-                    stopped.append(row["session_id"])
-            return stopped
+                if row.get("status") not in ("running", "asking", "waiting"):
+                    continue
+                if row.get("critical"):
+                    kept.append(row["session_id"])
+                    continue
+                await engine_client.signal(row["session_id"], "stop", by, f"self-termination:{reason}")
+                stopped.append(row["session_id"])
+            return stopped, kept
 
-        return {"action": action, "stopped": asyncio.run(_stop_all())}
+        stopped, kept = asyncio.run(_stop_all())
+        return {"action": action, "stopped": stopped, "kept": kept}
     if action == "digest":
         from sovereign.presence import chat, digest as digest_mod
 
