@@ -12,11 +12,9 @@ Feature: get_workload_logs — the separate drill-down tool for raw detail
 
   Scenario: tail is bounded even when a larger value is requested
     When get_workload_logs("app-x", tail=1000000) is called
-    Then the response contains at most the server's configured maximum tail
-      lines, not 1,000,000 lines
+    Then the response contains at most the server's configured maximum tail lines, not 1,000,000 lines
     And the response states the maximum it enforced
 
   Scenario: get_workload_state and get_workload_logs are distinct tools
     Given the MCP tool list exposed by the estate server
-    Then get_workload_state and get_workload_logs are registered as two
-      separate tools, not one tool with a hidden verbose flag
+    Then get_workload_state and get_workload_logs are registered as two separate tools, not one tool with a hidden verbose flag

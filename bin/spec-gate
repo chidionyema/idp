@@ -29,9 +29,12 @@ changed="$(git diff --name-only "$mb" HEAD)"
 spec_re='(^|/)(tests?|spec|features)/|(^|/)test_[^/]*\.py$|_test\.[a-z]+$|\.test\.[a-z]+$|\.spec\.[a-z]+$|(^|/)bin/estate-diagram$'
 code_re='\.(py|ts|tsx|js|jsx|go|rs|sh|rb|java|kt|swift)$|(^|/)bin/[^/]+$'
 specs="$(printf '%s\n' "$changed" | grep -E "$spec_re" || true)"
-# A feature file is bound when a tracked test file (not a feature) names its path or basename.
+# A feature file is bound when a tracked test file loads it through pytest-bdd's
+# scenarios("...") (path or basename). A docstring or comment that merely names
+# the file is prose, not execution: tests/test_cp1_estate_inventory.py named
+# cp1_inventory_tool.feature for a week while no scenario in it ever ran (crew#297).
 tests_list="$(git ls-files | grep -E "$spec_re" | grep -v '\.feature$' || true)"
-bound() { [ -n "$tests_list" ] && printf '%s\n' "$tests_list" | xargs grep -lF -e "$1" -e "$(basename "$1")" -- 2>/dev/null | grep -q .; }
+bound() { [ -n "$tests_list" ] && printf '%s\n' "$tests_list" | xargs grep -lE -e "scenarios?\(\s*[\"'][^\"']*$(basename "$1")[\"']" -- 2>/dev/null | grep -q .; }
 unbound_changed=""; new_unbound=""
 for f in $(printf '%s\n' "$specs" | grep -E '(^|/)features/.*\.feature$' || true); do
   git cat-file -e "HEAD:$f" 2>/dev/null || continue   # deleted
