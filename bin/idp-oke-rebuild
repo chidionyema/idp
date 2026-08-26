@@ -84,7 +84,10 @@ case "$MODE" in
     step tofu-plan tofu plan -detailed-exitcode -lock=false "${TFVARS[@]}" ;;
   --apply)
     step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
-    step flux-bootstrap "$IDP/bin/idp-flux-bootstrap" ;;
+    # A runner has no kube path (outside control_plane_allowed_cidrs) and a node-pool change needs
+    # no Flux bootstrap: Flux is already on the cluster and reconciles the new node itself (crew#289).
+    if [ -n "${OCI_CI:-}" ]; then echo "n/a   flux-bootstrap     no kube path from a runner; Flux already bootstrapped, a node-pool change needs none"
+    else step flux-bootstrap "$IDP/bin/idp-flux-bootstrap"; fi ;;
   --teardown-rebuild)
     step tofu-destroy tofu destroy -auto-approve "${TFVARS[@]}"
     step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
