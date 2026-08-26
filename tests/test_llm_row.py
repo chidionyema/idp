@@ -53,7 +53,10 @@ def test_secret_env_names_cover_every_os_environ_ref() -> None:
     es = next(d for d in yaml.safe_load_all((CLUSTER / "external-secret.yaml").read_text()) if d["metadata"]["name"] == "litellm-upstream")
     assert es["spec"]["dataFrom"][0]["extract"]["key"] == "litellm-upstream"
     dep = next(d for d in yaml.safe_load_all((CLUSTER / "litellm.yaml").read_text()) if d["kind"] == "Deployment")
-    assert dep["spec"]["template"]["spec"]["containers"][0]["envFrom"][0]["secretRef"]["name"] == es["spec"]["target"]["name"]
+    # idp#253: the Secret is a mounted volume the container exports itself; Kyverno refuses envFrom.
+    spec = dep["spec"]["template"]["spec"]
+    assert es["spec"]["target"]["name"] in {v.get("secret", {}).get("secretName") for v in spec["volumes"]}
+    assert "envFrom" not in spec["containers"][0]
 
 
 def test_route_attaches_to_the_edge_llm_listener() -> None:
