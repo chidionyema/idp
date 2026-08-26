@@ -15,7 +15,8 @@ IDP = Path(__file__).resolve().parents[3]
 POD = IDP / "platform" / "identity" / "oauth2-proxy.yaml"
 PROVIDER_KEYS = ("oidc-issuer-url", "login-url", "redeem-url", "oidc-jwks-url", "profile-url")
 RETIRED = ("platform/access", "access-apply", "ESTATE_LOGIN_GITHUB_USER")
-ALLOWED = ("features/identity/front-door-oidc-client.feature", "docs/decisions/")
+# The feature, the decision record that retires the broker, and this binding (which must spell the names to look for them).
+ALLOWED = ("features/identity/front-door-oidc-client.feature", "docs/decisions/", "sovereign/tests/bdd/test_identity_front_door.py")
 
 
 def _git(*args: str) -> str:
