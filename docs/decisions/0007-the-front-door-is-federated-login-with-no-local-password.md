@@ -26,16 +26,17 @@ login was a 401 because the hash and the plaintext were made from different valu
 
 **The estate never holds a password for a person. Login federates to an identity provider the
 founder already uses, with MFA enforced there. The implementation is oauth2-proxy in front of the
-gateway's ForwardAuth; the provider is GitHub, the account every repository here already trusts.**
+gateway's ForwardAuth; the provider is the estate's own OCI identity domain (`platform/oci/identity`, since 2026-08-26, crew#269/#288). GitHub was the provider from 2026-08-25 to 2026-08-26; a Cloudflare Access broker (`platform/access`) was planned and deleted unapplied.**
 
 - No user database, no hash, no plaintext, no reset flow, no sops file for a login.
-- The only values the estate holds are the OAuth client id and client secret of one GitHub OAuth
-  App, and a random cookie secret. They live in the estate vault
-  (`platform/identity/external-secret.yaml`) and reach the pod as a Kubernetes Secret. The founder
-  writes the two GitHub values into the vault himself, in the OCI console; no session sees them
-  and nothing carries them through chat, a log, or a push notification.
-- Who may enter is one value in `clusters/oke/estate-config.yaml`, `ESTATE_LOGIN_GITHUB_USER`. A
-  second person is a second value there, reviewed in a pull request like any other change.
+- The only values the estate holds are the OIDC client id and client secret of one confidential
+  application in the identity domain, and a random cookie secret. Terraform creates the application
+  and writes both into the estate vault (`platform/oci/identity/main.tf`); ESO mounts them
+  (`platform/identity/external-secret.yaml`) as a Kubernetes Secret. No person and no session sees
+  them, and nothing carries them through chat, a log, or a push notification.
+- Who may enter is the domain's grant table: `founder_emails` in `platform/oci/identity`, one
+  `oci_identity_domains_grant` per address, reviewed in a pull request like any other change.
+  `ESTATE_LOGIN_GITHUB_USER` is retired (crew#288 CP3).
 - The gateway contract is unchanged from ADR 0003: an HTTPRoute outside `identity` carries a Traefik
   ForwardAuth Middleware, now `login-forward-auth`, address `oauth2-proxy.identity.svc/`. The
   application receives `X-Auth-Request-User` and `X-Auth-Request-Email`.
