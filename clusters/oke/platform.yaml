@@ -166,3 +166,22 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
+---
+# crew#345: the cluster writes its own state receipt to Object Storage every 15 minutes, so no
+# session needs a kube path or `oci session authenticate` to read it (bin/idp-cluster-state).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cluster-state
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: backstage
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/state
+  prune: true
+  wait: true
+  timeout: 5m
