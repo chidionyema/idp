@@ -97,9 +97,15 @@ else
   found=""
   for i in $(seq 1 24); do
     sleep 5
+    # Read back through /api/public/v2/observations, never /api/public/traces.
+    # Langfuse 4.x runs in LANGFUSE_MIGRATION_V4_WRITE_MODE=events_only by
+    # default; in that mode the v1 traces endpoints answer 404 with "This
+    # endpoint is not available on deployments running in Langfuse v4
+    # events_only mode". For two days (crew#340) this probe polled that 404 and
+    # reported "accepted but never appeared" while the span sat in events_full.
     got=$(curl -sS --max-time 10 -u "$pk:$sk" \
-      "$PRIMARY/api/public/traces/$trace_id" 2>/dev/null \
-      | $JQ -r '.id // empty' 2>/dev/null)
+      "$PRIMARY/api/public/v2/observations?traceId=$trace_id&limit=1" 2>/dev/null \
+      | $JQ -r '.data[0].traceId // empty' 2>/dev/null)
     if [ -n "$got" ]; then found="$got"; break; fi
     [ $(( i % 4 )) -eq 0 ] && say "          still flushing ($(( i * 5 ))s)"
   done
