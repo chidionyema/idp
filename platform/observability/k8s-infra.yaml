@@ -1,0 +1,59 @@
+# SigNoz k8s-infra: the cluster's own metrics, logs and events into the SigNoz collector next
+# door (crew#388). The signoz chart 0.138.0 (signoz.yaml) does not bundle it, so until this
+# release the estate had traces from LiteLLM and nothing about pods, nodes or the kubelet.
+# One DaemonSet (otel-agent: hostMetrics, kubeletMetrics, container logs) and one Deployment
+# (otel-deployment: clusterMetrics, k8sEvents). Chart pinned; 0.17.0 (app 0.139.0) was
+# `helm search repo signoz/k8s-infra` on 2026-08-27. Uses the HelmRepository in signoz.yaml.
+# The agent reads /var/log/pods and the node filesystem, which the restricted profile refuses;
+# platform/edge/k8s-infra-exception.yaml waives exactly the rules bin/idp-kyverno-render shows
+# failing and nothing else.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: k8s-infra
+spec:
+  interval: 1h
+  timeout: 10m
+  chart:
+    spec:
+      chart: k8s-infra
+      version: 0.17.0
+      sourceRef:
+        kind: HelmRepository
+        name: signoz
+  install:
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3 }
+  values:
+    clusterName: oke
+    # gRPC OTLP on the SigNoz collector; LiteLLM uses the HTTP port 4318 of the same Service.
+    otelCollectorEndpoint: signoz-otel-collector.observability.svc:4317
+    otelInsecure: true
+    presets:
+      logsCollection: { enabled: true }
+      hostMetrics: { enabled: true }
+      kubeletMetrics: { enabled: true }
+      kubernetesAttributes: { enabled: true }
+      clusterMetrics: { enabled: true }
+      k8sEvents: { enabled: true }
+    otelAgent:
+      # No node-level listeners: workloads send OTLP to the signoz-otel-collector Service, so the
+      # agent's hostPorts (chart default on) stay off and disallow-host-ports passes.
+      ports:
+        otlp: { enabled: true, hostPort: false }
+        otlp-http: { enabled: true, hostPort: false }
+        zipkin: { enabled: false }
+        metrics: { enabled: true, hostPort: false }
+        health-check: { enabled: true, hostPort: false }
+      podSecurityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: { type: RuntimeDefault } }
+      securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+      resources:
+        requests: { cpu: 50m, memory: 128Mi }
+        limits: { cpu: 300m, memory: 512Mi }
+    otelDeployment:
+      podSecurityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: { type: RuntimeDefault } }
+      securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+      resources:
+        requests: { cpu: 30m, memory: 96Mi }
+        limits: { cpu: 200m, memory: 384Mi }

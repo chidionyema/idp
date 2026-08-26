@@ -4,6 +4,7 @@ namespace: observability
 resources:
   - namespace.yaml
   - signoz.yaml
+  - k8s-infra.yaml
   - langfuse.yaml
   - httproute.yaml
 configMapGenerator:
