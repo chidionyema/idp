@@ -52,3 +52,10 @@ def test_digest_job_is_described() -> None:
     )
     line = next((l for l in r.stdout.splitlines() if JOB in l), "")
     assert line.startswith("ok"), line or r.stdout
+
+
+def test_self_check_job_enforces_every_five_minutes() -> None:
+    jobs = yaml.safe_load((ROOT / "scheduler" / "schedule.yml").read_text())["jobs"]
+    job = jobs["ai.estate.sovereign-self-check"]
+    assert job["command"][-4:] == ["sovereign.cli", "self-check", "--enforce", "--json"]
+    assert str(job["cron"]).split()[0] == "*/5"
