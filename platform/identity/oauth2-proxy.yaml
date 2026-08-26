@@ -37,15 +37,33 @@ spec:
     remediation:
       retries: 3
   values:
+    # Incident 2026-08-26 (idp#146 live): the chart's default wiring hands the three secrets to the
+    # pod as environment variables from secretKeyRef, and the cluster policy
+    # secrets-not-from-env-vars refused the Deployment; the catalogue answered 500 until this.
+    # So the ExternalSecret renders the whole config file (external-secret.yaml) and it is mounted
+    # as a volume; the chart writes no secret, no env var and no config of its own.
+    proxyVarsAsSecrets: false
     config:
-      existingSecret: oauth2-proxy   # keys client-id, client-secret, cookie-secret (external-secret.yaml)
-      # The chart's default configFile sets upstreams = ["file:///dev/null"]; a flag and a file
-      # naming the same option is a precedence question nobody should have to answer, so the
-      # upstream is stated here, once.
-      configFile: |
-        email_domains = [ "*" ]
-        upstreams = [ "static://202" ]
+      configFile: ""
+      # Without this the chart still generates its own ConfigMap (upstreams file:///dev/null, no
+      # client id) and appends a second --config after extraArgs; the last flag wins and the pod
+      # never becomes ready ("missing setting: client-id"). idp#147 review, rendered both ways.
+      forceLegacyConfig: false
+    extraVolumes:
+      - name: config
+        secret:
+          secretName: oauth2-proxy
+    extraVolumeMounts:
+      - name: config
+        mountPath: /etc/oauth2-proxy-config
+        readOnly: true
+    # The policy's pattern needs a non-empty env list to match against; an empty `env:` is refused
+    # as if it held a secret. One plain value keeps the list non-empty.
+    extraEnv:
+      - name: OAUTH2_PROXY_PROVIDER_DISPLAY_NAME
+        value: GitHub
     extraArgs:
+      config: /etc/oauth2-proxy-config/oauth2_proxy.cfg
       provider: github
       # The one GitHub login allowed through the door; an estate value, not a literal (LAW 46).
       github-user: "${ESTATE_LOGIN_GITHUB_USER}"

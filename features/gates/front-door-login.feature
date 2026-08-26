@@ -27,3 +27,11 @@ Feature: The front door is a federated login with no local password
     Given every file under platform/
     Then no ExternalSecret renders a users file and no ForwardAuth points at authelia
     And the Middleware in front of every route outside identity points at oauth2-proxy
+
+  # Incident 2026-08-26 (idp#146 live): the chart handed the secrets to the pod as env vars, the
+  # cluster policy refused the Deployment and the catalogue answered 500.
+  Scenario: The secrets reach the pod as one mounted file, never as environment variables
+    Given the oauth2-proxy HelmRelease values the row ships
+    When the chart is rendered and the cluster policy set is applied to it
+    Then no rule fails
+    And the same values with the chart's env-var wiring turned on are refused by secrets-not-from-env-vars
