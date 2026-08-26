@@ -27,6 +27,12 @@ cases=(
   "placement-ok.json:0:allows short-interval desk jobs that are monitored and awake-hours only"
   "placement-misplaced.json:1:refuses sleep-window schedules, never-pinged jobs and survival work on a laptop"
   "placement-blind.json:1:refuses a monitored job whose check could not be read, so a monitoring outage cannot read as a pass"
+  "opmodel-ok.json:0:allows an identity with its grant, an approval word, a cost line and the canary label (crew#286)"
+  "opmodel-half-provisioned.json:1:refuses an identity created with no grant or policy in the same PR (ZCP, crew#287)"
+  "opmodel-gui.json:1:refuses an instruction line that sends a person to a console"
+  "opmodel-no-approval.json:1:refuses a founder-facing change with no Approval-word line"
+  "opmodel-over-budget.json:1:refuses a platform/oci change whose declared monthly cost beats the budget"
+  "opmodel-no-canary.json:1:refuses a platform/oci change with no canary label"
 )
 
 printf '%-20s %-8s %-8s %s\n' FIXTURE EXPECT GOT PROVES

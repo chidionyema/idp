@@ -124,6 +124,16 @@ OTTO_KEYS: dict[str, tuple[Any, type, str, str]] = {
     "otto.plugin_steer_min_parts": (
         2, int, "OTTO_PLUGIN_STEER_MIN_PARTS",
         "Min whitespace-split parts required by /sb-steer (id + text)"),
+    "otto.intake_repo": (
+        "", str, "OTTO_INTAKE_REPO",
+        "Git checkout a phone photo is committed into (spec 2.3); empty means "
+        "estate.home, which is a git repository and holds docs/"),
+    "otto.receipt_by": (
+        "telegram", str, "OTTO_RECEIPT_BY",
+        "The `by` recorded on receipts written from chat (undo, stop, approve)"),
+    "otto.receipt_fallback_template": (
+        "[?] {op} | session:{sid}", str, "OTTO_RECEIPT_FALLBACK_TEMPLATE",
+        "Line returned when no receipt exists yet for the session the op touched"),
 
     "otto.hermes_home_default_dirname": (
         ".hermes", str, "OTTO_HERMES_HOME_DEFAULT_DIRNAME",

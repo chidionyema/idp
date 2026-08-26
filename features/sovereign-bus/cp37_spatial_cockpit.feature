@@ -1,4 +1,4 @@
-@cp36
+@cp37
 Feature: The cockpit page is the presence model, not a log dump
   Founder: "this ui is terrible" (crew#284 CP4). Master Spec v1.0 §2.1: Ghost
   is the default and nothing else renders until the founder clicks; Spatial

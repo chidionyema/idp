@@ -1,3 +1,0 @@
-# The board's SQLite database and uploads. Back this directory up; never commit it.
-data/
-plugins/

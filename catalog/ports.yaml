@@ -8,7 +8,7 @@ blocks:
   3000-3099: product web
   3100-3199: product APIs and the portal
   3200-3299: platform UIs
-  3300-3399: platform UIs (kanboard, agentgateway -- grandfathered)
+  3300-3399: platform UIs (agentgateway -- grandfathered)
   4000-4099: model routing
   4300-4399: telemetry
   8000-8099: monitors and data
@@ -18,7 +18,6 @@ ports:
   - {port: 3100, service: backstage-app,        compose: none, bind: '[::1]'}
   - {port: 3200, service: langfuse-web,         compose: observability/langfuse.yml}
   - {port: 3210, service: dagster-webserver,    compose: none}
-  - {port: 3300, service: kanboard,             compose: board/kanboard.yml}
   - {port: 3310, service: agentgateway,         compose: mcp/agentgateway.yml}
   - {port: 4000, service: litellm,              compose: llm/litellm.yml}
   - {port: 4318, service: otel-fallback,        compose: observability/langfuse.yml}

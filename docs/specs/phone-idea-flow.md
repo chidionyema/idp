@@ -30,7 +30,7 @@ restated against the real component:
 |---|---|
 | Aider drives the laptop sessions | Claude Code sessions, launched from the crew CLI or by hand |
 | "Foreman" dispatches queued work | `maestro` at `~/dev/code/maestro` — see "Measured state" below for what it actually does today |
-| Plane.so holds the board | Kanboard (`idp/board`, SQLite) plus GitHub issues/PRs in `chidionyema/crew`, per the standing founder ruling that nothing generated may live only in vendor tooling |
+| Plane.so holds the board | GitHub issues/PRs in `chidionyema/crew` (STANDARDS row 27; Kanboard retired 2026-08-26, crew#282), per the standing founder ruling that nothing generated may live only in vendor tooling |
 
 ## Measured state, 2026-08-24 — do not re-measure without a fresh command
 
@@ -87,11 +87,11 @@ made that branch did so by another path.
 
 ## Where this lives, and where it does not
 
-Per `~/AGENTS.md` headline: one platform. `idp/board` (Kanboard) and GitHub
-issues/PRs in `chidionyema/crew` are the two sources of truth this flow reads
-and writes — never Telegram chat history alone (R11). `hermes-v2` is the
+Per `~/AGENTS.md` headline: one platform. GitHub issues/PRs in `chidionyema/crew`
+are the one source of truth this flow reads and writes (Kanboard, once `idp/board`,
+was retired 2026-08-26 under STANDARDS row 27, crew#282) — never Telegram chat history alone (R11). `hermes-v2` is the
 phone-facing product; its own internal kanban system is not extended to cover
-this flow, because that would be a second board next to `idp/board`, which is
+this flow, because that would be a second board next to the crew repo, which is
 exactly the stitching the headline forbids. Any board-write hermes-v2 performs
 for this flow targets `idp/board`.
 

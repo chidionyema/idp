@@ -182,16 +182,20 @@ else
   case "$hop" in
     "302 https://catalogue.$zone/oauth2/start"*) hop=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 10 "${hop#302 }" 2>/dev/null || echo "000") ;;
   esac
+  # The front door is generic OIDC against the estate's identity domain (platform/oci/identity);
+  # the authorize URL is the one value in estate-config, never a provider name here (R36).
+  idp_url=$(sed -n 's/^  ESTATE_OIDC_DOMAIN_URL: *//p' "$IDP/clusters/oke/estate-config.yaml" | head -1)
   case "$hop" in
-    "302 https://github.com/login/oauth/authorize"*)
-      # GitHub answers 302 for a placeholder, a fake and a real client_id alike (measured 2026-08-26,
-      # idp#149 review), so the id itself is graded: empty or the vault placeholder is a FAIL.
+    "302 ${idp_url%/}/oauth2/v1/authorize"*)
+      # The client id in the redirect is what the vault holds (idp#149 review): empty or the
+      # placeholder is a FAIL with the command that refreshes the pod after bin/idp-identity-apply.
       cid=$(printf '%s' "${hop#* }" | tr '?&' '\n\n' | sed -n 's/^client_id=//p' | head -1)
       case "$cid" in
-        ""|replace-in-console) say "FAIL      login     https://catalogue.$zone -> GitHub with client_id '${cid:-<empty>}' (FOUNDER ACTION: OAuth App id/secret into vault secrets oauth2-proxy-client-id / oauth2-proxy-client-secret, then kubectl -n identity annotate externalsecret oauth2-proxy force-sync=\$(date +%s) --overwrite && kubectl -n identity rollout restart deploy/oauth2-proxy)"; fail=1 ;;
-        *) say "ok        login     https://catalogue.$zone -> GitHub sign-in (no password anywhere, ADR 0007)" ;;
+        ""|replace-in-console) say "FAIL      login     https://catalogue.$zone -> identity domain with client_id '${cid:-<empty>}' (run bin/idp-identity-apply apply, then kubectl -n identity annotate externalsecret oauth2-proxy force-sync=\$(date +%s) --overwrite && kubectl -n identity rollout restart deploy/oauth2-proxy)"; fail=1 ;;
+        *) say "ok        login     https://catalogue.$zone -> identity domain sign-in (no password anywhere, ADR 0007)" ;;
       esac ;;
-    *) say "FAIL      login     https://catalogue.$zone -> ${hop%% *} $(printf '%s' "${hop#* }" | cut -d'?' -f1) (want 302 to GitHub; kubectl -n backstage get middleware login-forward-auth; kubectl -n identity get pods)"; fail=1 ;;
+    "302 https://github.com/login/oauth/authorize"*) say "FAIL      login     https://catalogue.$zone -> GitHub: the pod still runs provider github; reconcile platform/identity (flux reconcile ks platform --with-source)"; fail=1 ;;
+    *) say "FAIL      login     https://catalogue.$zone -> ${hop%% *} $(printf '%s' "${hop#* }" | cut -d'?' -f1) (want 302 to the identity domain; kubectl -n backstage get middleware login-forward-auth; kubectl -n identity get pods)"; fail=1 ;;
   esac
 fi
 exit "$fail"

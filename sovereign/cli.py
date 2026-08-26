@@ -312,10 +312,10 @@ def cmd_model_consensus(args: argparse.Namespace) -> int:
 
     Deliberately NOT folded into `sb consensus`, which is cp11's
     DB-versus-DAG dual read. Same English word, two unrelated questions."""
-    from sovereign.consensus import decide as decide_mod
+    from sovereign.consensus.decide import decide as decide_fn
 
     destructive = True if args.destructive else (False if args.non_destructive else None)
-    res = decide_mod.decide(args.op, destructive=destructive)
+    res = decide_fn(args.op, destructive=destructive)
     _emit(res, args.json)
     return 0 if res["ok"] else 1
 

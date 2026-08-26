@@ -1,182 +1,118 @@
-"""cp36 acceptance: the cockpit page is the presence model (CP4, crew#284).
+"""cp36 acceptance: the hermes plugin turns Telegram into a receipt channel.
 
-Founder: "this ui is terrible" -- four columns, one of them 156 raw tick
-lines. Master Spec v1.0 §2.1 says Ghost is the default and nothing else
-renders until the founder clicks. This suite proves the two mechanical
-halves of that promise the server controls, without a browser:
-
-* GET / never embeds session or inbox text -- the shell is the same bytes
-  whatever the estate is doing, so Ghost cannot leak into a page load.
-* GET /api/status carries the red dot and the one emergency line the
-  catastrophe path (spec §2.1: "Spatial may only be entered by explicit
-  founder action ... or by a catastrophic alert") needs to render.
-
-A real `sovereign.cockpit.server.Handler` on a real loopback socket, driven
-with `http.client` (stdlib), per crew#284's instruction. The only fakes are
-the two true external boundaries: `sovereign.engine.client` (Temporal) and
-the presence state file (the kernel's own write, reproduced by hand here).
+Owner: crew#284 CP1 (sovereign/otto/hermes_plugin). The two real boundaries
+are stubbed: `sb` (a subprocess) and the Telegram Bot API (card._send).
+Everything between them -- the hook's decision, the receipt formatter, the
+argv handed to sb -- is real.
 """
 from __future__ import annotations
 
-import http.client
-import json
-import threading
+import importlib.util
+import sys
 import types
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-scenarios("features/sovereign-bus/cp36_spatial_cockpit.feature")
+from sovereign.presence import config_keys as presence_ck
+
+scenarios("features/sovereign-bus/cp36_telegram_kernel.feature")
+
+PLUGIN = Path(__file__).resolve().parents[2] / "otto" / "hermes_plugin" / "__init__.py"
 
 
-def _fake_engine_module(sessions: list[dict[str, Any]]) -> types.ModuleType:
-    """A `sovereign.engine.client` stand-in whose `list_sessions` always
-    reflects the current contents of `sessions` (steps mutate it in place,
-    never reassign it, so this closure stays valid for the scenario)."""
+@pytest.fixture
+def plugin(monkeypatch):
+    spec = importlib.util.spec_from_file_location("hermes_sovereign_plugin", PLUGIN)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    calls: list[list[str]] = []
+    sent: list[str] = []
+    chain: list[dict] = []
 
-    async def _list_sessions() -> list[dict[str, Any]]:
-        return list(sessions)
+    def fake_run_sb(*args):
+        calls.append(list(args))
+        if args[0] == "intake":
+            return True, {"line": "[✓] DOC_COMMIT | file:docs/save-this-article.md | hash:8f2a1b3c | tags:#ml | budget:-1.2k | state:8f2a1b3c", "commit": "8f2a1b3c"}
+        if args[0] == "episodes":
+            return True, chain
+        return True, {}
 
-    async def _show(session_id: str) -> dict[str, Any]:
-        raise KeyError(session_id)
-
-    async def _signal(session_id: str, kind: str, by: str, text: str = "") -> dict[str, Any]:
-        return {"ok": True}
-
-    async def _start(task: str, runner: str = "claude", repo: str | None = None, by: str = "cli", budget: int = 0) -> dict[str, Any]:
-        return {"session_id": "sb-cp36-started"}
-
-    mod = types.ModuleType("sovereign.engine.client")
-    mod.list_sessions = _list_sessions  # type: ignore[attr-defined]
-    mod.show = _show  # type: ignore[attr-defined]
-    mod.signal = _signal  # type: ignore[attr-defined]
-    mod.start = _start  # type: ignore[attr-defined]
+    monkeypatch.setattr(mod, "_run_sb", fake_run_sb)
+    monkeypatch.setattr(mod, "_send_line", lambda event, line: sent.append(line) or True)
+    mod._test = SimpleNamespace(calls=calls, sent=sent, chain=chain, event=None, result=None, reply=None)
     return mod
 
 
-@pytest.fixture
-def sessions() -> list[dict[str, Any]]:
-    return []
+@given(parsers.parse('the founder sends a photo with caption "{caption}"'))
+def photo_with_caption(plugin, tmp_path, caption):
+    img = tmp_path / "photo.jpg"
+    img.write_bytes(b"\xff\xd8\xff")
+    plugin._test.event = SimpleNamespace(text=caption, media_urls=[str(img)], source=SimpleNamespace(chat_id="42"))
 
 
-@pytest.fixture
-def cockpit(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sessions: list[dict[str, Any]]):
-    """A real cockpit HTTP server on an ephemeral loopback port. Import
-    happens inside the fixture so the module-level route regexes (already
-    resolved once per process, cp22) are only ever read, never rebuilt."""
-    from sovereign.cockpit import server as cockpit_server
-
-    inbox_path = tmp_path / "inbox.jsonl"
-    inbox_path.write_text("")
-    monkeypatch.setattr(cockpit_server, "engine_client", _fake_engine_module(sessions))
-    monkeypatch.setattr(cockpit_server, "_inbox_path", lambda: inbox_path)
-    # No X-Telegram-Init-Data header below, so auth.authorize's loopback path
-    # is what admits these requests -- the same path a laptop browser uses.
-
-    httpd = cockpit_server.build_server(port=0, bind="127.0.0.1")
-    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield httpd
-    finally:
-        httpd.shutdown()
-        thread.join(timeout=5)
-        httpd.server_close()
+@given("the founder sends a photo with no caption")
+def photo_no_caption(plugin, tmp_path):
+    img = tmp_path / "photo.jpg"
+    img.write_bytes(b"\xff\xd8\xff")
+    plugin._test.event = SimpleNamespace(text="", media_urls=[str(img)], source=SimpleNamespace(chat_id="42"))
 
 
-@pytest.fixture
-def response(context: dict[str, Any]) -> dict[str, Any]:
-    return context.setdefault("response", {})
+@given(parsers.parse('session "{sid}" has a receipt of kind "{kind}" in the chain'))
+def receipt_in_chain(plugin, sid, kind):
+    plugin._test.chain.append({"session_id": sid, "kind": kind, "hash": "abcdef0123456789", "counter": 7, "tokens": 120, "status": "ok", "fsm_state": "terminal"})
 
 
-@given(parsers.parse('a session with task "{task}" is running'))
-def _session_running(sessions: list[dict[str, Any]], task: str) -> None:
-    sessions.append(
-        {
-            "session_id": "sb-cp36-0001",
-            "repo": "idp",
-            "task": task,
-            "step": 3,
-            "status": "running",
-            "runner": "claude",
-            "asking": None,
-            "budget": 50000,
-            "budget_remaining": 41000,
-            "started_at": "2026-08-26T00:00:00Z",
-            "updated_at": "2026-08-26T00:00:01Z",
-        }
-    )
+@when("the gateway pre-dispatch hook runs")
+def run_hook(plugin):
+    plugin._test.result = plugin.on_pre_gateway_dispatch(event=plugin._test.event, gateway=None, session_store=None)
 
 
-@given(parsers.parse('the inbox contains the line "{line}"'))
-def _inbox_line(cockpit: Any, line: str) -> None:
-    from sovereign.cockpit import server as cockpit_server
-
-    path = cockpit_server._inbox_path()
-    with path.open("a") as fh:
-        fh.write(json.dumps({"source": "test", "text": line}) + "\n")
+@when(parsers.parse('the founder sends "/sb-undo {args}"'))
+def send_undo(plugin, args):
+    plugin._test.reply = plugin.sb_undo(args)
 
 
-@given("the presence state is a catastrophe")
-def _presence_catastrophe(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    from sovereign.presence import state as presence_state
-    from sovereign.presence.fsm import Spatial
-
-    state_file = tmp_path / "presence.json"
-    monkeypatch.setenv("SB_PRESENCE_STATE_FILE", str(state_file))
-    presence_state.write(Spatial(cause="catastrophe"))
+@when(parsers.parse('the founder sends "/sb-stop {args}"'))
+def send_stop(plugin, args):
+    plugin._test.reply = plugin.sb_stop(args)
 
 
-def _get(cockpit: Any, path: str) -> tuple[int, bytes]:
-    conn = http.client.HTTPConnection(cockpit.server_address[0], cockpit.server_address[1], timeout=5)
-    try:
-        conn.request("GET", path)
-        res = conn.getresponse()
-        return res.status, res.read()
-    finally:
-        conn.close()
+@then("the message is skipped before dispatch")
+def skipped(plugin):
+    assert plugin._test.result and plugin._test.result["action"] == "skip"
+    assert plugin._test.calls[0][:2] == ["intake", plugin._test.event.media_urls[0]]
+    assert "--caption" in plugin._test.calls[0]
 
 
-@when(parsers.parse('I GET "{path}"'))
-def _get_path(cockpit: Any, response: dict[str, Any], path: str) -> None:
-    status, body = _get(cockpit, path)
-    response["status"] = status
-    response["body"] = body
-    response["text"] = body.decode("utf-8", errors="replace")
-    ctype = "application/json"
-    try:
-        response["json"] = json.loads(body) if body else None
-    except json.JSONDecodeError:
-        response["json"] = None
+@then("exactly one Telegram message is sent")
+def one_sent(plugin):
+    assert len(plugin._test.sent) == 1
 
 
-@then(parsers.parse('the response does not contain "{needle}"'))
-def _not_contains(response: dict[str, Any], needle: str) -> None:
-    assert response["status"] == 200, response
-    assert needle not in response["text"], f"Ghost page leaked {needle!r}"
+@then(parsers.parse('that message is one line containing "{word}", a hash and a budget delta'))
+def one_line(plugin, word):
+    line = plugin._test.sent[0]
+    assert "\n" not in line and word in line and "hash:" in line and "budget:" in line
 
 
-@then(parsers.parse('the response contains "{needle}"'))
-def _contains(response: dict[str, Any], needle: str) -> None:
-    assert response["status"] == 200, response
-    assert needle in response["text"], f"expected {needle!r} in the Ghost shell, got none"
+@then("the hook returns None")
+def returns_none(plugin):
+    assert plugin._test.result is None
+    assert plugin._test.calls == []
 
 
-@then(parsers.parse('the JSON field "{field}" is "{value}"'))
-def _json_field_is(response: dict[str, Any], field: str, value: str) -> None:
-    assert response["status"] == 200, response
-    body = response["json"]
-    assert body is not None, response["text"]
-    assert str(body.get(field)) == value, body
+@then(parsers.parse('sb was invoked with "{argv}"'))
+def sb_argv(plugin, argv):
+    assert argv.split() in plugin._test.calls
 
 
-@then(parsers.parse('the JSON field "{field}" is one line with no question mark'))
-def _json_field_one_line_no_question(response: dict[str, Any], field: str) -> None:
-    body = response["json"]
-    assert body is not None, response["text"]
-    line = body.get(field)
-    assert line, f"expected a non-empty {field!r}, got {line!r} in {body!r}"
-    assert "\n" not in line, f"{field} is not one line: {line!r}"
-    assert "?" not in line, f"a system-authored line never asks a question (cp32): {line!r}"
+@then(parsers.parse('the reply is one line starting with the ok mark and "{op}"'))
+def reply_line(plugin, op):
+    mark = str(presence_ck.resolve("presence.receipt_ok_mark"))
+    reply = plugin._test.reply
+    assert reply is not None and "\n" not in reply
+    assert reply.startswith(f"{mark} {op}"), reply
+    assert "hash:" in reply and "budget:" in reply

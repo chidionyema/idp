@@ -13,6 +13,7 @@ import importlib
 import json
 import re
 import shutil
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -187,3 +188,43 @@ def _one_cheap_model(proxy: FakeProxy, context: dict[str, Any]) -> None:
     for chain in chains:
         assert chain.split(",")[-1].strip() == cheap, chain
     assert config_mod.POLICY.routing["cheap"] == cheap
+
+
+# crew#284 CP2: spec 4.2 says three models. Three copies of one alias is one
+# model voting three times, which the old default was.
+@given("the shipped configuration with no consensus override", target_fixture="voters")
+def _shipped_voters(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    monkeypatch.delenv("SB_MODEL_CONSENSUS", raising=False)
+    from sovereign.config import KEYS
+
+    return list(KEYS["model.consensus"].default)
+
+
+@then("the consensus list names three aliases and no alias appears twice")
+def _three_distinct(voters: list[str]) -> None:
+    assert len(voters) == 3, voters
+    assert len(set(voters)) == 3, voters
+
+
+@then("every alias is a model_name the LiteLLM proxy config serves")
+def _served_by_proxy(voters: list[str]) -> None:
+    root = Path(__file__).resolve().parents[3]
+    text = (root / "llm" / "config.yaml").read_text()
+    served = set(re.findall(r"^\s*- model_name:\s*(\S+)", text, re.M))
+    missing = [v for v in voters if v not in served]
+    assert not missing, f"not in llm/config.yaml model_list: {missing}"
+
+
+# Incident 2026-08-26: `sb model-consensus` raised AttributeError before any
+# vote, because `from sovereign.consensus import decide` bound the function,
+# not the module. The command must reach decide() and print its verdict.
+@then('"sb model-consensus --op <op> --destructive" exits 0 with the verdict')
+def _cli_reaches_vote(context: dict[str, Any], capsys: pytest.CaptureFixture[str]) -> None:
+    import argparse
+
+    from sovereign import cli
+
+    args = argparse.Namespace(op=context["op"], destructive=True, non_destructive=False, json=True)
+    rc = cli.cmd_model_consensus(args)
+    out = json.loads(capsys.readouterr().out)
+    assert rc == 0 and out["ok"] is True, out

@@ -27,9 +27,6 @@ app:
           # The estate's own doors, not Backstage's. A portal whose toolkit
           # links to the vendor's docs is a portal nobody has moved into.
           tools:
-            - url: http://127.0.0.1:3300/
-              label: Board
-              icon: dashboard
             - url: http://127.0.0.1:3200/
               label: Traces (Langfuse)
               icon: dashboard
