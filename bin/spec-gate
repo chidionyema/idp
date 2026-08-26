@@ -6,7 +6,7 @@
 #
 # Code     any tracked file that ends in .py .ts .tsx .js .jsx .go .rs .sh .rb
 #          .java .kt .swift, or lives under bin/, that is not itself a spec.
-# Spec     a *.feature file; anything under tests/, test/, spec/, features/;
+# Spec     a *.feature file under features/; anything under tests/, test/, spec/, features/;
 #          a file named test_*.py, *_test.*, *.test.*, *.spec.*; the live
 #          diagram generator bin/estate-diagram.
 #
@@ -26,14 +26,14 @@ base="${1:-${SPEC_GATE_BASE:-origin/main}}"
 git rev-parse --verify -q "$base^{commit}" >/dev/null || { echo "BLIND spec-gate: base ref '$base' not found (fetch-depth 0?)"; exit 3; }
 mb="$(git merge-base "$base" HEAD)" || { echo "BLIND spec-gate: no merge base with $base"; exit 3; }
 changed="$(git diff --name-only "$mb" HEAD)"
-spec_re='(^|/)(tests?|spec|features)/|\.feature$|(^|/)test_[^/]*\.py$|_test\.[a-z]+$|\.test\.[a-z]+$|\.spec\.[a-z]+$|(^|/)bin/estate-diagram$'
+spec_re='(^|/)(tests?|spec|features)/|(^|/)test_[^/]*\.py$|_test\.[a-z]+$|\.test\.[a-z]+$|\.spec\.[a-z]+$|(^|/)bin/estate-diagram$'
 code_re='\.(py|ts|tsx|js|jsx|go|rs|sh|rb|java|kt|swift)$|(^|/)bin/[^/]+$'
 specs="$(printf '%s\n' "$changed" | grep -E "$spec_re" || true)"
 # A feature file is bound when a tracked test file (not a feature) names its path or basename.
 tests_list="$(git ls-files | grep -E "$spec_re" | grep -v '\.feature$' || true)"
 bound() { [ -n "$tests_list" ] && printf '%s\n' "$tests_list" | xargs grep -lF -e "$1" -e "$(basename "$1")" -- 2>/dev/null | grep -q .; }
 unbound_changed=""; new_unbound=""
-for f in $(printf '%s\n' "$specs" | grep '\.feature$' || true); do
+for f in $(printf '%s\n' "$specs" | grep -E '(^|/)features/.*\.feature$' || true); do
   git cat-file -e "HEAD:$f" 2>/dev/null || continue   # deleted
   if ! bound "$f"; then
     unbound_changed="$unbound_changed$f\n"
@@ -41,12 +41,12 @@ for f in $(printf '%s\n' "$specs" | grep '\.feature$' || true); do
   fi
 done
 [ -n "$unbound_changed" ] && specs="$(printf '%s\n' "$specs" | grep -vxF -f <(printf "$unbound_changed") || true)"
-nunbound=0; for f in $(git ls-files -- '*.feature'); do bound "$f" || nunbound=$((nunbound+1)); done
+nunbound=0; for f in $(git ls-files -- 'features/*.feature' 'features/**/*.feature' | sort -u); do bound "$f" || nunbound=$((nunbound+1)); done   # prose under docs/prose/ is not a spec
 echo "residual spec-gate $nunbound feature file(s) named by no test (crew#297)"
 if [ -n "$new_unbound" ]; then
   echo "FAIL  spec-gate new *.feature file(s) that no test names; a scenario nobody runs is prose (R29, crew#297):"
   printf "$new_unbound" | sed 's/^/      /'
-  echo "      bind it: scenarios(\"<path>\") in a pytest-bdd test, or put it under docs/"
+  echo "      bind it: scenarios(\"<path>\") in a pytest-bdd test, or put it under docs/prose/"
   exit 1
 fi
 [ -n "$unbound_changed" ] && { echo "note  spec-gate changed *.feature file(s) named by no test do not count as executable spec:"; printf "$unbound_changed" | sed 's/^/      /'; }
