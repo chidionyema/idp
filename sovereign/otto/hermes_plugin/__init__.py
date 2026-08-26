@@ -1,7 +1,8 @@
 """hermes-agent plugin: sovereign-bus session control from chat.
 
-Registers six slash commands (sb-list, sb-show, sb-stop, sb-approve,
-sb-deny, sb-steer). Each shells out to `$IDP/bin/sb <verb> ... --json` and
+Registers seven slash commands (sb-list, sb-show, sb-stop, sb-approve,
+sb-deny, sb-steer, sb-undo) and one gateway hook (photo + caption ->
+`sb intake` -> one DOC_COMMIT receipt line, crew#284 CP1). Each shells out to `$IDP/bin/sb <verb> ... --json` and
 returns at most a few lines of plain text (config-table-driven, see below) —
 no Telegram/Bot-API calls here, that is sovereign/otto/card.py's job.
 
@@ -113,7 +114,7 @@ def sb_stop(raw_args: str) -> Optional[str]:
     if not sid:
         return ck.get("otto.plugin_usage_id_template").format(cmd="sb-stop")
     ok, data = _run_sb("stop", sid)
-    return f"stopped {sid}" if ok else f"sb-stop failed: {data}"
+    return _receipt_line("stop", sid) if ok else f"sb-stop failed: {data}"
 
 
 def sb_approve(raw_args: str) -> Optional[str]:
@@ -121,7 +122,7 @@ def sb_approve(raw_args: str) -> Optional[str]:
     if not sid:
         return ck.get("otto.plugin_usage_id_template").format(cmd="sb-approve")
     ok, data = _run_sb("approve", sid)
-    return f"approved {sid}" if ok else f"sb-approve failed: {data}"
+    return _receipt_line("approve", sid) if ok else f"sb-approve failed: {data}"
 
 
 def sb_deny(raw_args: str) -> Optional[str]:
@@ -129,7 +130,7 @@ def sb_deny(raw_args: str) -> Optional[str]:
     if not sid:
         return ck.get("otto.plugin_usage_id_template").format(cmd="sb-deny")
     ok, data = _run_sb("deny", sid)
-    return f"denied {sid}" if ok else f"sb-deny failed: {data}"
+    return _receipt_line("deny", sid) if ok else f"sb-deny failed: {data}"
 
 
 def sb_steer(raw_args: str) -> Optional[str]:
@@ -139,7 +140,87 @@ def sb_steer(raw_args: str) -> Optional[str]:
         return ck.get("otto.plugin_usage_steer")
     sid, text = parts[0], parts[1]
     ok, data = _run_sb("steer", sid, text)
-    return f"steered {sid}" if ok else f"sb-steer failed: {data}"
+    return _receipt_line("steer", sid) if ok else f"sb-steer failed: {data}"
+
+
+# --- crew#284 CP1: every chat reply is a one-line receipt (spec 2.2) -------
+
+def _receipt_line(op: str, sid: str) -> str:
+    """The newest receipt in the signed chain for `sid`, as the one line
+    spec 2.2 draws: mark, OP, hash, budget delta, state. Never prose."""
+    ok, data = _run_sb("episodes")
+    rows = data if isinstance(data, list) else (data.get("episodes", []) if isinstance(data, dict) else [])
+    mine = [r for r in rows if isinstance(r, dict) and str(r.get("session_id", "")) == sid]
+    if not mine:
+        return str(ck.get("otto.receipt_fallback_template")).format(op=op.upper(), sid=sid)
+    row = max(mine, key=lambda r: int(r.get("counter") or 0))
+    try:
+        receipt_mod = importlib.import_module("sovereign.presence.receipt")
+        return receipt_mod.from_record(row).text
+    except Exception as exc:  # the chain is the truth; the formatter is a convenience
+        return f"[?] {op.upper()} | hash:{row.get('hash', '')} | formatter:{type(exc).__name__}"
+
+
+def sb_undo(raw_args: str) -> Optional[str]:
+    """`undo` from the phone reverts the commit the session's newest receipt
+    names (spec 2.2 rule 5); `undo <id> <receipt-hash>` walks back to that one."""
+    parts = raw_args.strip().split()
+    if not parts:
+        return ck.get("otto.plugin_usage_id_template").format(cmd="sb-undo")
+    sid = parts[0]
+    args = ["undo", sid, "--by", str(ck.get("otto.receipt_by"))]
+    if len(parts) > 1:
+        args += ["--to", parts[1]]
+    ok, data = _run_sb(*args)
+    return _receipt_line("undo", sid) if ok else f"sb-undo failed: {data}"
+
+
+def _intake_repo() -> str:
+    configured = str(ck.get("otto.intake_repo") or "").strip()
+    if configured:
+        return configured
+    return os.environ.get("ESTATE_HOME") or str(Path.home() / ".estate")
+
+
+def _chat_id(event) -> Optional[str]:
+    src = getattr(event, "source", None)
+    for holder in (src, event):
+        cid = getattr(holder, "chat_id", None)
+        if cid:
+            return str(cid)
+    return None
+
+
+def _send_line(event, line: str) -> bool:
+    """One Telegram message through the card's existing Bot API client."""
+    cid = _chat_id(event)
+    if not cid:
+        return False
+    try:
+        card = importlib.import_module("sovereign.otto.card")
+        return card._send(cid, line) is not None
+    except Exception:
+        return False
+
+
+def on_pre_gateway_dispatch(event=None, **_kw) -> Optional[dict]:
+    """Spec 2.3: a photo with a caption never reaches the model as chat. It
+    goes through `sb intake`, which extracts, commits under docs/ and writes
+    a DOC_COMMIT receipt; the only reply is that receipt's one line. A photo
+    without a caption, or a message without a photo, is dispatched normally."""
+    media = list(getattr(event, "media_urls", None) or [])
+    caption = str(getattr(event, "text", "") or "").strip()
+    if not media or not caption:
+        return None
+    image = str(media[0])
+    ok, data = _run_sb("intake", image, "--repo", _intake_repo(), "--caption", caption)
+    if ok and isinstance(data, dict) and data.get("line"):
+        line = str(data["line"])
+    else:
+        err_max = ck.get("otto.plugin_error_max_chars")
+        line = f"[x] DOC_COMMIT | refused:{str(data)[:err_max]}"
+    _send_line(event, line)
+    return {"action": "skip", "reason": line}
 
 
 def register(ctx) -> None:
@@ -149,3 +230,6 @@ def register(ctx) -> None:
     ctx.register_command("sb-approve", sb_approve, description="Approve a waiting session", args_hint="<id>")
     ctx.register_command("sb-deny", sb_deny, description="Deny a waiting session", args_hint="<id>")
     ctx.register_command("sb-steer", sb_steer, description="Steer a running session", args_hint="<id> <text>")
+    ctx.register_command("sb-undo", sb_undo, description="Revert the commit a session's receipt names", args_hint="<id> [receipt-hash]")
+    if hasattr(ctx, "register_hook"):
+        ctx.register_hook("pre_gateway_dispatch", on_pre_gateway_dispatch)
