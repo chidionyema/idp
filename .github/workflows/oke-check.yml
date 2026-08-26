@@ -67,6 +67,7 @@ jobs:
           OCI_S3_SECRET_KEY: ${{ secrets.OCI_S3_SECRET_KEY }}
           OKE_SSH_PUBKEY_TEXT: ${{ vars.OKE_SSH_PUBKEY }}
           OKE_ALLOWED_CIDRS: ${{ vars.OKE_ALLOWED_CIDRS }}
+          ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}   # platform/oci/langfuse.tf seeds the Langfuse login
         run: bin/idp-oke-rebuild --${{ inputs.mode || 'check' }}
 
   # crew#292 CP1: the check above proves the platform's shape. This proves a person can get in.

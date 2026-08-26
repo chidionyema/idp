@@ -96,6 +96,10 @@ spec:
       kind: HelmRelease
       name: signoz
       namespace: observability
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: langfuse
+      namespace: observability
 ---
 # The estate's one login (ADR 0007, crew#269). After edge (Gateway, cert-manager, Traefik CRD
 # provider) and secret-store (the vault). Health-checked at 10m like every other row.
