@@ -1,6 +1,14 @@
 # Langfuse on the OKE node pool (crew#286 CP6). Sized like SigNoz next door: requests small
 # enough to fit beside Backstage, limits so a runaway cannot take the node. Kyverno enforces the
 # restricted profile, so every workload declares non-root, seccomp and drop-ALL.
+global:
+  seaweedfs:
+    image:
+      # Incident 2026-08-26 (crew#325): the seaweedfs sub-chart renders `chrislusf/seaweedfs:4.23`
+      # with no registry, and the OKE node runtime enforces short-name mode, so the S3 pod sat in
+      # ImageInspectError for 3 hours ("returns ambiguous list"). Same class as the zookeeper
+      # image in values.yaml. `repository` is the namespace part of the image name in this chart.
+      repository: docker.io/chrislusf
 langfuse:
   nodeEnv: production
   features:
