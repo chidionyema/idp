@@ -54,16 +54,6 @@ jobs:
           domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           oci_region: ${{ vars.OCI_REGION }}
-      - name: bucket diagnostic for crew#292 (temporary; create says 409, import says non-existent)
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
-        run: |
-          echo "ns-get: $(oci os ns get --query data --raw-output 2>&1 | tail -1)"
-          oci os bucket get --namespace "$OCI_OS_NAMESPACE" --bucket-name estate-drill-receipts --query 'data.{c:"compartment-id",created:"time-created"}' 2>&1 | tail -3 || true
-          oci search resource structured-search --query-text "query bucket resources where displayName = 'estate-drill-receipts'" --query 'data.items[].{c:"compartment-id",id:identifier,st:"lifecycle-state"}' 2>&1 | tail -8 || true
-          oci os bucket list --compartment-id "$OCI_COMPARTMENT_OCID" --namespace "$OCI_OS_NAMESPACE" --query 'data[].name' 2>&1 | tail -8 || true
       - name: bin/idp-oke-rebuild --${{ inputs.mode || 'check' }}
         env:
           OCI_CI: "1"
