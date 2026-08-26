@@ -58,3 +58,19 @@ def test_incident_crew307_broken_path_row_says_what_rendered():
 
     src = Path(__file__).resolve().parents[1].joinpath("bin/idp-login-drill").read_text()
     assert "page says: {seen}; js errors: {errs}" in src
+
+
+def test_incident_crew307_material_table_keeps_its_own_uuid():
+    """Run 33005225790: /catalog and /docs rendered `TypeError: Cannot read properties of
+    undefined (reading 'v4')` in module-material-table. The global `uuid ^11.1.1` resolution
+    (idp#65) forced @material-table/core off uuid 3, whose default export it needs in the
+    browser bundle. The scoped rule must exist and come before the global one: yarn applies
+    the first matching resolution."""
+    import json
+    pkg = json.load(open(ROOT / "backstage" / "package.json"))
+    keys = list(pkg["resolutions"])
+    assert "@material-table/core/uuid" in keys
+    assert keys.index("@material-table/core/uuid") < keys.index("uuid")
+    assert pkg["resolutions"]["@material-table/core/uuid"].startswith("^3.")
+    lock = (ROOT / "backstage" / "yarn.lock").read_text()
+    assert '"uuid@npm:^3.4.0":' in lock

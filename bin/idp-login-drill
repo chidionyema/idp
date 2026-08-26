@@ -246,7 +246,7 @@ with sync_playwright() as p:
         ("catalog-import", "text=Register an existing component"),
         ("api-docs", "text=APIs"),
         ("docs", "text=Documentation"),
-        ("create", "text=Create a new component"),
+        ("create", "text=Templates"),  # the scaffolder page heading is "Templates"; "Create a new component" was Backstage 1.x
         ("search", "text=Search"),
         ("settings", "text=Settings"),
         ("visualizer", "text=Visualizer"),
