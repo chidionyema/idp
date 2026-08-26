@@ -52,6 +52,17 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
         assert cfg.exists() and "master_key: os.environ/" in cfg.read_text(), \
             f"{f}: annotated bearer-master-key but {cfg} enforces no master_key"
         return
+    # The trace store's public API (crew#325) carries Langfuse's own project-key auth. The route may
+    # skip oauth2-proxy only when it says so AND exposes nothing but /api/public/, AND the namespace
+    # pulls the two project keys Langfuse enforces on that path (langfuse.yaml, from the vault).
+    if (route["metadata"].get("annotations") or {}).get("idp.estate/auth") == "langfuse-project-keys":
+        paths = [m.get("path", {}) for rule in route["spec"]["rules"] for m in rule.get("matches", [])]
+        assert paths and all(p == {"type": "PathPrefix", "value": "/api/public/"} for p in paths), \
+            f"{f}: annotated langfuse-project-keys but exposes a path other than /api/public/: {paths}"
+        keys = (pathlib.Path(f).parent / "langfuse.yaml").read_text()
+        assert "langfuse-init-public-key" in keys and "langfuse-init-secret-key" in keys, \
+            f"{f}: annotated langfuse-project-keys but langfuse.yaml pulls no project keys"
+        return
     guarded = 0
     for rule in route["spec"]["rules"]:
         refs = [flt["extensionRef"] for flt in rule.get("filters", []) if flt.get("type") == "ExtensionRef"]

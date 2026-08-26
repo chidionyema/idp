@@ -16,20 +16,20 @@ def _route(name: str, ns_file: Path) -> dict:
 
 
 def test_langfuse_public_api_bypasses_the_login_forward_auth() -> None:
-    route = _route("langfuse", ROOT / "platform" / "observability" / "httproute.yaml")
-    public = [
-        r for r in route["spec"]["rules"]
-        if any(m.get("path", {}).get("value") == "/api/public/" for m in r.get("matches", []))
-    ]
-    assert public, "no rule for /api/public/ on the langfuse route"
-    assert not public[0].get("filters"), "the public API rule must carry no ForwardAuth filter"
-    assert public[0]["backendRefs"][0]["name"] == "langfuse-web"
-    # Every other non-/oauth2/ rule still goes through the login.
-    for r in route["spec"]["rules"]:
+    f = ROOT / "platform" / "observability" / "httproute.yaml"
+    api = _route("langfuse-api", f)
+    assert api["metadata"]["annotations"]["idp.estate/auth"] == "langfuse-project-keys"
+    paths = [m["path"] for r in api["spec"]["rules"] for m in r["matches"]]
+    assert paths == [{"type": "PathPrefix", "value": "/api/public/"}], paths
+    assert not any(r.get("filters") for r in api["spec"]["rules"]), "the public API route must carry no ForwardAuth filter"
+    assert api["spec"]["rules"][0]["backendRefs"][0]["name"] == "langfuse-web"
+    # The browser route keeps the login on every path except the /oauth2/ redirect.
+    ui = _route("langfuse", f)
+    for r in ui["spec"]["rules"]:
         paths = {m.get("path", {}).get("value") for m in r.get("matches", [])}
-        if paths & {"/oauth2/", "/api/public/"}:
+        if "/oauth2/" in paths:
             continue
-        assert any(f.get("extensionRef", {}).get("name") == "login-forward-auth" for f in r.get("filters", [])), r
+        assert any(x.get("extensionRef", {}).get("name") == "login-forward-auth" for x in r.get("filters", [])), r
 
 
 def test_trace_drill_is_catalogued_and_reads_keys_only_from_the_vault() -> None:
