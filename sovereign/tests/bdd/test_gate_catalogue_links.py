@@ -2,6 +2,7 @@
 bin/catalog-links-check for real over the tracked inventory fixtures; nothing is mocked."""
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -35,14 +36,14 @@ def _missing(state: dict) -> None:
 @when("bin/catalog-gen writes the catalogue and bin/catalog-links-check reads it")
 def _gen_then_check(state: dict) -> None:
     state["out"].mkdir(exist_ok=True)
-    g = subprocess.run(["python3", str(IDP / "bin" / "catalog-gen")], env={**os.environ, "INV": str(state["inv"]), "OUT": str(state["out"]), "ESTATE_ENV": "dev"}, capture_output=True, text=True)
+    g = subprocess.run([sys.executable, str(IDP / "bin" / "catalog-gen")], env={**os.environ, "INV": str(state["inv"]), "OUT": str(state["out"]), "ESTATE_ENV": "dev"}, capture_output=True, text=True)
     assert g.returncode == 0, g.stderr
-    state["run"] = subprocess.run(["python3", str(IDP / "bin" / "catalog-links-check"), str(state["out"] / "catalog-info.yaml")], capture_output=True, text=True)
+    state["run"] = subprocess.run([sys.executable, str(IDP / "bin" / "catalog-links-check"), str(state["out"] / "catalog-info.yaml")], capture_output=True, text=True)
 
 
 @when("bin/catalog-links-check runs")
 def _check_only(state: dict) -> None:
-    state["run"] = subprocess.run(["python3", str(IDP / "bin" / "catalog-links-check"), str(state["path"])], capture_output=True, text=True)
+    state["run"] = subprocess.run([sys.executable, str(IDP / "bin" / "catalog-links-check"), str(state["path"])], capture_output=True, text=True)
 
 
 @then(parsers.parse('it prints "{line}" and exits 0'))
