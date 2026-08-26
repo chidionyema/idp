@@ -32,6 +32,13 @@ module "oke" {
       memory           = var.worker_memory_gb
       size             = 1
       boot_volume_size = 50
+      # crew#289: a shape change reaches only new nodes. On 2026-08-26 the apply moved the pool to
+      # 4 OCPU / 24 GB while the running node stayed at 2 / 12 (`oci compute instance list`, kubectl
+      # allocatable 1830m). Cycling replaces the node: surge 1 brings the new node Ready first,
+      # unavailable 0 drains the old one only then. Same module setting the OKE docs call node cycling.
+      node_cycling_enabled         = true
+      node_cycling_max_surge       = 1
+      node_cycling_max_unavailable = 0
       placement_ads    = [1, 2] # 2026-08-25 apply failed: "Node shape is unavailable in subnet availability domain(s)"; VM.Standard.A1.Flex is offered in AD-1 and AD-2 only (oci compute shape list per AD)
     }
   }
