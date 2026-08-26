@@ -10,5 +10,5 @@ Feature: The front door is a federated login with no local password
   Scenario: No manifest holds a user database
     Given every file under platform/
     Then no ExternalSecret renders a users file and no ForwardAuth points at authelia
-    And the Middleware in front of every route outside identity points at oauth2-proxy
+    And every route outside identity is behind oauth2-proxy, or is a machine API whose own config proves a bearer master key
 
