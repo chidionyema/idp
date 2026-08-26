@@ -36,7 +36,7 @@ spec:
 ---
 # A second GitRepository for the same repo because the bootstrap one (flux-system) holds a
 # read-only deploy key (bin/idp-flux-bootstrap: --read-write-key=false). This one authenticates
-# as the estate-agents App through the github-app Secret (platform/secret-store/github-app.yaml).
+# as the estate-agents App through the github-app Secret (platform/image-automation/github-app.yaml).
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:

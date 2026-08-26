@@ -60,7 +60,7 @@ token)
   ;;
 installation)
   # Flux's GitRepository flux-system/idp-writer authenticates as the App (provider: github) and needs
-  # githubAppInstallationID beside the id and key; platform/secret-store/github-app.yaml reads all
+  # githubAppInstallationID beside the id and key; platform/image-automation/github-app.yaml reads all
   # three from this one vault secret. Re-puts the secret with every existing key plus installation_id.
   export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
   C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$IDP/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
