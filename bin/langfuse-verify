@@ -14,12 +14,13 @@
 #
 #   langfuse-verify          check both
 #   langfuse-verify --primary-only
+#   langfuse-verify --migrations-only   just the background-migrations row (crew#340)
 #
 # Exit 0 only when a span sent in comes back out.
 set -uo pipefail
 
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-ENVF="$IDP/observability/.env"
+ENVF="${LANGFUSE_ENV_FILE:-$IDP/observability/.env}"  # overridable for tests (crew#340)
 JQ=/usr/local/bin/jq
 PRIMARY=http://127.0.0.1:3200
 FALLBACK=http://127.0.0.1:4318
@@ -56,6 +57,26 @@ payload=$(cat <<JSON
     }]}]}]}
 JSON
 )
+
+# --- background migrations ----------------------------------------------------
+# crew#340: Langfuse v4 moves reads to ClickHouse events_full through five background
+# migrations the worker runs after boot. On 2026-08-24 steps 1, 3 and 4 failed at first
+# boot ("ClickHouse events_full table does not exist", a race with the schema migration)
+# and stayed failed for two days: the worker wrote every span to events_full and the
+# public API read the empty traces table, so this probe reported "accepted but never
+# appeared" with no cause. A failed row is the cause, and it is named here before the
+# span is sent. Retry from the Langfuse UI at /background-migrations, or reset the row.
+failed_bm=$(docker exec langfuse-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select name || chr(32) || coalesce(left(failed_reason,80), chr(39)||chr(39)) from background_migrations where failed_at is not null order by name"' 2>/dev/null); bm_rc=$?
+if [ "$bm_rc" -ne 0 ]; then
+  say "BLIND     background migrations: cannot read langfuse-postgres (docker exec rc=$bm_rc)"
+elif [ -n "$failed_bm" ]; then
+  say "FAIL      background migrations failed, the API reads tables the worker no longer writes:"
+  printf '%s\n' "$failed_bm" | sed 's/^/            /'
+  fail=1
+else
+  say "migrate   ok -- no failed background migration"
+fi
+[ "${1:-}" = "--migrations-only" ] && { [ "$fail" -eq 0 ] && say "PASS" || say "FAIL"; exit "$fail"; }
 
 # --- primary: send a span, then read it back ---------------------------------
 say "trace     $trace_id"
