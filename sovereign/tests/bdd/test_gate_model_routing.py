@@ -97,7 +97,10 @@ def secret_name(external_secret: dict) -> str:
 @then("every os.environ reference in the router config resolves from that Secret")
 def env_refs(secret_name: str) -> None:
     dep = next(d for d in yaml.safe_load_all((CLUSTER / "litellm.yaml").read_text()) if d["kind"] == "Deployment")
-    assert dep["spec"]["template"]["spec"]["containers"][0]["envFrom"][0]["secretRef"]["name"] == secret_name
+    # idp#253: the Secret is a mounted volume the container exports itself; Kyverno refuses envFrom.
+    spec = dep["spec"]["template"]["spec"]
+    assert secret_name in {v.get("secret", {}).get("secretName") for v in spec["volumes"]}, "litellm-upstream is not a mounted volume"
+    assert "envFrom" not in spec["containers"][0]
     refs = set(re.findall(r"os\.environ/([A-Z_]+)", (CLUSTER / "config.yaml").read_text()))
     documented = set(re.findall(r"([A-Z_]+_KEY)=\1", (CLUSTER / "external-secret.yaml").read_text()))
     assert refs == documented, refs ^ documented
