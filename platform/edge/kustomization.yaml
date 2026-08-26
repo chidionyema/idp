@@ -4,4 +4,5 @@ resources:
   - namespace.yaml
   - traefik.yaml
   - cert-manager.yaml
+  - langfuse-exception.yaml
   - kyverno.yaml

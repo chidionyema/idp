@@ -8,6 +8,7 @@ langfuse HelmRelease stayed refused for 2.5 hours. Two causes, both Kyverno:
 
 Rules, not code: every cert-manager component carries limits, and every PolicyException in
 platform/ lives in the one namespace Kyverno reads. Rung 4 (incident test)."""
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -35,15 +36,29 @@ def test_incident_crew325_cainjector_has_a_probe_exception() -> None:
 
 
 def test_incident_crew325_every_policy_exception_lives_where_kyverno_reads() -> None:
+    # Graded on the rendered output, not the file: platform/observability/kustomization.yaml sets
+    # `namespace: observability`, which rewrote an exception whose file said `kyverno`.
     kyverno = next(d for d in _docs("platform/edge/kyverno.yaml") if d["kind"] == "HelmRelease")
     exceptions = kyverno["spec"]["values"]["features"]["policyExceptions"]
     assert exceptions == {"enabled": True, "namespace": "kyverno"}
+    paths = sorted(
+        {
+            d["spec"]["path"]
+            for f in ROOT.glob("clusters/oke/*.yaml")
+            for d in yaml.safe_load_all(f.read_text())
+            if d and d.get("kind") == "Kustomization" and d["spec"].get("path", "").startswith("./platform/")
+        }
+    )
+    assert paths
     found = 0
-    for f in ROOT.glob("platform/**/*.yaml"):
-        for d in yaml.safe_load_all(f.read_text()):
+    for k in paths:
+        out = subprocess.run(
+            ["kustomize", "build", str(ROOT / k)], capture_output=True, text=True, check=True
+        ).stdout
+        for d in yaml.safe_load_all(out):
             if d and d.get("kind") == "PolicyException":
                 found += 1
-                assert d["metadata"].get("namespace") == "kyverno", f
+                assert d["metadata"].get("namespace") == "kyverno", (k, d["metadata"]["name"])
     assert found >= 3
 
 
