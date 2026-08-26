@@ -20,7 +20,7 @@ REFUSED=0
 for addr in $CREATES; do
   case "$addr" in
     oci_kms_vault.estate)
-      name=$(tofu show -no-color "$P" | awk -v a="$addr" '$0 ~ "# "a" will be created"{f=1} f && /display_name/{gsub(/"/,"",$3); print $3; exit}')
+      name=$(tofu show -no-color "$P" | awk -v a="$addr" '$0 ~ "# "a" will be created"{f=1} f && /display_name/{match($0,/"[^"]*"/); print substr($0,RSTART+1,RLENGTH-2); exit}')
       [ -n "$C" ] && [ -n "$name" ] || { echo "BLIND   recreate  $addr: no compartment or display_name to check"; continue; }
       live=$(oci kms management vault list --compartment-id "$C" --query "data[?\"display-name\"=='$name' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output 2>/dev/null) || { echo "BLIND   recreate  $addr: oci vault list failed"; continue; }
       if [ -n "$live" ] && [ "$live" != "null" ]; then

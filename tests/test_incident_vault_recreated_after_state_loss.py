@@ -20,7 +20,9 @@ def _run(tmp: Path, creates: bool, live_id: str) -> subprocess.CompletedProcess:
     _fake(b, "tofu", f'''
         case "$1" in plan) for a in "$@"; do case "$a" in -out=*) : > "${{a#-out=}}";; esac; done; exit 0;;
                      show) printf '%s\\n' '{show}';; esac''')
-    _fake(b, "oci", f'echo called >> "{tmp}/oci.calls"; printf "%s\\n" "{live_id}"')
+    # the fake answers only when asked for the exact display_name (reviewer 5420357246: a fake that
+    # ignores its arguments could not see the guard querying for '=' instead of the name)
+    _fake(b, "oci", f'echo called >> "{tmp}/oci.calls"; case "$*" in *"==\'estate-secrets\'"*) printf "%s\\n" "{live_id}";; *) echo "null";; esac')
     env = {**os.environ, "PATH": f"{b}:{os.environ['PATH']}"}
     return subprocess.run(["bash", str(GUARD), str(m)], env=env, capture_output=True, text=True)
 
