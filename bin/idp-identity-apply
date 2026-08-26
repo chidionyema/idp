@@ -43,3 +43,25 @@ tofu -chdir="$M" "${1:-plan}" -input=false "${@:2}" \
   -var "idcs_endpoint=$DOMAIN_BASE_URL" -var "zone=$zone" -var "founder_emails=[\"$ESTATE_FOUNDER_EMAIL\"]" \
   -var "compartment_ocid=$C" -var "vault_ocid=$V" -var "key_ocid=$K" \
   -var "client_id_secret_ocid=${CID:-}" -var "client_secret_secret_ocid=${CSEC:-}"
+
+# The domain sets mustChange=true on the password Terraform supplies at create (the flag is read-only on
+# the user and no password policy switches it off), so the drill user's live password is set here once
+# through the admin UserPasswordChanger, which clears the flag. Idempotent: nothing happens while
+# mustChange is false. The vault copy (front-door-drill-password) is the one the drill signs in with.
+if [ "${1:-plan}" = apply ]; then
+  uid=$(tofu -chdir="$M" output -raw drill_user_id 2>/dev/null || true)
+  if [ -n "$uid" ]; then
+    mc=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Users/$uid?attributes=urn:ietf:params:scim:schemas:oracle:idcs:extension:passwordState:User:mustChange" 2>/dev/null \
+         | jq -r '.data["urn:ietf:params:scim:schemas:oracle:idcs:extension:passwordState:User"].mustChange // false')
+    if [ "$mc" = true ]; then
+      T=${T:-$(mktemp -d)}
+      jq -n --arg n "$(tofu -chdir="$M" output -raw drill_live_password)" \
+        '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:UserPasswordChanger"],password:$n,bypassNotification:true}' > "$T/pw.json"
+      cr=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/UserPasswordChanger/$uid" --request-body "file://$T/pw.json" 2>&1)
+      rm -f "$T/pw.json"
+      if printf '%s' "$cr" | jq -e '.status == "200 OK"' >/dev/null 2>&1; then
+        echo "ok      drill user password settled (mustChange cleared; the vault copy is the live one)"
+      else echo "FAIL    drill user password change refused: $(printf '%s' "$cr" | jq -r '.data.detail // .data // .' 2>/dev/null | head -c 200)"; exit 1; fi
+    else echo "ok      drill user password already settled (mustChange=false)"; fi
+  fi
+fi

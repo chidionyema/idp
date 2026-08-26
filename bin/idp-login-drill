@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+# The front door, driven the way a person drives it (crew#292 CP1).
+#
+# bin/idp-verify's login row follows a redirect chain and never carries a credential, so it
+# proves the door redirects and nothing more. It cannot tell a working sign-in from a domain
+# that hands every user a password-reset page. This drill signs in for real, in a headless
+# browser, as the domain user platform/oci/identity creates for exactly this purpose, and then
+# looks for the Backstage shell. Nothing else proves the whole chain -- Traefik, oauth2-proxy,
+# the identity domain, the app grant, the session cookie and the catalogue render -- at once.
+#
+# The password is Terraform's (random_password), lives only in the OCI vault as
+# front-door-drill-password, and is read here into an environment variable that is never echoed
+# and never reaches a log or an argv. No credential is typed, pasted or committed (LAW 46).
+#
+#   bin/idp-login-drill
+#
+# Prints exactly one line and exits 0 only on a rendered catalogue:
+#   ok      login-drill  signed in as estate-drill, catalogue rendered in 4.1s
+#   FAIL    login-drill  <stage> <detail>
+#
+# Stages, so a failure names the layer that broke: config, python, vault, browser, redirect,
+# credentials, password-change, session, catalogue.
+#
+# Python with Playwright: $DRILL_PYTHON if set, else python3. CI installs it in the job.
+set -uo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+export SUPPRESS_LABEL_WARNING=True
+fail() { printf 'FAIL    login-drill  %s %s\n' "$1" "$2"; exit 1; }
+
+CFG="$IDP/clusters/oke/estate-config.yaml"
+[ -f "$CFG" ] || fail config "no $CFG"
+ZONE=$(awk '/ESTATE_ZONE:/{print $2}' "$CFG")
+DOMAIN=$(awk '/ESTATE_OIDC_DOMAIN_URL:/{print $2}' "$CFG")
+[ -n "$ZONE" ] || fail config "clusters/oke/estate-config.yaml has no ESTATE_ZONE"
+[ -n "$DOMAIN" ] || fail config "clusters/oke/estate-config.yaml has no ESTATE_OIDC_DOMAIN_URL"
+
+PY="${DRILL_PYTHON:-python3}"
+command -v "$PY" >/dev/null 2>&1 || fail python "no interpreter at '$PY'; set DRILL_PYTHON"
+"$PY" -c 'import playwright' >/dev/null 2>&1 || fail python "$PY has no playwright; pip install playwright && playwright install chromium"
+
+# --- the password, by name, out of the vault the client secrets already live in ---------------
+export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}
+C="${OCI_COMPARTMENT_OCID:-}"
+if [ -z "$C" ]; then
+  SEC="${ESTATE_SECRETS:-${ESTATE_CODE:-$IDP/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml"
+  [ -f "$SEC" ] || fail config "no OCI_COMPARTMENT_OCID in the environment and no $SEC"
+  C=$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "$SEC" 2>/dev/null) || fail config "cannot decrypt $SEC"
+fi
+SID=$(oci vault secret list --compartment-id "$C" --name front-door-drill-password \
+        --query 'data[0].id' --raw-output 2>/dev/null) || SID=""
+[ -n "$SID" ] && [ "$SID" != "null" ] || fail vault "no secret front-door-drill-password in the compartment; run bin/idp-identity-apply apply -auto-approve"
+B64=$(oci secrets secret-bundle get --secret-id "$SID" \
+        --query 'data."secret-bundle-content".content' --raw-output 2>/dev/null) || B64=""
+[ -n "$B64" ] && [ "$B64" != "null" ] || fail vault "secret-bundle for front-door-drill-password is empty or unreadable by this identity"
+DRILL_PASSWORD=$(printf '%s' "$B64" | base64 -d 2>/dev/null) || DRILL_PASSWORD=""
+[ -n "$DRILL_PASSWORD" ] || fail vault "front-door-drill-password decodes to nothing"
+export DRILL_PASSWORD
+unset B64 SID
+export DRILL_USER="${DRILL_USER:-estate-drill}" DRILL_ZONE="$ZONE" DRILL_DOMAIN="$DOMAIN"
+
+# The password crosses into python as an environment variable only. It is never an argument, so
+# it never appears in ps, and the driver never prints it.
+"$PY" - <<'PYDRIVER'
+import os, re, sys, time
+from urllib.parse import urlparse
+
+USER = os.environ["DRILL_USER"]
+PASSWORD = os.environ["DRILL_PASSWORD"]
+ZONE = os.environ["DRILL_ZONE"]
+DOMAIN_HOST = urlparse(os.environ["DRILL_DOMAIN"]).hostname or ""
+HOME = f"https://catalogue.{ZONE}/"
+TIMEOUT = float(os.environ.get("DRILL_TIMEOUT_MS", "30000"))
+
+
+def fail(stage, detail):
+    detail = re.sub(re.escape(PASSWORD), "<redacted>", str(detail)).replace("\n", " ")[:200]
+    print(f"FAIL    login-drill  {stage} {detail}")
+    sys.exit(1)
+
+
+try:
+    from playwright.sync_api import sync_playwright, Error as PWError
+except Exception as e:  # pragma: no cover - guarded by the shell above
+    fail("python", f"playwright import failed: {e}")
+
+# A page the domain shows instead of the catalogue. Named so a failure says which one.
+RESET_MARKERS = ("resetpwd", "changepwd", "/ui/v1/resetpassword")
+RESET_TEXT = re.compile(r"(change your password|new password|password (has )?expired|reset your password)", re.I)
+
+# Read off the live page 2026-08-26, not guessed. The password input's id contains a pipe
+# ("idcs-signin-basic-signin-form-password|input"), which no #id selector can match, and neither
+# button carries an id -- so the sign-in button is found by its text, never by being the first
+# submit button on the page. The first submit button is the domain's "Acknowledge" banner.
+USER_SELECTORS = ["#idcs-signin-basic-signin-form-username",
+                  "input[name='username']", "input[autocomplete='username']",
+                  "input[placeholder*='User name' i]",
+                  "input[type='email']", "input[type='text']:visible"]
+PASS_SELECTORS = ["[id='idcs-signin-basic-signin-form-password|input']",
+                  "input[name='password']", "input[type='password']"]
+SUBMIT_SELECTORS = ["#idcs-signin-basic-signin-form-submit-button",
+                    "button:has-text('Sign In')", "button:has-text('Sign in')",
+                    "input[type='submit'][value*='Sign' i]"]
+# A consent or notice banner the domain shows in front of the form. Dismissed, never bypassed:
+# it carries no authentication decision, and leaving it up hides the sign-in button.
+BANNER_SELECTORS = ["button:has-text('Acknowledge')", "button:has-text('Accept')"]
+
+
+def first(page, selectors, what):
+    for s in selectors:
+        loc = page.locator(s).first
+        try:
+            loc.wait_for(state="visible", timeout=4000)
+            return loc
+        except PWError:
+            continue
+    fail("credentials", f"no {what} field on {page.url}")
+
+
+started = time.time()
+with sync_playwright() as p:
+    try:
+        browser = p.chromium.launch(headless=True)
+    except PWError as e:
+        fail("browser", f"chromium will not launch: {e}")
+    ctx = browser.new_context(ignore_https_errors=False)
+    ctx.set_default_timeout(TIMEOUT)
+    page = ctx.new_page()
+
+    # 1. the door must hand an anonymous visitor to the identity domain, not serve the catalogue
+    try:
+        page.goto(HOME, wait_until="domcontentloaded")
+    except PWError as e:
+        fail("redirect", f"{HOME} did not load: {e}")
+    host = urlparse(page.url).hostname or ""
+    if host != DOMAIN_HOST:
+        fail("redirect", f"{HOME} landed on {host}, expected the identity domain {DOMAIN_HOST}")
+
+    # 2. sign in as the drill user
+    for b in BANNER_SELECTORS:
+        loc = page.locator(b).first
+        try:
+            if loc.is_visible(timeout=2000):
+                loc.click()
+        except PWError:
+            pass
+
+    first(page, USER_SELECTORS, "username").fill(USER)
+    first(page, PASS_SELECTORS, "password").fill(PASSWORD)
+    try:
+        first(page, SUBMIT_SELECTORS, "submit").click()
+    except PWError as e:
+        fail("credentials", f"sign-in button would not click: {e}")
+
+    # 3. a first-login password change is a real failure of this drill, not something to bypass.
+    #    The drill's password is Terraform's; a domain that demands a new one has taken the
+    #    account out of Terraform's hands, and no script here is allowed to put it back.
+    try:
+        page.wait_for_url(lambda u: urlparse(u).hostname != DOMAIN_HOST, timeout=TIMEOUT)
+    except PWError:
+        u = page.url
+        body = ""
+        try:
+            body = page.locator("body").inner_text(timeout=3000)
+        except PWError:
+            pass
+        if any(m in u.lower() for m in RESET_MARKERS) or RESET_TEXT.search(body or ""):
+            fail("password-change",
+                 f"the domain is demanding a new password for {USER} at {u}; the drill will not set one -- "
+                 "re-run bin/idp-identity-apply apply, or clear the must-change flag on the user")
+        fail("credentials", f"never left the identity domain; still at {u}")
+
+    landed = urlparse(page.url).hostname or ""
+    if landed != f"catalogue.{ZONE}":
+        page.wait_for_timeout(5000)
+        landed = urlparse(page.url).hostname or ""
+    if landed != f"catalogue.{ZONE}":
+        body = ""
+        try:
+            body = " ".join(page.locator("body").inner_text(timeout=3000).split())[:240]
+        except PWError:
+            pass
+        fail("session", f"signed in but landed on {page.url.split('?')[0]}, expected catalogue.{ZONE}; page says: {body}")
+
+    # 4. the session must actually serve the catalogue: 200 and the Backstage shell
+    try:
+        resp = page.goto(HOME, wait_until="domcontentloaded")
+    except PWError as e:
+        fail("catalogue", f"{HOME} did not reload with the session cookie: {e}")
+    if resp is None or resp.status != 200:
+        fail("catalogue", f"{HOME} answered {getattr(resp, 'status', 'no response')} to the signed-in session")
+    try:
+        page.locator("text=Catalog").first.wait_for(state="visible", timeout=TIMEOUT)
+    except PWError:
+        fail("catalogue", f"{HOME} answered 200 but no Backstage shell rendered (no 'Catalog' in the page)")
+
+    ctx.close()
+    browser.close()
+
+print(f"ok      login-drill  signed in as {USER}, catalogue rendered in {time.time() - started:.1f}s")
+PYDRIVER
