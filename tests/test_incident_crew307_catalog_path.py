@@ -46,3 +46,15 @@ def test_incident_crew307_oke_tag_is_orderable():
     m = re.search(r"newTag:\s*(\S+)\s*#\s*\{\"\$imagepolicy\"", text)
     assert m, "backstage newTag with the $imagepolicy marker is missing"
     assert re.fullmatch(r"main-[0-9]+-[0-9a-f]{40}", m.group(1)), m.group(1)
+
+
+def test_incident_crew307_broken_path_row_says_what_rendered():
+    """A broken published path prints the page text (features/hard_execution_chain.feature).
+
+    docs and create stayed broken after the rollout and the log could not say whether the
+    plugin never loaded or the locator drifted (crew#307, 2026-08-26).
+    """
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[1].joinpath("bin/idp-login-drill").read_text()
+    assert "page says: {seen}" in src
