@@ -158,3 +158,41 @@ def alerts_in_last_hour(now: float | None = None) -> int:
         if float(row.get("ts") or 0) >= cutoff:
             count += 1
     return count
+
+
+STOPPING_ACTIONS = ("soft_halt", "halt")
+
+
+def enforce(verdict: dict[str, Any], *, by: str = "kernel") -> dict[str, Any]:
+    """Act on evaluate()'s verdict (spec section 5, crew#284 CP6).
+
+    halt / soft_halt: signal `stop` to every session whose status is running,
+    asking or waiting. There is no critical marker on a session yet, so every
+    session counts as non-critical; the residual is recorded on the ticket.
+    digest: build the signed digest and post it once instead of the flood.
+    continue / retry_fallback: nothing to do here; the runner retries.
+    Returns what was done so the receipt records the action, not just the
+    verdict."""
+    import asyncio
+
+    action = verdict["action"]
+    reason = ",".join(r["reason"] for r in verdict.get("reasons", []))
+    if action in STOPPING_ACTIONS:
+        from sovereign.engine import client as engine_client
+
+        async def _stop_all() -> list[str]:
+            stopped: list[str] = []
+            for row in await engine_client.list_sessions():
+                if row.get("status") in ("running", "asking", "waiting"):
+                    await engine_client.signal(row["session_id"], "stop", by, f"self-termination:{reason}")
+                    stopped.append(row["session_id"])
+            return stopped
+
+        return {"action": action, "stopped": asyncio.run(_stop_all())}
+    if action == "digest":
+        from sovereign.presence import chat, digest as digest_mod
+
+        d = digest_mod.build()
+        chat.send(chat.TelegramSink(), d)
+        return {"action": action, "digest_lines": len(d.lines)}
+    return {"action": action}

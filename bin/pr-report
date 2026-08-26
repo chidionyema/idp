@@ -8,17 +8,25 @@
 #
 # The budget comes from estate-defaults.yaml infrastructure.monthly_cap_usd (crew#281); a
 # number typed here would be a second copy of it.
+#
+# IDP_ROOT lets the policy and the budget live in a different checkout from the pull
+# request being judged (crew#292 CP3). The reusable workflow checks the caller repo out
+# to . and idp to ./.idp, then sets IDP_ROOT=./.idp: `gh pr view` reads the caller's PR
+# from the working directory, and conftest reads the one copy of the policy from idp.
+# Unset, it is the script's own repo, which is what every local run does.
 set -uo pipefail
-IDP="$(cd "$(dirname "$0")/.." && pwd)"
+IDP="${IDP_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+[ -d "$IDP/policy" ] || { echo "BLIND no policy dir at $IDP/policy (IDP_ROOT=${IDP_ROOT:-unset})"; exit 2; }
+REPORTS="${PR_REPORT_DIR:-$IDP/reports}"
 n="${1:?pr number}"; comment="${2:-}"
 for t in gh jq conftest python3; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
-mkdir -p "$IDP/reports"
+mkdir -p "$REPORTS"
 budget=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['infrastructure']['monthly_cap_usd'])" "$IDP/estate-defaults.yaml")
-gh pr view "$n" --json number,body,labels,files -q '{number: .number, body: .body, labels: [.labels[].name], files: [.files[].path]}' > "$IDP/reports/pr-meta.json" || exit 2
-gh pr diff "$n" | grep '^+' | grep -v '^+++' > "$IDP/reports/pr-added.txt" || true
-jq -n --slurpfile m "$IDP/reports/pr-meta.json" --rawfile a "$IDP/reports/pr-added.txt" --argjson b "$budget" \
-  '{pr: ($m[0] + {added: $a}), budget_monthly_usd: $b}' > "$IDP/reports/pr.json"
-out=$(conftest test --parser json -p "$IDP/policy" "$IDP/reports/pr.json" 2>&1); rc=$?
+gh pr view "$n" --json number,body,labels,files -q '{number: .number, body: .body, labels: [.labels[].name], files: [.files[].path]}' > "$REPORTS/pr-meta.json" || exit 2
+gh pr diff "$n" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true
+jq -n --slurpfile m "$REPORTS/pr-meta.json" --rawfile a "$REPORTS/pr-added.txt" --argjson b "$budget" \
+  '{pr: ($m[0] + {added: $a}), budget_monthly_usd: $b}' > "$REPORTS/pr.json"
+out=$(conftest test --parser json -p "$IDP/policy" "$REPORTS/pr.json" 2>&1); rc=$?
 printf '%s\n' "$out" | grep -E 'FAIL|rule=' | sed 's/^.*FAIL - [^-]*- main - //'
 if [ "$rc" -ne 0 ] && [ "$comment" = "--comment" ]; then
   body=$(printf 'operating-model gate (policy/operating_model.rego) refused this PR. Each line names the rule and the fix.\n\n'; printf '%s\n' "$out" | grep -o 'rule=.*' | sed 's/^/- /'; printf '\nRe-run: bin/pr-report %s\n' "$n")

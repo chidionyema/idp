@@ -9,9 +9,6 @@ metadata:
   namespace: flux-system
 data:
   ESTATE_ZONE: mumchimp.com
-  # The GitHub login allowed through the front door (ADR 0007). One value, one place; a second
-  # person is a second value here, never a user database.
-  ESTATE_LOGIN_GITHUB_USER: chidionyema
   # The identity domain the front door signs people in against (platform/oci/identity). Same value
   # as the DOMAIN_BASE_URL variable bin/idp-oci-bootstrap writes; oauth2-proxy sees only this name.
   ESTATE_OIDC_DOMAIN_URL: https://idcs-e664824341af437895312af8a61882b1.identity.oraclecloud.com

@@ -33,3 +33,19 @@ Feature: The operating model is a gate on every pull request
     When the operating-model-gate job is evaluated for a push event
     Then the job is skipped by `if: github.event_name == 'pull_request'` and main stays green
     # Incident: run 32922679927 on 5dac18e failed with `bin/pr-report: line 13: 1: pr number`.
+
+  # crew#292 CP3: one gate, called by every active estate repo, not copied into each.
+  Scenario: Every active estate repo runs the one gate, with the policy in one place
+    Given hermes-v2 and crew each have .github/workflows/operating-model-gate.yml
+    And each file's only job is `uses: chidionyema/idp/.github/workflows/operating-model-gate.yml@main`
+    When a pull request opens on any of them
+    Then the reusable workflow checks the caller repo out to . and chidionyema/idp to ./.idp
+    And it runs .idp/bin/pr-report with IDP_ROOT=./.idp, so the rego and the budget have one copy
+    And idp's own ci.yml calls the same file, so idp is not a special case of the gate
+
+  Scenario: The policy can live in a different checkout from the pull request
+    Given IDP_ROOT names an idp checkout that is not the script's own repo
+    When bin/pr-report runs from another working directory
+    Then conftest reads $IDP_ROOT/policy and the budget reads $IDP_ROOT/estate-defaults.yaml
+    And `gh pr view` still resolves the pull request from the working directory
+    And an IDP_ROOT with no policy/ dir exits 2 with BLIND, never a pass
