@@ -36,3 +36,18 @@ def test_incident_crew284_cluster_router_has_its_database():
     vols = {v["name"]: v for v in sts["spec"]["template"]["spec"]["volumes"]}
     assert vols["upstream"]["secret"] == {"secretName": "litellm-upstream"}
     assert "postgres.yaml" in yaml.safe_load((LLM / "kustomization.yaml").read_text())["resources"]
+
+
+def test_incident_crew284_router_survives_its_migration_window():
+    """2026-08-26 23:2xZ: the -database image ran Prisma migrations, :4000 stayed closed, liveness
+    (timeout 1s, no startupProbe) killed it 8 times. A DB-backed router declares a startupProbe
+    covering at least 3 minutes and probe timeouts above the 1s default."""
+    docs = [d for d in yaml.safe_load_all((ROOT / "platform/llm/litellm.yaml").read_text()) if d]
+    dep = [d for d in docs if d.get("kind") == "Deployment" and d["metadata"]["name"] == "litellm"][0]
+    c = dep["spec"]["template"]["spec"]["containers"][0]
+    s = c["startupProbe"]
+    assert s["periodSeconds"] * s["failureThreshold"] >= 180
+    assert s["timeoutSeconds"] >= 3 and c["livenessProbe"]["timeoutSeconds"] >= 3
+    # Second cause, same incident: OOMKilled at 1Gi 19s after start (lastState.terminated.reason).
+    mem = c["resources"]["limits"]["memory"]
+    assert mem.endswith("Gi") and int(mem[:-2]) >= 2, mem
