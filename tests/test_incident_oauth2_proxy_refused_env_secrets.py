@@ -58,6 +58,9 @@ def _fails(tmp_path, resource):
 def test_shipped_values_are_admitted_and_env_var_wiring_is_refused(tmp_path):
     _blind()
     good = _render(tmp_path, "shipped", {})
+    rendered = good.read_text()
+    # idp#147 review: the chart's own generated ConfigMap appended a second --config after ours and won.
+    assert rendered.count("--config=") == 1 and "kind: ConfigMap" not in rendered, "the chart still writes a config of its own"
     n, out = _fails(tmp_path, good)
     assert n == 0, out[-1500:]
     bad = _render(tmp_path, "envvars", {"proxyVarsAsSecrets": True, "config": {"existingSecret": "oauth2-proxy", "configFile": ""}})

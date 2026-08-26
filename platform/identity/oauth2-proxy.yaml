@@ -45,6 +45,10 @@ spec:
     proxyVarsAsSecrets: false
     config:
       configFile: ""
+      # Without this the chart still generates its own ConfigMap (upstreams file:///dev/null, no
+      # client id) and appends a second --config after extraArgs; the last flag wins and the pod
+      # never becomes ready ("missing setting: client-id"). idp#147 review, rendered both ways.
+      forceLegacyConfig: false
     extraVolumes:
       - name: config
         secret:
