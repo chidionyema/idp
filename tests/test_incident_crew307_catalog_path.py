@@ -74,3 +74,21 @@ def test_incident_crew307_material_table_keeps_its_own_uuid():
     assert pkg["resolutions"]["@material-table/core/uuid"].startswith("^3.")
     lock = (ROOT / "backstage" / "yarn.lock").read_text()
     assert '"uuid@npm:^3.4.0":' in lock
+
+
+def test_incident_crew307_no_drill_row_is_graded_on_shell_text():
+    """crew#307: docs was graded on 'Documentation' and create on 'Create a new component',
+    both Backstage 1.x headings. A row's locator must be page content, never a word the
+    sidebar shell renders on every path."""
+    import ast
+    src = (ROOT / "bin" / "idp-login-drill").read_text()
+    tree = ast.parse(src)
+    rows = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "PUBLISHED" for t in node.targets):
+            rows = ast.literal_eval(node.value)
+    assert rows, "PUBLISHED tuple not found"
+    shell = {"Home", "Catalog", "Create", "APIs", "Docs", "Settings", "Notifications", "Visualizer", "Search", "Catalog Graph"}
+    bad = [(p, m) for p, m in rows if m.removeprefix("text=") in shell]
+    assert bad == [], f"rows graded on shell text: {bad}"
+    assert dict(rows)["docs"] == "text=Owned"
