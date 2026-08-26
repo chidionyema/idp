@@ -1,0 +1,124 @@
+# crew#345 (founder, 2026-08-26: "zero-touch OCI auth, no local oci session authenticate").
+# Every session that wanted to know the cluster's state ran `oci session authenticate` on a laptop,
+# because control_plane_allowed_cidrs admits only the Mac (platform/oci/main.tf:20). Same pattern
+# as the crew#292 chaos receipt: the answer is written from inside, read from outside.
+#
+# Every 15 minutes a Job-owned pod (admitted without probes: admit-job-pods.yaml) reads nodes and
+# pods through the API server with a read-only ServiceAccount, writes one receipt and puts it in
+# the drill-receipts bucket on the node's instance principal (receipts.tf: workers may write that
+# bucket and nothing else). Reader: bin/idp-cluster-state, job cluster-state in oke-check.yml.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cluster-state
+  namespace: backstage
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cluster-state-reader
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-state-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-state-reader
+subjects:
+  - kind: ServiceAccount
+    name: cluster-state
+    namespace: backstage
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-state-collect
+  namespace: backstage
+data:
+  # Line 1 is the graded summary; the rest is the JSON a session reads instead of kubectl.
+  collect.py: |
+    import json, ssl, sys, urllib.request
+    from datetime import datetime, timezone
+    SA = "/var/run/secrets/kubernetes.io/serviceaccount"
+    tok = open(f"{SA}/token").read().strip()
+    ctx = ssl.create_default_context(cafile=f"{SA}/ca.crt")
+    def get(path):
+        req = urllib.request.Request("https://kubernetes.default.svc" + path, headers={"Authorization": "Bearer " + tok})
+        with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
+            return json.load(r)
+    nodes = get("/api/v1/nodes")["items"]
+    pods = get("/api/v1/pods")["items"]
+    def cond(obj, kind):
+        return next((c["status"] for c in obj["status"].get("conditions", []) if c["type"] == kind), "Unknown")
+    node_rows = [{"name": n["metadata"]["name"], "ready": cond(n, "Ready") == "True",
+                  "version": n["status"]["nodeInfo"]["kubeletVersion"]} for n in nodes]
+    not_ready = [{"ns": p["metadata"]["namespace"], "name": p["metadata"]["name"], "phase": p["status"].get("phase"),
+                  "restarts": sum(c.get("restartCount", 0) for c in p["status"].get("containerStatuses", []))}
+                 for p in pods
+                 if p["status"].get("phase") not in ("Succeeded",) and cond(p, "Ready") != "True"]
+    ready = sum(1 for n in node_rows if n["ready"])
+    at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    head = f"ok cluster-state at {at} nodes={len(node_rows)} ready={ready} pods={len(pods)} pods_not_ready={len(not_ready)}"
+    body = {"at": at, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready}
+    sys.stdout.write(head + "\n" + json.dumps(body, sort_keys=True) + "\n")
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cluster-state
+  namespace: backstage
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 180
+      template:
+        spec:
+          serviceAccountName: cluster-state
+          automountServiceAccountToken: true
+          restartPolicy: Never
+          containers:
+            - name: receipt
+              # Same image and uid as platform/chaos/backstage-pod-kill.yaml; the CLI is python, so
+              # the collector needs no second image and no kubectl.
+              image: ghcr.io/oracle/oci-cli:20260826
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  python3 /collect/collect.py > /tmp/receipt
+                  head -1 /tmp/receipt
+                  oci --auth instance_principal os object put --bucket-name estate-drill-receipts \
+                    --name state/cluster --file /tmp/receipt --content-type text/plain --force
+              env:
+                - { name: HOME, value: /tmp }
+              volumeMounts:
+                - { name: collect, mountPath: /collect, readOnly: true }
+                - { name: tmp, mountPath: /tmp }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { cpu: 200m, memory: 256Mi }
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+                seccompProfile: { type: RuntimeDefault }
+          volumes:
+            - name: collect
+              configMap: { name: cluster-state-collect }
+            - name: tmp
+              emptyDir: {}

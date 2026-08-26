@@ -1,0 +1,7 @@
+# crew#345: the cluster reports its own state to Object Storage every 15 minutes, from the worker
+# node's identity. Nothing outside the cluster needs a kube path or a session token to know
+# whether the cluster is healthy; bin/idp-cluster-state reads the receipt through the runner's OIDC.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - cluster-state.yaml
