@@ -12,3 +12,10 @@ Feature: OIDC clients are provisioned by Terraform, never by a console (crew#281
     Given estate-defaults.yaml at the repository root
     Then handoff_protocol.mode is lazy_consensus and timeout_minutes is 60
     And policy.oauth_creation is terraform-automated
+
+  Scenario: the apply runs unattended and waits, never asks, while the token lacks scope (CP4)
+    Given the workflow .github/workflows/access-apply.yml on an hourly schedule and workflow_dispatch
+    And bin/idp-oci-login rendered platform/access/backend_override.tf for remote state
+    When bin/idp-access-apply runs and the Cloudflare token sees 0 accounts
+    Then it prints "WAITING access" and exits 0 with nothing applied
+    And on the first tick after the token gains Account -> Zero Trust: Edit it applies without a person
