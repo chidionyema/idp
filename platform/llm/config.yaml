@@ -33,6 +33,27 @@ model_list:
       api_key: os.environ/OPENROUTER_API_KEY
       timeout: 300
 
+  # crew#284: every direct consensus account (MiniMax, DeepSeek, Gemini) answered 429 on balance on
+  # 2026-08-26 while the OpenRouter account answered 200. These three route the same models through
+  # OpenRouter and sit first in each fallback chain, so consensus survives one empty account.
+  - model_name: minimax-or
+    litellm_params:
+      model: openrouter/minimax/minimax-m2
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 300
+
+  - model_name: deepseek-or
+    litellm_params:
+      model: openrouter/deepseek/deepseek-chat
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 300
+
+  - model_name: gemini-or
+    litellm_params:
+      model: openrouter/google/gemini-2.5-flash
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 300
+
   - model_name: gemini
     litellm_params:
       model: gemini/gemini-2.5-flash
@@ -47,10 +68,11 @@ model_list:
 
 router_settings:
   fallbacks:
-    - minimax: [minimax_m27, deepseek]
-    - deepseek: [minimax]
+    - minimax: [minimax-or, minimax_m27, deepseek]
+    - deepseek: [deepseek-or, minimax]
     - openrouter: [minimax, deepseek]
-    - gemini: [minimax, deepseek]
+    - gemini: [gemini-or, minimax, deepseek]
+    - vision: [gemini-or]
   num_retries: 2
   allowed_fails: 3
   cooldown_time: 60
