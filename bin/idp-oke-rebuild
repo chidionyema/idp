@@ -81,6 +81,14 @@ fi
 
 # --- the cluster -------------------------------------------------------------------------------
 TFVARS=(-input=false -no-color -var "cluster_name=$OCI_CLUSTER_NAME")
+# crew#311: a statement added to platform/oci/policy/*.json is live only after the founder's
+# bootstrap run; until then applies fail 409/404 with no name. This row names the gap, before any
+# plan or apply. On a pull_request the gap is not the PR's fault (same rule as tofu-plan rc=2
+# below): the FAIL line is shown and does not fail the job.
+if ! step iam-policy "$IDP/bin/idp-iam-policy-drift" && [ "${OKE_CHECK_EXPECT_CHANGES:-0}" = "1" ]; then
+  FAILED="${FAILED% iam-policy}"
+  printf '%-5s %-18s rc=%-3s %4ss  %s\n' ok iam-policy 0 0 "pull_request: the policy gap above is the founder's bootstrap run, not this PR"
+fi
 case "$MODE" in
   --check)
     # rc=2 is drift. Say which resources, not the plan's closing note: a tail nobody can read is

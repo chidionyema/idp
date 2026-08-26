@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Grade the live estate-operators policy against platform/oci/policy/estate-operators.statements.json.
+# crew#311 / crew#301: the policy lives in the tenancy root and only bin/idp-oci-bootstrap (a founder
+# browser sign-in) can change it, so a statement added to the file is not live until that run. Every
+# apply between the two fails with a 409/404 that names nothing. This row names the missing statement.
+#   ok      iam-policy  22 statements, live matches platform/oci/policy/estate-operators.statements.json
+#   FAIL    iam-policy  1 missing from the live policy: ... | fix: founder runs bin/idp-oci-bootstrap
+#   BLIND   iam-policy  <reason>                 (cannot read the policy: never a verdict, LAW 45)
+# Usage: idp-iam-policy-drift [<statements.json>]   env: OCI_TENANCY_OCID, POLICY_NAME (default below)
+set -u
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
+FILE="${1:-$HERE/platform/oci/policy/estate-operators.statements.json}"
+NAME="${POLICY_NAME:-estate-operators-manage-estate}"
+[ -f "$FILE" ] || { echo "BLIND   iam-policy  no statements file at $FILE"; exit 2; }
+[ -n "${OCI_TENANCY_OCID:-}" ] || { echo "BLIND   iam-policy  OCI_TENANCY_OCID unset; the policy lives in the tenancy root"; exit 2; }
+live=$(oci iam policy list --compartment-id "$OCI_TENANCY_OCID" --name "$NAME" --all --query 'data[0].statements' 2>&1) || { echo "BLIND   iam-policy  oci iam policy list failed: $(printf %s "$live" | grep -iE 'code|message' | head -1 | cut -c1-120)"; exit 2; }
+case "$live" in null|"") echo "FAIL    iam-policy  no policy named $NAME in the tenancy root | fix: founder runs bin/idp-oci-bootstrap"; exit 1;; esac
+want=$(jq -c 'map(ascii_downcase)|sort' "$FILE")
+have=$(printf %s "$live" | jq -c 'map(ascii_downcase)|sort' 2>/dev/null) || { echo "BLIND   iam-policy  policy list answered no JSON: $(printf %s "$live" | head -1 | cut -c1-120)"; exit 2; }
+missing=$(jq -nc --argjson w "$want" --argjson h "$have" '$w-$h')
+extra=$(jq -nc --argjson w "$want" --argjson h "$have" '$h-$w')
+nm=$(jq -n --argjson m "$missing" '$m|length'); ne=$(jq -n --argjson e "$extra" '$e|length')
+if [ "$nm" -eq 0 ] && [ "$ne" -eq 0 ]; then echo "ok      iam-policy  $(jq length "$FILE") statements, live matches ${FILE#$HERE/}"; exit 0; fi
+[ "$nm" -eq 0 ] || echo "FAIL    iam-policy  $nm missing from the live policy: $(jq -r 'join("; ")' <<<"$missing") | fix: founder runs bin/idp-oci-bootstrap"
+[ "$ne" -eq 0 ] || echo "FAIL    iam-policy  $ne live statement(s) not in ${FILE#$HERE/}: $(jq -r 'join("; ")' <<<"$extra") | fix: add to the file or remove with bin/idp-oci-bootstrap"
+exit 1
