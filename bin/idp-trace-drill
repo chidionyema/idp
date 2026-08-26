@@ -32,7 +32,7 @@ CFG="$IDP/clusters/oke/estate-config.yaml"
 [ -f "$CFG" ] || fail config "no $CFG"
 ZONE=$(awk '/ESTATE_ZONE:/{print $2}' "$CFG")
 [ -n "$ZONE" ] || fail config "clusters/oke/estate-config.yaml has no ESTATE_ZONE"
-MODEL="${TRACE_DRILL_MODEL:-deepseek}"   # a model_name in platform/llm/config.yaml; the cheapest upstream
+MODEL="${TRACE_DRILL_MODEL:-openrouter}"   # a model_name in platform/llm/config.yaml. Incident 2026-08-26 (crew#325): the direct deepseek key answered 402 Insufficient Balance and litellm does not fall back on a 4xx; openrouter routes the same model through a funded account.
 LLM="https://llm.$ZONE"
 LF="https://langfuse.$ZONE"
 

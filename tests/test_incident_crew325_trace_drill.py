@@ -77,3 +77,17 @@ def test_litellm_upstream_seed_step_runs_on_apply_and_never_echoes_a_value() -> 
     assert "bin/idp-vault-put litellm-upstream" in run and "LITELLM_MASTER_KEY=LITELLM_MASTER_KEY" in run
     assert 'exit 0' in run.split("\n")[0], "no seed -> n/a and exit 0"
     assert not re.search(r"echo[^\n]*\$\{?(MINIMAX|DEEPSEEK|OPENROUTER|GEMINI|LITELLM)_", run), "a value echoed"
+
+
+def test_incident_crew325_trace_drill_default_model_is_a_funded_router_route() -> None:
+    # Incident 2026-08-26: the drill asked for the direct `deepseek` key, DeepSeek answered
+    # 402 Insufficient Balance, litellm does not fall back on a 4xx, and three runs on main were red
+    # while langfuse was already up. Rule: the default model is a model_name in the router config
+    # whose upstream goes through OpenRouter, the one funded aggregator (crew#284, idp#257).
+    drill = (ROOT / "bin/idp-trace-drill").read_text()
+    default = re.search(r'MODEL="\$\{TRACE_DRILL_MODEL:-([a-z0-9_]+)\}"', drill)
+    assert default, "bin/idp-trace-drill no longer declares a default model"
+    config = yaml.safe_load((ROOT / "platform/llm/config.yaml").read_text())
+    routes = {m["model_name"]: m["litellm_params"]["model"] for m in config["model_list"]}
+    assert default.group(1) in routes, (default.group(1), sorted(routes))
+    assert routes[default.group(1)].startswith("openrouter/"), routes[default.group(1)]
