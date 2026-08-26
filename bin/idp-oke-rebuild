@@ -153,6 +153,8 @@ if [ -f "$KUBECONFIG" ]; then
 else
   step nodes nodes_oci
   printf 'n/a   %-18s %s\n' flux "no kube path from this host (outside control_plane_allowed_cidrs); site and catalog rows stand in"
+  # the vault's own door: OCI Audit shows whether external-secrets reads it (crew#325)
+  OCI_COMPARTMENT_OCID="$(awk -F'"' '/^compartment_ocid/{print $2}' terraform.tfvars)" step vault-reads "$IDP/bin/idp-vault-reads"
 fi
 if [ -n "$HOST" ] && [ -n "$API" ] && [ -n "$WANT_PACKS" ]; then step site site_200; step catalog packs
 else blind site "no OKE_HOST/OKE_API_HOST/WANT_PACKS for cluster $OCI_CLUSTER_NAME: add $TF/clusters/$OCI_CLUSTER_NAME.env"; blind catalog "same"; fi

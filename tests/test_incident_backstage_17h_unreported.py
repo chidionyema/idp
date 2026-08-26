@@ -72,7 +72,7 @@ def test_telegram_channel_survives_substitution_as_a_string():
     """Live incident 2026-08-25: kustomize dropped the quotes around `${channel}`, the
     numeric chat id substituted in as a YAML integer and the Provider dry-run refused it.
     The synced Secret value carries its own quotes; the Provider leaves the scalar bare."""
-    es = next(d for d in yaml.safe_load_all(open(ROOT / "platform" / "secret-store" / "flux-telegram.yaml")))
+    es = next(d for d in yaml.safe_load_all(open(ROOT / "platform" / "alerts-secret" / "flux-telegram.yaml")))
     channel = es["spec"]["target"]["template"]["data"]["channel"]
     assert channel.startswith('"') and channel.endswith('"'), channel
     prov = (ROOT / "platform" / "alerts" / "provider.yaml").read_text()

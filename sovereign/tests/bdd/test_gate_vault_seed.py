@@ -58,3 +58,17 @@ def _relocated() -> None:
     ss = yaml.safe_load((IDP / "platform" / "secret-store" / "kustomization.yaml").read_text())["resources"]
     assert "github-app.yaml" not in ss and "flux-writer.yaml" in ia
     assert (IDP / "platform" / "image-automation" / "flux-writer.yaml").is_file()
+
+
+@given("clusters/oke/secrets.yaml")
+def _secrets(state: dict) -> None:
+    assert (IDP / "clusters" / "oke" / "secrets.yaml").is_file()
+
+
+@then("platform/secret-store has no ExternalSecret; every consumer owns its own")
+def _store_only() -> None:
+    d = IDP / "platform" / "secret-store"
+    res = yaml.safe_load((d / "kustomization.yaml").read_text())["resources"]
+    kinds = {doc["kind"] for r in res for doc in yaml.safe_load_all((d / r).read_text()) if doc}
+    assert "ExternalSecret" not in kinds, kinds
+    assert (IDP / "platform" / "alerts-secret" / "flux-telegram.yaml").is_file()

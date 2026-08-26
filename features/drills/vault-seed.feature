@@ -17,3 +17,7 @@ Feature: the estate vault is seeded by the machine identity, never from a laptop
   Scenario: the git-writer credential never holds the LLM (crew#284)
     Given clusters/oke/platform.yaml and clusters/oke/image-automation.yaml
     Then the git-writer ExternalSecret is a resource of platform/image-automation, not platform/secret-store
+
+  Scenario: secret-store carries only the store (crew#284)
+    Given clusters/oke/secrets.yaml
+    Then platform/secret-store has no ExternalSecret; every consumer owns its own
