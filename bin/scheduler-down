@@ -4,4 +4,8 @@ IDP="$(cd "$(dirname "$0")/.." && pwd)"
 for n in dagster-daemon dagster-web; do
   f="$IDP/run/$n.pid"; [ -f "$f" ] && { kill "$(cat "$f")" 2>/dev/null && echo "stopped $n"; rm -f "$f"; }
 done
-pkill -f "dagster-daemon run.*$IDP/scheduler" 2>/dev/null; pkill -f "dagster-webserver.*$IDP/scheduler" 2>/dev/null; true
+# The daemon and webserver are started from $IDP/scheduler with a relative
+# workspace path (`-w workspace.yaml`), so the checkout path is not in their
+# argv and a pattern that expects it kills nothing (2026-08-26: the 6-hour-old
+# daemon survived scheduler-down and never loaded a new schedule.yml row).
+pkill -f "dagster-daemon run -w workspace.yaml" 2>/dev/null; pkill -f "dagster-webserver -w workspace.yaml" 2>/dev/null; true

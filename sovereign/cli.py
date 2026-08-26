@@ -353,7 +353,10 @@ def cmd_self_check(args: argparse.Namespace) -> int:
         alerts_last_hour=termination.alerts_in_last_hour(),
     )
     res = termination.evaluate(signals)
-    _emit({**res, "signals": vars(signals)}, args.json)
+    enforced: dict[str, Any] = {}
+    if getattr(args, "enforce", False):
+        enforced = termination.enforce(res, by=args.by)
+    _emit({**res, "signals": vars(signals), "enforced": enforced}, args.json)
     return 0 if res["action"] == termination.ACTIONS[0] else 1
 
 
@@ -650,6 +653,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--low-confidence-streak", type=int, default=0, dest="low_confidence_streak")
     p.add_argument("--last-latency-s", type=float, default=0.0, dest="last_latency_s")
     p.add_argument("--latency-retries-used", type=int, default=0, dest="latency_retries_used")
+    p.add_argument("--enforce", action="store_true",
+                   help="act on the verdict: halt/soft_halt stop every running session, digest posts one signed digest (crew#284 CP6)")
+    p.add_argument("--by", default="kernel", help="who the stop receipt names")
     _add_json(p)
     p.set_defaults(func=cmd_self_check)
 
