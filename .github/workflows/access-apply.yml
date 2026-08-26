@@ -42,6 +42,7 @@ jobs:
           OCI_S3_ACCESS_KEY: ${{ secrets.OCI_S3_ACCESS_KEY }}
           OCI_S3_SECRET_KEY: ${{ secrets.OCI_S3_SECRET_KEY }}
           OKE_ALLOWED_CIDRS: ${{ vars.OKE_ALLOWED_CIDRS }}
+          OKE_SSH_PUBKEY_TEXT: ${{ vars.OKE_SSH_PUBKEY }}   # idp-oci-login renders it; not used by this module
           ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}
         run: |
           bin/idp-oci-login
