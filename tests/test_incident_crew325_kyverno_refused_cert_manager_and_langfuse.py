@@ -67,3 +67,20 @@ def test_incident_crew325_seaweedfs_image_names_its_registry() -> None:
     values = yaml.safe_load((ROOT / "platform/observability/langfuse-values.yaml").read_text())
     repository = values["global"]["seaweedfs"]["image"]["repository"]
     assert repository.split("/")[0] == "docker.io", repository
+def test_incident_crew325_emptydir_over_an_image_conf_dir_is_seeded_first() -> None:
+    # An emptyDir mounted over a directory the image ships hides its files; the Bitnami zookeeper
+    # entrypoint died on the missing zoo_sample.cfg 32 times. Rule: such a mount has an
+    # initContainer that copies the image's directory into the volume.
+    hr = next(d for d in _docs("platform/observability/signoz.yaml") if d["kind"] == "HelmRelease")
+    for renderer in hr["spec"]["postRenderers"]:
+        for patch in renderer["kustomize"]["patches"]:
+            body = yaml.safe_load(patch["patch"])
+            if not isinstance(body, dict):  # JSON-patch lists (ClickHouseInstallation) carry no pod spec
+                continue
+            spec = body["spec"].get("template", {}).get("spec", {})
+            volumes = {v["name"] for v in spec.get("volumes", []) if "emptyDir" in v}
+            seeded = {m["name"] for c in spec.get("initContainers", []) for m in c.get("volumeMounts", [])}
+            for c in spec.get("containers", []):
+                for m in c.get("volumeMounts", []):
+                    if m["name"] in volumes and m["mountPath"].endswith("/conf"):
+                        assert m["name"] in seeded, (patch["target"], m)
