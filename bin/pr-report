@@ -24,7 +24,19 @@ mkdir -p "$REPORTS"
 budget=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['infrastructure']['monthly_cap_usd'])" "$IDP/estate-defaults.yaml")
 gh pr view "$n" --json number,body,labels,files -q '{number: .number, body: .body, labels: [.labels[].name], files: [.files[].path]}' > "$REPORTS/pr-meta.json" || exit 2
 gh pr diff "$n" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true
-drills=$(python3 -c "import yaml,sys,json; print(json.dumps([d['name'] for d in (yaml.safe_load(open(sys.argv[1])) or {}).get('drills', [])]))" "$IDP/drills/catalogue.yaml" 2>/dev/null || echo '[]')
+# The drills the policy may name: the catalogue on IDP_ROOT plus, when the PR itself changes
+# drills/catalogue.yaml, the catalogue at the PR head. Without the second copy the drill_named
+# rule's own fix ("add the drill to the catalogue in this PR") could never pass: idp#191 was
+# refused for naming the row it added (incident test tests/test_incident_gate_read_catalogue_from_main.py).
+cats=("$IDP/drills/catalogue.yaml")
+if jq -e '.files | index("drills/catalogue.yaml")' "$REPORTS/pr-meta.json" >/dev/null; then
+  head_sha=$(gh pr view "$n" --json headRefOid -q .headRefOid)
+  repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+  if gh api "repos/$repo/contents/drills/catalogue.yaml?ref=$head_sha" -H 'Accept: application/vnd.github.raw+json' > "$REPORTS/pr-catalogue.yaml" 2>/dev/null; then
+    cats+=("$REPORTS/pr-catalogue.yaml")
+  fi
+fi
+drills=$("$IDP/bin/idp-drill-names" "${cats[@]}" 2>/dev/null || echo '[]')
 jq -n --slurpfile m "$REPORTS/pr-meta.json" --rawfile a "$REPORTS/pr-added.txt" --argjson b "$budget" --argjson d "$drills" \
   '{pr: ($m[0] + {added: $a}), budget_monthly_usd: $b, drills: $d}' > "$REPORTS/pr.json"
 out=$(conftest test --parser json -p "$IDP/policy" "$REPORTS/pr.json" 2>&1); rc=$?
