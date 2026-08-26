@@ -83,6 +83,9 @@ fi
 TFVARS=(-input=false -no-color -var "cluster_name=$OCI_CLUSTER_NAME")
 case "$MODE" in
   --check)
+    # crew#311: a statement added to platform/oci/policy/*.json is live only after the founder's
+    # bootstrap run; until then applies fail 409/404 with no name. This row names the gap.
+    step iam-policy "$IDP/bin/idp-iam-policy-drift"
     # rc=2 is drift. Say which resources, not the plan's closing note: a tail nobody can read is
     # not an instrument (LAW 28; every run 02:22Z-02:28Z on 2026-08-26 failed with a hidden diff).
     # On a pull_request the planned changes ARE the PR (oke-check.yml sets OKE_CHECK_EXPECT_CHANGES=1):

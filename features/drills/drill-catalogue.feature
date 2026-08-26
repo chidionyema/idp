@@ -88,3 +88,12 @@ Feature: Every scheduled drill has run recently, and the catalogue says which dr
     When bin/idp-verify runs
     Then the drills row grades login-drill by the age of its last green oke-check.yml run
     And a run older than 26 hours is a FAIL, never n/a
+
+  # crew#311: a policy statement that is in git but not live fails every apply with a 409 that names
+  # nothing. The check grades the live tenancy-root policy against platform/oci/policy/*.json.
+  Scenario: The check names a policy statement that is in git but not live
+    Given platform/oci/policy/estate-operators.statements.json holds the estate-operators statements
+    When bin/idp-oke-rebuild --check runs its iam-policy row
+    Then a live policy equal to the file prints ok with the statement count
+    And a statement missing live prints FAIL naming the statement and "founder runs bin/idp-oci-bootstrap"
+    And a policy the identity cannot read prints BLIND, never ok
