@@ -74,6 +74,10 @@ jobs:
   # password Terraform put in the vault, which this job reads by name and never prints.
   login-drill:
     needs: check
+    # The drill grades the live door, which a pull request cannot change: on idp#184 the job was
+    # red for exactly the defect the PR fixed, and the merge guard refused a red PR. So it runs
+    # on the schedule, on dispatch and on main, never on pull_request.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
