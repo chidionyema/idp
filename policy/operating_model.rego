@@ -179,3 +179,32 @@ deny contains msg if {
 	not drill_line in drills_added_in_pr
 	msg := sprintf("rule=drill_named | `Drill: %s` names no entry in drills/catalogue.yaml | fix: use a catalogued drill name, or add the drill to the catalogue in this PR", [drill_line])
 }
+
+# --- architecture_laws (crew#254) --------------------------------------------------------
+# Founder, 2026-08-25 (crew#250): every PR passes the four Living Estate laws before merging
+# (crew/docs/ARCHITECTURE_LAWS.md "The pull-request checklist"). The body carries a
+# `## Architecture laws` section with one line per law; each line is a command or a path that
+# proves the law for this change, or `n/a:` with a reason. A sentence is neither. The gate
+# grades the shape of the line (a `/`, a backtick, an `->`, or `n/a: <reason>`); whether the
+# command proves the law is the reviewer's job, and the per-law mechanical gates land as the
+# layers do (LAW 1 bin/cloud-agnostic-gate is live).
+
+laws := {"1": "zero-gravity", "2": "fractal", "3": "nervous system", "4": "calibration"}
+
+has_laws_heading if regex.match(`(?m)^## Architecture laws\s*$`, input.pr.body)
+
+law_line_ok(n) if {
+	regex.match(sprintf(`(?m)^- LAW %s %s: (n/a: \S.*|[^\n]*[/\x60][^\n]*|[^\n]*->[^\n]*)$`, [n, laws[n]]), input.pr.body)
+}
+
+deny contains msg if {
+	not has_laws_heading
+	msg := "rule=architecture_laws | the PR body has no `## Architecture laws` section | fix: copy the four-line checklist from crew/docs/ARCHITECTURE_LAWS.md into the body; each line a command, a path or `n/a: <reason>`"
+}
+
+deny contains msg if {
+	has_laws_heading
+	some n, slug in laws
+	not law_line_ok(n)
+	msg := sprintf("rule=architecture_laws | `- LAW %s %s:` is missing or is a sentence | fix: make it the command or path that proves the law for this change, or `n/a: <reason>`", [n, slug])
+}
