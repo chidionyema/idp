@@ -1,3 +1,4 @@
 resources:
+  - github-app.yaml
   - backstage.yaml
   - github-app.yaml
