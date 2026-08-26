@@ -39,7 +39,11 @@ module "oke" {
       node_cycling_enabled         = true
       node_cycling_max_surge       = 1
       node_cycling_max_unavailable = 0
-      placement_ads    = [1, 2] # 2026-08-25 apply failed: "Node shape is unavailable in subnet availability domain(s)"; VM.Standard.A1.Flex is offered in AD-1 and AD-2 only (oci compute shape list per AD)
+      # AD-1 only (crew#289, 2026-08-26): the two block-volume PVs (backstage/pgdata-postgres-0,
+      # prospector/prospector-store-api-data) carry nodeAffinity UK-LONDON-1-AD-1; a cycled node in
+      # AD-2 could never mount them. A1.Flex is offered in AD-1 and AD-2 only, and the 2026-08-25
+      # "Node shape is unavailable in subnet availability domain(s)" failure was AD-3.
+      placement_ads    = [1]
     }
   }
 }
