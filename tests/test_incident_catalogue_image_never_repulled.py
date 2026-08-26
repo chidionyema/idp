@@ -45,7 +45,7 @@ def test_controllers_are_installed_and_the_writer_is_the_app():
     assert {"image-reflector-controller", "image-automation-controller"} <= deployments, deployments
     writer = BY_KIND["GitRepository"]
     assert writer["spec"]["provider"] == "github" and writer["spec"]["secretRef"] == {"name": "github-app"}
-    es = yaml.safe_load((ROOT / "platform/secret-store/github-app.yaml").read_text())
+    es = yaml.safe_load((ROOT / "platform/image-automation/github-app.yaml").read_text())
     assert set(es["spec"]["target"]["template"]["data"]) == {"githubAppID", "githubAppInstallationID", "githubAppPrivateKey"}
     assert BY_KIND["ImageUpdateAutomation"]["spec"]["sourceRef"]["name"] == writer["metadata"]["name"]
 
