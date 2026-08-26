@@ -39,7 +39,7 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: IfNotPresent
-      # The portal's origin: the hostname httproute.yaml publishes, behind Authelia
+      # The portal's origin: the hostname httproute.yaml publishes, behind oauth2-proxy
       # (ADR 0003). ESTATE_ZONE is substituted by Flux from estate-vars when set.
       - op: add
         path: /spec/template/spec/containers/0/env/-
