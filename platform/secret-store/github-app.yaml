@@ -1,0 +1,24 @@
+# The estate-agents GitHub App (crew#286 CP7) as Flux's git writer credential: one JSON secret
+# `github-app` in the vault (keys app_id, pem_b64, installation_id, written by bin/idp-github-app
+# convert and installation), rendered into the three keys source-controller reads for
+# `provider: github`. An installation token lasts an hour and source-controller mints its own,
+# so no long-lived token sits in the cluster (crew#267).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: github-app
+  namespace: flux-system
+spec:
+  refreshInterval: 1h
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: github-app
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        githubAppID: "{{ .app_id }}"
+        githubAppInstallationID: "{{ .installation_id }}"
+        githubAppPrivateKey: "{{ .pem_b64 | b64dec }}"
+  dataFrom:
+    - extract: { key: github-app }

@@ -1,0 +1,80 @@
+# crew#267: the catalogue rolls on every main build with no hand on the cluster.
+#
+# build-multiarch pushes ghcr.io/chidionyema/backstage:main-<run>-<sha>. image-reflector-controller
+# lists the tags, the policy picks the highest run number, and image-automation-controller writes
+# that tag into platform/backstage/overlays/oke/kustomization.yaml on branch flux/image-updates.
+# .github/workflows/image-update-pr.yml turns that push into a pull request with auto-merge; main's
+# rulesets have no bypass actors, so nothing writes to main directly. Flux then reconciles main
+# and the Deployment's image changes, which is what a mutable tag with IfNotPresent never did.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: backstage
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/backstage
+  interval: 5m
+  # ghcr packages under this account are private; bin/idp-flux-bootstrap writes ghcr-pull here.
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: backstage
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: backstage
+  filterTags:
+    # Only the orderable tag. The bare `:<sha>` provenance tag has no order and is ignored.
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc
+---
+# A second GitRepository for the same repo because the bootstrap one (flux-system) holds a
+# read-only deploy key (bin/idp-flux-bootstrap: --read-write-key=false). This one authenticates
+# as the estate-agents App through the github-app Secret (platform/secret-store/github-app.yaml).
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: idp-writer
+  namespace: flux-system
+spec:
+  interval: 10m
+  url: https://github.com/chidionyema/idp
+  ref:
+    branch: main
+  provider: github
+  secretRef:
+    name: github-app
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageUpdateAutomation
+metadata:
+  name: backstage
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: idp-writer
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        name: estate-agents
+        email: estate-agents[bot]@users.noreply.github.com
+      messageTemplate: |
+        platform/backstage/oke: catalogue image {{ range .Changed.Objects }}{{ range .Changes }}{{ .NewValue }}{{ end }}{{ end }} (crew#267)
+
+        Written by image-automation-controller from ImagePolicy flux-system/backstage.
+    push:
+      branch: flux/image-updates
+  update:
+    path: ./platform/backstage/overlays/oke
+    strategy: Setters
