@@ -7,6 +7,9 @@ infrastructure:
   dns_zone_source: clusters/oke/estate-config.yaml#ESTATE_ZONE   # one value, one place (idp#140)
   compute_tier: auto-scale-paid       # never suspend for a limit; scale up to the monthly cap
   monthly_cap_usd: 50
+node_pool:                            # crew#289: '4/24 or 2/12?' is answered here, never asked
+  prefer_free: true                   # the Always Free allowance is the floor; growth above it is paid
+  budget_monthly_usd: 50              # paid growth up to this is STAGED; above it is FOUNDER ACTION
 policy:
   stale_repos: delete-if-no-remote-and-1-commit   # report first, then STAGED deletion (60 min)
   vendor_lock_in: hard-reject         # a PR that binds a platform layer to one provider's SDK fails review

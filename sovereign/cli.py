@@ -71,7 +71,8 @@ def cmd_start(args: argparse.Namespace) -> int:
         return 0
     res = asyncio.run(
         engine_client.start(
-            args.task, runner=args.runner, repo=args.repo, by=args.by, budget=int(budget_resolved.value)
+            args.task, runner=args.runner, repo=args.repo, by=args.by, budget=int(budget_resolved.value),
+            critical=bool(getattr(args, "critical", False)),
         )
     )
     _emit(res, args.json)
@@ -551,6 +552,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--repo", default=None)
     p.add_argument("--by", default="cli")
     p.add_argument("--budget", type=int, default=None)
+    p.add_argument("--critical", action="store_true", help="survives self-termination (crew#284 CP6, spec section 5)")
     p.add_argument("--estate", default=None, help="attach root; repo defaults to it, receipts chain under its estate dir")
     p.add_argument("--branches", type=int, default=None, help="R19: fork this many silent child sessions instead of one (sovereign/shadow)")
     _add_json(p)
