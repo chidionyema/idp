@@ -1,0 +1,38 @@
+# Pull requests with no activity for 7 days are labelled `stale` and told so; 7 days after
+# that with still no activity they are closed. Issues are never touched: the board lives in
+# issues and its items wait on founder words by design. Label `keep-open` exempts a PR.
+#
+# Why: on 2026-08-26 the estate held 66 open PRs and 0 were mergeable. Most were red for
+# days because the session that opened them had ended (crew#299). A PR nobody owns is
+# inventory that hides the ones being worked; the platform closes it and says so.
+name: stale
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch: {}
+permissions:
+  pull-requests: write
+  issues: write
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11.0.0
+        with:
+          days-before-issue-stale: -1
+          days-before-issue-close: -1
+          days-before-pr-stale: 7
+          days-before-pr-close: 7
+          stale-pr-label: stale
+          exempt-pr-labels: keep-open
+          exempt-draft-pr: false
+          delete-branch: true
+          operations-per-run: 200
+          stale-pr-message: >
+            No activity for 7 days. This PR closes in 7 more days unless it is pushed to,
+            commented on, or labelled `keep-open` (crew#299: a PR with no live owner is
+            inventory, not progress).
+          close-pr-message: >
+            Closed after 14 days without activity. Reopen it, or open a fresh PR from
+            main, when an owner picks it up.
