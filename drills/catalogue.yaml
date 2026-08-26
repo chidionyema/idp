@@ -51,3 +51,13 @@ drills:
       In the last week Chaos Mesh killed one Backstage pod while /healthcheck stayed 200, the
       Workflow wrote its receipt from the node's own identity, and a runner holding no key read
       it back (bin/idp-chaos-drill grades the receipt's age, max 194h).
+
+  - name: trace-drill
+    workflow: trace-drill.yml
+    job: trace-drill
+    schedule: "23 * * * *"
+    max_age_hours: 3
+    proves: >-
+      One chat completion went through llm.<zone> with the master key from the vault and its
+      trace came back out of langfuse.<zone> by id within 90 s, so model routing and the trace
+      store work end to end from a runner that holds no key (crew#325 showcase).

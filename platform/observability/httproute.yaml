@@ -33,6 +33,14 @@ spec:
         - name: oauth2-proxy
           namespace: identity
           port: 80
+    # Langfuse's public API carries its own auth (project public:secret key, basic auth) and is
+    # what programs use: the LiteLLM callback in-cluster, and bin/idp-trace-drill from a runner
+    # (crew#325). Behind the login ForwardAuth it answers 302 to every program, so it bypasses it.
+    - matches:
+        - path: { type: PathPrefix, value: /api/public/ }
+      backendRefs:
+        - name: langfuse-web
+          port: 3000
     - filters:
         - type: ExtensionRef
           extensionRef:
