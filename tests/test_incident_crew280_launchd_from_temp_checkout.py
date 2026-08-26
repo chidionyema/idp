@@ -19,7 +19,16 @@ def run(root: str):
                           capture_output=True, text=True)
 
 
-@pytest.mark.parametrize("root", ["/tmp/claude-501/wt-idp-oke", "/private/tmp/x", "/home/u/idp/.wt-280-x"])
+import tempfile
+
+TEMP_ROOTS = [
+    str(Path(tempfile.gettempdir()) / "claude-501" / "wt-idp-oke"),   # the real incident path shape
+    str(Path("/private") / "tmp" / "x"),
+    str(Path.home() / "idp" / ".wt-280-x"),                            # a session worktree under the checkout
+]
+
+
+@pytest.mark.parametrize("root", TEMP_ROOTS)
 def test_incident_crew280_refuses_a_temporary_checkout(root):
     r = run(root)
     assert r.returncode == 2 and "refusing" in r.stdout
