@@ -39,6 +39,5 @@ def test_allow_empty_or_absent_local_state(tmp_path: Path):
 def test_no_init_in_bin_force_copies_state():
     bad = re.compile(r"^[^#]*\binit\b[^#\n]*-(force-copy|migrate-state)", re.M)   # code, not comments
     offenders = [p.name for p in (ROOT / "bin").iterdir()
-                 if p.is_file() and bad.search(p.read_text(errors="ignore"))
-                 and p.name != "idp-access-apply"]   # deleted by idp#167
+                 if p.is_file() and bad.search(p.read_text(errors="ignore"))]
     assert offenders == [], offenders

@@ -14,7 +14,7 @@
  "budget_monthly_usd": 50,
  "drills": [
   "oke-check",
-  "access-apply",
+  "drill-heartbeat",
   "login-drill"
  ]
 }

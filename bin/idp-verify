@@ -273,8 +273,8 @@ for d in entries:
         continue
     graded += 1
     # GitHub keeps run history for a deleted workflow, so a retired file still answers "last
-    # green 0.2h ago" for a while (idp#178 review, 2026-08-26: access-apply.yml was retired in
-    # #167 and the row kept grading its corpse). The file on disk is the only honest source.
+    # green 0.2h ago" for a while (idp#178 review, 2026-08-26: the workflow retired in #167
+    # kept being graded from its run history). The file on disk is the only honest source.
     if not os.path.isfile(os.path.join(root, ".github", "workflows", wf)):
         stale.append(name)
         row("FAIL", "%-22s .github/workflows/%s does not exist -- the catalogue names a retired workflow; fix the entry or the file" % (label, wf))
