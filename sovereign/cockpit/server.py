@@ -47,6 +47,15 @@ log = logging.getLogger("sovereign.cockpit")
 
 _INDEX_HTML = (Path(__file__).parent / "index.html").read_bytes()
 
+# Vendored, offline assets only (LAW 43/CP4: cytoscape.js draws the Spatial
+# graph, vendored rather than hand-rolling a force layout; no CDN load, per
+# sovereign/cockpit/vendor/VERSION). The route pattern is deliberately
+# restricted to the vendor/ directory's own filenames, not an open static-file
+# server.
+_VENDOR_DIR = Path(__file__).parent / "vendor"
+_VENDOR_RE = re.compile(config_keys.resolve("cockpit.route_vendor_pattern", config))
+_CT_JS = config_keys.resolve("cockpit.content_type_js", config)
+
 _SESSION_RE = re.compile(config_keys.resolve("cockpit.route_session_pattern", config))
 _SIGNAL_RE = re.compile(config_keys.resolve("cockpit.route_signal_pattern", config))
 _PAGE_RE = re.compile(config_keys.resolve("cockpit.route_page_pattern", config))
@@ -61,6 +70,7 @@ _ROUTE_API_INBOX = config_keys.resolve("cockpit.route_api_inbox", config)
 # sovereign.presence from the same engine rows /api/sessions serves.
 from sovereign.presence import config_keys as presence_keys  # noqa: E402
 from sovereign.presence import spatial as presence_spatial  # noqa: E402
+from sovereign.presence import state as presence_state  # noqa: E402
 from sovereign.presence import status as presence_status  # noqa: E402
 
 _ROUTE_API_STATUS = presence_keys.resolve("presence.route_api_status", config)
@@ -150,6 +160,20 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(_INDEX_HTML)
 
+    def _send_vendor(self, filename: str) -> None:
+        # _VENDOR_RE already restricts filename to the vendor/ directory's
+        # own charset (no "/", no ".."), so this cannot escape _VENDOR_DIR.
+        path = _VENDOR_DIR / filename
+        if not path.is_file():
+            self._send_json(_HTTP_NOT_FOUND, {"error": "not found"})
+            return
+        body = path.read_bytes()
+        self.send_response(_HTTP_OK)
+        self.send_header("Content-Type", _CT_JS)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _send_text(self, status: int, text: str) -> None:
         body = text.encode()
         self.send_response(status)
@@ -165,6 +189,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path in (_ROUTE_ROOT, "") or _PAGE_RE.match(path):
             self._send_html()
+            return
+        m = _VENDOR_RE.match(path)
+        if m:
+            self._send_vendor(m.group(1))
             return
         if not self._authorized():
             self._send_json(_HTTP_UNAUTHORIZED, {"error": "unauthorized"})
@@ -183,7 +211,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(_HTTP_UNAVAILABLE, {"error": "engine not available"})
                 return
             sessions = _run(engine_client.list_sessions())
-            shaped = presence_status.summarize(sessions) if path == _ROUTE_API_STATUS else presence_spatial.graph(sessions)
+            if path == _ROUTE_API_STATUS:
+                last = _tail_inbox(1)
+                shaped = presence_status.summarize(
+                    sessions,
+                    presence_row=presence_state.read(),
+                    last_receipt=last[0] if last else None,
+                )
+            else:
+                shaped = presence_spatial.graph(sessions)
             self._send_json(_HTTP_OK, shaped)
             return
         if path == _ROUTE_API_CONFIG:

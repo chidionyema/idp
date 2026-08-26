@@ -6,8 +6,12 @@
 <title>Otto</title>
 <!-- Telegram's own script, guarded: the cockpit runs standalone in a laptop
      browser too, where this file 404s or is blocked and nothing below may
-     depend on it having loaded. -->
+     depend on it having loaded. Sanctioned by sovereign/CONTRACT.md
+     "Cockpit" -- it is Telegram's own asset, not a third-party CDN, and the
+     page works fully offline whether or not it loads. Everything else this
+     page needs (cytoscape.js) is vendored under /vendor/, no CDN. -->
 <script src="https://telegram.org/js/telegram-web-app.js" onerror="window.__tgFailed=true"></script>
+<script src="/vendor/cytoscape.min.js"></script>
 <style>
   :root{
     --bg:#f4f5f7; --panel:#ffffff; --text:#111318; --sub:#5b6270; --border:#e2e4e9;
@@ -19,85 +23,115 @@
       --accent:#5b8dfc; --danger:#ff6b62; --ok:#3fce8f; --warn:#f0ad4e; --pill-bg:#20242c;
     }
   }
-  *{box-sizing:border-box}
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
   body{margin:0;background:var(--bg);color:var(--text);
     font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    padding-bottom:24px;}
-  header{position:sticky;top:0;z-index:5;display:flex;align-items:center;
-    justify-content:space-between;padding:14px 16px;background:var(--panel);
-    border-bottom:1px solid var(--border);}
-  header h1{font-size:18px;margin:0;font-weight:700}
-  header .counts{font-size:13px;color:var(--sub)}
-  main{display:flex;flex-direction:column;gap:14px;padding:14px;max-width:1200px;margin:0 auto}
-  @media (min-width:900px){ main{flex-direction:row;align-items:flex-start} .panel{flex:1;min-width:0} }
-  .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden}
-  .panel > h2{margin:0;padding:12px 14px;font-size:13px;text-transform:uppercase;
-    letter-spacing:.04em;color:var(--sub);border-bottom:1px solid var(--border);
-    display:flex;justify-content:space-between;cursor:pointer;user-select:none}
-  .panel .body{padding:8px}
-  .panel .body.collapsed{display:none}
-  .empty{padding:16px;color:var(--sub);font-size:13px}
-  .card{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:6px 0}
-  .row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
-  .title{font-weight:600;font-size:14px}
-  .task{color:var(--sub);font-size:13px;margin-top:2px;word-break:break-word}
-  .step{color:var(--sub);font-size:12px;margin-top:2px}
-  .pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;
-    background:var(--pill-bg);color:var(--sub);text-transform:uppercase;white-space:nowrap}
-  .pill.running{color:var(--accent)} .pill.waiting{color:var(--warn)}
-  .pill.stopped,.pill.denied{color:var(--danger)} .pill.done{color:var(--ok)}
-  .pill.failed{color:var(--danger)}
-  .actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
-  button{appearance:none;border:1px solid var(--border);background:var(--pill-bg);
-    color:var(--text);border-radius:9px;padding:10px 14px;font-size:13px;font-weight:600;
-    min-height:40px;min-width:64px;cursor:pointer}
-  button:active{opacity:.7} button:disabled{opacity:.4;cursor:default}
-  button.stop,button.deny{color:var(--danger);border-color:var(--danger)}
-  button.approve{color:var(--ok);border-color:var(--ok)}
-  button.steer{color:var(--accent);border-color:var(--accent)}
-  .ask{font-size:13px;margin:4px 0 8px;padding:8px 10px;background:var(--bg);border-radius:8px}
-  .inbox-item{border-bottom:1px solid var(--border);padding:8px 4px}
-  .inbox-item:last-child{border-bottom:none}
-  .inbox-src{font-size:11px;color:var(--sub);text-transform:uppercase;letter-spacing:.03em}
-  .inbox-text{font-size:13px;margin-top:2px;white-space:pre-wrap;word-break:break-word}
-  .err{color:var(--danger);font-size:12px;margin-top:6px}
-  .chev{transition:transform .15s} .collapsed + .chev, h2.collapsed-title .chev{transform:rotate(-90deg)}
+    overscroll-behavior:none;}
+  .hidden{display:none !important}
+
+  /* ---- Ghost: the whole page is the dot, nothing else renders. ---- */
+  #ghost{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:18px;cursor:pointer;padding:24px;text-align:center;}
+  #ghost-dot{width:min(34vw,140px);height:min(34vw,140px);border-radius:50%;
+    background:#8e8e93;transition:background-color .3s ease;}
+  #ghost-dot.emergency{animation:pulse 1.1s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(231,76,60,.55)}50%{box-shadow:0 0 0 22px rgba(231,76,60,0)}}
+  /* align-self:stretch takes the line out of the default
+     align-items:center fit-content codepath so it wraps inside the
+     row instead of growing past it. Plain px, not min()/calc(): the
+     local pr-evidence.py screenshot tool floors narrow --window-size
+     requests at ~500 CSS px on this Chrome/macOS build (Chromium
+     issue class: legacy headless ignores --window-size below the host
+     minimum window size), so a math-function max-width could not be
+     verified against a genuine narrow viewport here and is avoided on
+     that account; a fixed px value is unaffected by container width
+     and needs no such check. crew#284 CP4. */
+  #ghost-line{font-size:14px;color:var(--sub);max-width:480px;
+    align-self:stretch;overflow-wrap:break-word;word-break:break-word}
+  #ghost-hint{font-size:12px;color:var(--sub);opacity:.6}
+
+  /* ---- Spatial: the estate topology, entered only by a click. ---- */
+  #spatial{position:fixed;inset:0;display:flex;flex-direction:column;background:var(--bg)}
+  header{flex:0 0 auto;display:flex;align-items:center;gap:8px;
+    padding:10px 12px;background:var(--panel);border-bottom:1px solid var(--border);}
+  header .counts{flex:1;font-size:13px;color:var(--sub);min-width:0;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  header button{appearance:none;border:1px solid var(--border);background:var(--pill-bg);
+    color:var(--text);border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;
+    min-height:38px;min-width:38px;cursor:pointer}
+  header button:active{opacity:.7}
+  #cy{flex:1 1 auto;min-height:0;width:100%}
+
+  #decision{position:absolute;left:12px;right:12px;top:66px;z-index:6;
+    background:var(--panel);border:1px solid var(--warn);border-radius:12px;
+    padding:12px 14px;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+  #decision .ask{font-size:13px;margin:4px 0 10px}
+  #decision .actions{display:flex;gap:8px}
+  #decision .queue{font-size:11px;color:var(--sub);margin-top:8px}
+
+  #hover-card{position:absolute;z-index:5;background:var(--panel);border:1px solid var(--border);
+    border-radius:10px;padding:8px 10px;font-size:12px;pointer-events:none;
+    box-shadow:0 4px 14px rgba(0,0,0,.16);max-width:min(80vw,320px)}
+  #hover-card div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .panel{border-top:1px solid var(--border);background:var(--panel);max-height:42vh;
+    overflow:auto}
+  .panel .body{padding:10px 12px}
+  .panel.collapsed .body{display:none}
+  .empty{padding:10px 0;color:var(--sub);font-size:13px}
+  textarea{width:100%;box-sizing:border-box;background:var(--bg);color:var(--text);
+    border:1px solid var(--border);border-radius:8px;padding:8px}
+  button.start,button.log{appearance:none;border:1px solid var(--border);background:var(--pill-bg);
+    color:var(--text);border-radius:9px;padding:9px 13px;font-size:13px;font-weight:600;
+    min-height:38px;cursor:pointer}
+  button.approve{color:var(--ok);border-color:var(--ok);background:var(--pill-bg)}
+  button.deny,button.stop{color:var(--danger);border-color:var(--danger);background:var(--pill-bg)}
+  button{min-height:38px}
+
+  .receipt{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    padding:4px 12px;border-bottom:1px solid var(--border);white-space:pre-wrap;word-break:break-word}
+  .receipt:last-child{border-bottom:none}
 </style>
 </head>
 <body>
-<header>
-  <h1>Otto</h1>
-  <div class="counts" id="counts">loading…</div>
-</header>
-<main>
-  <section class="panel" id="panel-start">
-    <h2 onclick="toggle('start')">Start a session<span class="chev">▾</span></h2>
-    <div class="body" id="body-start">
-      <textarea id="start-task" rows="3" style="width:100%;box-sizing:border-box" placeholder="What should the agent do? Plain English. It runs in this estate and every step lands in the receipt chain."></textarea>
-      <div style="display:flex;gap:.5rem;align-items:center;margin-top:.5rem">
+
+<div id="ghost" onclick="enterSpatial('founder_click')">
+  <div id="ghost-dot"></div>
+  <div id="ghost-line">loading…</div>
+  <div id="ghost-hint">tap for Spatial</div>
+</div>
+
+<div id="spatial" class="hidden">
+  <header>
+    <button id="btn-back" onclick="leaveSpatial()" aria-label="back">‹</button>
+    <div class="counts" id="counts"></div>
+    <button class="start" onclick="togglePanel('start')">+</button>
+    <button class="log" onclick="togglePanel('log')">log</button>
+  </header>
+  <div id="decision" class="hidden"></div>
+  <div id="cy"></div>
+  <div id="hover-card" class="hidden"></div>
+
+  <section class="panel collapsed" id="panel-start">
+    <div class="body">
+      <textarea id="start-task" rows="3" placeholder="What should the agent do? Plain English. It runs in this estate and every step lands in the receipt chain."></textarea>
+      <div style="display:flex;gap:.5rem;align-items:center;margin-top:.5rem;flex-wrap:wrap">
         <label>budget <input id="start-budget" type="number" min="1" style="width:7em" placeholder="default"></label>
-        <button id="start-btn" onclick="startSession()">Start</button>
-        <span id="start-msg" class="empty"></span>
+        <button class="start" id="start-btn" onclick="startSession()">Start</button>
+        <span id="start-msg" class="empty" style="padding:0"></span>
       </div>
     </div>
   </section>
-  <section class="panel" id="panel-sessions">
-    <h2 onclick="toggle('sessions')">Sessions <span id="count-sessions"></span><span class="chev">▾</span></h2>
-    <div class="body" id="body-sessions"><div class="empty">loading…</div></div>
+
+  <section class="panel collapsed" id="panel-log">
+    <div class="body" id="log-body"><div class="empty">no receipts</div></div>
   </section>
-  <section class="panel" id="panel-decisions">
-    <h2 onclick="toggle('decisions')">Decisions <span id="count-decisions"></span><span class="chev">▾</span></h2>
-    <div class="body" id="body-decisions"><div class="empty">no sessions waiting</div></div>
-  </section>
-  <section class="panel" id="panel-inbox">
-    <h2 onclick="toggle('inbox')">Inbox <span id="count-inbox"></span><span class="chev">▾</span></h2>
-    <div class="body" id="body-inbox"><div class="empty">loading…</div></div>
-  </section>
-</main>
+</div>
+
 <script>
 "use strict";
 let POLL_MS = 3000; // cp22: overwritten by GET /api/config's cockpit.poll_s before the first poll
-const FOCUS_ID = (location.pathname.match(/^\/s\/([A-Za-z0-9_-]+)/) || [])[1] || null;
 let tg = null;
 if (window.Telegram && window.Telegram.WebApp) {
   tg = window.Telegram.WebApp;
@@ -112,18 +146,6 @@ if (window.Telegram && window.Telegram.WebApp) {
     if (t.button_color) root.setProperty("--accent", t.button_color);
   } catch (e) { /* Telegram not actually hosting us; ignore */ }
 }
-
-function collapsedKey(name){ return "cockpit-collapsed-" + name; }
-function toggle(name){
-  const body = document.getElementById("body-" + name);
-  const collapsed = body.classList.toggle("collapsed");
-  localStorage.setItem(collapsedKey(name), collapsed ? "1" : "0");
-}
-["sessions", "decisions", "inbox"].forEach(name => {
-  if (localStorage.getItem(collapsedKey(name)) === "1") {
-    document.getElementById("body-" + name).classList.add("collapsed");
-  }
-});
 
 async function api(path, opts){
   opts = opts || {};
@@ -144,35 +166,211 @@ function esc(s){
     {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 
-function sessionCard(s, opts){
-  opts = opts || {};
-  const busy = opts.busy || {};
-  const focused = FOCUS_ID && s.session_id === FOCUS_ID;
-  let html = `<div class="card" data-id="${esc(s.session_id)}" style="${focused ? "border-color:var(--accent)" : ""}">`;
-  html += `<div class="row"><div><div class="title">${esc(s.repo || "(no repo)")}</div>`;
-  html += `<div class="task">${esc(s.task)}</div></div>`;
-  html += `<span class="pill ${esc(s.status)}">${esc(s.status)}</span></div>`;
-  html += `<div class="step">step ${esc(s.step != null ? s.step : "-")} · ${esc(s.runner || "")}</div>`;
-  if (s.status === "waiting" && s.asking) {
-    html += `<div class="ask">asks: ${esc(s.asking)}</div>`;
+// ---------------------------------------------------------------------
+// Ghost: the default. Dot colour + at most one line. Nothing else runs
+// until the founder taps (spec §2.1).
+// ---------------------------------------------------------------------
+
+let ghostTimer = null;
+
+async function pollGhost(){
+  try {
+    const s = await api("/api/status");
+    const dot = document.getElementById("ghost-dot");
+    const line = document.getElementById("ghost-line");
+    dot.style.backgroundColor = s.dot || "grey";
+    dot.classList.toggle("emergency", Boolean(s.emergency));
+    line.textContent = s.emergency || s.line || "";
+  } catch (e) {
+    document.getElementById("ghost-line").textContent = "offline";
   }
-  if (opts.decisionButtons) {
-    html += `<div class="actions">
-      <button class="approve" ${busy.approve ? "disabled" : ""} onclick="act('${s.session_id}','approve')">Approve</button>
-      <button class="deny" ${busy.deny ? "disabled" : ""} onclick="act('${s.session_id}','deny')">Deny</button>
-    </div>`;
-  } else {
-    const live = ["running", "waiting"].includes(s.status);
-    html += `<div class="actions">
-      <button class="stop" ${!live || busy.stop ? "disabled" : ""} onclick="act('${s.session_id}','stop')">Stop</button>
-      <button class="steer" ${!live || busy.steer ? "disabled" : ""} onclick="steer('${s.session_id}')">Steer</button>
-    </div>`;
-  }
-  html += `</div>`;
-  return html;
 }
 
-const busyState = {};
+function inSpatial(){
+  return !document.getElementById("spatial").classList.contains("hidden");
+}
+
+// ---------------------------------------------------------------------
+// Spatial: the estate topology. Entered only by a founder click (or a
+// catastrophe raising the dot to red -- the founder still taps through
+// from Ghost to look, spec §2.1's own boundary condition, never an
+// unrequested screen change).
+// ---------------------------------------------------------------------
+
+let cy = null;
+let spatialTimer = null;
+let lastSessions = [];
+let decisionQueue = [];
+let decisionIndex = 0;
+
+function ensureCy(){
+  if (cy) return cy;
+  cy = cytoscape({
+    container: document.getElementById("cy"),
+    style: [
+      { selector: "node", style: {
+          "background-color": "data(colour)",
+          "width": "data(size)",
+          "height": "data(size)",
+          "label": "",
+          "border-width": 0,
+        } },
+      { selector: "edge", style: {
+          "width": "data(thickness)",
+          "line-color": "#8e8e93",
+          "target-arrow-shape": "triangle",
+          "target-arrow-color": "#8e8e93",
+          "curve-style": "bezier",
+          "opacity": 0.6,
+        } },
+    ],
+    layout: { name: "cose", animate: false },
+    userZoomingEnabled: true,
+    userPanningEnabled: true,
+    boxSelectionEnabled: false,
+    autoungrabify: true,
+  });
+  cy.on("mouseover", "node", showHoverCard);
+  cy.on("mouseout", "node", hideHoverCard);
+  cy.on("tap", "node", showHoverCard); // touch: tap shows the same card
+  cy.on("cxttap", "node", onRightClickNode);
+  document.getElementById("cy").addEventListener("contextmenu", e => e.preventDefault());
+  return cy;
+}
+
+function showHoverCard(evt){
+  const node = evt.target;
+  const d = node.data();
+  const card = document.getElementById("hover-card");
+  card.innerHTML =
+    `<div><b>${esc(d.task || d.id)}</b></div>` +
+    `<div>hash: ${esc((d.hash || "-").toString().slice(0, 12))}</div>` +
+    `<div>budget: ${esc(d.budget_remaining)} / ${esc(d.budget)}</div>` +
+    `<div>heartbeat: ${esc(d.last_heartbeat || "-")}</div>`;
+  const pos = node.renderedPosition();
+  const box = document.getElementById("cy").getBoundingClientRect();
+  card.style.left = Math.min(box.width - 160, Math.max(4, pos.x - 80)) + "px";
+  card.style.top = Math.max(4, pos.y - 74) + "px";
+  card.classList.remove("hidden");
+}
+
+function hideHoverCard(){
+  document.getElementById("hover-card").classList.add("hidden");
+}
+
+async function onRightClickNode(evt){
+  const id = evt.target.data("id");
+  if (!id) return;
+  if (!window.confirm("Halt " + id + "?")) return;
+  try {
+    await api(`/api/sessions/${id}/stop`, { method: "POST", body: JSON.stringify({ by: "founder", text: "halt from Spatial" }) });
+  } catch (e) { console.error(e); }
+  await refreshSpatial();
+}
+
+function renderGraph(graph){
+  ensureCy();
+  cy.elements().remove();
+  const eles = (graph.nodes || []).map(n => ({ data: n })).concat(
+    (graph.edges || []).map(e => ({ data: Object.assign({ thickness: 2 }, e) }))
+  );
+  cy.add(eles);
+  cy.layout({ name: "cose", animate: false }).run();
+}
+
+function renderCounts(status){
+  document.getElementById("counts").textContent =
+    `${status.running || 0} running · ${status.waiting || 0} waiting · ${status.total || 0} total`;
+}
+
+function renderDecision(){
+  const el = document.getElementById("decision");
+  if (decisionQueue.length === 0) {
+    el.classList.add("hidden");
+    el.innerHTML = "";
+    return;
+  }
+  if (decisionIndex >= decisionQueue.length) decisionIndex = 0;
+  const s = decisionQueue[decisionIndex];
+  el.classList.remove("hidden");
+  el.innerHTML =
+    `<div><b>${esc(s.repo || s.session_id)}</b></div>` +
+    `<div class="ask">${esc(s.asking || s.task || "waiting on you")}</div>` +
+    `<div class="actions">
+       <button class="approve" onclick="decide('${esc(s.session_id)}','approve')">Approve</button>
+       <button class="deny" onclick="decide('${esc(s.session_id)}','deny')">Deny</button>
+     </div>` +
+    (decisionQueue.length > 1
+      ? `<div class="queue">${decisionIndex + 1} of ${decisionQueue.length} · <a href="#" onclick="event.preventDefault();nextDecision()">next</a></div>`
+      : "");
+}
+
+function nextDecision(){
+  decisionIndex = (decisionIndex + 1) % Math.max(decisionQueue.length, 1);
+  renderDecision();
+}
+
+async function decide(id, kind){
+  try {
+    await api(`/api/sessions/${id}/${kind}`, { method: "POST", body: JSON.stringify({ by: "founder", text: "" }) });
+  } catch (e) { console.error(e); }
+  await refreshSpatial();
+}
+
+async function refreshSpatial(){
+  try {
+    const [graph, status, sessions] = await Promise.all([
+      api("/api/spatial"), api("/api/status"), api("/api/sessions"),
+    ]);
+    lastSessions = sessions || [];
+    renderGraph(graph);
+    renderCounts(status);
+    decisionQueue = lastSessions.filter(s => s.status === "waiting");
+    renderDecision();
+  } catch (e) {
+    document.getElementById("counts").textContent = "error: " + e.message;
+  }
+}
+
+function enterSpatial(){
+  document.getElementById("ghost").classList.add("hidden");
+  document.getElementById("spatial").classList.remove("hidden");
+  clearInterval(ghostTimer);
+  refreshSpatial();
+  spatialTimer = setInterval(refreshSpatial, POLL_MS);
+  window.requestAnimationFrame(() => cy && cy.resize());
+}
+
+function leaveSpatial(){
+  document.getElementById("spatial").classList.add("hidden");
+  document.getElementById("ghost").classList.remove("hidden");
+  clearInterval(spatialTimer);
+  pollGhost();
+  ghostTimer = setInterval(pollGhost, POLL_MS);
+}
+
+// ---------------------------------------------------------------------
+// The two things that may appear inside Spatial only on request: Start
+// and the log (the old Inbox, collapsed, newest first, one line each).
+// ---------------------------------------------------------------------
+
+function togglePanel(name){
+  const panel = document.getElementById("panel-" + name);
+  const collapsed = panel.classList.toggle("collapsed");
+  if (!collapsed && name === "log") loadLog();
+}
+
+async function loadLog(){
+  const body = document.getElementById("log-body");
+  try {
+    const items = await api("/api/inbox");
+    body.innerHTML = (items || []).length
+      ? items.map(item => `<div class="receipt">${esc(item.line || item.text || item.raw || JSON.stringify(item))}</div>`).join("")
+      : `<div class="empty">no receipts</div>`;
+  } catch (e) {
+    body.innerHTML = `<div class="empty">error: ${esc(e.message)}</div>`;
+  }
+}
 
 async function startSession(){
   const task = document.getElementById("start-task").value.trim();
@@ -187,80 +385,11 @@ async function startSession(){
     const res = await api("/api/sessions", { method: "POST", body: JSON.stringify(body) });
     msg.textContent = "started " + res.session_id;
     document.getElementById("start-task").value = "";
+    await refreshSpatial();
   } catch (e) {
     msg.textContent = String(e.message || e);
   } finally {
     btn.disabled = false;
-    await refresh();
-  }
-}
-
-async function act(id, kind, text){
-  busyState[id] = Object.assign({}, busyState[id], { [kind]: true });
-  render();
-  try {
-    await api(`/api/sessions/${id}/${kind}`, {
-      method: "POST",
-      body: JSON.stringify({ by: "founder", text: text || "" }),
-    });
-  } catch (e) {
-    console.error(e);
-  } finally {
-    busyState[id] = Object.assign({}, busyState[id], { [kind]: false });
-    await refresh();
-  }
-}
-
-function steer(id){
-  const text = window.prompt("Steer this session:");
-  if (text != null && text.trim() !== "") act(id, "steer", text.trim());
-}
-
-let lastSessions = [];
-let lastInbox = [];
-
-function render(){
-  const running = lastSessions.filter(s => s.status === "running").length;
-  const waiting = lastSessions.filter(s => s.status === "waiting").length;
-  document.getElementById("counts").textContent =
-    `${running} running · ${waiting} waiting · ${lastSessions.length} total`;
-  document.getElementById("count-sessions").textContent = `(${lastSessions.length})`;
-
-  const sBody = document.getElementById("body-sessions");
-  sBody.classList.remove("collapsed");
-  if (localStorage.getItem(collapsedKey("sessions")) === "1") sBody.classList.add("collapsed");
-  sBody.innerHTML = lastSessions.length
-    ? lastSessions.map(s => sessionCard(s, { busy: busyState[s.session_id] })).join("")
-    : `<div class="empty">no sessions</div>`;
-
-  const decisions = lastSessions.filter(s => s.status === "waiting");
-  document.getElementById("count-decisions").textContent = `(${decisions.length})`;
-  const dBody = document.getElementById("body-decisions");
-  if (localStorage.getItem(collapsedKey("decisions")) === "1") dBody.classList.add("collapsed");
-  dBody.innerHTML = decisions.length
-    ? decisions.map(s => sessionCard(s, { decisionButtons: true, busy: busyState[s.session_id] })).join("")
-    : `<div class="empty">no sessions waiting</div>`;
-
-  document.getElementById("count-inbox").textContent = `(${lastInbox.length})`;
-  const iBody = document.getElementById("body-inbox");
-  if (localStorage.getItem(collapsedKey("inbox")) === "1") iBody.classList.add("collapsed");
-  iBody.innerHTML = lastInbox.length
-    ? lastInbox.map(item => `<div class="inbox-item">
-        <div class="inbox-src">${esc(item.source || item.kind || "alert")}</div>
-        <div class="inbox-text">${esc(item.text || item.raw || JSON.stringify(item))}</div>
-      </div>`).join("")
-    : `<div class="empty">inbox is empty</div>`;
-}
-
-async function refresh(){
-  try {
-    const [sessions, inbox] = await Promise.all([api("/api/sessions"), api("/api/inbox")]);
-    lastSessions = sessions || [];
-    lastInbox = inbox || [];
-    render();
-  } catch (e) {
-    document.getElementById("counts").textContent = "error: " + e.message;
-    console.error(e);
   }
 }
 
@@ -273,8 +402,8 @@ async function boot(){
   } catch (e) {
     console.error("config fetch failed, using default poll interval", e);
   }
-  await refresh();
-  setInterval(refresh, POLL_MS);
+  await pollGhost();
+  ghostTimer = setInterval(pollGhost, POLL_MS);
 }
 boot();
 </script>
