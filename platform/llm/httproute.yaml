@@ -1,0 +1,19 @@
+# llm.<zone> -> the router. Not behind oauth2-proxy on purpose: the callers are programs
+# (the sovereign plugin, prospector) holding the master key, and LiteLLM refuses any request
+# without it. external-dns writes the record from this hostname (platform/dns).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: litellm
+  namespace: llm
+spec:
+  parentRefs:
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-llm
+  hostnames:
+    - "llm.${ESTATE_ZONE}"
+  rules:
+    - backendRefs:
+        - name: litellm
+          port: 4000

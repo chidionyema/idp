@@ -1,0 +1,77 @@
+# LiteLLM proxy as an estate service (crew#284 CP2). Until 2026-08-26 the router only ran in a
+# colima VM on the founder's 16 GB Mac; stopping colima to save the machine (load 131, 17 MB
+# free) took every routed model call and CP1's photo intake down with it (crew#313). A router
+# is a platform layer, and platform layers run on the cluster.
+#
+# No Postgres. llm/litellm.yml (the laptop compose) uses the -database image for spend
+# accounting and virtual keys; on the cluster the budget line in config.yaml (max_budget,
+# budget_duration) is enforced in-process and the one caller authenticates with the master
+# key. The node has 1 OCPU to share (observability is suspended for CPU): 100m requested.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: llm
+  labels: { app.kubernetes.io/name: litellm, app.kubernetes.io/part-of: idp }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: litellm }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: litellm, app.kubernetes.io/part-of: idp }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: litellm
+          # Same line as llm/litellm.yml minus the -database suffix; tests hold the version equal.
+          image: ghcr.io/berriai/litellm:v1.98.0
+          args: ["--config", "/etc/litellm/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+          ports:
+            - { name: http, containerPort: 4000 }
+          envFrom:
+            - secretRef: { name: litellm-upstream }
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: LITELLM_LOG, value: INFO }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            - { name: OTEL_EXPORTER, value: otlp_http }
+          volumeMounts:
+            - { name: config, mountPath: /etc/litellm, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 768Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            httpGet: { path: /health/readiness, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health/liveliness, port: http }
+            periodSeconds: 30
+            failureThreshold: 3
+      volumes:
+        - name: config
+          configMap: { name: litellm-config }
+        - name: tmp
+          emptyDir: { sizeLimit: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: llm
+  labels: { app.kubernetes.io/name: litellm }
+spec:
+  selector: { app.kubernetes.io/name: litellm }
+  ports:
+    - { name: http, port: 4000, targetPort: http }

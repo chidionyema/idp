@@ -1,0 +1,67 @@
+# LiteLLM config for the cluster. Every hosted model here is the same entry as llm/config.yaml
+# (tests/test_llm_row.py diffs them); what is missing is on purpose:
+#   - the ollama* entries: they point at the founder's Mac (host.docker.internal), which the
+#     cluster cannot reach. The free local lane stays on the laptop compose.
+#   - the ollama fallbacks, for the same reason.
+# `vision` is an alias so photo intake names a capability, not a vendor (crew#284 CP1).
+
+model_list:
+  - model_name: minimax
+    litellm_params:
+      model: openai/MiniMax-M2
+      api_base: https://api.minimax.io/v1
+      api_key: os.environ/MINIMAX_API_KEY
+      timeout: 300
+      max_tokens: 8192
+
+  - model_name: minimax_m27
+    litellm_params:
+      model: openai/MiniMax-Text-01
+      api_base: https://api.minimax.io/v1
+      api_key: os.environ/MINIMAX_API_KEY
+      timeout: 300
+
+  - model_name: deepseek
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+      timeout: 300
+
+  - model_name: openrouter
+    litellm_params:
+      model: openrouter/deepseek/deepseek-chat
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 300
+
+  - model_name: gemini
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 300
+
+  - model_name: vision
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 300
+
+router_settings:
+  fallbacks:
+    - minimax: [minimax_m27, deepseek]
+    - deepseek: [minimax]
+    - openrouter: [minimax]
+    - gemini: [minimax]
+  num_retries: 2
+  allowed_fails: 3
+  cooldown_time: 60
+
+litellm_settings:
+  callbacks: ["otel"]
+  drop_params: true
+  turn_off_message_logging: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  max_budget: 5.0
+  budget_duration: 1d
+  background_health_checks: false

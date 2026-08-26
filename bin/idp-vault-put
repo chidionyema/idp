@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Put one JSON secret into the estate vault from named keys of the operator's env file.
 #   bin/idp-vault-put <secret-name> <KEY=envkey>...      e.g. bin/idp-vault-put flux-telegram token=TELEGRAM_BOT_TOKEN channel=TELEGRAM_HOME_CHANNEL
-# Values are read in-process and never printed. Env file: $ESTATE_ENV_FILE (default ~/.hermes/.env).
+# Values are read in-process and never printed. Env file: $ESTATE_ENV_FILE (default ~/.estate/.env; ~/.hermes is retired, crew#13).
 # Vault and key ids come from tofu outputs; compartment from the sops vault (LAW 46: nothing typed here).
 set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 name=$1; shift
-ENVF=${ESTATE_ENV_FILE:-$HOME/.hermes/.env}
+ENVF=${ESTATE_ENV_FILE:-$HOME/.estate/.env}
 [ -f "$ENVF" ] || { echo "BLIND: no env file at $ENVF"; exit 2; }
 export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
 C=$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$IDP/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")
