@@ -199,7 +199,7 @@ with sync_playwright() as p:
     if page.locator("button:has-text('Enter')").count() > 0 or "Enter as a Guest" in page.inner_text("body"):
         fail("identity", f"{HOME} rendered Backstage's guest sign-in page; the door's identity never reached the auth provider")
     try:
-        who = page.request.post(f"{HOME}api/auth/v1/oauth2Proxy/refresh", headers={"x-requested-with": "XMLHttpRequest"})
+        who = page.request.post(f"{HOME}api/auth/oauth2Proxy/refresh", headers={"x-requested-with": "XMLHttpRequest"})
     except PWError as e:
         fail("identity", f"auth provider oauth2Proxy did not answer: {e}")
     if who.status != 200:
