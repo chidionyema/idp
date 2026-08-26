@@ -56,3 +56,10 @@ Feature: The estate can be torn down and rebuilt from the phone, and no past err
     Then hand steps and gaps are zero and stay zero
     And elapsed time has not grown
     And every new incident since the previous rehearsal has a gate by the next one
+
+  Scenario: A stale local state file can never overwrite the shared remote state
+    Given a checkout of platform/oci holds a terraform.tfstate from an earlier day
+    When bin/idp-oke-rebuild or bin/idp-identity-apply initialises the remote backend
+    Then the local file is moved aside as <name>.quarantine-<utc> and printed
+    And init runs with -reconfigure, never with -migrate-state or -force-copy
+    And tests/test_incident_state_force_copied_over_remote.py proves both ways

@@ -24,7 +24,7 @@ CSEC=$(oci vault secret list --compartment-id "$C" --name oauth2-proxy-client-se
 V=$(oci vault secret get --secret-id "$CID" --query 'data."vault-id"' --raw-output)
 K=$(oci vault secret get --secret-id "$CID" --query 'data."key-id"' --raw-output)
 M="$IDP/platform/oci/identity"
-if [ -f "$M/backend_override.tf" ]; then tofu -chdir="$M" init -input=false -migrate-state -force-copy >/dev/null
+if [ -f "$M/backend_override.tf" ]; then "$IDP/bin/idp-state-guard" "$M"; tofu -chdir="$M" init -input=false -reconfigure >/dev/null
 else echo "BLIND   state   platform/oci/identity/backend_override.tf missing: local state; run bin/idp-oci-login"; tofu -chdir="$M" init -input=false >/dev/null; fi
 tofu -chdir="$M" "${1:-plan}" -input=false "${@:2}" \
   -var "idcs_endpoint=$DOMAIN_BASE_URL" -var "zone=$zone" -var "founder_emails=[\"$ESTATE_FOUNDER_EMAIL\"]" \
