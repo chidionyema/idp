@@ -172,7 +172,11 @@ if [ -z "$TR_ID" ]; then
   scim POST IdentityPropagationTrusts --request-body "file://$T2/t.json" | jq -e .data.id >/dev/null; echo "wif     trust github-actions-estate created for $REPO"
 else
   jq -n --arg u "$CI_UID" --arg r "sub eq ${SUB_PREFIX}*" '{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"replace","path":"impersonationServiceUsers","value":[{"rule":$r,"value":$u}]}]}' > "$T2/tp.json"
-  scim PATCH "IdentityPropagationTrusts/$TR_ID" --request-body "file://$T2/tp.json" | jq -e .data.id >/dev/null && echo "wif     trust github-actions-estate rule reconciled"
+  # 2026-08-26: the PATCH answered an error body and `jq -e .data.id` printed a jq error and nothing
+  # else; the run read as clean. Show the domain's answer (the detail, never a token) instead.
+  pr=$(scim PATCH "IdentityPropagationTrusts/$TR_ID" --request-body "file://$T2/tp.json" 2>&1)
+  if printf %s "$pr" | jq -e '.data.id' >/dev/null 2>&1; then echo "wif     trust github-actions-estate rule reconciled"
+  else echo "FAIL    trust github-actions-estate rule PATCH refused: $(printf %s "$pr" | jq -r '.data.detail // .data // .' 2>/dev/null | head -c 300)"; fi
 fi
 if command -v gh >/dev/null && gh repo view "$REPO" >/dev/null 2>&1; then
   printf %s "$CLIENT_ID:$(vget OCI_OIDC_CLIENT_SECRET)" | gh secret set OIDC_CLIENT_IDENTIFIER -R "$REPO"
