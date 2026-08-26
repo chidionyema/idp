@@ -157,6 +157,27 @@ spec:
                           - { name: tmp, mountPath: /tmp }
                     volumes:
                       - { name: tmp, emptyDir: {} }
+          # Incident 2026-08-26 (crew#325): the SeaweedFS post-install/post-upgrade hook Job that
+          # creates the `langfuse` bucket carries no securityContext, Kyverno denied it, and every
+          # Helm upgrade of this release failed ("post-upgrade hooks failed ... langfuse-bucket-hook").
+          # Flux post-renders hook manifests too, so the profile is added here.
+          - target: { kind: Job, name: langfuse-bucket-hook }
+            patch: |
+              apiVersion: batch/v1
+              kind: Job
+              metadata: { name: langfuse-bucket-hook }
+              spec:
+                template:
+                  spec:
+                    securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+                    containers:
+                      - name: post-install-job
+                        securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+                        resources: { requests: { cpu: 20m, memory: 32Mi }, limits: { cpu: 200m, memory: 128Mi } }
+                        volumeMounts:
+                          - { name: tmp, mountPath: /tmp }
+                    volumes:
+                      - { name: tmp, emptyDir: {} }
           - target: { kind: Deployment, name: langfuse-redis }
             patch: |
               apiVersion: apps/v1
