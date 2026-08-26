@@ -265,7 +265,13 @@ with sync_playwright() as p:
         try:
             page.locator(must_see).first.wait_for(state="visible", timeout=TIMEOUT)
         except PWError:
-            broken.append(f"{path}: rendered but not its own content ({must_see} never appeared)")
+            # Say what the page did render, so a broken row can be graded from the log alone
+            # (LAW 28): a locator that drifted reads differently from a plugin that never loaded.
+            try:
+                seen = " ".join(page.locator("body").inner_text(timeout=3000).split())[:160]
+            except PWError:
+                seen = ""
+            broken.append(f"{path}: rendered but not its own content ({must_see} never appeared); page says: {seen}")
     print(f"paths   login-drill  {len(PUBLISHED) - len(broken)}/{len(PUBLISHED)} published paths render their own content")
     if broken:
         # One line per path: fail() caps its detail at 200 chars, which hid the third
