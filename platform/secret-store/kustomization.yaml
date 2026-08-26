@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - store.yaml
   - flux-telegram.yaml
+  - github-app.yaml

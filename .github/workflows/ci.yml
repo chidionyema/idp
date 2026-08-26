@@ -2,7 +2,10 @@ name: ci
 on:
   pull_request:
   push:
-    branches: [main]
+    # flux/image-updates is the branch image-automation-controller pushes a new catalogue tag to
+    # (crew#267). The required checks run on that push, so the pull request that
+    # image-update-pr.yml opens with GITHUB_TOKEN (which fires no pull_request run) is still graded.
+    branches: [main, flux/image-updates]
 jobs:
   offline-gate:
     runs-on: ubuntu-latest

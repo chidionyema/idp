@@ -173,7 +173,12 @@ jobs:
           [ "$n" -eq 2 ] || { echo "R24: expected 2 per-arch digests, found $n"; exit 1; }
           # shellcheck disable=SC2086
           # $digests is a list of image references and must word-split here.
-          docker buildx imagetools create -t "$image:${{ github.sha }}" $digests
+          # Two tags on one manifest list. `:<sha>` is the provenance tag. `main-<run>-<sha>` is the
+          # tag Flux orders by: a bare sha is a 40-hex string with no order, so an ImagePolicy over it
+          # cannot say which image is newest (crew#267). run_number only ever grows, so
+          # platform/image-automation/backstage.yaml sorts on it. Signed by digest below, so the
+          # extra tag adds nothing to sign.
+          docker buildx imagetools create -t "$image:${{ github.sha }}" -t "$image:main-${{ github.run_number }}-${{ github.sha }}" $digests
           docker buildx imagetools inspect "$image:${{ github.sha }}" | grep -E 'Platform:' | sort -u
           echo "image=$image" >> "$GITHUB_OUTPUT"
       # WHO BUILT THIS, PROVED BY SOMETHING OTHER THAN THE REGISTRY.
