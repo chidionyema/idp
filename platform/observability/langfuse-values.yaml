@@ -7,7 +7,7 @@ langfuse:
     telemetryEnabled: false
     signUpDisabled: true
   nextauth:
-    url: http://langfuse-web.observability.svc:3000
+    url: https://langfuse.${ESTATE_ZONE}   # substituted by Flux postBuild (clusters/oke/platform.yaml)
   additionalEnvFrom:
     - secretRef: { name: langfuse-init }
   podSecurityContext: { runAsNonRoot: true, runAsUser: 1001, runAsGroup: 1001, seccompProfile: { type: RuntimeDefault } }

@@ -74,10 +74,10 @@ metadata:
   name: observability
   namespace: flux-system
 spec:
-  # Suspended on 2026-08-25: the canary ran (clickhouse, signoz, operator Ready) and took the node
-  # from 1270m to 1830m requested, which left Backstage postgres Pending on CPU. It comes back when
-  # the node pool grows (platform/oci, founder decision R14, code-c1) by flipping this one line.
-  suspend: true
+  # Suspended 2026-08-25 because the canary took the 2 OCPU node from 1270m to 1830m requested and
+  # left Backstage postgres Pending. The node was replaced by surge with the 4 OCPU / 24 GB shape on
+  # 2026-08-26 04:38Z (crew#289 CP3, session 9f8f4f5f), so the row fits and runs again (crew#325).
+  suspend: false
   # 10m so a broken workload is reported within ten minutes (tests/test_incident_backstage_17h_unreported.py).
   # After unsuspend the HelmRelease has a 15m timeout, so a cold ClickHouse shows "not ready" for the
   # first two ticks; that is the install, not an incident (code-37, 2026-08-25).
@@ -89,6 +89,11 @@ spec:
     name: flux-system
   path: ./platform/observability
   prune: true
+  postBuild:
+    substituteFrom:
+      # ESTATE_ZONE for langfuse.<zone> (platform/observability/httproute.yaml), like every other row.
+      - kind: ConfigMap
+        name: estate-config
   wait: true
   timeout: 20m
   healthChecks:

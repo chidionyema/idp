@@ -57,6 +57,11 @@ router_settings:
 
 litellm_settings:
   callbacks: ["otel"]
+  # Every routed call lands in Langfuse (platform/observability) as a trace, whatever product made
+  # it: tracing at the router is the one instrument, not one SDK per product (crew#325 showcase).
+  # Keys arrive as env from the litellm-langfuse ExternalSecret; LANGFUSE_HOST is set in litellm.yaml.
+  success_callback: ["langfuse"]
+  failure_callback: ["langfuse"]
   drop_params: true
   turn_off_message_logging: true
 

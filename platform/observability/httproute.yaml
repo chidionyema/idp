@@ -1,0 +1,44 @@
+# langfuse.<zone>: the trace store behind the one login (ADR 0007, crew#325 showcase). Same shape
+# as the catalogue route (platform/backstage/overlays/oke/httproute.yaml): every request is
+# subrequested to oauth2-proxy first through Traefik's ForwardAuth, which must live in this
+# namespace; the /oauth2/ path goes to oauth2-proxy itself (ReferenceGrant in platform/identity).
+# The listener is https-langfuse on the shared Gateway (prospector-main deploy/k8s/base/edge.yaml).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: login-forward-auth
+  namespace: observability
+spec:
+  forwardAuth:
+    address: http://oauth2-proxy.identity.svc.cluster.local/
+    trustForwardHeader: true
+    authResponseHeaders: [X-Auth-Request-User, X-Auth-Request-Email, X-Auth-Request-Preferred-Username]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: langfuse
+  namespace: observability
+spec:
+  parentRefs:
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-langfuse
+  hostnames:
+    - "langfuse.${ESTATE_ZONE}"
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /oauth2/ }
+      backendRefs:
+        - name: oauth2-proxy
+          namespace: identity
+          port: 80
+    - filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: login-forward-auth
+      backendRefs:
+        - name: langfuse-web
+          port: 3000

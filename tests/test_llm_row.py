@@ -49,7 +49,8 @@ def test_secret_env_names_cover_every_os_environ_ref() -> None:
     refs = set(re.findall(r"os\.environ/([A-Z_]+)", (CLUSTER / "config.yaml").read_text()))
     documented = set(re.findall(r"([A-Z_]+_KEY)=\1", (CLUSTER / "external-secret.yaml").read_text()))
     assert refs == documented, (refs ^ documented)
-    es = yaml.safe_load((CLUSTER / "external-secret.yaml").read_text())
+    # The file holds two ExternalSecrets since the Langfuse callback (crew#325); this rule is about the upstream one.
+    es = next(d for d in yaml.safe_load_all((CLUSTER / "external-secret.yaml").read_text()) if d["metadata"]["name"] == "litellm-upstream")
     assert es["spec"]["dataFrom"][0]["extract"]["key"] == "litellm-upstream"
     dep = next(d for d in yaml.safe_load_all((CLUSTER / "litellm.yaml").read_text()) if d["kind"] == "Deployment")
     assert dep["spec"]["template"]["spec"]["containers"][0]["envFrom"][0]["secretRef"]["name"] == es["spec"]["target"]["name"]
