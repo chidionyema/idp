@@ -49,3 +49,12 @@ Feature: The operating model is a gate on every pull request
     Then conftest reads $IDP_ROOT/policy and the budget reads $IDP_ROOT/estate-defaults.yaml
     And `gh pr view` still resolves the pull request from the working directory
     And an IDP_ROOT with no policy/ dir exits 2 with BLIND, never a pass
+
+  # Incident 2026-08-26: idp#191 added the chaos-pod-kill row and was refused for naming it,
+  # because pr-report read the catalogue from main only (tests/test_incident_gate_read_catalogue_from_main.py).
+  Scenario: A drill added by the pull request satisfies drill_named
+    Given a pull request that changes a platform layer and adds a row to drills/catalogue.yaml
+    And its body says "Drill: <that row>"
+    When bin/pr-report judges it
+    Then the drill names come from the catalogue on main and the catalogue at the PR head
+    And the gate passes
