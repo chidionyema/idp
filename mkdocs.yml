@@ -79,6 +79,7 @@ nav:
       - Flux on OKE: onboarding/oke.md
       - Cloud-agnostic: onboarding/cloud-agnostic.md
       - Estate zone: onboarding/estate-zone.md
+      - k8s-infra: onboarding/k8s-infra.md
       - Langfuse: onboarding/langfuse.md
       - Manifests: onboarding/manifests.md
       - MCP: onboarding/mcp.md
