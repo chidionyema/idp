@@ -55,3 +55,17 @@ def test_code_change_with_only_an_unbound_feature_is_fail(tmp_path: Path) -> Non
     _commit(repo, {"app.py": "x=3\n", "features/old.feature": "Feature: old, edited\n"}, "touched only")
     r = _gate(repo)
     assert r.returncode == 1 and "FAIL  spec-gate 1 code file(s) changed and no executable spec" in r.stdout, r.stdout
+
+
+def test_incident_crew297_a_docstring_naming_the_feature_is_not_a_binding(tmp_path: Path) -> None:
+    """Both ways: a test whose docstring says 'cp1.feature' does not bind it; scenarios() does."""
+    repo = _repo(tmp_path)
+    _commit(repo, {"features/cp1.feature": "Feature: cp1\n",
+                   "tests/test_cp1.py": '"""covers features/cp1.feature, in prose only"""\nx = 1\n'}, "prose mention")
+    prose = _gate(repo)
+    assert prose.returncode == 1 and "features/cp1.feature" in prose.stdout, prose.stdout
+    assert "residual spec-gate 2 feature file(s) named by no test" in prose.stdout, prose.stdout
+
+    _commit(repo, {"tests/test_cp1.py": 'scenarios("features/cp1.feature")\n'}, "real binding")
+    real = _gate(repo)
+    assert real.returncode == 0 and "residual spec-gate 1 feature file(s) named by no test" in real.stdout, real.stdout
