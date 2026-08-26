@@ -61,3 +61,15 @@ drills:
       One chat completion went through llm.<zone> with the master key from the vault and its
       trace came back out of langfuse.<zone> by id within 90 s, so model routing and the trace
       store work end to end from a runner that holds no key (crew#325 showcase).
+
+  - name: kyverno-secrets-drill
+    workflow: kyverno-secrets-drill.yml
+    job: kyverno-secrets-drill
+    schedule: "41 7 * * *"
+    max_age_hours: 26
+    proves: >-
+      The secrets-not-from-env-vars Kyverno policy still refuses a Pod that reads a secret via
+      env.valueFrom.secretKeyRef or envFrom.secretRef, and still passes the real vault-backed
+      volume-mount pattern already shipped (langfuse) plus two false-positive-risk cases
+      (no env at all, ConfigMap-sourced env) -- so a future dependency bump or CEL engine
+      change cannot silently reopen the class crew#341 closed.
