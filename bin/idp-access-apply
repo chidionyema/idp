@@ -19,7 +19,8 @@ export CLOUDFLARE_API_TOKEN
 # Account -> Zero Trust: Edit, /accounts answers an empty list and there is nothing to apply. The
 # scheduled job (access-apply.yml) then exits 0 with this line and tries again on the next tick.
 accounts=$(curl -sS --max-time 20 -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" https://api.cloudflare.com/client/v4/accounts \
-  | python3 -c 'import sys,json; d=json.load(sys.stdin); print(len(d.get("result") or []))')
+  | python3 -c 'import sys,json; d=json.load(sys.stdin); print(len(d.get("result") or []))' || true)
+if [ -z "$accounts" ]; then echo "BLIND   access  cloudflare /accounts did not answer; nothing applied"; exit 0; fi
 if [ "$accounts" = "0" ]; then
   echo "WAITING access  cloudflare token sees 0 accounts (needs Account -> Zero Trust: Edit); nothing applied"; exit 0
 fi
