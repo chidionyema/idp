@@ -60,6 +60,14 @@ def _oauth2_proxy_in_front(state: dict) -> None:
         # oauth2-proxy only when it says so on the route AND its own config shows the key is enforced;
         # the annotation alone is a label, and a label is not a proof.
         auth = (d["metadata"].get("annotations") or {}).get("idp.estate/auth")
+        if auth == "langfuse-project-keys":
+            # The trace store's public API (crew#325): Langfuse enforces the project keys on
+            # /api/public/, so the route may expose that path and nothing else.
+            paths = [m.get("path", {}) for r in d["spec"]["rules"] for m in r.get("matches", [])]
+            assert paths and all(x == {"type": "PathPrefix", "value": "/api/public/"} for x in paths), f"{p}: langfuse-project-keys route exposes {paths}"
+            keys = (p.parent / "langfuse.yaml").read_text()
+            assert "langfuse-init-public-key" in keys and "langfuse-init-secret-key" in keys, f"{p}: langfuse.yaml pulls no project keys"
+            continue
         assert auth == "bearer-master-key", f"{p}: route {d['metadata']['name']} has no oauth2-proxy Middleware in front ({refs}) and no idp.estate/auth annotation"
         cfg = p.parent / "config.yaml"
         assert cfg.exists() and "master_key: os.environ/" in cfg.read_text(), f"{p}: annotated bearer-master-key but {cfg} enforces no master_key"
