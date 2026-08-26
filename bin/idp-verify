@@ -193,6 +193,14 @@ else
       case "$cid" in
         ""|replace-in-console) say "FAIL      login     https://catalogue.$zone -> identity domain with client_id '${cid:-<empty>}' (run bin/idp-identity-apply apply, then kubectl -n identity annotate externalsecret oauth2-proxy force-sync=\$(date +%s) --overwrite && kubectl -n identity rollout restart deploy/oauth2-proxy)"; fail=1 ;;
         *) say "ok        login     https://catalogue.$zone -> identity domain sign-in (no password anywhere, ADR 0007)" ;;
+      esac
+      # Incident 2026-08-26 02:31Z: the redirect was right and the first sign-in still returned 500,
+      # because oauth2-proxy could not read the domain's JWKS (401) to verify the id_token. The row
+      # above only proves the way in; this one proves the way back.
+      jwks=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "${idp_url%/}/admin/v1/SigningCert/jwk" 2>/dev/null || echo 000)
+      case "$jwks" in
+        200) say "ok        jwks      identity domain signing keys readable without a credential (callback can verify id_tokens)" ;;
+        *) say "FAIL      jwks      ${idp_url%/}/admin/v1/SigningCert/jwk answers $jwks; the sign-in callback returns 500 (run bin/idp-identity-apply apply: it PATCHes signingCertPublicAccess)"; fail=1 ;;
       esac ;;
     "302 https://github.com/login/oauth/authorize"*) say "FAIL      login     https://catalogue.$zone -> GitHub: the pod still runs provider github; reconcile platform/identity (flux reconcile ks platform --with-source)"; fail=1 ;;
     *) say "FAIL      login     https://catalogue.$zone -> ${hop%% *} $(printf '%s' "${hop#* }" | cut -d'?' -f1) (want 302 to the identity domain; kubectl -n backstage get middleware login-forward-auth; kubectl -n identity get pods)"; fail=1 ;;

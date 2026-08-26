@@ -8,8 +8,24 @@ Feature: The front door is a federated login with no local password
   Scenario: An unauthenticated request is sent to the identity domain
     Given the estate zone in clusters/oke/estate-config.yaml
     When bin/idp-verify runs
-    Then https://catalogue.<zone>/ answers 302 to https://github.com/login/oauth/authorize, directly or via /oauth2/start
+    Then https://catalogue.<zone>/ answers 302 to <ESTATE_OIDC_DOMAIN_URL>/oauth2/v1/authorize, directly or via /oauth2/start
     And the login row prints ok
+
+  # Incident 2026-08-26 02:31Z (crew#269): the redirect was right and the founder's first sign-in
+  # returned 500. oauth2-proxy fetched /admin/v1/SigningCert/jwk to verify the id_token and the domain
+  # answered 401: a new identity domain keeps its signing certificate private. The login row was green
+  # because it graded the way in and never the way back.
+  Scenario: The identity domain's signing keys are readable by the relying party
+    Given the login row printed ok
+    When bin/idp-verify requests <ESTATE_OIDC_DOMAIN_URL>/admin/v1/SigningCert/jwk without a credential
+    Then it answers 200 with at least one key and the jwks row prints ok
+    And bin/idp-identity-apply is what sets signingCertPublicAccess, by a SCIM PATCH, never a console
+
+  Scenario: The signing keys are private
+    Given the JWKS endpoint answers 401
+    When bin/idp-verify runs
+    Then the jwks row prints FAIL naming the 500 the callback will return and the apply command
+    And bin/idp-verify exits 1
 
   Scenario: The door answers anything else
     Given the catalogue answers 200, 401, 500, or a Location that is not the identity domain
