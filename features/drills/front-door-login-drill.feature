@@ -86,3 +86,17 @@ Feature: A drill signs in at the front door and sees the catalogue
     When the identity stage asks the auth backend who the session is
     Then it posts to /api/auth/oauth2Proxy/refresh, not to a versioned path
     And a 404 naming an unknown provider is reported as a FAIL, never as a guest
+
+  Scenario: The drill reads the catalogue and sees no error, not only a shell
+    Given the drill is signed in with a Backstage identity
+    Then GET /api/catalog/entities?limit=5 with the session answers 200 and a non-empty list
+    And the page raised no JavaScript error while rendering
+    And the page shows none of "Something went wrong", "Unexpected error", "Internal Server Error", "Failed to sign in"
+    And the ok line names the entity count and "0 js errors"
+
+  # crew#307: the founder's own account reached the resolver without x-auth-request-email.
+  Scenario: A door request with a user name and no email still signs in
+    Given the front door forwards x-auth-request-user "chidionyema" and no x-auth-request-email
+    When Backstage's oauth2Proxy sign-in resolver runs
+    Then it issues user:default/chidionyema
+    And a request with neither header is refused with the reason in the message

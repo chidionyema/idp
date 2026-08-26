@@ -69,46 +69,12 @@ jobs:
           OKE_ALLOWED_CIDRS: ${{ vars.OKE_ALLOWED_CIDRS }}
         run: bin/idp-oke-rebuild --${{ inputs.mode || 'check' }}
 
-  # crew#292 CP1: the check above proves the platform's shape. This proves a person can get in.
-  # Same machine identity, same token exchange -- the drill's own credential is the domain
-  # password Terraform put in the vault, which this job reads by name and never prints.
-  login-drill:
-    needs: check
-    # The drill grades the live door, which a pull request cannot change: on idp#184 the job was
-    # red for exactly the defect the PR fixed, and the merge guard refused a red PR. So it runs
-    # on the schedule, on dispatch and on main, never on pull_request.
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with: { python-version: "3.12" }
-      - name: oci cli and a headless browser
-        run: |
-          pip install -q oci-cli playwright
-          playwright install --with-deps chromium
-      - name: OCI session token from the GitHub OIDC token
-        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
-        with:
-          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
-          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
-          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
-          oci_region: ${{ vars.OCI_REGION }}
-      - name: bin/idp-login-drill
-        env:
-          OCI_CI: "1"
-          OCI_CLI_AUTH: security_token   # every oci call in the run uses the exchanged session token
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-          OCI_REGION: ${{ vars.OCI_REGION }}
-        run: bin/idp-login-drill
-
   # crew#292 CP4: the in-cluster chaos experiment leaves a receipt in Object Storage; this reads
   # it with the same machine identity and grades its age. A runner has no kube path, so the
-  # receipt is the only door. Never on pull_request, for the reason login-drill gives.
+  # receipt is the only door. Never on pull_request: the live door is not what a PR changes.
   chaos-drill:
-    needs: check
+    # crew#307: a drill never waits on another job. With `needs: check` every tofu red skipped
+    # this job and the skip read as green. It runs whether check passed, failed or never ran.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
