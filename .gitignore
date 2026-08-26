@@ -52,3 +52,6 @@ platform/access/.terraform/
 platform/access/*.tfstate*
 platform/access/*.tfplan
 platform/access/backend_override.tf
+platform/oci/identity/backend_override.tf
+platform/oci/identity/.terraform*
+platform/oci/identity/*.tfstate*
