@@ -16,7 +16,11 @@ CLOUDFLARE_API_TOKEN=$(oci secrets secret-bundle get --secret-id "$sid" --query 
 export CLOUDFLARE_API_TOKEN
 : "${ESTATE_FOUNDER_EMAIL:?set ESTATE_FOUNDER_EMAIL (the email the front door admits)}"
 : "${ESTATE_TEAM_NAME:=${zone%%.*}}"
+# existing placeholder secrets are imported, never re-created (409 otherwise)
+CID=$(oci vault secret list --compartment-id "$C" --name oauth2-proxy-client-id --query 'data[0].id' --raw-output 2>/dev/null || true)
+CSEC=$(oci vault secret list --compartment-id "$C" --name oauth2-proxy-client-secret --query 'data[0].id' --raw-output 2>/dev/null || true)
 tofu -chdir="$IDP/platform/access" init -input=false >/dev/null
 tofu -chdir="$IDP/platform/access" "${1:-plan}" -input=false \
   -var "zone=$zone" -var "team_name=$ESTATE_TEAM_NAME" -var "founder_emails=[\"$ESTATE_FOUNDER_EMAIL\"]" \
-  -var "compartment_ocid=$C" -var "vault_ocid=$V" -var "key_ocid=$K"
+  -var "compartment_ocid=$C" -var "vault_ocid=$V" -var "key_ocid=$K" \
+  -var "client_id_secret_ocid=${CID:-}" -var "client_secret_secret_ocid=${CSEC:-}"
