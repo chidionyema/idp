@@ -58,6 +58,42 @@ spec:
     - secretKey: password
       remoteRef: { key: clickhouse-admin-password }
 ---
+# Incident 2026-08-26 (crew#325): langfuse-web crashed for 4 hours on "Database langfuse does not
+# exist". The langfuse chart creates its database only when it deploys its own ClickHouse
+# (values: "Created automatically by the sub-chart when deploy is true"); on the shared SigNoz
+# ClickHouse nothing creates it, and the migrator assumes it exists. This Job is the declared
+# owner of that database. It is idempotent, retries until ClickHouse answers, and Flux re-applies
+# it on every reconcile, so a rebuilt cluster gets the database before Langfuse asks for it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: langfuse-clickhouse-database
+spec:
+  backoffLimit: 30
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext: { runAsNonRoot: true, runAsUser: 101, runAsGroup: 101, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: create
+          # Same image the SigNoz ClickHouseInstallation runs (signoz chart 0.138.0), already on the node.
+          image: docker.io/clickhouse/clickhouse-server:25.12.5
+          # Kyverno (secrets-not-from-env-vars) requires the password as a mounted file.
+          command:
+            - sh
+            - -c
+            - clickhouse-client --host signoz-clickhouse --user admin --password "$(cat /secrets/password)" --query "CREATE DATABASE IF NOT EXISTS langfuse"
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: clickhouse-auth, mountPath: /secrets, readOnly: true }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - { name: clickhouse-auth, secret: { secretName: clickhouse-auth } }
+---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
