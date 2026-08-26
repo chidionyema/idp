@@ -44,6 +44,10 @@ clickhouse:
   host: signoz-clickhouse
   httpPort: 8123
   nativePort: 9000
+  # SigNoz's ClickHouseInstallation names its one cluster `cluster`; the chart default here is
+  # true and langfuse would run ON CLUSTER default, which does not exist. Single node, so off.
+  cluster:
+    enabled: false
   database: langfuse
   auth:
     username: admin
