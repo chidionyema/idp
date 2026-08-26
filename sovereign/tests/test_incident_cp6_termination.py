@@ -43,6 +43,7 @@ def test_incident_cp6_enforce_stops_running_sessions_only_on_halt(monkeypatch: A
         {"session_id": "s-run", "status": "running"},
         {"session_id": "s-ask", "status": "asking"},
         {"session_id": "s-done", "status": "done"},
+        {"session_id": "s-crit", "status": "running", "critical": True},
     ]
     signalled: list[tuple[str, str, str]] = []
 
@@ -59,6 +60,7 @@ def test_incident_cp6_enforce_stops_running_sessions_only_on_halt(monkeypatch: A
     halt = termination.evaluate(termination.Signals(langfuse_blind_s=_blind_s(+1)))
     done = termination.enforce(halt)
     assert done["stopped"] == ["s-run", "s-ask"]
+    assert done["kept"] == ["s-crit"]
     assert all(n == "stop" and r.startswith("self-termination:blind") for _, n, r in signalled)
 
     signalled.clear()
