@@ -58,3 +58,13 @@ Feature: Every scheduled drill has run recently, and the catalogue says which dr
     When bin/idp-verify runs
     Then the drills row prints BLIND naming the file
     And it never prints ok
+
+  # Founder, 2026-08-26: "we need test discipline" -- the front door had failed three times on first
+  # use, each found by hand. policy/operating_model.rego rule drill_named.
+  Scenario: A platform change names the drill that exercises it
+    Given a pull request changes a file under platform/ or clusters/
+    When bin/pr-report runs the operating-model gate
+    Then a body with no "Drill: <name>" line is refused with rule=drill_named
+    And a "Drill:" line naming nothing in drills/catalogue.yaml is refused with rule=drill_named
+    And a "Drill:" line naming a catalogued drill passes
+    And the gate reads the catalogue names itself; a PR cannot invent one

@@ -1,1 +1,17 @@
-{"pr": {"number": 4, "files": ["backstage/app-config.yaml"], "added": "+x\n", "body": "changes the portal toolkit\n", "labels": []}, "budget_monthly_usd": 50}
+{
+ "pr": {
+  "number": 4,
+  "files": [
+   "backstage/app-config.yaml"
+  ],
+  "added": "+x\n",
+  "body": "changes the portal toolkit\n",
+  "labels": []
+ },
+ "budget_monthly_usd": 50,
+ "drills": [
+  "oke-check",
+  "access-apply",
+  "login-drill"
+ ]
+}
