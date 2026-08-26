@@ -45,3 +45,10 @@ def test_incident_crew325_every_policy_exception_lives_where_kyverno_reads() -> 
                 found += 1
                 assert d["metadata"].get("namespace") == "kyverno", f
     assert found >= 3
+
+
+def test_incident_crew325_seaweedfs_image_names_its_registry() -> None:
+    # The OKE node runtime enforces short-name mode: an unqualified image never pulls.
+    values = yaml.safe_load((ROOT / "platform/observability/langfuse-values.yaml").read_text())
+    repository = values["global"]["seaweedfs"]["image"]["repository"]
+    assert repository.split("/")[0] == "docker.io", repository
