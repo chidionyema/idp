@@ -197,12 +197,16 @@ law_line_ok(n) if {
 	regex.match(sprintf(`(?m)^- LAW %s %s: (n/a: \S.*|[^\n]*[/\x60][^\n]*|[^\n]*->[^\n]*)$`, [n, laws[n]]), input.pr.body)
 }
 
+# Only a PR input is graded: the other fixtures in policy/fixtures (node pools, placement,
+# commands) carry no pr at all and are not pull requests.
 deny contains msg if {
+	is_string(input.pr.body)
 	not has_laws_heading
 	msg := "rule=architecture_laws | the PR body has no `## Architecture laws` section | fix: copy the four-line checklist from crew/docs/ARCHITECTURE_LAWS.md into the body; each line a command, a path or `n/a: <reason>`"
 }
 
 deny contains msg if {
+	is_string(input.pr.body)
 	has_laws_heading
 	some n, slug in laws
 	not law_line_ok(n)
