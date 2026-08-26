@@ -97,3 +97,9 @@ Feature: A drill signs in at the front door and sees the catalogue
 
   # crew#307, 13:15Z: 40 minutes after the */5 cron landed on main GitHub had fired zero scheduled
   # runs and nothing said so. Absence is graded on a second clock.
+  Scenario: Every published path renders its own content, not the shell around it (crew#307)
+    Given the drill is signed in to the catalogue
+    When it visits each of the nine sidebar paths: catalog, catalog-graph, catalog-import, api-docs, docs, create, search, settings, visualizer
+    Then a body containing "PAGE NOT FOUND" or "ERROR 404" fails that path
+    And a page whose own marker never appears fails that path
+    And the drill prints "paths N/9" and fails once listing every broken path
