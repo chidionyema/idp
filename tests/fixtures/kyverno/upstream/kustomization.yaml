@@ -38,3 +38,9 @@ patches:
       version: v1
       kind: ClusterPolicy
       name: require-pod-probes
+  - path: admit-workflow-task-pods.yaml   # after admit-job-pods.yaml, same precondition list
+    target:
+      group: kyverno.io
+      version: v1
+      kind: ClusterPolicy
+      name: require-pod-probes

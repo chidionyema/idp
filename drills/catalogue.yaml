@@ -41,3 +41,13 @@ drills:
     proves: >-
       A sign-in to the front door completes end to end from a runner that holds no password,
       so the federated login is exercised daily rather than only when the founder tries it.
+
+  - name: chaos-pod-kill
+    workflow: oke-check.yml
+    job: chaos-drill
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    proves: >-
+      In the last week Chaos Mesh killed one Backstage pod while /healthcheck stayed 200, the
+      Workflow wrote its receipt from the node's own identity, and a runner holding no key read
+      it back (bin/idp-chaos-drill grades the receipt's age, max 194h).
