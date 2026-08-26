@@ -1,0 +1,10 @@
+{
+  "_comment": "The good case (LAW 38): the node pool grown to 4 OCPU / 24 GB. Two OCPU and 12 GB are paid: (2 * 0.01 + 12 * 0.0015) * 730 = USD 27.74 a month, under the USD 50 cap in estate-defaults.yaml. This must PASS; if it ever fails the gate has started refusing capacity the founder already authorised.",
+  "capacity": {
+    "ocpus": 4,
+    "memory_gb": 24,
+    "free": {"ocpus": 2, "memory_gb": 12},
+    "price_usd_hr": {"ocpu": 0.01, "memory_gb": 0.0015},
+    "monthly_cap_usd": 50
+  }
+}

@@ -19,7 +19,7 @@ set -uo pipefail
 export SUPPRESS_LABEL_WARNING=True
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 TF="$IDP/platform/oci"
-MODE="${1:---check}"
+MODE="${1:---check}"   # --plan-pool: crew#289, the node-pool decision with its cost line
 export OCI_CLUSTER_NAME="${OCI_CLUSTER_NAME:-estate}"
 # LAW 46: no product hostname or pack count in this script. Each cluster's expectations live in
 # platform/oci/clusters/<name>.env; env vars override; nothing known means the row is BLIND, never a
@@ -40,6 +40,29 @@ step() { # name, then the command; prints one receipt line, records failures, ne
 blind() { printf 'BLIND %-18s %s\n' "$1" "$2"; FAILED="$FAILED $1"; }
 for t in oci tofu flux kubectl curl python3; do command -v "$t" >/dev/null || { blind tools "$t missing"; echo "exit 2"; exit 2; }; done
 
+# --- node-pool decision (crew#289 CP3): no identity needed, the estimate is the module's own ---
+if [ "$MODE" = "--plan-pool" ]; then
+  cd "$TF" || { echo "FAIL  cd $TF"; exit 2; }
+  tofu init -backend=false -input=false -no-color >/dev/null 2>&1 || { blind capacity "tofu init -backend=false failed"; echo "exit 2"; exit 2; }
+  TFVARS=(-var "cluster_name=$OCI_CLUSTER_NAME" -var tenancy_ocid=unused -var compartment_ocid=unused -var ssh_public_key=unused)
+  # crew#289 CP3: the node-pool decision and its cost line, from the module's own estimate
+  # (local.capacity in main.tf, no apply needed) judged by policy/node_pool.rego. Prints
+  # one of: FREE (inside the Always Free allowance), STAGED (paid, under the budget) or
+  # FOUNDER ACTION (over it); exit 0 for the first two, 1 for the third.
+  mkdir -p "$IDP/reports"
+  if ! printf 'jsonencode({capacity = local.capacity})\n' | tofu console "${TFVARS[@]}" 2>/dev/null | python3 -c 'import sys,json; print(json.dumps(json.loads(json.loads(sys.stdin.read()))))' > "$IDP/reports/capacity.json"; then
+    blind capacity "tofu console could not evaluate local.capacity"; echo "exit 2"; exit 2; fi
+  python3 - "$IDP/reports/capacity.json" <<'PY'
+import json, sys
+c = json.load(open(sys.argv[1]))["capacity"]
+paid = c["ocpus"] > c["free"]["ocpus"] or c["memory_gb"] > c["free"]["memory_gb"]
+line = f'node pool {c["ocpus"]} OCPU / {c["memory_gb"]} GB, free allowance {c["free"]["ocpus"]}/{c["free"]["memory_gb"]}, estimated USD {c["monthly_usd"]:.2f} a month, budget USD {c["monthly_cap_usd"]}'
+print(("FREE   " if not paid else "STAGED " if c["monthly_usd"] <= c["monthly_cap_usd"] else "FOUNDER ACTION (paid billing) ") + line)
+PY
+  if conftest test --parser json -p "$IDP/policy" "$IDP/reports/capacity.json" >/dev/null 2>&1; then echo "ok    node-pool policy/node_pool.rego passes reports/capacity.json"; exit 0
+  else conftest test --parser json -p "$IDP/policy" "$IDP/reports/capacity.json" 2>&1 | grep -i fail | head -3; exit 1; fi
+fi
+
 # --- identity and inputs (idempotent: renders the same files every run) ---------------------
 step login "$IDP/bin/idp-oci-login" || { echo "exit 2: no OCI identity"; exit 2; }
 
@@ -58,15 +81,34 @@ fi
 TFVARS=(-input=false -no-color -var "cluster_name=$OCI_CLUSTER_NAME")
 case "$MODE" in
   --check)
-    step tofu-plan tofu plan -detailed-exitcode -lock=false "${TFVARS[@]}" ;;
+    # rc=2 is drift. Say which resources, not the plan's closing note: a tail nobody can read is
+    # not an instrument (LAW 28; every run 02:22Z-02:28Z on 2026-08-26 failed with a hidden diff).
+    # On a pull_request the planned changes ARE the PR (oke-check.yml sets OKE_CHECK_EXPECT_CHANGES=1):
+    # rc=2 is shown and passes. On schedule/dispatch rc=2 is drift and fails (run 32925504695 on
+    # 2026-08-26 failed #160 on its own capacity change, and rule-guard blocks merges on a red check).
+    if step tofu-plan tofu plan -detailed-exitcode -lock=false -out="$TF/check.tfplan" "${TFVARS[@]}"; then :; else
+      rc=$?
+      [ -f "$TF/check.tfplan" ] && tofu show -no-color "$TF/check.tfplan" | grep -E '^\s*# .* (will|must) be |^Plan:' | sed 's/^/      | drift: /'
+      if [ "$rc" -eq 2 ] && [ "${OKE_CHECK_EXPECT_CHANGES:-0}" = "1" ]; then
+        FAILED="${FAILED% tofu-plan}"
+        printf '%-5s %-18s rc=%-3s %4ss  %s\n' ok tofu-plan 2 0 "pull_request: the changes above are this PR, not drift"
+      fi
+    fi
+    rm -f "$TF/check.tfplan" ;;
   --apply)
+    # a create of a resource whose live namesake exists is a lost-state re-create: import, never apply
+    step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" || { echo "exit 3: recreate-guard refused; import the live resource"; exit 3; }
     step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
-    step flux-bootstrap "$IDP/bin/idp-flux-bootstrap" ;;
+    # A runner has no kube path (outside control_plane_allowed_cidrs) and a node-pool change needs
+    # no Flux bootstrap: Flux is already on the cluster and reconciles the new node itself (crew#289).
+    if [ -n "${OCI_CI:-}" ]; then echo "n/a   flux-bootstrap     no kube path from a runner; Flux already bootstrapped, a node-pool change needs none"
+    else step flux-bootstrap "$IDP/bin/idp-flux-bootstrap"; fi ;;
   --teardown-rebuild)
     step tofu-destroy tofu destroy -auto-approve "${TFVARS[@]}"
+    step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" || { echo "exit 3: recreate-guard refused; import the live resource"; exit 3; }
     step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
     step flux-bootstrap "$IDP/bin/idp-flux-bootstrap" ;;
-  *) echo "usage: $0 [--check|--apply|--teardown-rebuild]"; exit 64 ;;
+  *) echo "usage: $0 [--check|--apply|--teardown-rebuild|--plan-pool]"; exit 64 ;;
 esac
 
 # --- verify: the platform answers, measured from outside ---------------------------------------
