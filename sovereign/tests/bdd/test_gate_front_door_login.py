@@ -1,0 +1,57 @@
+"""Binds features/gates/front-door-login.feature (ADR 0007, crew#269, crew#297). The step parses every
+YAML document under platform/ for real: no user database, no Authelia, oauth2-proxy in front of every route."""
+from pathlib import Path
+
+import pytest
+import yaml
+from pytest_bdd import given, scenarios, then
+
+scenarios("features/gates/front-door-login.feature")
+
+IDP = Path(__file__).resolve().parents[3]
+PLATFORM = IDP / "platform"
+
+
+def _docs() -> list[tuple[Path, dict]]:
+    out = []
+    for p in sorted(PLATFORM.rglob("*.y*ml")):
+        try:
+            docs = list(yaml.safe_load_all(p.read_text()))
+        except yaml.YAMLError:
+            continue  # templates Flux substitutes; nothing here is a Middleware or ExternalSecret
+        out.extend((p, d) for d in docs if isinstance(d, dict) and "kind" in d)
+    return out
+
+
+@pytest.fixture
+def state() -> dict:
+    return {}
+
+
+@given("every file under platform/")
+def _platform(state: dict) -> None:
+    state["docs"] = _docs()
+    assert state["docs"], "platform/ holds no Kubernetes manifest"
+
+
+@then("no ExternalSecret renders a users file and no ForwardAuth points at authelia")
+def _no_user_db(state: dict) -> None:
+    for p, d in state["docs"]:
+        if d["kind"] == "ExternalSecret":
+            keys = [str(x.get("secretKey", "")) + str(x.get("remoteRef", {}).get("property", "")) for x in d.get("spec", {}).get("data", [])]
+            keys += list((d.get("spec", {}).get("target", {}).get("template", {}).get("data") or {}).keys())
+            assert not any("users" in k.lower() for k in keys), f"{p}: {d['metadata']['name']} renders a users file"
+        if d["kind"] == "Middleware":
+            addr = str(d.get("spec", {}).get("forwardAuth", {}).get("address", ""))
+            assert "authelia" not in addr, f"{p}: {d['metadata']['name']} forwards auth to authelia"
+
+
+@then("the Middleware in front of every route outside identity points at oauth2-proxy")
+def _oauth2_proxy_in_front(state: dict) -> None:
+    middlewares = {d["metadata"]["name"]: str(d.get("spec", {}).get("forwardAuth", {}).get("address", ""))
+                   for _, d in state["docs"] if d["kind"] == "Middleware"}
+    routes = [(p, d) for p, d in state["docs"] if d["kind"] == "HTTPRoute" and p.relative_to(PLATFORM).parts[0] != "identity"]
+    assert routes, "no HTTPRoute outside platform/identity"
+    for p, d in routes:
+        refs = [f.get("extensionRef", {}).get("name") for r in d.get("spec", {}).get("rules", []) for f in r.get("filters", [])]
+        assert any("oauth2-proxy" in middlewares.get(n, "") for n in refs), f"{p}: route {d['metadata']['name']} has no oauth2-proxy Middleware in front ({refs})"

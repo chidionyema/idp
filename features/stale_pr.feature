@@ -1,6 +1,7 @@
 Feature: a pull request with no live owner does not sit in the queue
   crew#299, 2026-08-26: 66 open PRs, 0 mergeable, most red for days after their
   author session ended. The stale workflow (.github/workflows/stale.yml) owns this rule.
+  # Bound by sovereign/tests/bdd/test_stale_pr.py over the workflow's inputs to actions/stale.
 
   Scenario: a pull request idle for seven days is warned
     Given a pull request with no push, comment or label change for 7 days

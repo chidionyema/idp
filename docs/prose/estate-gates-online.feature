@@ -1,24 +1,17 @@
+# Prose until a drill runs them: these seven scenarios need GitHub or the live estate.
 Feature: Every active estate repository runs the same merge-blocking gates
   Founder, 2026-08-25: the security scan and the executable-spec rule (R29)
   apply estate-wide, to every repository pushed in the last 30 days, not to
   idp alone. One composite action per gate lives in idp; each repository
   calls it from a job whose name is the required status check.
+  # The spec-gate scenarios live in features/gates/spec-gate.feature, bound by
+  # sovereign/tests/bdd/test_gate_spec_gate.py.
 
   Scenario: A leaked secret cannot reach main in any active repository
     Given a repository pushed in the last 30 days
     When a pull request adds a committed credential
     Then the security-scan job ends with "SECURITY-SCAN FAIL"
     And the ruleset estate-security-scan refuses the merge
-
-  Scenario: Code without an executable spec cannot reach main
-    Given a pull request that changes a .py, .ts or bin/ file
-    And it changes no *.feature, test or bin/estate-diagram file
-    Then the spec-gate job fails naming the code files
-    And the ruleset estate-security-scan refuses the merge
-
-  Scenario: The gate permits code that arrives with its spec
-    Given a pull request that changes a .py file and a *.feature file
-    Then the spec-gate job passes
 
   Scenario: The rollout is one command, run once
     When bin/estate-security-rollout --apply runs
@@ -47,13 +40,6 @@ Feature: Every active estate repository runs the same merge-blocking gates
     And an unchanged page commits nothing
     And a missing inventory exits 3 BLIND instead of rendering an empty page
 
-  Scenario: A launchd job that backgrounds children declares AbandonProcessGroup
-    Given a launchd template whose program starts a child with nohup, setsid or disown and then exits
-    When bin/plist-gate grades it
-    Then it fails unless the job declares AbandonProcessGroup or KeepAlive
-    And the same template with AbandonProcessGroup true passes
-    And ai.estate.scheduler carries AbandonProcessGroup, so dagster-daemon outlives scheduler-up
-
   Scenario: The npm audit gate is about what ships
     Given a repository whose package-lock.json has a high advisory in a shipped dependency
     When bin/estate-security-scan runs
@@ -69,3 +55,4 @@ Feature: Every active estate repository runs the same merge-blocking gates
     Then it audits the pins as written, without resolving or installing, and prints "ok    deps" when they carry no known vulnerability
     And it prints "FAIL  deps" when a pin carries a known vulnerability
     And when a requirements file is not fully pinned it prints "BLIND deps" and the scan is BLIND, never a FAIL
+
