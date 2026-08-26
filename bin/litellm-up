@@ -33,6 +33,23 @@ docker info >/dev/null 2>&1 || {
   exit 2
 }
 
+# The class, not the instance: a daemon with less memory than the stack it hosts. On
+# 2026-08-26 colima came up on 3 GiB; every container with restart=unless-stopped (this
+# stack, Langfuse, the product) started at once, the VM reached load 252 and the host fell
+# to 35 MiB free. The proxy never bound its port and the founder's Mac swapped. The
+# ceilings in litellm.yml (2g + 256m) need room beside whatever else the daemon restarts,
+# so refuse below 4 GiB rather than start a proxy that cannot come up.
+MEM_MIN_BYTES=$((4 * 1024 * 1024 * 1024))
+MEM_BYTES="${LITELLM_DOCKER_MEM_BYTES:-$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)}"
+if [ "${MEM_BYTES:-0}" -lt "$MEM_MIN_BYTES" ]; then
+  echo "FAIL  the docker daemon has $((MEM_BYTES / 1048576)) MiB; this stack needs 4096 MiB beside the other containers the daemon restarts."
+  echo "      colima: colima stop && colima start --cpu 2 --memory 5"
+  echo "      Then re-run this command. Starting anyway starves every container (2026-08-26, VM load 252)."
+  exit 2
+fi
+OTHERS=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -vc '^litellm-' || true)
+[ "${OTHERS:-0}" -gt 0 ] && log "note: $OTHERS other containers are running on this daemon and share its ${MEM_BYTES} bytes"
+
 # Validate the config the service will refuse to start without.
 #
 # The class, not the instance: a config file whose syntax is never checked before the
