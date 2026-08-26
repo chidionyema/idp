@@ -41,14 +41,24 @@ C="${OCI_COMPARTMENT_OCID:-}"
 [ -n "$C" ] || fail config "OCI_COMPARTMENT_OCID is not set"
 vault() {  # vault <secret-name> -> decoded content on stdout, never on argv
   local sid b64
-  sid=$(oci vault secret list --compartment-id "$C" --name "$1" --query 'data[0].id' --raw-output 2>/dev/null) || sid=""
+  # ACTIVE only: a same-named secret pending deletion lists first and holds stale keys (run 33006811039)
+  sid=$(oci vault secret list --compartment-id "$C" --name "$1" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output 2>/dev/null) || sid=""
   [ -n "$sid" ] && [ "$sid" != "null" ] || fail vault "no secret $1 in the compartment"
   b64=$(oci secrets secret-bundle get --secret-id "$sid" --query 'data."secret-bundle-content".content' --raw-output 2>/dev/null) || b64=""
   [ -n "$b64" ] && [ "$b64" != "null" ] || fail vault "secret-bundle for $1 is empty or unreadable by this identity"
   printf '%s' "$b64" | base64 -d
 }
-MASTER=$(vault litellm-upstream | jq -r '.LITELLM_MASTER_KEY // empty')
-[ -n "$MASTER" ] || fail vault "litellm-upstream holds no LITELLM_MASTER_KEY"
+UP=$(vault litellm-upstream)
+MASTER=$(printf '%s' "$UP" | jq -r '.LITELLM_MASTER_KEY // empty' 2>/dev/null)
+# On a miss, name the keys the secret does hold (names only, never values; LAW 46)
+shape() {  # value-free description of a secret payload that did not parse as JSON
+  local b64 dd
+  b64=$(printf '%s' "$1" | tr -d '\n' | grep -qE '^[A-Za-z0-9+/=]+$' && echo yes || echo no)
+  dd=$(printf '%s' "$1" | base64 -d 2>/dev/null | jq -e 'type' 2>/dev/null || echo no)
+  printf 'len=%s base64-shaped=%s json-after-second-decode=%s' "${#1}" "$b64" "$dd"
+}
+[ -n "$MASTER" ] || fail vault "litellm-upstream holds no LITELLM_MASTER_KEY; keys present: $(printf '%s' "$UP" | jq -r 'keys | join(" ")' 2>/dev/null || echo "not JSON ($(shape "$UP"))")"
+unset UP
 LF_PK=$(vault langfuse-init-public-key); LF_SK=$(vault langfuse-init-secret-key)
 [ -n "$LF_PK" ] && [ -n "$LF_SK" ] || fail vault "langfuse-init-public-key or langfuse-init-secret-key decodes to nothing"
 

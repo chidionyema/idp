@@ -41,3 +41,39 @@ def test_trace_drill_is_catalogued_and_reads_keys_only_from_the_vault() -> None:
     for name in ("litellm-upstream", "langfuse-init-public-key", "langfuse-init-secret-key"):
         assert name in script, name
     assert not re.search(r"(sk-lf-|pk-lf-|sk-)[A-Za-z0-9]{8,}", script), "a key literal in the drill"
+
+
+def test_trace_drill_reads_only_the_active_vault_secret() -> None:
+    """Run 33006811039: `data[0].id` with no lifecycle filter can pick a same-named secret pending
+    deletion. Every vault reader in bin filters ACTIVE, and the miss names key names, never values."""
+    script = (ROOT / "bin" / "idp-trace-drill").read_text()
+    assert "lifecycle-state\\\"=='ACTIVE'" in script
+    assert "keys present:" in script and "keys | join" in script
+
+
+def test_github_app_installation_step_runs_even_when_a_drill_row_is_red() -> None:
+    """Run 32988930880: the rebuild step failed on drill rows, the installation step was skipped, the
+    installation id never reached the vault, and ExternalSecret flux-system/github-app could not
+    render. The step is gated on always() so a red drill row cannot skip it."""
+    wf = yaml.safe_load((ROOT / ".github" / "workflows" / "oke-check.yml").read_text())
+    steps = [s for j in wf["jobs"].values() for s in j.get("steps", []) if "idp-github-app installation" in s.get("name", "")]
+    assert len(steps) == 1, steps
+    cond = str(steps[0]["if"])
+    assert "always()" in cond and "inputs.mode == 'apply'" in cond, cond
+
+
+def test_litellm_upstream_seed_step_runs_on_apply_and_never_echoes_a_value() -> None:
+    """trace-drill run 33007689530: the ACTIVE vault secret litellm-upstream held a raw value, not the
+    JSON envelope ExternalSecret llm/litellm-upstream extracts. The apply job re-puts it through
+    bin/idp-vault-put from SEED_* secrets; the step is always()-gated, exits 0 with no seed, and no
+    line echoes a key variable."""
+    wf = yaml.safe_load((ROOT / ".github" / "workflows" / "oke-check.yml").read_text())
+    steps = [s for j in wf["jobs"].values() for s in j.get("steps", []) if "idp-vault-put litellm-upstream" in s.get("name", "")]
+    assert len(steps) == 1, steps
+    step = steps[0]
+    assert "always()" in str(step["if"]) and "inputs.mode == 'apply'" in str(step["if"])
+    assert step["env"]["LITELLM_MASTER_KEY"] == "${{ secrets.SEED_LITELLM_MASTER_KEY }}"
+    run = step["run"]
+    assert "bin/idp-vault-put litellm-upstream" in run and "LITELLM_MASTER_KEY=LITELLM_MASTER_KEY" in run
+    assert 'exit 0' in run.split("\n")[0], "no seed -> n/a and exit 0"
+    assert not re.search(r"echo[^\n]*\$\{?(MINIMAX|DEEPSEEK|OPENROUTER|GEMINI|LITELLM)_", run), "a value echoed"
