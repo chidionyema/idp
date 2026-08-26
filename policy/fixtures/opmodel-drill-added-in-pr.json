@@ -1,0 +1,20 @@
+{
+ "pr": {
+  "number": 191,
+  "files": [
+   "platform/backstage/chaos/pod-kill-workflow.yaml",
+   "drills/catalogue.yaml",
+   "features/drills/chaos-drill.feature"
+  ],
+  "added": "+  - name: chaos-pod-kill\n+    workflow: oke-check.yml\n+    job: chaos-drill\n",
+  "body": "Weekly pod-kill leaves a receipt; chaos-drill job grades it.\nCost-delta-usd-month: 0\nUse: gh workflow run oke-check.yml -f mode=check\n\nDrill: chaos-pod-kill\n",
+  "labels": [
+   "canary"
+  ]
+ },
+ "budget_monthly_usd": 50,
+ "drills": [
+  "oke-check",
+  "login-drill"
+ ]
+}

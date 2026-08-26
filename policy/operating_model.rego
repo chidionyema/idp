@@ -163,9 +163,19 @@ deny contains msg if {
 	msg := "rule=drill_named | the PR changes a platform layer (platform/, clusters/) and names no drill that exercises it | fix: add `Drill: <name>` to the PR body, naming an entry in drills/catalogue.yaml (add the drill in this PR if none covers the layer)"
 }
 
+# The gate reads drills/catalogue.yaml from idp main, so a drill the PR itself adds is not in
+# input.drills yet (idp#191 was refused for naming the row it created). A `- name:` line added
+# to the catalogue in this PR's diff counts.
+drills_added_in_pr contains name if {
+	"drills/catalogue.yaml" in input.pr.files
+	some m in regex.find_all_string_submatch_n(`(?m)^\+\s*-\s*name:\s*(\S+)`, input.pr.added, -1)
+	name := m[1]
+}
+
 deny contains msg if {
 	touches_drilled_layer
 	drill_line
 	not drill_line in input.drills
+	not drill_line in drills_added_in_pr
 	msg := sprintf("rule=drill_named | `Drill: %s` names no entry in drills/catalogue.yaml | fix: use a catalogued drill name, or add the drill to the catalogue in this PR", [drill_line])
 }
