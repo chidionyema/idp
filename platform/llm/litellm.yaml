@@ -71,9 +71,18 @@ spec:
           readinessProbe:
             httpGet: { path: /health/readiness, port: http }
             periodSeconds: 10
+          # The -database image runs Prisma migrations before it listens (idp#262). With no
+          # startupProbe the kubelet killed the pod on liveness before :4000 opened, 8 restarts
+          # in 20 minutes on 2026-08-26 23:2xZ. Liveness only counts once startup has passed.
+          startupProbe:
+            httpGet: { path: /health/liveliness, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
           livenessProbe:
             httpGet: { path: /health/liveliness, port: http }
             periodSeconds: 30
+            timeoutSeconds: 5
             failureThreshold: 3
       volumes:
         - name: config
