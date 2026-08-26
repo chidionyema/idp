@@ -80,3 +80,9 @@ Feature: A drill signs in at the front door and sees the catalogue
     When the drill asks Backstage's oauth2Proxy provider who the session is
     Then the answer is a user entity ref derived from the door's email header
     And the ok line names that ref
+
+  Scenario: The refresh endpoint is asked at Backstage's real path
+    Given the door forwarded a session to Backstage
+    When the identity stage asks the auth backend who the session is
+    Then it posts to /api/auth/oauth2Proxy/refresh, not to a versioned path
+    And a 404 naming an unknown provider is reported as a FAIL, never as a guest
