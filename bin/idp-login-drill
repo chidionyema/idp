@@ -268,7 +268,11 @@ with sync_playwright() as p:
             broken.append(f"{path}: rendered but not its own content ({must_see} never appeared)")
     print(f"paths   login-drill  {len(PUBLISHED) - len(broken)}/{len(PUBLISHED)} published paths render their own content")
     if broken:
-        fail("path", f"{len(broken)} of {len(PUBLISHED)} published paths broken: " + "; ".join(broken))
+        # One line per path: fail() caps its detail at 200 chars, which hid the third
+        # broken path on run 32991079528.
+        for b in broken:
+            print(f"broken  login-drill  {b}")
+        fail("path", f"{len(broken)} of {len(PUBLISHED)} published paths broken: " + ", ".join(b.split(":")[0] for b in broken))
 
     for marker in ("Something went wrong", "Unexpected error", "Internal Server Error", "Failed to sign in", "PAGE NOT FOUND"):
         if marker in body_text:
