@@ -24,6 +24,10 @@ permissions:
 concurrency: { group: oke-check, cancel-in-progress: false }
 jobs:
   check:
+    # A dependabot pull request gets no repository secrets, so OIDC_CLIENT_IDENTIFIER is empty and
+    # the job fails at the credentials step (run 32979902578, PR #113). The plan is graded on the
+    # next human pull request; the scheduled run grades drift either way.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
