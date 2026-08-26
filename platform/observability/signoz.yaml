@@ -81,8 +81,13 @@ spec:
                         securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
                         volumeMounts:
                           - { name: tmp, mountPath: /tmp }
+                          # Incident 2026-08-26 (crew#325): the collector copies its config to
+                          # /var/tmp/collector-config.yaml at start; with a read-only rootfs and
+                          # only /tmp writable it died "read-only file system" on every start.
+                          - { name: var-tmp, mountPath: /var/tmp }
                     volumes:
                       - { name: tmp, emptyDir: {} }
+                      - { name: var-tmp, emptyDir: {} }
           - target: { kind: StatefulSet, name: signoz }
             patch: |
               apiVersion: apps/v1

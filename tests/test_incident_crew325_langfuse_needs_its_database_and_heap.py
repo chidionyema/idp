@@ -61,3 +61,38 @@ def test_incident_crew325_langfuse_web_heap_is_explicit_and_below_the_pod_limit(
     limit_mib = _mib(web["resources"]["limits"]["memory"])
     assert heap_mib >= 1024, "the first ClickHouse migration died at 500 MB"
     assert heap_mib < limit_mib, "heap must leave room for the process outside V8"
+
+
+def test_incident_crew325_langfuse_release_waits_for_the_clickhouse_it_uses() -> None:
+    values = _values()
+    docs = _rendered()
+    langfuse = next(d for d in docs if d["kind"] == "HelmRelease" and d["metadata"]["name"] == "langfuse")
+    signoz = next(d for d in docs if d["kind"] == "HelmRelease" and d["metadata"]["name"] == "signoz")
+    assert values["clickhouse"]["host"] == "signoz-clickhouse"
+    assert [d["name"] for d in langfuse["spec"]["dependsOn"]] == [signoz["metadata"]["name"]]
+
+
+def test_incident_crew325_otel_collector_can_write_the_paths_it_writes() -> None:
+    # signoz-otel-collector copies its config to /var/tmp at start (signozotelcollector/main.go).
+    docs = _rendered()
+    hr = next(d for d in docs if d["kind"] == "HelmRelease" and d["metadata"]["name"] == "signoz")
+    patch = next(p for p in hr["spec"]["postRenderers"][0]["kustomize"]["patches"]
+                 if p["target"].get("name") == "signoz-otel-collector")
+    spec = yaml.safe_load(patch["patch"])["spec"]["template"]["spec"]
+    collector = next(c for c in spec["containers"] if c["name"] == "collector")
+    assert collector["securityContext"]["readOnlyRootFilesystem"] is True
+    mounts = {m["mountPath"] for m in collector["volumeMounts"]}
+    assert {"/tmp", "/var/tmp"} <= mounts
+
+
+def test_incident_crew325_langfuse_accepts_the_legacy_ingestion_the_router_uses() -> None:
+    # Langfuse 4.x rejects trace events on /api/public/ingestion unless the write mode is legacy
+    # or dual; the router's `langfuse` callback posts exactly there (platform/llm/config.yaml).
+    router = yaml.safe_load((ROOT / "platform/llm/config.yaml").read_text())
+    callbacks = set(router["litellm_settings"]["success_callback"])
+    env = {e["name"]: e["value"] for e in _values()["langfuse"].get("additionalEnv", [])}
+    if "langfuse" in callbacks:
+        assert env.get("LANGFUSE_MIGRATION_V4_WRITE_MODE") in {"dual", "legacy"}, \
+            "events_only drops every trace the legacy callback sends"
+    else:
+        assert "langfuse_otel" in callbacks
