@@ -183,7 +183,14 @@ else
     "302 https://catalogue.$zone/oauth2/start"*) hop=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 10 "${hop#302 }" 2>/dev/null || echo "000") ;;
   esac
   case "$hop" in
-    "302 https://github.com/login/oauth/authorize"*) say "ok        login     https://catalogue.$zone -> GitHub sign-in (no password anywhere, ADR 0007)" ;;
+    "302 https://github.com/login/oauth/authorize"*)
+      # GitHub answers 302 for a placeholder, a fake and a real client_id alike (measured 2026-08-26,
+      # idp#149 review), so the id itself is graded: empty or the vault placeholder is a FAIL.
+      cid=$(printf '%s' "${hop#* }" | tr '?&' '\n\n' | sed -n 's/^client_id=//p' | head -1)
+      case "$cid" in
+        ""|replace-in-console) say "FAIL      login     https://catalogue.$zone -> GitHub with client_id '${cid:-<empty>}' (FOUNDER ACTION: OAuth App id/secret into vault secrets oauth2-proxy-client-id / oauth2-proxy-client-secret, then kubectl -n identity annotate externalsecret oauth2-proxy force-sync=\$(date +%s) --overwrite && kubectl -n identity rollout restart deploy/oauth2-proxy)"; fail=1 ;;
+        *) say "ok        login     https://catalogue.$zone -> GitHub sign-in (no password anywhere, ADR 0007)" ;;
+      esac ;;
     *) say "FAIL      login     https://catalogue.$zone -> ${hop%% *} $(printf '%s' "${hop#* }" | cut -d'?' -f1) (want 302 to GitHub; kubectl -n backstage get middleware login-forward-auth; kubectl -n identity get pods)"; fail=1 ;;
   esac
 fi

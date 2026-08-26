@@ -34,3 +34,11 @@ Feature: The front door is a federated login with no local password
     When the chart is rendered and the cluster policy set is applied to it
     Then no rule fails
     And the same values with the chart's env-var wiring turned on are refused by secrets-not-from-env-vars
+
+  Scenario: the login row refuses a placeholder client id (idp#149 review, 2026-08-26)
+    Given the catalogue answers 302 to GitHub's authorize page
+    And the client_id in that Location is empty or "replace-in-console"
+    When bin/idp-verify runs the login row
+    Then the row is FAIL and names the FOUNDER ACTION that fills the vault secrets
+    And a 302 carrying any other client_id is ok
+
