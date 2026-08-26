@@ -47,11 +47,6 @@ platform/oci/*.tfstate*
 .estate/
 platform/oci/backend_override.tf
 
-# platform/access (crew#281): providers and state stay local, as platform/oci
-platform/access/.terraform/
-platform/access/*.tfstate*
-platform/access/*.tfplan
-platform/access/backend_override.tf
 platform/oci/identity/backend_override.tf
 platform/oci/identity/.terraform*
 platform/oci/identity/*.tfstate*

@@ -58,8 +58,8 @@ fi
 # bin/idp-oke-rebuild then reports state-remote as BLIND instead of pretending.
 NS="$(vget OCI_OS_NAMESPACE || true)"; S3K="$(vget OCI_S3_ACCESS_KEY || true)"; S3S="$(vget OCI_S3_SECRET_KEY || true)"
 if [ -n "$NS" ] && [ -n "$S3K" ] && [ -n "$S3S" ]; then
-  # one state file per module: the cluster's and platform/access's (crew#281) share the bucket
-  for pair in "platform/oci:${OCI_CLUSTER_NAME:-estate}" "platform/access:access" "platform/oci/identity:identity"; do
+  # one state file per module: the cluster's and platform/oci/identity's (crew#281, crew#288) share the bucket
+  for pair in "platform/oci:${OCI_CLUSTER_NAME:-estate}" "platform/oci/identity:identity"; do
     mod="${pair%%:*}"; skey="${pair##*:}"
     cat > "$IDP/$mod/backend_override.tf" <<BK
 terraform {
@@ -81,9 +81,9 @@ terraform {
 BK
     chmod 600 "$IDP/$mod/backend_override.tf"
   done
-  echo "ok      state   backend_override.tf rendered for platform/oci and platform/access (bucket estate-tofu-state)"
+  echo "ok      state   backend_override.tf rendered for platform/oci and platform/oci/identity (bucket estate-tofu-state)"
 else
-  rm -f "$IDP/platform/oci/backend_override.tf" "$IDP/platform/access/backend_override.tf" "$IDP/platform/oci/identity/backend_override.tf"; echo "BLIND   state   no OCI_S3_* in the vault: local state (crew#220 hand step 1; run bin/idp-oci-bootstrap)"
+  rm -f "$IDP/platform/oci/backend_override.tf" "$IDP/platform/oci/identity/backend_override.tf"; echo "BLIND   state   no OCI_S3_* in the vault: local state (crew#220 hand step 1; run bin/idp-oci-bootstrap)"
 fi
 cat > "$IDP/platform/oci/terraform.tfvars" <<TFV
 tenancy_ocid                = "$(vget OCI_TENANCY_OCID)"
