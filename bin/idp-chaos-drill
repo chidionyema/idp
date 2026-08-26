@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# crew#292 CP4: grades the weekly Chaos Mesh experiment from outside the cluster.
+#
+# platform/chaos/backstage-pod-kill.yaml kills one Backstage pod every Monday 03:00Z while a
+# StatusCheck watches /healthcheck; its last step writes one line to the Object Storage bucket
+# platform/oci/receipts.tf owns, from the worker node's identity. A runner has no kube path, so
+# this reads that object through the OCI session the job already holds and grades its age.
+#
+# Prints one line, like every drill:
+#   ok      chaos-drill  <receipt text> (<age>h old, max <max>h)
+#   FAIL    chaos-drill  <why>            -- no receipt, a stale one, or one that is not "ok"
+#   BLIND   chaos-drill  <why>            -- no oci CLI or no session; nothing was graded
+# max age 194h = 7 days + 2h scheduling slack. Override with CHAOS_MAX_AGE_HOURS.
+set -uo pipefail
+NAME=backstage-pod-kill
+BUCKET="${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}"
+MAX_H="${CHAOS_MAX_AGE_HOURS:-194}"
+blind() { printf 'BLIND   chaos-drill  %s\n' "$1"; exit 2; }
+fail()  { printf 'FAIL    chaos-drill  %s\n' "$1"; exit 1; }
+command -v oci >/dev/null || blind "oci CLI is not installed"
+command -v python3 >/dev/null || blind "python3 is not installed"
+ns=(); [ -n "${OCI_OS_NAMESPACE:-}" ] && ns=(--namespace-name "$OCI_OS_NAMESPACE")
+head=$(oci os object head "${ns[@]}" --bucket-name "$BUCKET" --name "chaos/$NAME" 2>&1)
+rc=$?
+if [ $rc -ne 0 ]; then
+  case "$head" in
+    *"404"*|*NotFound*|*"not found"*) fail "no receipt chaos/$NAME in bucket $BUCKET: the Schedule has never accomplished a run (or the bucket is not applied yet)" ;;
+    *) blind "oci os object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
+  esac
+fi
+body=$(oci os object get "${ns[@]}" --bucket-name "$BUCKET" --name "chaos/$NAME" --file - 2>/dev/null | head -1)
+python3 - "$head" "$body" "$MAX_H" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+head, body, max_h = sys.argv[1], sys.argv[2].strip(), float(sys.argv[3])
+try:
+    lm = json.loads(head)["last-modified"]
+except Exception as e:
+    print(f"BLIND   chaos-drill  object head carried no last-modified: {e}"); sys.exit(2)
+age = (datetime.now(timezone.utc) - parsedate_to_datetime(lm)).total_seconds() / 3600
+if not body.startswith("ok "):
+    print(f"FAIL    chaos-drill  receipt does not start with ok: {body[:120]!r}"); sys.exit(1)
+if age > max_h:
+    print(f"FAIL    chaos-drill  receipt is {age:.1f}h old (max {max_h:.0f}h): {body[:120]}"); sys.exit(1)
+print(f"ok      chaos-drill  {body[:120]} ({age:.1f}h old, max {max_h:.0f}h)")
+PY

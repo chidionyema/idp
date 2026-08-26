@@ -103,3 +103,32 @@ jobs:
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
           OCI_REGION: ${{ vars.OCI_REGION }}
         run: bin/idp-login-drill
+
+  # crew#292 CP4: the in-cluster chaos experiment leaves a receipt in Object Storage; this reads
+  # it with the same machine identity and grades its age. A runner has no kube path, so the
+  # receipt is the only door. Never on pull_request, for the reason login-drill gives.
+  chaos-drill:
+    needs: check
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: "3.12" }
+      - name: oci cli
+        run: pip install -q oci-cli
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: bin/idp-chaos-drill
+        env:
+          OCI_CLI_AUTH: security_token   # every oci call in the run uses the exchanged session token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
+        run: bin/idp-chaos-drill
