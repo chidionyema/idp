@@ -49,8 +49,8 @@ router_settings:
   fallbacks:
     - minimax: [minimax_m27, deepseek]
     - deepseek: [minimax]
-    - openrouter: [minimax]
-    - gemini: [minimax]
+    - openrouter: [minimax, deepseek]
+    - gemini: [minimax, deepseek]
   num_retries: 2
   allowed_fails: 3
   cooldown_time: 60

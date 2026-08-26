@@ -89,10 +89,10 @@ contract_max_usd_month = 150
 days_per_month = 31   # the longest month, so a sum under the cap holds in every month
 
 [routing]
-default = "ollama"
-vision = "ollama-vision"
-cheap = "ollama"
-consensus = ["ollama", "deepseek", "minimax"]
+default = "minimax"
+vision = "vision"
+cheap = "deepseek"
+consensus = ["minimax", "deepseek", "gemini"]
 
 [merge]
 strict_branches = ["main"]

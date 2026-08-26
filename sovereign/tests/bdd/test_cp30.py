@@ -180,12 +180,17 @@ def _one_cheap_model(proxy: FakeProxy, context: dict[str, Any]) -> None:
     cheap = str(ck.get("consensus.cheap_model"))
     assert proxy.calls == [cheap]
     assert context["result"]["ok"] is True
-    # The cheapest: the last entry of every fallback chain in llm/config.yaml,
-    # the local model that cannot run out of credit.
-    litellm = (config_mod.POLICY.path.parent / "llm" / "config.yaml").read_text()
-    chains = re.findall(r"^\s*-\s*\w+:\s*\[([^\]]+)\]", litellm, flags=re.MULTILINE)
-    assert chains, "llm/config.yaml declares no fallback chains"
-    for chain in chains:
+    # The cheapest: the last entry of every fallback chain the estate router serves
+    # (platform/llm/config.yaml, crew#313). Until 2026-08-26 this read the laptop router's
+    # llm/config.yaml, whose chains end in the local ollama lane; that lane is laptop-only and
+    # the default is now the router on the cluster. The chain headed by the cheap model itself
+    # cannot end in it, so it is the one chain left out.
+    litellm = (config_mod.POLICY.path.parent / "platform" / "llm" / "config.yaml").read_text()
+    chains = re.findall(r"^\s*-\s*(\w+):\s*\[([^\]]+)\]", litellm, flags=re.MULTILINE)
+    assert chains, "platform/llm/config.yaml declares no fallback chains"
+    graded = [members for head, members in chains if head != cheap]
+    assert graded, "every chain is headed by the cheap model; nothing to grade"
+    for chain in graded:
         assert chain.split(",")[-1].strip() == cheap, chain
     assert config_mod.POLICY.routing["cheap"] == cheap
 
