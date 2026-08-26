@@ -61,12 +61,23 @@ spec:
     # as if it held a secret. One plain value keeps the list non-empty.
     extraEnv:
       - name: OAUTH2_PROXY_PROVIDER_DISPLAY_NAME
-        value: GitHub
+        value: Estate
     extraArgs:
       config: /etc/oauth2-proxy-config/oauth2_proxy.cfg
-      provider: github
-      # The one GitHub login allowed through the door; an estate value, not a literal (LAW 46).
-      github-user: "${ESTATE_LOGIN_GITHUB_USER}"
+      # Generic OIDC against the estate's identity domain (platform/oci/identity). The domain's
+      # discovery document names an issuer that differs from its own host, so discovery is off
+      # and the four endpoints are spelled out from the one value in estate-config (LAW 46).
+      provider: oidc
+      oidc-issuer-url: "${ESTATE_OIDC_ISSUER_URL}"
+      skip-oidc-discovery: true
+      login-url: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/authorize"
+      redeem-url: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/token"
+      oidc-jwks-url: "${ESTATE_OIDC_DOMAIN_URL}/admin/v1/SigningCert/jwk"
+      profile-url: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/userinfo"
+      scope: "openid email profile"
+      # The domain's id_token carries email without email_verified; the allow-list is the
+      # domain's grant table (oci_identity_domains_grant), enforced before any token is issued.
+      insecure-oidc-allow-unverified-email: true
       reverse-proxy: true
       set-xauthrequest: true
       skip-provider-button: true
