@@ -73,6 +73,7 @@ nav:
       - Policy test: demo/policy-test.md
       - Port gate: demo/port.md
       - Repo rulesets: demo/repo-rulesets.md
+      - Telemetry coverage: demo/telemetry-coverage.md
   - Onboarding:
       - Portal: onboarding/idp.md
       - Plist gate: onboarding/plist.md
@@ -117,3 +118,4 @@ nav:
       - Policy test: onboarding/policy-test.md
       - Port gate: onboarding/port.md
       - Repo rulesets: onboarding/repo-rulesets.md
+      - Telemetry coverage: onboarding/telemetry-coverage.md
