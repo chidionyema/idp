@@ -46,7 +46,9 @@ step login "$IDP/bin/idp-oci-login" || { echo "exit 2: no OCI identity"; exit 2;
 # --- state backend: remote when the bucket exists, else local and said so ---------------------
 cd "$TF" || { echo "FAIL  cd $TF"; exit 2; }
 if [ -f backend_override.tf ]; then
-  step state-remote tofu init -input=false -no-color -migrate-state -force-copy
+  # never -migrate-state/-force-copy: a stale local state would overwrite the shared remote (bin/idp-state-guard)
+  "$IDP/bin/idp-state-guard" "$TF"
+  step state-remote tofu init -input=false -no-color -reconfigure
 else
   step state-local tofu init -input=false -no-color
   blind state-remote "no backend_override.tf: state is one local file (crew#220 hand step 1); run bin/idp-oci-bootstrap"
