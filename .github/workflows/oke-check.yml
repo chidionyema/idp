@@ -78,7 +78,10 @@ jobs:
       # github-app. This ran once from a founder laptop (bin/idp-github-app installation); now the
       # apply run does it with the same machine identity. Exit 2 is BLIND (App not installed yet).
       - name: bin/idp-github-app installation (crew#267)
-        if: ${{ inputs.mode == 'apply' }}
+        # always(): a red drill row in the rebuild step skipped this step in run 32988930880, so the
+        # installation id never reached the vault and the ExternalSecret flux-system/github-app
+        # could not render (crew#325). The rebuild verdict still fails the job on its own.
+        if: ${{ always() && inputs.mode == 'apply' }}
         env:
           OCI_CLI_AUTH: security_token
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}

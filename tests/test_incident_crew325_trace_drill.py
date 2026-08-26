@@ -41,3 +41,22 @@ def test_trace_drill_is_catalogued_and_reads_keys_only_from_the_vault() -> None:
     for name in ("litellm-upstream", "langfuse-init-public-key", "langfuse-init-secret-key"):
         assert name in script, name
     assert not re.search(r"(sk-lf-|pk-lf-|sk-)[A-Za-z0-9]{8,}", script), "a key literal in the drill"
+
+
+def test_trace_drill_reads_only_the_active_vault_secret() -> None:
+    """Run 33006811039: `data[0].id` with no lifecycle filter can pick a same-named secret pending
+    deletion. Every vault reader in bin filters ACTIVE, and the miss names key names, never values."""
+    script = (ROOT / "bin" / "idp-trace-drill").read_text()
+    assert "lifecycle-state\\\"=='ACTIVE'" in script
+    assert "keys present:" in script and "keys | join" in script
+
+
+def test_github_app_installation_step_runs_even_when_a_drill_row_is_red() -> None:
+    """Run 32988930880: the rebuild step failed on drill rows, the installation step was skipped, the
+    installation id never reached the vault, and ExternalSecret flux-system/github-app could not
+    render. The step is gated on always() so a red drill row cannot skip it."""
+    wf = yaml.safe_load((ROOT / ".github" / "workflows" / "oke-check.yml").read_text())
+    steps = [s for j in wf["jobs"].values() for s in j.get("steps", []) if "idp-github-app installation" in s.get("name", "")]
+    assert len(steps) == 1, steps
+    cond = str(steps[0]["if"])
+    assert "always()" in cond and "inputs.mode == 'apply'" in cond, cond
