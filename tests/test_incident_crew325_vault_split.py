@@ -26,7 +26,7 @@ def _run(tmp: Path, other_secrets: str) -> subprocess.CompletedProcess:
     # other vault holds whatever the case says (values are never listed, only names)
     _fake(b, "oci", f'''
         case "$*" in
-          *"kms management vault list"*) printf '[["{TOFU}","estate-secrets"],["{OTHER}","estate-secrets"]]\\n';;
+          *"kms management vault list"*) printf '[["{TOFU}","estate-secrets","ACTIVE"],["{OTHER}","estate-secrets","PENDING_DELETION"]]\\n';;
           *"--vault-id {TOFU}"*) printf '["litellm-upstream","langfuse-init-public-key"]\\n';;
           *"--vault-id {OTHER}"*) printf '%s\\n' '{other_secrets}';;
           *) echo "[]";;
@@ -47,12 +47,13 @@ def test_one_populated_vault_that_is_the_tofu_vault_passes(tmp_path: Path) -> No
     r = _run(tmp_path, "[]")
     assert r.returncode == 0, r.stdout + r.stderr
     assert "ok      vault-split  tofu vault" in r.stdout and "is empty" in r.stdout
+    assert "        secret: langfuse-init-public-key" in r.stdout and "(PENDING_DELETION)" in r.stdout
     assert "REFUSE" not in r.stdout
 
 
 def test_rebuild_runs_the_guard_in_check_and_apply() -> None:
     s = (ROOT / "bin" / "idp-oke-rebuild").read_text()
-    i = s.index('step vault-split "$IDP/bin/idp-vault-split-guard"')
+    i = s.index('VS=$("$IDP/bin/idp-vault-split-guard" "$TF"')
     assert i < s.index('case "$MODE" in'), "the row runs before the mode switch, so --check and --apply both print it"
 
 
