@@ -27,3 +27,9 @@ Feature: Cross-model consensus under a policy invariant
     Given the shipped configuration with no consensus override
     Then the consensus list names three aliases and no alias appears twice
     And every alias is a model_name the LiteLLM proxy config serves
+
+  Scenario: sb model-consensus reaches the vote
+    Given a destructive op proposal and three configured models
+    When two models propose the same normalized tool call within 30 seconds
+    And the call is in the allowlist
+    Then "sb model-consensus --op <op> --destructive" exits 0 with the verdict

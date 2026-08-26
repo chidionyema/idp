@@ -213,3 +213,18 @@ def _served_by_proxy(voters: list[str]) -> None:
     served = set(re.findall(r"^\s*- model_name:\s*(\S+)", text, re.M))
     missing = [v for v in voters if v not in served]
     assert not missing, f"not in llm/config.yaml model_list: {missing}"
+
+
+# Incident 2026-08-26: `sb model-consensus` raised AttributeError before any
+# vote, because `from sovereign.consensus import decide` bound the function,
+# not the module. The command must reach decide() and print its verdict.
+@then('"sb model-consensus --op <op> --destructive" exits 0 with the verdict')
+def _cli_reaches_vote(context: dict[str, Any], capsys: pytest.CaptureFixture[str]) -> None:
+    import argparse
+
+    from sovereign import cli
+
+    args = argparse.Namespace(op=context["op"], destructive=True, non_destructive=False, json=True)
+    rc = cli.cmd_model_consensus(args)
+    out = json.loads(capsys.readouterr().out)
+    assert rc == 0 and out["ok"] is True, out

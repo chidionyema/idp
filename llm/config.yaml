@@ -58,10 +58,15 @@ model_list:
       timeout: 300
   # routing.vision in AGENTS.md (sovereign model.vision, R8: an alias, never a
   # provider model name). gemma3:4b is multimodal and is already pulled locally.
+  # Through Ollama's OpenAI-compatible endpoint, not the ollama/ provider: the
+  # litellm-database image ships without Pillow, and the ollama/ provider needs
+  # it to pass an image ("ollama image conversion failed", 2026-08-26). The
+  # OpenAI route sends the data URL through untouched.
   - model_name: ollama-vision
     litellm_params:
-      model: ollama/gemma3:4b
-      api_base: http://host.docker.internal:11434
+      model: openai/gemma3:4b
+      api_base: http://host.docker.internal:11434/v1
+      api_key: ollama
       timeout: 300
   # Second local voter for the kernel's 3-model consensus (kini spec 4.2:
   # "Ollama handles 2/3 quorum load"); a different family from `ollama`, so two
