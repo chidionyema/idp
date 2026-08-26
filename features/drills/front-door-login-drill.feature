@@ -100,3 +100,12 @@ Feature: A drill signs in at the front door and sees the catalogue
     When Backstage's oauth2Proxy sign-in resolver runs
     Then it issues user:default/chidionyema
     And a request with neither header is refused with the reason in the message
+
+  # crew#307, 13:15Z: 40 minutes after the */5 cron landed on main GitHub had fired zero scheduled
+  # runs and nothing said so. Absence is graded on a second clock.
+  Scenario: A drill that never runs is a failed drill
+    Given the newest successful login-drill run is older than 20 minutes
+    When bin/idp-drill-heartbeat grades login-drill.yml
+    Then it prints FAIL with the age, the run id and the dispatch command
+    And a run with no successful run on record is FAIL, and an unreadable API is BLIND, never ok
+    And drill-heartbeat.yml runs every 15 minutes and opens or comments "P0: login drill failed" on FAIL
