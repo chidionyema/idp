@@ -32,6 +32,9 @@ jobs:
   # crew#286: the Estate-as-Platform operating model as a gate. One job, one script, the
   # same conftest CI already installs; deny lines come back as a PR comment (CP10).
   operating-model-gate:
+    # pr-report needs a PR number; on a push to main there is none and the job
+    # failed with `1: pr number`, which turned main red (run 32922679927).
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions: { contents: read, pull-requests: write }
     steps:
