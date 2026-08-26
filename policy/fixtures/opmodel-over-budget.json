@@ -1,0 +1,1 @@
+{"pr": {"number": 5, "files": ["platform/oci/main.tf"], "added": "+x\n", "body": "Cost-delta-usd-month: 120\n", "labels": ["canary"]}, "budget_monthly_usd": 50}

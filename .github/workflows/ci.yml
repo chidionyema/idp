@@ -29,6 +29,18 @@ jobs:
         env:
           MIGRATE_HEALTH_WAIT: "240"
 
+  # crew#286: the Estate-as-Platform operating model as a gate. One job, one script, the
+  # same conftest CI already installs; deny lines come back as a PR comment (CP10).
+  operating-model-gate:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pull-requests: write }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: conftest
+        run: curl -sSL https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
+      - run: pip install -q pyyaml && bin/pr-report "${{ github.event.pull_request.number }}" --comment
+        env: { GH_TOKEN: "${{ github.token }}" }
+
   # crew#219 R39/R41: the Sovereign Bus acceptance suite, under the branch
   # policy AGENTS.md [merge] declares. offline-gate above already runs this
   # suite inside bin/idp-ci, permissively. This job is the strict leg: on a
