@@ -3,22 +3,14 @@ Feature: Every active estate repository runs the same merge-blocking gates
   apply estate-wide, to every repository pushed in the last 30 days, not to
   idp alone. One composite action per gate lives in idp; each repository
   calls it from a job whose name is the required status check.
+  # The spec-gate scenarios live in features/gates/spec-gate.feature, bound by
+  # sovereign/tests/bdd/test_gate_spec_gate.py.
 
   Scenario: A leaked secret cannot reach main in any active repository
     Given a repository pushed in the last 30 days
     When a pull request adds a committed credential
     Then the security-scan job ends with "SECURITY-SCAN FAIL"
     And the ruleset estate-security-scan refuses the merge
-
-  Scenario: Code without an executable spec cannot reach main
-    Given a pull request that changes a .py, .ts or bin/ file
-    And it changes no *.feature, test or bin/estate-diagram file
-    Then the spec-gate job fails naming the code files
-    And the ruleset estate-security-scan refuses the merge
-
-  Scenario: The gate permits code that arrives with its spec
-    Given a pull request that changes a .py file and a *.feature file
-    Then the spec-gate job passes
 
   Scenario: The rollout is one command, run once
     When bin/estate-security-rollout --apply runs
