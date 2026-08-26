@@ -6,17 +6,10 @@ app:
   packages: all
 
   extensions:
-    # Default landing page configuration.
-    # The catalog is mounted at /catalog by default but is overridden here to
-    # serve as the root page. To switch to the Home page, comment out the
-    # catalog path override and uncomment the home path override.
-    - page:catalog:
-        config:
-          path: /
-    # - page:home:
-    #     config:
-    #       path: /
-
+    # The catalog stays at Backstage's default /catalog. On 2026-08-26 it was overridden to
+    # serve "/", which made /catalog (the path in Backstage's own links and the founder's
+    # bookmark) a client-side ERROR 404 while the login drill, visiting "/", stayed green.
+    # crew#307. The Home page takes "/".
     # Visit tracking records which pages users navigate to and is disabled by default.
     # Enable it to populate the Most Visited and Recently Visited widgets on the Home page.
     # Visit data is stored via UserSettings storage if available, otherwise browser localStorage.
@@ -48,6 +41,7 @@ app:
               timeZone: UTC
     - page:home:
         config:
+          path: /
           defaultConfig:
             - component: HomePageSearchBar
               column: 0
