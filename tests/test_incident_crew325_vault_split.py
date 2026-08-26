@@ -1,0 +1,56 @@
+"""Incident test (rung 4): 2026-08-26, crew#325, oke-check run 33008917584. `bin/idp-vault-put
+litellm-upstream` said "created" in the tofu vault while a secret of that name was ACTIVE in the
+other vault left by the 02:26Z lost-state apply, and github-app was BLIND. Rule: a compartment where
+a vault other than the tofu vault holds ACTIVE secrets is refused, names only are printed, and a
+compartment whose only populated vault is the tofu vault passes."""
+import os, stat, subprocess, textwrap
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+GUARD = ROOT / "bin" / "idp-vault-split-guard"
+TOFU = "ocid1.vault.oc1..tofu00"
+OTHER = "ocid1.vault.oc1..other0"
+
+
+def _fake(bin_dir: Path, name: str, body: str) -> None:
+    f = bin_dir / name
+    f.write_text("#!/usr/bin/env bash\n" + textwrap.dedent(body))
+    f.chmod(f.stat().st_mode | stat.S_IEXEC)
+
+
+def _run(tmp: Path, other_secrets: str) -> subprocess.CompletedProcess:
+    b = tmp / "bin"; b.mkdir(exist_ok=True); m = tmp / "mod"; m.mkdir(exist_ok=True)
+    (m / "terraform.tfvars").write_text('compartment_ocid = "ocid1.compartment.oc1..test"\n')
+    _fake(b, "tofu", f'[ "$1 $2" = "output -raw" ] && printf "%s" "{TOFU}"')
+    # the fake answers per vault id: the tofu vault holds langfuse-init-* plus litellm-upstream; the
+    # other vault holds whatever the case says (values are never listed, only names)
+    _fake(b, "oci", f'''
+        case "$*" in
+          *"kms management vault list"*) printf '[["{TOFU}","estate-secrets"],["{OTHER}","estate-secrets"]]\\n';;
+          *"--vault-id {TOFU}"*) printf '["litellm-upstream","langfuse-init-public-key"]\\n';;
+          *"--vault-id {OTHER}"*) printf '%s\\n' '{other_secrets}';;
+          *) echo "[]";;
+        esac''')
+    env = {**os.environ, "PATH": f"{b}:{os.environ['PATH']}"}
+    return subprocess.run(["bash", str(GUARD), str(m)], env=env, capture_output=True, text=True)
+
+
+def test_incident_crew325_secrets_split_across_two_vaults_is_refused(tmp_path: Path) -> None:
+    r = _run(tmp_path, '["github-app","litellm-upstream"]')
+    assert r.returncode == 1
+    assert "REFUSE  vault-split" in r.stdout and "github-app litellm-upstream" in r.stdout
+    assert f"tofu import oci_kms_vault.estate {OTHER}" in r.stdout
+    assert "...tofu00" in r.stdout and TOFU not in r.stdout.split("REFUSE")[0]  # tofu row shows a 6-char tail only
+
+
+def test_one_populated_vault_that_is_the_tofu_vault_passes(tmp_path: Path) -> None:
+    r = _run(tmp_path, "[]")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "ok      vault-split  tofu vault" in r.stdout and "is empty" in r.stdout
+    assert "REFUSE" not in r.stdout
+
+
+def test_rebuild_runs_the_guard_in_check_and_apply() -> None:
+    s = (ROOT / "bin" / "idp-oke-rebuild").read_text()
+    i = s.index('step vault-split "$IDP/bin/idp-vault-split-guard"')
+    assert i < s.index('case "$MODE" in'), "the row runs before the mode switch, so --check and --apply both print it"

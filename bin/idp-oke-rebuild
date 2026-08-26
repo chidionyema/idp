@@ -89,6 +89,13 @@ if ! step iam-policy "$IDP/bin/idp-iam-policy-drift" && [ "${OKE_CHECK_EXPECT_CH
   FAILED="${FAILED% iam-policy}"
   printf '%-5s %-18s rc=%-3s %4ss  %s\n' ok iam-policy 0 0 "pull_request: the policy gap above is the founder's bootstrap run, not this PR"
 fi
+# crew#325: the cluster reads one vault (flux-system/estate-vars) and CI writes the tofu vault. When a
+# second vault holds ACTIVE secrets (left by the 02:26Z lost-state apply) every CI write is invisible
+# to the cluster; this row names the split and the import. Its failure is never the PR's fault.
+if ! step vault-split "$IDP/bin/idp-vault-split-guard" "$TF" && [ "${OKE_CHECK_EXPECT_CHANGES:-0}" = "1" ]; then
+  FAILED="${FAILED% vault-split}"
+  printf '%-5s %-18s rc=%-3s %4ss  %s\n' ok vault-split 0 0 "pull_request: the split above is the estate's, not this PR"
+fi
 # crew#307: a drill that never runs looks like one that passes. The newest successful login-drill
 # run must be under 20 minutes old. On a pull_request an absence is not the PR's fault (same rule
 # as iam-policy above): shown, not counted.

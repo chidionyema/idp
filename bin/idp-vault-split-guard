@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Refuse a secret store split across two vaults.
+# Incident 2026-08-26 02:26Z (bin/idp-recreate-guard header): a lost-state apply made a second vault
+# "estate-secrets". Same day 21:xxZ (crew#325, oke-check run 33008917584): `bin/idp-vault-put
+# litellm-upstream` printed "created" in the tofu vault while a secret of that name was ACTIVE in the
+# other vault, and `github-app` was BLIND in the tofu vault. ESO reads exactly one vault
+# (flux-system/estate-vars OCI_VAULT_ID); CI writes the tofu vault. When those differ, every secret CI
+# writes is invisible to the cluster and every read by name is a coin toss.
+# Rule: at most one ACTIVE vault in the compartment holds ACTIVE secrets, and it is the tofu vault.
+# Prints names only, never a value; an OCID is shown by its last 6 characters.
+# Usage: bin/idp-vault-split-guard <module dir>. Exit 0 pass, 1 refuse, 0 + BLIND when unreadable.
+set -uo pipefail
+M="${1:?module dir}"
+cd "$M" || { echo "BLIND   vault-split  $M is not a directory"; exit 0; }
+C=$(grep -o 'ocid1\.compartment[^" ]*' terraform.tfvars 2>/dev/null | head -1)
+[ -n "$C" ] || { echo "BLIND   vault-split  no compartment_ocid in terraform.tfvars"; exit 0; }
+V=$(tofu output -raw vault_id 2>/dev/null) || V=""
+[ -n "$V" ] || { echo "BLIND   vault-split  no vault_id in tofu outputs"; exit 0; }
+VAULTS=$(oci kms management vault list --compartment-id "$C" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].[id,\"display-name\"]" --output json 2>/dev/null | python3 -c 'import json,sys; [print(i, n) for i, n in json.load(sys.stdin)]' 2>/dev/null) \
+  || { echo "BLIND   vault-split  oci kms management vault list failed"; exit 0; }
+[ -n "$VAULTS" ] || { echo "BLIND   vault-split  no ACTIVE vault in the compartment"; exit 0; }
+REFUSED=0; SEEN_TOFU=0
+while read -r id name; do
+  [ -n "$id" ] || continue
+  names=$(oci vault secret list --compartment-id "$C" --vault-id "$id" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].\"secret-name\"" --output json 2>/dev/null | python3 -c 'import json,sys; print(" ".join(sorted(json.load(sys.stdin))))' 2>/dev/null) \
+    || { echo "BLIND   vault-split  secret list failed for vault '$name' ...${id: -6}"; continue; }
+  n=$(printf '%s' "$names" | wc -w | tr -d ' ')
+  if [ "$id" = "$V" ]; then SEEN_TOFU=1; echo "ok      vault-split  tofu vault '$name' ...${id: -6} holds $n ACTIVE secret(s): ${names:-none}"
+  elif [ "$n" = 0 ]; then echo "ok      vault-split  other vault '$name' ...${id: -6} is empty"
+  else echo "REFUSE  vault-split  vault '$name' ...${id: -6} is not the tofu vault and holds $n ACTIVE secret(s): $names; the cluster reads one vault and CI writes another. Run 'tofu import oci_kms_vault.estate $id' if flux-system/estate-vars names this vault, else move these secrets into the tofu vault with bin/idp-vault-put (incident 2026-08-26 02:26Z, crew#325)"; REFUSED=1; fi
+done <<EOF
+$VAULTS
+EOF
+[ "$SEEN_TOFU" = 1 ] || { echo "REFUSE  vault-split  tofu vault_id ...${V: -6} is not an ACTIVE vault in the compartment: the state names a vault that does not exist"; REFUSED=1; }
+exit $REFUSED
