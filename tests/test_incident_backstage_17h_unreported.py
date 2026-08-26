@@ -61,7 +61,11 @@ def test_alert_covers_every_namespace_that_holds_a_helmrelease():
     hr_namespaces = {_namespace_of(f, d) for f, d in _docs("platform/**/*.yaml") if d.get("kind") == "HelmRelease"}
     missing = {ns for ns in hr_namespaces if ("HelmRelease", ns) not in covered}
     assert not missing, f"HelmRelease namespaces with no alert: {sorted(missing)}"
-    assert all(a["spec"]["eventSeverity"] == "error" for a in alerts)
+    # The founder's channel carries errors only; a machine ledger (githubdispatch, crew#325)
+    # is allowed to carry info, because a session reads it and he does not.
+    founder = [a for a in alerts if a["spec"]["providerRef"]["name"] == "telegram"]
+    assert founder, "no Alert reaches the founder's Telegram channel"
+    assert all(a["spec"]["eventSeverity"] == "error" for a in founder)
 
 
 def test_telegram_channel_survives_substitution_as_a_string():
