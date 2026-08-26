@@ -96,3 +96,17 @@ def test_incident_crew325_langfuse_accepts_the_legacy_ingestion_the_router_uses(
             "events_only drops every trace the legacy callback sends"
     else:
         assert "langfuse_otel" in callbacks
+
+
+def test_incident_crew325_langfuse_bucket_hook_job_carries_the_restricted_profile() -> None:
+    # Helm hooks are admitted like any pod; the seaweedfs bucket hook shipped without a profile.
+    docs = _rendered()
+    hr = next(d for d in docs if d["kind"] == "HelmRelease" and d["metadata"]["name"] == "langfuse")
+    patch = next(p for p in hr["spec"]["postRenderers"][0]["kustomize"]["patches"]
+                 if p["target"] == {"kind": "Job", "name": "langfuse-bucket-hook"})
+    spec = yaml.safe_load(patch["patch"])["spec"]["template"]["spec"]
+    assert spec["securityContext"]["runAsNonRoot"] is True
+    assert spec["securityContext"]["seccompProfile"] == {"type": "RuntimeDefault"}
+    c = next(c for c in spec["containers"] if c["name"] == "post-install-job")
+    assert c["securityContext"] == {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True, "capabilities": {"drop": ["ALL"]}}
+    assert c["resources"]["limits"]["memory"]

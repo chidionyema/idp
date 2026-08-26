@@ -90,10 +90,16 @@ for plain in "$S"/plain-*.yaml; do
 done
 while read -r name ns npatch; do
   kubectl kustomize "$S/$name.kz" > "$S/$name.final.yaml"
-  # helm test hooks never reach the cluster (HelmRelease test.enable is off); drop them before judging
+  # helm test hooks never reach the cluster (HelmRelease test.enable is off); drop them before judging.
+  # Every other hook (pre/post-install, pre/post-upgrade, ...) is admitted like any pod and is
+  # judged. Until 2026-08-26 this dropped all hooks, and the langfuse s3 post-upgrade bucket hook
+  # merged with no securityContext; Kyverno then refused every Helm upgrade of the release (crew#325).
   python3 - "$S/$name.final.yaml" <<'PY'
 import sys, yaml
-p = sys.argv[1]; docs = [d for d in yaml.safe_load_all(open(p)) if d and "helm.sh/hook" not in (d["metadata"].get("annotations") or {})]
+def _is_test_hook(d):
+    hooks = (d["metadata"].get("annotations") or {}).get("helm.sh/hook", "")
+    return hooks and all(h.strip().startswith("test") for h in hooks.split(","))
+p = sys.argv[1]; docs = [d for d in yaml.safe_load_all(open(p)) if d and not _is_test_hook(d)]
 # Kyverno autogen covers Deployment/StatefulSet/DaemonSet but not Job/CronJob, so the CLI passed a
 # migrator Job whose Pod admission then refused (2026-08-25, require-pod-probes). Judge the Pod
 # a Job or CronJob would create, with the ownerReference admission would see.
