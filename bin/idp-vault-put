@@ -9,7 +9,7 @@ name=$1; shift
 ENVF=${ESTATE_ENV_FILE:-$HOME/.hermes/.env}
 [ -f "$ENVF" ] || { echo "BLIND: no env file at $ENVF"; exit 2; }
 export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-C=$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$IDP/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")
+C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$IDP/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
 V=$(cd "$IDP/platform/oci" && tofu output -raw vault_id); K=$(cd "$IDP/platform/oci" && tofu output -raw vault_key_id)
 payload=$(python3 - "$ENVF" "$@" <<'PY'
 import sys,json,base64
