@@ -19,7 +19,7 @@
 #   FAIL    login-drill  <stage> <detail>
 #
 # Stages, so a failure names the layer that broke: config, python, vault, browser, redirect,
-# credentials, password-change, session, catalogue.
+# credentials, password-change, session, catalogue, identity.
 #
 # Python with Playwright: $DRILL_PYTHON if set, else python3. CI installs it in the job.
 set -uo pipefail
@@ -193,8 +193,26 @@ with sync_playwright() as p:
     except PWError:
         fail("catalogue", f"{HOME} answered 200 but no Backstage shell rendered (no 'Catalog' in the page)")
 
+    # 5. the whole path, not just the door: the door's headers must reach Backstage's own
+    # auth provider and come back as a signed-in identity. On 2026-08-26 the door was green
+    # while Backstage still showed its guest "Enter" page, and that page threw a TypeError.
+    if page.locator("button:has-text('Enter')").count() > 0 or "Enter as a Guest" in page.inner_text("body"):
+        fail("identity", f"{HOME} rendered Backstage's guest sign-in page; the door's identity never reached the auth provider")
+    try:
+        who = page.request.post(f"{HOME}api/auth/v1/oauth2Proxy/refresh", headers={"x-requested-with": "XMLHttpRequest"})
+    except PWError as e:
+        fail("identity", f"auth provider oauth2Proxy did not answer: {e}")
+    if who.status != 200:
+        fail("identity", f"auth provider oauth2Proxy answered {who.status} to the door's session: {who.text()[:240]}")
+    try:
+        ref = who.json()["backstageIdentity"]["identity"]["userEntityRef"]
+    except (ValueError, KeyError, TypeError):
+        fail("identity", f"auth provider oauth2Proxy answered 200 without a Backstage identity: {who.text()[:240]}")
+    if "guest" in ref or not ref.startswith("user:"):
+        fail("identity", f"signed in as {ref}, not a user the identity domain vouched for")
+
     ctx.close()
     browser.close()
 
-print(f"ok      login-drill  signed in as {USER}, catalogue rendered in {time.time() - started:.1f}s")
+print(f"ok      login-drill  signed in as {USER}, catalogue rendered as {ref} in {time.time() - started:.1f}s")
 PYDRIVER

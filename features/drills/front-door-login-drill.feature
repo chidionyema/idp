@@ -67,3 +67,16 @@ Feature: A drill signs in at the front door and sees the catalogue
     Then the password appears in neither
     And the only place it exists is the OCI vault secret Terraform wrote
     And the CI job reads it with the same GitHub OIDC to OCI token exchange as bin/idp-oke-rebuild
+
+  Scenario: The door is green but Backstage shows its own guest sign-in page
+    Given the front door signs the drill user in
+    And Backstage still offers a guest "Enter" button instead of trusting the door's headers
+    When the drill runs
+    Then it prints "FAIL    login-drill  identity" naming the guest page
+    And exits 1
+
+  Scenario: The door's identity reaches Backstage's auth provider
+    Given the drill user has signed in at the door
+    When the drill asks Backstage's oauth2Proxy provider who the session is
+    Then the answer is a user entity ref derived from the door's email header
+    And the ok line names that ref
