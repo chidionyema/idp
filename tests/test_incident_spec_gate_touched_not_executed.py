@@ -37,6 +37,10 @@ def test_incident_touched_feature_is_not_an_executed_one(tmp_path: Path) -> None
     assert ok.returncode == 0 and "ok    spec-gate 1 code file(s) changed with 1 spec" in ok.stdout, ok.stdout + ok.stderr
     assert "residual spec-gate 1 feature file(s) named by no test" in ok.stdout, ok.stdout
 
+    _commit(repo, {"docs/prose/prose.feature": "Feature: prose, not a spec\n"}, "prose under docs")
+    docs = _gate(repo)
+    assert docs.returncode == 0 and "residual spec-gate 1 feature" in docs.stdout, docs.stdout
+
     _commit(repo, {"features/old.feature": "Feature: old, edited\n"}, "prose")
     still_ok = _gate(repo)
     assert still_ok.returncode == 0 and "do not count as executable spec" in still_ok.stdout and "features/old.feature" in still_ok.stdout, still_ok.stdout
