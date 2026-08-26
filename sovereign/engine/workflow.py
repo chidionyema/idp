@@ -167,6 +167,7 @@ class SessionWorkflow:
             "steps": self.steps,
             "budget": self.budget,
             "budget_remaining": self.budget_remaining,
+            "critical": self.critical,
             "fsm_state": self.fsm_state,
             "fsm_cycles": self.fsm_cycles,
             "fsm_paused": self.fsm_paused,
@@ -289,6 +290,7 @@ class SessionWorkflow:
         self.by = params.get("by", "cli")
         self.budget = int(params["budget"])
         self.budget_remaining = self.budget
+        self.critical = bool(params.get("critical", False))
         self._receipt_activity_timeout_s = int(params["receipt_activity_timeout_s"])
         self._receipt_retry_max_attempts = int(params["receipt_retry_max_attempts"])
         self._notify_activity_timeout_s = int(params["notify_activity_timeout_s"])

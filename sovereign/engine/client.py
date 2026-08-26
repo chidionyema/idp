@@ -32,7 +32,12 @@ def _new_session_id() -> str:
 
 
 async def start(
-    task: str, runner: str = "echo", repo: str | None = None, by: str = "cli", budget: int = 0
+    task: str,
+    runner: str = "echo",
+    repo: str | None = None,
+    by: str = "cli",
+    budget: int = 0,
+    critical: bool = False,
 ) -> dict[str, Any]:
     client = await get_client()
     session_id = _new_session_id()
@@ -43,6 +48,8 @@ async def start(
         "repo": repo,
         "by": by,
         "budget": budget,
+        # crew#284 CP6: a critical session survives self-termination (spec section 5).
+        "critical": bool(critical),
         # Engine-internal tuning, resolved here (the process that owns
         # config.py) and carried into the workflow so workflow.py stays
         # free of both vendor imports (cp6) and magic literals (cp22)
@@ -115,6 +122,7 @@ def _to_row(state: dict[str, Any] | None, session_id: str) -> dict[str, Any]:
             "line_message_id": None,
             "budget": 0,
             "budget_remaining": 0,
+            "critical": False,
         }
     row = dict(state)
     row["last_output"] = (row.get("last_output") or "")[: config.SESSION_LAST_OUTPUT_MAX_CHARS]
@@ -143,6 +151,7 @@ async def list_sessions() -> list[dict[str, Any]]:
                 "line_message_id": row.get("line_message_id"),
                 "budget": row.get("budget", 0),
                 "budget_remaining": row.get("budget_remaining", 0),
+                "critical": bool(row.get("critical", False)),
             }
         )
     return out
