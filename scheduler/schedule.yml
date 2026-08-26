@@ -82,6 +82,19 @@ jobs:
     max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
+  ai.estate.sovereign-digest:
+    command:
+    - $IDP/sovereign/.venv/bin/python
+    - -m
+    - sovereign.cli
+    - digest
+    - --send
+    cwd: $IDP
+    description: Builds the signed daily digest (max six lines, kernel-signed) from the receipt chain and posts it to the founder's Telegram; KINI spec 2.5, crew#284 CP5. Hour matches presence.digest_hour.
+    cron: 0 9 * * *
+    max_load: 6.0
+    skip_on_battery: false
+    timeout_s: 300
   ai.estate.tracked-guard:
     command:
     - /usr/bin/python3
