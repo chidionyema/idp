@@ -61,3 +61,12 @@ def test_incident_crew325_langfuse_web_heap_is_explicit_and_below_the_pod_limit(
     limit_mib = _mib(web["resources"]["limits"]["memory"])
     assert heap_mib >= 1024, "the first ClickHouse migration died at 500 MB"
     assert heap_mib < limit_mib, "heap must leave room for the process outside V8"
+
+
+def test_incident_crew325_langfuse_release_waits_for_the_clickhouse_it_uses() -> None:
+    values = _values()
+    docs = _rendered()
+    langfuse = next(d for d in docs if d["kind"] == "HelmRelease" and d["metadata"]["name"] == "langfuse")
+    signoz = next(d for d in docs if d["kind"] == "HelmRelease" and d["metadata"]["name"] == "signoz")
+    assert values["clickhouse"]["host"] == "signoz-clickhouse"
+    assert [d["name"] for d in langfuse["spec"]["dependsOn"]] == [signoz["metadata"]["name"]]

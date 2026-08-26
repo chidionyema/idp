@@ -101,6 +101,11 @@ metadata:
 spec:
   interval: 1h
   timeout: 15m
+  # Incident 2026-08-26 (crew#325): langfuse-web crash-looped for four hours on
+  # `lookup signoz-clickhouse: no such host` while the signoz release had never become Ready.
+  # Langfuse runs on SigNoz's ClickHouse, so it waits for that release instead of racing it.
+  dependsOn:
+    - name: signoz
   chart:
     spec:
       chart: langfuse
