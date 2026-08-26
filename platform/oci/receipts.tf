@@ -8,6 +8,14 @@ data "oci_objectstorage_namespace" "estate" {
   compartment_id = var.compartment_ocid
 }
 
+# crew#292 / crew#301: the bucket already exists in the tenancy but was not in state after the
+# 2026-08-26 state overwrite; the apply hit 409-BucketAlreadyExists (run 32965258786). Adopt it
+# rather than re-create it. The block is a no-op once the bucket is in state.
+import {
+  to = oci_objectstorage_bucket.drill_receipts
+  id = "n/${data.oci_objectstorage_namespace.estate.namespace}/b/${var.cluster_name}-drill-receipts"
+}
+
 resource "oci_objectstorage_bucket" "drill_receipts" {
   compartment_id = var.compartment_ocid
   namespace      = data.oci_objectstorage_namespace.estate.namespace
