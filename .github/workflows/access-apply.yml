@@ -1,0 +1,48 @@
+# crew#281 CP4: the front door's OIDC client is applied by the machine identity, on a schedule,
+# the moment the estate's Cloudflare token can see the account. No laptop, no session, no console:
+# every tick either applies or prints WAITING and exits 0. Same OCI path as oke-check.yml.
+name: access-apply
+on:
+  schedule:
+    - cron: "23 * * * *"   # hourly until the token has Account -> Zero Trust: Edit; idempotent after
+  workflow_dispatch:
+  pull_request:
+    paths: [".github/workflows/access-apply.yml", "bin/idp-access-apply", "bin/idp-oci-login", "platform/access/**"]
+permissions:
+  id-token: write
+  contents: read
+concurrency: { group: access-apply, cancel-in-progress: false }
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: "3.12" }
+      - uses: opentofu/setup-opentofu@592200bd4b9bbf4772ace78f887668b1aee8f716 # v1.0.5
+        with: { tofu_version: "1.12.6", tofu_wrapper: false }
+      - name: oci cli
+        run: pip install -q oci-cli
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: bin/idp-access-apply (plan on a pull request, apply on schedule and dispatch)
+        env:
+          OCI_CI: "1"
+          OCI_CLI_AUTH: security_token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
+          OCI_S3_ACCESS_KEY: ${{ secrets.OCI_S3_ACCESS_KEY }}
+          OCI_S3_SECRET_KEY: ${{ secrets.OCI_S3_SECRET_KEY }}
+          OKE_ALLOWED_CIDRS: ${{ vars.OKE_ALLOWED_CIDRS }}
+          ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}
+        run: |
+          bin/idp-oci-login
+          if [ "${{ github.event_name }}" = "pull_request" ]; then bin/idp-access-apply plan; else bin/idp-access-apply apply -auto-approve; fi
