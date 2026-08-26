@@ -39,14 +39,16 @@ def _template(state: dict) -> None:
     prog.write_text("#!/bin/sh\nnohup sleep 1 >/dev/null 2>&1 &\n")
     prog.chmod(prog.stat().st_mode | stat.S_IXUSR)
     state["prog"] = prog
-    (state["dir"] / "bare.plist.tmpl").write_text(TEMPLATE.format(prog=prog, extra=""))
-    (state["dir"] / "abandon.plist.tmpl").write_text(
-        TEMPLATE.format(prog=prog, extra="<key>AbandonProcessGroup</key><true/>"))
+    # plist-gate requires Label to match the file name, so each variant sits in its own dir.
+    for name, extra in (("bare", ""), ("abandon", "<key>AbandonProcessGroup</key><true/>")):
+        d = state["dir"] / name
+        d.mkdir()
+        (d / "ai.estate.test.plist.tmpl").write_text(TEMPLATE.format(prog=prog, extra=extra))
 
 
 @when("bin/plist-gate grades it")
 def _grade(state: dict) -> None:
-    state["bare"] = _gate(state["dir"] / "bare.plist.tmpl")
+    state["bare"] = _gate(state["dir"] / "bare" / "ai.estate.test.plist.tmpl")
 
 
 @then("it fails unless the job declares AbandonProcessGroup or KeepAlive")
@@ -57,7 +59,7 @@ def _fails(state: dict) -> None:
 
 @then("the same template with AbandonProcessGroup true passes")
 def _passes(state: dict) -> None:
-    r = _gate(state["dir"] / "abandon.plist.tmpl")
+    r = _gate(state["dir"] / "abandon" / "ai.estate.test.plist.tmpl")
     assert r.returncode == 0, r.stdout + r.stderr
 
 
