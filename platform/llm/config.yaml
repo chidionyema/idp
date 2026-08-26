@@ -72,7 +72,6 @@ router_settings:
     - deepseek: [deepseek-or, minimax]
     - openrouter: [minimax, deepseek]
     - gemini: [gemini-or, minimax, deepseek]
-    - vision: [gemini-or]
   num_retries: 2
   allowed_fails: 3
   cooldown_time: 60
