@@ -39,12 +39,16 @@ spec:
   values:
     config:
       existingSecret: oauth2-proxy   # keys client-id, client-secret, cookie-secret (external-secret.yaml)
+      # The chart's default configFile sets upstreams = ["file:///dev/null"]; a flag and a file
+      # naming the same option is a precedence question nobody should have to answer, so the
+      # upstream is stated here, once.
+      configFile: |
+        email_domains = [ "*" ]
+        upstreams = [ "static://202" ]
     extraArgs:
       provider: github
       # The one GitHub login allowed through the door; an estate value, not a literal (LAW 46).
       github-user: "${ESTATE_LOGIN_GITHUB_USER}"
-      email-domain: "*"
-      upstream: static://202
       reverse-proxy: true
       set-xauthrequest: true
       skip-provider-button: true
