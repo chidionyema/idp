@@ -1,3 +1,5 @@
+# Prose until a drill runs it: both scenarios need a running docker daemon, the age vault and llm/.env on the
+# machine that runs bin/litellm-up (crew#297).
 Feature: bin/litellm-up brings the proxy up on the config that is on disk
   A bind-mounted config the running process never re-reads is the class
   (2026-08-26): `docker compose up -d` leaves an unchanged container alone,
