@@ -81,7 +81,11 @@ fi
 TFVARS=(-input=false -no-color -var "cluster_name=$OCI_CLUSTER_NAME")
 case "$MODE" in
   --check)
-    step tofu-plan tofu plan -detailed-exitcode -lock=false "${TFVARS[@]}" ;;
+    # rc=2 is drift. Say which resources, not the plan's closing note: a tail nobody can read is
+    # not an instrument (LAW 28; every run 02:22Z-02:28Z on 2026-08-26 failed with a hidden diff).
+    step tofu-plan tofu plan -detailed-exitcode -lock=false -out="$TF/check.tfplan" "${TFVARS[@]}" \
+      || { [ -f "$TF/check.tfplan" ] && tofu show -no-color "$TF/check.tfplan" | grep -E '^\s*# .* (will|must) be |^Plan:' | sed 's/^/      | drift: /'; }
+    rm -f "$TF/check.tfplan" ;;
   --apply)
     step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
     # A runner has no kube path (outside control_plane_allowed_cidrs) and a node-pool change needs
