@@ -51,7 +51,13 @@ vault() {  # vault <secret-name> -> decoded content on stdout, never on argv
 UP=$(vault litellm-upstream)
 MASTER=$(printf '%s' "$UP" | jq -r '.LITELLM_MASTER_KEY // empty' 2>/dev/null)
 # On a miss, name the keys the secret does hold (names only, never values; LAW 46)
-[ -n "$MASTER" ] || fail vault "litellm-upstream holds no LITELLM_MASTER_KEY; keys present: $(printf '%s' "$UP" | jq -r 'keys | join(" ")' 2>/dev/null || echo 'not JSON')"
+shape() {  # value-free description of a secret payload that did not parse as JSON
+  local b64 dd
+  b64=$(printf '%s' "$1" | tr -d '\n' | grep -qE '^[A-Za-z0-9+/=]+$' && echo yes || echo no)
+  dd=$(printf '%s' "$1" | base64 -d 2>/dev/null | jq -e 'type' 2>/dev/null || echo no)
+  printf 'len=%s base64-shaped=%s json-after-second-decode=%s' "${#1}" "$b64" "$dd"
+}
+[ -n "$MASTER" ] || fail vault "litellm-upstream holds no LITELLM_MASTER_KEY; keys present: $(printf '%s' "$UP" | jq -r 'keys | join(" ")' 2>/dev/null || echo "not JSON ($(shape "$UP"))")"
 unset UP
 LF_PK=$(vault langfuse-init-public-key); LF_SK=$(vault langfuse-init-secret-key)
 [ -n "$LF_PK" ] && [ -n "$LF_SK" ] || fail vault "langfuse-init-public-key or langfuse-init-secret-key decodes to nothing"
