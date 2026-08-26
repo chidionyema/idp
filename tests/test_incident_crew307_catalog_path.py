@@ -57,4 +57,4 @@ def test_incident_crew307_broken_path_row_says_what_rendered():
     from pathlib import Path
 
     src = Path(__file__).resolve().parents[1].joinpath("bin/idp-login-drill").read_text()
-    assert "page says: {seen}" in src
+    assert "page says: {seen}; js errors: {errs}" in src
