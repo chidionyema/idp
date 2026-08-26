@@ -235,7 +235,25 @@ with sync_playwright() as p:
     if page_errors:
         fail("shell", f"{len(page_errors)} JavaScript error(s) while rendering; first: {page_errors[0][:200]}")
     body_text = page.inner_text("body")
-    for marker in ("Something went wrong", "Unexpected error", "Internal Server Error", "Failed to sign in"):
+    # 2026-08-26 (crew#307): /catalog rendered "ERROR 404: PAGE NOT FOUND" inside a healthy shell
+    # while this drill, visiting "/" and grading the word "Catalog" in the sidebar, stayed green.
+    # Every published path is visited and graded on its own content, not on the shell.
+    for path, must_see in (("catalog", "text=Owner"), ("catalog-graph", "text=Catalog Graph")):
+        try:
+            r = page.goto(f"{HOME}{path}", wait_until="domcontentloaded")
+        except PWError as e:
+            fail("path", f"{HOME}{path} did not load: {e}")
+        if r is None or r.status != 200:
+            fail("path", f"{HOME}{path} answered {getattr(r, 'status', 'no response')}")
+        body = page.locator("body").inner_text()
+        if "PAGE NOT FOUND" in body or "ERROR 404" in body:
+            fail("path", f"{HOME}{path} is a client-side 404 inside the shell (no route serves it)")
+        try:
+            page.locator(must_see).first.wait_for(state="visible", timeout=TIMEOUT)
+        except PWError:
+            fail("path", f"{HOME}{path} rendered but not its own content ({must_see} never appeared)")
+
+    for marker in ("Something went wrong", "Unexpected error", "Internal Server Error", "Failed to sign in", "PAGE NOT FOUND"):
         if marker in body_text:
             fail("shell", f"{HOME} rendered an error page: '{marker}'")
 
