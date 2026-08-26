@@ -104,6 +104,22 @@ done
 log "starting"
 "${COMPOSE[@]}" up -d --remove-orphans
 
+# The class, not the instance: a bind-mounted config the running process never re-reads.
+# `up -d` leaves an unchanged container alone, so a merged config.yaml sat on disk while
+# the proxy served the old model list (2026-08-26, idp#159: ollama-vision still on the
+# Pillow path, ollama-llama absent). If the file is newer than the container, restart it.
+started=$(docker inspect -f '{{.State.StartedAt}}' litellm-proxy 2>/dev/null || true)
+if [ -n "$started" ]; then
+  started_epoch=$(python3 -c "import sys,datetime; print(int(datetime.datetime.fromisoformat(sys.argv[1][:26]).replace(tzinfo=datetime.timezone.utc).timestamp()))" "$started" 2>/dev/null || echo 0)
+  cfg_epoch=$(stat -f %m "$CFG" 2>/dev/null || stat -c %Y "$CFG")
+  if [ "$cfg_epoch" -gt "$started_epoch" ]; then
+    log "config.yaml is newer than the running proxy; restarting it so the change is read"
+    "${COMPOSE[@]}" restart litellm-proxy >/dev/null
+  else
+    log "proxy started after the last config.yaml change; no restart"
+  fi
+fi
+
 log "waiting for the proxy to answer"
 for _ in $(seq 1 40); do
   code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:4000/health/liveliness 2>/dev/null || true)
