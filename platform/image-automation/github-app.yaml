@@ -3,6 +3,10 @@
 # convert and installation), rendered into the three keys source-controller reads for
 # `provider: github`. An installation token lasts an hour and source-controller mints its own,
 # so no long-lived token sits in the cluster (crew#267).
+# crew#325 (2026-08-26): this lived in platform/secret-store, whose Kustomization has wait: true and
+# is what llm, identity, alerts and image-automation depend on. The App was never created, the
+# ExternalSecret never became Ready, and four rows froze from 14:59Z. An optional credential lives
+# with its consumer: a missing App now stalls image-automation alone.
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
