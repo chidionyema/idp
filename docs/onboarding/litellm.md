@@ -31,6 +31,14 @@ proxy's own three secrets once and never again. `LITELLM_SALT_KEY` cannot be
 regenerated once virtual keys exist — rotating it makes every stored key
 unreadable, the same rule Langfuse's `ENCRYPTION_KEY` follows.
 
+The kernel (`sovereign/`) never holds `LITELLM_MASTER_KEY`. It reads
+`LITELLM_BASE_URL` and `LITELLM_API_KEY` from the estate secret store
+(`estate-secrets/secrets/<env>/`, through `scripts/secret-load`), and the key
+there is a LiteLLM virtual key, alias `sovereign-kernel`, capped at $5/day by the
+proxy itself. `~/.config/estate/estate.env` is only the fallback for a host with
+no vault. Executable spec: `features/sovereign-bus/cp2_litellm_real.feature`
+(crew#284 CP2).
+
 ## How to turn it off
 
 ```
