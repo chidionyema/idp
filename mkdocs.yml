@@ -17,6 +17,10 @@ nav:
       - 0004 Oracle OKE is the Kubernetes target: decisions/0004-oracle-oke-is-the-kubernetes-target.md
       - 0005 Chaos Mesh is the chaos framework: decisions/0005-chaos-mesh-is-the-chaos-framework.md
       - 0006 The platform answers for itself over one MCP: decisions/0006-the-platform-answers-for-itself-over-one-mcp.md
+  - Specs:
+      - KINI.AI master spec: specs/kini-master-spec.md
+      - Phone idea flow: specs/phone-idea-flow.md
+      - Fortress stack: specs/fortress-stack.md
   - Tutorials: tutorials/index.md
   - How-to: how-to/index.md
   - Reference:
