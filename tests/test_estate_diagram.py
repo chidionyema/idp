@@ -80,6 +80,14 @@ def incident_r29_hand_drawn_page_is_refused() -> int:
     return 0 if ok else 1
 
 
+def test_property_every_entity_present_and_counts_match():
+    assert prop_every_entity_present_and_counts_match() == 0
+
+
+def test_incident_r29_hand_drawn_page_is_refused():
+    assert incident_r29_hand_drawn_page_is_refused() == 0
+
+
 if __name__ == "__main__":
     f = prop_every_entity_present_and_counts_match()
     print(f"{'ok  ' if not f else 'FAIL'}  property: 200 synthetic catalogues, {f} failures")

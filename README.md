@@ -1,88 +1,67 @@
-# idp — the estate's internal developer platform
+# idp — the estate's platform
 
-Two portals over one catalogue, running at the same time, sharing no runtime.
+One platform, one of each layer, running on OKE and reconciled by Flux from this repository.
+Products (`prospector`, `hermes-v2`) run on it; they do not carry copies of it.
 
-```
-~/.estate/state/inventory.json        the source. LAW 39 produces it hourly.
-        |
-        +-- bin/catalog-gen  -->  catalog/catalog-info.yaml  -->  Backstage   :3100
-        +-- bin/db-gen       -->  catalog/estate.db          -->  Datasette   :8001
-```
+Two generated pages describe it and are refreshed by `make diagrams`; a hand-drawn page is refused
+by `bin/estate-diagram --check`:
 
-Neither portal is the source of truth. Both are renderings of the inventory, which
-is plain JSON on disk. That is the whole design: a renderer you can replace in one
-command is not a dependency.
+- `docs/architecture/index.md` — the C4 model, rendered from `architecture/workspace.dsl`.
+- `docs/architecture/live.md` — what is actually listening, scheduled and guarded, rendered from
+  the catalogue that `bin/catalog-gen` generates.
 
-## Front door
+## Layers
 
-One hostname, `catalogue.<zone>` (the zone is `ESTATE_ZONE` in `clusters/*/estate-config.yaml`),
-behind the one login on the shared Gateway. Every other URL the estate publishes is an `Open`
-link on a catalogue entity, and nowhere else: not in chat, not in a doc, not in a log
-(crew#269). `bin/catalog-links-check` refuses a Component with no URL a person can open;
-`bin/idp-ci` proves it both ways on every PR and `bin/idp-verify` grades the live catalogue.
+Each directory under `platform/` is one layer. `clusters/oke/platform.yaml` is the Flux
+Kustomization that applies them; `clusters/oke/estate-config.yaml` holds `ESTATE_ZONE` and the
+other substitutions, so no manifest names a zone, a host or an account (LAW 46).
 
-## Why two
+| layer | directory | what runs |
+|---|---|---|
+| service catalog and portal | `platform/backstage`, `catalog/` | Backstage at `catalogue.<zone>`, the estate's front door |
+| identity | `platform/identity`, `platform/spire` | oauth2-proxy in front of every HTTPRoute; SPIRE for workload identity |
+| edge and DNS | `platform/edge`, `platform/dns` | the shared Gateway (Traefik) and external-dns |
+| secrets | `platform/secrets`, `platform/secret-store` | External Secrets Operator over OCI Vault |
+| model routing | `platform/llm` | LiteLLM at `llm.<zone>`, bearer master key, no browser login |
+| traces and audit | `platform/observability` | Langfuse |
+| scheduling | `scheduler/` | Dagster; every job carries a description |
+| CI and supply chain | `.github/`, `platform/github`, `platform/github-app` | pinned actions, Flux image automation, per-lane GitHub App |
+| chaos and drills | `platform/chaos`, `drills/` | `oke-check`, `login-drill` and `drill-heartbeat` workflows |
+| policy | `policy/`, `AGENTS.md` | Kyverno at admission; Rego and shell gates in `bin/idp-ci` |
+| agent interface | `mcp/`, `sovereign/` | the estate MCP server and the Sovereign Bus |
 
-Backstage is the recognised answer and the one an outsider expects to see. It is
-also 1,900 npm packages, a Node major-version floor and a monthly release train,
-and any one of those can stop it booting on a Tuesday.
+## Proving it
 
-Datasette is the fallback. It is Python, it starts in under a second, it has no
-build step, and it has never heard of Node. A broken `node_modules` cannot take it
-down, which is the only property a fallback actually needs.
+Every gate runs locally and in CI with the same command.
 
-Same pattern as Fly and this laptop: the fallback is not a plan, it is already
-running.
-
-## The two switches
-
-**0 seconds.** Both are up at their own URLs. If one is wrong, open the other. No
-command, no failover, no waiting.
-
-**10 seconds.** `bin/idp-switch fallback` repoints the published URL at Datasette
-without the URL changing. That is for when the link has already been handed to
-somebody and the thing behind it has to change.
-
-`bin/idp-switch` refuses to point the link at a renderer that is not answering.
-A switch to a dead process is a second outage, not a failover.
-
-## Reachability
-
-Tailnet only. The catalogue is a map of every asset the estate owns — paths, repo
-names, job names, which drills have never run. There are no secrets in it and it
-is still not something to publish by accident, so the default is closed (LAW 21).
-
-`bin/idp-publish` turns on Tailscale Funnel and makes the primary URL public. It
-is one command, it prints what becomes visible before it does anything, and it is
-the founder's call rather than an agent's.
-
-## Commands
-
-| command | what it does |
+| command | proves |
 |---|---|
-| `bin/catalog-gen` | inventory → `catalog/catalog-info.yaml` (Backstage entities) |
-| `bin/db-gen` | inventory → `catalog/estate.db` (SQLite, via sqlite-utils) |
-| `bin/idp-up` | regenerate both, start both, publish on the tailnet, verify |
-| `bin/idp-down` | stop both renderers and unpublish both ports |
-| `bin/idp-status` | what is serving, where, and whether it is public |
-| `bin/idp-verify` | does what is published match the inventory, entity by entity |
-| `bin/idp-switch primary\|fallback` | repoint the published URL |
-| `bin/idp-publish on\|off` | make the primary URL public, or stop |
+| `bin/idp-ci` | every rule in `AGENTS.md` refuses its bad fixture and passes its good one, in one run |
+| `python -m pytest tests -q` | the property and incident tests under `tests/` |
+| `cd sovereign && python -m pytest tests/bdd -q` | every `features/**/*.feature` scenario |
+| `bin/idp-verify` | the published catalogue matches the inventory, entity by entity |
+| `bin/idp-status` | what is serving, where |
+| `bin/pr-report` | a pull request body answers the four architecture laws |
 
-Both generators refuse to write an empty catalogue. An empty portal renders
-identically to a healthy one with nothing wrong, which is the failure mode worth
-guarding.
+The GitHub workflows: `ci` (the three commands above, security scan, spec gate), `oke-check`
+(apply to the live cluster and grade it), `login-drill`, `drill-heartbeat`, `build-multiarch`,
+`image-update-pr`, `operating-model-gate`, `stale`.
 
-## Boundary
+## Rules
 
-- **In:** `~/.estate/state/inventory.json`, one JSON object with a `rows` array.
-- **Out:** a Backstage entity file, a SQLite database, and two HTTP services.
-- **Needs:** Python 3 (venv, in-repo), Node 22 and yarn for Backstage only,
-  Tailscale for publishing. Nothing else, no account, no hosted service.
+A rule that has no gate is not a rule here. `AGENTS.md` is the table of rules for this repository,
+each with a must-fail and a must-pass fixture; `bin/idp-ci` parses that table. Every PR that changes
+code also changes an executable spec (a `.feature`, a test, or a generator), or `spec-gate` refuses it.
+Architecture decisions are in `docs/decisions/`; the operating model and the definition of done are
+in `docs/policy/`.
 
-Swap the inventory for any other JSON with the same shape and this works unchanged.
+## Local
 
-## Cost
+`make cluster-up` creates a k3d cluster from `platform/k3d/estate.yaml`; `make catalogue-deploy`
+builds and serves the catalogue on `127.0.0.1:3100`; `make cluster-down` removes it. `make bind-audit`
+fails if anything but the gateway listens on a non-loopback address.
 
-$0 per month. Backstage is Apache-2.0, Datasette is Apache-2.0, sqlite-utils is
-Apache-2.0, Tailscale's free tier covers this, and it all runs on the Mac.
+## Licence
+
+Apache-2.0 (`LICENSE`). Every layer above is open source; `bin/policy-test` refuses a dependency
+whose licence would block a sale (LAW 40).
