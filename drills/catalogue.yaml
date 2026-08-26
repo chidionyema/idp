@@ -1,0 +1,57 @@
+# The graded drill catalogue (crew#292 CP2).
+#
+# Founder, 2026-08-26: "we have drills? ... when we get it working we need to drill".
+# bin/idp-verify graded static rows: a file exists, a redirect is right, a port is declared.
+# None of them said whether the scheduled drills had actually run. A drill that is scheduled
+# and silently failing to fire looks exactly like a drill that is passing, and the first time
+# anyone finds out is the day the thing it drills is needed.
+#
+# Every entry here is a scheduled GitHub workflow in this repository. The `drills` row of
+# bin/idp-verify asks GitHub for the last successful run of each one and FAILs when it is
+# older than max_age_hours. Nothing is invented: `schedule` is copied verbatim from the
+# workflow's own cron line, so a drill that is quietly unscheduled shows up as a diff here.
+#
+# Fields
+#   name            short name printed by the drills row
+#   workflow        the workflow file under .github/workflows/
+#   job             optional: the job inside that workflow the drill is (documentation only;
+#                   the freshness check grades the workflow run)
+#   schedule        the cron string exactly as the workflow declares it
+#   max_age_hours   how stale the last green run may be before the row is FAIL
+#                   (26 for a daily drill: 24 plus GitHub's scheduling slack)
+#   proves          one sentence: what a green run of this drill actually demonstrates
+#   pending         optional: true means the drill is not merged yet; the row prints n/a
+#                   and never FAILs. Remove the line the moment the job lands.
+
+drills:
+  - name: oke-check
+    workflow: oke-check.yml
+    job: check
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    proves: >-
+      A machine identity with no OCI API key can still exchange its GitHub OIDC token for an
+      OCI session and read the live cluster, so the platform can be rebuilt without a laptop.
+
+  - name: access-apply
+    workflow: access-apply.yml
+    job: apply
+    schedule: "23 * * * *"
+    max_age_hours: 3
+    proves: >-
+      The front door's OIDC client is reapplied from the repository by the machine identity on
+      every tick, so the door's configuration is what the repository says and not what a console
+      was once clicked into.
+
+  # Added by crew#292 CP2 before the job exists, so the catalogue names the drill the estate is
+  # missing rather than staying silent about it. A sibling worker adds the login-drill job to
+  # oke-check.yml on branch feat/login-drill; drop `pending` when that merges.
+  - name: login-drill
+    workflow: oke-check.yml
+    job: login-drill
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    pending: true
+    proves: >-
+      A sign-in to the front door completes end to end from a runner that holds no password,
+      so the federated login is exercised daily rather than only when the founder tries it.
