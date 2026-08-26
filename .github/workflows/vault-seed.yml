@@ -1,7 +1,8 @@
 # crew#284 CP1/CP2, crew#248: the estate vault is seeded from GitHub secrets by the machine identity.
 # The laptop path is closed (crew#227 deleted the OCI API key; crew#247: infra is never Mac-bound),
 # so the two vault entries the platform waits on (litellm-upstream, prospector-engine-env) are
-# written here from repository secrets named SEED_<KEY>. Values travel from the secret store to
+# written here from repository secrets named SEED_<KEY>. litellm-upstream is written by the oke-check apply
+# step (idp#241); this workflow carries the entries oke-check does not: prospector-engine-env and github-app. Values travel from the secret store to
 # the runner's process to the vault and are never printed; bin/idp-vault-put reads them in-process.
 # Runs from the phone: gh workflow run vault-seed.yml -f entry=all
 name: vault-seed
@@ -11,7 +12,7 @@ on:
       entry:
         description: "which vault entry to write"
         type: choice
-        options: [all, litellm-upstream, prospector-engine-env]
+        options: [all, prospector-engine-env, github-app]
         default: all
 permissions:
   id-token: write   # the OIDC token this job trades for OCI access
@@ -53,8 +54,6 @@ jobs:
           SEED_MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
           SEED_DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
           SEED_OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
-          SEED_GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
-          SEED_LITELLM_MASTER_KEY: ${{ secrets.SEED_LITELLM_MASTER_KEY }}
           SEED_ANTHROPIC_API_KEY: ${{ secrets.SEED_ANTHROPIC_API_KEY }}
           SEED_EXA_API_KEY: ${{ secrets.SEED_EXA_API_KEY }}
           SEED_STORE_API_URL: ${{ secrets.SEED_STORE_API_URL }}
@@ -63,6 +62,10 @@ jobs:
           SEED_R2_ACCOUNT_ID: ${{ secrets.SEED_R2_ACCOUNT_ID }}
           SEED_R2_BUCKET: ${{ secrets.SEED_R2_BUCKET }}
           SEED_R2_SECRET_ACCESS_KEY: ${{ secrets.SEED_R2_SECRET_ACCESS_KEY }}
+          SEED_GITHUB_APP_ID: ${{ secrets.SEED_GITHUB_APP_ID }}
+          SEED_GITHUB_APP_SLUG: ${{ secrets.SEED_GITHUB_APP_SLUG }}
+          SEED_GITHUB_APP_CLIENT_ID: ${{ secrets.SEED_GITHUB_APP_CLIENT_ID }}
+          SEED_GITHUB_APP_PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
         run: |
           set -euo pipefail
           bin/idp-oci-login --check
@@ -71,14 +74,14 @@ jobs:
           export ESTATE_ENV_FILE="$RUNNER_TEMP/seed.env"; umask 077
           env | sed -n 's/^SEED_//p' > "$ESTATE_ENV_FILE"
           put() { bin/idp-vault-put "$@"; }
-          if [ "$ENTRY" = all ] || [ "$ENTRY" = litellm-upstream ]; then
-            put litellm-upstream MINIMAX_API_KEY=MINIMAX_API_KEY DEEPSEEK_API_KEY=DEEPSEEK_API_KEY \
-              OPENROUTER_API_KEY=OPENROUTER_API_KEY GEMINI_API_KEY=GEMINI_API_KEY LITELLM_MASTER_KEY=LITELLM_MASTER_KEY
-          fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = prospector-engine-env ]; then
             put prospector-engine-env MINIMAX_API_KEY=MINIMAX_API_KEY DEEPSEEK_API_KEY=DEEPSEEK_API_KEY EXA_API_KEY=EXA_API_KEY \
               OPENROUTER_API_KEY=OPENROUTER_API_KEY ANTHROPIC_API_KEY=ANTHROPIC_API_KEY \
               STORE_API_URL=STORE_API_URL STORE_INTERNAL_API_KEY=STORE_INTERNAL_API_KEY \
               R2_ACCESS_KEY_ID=R2_ACCESS_KEY_ID R2_ACCOUNT_ID=R2_ACCOUNT_ID R2_BUCKET=R2_BUCKET R2_SECRET_ACCESS_KEY=R2_SECRET_ACCESS_KEY
+          fi
+          if [ "$ENTRY" = all ] || [ "$ENTRY" = github-app ]; then
+            # the four keys bin/idp-github-app convert writes; installation_id is added by the oke-check installation step
+            put github-app app_id=GITHUB_APP_ID slug=GITHUB_APP_SLUG client_id=GITHUB_APP_CLIENT_ID pem_b64=GITHUB_APP_PEM_B64
           fi
           rm -f "$ESTATE_ENV_FILE"

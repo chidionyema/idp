@@ -27,17 +27,17 @@ def _wf(state: dict) -> None:
 
 @then("every KEY=KEY pair passed to bin/idp-vault-put has a SEED_KEY in the step's env")
 def _keys(state: dict) -> None:
-    needed = set(re.findall(r"\b([A-Z0-9_]+)=\1\b", state["run"]))
+    needed = set(re.findall(r"\b([A-Z0-9_]+)=\1\b", state["run"])) | set(re.findall(r"\b[a-z_]+=(GITHUB_APP_[A-Z0-9_]+)", state["run"]))
     assert needed, "no KEY=KEY pairs found"
     missing = {k for k in needed if f"SEED_{k}" not in state["step"]["env"]}
     assert not missing, f"no SEED_ secret for {sorted(missing)}"
 
 
-@then("the workflow is dispatch-only with entries all, litellm-upstream and prospector-engine-env")
+@then("the workflow is dispatch-only with entries all, prospector-engine-env and github-app")
 def _dispatch(state: dict) -> None:
     on = state["doc"][True] if True in state["doc"] else state["doc"]["on"]   # yaml parses `on:` as True
     assert list(on) == ["workflow_dispatch"]
-    assert on["workflow_dispatch"]["inputs"]["entry"]["options"] == ["all", "litellm-upstream", "prospector-engine-env"]
+    assert on["workflow_dispatch"]["inputs"]["entry"]["options"] == ["all", "prospector-engine-env", "github-app"]
 
 
 @then("the run step never echoes, prints or cats the seed env file and removes it at the end")
@@ -45,3 +45,16 @@ def _silent(state: dict) -> None:
     run = state["run"]
     assert not re.search(r"\b(echo|cat|printf)\b[^\n]*ESTATE_ENV_FILE", run)
     assert run.rstrip().splitlines()[-1].strip() == 'rm -f "$ESTATE_ENV_FILE"'
+
+
+@given("clusters/oke/platform.yaml and clusters/oke/image-automation.yaml")
+def _clusters(state: dict) -> None:
+    assert (IDP / "clusters" / "oke" / "platform.yaml").is_file()
+
+
+@then("the github-app ExternalSecret is a resource of platform/image-automation, not platform/secret-store")
+def _relocated() -> None:
+    ia = yaml.safe_load((IDP / "platform" / "image-automation" / "kustomization.yaml").read_text())["resources"]
+    ss = yaml.safe_load((IDP / "platform" / "secret-store" / "kustomization.yaml").read_text())["resources"]
+    assert "github-app.yaml" in ia and "github-app.yaml" not in ss
+    assert (IDP / "platform" / "image-automation" / "github-app.yaml").is_file()

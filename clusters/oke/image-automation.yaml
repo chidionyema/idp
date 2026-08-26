@@ -1,4 +1,4 @@
-# crew#267: catalogue image automation. After secret-store (the github-app Secret) and backstage
+# crew#267: catalogue image automation. The github-app ExternalSecret (Flux git-writer credential) lives here, with its only consumer: while the App is not yet created it holds this Kustomization, not secret-store, so llm and identity never wait on it (crew#284, 2026-08-26). After backstage
 # (the Deployment it rolls). The two image controllers come from flux-system/gotk-components.yaml
 # (flux install --components-extra=image-reflector-controller,image-automation-controller).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
