@@ -4,9 +4,15 @@ namespace: observability
 resources:
   - namespace.yaml
   - signoz.yaml
+  - langfuse.yaml
 configMapGenerator:
   - name: signoz-values
     files:
       - values.yaml
+    options:
+      disableNameSuffixHash: true
+  - name: langfuse-values
+    files:
+      - values.yaml=langfuse-values.yaml
     options:
       disableNameSuffixHash: true

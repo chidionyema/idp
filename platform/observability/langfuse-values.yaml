@@ -1,0 +1,60 @@
+# Langfuse on the OKE node pool (crew#286 CP6). Sized like SigNoz next door: requests small
+# enough to fit beside Backstage, limits so a runaway cannot take the node. Kyverno enforces the
+# restricted profile, so every workload declares non-root, seccomp and drop-ALL.
+langfuse:
+  nodeEnv: production
+  features:
+    telemetryEnabled: false
+    signUpDisabled: true
+  nextauth:
+    url: http://langfuse-web.observability.svc:3000
+  additionalEnvFrom:
+    - secretRef: { name: langfuse-init }
+  podSecurityContext: { runAsNonRoot: true, runAsUser: 1001, runAsGroup: 1001, seccompProfile: { type: RuntimeDefault } }
+  securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: false, capabilities: { drop: [ALL] } }
+  web:
+    replicas: 1
+    resources:
+      requests: { cpu: 100m, memory: 512Mi }
+      limits: { cpu: 1000m, memory: 1Gi }
+  worker:
+    replicas: 1
+    resources:
+      requests: { cpu: 100m, memory: 512Mi }
+      limits: { cpu: 1000m, memory: 1Gi }
+postgresql:
+  deploy: true
+  storage:
+    requestedSize: 5Gi
+    className: oci-bv
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+redis:
+  deploy: true
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }
+    limits: { cpu: 200m, memory: 256Mi }
+clickhouse:
+  # SigNoz already runs the estate's ClickHouse (values.yaml, Altinity operator). Langfuse 2.x would
+  # bring a second operator (clickhouse.com/v1alpha1) plus cert-manager for its own; one database
+  # in the existing server instead.
+  deploy: false
+  crdCheck: false
+  host: signoz-clickhouse
+  httpPort: 8123
+  nativePort: 9000
+  database: langfuse
+  auth:
+    username: admin
+    existingSecret: clickhouse-auth
+    existingSecretKey: password
+s3:
+  deploy: true
+  allInOne:
+    data:
+      size: 10Gi
+      storageClass: oci-bv
+    resources:
+      requests: { cpu: 30m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 512Mi }

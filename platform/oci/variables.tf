@@ -93,3 +93,8 @@ variable "oci_profile" {
   type        = string
   default     = "DEFAULT"
 }
+
+variable "founder_email" {
+  description = "Login for Langfuse's seeded user (platform/oci/langfuse.tf). Set in terraform.tfvars (gitignored, LAW 46), never here."
+  type        = string
+}

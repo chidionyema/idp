@@ -23,6 +23,14 @@ echo "policies  $n ClusterPolicies from $src"
 rc=0
 for dir in "$@"; do
   kubectl kustomize "$dir" > "$S/kz.yaml"
+  # PolicyExceptions the directory declares are handed to the CLI, as admission would see them.
+  rm -rf "$S/exceptions"; mkdir -p "$S/exceptions"
+  python3 - "$S/kz.yaml" "$S/exceptions" <<'PY'
+import sys, yaml, pathlib
+out = pathlib.Path(sys.argv[2])
+for i, d in enumerate(d for d in yaml.safe_load_all(open(sys.argv[1])) if d and d.get("kind") == "PolicyException"):
+    (out / f"{i}.yaml").write_text(yaml.safe_dump(d))
+PY
   python3 - "$S" "$S/kz.yaml" <<'PY'
 import sys, yaml, subprocess, pathlib, json
 S = pathlib.Path(sys.argv[1]); docs = [d for d in yaml.safe_load_all(open(sys.argv[2])) if d]
@@ -59,7 +67,8 @@ for d in list(docs):
         "labels": (tpl.get("metadata") or {}).get("labels") or {}, "ownerReferences": [{"apiVersion": "batch/v1", "kind": "Job", "name": d["metadata"]["name"], "uid": "offline"}]}, "spec": tpl["spec"]})
 open(p, "w").write(yaml.safe_dump_all(docs))
 PY
-  out=$(kyverno apply "$S/policies.yaml" --resource "$S/$name.final.yaml" 2>&1 || true)
+  exc=(); for x in "$S"/exceptions/*.yaml; do [ -f "$x" ] && exc+=(--exception "$x"); done
+  out=$(kyverno apply "$S/policies.yaml" --resource "$S/$name.final.yaml" "${exc[@]}" 2>&1 || true)
   summary=$(printf '%s\n' "$out" | grep -E '^pass:' | tail -1)
   if printf '%s\n' "$out" | grep -qE '^policy .* failed'; then
     echo "FAIL  render   $name ($ns, $npatch patches): $summary"

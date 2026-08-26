@@ -34,6 +34,12 @@ spec:
   valuesFrom:
     - kind: ConfigMap
       name: signoz-values
+    # The ClickHouse admin password from the vault (ExternalSecret clickhouse-auth, langfuse.yaml),
+    # so the chart default 27ff0399-… is never on the cluster.
+    - kind: Secret
+      name: clickhouse-auth
+      valuesKey: password
+      targetPath: clickhouse.password
   postRenderers:
     - kustomize:
         patches:
