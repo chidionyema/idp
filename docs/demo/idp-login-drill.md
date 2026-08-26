@@ -16,16 +16,17 @@ identity domain, the app grant, the session cookie and the Backstage render.
 
 It prints one line and exits 0 only on a rendered catalogue:
 
-    ok      login-drill  signed in as estate-drill, catalogue rendered in 4.1s
+    ok      login-drill  signed in as estate-drill, catalogue rendered as user:default/estate-drill in 4.1s
 
 A failure names the layer that broke, so nobody has to guess where to look:
 
     FAIL    login-drill  redirect https://catalogue.mumchimp.com/ landed on catalogue.mumchimp.com, expected the identity domain ...
     FAIL    login-drill  password-change the domain is demanding a new password for estate-drill ...
     FAIL    login-drill  catalogue answered 200 but no Backstage shell rendered
+    FAIL    login-drill  identity https://catalogue.mumchimp.com/ rendered Backstage's guest sign-in page; the door's identity never reached the auth provider
 
 Stages are `config`, `python`, `vault`, `browser`, `redirect`, `credentials`, `password-change`,
-`session` and `catalogue`.
+`session`, `catalogue` and `identity`.
 
 ## Where the credential comes from
 
