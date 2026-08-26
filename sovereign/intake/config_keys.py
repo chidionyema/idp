@@ -50,7 +50,7 @@ INTAKE_KEYS: dict[str, tuple[Any, type, str, str]] = {
         8, int, "SB_INTAKE_HASH_SHORT_LEN",
         "Characters of the commit hash shown in the receipt line"),
     "intake.timeout_s": (
-        120, float, "SB_INTAKE_TIMEOUT_S",
+        300, float, "SB_INTAKE_TIMEOUT_S",
         "httpx timeout for one vision call through the LiteLLM proxy"),
     "intake.git_timeout_s": (
         30, float, "SB_INTAKE_GIT_TIMEOUT_S",
