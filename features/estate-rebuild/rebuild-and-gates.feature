@@ -78,3 +78,7 @@ Feature: The estate can be torn down and rebuilt from the phone, and no past err
     When bin/idp-oke-rebuild --apply runs
     Then bin/idp-recreate-guard refuses with the exact "tofu import" command and no vault is created
     And a plan that creates nothing, or a create with no live namesake, passes
+  Scenario: the secret store is never repointed at a vault while secrets still live in the current one (incident 2026-08-26 02:26Z)
+    Given flux-system/estate-vars names a vault that holds ACTIVE secrets
+    When bin/idp-flux-bootstrap sees a different vault_id in the tofu outputs
+    Then it refuses with rc 3 and names the import, and switches only when the current vault is empty

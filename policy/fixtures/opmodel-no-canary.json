@@ -1,1 +1,17 @@
-{"pr": {"number": 6, "files": ["platform/oci/main.tf"], "added": "+x\n", "body": "Cost-delta-usd-month: 0\n", "labels": []}, "budget_monthly_usd": 50}
+{
+ "pr": {
+  "number": 6,
+  "files": [
+   "platform/oci/main.tf"
+  ],
+  "added": "+x\n",
+  "body": "Cost-delta-usd-month: 0\n\nDrill: oke-check\n",
+  "labels": []
+ },
+ "budget_monthly_usd": 50,
+ "drills": [
+  "oke-check",
+  "access-apply",
+  "login-drill"
+ ]
+}
