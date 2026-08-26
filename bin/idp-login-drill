@@ -128,6 +128,8 @@ with sync_playwright() as p:
 
     # 1. the door must hand an anonymous visitor to the identity domain, not serve the catalogue
     try:
+        page_errors = []
+        page.on("pageerror", lambda e: page_errors.append(str(e)))
         page.goto(HOME, wait_until="domcontentloaded")
     except PWError as e:
         fail("redirect", f"{HOME} did not load: {e}")
@@ -211,8 +213,31 @@ with sync_playwright() as p:
     if "guest" in ref or not ref.startswith("user:"):
         fail("identity", f"signed in as {ref}, not a user the identity domain vouched for")
 
+    # 6. crew#307, founder: "the drills need to be thorough". A rendered shell with a valid
+    # identity can still be a broken portal. The signed-in session must read the catalogue
+    # through the API, the page must have thrown no JavaScript error, and no error page may
+    # be on screen. Each is a separate stage so the FAIL line names the layer.
+    try:
+        ents = page.request.get(f"{HOME}api/catalog/entities?limit=5")
+    except PWError as e:
+        fail("entities", f"catalogue API did not answer the signed-in session: {e}")
+    if ents.status != 200:
+        fail("entities", f"{HOME}api/catalog/entities answered {ents.status}: {ents.text()[:200]}")
+    try:
+        n_entities = len(ents.json())
+    except ValueError:
+        fail("entities", f"catalogue API answered 200 with no JSON list: {ents.text()[:200]}")
+    if n_entities == 0:
+        fail("entities", "catalogue API answered 200 with zero entities; the catalogue is empty for a signed-in user")
+    if page_errors:
+        fail("shell", f"{len(page_errors)} JavaScript error(s) while rendering; first: {page_errors[0][:200]}")
+    body_text = page.inner_text("body")
+    for marker in ("Something went wrong", "Unexpected error", "Internal Server Error", "Failed to sign in"):
+        if marker in body_text:
+            fail("shell", f"{HOME} rendered an error page: '{marker}'")
+
     ctx.close()
     browser.close()
 
-print(f"ok      login-drill  signed in as {USER}, catalogue rendered as {ref} in {time.time() - started:.1f}s")
+print(f"ok      login-drill  signed in as {USER}, catalogue rendered as {ref}, {n_entities} entities read, 0 js errors, in {time.time() - started:.1f}s")
 PYDRIVER

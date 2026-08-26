@@ -7,8 +7,10 @@
 // "asked me to enter as guest and failed with type error").
 //
 // No User entities exist in the catalog, so the resolver issues the token itself:
-// user:default/<local part of the email>. A request with no email header is refused,
-// never downgraded to guest.
+// user:default/<local part of the email>, or of the user name when the domain sent no email
+// (crew#307: the founder's own account reached here without the email header and the
+// resolver threw, which Backstage serves as a 500; the drill user, created by Terraform with
+// an email, never did). A request with neither header is refused, never downgraded to guest.
 import { createBackendModule } from '@backstage/backend-plugin-api';
 import {
   authProvidersExtensionPoint,
@@ -49,13 +51,13 @@ const frontDoorAuthModule = createBackendModule({
               };
             },
             signInResolver: async ({ result }, ctx) => {
-              const email = result.getHeader(EMAIL_HEADER);
-              if (!email) {
+              const who = result.getHeader(EMAIL_HEADER) ?? result.getHeader(USER_HEADER);
+              if (!who) {
                 throw new Error(
-                  `front door forwarded no ${EMAIL_HEADER} header; refusing to sign in`,
+                  `front door forwarded neither ${EMAIL_HEADER} nor ${USER_HEADER}; refusing to sign in`,
                 );
               }
-              const ref = `user:default/${entityName(email)}`;
+              const ref = `user:default/${entityName(who)}`;
               return ctx.issueToken({ claims: { sub: ref, ent: [ref] } });
             },
           }),
