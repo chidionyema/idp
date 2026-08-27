@@ -96,7 +96,7 @@ FROM node:24-trixie-slim
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
-    apt-get install -y --no-install-recommends libsqlite3-dev && \
+    apt-get install -y --no-install-recommends libsqlite3-dev python3 python3-pip && \
     rm -rf /var/lib/apt/lists/*
 # The runtime never runs npm, and the npm the base image bundles carries its own
 # node-tar. Incident 2026-08-25 (idp#125): Trivy failed the build on
@@ -108,6 +108,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 # Least privilege. `node` is uid 1000 in this image and owns nothing it does not
 # need; the catalogue file is mounted read-only from the host.
+# TechDocs builds every repo's docs/ inside this pod (app-config techdocs.generator.runIn: local),
+# so the generator has to be here. Pinned. crew#412 row 1.
+RUN pip3 install --no-cache-dir --break-system-packages mkdocs-techdocs-core==1.5.4
 USER node
 WORKDIR /app
 # The whole of /app from deps: that stage's working directory holds exactly the

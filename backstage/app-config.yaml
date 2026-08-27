@@ -151,7 +151,9 @@ proxy:
 techdocs:
   builder: 'local' # Alternatives - 'external'
   generator:
-    runIn: 'docker' # Alternatives - 'local'
+    # 'local': mkdocs-techdocs-core is in the image (backstage/Dockerfile); the pod has no docker
+    # socket, and must not (crew#412 row 1).
+    runIn: 'local'
   publisher:
     type: 'local' # Alternatives - 'googleGcs' or 'awsS3'. Read documentation for using alternatives.
 
