@@ -1,0 +1,33 @@
+# The Probe that drives FounderSurfaceDown (see ../blackbox.yaml for the exporter and the module).
+# It lives in its own Flux row (monitoring-rules) because a Probe is a monitoring.coreos.com CR and
+# the CRD arrives with the chart: one row holding both fails every dry-run (incident 2026-08-25).
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: founder-surfaces
+  namespace: monitoring
+spec:
+  jobName: founder-surfaces
+  interval: 60s
+  scrapeTimeout: 20s
+  module: founder
+  prober:
+    url: blackbox.monitoring.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      static:
+        - https://${ESTATE_ZONE}
+        - https://auth.${ESTATE_ZONE}
+        - https://catalogue.${ESTATE_ZONE}
+        - https://catalogue.${ESTATE_ZONE}/catalog?filters%5Bkind%5D=component&filters%5Btype%5D=founder-surface
+        - https://cloud.oracle.com/?region=uk-london-1
+        - https://hc.${ESTATE_ZONE}
+        - https://hc.${ESTATE_ZONE}/api/v3/status/
+        - https://langfuse.${ESTATE_ZONE}
+        - https://langfuse.${ESTATE_ZONE}/api/public/health
+        - https://llm.${ESTATE_ZONE}/
+        - https://llm.${ESTATE_ZONE}/ui
+        - https://mcp.${ESTATE_ZONE}/github/mcp
+        - https://signoz.${ESTATE_ZONE}
+        - https://t.me/Ottototbot
+        - https://www.${ESTATE_ZONE}

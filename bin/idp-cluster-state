@@ -4,7 +4,7 @@
 # minutes from the node's instance principal; this reads it with whatever OCI auth the caller has
 # (a runner's exchanged OIDC session in oke-check.yml). Same grading shape as bin/idp-chaos-drill.
 #   ok      cluster-state  <line 1 of the receipt>   -- fresh, every node Ready
-#   FAIL    cluster-state  <why>                     -- receipt missing, stale, a node not Ready or a Flux object not Ready (crew#406)
+#   FAIL    cluster-state  <why>                     -- receipt missing, stale, a node not Ready, a Flux object not Ready (crew#406), no PrometheusRule or no Watchdog alert (crew#539)
 #   BLIND   cluster-state  <why>                     -- no oci CLI or no session; nothing was graded
 # Print the JSON body with --json. Max age 60 min = 4 schedule slots. Override CLUSTER_STATE_MAX_AGE_MIN.
 set -uo pipefail
@@ -78,6 +78,16 @@ if int(kv["ds_short"]) > 0:
     except Exception:
         why = "body unreadable"
     print(f"FAIL    cluster-state  {kv['ds_short']} DaemonSet(s) short of desired: {why}"); sys.exit(1)
+# crew#539 DoD 1: a cluster with no PrometheusRule, or an Alertmanager that does not show the
+# always-firing Watchdog, has no alerting -- absent counts grade FAIL like every other row.
+if "monitoring_rules" not in kv or "alert_watchdog" not in kv:
+    print(f"FAIL    cluster-state  receipt carries no monitoring_rules/alert_watchdog (collector predates crew#539 DoD 1): {line1[:120]}"); sys.exit(1)
+if int(kv["monitoring_rules"]) == 0 or int(kv["alert_watchdog"]) == 0:
+    try:
+        why = (json.loads(rest).get("monitoring") or {}).get("error") or "no error recorded"
+    except Exception as e:
+        why = f"body unreadable: {e}"
+    print(f"FAIL    cluster-state  monitoring_rules={kv['monitoring_rules']} alert_watchdog={kv['alert_watchdog']}: {why[:300]}"); sys.exit(1)
 print(f"ok      cluster-state  {line1} ({age:.0f} min ago)")
 if flag == "--json":
     print(rest)

@@ -28,11 +28,12 @@ def _load():
 def _granted(role):
     out = set()
     for rule in role["rules"]:
-        if not {"get", "list"} <= set(rule["verbs"]):
-            continue
+        verbs = set(rule["verbs"])
         for g in rule["apiGroups"]:
             for r in rule["resources"]:
-                out.add((g, r.split("/")[0]))
+                # a subresource such as services/proxy is read with get alone; a collection needs list too
+                if ("/" in r and "get" in verbs) or {"get", "list"} <= verbs:
+                    out.add((g, r))
     return out
 
 
@@ -45,10 +46,14 @@ def _ungranted(role, src):
     bad = []
     for p in _paths(src):
         parts = p.split("?")[0].strip("/").split("/")
-        if parts[0] == "api":
-            group, resource = "", parts[2] if parts[1] == "v1" and len(parts) > 2 else parts[-1]
-        else:
-            group, resource = parts[1], parts[3] if len(parts) > 3 else parts[-1]
+        # /api/v1/<resource> | /api/v1/namespaces/<ns>/<resource>[/<name>/<subresource>/...]
+        # /apis/<group>/<version>/<resource> | /apis/<group>/<version>/namespaces/<ns>/<resource>[/...]
+        group, rest = ("", parts[2:]) if parts[0] == "api" else (parts[1], parts[3:])
+        if rest and rest[0] == "namespaces" and len(rest) > 2:
+            rest = rest[2:]
+        resource = rest[0] if rest else parts[-1]
+        if len(rest) > 2 and rest[2] in ("proxy", "log", "status"):
+            resource = f"{resource}/{rest[2]}"
         if (group, resource) not in granted:
             bad.append(p)
     return bad
