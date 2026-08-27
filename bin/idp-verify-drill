@@ -23,7 +23,7 @@
 # minted from the exchanged session; the receipt row stays because it is the cluster's word, not ours.
 # FAIL when any row is red, BLIND (exit 2) when a row cannot be measured. Never asks anything.
 set -uo pipefail
-COMP="${OCI_COMPARTMENT_OCID:?OCI_COMPARTMENT_OCID}"
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
 EXPECT_USER="${ESTATE_CI_USER:-estate-ci}"
 red=0; blind=0
 say()  { printf '%-7s %-12s %s\n' "$1" "$2" "$3"; }
@@ -53,23 +53,24 @@ PY
 fi
 
 # --- cluster: the control plane and node pools answer through the OCI API ------------------
-cl=$(oci ce cluster list --compartment-id "$COMP" --lifecycle-state ACTIVE --query 'data[].{n:name,id:id}' --output json 2>&1)
-if ! printf '%s' "$cl" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if isinstance(d,list) else 1)' 2>/dev/null; then bl cluster "oci ce cluster list failed: $(printf '%s' "$cl" | tail -1 | cut -c1-160)"
+cl=$("$IDP/bin/idp-cloud" cluster list 2>&1); rc=$?
+if [ $rc -ne 0 ]; then bl cluster "cluster list failed: $(printf '%s' "$cl" | tail -1 | cut -c1-160)"
 else
-  n_cl=$(printf '%s' "$cl" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
+  n_cl=$(printf '%s\n' "$cl" | grep -c .)
   if [ "$n_cl" -lt 1 ]; then fail cluster "no ACTIVE cluster in the compartment"
   else
-    np=$(oci ce node-pool list --compartment-id "$COMP" --query 'data[].{n:name,s:"lifecycle-state"}' --output json 2>/dev/null || echo '[]')
-    read -r n_all n_ok < <(printf '%s' "$np" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d), sum(1 for p in d if p["s"]=="ACTIVE"))')
+    np=$("$IDP/bin/idp-cloud" cluster nodepools 2>/dev/null) || np=""
+    n_all=$(printf '%s\n' "$np" | grep -c .)
+    n_ok=$(printf '%s\n' "$np" | awk '$2=="ACTIVE"' | grep -c .)
     if [ "$n_all" -lt 1 ] || [ "$n_ok" != "$n_all" ]; then fail cluster "$n_cl cluster ACTIVE, $n_ok/$n_all node pool(s) ACTIVE"
     else say ok cluster "$n_cl cluster ACTIVE, $n_ok/$n_all node pool(s) ACTIVE"; fi
     # --- kube: the same exchanged session, spoken to the API server (crew#484). The kubeconfig's
     # exec plugin runs `oci ce cluster generate-token` under OCI_CLI_AUTH=security_token, so no
     # second credential exists. A 403 is the IAM gap named on the row, never a silent skip.
-    cid=$(printf '%s' "$cl" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["id"])')
+    cid=$(printf '%s\n' "$cl" | awk 'NR==1{print $2}')
     kc="${KUBECONFIG_OUT:-${TMPDIR:-/tmp}/idp-verify-drill-kubeconfig}"
     if ! command -v kubectl >/dev/null; then bl kube "kubectl is not installed on this runner"
-    elif ! out=$(oci ce cluster create-kubeconfig --cluster-id "$cid" --file "$kc" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT 2>&1); then
+    elif ! out=$("$IDP/bin/idp-cloud" cluster kubeconfig "$cid" --file "$kc" 2>&1); then
       bl kube "create-kubeconfig failed: $(printf '%s' "$out" | tail -1 | cut -c1-160)"
     else
       # The exit code is the verdict; the body is only read on failure (idp#447 review: a healthy

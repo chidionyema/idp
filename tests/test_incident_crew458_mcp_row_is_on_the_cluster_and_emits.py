@@ -101,7 +101,7 @@ def test_incident_crew458_estate_mcp_serves_the_cloud_estate_db():
     assert "oci://ghcr.io/chidionyema/idp/estate-db:latest" in init["args"]
     main = dep["spec"]["template"]["spec"]["containers"][0]
     assert "/data/estate.db" in main["args"] and "-i" in main["args"]
-    assert {v["name"] for v in dep["spec"]["template"]["spec"]["volumes"]} == {"data", "creds"}
+    assert {v["name"] for v in dep["spec"]["template"]["spec"]["volumes"]} == {"data", "creds", "tmp"}  # tmp: writable /tmp under readOnlyRootFilesystem (crash-loop 2026-08-27 20:30Z)
     ks = yaml.safe_load((ROW / "kustomization.yaml").read_text())
     assert "estate-mcp.yaml" in ks["resources"] and "pull-secret.yaml" in ks["resources"]
     assert ks["images"][0]["name"] == "ghcr.io/chidionyema/estate-mcp"

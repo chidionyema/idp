@@ -57,6 +57,7 @@ spec:
             - { name: ESTATE_INVENTORY_BYTE_CEILING, value: "8000" }
           volumeMounts:
             - { name: data, mountPath: /data, readOnly: true }
+            - { name: tmp, mountPath: /tmp }   # crew#458: python tempfile needs one under readOnlyRootFilesystem
           resources:
             requests: { cpu: 20m, memory: 64Mi }
             limits: { cpu: 300m, memory: 256Mi }
@@ -72,6 +73,8 @@ spec:
             periodSeconds: 30
             failureThreshold: 3
       volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 16Mi }
         - name: data
           emptyDir: { sizeLimit: 64Mi }
         - name: creds

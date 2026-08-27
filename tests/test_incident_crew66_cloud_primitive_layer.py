@@ -268,3 +268,55 @@ def test_cp5a_header_documents_new_verbs():
     assert "--vault" in block
     assert "vault list" in block
     assert "bucket head" in block
+    assert "cluster list" in block
+    assert "cluster nodepools" in block
+    assert "cluster kubeconfig" in block
+    assert "--region" in block
+
+
+def test_cp5d_cluster_list_on_file_backend(tmp_path):
+    r = _run(tmp_path, "cluster", "list")
+    assert r.returncode == 0
+    assert r.stdout == ""   # no clusters/ dir yet
+
+    for cid, name in [("ocid1.cluster.aaa", "Alpha"), ("ocid1.cluster.ccc", "Charlie"), ("ocid1.cluster.bbb", "Bravo")]:
+        d = tmp_path / "clusters" / cid
+        d.mkdir(parents=True)
+        (d / "name").write_text(name)
+    r = _run(tmp_path, "cluster", "list")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip().splitlines() == ["Alpha ocid1.cluster.aaa", "Bravo ocid1.cluster.bbb", "Charlie ocid1.cluster.ccc"]
+
+
+def test_cp5d_cluster_nodepools_on_file_backend(tmp_path):
+    r = _run(tmp_path, "cluster", "nodepools")
+    assert r.returncode == 0
+    assert r.stdout == ""
+
+    (tmp_path / "nodepools").mkdir()
+    for name, state in [("pool-b", "ACTIVE"), ("pool-a", "ACTIVE"), ("pool-c", "UPDATING")]:
+        (tmp_path / "nodepools" / name).write_text(state)
+    r = _run(tmp_path, "cluster", "nodepools")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip().splitlines() == ["pool-a ACTIVE", "pool-b ACTIVE", "pool-c UPDATING"]
+
+
+def test_cp5d_cluster_kubeconfig_copies_the_file_and_chmods_600(tmp_path):
+    d = tmp_path / "clusters" / "ocid1.cluster.x"
+    d.mkdir(parents=True)
+    (d / "kubeconfig").write_text("apiVersion: v1\nclusters: []\n")
+    out = tmp_path / "kube"
+    r = _run(tmp_path, "cluster", "kubeconfig", "ocid1.cluster.x", "--file", str(out))
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == ""
+    assert out.read_text() == "apiVersion: v1\nclusters: []\n"
+    assert (out.stat().st_mode & 0o777) == 0o600
+
+
+def test_cp5d_cluster_kubeconfig_missing_cluster_is_exit_1_notfound(tmp_path):
+    out = tmp_path / "kube"
+    r = _run(tmp_path, "cluster", "kubeconfig", "ocid1.cluster.absent", "--file", str(out))
+    assert r.returncode == 1
+    assert "NotFound" in r.stderr
+    assert "ocid1.cluster.absent" in r.stderr
+    assert not out.exists()

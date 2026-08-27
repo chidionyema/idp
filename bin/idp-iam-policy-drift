@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# provider-adapter: oci — this file IS the provider door (session sign-in / tenancy-root IAM); it is not a caller of one. Every other bin/idp-* goes through bin/idp-cloud (crew#66).
 # Grade the live estate-operators grants against platform/oci/policy/estate-operators.statements.json.
 # crew#311 / crew#301: the tenancy-root policy is written only by bin/idp-oci-bootstrap (a founder
 # browser sign-in). Since idp#227 the compartment-scoped lines of the file are ALSO applied from CI by
