@@ -42,7 +42,10 @@ def _render_chart(tmp_path):
     values = tmp_path / "values.yaml"
     values.write_text(yaml.safe_dump(hr["spec"].get("values", {})))
     ns = hr["spec"].get("targetNamespace") or "observability"
-    r = subprocess.run(["helm", "template", hr["metadata"]["name"], spec["chart"], "--repo", repo["spec"]["url"],
+    # the release name the way helm-controller derives it (crew#483): releaseName, else
+    # <targetNamespace>-<name> when targetNamespace is set, else name
+    release = hr["spec"].get("releaseName") or (f"{ns}-{hr['metadata']['name']}" if hr["spec"].get("targetNamespace") else hr["metadata"]["name"])
+    r = subprocess.run(["helm", "template", release, spec["chart"], "--repo", repo["spec"]["url"],
                         "--version", spec["version"], "-n", ns, "-f", str(values)],
                        capture_output=True, text=True)
     if r.returncode:
