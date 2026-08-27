@@ -75,3 +75,24 @@ def _t_blocking(ctx):
 def _t_planned(ctx):
     assert "| PLANNED | [crew#7](https://x/7) | CP1 | build it | 2026-08-29 |" in ctx["page"]
     assert "Lanes reporting: none" in ctx["page"]
+
+
+def test_incident_idp402_issue_fetch_has_no_silent_cap():
+    """Review of idp#402: `gh issue list -L 500` dropped issue 501 with exit 0. The fetch paginates
+    the API and drops pull requests; 250 issues over three pages all come back."""
+    import importlib.machinery
+    import importlib.util
+    import types
+
+    spec = importlib.util.spec_from_loader("estate_next", importlib.machinery.SourceFileLoader("estate_next", str(IDP / "bin" / "estate-next")))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    lines = [json.dumps({"number": n, "title": f"t{n}", "body": "- [ ] CP1 x", "url": f"u{n}", "pr": n % 50 == 0}) for n in range(1, 251)]
+
+    def fake(cmd, **kw):
+        assert "--paginate" in cmd and "-L" not in cmd
+        return types.SimpleNamespace(stdout="\n".join(lines))
+
+    got = m.fetch_issues("o/r", run=fake)
+    assert len(got) == 245 and {i["number"] for i in got} == set(range(1, 251)) - {50, 100, 150, 200, 250}
+    assert "pr" not in got[0] and got[0]["url"] == "u1"

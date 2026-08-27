@@ -44,10 +44,14 @@ ORDER = {BLOCKING: 0, ACTIVE: 1, PLANNED: 2}
 LANE_WINDOW_H = 3  # feed-guard holds a lane for 2h after its handoff; older is a session that ended
 
 
-def fetch_issues(repo: str) -> list[dict]:
-    out = subprocess.run(["gh", "issue", "list", "-R", repo, "-s", "open", "-L", "500",
-                          "--json", "number,title,body,url"], capture_output=True, text=True, check=True).stdout
-    return json.loads(out)
+def fetch_issues(repo: str, run=subprocess.run) -> list[dict]:
+    """Every open issue, paginated; pull requests dropped. `gh issue list -L N` is a silent cap
+    (188 open on 2026-08-27; a 500 cap would drop checkpoints with exit 0, idp#402 review)."""
+    out = run(["gh", "api", "--paginate", f"repos/{repo}/issues?state=open&per_page=100",
+               "--jq", '.[] | {number, title, body, url: .html_url, pr: (.pull_request != null)}'],
+              capture_output=True, text=True, check=True).stdout
+    issues = [json.loads(line) for line in out.splitlines() if line.strip()]
+    return [{k: v for k, v in i.items() if k != "pr"} for i in issues if not i["pr"]]
 
 
 def checkpoints(issues: list[dict]) -> list[dict]:
