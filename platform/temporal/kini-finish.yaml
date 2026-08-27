@@ -4,12 +4,17 @@
 # KiniFinishWorkflow on the in-cluster engine and waits for it. A completed Job is never re-run
 # by a metadata change, which is why the name carries the request. Same image, SA and profile
 # as worker.yaml; the pull secret is the namespace's mirrored ghcr-pull.
+# crew#406: a Job's spec.template is immutable, and the kustomization `images:` transform rewrites
+# this image on every Flux roll (first seen idp#296, "Job.batch kini-finish-0 is invalid"), which
+# blocked the whole temporal Kustomization. `ssa: IfNotPresent` creates the Job once per name and
+# ignores later drift; the rename on FINISH: KINI is a new object and picks up the current image.
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: kini-finish-0
   namespace: temporal
   labels: { app.kubernetes.io/name: kini-finish }
+  annotations: { kustomize.toolkit.fluxcd.io/ssa: IfNotPresent }
 spec:
   backoffLimit: 3
   activeDeadlineSeconds: 7200
