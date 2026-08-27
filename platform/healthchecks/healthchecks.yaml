@@ -108,11 +108,20 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: { drop: [ALL] }
+          # crew#483: the kubelet probes with the pod IP as Host, Django's ALLOWED_HOSTS
+          # (env.yaml, hc.${ESTATE_ZONE}) answers 400, and the pod crash-looped 9 times on
+          # a liveness failure. The probe presents the one allowed host.
           readinessProbe:
-            httpGet: { path: /api/v3/status/, port: 8000 }
+            httpGet:
+              path: /api/v3/status/
+              port: 8000
+              httpHeaders: [{ name: Host, value: "hc.${ESTATE_ZONE}" }]
             periodSeconds: 10
           livenessProbe:
-            httpGet: { path: /api/v3/status/, port: 8000 }
+            httpGet:
+              path: /api/v3/status/
+              port: 8000
+              httpHeaders: [{ name: Host, value: "hc.${ESTATE_ZONE}" }]
             periodSeconds: 30
             failureThreshold: 3
           resources:
