@@ -72,11 +72,14 @@ else
     elif ! out=$(oci ce cluster create-kubeconfig --cluster-id "$cid" --file "$kc" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT 2>&1); then
       bl kube "create-kubeconfig failed: $(printf '%s' "$out" | tail -1 | cut -c1-160)"
     else
-      nodes=$(KUBECONFIG="$kc" kubectl get nodes -o json 2>&1)
-      if printf '%s' "$nodes" | grep -qiE 'forbidden|unauthorized|401|403'; then
-        bl kube "API server refused $EXPECT_USER: $(printf '%s' "$nodes" | tail -1 | cut -c1-120) -- IAM 'use clusters' on the compartment plus a ClusterRoleBinding for the user is the gap"
+      # The exit code is the verdict; the body is only read on failure (idp#447 review: a healthy
+      # node's resourceVersion 12403 must never read as a 403).
+      if ! nodes=$(KUBECONFIG="$kc" kubectl get nodes -o json 2>&1); then
+        if printf '%s' "$nodes" | grep -qiE 'forbidden|unauthorized|\b(HTTP|status) 40[13]\b'; then
+          bl kube "API server refused $EXPECT_USER: $(printf '%s' "$nodes" | tail -1 | cut -c1-120) -- IAM 'use clusters' on the compartment plus a ClusterRoleBinding for the user is the gap"
+        else bl kube "kubectl get nodes failed: $(printf '%s' "$nodes" | tail -1 | cut -c1-160)"; fi
       elif ! read -r k_all k_ready < <(printf '%s' "$nodes" | python3 -c 'import json,sys; d=json.load(sys.stdin)["items"]; print(len(d), sum(1 for n in d for c in n["status"]["conditions"] if c["type"]=="Ready" and c["status"]=="True"))' 2>/dev/null); then
-        bl kube "kubectl get nodes failed: $(printf '%s' "$nodes" | tail -1 | cut -c1-160)"
+        bl kube "kubectl get nodes returned 0 but no node list: $(printf '%s' "$nodes" | tail -1 | cut -c1-160)"
       elif [ "$k_all" -lt 1 ] || [ "$k_ready" != "$k_all" ]; then fail kube "$k_ready/$k_all node(s) Ready through the API server"
       else say ok kube "$k_ready/$k_all node(s) Ready through the API server, kubeconfig from the exchanged session"; fi
     fi

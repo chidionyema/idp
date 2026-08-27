@@ -14,8 +14,9 @@ CLUSTER = '[{"n": "oke", "id": "ocid1.cluster.fake.abc"}]'
 POOLS = '[{"n": "pool", "s": "ACTIVE"}]'
 
 
-def _node(ready: str) -> str:
-    return json.dumps({"items": [{"status": {"conditions": [{"type": "Ready", "status": ready}]}}]})
+def _node(ready: str, rv: str = "7") -> str:
+    return json.dumps({"items": [{"metadata": {"resourceVersion": rv},
+                                  "status": {"conditions": [{"type": "Ready", "status": ready}]}}]})
 
 
 def _bin(tmp: Path, nodes_out: str, nodes_rc: int = 0) -> Path:
@@ -67,6 +68,23 @@ def test_a_ready_node_read_through_the_api_server_is_an_ok_row(tmp_path: Path) -
     args = (tmp_path / "kc-args").read_text()
     assert "--token-version 2.0.0" in args and "--cluster-id ocid1.cluster.fake.abc" in args   # the exec plugin, not a static token
     assert not (tmp_path / "kc").exists(), "the kubeconfig outlived the run"
+
+
+def test_a_healthy_node_whose_json_contains_403_is_still_ok(tmp_path: Path) -> None:
+    """idp#447 review: the verdict is kubectl's exit code, never a number found in the body."""
+    b = _bin(tmp_path, _node("True", rv="12403"))
+    _token(tmp_path)
+    r = _run(tmp_path, b)
+    assert "ok      kube         1/1 node(s) Ready" in r.stdout, r.stdout
+    assert "refused" not in r.stdout and r.returncode == 0
+
+
+def test_a_failed_read_that_is_not_a_refusal_is_blind_without_the_iam_text(tmp_path: Path) -> None:
+    b = _bin(tmp_path, "Unable to connect to the server: dial tcp: i/o timeout", nodes_rc=1)
+    _token(tmp_path)
+    r = _run(tmp_path, b)
+    assert "BLIND   kube         kubectl get nodes failed" in r.stdout, r.stdout
+    assert "IAM" not in r.stdout and r.returncode == 2
 
 
 def test_a_refused_read_is_a_blind_row_that_names_the_iam_gap(tmp_path: Path) -> None:
