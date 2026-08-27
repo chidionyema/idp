@@ -24,4 +24,6 @@ spec:
       - resources:
           kinds: [DaemonSet, Pod]
           namespaces: [observability-agent]
-          names: [k8s-infra-otel-agent*]
+          # helm-controller names the release "<targetNamespace>-<name>" and the chart prefixes every
+          # object with it; "k8s-infra-otel-agent*" matched nothing on the cluster (crew#483).
+          names: [observability-agent-k8s-infra-otel-agent*]

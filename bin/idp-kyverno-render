@@ -60,12 +60,17 @@ for hr in (d for d in docs if d["kind"] == "HelmRelease"):
     # crew#388); the judge must render where the objects land, or an exception scoped to that
     # namespace looks unused and the DaemonSet fails here while passing on the cluster.
     ns = hr["spec"].get("targetNamespace") or hr["metadata"].get("namespace", "default")
+    # helm-controller names the release spec.releaseName, else "[targetNamespace-]name" (HelmRelease
+    # API). Charts build object names from the release name, so `helm template k8s-infra` rendered
+    # k8s-infra-otel-agent while the cluster admitted observability-agent-k8s-infra-otel-agent, and
+    # a PolicyException scoped to the rendered name passed here and never matched there (crew#483).
+    release = hr["spec"].get("releaseName") or (f"{hr['spec']['targetNamespace']}-{name}" if hr["spec"].get("targetNamespace") else name)
     vals = S / f"{name}.values.yaml"; vals.write_text("")
     for v in hr["spec"].get("valuesFrom", []):
         if v["kind"] == "ConfigMap": vals.write_text(cms[v["name"]][v.get("valuesKey", "values.yaml")])
     if "values" in hr["spec"]: vals.write_text(vals.read_text() + "\n" + yaml.safe_dump(hr["spec"]["values"]))
     render = S / f"{name}.render.yaml"
-    render.write_text(subprocess.check_output(["helm", "template", name, spec["chart"], "--repo", repos[spec["sourceRef"]["name"]],
+    render.write_text(subprocess.check_output(["helm", "template", release, spec["chart"], "--repo", repos[spec["sourceRef"]["name"]],
         "--version", str(spec["version"]), "-n", ns, "-f", str(vals)], text=True, stderr=subprocess.DEVNULL))
     kz = S / f"{name}.kz"; kz.mkdir(); (kz / "render.yaml").write_text(render.read_text())
     patches = [p for pr in hr["spec"].get("postRenderers", []) for p in pr.get("kustomize", {}).get("patches", [])]

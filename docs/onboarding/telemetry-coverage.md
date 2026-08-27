@@ -7,7 +7,7 @@ receipt lands in `state/telemetry-coverage` in the drill-receipts bucket every 1
 When your pod shows up under `missing`:
 
 1. It has been Running for more than ten minutes and neither logs nor metrics reached SigNoz.
-2. Check the k8s-infra agent on its node: `kubectl -n observability get ds k8s-infra-otel-agent`.
+2. Check the k8s-infra agent on its node: `kubectl -n observability-agent get ds observability-agent-k8s-infra-otel-agent`.
 3. If the pod writes nothing to stdout and has no kubelet metrics, it is not emitting. LAW 50
    says it must; add OTLP export to `signoz-otel-collector.observability.svc:4317`.
 
