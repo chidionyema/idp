@@ -289,6 +289,11 @@ jobs:
           # mumchimp-medusa is private; this repo's token cannot read it, the founder's browser can.
           fail: true
           token: ${{ secrets.GITHUB_TOKEN }}
+      # the default GITHUB_TOKEN reads Actions runs of public estate repos; private ones need the estate token, crew#535 CP2b
+      - name: actions-refused (crew#535)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 bin/idp-actions-refused --limit 5 | tee -a "$GITHUB_STEP_SUMMARY" || true
 
   kini-state:
     # crew#396 step 4: the KINI run's receipt (platform/temporal/kini-state.yaml), read the same
