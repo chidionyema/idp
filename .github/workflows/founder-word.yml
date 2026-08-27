@@ -4,7 +4,13 @@ name: founder-word
 on:
   issue_comment:
     types: [created]
+# actions: write is what `gh run rerun` needs; a called workflow can only narrow what the caller grants.
+permissions:
+  contents: read
+  pull-requests: read
+  actions: write
 jobs:
   gate:
     uses: ./.github/workflows/operating-model-gate.yml
+    permissions: { contents: read, pull-requests: read, actions: write }
     secrets: inherit
