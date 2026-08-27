@@ -26,5 +26,23 @@ if ! curl -fsS -o /dev/null "http://127.0.0.1:$PORT/server_info" 2>/dev/null; th
   ( cd "$IDP/scheduler" && nohup "$IDP/.venv/bin/dagster-webserver" -w workspace.yaml -h 127.0.0.1 -p "$PORT" > "$IDP/run/dagster-web.out" 2>&1 & echo $! > "$IDP/run/dagster-web.pid" )
   log "webserver starting on $PORT (pid $(cat "$IDP/run/dagster-web.pid"))"
 else
-  log "webserver already up on $PORT"
+  # crew#85, 2026-08-27 07:45Z: idp#316 landed, the running webserver kept the code location it had
+  # imported before the merge (ImportError: load_gate), and every launch from the UI was refused
+  # for two hours while the tree on disk was correct. A running webserver serves the tree it last
+  # loaded, so an update is not applied until the location is reloaded. Reload, and refuse to
+  # report "up" over a location that does not import.
+  reload='{"query":"mutation { reloadWorkspace { __typename ... on Workspace { locationEntries { name locationOrLoadError { __typename ... on PythonError { message } } } } ... on PythonError { message } } }"}'
+  if ! curl -fsS -m 120 -H 'Content-Type: application/json' -d "$reload" "http://127.0.0.1:$PORT/graphql" \
+      | "$IDP/.venv/bin/python" -c '
+import json, sys
+w = json.load(sys.stdin)["data"]["reloadWorkspace"]
+bad = [e for e in w.get("locationEntries", []) if e["locationOrLoadError"]["__typename"] == "PythonError"]
+for e in bad:
+    print("code location", e["name"], "does not load:", e["locationOrLoadError"]["message"].splitlines()[0][:200])
+sys.exit(1 if bad or w["__typename"] != "Workspace" else 0)
+'; then
+    log "webserver up on $PORT but its code location does not load; see above"
+    exit 1
+  fi
+  log "webserver already up on $PORT; code location reloaded from the tree on disk"
 fi
