@@ -151,6 +151,8 @@ metadata:
   title: "MCP gateway (tools for every agent session)"
   description: "The one MCP row (crew#458): agentgateway on the cluster fronting the GitHub MCP server, behind the estate login and a per-session API key. A session points its MCP url at /github/mcp here instead of a container on the founder Mac."
   annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/platform/mcp/"
     idp/updated-by: "Flux from platform/mcp/ on every main merge; the gateway key and GitHub token by the vault-seed workflow, entry mcp-gateway"
   tags: [founder]
   links:
