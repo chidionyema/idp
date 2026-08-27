@@ -26,11 +26,15 @@ module "oke" {
 
   worker_pools = {
     a1 = {
-      description      = "one A1 node: the Always Free allowance plus paid growth under the estate-defaults cap"
-      shape            = "VM.Standard.A1.Flex"
-      ocpus            = var.worker_ocpus
-      memory           = var.worker_memory_gb
-      size             = 1
+      description = "one A1 node: the Always Free allowance plus paid growth under the estate-defaults cap"
+      shape       = "VM.Standard.A1.Flex"
+      ocpus       = var.worker_ocpus
+      memory      = var.worker_memory_gb
+      size        = 1
+      # crew#539 CP4 (2026-08-27): the Cluster Autoscaler (platform/autoscaler) owns the size between
+      # 1 and estate-defaults node_pool.max_nodes; the module then ignores `size` (autoscaler.tf).
+      autoscale                = true
+      ignore_initial_pool_size = true
       # 100, not 50 (crew#516 CP4, 2026-08-27): at 50 GB the node evicted hermes-agent-gateway with
       # 5.9 GB free under the 6.25 GB threshold (87 pods' images; oke-check 33096065995). Block storage
       # is 200 GB Always Free and the PVCs claim 21 GB. Reaches a NEW node only: oke-check mode=surge-node.
@@ -77,6 +81,12 @@ locals {
     monthly_cap_usd = local.monthly_cap_usd
     monthly_usd     = local.capacity_monthly_usd
     prefer_free     = local.estate_defaults.node_pool.prefer_free
+    burst = {
+      max_nodes     = local.burst_max_nodes
+      hours_monthly = local.burst_hours_monthly
+      node_usd_hr   = local.burst_node_usd_hr
+      monthly_usd   = local.burst_monthly_usd
+    }
   }
 }
 

@@ -1,0 +1,8 @@
+# crew#539 CP4: the Kubernetes Cluster Autoscaler for OKE. One pool, a1, between 1 and
+# estate-defaults node_pool.max_nodes; a Pending pod that no node can hold (the balloon of
+# platform/scheduling, or a real workload) adds a node, ten unneeded minutes remove it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - external-secret.yaml
+  - cluster-autoscaler.yaml
