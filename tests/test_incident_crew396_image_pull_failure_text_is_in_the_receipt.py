@@ -43,3 +43,25 @@ def test_a_waiting_container_names_its_reason_and_a_starting_one_is_silent():
     empty = "def waiting" + src + "\nimport json; print(json.dumps(waiting({'phase': 'Running', 'containerStatuses': [{'name': 'a', 'state': {'running': {}}}]})))\n"
     r = subprocess.run([sys.executable, "-c", empty], capture_output=True, text=True, check=True)
     assert json.loads(r.stdout) == {}
+
+
+def test_a_failed_job_pod_that_never_restarted_carries_its_current_log():
+    """Second receipt (05:00Z): kini-state Job pods were phase Failed, restarts 0, last_log {}.
+    Both ways: exit 1 with no restart is read (current log), exit 0 is not, a restarted one is
+    still read as before (previous log)."""
+    collect = _collect()
+    src = collect.split("def last_log", 1)[1].split("not_ready = [", 1)[0]
+    prog = "import urllib.request\nasked = []\n" \
+           "class R:\n    def __init__(s, b): s.b = b\n    def __enter__(s): return s\n" \
+           "    def __exit__(s, *a): pass\n    def read(s): return s.b\n" \
+           "def fake_open(req, context=None, timeout=None):\n    asked.append(req.full_url); return R(b'Traceback: boom\\n')\n" \
+           "urllib.request.urlopen = fake_open\ntok = 't'; ctx = None\n" \
+           "def last_log" + src + \
+           "out = last_log('temporal', 'kini-state-1-abc', [{'name': 'step', 'restartCount': 0, 'state': {'terminated': {'exitCode': 1}}}," \
+           " {'name': 'done', 'restartCount': 0, 'state': {'terminated': {'exitCode': 0}}}," \
+           " {'name': 'looping', 'restartCount': 3, 'state': {'waiting': {'reason': 'CrashLoopBackOff'}}}])\n" \
+           "import json; print(json.dumps({'out': out, 'asked': asked}))\n"
+    r = subprocess.run([sys.executable, "-c", prog], capture_output=True, text=True, check=True)
+    got = json.loads(r.stdout)
+    assert set(got["out"]) == {"step", "looping"} and got["out"]["step"] == "Traceback: boom\n"
+    assert [u.split("container=")[1] for u in got["asked"]] == ["step&previous=false&tailLines=8", "looping&previous=true&tailLines=8"]

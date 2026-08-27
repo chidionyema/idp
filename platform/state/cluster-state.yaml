@@ -80,9 +80,17 @@ data:
     def last_log(ns, name, statuses):
         out = {}
         for c in statuses:
-            if not c.get("restartCount"):
+            # crew#396 second receipt: a Job pod that fails once never restarts (restartPolicy Never),
+            # so its exit was invisible; a terminated container with a non-zero exit code gets its
+            # current log, a restarted one its previous log, a quiet one is never asked for.
+            term = (c.get("state") or {}).get("terminated") or {}
+            if c.get("restartCount"):
+                which = "previous=true"
+            elif term.get("exitCode"):
+                which = "previous=false"
+            else:
                 continue
-            path = f"/api/v1/namespaces/{ns}/pods/{name}/log?container={c['name']}&previous=true&tailLines=8"
+            path = f"/api/v1/namespaces/{ns}/pods/{name}/log?container={c['name']}&{which}&tailLines=8"
             try:
                 req = urllib.request.Request("https://kubernetes.default.svc" + path, headers={"Authorization": "Bearer " + tok})
                 with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
