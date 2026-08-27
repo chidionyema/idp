@@ -17,7 +17,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scheduler"))
 
-from estate_scheduler.definitions import load_gate  # noqa: E402
+from estate_scheduler.load_gate import load_verdict as load_gate  # noqa: E402
 
 
 def test_one_thread_per_core_is_not_a_reason_to_skip() -> None:
@@ -26,7 +26,7 @@ def test_one_thread_per_core_is_not_a_reason_to_skip() -> None:
 
 def test_load_that_froze_the_dock_still_skips() -> None:
     skip = load_gate("x", {}, current=30.0, cores=12)
-    assert skip is not None and "per core" in skip.skip_message
+    assert skip is not None and "per core" in skip
 
 
 def test_explicit_max_load_is_honoured_as_written() -> None:

@@ -33,6 +33,11 @@ import time
 from pathlib import Path
 
 import yaml
+
+try:
+    from .load_gate import CORES, load_ceiling, load_verdict
+except ImportError:  # loaded as a bare file, not a package
+    from load_gate import CORES, load_ceiling, load_verdict  # type: ignore[no-redef]
 from dagster import (
     DagsterRunStatus,
     DefaultScheduleStatus,
@@ -98,31 +103,9 @@ def load1() -> float:
     return os.getloadavg()[0]
 
 
-CORES = os.cpu_count() or 1
-LOAD_PER_CORE = float(os.environ.get("ESTATE_MAX_LOAD_PER_CORE", "2.0"))
-
-
-def load_ceiling(spec: dict, cores: int = CORES) -> float:
-    """The 1-minute load above which this job skips.
-
-    An explicit max_load is a deliberate per-job choice and is honoured as
-    written. Otherwise the ceiling scales with the machine: os.getloadavg()
-    counts runnable threads, so the same 10.0 is a bored 12-core box and a
-    drowning 2-core one.
-    """
-    if "max_load" in spec:
-        return float(spec["max_load"])
-    return float(spec.get("max_load_per_core", LOAD_PER_CORE)) * cores
-
-
 def load_gate(label: str, spec: dict, current: float, cores: int = CORES) -> SkipReason | None:
-    ceiling = load_ceiling(spec, cores)
-    if current > ceiling:
-        return SkipReason(
-            f"{label}: load {current:.1f} > {ceiling:.1f} "
-            f"({current / cores:.2f} per core, ceiling {ceiling / cores:.2f})"
-        )
-    return None
+    why = load_verdict(label, spec, current, cores)
+    return SkipReason(why) if why else None
 
 
 def on_battery() -> bool:
