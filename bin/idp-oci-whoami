@@ -34,16 +34,17 @@ token_mtime() {
   echo 0
 }
 
+# _ow_* prefix: this file is sourced by bin/idp-vault-put; a bare `name` clobbered its secret name (crew#503).
 live=""
-newest_mtime=0
+_ow_newest=0
 for d in "$SESSIONS_DIR"/*/; do
-  name="$(basename "$d")"
+  _ow_name="$(basename "$d")"
   [ -f "$d/token" ] || continue
-  if oci session validate --profile "$name" --local >/dev/null 2>&1; then
-    mtime=$(token_mtime "$d/token")
-    if [ "$mtime" -gt "$newest_mtime" ]; then
-      live="$name"
-      newest_mtime="$mtime"
+  if oci session validate --profile "$_ow_name" --local >/dev/null 2>&1; then
+    _ow_mtime=$(token_mtime "$d/token")
+    if [ "$_ow_mtime" -gt "$_ow_newest" ]; then
+      live="$_ow_name"
+      _ow_newest="$_ow_mtime"
     fi
   fi
 done
@@ -56,12 +57,12 @@ done
 # before concluding a fresh browser login is genuinely required.
 if [ -z "$live" ]; then
   for d in "$SESSIONS_DIR"/*/; do
-    name="$(basename "$d")"
+    _ow_name="$(basename "$d")"
     [ -f "$d/token" ] || continue
-    if oci session refresh --profile "$name" --auth security_token >/dev/null 2>&1; then
-      if oci session validate --profile "$name" --local >/dev/null 2>&1; then
-        live="$name"
-        echo "ok      oci-whoami: refreshed expired session for '$name' (no browser, no founder action)" >&2
+    if oci session refresh --profile "$_ow_name" --auth security_token >/dev/null 2>&1; then
+      if oci session validate --profile "$_ow_name" --local >/dev/null 2>&1; then
+        live="$_ow_name"
+        echo "ok      oci-whoami: refreshed expired session for '$_ow_name' (no browser, no founder action)" >&2
         break
       fi
     fi

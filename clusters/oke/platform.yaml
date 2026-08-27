@@ -351,3 +351,22 @@ spec:
       kind: HelmRelease
       name: keda-add-ons-http
       namespace: keda
+---
+# crew#516 CP5 slice 1: the science lane's facts counted in the collector's backend, from inside
+# the cluster (platform/science/science-facts.yaml). Reader: bin/idp-science-facts.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: science
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: observability   # the clickhouse-auth Secret and the SigNoz backend
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/science
+  prune: true
+  wait: true
+  timeout: 5m

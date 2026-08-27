@@ -14,6 +14,10 @@ on:
         type: choice
         options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway]
         default: all
+      delete:
+        description: "schedule deletion of one vault secret by name (crew#503: a mis-named entry); entry is ignored when set"
+        type: string
+        default: ""
 permissions:
   id-token: write   # the OIDC token this job trades for OCI access
   contents: read
@@ -79,6 +83,7 @@ jobs:
           export ESTATE_ENV_FILE="$RUNNER_TEMP/seed.env"; umask 077
           env | sed -n 's/^SEED_//p' > "$ESTATE_ENV_FILE"
           put() { bin/idp-vault-put "$@"; }
+          if [ -n "${{ inputs.delete }}" ]; then bin/idp-vault-put --delete "${{ inputs.delete }}"; exit; fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = prospector-engine-env ]; then
             put prospector-engine-env MINIMAX_API_KEY=MINIMAX_API_KEY DEEPSEEK_API_KEY=DEEPSEEK_API_KEY EXA_API_KEY=EXA_API_KEY \
               OPENROUTER_API_KEY=OPENROUTER_API_KEY ANTHROPIC_API_KEY=ANTHROPIC_API_KEY \
