@@ -323,17 +323,17 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: founder-board-laptop
-  title: "Founder board (on the founder's Mac only)"
-  description: "Local board with /ops and /audit; the 30-minute session handoff feed is ~/.estate/feed.md on the same machine. Reachable only on that Mac; nothing here is served to the internet."
+  title: "Founder board"
+  description: "The estate state page (crew/STATE.md, rebuilt hourly by com.founder.estatesnapshot) and the hazard register (crew/docs/HAZARDS.md, hourly, crew#502). The local board on the founder's Mac (127.0.0.1:8787, launchd com.founder.boardserve) renders the same pages plus the 30-minute session feed; it is not linked here because a portal link must open from any browser (crew#503, founder-links gate)."
   annotations:
-    idp/updated-by: "launchd com.founder.boardserve (continuous); feed by every session every 30 minutes"
+    idp/updated-by: "launchd com.founder.estatesnapshot (hourly); feed by every session every 30 minutes"
   tags: [founder]
   links:
     - title: "Board"
-      url: "http://127.0.0.1:8787/"
+      url: "https://github.com/chidionyema/crew/blob/main/STATE.md"
       icon: dashboard
     - title: "Ops"
-      url: "http://127.0.0.1:8787/ops"
+      url: "https://github.com/chidionyema/crew/blob/main/docs/HAZARDS.md"
       icon: dashboard
 spec:
   type: founder-surface
