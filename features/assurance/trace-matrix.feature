@@ -11,3 +11,8 @@ Feature: Every scenario traces to the test that runs it
     Given a repository with one feature a test loads and one feature nothing loads
     When the second feature gains a test that loads it
     Then --check exits 0 and the page has no UNBOUND row
+
+  Scenario: A feature under docs/prose is counted as PROSE, never as a finding
+    Given a repository with one feature a test loads and one feature nothing loads
+    When the unbound feature moves under docs/prose
+    Then --check exits 0 and the page counts one PROSE row and no UNBOUND row

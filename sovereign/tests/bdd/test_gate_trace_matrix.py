@@ -54,6 +54,23 @@ def _bind(state: dict) -> None:
     _render(state)
 
 
+@when("the unbound feature moves under docs/prose")
+def _to_prose(state: dict) -> None:
+    repo = state["repo"]
+    (repo / "docs" / "prose").mkdir(parents=True)
+    _git(repo, "mv", "features/prose.feature", "docs/prose/prose.feature")
+    _git(repo, "commit", "-q", "-m", "prose (crew#495) (#3)")
+    _render(state)
+
+
+@then("--check exits 0 and the page counts one PROSE row and no UNBOUND row")
+def _prose_counted(state: dict) -> None:
+    assert state["check"].returncode == 0, state["check"].stdout + state["check"].stderr
+    assert "0 unbound (0 scenarios nothing runs), 1 prose" in state["check"].stdout
+    assert "| PROSE | `docs/prose/prose.feature`" in state["page"]
+    assert "| UNBOUND |" not in state["page"] and "**1 PROSE**, **0 UNBOUND** of 2" in state["page"]
+
+
 @then("the page lists the unbound feature before the bound one")
 def _order(state: dict) -> None:
     page = state["page"]
