@@ -10,11 +10,9 @@ out loud, we need to expose ourselves before the market exposes us and correct i
 ## What it printed (2026-08-27)
 
 ```
-estate-showcase: 424 lines, 31 GAP rows -> docs/SHOWCASE.md
-## The bar
-
+estate-showcase: 403 lines, 31 GAP rows -> docs/SHOWCASE.md
 - Entities: **287 ELITE**, **31 GAP**, **49 BLIND** of 367
-- Standards rows: **9 live**, **33 not yet** of 42
+- Standards rows: **10 live**, **12 not yet** of 22
 - Science: 15 rows on the science page, 2 BLIND
 ```
 

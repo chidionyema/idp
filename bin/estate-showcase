@@ -94,9 +94,17 @@ def standards(path: Path) -> list[tuple[str, str, str, str]]:
     rows = []
     if not path.is_file():
         return rows
+    in_table = False
     for line in path.read_text(encoding="utf-8").splitlines():
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) < 3 or cells[0] in ("Layer", "") or set(cells[0]) <= {"-"}:
+        cells = [c.strip().replace("\x00", "|") for c in line.strip().strip("|").replace("\\|", "\x00").split("|")]
+        if cells and cells[0] == "Layer":
+            in_table = True
+            continue
+        if not in_table:
+            continue
+        if not line.startswith("|"):
+            break  # only the first table (the layers) is the standards register
+        if len(cells) < 3 or set(cells[0]) <= {"-"}:
             continue
         status = cells[2]
         g = ELITE if status.lower().startswith("live") else GAP
