@@ -191,6 +191,14 @@ catalog:
       rules:
         - allow: [Component, Resource, Domain, System, Group]
 
+    # Every founder-facing surface with an Open link (crew#401). Hand-written on purpose:
+    # a hostname, a board, a button or a console is a decision, not an inventory row, and
+    # the gate in tests/ refuses a route or a workflow button that is not listed here.
+    - type: file
+      target: ../../founder/catalog-info.yaml
+      rules:
+        - allow: [Component]
+
     # Templates the scaffolder actually offers. One real one beats the
     # create-app example, which advertised "Example Node.js Template" to
     # anyone who clicked Create.
