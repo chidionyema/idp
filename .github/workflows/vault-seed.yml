@@ -76,7 +76,6 @@ jobs:
           SEED_HINDSIGHT_DB_PASSWORD: ${{ secrets.SEED_HINDSIGHT_DB_PASSWORD }}
           SEED_HINDSIGHT_LLM_API_KEY: ${{ secrets.SEED_HINDSIGHT_LLM_API_KEY }}
           SEED_HINDSIGHT_LLM_BASE_URL: ${{ secrets.SEED_HINDSIGHT_LLM_BASE_URL }}
-          SEED_K8SGPT_KEY: ${{ secrets.SEED_K8SGPT_KEY }}
           SEED_MCP_GATEWAY_KEY: ${{ secrets.SEED_MCP_GATEWAY_KEY }}
           SEED_GITHUB_MCP_TOKEN: ${{ secrets.SEED_GITHUB_MCP_TOKEN }}
         run: |
@@ -111,8 +110,9 @@ jobs:
             put hindsight postgres-password=HINDSIGHT_DB_PASSWORD HINDSIGHT_API_LLM_API_KEY=HINDSIGHT_LLM_API_KEY HINDSIGHT_API_LLM_BASE_URL=HINDSIGHT_LLM_BASE_URL
           fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = k8sgpt ]; then
-            # K8sGPT's LiteLLM virtual key, a router key never a vendor key (platform/healing/external-secret.yaml, crew#539 CP7)
-            put k8sgpt key=K8SGPT_KEY
+            # K8sGPT's LiteLLM virtual key, a router key never a vendor key (platform/healing/external-secret.yaml, crew#539 CP7).
+            # Minted here from the vault's master key, never seeded by a person (LAW 27, R5).
+            bin/idp-router-key k8sgpt minimax
           fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = mcp-gateway ]; then
             # the MCP gateway's API key and the GitHub token its github route forwards (platform/mcp, crew#458)

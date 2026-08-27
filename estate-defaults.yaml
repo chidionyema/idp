@@ -14,6 +14,8 @@ node_pool:                            # crew#289: '4/24 or 2/12?' is answered he
   burst_hours_monthly: 60             # hours a month the extra node may run; priced by policy/node_pool.rego under the cap
   spot_max_nodes: 1                   # crew#539 CP10: preemptible nodes the autoscaler may add (pool a1-spot, from 0)
   spot_hours_monthly: 30              # hours a month a preemptible node may run, at half the on-demand price, under the same cap
+llm:
+  virtual_key_daily_usd: 5             # every consumer's router key (bin/idp-router-key); the kernel's alias carries the same $5/day
 policy:
   stale_repos: delete-if-no-remote-and-1-commit   # report first, then STAGED deletion (60 min)
   vendor_lock_in: hard-reject         # a PR that binds a platform layer to one provider's SDK fails review

@@ -23,5 +23,6 @@ cluster within five minutes. There is no second list.
 replica count or request so the total stays in 10–20 % of one node (the test checks the band).
 
 **Healing loops.** `platform/healing/` holds the Descheduler and K8sGPT. K8sGPT reads one vault
-entry, `k8sgpt` (field `key`, a LiteLLM virtual key), seeded through `vault-seed.yml`; it never
-holds a vendor key.
+entry, `k8sgpt` (field `key`, a LiteLLM virtual key), minted by `vault-seed.yml -f entry=k8sgpt`
+through `bin/idp-router-key` from the router's master key in the vault — no person mints or pastes
+it; it never holds a vendor key.
