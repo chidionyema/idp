@@ -43,6 +43,38 @@ const sidebar = {
   pinnedBackground: navy,
 };
 
+// Below 600px the stock layout breaks: the header's right-hand box (search,
+// support) lands on top of the title, and the catalogue table squeezes six
+// columns into a phone width so every cell wraps. Wrap the header, and keep
+// only the first two columns (name and the next one) on a phone; the row
+// itself opens the entity page with everything else. Founder screenshot,
+// 2026-08-27 (crew#459).
+const phone = '@media (max-width: 600px)';
+const components = {
+  BackstageHeader: {
+    styleOverrides: {
+      header: {
+        boxShadow: 'none',
+        borderBottom: `3px solid ${accent}`,
+        [phone]: { flexWrap: 'wrap', padding: '12px 16px', rowGap: 8 },
+      },
+      leftItemsBox: { [phone]: { flexBasis: '100%', minWidth: 0 } },
+      rightItemsBox: { [phone]: { flexBasis: '100%', justifyContent: 'flex-start' } },
+      title: { [phone]: { fontSize: '1.4rem', wordBreak: 'break-word' } },
+    },
+  },
+  MuiTableCell: {
+    styleOverrides: {
+      root: {
+        [phone]: {
+          padding: '8px 10px',
+          '&:nth-of-type(n+3)': { display: 'none' },
+        },
+      },
+    },
+  },
+};
+
 export const estateLightTheme = createUnifiedTheme({
   ...createBaseThemeOptions({
     palette: {
@@ -55,13 +87,7 @@ export const estateLightTheme = createUnifiedTheme({
   }),
   defaultPageTheme: 'home',
   pageTheme: pageThemes,
-  components: {
-    BackstageHeader: {
-      styleOverrides: {
-        header: { boxShadow: 'none', borderBottom: `3px solid ${accent}` },
-      },
-    },
-  },
+  components,
 });
 
 export const estateDarkTheme = createUnifiedTheme({
@@ -76,13 +102,7 @@ export const estateDarkTheme = createUnifiedTheme({
   }),
   defaultPageTheme: 'home',
   pageTheme: pageThemes,
-  components: {
-    BackstageHeader: {
-      styleOverrides: {
-        header: { boxShadow: 'none', borderBottom: `3px solid ${accent}` },
-      },
-    },
-  },
+  components,
 });
 
 const lightTheme = ThemeBlueprint.make({
