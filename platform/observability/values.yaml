@@ -6,8 +6,8 @@ global:
   storageClass: oci-bv
 clickhouse:
   resources:
-    requests: { cpu: 150m, memory: 512Mi }
-    limits: { cpu: 1000m, memory: 2Gi }
+    requests: { cpu: 500m, memory: 2Gi }   # crew#539 CP9: == limits, Guaranteed QoS
+    limits: { cpu: 500m, memory: 2Gi }
   persistence:
     size: 20Gi
   zookeeper:

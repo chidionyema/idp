@@ -172,6 +172,23 @@ data:
             return msg
         return msg[:600] + " ... " + msg[-1400:]
 
+    def helm_last_attempt(st: dict) -> dict:
+        # crew#524 CP1, 2026-08-27: HelmRelease hindsight/hindsight sat "reconciliation in progress"
+        # for 2.5 hours across four receipts while the Kustomization above it said 'HelmRelease
+        # status: Failed'. The Ready condition says only that Flux is busy; the Released /
+        # Remediated conditions and the failure counters say what the last helm attempt did and
+        # why. A receipt that says "in progress" for a release that is failing is not a receipt
+        # (LAW 28). Returns {} when there is nothing beyond Ready to say.
+        out = {}
+        others = [c for c in st.get("conditions", []) if c.get("type") in ("Released", "Remediated", "TestSuccess") and c.get("message")]
+        if others:
+            last = max(others, key=lambda c: c.get("lastTransitionTime") or "")
+            out["last_attempt"] = f'{last["type"]}={last.get("status")}: ' + flux_message(last["message"])
+        for k in ("failures", "installFailures", "upgradeFailures"):
+            if st.get(k):
+                out[k] = st[k]
+        return out
+
     flux = []
     for kind, path in FLUX:
         try:
@@ -187,6 +204,8 @@ data:
                    # crew#483: when the Ready condition last flipped, so a denial can be dated against
                    # the commit that was meant to fix it instead of read as fresh.
                    "since": c.get("lastTransitionTime")}
+            if kind == "HelmRelease":
+                row.update(helm_last_attempt(st))
             if kind == "ImagePolicy":
                 row["latest"] = st.get("latestImage")
             if kind == "ImageUpdateAutomation":
@@ -432,8 +451,9 @@ spec:
                 - { name: collect, mountPath: /collect, readOnly: true }
                 - { name: tmp, mountPath: /tmp }
               resources:
-                requests: { cpu: 50m, memory: 128Mi }
-                limits: { cpu: 200m, memory: 256Mi }
+                # crew#539 CP9: requests == limits -> Guaranteed QoS
+                requests: { cpu: 100m, memory: 256Mi }
+                limits: { cpu: 100m, memory: 256Mi }
               securityContext:
                 runAsNonRoot: true
                 runAsUser: 1000

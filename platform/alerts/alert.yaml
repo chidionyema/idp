@@ -47,6 +47,9 @@ spec:
       namespace: reloader
     - kind: HelmRelease
       name: "*"
+      namespace: robusta
+    - kind: HelmRelease
+      name: "*"
       namespace: spire-mgmt
     - kind: HelmRelease
       name: "*"
