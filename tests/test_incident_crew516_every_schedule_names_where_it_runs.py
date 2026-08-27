@@ -35,7 +35,8 @@ def test_every_job_names_where_it_runs_and_a_cluster_job_names_no_mac_path():
     leaks = {k: MAC_ONLY.search(_flat(v)).group(0) for k, v in jobs.items()
              if v["runs_on"] == "cluster" and MAC_ONLY.search(_flat(v))}
     assert not leaks, f"cluster jobs that name a Mac-only path or tool: {leaks}"
-    assert sum(v["runs_on"] == "cluster" for v in jobs.values()) >= 1
+    # No floor on the cluster count: on 2026-08-27 the honest number was 0 of 43 (every row reads or
+    # writes Mac state), and a floor would have forced a lie to keep the suite green (LAW 38).
 
 
 def test_the_rule_refuses_a_job_without_runs_on_and_a_cluster_job_with_a_mac_path():

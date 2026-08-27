@@ -1,7 +1,8 @@
 # runs_on (crew#516 CP2, 2026-08-27): where each job belongs once the Mac is gone.
 #   cluster  needs only a checkout, git, gh, oci and python: rendered to a CronJob on OKE.
 #            Graded from what the script reads, not from its command line: six rows first marked
-#            cluster read ~/.estate, ~/dev/code or ESTATE_HOME files the Mac writes (2026-08-27)
+#            cluster read ~/.estate, ~/dev/code or ESTATE_HOME files the Mac writes, and the seventh
+#            writes the Mac's board (2026-08-27). Zero rows can move until that state leaves the Mac.
 #   mac      reads or writes Mac-only state today; runs_on_ref is the ticket that moves it
 #   retire   exists only because the estate is on a Mac (docker/colima, launchd, load, checkouts)
 # runs_on_ref names the crew item. tests/test_incident_crew516_every_schedule_names_where_it_runs.py
@@ -42,8 +43,10 @@ jobs:
     skip_on_battery: false
     timeout_s: 600
   ai.estate.dep-alerts:
-    runs_on: cluster
-    runs_on_ref: crew#516 CP2
+    # gh api runs anywhere, but its only output is tracked.board(), a line appended to the Mac's
+    # board file that sessions on this Mac read; on the cluster the alert would land nowhere (LAW 28)
+    runs_on: mac
+    runs_on_ref: crew#412
     command:
     - /usr/bin/python3
     - ~/.claude/scripts/estate/dep_alerts.py
