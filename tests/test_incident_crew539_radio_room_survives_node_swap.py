@@ -95,7 +95,7 @@ def test_flux_rows_seat_the_class_before_anyone_names_it():
         assert "scheduling" in deps, row
     assert {d["name"] for d in rows["healing"]["spec"]["dependsOn"]} >= {"scheduling", "llm"}
     kust = yaml.safe_load((SCHED / "kustomization.yaml").read_text())
-    assert set(kust["resources"]) == {"namespace.yaml", "priorityclasses.yaml", "balloon.yaml", "require-priority-class.yaml"}
+    assert set(kust["resources"]) == {"namespace.yaml", "priorityclasses.yaml", "balloon.yaml", "require-priority-class.yaml", "capacity-affinity.yaml"}
 
 
 def test_ping_lives_outside_the_cluster_and_pages_the_existing_bot():

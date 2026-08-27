@@ -1,0 +1,28 @@
+{
+  "_comment": "crew#539 CP10, the bad case: the same base and burst plus a preemptible node for 200 h = USD 9.60; total 57.70 over the cap. Must FAIL.",
+  "capacity": {
+    "ocpus": 6,
+    "memory_gb": 24,
+    "free": {
+      "ocpus": 2,
+      "memory_gb": 12
+    },
+    "price_usd_hr": {
+      "ocpu": 0.01,
+      "memory_gb": 0.0015
+    },
+    "monthly_cap_usd": 50,
+    "burst": {
+      "max_nodes": 2,
+      "hours_monthly": 60,
+      "node_usd_hr": 0.096,
+      "monthly_usd": 5.76
+    },
+    "spot": {
+      "max_nodes": 1,
+      "hours_monthly": 200,
+      "node_usd_hr": 0.048,
+      "monthly_usd": 9.6
+    }
+  }
+}

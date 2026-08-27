@@ -49,12 +49,22 @@ locals {
   burst_monthly_usd   = (local.burst_max_nodes - 1) * local.burst_node_usd_hr * local.burst_hours_monthly
 }
 
+# crew#539 CP10: the preemptible pool (main.tf a1-spot) is all paid at the discounted rate; its hours
+# are the founder's number (estate-defaults node_pool.spot_hours_monthly) and base + burst + spot
+# stays under the one cap. policy/node_pool.rego computes the same sum from local.capacity.
+locals {
+  spot_max_nodes     = local.estate_defaults.node_pool.spot_max_nodes
+  spot_hours_monthly = local.estate_defaults.node_pool.spot_hours_monthly
+  spot_node_usd_hr   = local.burst_node_usd_hr * (1 - var.a1_preemptible_discount)
+  spot_monthly_usd   = local.spot_max_nodes * local.spot_node_usd_hr * local.spot_hours_monthly
+}
+
 resource "terraform_data" "burst_cap" {
-  input = local.burst_monthly_usd
+  input = local.burst_monthly_usd + local.spot_monthly_usd
   lifecycle {
     precondition {
-      condition     = local.capacity_monthly_usd + local.burst_monthly_usd <= local.monthly_cap_usd
-      error_message = "Base pool USD ${local.capacity_monthly_usd} plus ${local.burst_max_nodes - 1} burst node(s) for ${local.burst_hours_monthly} h at USD ${local.burst_node_usd_hr}/h is over estate-defaults node_pool.budget_monthly_usd ${local.monthly_cap_usd}. A paid billing authorisation is FOUNDER ACTION, not STAGED."
+      condition     = local.capacity_monthly_usd + local.burst_monthly_usd + local.spot_monthly_usd <= local.monthly_cap_usd
+      error_message = "Base pool USD ${local.capacity_monthly_usd} plus ${local.burst_max_nodes - 1} burst node(s) for ${local.burst_hours_monthly} h at USD ${local.burst_node_usd_hr}/h plus ${local.spot_max_nodes} preemptible node(s) for ${local.spot_hours_monthly} h at USD ${local.spot_node_usd_hr}/h is over estate-defaults node_pool.budget_monthly_usd ${local.monthly_cap_usd}. A paid billing authorisation is FOUNDER ACTION, not STAGED."
     }
   }
 }
