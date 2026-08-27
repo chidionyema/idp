@@ -29,7 +29,10 @@ spec:
         kind: HelmRepository
         name: hindsight
   install:
-    remediation: { retries: 3 }
+    # crew#524 CP1 (2026-08-27): 4 installs failed on 'Deployment hindsight-api status Failed' and the
+    # release stalled with no pod evidence left; one more attempt per hour lets the 15-min
+    # cluster-state snapshot catch the pod's own reason (LAW 29: attribute before repair).
+    remediation: { retries: 5 }
   upgrade:
     remediation: { retries: 3 }
   values:
