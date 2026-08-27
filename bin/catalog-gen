@@ -105,13 +105,19 @@ def y(v):
     return s
 
 def entity(kind, name, title, etype, annotations, tags, links=(), depends_on=(),
-           system=None):
+           system=None, description=""):
+    # Founder, 2026-08-27: "cant have components that cannt self describe". An entity
+    # without a description is refused here, not tagged, so the catalogue cannot be
+    # written with one. Measured before this change: 349 of 362 entities had none.
+    if not str(description).strip():
+        sys.exit(f"catalog-gen: {kind} {name} has no description; refusing to publish an asset that cannot describe itself")
     out = [
         "apiVersion: backstage.io/v1alpha1",
         f"kind: {kind}",
         "metadata:",
         f"  name: {y(name)}",
         f"  title: {y(title)}",
+        f"  description: {y(str(description).strip())}",
     ]
     if annotations:
         out.append("  annotations:")
@@ -153,6 +159,57 @@ IDP_ROOT = os.environ.get("CATALOG_GEN_ROOT") or os.path.dirname(os.path.dirname
 ZONE_KEY = re.compile(r"^\s*ESTATE_ZONE:\s*['\"]?([A-Za-z0-9.-]+)['\"]?\s*$", re.M)
 
 
+def _docline(path):
+    """First sentence of the file's own docstring or leading comment, or ''. The asset
+    describes itself; this generator only repeats it."""
+    try:
+        if not path or not os.path.isfile(path) or os.path.getsize(path) > 2_000_000:
+            return ""
+        with open(path, errors="replace") as fh:
+            head = fh.read(4000)
+    except OSError:
+        return ""
+    m = re.search(r'^\s*[ru]?("""|\'\'\')(.*?)(\1|$)', head, re.S | re.M)
+    text = m.group(2) if m else ""
+    if not text:
+        lines = [l for l in head.splitlines()[1:12] if l.strip()]
+        cm = [l.lstrip("# ").strip() for l in lines if l.lstrip().startswith("#")]
+        text = " ".join(cm) if cm and len(cm) == len(lines[:len(cm)]) else ""
+    text = " ".join(text.split())
+    if not text:
+        return ""
+    sent = re.split(r"(?<=[.!?])\s", text, 1)[0]
+    return sent[:240]
+
+
+def describe(r):
+    """What this asset is, in one sentence a buyer's engineer can read on the card.
+    The asset's own words win (a `what`/`note` field, then the file's docstring);
+    when it has none, the sentence is built from fields the inventory measured,
+    never invented. Kinds without a row-level sentence are the bug, not a fallback."""
+    k = r.get("kind")
+    own = (r.get("what") or r.get("note") or "").strip()
+    doc = _docline(r.get("path"))
+    if k == "repo":
+        return own or doc or f"Git checkout at {r.get('path')} on branch {r.get('branch') or '?'}, {r.get('tracked_files') or 0} tracked files."
+    if k == "scheduled_job":
+        every = f" every {r['interval_s']} s" if r.get("interval_s") else ""
+        return doc or own or f"launchd job{every} running {r.get('path')}; last status {r.get('last_status') or 'unknown'}."
+    if k == "guard":
+        return doc or own or f"Hook guard at {r.get('path')}" + (f" (symlink to {r['symlink_to']})" if r.get("symlink_to") else "") + "."
+    if k == "listener":
+        return own or f"Port {r.get('port')} bound on {r.get('bind')} by {r.get('owner') or r.get('process')} ({r.get('command') or r.get('path')})."[:240]
+    if k == "drill":
+        return own or doc or f"Recovery drill graded {r.get('last_status') or 'NEVER RUN'}, must run every {r.get('max_age_days')} days."
+    if k == "container":
+        return own or f"Container {r.get('service') or r.get('id')} from image {r.get('image')} in compose project {r.get('project')}, health {r.get('health') or 'unknown'}."
+    if k == "ledger":
+        return own or f"Append-only ledger at {r.get('path')}, {r.get('rows') or 0} rows, " + ("read by something in the estate." if r.get("referenced") else "referenced by nothing.")
+    if k == "data":
+        return own or f"Data at {r.get('path')}, {r.get('mb') or 0} MB."
+    return own or doc
+
+
 def front_door_entities():
     import glob as _glob
     import yaml
@@ -176,7 +233,8 @@ def front_door_entities():
             sys.exit(f"catalog-gen: {rel}: hostname {host} carries a variable this generator cannot substitute")
         docs.append(entity("Component", f"front-door-{slug(name)}", url_host, "website",
                            {"hostname": url_host, "namespace": ns, "route": rel},
-                           ["front-door"], [("Open", f"https://{url_host}")]))
+                           ["front-door"], [("Open", f"https://{url_host}")],
+                           description=f"Public front door https://{url_host}, served by HTTPRoute {name} in namespace {ns} ({rel})."))
     return docs
 
 
@@ -237,6 +295,14 @@ def founder_surface_entities():
                 d["metadata"].setdefault("tags", []).append("unhealthy")
         docs.append(yaml.safe_dump(d, sort_keys=True, allow_unicode=True, width=1000).rstrip())
     return docs
+
+def yaml_links(doc):
+    """(title, url) pairs from an already-rendered entity document."""
+    import yaml
+    d = yaml.safe_load(doc)
+    return [(f"{d['metadata']['name']}: {l.get('title') or 'Open'}", l["url"])
+            for l in (d or {}).get("metadata", {}).get("links", [])]
+
 
 def main() -> int:
     if not os.path.exists(INV):
@@ -374,7 +440,8 @@ def main() -> int:
             "Resource", f"vendor-{slug(c)}", f"Vendor: {c}", "vendor",
             {"coupling": c, "dependents": n,
              "why": "every asset tagged with this coupling stops if it does"},
-            ["vendor", f"coupling-{slug(c)}"]))
+            ["vendor", f"coupling-{slug(c)}"],
+            description=f"External vendor {c}: {n} estate assets stop if it does."))
 
     # Domain and System take no spec.type/spec.system, so they are written out
     # literally rather than through entity(), which exists for the 194 rows.
@@ -390,7 +457,9 @@ def main() -> int:
         "spec:", f"  owner: {OWNER}", "  domain: platform"]))
     docs.append("\n".join([
         "apiVersion: backstage.io/v1alpha1", "kind: Group", "metadata:",
-        "  name: platform", "  title: Platform", "spec:", "  type: team",
+        "  name: platform", "  title: Platform",
+        f"  description: {y('The team that owns every generated entity in this catalogue.')}",
+        "spec:", "  type: team",
         "  children: []"]))
 
     # One System per running compose project. Backstage's System is "a collection
@@ -453,6 +522,7 @@ def main() -> int:
                 port_owner.setdefault(int(prt), names[id(r)])
 
     # ---- pass 2: the entities ----
+    all_links = []
     for r in rows:
         k = r.get("kind")
         if k not in MAP:
@@ -569,7 +639,8 @@ def main() -> int:
         if k == "container" and r.get("project") and r.get("project") != "(none)":
             sysref = f"system:default/stack-{slug(r['project'])}"
         docs.append(entity(bkind, name, r.get("id") or name, btype, ann, tags, links,
-                           deps, system=sysref))
+                           deps, system=sysref, description=describe(r)))
+        all_links += [(f"{r.get('id') or name}: {t}", u) for t, u in links]
         counts[k] = counts.get(k, 0) + 1
         edges += len(deps)
 
@@ -579,6 +650,17 @@ def main() -> int:
     founder = founder_surface_entities()
     docs += founder
     counts["founder-surface"] = len(founder)
+    # Founder, 2026-08-27: "i thought i could see all my interface urls in one spot". One
+    # entity carries every link the catalogue publishes, so the answer is one card in the
+    # portal (Component `interfaces`), never a grep over 362 entities.
+    for d in front + founder:
+        m = yaml_links(d)
+        all_links += m
+    all_links = sorted(set(all_links))
+    docs.append(entity("Component", "interfaces", "Every interface URL", "website",
+                       {"links": len(all_links)}, ["interfaces"], all_links,
+                       description=f"Every URL the estate publishes, {len(all_links)} links collected from the catalogue itself; open one here instead of searching for it."))
+    counts["interface-links"] = len(all_links)
     target = os.path.join(OUT, "catalog-info.yaml")
     with open(target, "w") as fh:
         fh.write("# GENERATED by idp/bin/catalog-gen from ~/.estate/state/inventory.json\n"
