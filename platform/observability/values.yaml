@@ -31,6 +31,26 @@ signoz:
   ingress:
     enabled: false
 otelCollector:
+  # crew#392: the collector stamps k8s.namespace.name and k8s.pod.name on every span and log line
+  # it receives, keyed by the sender's pod IP (k8sattributes, the upstream processor; the chart's
+  # clusterRole already grants pods/replicasets for it). Without it a workload that emits on its
+  # own (mcp-agentgateway, mcp-github) reaches ClickHouse with only service.name, and the coverage
+  # query in telemetry-coverage.yaml, which keys on the pod, counts it as never seen. Existing
+  # attributes are kept: k8s-infra's agent already names its pods and the processor does not
+  # overwrite. The metrics pipeline is left as shipped: every metric sample comes through the agent.
+  config:
+    processors:
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        extract:
+          metadata: [k8s.namespace.name, k8s.pod.name, k8s.deployment.name, k8s.node.name]
+        pod_association:
+          - sources: [{ from: connection }]
+    service:
+      pipelines:
+        traces: { processors: [k8sattributes, signozspanmetrics/delta, batch] }
+        logs: { processors: [k8sattributes, batch] }
   replicaCount: 1
   resources:
     requests: { cpu: 100m, memory: 200Mi }

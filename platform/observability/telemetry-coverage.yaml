@@ -61,9 +61,12 @@ data:
                                      headers={"X-ClickHouse-User": "admin", "X-ClickHouse-Key": pw})
         with urllib.request.urlopen(req, timeout=60) as r:
             return {tuple(line.split("\t")) for line in r.read().decode().splitlines() if line}
-    # Two tables, because a pod that logs nothing still has kubelet metrics (k8s-infra, crew#388)
-    # and a pod the kubelet has not sampled yet may already be logging.
+    # Three tables, because a pod that logs nothing still has kubelet metrics (k8s-infra, crew#388),
+    # a pod the kubelet has not sampled yet may already be logging, and a workload that emits its
+    # own spans (mcp-agentgateway, crew#392) is seen in traces before the node agent lands.
     QUERIES = {
+        "traces": f"SELECT DISTINCT resources_string['k8s.namespace.name'], resources_string['k8s.pod.name'] "
+                  f"FROM signoz_traces.distributed_signoz_index_v3 WHERE timestamp > now() - INTERVAL {WINDOW_SEC} SECOND",
         "logs": f"SELECT DISTINCT resources_string['k8s.namespace.name'], resources_string['k8s.pod.name'] "
                 f"FROM signoz_logs.distributed_logs_v2 WHERE timestamp > toUInt64(toUnixTimestamp(now()) - {WINDOW_SEC}) * 1000000000",
         "metrics": f"SELECT DISTINCT JSONExtractString(labels, 'k8s_namespace_name'), JSONExtractString(labels, 'k8s_pod_name') "
