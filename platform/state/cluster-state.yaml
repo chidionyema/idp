@@ -131,7 +131,11 @@ data:
                   "restarts": sum(c.get("restartCount", 0) for c in p["status"].get("containerStatuses", [])),
                   "waiting": waiting(p["status"]),
                   "failed": failed(p["status"]),
-                  "last_log": last_log(p["metadata"]["namespace"], p["metadata"]["name"], p["status"].get("containerStatuses", []))}
+                  # crew#396, fourth receipt (06:00Z): kini-state's `receipt` is an init container, and
+                  # last_log was handed containerStatuses only, so six Failed pods carried `failed`
+                  # {"receipt": "Error exit=1: "} and last_log {}. Init containers are read too.
+                  "last_log": last_log(p["metadata"]["namespace"], p["metadata"]["name"],
+                                       p["status"].get("initContainerStatuses", []) + p["status"].get("containerStatuses", []))}
                  for p in pods
                  if p["status"].get("phase") not in ("Succeeded",) and cond(p, "Ready") != "True"]
     ready = sum(1 for n in node_rows if n["ready"])
