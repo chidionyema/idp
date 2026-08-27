@@ -13,6 +13,7 @@ metadata:
   title: "The catalogue (this god view)"
   description: "Every service, hostname, job, guard, drill, port and this list. One login (auth). If something is not here, the gate in tests/test_incident_crew401_* refused the change that added it."
   annotations:
+    backstage.io/kubernetes-label-selector: "app.kubernetes.io/part-of=idp"
     idp/updated-by: "Flux image automation on every main build (platform/image-automation/backstage.yaml); inventory entities by bin/idp-catalog-push"
   tags: [founder]
   links:
@@ -35,6 +36,8 @@ metadata:
   title: "Model router (llm)"
   description: "Every model call in the estate goes through here. Which models exist is platform/llm/config.yaml model_list; the admin console (/ui: models, keys, spend) opens once the router database lands (crew#284, crew#400)."
   annotations:
+    backstage.io/kubernetes-namespace: llm
+    backstage.io/kubernetes-label-selector: "app.kubernetes.io/name=litellm"
     idp/updated-by: "Flux from platform/llm on merge to main"
   tags: [founder]
   links:
