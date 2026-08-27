@@ -5,7 +5,6 @@ which it was not. So one new provider meant re-seeding every key. Both ways: on 
 path does not exist and the groq lane is in neither router config."""
 from __future__ import annotations
 
-import base64
 import json
 import os
 import pathlib
@@ -30,7 +29,7 @@ def _run(env_lines: str, current: dict | None, merge: bool, pairs: list[str], tm
     envf = tmp_path / "seed.env"
     envf.write_text(env_lines)
     env = dict(os.environ, MERGE="1" if merge else "0")
-    env["CURRENT"] = base64.b64encode(json.dumps(current).encode()).decode() if current is not None else ""
+    env["CURRENT"] = json.dumps(current) if current is not None else ""  # crew#66 CP4: plain JSON, read in-process
     return subprocess.run([sys.executable, "-", str(envf), *pairs], input=_merge_block(), env=env, capture_output=True, text=True)
 
 
@@ -38,7 +37,7 @@ def test_merge_overlays_one_key_and_keeps_the_rest(tmp_path: pathlib.Path) -> No
     held = {"MINIMAX_API_KEY": "m", "DEEPSEEK_API_KEY": "d", "LITELLM_MASTER_KEY": "k"}
     r = _run("GROQ_API_KEY=g\n", held, True, ["MINIMAX_API_KEY=MINIMAX_API_KEY", "GROQ_API_KEY=GROQ_API_KEY"], tmp_path)
     assert r.returncode == 0, r.stderr
-    out = json.loads(base64.b64decode(r.stdout.strip()))
+    out = json.loads(r.stdout.strip().splitlines()[0])
     assert out == {**held, "GROQ_API_KEY": "g"}
     # names only on stderr, never a value
     assert "keys set: GROQ_API_KEY" in r.stderr and "kept:" in r.stderr and "g" not in r.stderr.split("kept:")[0].replace("GROQ_API_KEY", "")
