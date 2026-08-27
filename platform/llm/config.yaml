@@ -73,14 +73,17 @@ model_list:
 
 router_settings:
   fallbacks:
-    # crew#506 CP1 (2026-08-27): first hop is the other funded direct vendor, the OpenRouter
-    # deployment is the second. OpenRouter sat at ~2,400 tokens of credit and Google prepaid
-    # was empty, so the crew#284 order (OpenRouter first) walked every turn through 402/429
-    # before reaching a lane that answers. Consensus still survives any one account dry.
-    - minimax: [deepseek, minimax-or]
-    - deepseek: [minimax, deepseek-or]
+    # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat
+    # at ~2,400 tokens of credit and Google prepaid was empty, so the crew#284 order (OpenRouter
+    # first) walked every turn through 402/429 before reaching a lane that answers. Consensus
+    # still survives any one account dry. Every chain not headed by the cheap model ends in it
+    # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
+    # job aliases) but sit in no chain while the account is unfunded: a hop that always
+    # answers 402 is latency, not redundancy.
+    - minimax: [deepseek]
+    - deepseek: [minimax]
     - openrouter: [minimax, deepseek]
-    - gemini: [minimax, deepseek, gemini-or]
+    - gemini: [minimax, deepseek]
   num_retries: 2
   allowed_fails: 3
   cooldown_time: 60
