@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # One GitHub App for the estate's agents; one installation token per lane (crew#286 CP7).
 #   bin/idp-github-app manifest        print the one-tap URL that creates the App (founder taps Create once)
-#   bin/idp-github-app convert <code>  exchange the manifest code for the App and store it in the estate vault
+#   bin/idp-github-app convert <code>  exchange the manifest code for the App; SEED_GITHUB_APP_* repo secrets + vault-seed.yml write the vault from CI
+#   bin/idp-github-app seed <file>     retry the repo-secret write from a key file convert kept
 #   bin/idp-github-app token <lane>    mint an installation token narrowed to platform/github-app/lanes.json
 #   bin/idp-github-app installation    record the App's installation id in the vault (Flux's git writer reads it, crew#267)
 #   bin/idp-github-app status          which identity gh acts as, and whether it is the App
@@ -38,21 +39,37 @@ PY
   ;;
 convert)
   code=${1:?manifest code from the redirect URL}
-  # The code is one-time and the App's private key is returned exactly once: prove the vault WRITE path
-  # (live OCI profile, tofu outputs, a real vault read) BEFORE spending it. crew#503, 2026-08-27: two codes
-  # were spent and two keys lost, first on tofu state, then on an unset OCI profile.
-  VAULT_PUT_PREFLIGHT=1 "$IDP/bin/idp-vault-put" "$SECRET" \
-    || { echo "FAIL    github-app vault pre-flight failed; the code was NOT spent (source bin/idp-oci-whoami, tofu init $MAIN/platform/oci)" >&2; exit 2; }
+  # The code is one-time and the App's private key is returned exactly once. The vault is written by CI
+  # (.github/workflows/vault-seed.yml, entry github-app, from the SEED_GITHUB_APP_* repo secrets) so no
+  # laptop ever needs an OCI session (crew#503, 2026-08-27: two codes spent on a laptop whose OCI profile
+  # was not live). Prove the CI write path BEFORE spending the code: gh can set a repo secret and the
+  # seed workflow exists.
+  repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+  gh secret set SEED_GITHUB_APP_PREFLIGHT --repo "$repo" --body "$(date -u +%FT%TZ)" >/dev/null 2>&1 \
+    && gh workflow view vault-seed.yml --repo "$repo" >/dev/null 2>&1 \
+    || { echo "FAIL    github-app CI pre-flight failed (gh secret set / vault-seed.yml on $repo); the code was NOT spent" >&2; exit 2; }
   out=$(gh api -X POST "/app-manifests/$code/conversions")
   tmp=$(mktemp); chmod 600 "$tmp"
   jq -r '"GITHUB_APP_ID=\(.id)\nGITHUB_APP_SLUG=\(.slug)\nGITHUB_APP_CLIENT_ID=\(.client_id)\nGITHUB_APP_PEM_B64=\(.pem|@base64)"' <<<"$out" > "$tmp"
-  # If the write fails the key is NOT deleted: it exists nowhere else. Keep it 0600 and say how to retry.
-  if ! ESTATE_ENV_FILE="$tmp" "$IDP/bin/idp-vault-put" "$SECRET" app_id=GITHUB_APP_ID slug=GITHUB_APP_SLUG client_id=GITHUB_APP_CLIENT_ID pem_b64=GITHUB_APP_PEM_B64; then
-    echo "FAIL    github-app vault write failed; the App exists and its key is kept at $tmp (0600). Retry: ESTATE_ENV_FILE=$tmp bin/idp-vault-put $SECRET app_id=GITHUB_APP_ID slug=GITHUB_APP_SLUG client_id=GITHUB_APP_CLIENT_ID pem_b64=GITHUB_APP_PEM_B64; then rm -P $tmp" >&2
+  # If a write fails the key is NOT deleted: it exists nowhere else. Keep it 0600 and say how to retry.
+  ok=1
+  while IFS='=' read -r k v; do
+    gh secret set "SEED_$k" --repo "$repo" --body "$v" >/dev/null || ok=0
+  done < "$tmp"
+  if [ "$ok" != 1 ]; then
+    echo "FAIL    github-app repo-secret write failed; the App exists and its key is kept at $tmp (0600). Retry: bin/idp-github-app seed $tmp; then rm -P $tmp" >&2
     exit 1
   fi
   rm -f "$tmp"
-  echo "ok      github-app $(jq -r .slug <<<"$out") (id $(jq -r .id <<<"$out")) in vault secret $SECRET; install it on the org/user once: $(jq -r .html_url <<<"$out")/installations/new"
+  gh workflow run vault-seed.yml --repo "$repo" -f entry=github-app >/dev/null
+  echo "ok      github-app $(jq -r .slug <<<"$out") (id $(jq -r .id <<<"$out")) -> SEED_GITHUB_APP_* on $repo; vault-seed.yml entry=github-app dispatched; install it once: $(jq -r .html_url <<<"$out")/installations/new"
+  ;;
+seed)
+  # re-run the repo-secret write from a kept key file (only after a failed convert write)
+  f=${1:?kept key file}; repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+  while IFS='=' read -r k v; do gh secret set "SEED_$k" --repo "$repo" --body "$v" >/dev/null; done < "$f"
+  gh workflow run vault-seed.yml --repo "$repo" -f entry=github-app >/dev/null
+  echo "ok      github-app SEED_GITHUB_APP_* on $repo; vault-seed.yml entry=github-app dispatched"
   ;;
 token)
   lane=${1:?lane name from platform/github-app/lanes.json}
