@@ -112,11 +112,12 @@ token)
   [[ "$inst" =~ ^[0-9]+$ ]] || app_jwt_diag "$app_id" "$pem_b64" "$jwt" "$bundle"
   # run 33097094260: gh printed the 401 body on stdout and the non-empty check took it for an id
   [[ "$inst" =~ ^[0-9]+$ ]] || { echo "BLIND   github-app App $app_id has no installation yet (or its JWT was refused; see DIAG)"; exit 2; }
-  body=$(app_api "$jwt" "/app/installations/$inst/access_tokens" -X POST --data "$(jq -nc --argjson p "$perms" '{permissions:$p}')" 2>"$TMPDIR_ERR" || true)
+  raw=$(app_api "$jwt" "/app/installations/$inst/access_tokens" -X POST --data "$(jq -nc --argjson p "$perms" '{permissions:$p}')" -w $'\nhttp_code=%{http_code}' 2>"$TMPDIR_ERR" || true)
+  code=${raw##*http_code=}; body=${raw%$'\n'http_code=*}
   tok=$(jq -r '.token // empty' <<<"$body" 2>/dev/null || true)
   # run 33097577404: whatever gh printed was passed on as a token; a token has a shape. Run 33098351833: the
   # reason it had none was lost, so GitHub's own message travels on stderr where the drill reads it.
-  [[ "$tok" =~ ^ghs_[A-Za-z0-9]+$ ]] || { echo "DIAG    github-app access_tokens for installation $inst lane $lane returned no token: $(jq -r '.message // empty' <<<"$body" 2>/dev/null | cut -c1-140) $(tail -1 "$TMPDIR_ERR" 2>/dev/null | cut -c1-80)" >&2; echo "BLIND   github-app no installation token for lane $lane (see DIAG)"; exit 2; }
+  [[ "$tok" =~ ^ghs_[A-Za-z0-9]+$ ]] || { echo "DIAG    github-app access_tokens for installation $inst lane $lane returned no token: http=${code:-none} body=$(jq -c 'del(.token)' <<<"$body" 2>/dev/null | cut -c1-160 || head -c 160 <<<"$body" | tr -d '\n') curl=$(tail -1 "$TMPDIR_ERR" 2>/dev/null | cut -c1-80)" >&2; echo "BLIND   github-app no installation token for lane $lane (see DIAG)"; exit 2; }
   if [ -t 1 ]; then echo "ok      github-app token minted for lane $lane (installation $inst, expires in 1h); pipe it: bin/idp-github-app token $lane | gh auth login --with-token"; else printf %s "$tok"; fi
   ;;
 installation)
