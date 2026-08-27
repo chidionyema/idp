@@ -64,7 +64,7 @@ def test_unknown_backend_and_unset_root_are_blind(tmp_path):
     assert r.returncode == 2 and "BLIND" in r.stderr
 
 
-@pytest.mark.parametrize("name", ["idp-cluster-state", "idp-kini-state", "idp-door-heartbeat"])
+@pytest.mark.parametrize("name", ["idp-cluster-state", "idp-kini-state", "idp-door-heartbeat", "idp-chaos-drill", "idp-science-facts", "idp-telemetry-coverage"])
 def test_the_first_three_callers_go_through_the_layer_never_the_cli(name):
     text = (ROOT / "bin" / name).read_text()
     assert '"$IDP/bin/idp-cloud" object head' in text
