@@ -17,7 +17,7 @@ MANIFEST = ROOT / "platform/state/cluster-state.yaml"
 GRADER = ROOT / "bin/idp-cluster-state"
 ALERT = ROOT / "platform/alerts/alert.yaml"
 FLUX_KINDS = ("GitRepository", "OCIRepository", "HelmRepository", "Kustomization", "HelmRelease",
-              "ImageRepository", "ImagePolicy", "ImageUpdateAutomation")
+              "ImageRepository", "ImagePolicy", "ImageUpdateAutomation", "ClusterSecretStore", "ExternalSecret")
 
 
 def _docs():

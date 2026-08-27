@@ -27,6 +27,9 @@ rules:
   - apiGroups: ["source.toolkit.fluxcd.io", "kustomize.toolkit.fluxcd.io", "helm.toolkit.fluxcd.io", "image.toolkit.fluxcd.io"]
     resources: ["gitrepositories", "ocirepositories", "helmrepositories", "kustomizations", "helmreleases", "imagerepositories", "imagepolicies", "imageupdateautomations"]
     verbs: ["get", "list"]
+  - apiGroups: ["external-secrets.io"]
+    resources: ["externalsecrets", "clustersecretstores"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -80,6 +83,8 @@ data:
         ("ImageRepository", "/apis/image.toolkit.fluxcd.io/v1/imagerepositories"),
         ("ImagePolicy", "/apis/image.toolkit.fluxcd.io/v1/imagepolicies"),
         ("ImageUpdateAutomation", "/apis/image.toolkit.fluxcd.io/v1/imageupdateautomations"),
+        ("ClusterSecretStore", "/apis/external-secrets.io/v1/clustersecretstores"),
+        ("ExternalSecret", "/apis/external-secrets.io/v1/externalsecrets"),
     ]
     flux = []
     for kind, path in FLUX:
@@ -91,7 +96,7 @@ data:
         for o in items:
             st = o.get("status", {})
             c = next((c for c in st.get("conditions", []) if c["type"] == "Ready"), {})
-            row = {"kind": kind, "ns": o["metadata"]["namespace"], "name": o["metadata"]["name"],
+            row = {"kind": kind, "ns": o["metadata"].get("namespace", ""), "name": o["metadata"]["name"],
                    "ready": c.get("status") == "True", "message": c.get("message", "no Ready condition yet")[:300]}
             if kind == "ImagePolicy":
                 row["latest"] = st.get("latestImage")
