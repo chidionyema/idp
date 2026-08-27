@@ -392,7 +392,7 @@ kind: Component
 metadata:
   name: founder-store
   title: "The store (mumchimp)"
-  description: "The one place a customer pays this estate: the storefront and the Medusa API behind it. Revenue is read from api.<zone> by crew science/outcomes.py revenue (crew#70). Registered here because catalogue-drift found the three hostnames live and unlisted (oke-check run 33034521953)."
+  description: "The one place a customer pays this estate: the storefront and the Medusa API behind it. Revenue is read by crew science/outcomes.py revenue (crew#70). No API health link here: api.<zone> answers 404 on every path from a Kestrel server (crew#503 probe), so the Medusa API is not published on that hostname; the link returns when mumchimp-medusa publishes one. Registered here because catalogue-drift found the three hostnames live and unlisted (oke-check run 33034521953)."
   annotations:
     github.com/project-slug: chidionyema/mumchimp-medusa
     backstage.io/source-location: "url:https://github.com/chidionyema/mumchimp-medusa/tree/main/"
@@ -405,9 +405,6 @@ metadata:
     - title: "Apex"
       url: "https://${ESTATE_ZONE}"
       icon: web
-    - title: "Store API health"
-      url: "https://api.${ESTATE_ZONE}/health"
-      icon: dashboard
     - title: "Source"
       url: "https://github.com/chidionyema/mumchimp-medusa"
       icon: github
