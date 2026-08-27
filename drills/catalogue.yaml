@@ -120,3 +120,22 @@ drills:
       The limits API granted the tenancy at least the A1 cores and memory platform/oci/variables.tf
       assumes free and enough to hold what it provisions, so the allowance OCI halved once
       (ADR 0004) has not moved again without a red row (crew#488 CP3).
+
+  - name: stale
+    workflow: stale.yml
+    job: stale
+    schedule: "17 * * * *"
+    max_age_hours: 3
+    proves: >-
+      A pull request nobody has touched for 24 hours is closed by the platform with the two
+      ways back in the comment, so the queue cannot pile up behind ended sessions (crew#504 CP2).
+
+  - name: wake-blocked
+    workflow: wake-blocked.yml
+    job: wake-blocked
+    schedule: "7-59/30 * * * *"
+    max_age_hours: 3
+    pending: true
+    proves: >-
+      A pull request closed with a Blocked-by line is updated and reopened within 30 minutes of
+      its blocker landing, so dependency waits never need a person to remember (crew#504 CP7).
