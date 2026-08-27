@@ -73,6 +73,9 @@ jobs:
           SEED_FLUX_WRITER_IDENTITY_B64: ${{ secrets.SEED_FLUX_WRITER_IDENTITY_B64 }}
           SEED_FLUX_WRITER_PUB: ${{ secrets.SEED_FLUX_WRITER_PUB }}
           SEED_TEMPORAL_DB_PASSWORD: ${{ secrets.SEED_TEMPORAL_DB_PASSWORD }}
+          SEED_HINDSIGHT_DB_PASSWORD: ${{ secrets.SEED_HINDSIGHT_DB_PASSWORD }}
+          SEED_HINDSIGHT_LLM_API_KEY: ${{ secrets.SEED_HINDSIGHT_LLM_API_KEY }}
+          SEED_HINDSIGHT_LLM_BASE_URL: ${{ secrets.SEED_HINDSIGHT_LLM_BASE_URL }}
           SEED_MCP_GATEWAY_KEY: ${{ secrets.SEED_MCP_GATEWAY_KEY }}
           SEED_GITHUB_MCP_TOKEN: ${{ secrets.SEED_GITHUB_MCP_TOKEN }}
         run: |
@@ -101,6 +104,10 @@ jobs:
           if [ "$ENTRY" = all ] || [ "$ENTRY" = temporal-db ]; then
             # Temporal's Postgres password (platform/temporal/external-secret.yaml, crew#396)
             put temporal-db password=TEMPORAL_DB_PASSWORD
+          fi
+          if [ "$ENTRY" = all ] || [ "$ENTRY" = hindsight ]; then
+            # Hindsight's Postgres password and its router key (platform/hindsight/external-secret.yaml, crew#524)
+            put hindsight postgres-password=HINDSIGHT_DB_PASSWORD HINDSIGHT_API_LLM_API_KEY=HINDSIGHT_LLM_API_KEY HINDSIGHT_API_LLM_BASE_URL=HINDSIGHT_LLM_BASE_URL
           fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = mcp-gateway ]; then
             # the MCP gateway's API key and the GitHub token its github route forwards (platform/mcp, crew#458)

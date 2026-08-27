@@ -115,6 +115,10 @@ spec:
               value: /run/secrets/hermes-agent-env
             - name: HOME
               value: /data
+            # crew#524 CP1: the self-hosted Hindsight row (platform/hindsight). A URL alone makes the
+            # hermes hindsight plugin available (`has_key or has_url`); no key on a self-host.
+            - name: HINDSIGHT_API_URL
+              value: http://hindsight-api.hindsight.svc:8888
             - name: PYTHONUNBUFFERED
               value: "1"
           ports:
