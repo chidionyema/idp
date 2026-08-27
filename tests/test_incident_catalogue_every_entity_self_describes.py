@@ -40,6 +40,13 @@ def test_every_entity_has_a_description_and_the_interfaces_card_has_every_link(t
     assert not blank, blank
     published = {l["url"] for d in docs if d["metadata"]["name"] != "interfaces"
                  for l in d["metadata"].get("links", [])}
+    # crew#503 CP6: the founder surfaces reach the portal through the founder-catalog ConfigMap
+    # (Flux, zone substituted), not through this generator, but the card still carries their links.
+    zones = {yaml.safe_load(f.read_text())["data"]["ESTATE_ZONE"] for f in (ROOT / "clusters").glob("*/estate-config.yaml")}
+    assert len(zones) == 1, zones
+    zone = zones.pop()
+    founder = [d for d in yaml.safe_load_all((ROOT / "backstage/founder/catalog-info.yaml").read_text()) if d]
+    published |= {l["url"].replace("${ESTATE_ZONE}", zone) for d in founder for l in d["metadata"].get("links", [])}
     card = [d for d in docs if d["metadata"]["name"] == "interfaces"]
     assert len(card) == 1
     on_card = {l["url"] for l in card[0]["metadata"]["links"]}

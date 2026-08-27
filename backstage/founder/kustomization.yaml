@@ -1,0 +1,11 @@
+# crew#503 CP6: the founder's surfaces reach the portal from git through Flux. This ConfigMap carries
+# catalog-info.yaml; the oke overlay mounts it at /estate/founder and Flux postBuild substitutes
+# ${ESTATE_ZONE} like every other manifest. bin/catalog-gen and the founder-links gate read the same file.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+configMapGenerator:
+  - name: founder-catalog
+    files:
+      - catalog-info.yaml
+generatorOptions:
+  disableNameSuffixHash: true

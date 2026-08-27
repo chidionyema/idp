@@ -14,6 +14,11 @@ metadata:
   name: litellm
   namespace: llm
   labels: { app.kubernetes.io/name: litellm, app.kubernetes.io/part-of: idp }
+  # Reloader (platform/reloader) rolls this Deployment when the named Secret changes, because the
+  # command below exports the keys once at start (crew#506 CP4: a rotated GROQ_API_KEY sat in the
+  # Secret while the pod answered `Invalid API Key`).
+  annotations:
+    secret.reloader.stakater.com/reload: "litellm-upstream"
 spec:
   replicas: 1
   selector:
