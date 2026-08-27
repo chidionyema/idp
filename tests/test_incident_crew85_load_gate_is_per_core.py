@@ -34,7 +34,15 @@ def test_explicit_max_load_is_honoured_as_written() -> None:
     assert load_gate("x", {"max_load": 8.0}, current=7.0, cores=2) is None
 
 
+def stamped_jobs(text: str) -> list[str]:
+    jobs = yaml.safe_load(text)["jobs"]
+    return [k for k, v in jobs.items() if isinstance(v, dict) and v.get("max_load") == 6.0]
+
+
 def test_schedule_yml_carries_no_stamped_flat_ceiling() -> None:
-    jobs = yaml.safe_load((ROOT / "scheduler" / "schedule.yml").read_text())
-    stamped = [k for k, v in jobs.items() if isinstance(v, dict) and v.get("max_load") == 6.0]
-    assert stamped == [], stamped
+    assert stamped_jobs((ROOT / "scheduler" / "schedule.yml").read_text()) == []
+
+
+def test_the_check_sees_a_stamped_ceiling() -> None:
+    # The shape the importer used to write; the test above is only a test if this fails.
+    assert stamped_jobs("jobs:\n  a:\n    cron: '* * * * *'\n    max_load: 6.0\n") == ["a"]
