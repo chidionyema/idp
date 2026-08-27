@@ -28,7 +28,7 @@ case "$*" in
   *"node-pool list"*) echo "ocid1.nodepool.pool";;
   *"private-ip"*) echo 10.0.0.9;;
   *"node-pool get"*) cat "$SHIM_NODES";;
-  *"os object get"*) printf '{"at":"%s","nodes":[{"name":"10.0.0.9","ready":%s}]}' "$KUBE_AT" "$KUBE_READY";;
+  *"os object get"*) printf 'ok cluster-state at %s nodes=1 ready=1\n{"at":"%s","nodes":[{"name":"10.0.0.9","ready":%s}]}\n' "$KUBE_AT" "$KUBE_AT" "$KUBE_READY";;
   *"node-pool update"*) echo '["ocid1.node.old","ocid1.node.new"]' > "$SHIM_NODES";;
   *"delete-node"*) echo '["ocid1.node.new"]' > "$SHIM_NODES";;
 esac
@@ -111,6 +111,7 @@ TWO = [{"id": "ocid1.node.old", "ip": "10.0.0.1", "t": "2026-08-01T00:00:00Z"}, 
 
 
 def _finish(tmp_path, body, nodes=TWO):
+    if body: body = "ok cluster-state at x nodes=2 ready=2\n" + body + "\n"   # the real receipt shape: grade line, then JSON
     idp = tmp_path / "idp"; (idp / "bin").mkdir(parents=True); (idp / "platform/oci").mkdir(parents=True)
     shutil.copy(ROOT / "bin/idp-oke-surge-node", idp / "bin/idp-oke-surge-node")
     (idp / "platform/oci/terraform.tfvars").write_text('compartment_ocid = "ocid1.compartment.c"\n')
@@ -125,7 +126,7 @@ def _finish(tmp_path, body, nodes=TWO):
 
 
 def test_a_blind_receipt_read_is_named_and_exits_5_after_three_in_a_row_without_deleting(tmp_path):
-    blind = OCI_SHIM.replace('''*"os object get"*) printf '{"at":"%s","nodes":[{"name":"10.0.0.9","ready":%s}]}' "$KUBE_AT" "$KUBE_READY";;''',
+    blind = OCI_SHIM.replace('''*"os object get"*) printf 'ok cluster-state at %s nodes=1 ready=1\\n{"at":"%s","nodes":[{"name":"10.0.0.9","ready":%s}]}\\n' "$KUBE_AT" "$KUBE_AT" "$KUBE_READY";;''',
                              '''*"os object get"*) echo "ServiceError: NotAuthenticated" >&2; exit 1;;''')
     assert blind != OCI_SHIM
     idp = tmp_path / "idp"; (idp / "bin").mkdir(parents=True); (idp / "platform/oci").mkdir(parents=True)
@@ -176,3 +177,15 @@ def test_the_workflow_and_the_rebuild_offer_surge_finish():
     wf = yaml.safe_load((ROOT / ".github/workflows/oke-check.yml").read_text())
     assert "surge-finish" in wf[True]["workflow_dispatch"]["inputs"]["mode"]["options"]
     assert '--surge-finish)' in (ROOT / "bin/idp-oke-rebuild").read_text()
+
+
+def test_a_receipt_is_a_grade_line_then_json_and_bare_json_or_prose_is_blind(tmp_path):
+    # run 33108132312: the finish tested the first byte for "{" and called a good receipt BLIND;
+    # run 33101801971: the surge json.load-ed the whole body and called every read "not Ready".
+    r, log = _finish(tmp_path, "")
+    assert r.returncode == 5, r.stdout + r.stderr
+    idp = tmp_path / "raw"; body = json.dumps({"at": FRESH, "nodes": [{"name": "10.0.0.9", "ready": True}]})
+    r2, log2 = _finish(idp, "\n" + body)      # grade line empty, JSON intact: still parses
+    assert r2.returncode == 0 and [l for l in log2 if "delete-node" in l], r2.stdout + r2.stderr
+    r3, log3 = _finish(tmp_path / "prose", "FAIL cluster-state at x\nno json here")
+    assert r3.returncode == 5 and "BLIND, receipt state/cluster unreadable: ok cluster-state at x" in r3.stdout and not [l for l in log3 if "delete-node" in l], r3.stdout + r3.stderr
