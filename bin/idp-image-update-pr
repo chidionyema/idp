@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# crew#267 / crew#439: open or refresh the flux/image-updates pull request and arm auto-merge.
+# crew#439: idp#298 sat CONFLICTING for two hours while every push printed "ok auto-merge armed".
+# A pull request that is not MERGEABLE is not ok: merge main into the branch (the controller's
+# newTag lines win), push, and dispatch ci.yml on the branch so the head commit carries the
+# required checks (a push made with GITHUB_TOKEN fires no workflow). Anything else exits 1.
+set -euo pipefail
+branch=${IMAGE_UPDATE_BRANCH:-flux/image-updates}
+n=$(gh pr list --head "$branch" --base main --state open --json number -q '.[0].number')
+if [ -z "$n" ]; then
+  gh pr create --head "$branch" --base main \
+    --title "$(git log -1 --format=%s)" \
+    --body "$(printf '%s\n\n%s\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n' \
+      "$(git log -1 --format=%b)" \
+      "Spec: tests/test_incident_catalogue_image_never_repulled.py" \
+      "Drill: login-drill" \
+      "Cost-delta-usd-month: 0" \
+      "Rung 7: production oracle, the backstage row health check rolls the Deployment on merge" \
+      "## Architecture laws" \
+      "- LAW 1 zero-gravity: n/a: image tag only, bin/cloud-agnostic-gate unchanged" \
+      "- LAW 2 fractal: n/a: same container, new build" \
+      "- LAW 3 nervous system: n/a: Deployment env unchanged" \
+      "- LAW 4 calibration: n/a: no prediction made")"
+  n=$(gh pr list --head "$branch" --base main --state open --json number -q '.[0].number')
+fi
+m=UNKNOWN
+for _ in 1 2 3 4 5 6; do
+  m=$(gh pr view "$n" --json mergeable -q .mergeable)
+  [ "$m" != UNKNOWN ] && break
+  sleep "${MERGEABLE_WAIT:-10}"
+done
+case "$m" in
+  MERGEABLE) ;;
+  CONFLICTING)
+    git fetch origin main
+    git -c user.name=image-update-pr -c user.email=image-update-pr@users.noreply.github.com \
+      merge origin/main --no-edit -X ours -m "$branch: merge main, keep the controller's newTag lines (crew#439)"
+    git push origin "HEAD:$branch"
+    gh workflow run ci.yml --ref "$branch"
+    echo "refresh image-update-pr #$n was CONFLICTING, merged main as $(git rev-parse --short HEAD), ci dispatched"
+    ;;
+  *)
+    echo "FAIL    image-update-pr #$n mergeable=$m after waiting; not armed"
+    exit 1
+    ;;
+esac
+gh pr merge "$n" --auto --squash
+echo "ok      image-update-pr #$n auto-merge armed"
