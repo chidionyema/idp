@@ -42,7 +42,7 @@ def _receipt(flux_not_ready: list, with_count: bool = True) -> str:
     n = len(flux_not_ready)
     head = "ok cluster-state at 2026-08-27T00:00:00Z nodes=1 ready=1 pods=48 pods_not_ready=0"
     if with_count:
-        head += f" flux=20 flux_not_ready={n}"
+        head += f" flux=20 flux_not_ready={n} ds=3 ds_short=0 events_warning=0"  # crew#320 rows
     return head + "\n" + json.dumps({"flux_not_ready": flux_not_ready})
 
 
