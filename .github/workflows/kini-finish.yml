@@ -1,0 +1,62 @@
+# crew#396 step 4: "type 'Finish KINI', close the laptop". The word is an issue comment
+# `FINISH: KINI` from the repository owner (or a dispatch of this workflow). It renames the Job in
+# platform/temporal/kini-finish.yaml to kini-finish-<request> on a branch pushed with the Flux
+# writer deploy key (a GITHUB_TOKEN push fires no checks, so the ruleset could never merge it),
+# opens the pull request and arms auto-merge. Flux applies the renamed Job; the Job runs
+# `sovereign.cli kini finish --wait` against the in-cluster engine; platform/temporal/kini-state.yaml
+# publishes state/kini; oke-check.yml job kini-state grades it. Nothing here reaches the cluster.
+name: kini-finish
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: kini-finish
+  cancel-in-progress: false
+jobs:
+  request:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (startsWith(github.event.comment.body, 'FINISH: KINI') && github.event.comment.user.login == github.repository_owner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: rename the Job to this request, push with the Flux writer key, auto-merge on green
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WRITER_KEY_B64: ${{ secrets.SEED_FLUX_WRITER_IDENTITY_B64 }}
+          REQUEST: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          test -n "$WRITER_KEY_B64" || { echo "FAIL    kini-finish  SEED_FLUX_WRITER_IDENTITY_B64 is not set (capabilities register: flux-writer)"; exit 1; }
+          f=platform/temporal/kini-finish.yaml
+          sed -i -E "s/^  name: kini-finish-[0-9]+$/  name: kini-finish-$REQUEST/" "$f"
+          grep -q "name: kini-finish-$REQUEST" "$f"
+          umask 077; mkdir -p ~/.ssh; printf '%s' "$WRITER_KEY_B64" | base64 -d > ~/.ssh/flux-writer
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/flux-writer -o IdentitiesOnly=yes"
+          git config user.name kini-finish; git config user.email "kini-finish@users.noreply.github.com"
+          b="kini/finish-$REQUEST"
+          git checkout -q -b "$b"
+          git commit -qam "kini: FINISH request $REQUEST runs KiniFinishWorkflow in the cluster (crew#396)"
+          git push -q "git@github.com:${GITHUB_REPOSITORY}.git" "$b"
+          gh pr create --head "$b" --base main \
+            --title "kini: FINISH request $REQUEST (crew#396)" \
+            --body "$(printf '%s\n\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n\n%s\n' \
+              "Board word FINISH: KINI (${{ github.event_name }}, run $REQUEST). Flux applies the renamed Job; it starts KiniFinishWorkflow and waits. Receipt: state/kini via bin/idp-kini-state." \
+              "Spec: features/sovereign-bus/cp0d_kini_finish_trigger.feature" \
+              "Drill: kini-finish" \
+              "Cost-delta-usd-month: 0" \
+              "## Architecture laws" \
+              "- LAW 1 zero-gravity: n/a: Job name only" \
+              "- LAW 2 fractal: n/a: same Job, new request" \
+              "- LAW 3 nervous system: bin/idp-kini-state" \
+              "- LAW 4 calibration: n/a: no prediction made" \
+              "No-Issue: one request of crew#396; the issue closes when the drill is green.")"
+          n=$(gh pr list --head "$b" --base main --state open --json number -q '.[0].number')
+          gh pr merge "$n" --auto --squash
+          echo "ok      kini-finish  request $REQUEST is pull request #$n, auto-merge armed"
