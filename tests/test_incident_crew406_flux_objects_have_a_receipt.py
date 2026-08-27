@@ -69,6 +69,20 @@ def test_grader_fails_on_a_flux_object_that_is_not_ready():
     assert rc == 1 and out.startswith("FAIL") and "ImageUpdateAutomation flux-system/sovereign-worker" in out, out
 
 
+def test_grader_prints_every_not_ready_row_whole_under_the_fail_line():
+    # crew#406: the first live FAIL cut every row at 100 chars, so the reason was unreadable.
+    msg = "failed to push to flux/image-updates: " + "x" * 200
+    bad = [{"kind": "ImageUpdateAutomation", "ns": "flux-system", "name": "sovereign-worker", "ready": False, "message": msg},
+           {"kind": "Kustomization", "ns": "flux-system", "name": "alerts", "ready": False, "message": "dependency alerts-secret is not ready"}]
+    rc, out = _grade(_receipt(bad))
+    lines = out.splitlines()
+    assert rc == 1 and lines[0].startswith("FAIL"), out
+    rows = [l for l in lines if l.startswith("  not-ready  ")]
+    assert len(rows) == 2, out
+    assert f"ImageUpdateAutomation flux-system/sovereign-worker: {msg}" in rows[0], rows[0]
+    assert "Kustomization flux-system/alerts: dependency alerts-secret is not ready" in rows[1], rows[1]
+
+
 def test_grader_fails_on_a_receipt_that_predates_the_flux_rows():
     rc, out = _grade(_receipt([], with_count=False))
     assert rc == 1 and "no flux_not_ready count" in out, out

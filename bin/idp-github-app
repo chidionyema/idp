@@ -11,6 +11,8 @@
 # on request, and only when stdout is not a terminal.
 set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
+# estate-secrets sits beside the main checkout, even when this runs from a worktree under .claude/worktrees (crew#408)
+MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
 D="$IDP/platform/github-app"
 SECRET=github-app
 cmd=${1:-}; shift || true
@@ -46,7 +48,7 @@ token)
   lane=${1:?lane name from platform/github-app/lanes.json}
   perms=$(jq -c --arg l "$lane" '.[$l] // empty' "$D/lanes.json"); [ -n "$perms" ] || { echo "REFUSED: no lane '$lane' in $D/lanes.json"; exit 2; }
   export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-  C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$IDP/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+  C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
   V=$(cd "$IDP/platform/oci" && tofu output -raw vault_id)
   sid=$(oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"secret-name\"=='$SECRET' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output)
   [ -n "$sid" ] && [ "$sid" != null ] || { echo "BLIND   github-app no vault secret $SECRET; run: bin/idp-github-app convert <code>"; exit 2; }
@@ -63,7 +65,7 @@ installation)
   # githubAppInstallationID beside the id and key; the App is no longer Flux's writer (platform/image-automation/flux-writer.yaml, crew#325); kept for the alerts ledger
   # three from this one vault secret. Re-puts the secret with every existing key plus installation_id.
   export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-  C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$IDP/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+  C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
   V=$(cd "$IDP/platform/oci" && tofu output -raw vault_id)
   sid=$(oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"secret-name\"=='$SECRET' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output)
   [ -n "$sid" ] && [ "$sid" != null ] || { echo "BLIND   github-app no vault secret $SECRET; run: bin/idp-github-app convert <code>"; exit 2; }

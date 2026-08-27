@@ -1,0 +1,51 @@
+# crew#396 step 4: the trigger. `FINISH: KINI` (an issue comment, or `gh workflow run
+# kini-finish.yml`) makes .github/workflows/kini-finish.yml rename this Job to
+# kini-finish-<request> on a branch and auto-merge it; Flux applies the new name, the Job starts
+# KiniFinishWorkflow on the in-cluster engine and waits for it. A completed Job is never re-run
+# by a metadata change, which is why the name carries the request. Same image, SA and profile
+# as worker.yaml; the pull secret is the namespace's mirrored ghcr-pull.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kini-finish-0
+  namespace: temporal
+  labels: { app.kubernetes.io/name: kini-finish }
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 7200
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: kini-finish }
+    spec:
+      serviceAccountName: sovereign-worker
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: finish
+          image: idp/sovereign-worker:local
+          command: ["python", "-m", "sovereign.cli", "kini", "finish", "--wait", "--json"]
+          env:
+            - { name: TEMPORAL_HOST, value: temporal-frontend.temporal.svc }
+            - { name: TEMPORAL_PORT, value: "7233" }
+            - { name: TEMPORAL_NAMESPACE, value: estate }
+            - { name: ESTATE_HOME, value: /tmp/estate }
+            - { name: HOME, value: /tmp }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+      volumes:
+        - name: tmp
+          emptyDir: {}

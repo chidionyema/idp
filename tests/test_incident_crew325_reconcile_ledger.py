@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-ALERTS = ROOT / "platform" / "alerts"
+ALERTS = ROOT / "platform" / "alerts-github"   # crew#406: the ledger has its own Kustomization
 
 
 def _docs(path: Path) -> list[dict]:
