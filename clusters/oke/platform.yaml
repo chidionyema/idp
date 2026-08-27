@@ -220,6 +220,31 @@ spec:
       - kind: ConfigMap
         name: estate-config
 ---
+# The Architect row (crew#516 CP4): the hermes-agent gateway (Telegram + a2a) on the cluster,
+# the Mac's ai.architect.gateway leaving the laptop. After secret-store (the vault entry
+# hermes-agent-env); no edge dependency, Telegram polls out and a2a stays in-cluster.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: hermes-agent
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/hermes-agent
+  prune: true
+  dependsOn:
+    - name: secret-store
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: hermes-agent-gateway
+      namespace: hermes-agent
+---
 # MCP row (crew#458): agentgateway + github-mcp on the cluster, reached at mcp.<zone> through the
 # https-mcp listener on prospector-edge. Replaces the colima VM on the founder Mac. After edge
 # and secret-store (the gateway key and GitHub token), like llm.

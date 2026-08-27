@@ -3,3 +3,4 @@ resources:
   - backstage.yaml
   - pull-secret.yaml
   - sovereign-worker.yaml
+  - hermes-agent.yaml
