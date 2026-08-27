@@ -264,9 +264,17 @@ data:
             return datetime.strptime(t[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
         except Exception:
             return 0
+    def event_message(msg: str) -> str:
+        # crew#539, 2026-08-27: receipt 33125739247 cut the autoscaler's Warning at 300 characters,
+        # one word before the name of the OCI limit it hit ("(400, LimitExceeded"), and the Kyverno
+        # audit at "failed at pa". Same class as flux_message (crew#483): the actionable part of a
+        # long message is at its end. Keep 500 whole; past that, the head and the tail.
+        if len(msg) <= 500:
+            return msg
+        return msg[:200] + " ... " + msg[-300:]
     events = sorted(({"at": (e.get("lastTimestamp") or e.get("eventTime") or "")[:19], "ns": e["involvedObject"].get("namespace", ""),
                       "kind": e["involvedObject"].get("kind"), "name": e["involvedObject"].get("name"),
-                      "reason": e.get("reason"), "count": e.get("count", 1), "message": (e.get("message") or "")[:300]}
+                      "reason": e.get("reason"), "count": e.get("count", 1), "message": event_message(e.get("message") or "")}
                      for e in ev_items if ev_time(e) >= cutoff), key=lambda r: r["at"], reverse=True)[:60]
     # crew#401 CP4: the hostnames the cluster publishes (HTTPRoute). bin/idp-catalogue-drift diffs
     # them against backstage/**/catalog-info.yaml; a list that failed is recorded, never left empty.
