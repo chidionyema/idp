@@ -28,7 +28,26 @@ for _ in $(seq 1 "${SURGE_WAIT_ROUNDS:-60}"); do
   NEW=$(active | grep -vxF "$OLD" || true); [ -n "$NEW" ] && break; sleep "${SURGE_POLL_SECONDS:-20}"
 done
 [ -n "$NEW" ] || { echo "surge: no second ACTIVE node after the wait; pool left at size 2 for a person to read"; exit 4; }
-# ACTIVE is the instance, not the kubelet; give it a settle before the old node's pods are pushed.
-sleep "${SURGE_SETTLE_SECONDS:-90}"
+# ACTIVE is the instance, not the kubelet (idp#443 review, 09cd04a6): on BASIC there is no path back
+# once the only node is gone, so the old node is deleted only after the new one is Ready. A runner has
+# no kube path (control_plane_allowed_cidrs), so Ready is read the way every session reads it: the
+# cluster's own receipt state/cluster (platform/state, every 15 min), taken only when written after
+# this surge began, node row name == the new node's private IP, ready == true.
+T_SURGE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+NEW_IP=$(oci ce node-pool get --node-pool-id "$POOL" --query "data.nodes[?id=='$NEW'].\"private-ip\" | [0]" --raw-output)
+BUCKET="${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}"; ns=(); [ -n "${OCI_OS_NAMESPACE:-}" ] && ns=(--namespace-name "$OCI_OS_NAMESPACE")
+ready() { oci os object get "${ns[@]}" --bucket-name "$BUCKET" --name state/cluster --file - 2>/dev/null | python3 -c '
+import sys, json
+r = json.load(sys.stdin); ip, t0 = sys.argv[1], sys.argv[2]
+if str(r.get("at", "")) < t0: sys.exit(0)            # written before the surge began: not evidence
+for n in r.get("nodes", []):
+    if n.get("name") == ip and n.get("ready") is True: print(n["name"])
+' "$NEW_IP" "$T_SURGE"; }
+READY=""
+for _ in $(seq 1 "${SURGE_READY_ROUNDS:-45}"); do
+  READY=$(ready || true); [ -n "$READY" ] && break; sleep "${SURGE_READY_POLL_SECONDS:-60}"
+done
+[ -n "$READY" ] || { echo "surge: new node $NEW ($NEW_IP) is ACTIVE but never Ready in the cluster receipt; old node $OLD kept, pool left at size 2"; exit 4; }
+echo "surge: new node $NEW Ready as $READY (receipt state/cluster written after $T_SURGE)"
 oci ce node-pool delete-node --node-pool-id "$POOL" --node-id "$OLD" --is-decrement-size true --force >/dev/null
 echo "surge: new node $NEW ACTIVE, old node $OLD deleted, pool back to size 1"

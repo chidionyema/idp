@@ -34,7 +34,8 @@ jobs:
     # next human pull request; the scheduled run grades drift either way.
     if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # 25 for check/apply; surge-node waits up to ~65 min for the new node to be ACTIVE then Ready in the receipt (crew#516)
+    timeout-minutes: ${{ inputs.mode == 'surge-node' && 90 || 25 }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
