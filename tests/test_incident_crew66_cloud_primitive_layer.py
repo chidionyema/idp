@@ -72,6 +72,24 @@ def test_the_first_three_callers_go_through_the_layer_never_the_cli(name):
     assert not re.search(r"^\s*[^#]*\boci os object", text, re.M), f"{name} still names the oci CLI"
 
 
+def test_secret_get_refuses_a_split_store(tmp_path):
+    secrets = tmp_path / "secrets"
+    secrets.mkdir()
+    (secrets / "dup").write_text("value")
+    (secrets / "dup.split").write_text("")
+    got = _run(tmp_path, "secret", "get", "dup")
+    assert got.returncode == 3
+    assert "Split" in got.stderr
+
+
+@pytest.mark.parametrize("name", ["idp-hc-enroll", "idp-login-drill", "idp-trace-drill"])
+def test_secret_callers_go_through_the_layer(name):
+    text = (ROOT / "bin" / name).read_text()
+    assert '"$IDP/bin/idp-cloud" secret get' in text
+    assert not re.search(r"^\s*[^#]*\boci (vault secret list|secrets secret-bundle)", text, re.M), \
+        f"{name} still names the oci CLI for secret reads"
+
+
 def test_cluster_state_reads_a_file_backend_receipt_end_to_end(tmp_path):
     r"""Build a fresh, all-green receipt on the file backend and let idp-cluster-state grade it.
 
