@@ -2,8 +2,15 @@
 import importlib.util
 from pathlib import Path
 
+import yaml
+
 SCRIPT = Path(__file__).resolve().parents[1] / "bin" / "idp-actions-refused"
+WF = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "oke-check.yml"
 BILLING = "The job was not started because recent account payments have failed or your spending limit needs to be increased."
+
+
+def _wf():
+    return yaml.safe_load(WF.read_text())
 
 
 def _load():
@@ -53,3 +60,18 @@ def test_a_zero_step_failure_without_an_annotation_is_named_but_is_not_billing(m
     assert rc == 2
     assert "run 9: refused before the first step, no annotation" in out
     assert "FOUNDER ACTION" not in out
+
+
+def test_the_hourly_receipt_runs_the_refusal_check():
+    """crew#535 CP2 second half: the scheduled receipt prints the FOUNDER ACTION row, unattended.
+    The check is a row in the summary, not a gate; || true keeps a transient gh blip from failing
+    the job that runs it. The founder-links job is where it sits so the same GITHUB_TOKEN that
+    probes the home links also reads Actions runs of public estate repos (crew#535 CP2b)."""
+    runs = [
+        str(step.get("run", ""))
+        for job in _wf().get("jobs", {}).values()
+        for step in job.get("steps", [])
+    ]
+    assert any("bin/idp-actions-refused" in r and "GITHUB_STEP_SUMMARY" in r for r in runs), (
+        f"no step runs bin/idp-actions-refused and writes to GITHUB_STEP_SUMMARY; saw {runs}"
+    )
