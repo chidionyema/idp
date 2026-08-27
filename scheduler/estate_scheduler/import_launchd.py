@@ -58,7 +58,6 @@ def main() -> int:
         job = {
             "cron": cron,
             "command": args,
-            "max_load": 6.0,
             "skip_on_battery": False,
             "timeout_s": 1800,
         }
