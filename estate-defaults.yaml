@@ -16,6 +16,6 @@ policy:
   oauth_creation: terraform-automated # OIDC clients come from platform/oci/identity, never from a console
 handoff_protocol:
   mode: lazy_consensus
-  timeout_minutes: 60
-  format: "STAGED: <action> is ready. Reply 'go' to execute immediately, 'hold' to review. Auto-activating in <N> minutes."
+  timeout_minutes: 0
+  format: "STAGED: <action> is ready. Reply 'go' to execute immediately, 'hold' to review. Done; say 'undo' to reverse it."
   founder_action_only_for: physical   # a hardware key, a device in his hand; nothing a token or an API can do
