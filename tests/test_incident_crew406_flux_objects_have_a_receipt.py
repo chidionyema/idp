@@ -42,7 +42,7 @@ def _receipt(flux_not_ready: list, with_count: bool = True) -> str:
     n = len(flux_not_ready)
     head = "ok cluster-state at 2026-08-27T00:00:00Z nodes=1 ready=1 pods=48 pods_not_ready=0"
     if with_count:
-        head += f" flux=20 flux_not_ready={n}"
+        head += f" flux=20 flux_not_ready={n} ds=3 ds_short=0 events_warning=0"  # crew#320 rows
     return head + "\n" + json.dumps({"flux_not_ready": flux_not_ready})
 
 
@@ -67,6 +67,20 @@ def test_grader_fails_on_a_flux_object_that_is_not_ready():
             "ready": False, "message": "failed to push to flux/image-updates: permission denied"}]
     rc, out = _grade(_receipt(bad))
     assert rc == 1 and out.startswith("FAIL") and "ImageUpdateAutomation flux-system/sovereign-worker" in out, out
+
+
+def test_grader_prints_every_not_ready_row_whole_under_the_fail_line():
+    # crew#406: the first live FAIL cut every row at 100 chars, so the reason was unreadable.
+    msg = "failed to push to flux/image-updates: " + "x" * 200
+    bad = [{"kind": "ImageUpdateAutomation", "ns": "flux-system", "name": "sovereign-worker", "ready": False, "message": msg},
+           {"kind": "Kustomization", "ns": "flux-system", "name": "alerts", "ready": False, "message": "dependency alerts-secret is not ready"}]
+    rc, out = _grade(_receipt(bad))
+    lines = out.splitlines()
+    assert rc == 1 and lines[0].startswith("FAIL"), out
+    rows = [l for l in lines if l.startswith("  not-ready  ")]
+    assert len(rows) == 2, out
+    assert f"ImageUpdateAutomation flux-system/sovereign-worker: {msg}" in rows[0], rows[0]
+    assert "Kustomization flux-system/alerts: dependency alerts-secret is not ready" in rows[1], rows[1]
 
 
 def test_grader_fails_on_a_receipt_that_predates_the_flux_rows():

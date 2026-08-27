@@ -56,10 +56,21 @@ spec:
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
             - { name: OTEL_EXPORTER, value: otlp_http }
             - { name: LANGFUSE_HOST, value: "http://langfuse-web.observability.svc:3000" }
+            # crew#408: the Admin UI signs in through the estate identity domain (ADR 0007); the
+            # client id, secret and admin id are the litellm-sso mount. Endpoints come from
+            # estate-config, so no domain URL is typed here (LAW 46).
+            - { name: GENERIC_AUTHORIZATION_ENDPOINT, value: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/authorize" }
+            - { name: GENERIC_TOKEN_ENDPOINT, value: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/token" }
+            - { name: GENERIC_USERINFO_ENDPOINT, value: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/userinfo" }
+            - { name: GENERIC_SCOPE, value: "openid email profile" }
+            - { name: GENERIC_USER_ID_ATTRIBUTE, value: email }
+            - { name: GENERIC_USER_EMAIL_ATTRIBUTE, value: email }
+            - { name: PROXY_BASE_URL, value: "https://llm.${ESTATE_ZONE}" }
           volumeMounts:
             - { name: config, mountPath: /etc/litellm, readOnly: true }
             - { name: upstream, mountPath: /run/secrets/litellm/upstream, readOnly: true }
             - { name: langfuse, mountPath: /run/secrets/litellm/langfuse, readOnly: true }
+            - { name: sso, mountPath: /run/secrets/litellm/sso, readOnly: true }
             - { name: tmp, mountPath: /tmp }
           resources:
             # OOMKilled at 1Gi within 19s of start on the -database image (Prisma engine plus the
@@ -93,6 +104,8 @@ spec:
           secret: { secretName: litellm-upstream }
         - name: langfuse
           secret: { secretName: litellm-langfuse }
+        - name: sso
+          secret: { secretName: litellm-sso }   # crew#408: OIDC client for llm.<zone>/ui, written by tofu
         - name: tmp
           emptyDir: { sizeLimit: 256Mi }
 ---

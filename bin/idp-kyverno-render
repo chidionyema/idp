@@ -55,7 +55,11 @@ S = pathlib.Path(sys.argv[1]); docs = [d for d in yaml.safe_load_all(open(sys.ar
 repos = {d["metadata"]["name"]: d["spec"]["url"] for d in docs if d["kind"] == "HelmRepository"}
 cms = {d["metadata"]["name"]: d.get("data", {}) for d in docs if d["kind"] == "ConfigMap"}
 for hr in (d for d in docs if d["kind"] == "HelmRelease"):
-    spec = hr["spec"]["chart"]["spec"]; name = hr["metadata"]["name"]; ns = hr["metadata"].get("namespace", "default")
+    spec = hr["spec"]["chart"]["spec"]; name = hr["metadata"]["name"]
+    # helm-controller installs into spec.targetNamespace when set (k8s-infra -> observability-agent,
+    # crew#388); the judge must render where the objects land, or an exception scoped to that
+    # namespace looks unused and the DaemonSet fails here while passing on the cluster.
+    ns = hr["spec"].get("targetNamespace") or hr["metadata"].get("namespace", "default")
     vals = S / f"{name}.values.yaml"; vals.write_text("")
     for v in hr["spec"].get("valuesFrom", []):
         if v["kind"] == "ConfigMap": vals.write_text(cms[v["name"]][v.get("valuesKey", "values.yaml")])
@@ -65,8 +69,14 @@ for hr in (d for d in docs if d["kind"] == "HelmRelease"):
         "--version", str(spec["version"]), "-n", ns, "-f", str(vals)], text=True, stderr=subprocess.DEVNULL))
     kz = S / f"{name}.kz"; kz.mkdir(); (kz / "render.yaml").write_text(render.read_text())
     patches = [p for pr in hr["spec"].get("postRenderers", []) for p in pr.get("kustomize", {}).get("patches", [])]
+    # helm-controller semantics (crew#227, SPIRE): an object that names no namespace lands in the
+    # release namespace; one that names its own keeps it, and a Namespace the chart creates keeps
+    # its name. The plain `namespace:` field renames chart-made Namespaces to the release namespace
+    # and two of them collide ("namespace transformation produces ID conflict").
+    (kz / "ns.yaml").write_text(yaml.safe_dump({"apiVersion": "builtin", "kind": "NamespaceTransformer",
+        "metadata": {"name": "release-namespace", "namespace": ns}, "unsetOnly": True}))
     (kz / "kustomization.yaml").write_text(yaml.safe_dump({"apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization",
-        "namespace": ns, "resources": ["render.yaml"], "patches": patches}))
+        "transformers": ["ns.yaml"], "resources": ["render.yaml"], "patches": patches}))
     print(f"{name} {ns} {len(patches)}")
 PY
   # Plain workloads in the same kustomize output, judged as they are.

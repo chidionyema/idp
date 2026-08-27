@@ -36,7 +36,10 @@ def test_kustomization_carries_the_policy_marker():
     text = (ROOT / "platform/backstage/overlays/oke/kustomization.yaml").read_text()
     m = re.search(r'newTag: (\S+) # \{"\$imagepolicy": "flux-system:backstage:tag"\}', text)
     assert m, "newTag line has no $imagepolicy marker; image-automation-controller cannot find it"
-    assert BY_KIND["ImageUpdateAutomation"]["spec"]["update"] == {"path": "./platform/backstage/overlays/oke", "strategy": "Setters"}
+    update = BY_KIND["ImageUpdateAutomation"]["spec"]["update"]
+    assert update["strategy"] == "Setters"
+    # crew#406: one automation walks ./platform; the overlay must sit under its path.
+    assert "platform/backstage/overlays/oke".startswith(update["path"].removeprefix("./")), update
 
 
 def test_controllers_are_installed_and_the_writer_is_a_deploy_key():
@@ -63,5 +66,8 @@ def test_the_automation_branch_is_graded_and_becomes_a_pull_request():
     assert branch in (ci.get("on") or ci.get(True))["push"]["branches"], "required checks would never run on the automation push"
     pr = yaml.safe_load((ROOT / ".github/workflows/image-update-pr.yml").read_text())
     assert (pr.get("on") or pr.get(True))["push"]["branches"] == [branch]
-    run = pr["jobs"]["open"]["steps"][-1]["run"]
+    run = pr["jobs"]["open"]["steps"][-1]["run"].strip()
+    script = ROOT / run.splitlines()[-1].strip()  # crew#439: the step ends by running bin/idp-image-update-pr; the rule binds the script
+    assert script.exists(), script
+    run = script.read_text()
     assert "gh pr merge" in run and "--auto" in run

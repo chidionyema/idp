@@ -3,8 +3,12 @@
 Each entry in schedule.yml becomes one Dagster job (one op that runs the
 command) and one cron schedule. What the plists could not do lives here:
 
-  max_load         the schedule skips, with a reason, while the 1-minute load
-                   average is above it (2026-08-24: load 30 froze the Dock)
+  load gate        the schedule skips, with a reason, while the 1-minute load
+                   average is above max_load_per_core x cores (default 2.0;
+                   2026-08-24: load 30 froze the Dock). Per core, because a bare
+                   number describes one machine: a flat 6.0 on this 12-core Mac
+                   skipped 3836 ticks in 24h and ran nothing for 16 hours
+                   (crew#85, 2026-08-27). An explicit max_load still wins.
   skip_on_battery  the schedule skips while the Mac is discharging
   after            a run_status_sensor starts this job when the named job
                    succeeds; the cron on such a job is optional
@@ -29,6 +33,12 @@ import time
 from pathlib import Path
 
 import yaml
+
+try:
+    from .load_gate import CORES, load_ceiling, load_verdict
+except ImportError:  # loaded as a bare file, not a package (dagster -f definitions.py)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from load_gate import CORES, load_ceiling, load_verdict  # type: ignore[no-redef]
 from dagster import (
     DagsterRunStatus,
     DefaultScheduleStatus,
@@ -94,6 +104,11 @@ def load1() -> float:
     return os.getloadavg()[0]
 
 
+def load_gate(label: str, spec: dict, current: float, cores: int = CORES) -> SkipReason | None:
+    why = load_verdict(label, spec, current, cores)
+    return SkipReason(why) if why else None
+
+
 def on_battery() -> bool:
     try:
         out = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True, timeout=5).stdout
@@ -112,6 +127,18 @@ def _recent_statuses(instance, job_name: str, n: int) -> list[DagsterRunStatus]:
 def circuit_open(instance, job_name: str) -> bool:
     recent = _recent_statuses(instance, job_name, BREAKER_TRIP)
     return len(recent) == BREAKER_TRIP and all(s == DagsterRunStatus.FAILURE for s in recent)
+
+
+def exit_is_ok(spec: dict, returncode: int) -> bool:
+    """0, or a code the job declares in ``ok_exit`` as "ran fine, found something".
+
+    crew#85 (2026-08-27): com.estate.costsentinel exits 1 to say "spend warning" and
+    ai.estate.sovereign-self-check exits 1 to say "enforced an action". Three of those in a
+    row opened the circuit breaker, so each sentinel went silent exactly when it had
+    something to say. Same split as hc-wrap.sh HC_FINDINGS_EXIT: a crash is any code not
+    declared here and still trips the breaker.
+    """
+    return returncode == 0 or returncode in set(spec.get("ok_exit") or [])
 
 
 def make_op(label: str, spec: dict):
@@ -136,9 +163,9 @@ def make_op(label: str, spec: dict):
             context.log.info(proc.stdout[-20000:])
         if proc.stderr:
             context.log.warning(proc.stderr[-20000:])
-        if proc.returncode != 0:
+        if not exit_is_ok(spec, proc.returncode):
             raise Failure(f"{label}: exit {proc.returncode} after {took}s")
-        context.log.info("%s: exit 0 after %ss", label, took)
+        context.log.info("%s: exit %s after %ss", label, proc.returncode, took)
 
     return _run
 
@@ -166,7 +193,7 @@ def _job_metadata(label: str, spec: dict, source: str) -> dict:
 
 
 def _skip_note(spec: dict) -> str:
-    parts = [f"1-minute load average is above {float(spec.get('max_load', 6.0)):.1f}"]
+    parts = [f"1-minute load average is above {load_ceiling(spec):.1f} ({CORES} cores)"]
     if spec.get("skip_on_battery"):
         parts.append("the laptop is on battery")
     parts.append(f"the breaker is open after {BREAKER_TRIP} consecutive failures")
@@ -198,7 +225,6 @@ def make_job(label: str, spec: dict):
 
 
 def make_schedule(label: str, spec: dict, the_job):
-    max_load = float(spec.get("max_load", 6.0))
     battery = bool(spec.get("skip_on_battery", False))
 
     text, _ = describe_job(label, spec)
@@ -213,9 +239,9 @@ def make_schedule(label: str, spec: dict, the_job):
         default_status=DefaultScheduleStatus.RUNNING,
     )
     def _sched(context):
-        current = load1()
-        if current > max_load:
-            return SkipReason(f"{label}: load {current:.1f} > max_load {max_load}")
+        skip = load_gate(label, spec, load1())
+        if skip is not None:
+            return skip
         if battery and on_battery():
             return SkipReason(f"{label}: on battery")
         if circuit_open(context.instance, the_job.name):

@@ -6,7 +6,9 @@
 set -euo pipefail
 export SUPPRESS_LABEL_WARNING=True
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-VAULT="${ESTATE_SECRETS:-$(dirname "$IDP")/estate-secrets}"
+# estate-secrets sits beside the main checkout, even when this runs from a worktree under .claude/worktrees (crew#408)
+MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
+VAULT="${ESTATE_SECRETS:-$(dirname "$MAIN")/estate-secrets}"
 export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
 ENV_NAME="${OCI_ENV:-dev}"
 for t in flux oci kubectl tofu sops; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done

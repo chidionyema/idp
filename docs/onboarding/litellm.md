@@ -1,73 +1,64 @@
-# Onboarding: litellm-up / litellm-down / litellm-status
+# Founder tutorial: picking and adding models (the router, llm.<zone>)
 
-## What it is for
+Executable spec: `features/gates/model-routing.feature`, graded by `tests/test_llm_row.py`.
+Tracked on crew#400. `<zone>` is `estate.zone` in `clusters/<cluster>/estate-config.yaml`
+(today `mumchimp.com`); the founder-surface card "Model router (llm)" in the catalogue at
+`https://catalogue.<zone>` carries the resolved links.
 
-LiteLLM is the one router every model call in this estate should go through:
-one base URL (`http://127.0.0.1:4000/v1`), one place virtual keys and spend
-are tracked, one place a provider can be swapped without touching every
-caller (LAW 34, provider-agnostic from day 0). The Claude CLI and Gemini CLI
-are the two deliberate exceptions — they run on a subscription, not an API
-key, so there is nothing for a proxy to meter.
+## What it is
 
-## Where it lives
+LiteLLM is the estate's one model router. Every model call from every product goes to
+`https://llm.<zone>/v1` with a virtual key. It runs on the cluster as the Flux Kustomization
+`llm` (`platform/llm/`), with its own Postgres (`litellm-db`), so which models exist, who may
+call them and what they cost is one place, and that place is a web console, not a YAML file.
 
-```
-llm/litellm.yml     the compose stack
-llm/config.yaml      model list and routing
-llm/.env             every secret, chmod 600, gitignored, per checkout
-bin/litellm-up        start (safe to re-run)
-bin/litellm-down      stop, keeping the spend ledger and virtual keys
-bin/litellm-status    what is answering, what it serves, what it costs
-```
+## Picking a model (as a caller)
 
-## How it starts
+`model` in the request is a row in the console's Models tab. The floor is `platform/llm/config.yaml`
+`model_list`: `minimax`, `minimax_m27`, `deepseek`, `openrouter`, `minimax-or`, `deepseek-or`,
+`gemini-or`, `gemini`, `vision`. `GET https://llm.<zone>/v1/models` with a key lists what the
+router serves right now, including anything added in the console.
 
-`bin/litellm-up` is `bin/langfuse-up`'s shape, deliberately, so the estate has
-one pattern for bringing a compose stack up: validate `config.yaml` as YAML
-before anything starts (a malformed one exits the container silently, the
-same class of failure ClickHouse had with its XML comment), pull every
-upstream key out of the age vault into `llm/.env` at mode 600, generate the
-proxy's own three secrets once and never again. `LITELLM_SALT_KEY` cannot be
-regenerated once virtual keys exist — rotating it makes every stored key
-unreadable, the same rule Langfuse's `ENCRYPTION_KEY` follows.
+## Adding or changing a model (the founder, no PR)
 
-The kernel (`sovereign/`) never holds `LITELLM_MASTER_KEY`. It reads
-`LITELLM_BASE_URL` and `LITELLM_API_KEY` from the estate secret store
-(`estate-secrets/secrets/<env>/`, through `scripts/secret-load`), and the key
-there is a LiteLLM virtual key, alias `sovereign-kernel`, capped at $5/day by the
-proxy itself. `~/.config/estate/estate.env` is only the fallback for a host with
-no vault. Executable spec: `features/sovereign-bus/cp2_litellm_real.feature`
-(crew#284 CP2).
+1. Open `https://llm.<zone>/ui` (the "Admin console" link on the router's catalogue card).
+2. Sign in with your estate login: the console sends you to the identity domain, the same
+   sign-in as the catalogue. There is no console password (ADR 0007, crew#408). Who may sign in is
+   `founder_emails` in `platform/oci/identity` (app `estate-router-console`), applied by
+   `bin/idp-identity-apply`.
+3. Models → Add Model. Pick the provider, type the public model name, and for the credential
+   reference the key the pod already holds: `os.environ/MINIMAX_API_KEY`,
+   `os.environ/DEEPSEEK_API_KEY`, `os.environ/OPENROUTER_API_KEY`, `os.environ/GEMINI_API_KEY`.
+   A provider the vault does not hold a key for needs the key added to the vault entry
+   `litellm-upstream` first (`bin/idp-vault-put`, run by the `oke-check` apply step from
+   `SEED_*` repository secrets, never from a laptop).
+4. Save. `store_model_in_db: true` in `general_settings` means the row is in `litellm-db` and
+   survives a pod restart; `platform/llm/config.yaml` is never edited for this.
 
-## How to turn it off
+Keys, Teams and Spend are the other tabs of the same console: a product gets its own virtual key
+with a daily budget there (the kernel's is alias `sovereign-kernel`, $5/day).
 
-```
-bin/litellm-down
-```
+## Who can sign in, and how it is wired
 
-Containers stop, the spend ledger and virtual keys survive.
-
-```
-bin/litellm-down --wipe
-```
-
-Deletes them as well. Cannot be undone.
+`platform/oci/identity/main.tf` creates the confidential OIDC client `estate-router-console`
+(redirect `https://llm.<zone>/sso/callback`), grants it to every address in `founder_emails`, and
+writes the client id, secret and admin id to the vault as `litellm-sso-client-id`,
+`litellm-sso-client-secret` and `litellm-sso-admin-id`. `platform/llm/external-secret.yaml`
+(`litellm-sso`) mounts them; the pod exports them as `GENERIC_CLIENT_ID`, `GENERIC_CLIENT_SECRET`
+and `PROXY_ADMIN_ID`, and the endpoints come from `estate-config` (`ESTATE_OIDC_DOMAIN_URL`).
+Nothing is seeded by hand and no value is ever sent to a person (crew#407). Break-glass: the
+form at `/ui/login` accepts the master key, which only the vault holds (`litellm-upstream`); it
+is read by a pod, never by a chat.
 
 ## Checking it
 
-```
-bin/litellm-status
-```
+- `curl -s -o /dev/null -w '%{http_code}\n' https://llm.<zone>/health/liveliness` → `200`
+- `curl -s -o /dev/null -w '%{http_code}\n' https://llm.<zone>/ui/` → `200`
+- `curl -sI https://llm.<zone>/sso/key/generate | grep -i '^location'` → the identity domain (`identity.oraclecloud.com`)
+- `gh workflow run oke-check.yml -f mode=check` → the `model-routing` row
 
-Exits non-zero only when the proxy is actually not answering — a running
-container serving a refused config still counts as down, because `docker ps`
-would say otherwise and this check exists specifically to catch that case.
+## The laptop stack is gone from the platform
 
-## Related files
-
-```
-bin/litellm-up / litellm-down / litellm-status
-llm/litellm.yml, llm/config.yaml, llm/.env
-docs/specs/fortress-stack.md         defines "done" for this stack
-docs/onboarding/langfuse.md          the sibling stack this one's shape follows
-```
+`bin/litellm-up`, `llm/litellm.yml` and `llm/.env` are the developer's local mirror for tests
+(`tests/test_llm_row.py` keeps the two `config.yaml` files in step). The estate's router is the
+cluster one above; a laptop being off does not change whether a model call is routed (crew#313).

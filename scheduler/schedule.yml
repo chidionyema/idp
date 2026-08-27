@@ -6,7 +6,6 @@ jobs:
     - /usr/bin/python3
     - ~/.claude/scripts/aiden/tick.py
     cron: '*/5 * * * *'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.agent-guard-lint:
@@ -15,16 +14,25 @@ jobs:
     - $CODE/agent-guard/bin/launchd-lint
     - --broadcast-on-red
     cron: 33 5,11,17,23 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
+  ai.estate.checkout-drift:
+    command:
+    - ~/.claude/scripts/hc-wrap.sh
+    - checkout-drift
+    - /usr/bin/python3
+    - $CODE/idp/bin/idp-checkout-drift
+    env:
+      ESTATE_CHECKOUTS: $CODE/crew:$CODE/idp:$CODE/hermes-v2:~/.claude/scripts
+    cron: 17 * * * *
+    skip_on_battery: false
+    timeout_s: 600
   ai.estate.dep-alerts:
     command:
     - /usr/bin/python3
     - ~/.claude/scripts/estate/dep_alerts.py
     cron: 10 8 * * *
     cwd: ~/.claude/scripts
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.drills:
@@ -34,7 +42,6 @@ jobs:
     - --all
     cron: 30 4 * * *
     cwd: ~/.claude/scripts
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.friction-relay:
@@ -46,7 +53,6 @@ jobs:
     - --refresh
     cron: '*/10 * * * *'
     cwd: '~'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.idp:
@@ -58,7 +64,6 @@ jobs:
     cwd: $IDP
     env:
       HOME: '~'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.key-escrow:
@@ -68,7 +73,6 @@ jobs:
     - --seal
     cron: 10 5 * * *
     cwd: ~/.claude/scripts
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.law-writer:
@@ -79,7 +83,6 @@ jobs:
     - ~/.claude/scripts/law-writer.py
     - --write
     cron: 5 1,7,13,19 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.sovereign-digest:
@@ -92,10 +95,10 @@ jobs:
     cwd: $IDP
     description: Builds the signed daily digest (max six lines, kernel-signed) from the receipt chain and posts it to the founder's Telegram; KINI spec 2.5, crew#284 CP5. Hour matches presence.digest_hour.
     cron: 0 9 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 300
   ai.estate.sovereign-self-check:
+    ok_exit: [1]  # 1 = ran fine and reports a finding; not a crash
     command:
     - $IDP/sovereign/.venv/bin/python
     - -m
@@ -106,7 +109,6 @@ jobs:
     cwd: $IDP
     description: Evaluates the self-termination rules (KINI spec 5, crew#284 CP6) every five minutes and acts on the verdict; Langfuse blind over blind.halt_after_min or a low-confidence streak stops running sessions, an alert flood posts one signed digest.
     cron: '*/5 * * * *'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 120
   ai.estate.tracked-guard:
@@ -116,24 +118,22 @@ jobs:
     - --sync
     cron: '*/30 * * * *'
     cwd: ~/.claude/scripts
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.hermes.runaway-reaper:
     command:
     - /usr/local/bin/python3
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - ai.hermes.runaway-reaper
     - --
     - /bin/bash
-    - ~/.hermes/scripts/runaway-reaper.sh
+    - ~/.claude/scripts/estate/runaway-reaper.sh
     cron: '*/5 * * * *'
     cwd: ~/.hermes
     env:
       HERMES_HOME: ~/.hermes
       HOME: '~'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.idp.reconcile:
@@ -155,7 +155,6 @@ jobs:
     - --root
     - $CODE
     cron: 57 1,7,13,19 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.chidionyema.guard-selftest:
@@ -166,13 +165,12 @@ jobs:
     - --alert
     cron: 15 7,19 * * *
     cwd: ~/.claude/scripts
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.chidionyema.reflect:
     command:
     - ~/Documents/code/prospector/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.chidionyema.reflect
     - --
@@ -180,7 +178,6 @@ jobs:
     - ~/.claude/scripts/reflect.py
     - --json
     cron: 9 3,7,11,15,19,23 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.estate.bundlepush:
@@ -188,7 +185,6 @@ jobs:
     - ~/.claude/bin/estate-runner
     - ~/.claude/scripts/estate/estate_bundle_push.sh
     cron: 27 0,2,4,6,8,10,12,14,16,18,20,22 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.estate.catalog-render:
@@ -199,10 +195,10 @@ jobs:
     - /usr/local/bin/python3
     - $IDP/bin/catalog-render
     cwd: $IDP
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 900
   com.estate.costsentinel:
+    ok_exit: [1]  # 1 = ran fine and reports a finding; not a crash
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - estate-costsentinel
@@ -210,7 +206,6 @@ jobs:
     - ~/.claude/scripts/estate/estate_cost_sentinel.py
     - --digest
     cron: '*/15 * * * *'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.estate.downshift:
@@ -218,7 +213,6 @@ jobs:
     - /usr/local/bin/python3
     - ~/.claude/scripts/estate/estate_downshift.py
     cron: '*/15 * * * *'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.estate.inventory:
@@ -233,7 +227,6 @@ jobs:
     cwd: ~/.estate
     env:
       HOME: '~'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.estate.restic-backup:
@@ -242,7 +235,6 @@ jobs:
     - estate-restic
     - ~/.claude/scripts/estate/restic-backup.sh
     cron: 30 3 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.agentcert:
@@ -255,7 +247,6 @@ jobs:
     - ~/.claude/scripts/estate/agent_cert.py
     cron: 11 0,2,4,6,8,10,12,14,16,18,20,22 * * *
     cwd: ~/.claude/scripts/estate
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.board:
@@ -266,7 +257,6 @@ jobs:
     - ~/.claude/state/founder-board.html
     cron: 43 0,2,4,6,8,10,12,14,16,18,20,22 * * *
     cwd: '~'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.configsyntaxsweep:
@@ -275,7 +265,6 @@ jobs:
     - ~/.claude/scripts/config-syntax-sweep.py
     - --broadcast-on-red
     cron: 17 2,8,14,20 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.estateaudit:
@@ -285,7 +274,6 @@ jobs:
     - --html
     - --state
     cron: 21 1,7,13,19 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.estatelander:
@@ -294,7 +282,6 @@ jobs:
     - $CODE/crew/scripts/estate-lander
     - --push
     cron: 29 1,7,13,19 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.estatepush:
@@ -302,7 +289,6 @@ jobs:
     - /bin/bash
     - ~/.claude/scripts/estate/estate_push.sh
     cron: 19 0,2,4,6,8,10,12,14,16,18,20,22 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.estatesnapshot:
@@ -313,7 +299,6 @@ jobs:
     - --commit
     cron: 3 0,2,4,6,8,10,12,14,16,18,20,22 * * *
     cwd: $CODE/.crew-state
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.estatewatch:
@@ -321,7 +306,6 @@ jobs:
     - /usr/bin/python3
     - ~/.claude/scripts/estate/estate_watch.py
     cron: '*/30 * * * *'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.ingit:
@@ -334,7 +318,6 @@ jobs:
     - ~/.claude/scripts/estate/in-git.py
     cron: 35 0,2,4,6,8,10,12,14,16,18,20,22 * * *
     cwd: ~/.claude/scripts/estate
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.lawenforcement:
@@ -347,7 +330,6 @@ jobs:
     - $CODE/crew/science/law_enforcement.py
     cron: 51 0,2,4,6,8,10,12,14,16,18,20,22 * * *
     cwd: $CODE/crew
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.sciencecollect:
@@ -357,7 +339,6 @@ jobs:
     - $CODE/crew/scripts/science-collect
     cron: 37 1,7,13,19 * * *
     cwd: $CODE/crew
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.stuckdetector:
@@ -366,30 +347,6 @@ jobs:
     - ~/.claude/scripts/stuck_detector_tick.sh
     cron: '*/5 * * * *'
     cwd: '~'
-    max_load: 6.0
-    skip_on_battery: false
-    timeout_s: 1800
-  com.prospector-control.failover-watch:
-    command:
-    - ~/.prospector/bin/failover
-    - check
-    cron: '*/1 * * * *'
-    max_load: 6.0
-    skip_on_battery: false
-    timeout_s: 1800
-  com.prospector-control.receipt-bridge:
-    command:
-    - /usr/local/bin/python3
-    - ~/.hermes/scripts/launchd_receipt.py
-    - --label
-    - com.prospector-control.receipt-bridge
-    - --script
-    - engine_failover.py
-    - --
-    - ~/.prospector/bin/failover
-    - receipts
-    cron: '*/15 * * * *'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.backup:
@@ -397,7 +354,7 @@ jobs:
     - ~/.claude/scripts/hc-wrap.sh
     - prospector-backup
     - ~/Documents/code/prospector-live/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.prospector.backup
     - --
@@ -409,13 +366,12 @@ jobs:
     env:
       HOME: '~'
       PROSPECTOR_STORE_DIR: ~/Documents/code/prospector/store
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.estate-inventory:
     command:
     - ~/Documents/code/prospector-live/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.prospector.estate-inventory
     - --
@@ -427,13 +383,12 @@ jobs:
     cwd: ~/Documents/code/prospector-live
     env:
       HOME: '~'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.launchd-held:
     command:
     - ~/Documents/code/prospector/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.prospector.launchd-held
     - --
@@ -445,7 +400,6 @@ jobs:
     env:
       HOME: '~'
       PROSPECTOR_STORE_DIR: ~/Documents/code/prospector/store
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.log-rotation:
@@ -459,7 +413,6 @@ jobs:
     env:
       HOME: '~'
       PROSPECTOR_STORE_DIR: ~/Documents/code/prospector/store
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.offsite-backup:
@@ -475,13 +428,12 @@ jobs:
     env:
       HOME: '~'
       PROSPECTOR_STORE_DIR: ~/Documents/code/prospector/store
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.process-audit:
     command:
     - ~/Documents/code/prospector/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.prospector.process-audit
     - --
@@ -494,7 +446,6 @@ jobs:
     env:
       HOME: '~'
       PROSPECTOR_STORE_DIR: ~/Documents/code/prospector/store
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.restore-drill:
@@ -502,7 +453,7 @@ jobs:
     - ~/.claude/scripts/hc-wrap.sh
     - restore-drill
     - ~/Documents/code/prospector-live/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.prospector.restore-drill
     - --script
@@ -517,6 +468,5 @@ jobs:
     env:
       HOME: '~'
       PROSPECTOR_STORE_DIR: ~/Documents/code/prospector/store
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800

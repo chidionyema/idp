@@ -78,10 +78,13 @@ deny contains msg if {
 	msg := sprintf("rule=no_gui_actions | an instruction line asks for a GUI step: %q | fix: express the step as a command, a Terraform block or an APPROVE: word; if privilege is missing, open a privilege-elevation issue (crew#287 shape)", [trim_space(l)])
 }
 
-# --- founder_approval_required -----------------------------------------------------------
-# A change to a founder-facing system declares the word he replies with. The merge gate
-# (bin/pr-report --approval) then looks for `APPROVE: <word>` from his login on the PR or
-# on Telegram; this rule only guarantees there is a word to look for.
+# --- founder_denied ----------------------------------------------------------------------
+# Founder, 2026-08-27: "you need to approve all / no founder friction if can be avoided / yes
+# portal". Until then a change under a founder-facing prefix waited for `APPROVE: <word>` from
+# his login; 8 green PRs sat a median 6.1h (44h total) on that word alone. The word is now
+# optional and only his veto reads it: a PR that declares `Approval-word: <word>` and carries a
+# `DENY: <word>` comment from the repository owner's login (bin/pr-report pr.denials) is refused.
+# No word, no APPROVE, and a green PR merges. The word said on Telegram is still not evidence.
 
 founder_facing_prefixes := {"backstage/", "platform/identity/", "platform/edge/", "docs/policy/", "estate-defaults.yaml"}
 
@@ -91,14 +94,15 @@ touches_founder_facing if {
 	startswith(f, p)
 }
 
-has_approval_word if {
-	regex.match(`(?m)^Approval-word:\s*\S+`, input.pr.body)
+approval_word := w if {
+	m := regex.find_all_string_submatch_n(`(?m)^Approval-word:\s*(\S+)`, input.pr.body, 1)
+	count(m) == 1
+	w := m[0][1]
 }
 
 deny contains msg if {
-	touches_founder_facing
-	not has_approval_word
-	msg := "rule=founder_approval_required | the PR changes a founder-facing surface (backstage/, platform/identity/, platform/edge/, docs/policy/, estate-defaults.yaml) and names no approval word | fix: add a line `Approval-word: <word>` to the PR body; the founder replies `APPROVE: <word>` or `DENY: <word>`"
+	approval_word in object.get(input.pr, "denials", [])
+	msg := sprintf("rule=founder_denied | the founder replied `DENY: %s` on this PR | fix: do not merge; address his reason and open a new PR with a new word", [approval_word])
 }
 
 # --- cost_budget -------------------------------------------------------------------------

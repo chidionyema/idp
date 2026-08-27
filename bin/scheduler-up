@@ -16,7 +16,7 @@ log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 # file ticks nothing and says nothing.
 "$IDP/.venv/bin/python" -c "import sys; sys.path.insert(0, '$IDP/scheduler'); from estate_scheduler.definitions import defs; print('schedule.yml ok:', len(list(defs.jobs or [])), 'jobs')"
 
-if ! pgrep -qf "dagster-daemon run"; then
+if ! pgrep -qf "[d]agster-daemon run"; then  # bracket: never match a shell whose own command line names it (crew#85)
   ( cd "$IDP/scheduler" && nohup "$IDP/.venv/bin/dagster-daemon" run -w workspace.yaml > "$IDP/run/dagster-daemon.out" 2>&1 & echo $! > "$IDP/run/dagster-daemon.pid" )
   log "daemon    starting (pid $(cat "$IDP/run/dagster-daemon.pid"))"
 else
@@ -26,5 +26,16 @@ if ! curl -fsS -o /dev/null "http://127.0.0.1:$PORT/server_info" 2>/dev/null; th
   ( cd "$IDP/scheduler" && nohup "$IDP/.venv/bin/dagster-webserver" -w workspace.yaml -h 127.0.0.1 -p "$PORT" > "$IDP/run/dagster-web.out" 2>&1 & echo $! > "$IDP/run/dagster-web.pid" )
   log "webserver starting on $PORT (pid $(cat "$IDP/run/dagster-web.pid"))"
 else
-  log "webserver already up on $PORT"
+  # crew#85, 2026-08-27 07:45Z: idp#316 landed, the running webserver kept the code location it had
+  # imported before the merge (ImportError: load_gate), and every launch from the UI was refused
+  # for two hours while the tree on disk was correct. A running webserver serves the tree it last
+  # loaded, so an update is not applied until the location is reloaded. Reload, and refuse to
+  # report "up" over a location that does not import.
+  reload='{"query":"mutation { reloadWorkspace { __typename ... on Workspace { locationEntries { name locationOrLoadError { __typename ... on PythonError { message } } } } ... on PythonError { message } } }"}'
+  if ! curl -fsS -m 120 -H 'Content-Type: application/json' -d "$reload" "http://127.0.0.1:$PORT/graphql" \
+      | "$IDP/.venv/bin/python" "$IDP/scheduler/reload_check.py"; then
+    log "webserver up on $PORT but its code location does not load; see above"
+    exit 1
+  fi
+  log "webserver already up on $PORT; code location reloaded from the tree on disk"
 fi
