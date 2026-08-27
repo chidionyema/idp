@@ -1,3 +1,11 @@
+# crew#524 CP5 — the sandbox is this pod, not a docker-in-pod or a Job (attributed 2026-08-27):
+# the Hermes fork's tools/terminal_tool.py has backends local, docker, ssh, singularity, modal,
+# daytona, vercel_sandbox and no Kubernetes Job backend; the gateway sets no terminal.backend, so
+# tool commands run `local` inside this container. That container is the admitted sandbox:
+# non-root 10001, readOnlyRootFilesystem, all capabilities dropped, RuntimeDefault seccomp, no
+# privilege escalation, Kyverno baseline. The `sandbox:` block in hermes-v2 config.yaml (pinned
+# image, :ro mounts) is honoured only where Docker exists (a Mac) and is inert here. A Job backend
+# would be a fork feature nobody upstream maintains (LAW 43); the row states this instead.
 # The Architect (hermes-agent gateway, Telegram + a2a) on OKE: crew#516 CP4, 2026-08-27.
 #
 # What runs here is the same thing the Mac's ai.architect.gateway launchd job runs: the image
