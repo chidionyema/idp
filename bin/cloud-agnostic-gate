@@ -80,7 +80,9 @@ PROSE = re.compile(r"^\s*-?\s*name:")
 
 def _oci_cli_callers(root: pathlib.Path, untracked: set[str]) -> list[str]:
     """Tracked files under bin/ and .github/workflows that invoke the oci CLI. Measured 2026-08-27
-    (crew#309): 30 scripts + 6 workflows. The platform manifests name no cloud; the operator tooling
+    (crew#309) by this function on main: 25 = 23 scripts + 2 workflows (a grep for files merely
+    naming OCI said 36; env names and step titles are not calls). The platform manifests name no
+    cloud; the operator tooling
     does, through three primitives (object storage, secret read/write, IAM read). This number is
     printed so the vendor-agnostic lane (crew#66) has a floor it can watch go down; it does not fail
     the gate until it is wired to a threshold. Comment lines are not counted."""
