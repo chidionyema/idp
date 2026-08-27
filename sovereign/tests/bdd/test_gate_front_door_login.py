@@ -12,6 +12,12 @@ IDP = Path(__file__).resolve().parents[3]
 PLATFORM = IDP / "platform"
 
 
+
+def api_key_enforced(cfg: str) -> bool:
+    """True when an agentgateway config carries a strict apiKey policy with a hashed key: the
+    two-part proof an `idp.estate/auth: api-key` route must show (crew#458)."""
+    return "apiKey:" in cfg and "mode: strict" in cfg and "keyHash: sha256:" in cfg
+
 def _docs() -> list[tuple[Path, dict]]:
     out = []
     for p in sorted(PLATFORM.rglob("*.y*ml")):
@@ -67,6 +73,12 @@ def _oauth2_proxy_in_front(state: dict) -> None:
             assert paths and all(x == {"type": "PathPrefix", "value": "/api/public/"} for x in paths), f"{p}: langfuse-project-keys route exposes {paths}"
             keys = (p.parent / "langfuse.yaml").read_text()
             assert "langfuse-init-public-key" in keys and "langfuse-init-secret-key" in keys, f"{p}: langfuse.yaml pulls no project keys"
+            continue
+        if auth == "api-key":
+            # The MCP gateway (crew#458): agentgateway enforces the key itself, and the proof is a
+            # strict apiKey policy with a hashed key in the config that sits beside the route.
+            gw = p.parent / "agentgateway.yaml"
+            assert gw.exists() and api_key_enforced(gw.read_text()), f"{p}: annotated api-key but {gw} enforces no strict apiKey"
             continue
         assert auth == "bearer-master-key", f"{p}: route {d['metadata']['name']} has no oauth2-proxy Middleware in front ({refs}) and no idp.estate/auth annotation"
         cfg = p.parent / "config.yaml"

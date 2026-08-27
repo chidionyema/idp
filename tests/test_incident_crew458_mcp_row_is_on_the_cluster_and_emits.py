@@ -77,3 +77,15 @@ def test_incident_crew458_the_vault_entry_the_row_reads_can_be_seeded():
     assert f'"$ENTRY" = {key} ' in seed and f"put {key} " in seed
     for var in ("MCP_GATEWAY_KEY", "GITHUB_MCP_TOKEN"):
         assert f"SEED_{var}: ${{{{ secrets.SEED_{var} }}}}" in seed, var
+
+
+def test_incident_crew458_api_key_marker_needs_a_strict_hashed_policy_both_ways():
+    """The front-door gates accept `idp.estate/auth: api-key` only with the proof beside it."""
+    from test_front_door_every_route_is_behind_the_one_login import api_key_enforced
+
+    cfg = (ROW / "agentgateway.yaml").read_text()
+    assert api_key_enforced(cfg)
+    assert not api_key_enforced(cfg.replace("mode: strict", "mode: optional"))
+    assert not api_key_enforced(cfg.replace("keyHash: sha256:", "key: "))
+    route = yaml.safe_load((ROW / "httproute.yaml").read_text())
+    assert route["metadata"]["annotations"]["idp.estate/auth"] == "api-key"

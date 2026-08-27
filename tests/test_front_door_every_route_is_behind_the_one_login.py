@@ -39,6 +39,12 @@ def test_routes_exist():
     assert ROUTES, "no HTTPRoute under platform/"
 
 
+
+def api_key_enforced(cfg: str) -> bool:
+    """True when an agentgateway config carries a strict apiKey policy with a hashed key: the
+    two-part proof an `idp.estate/auth: api-key` route must show (crew#458)."""
+    return "apiKey:" in cfg and "mode: strict" in cfg and "keyHash: sha256:" in cfg
+
 @pytest.mark.parametrize("f,route", ROUTES, ids=[d["metadata"]["name"] for _, d in ROUTES])
 def test_every_route_outside_identity_is_behind_forward_auth(f, route):
     ns = route["metadata"]["namespace"]
@@ -51,6 +57,13 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
         cfg = pathlib.Path(f).parent / "config.yaml"
         assert cfg.exists() and "master_key: os.environ/" in cfg.read_text(), \
             f"{f}: annotated bearer-master-key but {cfg} enforces no master_key"
+        return
+    # The MCP gateway (crew#458) enforces its own API key: the route may skip oauth2-proxy only when
+    # it says so AND the agentgateway config beside it carries a strict apiKey policy with a hashed key.
+    if (route["metadata"].get("annotations") or {}).get("idp.estate/auth") == "api-key":
+        gw = pathlib.Path(f).parent / "agentgateway.yaml"
+        assert gw.exists() and api_key_enforced(gw.read_text()), \
+            f"{f}: annotated api-key but {gw} enforces no strict apiKey"
         return
     # The trace store's public API (crew#325) carries Langfuse's own project-key auth. The route may
     # skip oauth2-proxy only when it says so AND exposes nothing but /api/public/, AND the namespace
