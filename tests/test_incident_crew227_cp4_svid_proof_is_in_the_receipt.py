@@ -9,7 +9,9 @@ a finished CSI workload's log yields its SPIFFE IDs; a log that could not be rea
 a pod that has not finished is not asked.
 Fourth row (idp#336 residual, 07:00Z receipt 33048165522): every proof pod said "workload attestation failed"
 and the receipt could not say why; the spire-agent pods' error/warning/attest log lines are a row, a read
-that failed is an error row, a pod that is not the agent is not asked."""
+that failed is an error row, a pod that is not the agent is not asked.
+Fifth row (receipt 08:45:03Z): a kept line is the head of the log line, where logfmt puts time, level and msg;
+the tail slice hid the verdict on every AttestAgent line."""
 import json
 import subprocess
 import sys
@@ -51,7 +53,9 @@ def test_receipt_names_spiffe_ids_and_csi_workloads_and_the_role_allows_the_list
     ]
     agent_log = ('time=1 level=info msg="Node attestation was successful"\ntime=2 level=info msg=quiet\n'
                  'time=3 level=error msg="Failed to collect all selectors for PID" error="dial tcp 127.0.0.1:10250"\n')
-    server_log = ('time=4 level=info msg="Created entry" spiffe_id=spiffe://estate/ns/a/sa/proof parent_id=spiffe://estate/spire/agent/k8s_psat/estate/n1\n'
+    LONG = 'time=4 level=info msg="Created entry" spiffe_id=spiffe://estate/ns/a/sa/proof parent_id=spiffe://estate/spire/agent/k8s_psat/estate/n1' + " selectors=" + "k8s:pod-label:x," * 40
+    # fifth row (receipt 08:45:03Z): a long line keeps its head, where logfmt puts time, level and msg
+    server_log = (LONG + '\n'
                   'time=5 level=info msg=quiet\n')
     stub = ("def pod_log(ns, name, c, tail=20):\n"
             "    if name in ('log-broken', 'spire-agent-broken'): return 'log read failed: 500'\n"
@@ -71,7 +75,7 @@ def test_receipt_names_spiffe_ids_and_csi_workloads_and_the_role_allows_the_list
                          'time=3 level=error msg="Failed to collect all selectors for PID" error="dial tcp 127.0.0.1:10250"']},
               {"pod": "s/spire-agent-broken", "node": "n2", "lines": [], "error": "log read failed: 500"}]
     server = [{"pod": "s/spire-server-0", "container": "spire-server", "error": "",
-               "lines": ['time=4 level=info msg="Created entry" spiffe_id=spiffe://estate/ns/a/sa/proof parent_id=spiffe://estate/spire/agent/k8s_psat/estate/n1']}]
+               "lines": [LONG[:300]]}]
     assert got == {"clusterspiffeids": [{"name": "agents", "podsSelected": 3, "entriesToRender": 3}],
                    "error": "", "csi_workloads": csi_workloads, "svids": svids, "agents": agents, "server": server}
     failing = (f"pods = {pods!r}\nimport json, re\n"
