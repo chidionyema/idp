@@ -130,6 +130,8 @@ metadata:
   description: "The one platform. Open pull requests are work in flight; the security tab is Dependabot and code scanning; packages are the images the cluster runs."
   annotations:
     idp/updated-by: "Agents; every merge to main is deployed by Flux"
+    # docs/ + mkdocs.yml in this repo, built by TechDocs from GitHub (crew#459).
+    backstage.io/techdocs-ref: url:https://github.com/chidionyema/idp/tree/main/
   tags: [founder]
   links:
     - title: "Pull requests"
