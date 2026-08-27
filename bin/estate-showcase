@@ -154,6 +154,17 @@ def science(path: Path) -> str | None:
     return f"{len(caps)} rows on the science page, {len(blind)} BLIND"
 
 
+NEXT = ROOT / "docs" / "NEXT.md"
+
+
+def next_bar(path: Path = NEXT) -> str:
+    """crew#403 CP6: quote the Next page's bar, or say it is missing (LAW 28)."""
+    if not path.is_file():
+        return f"BLIND (no page at {path}; run bin/estate-next)"
+    lines = [l[2:] for l in path.read_text(encoding="utf-8").splitlines() if l.startswith("- Checkpoints:") or l.startswith("- When:")]
+    return "; ".join(lines) + f" — see `{path.name}`" if lines else f"BLIND ({path.name} carries no bar)"
+
+
 def render(taken: str, docs: list, std_rows: list, sci: str | None, std_path: Path, sci_path: Path) -> str:
     graded = []
     for d in docs:
@@ -175,6 +186,7 @@ def render(taken: str, docs: list, std_rows: list, sci: str | None, std_path: Pa
         f"- Entities: **{n[ELITE]} ELITE**, **{n[GAP]} GAP**, **{n[BLIND]} BLIND** of {len(graded)}",
         f"- Standards rows: **{len(std_rows) - len(sgap)} live**, **{len(sgap)} not yet** of {len(std_rows)}",
         f"- Science: {sci or f'BLIND (no page at {sci_path})'}",
+        f"- Next: {next_bar()}",
         "",
         "## Gaps, loudest first",
         "",

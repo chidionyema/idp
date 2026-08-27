@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""estate-next: the "what is planned, what is blocking, when" table, generated (crew#403 CP6).
+
+Founder, 2026-08-27, the third time that day: "what major capabilities and showcase do you have
+planned and what is outstanding or blocking, we should automate this and reduce founder friction
+for always asking about major capabilities and progress ... and when to expect". LAW 44: a repeated
+instruction becomes a protocol, and this file is it. Nobody answers that question from memory
+again; the page answers it, and the page is drawn from three things that already exist:
+
+    - every open `- [ ] CP<n>` row of every open crew issue        (planned)
+    - the newest feed handoff per lane, its 🔴 and 🟡 lines         (blocking / active)
+    - an `Expect: <date>` line under the checkpoint row              (when)
+
+A checkpoint with no `Expect:` line is a red row, never a blank: the owner has not said when.
+
+    estate-next                          write docs/NEXT.md from gh + ~/.estate/feed.md
+    estate-next --issues f.json --feed f.md --out p.md   the same from files (tests, offline)
+    estate-next --check                  exit 1 when docs/NEXT.md differs from the inputs
+
+Rows are red first (crew#474): blocking, then no date, then active, then planned.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "docs" / "NEXT.md"
+FEED = Path(os.environ.get("ESTATE_FEED") or os.path.join(os.environ.get("ESTATE_HOME", os.path.expanduser("~/.estate")), "feed.md"))
+REPO = os.environ.get("ESTATE_CREW_REPO", "chidionyema/crew")
+
+CP_RE = re.compile(r"^\s*- \[ \] \**(CP[\w.-]*)\**[:\s]*(.*)$")
+EXPECT_RE = re.compile(r"^\s+Expect:\s*(\S.*)$")
+HANDOFF_RE = re.compile(r"^## (\S+) · (?:session )?(\S+) · (?:lane )?(\S+)")
+BLOCKING, ACTIVE, PLANNED = "BLOCKING", "ACTIVE", "PLANNED"
+NODATE = "**NO DATE**"
+ORDER = {BLOCKING: 0, ACTIVE: 1, PLANNED: 2}
+LANE_WINDOW_H = 3  # feed-guard holds a lane for 2h after its handoff; older is a session that ended
+
+
+def fetch_issues(repo: str, run=subprocess.run) -> list[dict]:
+    """Every open issue, paginated; pull requests dropped. `gh issue list -L N` is a silent cap
+    (188 open on 2026-08-27; a 500 cap would drop checkpoints with exit 0, idp#402 review)."""
+    out = run(["gh", "api", "--paginate", f"repos/{repo}/issues?state=open&per_page=100",
+               "--jq", '.[] | {number, title, body, url: .html_url, pr: (.pull_request != null)}'],
+              capture_output=True, text=True, check=True).stdout
+    issues = [json.loads(line) for line in out.splitlines() if line.strip()]
+    return [{k: v for k, v in i.items() if k != "pr"} for i in issues if not i["pr"]]
+
+
+def checkpoints(issues: list[dict]) -> list[dict]:
+    """Every open `- [ ] CP` row, with the `Expect:` line indented under it, if any."""
+    rows = []
+    for issue in issues:
+        lines = (issue.get("body") or "").splitlines()
+        for i, line in enumerate(lines):
+            m = CP_RE.match(line)
+            if not m:
+                continue
+            expect = None
+            for nxt in lines[i + 1:]:
+                if CP_RE.match(nxt) or (nxt.strip() and not nxt.startswith(" ")):
+                    break
+                e = EXPECT_RE.match(nxt)
+                if e:
+                    expect = e.group(1).strip()
+                    break
+            rows.append({"issue": issue["number"], "title": issue.get("title", ""), "url": issue.get("url", ""),
+                         "cp": m.group(1), "what": m.group(2).strip()[:90], "expect": expect})
+    return rows
+
+
+def lanes(feed_text: str, now: datetime | None = None) -> dict[str, dict]:
+    """Newest handoff per lane inside LANE_WINDOW_H: its 🔴 and 🟡 lines and the issues each names."""
+    now = now or datetime.now(timezone.utc)
+    latest: dict[str, dict] = {}
+    cur = None
+    for line in feed_text.splitlines():
+        h = HANDOFF_RE.match(line)
+        if h:
+            cur = None
+            try:
+                at = datetime.strptime(h.group(1)[:16], "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            if (now - at).total_seconds() > LANE_WINDOW_H * 3600:
+                continue
+            cur = {"at": h.group(1)[:16] + "Z", "session": h.group(2), "lane": h.group(3), "red": "", "amber": ""}
+            latest[h.group(3)] = cur  # newest is last in the file
+            continue
+        if cur is None:
+            continue
+        if line.startswith("🔴"):
+            cur["red"] = line[1:].strip()
+        elif line.startswith("🟡"):
+            cur["amber"] = line[1:].strip()
+    return latest
+
+
+def grade(row: dict, by_lane: dict[str, dict]) -> tuple[str, str]:
+    tag = f"#{row['issue']}"
+    pat = re.compile(rf"(?<![\d#]){re.escape(tag)}(?!\d)")  # crew#495 and #495; not #4950, not idp#495
+    for lane in by_lane.values():
+        if pat.search(lane["red"]):
+            return BLOCKING, f"{lane['lane']} {lane['at']}: {lane['red'][:110]}"
+    for lane in by_lane.values():
+        if pat.search(lane["amber"]):
+            return ACTIVE, f"{lane['lane']} {lane['at']}: {lane['amber'][:110]}"
+    return PLANNED, "open; no lane named it in its newest handoff"
+
+
+def render(rows: list[dict], by_lane: dict[str, dict], taken: str) -> str:
+    graded = [(*grade(r, by_lane), r) for r in rows]
+    graded.sort(key=lambda g: (g[0] != BLOCKING, bool(g[2]["expect"]), ORDER[g[0]], g[2]["issue"], g[2]["cp"]))
+    n = {k: sum(1 for g in graded if g[0] == k) for k in ORDER}
+    nodate = sum(1 for g in graded if not g[2]["expect"])
+    out = [
+        "# What is planned, what is blocking, when",
+        "",
+        f"GENERATED by `bin/estate-next` at {taken} from the open `- [ ] CP` rows of `{REPO}` and the "
+        "newest feed handoff per lane (crew#403 CP6). Red rows first. Do not edit by hand; to change a "
+        "date, put `Expect: <date>` indented under the checkpoint row on the issue.",
+        "",
+        "## The bar",
+        "",
+        f"- Checkpoints: **{n[BLOCKING]} BLOCKING**, **{n[ACTIVE]} ACTIVE**, **{n[PLANNED]} PLANNED** "
+        f"of {len(graded)} open, across {len({r['issue'] for r in rows})} issues",
+        f"- When: **{nodate} NO DATE** (no `Expect:` line; the owner has not said when), {len(graded) - nodate} dated",
+        f"- Lanes reporting: {', '.join(f'{l} ({v['at']})' for l, v in sorted(by_lane.items())) or 'none'}",
+        "",
+        "## Next",
+        "",
+        "| Status | Issue | Checkpoint | What | Expect | Why |",
+        "|---|---|---|---|---|---|",
+    ]
+    for status, why, r in graded:
+        link = f"[crew#{r['issue']}]({r['url']})" if r["url"] else f"crew#{r['issue']}"
+        out.append(f"| {status} | {link} | {r['cp']} | {r['what'].replace('|', '/')} | {r['expect'] or NODATE} | {why.replace('|', '/')} |")
+    if not graded:
+        out.append("| — | — | — | no open checkpoint rows | — | — |")
+    return "\n".join(out) + "\n"
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("--issues", help="JSON file of issues (number,title,body,url); default: gh issue list")
+    ap.add_argument("--feed", default=str(FEED))
+    ap.add_argument("--out", default=str(OUT))
+    ap.add_argument("--taken", help="timestamp to print; default now UTC")
+    ap.add_argument("--now", help="clock for the lane window, YYYY-MM-DDTHH:MMZ (tests); default now UTC")
+    ap.add_argument("--check", action="store_true", help="exit 1 when the page on disk differs from the inputs")
+    a = ap.parse_args(argv)
+    issues = json.loads(Path(a.issues).read_text()) if a.issues else fetch_issues(REPO)
+    feed = Path(a.feed)
+    now = datetime.strptime(a.now[:16], "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc) if a.now else None
+    by_lane = lanes(feed.read_text(encoding="utf-8", errors="ignore"), now) if feed.is_file() else {}
+    if not feed.is_file():
+        print(f"BLIND estate-next: no feed at {feed}; every row grades on the issue alone", file=sys.stderr)
+    taken = a.taken or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
+    page = render(checkpoints(issues), by_lane, taken)
+    out = Path(a.out)
+    body = lambda s: s.split("\n", 3)[3]  # everything after the GENERATED line's timestamp
+    if a.check:
+        if out.is_file() and body(out.read_text(encoding="utf-8")) == body(page):
+            print(f"ok    estate-next: {out} matches the inputs")
+            return 0
+        print(f"FAIL  estate-next: {out} is not what the inputs say; run bin/estate-next")
+        return 1
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(page, encoding="utf-8")
+    red = page.count(f"| {BLOCKING} |") + page.count(f"| {NODATE} |")  # rows are red on either axis
+    print(f"estate-next: {page.count(chr(10))} lines, {red} red rows -> {os.path.relpath(out)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
