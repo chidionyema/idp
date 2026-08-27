@@ -10,6 +10,11 @@ export DAGSTER_HOME="$IDP/run/dagster"
 mkdir -p "$DAGSTER_HOME"
 cp "$IDP/scheduler/dagster.yaml" "$DAGSTER_HOME/dagster.yaml"
 PORT=3210
+# The catalog's Dagster entity provider (crew#468) reads this URL from
+# backstage/app-config.yaml's `${DAGSTER_GRAPHQL_URL:-...}` default, which already names this
+# exact host and port; export it too so a shell that sources this script, or a launchd plist
+# built from it, carries the same value instead of a second copy of the literal (LAW 46).
+export DAGSTER_GRAPHQL_URL="http://127.0.0.1:$PORT/graphql"
 log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 
 # Fail early if schedule.yml does not load: a scheduler with a broken policy
