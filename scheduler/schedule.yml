@@ -443,6 +443,25 @@ jobs:
     cwd: $CODE/crew
     skip_on_battery: false
     timeout_s: 900
+  com.estate.board-assign:
+    # the board's turn (crew#527 CP3): release claims 24h old with no box ticked, hand every alive
+    # session holding nothing the top of the finish-first rank; hourly so an idle session waits
+    # minutes, not a day. Exit 2 = BLIND (no feed, or the board unreadable): a finding, not a crash.
+    runs_on: mac
+    runs_on_ref: crew#516 CP5
+    ok_exit: [2]
+    env:
+      HC_FINDINGS_EXIT: "2"
+    command:
+    - ~/.claude/scripts/hc-wrap.sh
+    - board-assign
+    - python3
+    - ~/.claude/scripts/estate_board.py
+    - assign
+    cron: 17 * * * *
+    cwd: $CODE/crew
+    skip_on_battery: false
+    timeout_s: 300
   com.estate.velocity:
     # velocity per lane from the board, one row per lane per day into the crew checkout the snapshot commits (crew#527 CP1)
     runs_on: mac
