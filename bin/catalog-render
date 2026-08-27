@@ -58,6 +58,12 @@ def main(argv: list[str]) -> int:
         step("create worktree", ["git", "worktree", "add", "--detach", "-q", str(WT), "origin/main"], ROOT)
     step("move worktree to origin/main", ["git", "checkout", "-q", "--detach", "origin/main"], WT)
     step("catalog-gen", [sys.executable, str(WT / "bin" / "catalog-gen")], WT, 300)
+    # crew#401 CP4: the cluster's catalogue is this file as an OCI artifact (clusters/oke/catalog.yaml).
+    # Until 2026-08-27 nothing pushed it on a schedule; the artifact on ghcr was 24 hours behind the
+    # inventory and the portal showed a stale estate. Idempotent: same content, same digest. BLIND
+    # (no flux/sops/token on this machine) is reported, never hidden, and does not stop the page.
+    rc, out = sh([str(WT / "bin" / "idp-catalog-push")], WT, 300)
+    print(("ok    " if rc == 0 else "BLIND ") + f"catalog-render: catalogue push: {out[-200:]}")
     step("estate-diagram", [sys.executable, str(WT / "bin" / "estate-diagram")], WT)
     rc, diff = sh(["git", "diff", "--stat", "--", PAGE], WT)
     if not diff:

@@ -14,6 +14,9 @@ SRC="$IDP/catalog/catalog-info.yaml"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 kubectl create configmap estate-catalog --from-file=catalog-info.yaml="$SRC" --dry-run=client -o yaml > "$T/estate-catalog.yaml"
 REV="$(git -C "$IDP" rev-parse --short HEAD)@$(date -u +%Y%m%dT%H%M%SZ)"
-sops -d --extract '["GITHUB_TOKEN"]' "$VAULT/secrets/$ENV_NAME/GITHUB_TOKEN.yaml" | flux push artifact "oci://ghcr.io/chidionyema/idp/estate-catalog:latest" \
+# crew#401 CP4: the vault copy of GITHUB_TOKEN answered UNAUTHORIZED on 2026-08-27 (no write:packages).
+# gh on the machine that runs the schedule is the founder's account and carries it: gh first, vault second.
+token() { gh auth token 2>/dev/null || sops -d --extract '["GITHUB_TOKEN"]' "$VAULT/secrets/$ENV_NAME/GITHUB_TOKEN.yaml"; }
+token | flux push artifact "oci://ghcr.io/chidionyema/idp/estate-catalog:latest" \
   --path="$T" --source="https://github.com/chidionyema/idp" --revision="$REV" --creds "chidionyema:$(cat)" >/dev/null
 echo "ok      estate-catalog pushed, revision $REV"
