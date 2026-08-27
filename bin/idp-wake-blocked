@@ -73,6 +73,9 @@ def plan(closed_prs: list[dict], landed, open_count: int, resolved: set[str]) ->
         keys = keys_of(pr.get("body") or "")
         if not keys or pr.get("merged_at"):
             continue
+        if "head" in pr and not (pr.get("head") or {}).get("repo"):
+            out.append({"number": pr["number"], "action": "skip", "reason": "head repository is gone"})
+            continue
         state = {k: (k in resolved) or (landed(k) is True) for k in keys}
         waiting = sorted(k for k, ok in state.items() if not ok)
         if waiting:
@@ -119,17 +122,22 @@ def main() -> int:
         if not a.repo:
             print("BLOCKED: no --repo and no GH_REPO", file=sys.stderr)
             return 2
-        closed = json.loads(gh("api", f"repos/{a.repo}/pulls?state=closed&per_page=100&sort=updated&direction=desc"))
+        closed = json.loads(gh("api", "--paginate", "--slurp", f"repos/{a.repo}/pulls?state=closed&per_page=100"))
+        closed = [pr for page in closed for pr in page]
         open_count = len(json.loads(gh("api", f"repos/{a.repo}/pulls?state=open&per_page=100")))
         landed = ref_landed
     actions = plan(closed, landed, open_count, set(a.resolved))
     for act in actions:
         if act["action"] == "wake" and not a.dry_run and not offline:
-            act["note"] = wake(a.repo, act["number"], act["landed"])
+            try:
+                act["note"] = wake(a.repo, act["number"], act["landed"])
+            except RuntimeError as e:  # one PR's failure never skips the sleepers after it
+                act["action"], act["error"] = "error", str(e)[:200]
         print(json.dumps(act))
     woke = sum(1 for x in actions if x["action"] == "wake")
     print(f"wake-blocked: {len(actions)} sleeping, {woke} woke, "
-          f"{sum(1 for x in actions if x['action'] == 'capped')} capped, open={open_count} cap={PR_CAP}")
+          f"{sum(1 for x in actions if x['action'] == 'capped')} capped, "
+          f"{sum(1 for x in actions if x['action'] == 'error')} errors, open={open_count} cap={PR_CAP}")
     return 0
 
 

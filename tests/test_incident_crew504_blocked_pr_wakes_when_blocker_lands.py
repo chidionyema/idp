@@ -58,4 +58,31 @@ def test_cli_offline_dry_run(tmp_path):
     r = subprocess.run([sys.executable, BIN, "--pulls", str(f), "--open", "3", "--landed", "idp#400", "--dry-run"],
                        capture_output=True, text=True, timeout=60, check=False)
     assert r.returncode == 0, r.stderr
-    assert "wake-blocked: 3 sleeping, 1 woke, 0 capped, open=3 cap=10" in r.stdout
+    assert "wake-blocked: 3 sleeping, 1 woke, 0 capped, 0 errors, open=3 cap=10" in r.stdout
+
+
+def test_gone_head_is_skipped_not_woken():
+    prs = [{"number": 9, "merged_at": None, "body": "Blocked-by: idp#400", "head": {"repo": None}}]
+    got = _by(wake.plan(prs, _landed, open_count=1, resolved=set()))
+    assert got[9]["action"] == "skip"
+
+
+def test_one_failing_wake_does_not_skip_the_rest(monkeypatch, tmp_path, capsys):
+    calls = []
+
+    def fake_wake(repo, number, landed):
+        calls.append(number)
+        if number == 1:
+            raise RuntimeError("gh api PUT: 422 head branch gone")
+        return "branch updated from base"
+
+    two = [{"number": 1, "merged_at": None, "body": "Blocked-by: idp#400"},
+           {"number": 7, "merged_at": None, "body": "Blocked-by: idp#400"}]
+    monkeypatch.setattr(wake, "wake", fake_wake)
+    monkeypatch.setattr(wake, "gh", lambda *a: json.dumps([two]) if "--paginate" in a else json.dumps([]))
+    monkeypatch.setattr(wake, "ref_landed", lambda k: True)
+    monkeypatch.setattr(sys, "argv", ["idp-wake-blocked", "--repo", "o/r"])
+    assert wake.main() == 0
+    out = capsys.readouterr().out
+    assert calls == [1, 7]
+    assert '"action": "error"' in out and "1 woke, 0 capped, 1 errors" in out
