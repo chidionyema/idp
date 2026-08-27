@@ -80,3 +80,19 @@ def test_when_the_vault_cannot_be_listed_the_drill_is_blind_not_red(tmp_path: Pa
     r = _run({"OCI_COMPARTMENT_OCID": "ocid1.compartment.oc1..stub", "OCI_CLI_AUTH": "security_token"}, tmp_path)
     assert r.returncode == 2 and "BLIND   vault" in r.stdout, r.stdout + r.stderr
     assert (tmp_path / "calls").read_text().count("oci") == 1, "one vault listing, nothing after a blind vault"
+
+
+def test_the_incremental_bundle_check_matches_what_git_actually_prints(tmp_path: Path) -> None:
+    """Run 33097094260 grepped 'requires these'; git 2.4x prints 'Repository lacks these prerequisite
+    commits' and 19 good incremental bundles were counted broken. The pattern is taken from the script
+    and tested against a real incremental bundle verified in an empty repository."""
+    pat = re.search(r"grep -q '([^']+)' \"\$OUT/bundle-\$d.txt\"", SCRIPT.read_text()).group(1)
+    src = tmp_path / "src"; src.mkdir()
+    g = lambda *a, cwd=src: subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True, text=True)
+    g("init", "-q", "-b", "main"); g("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "one")
+    g("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "two")
+    g("bundle", "create", str(tmp_path / "inc.bundle"), "main~1..main")
+    empty = tmp_path / "empty"; empty.mkdir(); g("init", "-q", cwd=empty)
+    r = subprocess.run(["git", "bundle", "verify", str(tmp_path / "inc.bundle")], cwd=empty, capture_output=True, text=True)
+    assert r.returncode != 0
+    assert re.search(pat, r.stdout + r.stderr), f"script pattern {pat!r} does not match git's wording: {r.stderr!r}"

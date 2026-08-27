@@ -47,7 +47,7 @@ vault_json() { # <secret-name> → the JSON the entry holds, or empty
 
 # --- github-app: the clones authenticate as the App, narrowed to a read-only lane -------------
 tok=$(ESTATE_VAULT_OCID="$V" "$IDP/bin/idp-github-app" token recovery 2>"$OUT/github-app.err" | cat) || true
-if [ -z "$tok" ]; then bl github-app "no installation token: $(tail -1 "$OUT/github-app.err" 2>/dev/null)"
+if [ -z "$tok" ]; then bl github-app "no installation token: $(grep -m1 '^DIAG' "$OUT/github-app.err" 2>/dev/null || tail -1 "$OUT/github-app.err" 2>/dev/null)"
 else ok github-app "installation token minted for lane recovery (read-only)"; fi
 
 # --- repo: every load-bearing repo clones from its remote on a machine with no key -------------
@@ -80,13 +80,14 @@ else
       rclone copyto ":s3:$B/bundles/$d/latest.bundle" "$f" 2>/dev/null || { broken="$broken $d(no-latest)"; continue; }
       if ! git bundle verify "$f" >"$OUT/bundle-$d.txt" 2>&1; then
         # an incremental bundle verifies only against a repo holding its prerequisites; record it as such
-        if grep -q 'requires these' "$OUT/bundle-$d.txt"; then incr=$((incr+1)); verified=$((verified+1)); printf '%s incremental %s\n' "$d" "$(du -k "$f" | cut -f1)KB" >> "$OUT/bundles.txt"
+        # git 2.4x: "error: Repository lacks these prerequisite commits:" (run 33097094260 grepped the wrong words and counted 19 good bundles broken)
+        if grep -q 'prerequisite commits' "$OUT/bundle-$d.txt"; then incr=$((incr+1)); verified=$((verified+1)); printf '%s incremental %s\n' "$d" "$(du -k "$f" | cut -f1)KB" >> "$OUT/bundles.txt"
         else broken="$broken $d"; fi
         continue
       fi
       verified=$((verified+1))
-      if git clone -q --bare "$f" "$WORK/bundles/$d.git" 2>/dev/null; then full=$((full+1)); printf '%s complete tip %s\n' "$d" "$(git -C "$WORK/bundles/$d.git" log -1 --format=%h 2>/dev/null || echo ?)" >> "$OUT/bundles.txt"
-      else broken="$broken $d(clone)"; fi
+      if git clone -q --bare "$f" "$WORK/bundles/$d.git" 2>"$OUT/clone-bundle-$d.err"; then full=$((full+1)); printf '%s complete tip %s\n' "$d" "$(git -C "$WORK/bundles/$d.git" log -1 --format=%h 2>/dev/null || echo ?)" >> "$OUT/bundles.txt"
+      else broken="$broken $d(clone: $(tail -1 "$OUT/clone-bundle-$d.err" | cut -c1-80))"; fi
     done
     if [ -n "$broken" ]; then fail bundles "$n bundle(s) in R2, $verified verified, broken:$broken"
     else ok bundles "$n bundle(s) in R2, $verified verified, $full complete histories cloned, $incr incremental (need their remote)"; fi
