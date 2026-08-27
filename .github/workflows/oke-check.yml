@@ -21,7 +21,12 @@ on:
 permissions:
   id-token: write   # the OIDC token this job trades for OCI access
   contents: read
-concurrency: { group: oke-check, cancel-in-progress: false }
+# crew#516 CP4: one group per event. GitHub keeps one PENDING run per group, so every pull_request
+# push displaced the queued apply dispatch (33089051005, 33091098027 both cancelled, never ran).
+# check runs are read-only plans; the apply dispatch serialises only against other dispatches.
+concurrency:
+  group: "oke-check-${{ github.event_name }}"
+  cancel-in-progress: false
 jobs:
   check:
     # A dependabot pull request gets no repository secrets, so OIDC_CLIENT_IDENTIFIER is empty and

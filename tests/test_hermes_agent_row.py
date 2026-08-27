@@ -123,3 +123,11 @@ def test_oke_check_seeds_the_entry_the_pod_reads():
 def test_the_row_renders():
     out = subprocess.run(["kustomize", "build", str(DIR)], capture_output=True, text=True, check=True).stdout
     assert "claimName: hermes-agent-data" in out and "image: ghcr.io/chidionyema/hermes-agent:" in out
+
+
+def test_incident_apply_dispatch_is_not_displaced_by_pull_request_pushes():
+    """Runs 33089051005 and 33091098027: the queued apply dispatch was cancelled by later PR pushes
+    because GitHub keeps one pending run per concurrency group. Dispatches get their own group."""
+    wf = yaml.safe_load((ROOT / ".github/workflows/oke-check.yml").read_text())
+    assert wf["concurrency"]["group"] == "oke-check-${{ github.event_name }}"
+    assert wf["concurrency"]["cancel-in-progress"] is False
