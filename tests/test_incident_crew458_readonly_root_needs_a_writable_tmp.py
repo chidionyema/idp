@@ -19,8 +19,10 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 PLATFORM = ROOT / "platform"
 
-# Images that never touch a temp dir: a copy-only init container. Everything else is in the rule.
-COPY_ONLY_IMAGE_PREFIXES = ("ghcr.io/fluxcd/flux-cli",)
+# Images that never touch a temp dir: a copy-only init container, and the pause image (a single
+# static binary that sleeps; crew#539's balloon pods). 2026-08-27: #492 (balloon) and #489 (this
+# rule) merged the same evening and main went red on balloon/pause. Everything else is in the rule.
+COPY_ONLY_IMAGE_PREFIXES = ("ghcr.io/fluxcd/flux-cli", "registry.k8s.io/pause")
 
 
 def _containers():
