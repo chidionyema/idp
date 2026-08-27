@@ -1,0 +1,58 @@
+# SPIRE cannot pass the estate's restricted policy set, by design, in the same way Chaos Mesh cannot
+# (platform/chaos/mesh/exception.yaml): the agent DaemonSet reads pod identity from the kubelet
+# (hostPID, hostPath for the Workload API socket) and the CSI driver mounts that socket into other
+# pods from /var/lib/kubelet (privileged, hostPath). Measured 2026-08-27 with kyverno CLI 1.19.0
+# against the prospector policy set, chart spire 0.30.1 rendered from values.yaml:
+# 59 rule failures across 14 policies; every failing policy is listed below and no other
+# (tests/test_spire_row.py refuses a waiver for a policy the chart already passes, and proves the
+# same objects are still refused in any other namespace).
+# It lives in namespace kyverno because platform/edge/kyverno.yaml restricts exceptions to it.
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: spire
+  namespace: kyverno
+spec:
+  match:
+    any:
+      - resources:
+          namespaces:
+            - spire-mgmt
+            - spire-server
+            - spire-system
+          kinds:
+            - Pod
+            - DaemonSet
+            - StatefulSet
+            - Deployment
+            - ReplicaSet
+            - Job
+  exceptions:
+    - policyName: disallow-capabilities-strict
+      ruleNames: ['*']
+    - policyName: disallow-host-namespaces
+      ruleNames: ['*']
+    - policyName: disallow-host-path
+      ruleNames: ['*']
+    - policyName: disallow-privilege-escalation
+      ruleNames: ['*']
+    - policyName: disallow-privileged-containers
+      ruleNames: ['*']
+    - policyName: drop-all-capabilities
+      ruleNames: ['*']
+    - policyName: require-pod-probes
+      ruleNames: ['*']
+    - policyName: require-requests-limits
+      ruleNames: ['*']
+    - policyName: require-ro-rootfs
+      ruleNames: ['*']
+    - policyName: require-run-as-non-root-user
+      ruleNames: ['*']
+    - policyName: require-run-as-nonroot
+      ruleNames: ['*']
+    - policyName: restrict-seccomp-strict
+      ruleNames: ['*']
+    - policyName: restrict-volume-types
+      ruleNames: ['*']
+    - policyName: secrets-not-from-env-vars
+      ruleNames: ['*']
