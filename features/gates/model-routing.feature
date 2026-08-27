@@ -21,3 +21,11 @@ Feature: Model routing is an estate service, not a laptop process
     When the ExternalSecret materialises it in namespace llm
     Then every os.environ reference in the router config resolves from that Secret
     And no key is written in the repository
+
+  Scenario: The founder picks and adds models in the Admin UI, never by pull request
+    Given the router runs the -database image with litellm-db in namespace llm
+    And general_settings.store_model_in_db is true so a model added in the UI outlives a restart
+    When the founder opens https://llm.<zone>/ui and signs in
+    Then the login is UI_USERNAME and UI_PASSWORD from the vault entry litellm-ui, mounted like the upstream keys
+    And no username or password is written in the repository
+    And every provider key the UI can bind to is an os.environ name the pod already exports

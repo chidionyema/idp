@@ -33,7 +33,7 @@ kind: Component
 metadata:
   name: founder-model-router
   title: "Model router (llm)"
-  description: "Every model call in the estate goes through here. Which models exist is platform/llm/config.yaml model_list; the admin console (/ui: models, keys, spend) opens once the router database lands (crew#284, crew#400)."
+  description: "Every model call in the estate goes through here. Pick and add models, keys, teams and budgets in the admin console (/ui); the login is the vault entry litellm-ui, sent to your Telegram once. Tutorial: docs/onboarding/litellm.md (crew#400)."
   annotations:
     idp/updated-by: "Flux from platform/llm on merge to main"
   tags: [founder]

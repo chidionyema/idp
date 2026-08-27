@@ -60,6 +60,7 @@ spec:
             - { name: config, mountPath: /etc/litellm, readOnly: true }
             - { name: upstream, mountPath: /run/secrets/litellm/upstream, readOnly: true }
             - { name: langfuse, mountPath: /run/secrets/litellm/langfuse, readOnly: true }
+            - { name: ui, mountPath: /run/secrets/litellm/ui, readOnly: true }
             - { name: tmp, mountPath: /tmp }
           resources:
             # OOMKilled at 1Gi within 19s of start on the -database image (Prisma engine plus the
@@ -93,6 +94,8 @@ spec:
           secret: { secretName: litellm-upstream }
         - name: langfuse
           secret: { secretName: litellm-langfuse }
+        - name: ui
+          secret: { secretName: litellm-ui }   # crew#400: UI_USERNAME/UI_PASSWORD for llm.<zone>/ui
         - name: tmp
           emptyDir: { sizeLimit: 256Mi }
 ---

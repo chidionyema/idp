@@ -74,3 +74,23 @@ def test_flux_row_waits_on_edge_and_secret_store() -> None:
     assert {d["name"] for d in llm["spec"]["dependsOn"]} >= {"edge", "secret-store"}
     assert llm["spec"]["wait"] is True
     assert llm["spec"]["postBuild"]["substituteFrom"][0]["name"] == "estate-config"
+
+
+def test_founder_picks_models_in_the_admin_ui_not_by_pr() -> None:
+    """crew#400 (rung 2). The founder adds models at llm.<zone>/ui; the login comes from the vault."""
+    assert CLUSTER_CFG["general_settings"].get("store_model_in_db") is True
+    docs = list(yaml.safe_load_all((CLUSTER / "external-secret.yaml").read_text()))
+    ui = next(d for d in docs if d["metadata"]["name"] == "litellm-ui")
+    assert ui["spec"]["dataFrom"][0]["extract"]["key"] == "litellm-ui"
+    dep = next(d for d in yaml.safe_load_all((CLUSTER / "litellm.yaml").read_text()) if d["kind"] == "Deployment")
+    spec = dep["spec"]["template"]["spec"]
+    vol = next(v for v in spec["volumes"] if v.get("secret", {}).get("secretName") == "litellm-ui")
+    mounts = {m["name"]: m["mountPath"] for m in spec["containers"][0]["volumeMounts"]}
+    assert mounts[vol["name"]].startswith("/run/secrets/litellm/"), "the container exports /run/secrets/litellm/*/* as env"
+    # The seed path is self-serve (vault-seed.yml), so no session ever writes FOUNDER ACTION for this login.
+    seed = (ROOT / ".github" / "workflows" / "vault-seed.yml").read_text()
+    assert "put litellm-ui UI_USERNAME=LITELLM_UI_USERNAME UI_PASSWORD=LITELLM_UI_PASSWORD" in seed
+    assert "litellm-ui]" in seed, "litellm-ui must be a workflow_dispatch choice"
+    # LAW 46/21: no login value typed anywhere under platform/llm.
+    for f in CLUSTER.glob("*.yaml"):
+        assert not re.search(r"UI_(USERNAME|PASSWORD)\s*[:=]\s*['\"]?[A-Za-z0-9]", f.read_text()), f
