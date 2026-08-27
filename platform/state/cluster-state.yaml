@@ -274,13 +274,16 @@ data:
             ns, name = p["metadata"]["namespace"], p["metadata"]["name"]
             text = pod_log(ns, name, "spire-agent", 60)
             failed = text.startswith("log read failed")
-            lines = [] if failed else [l[-300:] for l in text.splitlines() if re.search(r"level=(error|warning)|attest", l)][-6:]
+            lines = [] if failed else [l[:300] for l in text.splitlines() if re.search(r"level=(error|warning)|attest", l)][-6:]
             agents.append({"pod": f"{ns}/{name}", "node": (p["spec"].get("nodeName") or ""), "lines": lines,
                            "error": text[:300] if failed else ""})
         # crew#227 CP4 fifth row (receipt 2026-08-27T08:00:03Z): the agent said "No identity issued
         # registered=false" and the receipt could not say whether the server ever held an entry for the
         # proof pod, or under which parent. The spire-server and controller-manager lines that name an
         # entry, a parent, an attestation or the proof pod travel too; a read that failed is recorded.
+        # Receipt 2026-08-27T08:45:03Z: the lines kept their last 300 chars, so `time= level= msg=` were
+        # cut off every AttestAgent line and the verdict could not be read. logfmt puts the verdict first;
+        # keep the head.
         server = []
         for p in pods:
             lbl = p["metadata"].get("labels") or {}
@@ -292,7 +295,7 @@ data:
                     continue
                 text = pod_log(ns, name, c["name"], 120)
                 failed = text.startswith("log read failed")
-                lines = [] if failed else [l[-300:] for l in text.splitlines()
+                lines = [] if failed else [l[:300] for l in text.splitlines()
                                            if re.search(r"level=(error|warning)|attest|entry|parent|spiffe-proof", l, re.I)][-8:]
                 server.append({"pod": f"{ns}/{name}", "container": c["name"], "lines": lines,
                                "error": text[:300] if failed else ""})
