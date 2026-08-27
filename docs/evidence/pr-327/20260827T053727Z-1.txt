@@ -1,0 +1,42 @@
+1 failed, 1 passed in 0.37s
+launchd-retire: 39 of 43 schedule.yml jobs are also loaded in launchd
+  BOTH  ai.aiden.watch
+  BOTH  ai.estate.agent-guard-lint
+  BOTH  ai.estate.dep-alerts
+  BOTH  ai.estate.drills
+  BOTH  ai.estate.friction-relay
+  BOTH  ai.estate.idp
+  BOTH  ai.estate.key-escrow
+  BOTH  ai.estate.law-writer
+  BOTH  ai.estate.tracked-guard
+  BOTH  ai.hermes.runaway-reaper
+  BOTH  com.chidionyema.graphify-sweep
+  BOTH  com.chidionyema.guard-selftest
+  BOTH  com.chidionyema.reflect
+  BOTH  com.estate.bundlepush
+  BOTH  com.estate.costsentinel
+  BOTH  com.estate.downshift
+  BOTH  com.estate.inventory
+  BOTH  com.estate.restic-backup
+  BOTH  com.founder.agentcert
+  BOTH  com.founder.board
+  BOTH  com.founder.configsyntaxsweep
+  BOTH  com.founder.estateaudit
+  BOTH  com.founder.estatelander
+  BOTH  com.founder.estatepush
+  BOTH  com.founder.estatesnapshot
+  BOTH  com.founder.estatewatch
+  BOTH  com.founder.ingit
+  BOTH  com.founder.lawenforcement
+  BOTH  com.founder.sciencecollect
+  BOTH  com.founder.stuckdetector
+  BOTH  com.prospector-control.failover-watch
+  BOTH  com.prospector-control.receipt-bridge
+  BOTH  com.prospector.backup
+  BOTH  com.prospector.estate-inventory
+  BOTH  com.prospector.launchd-held
+  BOTH  com.prospector.log-rotation
+  BOTH  com.prospector.offsite-backup
+  BOTH  com.prospector.process-audit
+  BOTH  com.prospector.restore-drill
+run with --apply to bootout them and park the plists in /Users/chidionyema/Library/LaunchAgents.retired-by-dagster
