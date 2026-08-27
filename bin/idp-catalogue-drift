@@ -47,10 +47,11 @@ def receipt_body(arg: str | None) -> dict:
         with open(arg, encoding="utf-8") as fh:
             text = fh.read()
     else:
-        r = subprocess.run([os.path.join(IDP, "bin", "idp-cluster-state"), "--json"], capture_output=True, text=True)
-        if r.returncode != 0:
-            print(f"BLIND   catalogue-drift  cluster-state row is not ok: {r.stdout.strip().splitlines()[-1][:160] if r.stdout.strip() else r.stderr.strip()[:160]}")
-            sys.exit(2)
+        # The reader exits non-zero whenever the cluster-state row is FAIL (Flux not ready, a pod
+        # pending). The hostnames list does not depend on that grade, so the exit code is not
+        # read here; only a receipt with no JSON body is BLIND (crew#401 first live row, 02:37Z).
+        reader = os.environ.get("IDP_CLUSTER_STATE_BIN") or os.path.join(IDP, "bin", "idp-cluster-state")
+        r = subprocess.run([reader, "--json"], capture_output=True, text=True)
         text = r.stdout
     for line in reversed(text.strip().splitlines()):
         if line.startswith("{"):
