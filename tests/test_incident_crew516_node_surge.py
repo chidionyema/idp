@@ -27,7 +27,7 @@ echo "$*" >> "$SHIM_LOG"
 case "$*" in
   *"node-pool list"*) echo "ocid1.nodepool.pool";;
   *"private-ip"*) echo 10.0.0.9;;
-  *"node-pool get"*) cat "$SHIM_NODES";;
+  *"node-pool get"*) python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])), indent=2))' "$SHIM_NODES";;   # the CLI pretty-prints (run 33110054128)
   *"os object get"*) printf 'ok cluster-state at %s nodes=1 ready=1\n{"at":"%s","nodes":[{"name":"10.0.0.9","ready":%s}]}\n' "$KUBE_AT" "$KUBE_AT" "$KUBE_READY";;
   *"node-pool update"*) echo '["ocid1.node.old","ocid1.node.new"]' > "$SHIM_NODES";;
   *"delete-node"*) echo '["ocid1.node.new"]' > "$SHIM_NODES";;
