@@ -102,7 +102,11 @@ def _render(state: dict, tmp_path: Path) -> None:
     for d in rendered:
         d.setdefault("metadata", {}).setdefault("namespace", "temporal")
     (tmp_path / "objects.yaml").write_text(yaml.safe_dump_all([d for d in rendered if d["kind"] != "PolicyException"]))
-    (tmp_path / "exceptions.yaml").write_text(yaml.safe_dump_all([d for d in rendered if d["kind"] == "PolicyException"]))
+    # The exceptions live in platform/edge (namespace kyverno is the only one Kyverno reads, crew#325);
+    # platform/temporal's kustomization would stamp `namespace: temporal` on them.
+    exceptions = [d for d in yaml.safe_load_all((IDP / "platform/edge/temporal-exception.yaml").read_text()) if d]
+    assert exceptions and all(d["metadata"]["namespace"] == "kyverno" for d in exceptions), exceptions
+    (tmp_path / "exceptions.yaml").write_text(yaml.safe_dump_all(exceptions))
     pol = subprocess.run(["kubectl", "kustomize", str(IDP / "tests/fixtures/kyverno/upstream")], capture_output=True, text=True)
     assert pol.returncode == 0, pol.stderr
     (tmp_path / "policies.yaml").write_text(pol.stdout)
