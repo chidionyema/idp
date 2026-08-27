@@ -82,3 +82,25 @@ def test_receipt_counts_flows_for_the_kyverno_radio_room_set():
     assert "hubble_flows_processed_total" in src and "destination_workload" in src
     grader = (IDP / "bin/idp-telemetry-coverage").read_text()
     assert 'kv.get("hubble_radio_flows", 0)) <= 0' in grader
+
+
+def test_first_apply_recreates_the_radio_room_pods_so_zero_is_a_defect_not_a_startup_state():
+    """Review at d4bb098 (09cd04a6): a pod gets a Cilium endpoint only when its sandbox is created
+    after the agent is Ready, so without a rollout the receipt reads hubble_radio_flows=0 and the
+    grader's FAIL fires against its own merge. The mechanism: the same Flux row ships a one-shot
+    Job that waits for the agent DaemonSet, `rollout restart`s every radio-room Deployment the
+    receipt counts, and blocks until each rollout is done — so a 0 after apply is a real miss."""
+    assert "endpoint-rollout.yaml" in one("platform/cilium/kustomization.yaml", "Kustomization")["resources"]
+    job = one("platform/cilium/endpoint-rollout.yaml", "Job", "cilium-endpoint-rollout")
+    spec = job["spec"]["template"]["spec"]
+    steps = [c["command"] for c in spec["initContainers"] + spec["containers"]]
+    assert steps[0][:4] == ["kubectl", "rollout", "status", "daemonset/cilium"], "agent first"
+    restarted = {a.split("/")[1] for s in steps if s[:3] == ["kubectl", "rollout", "restart"] for a in s if a.startswith("deployment/")}
+    waited = {a.split("/")[1] for s in steps if s[:3] == ["kubectl", "rollout", "status"] for a in s if a.startswith("deployment/")}
+    cm = one("platform/observability/telemetry-coverage.yaml", "ConfigMap", "telemetry-coverage-collect")
+    counted = set(re.search(r'"RADIO_ROOM", "([^"]+)"', cm["data"]["collect.py"]).group(1).split(","))
+    assert counted <= restarted and counted <= waited, (counted - restarted, counted - waited)
+    assert all(c["securityContext"]["readOnlyRootFilesystem"] for c in spec["initContainers"] + spec["containers"])
+    role = one("platform/cilium/endpoint-rollout.yaml", "ClusterRole", "cilium-endpoint-rollout")
+    verbs = {v for r in role["rules"] if "deployments" in r["resources"] for v in r["verbs"]}
+    assert "patch" in verbs and not verbs & {"delete", "create", "*"}, verbs
