@@ -80,68 +80,74 @@ def synth_state_md(path, generated: dt.datetime):
         )
 
 
-with tempfile.TemporaryDirectory() as td:
-    cat = os.path.join(td, "catalog-info.yaml")
-    st = os.path.join(td, "STATE.md")
-    now = dt.datetime(2026, 8, 25, 12, 0, tzinfo=dt.timezone.utc)
+def _run():
+    """The scenario. Runs once, when the test (or __main__) asks, never on import:
+    measured 2026-08-27, on import it cost pytest collection 81s/24s (crew#513)."""
+    global fail
+    with tempfile.TemporaryDirectory() as td:
+        cat = os.path.join(td, "catalog-info.yaml")
+        st = os.path.join(td, "STATE.md")
+        now = dt.datetime(2026, 8, 25, 12, 0, tzinfo=dt.timezone.utc)
 
-    # --- property: many (entity count x ceiling) pairs, payload never exceeds ceiling ---
-    synth_state_md(st, now - dt.timedelta(minutes=5))
-    rng = random.Random(0)
-    ceilings_ok = True
-    counts_ok = True
-    for n in [0, 1, 5, 50, 200, 1000, 5000]:
-        synth_catalog(n, cat)
-        for ceiling in (500, 2000, 8000, 50000):
-            cfg = {"catalog_path": cat, "state_md_path": st,
-                   "byte_ceiling": ceiling, "stale_minutes": 90}
-            payload = ei.build_inventory(cfg, now=now)
-            size = ei._json_bytes(payload)
-            if size > ceiling:
-                ceilings_ok = False
-                print(f"      n={n} ceiling={ceiling} got {size} bytes")
-            kept = len(payload["entities"])
-            if payload["entities_truncated"]:
-                if payload["entity_count_total"] - kept != payload["entities_omitted"] or kept >= n:
+        # --- property: many (entity count x ceiling) pairs, payload never exceeds ceiling ---
+        synth_state_md(st, now - dt.timedelta(minutes=5))
+        rng = random.Random(0)
+        ceilings_ok = True
+        counts_ok = True
+        for n in [0, 1, 5, 50, 200, 1000, 5000]:
+            synth_catalog(n, cat)
+            for ceiling in (500, 2000, 8000, 50000):
+                cfg = {"catalog_path": cat, "state_md_path": st,
+                       "byte_ceiling": ceiling, "stale_minutes": 90}
+                payload = ei.build_inventory(cfg, now=now)
+                size = ei._json_bytes(payload)
+                if size > ceiling:
+                    ceilings_ok = False
+                    print(f"      n={n} ceiling={ceiling} got {size} bytes")
+                kept = len(payload["entities"])
+                if payload["entities_truncated"]:
+                    if payload["entity_count_total"] - kept != payload["entities_omitted"] or kept >= n:
+                        counts_ok = False
+                elif kept != n or payload["entities_omitted"] != 0:
                     counts_ok = False
-            elif kept != n or payload["entities_omitted"] != 0:
-                counts_ok = False
-            if payload["entity_count_total"] != n:
-                counts_ok = False
-    check("cp1-byte-ceiling", ceilings_ok, "a payload exceeded its configured ceiling")
-    check("cp1-entity-accounting", counts_ok, "entity_count_total/entities/omitted disagree")
+                if payload["entity_count_total"] != n:
+                    counts_ok = False
+        check("cp1-byte-ceiling", ceilings_ok, "a payload exceeded its configured ceiling")
+        check("cp1-entity-accounting", counts_ok, "entity_count_total/entities/omitted disagree")
 
-    # --- incident, both ways: a stale snapshot is disclosed, a fresh one is not ---
-    synth_catalog(3, cat)
-    synth_state_md(st, now - dt.timedelta(minutes=200))  # 200 > default 90-minute threshold
-    stale_payload = ei.build_inventory(
-        {"catalog_path": cat, "state_md_path": st, "byte_ceiling": 8000, "stale_minutes": 90}, now=now)
-    synth_state_md(st, now - dt.timedelta(minutes=5))
-    fresh_payload = ei.build_inventory(
-        {"catalog_path": cat, "state_md_path": st, "byte_ceiling": 8000, "stale_minutes": 90}, now=now)
-    check("cp1-stale-disclosed", stale_payload["snapshot_stale"] is True
-          and stale_payload["snapshot_age_minutes"] == 200.0
-          and len(stale_payload["entities"]) == 3,
-          f"got {stale_payload['snapshot_stale']} / {stale_payload['snapshot_age_minutes']}")
-    check("cp1-fresh-not-stale", fresh_payload["snapshot_stale"] is False
-          and fresh_payload["snapshot_age_minutes"] == 5.0,
-          f"got {fresh_payload['snapshot_stale']} / {fresh_payload['snapshot_age_minutes']}")
+        # --- incident, both ways: a stale snapshot is disclosed, a fresh one is not ---
+        synth_catalog(3, cat)
+        synth_state_md(st, now - dt.timedelta(minutes=200))  # 200 > default 90-minute threshold
+        stale_payload = ei.build_inventory(
+            {"catalog_path": cat, "state_md_path": st, "byte_ceiling": 8000, "stale_minutes": 90}, now=now)
+        synth_state_md(st, now - dt.timedelta(minutes=5))
+        fresh_payload = ei.build_inventory(
+            {"catalog_path": cat, "state_md_path": st, "byte_ceiling": 8000, "stale_minutes": 90}, now=now)
+        check("cp1-stale-disclosed", stale_payload["snapshot_stale"] is True
+              and stale_payload["snapshot_age_minutes"] == 200.0
+              and len(stale_payload["entities"]) == 3,
+              f"got {stale_payload['snapshot_stale']} / {stale_payload['snapshot_age_minutes']}")
+        check("cp1-fresh-not-stale", fresh_payload["snapshot_stale"] is False
+              and fresh_payload["snapshot_age_minutes"] == 5.0,
+              f"got {fresh_payload['snapshot_stale']} / {fresh_payload['snapshot_age_minutes']}")
 
-    # --- a missing STATE.md degrades (an error field), never raises, never hides the catalog ---
-    missing_payload = ei.build_inventory(
-        {"catalog_path": cat, "state_md_path": os.path.join(td, "absent.md"),
-         "byte_ceiling": 8000, "stale_minutes": 90}, now=now)
-    check("cp1-missing-state-md-degrades", missing_payload["snapshot_error"] is not None
-          and missing_payload["snapshot_stale"] is False
-          and len(missing_payload["entities"]) == 3,
-          f"got error={missing_payload['snapshot_error']!r}")
+        # --- a missing STATE.md degrades (an error field), never raises, never hides the catalog ---
+        missing_payload = ei.build_inventory(
+            {"catalog_path": cat, "state_md_path": os.path.join(td, "absent.md"),
+             "byte_ceiling": 8000, "stale_minutes": 90}, now=now)
+        check("cp1-missing-state-md-degrades", missing_payload["snapshot_error"] is not None
+              and missing_payload["snapshot_stale"] is False
+              and len(missing_payload["entities"]) == 3,
+              f"got error={missing_payload['snapshot_error']!r}")
 
 
 def test_cp1_estate_inventory():
-    """pytest entry: the checks above ran at import; this is their verdict (crew#325 step 2)."""
+    """pytest entry: run the checks, then their verdict (crew#325 step 2)."""
+    _run()
     assert not fail, "cp1-estate-inventory: a check above printed FAIL"
 
 
 if __name__ == "__main__":
+    _run()
     print("PASS  cp1-estate-inventory" if not fail else "FAIL  cp1-estate-inventory")
     sys.exit(1 if fail else 0)
