@@ -47,7 +47,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: postgres
-          image: postgres:17.6-alpine
+          image: docker.io/library/postgres:17.6-alpine
           env:
             - { name: POSTGRES_USER, value: temporal }
             - { name: POSTGRES_DB, value: temporal }

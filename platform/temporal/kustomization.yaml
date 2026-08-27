@@ -6,7 +6,6 @@ resources:
   - external-secret.yaml
   - postgres.yaml
   - temporal.yaml
-  - exception.yaml
   - pull-secret.yaml
   - worker.yaml
 images:

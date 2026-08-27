@@ -1,4 +1,6 @@
 # Two rules the official chart cannot satisfy, scoped to the pods it renders, nothing wider.
+# Lives in platform/edge, not platform/temporal: that kustomization stamps `namespace: temporal`
+# and Kyverno honours exceptions from namespace kyverno only (crew#325).
 # 1. secrets-not-from-env-vars: the chart hands the store password to the server as SQL_PASSWORD
 #    and to its schema Jobs as TEMPORAL_*_STORE_PASSWORD, from `existingSecret`; upstream has no
 #    password-file option (charts/temporal/templates/server-deployment.yaml). Same class as

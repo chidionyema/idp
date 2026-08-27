@@ -32,6 +32,9 @@ spec:
     - kind: HelmRelease
       name: "*"
       namespace: kyverno
+    - kind: HelmRelease
+      name: "*"
+      namespace: temporal
     - kind: GitRepository
       name: "*"
       namespace: flux-system

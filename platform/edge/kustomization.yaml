@@ -6,4 +6,5 @@ resources:
   - cert-manager.yaml
   - langfuse-exception.yaml
   - k8s-infra-exception.yaml
+  - temporal-exception.yaml
   - kyverno.yaml
