@@ -12,8 +12,9 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = ROOT / "scheduler/schedule.yml"
 # Mac-only paths and tools. An absolute interpreter (/usr/bin/python3, a .venv) is not on
-# this list: 6 of the 7 cluster jobs name one today and the CronJob renderer (slice 2)
-# substitutes the image's python; the rule here is what no image can carry.
+# this list: the CronJob renderer (slice 2) substitutes the image's python; the rule here is
+# what no image can carry. It reads the command line only: a script that opens ~/.estate
+# inside passes it, which is why 7 rows were graded cluster on 2026-08-27 before anyone read them.
 MAC_ONLY = re.compile(r"~/Documents/|~/Library/|launchctl|launchd|colima|docker|pmset|brew ")
 REF = re.compile(r"^crew#\d+( CP\d+)?$")
 
