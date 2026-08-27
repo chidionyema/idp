@@ -94,3 +94,33 @@ A dual-read mismatch is an alert, never a freeze -- one `consensus_mismatch` lin
     -rw-r--r--
 
 0.548ms of chmod-plus-verify wall time, well under `flip.max_downtime_ms` (250ms default) -- reads are never blocked either way, so this bounds only the window before the flip itself is durable, not an outage. A second connection opened after the chmod is what the OS permission bit actually gates; a connection already open beforehand keeps its file descriptor and is unaffected until it reopens.
+
+## Phase 2 — projection views (cp14)
+
+`sb rebuild` deletes nothing itself but always replays the whole DAG from genesis and rewrites the projection store -- a plain JSON file keyed by table then rowid, `projection.store_path`. Every read the store answers came from the DAG, never from a copy trusted to survive on its own. Measured 2026-08-25 on a disposable estate, two rows inserted and drained:
+
+    $ bin/sb rebuild --by founder --json
+    {"root": "0f49efca8af8c8992712f0b135664864630cbc7ba7afc1e9387d84c3970473f0", "rows": 2, "tables": ["episodes"], "verified": true}
+    $ rm $ESTATE_HOME/sovereign/projection.json && bin/sb rebuild --by founder --json
+    {"root": "0f49efca8af8c8992712f0b135664864630cbc7ba7afc1e9387d84c3970473f0", "rows": 2, "tables": ["episodes"], "verified": true}
+
+Same root both times -- deleting and rebuilding the store is deterministic, exactly "the views match the root hash" the feature file names.
+
+The boot check (`sb up`, before temporal/the worker start) compares the store's own recorded root against the current DAG head and rebuilds automatically on any mismatch, writing a `"[✓] REBUILD | root:<hash>"` receipt:
+
+    $ # a row lands in the DAG without a rebuild
+    read before boot: None
+    $ # ensure_fresh() is what `sb up` calls at boot
+    ensure_fresh (boot check): {'root': '3c706a84…', 'verified': True, 'tables': ['episodes'], 'rows': 3, 'rebuilt': True}
+    read after boot: {'id': 'c', 'lane': 'ops', 'note': 'n3'}
+## Phase 2 — cross-stack root (cp15)
+
+`bin/sb root --json` now reports one composite root over four children -- `code_root` (`git rev-parse HEAD`), `db_root` (cp9's shadow root, unchanged), `policy_root` (the resolved `sovereign.attach` policy: destructive patterns, write-verb lists, quorum), `ai_policy_root` (the resolved `sovereign.trust` policy: backend, presence timeout) -- so a single number moves the moment any one of the four does. Measured 2026-08-25 on a disposable estate, two rows inserted and drained one at a time:
+
+    $ bin/sb root --json
+    {"ai_policy_root": "ebe0f3054e844927f6183fa11aa92fc782bf07ddcbf4e5110d61995eff381cd5", "code_root": "d78b7d58a379f82488ef0af2491fec03ad71025a", "db_nodes": 1, "db_parent": "0000…", "db_root": "b3449ed6bd317b5f1a8b4ff3dba073eaa9488369c77e57b60950543fdc3f4f68", "db_verified": true, "policy_root": "ef9ada93f556b351aab13d6d9c12e0e8e6d4082a63f58c9184d353de42a18eed", "root": "04da929c9cc748fe9e1750c7b359a7b6272a43ff575cd45bd48a423b5afc94ad"}
+    $ # a second row drained, code/policy/ai_policy untouched
+    $ bin/sb root --json
+    {"ai_policy_root": "ebe0f3054e844927f6183fa11aa92fc782bf07ddcbf4e5110d61995eff381cd5", "code_root": "d78b7d58a379f82488ef0af2491fec03ad71025a", "db_nodes": 2, "db_parent": "b3449ed6bd317b5f1a8b4ff3dba073eaa9488369c77e57b60950543fdc3f4f68", "db_root": "bef2735bffd3ab589af9550c1289fbac088b06ae29bb528b173b8f50fc3adec1", "db_verified": true, "policy_root": "ef9ada93f556b351aab13d6d9c12e0e8e6d4082a63f58c9184d353de42a18eed", "root": "7688b96c2e4cf324dc991ae80b61bd45a1e95ea096a04be01aa7881d439e064f"}
+
+`code_root`, `policy_root` and `ai_policy_root` held identical across both calls; only `db_root` and the composite `root` moved -- proving the composite genuinely covers `db_root` rather than silently dropping it (`sovereign/engine/test_cross_stack.py::test_incident_cp15_composite_root_changes_when_db_root_changes`).

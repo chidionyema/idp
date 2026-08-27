@@ -192,14 +192,17 @@ def cmd_recover(args: argparse.Namespace) -> int:
 
 
 def cmd_root(args: argparse.Namespace) -> int:
-    """cp9: `sb root --json` reports {root, parent, nodes, verified} for
-    .estate/heads/shadow_main -- the branch pointer cp8's sidecar advances
-    once per write."""
-    from sovereign.engine import shadow_root
+    """cp9/cp15: `sb root --json` reports the cross-stack composite root
+    -- {root, code_root, db_root, policy_root, ai_policy_root} -- plus
+    cp9's own DB-chain diagnostics (db_nodes, db_parent, db_verified).
+    db_root IS .estate/heads/shadow_main, the branch pointer cp8's
+    sidecar advances once per write; the other three children are cp15's
+    (git HEAD, the attach policy config, the trust/presence config)."""
+    from sovereign.engine import cross_stack
 
-    res = shadow_root.verify()
+    res = cross_stack.root()
     _emit(res, args.json)
-    return 0 if res.get("verified") else 1
+    return 0 if res.get("db_verified") else 1
 
 
 def cmd_consensus(args: argparse.Namespace) -> int:
@@ -226,6 +229,16 @@ def cmd_flip(args: argparse.Namespace) -> int:
     except flip.FlipError as exc:
         print(f"flip refused: {exc}", file=sys.stderr)
         return config.CLI_EXIT_USAGE_ERROR
+
+def cmd_rebuild(args: argparse.Namespace) -> int:
+    """cp14: `sb rebuild --json` replays the whole DAG from genesis and
+    rewrites the projection store; verified=False means the DAG chain
+    itself did not check out and the store on disk was left untouched."""
+    from sovereign.engine import projection
+
+    result = projection.rebuild(by=args.by)
+    _emit(result, args.json)
+    return 0 if result["verified"] else 1
 
 
 def cmd_list(args: argparse.Namespace) -> int:
@@ -471,7 +484,17 @@ def _spawn(cmd: list[str], log_path: Path, pid_path: Path) -> int:
 
 def cmd_up(args: argparse.Namespace) -> int:
     config.ensure_dirs()
-    result = {"temporal": "already-running", "worker": "already-running"}
+
+    # cp14 boot check: "when the kernel boots and the view hash differs
+    # from heads/main, it rebuilds automatically and writes a receipt."
+    # Runs before temporal/the worker start, since neither depends on the
+    # projection store and a stale store should never be served even for
+    # the brief window before the worker comes up.
+    from sovereign.engine import projection
+
+    boot_check = projection.ensure_fresh(by="boot")
+
+    result = {"temporal": "already-running", "worker": "already-running", "projection": boot_check}
 
     if _alive(_read_pid(config.TEMPORAL_PID_FILE)) or _port_open(
         config.TEMPORAL_ADDRESS, config.CLI_PORT_PROBE_TIMEOUT_S
@@ -695,6 +718,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--signed", action="store_true")
     _add_json(p)
     p.set_defaults(func=cmd_flip)
+
+    p = sub.add_parser("rebuild", help="cp14 -- replay the DAG from genesis and rewrite the projection store")
+    p.add_argument("--by", default="operator")
+    _add_json(p)
+    p.set_defaults(func=cmd_rebuild)
 
     p = sub.add_parser("list", help="list sessions")
     _add_json(p)

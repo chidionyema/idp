@@ -30,6 +30,7 @@ spec:
           volumeMounts:
             - { name: config, mountPath: /config, readOnly: true }
             - { name: secrets, mountPath: /run/secrets/mcp, readOnly: true }
+            - { name: tmp, mountPath: /tmp }   # crew#458: writable /tmp under readOnlyRootFilesystem
           resources:
             requests: { cpu: 50m, memory: 64Mi }
             limits: { cpu: 500m, memory: 256Mi }
@@ -45,6 +46,8 @@ spec:
             periodSeconds: 30
             failureThreshold: 3
       volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 16Mi }
         - name: config
           configMap: { name: mcp-config }
         - name: secrets
