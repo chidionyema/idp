@@ -2,8 +2,10 @@
 litellm-upstream` said "created" in the tofu vault while a secret of that name was ACTIVE in the
 other vault left by the 02:26Z lost-state apply, and github-app was BLIND. Rule: a compartment where
 a vault other than the tofu vault holds ACTIVE secrets is refused, names only are printed, and a
-compartment whose only populated vault is the tofu vault passes."""
-import os, stat, subprocess, textwrap
+compartment whose only populated vault is the tofu vault passes.
+crew#66 CP5c: the vaults and their secret names are read through the one cloud layer, so the fake
+here is a fake bin/idp-cloud in a temp IDP tree, never a fake provider CLI."""
+import os, shutil, stat, subprocess, textwrap
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,25 +20,35 @@ def _fake(bin_dir: Path, name: str, body: str) -> None:
     f.chmod(f.stat().st_mode | stat.S_IEXEC)
 
 
-def _run(tmp: Path, other_secrets: str) -> subprocess.CompletedProcess:
+def _run(tmp: Path, other_secrets: list[str]) -> subprocess.CompletedProcess:
+    # the guard resolves "$IDP/bin/idp-cloud" beside itself, so it is copied into tmp/bin next to the fake layer
     b = tmp / "bin"; b.mkdir(exist_ok=True); m = tmp / "mod"; m.mkdir(exist_ok=True)
+    shutil.copy(GUARD, b / GUARD.name)
     (m / "terraform.tfvars").write_text('compartment_ocid = "ocid1.compartment.oc1..test"\n')
     _fake(b, "tofu", f'[ "$1 $2" = "output -raw" ] && printf "%s" "{TOFU}"')
     # the fake answers per vault id: the tofu vault holds langfuse-init-* plus litellm-upstream; the
-    # other vault holds whatever the case says (values are never listed, only names)
-    _fake(b, "oci", f'''
-        case "$*" in
-          *"kms management vault list"*) printf '[["{TOFU}","estate-secrets","ACTIVE"],["{OTHER}","estate-secrets","PENDING_DELETION"]]\\n';;
-          *"--vault-id {TOFU}"*) printf '["litellm-upstream","langfuse-init-public-key"]\\n';;
-          *"--vault-id {OTHER}"*) printf '%s\\n' '{other_secrets}';;
-          *) echo "[]";;
+    # other vault holds whatever the case says (values are never listed, only names). `vault list`
+    # prints "<display-name> <id>" per ACTIVE vault and `secret list --vault ID` one name per line,
+    # sorted, exactly as bin/idp-cloud does.
+    other = " ".join(f"'{s}'" for s in sorted(other_secrets))
+    other_cmd = f"printf '%s\\n' {other}" if other else ":"   # an empty vault answers nothing, exit 0
+    _fake(b, "idp-cloud", f'''
+        case "$1 $2" in
+          "vault list") printf '%s\\n' 'estate-secrets {TOFU}' 'estate-secrets {OTHER}';;
+          "secret list")
+            case "$*" in
+              *"--vault {TOFU}"*) printf '%s\\n' 'langfuse-init-public-key' 'litellm-upstream';;
+              *"--vault {OTHER}"*) {other_cmd};;
+              *) echo "unexpected vault: $*" >&2; exit 2;;
+            esac;;
+          *) echo "unexpected layer call: $*" >&2; exit 2;;
         esac''')
     env = {**os.environ, "PATH": f"{b}:{os.environ['PATH']}"}
-    return subprocess.run(["bash", str(GUARD), str(m)], env=env, capture_output=True, text=True)
+    return subprocess.run(["bash", str(b / GUARD.name), str(m)], env=env, capture_output=True, text=True)
 
 
 def test_incident_crew325_secrets_split_across_two_vaults_is_refused(tmp_path: Path) -> None:
-    r = _run(tmp_path, '["github-app","litellm-upstream"]')
+    r = _run(tmp_path, ["github-app", "litellm-upstream"])
     assert r.returncode == 1
     assert "REFUSE  vault-split" in r.stdout and "github-app litellm-upstream" in r.stdout
     assert f"tofu import oci_kms_vault.estate {OTHER}" in r.stdout
@@ -44,11 +56,18 @@ def test_incident_crew325_secrets_split_across_two_vaults_is_refused(tmp_path: P
 
 
 def test_one_populated_vault_that_is_the_tofu_vault_passes(tmp_path: Path) -> None:
-    r = _run(tmp_path, "[]")
+    r = _run(tmp_path, [])
     assert r.returncode == 0, r.stdout + r.stderr
     assert "ok      vault-split  tofu vault" in r.stdout and "is empty" in r.stdout
-    assert "        secret: langfuse-init-public-key" in r.stdout and "(PENDING_DELETION)" in r.stdout
+    assert "        secret: langfuse-init-public-key" in r.stdout and "(ACTIVE)" in r.stdout
     assert "REFUSE" not in r.stdout
+
+
+def test_the_guard_reads_the_vaults_through_the_layer() -> None:
+    # crew#66 CP5c: one cloud layer, no provider CLI in the guard
+    s = GUARD.read_text()
+    assert '"$IDP/bin/idp-cloud" vault list' in s
+    assert '"$IDP/bin/idp-cloud" secret list --vault "$id"' in s
 
 
 def test_rebuild_runs_the_guard_in_check_and_apply() -> None:
