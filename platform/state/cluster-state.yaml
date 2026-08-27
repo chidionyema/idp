@@ -20,7 +20,7 @@ metadata:
   name: cluster-state-reader
 rules:
   - apiGroups: [""]
-    resources: ["nodes", "pods", "events"]
+    resources: ["nodes", "pods", "pods/log", "events"]
     verbs: ["get", "list"]
   - apiGroups: ["apps"]
     resources: ["daemonsets"]
@@ -74,8 +74,25 @@ data:
         return next((c["status"] for c in obj["status"].get("conditions", []) if c["type"] == kind), "Unknown")
     node_rows = [{"name": n["metadata"]["name"], "ready": cond(n, "Ready") == "True",
                   "version": n["status"]["nodeInfo"]["kubeletVersion"]} for n in nodes]
+    # crew#396: a container that starts and exits leaves only "Back-off restarting" in the events,
+    # and the receipt is the only kube path a session has, so a restarted container's last lines
+    # of its previous run travel with the pod row. A log read that fails is recorded, never dropped.
+    def last_log(ns, name, statuses):
+        out = {}
+        for c in statuses:
+            if not c.get("restartCount"):
+                continue
+            path = f"/api/v1/namespaces/{ns}/pods/{name}/log?container={c['name']}&previous=true&tailLines=8"
+            try:
+                req = urllib.request.Request("https://kubernetes.default.svc" + path, headers={"Authorization": "Bearer " + tok})
+                with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
+                    out[c["name"]] = r.read().decode("utf-8", "replace")[-800:]
+            except Exception as e:
+                out[c["name"]] = f"log read failed: {e}"[:300]
+        return out
     not_ready = [{"ns": p["metadata"]["namespace"], "name": p["metadata"]["name"], "phase": p["status"].get("phase"),
-                  "restarts": sum(c.get("restartCount", 0) for c in p["status"].get("containerStatuses", []))}
+                  "restarts": sum(c.get("restartCount", 0) for c in p["status"].get("containerStatuses", [])),
+                  "last_log": last_log(p["metadata"]["namespace"], p["metadata"]["name"], p["status"].get("containerStatuses", []))}
                  for p in pods
                  if p["status"].get("phase") not in ("Succeeded",) and cond(p, "Ready") != "True"]
     ready = sum(1 for n in node_rows if n["ready"])
