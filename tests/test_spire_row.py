@@ -121,3 +121,27 @@ def test_incident_chaos_mesh_pattern_spire_admitted_with_its_exception_and_refus
                          .replace('namespace: "spire-mgmt"', "namespace: backstage"))
     still_refused = _apply(tmp_path, elsewhere, shipped)
     assert still_refused["fail"] == without["fail"], (still_refused, without)
+
+
+def _host_network_pods(rendered):
+    return sorted(f'{d["kind"]}/{d["metadata"]["name"]}' for d in _docs(rendered)
+                  if d.get("kind") in ("DaemonSet", "Deployment", "StatefulSet", "Job")
+                  and d["spec"]["template"]["spec"].get("hostNetwork", False))
+
+
+def test_incident_crew227_cp4_host_network_pod_needs_the_host_ports_waiver(tmp_path):
+    """Incident 2026-08-27 (oke-check 33035070500): all eight spire-agent pods were refused with
+    `host-ports-none` although the offline render passed with the shipped exception. The API server
+    defaults every containerPort of a hostNetwork pod to a hostPort; `kyverno apply` on a template
+    never applies that defaulting, so the render cannot see the refusal. Rule (rung 4): a rendered
+    pod on the host network is admitted only if disallow-host-ports is waived for it, and the shipped
+    chart keeps the agent off the host network."""
+    _blind()
+    rendered = _render(tmp_path)
+    waived = {e["policyName"] for e in _docs(SPIRE / "exception.yaml")[0]["spec"]["exceptions"]}
+    assert _host_network_pods(rendered) == [], "spire-agent.hostNetwork must stay false in values.yaml"
+    assert "disallow-host-ports" not in waived, "no host network, so no host-ports waiver either"
+    # detector, both ways: the chart default (hostNetwork: true) is what the incident shipped
+    stripped = tmp_path / "default.yaml"
+    stripped.write_text(rendered.read_text().replace("      hostPID: true\n", "      hostPID: true\n      hostNetwork: true\n"))
+    assert _host_network_pods(stripped) == ["DaemonSet/spire-agent"]
