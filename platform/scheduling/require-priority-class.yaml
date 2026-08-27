@@ -66,3 +66,32 @@ spec:
                   template:
                     spec:
                       priorityClassName: "?*"
+    # crew#539 CP9. Guaranteed QoS is requests == limits for cpu AND memory on every container;
+    # the kubelet evicts BestEffort, then Burstable, then Guaranteed. A later edit that widens a
+    # limit "for headroom" silently demotes the workload to Burstable; this rule refuses it.
+    - name: radio-room-set-is-guaranteed
+      match:
+        any:
+          - resources:
+              kinds: [Deployment, CronJob]
+              names: [langfuse-web, langfuse-worker, agentgateway, hermes-agent-gateway, telemetry-coverage, cluster-state]
+      validate:
+        failureAction: Enforce
+        message: "crew#539: this workload is in the radio-room set and must be Guaranteed QoS: resources.requests == resources.limits for cpu and memory on every container"
+        foreach:
+          - list: "request.object.spec.template.spec.containers || request.object.spec.jobTemplate.spec.template.spec.containers"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.resources.requests.cpu || '' }}"
+                    operator: Equals
+                    value: ""
+                  - key: "{{ element.resources.requests.memory || '' }}"
+                    operator: Equals
+                    value: ""
+                  - key: "{{ element.resources.requests.cpu || '' }}"
+                    operator: NotEquals
+                    value: "{{ element.resources.limits.cpu || '' }}"
+                  - key: "{{ element.resources.requests.memory || '' }}"
+                    operator: NotEquals
+                    value: "{{ element.resources.limits.memory || '' }}"
