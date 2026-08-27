@@ -103,8 +103,12 @@ def main(argv: list[str]) -> int:
     # Until 2026-08-27 nothing pushed it on a schedule; the artifact on ghcr was 24 hours behind the
     # inventory and the portal showed a stale estate. Idempotent: same content, same digest. BLIND
     # (no flux/sops/token on this machine) is reported, never hidden, and does not stop the page.
-    rc, out = sh([str(WT / "bin" / "idp-catalog-push")], WT, 300)
-    print(("ok    " if rc == 0 else "BLIND ") + f"catalog-render: catalogue push: {out[-200:]}")
+    # crew#516 CP3: dry-run 33106556071 pushed the artifact; --dry-run means nothing leaves this machine.
+    if not dry:
+        rc, out = sh([str(WT / "bin" / "idp-catalog-push")], WT, 300)
+        print(("ok    " if rc == 0 else "BLIND ") + f"catalog-render: catalogue push: {out[-200:]}")
+    else:
+        print("skip  catalog-render: catalogue push skipped in --dry-run (crew#516 CP3)")
     step("estate-diagram", [sys.executable, str(WT / "bin" / "estate-diagram")], WT)
     # crew#474: the graded page, red rows first, from the same catalogue in the same run.
     # crew#403 CP6: planned / blocking / when, before the showcase so its bar can quote it.
