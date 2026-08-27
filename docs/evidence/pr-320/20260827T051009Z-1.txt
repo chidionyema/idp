@@ -1,0 +1,7 @@
+== pytest (both incident tests)
+6 passed in 3.21s
+== live daemon ticks, last 10 min
+SCHEDULE|SKIPPED|4
+SCHEDULE|SUCCESS|11
+SENSOR|SKIPPED|6
+SENSOR|SUCCESS|4
