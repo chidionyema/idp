@@ -42,13 +42,15 @@ M="$IDP/platform/oci/identity"
 # the provider signs in the way the oci CLI in this run does: SecurityToken under GitHub OIDC
 # (oke-check sets OCI_CLI_AUTH=security_token), APIKey on a laptop (crew#408)
 PAUTH=APIKey; [ "${OCI_CLI_AUTH:-}" = security_token ] && PAUTH=SecurityToken
+# region: the CI variable when the job sets it, else the vault; a SecurityToken provider cannot read it from the profile (run 33030450105)
+REGION="${OCI_REGION:-$(sops -d --extract '["OCI_REGION"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_REGION.yaml")}"
 if [ -f "$M/backend_override.tf" ]; then "$IDP/bin/idp-state-guard" "$M"; tofu -chdir="$M" init -input=false -reconfigure >/dev/null
 else echo "BLIND   state   platform/oci/identity/backend_override.tf missing: local state; run bin/idp-oci-login"; tofu -chdir="$M" init -input=false >/dev/null; fi
 tofu -chdir="$M" "${1:-plan}" -input=false "${@:2}" \
   -var "idcs_endpoint=$DOMAIN_BASE_URL" -var "zone=$zone" -var "founder_emails=[\"$ESTATE_FOUNDER_EMAIL\"]" \
   -var "compartment_ocid=$C" -var "vault_ocid=$V" -var "key_ocid=$K" \
   -var "client_id_secret_ocid=${CID:-}" -var "client_secret_secret_ocid=${CSEC:-}" \
-  -var "oci_auth=$PAUTH" -var "oci_profile=${OCI_CLI_PROFILE:-DEFAULT}"
+  -var "oci_auth=$PAUTH" -var "oci_profile=${OCI_CLI_PROFILE:-DEFAULT}" -var "region=$REGION"
 
 # The domain sets mustChange=true on the password Terraform supplies at create (the flag is read-only on
 # the user and no password policy switches it off), so the drill user's live password is set here once

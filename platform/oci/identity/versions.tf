@@ -12,6 +12,7 @@ terraform {
 # SecurityToken in GitHub Actions (the profile holds the exchanged one-hour session token). Without
 # auth = var.oci_auth the provider assumed an API key and the CI apply could never run (crew#408).
 provider "oci" {
+  region              = var.region
   auth                = var.oci_auth
   config_file_profile = var.oci_profile
 }

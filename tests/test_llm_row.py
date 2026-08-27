@@ -97,6 +97,10 @@ def test_founder_picks_models_in_the_admin_ui_not_by_pr() -> None:
     assert "bin/idp-identity-apply apply -auto-approve" in wf and "bin/idp-identity-apply plan" in wf
     vt = (ROOT / "platform" / "oci" / "identity" / "versions.tf").read_text()
     assert "auth                = var.oci_auth" in vt, "identity provider must sign in as the CLI does (SecurityToken in CI)"
+    # run 33030450105: SecurityToken auth cannot read the region from the profile; it is a provider input
+    assert "region              = var.region" in vt, "identity provider needs region under SecurityToken auth"
+    step = wf.split("bin/idp-identity-apply ${{", 1)[1].split("- name:", 1)[0]
+    assert "OCI_REGION: ${{ vars.OCI_REGION }}" in step, "identity step must pass OCI_REGION"
     assert 'display_name  = "estate-router-console"' in tf
     assert 'redirect_uris             = ["https://llm.${var.zone}/sso/callback"]' in tf
     # crew#407: no console password exists, so none can ever be sent.
