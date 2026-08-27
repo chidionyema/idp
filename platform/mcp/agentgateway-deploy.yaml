@@ -33,8 +33,9 @@ spec:
             - { name: secrets, mountPath: /run/secrets/mcp, readOnly: true }
             - { name: tmp, mountPath: /tmp }   # crew#458: writable /tmp under readOnlyRootFilesystem
           resources:
-            requests: { cpu: 50m, memory: 64Mi }
-            limits: { cpu: 500m, memory: 256Mi }
+            # crew#539 CP9: requests == limits -> Guaranteed QoS, evicted last under node pressure
+            requests: { cpu: 200m, memory: 256Mi }
+            limits: { cpu: 200m, memory: 256Mi }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

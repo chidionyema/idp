@@ -1,0 +1,86 @@
+# crew#539 row 7 (founder, 2026-08-27: "intercept K8s crash logs and wire them into Telegram
+# before the evidence vanishes"). Robusta (LAW 43, robusta-dev/robusta, MIT) watches the API
+# server for CrashLoopBackOff, OOMKilled, ImagePullBackOff, Pending and job failures, and its
+# built-in playbooks post the pod's last logs and events to the sink below. Its bundled
+# kube-prometheus-stack stays off: crew#539 row 1 owns the one Prometheus; Robusta will read
+# that Alertmanager once it exists. No Robusta SaaS account: no robusta_sink, no telemetry.
+#
+# Secrets: the sink's bot token and chat id are `{{ env.X }}` references resolved by the runner
+# from env vars fed by a secretKeyRef (docs.robusta.dev "Managing Secrets";
+# src/robusta/core/sinks/sink_base_params.py env_values_validation). Nothing secret is a value.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: robusta
+  namespace: robusta
+spec:
+  interval: 24h
+  url: https://robusta-charts.storage.googleapis.com
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: robusta
+  namespace: robusta
+spec:
+  interval: 1h
+  timeout: 15m
+  chart:
+    spec:
+      chart: robusta
+      version: 0.48.0
+      sourceRef:
+        kind: HelmRepository
+        name: robusta
+  install:
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3 }
+  values:
+    clusterName: oke
+    enablePrometheusStack: false
+    enableHolmesGPT: false
+    runner:
+      sendAdditionalTelemetry: false
+      hardenedFs: true
+      additional_env_vars:
+        - name: TELEGRAM_BOT_TOKEN
+          valueFrom: { secretKeyRef: { name: robusta-telegram, key: token } }
+        - name: TELEGRAM_CHAT_ID
+          valueFrom: { secretKeyRef: { name: robusta-telegram, key: channel } }
+      # The chart asks 250m / 1 Gi; the pool this lands on was CPU-starved (2026-08-27).
+      resources:
+        requests: { cpu: 100m, memory: 512Mi }
+        limits: { cpu: 100m, memory: 512Mi }
+    kubewatch:
+      resources:
+        requests: { cpu: 20m, memory: 128Mi }
+        limits: { cpu: 20m, memory: 128Mi }
+    sinksConfig:
+      - telegram_sink:
+          name: telegram
+          bot_token: "{{ env.TELEGRAM_BOT_TOKEN }}"
+          chat_id: "{{ env.TELEGRAM_CHAT_ID }}"
+          send_files: true
+    # crew#539 CP11. Only the built-in trigger and enrichers (docs.robusta.dev playbook-reference):
+    # a CrashLoopBackOff posts the previous container's log and the pod's last events, so the
+    # evidence is in Telegram before the pod is recycled. The chart's built-in
+    # report_crash_loop (log only, first restart) stays: overriding builtinPlaybooks would drop
+    # the OOM/ImagePull/Pending rows too. This one fires at the second restart with the events.
+    # Stuck-Terminating force-delete is NOT here: Robusta has no built-in for it (searched
+    # playbooks/robusta_playbooks and docs, 2026-08-27); writing a custom Python action would
+    # be a script for the class of thing this chart exists to do (headline rule 1). Recorded
+    # on crew#539 as the CP11 gap; the descheduler (platform/healing) owns stuck pods today.
+    customPlaybooks:
+      - triggers:
+          - on_pod_crash_loop:
+              restart_reason: CrashLoopBackOff
+              restart_count: 2
+              rate_limit: 3600
+        actions:
+          - logs_enricher:
+              previous: true
+          - pod_events_enricher:
+              max_events: 8
+              included_types: [Warning, Normal]
+        sinks: [telegram]
