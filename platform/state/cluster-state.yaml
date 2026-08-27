@@ -104,7 +104,11 @@ data:
             try:
                 req = urllib.request.Request("https://kubernetes.default.svc" + path, headers={"Authorization": "Bearer " + tok})
                 with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
-                    out[c["name"]] = r.read().decode("utf-8", "replace")[-800:]
+                    # crew#495: signoz-0 crashed 37 times and every receipt carried only cobra
+                    # frames, because its fatal is one zap JSON line with "msg" at the head and a
+                    # stacktrace longer than the 800-char tail kept here. Each line keeps its head.
+                    lines = r.read().decode("utf-8", "replace").splitlines()[-8:]
+                    out[c["name"]] = "".join(ln[:400] + (" ...[cut]\n" if len(ln) > 400 else "\n") for ln in lines)
             except Exception as e:
                 out[c["name"]] = f"log read failed: {e}"[:300]
         return out
