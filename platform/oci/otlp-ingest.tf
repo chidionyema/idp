@@ -7,7 +7,8 @@
 # Two vault entries from one password: otlp-ingest-password is what the sender reads (a vault
 # read on the Mac, never typed), otlp-ingest-users is the `science:<bcrypt>` line the Middleware
 # reads through ExternalSecret otlp-ingest-users. bcrypt() salts anew on every plan, so the users
-# entry ignores content changes after the first write; rotate by tainting random_password.otlp_ingest.
+# entry ignores content changes after the first write and is replaced whenever the password is;
+# rotate with `tofu taint random_password.otlp_ingest`.
 resource "random_password" "otlp_ingest" {
   length  = 40
   special = false # travels in an Authorization: Basic header and a k=v env pair; letters and digits only
@@ -34,6 +35,10 @@ resource "oci_vault_secret" "otlp_ingest_users" {
     content      = base64encode("science:${bcrypt(random_password.otlp_ingest.result)}")
   }
   lifecycle {
+    # bcrypt() salts anew on every plan: without this the entry would rewrite on every apply.
     ignore_changes = [secret_content]
+    # ...and with only that, a tainted password would never reach the vault and every tick would
+    # 401 against the old line (idp#436 review, d5ae1960). A new password replaces the entry.
+    replace_triggered_by = [random_password.otlp_ingest]
   }
 }
