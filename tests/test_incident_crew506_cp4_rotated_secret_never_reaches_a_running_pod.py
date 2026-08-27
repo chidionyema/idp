@@ -50,6 +50,13 @@ def test_reloader_row_watches_the_router_namespace_and_only_opted_in_workloads()
     assert re.fullmatch(r"\d+\.\d+\.\d+", str(hr["spec"]["chart"]["spec"]["version"])), "chart is pinned"
 
 
+def test_a_secret_that_predates_reloader_still_rolls_its_workload() -> None:
+    """Incident 2026-08-27 15:12Z: #414 applied, GROQ_API_KEY already in the Secret, router still
+    `Invalid API Key` -- no update event ever came. reloadOnCreate is the chart's knob for that."""
+    values = _one(_docs(ROW), "HelmRelease", "reloader")["spec"]["values"]["reloader"]
+    assert values["reloadOnCreate"] is True
+
+
 def test_flux_applies_the_reloader_row_after_the_secret_store_and_waits_on_it() -> None:
     ks = _one(_docs(FLUX), "Kustomization", "reloader")
     spec = ks["spec"]
