@@ -1,0 +1,64 @@
+# crew#488 CP1: the hydration scenario of docs/prose/cloud-agnostic-drills.feature, run for real.
+#
+# A vanilla k3d cluster on a runner with no OCI identity, Flux installed from its own CLI, one
+# GitRepository at this run's commit, every Kustomization under clusters/oke/ applied. Then
+# bin/idp-portability-drill counts how many layers came Ready and grades it against
+# drills/portability-floor.txt. Layers that need OCI (the vault behind secret-store, DNS, the
+# receipts bucket) are expected to stay red; the drill prints each with Flux's own reason, and
+# the count of everything else is the portability number a buyer's engineer can check.
+#
+# Weekly, and on any PR that touches the drill itself, so the change ships with its green run
+# (LAW 22). Cost: £0, GitHub-hosted runner.
+name: portability-drill
+on:
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - .github/workflows/portability-drill.yml
+      - bin/idp-portability-drill
+      - drills/portability-floor.txt
+      - platform/k3d/estate.yaml
+permissions:
+  contents: read
+concurrency:
+  group: portability-drill-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  hydrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: k3d cluster from platform/k3d/estate.yaml (crew#191)
+        uses: AbsaOSS/k3d-action@ad80fda285ceeca9b1ebef8c4b3f862f8b9124b4 # v2.4.0
+        with:
+          cluster-name: estate
+          args: --config=platform/k3d/estate.yaml
+      - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
+      - name: flux install, then the same tree OKE runs, from this commit
+        env:
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          flux install --components-extra=image-reflector-controller,image-automation-controller
+          kubectl apply -f clusters/oke/estate-config.yaml
+          flux create source git flux-system --url="https://github.com/${GITHUB_REPOSITORY}" --branch=main --commit="$SHA" --interval=10m
+          for f in clusters/oke/*.yaml; do kubectl apply -f "$f"; done
+          echo "applied $(kubectl get kustomizations -A --no-headers | wc -l) Kustomizations"
+      - name: wait for what can come up
+        run: kubectl wait kustomization --all -A --for=condition=Ready --timeout=600s || true
+      - name: grade against the floor
+        run: |
+          set -euo pipefail
+          mkdir -p receipt
+          kubectl get kustomizations -A -o json > receipt/kustomizations.json
+          kubectl get helmreleases -A > receipt/helmreleases.txt 2>&1 || true
+          flux get kustomizations -A | tee receipt/flux-get.txt
+          bin/idp-portability-drill receipt/kustomizations.json | tee receipt/grade.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: portability-receipt
+          path: receipt/
