@@ -191,6 +191,10 @@ catalog:
       rules:
         - allow: [Component, Resource, Domain, System, Group]
 
+    # The founder's surfaces (crew#401) are hand-written in backstage/founder/catalog-info.yaml
+    # but reach the portal only through the generated estate catalogue above: bin/catalog-gen
+    # substitutes ${ESTATE_ZONE} (Backstage does not) and stamps each card with its health.
+
     # Templates the scaffolder actually offers. One real one beats the
     # create-app example, which advertised "Example Node.js Template" to
     # anyone who clicked Create.

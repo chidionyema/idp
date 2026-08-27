@@ -101,6 +101,33 @@ deny contains msg if {
 	msg := "rule=founder_approval_required | the PR changes a founder-facing surface (backstage/, platform/identity/, platform/edge/, docs/policy/, estate-defaults.yaml) and names no approval word | fix: add a line `Approval-word: <word>` to the PR body; the founder replies `APPROVE: <word>` or `DENY: <word>`"
 }
 
+# --- founder_approval_given (crew#227 CP5) -----------------------------------------------
+# The word above was only ever declared; nothing read his reply. bin/pr-report now lists every
+# `APPROVE: <word>` and `DENY: <word>` the repository owner's login wrote on the PR (pr.approvals,
+# pr.denials). A founder-facing PR is refused until the declared word is in approvals, and refused
+# outright when it is in denials. A word said on Telegram is not evidence: the bot sees a chat id,
+# GitHub sees a 2FA login.
+
+approval_word := w if {
+	m := regex.find_all_string_submatch_n(`(?m)^Approval-word:\s*(\S+)`, input.pr.body, 1)
+	count(m) == 1
+	w := m[0][1]
+}
+
+deny contains msg if {
+	touches_founder_facing
+	approval_word in object.get(input.pr, "denials", [])
+	msg := sprintf("rule=founder_denied | the founder replied `DENY: %s` on this PR | fix: do not merge; address his reason and open a new PR with a new word", [approval_word])
+}
+
+deny contains msg if {
+	touches_founder_facing
+	has_approval_word
+	not approval_word in object.get(input.pr, "denials", [])
+	not approval_word in object.get(input.pr, "approvals", [])
+	msg := sprintf("rule=founder_approval_pending | no `APPROVE: %s` from %s on this PR yet | fix: the founder comments `APPROVE: %s` on the PR from his GitHub login; a chat message does not count", [approval_word, object.get(input.pr, "founder", "the repository owner"), approval_word])
+}
+
 # --- cost_budget -------------------------------------------------------------------------
 # A platform/oci change declares its monthly cost delta; over budget is a refusal, not a
 # review comment. The budget is estate-defaults.yaml cost.budget_monthly_usd, passed in.

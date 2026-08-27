@@ -180,3 +180,80 @@ output "drill_live_password" {
   value     = random_password.drill_live.result
   sensitive = true
 }
+
+# ── The router console (crew#408) ─────────────────────────────────────────────────────────────
+# LiteLLM's Admin UI at llm.<zone>/ui signs in through this domain, the same login as the catalogue.
+# No console password exists (ADR 0007): a session once sent one over Telegram (crew#407), and the
+# founder's answer was "I don't want to have to maintain passwords". LiteLLM reads the client as
+# GENERIC_CLIENT_ID/GENERIC_CLIENT_SECRET (platform/llm/external-secret.yaml, litellm-sso).
+resource "oci_identity_domains_app" "router_console" {
+  idcs_endpoint = var.idcs_endpoint
+  schemas       = ["urn:ietf:params:scim:schemas:oracle:idcs:App"]
+  display_name  = "estate-router-console"
+  description   = "LiteLLM Admin UI at llm.${var.zone}/ui; managed by platform/oci/identity, never by hand"
+  based_on_template {
+    value = "CustomWebAppTemplateId"
+  }
+  active                    = true
+  is_oauth_client           = true
+  client_type               = "confidential"
+  allowed_grants            = ["authorization_code"]
+  bypass_consent            = true
+  redirect_uris             = ["https://llm.${var.zone}/sso/callback"]
+  post_logout_redirect_uris = ["https://llm.${var.zone}/ui"]
+  show_in_my_apps           = false
+  attribute_sets            = ["all"]
+  lifecycle {
+    ignore_changes = [schemas]
+  }
+}
+
+resource "oci_identity_domains_grant" "router_console_founder" {
+  for_each        = data.oci_identity_domains_users.founder
+  idcs_endpoint   = var.idcs_endpoint
+  schemas         = ["urn:ietf:params:scim:schemas:oracle:idcs:Grant"]
+  grant_mechanism = "ADMINISTRATOR_TO_USER"
+  grantee {
+    type  = "User"
+    value = one(each.value.users).id
+  }
+  app {
+    value = oci_identity_domains_app.router_console.id
+  }
+}
+
+resource "oci_vault_secret" "router_console_client_id" {
+  compartment_id = var.compartment_ocid
+  vault_id       = var.vault_ocid
+  key_id         = var.key_ocid
+  secret_name    = "litellm-sso-client-id"
+  secret_content {
+    content_type = "BASE64"
+    content      = base64encode(oci_identity_domains_app.router_console.name)
+  }
+}
+resource "oci_vault_secret" "router_console_client_secret" {
+  compartment_id = var.compartment_ocid
+  vault_id       = var.vault_ocid
+  key_id         = var.key_ocid
+  secret_name    = "litellm-sso-client-secret"
+  secret_content {
+    content_type = "BASE64"
+    content      = base64encode(oci_identity_domains_app.router_console.client_secret)
+  }
+}
+# LiteLLM grants the proxy-admin role to the user whose id (the email claim) equals PROXY_ADMIN_ID.
+resource "oci_vault_secret" "router_console_admin_id" {
+  compartment_id = var.compartment_ocid
+  vault_id       = var.vault_ocid
+  key_id         = var.key_ocid
+  secret_name    = "litellm-sso-admin-id"
+  secret_content {
+    content_type = "BASE64"
+    content      = base64encode(var.founder_emails[0])
+  }
+}
+
+output "router_console_client_id" {
+  value = oci_identity_domains_app.router_console.name
+}

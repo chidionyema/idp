@@ -14,6 +14,7 @@ DEST="$HOME/Library/LaunchAgents"; mkdir -p "$DEST"
 # launchd does not search PATH for ProgramArguments[0]; a bare name exits 78 with an empty
 # log (2026-08-25, ai.estate.temporal). Binaries are resolved here, once, per machine.
 TEMPORAL_BIN="$(command -v temporal || true)"
+# crew#396: ai.estate.temporal.plist.tmpl is retired; the engine is platform/temporal on the cluster.
 for t in "$IDP"/launchd/*.plist.tmpl; do
   name="$(basename "${t%.tmpl}")"
   if [ "${#ONLY[@]}" -gt 0 ]; then

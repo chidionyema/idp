@@ -1,0 +1,97 @@
+# The heal activity (sovereign/engine/kini.py cluster_ready) asks the API whether every node is
+# Ready: the in-cluster form of bin/idp-cluster-state. Read-only, nodes only.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sovereign-worker
+  namespace: temporal
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sovereign-worker-nodes
+rules:
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sovereign-worker-nodes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sovereign-worker-nodes
+subjects:
+  - kind: ServiceAccount
+    name: sovereign-worker
+    namespace: temporal
+---
+# crew#396 step 2: the sovereign worker polls the in-cluster engine, so a workflow keeps
+# running with the laptop closed. Image from sovereign-worker.Dockerfile; the tag
+# below is rewritten by image-automation-controller (platform/image-automation/sovereign-worker.yaml).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sovereign-worker
+  namespace: temporal
+  labels:
+    app.kubernetes.io/name: sovereign-worker
+    app.kubernetes.io/part-of: idp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sovereign-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sovereign-worker
+        app.kubernetes.io/part-of: idp
+    spec:
+      serviceAccountName: sovereign-worker
+      imagePullSecrets:
+        - name: ghcr-pull   # mirrored from backstage/ghcr-pull by pull-secret.yaml
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001   # `USER sovereign` in sovereign-worker.Dockerfile
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: worker
+          image: idp/sovereign-worker:local
+          imagePullPolicy: IfNotPresent
+          env:
+            # The chart's frontend Service (platform/temporal/temporal.yaml); sovereign/config.py
+            # builds TEMPORAL_ADDRESS from host and port.
+            - { name: TEMPORAL_HOST, value: temporal-frontend.temporal.svc }
+            - { name: TEMPORAL_PORT, value: "7233" }
+            - { name: TEMPORAL_NAMESPACE, value: estate }
+            - { name: ESTATE_HOME, value: /tmp/estate }
+            - { name: HOME, value: /tmp }
+          # The worker writes worker.ready under ESTATE_HOME/sovereign once it is polling
+          # (sovereign/engine/worker.py) and removes it on stop; there is no HTTP port to probe.
+          startupProbe:
+            exec: { command: [test, -f, /tmp/estate/sovereign/worker.ready] }
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            exec: { command: [test, -f, /tmp/estate/sovereign/worker.ready] }
+            periodSeconds: 15
+          livenessProbe:
+            exec: { command: [test, -f, /tmp/estate/sovereign/worker.ready] }
+            periodSeconds: 30
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+      volumes:
+        - name: tmp
+          emptyDir: {}

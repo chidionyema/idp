@@ -14,6 +14,7 @@ from temporalio.worker import Worker
 
 from sovereign import config
 from sovereign.engine import activities
+from sovereign.engine import kini
 from sovereign.engine.workflow import SessionWorkflow
 from sovereign.shadow import activities as shadow_activities
 from sovereign.shadow.workflow import BranchChildWorkflow, BranchParentWorkflow
@@ -45,13 +46,14 @@ class _RedactBotTokenFilter(logging.Filter):
 # here, or the start succeeds and the run sits unpicked forever (crew#284 CP3:
 # `sb run --branches 3` started BranchParentWorkflow while the worker only
 # served SessionWorkflow). tests/bdd/test_cp3_worker_registry.py holds the rule.
-WORKFLOWS = [SessionWorkflow, BranchParentWorkflow, BranchChildWorkflow]
+WORKFLOWS = [SessionWorkflow, BranchParentWorkflow, BranchChildWorkflow, *kini.WORKFLOWS]
 ACTIVITIES = [
     activities.run_step,
     activities.append_receipt,
     activities.notify_change,
     activities.budget_op,
     *shadow_activities.ACTIVITIES,
+    *kini.ACTIVITIES,
 ]
 
 
@@ -90,8 +92,16 @@ async def run_worker() -> None:
         except NotImplementedError:  # pragma: no cover - non-unix
             pass
 
+    ready = config.SOVEREIGN_HOME / "worker.ready"
     async with worker:
-        await stop_event.wait()
+        # The Deployment's probes (platform/temporal/worker.yaml) test this file: it
+        # exists only while the Worker is polling. Written after the connect above,
+        # so a worker that cannot reach the frontend is never reported ready.
+        ready.write_text(f"{config.TEMPORAL_ADDRESS} {config.TEMPORAL_NAMESPACE} {config.TEMPORAL_TASK_QUEUE}\n")
+        try:
+            await stop_event.wait()
+        finally:
+            ready.unlink(missing_ok=True)
     log.info("sovereign worker stopped")
 
 

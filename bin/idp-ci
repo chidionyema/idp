@@ -538,7 +538,9 @@ fi
 #    unpatched-chart fixture must be refused. Kyverno judges at admission, after merge;
 #    this judges before the PR. BLIND (rc 2) when helm/kyverno are missing, never a pass.
 if command -v kyverno >/dev/null && command -v helm >/dev/null; then
-  dirs=$(cd "$IDP" && grep -lE '^kind: HelmRelease' platform/*/*.yaml platform/*/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && grep -q postRenderers "$d"/*.yaml && echo "$d"; done)
+  # HelmRelease dirs with postRenderers, plus any dir shipping a plain workload (crew#284: the
+  # litellm Deployment was never judged and the cluster refused it after merge).
+  dirs=$(cd "$IDP" && { grep -lE '^kind: HelmRelease' platform/*/*.yaml platform/*/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && grep -q postRenderers "$d"/*.yaml && echo "$d"; done; grep -lE '^kind: (Deployment|StatefulSet|DaemonSet|Job|CronJob)$' platform/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && echo "$d"; done; } | sort -u)
   if [ -n "$dirs" ] && (cd "$IDP" && bin/idp-kyverno-render $dirs) && ! (cd "$IDP" && bin/idp-kyverno-render tests/fixtures/kyverno/must-fail >/dev/null 2>&1); then
     say "ok    kyverno  $(echo "$dirs" | tr '\n' ' ')render clean; the unpatched-chart fixture is refused"
   else say "FAIL  kyverno  a HelmRelease render fails admission policy, or the must-fail fixture passed"; fail=1; fi

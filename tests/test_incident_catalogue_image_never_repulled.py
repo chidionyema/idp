@@ -36,7 +36,10 @@ def test_kustomization_carries_the_policy_marker():
     text = (ROOT / "platform/backstage/overlays/oke/kustomization.yaml").read_text()
     m = re.search(r'newTag: (\S+) # \{"\$imagepolicy": "flux-system:backstage:tag"\}', text)
     assert m, "newTag line has no $imagepolicy marker; image-automation-controller cannot find it"
-    assert BY_KIND["ImageUpdateAutomation"]["spec"]["update"] == {"path": "./platform/backstage/overlays/oke", "strategy": "Setters"}
+    update = BY_KIND["ImageUpdateAutomation"]["spec"]["update"]
+    assert update["strategy"] == "Setters"
+    # crew#406: one automation walks ./platform; the overlay must sit under its path.
+    assert "platform/backstage/overlays/oke".startswith(update["path"].removeprefix("./")), update
 
 
 def test_controllers_are_installed_and_the_writer_is_a_deploy_key():

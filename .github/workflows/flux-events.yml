@@ -1,4 +1,4 @@
-# Reconcile ledger (crew#325). Flux's github-dispatch Provider (platform/alerts/provider-github.yaml)
+# Reconcile ledger (crew#325). Flux's github-dispatch Provider (platform/alerts-github/provider-github.yaml)
 # sends every flux-system Kustomization event here as a repository_dispatch. The run does one
 # thing: print the event as a receipt, so a session with no kube path can read what the cluster
 # did with a commit. Read it with:

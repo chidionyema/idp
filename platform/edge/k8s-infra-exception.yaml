@@ -1,0 +1,26 @@
+# The SigNoz k8s-infra agent (platform/observability/k8s-infra.yaml, crew#388) reads container
+# logs from /var/log/pods and node metrics from the host filesystem. That is the whole job of a
+# node agent, and it cannot be done without hostPath volumes, which disallow-host-path and
+# restrict-volume-types refuse by design. The waiver is scoped to the one DaemonSet and those
+# two policies; the otel-deployment Deployment next to it passes the full restricted profile.
+# Only the policies bin/idp-kyverno-render shows failing are listed; the incident test refuses
+# a waiver for a policy the chart already passes. It lives in platform/edge because Kyverno
+# honours exceptions from namespace kyverno only (crew#325) and this directory has no
+# namespace transformer.
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: k8s-infra-node-agent
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: disallow-host-path
+      ruleNames: ['*']
+    - policyName: restrict-volume-types
+      ruleNames: ['*']
+  match:
+    any:
+      - resources:
+          kinds: [DaemonSet, Pod]
+          namespaces: [observability]
+          names: [k8s-infra-otel-agent*]

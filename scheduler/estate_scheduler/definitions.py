@@ -3,8 +3,12 @@
 Each entry in schedule.yml becomes one Dagster job (one op that runs the
 command) and one cron schedule. What the plists could not do lives here:
 
-  max_load         the schedule skips, with a reason, while the 1-minute load
-                   average is above it (2026-08-24: load 30 froze the Dock)
+  load gate        the schedule skips, with a reason, while the 1-minute load
+                   average is above max_load_per_core x cores (default 2.0;
+                   2026-08-24: load 30 froze the Dock). Per core, because a bare
+                   number describes one machine: a flat 6.0 on this 12-core Mac
+                   skipped 3836 ticks in 24h and ran nothing for 16 hours
+                   (crew#85, 2026-08-27). An explicit max_load still wins.
   skip_on_battery  the schedule skips while the Mac is discharging
   after            a run_status_sensor starts this job when the named job
                    succeeds; the cron on such a job is optional
@@ -29,6 +33,11 @@ import time
 from pathlib import Path
 
 import yaml
+
+try:
+    from .load_gate import CORES, load_ceiling, load_verdict
+except ImportError:  # loaded as a bare file, not a package
+    from load_gate import CORES, load_ceiling, load_verdict  # type: ignore[no-redef]
 from dagster import (
     DagsterRunStatus,
     DefaultScheduleStatus,
@@ -92,6 +101,11 @@ def _job_name(label: str) -> str:
 
 def load1() -> float:
     return os.getloadavg()[0]
+
+
+def load_gate(label: str, spec: dict, current: float, cores: int = CORES) -> SkipReason | None:
+    why = load_verdict(label, spec, current, cores)
+    return SkipReason(why) if why else None
 
 
 def on_battery() -> bool:
@@ -166,7 +180,7 @@ def _job_metadata(label: str, spec: dict, source: str) -> dict:
 
 
 def _skip_note(spec: dict) -> str:
-    parts = [f"1-minute load average is above {float(spec.get('max_load', 6.0)):.1f}"]
+    parts = [f"1-minute load average is above {load_ceiling(spec):.1f} ({CORES} cores)"]
     if spec.get("skip_on_battery"):
         parts.append("the laptop is on battery")
     parts.append(f"the breaker is open after {BREAKER_TRIP} consecutive failures")
@@ -198,7 +212,6 @@ def make_job(label: str, spec: dict):
 
 
 def make_schedule(label: str, spec: dict, the_job):
-    max_load = float(spec.get("max_load", 6.0))
     battery = bool(spec.get("skip_on_battery", False))
 
     text, _ = describe_job(label, spec)
@@ -213,9 +226,9 @@ def make_schedule(label: str, spec: dict, the_job):
         default_status=DefaultScheduleStatus.RUNNING,
     )
     def _sched(context):
-        current = load1()
-        if current > max_load:
-            return SkipReason(f"{label}: load {current:.1f} > max_load {max_load}")
+        skip = load_gate(label, spec, load1())
+        if skip is not None:
+            return skip
         if battery and on_battery():
             return SkipReason(f"{label}: on battery")
         if circuit_open(context.instance, the_job.name):

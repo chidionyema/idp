@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: temporal
+resources:
+  - namespace.yaml
+  - external-secret.yaml
+  - postgres.yaml
+  - temporal.yaml
+  - pull-secret.yaml
+  - worker.yaml
+  - kini-finish.yaml
+  - kini-state.yaml
+images:
+  # build-multiarch pushes ghcr.io/chidionyema/sovereign-worker:main-<run>-<sha> (crew#396 step 2).
+  # The first main build after this file merges writes the tag; until then the Deployment cannot
+  # pull and Flux reports it. image-automation-controller rewrites the newTag line from
+  # ImagePolicy flux-system/sovereign-worker; the marker is how it finds the line.
+  - name: idp/sovereign-worker
+    newName: ghcr.io/chidionyema/sovereign-worker
+    newTag: main-783-8490d36abd7aea6fbaed533534c60f0d13304050 # {"$imagepolicy": "flux-system:sovereign-worker:tag"}

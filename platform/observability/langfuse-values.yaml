@@ -1,6 +1,14 @@
 # Langfuse on the OKE node pool (crew#286 CP6). Sized like SigNoz next door: requests small
 # enough to fit beside Backstage, limits so a runaway cannot take the node. Kyverno enforces the
 # restricted profile, so every workload declares non-root, seccomp and drop-ALL.
+global:
+  seaweedfs:
+    image:
+      # Incident 2026-08-26 (crew#325): the seaweedfs sub-chart renders `chrislusf/seaweedfs:4.23`
+      # with no registry, and the OKE node runtime enforces short-name mode, so the S3 pod sat in
+      # ImageInspectError for 3 hours ("returns ambiguous list"). Same class as the zookeeper
+      # image in values.yaml. `repository` is the namespace part of the image name in this chart.
+      repository: docker.io/chrislusf
 langfuse:
   nodeEnv: production
   features:
@@ -10,13 +18,28 @@ langfuse:
     url: https://langfuse.${ESTATE_ZONE}   # substituted by Flux postBuild (clusters/oke/platform.yaml)
   additionalEnvFrom:
     - secretRef: { name: langfuse-init }
+  # Incident 2026-08-26 (crew#325): Langfuse 4.x defaults LANGFUSE_MIGRATION_V4_WRITE_MODE to
+  # events_only, and langfuse-web logged "Rejected 2 event(s) from the legacy /api/public/ingestion
+  # endpoint ... These events were not stored" for every routed call. The router's `langfuse`
+  # callback (platform/llm/config.yaml) posts to that legacy endpoint, so every trace was dropped
+  # while the health check answered 200. `dual` is the documented bridge, on web and worker;
+  # the end state is the router's `langfuse_otel` callback, after which this line goes.
+  additionalEnv:
+    - { name: LANGFUSE_MIGRATION_V4_WRITE_MODE, value: dual }
   podSecurityContext: { runAsNonRoot: true, runAsUser: 1001, runAsGroup: 1001, seccompProfile: { type: RuntimeDefault } }
   securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: false, capabilities: { drop: [ALL] } }
   web:
     replicas: 1
+    # Incident 2026-08-26 (crew#325): langfuse-web died on its first ClickHouse migration with
+    # "FATAL ERROR: Ineffective mark-compacts near heap limit" at 500 MB, under a 1Gi pod limit.
+    # Node caps the V8 heap below the cgroup limit unless told otherwise, so the limit alone is
+    # not the fix: set the heap explicitly and give the pod room above it.
+    additionalEnv:
+      - name: NODE_OPTIONS
+        value: --max-old-space-size=1536
     resources:
-      requests: { cpu: 100m, memory: 512Mi }
-      limits: { cpu: 1000m, memory: 1Gi }
+      requests: { cpu: 100m, memory: 1Gi }
+      limits: { cpu: 1000m, memory: 2Gi }
   worker:
     replicas: 1
     resources:

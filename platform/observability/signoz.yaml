@@ -81,8 +81,13 @@ spec:
                         securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
                         volumeMounts:
                           - { name: tmp, mountPath: /tmp }
+                          # Incident 2026-08-26 (crew#325): the collector copies its config to
+                          # /var/tmp/collector-config.yaml at start; with a read-only rootfs and
+                          # only /tmp writable it died "read-only file system" on every start.
+                          - { name: var-tmp, mountPath: /var/tmp }
                     volumes:
                       - { name: tmp, emptyDir: {} }
+                      - { name: var-tmp, emptyDir: {} }
           - target: { kind: StatefulSet, name: signoz }
             patch: |
               apiVersion: apps/v1
@@ -108,6 +113,19 @@ spec:
                 template:
                   spec:
                     securityContext: { runAsNonRoot: true, runAsUser: 1001, runAsGroup: 1001, fsGroup: 1001, seccompProfile: { type: RuntimeDefault } }
+                    # Incident 2026-08-26 (crew#325): the zk-conf emptyDir mounted over the image's conf
+                    # directory hid zoo_sample.cfg, and the Bitnami entrypoint died on
+                    # `cp: cannot stat '/opt/bitnami/zookeeper/conf/zoo_sample.cfg'` 32 times. The
+                    # cluster's require-ro-rootfs policy keeps the root read-only, so the conf files are
+                    # copied out of the same image into the emptyDir before the server starts.
+                    initContainers:
+                      - name: zookeeper-conf
+                        image: docker.io/signoz/zookeeper:3.7.1
+                        command: [sh, -c, "cp -r /opt/bitnami/zookeeper/conf/. /zk-conf/"]
+                        securityContext: { allowPrivilegeEscalation: false, runAsNonRoot: true, runAsUser: 1001, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+                        resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { cpu: 100m, memory: 64Mi } }
+                        volumeMounts:
+                          - { name: zk-conf, mountPath: /zk-conf }
                     containers:
                       - name: zookeeper
                         securityContext: { allowPrivilegeEscalation: false, runAsNonRoot: true, runAsUser: 1001, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }

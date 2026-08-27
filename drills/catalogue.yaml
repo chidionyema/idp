@@ -61,3 +61,44 @@ drills:
       One chat completion went through llm.<zone> with the master key from the vault and its
       trace came back out of langfuse.<zone> by id within 90 s, so model routing and the trace
       store work end to end from a runner that holds no key (crew#325 showcase).
+
+  - name: kyverno-secrets-drill
+    workflow: kyverno-secrets-drill.yml
+    job: kyverno-secrets-drill
+    schedule: "41 7 * * *"
+    max_age_hours: 26
+    proves: >-
+      The secrets-not-from-env-vars Kyverno policy still refuses a Pod that reads a secret via
+      env.valueFrom.secretKeyRef or envFrom.secretRef, and still passes the real vault-backed
+      volume-mount pattern already shipped (langfuse) plus two false-positive-risk cases
+      (no env at all, ConfigMap-sourced env) -- so a future dependency bump or CEL engine
+      change cannot silently reopen the class crew#341 closed.
+
+  - name: cluster-state
+    workflow: oke-check.yml
+    job: cluster-state
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    proves: >-
+      The cluster wrote its own state receipt (nodes, pods not Ready) to Object Storage from the
+      node's identity within the last hour and a runner with no kube path and no laptop session
+      token read it back through OIDC (crew#345: bin/idp-cluster-state grades freshness and Ready).
+
+  - name: kini-finish
+    workflow: oke-check.yml
+    job: kini-state
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    proves: >-
+      The KINI run's own receipt (state/kini, written every 15 minutes by the kini-state CronJob
+      from the engine's answer) is fresh and the last KiniFinishWorkflow is green, running, or not
+      yet requested; a red checkpoint or a stale receipt fails it (crew#396: bin/idp-kini-state).
+  - name: telemetry-coverage
+    workflow: oke-check.yml
+    job: telemetry-coverage
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    proves: >-
+      Every pod Running for more than ten minutes wrote a log line or a metric sample that SigNoz
+      stored in the last hour, measured by querying ClickHouse and diffing against the API server
+      (crew#320, LAW 50: coverage is proved by the backend, never by scanning files).

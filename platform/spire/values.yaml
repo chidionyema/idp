@@ -50,6 +50,13 @@ spire-server:
     limits: { memory: 512Mi }
 
 spire-agent:
+  # Off the host network. Incident 2026-08-27 (crew#227 CP4, oke-check 33035070500): the chart
+  # default is hostNetwork: true, the API server then defaults every containerPort to a hostPort,
+  # and Kyverno's disallow-host-ports refused all eight spire-agent pods (FailedCreate). The
+  # offline render in bin/idp-kyverno-render never sees that defaulting, so the exception could
+  # not have listed it. The agent reaches the kubelet by node name (MY_NODE_NAME) and serves the
+  # Workload API on a hostPath socket, so the host network buys nothing here.
+  hostNetwork: false
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { memory: 256Mi }

@@ -58,6 +58,42 @@ spec:
     - secretKey: password
       remoteRef: { key: clickhouse-admin-password }
 ---
+# Incident 2026-08-26 (crew#325): langfuse-web crashed for 4 hours on "Database langfuse does not
+# exist". The langfuse chart creates its database only when it deploys its own ClickHouse
+# (values: "Created automatically by the sub-chart when deploy is true"); on the shared SigNoz
+# ClickHouse nothing creates it, and the migrator assumes it exists. This Job is the declared
+# owner of that database. It is idempotent, retries until ClickHouse answers, and Flux re-applies
+# it on every reconcile, so a rebuilt cluster gets the database before Langfuse asks for it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: langfuse-clickhouse-database
+spec:
+  backoffLimit: 30
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext: { runAsNonRoot: true, runAsUser: 101, runAsGroup: 101, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: create
+          # Same image the SigNoz ClickHouseInstallation runs (signoz chart 0.138.0), already on the node.
+          image: docker.io/clickhouse/clickhouse-server:25.12.5
+          # Kyverno (secrets-not-from-env-vars) requires the password as a mounted file.
+          command:
+            - sh
+            - -c
+            - clickhouse-client --host signoz-clickhouse --user admin --password "$(cat /secrets/password)" --query "CREATE DATABASE IF NOT EXISTS langfuse"
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: clickhouse-auth, mountPath: /secrets, readOnly: true }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - { name: clickhouse-auth, secret: { secretName: clickhouse-auth } }
+---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -65,6 +101,11 @@ metadata:
 spec:
   interval: 1h
   timeout: 15m
+  # Incident 2026-08-26 (crew#325): langfuse-web crash-looped for four hours on
+  # `lookup signoz-clickhouse: no such host` while the signoz release had never become Ready.
+  # Langfuse runs on SigNoz's ClickHouse, so it waits for that release instead of racing it.
+  dependsOn:
+    - name: signoz
   chart:
     spec:
       chart: langfuse
@@ -116,6 +157,27 @@ spec:
                           - { name: tmp, mountPath: /tmp }
                     volumes:
                       - { name: tmp, emptyDir: {} }
+          # Incident 2026-08-26 (crew#325): the SeaweedFS post-install/post-upgrade hook Job that
+          # creates the `langfuse` bucket carries no securityContext, Kyverno denied it, and every
+          # Helm upgrade of this release failed ("post-upgrade hooks failed ... langfuse-bucket-hook").
+          # Flux post-renders hook manifests too, so the profile is added here.
+          - target: { kind: Job, name: langfuse-bucket-hook }
+            patch: |
+              apiVersion: batch/v1
+              kind: Job
+              metadata: { name: langfuse-bucket-hook }
+              spec:
+                template:
+                  spec:
+                    securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+                    containers:
+                      - name: post-install-job
+                        securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+                        resources: { requests: { cpu: 20m, memory: 32Mi }, limits: { cpu: 200m, memory: 128Mi } }
+                        volumeMounts:
+                          - { name: tmp, mountPath: /tmp }
+                    volumes:
+                      - { name: tmp, emptyDir: {} }
           - target: { kind: Deployment, name: langfuse-redis }
             patch: |
               apiVersion: apps/v1
@@ -155,23 +217,3 @@ spec:
                     initContainers:
                       - name: postgresql-init
                         resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { cpu: 100m, memory: 64Mi } }
----
-# Langfuse and its Postgres read their credentials only from the environment (twelve-factor,
-# no file form exists), so the two secrets-from-env rules cannot be met by them. The exception is
-# scoped to these three workloads and these two rules; every other policy still applies. The
-# SigNoz release next door passes the same rules by carrying its ClickHouse password as a plain
-# env literal, which is the weaker of the two forms; that is the policy's gap, not a model.
-apiVersion: kyverno.io/v2
-kind: PolicyException
-metadata:
-  name: langfuse-secrets-from-env
-spec:
-  exceptions:
-    - policyName: secrets-not-from-env-vars
-      ruleNames: [secrets-not-from-env-vars, secrets-not-from-envfrom, autogen-secrets-not-from-env-vars, autogen-secrets-not-from-envfrom]
-  match:
-    any:
-      - resources:
-          kinds: [Deployment, StatefulSet, Pod, ReplicaSet]
-          namespaces: [observability]
-          names: [langfuse-web*, langfuse-worker*, langfuse-postgresql*]
