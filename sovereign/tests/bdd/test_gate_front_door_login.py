@@ -46,7 +46,13 @@ def _no_user_db(state: dict) -> None:
         if d["kind"] == "ExternalSecret":
             keys = [str(x.get("secretKey", "")) + str(x.get("remoteRef", {}).get("property", "")) for x in d.get("spec", {}).get("data", [])]
             keys += list((d.get("spec", {}).get("target", {}).get("template", {}).get("data") or {}).keys())
-            assert not any("users" in k.lower() for k in keys), f"{p}: {d['metadata']['name']} renders a users file"
+            # crew#516 CP5: the one `users` key allowed is the htpasswd line a basicAuth Middleware in
+            # the same file reads for a route annotated edge-basic-auth (one program credential,
+            # written by platform/oci/otlp-ingest.tf, not a person's password).
+            readers = {str(m.get("spec", {}).get("basicAuth", {}).get("secret", ""))
+                       for pp, m in state["docs"] if pp == p and m["kind"] == "Middleware"}
+            if d["metadata"]["name"] not in readers:
+                assert not any("users" in k.lower() for k in keys), f"{p}: {d['metadata']['name']} renders a users file"
         if d["kind"] == "Middleware":
             addr = str(d.get("spec", {}).get("forwardAuth", {}).get("address", ""))
             assert "authelia" not in addr, f"{p}: {d['metadata']['name']} forwards auth to authelia"
@@ -88,6 +94,19 @@ def _oauth2_proxy_in_front(state: dict) -> None:
             assert paths and all(x == {"type": "PathPrefix", "value": "/ping/"} for x in paths), f"{p}: healthchecks-ping-key route exposes {paths}"
             assert "healthchecks-ping-key" in (p.parent / "external-secret.yaml").read_text(), f"{p}: the row pulls no ping key"
             assert 'project.ping_key = os.environ["PING_KEY"]' in (p.parent / "healthchecks.yaml").read_text(), f"{p}: the row never pins the ping key"
+            continue
+        if auth == "edge-basic-auth":
+            # The collector's ingest door (crew#516 CP5): OTLP /v1/ paths only, and every rule carries a
+            # basicAuth Middleware whose Secret an ExternalSecret in the same file pulls from the vault.
+            paths = [m.get("path", {}) for r in d["spec"]["rules"] for m in r.get("matches", [])]
+            assert paths and all(x.get("type") == "PathPrefix" and x.get("value") in ("/v1/logs", "/v1/traces", "/v1/metrics") for x in paths), f"{p}: edge-basic-auth route exposes {paths}"
+            basic = {m["metadata"]["name"]: str(m.get("spec", {}).get("basicAuth", {}).get("secret", ""))
+                     for pp, m in state["docs"] if pp == p and m["kind"] == "Middleware" and m.get("spec", {}).get("basicAuth")}
+            pulled = {m["metadata"]["name"] for pp, m in state["docs"] if pp == p and m["kind"] == "ExternalSecret"}
+            for r in d["spec"]["rules"]:
+                names = [f.get("extensionRef", {}).get("name") for f in r.get("filters", [])]
+                assert any(n in basic for n in names), f"{p}: a rule of {d['metadata']['name']} carries no basicAuth Middleware ({names})"
+                assert all(basic[n] in pulled for n in names if n in basic), f"{p}: the basicAuth Secret is pulled by no ExternalSecret in the file"
             continue
         assert auth == "bearer-master-key", f"{p}: route {d['metadata']['name']} has no oauth2-proxy Middleware in front ({refs}) and no idp.estate/auth annotation"
         cfg = p.parent / "config.yaml"

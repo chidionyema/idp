@@ -35,6 +35,35 @@ ROUTES = [(f, d) for f, d in _docs() if d.get("kind") == "HTTPRoute"]
 MIDDLEWARES = {(d["metadata"]["namespace"], d["metadata"]["name"]): d for _, d in _docs() if d.get("kind") == "Middleware"}
 
 
+OTLP_PATHS = {"/v1/logs", "/v1/traces", "/v1/metrics"}
+
+
+def edge_basic_auth_ok(f, route, middlewares=None, docs=None):
+    """(ok, why) for a route annotated edge-basic-auth (crew#516 CP5): the collector's ingest door.
+    Pure over the documents so the refusing shapes are tested without a file: a path outside the
+    OTLP /v1/ paths, a rule with no basicAuth Middleware, a Middleware whose Secret no
+    ExternalSecret in the same file pulls from the vault."""
+    ns = route["metadata"]["namespace"]
+    mws = MIDDLEWARES if middlewares is None else middlewares
+    if docs is None:
+        docs = [d for ff, d in _docs() if ff == f]
+    paths = [m.get("path", {}) for rule in route["spec"]["rules"] for m in rule.get("matches", [])]
+    if not paths or not all(p.get("type") == "PathPrefix" and p.get("value") in OTLP_PATHS for p in paths):
+        return False, f"annotated edge-basic-auth but exposes a path other than the OTLP /v1/ paths: {paths}"
+    pulled = {d["metadata"]["name"]: [x.get("remoteRef", {}).get("key") for x in d.get("spec", {}).get("data", [])]
+              for d in docs if d.get("kind") == "ExternalSecret"}
+    for rule in route["spec"]["rules"]:
+        refs = [flt["extensionRef"]["name"] for flt in rule.get("filters", []) if flt.get("type") == "ExtensionRef"]
+        basic = [mws[(ns, n)] for n in refs if (ns, n) in mws and mws[(ns, n)].get("spec", {}).get("basicAuth")]
+        if not basic:
+            return False, f"a rule carries no basicAuth Middleware in {ns}: {refs}"
+        for mw in basic:
+            secret = mw["spec"]["basicAuth"].get("secret")
+            if not secret or not any(pulled.get(secret) or []):
+                return False, f"Middleware {mw['metadata']['name']} reads Secret {secret!r}, which no ExternalSecret in the file pulls"
+    return True, "the OTLP paths only, a basicAuth Middleware on every rule, its Secret pulled from the vault"
+
+
 def test_routes_exist():
     assert ROUTES, "no HTTPRoute under platform/"
 
@@ -89,6 +118,15 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
         assert "healthchecks-ping-key" in row, f"{f}: annotated healthchecks-ping-key but the row pulls no ping key"
         enrol = (pathlib.Path(f).parent / "healthchecks.yaml").read_text()
         assert "project.ping_key = os.environ[\"PING_KEY\"]" in enrol, f"{f}: the row never pins the ping key on the project"
+        return
+    # The collector's ingest door (crew#516 CP5): a program off the cluster posts OTLP/HTTP and
+    # cannot pass a browser login; the collector enforces no credential itself, so the edge does.
+    # The route may skip oauth2-proxy only when it says so AND exposes nothing but the OTLP /v1/
+    # paths, AND every rule carries a basicAuth Middleware whose Secret an ExternalSecret in the
+    # same file pulls from the vault (platform/oci/otlp-ingest.tf writes the htpasswd line).
+    if (route["metadata"].get("annotations") or {}).get("idp.estate/auth") == "edge-basic-auth":
+        ok, why = edge_basic_auth_ok(f, route)
+        assert ok, f"{f}: {why}"
         return
     guarded = 0
     for rule in route["spec"]["rules"]:
@@ -152,3 +190,33 @@ def test_the_unguarded_shape_is_refused():
                  {"matches": [{"path": {"type": "PathPrefix", "value": "/oauth2/"}}], "backendRefs": [{"name": "catalogue"}]}):
         with pytest.raises(AssertionError):
             test_every_route_outside_identity_is_behind_forward_auth("fixture", {"metadata": bad["metadata"], "spec": {"rules": [rule]}})
+
+
+def test_the_edge_basic_auth_door_is_refused_without_its_three_proofs():
+    """crew#516 CP5: the annotation is a label; each of the three proofs missing is refused."""
+    es = {"kind": "ExternalSecret", "metadata": {"name": "otlp-ingest-users", "namespace": "observability"},
+          "spec": {"data": [{"secretKey": "users", "remoteRef": {"key": "otlp-ingest-users"}}]}}
+    mw = {"kind": "Middleware", "metadata": {"name": "otlp-basic-auth", "namespace": "observability"},
+          "spec": {"basicAuth": {"secret": "otlp-ingest-users"}}}
+    fwd = {"kind": "Middleware", "metadata": {"name": "login-forward-auth", "namespace": "observability"},
+           "spec": {"forwardAuth": {"address": "http://oauth2-proxy.identity.svc.cluster.local/"}}}
+    mws = {("observability", "otlp-basic-auth"): mw, ("observability", "login-forward-auth"): fwd}
+
+    def route(paths, middleware="otlp-basic-auth"):
+        return {"metadata": {"name": "otlp-ingest", "namespace": "observability", "annotations": {"idp.estate/auth": "edge-basic-auth"}},
+                "spec": {"rules": [{"matches": [{"path": {"type": "PathPrefix", "value": v}} for v in paths],
+                                    "filters": [{"type": "ExtensionRef", "extensionRef": {"name": middleware}}],
+                                    "backendRefs": [{"name": "signoz-otel-collector", "port": 4318}]}]}}
+
+    assert edge_basic_auth_ok("fixture", route(["/v1/logs", "/v1/traces"]), mws, [es, mw])[0]
+    # a path that is not an OTLP path: the SigNoz UI or API would be reachable with one program credential
+    assert not edge_basic_auth_ok("fixture", route(["/v1/logs", "/api/"]), mws, [es, mw])[0]
+    assert not edge_basic_auth_ok("fixture", route(["/"]), mws, [es, mw])[0]
+    # the forward-auth Middleware instead of basicAuth: a program gets the 302 again
+    assert not edge_basic_auth_ok("fixture", route(["/v1/logs"], "login-forward-auth"), mws, [es, mw])[0]
+    # no ExternalSecret pulls the users line: the Middleware would read a Secret nobody writes
+    assert not edge_basic_auth_ok("fixture", route(["/v1/logs"]), mws, [mw])[0]
+    # the real route passes the same function through the parametrised rule
+    real = [(f, d) for f, d in ROUTES if d["metadata"]["name"] == "otlp-ingest"]
+    assert real, "platform/observability/httproute.yaml has no otlp-ingest route"
+    assert edge_basic_auth_ok(*real[0])[0]
