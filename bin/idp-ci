@@ -395,6 +395,7 @@ else say "FAIL  schema   check-jsonschema rejected a generated entity"; fail=1; 
 #    rule cannot exist without its proof (LAW 44) and no gate refuses good work (LAW 38).
 policy_gate() { conftest test --parser json -p "$IDP/policy" "$1" >/dev/null 2>&1; }
 bind_audit() { "$IDP/bin/bind-audit" --table "$1" >/dev/null 2>&1; }
+ns_fence_gate() { python3 "$IDP/bin/ns-fence-gate" "$1" >/dev/null 2>&1; }
 job_described() { ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe "$1" ) >/dev/null 2>&1; }
 # A code location is loaded by PATH by workspace.yaml, never as a package. Loading
 # it any other way here would grade a proxy: on 2026-08-25 definitions.py imported a
@@ -458,6 +459,19 @@ if bin/owner-account-gate tests/fixtures/owner-accounts/good.yaml >/dev/null \
 else say "FAIL  owners   bin/owner-account-gate fixtures"; fail=1; fi
 if out=$("$IDP/bin/bind-audit" --selftest 2>&1); then say "ok    binds    bind-audit refuses an unknown listener and permits an allow-listed one"
 else say "FAIL  binds    bin/bind-audit --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
+# 7b. The fences the estate's own namespaces ship with (crew#191). The AGENTS.md row
+#    above proves ns-fence-gate can tell a fenced namespace from a flat one; this
+#    runs it over the manifests that are actually committed, because a gate that
+#    works on fixtures and is never pointed at the real thing protects fixtures.
+#    Measured on `estate` before these existed: a pod in one namespace reached a pod
+#    in another by IP, no credential, HTTP 200 in 4ms. Report-only until crew#191
+#    fences the namespaces that exist today (2026-08-27: 76 defects across 19): a
+#    gate that refuses every namespace on main is the outage (LAW 38), and a count
+#    that falls to 0 is the moment this row becomes a FAIL.
+if out=$(cd "$IDP" && python3 bin/ns-fence-gate platform 2>&1); then
+  say "ok    fences   $(printf '%s' "$out" | sed 's/^ok *ns-fence-gate: //')"
+else say "warn  fences   $(printf '%s' "$out" | head -1 | sed 's/^FAIL *ns-fence-gate: //') -- crew#191 fences them; report-only until 0"; fi
 
 # 8. crew#216 CP1: the get_estate_inventory MCP tool. Property (byte ceiling holds over
 #    many synthetic catalog sizes) and incident (stale snapshot disclosed, proved both
