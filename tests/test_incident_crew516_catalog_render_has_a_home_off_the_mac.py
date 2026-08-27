@@ -59,10 +59,14 @@ def test_incident_crew516_default_is_dry_run_and_commit_is_a_choice():
     assert "58 1,7,13,19 * * *" in [c["cron"] for c in wf[True]["schedule"]]
 
 
-def test_incident_crew516_the_mac_row_still_stands_until_parity():
+def test_incident_crew516_the_mac_row_is_retired_and_the_workflow_has_a_schedule():
+    """Parity reached 2026-08-27: the workflow renders the same pages from the bucket copies, so the
+    Mac row is retired (not deleted: the launchd job is booted out by the scheduler reconcile)."""
     sched = yaml.safe_load((ROOT / "scheduler" / "schedule.yml").read_text())
     jobs = sched.get("jobs", sched)
-    assert jobs["com.estate.catalog-render"]["runs_on"] == "mac"
+    assert jobs["com.estate.catalog-render"]["runs_on"] == "retire"
+    assert jobs["com.estate.catalog-render"]["runs_on_ref"] == "crew#516 CP3"
+    assert _wf()[True]["schedule"], "the cloud render must run on a cron, not only on dispatch"
 
 
 def test_incident_crew516_the_runner_carries_flux_and_reads_the_feed_from_the_bucket():
