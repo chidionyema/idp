@@ -156,3 +156,27 @@ def test_incident_crew227_cp4_failed_install_is_remediated_not_kept():
         rem = hr["spec"][phase]["remediation"]
         assert rem["retries"] >= 1
         assert rem["remediateLastFailure"] is True, phase
+
+
+def test_incident_crew227_cp4_agent_off_host_network_must_reach_the_kubelet_by_node_address(tmp_path):
+    """crew#227 CP4, cluster-state receipt 2026-08-27T07:00:02Z: eight spiffe-proof pods Failed with
+    `rpc error: code = Unavailable desc = workload attestation failed` while csi_workloads listed all
+    eight and the ClusterSPIFFEID reported 67 entries, 0 failures. #308 set hostNetwork: false; the
+    chart's kubeletAddress.mode default "auto" resolves to 127.0.0.1:10250, which inside the pod
+    network is the agent, not the kubelet. Rule (rung 4): an agent DaemonSet without hostNetwork
+    carries KUBELET_ADDR from the downward API (status.hostIP or spec.nodeName) and its agent.conf
+    names node_name_env KUBELET_ADDR."""
+    rendered = _render(tmp_path)
+    docs = [d for d in yaml.safe_load_all(rendered.read_text()) if d]
+    ds = _one(docs, "DaemonSet", "spire-agent")
+    pod = ds["spec"]["template"]["spec"]
+    if pod.get("hostNetwork"):
+        pytest.skip("agent is on the host network; localhost reaches the kubelet")
+    agent = next(c for c in pod["containers"] if c["name"] == "spire-agent")
+    env = {e["name"]: e for e in agent.get("env", [])}
+    assert "KUBELET_ADDR" in env, "kubeletAddress.mode must be hostip or hostname when hostNetwork is false"
+    field = env["KUBELET_ADDR"]["valueFrom"]["fieldRef"]["fieldPath"]
+    assert field in ("status.hostIP", "spec.nodeName"), field
+    cm = _one(docs, "ConfigMap", "spire-agent")
+    conf = "".join(cm["data"].values())   # chart 0.30.1 writes agent.conf as JSON
+    assert '"node_name_env": "KUBELET_ADDR"' in conf, conf[-600:]
