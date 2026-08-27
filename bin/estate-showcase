@@ -45,7 +45,7 @@ STANDARDS = CODE / "crew" / "docs" / "STANDARDS.md"
 SCIENCE = CODE / "crew" / "docs" / "science" / "SHOWCASE.md"
 
 ELITE, GAP, BLIND = "ELITE", "GAP", "BLIND"
-PASSING = {"clean", "PASS", "0"}
+PASSING = {"clean", "PASS", "0", "running"}  # running: a KeepAlive daemon with a live PID (crew#478)
 
 
 def load(catalog: Path):
