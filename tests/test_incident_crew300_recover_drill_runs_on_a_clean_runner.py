@@ -104,12 +104,16 @@ def test_a_token_is_graded_by_its_shape_in_both_scripts_never_by_being_non_empty
     the drill must ask the installation which repositories it sees before git is asked."""
     drill = SCRIPT.read_text()
     app = (ROOT / "bin" / "idp-github-app").read_text()
-    shape = r'=~ \^ghs_\[A-Za-z0-9\]\+\$'
+    # Run 33099762534: a real installation token is ~390 bytes and carries `_` and `.`; alphanumeric-only refused it.
+    shape = r'=~ \^ghs_\[A-Za-z0-9_\.-\]\+\$'
     assert re.search(shape, drill), "bin/idp-recover-drill does not grade the token by shape"
     assert re.search(shape, app), "bin/idp-github-app does not grade the token by shape"
     assert '[ -z "$tok" ]; then bl github-app' not in drill
     assert "/installation/repositories" in drill
     assert re.search(r"^\s*[^#\n]*\bghs_[A-Za-z0-9]{10,}", drill + app, re.M) is None, "a literal token in a script"
+    for good in ("ghs_" + "a" * 36, "ghs_" + "a" * 200 + "_b.c-d"):
+        assert re.fullmatch(r"ghs_[A-Za-z0-9_.-]+", good)
+    assert re.fullmatch(r"ghs_[A-Za-z0-9_.-]+", 'BLIND   github-app no installation token') is None
 
 
 def test_an_app_jwt_is_sent_as_bearer_never_through_gh_token() -> None:
