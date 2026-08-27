@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""Flux post-build substitution, run before the PR merges, with the tool Flux runs (crew#483).
+
+Incident: idp#310 put `code=${out%% *}; loc=${out#* }` in a CronJob script under platform/identity.
+The identity Kustomization substitutes from estate-config in strict mode, so Flux refused the whole
+layer (`envsubst error: variable not set (strict mode): "out"`) and healthchecks, which depends on
+it, went down with it. The crew#284 test only knew `${UPPER_NAME}`; a lowercase name with a shell
+modifier walked past it. This gate stops re-implementing the parser: for every Kustomization in
+clusters/*/*.yaml that declares postBuild, it runs `kustomize build <path> | flux envsubst --strict`
+with exactly the keys its substituteFrom sources hold (ConfigMap data from git, and the names
+bin/idp-flux-bootstrap creates), so what CI judges is what the controller renders.
+
+Usage: bin/idp-envsubst-gate            every postBuild Kustomization in this checkout
+       bin/idp-envsubst-gate DIR...     these kustomize dirs, with the estate-config keys
+Exit 0 clean, 1 with each refused build printed, 2 (BLIND) when flux or kustomize is missing or no
+Kustomization declares postBuild: a gate that lost its evidence reports BLIND, never a verdict.
+Proved both ways in bin/idp-ci on tests/fixtures/envsubst/{good,bad}.
+"""
+import glob
+import os
+import pathlib
+import re
+import shutil
+import subprocess
+import sys
+
+import yaml
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+def source_keys() -> dict[str, dict[str, str]]:
+    keys: dict[str, dict[str, str]] = {}
+    for f in glob.glob(str(ROOT / "clusters" / "*" / "*.yaml")):
+        for d in yaml.safe_load_all(pathlib.Path(f).read_text()):
+            if d and d.get("kind") == "ConfigMap":
+                keys.setdefault(d["metadata"]["name"], {}).update({k: str(v) for k, v in (d.get("data") or {}).items()})
+    boot = (ROOT / "bin" / "idp-flux-bootstrap").read_text()
+    for m in re.finditer(r"create configmap (\S+)((?:\s+--from-literal=[A-Z_]+=\S+)+)", boot):
+        keys.setdefault(m.group(1), {}).update({k: "set-by-bootstrap" for k in re.findall(r"--from-literal=([A-Z_]+)=", m.group(2))})
+    # A Secret source synced by an ExternalSecret (alerts: flux-telegram): its keys are the
+    # target template's data keys, or the data[].secretKey names, and nothing else reaches Flux.
+    for f in glob.glob(str(ROOT / "platform" / "**" / "*.yaml"), recursive=True):
+        try:
+            docs = list(yaml.safe_load_all(pathlib.Path(f).read_text()))
+        except yaml.YAMLError:
+            continue
+        for d in docs:
+            if d and d.get("kind") == "ExternalSecret":
+                tgt = d["spec"].get("target", {})
+                names = (tgt.get("template", {}).get("data") or {}).keys() or [x["secretKey"] for x in d["spec"].get("data", [])]
+                keys.setdefault(tgt.get("name") or d["metadata"]["name"], {}).update({k: "synced-by-external-secrets" for k in names})
+    return keys
+
+
+def kustomizations():
+    for f in sorted(glob.glob(str(ROOT / "clusters" / "*" / "*.yaml"))):
+        for d in yaml.safe_load_all(pathlib.Path(f).read_text()):
+            if d and d.get("kind") == "Kustomization" and d["spec"].get("postBuild", {}).get("substituteFrom"):
+                yield d
+
+
+def render(path: str, env: dict[str, str]) -> tuple[int, str]:
+    build = subprocess.run(["kustomize", "build", path], capture_output=True, text=True, cwd=ROOT)
+    if build.returncode:
+        return build.returncode, "kustomize: " + build.stderr.strip().splitlines()[-1]
+    sub = subprocess.run(["flux", "envsubst", "--strict"], input=build.stdout, capture_output=True, text=True, env={**os.environ, **env})
+    return sub.returncode, (sub.stderr or sub.stdout).strip().splitlines()[-1] if sub.returncode else ""
+
+
+def main(argv: list[str]) -> int:
+    if not (shutil.which("flux") and shutil.which("kustomize")):
+        print("BLIND: flux or kustomize CLI not installed; post-build substitution was not judged")
+        return 2
+    keys = source_keys()
+    jobs: list[tuple[str, str, dict[str, str]]] = []
+    if argv:
+        jobs = [(pathlib.Path(a).name, a, keys.get("estate-config", {})) for a in argv]
+    else:
+        for ks in kustomizations():
+            path = ks["spec"]["path"]
+            if not (ROOT / path).is_dir():
+                print(f"skip  {ks['metadata']['name']}: {path} is not in this checkout (another source)")
+                continue
+            env: dict[str, str] = {}
+            for s in ks["spec"]["postBuild"]["substituteFrom"]:
+                env.update(keys.get(s["name"], {}))
+            jobs.append((ks["metadata"]["name"], path, env))
+    if not jobs:
+        print("BLIND: no Kustomization declares postBuild.substituteFrom")
+        return 2
+    bad = 0
+    for name, path, env in jobs:
+        rc, msg = render(path, env)
+        if rc:
+            bad += 1
+            print(f"FAIL  {name} ({path}): {msg}")
+        else:
+            print(f"ok    {name} ({path}) substitutes clean with {len(env)} key(s)")
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

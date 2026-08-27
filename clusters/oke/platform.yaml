@@ -198,6 +198,40 @@ spec:
       - kind: ConfigMap
         name: estate-config
 ---
+# MCP row (crew#458): agentgateway + github-mcp on the cluster, reached at mcp.<zone> through the
+# https-mcp listener on prospector-edge. Replaces the colima VM on the founder Mac. After edge
+# and secret-store (the gateway key and GitHub token), like llm.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: mcp
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/mcp
+  prune: true
+  dependsOn:
+    - name: edge
+    - name: secret-store
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentgateway
+      namespace: mcp
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: github-mcp
+      namespace: mcp
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+---
 # crew#345: the cluster writes its own state receipt to Object Storage every 15 minutes, so no
 # session needs a kube path or `oci session authenticate` to read it (bin/idp-cluster-state).
 apiVersion: kustomize.toolkit.fluxcd.io/v1

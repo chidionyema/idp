@@ -110,8 +110,6 @@ RUN pip3 install --no-cache-dir --break-system-packages mkdocs-techdocs-core==1.
 # removed with the tool that owns it. A CVE in a tool the image never runs is
 # still a red gate and a finding in diligence.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
-# Least privilege. `node` is uid 1000 in this image and owns nothing it does not
-# need; the catalogue file is mounted read-only from the host.
 USER node
 WORKDIR /app
 # The whole of /app from deps: that stage's working directory holds exactly the

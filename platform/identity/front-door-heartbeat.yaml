@@ -47,12 +47,12 @@ spec:
                   at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
                   IDENTITY_HOST=$(printf '%s' "$IDENTITY_URL" | sed -E 's#^[a-z]+://([^/]+).*#\1#')
                   out=$(curl -sS -o /dev/null --max-time 20 -w '%{http_code} %{redirect_url}' "$DOOR_URL" 2>&1)
-                  code=${out%% *}; loc=${out#* }
+                  code=$${out%% *}; loc=$${out#* }
                   lochost=$(printf '%s' "$loc" | sed -E 's#^[a-z]+://([^/]+).*#\1#')
                   if [ "$code" = 302 ] && [ -n "$lochost" ] && [ "$lochost" = "$IDENTITY_HOST" ]; then
                     printf 'ok front-door-heartbeat %s -> 302 %s at %s\n' "$DOOR_URL" "$lochost" "$at" > /tmp/receipt
                   else
-                    printf 'FAIL front-door-heartbeat %s -> %s %s (expected 302 to %s) at %s\n' "$DOOR_URL" "$code" "${lochost:-no-location}" "$IDENTITY_HOST" "$at" > /tmp/receipt
+                    printf 'FAIL front-door-heartbeat %s -> %s %s (expected 302 to %s) at %s\n' "$DOOR_URL" "$code" "$${lochost:-no-location}" "$IDENTITY_HOST" "$at" > /tmp/receipt
                   fi
                   cat /tmp/receipt
                   oci --auth instance_principal os object put --bucket-name estate-drill-receipts \

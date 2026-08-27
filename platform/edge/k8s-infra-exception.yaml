@@ -24,4 +24,5 @@ spec:
       - resources:
           kinds: [DaemonSet, Pod]
           namespaces: [observability-agent]
-          names: [k8s-infra-otel-agent*]
+          # the release is observability-agent-k8s-infra (helm-controller: <targetNamespace>-<name>), crew#483
+          names: [observability-agent-k8s-infra-otel-agent*]

@@ -96,7 +96,10 @@ def _wf_shape(wf):
 def _render():
     out = subprocess.run(["kubectl", "kustomize", str(IDP / "platform/temporal")], capture_output=True, text=True, check=True).stdout
     docs = {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(out) if d}
-    job = docs[("Job", "kini-finish-0")]
+    # The request renames the Job to kini-finish-<run id> (crew#406), so find it by its label, not its name.
+    jobs = [d for (k, _), d in docs.items() if k == "Job" and d["metadata"].get("labels", {}).get("app.kubernetes.io/name") == "kini-finish"]
+    assert len(jobs) == 1, f"expected one kini-finish Job, found {[d['metadata']['name'] for d in jobs]}"
+    job = jobs[0]
     spec = job["spec"]["template"]["spec"]
     assert spec["serviceAccountName"] == "sovereign-worker"
     assert spec["containers"][0]["image"].startswith("ghcr.io/chidionyema/sovereign-worker:"), spec["containers"][0]["image"]
