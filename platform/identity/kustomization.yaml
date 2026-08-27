@@ -5,3 +5,4 @@ resources:
   - oauth2-proxy.yaml
   - external-secret.yaml
   - httproute.yaml
+  - front-door-heartbeat.yaml
