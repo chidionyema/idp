@@ -9,6 +9,7 @@
 #   --check              zero-downtime drill (daily): no drift in tofu, cluster serving. Default.
 #   --apply              one-shot bring-up or converge: login, tofu apply, flux bootstrap, verify.
 #   --surge-node         apply, then replace the one node by a surge (new boot volume / shape reach new nodes only).
+#   --surge-finish       second half of a surge whose Ready gate went blind (run 33101801971): delete the old node once the new one is Ready.
 #   --teardown-rebuild   the full drill: tofu destroy, then --apply. Downtime for the whole run.
 #                        Run against a second cluster with OCI_CLUSTER_NAME=estate-drill; the
 #                        Always Free A1 allowance is one node, so a parallel drill cluster needs
@@ -142,12 +143,14 @@ case "$MODE" in
     step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" || { echo "exit 3: recreate-guard refused; import the live resource"; exit 3; }
     step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
     step surge-node "$IDP/bin/idp-oke-surge-node" ;;
+  --surge-finish)
+    step surge-finish "$IDP/bin/idp-oke-surge-node" --finish ;;
   --teardown-rebuild)
     step tofu-destroy tofu destroy -auto-approve "${TFVARS[@]}"
     step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" || { echo "exit 3: recreate-guard refused; import the live resource"; exit 3; }
     step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
     step flux-bootstrap "$IDP/bin/idp-flux-bootstrap" ;;
-  *) echo "usage: $0 [--check|--apply|--surge-node|--teardown-rebuild|--plan-pool]"; exit 64 ;;
+  *) echo "usage: $0 [--check|--apply|--surge-node|--surge-finish|--teardown-rebuild|--plan-pool]"; exit 64 ;;
 esac
 
 # --- verify: the platform answers, measured from outside ---------------------------------------
