@@ -283,3 +283,31 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-store
+  title: "The store (mumchimp)"
+  description: "The one place a customer pays this estate: the storefront and the Medusa API behind it. Revenue is read from api.<zone> by crew science/outcomes.py revenue (crew#70). Registered here because catalogue-drift found the three hostnames live and unlisted (oke-check run 33034521953)."
+  annotations:
+    idp/updated-by: "github.com/chidionyema/mumchimp-medusa on push to main (its own pipeline); this entry by hand until that repo carries a catalog-info.yaml"
+  tags: [founder, product]
+  links:
+    - title: "Open"
+      url: "https://www.${ESTATE_ZONE}"
+      icon: web
+    - title: "Apex"
+      url: "https://${ESTATE_ZONE}"
+      icon: web
+    - title: "Store API health"
+      url: "https://api.${ESTATE_ZONE}/health"
+      icon: dashboard
+    - title: "Source"
+      url: "https://github.com/chidionyema/mumchimp-medusa"
+      icon: github
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
