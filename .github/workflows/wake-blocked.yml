@@ -1,0 +1,27 @@
+# Copied verbatim into .github/workflows/wake-blocked.yml of every active estate repository by
+# bin/estate-security-rollout's sibling step (crew#504 CP7). A PR closed with a `Blocked-by:` line
+# in its body reopens itself, branch updated, when every key it names has landed.
+name: wake-blocked
+on:
+  schedule:
+    - cron: "7-59/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      resolved:
+        description: "free-text Blocked-by key that has landed, e.g. secret signoz-root"
+        default: ""
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+concurrency:
+  group: wake-blocked
+  cancel-in-progress: false
+jobs:
+  wake-blocked:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: chidionyema/idp/.github/actions/wake-blocked@main
+        with:
+          resolved: ${{ inputs.resolved }}

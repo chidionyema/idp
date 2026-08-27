@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 # Put one JSON secret into the estate vault from named keys of the operator's env file.
 #   bin/idp-vault-put <secret-name> <KEY=envkey>...      e.g. bin/idp-vault-put flux-telegram token=TELEGRAM_BOT_TOKEN channel=TELEGRAM_HOME_CHANNEL
+#   bin/idp-vault-put --merge <secret-name> <KEY=envkey>...
+#     --merge overlays the given keys on the JSON the vault already holds and keeps every other key
+#     (crew#506 CP4: one new provider key never re-seeds the whole entry). A pair whose env key is
+#     unset is skipped under --merge, so a CI step may list every key it might carry; without --merge
+#     an unset key is an error, as before. Prints key NAMES only.
 # Values are read in-process and never printed. Env file: $ESTATE_ENV_FILE (default ~/.estate/.env; ~/.hermes is retired, crew#13).
 # Vault and key ids come from tofu outputs; compartment from the sops vault (LAW 46: nothing typed here).
 set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 # estate-secrets sits beside the main checkout, even when this runs from a worktree under .claude/worktrees (crew#408)
 MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
+MERGE=0; [ "${1:-}" = --merge ] && { MERGE=1; shift; }
 name=$1; shift
 # No profile is a hard stop: ~/.oci/config has no DEFAULT, only session-token profiles. Discover the
 # live one the way every other bin/idp-* does (crew#503, 2026-08-27: an unset profile failed the write
@@ -28,23 +34,35 @@ if [ "${1:-}" = "--preflight" ] || [ "${VAULT_PUT_PREFLIGHT:-}" = 1 ]; then
   oci vault secret list --compartment-id "$C" --vault-id "$V" --limit 1 --query 'length(data)' --raw-output >/dev/null \
     && { echo "ok      vault   reachable as $OCI_CLI_PROFILE"; exit 0; } || { echo "FAIL    vault   not reachable as $OCI_CLI_PROFILE"; exit 2; }
 fi
-payload=$(python3 - "$ENVF" "$@" <<'PY'
-import sys,json,base64
+existing=$(oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"secret-name\"=='$name' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output 2>/dev/null || true)
+[ "$existing" = null ] && existing=""
+current=""
+if [ "$MERGE" = 1 ] && [ -n "$existing" ]; then
+  # the JSON the vault holds now, read in-process and never written to disk (LAW 21)
+  current=$(oci secrets secret-bundle get --secret-id "$existing" --query 'data."secret-bundle-content".content' --raw-output)
+fi
+payload=$(CURRENT="$current" MERGE="$MERGE" python3 - "$ENVF" "$@" <<'PY'
+import sys,json,base64,os
 envf=sys.argv[1]; kv={}
 for line in open(envf):
     line=line.strip()
     if line and not line.startswith("#") and "=" in line:
         k,v=line.split("=",1); kv[k]=v.strip().strip('"').strip("'")
-out={}
+merge=os.environ["MERGE"]=="1"
+out=json.loads(base64.b64decode(os.environ["CURRENT"])) if os.environ.get("CURRENT") else {}
+kept=set(out); given=[]
 for pair in sys.argv[2:]:
     dst,src=pair.split("=",1)
-    if src not in kv or not kv[src]: sys.exit(f"missing {src} in env file")
-    out[dst]=kv[src]
+    if src not in kv or not kv[src]:
+        if merge: continue
+        sys.exit(f"missing {src} in env file")
+    out[dst]=kv[src]; given.append(dst)
+if not given: sys.exit("no key given has a value in the env file")
 print(base64.b64encode(json.dumps(out).encode()).decode())
+print("keys set: "+" ".join(given)+("; kept: "+" ".join(sorted(kept-set(given))) if merge else ""), file=sys.stderr)
 PY
 )
-existing=$(oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"secret-name\"=='$name' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output 2>/dev/null || true)
-if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+if [ -n "$existing" ]; then
   oci vault secret update-base64 --secret-id "$existing" --secret-content-content "$payload" >/dev/null && echo "vault   $name updated ($# keys)"
 else
   oci vault secret create-base64 --compartment-id "$C" --vault-id "$V" --key-id "$K" --secret-name "$name" --secret-content-content "$payload" >/dev/null && echo "vault   $name created ($# keys)"
