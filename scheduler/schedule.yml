@@ -16,6 +16,15 @@ jobs:
     cron: 33 5,11,17,23 * * *
     skip_on_battery: false
     timeout_s: 1800
+  ai.estate.checkout-drift:
+    command:
+    - ~/.claude/scripts/hc-wrap.sh
+    - checkout-drift
+    - /usr/bin/python3
+    - $CODE/idp/bin/idp-checkout-drift
+    cron: 17 * * * *
+    skip_on_battery: false
+    timeout_s: 600
   ai.estate.dep-alerts:
     command:
     - /usr/bin/python3
