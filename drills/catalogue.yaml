@@ -139,3 +139,13 @@ drills:
     proves: >-
       A pull request closed with a Blocked-by line is updated and reopened within 30 minutes of
       its blocker landing, so dependency waits never need a person to remember (crew#504 CP7).
+  - name: science-facts
+    workflow: oke-check.yml
+    job: science-facts
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    proves: >-
+      The science lane's rows reached the estate collector: an hourly job inside the cluster counts
+      rows per science.source in ClickHouse over the last 24 hours and writes the count as a receipt;
+      at least one source is the only green, and a backend that cannot answer is BLIND
+      (crew#516 CP5, LAW 50: the lane is graded by querying the backend, never by scanning files).
