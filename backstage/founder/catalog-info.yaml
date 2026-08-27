@@ -77,6 +77,23 @@ metadata:
 spec:
   type: founder-surface
   lifecycle: production
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-telemetry
+  title: "Telemetry (SigNoz)"
+  description: "Every workload's traces, metrics and logs land here (LAW 50). The telemetry-coverage receipt in oke-check is the count of pods this backend has seen; the SLO alert rules (crew#495) are declared against it."
+  annotations:
+    idp/updated-by: "Flux from platform/observability; rows arrive live from the OTel collector"
+  tags: [founder]
+  links:
+    - title: "Open"
+      url: "https://signoz.${ESTATE_ZONE}"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
   owner: group:default/platform
   system: system:default/estate
 ---
