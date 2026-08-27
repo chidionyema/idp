@@ -146,6 +146,9 @@ jobs:
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.SEED_HERMES_TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS }}
+          # crew#516 CP4 (receipt 33116314460, "Unauthorized user ... on telegram"): hermes-agent reads
+          # TELEGRAM_ALLOWED_USERS (gateway/run.py); the cockpit reads TELEGRAM_ALLOWED_USER_IDS. Both carry the one value.
+          TELEGRAM_ALLOWED_USERS: ${{ secrets.SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS }}
           TELEGRAM_HOME_CHANNEL: ${{ secrets.SEED_HERMES_TELEGRAM_HOME_CHANNEL }}
           ANTHROPIC_API_KEY: ${{ secrets.SEED_ANTHROPIC_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
@@ -154,7 +157,7 @@ jobs:
           EXA_API_KEY: ${{ secrets.SEED_EXA_API_KEY }}
           HERMES_AUTH_JSON: ${{ secrets.SEED_HERMES_AUTH_JSON }}
         run: |
-          keys=TELEGRAM_BOT_TOKEN,TELEGRAM_ALLOWED_USER_IDS,TELEGRAM_HOME_CHANNEL,ANTHROPIC_API_KEY,OPENROUTER_API_KEY,LITELLM_API_KEY,GITHUB_TOKEN,EXA_API_KEY,HERMES_AUTH_JSON
+          keys=TELEGRAM_BOT_TOKEN,TELEGRAM_ALLOWED_USER_IDS,TELEGRAM_ALLOWED_USERS,TELEGRAM_HOME_CHANNEL,ANTHROPIC_API_KEY,OPENROUTER_API_KEY,LITELLM_API_KEY,GITHUB_TOKEN,EXA_API_KEY,HERMES_AUTH_JSON
           any=0; for k in ${keys//,/ }; do [ -n "${!k:-}" ] && any=1; done
           [ "$any" = 1 ] || { echo "n/a     hermes-agent-env   no SEED_HERMES_* secrets set; the vault keeps what it holds"; exit 0; }
           umask 077; f=$(mktemp)
