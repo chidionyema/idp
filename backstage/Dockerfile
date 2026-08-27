@@ -122,5 +122,7 @@ COPY --chown=node:node app-config*.yaml ./
 # provider resolves through the catalog. Drop it and sign-in breaks.
 COPY --chown=node:node templates ./templates
 COPY --chown=node:node examples ./examples
+# founder/ is the founder-surfaces catalog location (crew#401); app-config.yaml loads it.
+COPY --chown=node:node founder ./founder
 ENV NODE_ENV=production
 CMD ["node", "packages/backend", "--config", "app-config.yaml", "--config", "app-config.container.yaml"]
