@@ -275,8 +275,8 @@ metadata:
     - title: "kini-finish: Run workflow"
       url: "https://github.com/chidionyema/idp/actions/workflows/kini-finish.yml"
       icon: dashboard
-    - title: "Receipt: oke-check kini-state row"
-      url: "https://github.com/chidionyema/idp/actions/workflows/oke-check.yml"
+    - title: "Receipt reader (bin/idp-kini-state)"
+      url: "https://github.com/chidionyema/idp/blob/main/bin/idp-kini-state"
       icon: dashboard
 spec:
   type: founder-surface
