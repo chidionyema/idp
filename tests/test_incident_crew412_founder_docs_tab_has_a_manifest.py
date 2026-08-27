@@ -8,7 +8,8 @@ the image). BLIND when GitHub cannot be reached, never green by absence.
 """
 import pathlib
 import re
-import subprocess
+import urllib.error
+import urllib.request
 
 import pytest
 import yaml
@@ -39,11 +40,18 @@ def test_every_founder_techdocs_ref_names_a_tree_with_a_manifest(name: str, ref:
     m = re.fullmatch(r"url:https://github\.com/([^/]+)/([^/]+)/tree/([^/]+)/?", ref)
     assert m, f"{name}: techdocs-ref {ref!r} is not url:https://github.com/<owner>/<repo>/tree/<ref>/"
     owner, repo, gitref = m.groups()
-    r = subprocess.run(["gh", "api", f"repos/{owner}/{repo}/contents/mkdocs.yml?ref={gitref}", "--jq", ".name"],
-                       capture_output=True, text=True, check=False)
-    if r.returncode != 0 and ("Could not resolve" in r.stderr or "network" in r.stderr.lower() or "auth" in r.stderr.lower()):
-        pytest.skip(f"BLIND: gh api unreachable: {r.stderr.strip()[:120]}")
-    assert r.returncode == 0 and r.stdout.strip() == "mkdocs.yml", f"{name}: {owner}/{repo}@{gitref} has no mkdocs.yml at its root ({r.stderr.strip()[:120]})"
+    # Plain HTTPS, no gh: CI runners carry no GH_TOKEN for this job (idp#288 run 1 failed on
+    # that, not on the manifest). The repo is public, so the raw file is the receipt.
+    url = f"https://raw.githubusercontent.com/{owner}/{repo}/{gitref}/mkdocs.yml"
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:  # noqa: S310 - fixed https host
+            body = resp.read(4096).decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        assert e.code != 404, f"{name}: {owner}/{repo}@{gitref} has no mkdocs.yml at its root (HTTP 404)"
+        pytest.skip(f"BLIND: GitHub answered HTTP {e.code} for {url}")
+    except (urllib.error.URLError, TimeoutError) as e:
+        pytest.skip(f"BLIND: GitHub unreachable: {e}")
+    assert "docs_dir" in body or "site_name" in body, f"{name}: {url} is not a mkdocs manifest"
 
 
 def test_the_pod_can_build_docs_without_docker():
