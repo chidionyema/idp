@@ -69,7 +69,7 @@ spec:
         name: estate-agents
         email: estate-agents[bot]@users.noreply.github.com
       messageTemplate: |
-        platform/backstage/oke: catalogue image {{ range .Changed.Objects }}{{ range .Changes }}{{ .NewValue }}{{ end }}{{ end }} (crew#267)
+        platform/backstage/oke: catalogue image {{ range $resource, $changes := .Changed.Objects }}{{ range $_, $change := $changes }}{{ $change.NewValue }}{{ end }}{{ end }} (crew#267)
 
         Written by image-automation-controller from ImagePolicy flux-system/backstage.
     push:
