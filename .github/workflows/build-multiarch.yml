@@ -37,10 +37,17 @@ jobs:
       dockerfiles: ${{ steps.find.outputs.list }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # bin/dockerfiles --changed-since needs the base commit
+      # Build only the images the change reaches: on 2026-08-27 every run built all
+      # images on both architectures (six builds) for a one-line YAML edit (crew#516).
+      # A pull request diffs against its base; a push against the commit before it;
+      # an unknown ref (first push, force-push) builds everything.
       - id: find
         run: |
-          list=$(bin/dockerfiles --json)
-          echo "list=$list" >> "$GITHUB_OUTPUT"; echo "dockerfiles: $list"
+          if [ "${{ github.event_name }}" = pull_request ]; then base="origin/${{ github.base_ref }}"; else base="${{ github.event.before }}"; fi
+          list=$(bin/dockerfiles --json --changed-since "$base")
+          echo "list=$list" >> "$GITHUB_OUTPUT"; echo "dockerfiles (changed since $base): $list"
   build:
     needs: discover
     if: needs.discover.outputs.dockerfiles != '[]'

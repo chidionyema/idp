@@ -19,8 +19,13 @@ its file name, before this coverage check existed.
 
 ## When it runs
 
-`.github/workflows/build-multiarch.yml` calls `bin/dockerfiles --json` to
-build its build matrix on every push and pull request.
+`.github/workflows/build-multiarch.yml` calls
+`bin/dockerfiles --json --changed-since <base>` to build its build matrix on
+every push and pull request: only the images whose context or Dockerfile the
+change reaches are built. Every image is built when this script or the
+workflow itself changed, or when the base ref is unknown to the clone (first
+push, force-push). `bin/dockerfiles --changed-since origin/main` shows what a
+branch would build.
 `bin/multiarch-gate` calls the plain (non-JSON) form to check coverage every
 time it runs, including inside `bin/idp-ci`.
 
