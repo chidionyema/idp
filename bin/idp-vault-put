@@ -10,8 +10,6 @@
 # Vault writes and reads go through bin/idp-cloud (crew#66 CP4); the compartment comes from the sops vault (LAW 46: nothing typed here).
 set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
-# estate-secrets sits beside the main checkout, even when this runs from a worktree under .claude/worktrees (crew#408)
-MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
 MERGE=0; [ "${1:-}" = --merge ] && { MERGE=1; shift; }
 DELETE=0; [ "${1:-}" = --delete ] && { DELETE=1; shift; }
 # SECRET_NAME, not `name`: bin/idp-oci-whoami is sourced below and its profile loop assigned `name`,
