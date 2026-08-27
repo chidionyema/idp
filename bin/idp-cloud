@@ -7,7 +7,10 @@
 #   bin/idp-cloud secret get  NAME                    decoded secret content; exit 1 NotFound, 3 Split (ACTIVE in more than one vault), 4 Unreadable
 #   bin/idp-cloud secret put  NAME --file F           create or update; content is the file, never argv
 #   bin/idp-cloud secret delete NAME                  schedule deletion; absent is exit 0
-#   bin/idp-cloud secret list                         one ACTIVE secret name per line
+#   bin/idp-cloud secret describe NAME                JSON {"id","vault-id","key-id"} of the ACTIVE secret in the compartment; exit 1 NotFound, 3 Split
+#   bin/idp-cloud secret list [--vault VAULT_ID]      one ACTIVE secret name per line; --vault restricts to that vault only
+#   bin/idp-cloud vault list                         one ACTIVE vault per line as "<display-name> <id>", sorted by name
+#   bin/idp-cloud bucket head NAME                   exit 0 "ok" if the bucket exists in the tenancy namespace; exit 1 with NotFound on stderr when absent, exit 2 BLIND when the namespace cannot be read
 # Backend: $IDP_CLOUD_BACKEND, default oci. `file` backend (tests, laptops with no cloud) roots at $IDP_CLOUD_FILE_ROOT:
 #   objects at $IDP_CLOUD_FILE_ROOT/objects/<bucket>/<name>, secrets at $IDP_CLOUD_FILE_ROOT/secrets/<name>.
 # Grading lines, same shape as every bin/idp-*: `BLIND   cloud  <why>` exit 2 when nothing could be asked.
@@ -16,13 +19,14 @@ IDP=$(cd "$(dirname "$0")/.." && pwd)
 BACKEND=${IDP_CLOUD_BACKEND:-oci}
 blind() { printf 'BLIND   cloud  %s\n' "$1" >&2; exit 2; }
 prim=$1; verb=$2; shift 2
-BUCKET=""; NAME=""; FILE=""; PREFIX=""
+BUCKET=""; NAME=""; FILE=""; PREFIX=""; VAULT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --bucket) BUCKET=$2; shift 2;;
     --name)   NAME=$2; shift 2;;
     --file)   FILE=$2; shift 2;;
     --prefix) PREFIX=$2; shift 2;;
+    --vault)  VAULT=$2; shift 2;;
     --) shift; break;;
     -*) blind "unknown flag $1";;
     *) NAME=$1; shift;;
@@ -217,11 +221,47 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
           *) blind "unknown backend $BACKEND";;
         esac
         ;;
+      describe)
+        case "$BACKEND" in
+          file)
+            [ -n "${IDP_CLOUD_FILE_ROOT:-}" ] || blind "IDP_CLOUD_FILE_ROOT unset for the file backend"
+            split="$IDP_CLOUD_FILE_ROOT/secrets/$NAME.split"
+            [ -e "$split" ] && { echo "Split: secret $NAME is ACTIVE in more than one vault of the compartment; bin/idp-vault-split-guard names them" >&2; exit 3; }
+            meta="$IDP_CLOUD_FILE_ROOT/secrets/$NAME.meta.json"
+            path=$(file_secret_path)
+            if [ -f "$meta" ]; then cat "$meta"
+            elif [ -f "$path" ]; then printf '{"id":"file:%s","vault-id":"file","key-id":"file"}\n' "$NAME"
+            else echo "NotFound: secret $NAME" >&2; exit 1; fi
+            ;;
+          oci)
+            command -v oci >/dev/null || blind "oci CLI is not installed"
+            MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
+            if [ -z "${OCI_CLI_PROFILE:-}" ]; then
+              # shellcheck source=idp-oci-whoami
+              source "$IDP/bin/idp-oci-whoami" || exit 2
+            fi
+            export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
+            export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
+            C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+            list=$(oci vault secret list --compartment-id "$C" --name "$NAME" --all --query "data[?\"lifecycle-state\"=='ACTIVE']" --output json 2>/dev/null) || list=""
+            n=$(printf '%s\n' "$list" | jq 'length // 0' 2>/dev/null) || n=0
+            [ "$n" -le 1 ] || { echo "Split: secret $NAME is ACTIVE in $n vaults of the compartment; bin/idp-vault-split-guard names them" >&2; exit 3; }
+            desc=$(printf '%s\n' "$list" | jq -c 'if length == 0 then null else .[0] | {id, "vault-id": ."vault-id", "key-id": ."key-id"} end' 2>/dev/null) || desc=""
+            [ -n "$desc" ] && [ "$desc" != null ] || { echo "NotFound: secret $NAME" >&2; exit 1; }
+            printf '%s\n' "$desc"
+            ;;
+          *) blind "unknown backend $BACKEND";;
+        esac
+        ;;
       list)
         case "$BACKEND" in
           file)
             [ -n "${IDP_CLOUD_FILE_ROOT:-}" ] || blind "IDP_CLOUD_FILE_ROOT unset for the file backend"
-            dir="$IDP_CLOUD_FILE_ROOT/secrets"
+            if [ -n "$VAULT" ]; then
+              dir="$IDP_CLOUD_FILE_ROOT/vaults/$VAULT/secrets"
+            else
+              dir="$IDP_CLOUD_FILE_ROOT/secrets"
+            fi
             [ -d "$dir" ] || exit 0
             cd "$dir" || exit 0
             ls -1 | sort
@@ -236,13 +276,74 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
             export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
             C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
-            V=${ESTATE_VAULT_OCID:-$(cd "$MAIN/platform/oci" && tofu output -raw vault_id)}
+            if [ -n "$VAULT" ]; then
+              V=$VAULT
+            else
+              V=${ESTATE_VAULT_OCID:-$(cd "$MAIN/platform/oci" && tofu output -raw vault_id)}
+            fi
             oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].\"secret-name\"" --raw-output | python3 -c 'import json,sys; [print(n) for n in sorted(json.load(sys.stdin))]'
             ;;
           *) blind "unknown backend $BACKEND";;
         esac
         ;;
       *) blind "unknown secret $verb";;
+    esac
+    ;;
+  vault)
+    case "$verb" in
+      list)
+        case "$BACKEND" in
+          file)
+            [ -n "${IDP_CLOUD_FILE_ROOT:-}" ] || blind "IDP_CLOUD_FILE_ROOT unset for the file backend"
+            [ -d "$IDP_CLOUD_FILE_ROOT/vaults" ] || exit 0
+            for d in "$IDP_CLOUD_FILE_ROOT"/vaults/*/; do
+              [ -d "$d" ] || continue
+              name=$(cat "$d/name" 2>/dev/null) || continue
+              id=$(basename "$d")
+              printf '%s %s\n' "$name" "$id"
+            done | sort
+            ;;
+          oci)
+            command -v oci >/dev/null || blind "oci CLI is not installed"
+            MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
+            if [ -z "${OCI_CLI_PROFILE:-}" ]; then
+              # shellcheck source=idp-oci-whoami
+              source "$IDP/bin/idp-oci-whoami" || exit 2
+            fi
+            export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
+            export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
+            C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+            oci kms management vault list --compartment-id "$C" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].[\"display-name\",id]" --output json | jq -r '.[] | "\(.[0]) \(.[1])"' | sort
+            ;;
+          *) blind "unknown backend $BACKEND";;
+        esac
+        ;;
+      *) blind "unknown vault $verb";;
+    esac
+    ;;
+  bucket)
+    case "$verb" in
+      head)
+        case "$BACKEND" in
+          file)
+            [ -n "${IDP_CLOUD_FILE_ROOT:-}" ] || blind "IDP_CLOUD_FILE_ROOT unset for the file backend"
+            [ -d "$IDP_CLOUD_FILE_ROOT/objects/$NAME" ] || { echo "NotFound: bucket $NAME" >&2; exit 1; }
+            echo ok
+            ;;
+          oci)
+            command -v oci >/dev/null || blind "oci CLI is not installed"
+            bucket_ns=$(oci os ns get --query data --raw-output) || blind "oci os ns get failed"
+            if oci os bucket get --namespace "$bucket_ns" --bucket-name "$NAME" >/dev/null 2>&1; then
+              echo ok
+            else
+              echo "NotFound: bucket $NAME" >&2
+              exit 1
+            fi
+            ;;
+          *) blind "unknown backend $BACKEND";;
+        esac
+        ;;
+      *) blind "unknown bucket $verb";;
     esac
     ;;
   *) blind "unknown $prim $verb";;
