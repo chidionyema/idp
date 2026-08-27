@@ -153,6 +153,16 @@ data:
         ("ClusterSecretStore", "/apis/external-secrets.io/v1/clustersecretstores"),
         ("ExternalSecret", "/apis/external-secrets.io/v1/externalsecrets"),
     ]
+    def flux_message(msg: str) -> str:
+        # crew#483, 2026-08-27: the k8s-infra HelmRelease message ended at 'admission webhook
+        # "validate.kyverno.svc-fail" denied the request:' because the row kept 300 characters
+        # and Kyverno puts the policy and rule names after that colon. A denial whose policy
+        # name is cut off is a receipt nobody can act on. Keep the whole message up to 2000;
+        # past that, keep the head and the tail, since the policy is at the end.
+        if len(msg) <= 2000:
+            return msg
+        return msg[:600] + " ... " + msg[-1400:]
+
     flux = []
     for kind, path in FLUX:
         try:
@@ -164,7 +174,7 @@ data:
             st = o.get("status", {})
             c = next((c for c in st.get("conditions", []) if c["type"] == "Ready"), {})
             row = {"kind": kind, "ns": o["metadata"].get("namespace", ""), "name": o["metadata"]["name"],
-                   "ready": c.get("status") == "True", "message": c.get("message", "no Ready condition yet")[:300]}
+                   "ready": c.get("status") == "True", "message": flux_message(c.get("message", "no Ready condition yet"))}
             if kind == "ImagePolicy":
                 row["latest"] = st.get("latestImage")
             if kind == "ImageUpdateAutomation":

@@ -35,6 +35,38 @@ SHOWCASE = "docs/SHOWCASE.md"
 INV = Path(os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json"))
 
 
+def driver_is_stale(driver: Path, on_main: Path) -> bool:
+    """crew#474, 2026-08-27: the scheduler runs $IDP/bin/catalog-render from the shared checkout,
+    and that checkout was on a peer's feature branch (feat/crew290), so the driver that ran was
+    a copy without the estate-showcase step while its own worktree sat on main. The inner steps
+    were current; the script driving them was not. Stale means: this file is not the worktree's
+    copy and its bytes differ from the worktree's copy at origin/main.
+    """
+    try:
+        if driver.resolve() == on_main.resolve():
+            return False
+        return driver.read_bytes() != on_main.read_bytes()
+    except OSError:
+        return False
+
+
+def should_hand_over(driver: Path, on_main: Path, argv: list[str], env: dict) -> bool:
+    """Only the scheduled run hands over. A branch run of a PR that edits this driver must
+    execute its own copy (code-2f, idp#377 review 5437850580)."""
+    if "--scheduled" not in argv or env.get("CATALOG_RENDER_REEXEC"):
+        return False
+    return driver_is_stale(driver, on_main)
+
+
+def reexec_from_worktree(driver: Path, on_main: Path, argv: list[str]) -> None:
+    """Hand over to the origin/main copy of this script, once, and never loop."""
+    if not should_hand_over(driver, on_main, argv, dict(os.environ)):
+        return
+    print(f"catalog-render: driver {driver} differs from origin/main; re-running {on_main}")
+    os.environ["CATALOG_RENDER_REEXEC"] = "1"
+    os.execv(sys.executable, [sys.executable, str(on_main), *argv])
+
+
 def sh(cmd: list[str], cwd: Path, timeout: int = 120) -> tuple[int, str]:
     p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
     return p.returncode, (p.stdout + p.stderr).strip()
@@ -58,6 +90,7 @@ def main(argv: list[str]) -> int:
         sh(["git", "worktree", "prune"], ROOT)
         step("create worktree", ["git", "worktree", "add", "--detach", "-q", str(WT), "origin/main"], ROOT)
     step("move worktree to origin/main", ["git", "checkout", "-q", "--detach", "origin/main"], WT)
+    reexec_from_worktree(Path(__file__), WT / "bin" / "catalog-render", sys.argv[1:])
     # crew#401 CP5: the founder-surface cards carry a live health stamp on the scheduled render only.
     os.environ["CATALOG_GEN_PROBE"] = "1"
     step("catalog-gen", [sys.executable, str(WT / "bin" / "catalog-gen")], WT, 300)
