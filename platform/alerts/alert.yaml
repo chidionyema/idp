@@ -38,6 +38,9 @@ spec:
       namespace: keda
     - kind: HelmRelease
       name: "*"
+      namespace: kube-system
+    - kind: HelmRelease
+      name: "*"
       namespace: kyverno
     - kind: HelmRelease
       name: "*"

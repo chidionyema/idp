@@ -550,6 +550,30 @@ spec:
       name: robusta
       namespace: robusta
 ---
+# crew#539 CP12: Cilium chained after OKE's flannel (generic-veth), Hubble metrics into the SigNoz
+# collector (platform/cilium). After edge: its PolicyException lives there.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cilium
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: edge
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/cilium
+  prune: true
+  wait: true
+  timeout: 15m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: cilium
+      namespace: kube-system
+---
 # crew#539 DoD item 1: the one Prometheus + Alertmanager, the founder-surface probe and the
 # estate's rules (platform/monitoring). Pages go to Telegram from the flux-telegram vault entry
 # and, for warnings, to Robusta (CP14). ESTATE_ZONE substitutes into the Probe targets.
