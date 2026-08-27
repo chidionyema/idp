@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # crew#539 CP4: put the node pool the Cluster Autoscaler manages into the vault as `oke-autoscaler`
 # (NODEPOOL_ID, COMPARTMENT_ID, REGION), the way every other row gets its facts: ExternalSecret
-# platform/autoscaler reads it, the Deployment's --nodes flag is `min:max:$(NODEPOOL_ID)`. No pool
+# platform/oci/autoscaler reads it, the Deployment's --nodes flag is `min:max:$(NODEPOOL_ID)`. No pool
 # OCID is ever typed in git (LAW 46); the pool is found by cluster name, once per apply run.
 #   OCI_COMPARTMENT_OCID=... OCI_REGION=... OCI_CLUSTER_NAME=estate bin/idp-autoscaler-seed [pool-key]
 # Prints key NAMES only. Exit 2 is BLIND (no ACTIVE cluster or pool of that name), never a write.

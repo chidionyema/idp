@@ -4,7 +4,7 @@
 (up to `estate-defaults.yaml node_pool.max_nodes`); ten minutes of an unneeded node removes it.
 
 ## How it works
-- `platform/autoscaler`: the Kubernetes Cluster Autoscaler for OKE (Oracle's manifest, one
+- `platform/oci/autoscaler`: the Kubernetes Cluster Autoscaler for OKE (Oracle's manifest, one
   replica) in `kube-system`, `--nodes=1:<max>:$(NODEPOOL_ID)`.
 - The pool id, compartment and region come from the vault entry `oke-autoscaler`, written by
   `bin/idp-autoscaler-seed` on every `oke-check` apply (found by cluster name, never typed).

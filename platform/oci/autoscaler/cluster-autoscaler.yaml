@@ -178,8 +178,3 @@ spec:
             - --scale-down-delay-after-add=10m
             - --scale-down-unneeded-time=10m
             - --unremovable-node-recheck-timeout=5m
-            - --balance-similar-node-groups
-            - --balancing-ignore-label=displayName
-            - --balancing-ignore-label=hostname
-            - --balancing-ignore-label=internal_addr
-            - --balancing-ignore-label=oci.oraclecloud.com/fault-domain

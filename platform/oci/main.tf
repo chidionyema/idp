@@ -31,7 +31,7 @@ module "oke" {
       ocpus       = var.worker_ocpus
       memory      = var.worker_memory_gb
       size        = 1
-      # crew#539 CP4 (2026-08-27): the Cluster Autoscaler (platform/autoscaler) owns the size between
+      # crew#539 CP4 (2026-08-27): the Cluster Autoscaler (platform/oci/autoscaler) owns the size between
       # 1 and estate-defaults node_pool.max_nodes; the module then ignores `size` (autoscaler.tf).
       autoscale                = true
       ignore_initial_pool_size = true

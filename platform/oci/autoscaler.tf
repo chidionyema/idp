@@ -1,5 +1,5 @@
 # crew#539 CP4 (2026-08-27): the node pool grows and shrinks by itself. The Kubernetes Cluster
-# Autoscaler for OKE (platform/autoscaler) runs in the cluster as the worker nodes' instance
+# Autoscaler for OKE (platform/oci/autoscaler) runs in the cluster as the worker nodes' instance
 # principal; this file is the identity it needs and the moved block that hands the pool's size to
 # it. The cluster is BASIC (no add-ons, no workload identity: crew#289), so the standalone
 # Deployment is the only shape Oracle offers, and the node dynamic group (vault.tf) is its
@@ -28,7 +28,7 @@ resource "oci_identity_policy" "workers_autoscale" {
 # scheduled apply never shrinks the pool under running pods. The address change would otherwise
 # be a destroy-and-create of the live pool (and bin/idp-recreate-guard would refuse it).
 moved {
-  from = module.oke.module.workers[0].oci_containerengine_node_pool.workers["a1"]
+  from = module.oke.module.workers[0].oci_containerengine_node_pool.tfscaled_workers["a1"]
   to   = module.oke.module.workers[0].oci_containerengine_node_pool.autoscaled_workers["a1"]
 }
 

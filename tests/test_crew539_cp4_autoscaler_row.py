@@ -15,7 +15,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-ROW = ROOT / "platform" / "autoscaler"
+ROW = ROOT / "platform" / "oci" / "autoscaler"
 OCID = re.compile(r"ocid1\.[a-z]+\.oc1\.")
 
 
@@ -47,7 +47,7 @@ def test_row_is_wired_and_names_no_ocid():
     assert env["NODEPOOL_ID"]["valueFrom"]["secretKeyRef"] == {"name": "oke-autoscaler", "key": "NODEPOOL_ID"}
     assert env["OCI_USE_INSTANCE_PRINCIPAL"]["value"] == "true"
     rows = [d for d in yaml.safe_load_all((ROOT / "clusters" / "oke" / "platform.yaml").read_text()) if d and d["metadata"]["name"] == "autoscaler"]
-    assert len(rows) == 1 and rows[0]["spec"]["path"] == "./platform/autoscaler"
+    assert len(rows) == 1 and rows[0]["spec"]["path"] == "./platform/oci/autoscaler"
     assert {"name": "secret-store"} in rows[0]["spec"]["dependsOn"]
     assert rows[0]["spec"]["healthChecks"][0]["name"] == "cluster-autoscaler"
 
@@ -57,7 +57,7 @@ def test_terraform_hands_size_over_and_moves_the_pool_instead_of_recreating_it()
     pool = main[main.index("a1 = {"):]
     assert re.search(r"ignore_initial_pool_size\s*=\s*true", pool) and re.search(r"\bautoscale\s*=\s*true", pool)
     auto = (ROOT / "platform" / "oci" / "autoscaler.tf").read_text()
-    assert re.search(r'moved\s*\{\s*from\s*=\s*module\.oke\.module\.workers\[0\]\.oci_containerengine_node_pool\.workers\["a1"\]\s*to\s*=\s*module\.oke\.module\.workers\[0\]\.oci_containerengine_node_pool\.autoscaled_workers\["a1"\]', auto)
+    assert re.search(r'moved\s*\{\s*from\s*=\s*module\.oke\.module\.workers\[0\]\.oci_containerengine_node_pool\.tfscaled_workers\["a1"\]\s*to\s*=\s*module\.oke\.module\.workers\[0\]\.oci_containerengine_node_pool\.autoscaled_workers\["a1"\]', auto)
     for verb in ["manage cluster-node-pools", "manage instance-family", "use subnets", "read virtual-network-family", "use vnics", "inspect compartments"]:
         assert verb in auto, verb
     assert "in tenancy" not in auto

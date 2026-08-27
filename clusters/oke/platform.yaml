@@ -431,7 +431,7 @@ spec:
       name: hindsight
       namespace: hindsight
 ---
-# crew#539 CP4: the node pool grows and shrinks by itself (platform/autoscaler).
+# crew#539 CP4: the node pool grows and shrinks by itself (platform/oci/autoscaler).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -442,7 +442,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./platform/autoscaler
+  path: ./platform/oci/autoscaler
   prune: true
   dependsOn:
     - name: secret-store

@@ -164,7 +164,7 @@ jobs:
           rm -f "$f"
 
       # crew#539 CP4: the Cluster Autoscaler's node pool id, found by name after the apply, so the
-      # row platform/autoscaler never carries an OCID. Exit 2 is BLIND (no ACTIVE pool yet).
+      # row platform/oci/autoscaler never carries an OCID. Exit 2 is BLIND (no ACTIVE pool yet).
       - name: bin/idp-autoscaler-seed (crew#539 CP4)
         if: ${{ always() && inputs.mode == 'apply' }}
         env:
