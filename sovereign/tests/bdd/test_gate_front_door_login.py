@@ -79,6 +79,14 @@ def _oauth2_proxy_in_front(state: dict) -> None:
             # strict apiKey policy with a hashed key in the config that sits beside the route.
             gw = p.parent / "agentgateway.yaml"
             assert gw.exists() and api_key_enforced(gw.read_text()), f"{p}: annotated api-key but {gw} enforces no strict apiKey"
+        if auth == "healthchecks-ping-key":
+            # The job monitor's ping path (crew#177): the jobs' curl carries the project ping key
+            # in the URL, so the route may expose /ping/ and nothing else, and the row must pull
+            # that key from the vault and pin it on the project.
+            paths = [m.get("path", {}) for r in d["spec"]["rules"] for m in r.get("matches", [])]
+            assert paths and all(x == {"type": "PathPrefix", "value": "/ping/"} for x in paths), f"{p}: healthchecks-ping-key route exposes {paths}"
+            assert "healthchecks-ping-key" in (p.parent / "external-secret.yaml").read_text(), f"{p}: the row pulls no ping key"
+            assert 'project.ping_key = os.environ["PING_KEY"]' in (p.parent / "healthchecks.yaml").read_text(), f"{p}: the row never pins the ping key"
             continue
         assert auth == "bearer-master-key", f"{p}: route {d['metadata']['name']} has no oauth2-proxy Middleware in front ({refs}) and no idp.estate/auth annotation"
         cfg = p.parent / "config.yaml"

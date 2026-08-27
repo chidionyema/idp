@@ -76,6 +76,20 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
         assert "langfuse-init-public-key" in keys and "langfuse-init-secret-key" in keys, \
             f"{f}: annotated langfuse-project-keys but langfuse.yaml pulls no project keys"
         return
+    # The job monitor's ping path (crew#177) is called by curl from every wrapped launchd job and
+    # cannot sit behind a browser login. Healthchecks authenticates it with the project ping key in
+    # the URL (/ping/<key>/<slug>). The route may skip oauth2-proxy only when it says so AND exposes
+    # nothing but /ping/, AND the row enrols that key from the vault (healthchecks.yaml reads
+    # healthchecks-ping-key and pins it on the project).
+    if (route["metadata"].get("annotations") or {}).get("idp.estate/auth") == "healthchecks-ping-key":
+        paths = [m.get("path", {}) for rule in route["spec"]["rules"] for m in rule.get("matches", [])]
+        assert paths and all(p == {"type": "PathPrefix", "value": "/ping/"} for p in paths), \
+            f"{f}: annotated healthchecks-ping-key but exposes a path other than /ping/: {paths}"
+        row = (pathlib.Path(f).parent / "external-secret.yaml").read_text()
+        assert "healthchecks-ping-key" in row, f"{f}: annotated healthchecks-ping-key but the row pulls no ping key"
+        enrol = (pathlib.Path(f).parent / "healthchecks.yaml").read_text()
+        assert "project.ping_key = os.environ[\"PING_KEY\"]" in enrol, f"{f}: the row never pins the ping key on the project"
+        return
     guarded = 0
     for rule in route["spec"]["rules"]:
         refs = [flt["extensionRef"] for flt in rule.get("filters", []) if flt.get("type") == "ExtensionRef"]
