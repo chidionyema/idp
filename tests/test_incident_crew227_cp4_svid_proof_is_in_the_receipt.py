@@ -51,9 +51,12 @@ def test_receipt_names_spiffe_ids_and_csi_workloads_and_the_role_allows_the_list
     ]
     agent_log = ('time=1 level=info msg="Node attestation was successful"\ntime=2 level=info msg=quiet\n'
                  'time=3 level=error msg="Failed to collect all selectors for PID" error="dial tcp 127.0.0.1:10250"\n')
+    server_log = ('time=4 level=info msg="Created entry" spiffe_id=spiffe://estate/ns/a/sa/proof parent_id=spiffe://estate/spire/agent/k8s_psat/estate/n1\n'
+                  'time=5 level=info msg=quiet\n')
     stub = ("def pod_log(ns, name, c, tail=20):\n"
             "    if name in ('log-broken', 'spire-agent-broken'): return 'log read failed: 500'\n"
             f"    if name == 'spire-agent-x': return {agent_log!r}\n"
+            f"    if name == 'spire-server-0': return {server_log!r}\n"
             "    return 'SPIFFE ID:\\t\\tspiffe://estate/ns/a/sa/proof\\nyours\\n'\n")
     svids = [{"pod": "a/with-svid", "container": "fetch", "spiffe_ids": ["spiffe://estate/ns/a/sa/proof"], "error": ""},
              {"pod": "a/log-broken", "container": "fetch", "spiffe_ids": [], "error": "log read failed: 500"}]
@@ -67,10 +70,12 @@ def test_receipt_names_spiffe_ids_and_csi_workloads_and_the_role_allows_the_list
                "lines": ['time=1 level=info msg="Node attestation was successful"',
                          'time=3 level=error msg="Failed to collect all selectors for PID" error="dial tcp 127.0.0.1:10250"']},
               {"pod": "s/spire-agent-broken", "node": "n2", "lines": [], "error": "log read failed: 500"}]
+    server = [{"pod": "s/spire-server-0", "container": "spire-server", "error": "",
+               "lines": ['time=4 level=info msg="Created entry" spiffe_id=spiffe://estate/ns/a/sa/proof parent_id=spiffe://estate/spire/agent/k8s_psat/estate/n1']}]
     assert got == {"clusterspiffeids": [{"name": "agents", "podsSelected": 3, "entriesToRender": 3}],
-                   "error": "", "csi_workloads": csi_workloads, "svids": svids, "agents": agents}
+                   "error": "", "csi_workloads": csi_workloads, "svids": svids, "agents": agents, "server": server}
     failing = (f"pods = {pods!r}\nimport json, re\n"
                "def get(path): raise RuntimeError('403 forbidden')\n"
                "def pod_log" + src + stub + "\nprint(json.dumps(spiffe_rows()))\n")
     got = json.loads(subprocess.run([sys.executable, "-c", failing], capture_output=True, text=True, check=True).stdout)
-    assert got["clusterspiffeids"] is None and "403" in got["error"] and got["csi_workloads"] == csi_workloads and got["svids"] == svids and got["agents"] == agents
+    assert got["clusterspiffeids"] is None and "403" in got["error"] and got["csi_workloads"] == csi_workloads and got["svids"] == svids and got["agents"] == agents and got["server"] == server
