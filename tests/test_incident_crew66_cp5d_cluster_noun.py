@@ -165,6 +165,7 @@ def test_oke_rebuild_nodes_oci_grades_with_awk_through_the_layer() -> None:
     pool(s) ACTIVE (cloud layer)'."""
     text = (ROOT / "bin" / "idp-oke-rebuild").read_text()
     assert '"$IDP/bin/idp-cloud" cluster nodepools' in text
-    assert 'awk \'$2!="ACTIVE"{print $1}\'' in text
+    # idp#507 (crew#539 CP4): the grade names the state and waives UPDATING; still awk, still through the layer
+    assert 'awk \'$2!="ACTIVE" && $2!="UPDATING"{print $1"("$2")"}\'' in text
     assert "cloud layer" in text
     assert "(OCI API)" not in text.split("nodes_oci")[1].split("}", 1)[1]   # the old jq-bracket message is gone
