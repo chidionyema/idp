@@ -35,9 +35,11 @@ case "$m" in
     git fetch origin main
     git -c user.name=image-update-pr -c user.email=image-update-pr@users.noreply.github.com \
       merge origin/main --no-edit -X ours -m "$branch: merge main, keep the controller's newTag lines (crew#439)"
-    git push origin "HEAD:$branch"
-    gh workflow run ci.yml --ref "$branch"
-    echo "refresh image-update-pr #$n was CONFLICTING, merged main as $(git rev-parse --short HEAD), ci dispatched"
+    # A push made with GITHUB_TOKEN fires no ci run, so the workflow sets PUSH_URL to the ssh remote
+    # and GIT_SSH_COMMAND to the flux-writer deploy key (kini-finish.yml does the same); that push
+    # fires ci.yml on the branch and the ruleset grades the new head.
+    git push "${PUSH_URL:-origin}" "HEAD:$branch"
+    echo "refresh image-update-pr #$n was CONFLICTING, merged main as $(git rev-parse --short HEAD), pushed with the writer key"
     ;;
   *)
     echo "FAIL    image-update-pr #$n mergeable=$m after waiting; not armed"

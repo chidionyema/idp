@@ -11,7 +11,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  actions: write  # crew#439: bin/idp-image-update-pr dispatches ci.yml after refreshing a conflict
 jobs:
   open:
     runs-on: ubuntu-latest
@@ -22,4 +21,14 @@ jobs:
       - name: open or refresh the pull request, auto-merge on green
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bin/idp-image-update-pr
+          WRITER_KEY_B64: ${{ secrets.SEED_FLUX_WRITER_IDENTITY_B64 }}
+        run: |
+          set -euo pipefail
+          # crew#439: the refresh push must fire ci.yml, and a GITHUB_TOKEN push fires nothing;
+          # push with the flux-writer deploy key as kini-finish.yml does.
+          test -n "$WRITER_KEY_B64" || { echo "FAIL    image-update-pr  SEED_FLUX_WRITER_IDENTITY_B64 is not set (capabilities register: flux-writer)"; exit 1; }
+          umask 077; mkdir -p ~/.ssh; printf '%s' "$WRITER_KEY_B64" | base64 -d > ~/.ssh/flux-writer
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/flux-writer -o IdentitiesOnly=yes"
+          export PUSH_URL="git@github.com:${GITHUB_REPOSITORY}.git"
+          bin/idp-image-update-pr

@@ -1,9 +1,6 @@
 name: ci
 on:
   pull_request:
-  # crew#439: bin/idp-image-update-pr dispatches ci on flux/image-updates after it merges main,
-  # because a push made with GITHUB_TOKEN fires no push run and the ruleset needs the checks.
-  workflow_dispatch:
   push:
     # flux/image-updates is the branch image-automation-controller pushes a new catalogue tag to
     # (crew#267). The required checks run on that push, so the pull request that

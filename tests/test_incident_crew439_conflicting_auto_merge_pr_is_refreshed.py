@@ -3,7 +3,7 @@ merged the same newTag line by another path. For two hours every controller push
 image-update-pr, which printed "ok auto-merge armed", and nothing merged; the sovereign-worker fix
 sat unrolled. Rule: bin/idp-image-update-pr never prints ok for a pull request that is not
 MERGEABLE; a CONFLICTING one gets main merged into it (the branch's lines win), pushed, and ci
-dispatched on the branch; anything else exits 1. Rung 4, incident test, proved both ways against a
+pushed with the writer key so ci runs on the branch; anything else exits 1. Rung 4, incident test, proved both ways against a
 fake gh and a real temporary origin."""
 import os
 import stat
@@ -64,17 +64,17 @@ def run(work: Path, bindir: Path) -> subprocess.CompletedProcess:
     return subprocess.run([str(SCRIPT)], cwd=work, env=env, capture_output=True, text=True)
 
 
-def test_a_conflicting_pr_gets_main_merged_pushed_and_ci_dispatched_before_it_is_armed(tmp_path):
+def test_a_conflicting_pr_gets_main_merged_and_pushed_before_it_is_armed(tmp_path):
     origin, work = make_repos(tmp_path)
     bindir, log = fake_gh(tmp_path, "CONFLICTING")
     r = run(work, bindir)
     assert r.returncode == 0, r.stdout + r.stderr
-    assert "was CONFLICTING, merged main" in r.stdout and "ci dispatched" in r.stdout
+    assert "was CONFLICTING, merged main" in r.stdout and "pushed with the writer key" in r.stdout
     assert r.stdout.strip().endswith("auto-merge armed")
     pushed = git(tmp_path, "--git-dir", str(origin), "show", "flux/image-updates:k.yaml")
     assert pushed == "newTag: main-783\n#\n#\n#\nother: 2", pushed  # the controller's line won, main's change came along
     calls = log.read_text()
-    assert "workflow run ci.yml --ref flux/image-updates" in calls
+    assert "workflow run" not in calls  # a GITHUB_TOKEN dispatch is not the path; the writer-key push fires ci
     assert calls.strip().endswith("pr merge 5 --auto --squash")
 
 
@@ -96,12 +96,13 @@ def test_an_unknown_mergeable_state_is_never_reported_ok(tmp_path):
     assert "pr merge" not in log.read_text()
 
 
-def test_the_workflow_runs_the_script_and_ci_can_be_dispatched():
+def test_the_workflow_runs_the_script_and_the_refresh_push_fires_ci():
     wf = (ROOT / ".github/workflows/image-update-pr.yml").read_text()
-    assert "run: bin/idp-image-update-pr" in wf and "fetch-depth: 0" in wf
-    # 09cd04a6 review of idp#319: without actions: write the dispatch is a 403 after the push.
-    assert "actions: write" in wf
-    assert "workflow_dispatch:" in (ROOT / ".github/workflows/ci.yml").read_text()
+    assert "bin/idp-image-update-pr" in wf and "fetch-depth: 0" in wf
+    # A GITHUB_TOKEN push fires no run, and a workflow_dispatch on ci.yml is a founder button
+    # (crew#401 rule 3), so the refresh pushes with the flux-writer deploy key like kini-finish.yml.
+    assert "SEED_FLUX_WRITER_IDENTITY_B64" in wf and 'PUSH_URL="git@github.com:' in wf
+    assert "workflow_dispatch" not in (ROOT / ".github/workflows/ci.yml").read_text()
     assert os.access(SCRIPT, os.X_OK)
 
 
