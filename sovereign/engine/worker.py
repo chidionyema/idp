@@ -90,8 +90,16 @@ async def run_worker() -> None:
         except NotImplementedError:  # pragma: no cover - non-unix
             pass
 
+    ready = config.SOVEREIGN_HOME / "worker.ready"
     async with worker:
-        await stop_event.wait()
+        # The Deployment's probes (platform/temporal/worker.yaml) test this file: it
+        # exists only while the Worker is polling. Written after the connect above,
+        # so a worker that cannot reach the frontend is never reported ready.
+        ready.write_text(f"{config.TEMPORAL_ADDRESS} {config.TEMPORAL_NAMESPACE} {config.TEMPORAL_TASK_QUEUE}\n")
+        try:
+            await stop_event.wait()
+        finally:
+            ready.unlink(missing_ok=True)
     log.info("sovereign worker stopped")
 
 
