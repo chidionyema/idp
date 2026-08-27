@@ -2,8 +2,8 @@
 # crew#267 / crew#439: open or refresh the flux/image-updates pull request and arm auto-merge.
 # crew#439: idp#298 sat CONFLICTING for two hours while every push printed "ok auto-merge armed".
 # A pull request that is not MERGEABLE is not ok: merge main into the branch (the controller's
-# newTag lines win), push, and dispatch ci.yml on the branch so the head commit carries the
-# required checks (a push made with GITHUB_TOKEN fires no workflow). Anything else exits 1.
+# newTag lines win) and push with the flux-writer key so ci runs on the branch and the head commit
+# carries the required checks (a push made with GITHUB_TOKEN fires no workflow). Anything else exits 1.
 set -euo pipefail
 branch=${IMAGE_UPDATE_BRANCH:-flux/image-updates}
 n=$(gh pr list --head "$branch" --base main --state open --json number -q '.[0].number')
