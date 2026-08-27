@@ -21,7 +21,7 @@ images:
     newName: ghcr.io/chidionyema/backstage
     # image-automation-controller rewrites this line from ImagePolicy flux-system/backstage
     # (platform/image-automation/backstage.yaml, crew#267); the marker is how it finds the line.
-    newTag: main-991-f3f0f79199ee77e119b97292fe7e8aa378e2c8d8 # {"$imagepolicy": "flux-system:backstage:tag"}
+    newTag: main-995-c45cc65bf3c48ab87287d7e179e5f8be698a8b85 # {"$imagepolicy": "flux-system:backstage:tag"}
   # OKE's CRI-O enforces fully qualified names: `postgres:17.6-alpine` failed with
   # "short name mode is enforcing" on 2026-08-25. k3d resolves either form.
   - name: postgres
