@@ -88,7 +88,8 @@ def _run_helper(args: list[str], timeout: float) -> dict[str, Any] | None:
     if helper is None:
         return None
     try:
-        result = subprocess.run([str(helper), *args], capture_output=True, text=True, timeout=timeout)
+        env = {**os.environ, "SOVEREIGN_ENCLAVE_KEY_FILE": str(_enclave_key_path())}
+        result = subprocess.run([str(helper), *args], capture_output=True, text=True, timeout=timeout, env=env)
     except (OSError, subprocess.SubprocessError):
         return None
     try:
@@ -141,6 +142,11 @@ def _detect_backend() -> str:
         backend = _detect_windows_backend()
         return backend if backend != "software_key" else _detect_fido2_backend()
     return _detect_fido2_backend()
+
+
+def _enclave_key_path() -> Path:
+    """Where the helper keeps the Secure Enclave key handle; see presence_helper.swift keyFile."""
+    return _estate_home() / ck.get("trust.sovereign_dirname") / ck.get("trust.enclave_key_filename")
 
 
 def _software_key_path() -> Path:
