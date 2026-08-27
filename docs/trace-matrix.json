@@ -1,566 +1,5 @@
 [
  {
-  "feature": "docs/prose/capacity-cap-rollout.feature",
-  "title": "paid capacity reaches the running node from GitHub",
-  "scenarios": [
-   "the STAGED node-pool change is applied from GitHub, never from a laptop",
-   "a shape change reaches the running node, not only the pool template (incident 2026-08-26, crew#289)"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "8f7267e",
-  "pr": 209,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/catalogue-links-product.feature",
-  "title": "A product's UIs enter the catalogue from the product's own repository",
-  "scenarios": [
-   "A product's UIs enter the catalogue from the product's own repository"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "08873aa",
-  "pr": 205,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/chaos-daemon-runtime.feature",
-  "title": "The chaos daemon speaks the container runtime the node actually runs",
-  "scenarios": [
-   "The daemon's runtime matches the node's containerRuntimeVersion",
-   "A runtime value that names a socket the node does not have is a red row, not a quiet one"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "b4e9172",
-  "pr": 215,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/chaos-drill-live.feature",
-  "title": "The weekly pod-kill experiment leaves a receipt and the runner grades it",
-  "scenarios": [
-   "A finished experiment leaves a receipt",
-   "The runner grades the receipt's age",
-   "A missing or stale receipt is a red row"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "7fd1ba4",
-  "pr": 217,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/chaos-live.feature",
-  "title": "A chaos experiment injects for real on the cluster",
-  "scenarios": [
-   "The first run is a receipt, not a promise"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "b4e9172",
-  "pr": 215,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/cloud-agnostic-drills.feature",
-  "title": "Disposable compute, universal state: the migration drills",
-  "scenarios": [
-   "Bring-your-own-Kubernetes hydration",
-   "Cross-cloud secret portability",
-   "Stateless compute disaster recovery",
-   "Agnostic ingress routing"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "30a8454",
-  "pr": 206,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/drill-catalogue-live.feature",
-  "title": "The drills row of bin/idp-verify grades the live run history",
-  "scenarios": [
-   "A drill ran inside its window",
-   "Every graded drill is green",
-   "A drill has gone stale",
-   "A drill has never run at all",
-   "A pending drill is named but never graded",
-   "Freshness cannot be measured",
-   "The catalogue is missing or empty",
-   "The catalogue names a workflow that was retired",
-   "login-drill is graded, not pending",
-   "The check names a policy statement that is in git but not live"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "b4e9172",
-  "pr": 215,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/estate-gates-online.feature",
-  "title": "Every active estate repository runs the same merge-blocking gates",
-  "scenarios": [
-   "A leaked secret cannot reach main in any active repository",
-   "The rollout is one command, run once",
-   "A required check that cannot report never blocks a repository",
-   "The architecture diagram is drawn from the catalogue, never by hand",
-   "The live architecture page reaches main on a schedule, through a pull request",
-   "The npm audit gate is about what ships",
-   "The pip-audit gate reports an advisory, never a broken build environment"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "0a8807c",
-  "pr": 207,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/estate-rebuild-live.feature",
-  "title": "The estate rebuilds from an empty tenancy and every incident is a gate",
-  "scenarios": [
-   "Every component of the estate is covered, or a command says which is not",
-   "A full rebuild from an empty tenancy, started from the phone",
-   "The rebuild is rehearsed on a schedule",
-   "A broken workload is reported to the founder within ten minutes",
-   "Every past incident is a gate proved both ways",
-   "A deploy cannot point at an image nobody builds",
-   "Improvement is measured, not felt"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "726ecdc",
-  "pr": 219,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/fortress/cp1_data.feature",
-  "title": "Data \u2014 the catalog database is green before any governance layer is judged",
-  "scenarios": [
-   "idp-verify passes clean"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/fortress/cp2_litellm.feature",
-  "title": "Model routing \u2014 LiteLLM is the universal API layer",
-  "scenarios": [
-   "The proxy is up with a real fallback chain",
-   "Every non-CLI agent's base URL points at the proxy"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/fortress/cp3_langfuse.feature",
-  "title": "Observability and audit \u2014 OTel GenAI traces reach Langfuse",
-  "scenarios": [
-   "The primary receiver answers",
-   "A real agent run produces a queryable, complete trace"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/fortress/cp4_spiffe_on_k3d.feature",
-  "title": "Agent identity \u2014 SPIRE runs on the estate cluster and issues short-lived SVIDs",
-  "scenarios": [
-   "The SPIRE server has attested the node agent",
-   "A workload in the catalogue namespace receives an SVID from the Workload API"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/fortress/cp4_spiffe_on_oke.feature",
-  "title": "Agent identity \u2014 SPIRE runs on the estate cluster through Flux and issues short-lived SVIDs",
-  "scenarios": [
-   "The cluster carries the SPIRE row and Flux waits for it to be healthy",
-   "The cluster-state receipt shows the identity issuer running"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "731c605",
-  "pr": 292,
-  "ticket": "crew#227"
- },
- {
-  "feature": "docs/prose/fortress/cp5_mcp_agentgateway.feature",
-  "title": "Protocols \u2014 official MCP SDK replaces the proprietary board schema, fronted by Agentgateway",
-  "scenarios": [
-   "The board and estate.db are MCP tools, not a proprietary schema",
-   "Every MCP call passes through Agentgateway"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/fortress/cp6_agents_md.feature",
-  "title": "Living specs \u2014 AGENTS.md is the version-controlled boundary for this repo",
-  "scenarios": [
-   "AGENTS.md is a committed file, not a convention in someone's head",
-   "A gate reads it both ways"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/front-door-login-drill-live.feature",
-  "title": "A drill signs in at the front door and sees the catalogue",
-  "scenarios": [
-   "The drill signs in and the catalogue renders",
-   "The password is wrong",
-   "The domain demands a password change on first login",
-   "The domain asks the drill user to consent to the front door",
-   "A later apply never overwrites the live drill password",
-   "The JWKS the door validates against is private",
-   "The drill credential is never on a laptop and never in a log",
-   "The door is green but Backstage shows its own guest sign-in page",
-   "The door's identity reaches Backstage's auth provider",
-   "The refresh endpoint is asked at Backstage's real path",
-   "The drill reads the catalogue and sees no error, not only a shell",
-   "A door request with a user name and no email still signs in",
-   "Every published path renders its own content, not the shell around it (crew#307)"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "ceb7345",
-  "pr": 218,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/front-door-login-live.feature",
-  "title": "The live front door redirects to the identity domain and holds no password",
-  "scenarios": [
-   "An unauthenticated request is sent to the identity domain",
-   "The identity domain's signing keys are readable by the relying party",
-   "The signing keys are private",
-   "The door answers anything else",
-   "No zone is configured",
-   "The secrets reach the pod as one mounted file, never as environment variables",
-   "the login row refuses a placeholder client id (idp#149 review, 2026-08-26)"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "f4cfb54",
-  "pr": 212,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/front-door-oidc-rollout.feature",
-  "title": "the front door OIDC client is applied by Terraform and used by the founder (crew#269, crew#281)",
-  "scenarios": [
-   "the identity module is valid and writes the two vault secrets the pod reads",
-   "the apply refuses a domain mismatch",
-   "the founder signs in with the identity he already has"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "49403c3",
-  "pr": 210,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/github-app-online.feature",
-  "title": "The GitHub App manifest and the identity gh acts as",
-  "scenarios": [
-   "The manifest is a one-tap page with no webhook and no public listing",
-   "A session on a personal token is a FAIL"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "397e4a5",
-  "pr": 211,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/langfuse-traces-live.feature",
-  "title": "Agent sessions trace to the live Langfuse, tagged with their crew issue",
-  "scenarios": [
-   "The seed secrets have no human author",
-   "A tag query returns the session"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "a124088",
-  "pr": 214,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/litellm-up.feature",
-  "title": "bin/litellm-up brings the proxy up on the config that is on disk",
-  "scenarios": [
-   "The proxy is restarted when config.yaml changed after it started",
-   "The proxy is left alone when it already runs the config on disk"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "535b6e3",
-  "pr": 220,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/operating-model-gate-callers.feature",
-  "title": "Every active estate repo runs the one operating-model gate",
-  "scenarios": [
-   "Every active estate repo runs the one gate, with the policy in one place"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "75b90aa",
-  "pr": 216,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp10_urgency.feature",
-  "title": "Urgency \u2014 open decision, default is never interrupt",
-  "scenarios": [
-   "An urgent phone message during an active session changes nothing about it",
-   "An urgent card is flagged, once confirmed"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp11_persistence.feature",
-  "title": "Persistence \u2014 the platform holds the record, not vendor chat",
-  "scenarios": [
-   "A draft survives losing the Telegram conversation"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp12_provider_agnostic.feature",
-  "title": "Provider agnostic \u2014 the model and the transport are both swappable",
-  "scenarios": [
-   "The flow's logic carries no vendor-specific import"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp1_continuity.feature",
-  "title": "Continuity \u2014 an active laptop session is never touched by the phone flow",
-  "scenarios": [
-   "An active session finishes on its own after he leaves",
-   "A phone message during the session injects nothing into it"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp2_phone_ingress.feature",
-  "title": "Phone ingress \u2014 hermes-v2 never touches the active laptop session",
-  "scenarios": [
-   "hermes-v2 and the active session are separate processes"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp3_preflight_dedup.feature",
-  "title": "Pre-flight dedup \u2014 hermes-v2 checks the board before drafting",
-  "scenarios": [
-   "A matching card already exists",
-   "No match exists"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp4_mode_detection.feature",
-  "title": "Mode detection \u2014 exploring stays talk, building drafts a feature",
-  "scenarios": [
-   "Exploratory phrasing enters sounding-board mode",
-   "Build phrasing enters PM mode"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp5_confirmation_gate.feature",
-  "title": "Confirmation gate \u2014 hermes-v2 never writes to the board unannounced",
-  "scenarios": [
-   "A draft is shown before any board write",
-   "The board write matches the button tapped",
-   "Drop writes nothing"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp6_icebox.feature",
-  "title": "Icebox \u2014 kept ideas do not enter the work queue",
-  "scenarios": [
-   "An Icebox card is never claimed"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp7_dispatch.feature",
-  "title": "Dispatch \u2014 the watched column starts work when the laptop is awake",
-  "scenarios": [
-   "A card starts within one poll cycle while awake",
-   "A card waits while the laptop sleeps"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp8_welcome_back.feature",
-  "title": "Welcome back \u2014 the two branches never conflict",
-  "scenarios": [
-   "Both branches coexist without conflict"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/phone-idea/cp9_later_activation.feature",
-  "title": "Later activation \u2014 an Icebox idea becomes work, still gated",
-  "scenarios": [
-   "Activating an Icebox card drafts a feature file",
-   "The move still requires the confirmation gate"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/self-aware-platform/cp4_get_catalog_drift.feature",
-  "title": "get_catalog_drift \u2014 dark matter is visible, on the laptop substrate",
-  "scenarios": [
-   "A launchd job with no catalog entity is reported as drift",
-   "A colima container with no catalog entity is reported as drift",
-   "A port bound outside catalog/ports.yaml is reported as drift",
-   "Everything cataloged and running is not flagged",
-   "Drift detection reads typed annotations, never string-greps"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/self-aware-platform/cp5_event_aggregation.feature",
-  "title": "Event aggregation behind Temporal \u2014 a storm becomes one event",
-  "scenarios": [
-   "50 crashes in 10 seconds collapse to one event",
-   "Events outside the window are not merged",
-   "Storm test proves the collapse ratio",
-   "Aggregation does not drop information, only delivery count"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/self-aware-platform/cp6_propose_execute_state_hash.feature",
-  "title": "propose_action / execute_action carry a state hash, refuse on TOCTOU",
-  "scenarios": [
-   "A proposal carries the state hash it was computed against",
-   "Execute succeeds when state has not changed",
-   "Execute refuses when state changed between propose and approve \u2014 TOCTOU",
-   "A stale approval never mutates anything"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/self-aware-platform/cp7_token_receipt.feature",
-  "title": "Token receipt \u2014 the waste the founder named, measured before and after",
-  "scenarios": [
-   "The script defines three recurring questions",
-   "Before numbers are measured, not remembered",
-   "After numbers are measured against the new MCP surface",
-   "The receipt is the number, not a claim",
-   "The laptop path renders no key"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/self-aware-platform/cp8_k8s_adapter.feature",
-  "title": "k8s adapter \u2014 the same desired-vs-actual interface, deferred until a cluster exists",
-  "scenarios": [
-   "Desired-vs-actual is read through one interface, not two code paths",
-   "A k8s implementation of the interface can be registered without",
-   "The adapter is not activated against a live cluster yet"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "15a7f0d",
-  "pr": 202,
-  "ticket": "crew#297"
- },
- {
   "feature": "features/sovereign-bus/cp10_dual_read.feature",
   "title": "Dual-read router \u2014 every read runs twice, legacy and DAG, and is compared",
   "scenarios": [
@@ -919,6 +358,567 @@
   "added_in": "a85623f",
   "pr": null,
   "ticket": null
+ },
+ {
+  "feature": "docs/prose/capacity-cap-rollout.feature",
+  "title": "paid capacity reaches the running node from GitHub",
+  "scenarios": [
+   "the STAGED node-pool change is applied from GitHub, never from a laptop",
+   "a shape change reaches the running node, not only the pool template (incident 2026-08-26, crew#289)"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "8f7267e",
+  "pr": 209,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/catalogue-links-product.feature",
+  "title": "A product's UIs enter the catalogue from the product's own repository",
+  "scenarios": [
+   "A product's UIs enter the catalogue from the product's own repository"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "08873aa",
+  "pr": 205,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/chaos-daemon-runtime.feature",
+  "title": "The chaos daemon speaks the container runtime the node actually runs",
+  "scenarios": [
+   "The daemon's runtime matches the node's containerRuntimeVersion",
+   "A runtime value that names a socket the node does not have is a red row, not a quiet one"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "b4e9172",
+  "pr": 215,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/chaos-drill-live.feature",
+  "title": "The weekly pod-kill experiment leaves a receipt and the runner grades it",
+  "scenarios": [
+   "A finished experiment leaves a receipt",
+   "The runner grades the receipt's age",
+   "A missing or stale receipt is a red row"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "7fd1ba4",
+  "pr": 217,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/chaos-live.feature",
+  "title": "A chaos experiment injects for real on the cluster",
+  "scenarios": [
+   "The first run is a receipt, not a promise"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "b4e9172",
+  "pr": 215,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/cloud-agnostic-drills.feature",
+  "title": "Disposable compute, universal state: the migration drills",
+  "scenarios": [
+   "Bring-your-own-Kubernetes hydration",
+   "Cross-cloud secret portability",
+   "Stateless compute disaster recovery",
+   "Agnostic ingress routing"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "30a8454",
+  "pr": 206,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/drill-catalogue-live.feature",
+  "title": "The drills row of bin/idp-verify grades the live run history",
+  "scenarios": [
+   "A drill ran inside its window",
+   "Every graded drill is green",
+   "A drill has gone stale",
+   "A drill has never run at all",
+   "A pending drill is named but never graded",
+   "Freshness cannot be measured",
+   "The catalogue is missing or empty",
+   "The catalogue names a workflow that was retired",
+   "login-drill is graded, not pending",
+   "The check names a policy statement that is in git but not live"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "b4e9172",
+  "pr": 215,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/estate-gates-online.feature",
+  "title": "Every active estate repository runs the same merge-blocking gates",
+  "scenarios": [
+   "A leaked secret cannot reach main in any active repository",
+   "The rollout is one command, run once",
+   "A required check that cannot report never blocks a repository",
+   "The architecture diagram is drawn from the catalogue, never by hand",
+   "The live architecture page reaches main on a schedule, through a pull request",
+   "The npm audit gate is about what ships",
+   "The pip-audit gate reports an advisory, never a broken build environment"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "0a8807c",
+  "pr": 207,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/estate-rebuild-live.feature",
+  "title": "The estate rebuilds from an empty tenancy and every incident is a gate",
+  "scenarios": [
+   "Every component of the estate is covered, or a command says which is not",
+   "A full rebuild from an empty tenancy, started from the phone",
+   "The rebuild is rehearsed on a schedule",
+   "A broken workload is reported to the founder within ten minutes",
+   "Every past incident is a gate proved both ways",
+   "A deploy cannot point at an image nobody builds",
+   "Improvement is measured, not felt"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "726ecdc",
+  "pr": 219,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/fortress/cp1_data.feature",
+  "title": "Data \u2014 the catalog database is green before any governance layer is judged",
+  "scenarios": [
+   "idp-verify passes clean"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/fortress/cp2_litellm.feature",
+  "title": "Model routing \u2014 LiteLLM is the universal API layer",
+  "scenarios": [
+   "The proxy is up with a real fallback chain",
+   "Every non-CLI agent's base URL points at the proxy"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/fortress/cp3_langfuse.feature",
+  "title": "Observability and audit \u2014 OTel GenAI traces reach Langfuse",
+  "scenarios": [
+   "The primary receiver answers",
+   "A real agent run produces a queryable, complete trace"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/fortress/cp4_spiffe_on_k3d.feature",
+  "title": "Agent identity \u2014 SPIRE runs on the estate cluster and issues short-lived SVIDs",
+  "scenarios": [
+   "The SPIRE server has attested the node agent",
+   "A workload in the catalogue namespace receives an SVID from the Workload API"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/fortress/cp4_spiffe_on_oke.feature",
+  "title": "Agent identity \u2014 SPIRE runs on the estate cluster through Flux and issues short-lived SVIDs",
+  "scenarios": [
+   "The cluster carries the SPIRE row and Flux waits for it to be healthy",
+   "The cluster-state receipt shows the identity issuer running"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "731c605",
+  "pr": 292,
+  "ticket": "crew#227"
+ },
+ {
+  "feature": "docs/prose/fortress/cp5_mcp_agentgateway.feature",
+  "title": "Protocols \u2014 official MCP SDK replaces the proprietary board schema, fronted by Agentgateway",
+  "scenarios": [
+   "The board and estate.db are MCP tools, not a proprietary schema",
+   "Every MCP call passes through Agentgateway"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/fortress/cp6_agents_md.feature",
+  "title": "Living specs \u2014 AGENTS.md is the version-controlled boundary for this repo",
+  "scenarios": [
+   "AGENTS.md is a committed file, not a convention in someone's head",
+   "A gate reads it both ways"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/front-door-login-drill-live.feature",
+  "title": "A drill signs in at the front door and sees the catalogue",
+  "scenarios": [
+   "The drill signs in and the catalogue renders",
+   "The password is wrong",
+   "The domain demands a password change on first login",
+   "The domain asks the drill user to consent to the front door",
+   "A later apply never overwrites the live drill password",
+   "The JWKS the door validates against is private",
+   "The drill credential is never on a laptop and never in a log",
+   "The door is green but Backstage shows its own guest sign-in page",
+   "The door's identity reaches Backstage's auth provider",
+   "The refresh endpoint is asked at Backstage's real path",
+   "The drill reads the catalogue and sees no error, not only a shell",
+   "A door request with a user name and no email still signs in",
+   "Every published path renders its own content, not the shell around it (crew#307)"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "ceb7345",
+  "pr": 218,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/front-door-login-live.feature",
+  "title": "The live front door redirects to the identity domain and holds no password",
+  "scenarios": [
+   "An unauthenticated request is sent to the identity domain",
+   "The identity domain's signing keys are readable by the relying party",
+   "The signing keys are private",
+   "The door answers anything else",
+   "No zone is configured",
+   "The secrets reach the pod as one mounted file, never as environment variables",
+   "the login row refuses a placeholder client id (idp#149 review, 2026-08-26)"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "f4cfb54",
+  "pr": 212,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/front-door-oidc-rollout.feature",
+  "title": "the front door OIDC client is applied by Terraform and used by the founder (crew#269, crew#281)",
+  "scenarios": [
+   "the identity module is valid and writes the two vault secrets the pod reads",
+   "the apply refuses a domain mismatch",
+   "the founder signs in with the identity he already has"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "49403c3",
+  "pr": 210,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/github-app-online.feature",
+  "title": "The GitHub App manifest and the identity gh acts as",
+  "scenarios": [
+   "The manifest is a one-tap page with no webhook and no public listing",
+   "A session on a personal token is a FAIL"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "397e4a5",
+  "pr": 211,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/langfuse-traces-live.feature",
+  "title": "Agent sessions trace to the live Langfuse, tagged with their crew issue",
+  "scenarios": [
+   "The seed secrets have no human author",
+   "A tag query returns the session"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "a124088",
+  "pr": 214,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/litellm-up.feature",
+  "title": "bin/litellm-up brings the proxy up on the config that is on disk",
+  "scenarios": [
+   "The proxy is restarted when config.yaml changed after it started",
+   "The proxy is left alone when it already runs the config on disk"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "535b6e3",
+  "pr": 220,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/operating-model-gate-callers.feature",
+  "title": "Every active estate repo runs the one operating-model gate",
+  "scenarios": [
+   "Every active estate repo runs the one gate, with the policy in one place"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "75b90aa",
+  "pr": 216,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp10_urgency.feature",
+  "title": "Urgency \u2014 open decision, default is never interrupt",
+  "scenarios": [
+   "An urgent phone message during an active session changes nothing about it",
+   "An urgent card is flagged, once confirmed"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp11_persistence.feature",
+  "title": "Persistence \u2014 the platform holds the record, not vendor chat",
+  "scenarios": [
+   "A draft survives losing the Telegram conversation"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp12_provider_agnostic.feature",
+  "title": "Provider agnostic \u2014 the model and the transport are both swappable",
+  "scenarios": [
+   "The flow's logic carries no vendor-specific import"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp1_continuity.feature",
+  "title": "Continuity \u2014 an active laptop session is never touched by the phone flow",
+  "scenarios": [
+   "An active session finishes on its own after he leaves",
+   "A phone message during the session injects nothing into it"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp2_phone_ingress.feature",
+  "title": "Phone ingress \u2014 hermes-v2 never touches the active laptop session",
+  "scenarios": [
+   "hermes-v2 and the active session are separate processes"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp3_preflight_dedup.feature",
+  "title": "Pre-flight dedup \u2014 hermes-v2 checks the board before drafting",
+  "scenarios": [
+   "A matching card already exists",
+   "No match exists"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp4_mode_detection.feature",
+  "title": "Mode detection \u2014 exploring stays talk, building drafts a feature",
+  "scenarios": [
+   "Exploratory phrasing enters sounding-board mode",
+   "Build phrasing enters PM mode"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp5_confirmation_gate.feature",
+  "title": "Confirmation gate \u2014 hermes-v2 never writes to the board unannounced",
+  "scenarios": [
+   "A draft is shown before any board write",
+   "The board write matches the button tapped",
+   "Drop writes nothing"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp6_icebox.feature",
+  "title": "Icebox \u2014 kept ideas do not enter the work queue",
+  "scenarios": [
+   "An Icebox card is never claimed"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp7_dispatch.feature",
+  "title": "Dispatch \u2014 the watched column starts work when the laptop is awake",
+  "scenarios": [
+   "A card starts within one poll cycle while awake",
+   "A card waits while the laptop sleeps"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp8_welcome_back.feature",
+  "title": "Welcome back \u2014 the two branches never conflict",
+  "scenarios": [
+   "Both branches coexist without conflict"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/phone-idea/cp9_later_activation.feature",
+  "title": "Later activation \u2014 an Icebox idea becomes work, still gated",
+  "scenarios": [
+   "Activating an Icebox card drafts a feature file",
+   "The move still requires the confirmation gate"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/self-aware-platform/cp4_get_catalog_drift.feature",
+  "title": "get_catalog_drift \u2014 dark matter is visible, on the laptop substrate",
+  "scenarios": [
+   "A launchd job with no catalog entity is reported as drift",
+   "A colima container with no catalog entity is reported as drift",
+   "A port bound outside catalog/ports.yaml is reported as drift",
+   "Everything cataloged and running is not flagged",
+   "Drift detection reads typed annotations, never string-greps"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/self-aware-platform/cp5_event_aggregation.feature",
+  "title": "Event aggregation behind Temporal \u2014 a storm becomes one event",
+  "scenarios": [
+   "50 crashes in 10 seconds collapse to one event",
+   "Events outside the window are not merged",
+   "Storm test proves the collapse ratio",
+   "Aggregation does not drop information, only delivery count"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/self-aware-platform/cp6_propose_execute_state_hash.feature",
+  "title": "propose_action / execute_action carry a state hash, refuse on TOCTOU",
+  "scenarios": [
+   "A proposal carries the state hash it was computed against",
+   "Execute succeeds when state has not changed",
+   "Execute refuses when state changed between propose and approve \u2014 TOCTOU",
+   "A stale approval never mutates anything"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/self-aware-platform/cp7_token_receipt.feature",
+  "title": "Token receipt \u2014 the waste the founder named, measured before and after",
+  "scenarios": [
+   "The script defines three recurring questions",
+   "Before numbers are measured, not remembered",
+   "After numbers are measured against the new MCP surface",
+   "The receipt is the number, not a claim",
+   "The laptop path renders no key"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
+ },
+ {
+  "feature": "docs/prose/self-aware-platform/cp8_k8s_adapter.feature",
+  "title": "k8s adapter \u2014 the same desired-vs-actual interface, deferred until a cluster exists",
+  "scenarios": [
+   "Desired-vs-actual is read through one interface, not two code paths",
+   "A k8s implementation of the interface can be registered without",
+   "The adapter is not activated against a live cluster yet"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "15a7f0d",
+  "pr": 202,
+  "ticket": "crew#297"
  },
  {
   "feature": "features/assurance/trace-matrix.feature",

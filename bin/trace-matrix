@@ -12,7 +12,8 @@ cannot be derived from git and the test files does not exist (R29).
     bin/trace-matrix --check    same, then exit 1 when any feature is bound by no test
 
 Grades per feature: BOUND (a test loads it), PENDING (the test is marked pending, so the
-scenarios are skipped, not run), UNBOUND (prose; nothing runs it). Unbound rows print first.
+scenarios are skipped, not run), PROSE (under docs/prose/, intent that nothing runs, by rule),
+UNBOUND (under features/ with no test; the defect). Unbound rows print first.
 """
 from __future__ import annotations
 
@@ -33,7 +34,8 @@ SPEC_RE = re.compile(r"(^|/)(tests?|spec|features)/|(^|/)test_[^/]*\.py$|_test\.
 SCENARIO_RE = re.compile(r"^\s*Scenario( Outline)?:\s*(.+?)\s*$", re.M)
 FEATURE_RE = re.compile(r"^\s*Feature:\s*(.+?)\s*$", re.M)
 PENDING_RE = re.compile(r"pytest\.mark\.pending")
-BOUND, PENDING, UNBOUND = "BOUND", "PENDING", "UNBOUND"
+BOUND, PENDING, PROSE, UNBOUND = "BOUND", "PENDING", "PROSE", "UNBOUND"
+PROSE_DIR = "docs/prose/"  # bin/spec-gate: a feature here is intent, run by nothing, and moves back under features/ the day a test names it (crew#297)
 
 
 def git(root: Path, *args: str) -> str:
@@ -49,7 +51,10 @@ def rows(root: Path) -> list[dict]:
         base = re.escape(os.path.basename(f))
         loads = re.compile(r"scenarios?\(\s*[\"'][^\"']*" + base + r"[\"']")
         bound_by = sorted(t for t, body in tests.items() if loads.search(body))
-        status = UNBOUND if not bound_by else (PENDING if all(PENDING_RE.search(tests[t]) for t in bound_by) else BOUND)
+        if not bound_by:
+            status = PROSE if f.startswith(PROSE_DIR) else UNBOUND
+        else:
+            status = PENDING if all(PENDING_RE.search(tests[t]) for t in bound_by) else BOUND
         added = git(root, "log", "--diff-filter=A", "--format=%h|%s", "-1", "--", f).strip()
         sha, _, subject = added.partition("|")
         pr = re.search(r"\(#(\d+)\)\s*$", subject)
@@ -65,13 +70,13 @@ def rows(root: Path) -> list[dict]:
             "pr": int(pr.group(1)) if pr else None,
             "ticket": ticket.group(1) if ticket else None,
         })
-    order = {UNBOUND: 0, PENDING: 1, BOUND: 2}
+    order = {UNBOUND: 0, PENDING: 1, PROSE: 2, BOUND: 3}
     return sorted(out, key=lambda r: (order[r["status"]], r["feature"]))
 
 
 def render(matrix: list[dict], taken: str) -> str:
     n_scen = sum(len(r["scenarios"]) for r in matrix)
-    by = {s: [r for r in matrix if r["status"] == s] for s in (BOUND, PENDING, UNBOUND)}
+    by = {s: [r for r in matrix if r["status"] == s] for s in (BOUND, PENDING, PROSE, UNBOUND)}
     run_scen = sum(len(r["scenarios"]) for r in by[BOUND])
     lines = [
         "# Trace matrix",
@@ -81,7 +86,8 @@ def render(matrix: list[dict], taken: str) -> str:
         "",
         "## The bar",
         "",
-        f"- Features: **{len(by[BOUND])} BOUND**, **{len(by[PENDING])} PENDING**, **{len(by[UNBOUND])} UNBOUND** of {len(matrix)}",
+        f"- Features: **{len(by[BOUND])} BOUND**, **{len(by[PENDING])} PENDING**, **{len(by[PROSE])} PROSE**, **{len(by[UNBOUND])} UNBOUND** of {len(matrix)}",
+        f"- PROSE is a feature under `{PROSE_DIR}`: intent that nothing runs, by the spec-gate rule; it is counted, not failed. UNBOUND is a feature under `features/` with no test, and fails `--check`.",
         f"- Scenarios: **{run_scen} run by a test** of {n_scen}",
         "",
         "## Requirement -> scenario -> test",
@@ -109,9 +115,10 @@ def main(argv: list[str]) -> int:
     a.out.write_text(render(matrix, taken))
     a.json.write_text(json.dumps(matrix, indent=1) + "\n")
     unbound = [r for r in matrix if r["status"] == UNBOUND]
+    prose = sum(1 for r in matrix if r["status"] == PROSE)
     n_scen = sum(len(r["scenarios"]) for r in unbound)
     word = "FAIL " if (a.check and unbound) else "ok   "
-    print(f"{word} trace-matrix  {len(matrix)} features, {len(unbound)} unbound ({n_scen} scenarios nothing runs) -> {a.out.relative_to(ROOT) if a.out.is_relative_to(ROOT) else a.out}")
+    print(f"{word} trace-matrix  {len(matrix)} features, {len(unbound)} unbound ({n_scen} scenarios nothing runs), {prose} prose -> {a.out.relative_to(ROOT) if a.out.is_relative_to(ROOT) else a.out}")
     return 1 if (a.check and unbound) else 0
 
 
