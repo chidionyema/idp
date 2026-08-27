@@ -57,11 +57,17 @@ def _ensure_swift_helper_compiled() -> Path | None:
     Returns None (never raises) if swiftc is unavailable, the source is
     missing, or compilation fails -- callers fall back to software_key."""
     out = _swift_helper_path()
-    if out.exists():
-        return out
     src = _swift_source_path()
     if not src.exists():
-        return None
+        return out if out.exists() else None
+    # crew#227 CP5 incident: the binary was cached on first use and never rebuilt, so a706e26's
+    # --pubkey / --verify-sig never reached the founder's Mac and enroll() failed closed for a
+    # day. The source's digest sits beside the binary; a different digest rebuilds. mtime is not
+    # used because a git checkout rewrites it without changing the content.
+    digest = hashlib.sha256(src.read_bytes()).hexdigest()
+    stamp = out.with_suffix(".sha256")
+    if out.exists() and stamp.exists() and stamp.read_text().strip() == digest:
+        return out
     out.parent.mkdir(parents=True, exist_ok=True)
     try:
         result = subprocess.run(
@@ -71,8 +77,9 @@ def _ensure_swift_helper_compiled() -> Path | None:
     except (OSError, subprocess.SubprocessError):
         return None
     if result.returncode != 0 or not out.exists():
-        return None
+        return out if out.exists() else None  # a stale helper beats no helper; the stamp stays unset
     out.chmod(ck.get("trust.helper_file_mode"))
+    stamp.write_text(digest)
     return out
 
 
