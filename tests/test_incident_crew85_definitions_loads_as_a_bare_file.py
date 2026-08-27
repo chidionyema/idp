@@ -8,6 +8,12 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
+# CI has no dagster (idp#316 moved the gate rule out of it for that reason); this test is about
+# how dagster loads the file, so it runs where dagster is: the scheduler venv on the Mac.
+pytest.importorskip("dagster")
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
