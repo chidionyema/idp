@@ -52,10 +52,16 @@ spec:
       sourceRef:
         kind: HelmRepository
         name: spiffe
+  # remediateLastFailure. Incident 2026-08-27 (crew#227 CP4, oke-check 33038080419): the first install
+  # exhausted its 3 retries while Kyverno refused the agent's hostPort, and the failed release kept its
+  # DaemonSet. #308 removed the hostPort from the values, yet 24 minutes later (03:57:27Z) the same old
+  # DaemonSet was still creating refused pods: a HelmRelease in Failed keeps the stale objects until
+  # the last failure is remediated. With this flag the failed install is uninstalled and re-run from
+  # the current values; tests/test_spire_row.py holds it.
   install:
-    remediation: { retries: 3 }
+    remediation: { retries: 3, remediateLastFailure: true }
   upgrade:
-    remediation: { retries: 3 }
+    remediation: { retries: 3, remediateLastFailure: true }
   valuesFrom:
     - kind: ConfigMap
       name: spire-values

@@ -145,3 +145,14 @@ def test_incident_crew227_cp4_host_network_pod_needs_the_host_ports_waiver(tmp_p
     stripped = tmp_path / "default.yaml"
     stripped.write_text(rendered.read_text().replace("      hostPID: true\n", "      hostPID: true\n      hostNetwork: true\n"))
     assert _host_network_pods(stripped) == ["DaemonSet/spire-agent"]
+
+
+def test_incident_crew227_cp4_failed_install_is_remediated_not_kept():
+    """oke-check 33038080419: a Failed HelmRelease kept its refused DaemonSet after the values fix
+    landed; the last failure must be uninstalled so the next attempt renders the current values."""
+    docs = _docs(SPIRE / "helmrelease.yaml")
+    hr = _one(docs, "HelmRelease", "spire")
+    for phase in ("install", "upgrade"):
+        rem = hr["spec"][phase]["remediation"]
+        assert rem["retries"] >= 1
+        assert rem["remediateLastFailure"] is True, phase
