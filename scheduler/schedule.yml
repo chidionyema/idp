@@ -238,8 +238,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.estate.catalog-render:
-    # reads ~/.estate/state/inventory.json, the Mac inventory (measured 2026-08-27 16:55Z from the script, not the command)
-    runs_on: mac
+    # retired 2026-08-27 (crew#516 CP3): .github/workflows/catalog-render.yml renders from the bucket copies of the inventory and the feed (cron 58 1,7,13,19); the Mac row stays listed until the launchd job is booted out
+    runs_on: retire
     runs_on_ref: crew#516 CP3
     after: com.estate.inventory
     command:
