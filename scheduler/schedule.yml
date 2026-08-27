@@ -238,8 +238,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.estate.catalog-render:
-    # reads ~/.estate/state/inventory.json, the Mac inventory (measured 2026-08-27 16:55Z from the script, not the command)
-    runs_on: mac
+    # retired 2026-08-27 (crew#516 CP3): .github/workflows/catalog-render.yml renders from the bucket copies of the inventory and the feed (cron 58 1,7,13,19); the Mac row stays listed until the launchd job is booted out
+    runs_on: retire
     runs_on_ref: crew#516 CP3
     after: com.estate.inventory
     command:
@@ -446,7 +446,8 @@ jobs:
   com.estate.board-assign:
     # the board's turn (crew#527 CP3): release claims 24h old with no box ticked, hand every alive
     # session holding nothing the top of the finish-first rank; hourly so an idle session waits
-    # minutes, not a day. Exit 2 = BLIND (no feed, or the board unreadable): a finding, not a crash.
+    # minutes, not a day. Exit 3 = BLIND (no feed, or the board unreadable): a finding, not a crash;
+    # exit 2 is argparse and pages.
     runs_on: mac
     runs_on_ref: crew#516 CP5
     ok_exit: [3]
@@ -462,6 +463,27 @@ jobs:
     cwd: $CODE/crew
     skip_on_battery: false
     timeout_s: 300
+  com.estate.board-close:
+    # the nightly close turn (crew#526 CP2): an issue whose Closes-when row probe exits 0, or whose
+    # every box has been ticked for 24h, is closed with the receipt; counts land in science/closer.jsonl
+    # where velocity reads them. Only the datamap row probe may run from a body line (cg#170).
+    # Exit 3 = BLIND (board unreadable): a finding, not a crash; exit 2 is argparse and pages.
+    runs_on: mac
+    runs_on_ref: crew#516 CP5
+    ok_exit: [3]
+    env:
+      HC_FINDINGS_EXIT: "3"
+      ESTATE_CLOSER_LOG: science/closer.jsonl
+    command:
+    - ~/.claude/scripts/hc-wrap.sh
+    - board-close
+    - python3
+    - ~/.claude/scripts/estate_board.py
+    - close
+    cron: 41 2 * * *
+    cwd: $CODE/crew
+    skip_on_battery: false
+    timeout_s: 1800
   com.estate.velocity:
     # velocity per lane from the board, one row per lane per day into the crew checkout the snapshot commits (crew#527 CP1)
     runs_on: mac

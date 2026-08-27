@@ -4,7 +4,9 @@
 #   bin/idp-cloud object get  --bucket B --name N     body on stdout
 #   bin/idp-cloud object put  --bucket B --name N --file F
 #   bin/idp-cloud object list --bucket B [--prefix P] one name per line
-#   bin/idp-cloud secret get  NAME                    decoded secret content on stdout
+#   bin/idp-cloud secret get  NAME                    decoded secret content; exit 1 NotFound, 3 Split (ACTIVE in more than one vault), 4 Unreadable
+#   bin/idp-cloud secret put  NAME --file F           create or update; content is the file, never argv
+#   bin/idp-cloud secret delete NAME                  schedule deletion; absent is exit 0
 #   bin/idp-cloud secret list                         one ACTIVE secret name per line
 # Backend: $IDP_CLOUD_BACKEND, default oci. `file` backend (tests, laptops with no cloud) roots at $IDP_CLOUD_FILE_ROOT:
 #   objects at $IDP_CLOUD_FILE_ROOT/objects/<bucket>/<name>, secrets at $IDP_CLOUD_FILE_ROOT/secrets/<name>.
@@ -117,6 +119,8 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
         case "$BACKEND" in
           file)
             [ -n "${IDP_CLOUD_FILE_ROOT:-}" ] || blind "IDP_CLOUD_FILE_ROOT unset for the file backend"
+            split="$IDP_CLOUD_FILE_ROOT/secrets/$NAME.split"
+            [ -e "$split" ] && { echo "Split: secret $NAME is ACTIVE in more than one vault of the compartment; bin/idp-vault-split-guard names them" >&2; exit 3; }
             path=$(file_secret_path)
             [ -f "$path" ] || { echo "NotFound: secret $NAME" >&2; exit 1; }
             cat "$path"
@@ -131,10 +135,84 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
             export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
             C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
-            V=${ESTATE_VAULT_OCID:-$(cd "$MAIN/platform/oci" && tofu output -raw vault_id)}
-            sid=$(oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"secret-name\"=='$NAME' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output)
+            ids=$(oci vault secret list --compartment-id "$C" --name "$NAME" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].id" --output json 2>/dev/null | python3 -c 'import json,sys; [print(i) for i in json.load(sys.stdin)]' 2>/dev/null) || ids=""
+            n=$(printf '%s\n' "$ids" | grep -c .)
+            [ "$n" -le 1 ] || { echo "Split: secret $NAME is ACTIVE in $n vaults of the compartment; bin/idp-vault-split-guard names them" >&2; exit 3; }
+            sid=$(printf '%s\n' "$ids" | head -1)
             [ -n "$sid" ] && [ "$sid" != null ] || { echo "NotFound: secret $NAME" >&2; exit 1; }
-            oci secrets secret-bundle get --secret-id "$sid" --query 'data."secret-bundle-content".content' --raw-output | base64 -d
+            b64=$(oci secrets secret-bundle get --secret-id "$sid" --query 'data."secret-bundle-content".content' --raw-output 2>/dev/null) || b64=""
+            [ -n "$b64" ] && [ "$b64" != null ] || { echo "Unreadable: secret-bundle for $NAME is empty or unreadable by this identity" >&2; exit 4; }
+            printf '%s' "$b64" | base64 -d
+            ;;
+          *) blind "unknown backend $BACKEND";;
+        esac
+        ;;
+      put)
+        case "$BACKEND" in
+          file)
+            [ -n "${IDP_CLOUD_FILE_ROOT:-}" ] || blind "IDP_CLOUD_FILE_ROOT unset for the file backend"
+            [ -n "$NAME" ] || blind "secret put NAME --file F: NAME required"
+            [ -n "$FILE" ] || blind "secret put NAME --file F: --file F required"
+            mkdir -p "$IDP_CLOUD_FILE_ROOT/secrets"
+            path=$(file_secret_path)
+            if [ -f "$path" ]; then verb=updated; else verb=created; fi
+            cp "$FILE" "$path"
+            chmod 600 "$path"
+            printf '%s' "$verb"
+            ;;
+          oci)
+            command -v oci >/dev/null || blind "oci CLI is not installed"
+            MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
+            if [ -z "${OCI_CLI_PROFILE:-}" ]; then
+              # shellcheck source=idp-oci-whoami
+              source "$IDP/bin/idp-oci-whoami" || exit 2
+            fi
+            export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
+            export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
+            C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+            ids=$(oci vault secret list --compartment-id "$C" --name "$NAME" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].id" --output json 2>/dev/null | python3 -c 'import json,sys; [print(i) for i in json.load(sys.stdin)]' 2>/dev/null) || ids=""
+            n=$(printf '%s\n' "$ids" | grep -c .)
+            [ "$n" -le 1 ] || { echo "Split: secret $NAME is ACTIVE in $n vaults of the compartment; bin/idp-vault-split-guard names them" >&2; exit 3; }
+            sid=$(printf '%s\n' "$ids" | head -1)
+            payload=$(base64 < "$FILE" | tr -d '\n')
+            if [ -n "$sid" ] && [ "$sid" != null ]; then
+              oci vault secret update-base64 --secret-id "$sid" --secret-content-content "$payload" >/dev/null
+              printf '%s' updated
+            else
+              V=${ESTATE_VAULT_OCID:-$(cd "$MAIN/platform/oci" && tofu output -raw vault_id)}
+              K=${ESTATE_VAULT_KEY_OCID:-$(cd "$MAIN/platform/oci" && tofu output -raw vault_key_id)}
+              oci vault secret create-base64 --compartment-id "$C" --vault-id "$V" --key-id "$K" --secret-name "$NAME" --secret-content-content "$payload" >/dev/null
+              printf '%s' created
+            fi
+            ;;
+          *) blind "unknown backend $BACKEND";;
+        esac
+        ;;
+      delete)
+        case "$BACKEND" in
+          file)
+            [ -n "${IDP_CLOUD_FILE_ROOT:-}" ] || blind "IDP_CLOUD_FILE_ROOT unset for the file backend"
+            [ -n "$NAME" ] || blind "secret delete NAME: NAME required"
+            rm -f "$IDP_CLOUD_FILE_ROOT/secrets/$NAME" "$IDP_CLOUD_FILE_ROOT/secrets/$NAME.split"
+            exit 0
+            ;;
+          oci)
+            command -v oci >/dev/null || blind "oci CLI is not installed"
+            MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
+            if [ -z "${OCI_CLI_PROFILE:-}" ]; then
+              # shellcheck source=idp-oci-whoami
+              source "$IDP/bin/idp-oci-whoami" || exit 2
+            fi
+            export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
+            export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
+            C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+            ids=$(oci vault secret list --compartment-id "$C" --name "$NAME" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].id" --output json 2>/dev/null | python3 -c 'import json,sys; [print(i) for i in json.load(sys.stdin)]' 2>/dev/null) || ids=""
+            n=$(printf '%s\n' "$ids" | grep -c .)
+            [ "$n" -le 1 ] || { echo "Split: secret $NAME is ACTIVE in $n vaults of the compartment; bin/idp-vault-split-guard names them" >&2; exit 3; }
+            sid=$(printf '%s\n' "$ids" | head -1)
+            if [ -z "$sid" ] || [ "$sid" = null ]; then printf '%s' absent; exit 0; fi
+            oci vault secret schedule-secret-deletion --secret-id "$sid" >/dev/null
+            printf '%s' scheduled
             ;;
           *) blind "unknown backend $BACKEND";;
         esac

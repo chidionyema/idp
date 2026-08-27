@@ -48,13 +48,11 @@ if [ -z "$C" ]; then
   [ -f "$SEC" ] || fail config "no OCI_COMPARTMENT_OCID in the environment and no $SEC"
   C=$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "$SEC" 2>/dev/null) || fail config "cannot decrypt $SEC"
 fi
-SID=$(oci vault secret list --compartment-id "$C" --name front-door-drill-password \
-        --query 'data[0].id' --raw-output 2>/dev/null) || SID=""
-[ -n "$SID" ] && [ "$SID" != "null" ] || fail vault "no secret front-door-drill-password in the compartment; run bin/idp-identity-apply apply -auto-approve"
-B64=$(oci secrets secret-bundle get --secret-id "$SID" \
-        --query 'data."secret-bundle-content".content' --raw-output 2>/dev/null) || B64=""
-[ -n "$B64" ] && [ "$B64" != "null" ] || fail vault "secret-bundle for front-door-drill-password is empty or unreadable by this identity"
-DRILL_PASSWORD=$(printf '%s' "$B64" | base64 -d 2>/dev/null) || DRILL_PASSWORD=""
+DRILL_PASSWORD=$("$IDP/bin/idp-cloud" secret get front-door-drill-password 2>"${TMPDIR:-/tmp}/login-drill.err") || case $? in
+  1) fail vault "no secret front-door-drill-password in the compartment; run bin/idp-identity-apply apply -auto-approve";;
+  3) fail vault "$(head -1 "${TMPDIR:-/tmp}/login-drill.err")";;
+  *) fail vault "secret-bundle for front-door-drill-password is empty or unreadable by this identity";;
+esac
 [ -n "$DRILL_PASSWORD" ] || fail vault "front-door-drill-password decodes to nothing"
 export DRILL_PASSWORD
 unset B64 SID

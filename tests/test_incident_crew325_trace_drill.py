@@ -47,7 +47,11 @@ def test_trace_drill_reads_only_the_active_vault_secret() -> None:
     """Run 33006811039: `data[0].id` with no lifecycle filter can pick a same-named secret pending
     deletion. Every vault reader in bin filters ACTIVE, and the miss names key names, never values."""
     script = (ROOT / "bin" / "idp-trace-drill").read_text()
-    assert "lifecycle-state\\\"=='ACTIVE'" in script
+    # crew#66 CP3: the ACTIVE filter moved into the one cloud layer; the drill reads through it and
+    # never names a provider CLI (bin/cloud-agnostic-gate refuses one).
+    assert '"$IDP/bin/idp-cloud" secret get' in script
+    cloud = (ROOT / "bin" / "idp-cloud").read_text()
+    assert "lifecycle-state" in cloud and "ACTIVE" in cloud
     assert "keys present:" in script and "keys | join" in script
 
 
