@@ -8,5 +8,6 @@ resources:
   - k8s-infra-namespace.yaml
   - k8s-infra-exception.yaml
   - temporal-exception.yaml
+  - scheduling-exception.yaml
   - hindsight-exception.yaml
   - kyverno.yaml

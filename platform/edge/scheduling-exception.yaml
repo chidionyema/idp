@@ -1,0 +1,21 @@
+# crew#539 CP1: the balloon Deployment runs registry.k8s.io/pause, a process that opens no port and
+# serves no health endpoint, so require-pod-probes cannot be satisfied and must not be: a probe
+# that fails would restart the reservation the scheduler is meant to preempt. Scoped to that one
+# Deployment in namespace scheduling, nothing wider. Lives in platform/edge, not platform/scheduling:
+# that kustomization stamps `namespace: scheduling` and Kyverno honours exceptions from namespace
+# kyverno only (crew#325).
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: scheduling-balloon-probes
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: require-pod-probes
+      ruleNames: [validate-probes, autogen-validate-probes]
+  match:
+    any:
+      - resources:
+          kinds: [Deployment, Pod, ReplicaSet]
+          namespaces: [scheduling]
+          names: [balloon*]

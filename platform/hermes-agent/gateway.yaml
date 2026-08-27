@@ -136,6 +136,7 @@ spec:
         app: hermes-agent-gateway
         app.kubernetes.io/name: hermes-agent-gateway
     spec:
+      priorityClassName: infrastructure-critical
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true

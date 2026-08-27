@@ -409,6 +409,7 @@ spec:
       activeDeadlineSeconds: 180
       template:
         spec:
+          priorityClassName: infrastructure-critical
           serviceAccountName: cluster-state
           automountServiceAccountToken: true
           restartPolicy: Never
