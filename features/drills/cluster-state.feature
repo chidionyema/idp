@@ -50,3 +50,11 @@ Feature: The cluster reports its own state and a runner grades it without a lapt
     Given a receipt "ok cluster-state at T nodes=2 ready=2 pods=40 pods_not_ready=0 flux=20 flux_not_ready=0" written 5 minutes ago
     When bin/idp-cluster-state grades it
     Then the verdict line starts with "FAIL    cluster-state" and names ds_short
+
+  Scenario: An ExternalSecret that is Ready but has not refreshed in twice its interval grades FAIL (crew#387)
+    Given a receipt "ok cluster-state at T nodes=2 ready=2 pods=40 pods_not_ready=0 flux=21 flux_not_ready=1 ds=3 ds_short=0 events_warning=0" written 5 minutes ago
+    And its body lists ExternalSecret llm/litellm-upstream with message "Ready but last sync T-26h is older than 2x refreshInterval 1h"
+    When bin/idp-cluster-state runs
+    Then it prints "FAIL    cluster-state  1 Flux object(s) not Ready: ExternalSecret llm/litellm-upstream"
+    And exits 1
+
