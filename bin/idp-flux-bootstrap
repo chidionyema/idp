@@ -17,7 +17,7 @@ vget() { sops -d --extract "[\"$1\"]" "$VAULT/secrets/$ENV_NAME/$1.yaml" 2>/dev/
 CLUSTER=$(cd "$IDP/platform/oci" && tofu output -raw cluster_id 2>/dev/null || true)
 [ -n "$CLUSTER" ] || { echo "BLIND no OKE cluster id in platform/oci state; run tofu apply first"; exit 2; }
 export KUBECONFIG="$HOME/.kube/oke-estate"
-oci ce cluster create-kubeconfig --cluster-id "$CLUSTER" --file "$KUBECONFIG" --region "$(vget OCI_REGION)" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT >/dev/null
+"$IDP/bin/idp-cloud" cluster kubeconfig "$CLUSTER" --file "$KUBECONFIG" --region "$(vget OCI_REGION)" || { echo "BLIND   flux  cluster kubeconfig failed for ...${CLUSTER: -6}"; exit 2; }
 chmod 600 "$KUBECONFIG"
 kubectl get --raw /readyz >/dev/null && echo "ok      apiserver ready"
 kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f - >/dev/null

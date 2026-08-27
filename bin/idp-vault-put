@@ -20,7 +20,7 @@ SECRET_NAME=$1; shift
 # after a one-time GitHub manifest code had already been spent).
 if [ -z "${OCI_CLI_PROFILE:-}" ]; then
   # shellcheck source=idp-oci-whoami
-  source "$IDP/bin/idp-oci-whoami" || exit 2
+  source "$IDP/bin/idp-oci-whoami" >&2 || exit 2
 fi
 export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
 ENVF=${ESTATE_ENV_FILE:-$HOME/.estate/.env}

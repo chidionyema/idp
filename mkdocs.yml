@@ -40,6 +40,7 @@ nav:
       - Estate next: demo/estate-next.md
       - Trace matrix: demo/trace-matrix.md
       - Plist gate: demo/plist.md
+      - Namespace fences: demo/ns-fence-gate.md
       - k8s-infra: demo/k8s-infra.md
       - Oracle identity: demo/oci.md
       - Flux on OKE: demo/oke.md
@@ -85,6 +86,7 @@ nav:
       - Wake blocked: demo/wake-blocked.md
   - Onboarding:
       - Trace matrix: onboarding/trace-matrix.md
+      - Namespace fences: onboarding/ns-fence-gate.md
       - Portal: onboarding/idp.md
       - Estate showcase: onboarding/estate-showcase.md
       - Estate next: onboarding/estate-next.md

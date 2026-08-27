@@ -16,6 +16,7 @@ Row format, one rule per row. `gate` is a shell function or command defined in `
 | No scheduled job on this laptop that runs in the sleep window or is never pinged (LAW 28) | policy_gate | policy/fixtures/placement-misplaced.json | policy/fixtures/placement-ok.json |
 | Paid capacity is auto-defaulted up to estate-defaults.yaml node_pool.budget_monthly_usd and refused above it (crew#289, R14) | policy_gate | policy/fixtures/capacity-over-cap.json | policy/fixtures/capacity-under-cap.json |
 | Only the gateway binds a non-loopback address; everything else is 127.0.0.1 or nothing (R20) | bind_audit | tests/fixtures/listeners.bad.txt | tests/fixtures/listeners.good.txt |
+| No namespace without a both-ways default-deny NetworkPolicy, a ResourceQuota, a LimitRange and a DNS exception (crew#191) | ns_fence_gate | tests/fixtures/ns-fence/bad.yaml | tests/fixtures/ns-fence/good.yaml |
 | Every scheduled job reaches the Dagster UI with a description of what it does (LAW 28) | job_described | tests/fixtures/schedule-undescribed.yml | tests/fixtures/schedule-described.yml |
 | A code location loads the way workspace.yaml loads it: by file path, not as a package (LAW 45) | defs_validate | tests/fixtures/definitions/relative-import.py | tests/fixtures/definitions/loads-by-path.py |
 
