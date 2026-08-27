@@ -91,6 +91,13 @@ catalog:
       rules:
         - allow: [Component, Resource, Domain, System, Group]
 
+    # The founder's surfaces (crew#503 CP6): the ConfigMap founder-catalog rendered by Flux from
+    # backstage/founder/catalog-info.yaml with ${ESTATE_ZONE} substituted; no laptop push.
+    - type: file
+      target: /estate/founder/catalog-info.yaml
+      rules:
+        - allow: [Component]
+
     # Products are onboarded, never copied in (crew#282). Each product repo carries its own
     # catalog-info.yaml naming its UIs and their URLs; the platform reads it by URL. The repo is
     # public, so no token is needed. Adding a product is one line here, not a platform change.

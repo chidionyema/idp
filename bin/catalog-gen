@@ -657,9 +657,11 @@ def main() -> int:
     front = front_door_entities()
     docs += front
     counts["front-door"] = len(front)
+    # crew#503 CP6: the founder entities reach the portal from the founder-catalog ConfigMap
+    # (platform/backstage/overlays/oke, zone substituted by Flux), so they are not emitted here
+    # a second time; they are still read so the `interfaces` card carries their links.
     founder = founder_surface_entities()
-    docs += founder
-    counts["founder-surface"] = len(founder)
+    counts["founder-surface (links only, entities via Flux)"] = len(founder)
     # Founder, 2026-08-27: "i thought i could see all my interface urls in one spot". One
     # entity carries every link the catalogue publishes, so the answer is one card in the
     # portal (Component `interfaces`), never a grep over 362 entities.

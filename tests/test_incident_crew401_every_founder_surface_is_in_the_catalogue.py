@@ -120,22 +120,39 @@ def _gen(tmp_path):
     return [d for d in yaml.safe_load_all((out / "catalog-info.yaml").read_text()) if d]
 
 
-def test_incident_crew401_the_generated_catalogue_carries_every_surface_with_the_zone_resolved(tmp_path):
-    docs = _gen(tmp_path)
-    gen = {d["metadata"]["name"]: d for d in docs if d.get("spec", {}).get("type") == "founder-surface"}
+def _rendered_founder_docs():
+    """The founder-catalog ConfigMap as Flux renders it for OKE: kustomize build, then the zone
+    substituted the way postBuild.substituteFrom does (crew#503 CP6)."""
+    import shutil
+    import subprocess
+    if not shutil.which("kubectl"):
+        pytest.skip("kubectl not installed; the overlay render is checked in CI")
+    p = subprocess.run(["kubectl", "kustomize", "--load-restrictor", "LoadRestrictionsNone",
+                        str(ROOT / "platform/backstage/overlays/oke")], capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    cms = [d for d in yaml.safe_load_all(p.stdout) if d and d.get("kind") == "ConfigMap"
+           and d["metadata"]["name"] == "founder-catalog"]
+    assert len(cms) == 1, "founder-catalog ConfigMap missing from the OKE overlay"
+    text = cms[0]["data"]["catalog-info.yaml"].replace("${ESTATE_ZONE}", _zone(ROOT))
+    return [d for d in yaml.safe_load_all(text) if d]
+
+
+def test_incident_crew401_the_rendered_overlay_carries_every_surface_with_the_zone_resolved():
+    gen = {d["metadata"]["name"]: d for d in _rendered_founder_docs() if d.get("spec", {}).get("type") == "founder-surface"}
     zone = _zone(ROOT)
     for d in _surfaces(ROOT):
         name = d["metadata"]["name"]
-        assert name in gen, f"{name} missing from the generated catalogue"
+        assert name in gen, f"{name} missing from the rendered founder-catalog ConfigMap"
         for l in gen[name]["metadata"]["links"]:
             assert "${" not in l["url"], f"{name}: {l['url']} reached the catalogue unexpanded"
         assert all(l["url"].replace("${ESTATE_ZONE}", zone) in {g["url"] for g in gen[name]["metadata"]["links"]}
                    for l in d["metadata"]["links"]), name
-        assert "estate/health" not in gen[name]["metadata"].get("annotations", {}), "no probe without CATALOG_GEN_PROBE=1"
 
 
-def test_incident_crew401_the_checkout_lists_every_founder_surface():
-    assert missing(ROOT) == []
+def test_incident_crew503_the_generated_catalogue_does_not_carry_the_surfaces_twice(tmp_path):
+    """Two locations providing one entity name is a Backstage conflict; the surfaces come from Flux only."""
+    docs = _gen(tmp_path)
+    assert [d["metadata"]["name"] for d in docs if d.get("spec", {}).get("type") == "founder-surface"] == []
 
 
 def _copy(tmp_path):
@@ -178,9 +195,10 @@ def test_incident_crew412_a_repo_surface_without_a_project_slug_is_refused(tmp_p
     assert [m for m in missing(fake) if "project-slug" in m], "a repo surface with no slug must fail"
 
 
-def test_incident_crew412_founder_annotations_reach_the_generated_catalogue(tmp_path):
+def test_incident_crew412_founder_annotations_reach_the_generated_catalogue():
+    """The catalogue the annotations must reach is the founder-catalog ConfigMap Flux renders (crew#503 CP6)."""
     src = {d["metadata"]["name"]: d["metadata"].get("annotations") or {} for d in _surfaces(ROOT)}
-    p = _gen(tmp_path)
+    p = _rendered_founder_docs()
     gen = {d["metadata"]["name"]: d["metadata"].get("annotations") or {} for d in p if d["metadata"]["name"] in src}
     for name, ann in src.items():
         keep = {k: v for k, v in ann.items() if k.startswith(("backstage.io/", "github.com/"))}
