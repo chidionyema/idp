@@ -258,3 +258,28 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-kini-finish
+  title: "Finish KINI (one word)"
+  description: "Comment `FINISH: KINI` on any idp issue, or press Run workflow. The cluster runs the seven KINI checkpoints with retries and self-healing (crew#396); the receipt is the kini-state row of oke-check. Nothing after the word needs a laptop."
+  annotations:
+    idp/updated-by: "kini-finish.yml on the word; kini-state CronJob every 15 minutes"
+  tags: [founder]
+  links:
+    - title: "Say the word (idp issues)"
+      url: "https://github.com/chidionyema/idp/issues"
+      icon: dashboard
+    - title: "kini-finish: Run workflow"
+      url: "https://github.com/chidionyema/idp/actions/workflows/kini-finish.yml"
+      icon: dashboard
+    - title: "Receipt reader (bin/idp-kini-state)"
+      url: "https://github.com/chidionyema/idp/blob/main/bin/idp-kini-state"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate

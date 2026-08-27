@@ -19,6 +19,7 @@ def run(root: str):
                           capture_output=True, text=True)
 
 
+import re
 import tempfile
 
 TEMP_ROOTS = [
@@ -35,6 +36,8 @@ def test_incident_crew280_refuses_a_temporary_checkout(root):
 
 
 def test_incident_crew280_accepts_the_permanent_checkout():
-    r = run(str(INSTALLER.parents[1]).replace("/.wt-280-launchd", ""))
+    # Any session worktree (.wt-<lane>) maps back to the permanent checkout, not just the one this
+    # test was written in (crew#396: it failed from .wt-temporal).
+    r = run(re.sub(r"/\.wt-[^/]+$", "", str(INSTALLER.parents[1])))
     assert r.returncode == 0, r.stdout + r.stderr
     assert "loaded" not in r.stdout  # filter matched no template, nothing was bootstrapped
