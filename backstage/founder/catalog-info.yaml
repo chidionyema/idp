@@ -152,33 +152,6 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: founder-estate-showcase
-  title: "Estate showcase, graded"
-  description: "The whole estate graded against the buyer's-engineer bar: ELITE, GAP or BLIND per entity, gaps first. Regenerated after every inventory by bin/catalog-render (crew#474)."
-  annotations:
-    github.com/project-slug: "chidionyema/idp"
-    backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/"
-    idp/updated-by: "com.estate.catalog-render, after com.estate.inventory"
-  tags: [founder, science]
-  links:
-    - title: "Showcase page"
-      url: "https://github.com/chidionyema/idp/blob/main/docs/SHOWCASE.md"
-      icon: dashboard
-    - title: "How to read it"
-      url: "https://github.com/chidionyema/idp/blob/main/docs/how-to/read-the-estate-showcase.md"
-      icon: docs
-    - title: "crew#474"
-      url: "https://github.com/chidionyema/crew/issues/474"
-      icon: dashboard
-spec:
-  type: founder-surface
-  owner: group:default/platform
-  system: system:default/estate
-  lifecycle: production
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
   name: founder-platform-repo
   title: "Platform repository (idp)"
   description: "The one platform. Open pull requests are work in flight; the security tab is Dependabot and code scanning; packages are the images the cluster runs."
@@ -355,7 +328,7 @@ metadata:
   title: "The store (mumchimp)"
   description: "The one place a customer pays this estate: the storefront and the Medusa API behind it. Revenue is read from api.<zone> by crew science/outcomes.py revenue (crew#70). Registered here because catalogue-drift found the three hostnames live and unlisted (oke-check run 33034521953)."
   annotations:
-    github.com/project-slug: "chidionyema/mumchimp-medusa"
+    github.com/project-slug: chidionyema/mumchimp-medusa
     backstage.io/source-location: "url:https://github.com/chidionyema/mumchimp-medusa/tree/main/"
     idp/updated-by: "github.com/chidionyema/mumchimp-medusa on push to main (its own pipeline); this entry by hand until that repo carries a catalog-info.yaml"
   tags: [founder, product]
