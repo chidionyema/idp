@@ -1,5 +1,5 @@
 """Incident 2026-08-27 (crew#516 CP6): bin/cloud-agnostic-gate reported one leak,
-platform/access/backend_override.tf:6, a file bin/idp-oci-login renders for a login session with the
+platform/<module>/backend_override.tf, a file bin/idp-oci-login renders for a login session with the
 object-storage endpoint and credentials inside. It was never tracked and never shipped; the gate
 graded the founder's laptop, not the platform. Rule: a file git does not hold is not scanned when the
 root is a checkout; a plain directory (the fixtures) is scanned whole. Rung 4, incident test."""
@@ -20,9 +20,9 @@ def _gate(root: Path) -> subprocess.CompletedProcess:
 
 
 def _tree(tmp_path: Path) -> Path:
-    (tmp_path / "platform" / "access").mkdir(parents=True)
+    (tmp_path / "platform" / "langfuse").mkdir(parents=True)
     (tmp_path / "platform" / "tracked.yaml").write_text("host: a.oraclecloud.com\n")
-    (tmp_path / "platform" / "access" / "backend_override.tf").write_text(LEAK)
+    (tmp_path / "platform" / "langfuse" / "backend_override.tf").write_text(LEAK)
     return tmp_path
 
 
@@ -39,7 +39,7 @@ def test_a_checkout_skips_the_untracked_rendered_file(tmp_path):
 def test_a_plain_directory_is_scanned_whole(tmp_path):
     r = _gate(_tree(tmp_path))
     assert r.returncode == 1, r.stdout
-    assert "platform/access/backend_override.tf:1" in r.stdout, r.stdout
+    assert "platform/langfuse/backend_override.tf:1" in r.stdout, r.stdout
     assert "platform/tracked.yaml:1" in r.stdout
 
 
