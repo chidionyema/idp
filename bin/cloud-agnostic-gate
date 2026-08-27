@@ -65,7 +65,41 @@ def main() -> int:
     for h in hits:
         print(h)
     print(f"cloud-agnostic-gate: {len(hits)} provider-specific line(s) outside the provisioner")
+    callers = _oci_cli_callers(ROOT, untracked)
+    print(f"cloud-agnostic-gate: {len(callers)} operator file(s) bound to the oci CLI (bin/, .github/workflows; crew#309 ratchet, crew#66)")
     return 1 if hits else 0
+
+
+# Any `oci <service> <verb>` invocation, optional leading flags (`oci --profile x os ...`). Not a verb allow-list:
+# bin/idp-vault-reads calls `oci audit event list`, which a list of the usual services silently missed.
+# Shell: `oci <service> <verb>`; Python: subprocess argv starting ["oci", ...] (bin/idp-free-tier).
+OCI_CLI = re.compile(r"(^|[\s$(`|;&])oci(\s+--?[a-z-]+(\s+\S+)?)*\s+[a-z][a-z-]*\s+[a-z][a-z-]*|\[\s*[\"']oci[\"']\s*,")
+# A workflow step's `name:` is prose ("oci cli and a headless browser"), not a call.
+PROSE = re.compile(r"^\s*-?\s*name:")
+
+
+def _oci_cli_callers(root: pathlib.Path, untracked: set[str]) -> list[str]:
+    """Tracked files under bin/ and .github/workflows that invoke the oci CLI. Measured 2026-08-27
+    (crew#309): 30 scripts + 6 workflows. The platform manifests name no cloud; the operator tooling
+    does, through three primitives (object storage, secret read/write, IAM read). This number is
+    printed so the vendor-agnostic lane (crew#66) has a floor it can watch go down; it does not fail
+    the gate until it is wired to a threshold. Comment lines are not counted."""
+    out = []
+    for top in ("bin", ".github/workflows"):
+        d = root / top
+        if not d.is_dir():
+            continue
+        for f in sorted(d.rglob("*")):
+            rel = f.relative_to(root).as_posix()
+            if not f.is_file() or rel in untracked:
+                continue
+            try:
+                lines = f.read_text(errors="replace").splitlines()
+            except OSError:
+                continue
+            if any(OCI_CLI.search(l) and not l.lstrip().startswith("#") and not PROSE.match(l) for l in lines):
+                out.append(rel)
+    return out
 
 
 if __name__ == "__main__":
