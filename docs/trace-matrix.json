@@ -925,7 +925,8 @@
   "title": "Every scenario traces to the test that runs it",
   "scenarios": [
    "A feature nothing runs is listed first and counted as a finding",
-   "A repository where every feature is bound passes the check"
+   "A repository where every feature is bound passes the check",
+   "A feature under docs/prose is counted as PROSE, never as a finding"
   ],
   "bound_by": [
    "sovereign/tests/bdd/test_gate_trace_matrix.py"
