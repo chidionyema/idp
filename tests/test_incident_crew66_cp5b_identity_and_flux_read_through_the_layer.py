@@ -64,15 +64,15 @@ def test_identity_layer_exit_split_blinds(tmp_path: Path) -> None:
     _fake(fake_bin, "idp-cloud", '''
 case "$1 $2" in
   "secret describe")
-    echo "Split: secret oauth2-proxy-client-id is ACTIVE in more than one vault of the compartment" >&2
+    echo "Split: secret $3 is ACTIVE in more than one vault of the compartment" >&2
     exit 3;;
 esac
 echo "unexpected: $*" >&2; exit 9''')
     src = (ROOT / "bin" / "idp-identity-apply").read_text()
-    # extract from `err="${TMPDIR:-/tmp}/identity.err"` through the closing of the second case.
+    # extract from `err_id="${TMPDIR:-/tmp}/identity-id.err"` through the closing of the second case.
     # the script's first layer call is on `oauth2-proxy-client-id`; a Split there must BLIND.
     m = re.search(
-        r'(err="\$\{TMPDIR:-/tmp\}/identity\.err"; : > "\$err"\n.*?case "\$rc_sec" in\n.*?\)\s*\n)',
+        r'(err_id="\$\{TMPDIR:-/tmp\}/identity-id\.err"; : > "\$err_id"\n.*?case "\$rc_sec" in\n.*?\)\s*\n)',
         src, re.S,
     )
     assert m, "the identity-apply BLIND-on-layer-error block could not be located"
@@ -81,6 +81,10 @@ echo "unexpected: $*" >&2; exit 9''')
     assert r.returncode == 2, (r.stdout, r.stderr)
     assert "BLIND" in r.stdout
     assert "identity" in r.stdout
+    # REWORK idp#476 (09cd04a6): both describes run before either rc is checked, so a shared stderr
+    # file would print client-secret's line for a client-id BLIND. The line must name client-id.
+    assert "oauth2-proxy-client-id is ACTIVE" in r.stdout, r.stdout
+    assert "client-secret" not in r.stdout, r.stdout
 
 
 def test_flux_layer_exit_split_blinds(tmp_path: Path) -> None:

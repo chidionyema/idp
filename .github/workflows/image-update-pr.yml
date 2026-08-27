@@ -11,6 +11,11 @@ on:
 permissions:
   contents: write
   pull-requests: write
+# A newer run on the same ref supersedes the older one: on 2026-08-27 20:23Z idp had 9 running and
+# 20 queued runs, 12 of them stale duplicates, and a one-line oke-check waited 19 min (crew#516).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   open:
     runs-on: ubuntu-latest

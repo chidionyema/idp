@@ -1,6 +1,6 @@
-# agentgateway config, mounted from the mcp-config ConfigMap. Same routes as mcp/agentgateway.yaml
-# minus /estate/mcp: estate.db is produced only on the Mac by bin/db-gen and has no cluster producer
-# yet (crew#458 row 3); the route returns when it does. Traces go to the estate collector (LAW 50).
+# agentgateway config, mounted from the mcp-config ConfigMap. The /estate/mcp route is back now
+# that estate.db has a cluster producer (bin/idp-estate-db-push in the cloud catalog-render,
+# crew#458 row 3). Traces go to the estate collector (LAW 50).
 config:
   tracing:
     otlpEndpoint: http://signoz-otel-collector.observability.svc:4317
@@ -31,3 +31,20 @@ binds:
                 key:
                   value:
                     file: /run/secrets/mcp/GITHUB_MCP_TOKEN
+    - name: estate
+      matches:
+      - path:
+          exact: /estate/mcp
+      policies:
+        apiKey:
+          mode: strict
+          keys:
+          # SHA-256 of MCP_GATEWAY_KEY (vault entry mcp-gateway); the key itself is never in git or env.
+          - keyHash: sha256:24a593ed6b7a908829b98077341837334811ec9b6c9d1eb9766d6cd7d78de12e
+      backends:
+      - mcp:
+          statefulMode: stateless
+          targets:
+          - name: estate
+            mcp:
+              host: http://estate-mcp.mcp.svc:8001/-/mcp

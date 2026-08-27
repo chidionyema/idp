@@ -312,6 +312,12 @@ KEYS: dict[str, KeySpec] = {
     "cli.exit_usage_error": KeySpec(2, "int", "SB_EXIT_USAGE_ERROR", "exit code for a refused command, e.g. missing budget"),
     "client.query_timeout_s": KeySpec(5, "float", "SB_QUERY_TIMEOUT_S", "client-side timeout on a single workflow query, so one stuck session never hangs `sb list`"),
     "log.bot_token_redact_pattern": KeySpec(r"bot\d+:[A-Za-z0-9_-]+", "str", None, "regex matching a Telegram bot token as it appears in a URL (LAW 21)"),
+    "flip.readonly_mode": KeySpec(0o444, "int", None, "cp13: filesystem mode `sb flip` chmods the legacy DB file to"),
+    "flip.writable_mode": KeySpec(0o644, "int", None, "cp13: filesystem mode `sb flip --rollback` restores"),
+    "flip.max_downtime_ms": KeySpec(250, "int", "SB_FLIP_MAX_DOWNTIME_MS", "cp13: budget for the chmod + one shadow-root verify() a flip takes; reads are never blocked, this bounds the window before the flip is durable"),
+    "flip.receipt_template": KeySpec("[✓] FLIP | root:{root} | legacy:readonly", "str", "SB_FLIP_RECEIPT_TEMPLATE", "cp13 receipt line, exact format"),
+    "flip.rollback_receipt_template": KeySpec("[✓] FLIP_ROLLBACK | root:{root} | legacy:writable", "str", "SB_FLIP_ROLLBACK_RECEIPT_TEMPLATE", "cp13 receipt line, exact format"),
+    "flip.hash_chunk_bytes": KeySpec(65536, "int", None, "cp13: read chunk size for the legacy DB's sha256 in flip.py -- a lint-exempt literal would trip config.py's own numeric-literal rule"),
 }
 
 # ---------------------------------------------------------------------------
@@ -746,6 +752,12 @@ REQUIRE_SIGNED_APPROVAL: bool = _R["trust.require_signed_approval"].value
 CLI_EXIT_USAGE_ERROR: int = _R["cli.exit_usage_error"].value
 CLIENT_QUERY_TIMEOUT_S: float = _R["client.query_timeout_s"].value
 LOG_BOT_TOKEN_REDACT_PATTERN: str = _R["log.bot_token_redact_pattern"].value
+FLIP_READONLY_MODE: int = _R["flip.readonly_mode"].value
+FLIP_WRITABLE_MODE: int = _R["flip.writable_mode"].value
+FLIP_MAX_DOWNTIME_MS: int = _R["flip.max_downtime_ms"].value
+FLIP_RECEIPT_TEMPLATE: str = _R["flip.receipt_template"].value
+FLIP_ROLLBACK_RECEIPT_TEMPLATE: str = _R["flip.rollback_receipt_template"].value
+FLIP_HASH_CHUNK_BYTES: int = _R["flip.hash_chunk_bytes"].value
 
 TEMPORAL_PID_FILE: Path = ESTATE_HOME / "temporal" / "dev-server.pid"
 WORKER_PID_FILE: Path = SOVEREIGN_HOME / "worker.pid"
