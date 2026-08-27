@@ -1,0 +1,76 @@
+"""crew#506 CP4 (2026-08-27): adding the free Groq lane needed one key in the vault entry
+`litellm-upstream`, and the only writer, bin/idp-vault-put, replaced the whole JSON from the env
+file it was given; the oke-check apply step also exited n/a unless SEED_LITELLM_MASTER_KEY was set,
+which it was not. So one new provider meant re-seeding every key. Both ways: on main the --merge
+path does not exist and the groq lane is in neither router config."""
+from __future__ import annotations
+
+import base64
+import json
+import os
+import pathlib
+import re
+import subprocess
+import sys
+
+import yaml
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+PUT = ROOT / "bin" / "idp-vault-put"
+CONFIGS = [ROOT / "platform" / "llm" / "config.yaml", ROOT / "llm" / "config.yaml"]
+
+
+def _merge_block() -> str:
+    text = PUT.read_text()
+    start = text.index("<<'PY'\n") + len("<<'PY'\n")
+    return text[start : text.index("\nPY\n", start)]
+
+
+def _run(env_lines: str, current: dict | None, merge: bool, pairs: list[str], tmp_path: pathlib.Path) -> subprocess.CompletedProcess:
+    envf = tmp_path / "seed.env"
+    envf.write_text(env_lines)
+    env = dict(os.environ, MERGE="1" if merge else "0")
+    env["CURRENT"] = base64.b64encode(json.dumps(current).encode()).decode() if current is not None else ""
+    return subprocess.run([sys.executable, "-", str(envf), *pairs], input=_merge_block(), env=env, capture_output=True, text=True)
+
+
+def test_merge_overlays_one_key_and_keeps_the_rest(tmp_path: pathlib.Path) -> None:
+    held = {"MINIMAX_API_KEY": "m", "DEEPSEEK_API_KEY": "d", "LITELLM_MASTER_KEY": "k"}
+    r = _run("GROQ_API_KEY=g\n", held, True, ["MINIMAX_API_KEY=MINIMAX_API_KEY", "GROQ_API_KEY=GROQ_API_KEY"], tmp_path)
+    assert r.returncode == 0, r.stderr
+    out = json.loads(base64.b64decode(r.stdout.strip()))
+    assert out == {**held, "GROQ_API_KEY": "g"}
+    # names only on stderr, never a value
+    assert "keys set: GROQ_API_KEY" in r.stderr and "kept:" in r.stderr and "g" not in r.stderr.split("kept:")[0].replace("GROQ_API_KEY", "")
+
+
+def test_without_merge_an_unset_key_is_still_an_error(tmp_path: pathlib.Path) -> None:
+    r = _run("GROQ_API_KEY=g\n", None, False, ["MINIMAX_API_KEY=MINIMAX_API_KEY"], tmp_path)
+    assert r.returncode != 0 and "missing MINIMAX_API_KEY" in r.stderr
+
+
+def test_merge_with_nothing_set_writes_nothing(tmp_path: pathlib.Path) -> None:
+    r = _run("", {"MINIMAX_API_KEY": "m"}, True, ["GROQ_API_KEY=GROQ_API_KEY"], tmp_path)
+    assert r.returncode != 0 and r.stdout == ""
+
+
+def test_apply_step_merges_whichever_seed_keys_are_set() -> None:
+    wf = (ROOT / ".github" / "workflows" / "oke-check.yml").read_text()
+    step = wf[wf.index("bin/idp-vault-put litellm-upstream") :]
+    step = step[: step.index("\n  # ")]
+    assert "SEED_GROQ_API_KEY" in step
+    assert "bin/idp-vault-put --merge litellm-upstream" in step
+    assert '[ -n "$LITELLM_MASTER_KEY" ] ||' not in step, "the step must not require the master key to add one provider"
+
+
+def test_groq_lane_in_both_router_configs_with_the_key_documented() -> None:
+    for cfg in CONFIGS:
+        models = {m["model_name"]: m for m in yaml.safe_load(cfg.read_text())["model_list"]}
+        assert models["groq"]["litellm_params"]["api_key"] == "os.environ/GROQ_API_KEY", cfg
+        assert models["groq"]["litellm_params"]["model"] == "groq/openai/gpt-oss-120b", cfg
+        assert models["groq"]["model_info"]["max_input_tokens"] == 131072, cfg
+        chains = {k: v for e in yaml.safe_load(cfg.read_text())["router_settings"]["fallbacks"] for k, v in e.items()}
+        # a rate-limited free lane falls to a paid direct lane first, never to another free lane
+        assert chains["groq"][0] == "minimax" and chains["groq"][-1] == "deepseek", cfg
+    es = (ROOT / "platform" / "llm" / "external-secret.yaml").read_text()
+    assert re.search(r"GROQ_API_KEY=GROQ_API_KEY", es) and "--merge" in es
