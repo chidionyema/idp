@@ -46,5 +46,21 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value: {name: APP_BASE_URL, value: "https://catalogue.${ESTATE_ZONE}"}
+      # crew#503 CP6: the founder's surfaces reach the portal from git through Flux, never from a
+      # laptop push. The ConfigMap below carries backstage/founder/catalog-info.yaml; Flux
+      # postBuild substitutes ${ESTATE_ZONE} in it like every other manifest here, and the
+      # container mounts it at /estate/founder (app-config.container.yaml location).
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value: {name: founder, configMap: {name: founder-catalog}}
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value: {name: founder, mountPath: /estate/founder, readOnly: true}
+configMapGenerator:
+  # Flux and bin/idp-ci both build with LoadRestrictionsNone, so the file stays where the tests,
+  # bin/catalog-gen and the founder-links gate read it.
+  - name: founder-catalog
+    files:
+      - catalog-info.yaml=../../../../backstage/founder/catalog-info.yaml
 generatorOptions:
   disableNameSuffixHash: true
