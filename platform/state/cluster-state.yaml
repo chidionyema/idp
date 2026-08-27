@@ -59,7 +59,7 @@ metadata:
 data:
   # Line 1 is the graded summary; the rest is the JSON a session reads instead of kubectl.
   collect.py: |
-    import json, ssl, sys, urllib.request
+    import json, re, ssl, sys, urllib.request
     from datetime import datetime, timezone
     SA = "/var/run/secrets/kubernetes.io/serviceaccount"
     tok = open(f"{SA}/token").read().strip()
@@ -128,6 +128,22 @@ data:
                 row["last_push"] = st.get("lastPushCommit"); row["last_push_time"] = st.get("lastPushTime")
             if kind == "ImageRepository":
                 row["tags"] = (st.get("lastScanResult") or {}).get("tagCount")
+            if kind == "ExternalSecret":
+                # crew#387: a Ready ExternalSecret whose controller stopped refreshing looks healthy
+                # forever while the upstream rotates under it. The row carries the last sync time
+                # and is graded not-ready once it is older than twice its refreshInterval (floor 2h).
+                row["last_sync"] = st.get("refreshTime")
+                iv = str((o.get("spec") or {}).get("refreshInterval") or "1h")
+                mult = {"s": 1, "m": 60, "h": 3600}
+                secs = sum(int(n) * mult[u] for n, u in re.findall(r"(\d+)([smh])", iv)) or 3600
+                try:
+                    last = datetime.strptime(str(st.get("refreshTime"))[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                    age = (datetime.now(timezone.utc) - last).total_seconds()
+                except Exception:
+                    age = None
+                if row["ready"] and (age is None or age > max(2 * secs, 7200)):
+                    row["ready"] = False
+                    row["message"] = f"Ready but last sync {st.get('refreshTime')} is older than 2x refreshInterval {iv}"
             flux.append(row)
     flux_not_ready = [r for r in flux if not r["ready"]]
     # crew#320: a DaemonSet with fewer ready pods than desired is invisible to every row above
