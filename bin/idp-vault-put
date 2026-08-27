@@ -13,7 +13,10 @@ IDP=$(cd "$(dirname "$0")/.." && pwd)
 # estate-secrets sits beside the main checkout, even when this runs from a worktree under .claude/worktrees (crew#408)
 MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
 MERGE=0; [ "${1:-}" = --merge ] && { MERGE=1; shift; }
-name=$1; shift
+DELETE=0; [ "${1:-}" = --delete ] && { DELETE=1; shift; }
+# SECRET_NAME, not `name`: bin/idp-oci-whoami is sourced below and its profile loop assigned `name`,
+# so the github-app entry was created as "DEFAULT" (vault-seed run 33089277235, crew#503).
+SECRET_NAME=$1; shift
 # No profile is a hard stop: ~/.oci/config has no DEFAULT, only session-token profiles. Discover the
 # live one the way every other bin/idp-* does (crew#503, 2026-08-27: an unset profile failed the write
 # after a one-time GitHub manifest code had already been spent).
@@ -34,8 +37,13 @@ if [ "${1:-}" = "--preflight" ] || [ "${VAULT_PUT_PREFLIGHT:-}" = 1 ]; then
   oci vault secret list --compartment-id "$C" --vault-id "$V" --limit 1 --query 'length(data)' --raw-output >/dev/null \
     && { echo "ok      vault   reachable as $OCI_CLI_PROFILE"; exit 0; } || { echo "FAIL    vault   not reachable as $OCI_CLI_PROFILE"; exit 2; }
 fi
-existing=$(oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"secret-name\"=='$name' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output 2>/dev/null || true)
+existing=$(oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"secret-name\"=='$SECRET_NAME' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output 2>/dev/null || true)
 [ "$existing" = null ] && existing=""
+if [ "$DELETE" = 1 ]; then
+  [ -n "$existing" ] || { echo "ok      vault   $SECRET_NAME not present"; exit 0; }
+  oci vault secret schedule-secret-deletion --secret-id "$existing" >/dev/null && echo "vault   $SECRET_NAME deletion scheduled"
+  exit
+fi
 current=""
 if [ "$MERGE" = 1 ] && [ -n "$existing" ]; then
   # the JSON the vault holds now, read in-process and never written to disk (LAW 21)
@@ -63,7 +71,7 @@ print("keys set: "+" ".join(given)+("; kept: "+" ".join(sorted(kept-set(given)))
 PY
 )
 if [ -n "$existing" ]; then
-  oci vault secret update-base64 --secret-id "$existing" --secret-content-content "$payload" >/dev/null && echo "vault   $name updated ($# keys)"
+  oci vault secret update-base64 --secret-id "$existing" --secret-content-content "$payload" >/dev/null && echo "vault   $SECRET_NAME updated ($# keys)"
 else
-  oci vault secret create-base64 --compartment-id "$C" --vault-id "$V" --key-id "$K" --secret-name "$name" --secret-content-content "$payload" >/dev/null && echo "vault   $name created ($# keys)"
+  oci vault secret create-base64 --compartment-id "$C" --vault-id "$V" --key-id "$K" --secret-name "$SECRET_NAME" --secret-content-content "$payload" >/dev/null && echo "vault   $SECRET_NAME created ($# keys)"
 fi
