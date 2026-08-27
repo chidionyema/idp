@@ -133,6 +133,7 @@ spec:
               spec:
                 template:
                   spec:
+                    priorityClassName: infrastructure-critical
                     containers:
                       - name: langfuse-web
                         securityContext: { readOnlyRootFilesystem: true }
@@ -150,6 +151,7 @@ spec:
               spec:
                 template:
                   spec:
+                    priorityClassName: infrastructure-critical
                     containers:
                       - name: langfuse-worker
                         securityContext: { readOnlyRootFilesystem: true }
