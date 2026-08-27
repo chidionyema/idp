@@ -44,7 +44,7 @@ jobs:
           OIDC: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
           EP: ${{ vars.DOMAIN_BASE_URL }}
         run: |
-          JWT=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://cloud.oracle.com" | jq -r .value)
+          JWT=$(curl -sS --retry 5 --retry-all-errors --retry-delay 2 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://cloud.oracle.com" | jq -r .value)
           printf '%s' "$JWT" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null | jq -c '{iss,aud,sub,repository,ref,event_name}'
           PUB=$(openssl genrsa 2048 2>/dev/null | openssl rsa -pubout -outform DER 2>/dev/null | base64 -w0)
           curl -sS -o /tmp/x.json -w 'exchange http %{http_code}\n' -u "$OIDC" "$EP/oauth2/v1/token" \
