@@ -76,7 +76,7 @@ def _gui_refused(state: dict) -> None:
     _refused_with(state, "opmodel-gui.json", "no_gui_actions")
 
 
-# --- founder_approval_required -----------------------------------------------------------------
+# --- founder_denied (crew#473: no APPROVE: wait, DENY: still refuses) -----------------------------------------------------------------
 
 @given('a PR touching backstage/ or platform/identity/ with no "Approval-word:" line')
 def _no_approval(state: dict) -> None:
@@ -86,9 +86,23 @@ def _no_approval(state: dict) -> None:
     state["fixtures"].append("opmodel-no-approval.json")
 
 
-@then("it exits 1 with rule=founder_approval_required")
-def _no_approval_refused(state: dict) -> None:
-    _refused_with(state, "opmodel-no-approval.json", "founder_approval_required")
+@then("the founder-facing change passes with no founder word")
+def _no_approval_passes(state: dict) -> None:
+    r = state["runs"]["opmodel-no-approval.json"]
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+@given('a PR whose "Approval-word:" the founder answered with DENY: from his GitHub login')
+def _denied(state: dict) -> None:
+    fx = _fx("opmodel-denied.json")
+    word = next(l.split(":", 1)[1].strip() for l in fx["pr"]["body"].splitlines() if l.startswith("Approval-word:"))
+    assert word in fx["pr"]["denials"], (word, fx["pr"]["denials"])
+    state["fixtures"].append("opmodel-denied.json")
+
+
+@then("it exits 1 with rule=founder_denied")
+def _denied_refused(state: dict) -> None:
+    _refused_with(state, "opmodel-denied.json", "founder_denied")
 
 
 # --- cost_budget / canary ----------------------------------------------------------------------
