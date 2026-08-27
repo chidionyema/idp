@@ -53,6 +53,7 @@ nav:
       - LAW 32 gate: demo/law32.md
       - Actions pinned: demo/actions-pinned.md
       - Front-door login drill: demo/idp-login-drill.md
+      - Free-tier allowance row: demo/idp-free-tier.md
       - PR report (operating-model gate): demo/pr-report.md
       - Estate security scan: demo/estate-security-scan.md
       - Estate security rollout: demo/estate-security-rollout.md
@@ -100,6 +101,7 @@ nav:
       - LAW 32 gate: onboarding/law32.md
       - Actions pinned: onboarding/actions-pinned.md
       - Front-door login drill: onboarding/idp-login-drill.md
+      - Free-tier allowance row: onboarding/idp-free-tier.md
       - PR report (operating-model gate): onboarding/pr-report.md
       - Estate security scan: onboarding/estate-security-scan.md
       - Estate security rollout: onboarding/estate-security-rollout.md
