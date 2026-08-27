@@ -2,9 +2,9 @@
 """Grade every live checkout a scheduled job runs from: on main, not behind origin/main, clean.
 
 crew#433 (2026-08-27): ~/.claude/scripts sat 7 commits behind main while every session was
-served the old laws. crew#437: ~/dev/code/crew on feat/research-engine-step1, 36 behind, 50
+served the old laws. crew#437: the live crew checkout on feat/research-engine-step1, 36 behind, 50
 dirty, so science-collect ran without the merged transcript collector. crew#85 (same day):
-~/dev/code/idp on a peer branch 56 behind main while the Dagster daemon loaded its scheduler
+the live idp checkout on a peer branch 56 behind main while the Dagster daemon loaded its scheduler
 from it. One class, one grader. Report mode only: nothing here resets a checkout, because a
 session may be working in it; it goes red and names the path back.
 
