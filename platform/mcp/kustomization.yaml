@@ -4,9 +4,18 @@ namespace: mcp
 resources:
   - namespace.yaml
   - external-secret.yaml
+  - pull-secret.yaml
   - agentgateway-deploy.yaml
   - github-mcp.yaml
+  - estate-mcp.yaml
   - httproute.yaml
+images:
+  # build-multiarch pushes ghcr.io/chidionyema/estate-mcp:main-<run>-<sha> (crew#458 row 3, crew#516 CP3).
+  # The first main build after this file merges writes the tag; until then the Deployment cannot
+  # pull and Flux reports it. image-automation-controller rewrites the newTag line from
+  # ImagePolicy flux-system/estate-mcp; the marker is how it finds the line.
+  - name: ghcr.io/chidionyema/estate-mcp
+    newTag: main-1310-c7cad787b1099eb15f72e11603271fac15fd8a8c # {"$imagepolicy": "flux-system:estate-mcp:tag"}
 configMapGenerator:
   - name: mcp-config
     files:

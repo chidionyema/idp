@@ -11,6 +11,8 @@
 # inputs the Mac still owns are reported BLIND by the tools themselves, never faked: the estate
 # feed (estate-next), ~/.estate/env (catalog-gen falls back to dev). Flip: `mode: commit` on
 # dispatch runs the real render, which opens the auto-merge PR the Mac row opens today.
+# Mode: commit also publishes estate.db (bin/idp-estate-db-push) for the cluster's estate-mcp
+# (crew#458 row 3).
 #
 # Secrets: the bucket keys are the SEED_R2_* repo secrets the vault seed already carries; they
 # reach rclone as RCLONE_S3_* environment, never argv.
@@ -85,3 +87,15 @@ jobs:
           python3 bin/catalog-render $flag 2>&1 | tee "$RUNNER_TEMP/render.log"; rc=${PIPESTATUS[0]}
           { echo; echo '```'; tail -60 "$RUNNER_TEMP/render.log"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit $rc
+      - name: estate.db to the registry (crew#458 row 3; estate-mcp on the cluster pulls it)
+        if: ${{ (inputs.mode || 'dry-run') == 'commit' }}
+        working-directory: idp
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INV: ${{ runner.temp }}/inventory.json
+          CATALOG: ${{ runner.temp }}/idp-state/catalog/catalog-info.yaml
+          ESTATE_CODE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          pip install -q sqlite-utils
+          SU="$(command -v sqlite-utils)" bin/idp-estate-db-push | tee -a "$GITHUB_STEP_SUMMARY"
