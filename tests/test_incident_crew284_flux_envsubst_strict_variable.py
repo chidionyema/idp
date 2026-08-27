@@ -16,7 +16,9 @@ import re
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-VAR = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)\}")
+# What Flux (drone/envsubst) substitutes: any identifier, with or without a shell modifier, unless the
+# dollar is escaped as `$$` (crew#483: `${out%% *}` walked past the `${UPPER}`-only form of this).
+VAR = re.compile(r"(?<!\$)\$\{([A-Za-z_][A-Za-z0-9_]*)[^}]*\}")
 
 
 def source_keys() -> dict[str, set[str]]:
@@ -28,6 +30,18 @@ def source_keys() -> dict[str, set[str]]:
     boot = (ROOT / "bin" / "idp-flux-bootstrap").read_text()
     for m in re.finditer(r"create configmap (\S+)((?:\s+--from-literal=[A-Z_]+=\S+)+)", boot):
         keys.setdefault(m.group(1), set()).update(re.findall(r"--from-literal=([A-Z_]+)=", m.group(2)))
+    # A Secret source synced by an ExternalSecret (alerts: flux-telegram): its keys are the
+    # target template's data keys, or the data[].secretKey names, and nothing else reaches Flux.
+    for f in glob.glob(str(ROOT / "platform" / "**" / "*.yaml"), recursive=True):
+        try:
+            docs = list(yaml.safe_load_all(pathlib.Path(f).read_text()))
+        except yaml.YAMLError:
+            continue
+        for d in docs:
+            if d and d.get("kind") == "ExternalSecret":
+                tgt = d["spec"].get("target", {})
+                names = (tgt.get("template", {}).get("data") or {}).keys() or [x["secretKey"] for x in d["spec"].get("data", [])]
+                keys.setdefault(tgt.get("name") or d["metadata"]["name"], set()).update(names)
     return keys
 
 
@@ -63,3 +77,6 @@ def test_guard_refuses_the_incident_and_permits_shell_forms():
     allowed = {"ESTATE_ZONE"}
     assert undefined_variables('export X="pg://u:${LITELLM_DB_PASSWORD}@h"', allowed) == {"LITELLM_DB_PASSWORD"}
     assert undefined_variables('host: a.${ESTATE_ZONE}\nexport "$(basename "$f")=$(cat "$f")"', allowed) == set()
+    # crew#483: a lowercase name with a shell modifier is substituted too; `$$` is the escape
+    assert undefined_variables("code=${out%% *}; loc=${out#* } ${lochost:-x}", allowed) == {"out", "lochost"}
+    assert undefined_variables("code=$${out%% *}; loc=$${out#* } ${ESTATE_ZONE}", allowed) == set()
