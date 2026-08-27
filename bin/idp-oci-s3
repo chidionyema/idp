@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# provider-adapter: oci — the object store's S3-compatible door, signed by curl with the state-backend
+# provider-adapter: oci — this file IS the provider door (session sign-in / tenancy-root IAM); it is not a caller of one. Every other bin/idp-* goes through bin/idp-cloud (crew#66).
+# the object store's S3-compatible door, signed by curl with the state-backend
 # keys the sops envelope already holds (OCI_S3_ACCESS_KEY / OCI_S3_SECRET_KEY, the same pair
 # platform/oci's remote state uses). It exists for a machine with no OCI identity: a Mac's laptop
 # sessions are retired (crew#345) and it holds no API key, yet it must read one bucket object (the job
@@ -15,9 +16,9 @@ command -v curl >/dev/null || blind "curl missing"
 vget() {
   local v; v=${!1:-}
   if [ -z "$v" ] && command -v sops >/dev/null; then
-    local MAIN; MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)")
+    local MAIN; MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
     export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}
-    v=$(sops -d --extract "[\"$1\"]" "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/${OCI_ENV:-dev}/$1.yaml" 2>/dev/null)
+    v=$(sops -d --extract "[\"$1\"]" "${ESTATE_SECRETS:-${ESTATE_CODE:-$(dirname "$MAIN")}/estate-secrets}/secrets/${OCI_ENV:-dev}/$1.yaml" 2>/dev/null)
   fi
   [ -n "$v" ] || blind "no $1 in the environment or the envelope"
   printf '%s' "$v"
