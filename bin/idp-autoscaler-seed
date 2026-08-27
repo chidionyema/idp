@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# crew#539 CP4: put the node pool the Cluster Autoscaler manages into the vault as `oke-autoscaler`
+# (NODEPOOL_ID, COMPARTMENT_ID, REGION), the way every other row gets its facts: ExternalSecret
+# platform/oci/autoscaler reads it, the Deployment's --nodes flag is `min:max:$(NODEPOOL_ID)`. No pool
+# OCID is ever typed in git (LAW 46); the pool is found by cluster name, once per apply run.
+#   OCI_COMPARTMENT_OCID=... OCI_REGION=... OCI_CLUSTER_NAME=estate bin/idp-autoscaler-seed [pool-key]
+# Prints key NAMES only. Exit 2 is BLIND (no ACTIVE cluster or pool of that name), never a write.
+set -euo pipefail
+IDP=$(cd "$(dirname "$0")/.." && pwd)
+: "${OCI_COMPARTMENT_OCID:?}" "${OCI_REGION:?}" "${OCI_CLUSTER_NAME:=estate}"
+POOL_KEY=${1:-a1}
+CID=$(oci ce cluster list --compartment-id "$OCI_COMPARTMENT_OCID" --name "$OCI_CLUSTER_NAME" --lifecycle-state ACTIVE --query 'data[0].id' --raw-output 2>/dev/null || true)
+[ -n "$CID" ] && [ "$CID" != null ] || { echo "BLIND   autoscaler-seed   no ACTIVE cluster named $OCI_CLUSTER_NAME"; exit 2; }
+# the module names a pool <cluster>-<key>; ACTIVE only, the newest if a surge left two
+PID=$(oci ce node-pool list --compartment-id "$OCI_COMPARTMENT_OCID" --cluster-id "$CID" --name "$OCI_CLUSTER_NAME-$POOL_KEY" --lifecycle-state ACTIVE --sort-by TIME_CREATED --sort-order DESC --query 'data[0].id' --raw-output 2>/dev/null || true)
+[ -n "$PID" ] && [ "$PID" != null ] || { echo "BLIND   autoscaler-seed   no ACTIVE node pool named $OCI_CLUSTER_NAME-$POOL_KEY in cluster $OCI_CLUSTER_NAME"; exit 2; }
+umask 077; f=$(mktemp); trap 'rm -f "$f"' EXIT
+printf 'NODEPOOL_ID=%s\nCOMPARTMENT_ID=%s\nREGION=%s\n' "$PID" "$OCI_COMPARTMENT_OCID" "$OCI_REGION" > "$f"
+ESTATE_ENV_FILE="$f" "$IDP/bin/idp-vault-put" oke-autoscaler NODEPOOL_ID=NODEPOOL_ID COMPARTMENT_ID=COMPARTMENT_ID REGION=REGION

@@ -56,3 +56,24 @@ deny contains msg if {
 	not input.capacity.monthly_cap_usd
 	msg := "capacity input carries no monthly_cap_usd; read it from estate-defaults.yaml node_pool.budget_monthly_usd, never default it"
 }
+
+# crew#539 CP4: the burst node the Cluster Autoscaler may add is all paid; its hours are the
+# founder's number (estate-defaults node_pool.burst_hours_monthly) and base plus burst stays
+# under the same cap. Absent burst rows (an older capacity.json) are read as no burst, and the
+# base rule above still applies.
+burst_monthly_usd := (input.capacity.burst.max_nodes - 1) * input.capacity.burst.node_usd_hr * input.capacity.burst.hours_monthly
+
+deny contains msg if {
+	input.capacity.burst
+	(monthly_usd + burst_monthly_usd) > input.capacity.monthly_cap_usd
+	msg := sprintf(
+		"base pool USD %.2f plus %v burst node(s) for %v h at USD %.3f/h (USD %.2f) is over estate-defaults node_pool.budget_monthly_usd %v: FOUNDER ACTION, not STAGED.",
+		[monthly_usd, input.capacity.burst.max_nodes - 1, input.capacity.burst.hours_monthly, input.capacity.burst.node_usd_hr, burst_monthly_usd, input.capacity.monthly_cap_usd],
+	)
+}
+
+deny contains msg if {
+	input.capacity.burst
+	input.capacity.burst.max_nodes < 1
+	msg := "capacity.burst.max_nodes is below 1; the autoscaler floor is one node"
+}
