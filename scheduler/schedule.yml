@@ -443,6 +443,23 @@ jobs:
     cwd: $CODE/crew
     skip_on_battery: false
     timeout_s: 900
+  com.estate.velocity:
+    # velocity per lane from the board, one row per lane per day into the crew checkout the snapshot commits (crew#527 CP1)
+    runs_on: mac
+    runs_on_ref: crew#516 CP5
+    ok_exit: [1]  # 1 = measured fine and a lane is red (three days, open not falling, no box ticked); a finding, not a crash
+    env:
+      HC_FINDINGS_EXIT: "1"
+    command:
+    - ~/.claude/scripts/hc-wrap.sh
+    - velocity
+    - python3
+    - $CODE/crew/science/velocity.py
+    - --check
+    cron: 42 6 * * *
+    cwd: $CODE/crew
+    skip_on_battery: false
+    timeout_s: 600
   com.founder.stuckdetector:
     runs_on: mac
     runs_on_ref: crew#396
