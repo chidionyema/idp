@@ -10,8 +10,6 @@
 # Vault writes and reads go through bin/idp-cloud (crew#66 CP4); the compartment comes from the sops vault (LAW 46: nothing typed here).
 set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
-# estate-secrets sits beside the main checkout, even when this runs from a worktree under .claude/worktrees (crew#408)
-MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
 MERGE=0; [ "${1:-}" = --merge ] && { MERGE=1; shift; }
 DELETE=0; [ "${1:-}" = --delete ] && { DELETE=1; shift; }
 # SECRET_NAME, not `name`: bin/idp-oci-whoami is sourced below and its profile loop assigned `name`,
@@ -28,7 +26,6 @@ export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
 ENVF=${ESTATE_ENV_FILE:-$HOME/.estate/.env}
 [ "${VAULT_PUT_PREFLIGHT:-}" = 1 ] || [ -f "$ENVF" ] || { echo "BLIND: no env file at $ENVF"; exit 2; }
 export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
 if [ "${1:-}" = "--preflight" ] || [ "${VAULT_PUT_PREFLIGHT:-}" = 1 ]; then
   # The same read the write path needs; callers that hold one-time material run this first.
   "$IDP/bin/idp-cloud" secret list >/dev/null 2>&1 \
