@@ -301,6 +301,8 @@ spec:
   failedJobsHistoryLimit: 2
   jobTemplate:
     spec:
+      # crew#396: finished Jobs are removed an hour later so their pods never haunt the receipt
+      ttlSecondsAfterFinished: 3600
       backoffLimit: 2
       activeDeadlineSeconds: 180
       template:

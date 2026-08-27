@@ -18,6 +18,11 @@ spec:
     spec:
       backoffLimit: 2
       activeDeadlineSeconds: 180
+      # crew#396: a finished Job's pods stay in the cluster-state receipt's pods_not_ready until
+      # failedJobsHistoryLimit displaces them, so the 04:30Z and 04:45Z failures (pre idp#313 image)
+      # read as red at 07:00Z. Kubernetes removes the Job and its pods an hour after it finishes;
+      # the 15-minute receipts already carry each failure's last_log.
+      ttlSecondsAfterFinished: 3600
       template:
         spec:
           serviceAccountName: sovereign-worker
