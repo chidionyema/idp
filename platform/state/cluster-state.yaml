@@ -30,6 +30,10 @@ rules:
   - apiGroups: ["external-secrets.io"]
     resources: ["externalsecrets", "clustersecretstores"]
     verbs: ["get", "list"]
+  # crew#401 CP4: every hostname the cluster publishes, so oke-check can diff it against the catalogue
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -106,11 +110,20 @@ data:
                 row["tags"] = (st.get("lastScanResult") or {}).get("tagCount")
             flux.append(row)
     flux_not_ready = [r for r in flux if not r["ready"]]
+    # crew#401 CP4: the hostnames the cluster publishes (HTTPRoute). bin/idp-catalogue-drift diffs
+    # them against backstage/**/catalog-info.yaml; a list that failed is recorded, never left empty.
+    hostnames_error = ""
+    try:
+        hostnames = sorted({h for r in get("/apis/gateway.networking.k8s.io/v1/httproutes")["items"]
+                            for h in (r.get("spec") or {}).get("hostnames", [])})
+    except Exception as e:
+        hostnames, hostnames_error = None, f"{e}"[:300]
     at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     head = (f"ok cluster-state at {at} nodes={len(node_rows)} ready={ready} pods={len(pods)} pods_not_ready={len(not_ready)}"
-            f" flux={len(flux)} flux_not_ready={len(flux_not_ready)}")
+            f" flux={len(flux)} flux_not_ready={len(flux_not_ready)} hostnames={len(hostnames or [])}")
     body = {"at": at, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
-            "flux": flux, "flux_not_ready": flux_not_ready}
+            "flux": flux, "flux_not_ready": flux_not_ready,
+            "hostnames": hostnames, "hostnames_error": hostnames_error}
     sys.stdout.write(head + "\n" + json.dumps(body, sort_keys=True) + "\n")
 ---
 apiVersion: batch/v1
