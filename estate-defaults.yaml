@@ -12,6 +12,8 @@ node_pool:                            # crew#289: '4/24 or 2/12?' is answered he
   budget_monthly_usd: 50              # paid growth up to this is STAGED; above it is FOUNDER ACTION
   max_nodes: 2                        # crew#539 CP4: the Cluster Autoscaler may add this many nodes in total
   burst_hours_monthly: 60             # hours a month the extra node may run; priced by policy/node_pool.rego under the cap
+  spot_max_nodes: 1                   # crew#539 CP10: preemptible nodes the autoscaler may add (pool a1-spot, from 0)
+  spot_hours_monthly: 30              # hours a month a preemptible node may run, at half the on-demand price, under the same cap
 llm:
   virtual_key_daily_usd: 5             # every consumer's router key (bin/idp-router-key); the kernel's alias carries the same $5/day
 policy:

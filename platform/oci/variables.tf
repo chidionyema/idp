@@ -98,3 +98,11 @@ variable "founder_email" {
   description = "Login for Langfuse's seeded user (platform/oci/langfuse.tf). Rendered into terraform.tfvars by bin/idp-oci-login from ESTATE_FOUNDER_EMAIL (repo variable in CI); never a literal here (LAW 46)."
   type        = string
 }
+
+# crew#539 CP10: preemptible capacity is billed at 50% of the on-demand price for the same shape
+# (docs.oracle.com/en-us/iaas/Content/Compute/Concepts/preemptible.htm "Preemptible instances
+# cost 50% less", read 2026-08-27). A discount, not a price: the price rows above stay the one source.
+variable "a1_preemptible_discount" {
+  type    = number
+  default = 0.5
+}

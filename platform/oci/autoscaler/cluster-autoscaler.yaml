@@ -164,6 +164,8 @@ spec:
               valueFrom: { secretKeyRef: { name: oke-autoscaler, key: COMPARTMENT_ID } }
             - name: NODEPOOL_ID
               valueFrom: { secretKeyRef: { name: oke-autoscaler, key: NODEPOOL_ID } }
+            - name: SPOT_NODEPOOL_ID
+              valueFrom: { secretKeyRef: { name: oke-autoscaler, key: SPOT_NODEPOOL_ID } }
           resources:
             requests: { cpu: 50m, memory: 300Mi }
             limits: { cpu: 200m, memory: 300Mi }
@@ -175,6 +177,8 @@ spec:
             - --max-node-provision-time=25m
             # min:max: the max is estate-defaults node_pool.max_nodes (tests/test_crew539_cp4_autoscaler_row.py pins them equal)
             - --nodes=1:2:$(NODEPOOL_ID)
+            # crew#539 CP10: the preemptible pool, from zero; max is estate-defaults node_pool.spot_max_nodes
+            - --nodes=0:1:$(SPOT_NODEPOOL_ID)
             - --scale-down-delay-after-add=10m
             - --scale-down-unneeded-time=10m
             - --unremovable-node-recheck-timeout=5m
