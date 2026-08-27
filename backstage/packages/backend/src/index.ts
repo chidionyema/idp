@@ -37,6 +37,12 @@ backend.add(
 // See https://backstage.io/docs/features/software-catalog/configuration#subscribing-to-catalog-errors
 backend.add(import('@backstage/plugin-catalog-backend-module-logs'));
 
+// Every Dagster asset, job and schedule becomes a catalogue entity by polling Dagster's GraphQL
+// API on catalog.providers.dagster.schedule; no hand-written entity for scheduler work (crew#468).
+backend.add(
+  import('catalog-backend-module-dagster-entity-provider'),
+);
+
 // permission plugin
 backend.add(import('@backstage/plugin-permission-backend'));
 // See https://backstage.io/docs/permissions/getting-started for how to create your own permission policy
