@@ -18,10 +18,17 @@ Feature: The operating model is a gate on every pull request
     When bin/pr-report runs
     Then it exits 1 with rule=no_gui_actions
 
-  Scenario: A founder-facing change names the word he replies with
+  # crew#473, founder 2026-08-27: "you need to approve all / no founder friction if can be avoided".
+  # Nothing waits for APPROVE: any more; DENY: on the declared word is his veto and still refuses.
+  Scenario: A founder-facing change with no approval word merges on green
     Given a PR touching backstage/ or platform/identity/ with no "Approval-word:" line
     When bin/pr-report runs
-    Then it exits 1 with rule=founder_approval_required
+    Then the founder-facing change passes with no founder word
+
+  Scenario: A DENY from the founder on the declared word refuses the PR
+    Given a PR whose "Approval-word:" the founder answered with DENY: from his GitHub login
+    When bin/pr-report runs
+    Then it exits 1 with rule=founder_denied
 
   Scenario: Cost and canary are declared for every platform/oci change
     Given a PR touching platform/oci/ whose Cost-delta-usd-month beats estate-defaults.yaml infrastructure.monthly_cap_usd, or with no canary label

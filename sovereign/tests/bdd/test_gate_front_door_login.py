@@ -68,6 +68,15 @@ def _oauth2_proxy_in_front(state: dict) -> None:
             keys = (p.parent / "langfuse.yaml").read_text()
             assert "langfuse-init-public-key" in keys and "langfuse-init-secret-key" in keys, f"{p}: langfuse.yaml pulls no project keys"
             continue
+        if auth == "healthchecks-ping-key":
+            # The job monitor's ping path (crew#177): the jobs' curl carries the project ping key
+            # in the URL, so the route may expose /ping/ and nothing else, and the row must pull
+            # that key from the vault and pin it on the project.
+            paths = [m.get("path", {}) for r in d["spec"]["rules"] for m in r.get("matches", [])]
+            assert paths and all(x == {"type": "PathPrefix", "value": "/ping/"} for x in paths), f"{p}: healthchecks-ping-key route exposes {paths}"
+            assert "healthchecks-ping-key" in (p.parent / "external-secret.yaml").read_text(), f"{p}: the row pulls no ping key"
+            assert 'project.ping_key = os.environ["PING_KEY"]' in (p.parent / "healthchecks.yaml").read_text(), f"{p}: the row never pins the ping key"
+            continue
         assert auth == "bearer-master-key", f"{p}: route {d['metadata']['name']} has no oauth2-proxy Middleware in front ({refs}) and no idp.estate/auth annotation"
         cfg = p.parent / "config.yaml"
         assert cfg.exists() and "master_key: os.environ/" in cfg.read_text(), f"{p}: annotated bearer-master-key but {cfg} enforces no master_key"
