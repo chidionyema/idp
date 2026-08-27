@@ -35,9 +35,16 @@ spec:
     # Chart 1.x carries no bundled store or metrics stack (the cassandra/mysql/postgresql/
     # elasticsearch/prometheus/grafana sub-charts were removed in 1.0.0; the chart's
     # validations.yaml refuses those keys). Persistence is the StatefulSet in postgres.yaml only.
-    admintools: { enabled: false }
+    # crew#396: the node runtime enforces short-name mode and refused every chart image
+    # (`temporalio/server:1.31.2 returns ambiguous list`); the registry is named here so the
+    # chart never ships a short name. admintools is disabled but its image runs the schema
+    # and namespace Jobs, so it is qualified too. Guard: tests/test_incident_crew284_*.
+    admintools:
+      enabled: false
+      image: { repository: docker.io/temporalio/admin-tools }
     web:
       enabled: true
+      image: { repository: docker.io/temporalio/ui }
       resources:
         requests: { cpu: 20m, memory: 64Mi }
         limits: { cpu: 200m, memory: 256Mi }
@@ -63,6 +70,7 @@ spec:
         limits: { cpu: 200m, memory: 256Mi }
     server:
       replicaCount: 1
+      image: { repository: docker.io/temporalio/server }
       securityContext: *psc
       # The image's entrypoint (dockerize) renders /etc/temporal/config/docker.yaml at start, so
       # that directory is an emptyDir under a read-only root (require-ro-rootfs).
