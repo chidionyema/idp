@@ -26,6 +26,9 @@ spec:
       namespace: external-secrets
     - kind: HelmRelease
       name: "*"
+      namespace: hindsight
+    - kind: HelmRelease
+      name: "*"
       namespace: identity
     - kind: HelmRelease
       name: "*"
