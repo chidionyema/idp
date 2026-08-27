@@ -80,6 +80,21 @@ backend:
       database: ${POSTGRES_DB}
 
 catalog:
+  # The catalogue discovers itself (crew#480): a GitHub org scan replaces a laptop running
+  # bin/catalog-gen by hand. Every repo in the org that carries a catalog-info.yaml anywhere
+  # in its tree is picked up on the schedule below; the estate's own inventory-derived entities
+  # keep arriving through the `file` location below until bin/catalog-gen retires (LAW 39
+  # bootstrap register, crew#480 CP1).
+  providers:
+    github:
+      default:
+        organization: 'chidionyema'
+        catalogPath: '/**/catalog-info.yaml'
+        filters:
+          allowArchived: false
+        schedule:
+          frequency: { minutes: 30 }
+          timeout: { minutes: 3 }
   locations:
     # The estate. Generated on the host by bin/catalog-gen from the LAW 39
     # inventory, and bind-mounted read-only at /estate. It is deliberately not
@@ -111,3 +126,22 @@ catalog:
       target: /app/examples/org.yaml
       rules:
         - allow: [User, Group]
+
+kubernetes:
+  # Cluster locator for the estate's own OKE cluster, read by the Kubernetes plugin backend
+  # (already registered in packages/backend/src/index.ts). authProvider: serviceAccount with
+  # serviceAccountToken omitted means Backstage ignores url/caData below and talks to the API
+  # server through the pod's own mounted service account
+  # (/var/run/secrets/kubernetes.io/serviceaccount) -- no token, no cluster name, no zone is a
+  # literal here (LAW 46): both come from the environment, with a fallback that only applies
+  # outside the cluster where the in-cluster client cannot be reached anyway.
+  serviceLocatorMethod:
+    type: 'multiTenant'
+  clusterLocatorMethods:
+    - type: 'config'
+      clusters:
+        - name: ${K8S_CLUSTER_NAME:-oke-estate}
+          url: ${K8S_CLUSTER_URL:-https://kubernetes.default.svc}
+          authProvider: 'serviceAccount'
+          skipTLSVerify: false
+          skipMetricsLookup: true
