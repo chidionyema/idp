@@ -50,9 +50,17 @@ def driver_is_stale(driver: Path, on_main: Path) -> bool:
         return False
 
 
+def should_hand_over(driver: Path, on_main: Path, argv: list[str], env: dict) -> bool:
+    """Only the scheduled run hands over. A branch run of a PR that edits this driver must
+    execute its own copy (code-2f, idp#377 review 5437850580)."""
+    if "--scheduled" not in argv or env.get("CATALOG_RENDER_REEXEC"):
+        return False
+    return driver_is_stale(driver, on_main)
+
+
 def reexec_from_worktree(driver: Path, on_main: Path, argv: list[str]) -> None:
     """Hand over to the origin/main copy of this script, once, and never loop."""
-    if os.environ.get("CATALOG_RENDER_REEXEC") or not driver_is_stale(driver, on_main):
+    if not should_hand_over(driver, on_main, argv, dict(os.environ)):
         return
     print(f"catalog-render: driver {driver} differs from origin/main; re-running {on_main}")
     os.environ["CATALOG_RENDER_REEXEC"] = "1"

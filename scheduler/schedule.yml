@@ -194,6 +194,7 @@ jobs:
     - estate-catalog-render
     - /usr/local/bin/python3
     - $IDP/bin/catalog-render
+    - --scheduled
     cwd: $IDP
     skip_on_battery: false
     timeout_s: 900

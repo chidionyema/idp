@@ -28,3 +28,16 @@ def test_incident_crew474_stale_driver_is_detected_and_current_driver_is_not(tmp
     assert cr.driver_is_stale(same, on_main) is False
     assert cr.driver_is_stale(on_main, on_main) is False
     assert cr.driver_is_stale(stale, tmp_path / "missing") is False, "no worktree copy: run what we have, never crash"
+
+
+def test_incident_crew474_only_the_scheduled_run_hands_over(tmp_path):
+    on_main = tmp_path / "wt" / "catalog-render"
+    on_main.parent.mkdir()
+    on_main.write_text("main\n")
+    branch = tmp_path / "branch" / "catalog-render"
+    branch.parent.mkdir()
+    branch.write_text("branch edit of the driver\n")
+    assert cr.should_hand_over(branch, on_main, ["--scheduled"], {}) is True
+    assert cr.should_hand_over(branch, on_main, [], {}) is False, "a PR editing the driver runs its own copy"
+    assert cr.should_hand_over(branch, on_main, ["--scheduled"], {"CATALOG_RENDER_REEXEC": "1"}) is False, "never loops"
+    assert cr.should_hand_over(on_main, on_main, ["--scheduled"], {}) is False
