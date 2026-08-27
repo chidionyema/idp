@@ -47,6 +47,7 @@ platform/oci/*.tfplan
 # sb attach writes runtime state here (mount hash, receipts); never committed
 .estate/
 platform/oci/backend_override.tf
+platform/**/backend_override.tf
 
 platform/oci/identity/backend_override.tf
 platform/oci/identity/.terraform*

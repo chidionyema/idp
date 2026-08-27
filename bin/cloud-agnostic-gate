@@ -10,10 +10,14 @@ the one ClusterSecretStore (platform/secret-store) and the per-cluster rows (clu
 are the three places a cloud is allowed to be named. Comment lines are not counted.
 Exit 0 at zero, 1 with each offending line printed, 2 when the root cannot be read (BLIND).
 Proved both ways: CLOUD_AGNOSTIC_ROOT=<dir> scans that tree; tests/fixtures/cloud-agnostic/{good,bad}.
+Untracked files are skipped when the root is a git checkout (crew#516 CP6): bin/idp-oci-login renders
+platform/<module>/backend_override.tf with the object-storage endpoint and credentials for a session,
+and the gate graded that rendered file as a leak. A file git does not hold cannot ship.
 """
 import os
 import pathlib
 import re
+import subprocess
 import sys
 
 ROOT = pathlib.Path(os.environ.get("CLOUD_AGNOSTIC_ROOT") or pathlib.Path(__file__).resolve().parents[1])
@@ -28,17 +32,30 @@ PATTERN = re.compile(
 )
 
 
+def _untracked(root: pathlib.Path) -> set[str]:
+    """Paths git does not track under root, relative to root; empty when root is not a checkout."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "--others", "-z"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return set()
+    return {p for p in out.split("\0") if p}
+
+
 def main() -> int:
     if not ROOT.is_dir():
         print(f"BLIND: {ROOT} is not a directory")
         return 2
     hits = []
+    untracked = _untracked(ROOT)
     for top in SCAN:
         for f in sorted((ROOT / top).rglob("*")):
             if not f.is_file() or f.suffix not in SUFFIXES:
                 continue
             rel = f.relative_to(ROOT).as_posix()
-            if rel.startswith(EXEMPT) or "/.terraform/" in rel:
+            if rel.startswith(EXEMPT) or "/.terraform/" in rel or rel in untracked:
                 continue
             for n, line in enumerate(f.read_text(errors="replace").splitlines(), 1):
                 if line.lstrip().startswith("#"):
