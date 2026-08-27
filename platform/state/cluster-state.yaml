@@ -22,6 +22,14 @@ rules:
   - apiGroups: [""]
     resources: ["nodes", "pods"]
     verbs: ["get", "list"]
+  # crew#406: every Flux object's Ready condition lands in the receipt, so a dead image automation
+  # or a source that cannot fetch is graded by oke-check instead of sitting frozen unseen.
+  - apiGroups: ["source.toolkit.fluxcd.io", "kustomize.toolkit.fluxcd.io", "helm.toolkit.fluxcd.io", "image.toolkit.fluxcd.io"]
+    resources: ["gitrepositories", "ocirepositories", "helmrepositories", "kustomizations", "helmreleases", "imagerepositories", "imagepolicies", "imageupdateautomations"]
+    verbs: ["get", "list"]
+  - apiGroups: ["external-secrets.io"]
+    resources: ["externalsecrets", "clustersecretstores"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -64,9 +72,45 @@ data:
                  for p in pods
                  if p["status"].get("phase") not in ("Succeeded",) and cond(p, "Ready") != "True"]
     ready = sum(1 for n in node_rows if n["ready"])
+    # crew#406: Flux objects. Ready=False with the controller's message is the whole diagnosis
+    # when an image roll or a source stops; a list call that fails is itself recorded, never skipped.
+    FLUX = [
+        ("GitRepository", "/apis/source.toolkit.fluxcd.io/v1/gitrepositories"),
+        ("OCIRepository", "/apis/source.toolkit.fluxcd.io/v1/ocirepositories"),
+        ("HelmRepository", "/apis/source.toolkit.fluxcd.io/v1/helmrepositories"),
+        ("Kustomization", "/apis/kustomize.toolkit.fluxcd.io/v1/kustomizations"),
+        ("HelmRelease", "/apis/helm.toolkit.fluxcd.io/v2/helmreleases"),
+        ("ImageRepository", "/apis/image.toolkit.fluxcd.io/v1/imagerepositories"),
+        ("ImagePolicy", "/apis/image.toolkit.fluxcd.io/v1/imagepolicies"),
+        ("ImageUpdateAutomation", "/apis/image.toolkit.fluxcd.io/v1/imageupdateautomations"),
+        ("ClusterSecretStore", "/apis/external-secrets.io/v1/clustersecretstores"),
+        ("ExternalSecret", "/apis/external-secrets.io/v1/externalsecrets"),
+    ]
+    flux = []
+    for kind, path in FLUX:
+        try:
+            items = get(path)["items"]
+        except Exception as e:
+            flux.append({"kind": kind, "ns": "", "name": "*", "ready": False, "message": f"list failed: {e}"[:300]})
+            continue
+        for o in items:
+            st = o.get("status", {})
+            c = next((c for c in st.get("conditions", []) if c["type"] == "Ready"), {})
+            row = {"kind": kind, "ns": o["metadata"].get("namespace", ""), "name": o["metadata"]["name"],
+                   "ready": c.get("status") == "True", "message": c.get("message", "no Ready condition yet")[:300]}
+            if kind == "ImagePolicy":
+                row["latest"] = st.get("latestImage")
+            if kind == "ImageUpdateAutomation":
+                row["last_push"] = st.get("lastPushCommit"); row["last_push_time"] = st.get("lastPushTime")
+            if kind == "ImageRepository":
+                row["tags"] = (st.get("lastScanResult") or {}).get("tagCount")
+            flux.append(row)
+    flux_not_ready = [r for r in flux if not r["ready"]]
     at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    head = f"ok cluster-state at {at} nodes={len(node_rows)} ready={ready} pods={len(pods)} pods_not_ready={len(not_ready)}"
-    body = {"at": at, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready}
+    head = (f"ok cluster-state at {at} nodes={len(node_rows)} ready={ready} pods={len(pods)} pods_not_ready={len(not_ready)}"
+            f" flux={len(flux)} flux_not_ready={len(flux_not_ready)}")
+    body = {"at": at, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
+            "flux": flux, "flux_not_ready": flux_not_ready}
     sys.stdout.write(head + "\n" + json.dumps(body, sort_keys=True) + "\n")
 ---
 apiVersion: batch/v1

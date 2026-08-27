@@ -79,3 +79,31 @@ def test_telegram_channel_survives_substitution_as_a_string():
     assert "channel: ${channel}" in prov and 'channel: "${channel}"' not in prov
     rendered = "channel: ${channel}".replace("${channel}", '"123"')
     assert isinstance(yaml.safe_load(rendered)["channel"], str)
+
+
+# crew#344: the HelmRelease rows are generated from the Flux render by bin/idp-alert-rows, so
+# a new namespace is covered without anyone remembering to type it. Both ways: the checked-in
+# file must be current, and a file missing a namespace must be refused.
+def _alert_rows(root, *args):
+    import subprocess
+    import sys
+
+    return subprocess.run([sys.executable, str(ROOT / "bin/idp-alert-rows"), *args], capture_output=True, text=True, cwd=root)
+
+
+def test_incident_crew344_alert_rows_are_generated_and_current():
+    r = _alert_rows(ROOT, "--check")
+    assert r.returncode == 0 and r.stdout.startswith("ok      alert-rows"), r.stdout + r.stderr
+
+
+def test_incident_crew344_a_missing_namespace_row_is_refused(tmp_path, monkeypatch):
+    import shutil
+
+    alert = ROOT / "platform/alerts/alert.yaml"
+    keep = alert.read_text()
+    try:
+        alert.write_text(keep.replace('      namespace: temporal\n', '', 1))
+        r = _alert_rows(ROOT, "--check")
+        assert r.returncode == 1 and "stale" in r.stdout, r.stdout + r.stderr
+    finally:
+        alert.write_text(keep)
