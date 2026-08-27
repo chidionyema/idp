@@ -88,6 +88,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bin/idp-github-app installation || { rc=$?; [ "$rc" = 2 ] && echo "BLIND   github-app has no installation yet; install the App on chidionyema and re-run apply" || exit "$rc"; }
+      # crew#408: the identity domain's OIDC clients (front door, router console) and their vault
+      # secrets are platform/oci/identity. Until this step it had no CI caller: bin/idp-identity-apply
+      # ran from a laptop whose OCI session expires (crew#247, R26). The same machine identity plans
+      # it on every check and applies it on apply; the rebuild step above rendered its remote state.
+      - name: bin/idp-identity-apply ${{ inputs.mode == 'apply' && 'apply' || 'plan' }} (crew#408)
+        if: ${{ always() }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          DOMAIN_BASE_URL: ${{ vars.DOMAIN_BASE_URL }}
+          ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}
+        run: |
+          if [ "${{ inputs.mode }}" = apply ]; then bin/idp-identity-apply apply -auto-approve; else bin/idp-identity-apply plan; fi
       # crew#325: the model-routing row reads one JSON vault secret, litellm-upstream. trace-drill run
       # 33007689530 found the ACTIVE secret holding a raw value, not the envelope, so ExternalSecret
       # llm/litellm-upstream cannot extract it. The values live only on the operator's laptop, which

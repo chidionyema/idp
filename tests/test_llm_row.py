@@ -92,6 +92,11 @@ def test_founder_picks_models_in_the_admin_ui_not_by_pr() -> None:
     assert env["PROXY_BASE_URL"] == "https://llm.${ESTATE_ZONE}"
     # The client is created by tofu (platform/oci/identity) with the founder grant; nothing is seeded by hand.
     tf = (ROOT / "platform" / "oci" / "identity" / "main.tf").read_text()
+    # crew#408: the module is applied by the machine identity in oke-check, never from a laptop
+    wf = (ROOT / ".github" / "workflows" / "oke-check.yml").read_text()
+    assert "bin/idp-identity-apply apply -auto-approve" in wf and "bin/idp-identity-apply plan" in wf
+    vt = (ROOT / "platform" / "oci" / "identity" / "versions.tf").read_text()
+    assert "auth                = var.oci_auth" in vt, "identity provider must sign in as the CLI does (SecurityToken in CI)"
     assert 'display_name  = "estate-router-console"' in tf
     assert 'redirect_uris             = ["https://llm.${var.zone}/sso/callback"]' in tf
     # crew#407: no console password exists, so none can ever be sent.
