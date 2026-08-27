@@ -43,11 +43,12 @@ jobs:
       - name: flux install, then the same tree OKE runs, from this commit
         env:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REF: ${{ github.head_ref || github.ref_name }}
         run: |
           set -euo pipefail
           flux install --components-extra=image-reflector-controller,image-automation-controller
           kubectl apply -f clusters/oke/estate-config.yaml
-          flux create source git flux-system --url="https://github.com/${GITHUB_REPOSITORY}" --branch=main --commit="$SHA" --interval=10m
+          flux create source git flux-system --url="https://github.com/${GITHUB_REPOSITORY}" --branch="$REF" --commit="$SHA" --interval=10m
           for f in clusters/oke/*.yaml; do kubectl apply -f "$f"; done
           echo "applied $(kubectl get kustomizations -A --no-headers | wc -l) Kustomizations"
       - name: wait for what can come up
