@@ -10,7 +10,10 @@ MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-di
 VAULT="${ESTATE_SECRETS:-$(dirname "$MAIN")/estate-secrets}"
 export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
 ENV_NAME="${OCI_ENV:-dev}"
-for t in flux kubectl sops git; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
+for t in flux kubectl git; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
+# sops is the vault fallback only: a runner with GH_TOKEN (catalog-render.yml) carries no vault and no sops
+# (run 33102084969: "BLIND sops missing" with a valid token in the environment)
+gh auth token >/dev/null 2>&1 || command -v sops >/dev/null || { echo "BLIND sops missing (and gh holds no token)"; exit 2; }
 SRC="$IDP/catalog/catalog-info.yaml"
 [ -s "$SRC" ] || { echo "BLIND $SRC missing; run bin/catalog-gen"; exit 2; }
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT

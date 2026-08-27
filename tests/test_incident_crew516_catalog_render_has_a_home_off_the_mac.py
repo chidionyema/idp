@@ -77,3 +77,17 @@ def test_incident_crew516_the_runner_carries_flux_and_reads_the_feed_from_the_bu
     assert "not in the bucket yet" in fetch["run"], "a missing feed must be a named line, not a dead job"
     render = next(s for s in steps if s.get("name") == "render")
     assert render["env"]["ESTATE_FEED"].endswith("/feed.md")
+
+
+def test_incident_crew516_the_feed_receipt_is_the_file_and_the_push_needs_no_vault_beside_a_token():
+    """Second dry-run (33102084969): the summary said `feed taken, last handoff ` with no file,
+    because rclone copyto exits 0 for an absent object; and the catalogue push graded
+    `BLIND sops missing` with a valid GH_TOKEN in the environment, because the push demanded the
+    vault decryptor before asking gh. The file is the receipt; sops is required only when gh
+    holds no token; the job may write packages so the push is real and not BLIND."""
+    fetch = next(s for s in _steps() if "inventory from the bucket" in s.get("name", ""))
+    assert re.search(r'\[ -s "\$RUNNER_TEMP/feed\.md" \]', fetch["run"]), "feed taken must be gated on a non-empty file"
+    assert _wf()["permissions"].get("packages") == "write"
+    push = (ROOT / "bin" / "idp-catalog-push").read_text()
+    assert "for t in flux kubectl git; do" in push, "sops must not be a hard requirement"
+    assert re.search(r"gh auth token >/dev/null 2>&1 \|\| command -v sops", push), "sops is the fallback after gh"
