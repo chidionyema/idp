@@ -129,6 +129,18 @@ def circuit_open(instance, job_name: str) -> bool:
     return len(recent) == BREAKER_TRIP and all(s == DagsterRunStatus.FAILURE for s in recent)
 
 
+def exit_is_ok(spec: dict, returncode: int) -> bool:
+    """0, or a code the job declares in ``ok_exit`` as "ran fine, found something".
+
+    crew#85 (2026-08-27): com.estate.costsentinel exits 1 to say "spend warning" and
+    ai.estate.sovereign-self-check exits 1 to say "enforced an action". Three of those in a
+    row opened the circuit breaker, so each sentinel went silent exactly when it had
+    something to say. Same split as hc-wrap.sh HC_FINDINGS_EXIT: a crash is any code not
+    declared here and still trips the breaker.
+    """
+    return returncode == 0 or returncode in set(spec.get("ok_exit") or [])
+
+
 def make_op(label: str, spec: dict):
     text, _ = describe_job(label, spec)
 
@@ -151,9 +163,9 @@ def make_op(label: str, spec: dict):
             context.log.info(proc.stdout[-20000:])
         if proc.stderr:
             context.log.warning(proc.stderr[-20000:])
-        if proc.returncode != 0:
+        if not exit_is_ok(spec, proc.returncode):
             raise Failure(f"{label}: exit {proc.returncode} after {took}s")
-        context.log.info("%s: exit 0 after %ss", label, took)
+        context.log.info("%s: exit %s after %ss", label, proc.returncode, took)
 
     return _run
 

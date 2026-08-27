@@ -87,6 +87,7 @@ jobs:
     skip_on_battery: false
     timeout_s: 300
   ai.estate.sovereign-self-check:
+    ok_exit: [1]  # 1 = ran fine and reports a finding; not a crash
     command:
     - $IDP/sovereign/.venv/bin/python
     - -m
@@ -111,12 +112,12 @@ jobs:
   ai.hermes.runaway-reaper:
     command:
     - /usr/local/bin/python3
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - ai.hermes.runaway-reaper
     - --
     - /bin/bash
-    - ~/.hermes/scripts/runaway-reaper.sh
+    - ~/.claude/scripts/estate/runaway-reaper.sh
     cron: '*/5 * * * *'
     cwd: ~/.hermes
     env:
@@ -158,7 +159,7 @@ jobs:
   com.chidionyema.reflect:
     command:
     - ~/Documents/code/prospector/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.chidionyema.reflect
     - --
@@ -186,6 +187,7 @@ jobs:
     skip_on_battery: false
     timeout_s: 900
   com.estate.costsentinel:
+    ok_exit: [1]  # 1 = ran fine and reports a finding; not a crash
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - estate-costsentinel
@@ -336,33 +338,12 @@ jobs:
     cwd: '~'
     skip_on_battery: false
     timeout_s: 1800
-  com.prospector-control.failover-watch:
-    command:
-    - ~/.prospector/bin/failover
-    - check
-    cron: '*/1 * * * *'
-    skip_on_battery: false
-    timeout_s: 1800
-  com.prospector-control.receipt-bridge:
-    command:
-    - /usr/local/bin/python3
-    - ~/.hermes/scripts/launchd_receipt.py
-    - --label
-    - com.prospector-control.receipt-bridge
-    - --script
-    - engine_failover.py
-    - --
-    - ~/.prospector/bin/failover
-    - receipts
-    cron: '*/15 * * * *'
-    skip_on_battery: false
-    timeout_s: 1800
   com.prospector.backup:
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - prospector-backup
     - ~/Documents/code/prospector-live/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.prospector.backup
     - --
@@ -379,7 +360,7 @@ jobs:
   com.prospector.estate-inventory:
     command:
     - ~/Documents/code/prospector-live/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.prospector.estate-inventory
     - --
@@ -396,7 +377,7 @@ jobs:
   com.prospector.launchd-held:
     command:
     - ~/Documents/code/prospector/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.prospector.launchd-held
     - --
@@ -441,7 +422,7 @@ jobs:
   com.prospector.process-audit:
     command:
     - ~/Documents/code/prospector/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.prospector.process-audit
     - --
@@ -461,7 +442,7 @@ jobs:
     - ~/.claude/scripts/hc-wrap.sh
     - restore-drill
     - ~/Documents/code/prospector-live/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.prospector.restore-drill
     - --script
