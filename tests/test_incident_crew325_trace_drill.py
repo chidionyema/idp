@@ -74,8 +74,11 @@ def test_litellm_upstream_seed_step_runs_on_apply_and_never_echoes_a_value() -> 
     assert "always()" in str(step["if"]) and "inputs.mode == 'apply'" in str(step["if"])
     assert step["env"]["LITELLM_MASTER_KEY"] == "${{ secrets.SEED_LITELLM_MASTER_KEY }}"
     run = step["run"]
-    assert "bin/idp-vault-put litellm-upstream" in run and "LITELLM_MASTER_KEY=LITELLM_MASTER_KEY" in run
-    assert 'exit 0' in run.split("\n")[0], "no seed -> n/a and exit 0"
+    # crew#506 CP4: the put merges whichever SEED_* keys are set; the master key is one of the
+    # keys it may carry, no longer the gate.
+    assert "bin/idp-vault-put --merge litellm-upstream" in run and "LITELLM_MASTER_KEY" in run
+    gate = next(l for l in run.split("\n") if "exit 0" in l)
+    assert "n/a" in gate, "no seed -> n/a and exit 0"
     assert not re.search(r"echo[^\n]*\$\{?(MINIMAX|DEEPSEEK|OPENROUTER|GEMINI|LITELLM)_", run), "a value echoed"
 
 
