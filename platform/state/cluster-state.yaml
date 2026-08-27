@@ -90,8 +90,19 @@ data:
             except Exception as e:
                 out[c["name"]] = f"log read failed: {e}"[:300]
         return out
+    # crew#396, second fault: two pods sat in ImagePullBackOff and the receipt said only "Pending",
+    # because the pull error lives in containerStatuses[].state.waiting and the events list keeps
+    # the 20 newest. The waiting reason and message travel with the pod row, init containers too.
+    def waiting(status):
+        out = {}
+        for c in status.get("initContainerStatuses", []) + status.get("containerStatuses", []):
+            w = (c.get("state") or {}).get("waiting")
+            if w and w.get("reason") not in (None, "ContainerCreating", "PodInitializing"):
+                out[c["name"]] = (w.get("reason", "") + ": " + (w.get("message") or ""))[:400]
+        return out
     not_ready = [{"ns": p["metadata"]["namespace"], "name": p["metadata"]["name"], "phase": p["status"].get("phase"),
                   "restarts": sum(c.get("restartCount", 0) for c in p["status"].get("containerStatuses", [])),
+                  "waiting": waiting(p["status"]),
                   "last_log": last_log(p["metadata"]["namespace"], p["metadata"]["name"], p["status"].get("containerStatuses", []))}
                  for p in pods
                  if p["status"].get("phase") not in ("Succeeded",) and cond(p, "Ready") != "True"]
