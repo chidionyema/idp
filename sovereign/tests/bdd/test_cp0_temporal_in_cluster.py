@@ -66,7 +66,10 @@ def _bundled(state: dict) -> None:
         assert k not in v, f"{k}: chart 1.x refuses the removed sub-chart key (templates/validations.yaml)"
     ds = v["server"]["config"]["persistence"]["datastores"]
     assert set(ds) == {"default", "visibility"} and all("sql" in ds[k] and "elasticsearch" not in ds[k] for k in ds), ds
-    assert v["admintools"] == {"enabled": False}
+    assert v["admintools"]["enabled"] is False
+    # crew#396: the node runtime enforces short-name mode, so every chart image names its registry
+    for k in ("admintools", "web", "server"):
+        assert v[k]["image"]["repository"].startswith("docker.io/temporalio/"), k
 
 
 @given("the launchd template for the Temporal server")
