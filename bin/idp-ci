@@ -546,6 +546,16 @@ if command -v kyverno >/dev/null && command -v helm >/dev/null; then
   else say "FAIL  kyverno  a HelmRelease render fails admission policy, or the must-fail fixture passed"; fail=1; fi
 else say "BLIND kyverno  helm or kyverno CLI not installed; HelmRelease renders were not judged"; fail=1; fi
 
+# 9b. crew#483: Flux post-build substitution judged with the tool Flux runs. Every Kustomization
+#     that declares postBuild renders (kustomize build | flux envsubst --strict) with its sources'
+#     keys; the fixture carrying an unescaped shell `${out%% *}` must be refused and the `$$`
+#     form must pass. BLIND (rc 2) when flux or kustomize is missing, never a pass.
+es_out=$(cd "$IDP" && bin/idp-envsubst-gate 2>&1); es_rc=$?
+if [ "$es_rc" -eq 2 ]; then say "BLIND envsubst $(printf '%s' "$es_out" | tail -1)"; fail=1
+elif [ "$es_rc" -eq 0 ] && (cd "$IDP" && bin/idp-envsubst-gate tests/fixtures/envsubst/good >/dev/null 2>&1) && ! (cd "$IDP" && bin/idp-envsubst-gate tests/fixtures/envsubst/bad >/dev/null 2>&1); then
+  say "ok    envsubst $(printf '%s' "$es_out" | grep -c '^ok') Kustomization(s) substitute clean; the unescaped-shell fixture is refused"
+else say "FAIL  envsubst a postBuild Kustomization is refused by flux envsubst --strict, or the fixtures did not prove both ways:"; printf '%s\n' "$es_out" | grep -v '^ok' | sed 's/^/      /'; fail=1; fi
+
 # 10. crew#269 row 3: a Component with no URL a person can open fails the PR, both ways.
 #     The clean fixture must pass bin/catalog-links-check and a checkout with no remote
 #     must be refused. Row 2 made every route an Open link; this keeps a linkless

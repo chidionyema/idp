@@ -1,0 +1,56 @@
+# GitHub's own MCP server, read-only, issues toolset only, the same flags the compose file ran.
+# It carries no token: agentgateway adds the Authorization header per request (backendAuth).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-mcp
+  namespace: mcp
+  labels: { app.kubernetes.io/name: github-mcp, app.kubernetes.io/part-of: idp }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: github-mcp }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: github-mcp, app.kubernetes.io/part-of: idp }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: github-mcp
+          image: ghcr.io/github/github-mcp-server:v1.10.1
+          args: ["http", "--listen-host", "0.0.0.0", "--port", "8082", "--read-only", "--toolsets", "issues"]
+          ports:
+            - { name: http, containerPort: 8082 }
+          env:
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            - { name: OTEL_SERVICE_NAME, value: mcp-github }
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 300m, memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 30
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: github-mcp
+  namespace: mcp
+  labels: { app.kubernetes.io/name: github-mcp }
+spec:
+  selector: { app.kubernetes.io/name: github-mcp }
+  ports:
+    - { name: http, port: 8082, targetPort: http }

@@ -34,7 +34,7 @@ Rules, all in `policy/operating_model.rego`:
 |---|---|---|
 | `provisioning_complete` | an identity resource with no grant, policy or membership in the PR | add the binding in this PR |
 | `no_gui_actions` | an instruction line (`FOUNDER ACTION:`, `STAGED:`, `Use:`) with a console, click or browser step | a command, a Terraform block or an `APPROVE:` word |
-| `founder_approval_required` | a founder-facing change (`backstage/`, `platform/identity/`, `platform/edge/`, `docs/policy/`, `estate-defaults.yaml`) with no `Approval-word:` line | add the line; the founder replies `APPROVE: <word>` or `DENY: <word>` |
+| `founder_denied` | a PR whose declared `Approval-word:` the founder answered with `DENY: <word>` from his GitHub login | do not merge; address his reason in a new PR. No rule waits for `APPROVE:`: a green PR merges (founder, 2026-08-27: "approve all, no founder friction", crew#473) |
 | `cost_budget` | a `platform/oci/` change with no `Cost-delta-usd-month:` line, or one above `estate-defaults.yaml` `infrastructure.monthly_cap_usd` | reduce the change, or raise the cap in its own approved PR |
 | `canary` | a `platform/oci/` change with no `canary` label | label it once the plan names its canary step |
 
@@ -75,8 +75,8 @@ crew#227 CP4); a rogue session is revoked by rotating its SVID.
 | "Push or delete AwesomeProject?" | policy `stale-repo-auto-delete-after-7d` (estate-defaults.yaml `policy.stale_repos`): deletion staged, `APPROVE: delete` or `DENY: keep` |
 | "Review mumchimp.com vs Medusa" | a recon agent posts the screenshot diff; `APPROVE: A` or `APPROVE: B` |
 
-The approval word is declared in the PR body (`Approval-word:`) so the gate and the merge step
-look for the same token. `STAGED:` handoffs (crew#281) keep their timer; the reply words are
+The approval word is optional in the PR body (`Approval-word:`) and is only a handle for his veto;
+since 2026-08-27 (crew#473) nothing waits for `APPROVE:`. `STAGED:` handoffs (crew#281) keep their timer; the reply words are
 `APPROVE: <word>` and `DENY: <word>`.
 
 ## Phase 0

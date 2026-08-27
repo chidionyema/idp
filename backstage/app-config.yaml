@@ -89,9 +89,8 @@ proxy:
 techdocs:
   builder: 'local' # Alternatives - 'external'
   generator:
-    # 'local': the portal runs in a pod with no Docker socket. With 'docker' every build
-    # failed and the docs section stayed empty (crew#459). mkdocs-techdocs-core is in the
-    # runtime image (backstage/Dockerfile).
+    # 'local': mkdocs-techdocs-core is in the image (backstage/Dockerfile); the pod has no docker
+    # socket, and must not (crew#412 row 1).
     runIn: 'local'
   publisher:
     type: 'local' # Alternatives - 'googleGcs' or 'awsS3'. Read documentation for using alternatives.
