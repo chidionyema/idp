@@ -36,6 +36,7 @@ nav:
   - Demo:
       - Portal: demo/idp.md
       - Estate showcase: demo/estate-showcase.md
+      - Trace matrix: demo/trace-matrix.md
       - Plist gate: demo/plist.md
       - k8s-infra: demo/k8s-infra.md
       - Oracle identity: demo/oci.md
@@ -79,6 +80,7 @@ nav:
       - Repo rulesets: demo/repo-rulesets.md
       - Telemetry coverage: demo/telemetry-coverage.md
   - Onboarding:
+      - Trace matrix: onboarding/trace-matrix.md
       - Portal: onboarding/idp.md
       - Estate showcase: onboarding/estate-showcase.md
       - Plist gate: onboarding/plist.md
