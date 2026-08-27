@@ -86,6 +86,8 @@ def grade(doc: dict) -> tuple[str, str]:
         return (GAP, f"stale, age {ann.get('estate/age-h', '?')}h") if ann["estate/stale"] == "True" else (ELITE, f"fresh, age {ann.get('estate/age-h', '?')}h")
     if typ in ("ledger", "data-store", "port", "vendor"):
         return (ELITE, "described") if md.get("description") else (GAP, "no description")
+    if kind in ("Domain", "System", "Group"):
+        return (ELITE, "described") if md.get("description") else (GAP, "no description")
     return BLIND, f"no rule for {kind}/{typ}"
 
 

@@ -11,6 +11,7 @@ Rungs, per ~/AGENTS.md "How to test":
 
 Run: python3 tests/test_estate_showcase.py (needs pyyaml). Exit 0 pass, 1 fail.
 """
+import pathlib
 import importlib.machinery
 import importlib.util
 import random
@@ -93,3 +94,20 @@ if __name__ == "__main__":
     test_properties()
     test_incident_crew474_a_failed_job_is_a_gap_row_and_check_is_proved_both_ways()
     print("ok    test_estate_showcase: 2 passed")
+
+
+def test_incident_crew474_guards_and_groups_are_graded_not_blind():
+    """46 guards and the Domain/System/Group entities were BLIND on the first render: the
+    guards because nothing carried hook-outcomes into the catalogue, the groups because the
+    grader had no rule. Both ways: a guard seen clean is ELITE, one never seen stays BLIND,
+    a described Domain is ELITE and an undescribed one is a GAP."""
+    import importlib.util
+    from importlib.machinery import SourceFileLoader
+    p = pathlib.Path(__file__).resolve().parents[1] / "bin" / "estate-showcase"
+    spec = importlib.util.spec_from_file_location("es_t", p, loader=SourceFileLoader("es_t", str(p)))
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+    guard = {"kind": "Resource", "spec": {"type": "guard"}, "metadata": {"annotations": {"estate/last-status": "clean"}}}
+    assert m.grade(guard)[0] == m.ELITE
+    assert m.grade({"kind": "Resource", "spec": {"type": "guard"}, "metadata": {}})[0] == m.BLIND
+    assert m.grade({"kind": "Domain", "metadata": {"description": "the platform"}})[0] == m.ELITE
+    assert m.grade({"kind": "Domain", "metadata": {}})[0] == m.GAP
