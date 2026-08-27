@@ -14,6 +14,11 @@ metadata:
   name: litellm
   namespace: llm
   labels: { app.kubernetes.io/name: litellm, app.kubernetes.io/part-of: idp }
+  # Reloader (platform/reloader) rolls this Deployment when the named Secret changes, because the
+  # command below exports the keys once at start (crew#506 CP4: a rotated GROQ_API_KEY sat in the
+  # Secret while the pod answered `Invalid API Key`).
+  annotations:
+    secret.reloader.stakater.com/reload: "litellm-upstream"
 spec:
   replicas: 1
   selector:
@@ -56,14 +61,27 @@ spec:
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
             - { name: OTEL_EXPORTER, value: otlp_http }
             - { name: LANGFUSE_HOST, value: "http://langfuse-web.observability.svc:3000" }
+            # crew#408: the Admin UI signs in through the estate identity domain (ADR 0007); the
+            # client id, secret and admin id are the litellm-sso mount. Endpoints come from
+            # estate-config, so no domain URL is typed here (LAW 46).
+            - { name: GENERIC_AUTHORIZATION_ENDPOINT, value: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/authorize" }
+            - { name: GENERIC_TOKEN_ENDPOINT, value: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/token" }
+            - { name: GENERIC_USERINFO_ENDPOINT, value: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/userinfo" }
+            - { name: GENERIC_SCOPE, value: "openid email profile" }
+            - { name: GENERIC_USER_ID_ATTRIBUTE, value: email }
+            - { name: GENERIC_USER_EMAIL_ATTRIBUTE, value: email }
+            - { name: PROXY_BASE_URL, value: "https://llm.${ESTATE_ZONE}" }
           volumeMounts:
             - { name: config, mountPath: /etc/litellm, readOnly: true }
             - { name: upstream, mountPath: /run/secrets/litellm/upstream, readOnly: true }
             - { name: langfuse, mountPath: /run/secrets/litellm/langfuse, readOnly: true }
+            - { name: sso, mountPath: /run/secrets/litellm/sso, readOnly: true }
             - { name: tmp, mountPath: /tmp }
           resources:
-            requests: { cpu: 100m, memory: 256Mi }
-            limits: { cpu: 1000m, memory: 1Gi }
+            # OOMKilled at 1Gi within 19s of start on the -database image (Prisma engine plus the
+            # proxy), 10 restarts on 2026-08-26 23:2xZ; node has 20Gi allocatable.
+            requests: { cpu: 100m, memory: 512Mi }
+            limits: { cpu: 1000m, memory: 2Gi }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -71,9 +89,18 @@ spec:
           readinessProbe:
             httpGet: { path: /health/readiness, port: http }
             periodSeconds: 10
+          # The -database image runs Prisma migrations before it listens (idp#262). With no
+          # startupProbe the kubelet killed the pod on liveness before :4000 opened, 8 restarts
+          # in 20 minutes on 2026-08-26 23:2xZ. Liveness only counts once startup has passed.
+          startupProbe:
+            httpGet: { path: /health/liveliness, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
           livenessProbe:
             httpGet: { path: /health/liveliness, port: http }
             periodSeconds: 30
+            timeoutSeconds: 5
             failureThreshold: 3
       volumes:
         - name: config
@@ -82,6 +109,8 @@ spec:
           secret: { secretName: litellm-upstream }
         - name: langfuse
           secret: { secretName: litellm-langfuse }
+        - name: sso
+          secret: { secretName: litellm-sso }   # crew#408: OIDC client for llm.<zone>/ui, written by tofu
         - name: tmp
           emptyDir: { sizeLimit: 256Mi }
 ---

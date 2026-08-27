@@ -1,0 +1,7 @@
+.git
+.wt-*
+**/.venv
+**/__pycache__
+**/node_modules
+backstage
+docs/evidence

@@ -1,0 +1,205 @@
+"""crew#401 (founder, 2026-08-27): "i didnt ask i would not have known this. all founder interfaces
+need to be highly accessible to founder else it's a void ... tell me how you guarantee i would
+never have to wonder where anything is."
+
+The guarantee is a gate, not a promise. backstage/founder/catalog-info.yaml is the one list of
+places the founder looks, rendered by the portal at
+catalogue.<zone>/catalog?filters[kind]=component&filters[type]=founder-surface. Rules (rung 2,
+properties over the checkout; rung 4 for the incident itself):
+
+  1. every public hostname (HTTPRoute under platform/**) is an Open link on a founder surface;
+  2. every workflow a person can press (workflow_dispatch) is a link on a founder surface;
+  3. every founder surface says what it is for, who updates it, and has at least one link;
+     no link carries an unsubstituted variable; names and URLs are unique;
+  4. the portal never loads the file directly (Backstage does not expand ${ESTATE_ZONE} in an
+     entity file); bin/catalog-gen carries every surface into the generated catalogue with the
+     zone resolved, and stamps health only when CATALOG_GEN_PROBE=1 (CP5).
+
+Proved both ways: the checkout passes; a copy with one extra route or one extra button fails.
+"""
+import pathlib
+import re
+import shutil
+
+import pytest
+import yaml
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+FOUNDER = "backstage/founder/catalog-info.yaml"
+
+
+def _zone(root):
+    zones = {yaml.safe_load(f.read_text())["data"]["ESTATE_ZONE"] for f in (root / "clusters").glob("*/estate-config.yaml")}
+    assert len(zones) == 1, zones
+    return zones.pop()
+
+
+def _hostnames(root):
+    zone = _zone(root)
+    for f in sorted((root / "platform").rglob("*.yaml")):
+        for d in yaml.safe_load_all(f.read_text()):
+            if d and d.get("kind") == "HTTPRoute":
+                for h in d["spec"].get("hostnames", []):
+                    yield re.sub(r"\$\{ESTATE_ZONE[^}]*\}", zone, h)
+
+
+def _buttons(root):
+    for f in sorted((root / ".github/workflows").glob("*.yml")):
+        on = yaml.safe_load(f.read_text()).get(True) or yaml.safe_load(f.read_text()).get("on") or {}
+        if "workflow_dispatch" in on:
+            yield f.name
+
+
+def _surfaces(root):
+    docs = [d for d in yaml.safe_load_all((root / FOUNDER).read_text()) if d]
+    assert docs, FOUNDER
+    return docs
+
+
+def missing(root) -> list[str]:
+    """Every rule, as a list of violations; empty means the founder can find everything."""
+    zone = _zone(root)
+    out = []
+    surfaces = _surfaces(root)
+    urls, names = [], []
+    for d in surfaces:
+        m, name = d["metadata"], d["metadata"]["name"]
+        names.append(name)
+        if d.get("kind") != "Component" or d.get("spec", {}).get("type") != "founder-surface":
+            out.append(f"{name}: not a Component of type founder-surface")
+        if not m.get("description", "").strip():
+            out.append(f"{name}: no description (what is it for?)")
+        if not (m.get("annotations") or {}).get("idp/updated-by", "").strip():
+            out.append(f"{name}: no idp/updated-by annotation (who keeps it current?)")
+        links = m.get("links") or []
+        if not links:
+            out.append(f"{name}: no links")
+        for l in links:
+            u = l["url"].replace("${ESTATE_ZONE}", zone)
+            if "${" in u or not re.match(r"https?://", u):
+                out.append(f"{name}: link {l['url']} is not an address a person can open")
+            urls.append(u)
+        repos = {mm.group(1) for l in links for mm in [re.match(r"https://github\.com/([^/]+/[^/]+)", l["url"])] if mm}
+        ann = m.get("annotations") or {}
+        if repos and ann.get("github.com/project-slug") not in repos:
+            out.append(f"{name}: links to {sorted(repos)} but github.com/project-slug names none of them")
+        if repos and not (ann.get("backstage.io/source-location") or "").startswith("url:https://github.com/"):
+            out.append(f"{name}: links to a GitHub repo but has no backstage.io/source-location")
+    for dup in {x for x in names if names.count(x) > 1}:
+        out.append(f"duplicate surface name {dup}")
+    for dup in {x for x in urls if urls.count(x) > 1}:
+        out.append(f"duplicate link {dup}")
+    hosts = {re.match(r"https?://([^/]+)", u).group(1) for u in urls if re.match(r"https?://", u)}
+    for h in _hostnames(root):
+        if h not in hosts:
+            out.append(f"public hostname {h} has no founder surface")
+    for wf in _buttons(root):
+        if not any(u.endswith(f"/actions/workflows/{wf}") for u in urls):
+            out.append(f"workflow button {wf} has no founder surface link")
+    # Rule 4 (CP5, 2026-08-27): the portal must NOT load the file directly. Backstage does not
+    # expand ${ESTATE_ZONE} in an entity file; the generated catalogue (bin/catalog-gen) is the
+    # only path, and it substitutes the zone and stamps health.
+    app = yaml.safe_load((root / "backstage/app-config.yaml").read_text())
+    if any("founder/catalog-info.yaml" in loc.get("target", "") for loc in app["catalog"]["locations"]):
+        out.append("app-config.yaml loads founder/catalog-info.yaml directly: ${ESTATE_ZONE} would reach the portal unexpanded")
+    return out
+
+
+def _gen(tmp_path):
+    """Run bin/catalog-gen over the fixture inventory; the generated documents."""
+    import os
+    import subprocess
+    out = tmp_path / "out"
+    out.mkdir()
+    p = subprocess.run([str(ROOT / "bin" / "catalog-gen")],
+                       env={**os.environ, "INV": str(ROOT / "tests" / "fixtures" / "inventory.json"),
+                            "OUT": str(out), "ESTATE_ENV": "dev", "CATALOG_GEN_ROOT": str(ROOT),
+                            "CATALOG_GEN_PROBE": "0"},
+                       capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    return [d for d in yaml.safe_load_all((out / "catalog-info.yaml").read_text()) if d]
+
+
+def _rendered_founder_docs():
+    """The founder-catalog ConfigMap as Flux renders it for OKE: kustomize build, then the zone
+    substituted the way postBuild.substituteFrom does (crew#503 CP6)."""
+    import shutil
+    import subprocess
+    if not shutil.which("kubectl"):
+        pytest.skip("kubectl not installed; the overlay render is checked in CI")
+    p = subprocess.run(["kubectl", "kustomize", "--load-restrictor", "LoadRestrictionsNone",
+                        str(ROOT / "platform/backstage/overlays/oke")], capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    cms = [d for d in yaml.safe_load_all(p.stdout) if d and d.get("kind") == "ConfigMap"
+           and d["metadata"]["name"] == "founder-catalog"]
+    assert len(cms) == 1, "founder-catalog ConfigMap missing from the OKE overlay"
+    text = cms[0]["data"]["catalog-info.yaml"].replace("${ESTATE_ZONE}", _zone(ROOT))
+    return [d for d in yaml.safe_load_all(text) if d]
+
+
+def test_incident_crew401_the_rendered_overlay_carries_every_surface_with_the_zone_resolved():
+    gen = {d["metadata"]["name"]: d for d in _rendered_founder_docs() if d.get("spec", {}).get("type") == "founder-surface"}
+    zone = _zone(ROOT)
+    for d in _surfaces(ROOT):
+        name = d["metadata"]["name"]
+        assert name in gen, f"{name} missing from the rendered founder-catalog ConfigMap"
+        for l in gen[name]["metadata"]["links"]:
+            assert "${" not in l["url"], f"{name}: {l['url']} reached the catalogue unexpanded"
+        assert all(l["url"].replace("${ESTATE_ZONE}", zone) in {g["url"] for g in gen[name]["metadata"]["links"]}
+                   for l in d["metadata"]["links"]), name
+
+
+def test_incident_crew503_the_generated_catalogue_does_not_carry_the_surfaces_twice(tmp_path):
+    """Two locations providing one entity name is a Backstage conflict; the surfaces come from Flux only."""
+    docs = _gen(tmp_path)
+    assert [d["metadata"]["name"] for d in docs if d.get("spec", {}).get("type") == "founder-surface"] == []
+
+
+def _copy(tmp_path):
+    fake = tmp_path / "root"
+    for p in ("platform", "clusters", ".github/workflows", "backstage/founder"):
+        shutil.copytree(ROOT / p, fake / p)
+    for p in ("backstage/app-config.yaml", "backstage/Dockerfile"):
+        shutil.copy(ROOT / p, fake / p)
+    return fake
+
+
+def test_incident_crew401_an_unlisted_hostname_is_refused(tmp_path):
+    fake = _copy(tmp_path)
+    (fake / "platform/nowhere.yaml").write_text(
+        "apiVersion: gateway.networking.k8s.io/v1\nkind: HTTPRoute\nmetadata: {name: x}\nspec:\n  hostnames: ['void.${ESTATE_ZONE}']\n")
+    assert [m for m in missing(fake) if "void." in m], "a route with no founder surface must fail"
+
+
+def test_incident_crew401_an_unlisted_button_is_refused(tmp_path):
+    fake = _copy(tmp_path)
+    (fake / ".github/workflows/void.yml").write_text("name: void\non:\n  workflow_dispatch: {}\njobs: {}\n")
+    assert [m for m in missing(fake) if "void.yml" in m], "a button with no founder surface must fail"
+
+
+@pytest.mark.parametrize("field", ["description", "links"])
+def test_incident_crew401_a_surface_without_purpose_or_link_is_refused(tmp_path, field):
+    fake = _copy(tmp_path)
+    docs = _surfaces(fake)
+    docs[0]["metadata"].pop(field)
+    (fake / FOUNDER).write_text(yaml.safe_dump_all(docs))
+    assert [m for m in missing(fake) if docs[0]["metadata"]["name"] in m]
+
+
+def test_incident_crew412_a_repo_surface_without_a_project_slug_is_refused(tmp_path):
+    fake = _copy(tmp_path)
+    f = fake / FOUNDER
+    text = f.read_text()
+    assert "github.com/project-slug" in text
+    f.write_text(text.replace("github.com/project-slug", "github.com/project-slug-was"))
+    assert [m for m in missing(fake) if "project-slug" in m], "a repo surface with no slug must fail"
+
+
+def test_incident_crew412_founder_annotations_reach_the_generated_catalogue():
+    """The catalogue the annotations must reach is the founder-catalog ConfigMap Flux renders (crew#503 CP6)."""
+    src = {d["metadata"]["name"]: d["metadata"].get("annotations") or {} for d in _surfaces(ROOT)}
+    p = _rendered_founder_docs()
+    gen = {d["metadata"]["name"]: d["metadata"].get("annotations") or {} for d in p if d["metadata"]["name"] in src}
+    for name, ann in src.items():
+        keep = {k: v for k, v in ann.items() if k.startswith(("backstage.io/", "github.com/"))}
+        assert keep.items() <= gen[name].items(), f"{name}: catalog-gen dropped {set(keep) - set(gen[name])}"

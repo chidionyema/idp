@@ -21,7 +21,7 @@ SQLite default under `DAGSTER_HOME`; the documented escalation if lock contentio
 |---|---|---|
 | Cron schedule per job, laptop-local time (`execution_timezone`, env `ESTATE_TZ`) | `definitions.py make_schedule` | guides/automate/schedules |
 | Schedules and sensors ON by default (`default_status=RUNNING`) | `definitions.py` | guides/automate/schedules |
-| Skip with a reason: `max_load` (1-min load), `skip_on_battery` | `schedule.yml` per job; `SkipReason` | guides/automate/schedules |
+| Skip with a reason: `max_load_per_core` x cores, or an explicit `max_load` (1-min load), `skip_on_battery` | `schedule.yml` per job; `SkipReason` | guides/automate/schedules |
 | Circuit breaker: 3 consecutive failures → tick skipped until run by hand | `definitions.py circuit_open` | — (estate rule) |
 | Dependencies: `after: <job>` runs on upstream SUCCESS | `run_status_sensor` | guides/automate/sensors |
 | Failure log `run/scheduler-failures.jsonl` | `run_failure_sensor estate_failure_log` | guides/automate/sensors |

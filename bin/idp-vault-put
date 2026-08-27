@@ -1,34 +1,77 @@
 #!/usr/bin/env bash
 # Put one JSON secret into the estate vault from named keys of the operator's env file.
 #   bin/idp-vault-put <secret-name> <KEY=envkey>...      e.g. bin/idp-vault-put flux-telegram token=TELEGRAM_BOT_TOKEN channel=TELEGRAM_HOME_CHANNEL
+#   bin/idp-vault-put --merge <secret-name> <KEY=envkey>...
+#     --merge overlays the given keys on the JSON the vault already holds and keeps every other key
+#     (crew#506 CP4: one new provider key never re-seeds the whole entry). A pair whose env key is
+#     unset is skipped under --merge, so a CI step may list every key it might carry; without --merge
+#     an unset key is an error, as before. Prints key NAMES only.
 # Values are read in-process and never printed. Env file: $ESTATE_ENV_FILE (default ~/.estate/.env; ~/.hermes is retired, crew#13).
 # Vault and key ids come from tofu outputs; compartment from the sops vault (LAW 46: nothing typed here).
 set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
-name=$1; shift
+# estate-secrets sits beside the main checkout, even when this runs from a worktree under .claude/worktrees (crew#408)
+MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
+MERGE=0; [ "${1:-}" = --merge ] && { MERGE=1; shift; }
+DELETE=0; [ "${1:-}" = --delete ] && { DELETE=1; shift; }
+# SECRET_NAME, not `name`: bin/idp-oci-whoami is sourced below and its profile loop assigned `name`,
+# so the github-app entry was created as "DEFAULT" (vault-seed run 33089277235, crew#503).
+SECRET_NAME=$1; shift
+# No profile is a hard stop: ~/.oci/config has no DEFAULT, only session-token profiles. Discover the
+# live one the way every other bin/idp-* does (crew#503, 2026-08-27: an unset profile failed the write
+# after a one-time GitHub manifest code had already been spent).
+if [ -z "${OCI_CLI_PROFILE:-}" ]; then
+  # shellcheck source=idp-oci-whoami
+  source "$IDP/bin/idp-oci-whoami" || exit 2
+fi
+export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
 ENVF=${ESTATE_ENV_FILE:-$HOME/.estate/.env}
-[ -f "$ENVF" ] || { echo "BLIND: no env file at $ENVF"; exit 2; }
+[ "${VAULT_PUT_PREFLIGHT:-}" = 1 ] || [ -f "$ENVF" ] || { echo "BLIND: no env file at $ENVF"; exit 2; }
 export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$IDP/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
-V=$(cd "$IDP/platform/oci" && tofu output -raw vault_id); K=$(cd "$IDP/platform/oci" && tofu output -raw vault_key_id)
-payload=$(python3 - "$ENVF" "$@" <<'PY'
-import sys,json,base64
+C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+# tofu state and .terraform live in the main checkout, never in a worktree (crew#503: a convert run from a
+# worktree spent a one-time GitHub manifest code and then failed here, losing the App's private key).
+V=$(cd "$MAIN/platform/oci" && tofu output -raw vault_id); K=$(cd "$MAIN/platform/oci" && tofu output -raw vault_key_id)
+if [ "${1:-}" = "--preflight" ] || [ "${VAULT_PUT_PREFLIGHT:-}" = 1 ]; then
+  # The same read the write path needs; callers that hold one-time material run this first.
+  oci vault secret list --compartment-id "$C" --vault-id "$V" --limit 1 --query 'length(data)' --raw-output >/dev/null \
+    && { echo "ok      vault   reachable as $OCI_CLI_PROFILE"; exit 0; } || { echo "FAIL    vault   not reachable as $OCI_CLI_PROFILE"; exit 2; }
+fi
+existing=$(oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"secret-name\"=='$SECRET_NAME' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output 2>/dev/null || true)
+[ "$existing" = null ] && existing=""
+if [ "$DELETE" = 1 ]; then
+  [ -n "$existing" ] || { echo "ok      vault   $SECRET_NAME not present"; exit 0; }
+  oci vault secret schedule-secret-deletion --secret-id "$existing" >/dev/null && echo "vault   $SECRET_NAME deletion scheduled"
+  exit
+fi
+current=""
+if [ "$MERGE" = 1 ] && [ -n "$existing" ]; then
+  # the JSON the vault holds now, read in-process and never written to disk (LAW 21)
+  current=$(oci secrets secret-bundle get --secret-id "$existing" --query 'data."secret-bundle-content".content' --raw-output)
+fi
+payload=$(CURRENT="$current" MERGE="$MERGE" python3 - "$ENVF" "$@" <<'PY'
+import sys,json,base64,os
 envf=sys.argv[1]; kv={}
 for line in open(envf):
     line=line.strip()
     if line and not line.startswith("#") and "=" in line:
         k,v=line.split("=",1); kv[k]=v.strip().strip('"').strip("'")
-out={}
+merge=os.environ["MERGE"]=="1"
+out=json.loads(base64.b64decode(os.environ["CURRENT"])) if os.environ.get("CURRENT") else {}
+kept=set(out); given=[]
 for pair in sys.argv[2:]:
     dst,src=pair.split("=",1)
-    if src not in kv or not kv[src]: sys.exit(f"missing {src} in env file")
-    out[dst]=kv[src]
+    if src not in kv or not kv[src]:
+        if merge: continue
+        sys.exit(f"missing {src} in env file")
+    out[dst]=kv[src]; given.append(dst)
+if not given: sys.exit("no key given has a value in the env file")
 print(base64.b64encode(json.dumps(out).encode()).decode())
+print("keys set: "+" ".join(given)+("; kept: "+" ".join(sorted(kept-set(given))) if merge else ""), file=sys.stderr)
 PY
 )
-existing=$(oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"secret-name\"=='$name' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output 2>/dev/null || true)
-if [ -n "$existing" ] && [ "$existing" != "null" ]; then
-  oci vault secret update-base64 --secret-id "$existing" --secret-content-content "$payload" >/dev/null && echo "vault   $name updated ($# keys)"
+if [ -n "$existing" ]; then
+  oci vault secret update-base64 --secret-id "$existing" --secret-content-content "$payload" >/dev/null && echo "vault   $SECRET_NAME updated ($# keys)"
 else
-  oci vault secret create-base64 --compartment-id "$C" --vault-id "$V" --key-id "$K" --secret-name "$name" --secret-content-content "$payload" >/dev/null && echo "vault   $name created ($# keys)"
+  oci vault secret create-base64 --compartment-id "$C" --vault-id "$V" --key-id "$K" --secret-name "$SECRET_NAME" --secret-content-content "$payload" >/dev/null && echo "vault   $SECRET_NAME created ($# keys)"
 fi

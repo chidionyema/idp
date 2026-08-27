@@ -22,6 +22,11 @@ model_list:
       api_key: os.environ/MINIMAX_API_KEY
       timeout: 300
       max_tokens: 8192
+    model_info:
+      # crew#506 CP1: the router refuses an oversized turn before it leaves the estate.
+      # MiniMax-M2 context window is 204,800 tokens; a turn above it 400s here instead of
+      # walking the fallback chain into unfunded lanes (the 2026-08-27 Telegram outage).
+      max_input_tokens: 204800
 
   # The failover tier: same account and adapter, different model. It is a failover, never
   # a routing choice — see prospector config.yaml on `minimax_m27`.
@@ -65,6 +70,26 @@ model_list:
       api_key: os.environ/OPENROUTER_API_KEY
       timeout: 300
 
+  # --- crew#506 CP4: the free tier (2026-08-27) ----------------------------------------
+  # Groq's free plan answers openai/gpt-oss-120b at 131k context with no card on file, so it
+  # is the first free hop for every job that is not the moat's paid MiniMax lane. Model ids
+  # are the ones the key lists at api.groq.com/openai/v1/models on 2026-08-27; llama-3.3-70b
+  # is not on the plan. Rate limits are per minute, so the chain drops to a paid direct lane
+  # rather than retrying (allowed_fails 3, cooldown 60).
+  - model_name: groq
+    litellm_params:
+      model: groq/openai/gpt-oss-120b
+      api_key: os.environ/GROQ_API_KEY
+      timeout: 120
+    model_info:
+      max_input_tokens: 131072
+  - model_name: groq-fast
+    litellm_params:
+      model: groq/openai/gpt-oss-20b
+      api_key: os.environ/GROQ_API_KEY
+      timeout: 60
+    model_info:
+      max_input_tokens: 131072
   - model_name: gemini
     litellm_params:
       model: gemini/gemini-2.5-flash
@@ -109,10 +134,21 @@ router_settings:
   # instead of in FallbackOperator. `minimax -> minimax_m27` is the documented failover;
   # ollama is last because it is local and cannot run out of credit.
   fallbacks:
-    - minimax: [minimax-or, minimax_m27, deepseek, ollama]
-    - deepseek: [deepseek-or, minimax, ollama]
-    - openrouter: [minimax, ollama]
-    - gemini: [gemini-or, minimax, ollama]
+    # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat
+    # at ~2,400 tokens of credit and Google prepaid was empty, so the crew#284 order (OpenRouter
+    # first) walked every turn through 402/429 before reaching a lane that answers. Consensus
+    # still survives any one account dry. Every chain not headed by the cheap model ends in it
+    # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
+    # job aliases) but sit in no chain while the account is unfunded: a hop that always
+    # answers 402 is latency, not redundancy.
+    - minimax: [deepseek]
+    - deepseek: [minimax]
+    - openrouter: [minimax, deepseek]
+    - gemini: [minimax, deepseek]
+    # crew#506 CP4: a free lane that rate-limits falls to the paid direct lanes, never to
+    # another free lane first; the chain still ends in the cheap model (cp30).
+    - groq: [minimax, deepseek]
+    - groq-fast: [groq, deepseek]
   num_retries: 2
   # A tier that keeps failing is taken out of the chain rather than retried into the
   # ground. This is the circuit breaker prospector/breaker.py hand-rolls.

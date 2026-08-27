@@ -5,8 +5,11 @@
 # authenticate as "estate-bootstrap", the interactive `oci session authenticate` flow
 # landed the session under a different profile name ("otto"), and nothing surfaced
 # that mismatch until a manual `ls ~/.oci/sessions/` found it. Login itself cannot be
-# automated (LAW: no agent proves identity to a platform in a browser as the founder)
-# -- but discovering which profile a completed login used, and exporting it for every
+# automated (LAW: no agent proves identity to a platform in a browser as the founder),
+# and since crew#345 no session needs one: cluster and drill state are receipts in the
+# drill bucket, read by bin/idp-cluster-state and `gh workflow run oke-check.yml -f mode=check`
+# on the runner's OIDC identity. A laptop session token is the founder's bootstrap path only.
+# Discovering which profile a completed login used, and exporting it for every
 # other script in this repo to pick up via OCI_CLI_PROFILE/OCI_CLI_AUTH (the same env
 # vars idp-oci-login already reads, per crew#227 CP2), is not a login action and can
 # be fully automatic.
@@ -16,18 +19,32 @@
 set -uo pipefail
 
 SESSIONS_DIR="$HOME/.oci/sessions"
-[ -d "$SESSIONS_DIR" ] || { echo "BLIND   oci-whoami: no $SESSIONS_DIR; run oci session authenticate first"; exit 2; }
+[ -d "$SESSIONS_DIR" ] || { echo "BLIND   oci-whoami: no $SESSIONS_DIR on this machine; sessions read state through bin/idp-cluster-state or gh workflow run oke-check.yml -f mode=check (crew#345), no login"; exit 2; }
 
+# crew#503: `stat -f %m` is BSD/macOS; GNU stat -f prints filesystem status, so on
+# the Linux runner every mtime was garbage, `-gt` errored and no live session was
+# ever detected (vault-seed 33089277235). Try BSD, then GNU, else 0.
+token_mtime() {
+  # GNU `stat -f` exits 0 with filesystem text, so an exit-code fallback is not
+  # enough: take the first candidate that is purely digits.
+  local m
+  for m in "$(stat -f "%m" "$1" 2>/dev/null)" "$(stat -c "%Y" "$1" 2>/dev/null)"; do
+    case "$m" in ''|*[!0-9]*) continue;; *) echo "$m"; return;; esac
+  done
+  echo 0
+}
+
+# _ow_* prefix: this file is sourced by bin/idp-vault-put; a bare `name` clobbered its secret name (crew#503).
 live=""
-newest_mtime=0
+_ow_newest=0
 for d in "$SESSIONS_DIR"/*/; do
-  name="$(basename "$d")"
+  _ow_name="$(basename "$d")"
   [ -f "$d/token" ] || continue
-  if oci session validate --profile "$name" --local >/dev/null 2>&1; then
-    mtime=$(stat -f "%m" "$d/token" 2>/dev/null || echo 0)
-    if [ "$mtime" -gt "$newest_mtime" ]; then
-      live="$name"
-      newest_mtime="$mtime"
+  if oci session validate --profile "$_ow_name" --local >/dev/null 2>&1; then
+    _ow_mtime=$(token_mtime "$d/token")
+    if [ "$_ow_mtime" -gt "$_ow_newest" ]; then
+      live="$_ow_name"
+      _ow_newest="$_ow_mtime"
     fi
   fi
 done
@@ -40,12 +57,12 @@ done
 # before concluding a fresh browser login is genuinely required.
 if [ -z "$live" ]; then
   for d in "$SESSIONS_DIR"/*/; do
-    name="$(basename "$d")"
+    _ow_name="$(basename "$d")"
     [ -f "$d/token" ] || continue
-    if oci session refresh --profile "$name" --auth security_token >/dev/null 2>&1; then
-      if oci session validate --profile "$name" --local >/dev/null 2>&1; then
-        live="$name"
-        echo "ok      oci-whoami: refreshed expired session for '$name' (no browser, no founder action)" >&2
+    if oci session refresh --profile "$_ow_name" --auth security_token >/dev/null 2>&1; then
+      if oci session validate --profile "$_ow_name" --local >/dev/null 2>&1; then
+        live="$_ow_name"
+        echo "ok      oci-whoami: refreshed expired session for '$_ow_name' (no browser, no founder action)" >&2
         break
       fi
     fi
@@ -53,7 +70,7 @@ if [ -z "$live" ]; then
 fi
 
 if [ -z "$live" ]; then
-  echo "BLIND   oci-whoami: no valid session found under any profile in $SESSIONS_DIR; run: oci session authenticate --region <region>"
+  echo "BLIND   oci-whoami: no valid session under any profile in $SESSIONS_DIR; sessions read state through bin/idp-cluster-state or gh workflow run oke-check.yml -f mode=check (crew#345), no login"
   exit 2
 fi
 

@@ -1,0 +1,5 @@
+FAIL  /Users/chidionyema/dev/code/crew  on feat/research-engine-step1, not main; 36 behind origin/main; 47 dirty file(s)
+FAIL  /Users/chidionyema/dev/code/idp  on fix/crew297-bind-self-aware-specs, not main; 2 behind origin/main; 9 dirty file(s)
+FAIL  /Users/chidionyema/dev/code/hermes-v2  on feat/hermes-agent-ci-image, not main; 10 dirty file(s)
+FAIL  /Users/chidionyema/.claude/scripts  1 behind origin/main; 2 dirty file(s)
+checkout-drift: 4 drifted, 0 unreadable, of 4

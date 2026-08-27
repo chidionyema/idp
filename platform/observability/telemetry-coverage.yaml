@@ -1,0 +1,163 @@
+# crew#320 / LAW 50 (founder, 2026-08-27): "every workload emits telemetry to SigNoz, and the
+# coverage is verified by querying the backend, not by scanning files."
+#
+# Every 15 minutes a Job-owned pod asks two questions and diffs the answers: the API server for
+# every pod that has been Running for more than ten minutes, and ClickHouse (the SigNoz store) for
+# every pod that wrote a log line or a metric sample in the last hour. A Running pod the backend
+# has not heard from is a coverage gap, and line 1 of the receipt says FAIL and names it. A
+# backend that cannot be queried is BLIND, never ok. Same shape as platform/state/cluster-state.yaml:
+# written from inside on the node's instance principal, read from outside by
+# bin/idp-telemetry-coverage (job telemetry-coverage in oke-check.yml).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: telemetry-coverage
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: telemetry-coverage-reader
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: telemetry-coverage-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: telemetry-coverage-reader
+subjects:
+  - kind: ServiceAccount
+    name: telemetry-coverage
+    namespace: observability
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: telemetry-coverage-collect
+data:
+  # Line 1 is the graded summary; the rest is JSON naming every pod the backend has not seen.
+  collect.py: |
+    import json, os, ssl, sys, urllib.parse, urllib.request
+    from datetime import datetime, timedelta, timezone
+    SA = "/var/run/secrets/kubernetes.io/serviceaccount"
+    CH = os.environ.get("CLICKHOUSE_URL", "http://signoz-clickhouse:8123")
+    GRACE_MIN = int(os.environ.get("GRACE_MIN", "10"))
+    WINDOW_SEC = int(os.environ.get("WINDOW_SEC", "3600"))
+    def kube(path):
+        tok = open(f"{SA}/token").read().strip()
+        ctx = ssl.create_default_context(cafile=f"{SA}/ca.crt")
+        req = urllib.request.Request("https://kubernetes.default.svc" + path, headers={"Authorization": "Bearer " + tok})
+        with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
+            return json.load(r)
+    def clickhouse(sql):
+        pw = open("/secrets/password").read().strip()
+        req = urllib.request.Request(CH + "/?" + urllib.parse.urlencode({"query": sql + " FORMAT TSV"}),
+                                     headers={"X-ClickHouse-User": "admin", "X-ClickHouse-Key": pw})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return {tuple(line.split("\t")) for line in r.read().decode().splitlines() if line}
+    # Three tables, because a pod that logs nothing still has kubelet metrics (k8s-infra, crew#388),
+    # a pod the kubelet has not sampled yet may already be logging, and a workload that emits its
+    # own spans (mcp-agentgateway, crew#392) is seen in traces before the node agent lands.
+    QUERIES = {
+        "traces": f"SELECT DISTINCT resources_string['k8s.namespace.name'], resources_string['k8s.pod.name'] "
+                  f"FROM signoz_traces.distributed_signoz_index_v3 WHERE timestamp > now() - INTERVAL {WINDOW_SEC} SECOND",
+        "logs": f"SELECT DISTINCT resources_string['k8s.namespace.name'], resources_string['k8s.pod.name'] "
+                f"FROM signoz_logs.distributed_logs_v2 WHERE timestamp > toUInt64(toUnixTimestamp(now()) - {WINDOW_SEC}) * 1000000000",
+        "metrics": f"SELECT DISTINCT JSONExtractString(labels, 'k8s_namespace_name'), JSONExtractString(labels, 'k8s_pod_name') "
+                   f"FROM signoz_metrics.distributed_time_series_v4 WHERE unix_milli > (toUnixTimestamp(now()) - {WINDOW_SEC}) * 1000",
+    }
+    def main(kube=kube, clickhouse=clickhouse, now=None):
+        now = now or datetime.now(timezone.utc)
+        at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        cutoff = now - timedelta(minutes=GRACE_MIN)
+        pods = kube("/api/v1/pods")["items"]
+        running = []
+        for p in pods:
+            if p["status"].get("phase") != "Running":
+                continue
+            start = p["status"].get("startTime")
+            if not start or datetime.fromisoformat(start.replace("Z", "+00:00")) > cutoff:
+                continue
+            running.append((p["metadata"]["namespace"], p["metadata"]["name"]))
+        seen, errors = set(), {}
+        for name, sql in QUERIES.items():
+            try:
+                seen |= {(ns, pod) for ns, pod in clickhouse(sql) if pod}
+            except Exception as e:  # a backend that cannot answer is BLIND, never a pass
+                errors[name] = str(e)[:160]
+        missing = sorted(set(running) - seen)
+        body = {"at": at, "pods_running": len(running), "pods_seen": len(seen),
+                "missing": [{"ns": ns, "pod": pod} for ns, pod in missing], "backend_errors": errors}
+        if len(errors) == len(QUERIES):
+            head = f"BLIND telemetry-coverage at {at} backend unreachable: {'; '.join(errors.values())}"
+        else:
+            verdict = "ok" if not missing else "FAIL"
+            head = f"{verdict} telemetry-coverage at {at} pods={len(running)} seen={len(running) - len(missing)} missing={len(missing)}"
+        return head, body
+    if __name__ == "__main__":
+        head, body = main()
+        sys.stdout.write(head + "\n" + json.dumps(body, sort_keys=True) + "\n")
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: telemetry-coverage
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      # crew#396: finished Jobs are removed an hour later so their pods never haunt the receipt
+      ttlSecondsAfterFinished: 3600
+      backoffLimit: 2
+      activeDeadlineSeconds: 180
+      template:
+        spec:
+          serviceAccountName: telemetry-coverage
+          automountServiceAccountToken: true
+          restartPolicy: Never
+          containers:
+            - name: receipt
+              # Same image and uid as platform/state/cluster-state.yaml: python for the two reads,
+              # the CLI for the one write. No kubectl, no clickhouse-client.
+              image: ghcr.io/oracle/oci-cli:20260826
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  python3 /collect/collect.py > /tmp/receipt
+                  head -1 /tmp/receipt
+                  oci --auth instance_principal os object put --bucket-name estate-drill-receipts \
+                    --name state/telemetry-coverage --file /tmp/receipt --content-type text/plain --force
+              env:
+                - { name: HOME, value: /tmp }
+              volumeMounts:
+                - { name: collect, mountPath: /collect, readOnly: true }
+                - { name: clickhouse-auth, mountPath: /secrets, readOnly: true }   # Kyverno: the password is a file, never an env var
+                - { name: tmp, mountPath: /tmp }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { cpu: 200m, memory: 256Mi }
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+                seccompProfile: { type: RuntimeDefault }
+          volumes:
+            - name: collect
+              configMap: { name: telemetry-coverage-collect }
+            - name: clickhouse-auth
+              secret: { secretName: clickhouse-auth }
+            - name: tmp
+              emptyDir: {}

@@ -12,8 +12,12 @@ on:
       entry:
         description: "which vault entry to write"
         type: choice
-        options: [all, prospector-engine-env, github-app, flux-writer]
+        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway]
         default: all
+      delete:
+        description: "schedule deletion of one vault secret by name (crew#503: a mis-named entry); entry is ignored when set"
+        type: string
+        default: ""
 permissions:
   id-token: write   # the OIDC token this job trades for OCI access
   contents: read
@@ -68,6 +72,9 @@ jobs:
           SEED_GITHUB_APP_PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
           SEED_FLUX_WRITER_IDENTITY_B64: ${{ secrets.SEED_FLUX_WRITER_IDENTITY_B64 }}
           SEED_FLUX_WRITER_PUB: ${{ secrets.SEED_FLUX_WRITER_PUB }}
+          SEED_TEMPORAL_DB_PASSWORD: ${{ secrets.SEED_TEMPORAL_DB_PASSWORD }}
+          SEED_MCP_GATEWAY_KEY: ${{ secrets.SEED_MCP_GATEWAY_KEY }}
+          SEED_GITHUB_MCP_TOKEN: ${{ secrets.SEED_GITHUB_MCP_TOKEN }}
         run: |
           set -euo pipefail
           bin/idp-oci-login --check
@@ -76,6 +83,7 @@ jobs:
           export ESTATE_ENV_FILE="$RUNNER_TEMP/seed.env"; umask 077
           env | sed -n 's/^SEED_//p' > "$ESTATE_ENV_FILE"
           put() { bin/idp-vault-put "$@"; }
+          if [ -n "${{ inputs.delete }}" ]; then bin/idp-vault-put --delete "${{ inputs.delete }}"; exit; fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = prospector-engine-env ]; then
             put prospector-engine-env MINIMAX_API_KEY=MINIMAX_API_KEY DEEPSEEK_API_KEY=DEEPSEEK_API_KEY EXA_API_KEY=EXA_API_KEY \
               OPENROUTER_API_KEY=OPENROUTER_API_KEY ANTHROPIC_API_KEY=ANTHROPIC_API_KEY \
@@ -89,5 +97,13 @@ jobs:
           if [ "$ENTRY" = all ] || [ "$ENTRY" = flux-writer ]; then
             # the read-write deploy key Flux's idp-writer GitRepository uses (platform/image-automation/flux-writer.yaml, crew#325)
             put flux-writer identity_b64=FLUX_WRITER_IDENTITY_B64 pub=FLUX_WRITER_PUB
+          fi
+          if [ "$ENTRY" = all ] || [ "$ENTRY" = temporal-db ]; then
+            # Temporal's Postgres password (platform/temporal/external-secret.yaml, crew#396)
+            put temporal-db password=TEMPORAL_DB_PASSWORD
+          fi
+          if [ "$ENTRY" = all ] || [ "$ENTRY" = mcp-gateway ]; then
+            # the MCP gateway's API key and the GitHub token its github route forwards (platform/mcp, crew#458)
+            put mcp-gateway MCP_GATEWAY_KEY=MCP_GATEWAY_KEY GITHUB_MCP_TOKEN=GITHUB_MCP_TOKEN
           fi
           rm -f "$ESTATE_ENV_FILE"

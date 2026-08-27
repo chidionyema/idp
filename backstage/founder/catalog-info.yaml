@@ -1,0 +1,400 @@
+# Founder surfaces: every place the founder is expected to look, in Backstage's own entity
+# format (crew#401, founder 2026-08-27: "all founder interfaces need to be highly accessible to
+# founder else it's a void"). One entity per surface, `Open` links, who updates it and how often.
+# Loaded by app-config.yaml as a catalog location and copied into the image (backstage/Dockerfile).
+# tests/test_incident_crew401_every_founder_surface_is_in_the_catalogue.py refuses a hostname or a
+# workflow button that is not listed here. ${ESTATE_ZONE} is substituted by Flux (LAW 46).
+# Portal view: https://catalogue.<zone>/catalog?filters[kind]=component&filters[type]=founder-surface
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-catalogue
+  title: "The catalogue (this god view)"
+  description: "Every service, hostname, job, guard, drill, port and this list. One login (auth). If something is not here, the gate in tests/test_incident_crew401_* refused the change that added it."
+  annotations:
+    backstage.io/kubernetes-label-selector: "app.kubernetes.io/part-of=idp"
+    idp/updated-by: "Flux image automation on every main build (platform/image-automation/backstage.yaml); inventory entities by bin/idp-catalog-push"
+  tags: [founder]
+  links:
+    - title: "Open"
+      url: "https://catalogue.${ESTATE_ZONE}"
+      icon: dashboard
+    - title: "Founder surfaces only"
+      url: "https://catalogue.${ESTATE_ZONE}/catalog?filters%5Bkind%5D=component&filters%5Btype%5D=founder-surface"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-model-router
+  title: "Model router (llm)"
+  description: "Every model call in the estate goes through here. Pick and add models, keys, teams and budgets in the admin console (/ui); sign in with your estate login (the same as this catalogue); there is no console password. Tutorial: docs/onboarding/litellm.md (crew#400)."
+  annotations:
+    backstage.io/kubernetes-namespace: llm
+    backstage.io/kubernetes-label-selector: "app.kubernetes.io/name=litellm"
+    github.com/project-slug: "chidionyema/idp"
+    backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/"
+    idp/updated-by: "Flux from platform/llm on merge to main"
+  tags: [founder]
+  links:
+    - title: "API (OpenAPI docs; POST /v1/chat/completions)"
+      url: "https://llm.${ESTATE_ZONE}/"
+      icon: dashboard
+    - title: "Admin console"
+      url: "https://llm.${ESTATE_ZONE}/ui"
+      icon: dashboard
+    - title: "Model list (source)"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/llm/config.yaml"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-traces
+  title: "Traces (langfuse)"
+  description: "Every call through the router leaves a trace here: prompt, answer, cost, latency. The hourly trace-drill proves the round trip."
+  annotations:
+    idp/updated-by: "Flux from platform/observability; traces arrive live from the router"
+  tags: [founder]
+  links:
+    - title: "Open"
+      url: "https://langfuse.${ESTATE_ZONE}"
+      icon: dashboard
+    - title: "Health"
+      url: "https://langfuse.${ESTATE_ZONE}/api/public/health"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-telemetry
+  title: "Telemetry (SigNoz)"
+  description: "Every workload's traces, metrics and logs land here (LAW 50). The telemetry-coverage receipt in oke-check is the count of pods this backend has seen; the SLO alert rules (crew#495) are declared against it."
+  annotations:
+    idp/updated-by: "Flux from platform/observability; rows arrive live from the OTel collector"
+  tags: [founder]
+  links:
+    - title: "Open"
+      url: "https://signoz.${ESTATE_ZONE}"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-jobs
+  title: "Jobs (healthchecks)"
+  description: "Every scheduled job pings here when it finishes; a job that did not run goes red. Standards row 21 (crew#177), the dead-man switch for the estate's cron."
+  annotations:
+    idp/updated-by: "Flux from platform/healthchecks; pings arrive live from hc-wrap.sh"
+  tags: [founder]
+  links:
+    - title: "Open"
+      url: "https://hc.${ESTATE_ZONE}"
+      icon: dashboard
+    - title: "Health"
+      url: "https://hc.${ESTATE_ZONE}/api/v3/status/"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-login
+  title: "The one login (auth)"
+  description: "oauth2-proxy in front of every hostname on the zone; Oracle IDCS is the identity provider. There is no second login anywhere."
+  annotations:
+    idp/updated-by: "Flux from platform/identity"
+  tags: [founder]
+  links:
+    - title: "Open"
+      url: "https://auth.${ESTATE_ZONE}"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-crew-board
+  title: "Crew board (every founder request)"
+  description: "Each thing the founder asks for is an issue here (LAW 18). P1 = a fire. STATE.md is the hourly estate snapshot: every row is a command and its output. The Docs tab renders crew/docs: standards, rulings, the science showcase (R38, crew#412)."
+  annotations:
+    github.com/project-slug: "chidionyema/crew"
+    backstage.io/source-location: "url:https://github.com/chidionyema/crew/tree/main/"
+    idp/updated-by: "Agents on every request; STATE.md hourly by launchd com.founder.estatesnapshot"
+    backstage.io/techdocs-ref: "url:https://github.com/chidionyema/crew/tree/main/"
+  tags: [founder]
+  links:
+    - title: "Issues"
+      url: "https://github.com/chidionyema/crew/issues"
+      icon: dashboard
+    - title: "P1 fires"
+      url: "https://github.com/chidionyema/crew/issues?q=is%3Aopen+label%3AP1"
+      icon: dashboard
+    - title: "STATE.md (hourly snapshot)"
+      url: "https://github.com/chidionyema/crew/blob/main/STATE.md"
+      icon: dashboard
+    - title: "Standards (one row per layer)"
+      url: "https://github.com/chidionyema/crew/blob/main/docs/STANDARDS.md"
+      icon: dashboard
+    - title: "Hazards (hourly register)"
+      url: "https://github.com/chidionyema/crew/blob/main/docs/HAZARDS.md"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-showcase
+  title: "Science showcase and founder demo"
+  description: "Every science and research capability on one page, generated from the lane's own stores four times a day (crew#403). A capability that cannot describe and demo itself is refused in CI. The demo is one command: bin/founder-demo in crew."
+  annotations:
+    github.com/project-slug: "chidionyema/crew"
+    backstage.io/source-location: "url:https://github.com/chidionyema/crew/tree/main/"
+    idp/updated-by: "Dagster com.founder.sciencecollect (37 1,7,13,19 * * *) runs science/showcase.py; verify.d/27-showcase-check.sh on every crew PR"
+  tags: [founder, science]
+  links:
+    - title: "Showcase (generated page)"
+      url: "https://github.com/chidionyema/crew/blob/main/docs/science/SHOWCASE.md"
+      icon: dashboard
+    - title: "Founder demo (bin/founder-demo)"
+      url: "https://github.com/chidionyema/crew/blob/main/bin/founder-demo"
+      icon: docs
+    - title: "Tracked item crew#403"
+      url: "https://github.com/chidionyema/crew/issues/403"
+      icon: dashboard
+  name: founder-mcp-gateway
+  title: "MCP gateway (tools for every agent session)"
+  description: "The one MCP row (crew#458): agentgateway on the cluster fronting the GitHub MCP server, behind the estate login and a per-session API key. A session points its MCP url at /github/mcp here instead of a container on the founder Mac."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/platform/mcp/"
+    idp/updated-by: "Flux from platform/mcp/ on every main merge; the gateway key and GitHub token by the vault-seed workflow, entry mcp-gateway"
+  tags: [founder]
+  links:
+    - title: "GitHub MCP endpoint"
+      url: "https://mcp.${ESTATE_ZONE}/github/mcp"
+      icon: cloud
+    - title: "Gateway config"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/mcp/agentgateway.yaml"
+      icon: docs
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-platform-repo
+  title: "Platform repository (idp)"
+  description: "The one platform. Open pull requests are work in flight; the security tab is Dependabot and code scanning; packages are the images the cluster runs."
+  annotations:
+    github.com/project-slug: "chidionyema/idp"
+    backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/"
+    idp/updated-by: "Agents; every merge to main is deployed by Flux"
+    # docs/ + mkdocs.yml in this repo, built by TechDocs from GitHub (crew#459).
+    backstage.io/techdocs-ref: url:https://github.com/chidionyema/idp/tree/main/
+  tags: [founder]
+  links:
+    - title: "Pull requests"
+      url: "https://github.com/chidionyema/idp/pulls"
+      icon: dashboard
+    - title: "Security"
+      url: "https://github.com/chidionyema/idp/security"
+      icon: dashboard
+    - title: "Images (ghcr)"
+      url: "https://github.com/chidionyema?tab=packages"
+      icon: dashboard
+    - title: "Docs index"
+      url: "https://github.com/chidionyema/idp/blob/main/docs/index.md"
+      icon: dashboard
+    - title: "Live diagram"
+      url: "https://github.com/chidionyema/idp/blob/main/docs/architecture/live.md"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-drills
+  title: "Drills and receipts (Actions)"
+  description: "The proof the platform works, on a schedule. Green = working; a red run is a fire. Each button can also be pressed by hand (Run workflow)."
+  annotations:
+    github.com/project-slug: "chidionyema/idp"
+    backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/"
+    idp/updated-by: "GitHub Actions on the schedules in drills/catalogue.yaml"
+  tags: [founder]
+  links:
+    - title: "All runs"
+      url: "https://github.com/chidionyema/idp/actions"
+      icon: dashboard
+    - title: "Drill schedule (source)"
+      url: "https://github.com/chidionyema/idp/blob/main/drills/catalogue.yaml"
+      icon: dashboard
+    - title: "oke-check: cluster, login, chaos, IAM, cluster-state"
+      url: "https://github.com/chidionyema/idp/actions/workflows/oke-check.yml"
+      icon: dashboard
+    - title: "trace-drill: one call, one trace, hourly"
+      url: "https://github.com/chidionyema/idp/actions/workflows/trace-drill.yml"
+      icon: dashboard
+    - title: "login-drill: the one login works"
+      url: "https://github.com/chidionyema/idp/actions/workflows/login-drill.yml"
+      icon: dashboard
+    - title: "kyverno-secrets-drill: policy refuses a bad secret"
+      url: "https://github.com/chidionyema/idp/actions/workflows/kyverno-secrets-drill.yml"
+      icon: dashboard
+    - title: "portability-drill: the platform hydrates on a cluster with no OCI"
+      url: "https://github.com/chidionyema/idp/actions/workflows/portability-drill.yml"
+      icon: dashboard
+    - title: "drill-heartbeat: every drill ran on time"
+      url: "https://github.com/chidionyema/idp/actions/workflows/drill-heartbeat.yml"
+      icon: dashboard
+    - title: "vault-seed: put a secret in the vault from CI"
+      url: "https://github.com/chidionyema/idp/actions/workflows/vault-seed.yml"
+      icon: dashboard
+    - title: "stale: closes a PR idle for 24h, branch kept"
+      url: "https://github.com/chidionyema/idp/actions/workflows/stale.yml"
+      icon: dashboard
+    - title: "wake-blocked: reopens a closed PR when its Blocked-by lands"
+      url: "https://github.com/chidionyema/idp/actions/workflows/wake-blocked.yml"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-cloud-console
+  title: "Cloud console (OCI, uk-london-1)"
+  description: "The cluster (OKE), the vault, object storage receipts and the bill. Read-only for people; every change to it goes through git and Flux."
+  annotations:
+    github.com/project-slug: "chidionyema/idp"
+    backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/"
+    idp/updated-by: "Terraform/Flux on merge; oke-check reads it daily"
+  tags: [founder]
+  links:
+    - title: "Open"
+      url: "https://cloud.oracle.com/?region=uk-london-1"
+      icon: dashboard
+    - title: "Cluster state receipt (how to read)"
+      url: "https://github.com/chidionyema/idp/blob/main/docs/how-to/index.md"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-telegram
+  title: "Telegram (the founder's phone)"
+  description: "Where every session's deliveries, STAGED notices and founder blockers land, sent by founder-deliver.py through the estate bot. Open the chat with @Ottototbot; every message carries the URL of the thing it is about."
+  annotations:
+    idp/updated-by: "founder-deliver.py on every delivery; founder-blocker.py on every STAGED or blocker"
+  tags: [founder]
+  links:
+    - title: "Open Telegram chat"
+      url: "https://t.me/Ottototbot"
+      icon: chat
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-kini-finish
+  title: "Finish KINI (one word)"
+  description: "Comment `FINISH: KINI` on any idp issue, or press Run workflow. The cluster runs the seven KINI checkpoints with retries and self-healing (crew#396); the receipt is the kini-state row of oke-check. Nothing after the word needs a laptop."
+  annotations:
+    github.com/project-slug: "chidionyema/idp"
+    backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/"
+    idp/updated-by: "kini-finish.yml on the word; kini-state CronJob every 15 minutes"
+  tags: [founder]
+  links:
+    - title: "Say the word (idp issues)"
+      url: "https://github.com/chidionyema/idp/issues"
+      icon: dashboard
+    - title: "kini-finish: Run workflow"
+      url: "https://github.com/chidionyema/idp/actions/workflows/kini-finish.yml"
+      icon: dashboard
+    - title: "Receipt reader (bin/idp-kini-state)"
+      url: "https://github.com/chidionyema/idp/blob/main/bin/idp-kini-state"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-store
+  title: "The store (mumchimp)"
+  description: "The one place a customer pays this estate: the storefront and the Medusa API behind it. Revenue is read by crew science/outcomes.py revenue (crew#70). No API health link here: api.<zone> answers 404 on every path from a Kestrel server (crew#503 probe), so the Medusa API is not published on that hostname; the link returns when mumchimp-medusa publishes one. Registered here because catalogue-drift found the three hostnames live and unlisted (oke-check run 33034521953)."
+  annotations:
+    github.com/project-slug: chidionyema/mumchimp-medusa
+    backstage.io/source-location: "url:https://github.com/chidionyema/mumchimp-medusa/tree/main/"
+    idp/updated-by: "github.com/chidionyema/mumchimp-medusa on push to main (its own pipeline); this entry by hand until that repo carries a catalog-info.yaml"
+  tags: [founder, product]
+  links:
+    - title: "Open"
+      url: "https://www.${ESTATE_ZONE}"
+      icon: web
+    - title: "Apex"
+      url: "https://${ESTATE_ZONE}"
+      icon: web
+    - title: "Source"
+      url: "https://github.com/chidionyema/mumchimp-medusa"
+      icon: github
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate

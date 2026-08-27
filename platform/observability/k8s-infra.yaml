@@ -5,15 +5,28 @@
 # (otel-deployment: clusterMetrics, k8sEvents). Chart pinned; 0.17.0 (app 0.139.0) was
 # `helm search repo signoz/k8s-infra` on 2026-08-27. Uses the HelmRepository in signoz.yaml.
 # The agent reads /var/log/pods and the node filesystem, which the restricted profile refuses;
-# platform/edge/k8s-infra-exception.yaml waives exactly the rules bin/idp-kyverno-render shows
-# failing and nothing else.
+# platform/edge/k8s-infra-exception.yaml waives exactly the Kyverno rules bin/idp-kyverno-render
+# shows failing and nothing else. The Pod Security Admission label is the other gate, and no
+# Kyverno exception reaches it, so the release installs into observability-agent
+# (platform/edge/k8s-infra-namespace.yaml, enforce: privileged) while this HelmRelease object stays here.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: k8s-infra
+  annotations:
+    # crew#483: the install failed 3 times on the Kyverno hostPath denial before the waiver
+    # (platform/edge/k8s-infra-exception.yaml, merged 2026-08-27T10:26Z) existed, and
+    # helm-controller stops retrying once retries are exhausted. `flux reconcile hr --reset`
+    # sets two annotations, and helm-controller only resets the failure count when resetAt
+    # carries the same value as requestedAt; resetAt alone (12:11Z) changed nothing and the
+    # release kept the pre-waiver denial. The git-only estate has no kubectl to run it.
+    reconcile.fluxcd.io/requestedAt: "2026-08-27T12:41:00Z"
+    reconcile.fluxcd.io/resetAt: "2026-08-27T12:41:00Z"
 spec:
   interval: 1h
   timeout: 10m
+  targetNamespace: observability-agent
+  storageNamespace: observability-agent
   chart:
     spec:
       chart: k8s-infra

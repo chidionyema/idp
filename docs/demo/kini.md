@@ -43,10 +43,10 @@ three lines read `200`.
 
 ## What you cannot do yet
 
-| Row | State on 2026-08-26 | Owner |
+| Row | State on 2026-08-27 | Owner |
 |---|---|---|
-| CP1 Telegram to kernel receipt, `undo`, photo intake | not live; `hermes-v2/plugins/sovereign` registers 7 commands (`bin/verify` PASS) but no receipt id from the phone yet | session 8f034e1e |
-| CP2 router | live; consensus wire test against the live router still to run | session d636e984, crew#293 |
+| CP1 Telegram to kernel receipt, `undo`, photo intake | not confirmed from the phone; `hermes-v2/plugins/sovereign` registers 7 commands (`bin/verify` PASS); the founder's `/sb-list` on 2026-08-27 00:08Z hit a gateway process older than the plugin code and was answered as chat; gateway restarted 00:23Z, resend requested | session d5ae1960 |
+| CP2 router | live with a database (idp#262, #263, #270, #274); a kernel key is minted from outside and stored in `estate-secrets` dev; `sovereign/tests/bdd/test_cp2_litellm_real.py` 3 passed against the live router on 2026-08-27 | crew#284 comment 5432705704 |
 | CP7 identity | crew#227, linked only | crew#227 |
 
 The phone demo (send `status` in Telegram, get a one-line receipt with hash

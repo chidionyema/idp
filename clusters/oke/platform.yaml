@@ -65,6 +65,7 @@ spec:
     name: flux-system
   path: ./platform/chaos
   prune: true
+  wait: true
 ---
 # crew#258 CP2: SigNoz, the one metrics/traces/logs store (crew/docs/STANDARDS.md "Observability").
 # Ordered after backstage so the portal keeps first claim on the single node's CPU.
@@ -137,9 +138,61 @@ spec:
       - kind: ConfigMap
         name: estate-config
 ---
+# Job monitoring row (crew#177, STANDARDS.md row 21): Healthchecks at hc.<zone> through the https-hc
+# listener on prospector-edge. After identity (the front door answers its ForwardAuth) and
+# secret-store (the three vault entries platform/oci/healthchecks.tf writes). 10m like every row.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: healthchecks
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/healthchecks
+  prune: true
+  dependsOn:
+    - name: identity
+    - name: secret-store
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: healthchecks
+      namespace: healthchecks
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+---
 # Model routing row (crew#284 CP2, crew#313): LiteLLM on the cluster, reached at llm.<zone>
 # through the https-llm listener on prospector-edge. After edge (Gateway, certificate) and
 # secret-store (the upstream keys). Health-checked at 10m like every other row.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: reloader
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/reloader
+  prune: true
+  dependsOn:
+    - name: secret-store
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: reloader
+      namespace: reloader
+---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -167,6 +220,40 @@ spec:
       - kind: ConfigMap
         name: estate-config
 ---
+# MCP row (crew#458): agentgateway + github-mcp on the cluster, reached at mcp.<zone> through the
+# https-mcp listener on prospector-edge. Replaces the colima VM on the founder Mac. After edge
+# and secret-store (the gateway key and GitHub token), like llm.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: mcp
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/mcp
+  prune: true
+  dependsOn:
+    - name: edge
+    - name: secret-store
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentgateway
+      namespace: mcp
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: github-mcp
+      namespace: mcp
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+---
 # crew#345: the cluster writes its own state receipt to Object Storage every 15 minutes, so no
 # session needs a kube path or `oci session authenticate` to read it (bin/idp-cluster-state).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -182,6 +269,104 @@ spec:
     kind: GitRepository
     name: flux-system
   path: ./platform/state
+  prune: true
+  wait: true
+  timeout: 5m
+---
+# crew#396: the estate's one workflow engine, in the cluster instead of on the Mac.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: temporal
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: edge
+    - name: secret-store
+    - name: image-automation   # ClusterSecretStore ghcr-pull, mirrored into this namespace (step 2)
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/temporal
+  prune: true
+  wait: true
+  timeout: 20m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: temporal
+      namespace: temporal
+---
+# Agent identity (crew#227 CP4): SPIRE issues short-lived SVIDs to workloads on this cluster.
+# After backstage for the same reason chaos-mesh is: Kyverno and the PolicyException CRD arrive
+# with the edge row backstage already waits on.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: spire
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: backstage
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/spire
+  prune: true
+  wait: true
+  timeout: 15m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: spire
+      namespace: spire-mgmt
+---
+# KEDA and its HTTP add-on: the estate's one autoscaler, so a request-scoped product workload can
+# sit at zero replicas and wake on the first request (crew#488 CP7). After observability so the
+# operator's OTLP export has a collector to reach; the product opts in from its own repo.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: keda
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: observability
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/keda
+  prune: true
+  wait: true
+  timeout: 15m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: keda
+      namespace: keda
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: keda-add-ons-http
+      namespace: keda
+---
+# crew#516 CP5 slice 1: the science lane's facts counted in the collector's backend, from inside
+# the cluster (platform/science/science-facts.yaml). Reader: bin/idp-science-facts.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: science
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: observability   # the clickhouse-auth Secret and the SigNoz backend
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/science
   prune: true
   wait: true
   timeout: 5m

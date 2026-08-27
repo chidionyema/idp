@@ -1,0 +1,117 @@
+# crew#516 CP5 slice 1 (LAW 50, crew#320): `science-collect` on the Mac reads 41 stores, 31 of them
+# under the laptop's home directory, and every one of them declares `receiver: otlp` in
+# crew science/sources.json. A cluster copy of that script would read paths that do not exist
+# there. The cluster-side truth is what the collector's backend holds: every science row that
+# reached SigNoz carries the attribute named by SOURCE_ATTR (default `science.source`), and this
+# job counts rows per source over the window and writes the count as a receipt, the way
+# platform/observability/telemetry-coverage.yaml does for pods. `ok` needs at least one source in
+# the window: a backend with nothing from the science lane means the writer path is dead, and that
+# is a FAIL that names itself, never a quiet zero. A backend that cannot answer is BLIND.
+# Reader: bin/idp-science-facts (freshness, verdict, and with --sources the closed-world diff
+# against crew science/sources.json). Hourly; the Mac tick runs four times a day.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: science-facts
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: science-facts-collect
+data:
+  collect.py: |
+    import json, os, sys, urllib.parse, urllib.request
+    from datetime import datetime, timezone
+    CH = os.environ.get("CLICKHOUSE_URL", "http://signoz-clickhouse:8123")
+    WINDOW_SEC = int(os.environ.get("WINDOW_SEC", "86400"))
+    ATTR = os.environ.get("SOURCE_ATTR", "science.source")
+    def clickhouse(sql):
+        pw = open("/secrets/password").read().strip()
+        req = urllib.request.Request(CH + "/?" + urllib.parse.urlencode({"query": sql + " FORMAT TSV"}),
+                                     headers={"X-ClickHouse-User": "admin", "X-ClickHouse-Key": pw})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return [tuple(line.split("\t")) for line in r.read().decode().splitlines() if line]
+    QUERY = (f"SELECT attributes_string['{ATTR}'] AS source, count(), "
+             f"toString(toDateTime(intDiv(max(timestamp), 1000000000))) "
+             f"FROM signoz_logs.distributed_logs_v2 "
+             f"WHERE timestamp > toUInt64(toUnixTimestamp(now()) - {WINDOW_SEC}) * 1000000000 "
+             f"AND attributes_string['{ATTR}'] != '' GROUP BY source ORDER BY source")
+    def main(clickhouse=clickhouse, now=None):
+        now = now or datetime.now(timezone.utc)
+        at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        sources, errors = {}, {}
+        try:
+            for source, n, last in clickhouse(QUERY):
+                sources[source] = {"rows": int(n), "last_at": last}
+        except Exception as e:  # a backend that cannot answer is BLIND, never a pass
+            errors["logs"] = str(e)[:160]
+        total = sum(s["rows"] for s in sources.values())
+        body = {"at": at, "window_sec": WINDOW_SEC, "attr": ATTR, "sources": sources, "backend_errors": errors}
+        if errors:
+            head = f"BLIND science-facts at {at} backend unreachable: {errors['logs']}"
+        else:
+            verdict = "ok" if sources else "FAIL"
+            head = (f"{verdict} science-facts at {at} window_h={WINDOW_SEC // 3600} "
+                    f"sources={len(sources)} rows={total}")
+            if not sources:
+                head += f" (no row carried attribute {ATTR}: the science writer never reached the collector)"
+        return head, body
+    if __name__ == "__main__":
+        head, body = main()
+        sys.stdout.write(head + "\n" + json.dumps(body, sort_keys=True) + "\n")
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: science-facts
+spec:
+  schedule: "7 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 3600
+      backoffLimit: 2
+      activeDeadlineSeconds: 180
+      template:
+        spec:
+          serviceAccountName: science-facts
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          containers:
+            - name: receipt
+              image: ghcr.io/oracle/oci-cli:20260826
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  python3 /collect/collect.py > /tmp/receipt
+                  head -1 /tmp/receipt
+                  oci --auth instance_principal os object put --bucket-name estate-drill-receipts \
+                    --name science/facts --file /tmp/receipt --content-type text/plain --force
+              env:
+                - { name: HOME, value: /tmp }
+              volumeMounts:
+                - { name: collect, mountPath: /collect, readOnly: true }
+                - { name: clickhouse-auth, mountPath: /secrets, readOnly: true }   # Kyverno: the password is a file, never an env var
+                - { name: tmp, mountPath: /tmp }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { cpu: 200m, memory: 256Mi }
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+                seccompProfile: { type: RuntimeDefault }
+          volumes:
+            - name: collect
+              configMap: { name: science-facts-collect }
+            - name: clickhouse-auth
+              secret: { secretName: clickhouse-auth }
+            - name: tmp
+              emptyDir: {}

@@ -33,6 +33,9 @@ spec:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       namespace: observability
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: healthchecks
   to:
     - group: ""
       kind: Service

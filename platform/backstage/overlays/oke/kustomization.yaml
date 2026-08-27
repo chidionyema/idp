@@ -11,6 +11,9 @@ resources:
   - ../../base
   - backstage-external-secret.yaml
   - httproute.yaml
+  # crew#503 CP6: backstage/founder is a kustomization of its own (a directory base may live anywhere;
+  # a file outside the overlay may not, and plain `kustomize build` in the tests refuses it).
+  - ../../../../backstage/founder
 images:
   # build-multiarch pushes ghcr.io/chidionyema/<image name from bin/dockerfiles>:<commit sha>
   # and nothing else (its header: a moving tag leaves a rollback nothing to roll back to).
@@ -21,7 +24,7 @@ images:
     newName: ghcr.io/chidionyema/backstage
     # image-automation-controller rewrites this line from ImagePolicy flux-system/backstage
     # (platform/image-automation/backstage.yaml, crew#267); the marker is how it finds the line.
-    newTag: main-543-d3b6e287b69740f288104cef849d608d075256b2 # {"$imagepolicy": "flux-system:backstage:tag"}
+    newTag: main-1188-57a4f33aa1eac1dbd88bef9f67b372712522dcbe # {"$imagepolicy": "flux-system:backstage:tag"}
   # OKE's CRI-O enforces fully qualified names: `postgres:17.6-alpine` failed with
   # "short name mode is enforcing" on 2026-08-25. k3d resolves either form.
   - name: postgres
@@ -46,5 +49,13 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value: {name: APP_BASE_URL, value: "https://catalogue.${ESTATE_ZONE}"}
-generatorOptions:
-  disableNameSuffixHash: true
+      # crew#503 CP6: the founder's surfaces reach the portal from git through Flux, never from a
+      # laptop push. The ConfigMap below carries backstage/founder/catalog-info.yaml; Flux
+      # postBuild substitutes ${ESTATE_ZONE} in it like every other manifest here, and the
+      # container mounts it at /estate/founder (app-config.container.yaml location).
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value: {name: founder, configMap: {name: founder-catalog}}
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value: {name: founder, mountPath: /estate/founder, readOnly: true}

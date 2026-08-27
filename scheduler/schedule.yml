@@ -1,43 +1,73 @@
+# runs_on (crew#516 CP2, 2026-08-27): where each job belongs once the Mac is gone.
+#   cluster  needs only a checkout, git, gh, oci and python: rendered to a CronJob on OKE.
+#            Graded from what the script reads, not from its command line: six rows first marked
+#            cluster read ~/.estate, ~/dev/code or ESTATE_HOME files the Mac writes, and the seventh
+#            writes the Mac's board (2026-08-27). Zero rows can move until that state leaves the Mac.
+#   mac      reads or writes Mac-only state today; runs_on_ref is the ticket that moves it
+#   retire   exists only because the estate is on a Mac (docker/colima, launchd, load, checkouts)
+# runs_on_ref names the crew item. tests/test_incident_crew516_every_schedule_names_where_it_runs.py
+# refuses a job without both, and a `cluster` job whose command names a Mac-only path.
 jobs:
   ai.aiden.watch:
+    runs_on: mac
+    runs_on_ref: crew#516 CP4
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - watch
     - /usr/bin/python3
     - ~/.claude/scripts/aiden/tick.py
     cron: '*/5 * * * *'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.agent-guard-lint:
+    runs_on: retire
+    runs_on_ref: crew#478
     command:
     - /usr/local/bin/python3
     - $CODE/agent-guard/bin/launchd-lint
     - --broadcast-on-red
     cron: 33 5,11,17,23 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
+  ai.estate.checkout-drift:
+    runs_on: retire
+    runs_on_ref: crew#479
+    command:
+    - ~/.claude/scripts/hc-wrap.sh
+    - checkout-drift
+    - /usr/bin/python3
+    - $CODE/idp/bin/idp-checkout-drift
+    env:
+      ESTATE_CHECKOUTS: $CODE/crew:$CODE/idp:$CODE/hermes-v2:~/.claude/scripts
+    cron: 17 * * * *
+    skip_on_battery: false
+    timeout_s: 600
   ai.estate.dep-alerts:
+    # gh api runs anywhere, but its only output is tracked.board(), a line appended to the Mac's
+    # board file that sessions on this Mac read; on the cluster the alert would land nowhere (LAW 28)
+    runs_on: mac
+    runs_on_ref: crew#412
     command:
     - /usr/bin/python3
     - ~/.claude/scripts/estate/dep_alerts.py
     cron: 10 8 * * *
     cwd: ~/.claude/scripts
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.drills:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - /usr/bin/python3
     - ~/.claude/scripts/drills/run.py
     - --all
     cron: 30 4 * * *
     cwd: ~/.claude/scripts
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.friction-relay:
+    runs_on: mac
+    runs_on_ref: crew#396
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - friction-relay
@@ -46,10 +76,11 @@ jobs:
     - --refresh
     cron: '*/10 * * * *'
     cwd: '~'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.idp:
+    runs_on: retire
+    runs_on_ref: crew#458
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - estate-idp
@@ -58,20 +89,22 @@ jobs:
     cwd: $IDP
     env:
       HOME: '~'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.key-escrow:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - /usr/bin/python3
     - ~/.claude/scripts/estate/key_escrow.py
     - --seal
     cron: 10 5 * * *
     cwd: ~/.claude/scripts
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.law-writer:
+    runs_on: mac
+    runs_on_ref: crew#396
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - law-writer
@@ -79,10 +112,12 @@ jobs:
     - ~/.claude/scripts/law-writer.py
     - --write
     cron: 5 1,7,13,19 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.sovereign-digest:
+    # reads the worker's SB_RECEIPTS under ESTATE_HOME, a file the Mac worker writes (measured 2026-08-27 16:55Z from the script, not the command)
+    runs_on: mac
+    runs_on_ref: crew#396
     command:
     - $IDP/sovereign/.venv/bin/python
     - -m
@@ -92,10 +127,13 @@ jobs:
     cwd: $IDP
     description: Builds the signed daily digest (max six lines, kernel-signed) from the receipt chain and posts it to the founder's Telegram; KINI spec 2.5, crew#284 CP5. Hour matches presence.digest_hour.
     cron: 0 9 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 300
   ai.estate.sovereign-self-check:
+    # its signals are the tracing last-ok marker and the alert inbox under ESTATE_HOME on the Mac; on a fresh emptyDir every run says continue (measured 2026-08-27 16:55Z from the script, not the command)
+    runs_on: mac
+    runs_on_ref: crew#396
+    ok_exit: [1]  # 1 = ran fine and reports a finding; not a crash
     command:
     - $IDP/sovereign/.venv/bin/python
     - -m
@@ -106,37 +144,41 @@ jobs:
     cwd: $IDP
     description: Evaluates the self-termination rules (KINI spec 5, crew#284 CP6) every five minutes and acts on the verdict; Langfuse blind over blind.halt_after_min or a low-confidence streak stops running sessions, an alert flood posts one signed digest.
     cron: '*/5 * * * *'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 120
   ai.estate.tracked-guard:
+    # syncs this Mac's ~/.claude/scripts checkout; nothing to sync once there is no Mac (measured 2026-08-27 16:55Z from the script, not the command)
+    runs_on: retire
+    runs_on_ref: crew#516 CP2
     command:
     - /usr/bin/python3
     - ~/.claude/scripts/tracked.py
     - --sync
     cron: '*/30 * * * *'
     cwd: ~/.claude/scripts
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.hermes.runaway-reaper:
+    runs_on: retire
+    runs_on_ref: crew#516 CP4
     command:
     - /usr/local/bin/python3
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - ai.hermes.runaway-reaper
     - --
     - /bin/bash
-    - ~/.hermes/scripts/runaway-reaper.sh
+    - ~/.claude/scripts/estate/runaway-reaper.sh
     cron: '*/5 * * * *'
     cwd: ~/.hermes
     env:
       HERMES_HOME: ~/.hermes
       HOME: '~'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   ai.idp.reconcile:
+    runs_on: retire
+    runs_on_ref: crew#458
     command:
     - $IDP/bin/idp-reconcile
     - --fix
@@ -146,6 +188,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 300
   com.chidionyema.graphify-sweep:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - graphify-sweep
@@ -155,10 +199,11 @@ jobs:
     - --root
     - $CODE
     cron: 57 1,7,13,19 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.chidionyema.guard-selftest:
+    runs_on: mac
+    runs_on_ref: crew#306
     command:
     - /usr/local/bin/python3
     - ~/.claude/scripts/estate-selftest.py
@@ -166,13 +211,14 @@ jobs:
     - --alert
     cron: 15 7,19 * * *
     cwd: ~/.claude/scripts
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.chidionyema.reflect:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/Documents/code/prospector/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.chidionyema.reflect
     - --
@@ -180,29 +226,35 @@ jobs:
     - ~/.claude/scripts/reflect.py
     - --json
     cron: 9 3,7,11,15,19,23 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.estate.bundlepush:
+    runs_on: mac
+    runs_on_ref: crew#300
     command:
     - ~/.claude/bin/estate-runner
     - ~/.claude/scripts/estate/estate_bundle_push.sh
     cron: 27 0,2,4,6,8,10,12,14,16,18,20,22 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.estate.catalog-render:
+    # reads ~/.estate/state/inventory.json, the Mac inventory (measured 2026-08-27 16:55Z from the script, not the command)
+    runs_on: mac
+    runs_on_ref: crew#516 CP3
     after: com.estate.inventory
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - estate-catalog-render
     - /usr/local/bin/python3
     - $IDP/bin/catalog-render
+    - --scheduled
     cwd: $IDP
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 900
   com.estate.costsentinel:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
+    ok_exit: [1]  # 1 = ran fine and reports a finding; not a crash
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - estate-costsentinel
@@ -210,18 +262,20 @@ jobs:
     - ~/.claude/scripts/estate/estate_cost_sentinel.py
     - --digest
     cron: '*/15 * * * *'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.estate.downshift:
+    runs_on: retire
+    runs_on_ref: crew#85
     command:
     - /usr/local/bin/python3
     - ~/.claude/scripts/estate/estate_downshift.py
     cron: '*/15 * * * *'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.estate.inventory:
+    runs_on: mac
+    runs_on_ref: crew#516 CP3
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - estate-inventory-real
@@ -233,19 +287,21 @@ jobs:
     cwd: ~/.estate
     env:
       HOME: '~'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.estate.restic-backup:
+    runs_on: mac
+    runs_on_ref: crew#300
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - estate-restic
     - ~/.claude/scripts/estate/restic-backup.sh
     cron: 30 3 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.agentcert:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - agentcert
@@ -255,10 +311,11 @@ jobs:
     - ~/.claude/scripts/estate/agent_cert.py
     cron: 11 0,2,4,6,8,10,12,14,16,18,20,22 * * *
     cwd: ~/.claude/scripts/estate
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.board:
+    runs_on: mac
+    runs_on_ref: crew#412
     command:
     - /usr/local/bin/python3
     - ~/.claude/scripts/founder_board.py
@@ -266,46 +323,52 @@ jobs:
     - ~/.claude/state/founder-board.html
     cron: 43 0,2,4,6,8,10,12,14,16,18,20,22 * * *
     cwd: '~'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.configsyntaxsweep:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - /usr/local/bin/python3
     - ~/.claude/scripts/config-syntax-sweep.py
     - --broadcast-on-red
     cron: 17 2,8,14,20 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.estateaudit:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - /usr/bin/python3
     - ~/.claude/scripts/estate/estate_audit.py
     - --html
     - --state
     cron: 21 1,7,13,19 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.estatelander:
+    # globs ~/dev/code/* and ~/.claude, the Mac's checkouts (measured 2026-08-27 16:55Z from the script, not the command)
+    runs_on: mac
+    runs_on_ref: crew#516 CP3
     command:
     - /usr/bin/python3
     - $CODE/crew/scripts/estate-lander
     - --push
     cron: 29 1,7,13,19 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.estatepush:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - /bin/bash
     - ~/.claude/scripts/estate/estate_push.sh
     cron: 19 0,2,4,6,8,10,12,14,16,18,20,22 * * *
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.estatesnapshot:
+    runs_on: mac
+    runs_on_ref: crew#516 CP3
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - estate-snapshot
@@ -313,18 +376,20 @@ jobs:
     - --commit
     cron: 3 0,2,4,6,8,10,12,14,16,18,20,22 * * *
     cwd: $CODE/.crew-state
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.estatewatch:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - /usr/bin/python3
     - ~/.claude/scripts/estate/estate_watch.py
     cron: '*/30 * * * *'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.ingit:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - ingit
@@ -334,10 +399,11 @@ jobs:
     - ~/.claude/scripts/estate/in-git.py
     cron: 35 0,2,4,6,8,10,12,14,16,18,20,22 * * *
     cwd: ~/.claude/scripts/estate
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.lawenforcement:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - lawenforcement
@@ -347,57 +413,54 @@ jobs:
     - $CODE/crew/science/law_enforcement.py
     cron: 51 0,2,4,6,8,10,12,14,16,18,20,22 * * *
     cwd: $CODE/crew
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.founder.sciencecollect:
+    runs_on: mac
+    runs_on_ref: crew#516 CP5
+    ok_exit: [1]  # 1 = collected fine and reports a stale or unregistered source (crew#90); not a crash
+    env:
+      HC_FINDINGS_EXIT: "1"  # hc-wrap: liveness stays green, the finding fails sciencecollect-findings
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - sciencecollect
     - $CODE/crew/scripts/science-collect
     cron: 37 1,7,13,19 * * *
     cwd: $CODE/crew
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
+  com.estate.research-intake:
+    # writes the research ledger into the crew checkout the snapshot commits (measured 2026-08-27 16:55Z from the script, not the command)
+    runs_on: mac
+    runs_on_ref: crew#516 CP5
+    command:
+    - ~/.claude/scripts/hc-wrap.sh
+    - research-intake
+    - python3
+    - $CODE/crew/science/research_intake.py
+    - pull
+    cron: 12 6 * * *
+    cwd: $CODE/crew
+    skip_on_battery: false
+    timeout_s: 900
   com.founder.stuckdetector:
+    runs_on: mac
+    runs_on_ref: crew#396
     command:
     - /bin/sh
     - ~/.claude/scripts/stuck_detector_tick.sh
     cron: '*/5 * * * *'
     cwd: '~'
-    max_load: 6.0
-    skip_on_battery: false
-    timeout_s: 1800
-  com.prospector-control.failover-watch:
-    command:
-    - ~/.prospector/bin/failover
-    - check
-    cron: '*/1 * * * *'
-    max_load: 6.0
-    skip_on_battery: false
-    timeout_s: 1800
-  com.prospector-control.receipt-bridge:
-    command:
-    - /usr/local/bin/python3
-    - ~/.hermes/scripts/launchd_receipt.py
-    - --label
-    - com.prospector-control.receipt-bridge
-    - --script
-    - engine_failover.py
-    - --
-    - ~/.prospector/bin/failover
-    - receipts
-    cron: '*/15 * * * *'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.backup:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - prospector-backup
     - ~/Documents/code/prospector-live/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.prospector.backup
     - --
@@ -409,13 +472,14 @@ jobs:
     env:
       HOME: '~'
       PROSPECTOR_STORE_DIR: ~/Documents/code/prospector/store
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.estate-inventory:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/Documents/code/prospector-live/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.prospector.estate-inventory
     - --
@@ -427,13 +491,14 @@ jobs:
     cwd: ~/Documents/code/prospector-live
     env:
       HOME: '~'
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.launchd-held:
+    runs_on: retire
+    runs_on_ref: crew#458
     command:
     - ~/Documents/code/prospector/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.prospector.launchd-held
     - --
@@ -445,10 +510,11 @@ jobs:
     env:
       HOME: '~'
       PROSPECTOR_STORE_DIR: ~/Documents/code/prospector/store
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.log-rotation:
+    runs_on: retire
+    runs_on_ref: crew#458
     command:
     - ~/Documents/code/prospector-live/.venv/bin/python
     - -m
@@ -459,10 +525,11 @@ jobs:
     env:
       HOME: '~'
       PROSPECTOR_STORE_DIR: ~/Documents/code/prospector/store
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.offsite-backup:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - prospector-offsite-backup
@@ -475,13 +542,14 @@ jobs:
     env:
       HOME: '~'
       PROSPECTOR_STORE_DIR: ~/Documents/code/prospector/store
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.process-audit:
+    runs_on: retire
+    runs_on_ref: crew#458
     command:
     - ~/Documents/code/prospector/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.prospector.process-audit
     - --
@@ -494,15 +562,16 @@ jobs:
     env:
       HOME: '~'
       PROSPECTOR_STORE_DIR: ~/Documents/code/prospector/store
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.restore-drill:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - restore-drill
     - ~/Documents/code/prospector-live/.venv/bin/python
-    - ~/.hermes/scripts/launchd_receipt.py
+    - ~/.claude/scripts/estate/launchd_receipt.py
     - --label
     - com.prospector.restore-drill
     - --script
@@ -517,6 +586,5 @@ jobs:
     env:
       HOME: '~'
       PROSPECTOR_STORE_DIR: ~/Documents/code/prospector/store
-    max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800

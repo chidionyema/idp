@@ -24,6 +24,13 @@ mkdir -p "$REPORTS"
 budget=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['infrastructure']['monthly_cap_usd'])" "$IDP/estate-defaults.yaml")
 gh pr view "$n" --json number,body,labels,files -q '{number: .number, body: .body, labels: [.labels[].name], files: [.files[].path]}' > "$REPORTS/pr-meta.json" || exit 2
 gh pr diff "$n" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true
+# crew#227 CP5: the founder's approval is a comment from the repository owner's GitHub login
+# (2FA-authenticated), never a word relayed from chat. Every `APPROVE: <word>` / `DENY: <word>`
+# he wrote on this PR lands in pr.json; the policy compares them with the Approval-word line.
+founder=$(gh repo view --json owner -q .owner.login 2>/dev/null || echo "")
+gh pr view "$n" --json comments -q --arg f "$founder" \
+  '{founder: $f, approvals: [.comments[] | select(.author.login == $f) | .body | capture("(?m)^APPROVE:\\s*(?<w>\\S+)") | .w], denials: [.comments[] | select(.author.login == $f) | .body | capture("(?m)^DENY:\\s*(?<w>\\S+)") | .w]}' \
+  > "$REPORTS/pr-words.json" 2>/dev/null || echo '{"founder": "", "approvals": [], "denials": []}' > "$REPORTS/pr-words.json"
 # The drills the policy may name: the catalogue on IDP_ROOT plus, when the PR itself changes
 # drills/catalogue.yaml, the catalogue at the PR head. Without the second copy the drill_named
 # rule's own fix ("add the drill to the catalogue in this PR") could never pass: idp#191 was
@@ -37,8 +44,8 @@ if jq -e '.files | index("drills/catalogue.yaml")' "$REPORTS/pr-meta.json" >/dev
   fi
 fi
 drills=$("$IDP/bin/idp-drill-names" "${cats[@]}" 2>/dev/null || echo '[]')
-jq -n --slurpfile m "$REPORTS/pr-meta.json" --rawfile a "$REPORTS/pr-added.txt" --argjson b "$budget" --argjson d "$drills" \
-  '{pr: ($m[0] + {added: $a}), budget_monthly_usd: $b, drills: $d}' > "$REPORTS/pr.json"
+jq -n --slurpfile m "$REPORTS/pr-meta.json" --slurpfile w "$REPORTS/pr-words.json" --rawfile a "$REPORTS/pr-added.txt" --argjson b "$budget" --argjson d "$drills" \
+  '{pr: ($m[0] + {added: $a} + $w[0]), budget_monthly_usd: $b, drills: $d}' > "$REPORTS/pr.json"
 out=$(conftest test --parser json -p "$IDP/policy" "$REPORTS/pr.json" 2>&1); rc=$?
 printf '%s\n' "$out" | grep -E 'FAIL|rule=' | sed 's/^.*FAIL - [^-]*- main - //'
 if [ "$rc" -ne 0 ] && [ "$comment" = "--comment" ]; then

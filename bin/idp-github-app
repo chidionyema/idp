@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # One GitHub App for the estate's agents; one installation token per lane (crew#286 CP7).
 #   bin/idp-github-app manifest        print the one-tap URL that creates the App (founder taps Create once)
-#   bin/idp-github-app convert <code>  exchange the manifest code for the App and store it in the estate vault
+#   bin/idp-github-app convert <code>  exchange the manifest code for the App; SEED_GITHUB_APP_* repo secrets + vault-seed.yml write the vault from CI
+#   bin/idp-github-app seed <file>     retry the repo-secret write from a key file convert kept
 #   bin/idp-github-app token <lane>    mint an installation token narrowed to platform/github-app/lanes.json
 #   bin/idp-github-app installation    record the App's installation id in the vault (Flux's git writer reads it, crew#267)
 #   bin/idp-github-app status          which identity gh acts as, and whether it is the App
@@ -11,6 +12,8 @@
 # on request, and only when stdout is not a terminal.
 set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
+# estate-secrets sits beside the main checkout, even when this runs from a worktree under .claude/worktrees (crew#408)
+MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
 D="$IDP/platform/github-app"
 SECRET=github-app
 cmd=${1:-}; shift || true
@@ -36,17 +39,43 @@ PY
   ;;
 convert)
   code=${1:?manifest code from the redirect URL}
+  # The code is one-time and the App's private key is returned exactly once. The vault is written by CI
+  # (.github/workflows/vault-seed.yml, entry github-app, from the SEED_GITHUB_APP_* repo secrets) so no
+  # laptop ever needs an OCI session (crew#503, 2026-08-27: two codes spent on a laptop whose OCI profile
+  # was not live). Prove the CI write path BEFORE spending the code: gh can set a repo secret and the
+  # seed workflow exists.
+  repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+  gh secret set SEED_GITHUB_APP_PREFLIGHT --repo "$repo" --body "$(date -u +%FT%TZ)" >/dev/null 2>&1 \
+    && gh workflow view vault-seed.yml --repo "$repo" >/dev/null 2>&1 \
+    || { echo "FAIL    github-app CI pre-flight failed (gh secret set / vault-seed.yml on $repo); the code was NOT spent" >&2; exit 2; }
   out=$(gh api -X POST "/app-manifests/$code/conversions")
-  tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT; chmod 600 "$tmp"
+  tmp=$(mktemp); chmod 600 "$tmp"
   jq -r '"GITHUB_APP_ID=\(.id)\nGITHUB_APP_SLUG=\(.slug)\nGITHUB_APP_CLIENT_ID=\(.client_id)\nGITHUB_APP_PEM_B64=\(.pem|@base64)"' <<<"$out" > "$tmp"
-  ESTATE_ENV_FILE="$tmp" "$IDP/bin/idp-vault-put" "$SECRET" app_id=GITHUB_APP_ID slug=GITHUB_APP_SLUG client_id=GITHUB_APP_CLIENT_ID pem_b64=GITHUB_APP_PEM_B64
-  echo "ok      github-app $(jq -r .slug <<<"$out") (id $(jq -r .id <<<"$out")) in vault secret $SECRET; install it on the org/user once: $(jq -r .html_url <<<"$out")/installations/new"
+  # If a write fails the key is NOT deleted: it exists nowhere else. Keep it 0600 and say how to retry.
+  ok=1
+  while IFS='=' read -r k v; do
+    gh secret set "SEED_$k" --repo "$repo" --body "$v" >/dev/null || ok=0
+  done < "$tmp"
+  if [ "$ok" != 1 ]; then
+    echo "FAIL    github-app repo-secret write failed; the App exists and its key is kept at $tmp (0600). Retry: bin/idp-github-app seed $tmp; then rm -P $tmp" >&2
+    exit 1
+  fi
+  rm -f "$tmp"
+  gh workflow run vault-seed.yml --repo "$repo" -f entry=github-app >/dev/null
+  echo "ok      github-app $(jq -r .slug <<<"$out") (id $(jq -r .id <<<"$out")) -> SEED_GITHUB_APP_* on $repo; vault-seed.yml entry=github-app dispatched; install it once: $(jq -r .html_url <<<"$out")/installations/new"
+  ;;
+seed)
+  # re-run the repo-secret write from a kept key file (only after a failed convert write)
+  f=${1:?kept key file}; repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+  while IFS='=' read -r k v; do gh secret set "SEED_$k" --repo "$repo" --body "$v" >/dev/null; done < "$f"
+  gh workflow run vault-seed.yml --repo "$repo" -f entry=github-app >/dev/null
+  echo "ok      github-app SEED_GITHUB_APP_* on $repo; vault-seed.yml entry=github-app dispatched"
   ;;
 token)
   lane=${1:?lane name from platform/github-app/lanes.json}
   perms=$(jq -c --arg l "$lane" '.[$l] // empty' "$D/lanes.json"); [ -n "$perms" ] || { echo "REFUSED: no lane '$lane' in $D/lanes.json"; exit 2; }
   export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-  C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$IDP/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+  C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
   V=$(cd "$IDP/platform/oci" && tofu output -raw vault_id)
   sid=$(oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"secret-name\"=='$SECRET' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output)
   [ -n "$sid" ] && [ "$sid" != null ] || { echo "BLIND   github-app no vault secret $SECRET; run: bin/idp-github-app convert <code>"; exit 2; }
@@ -63,7 +92,7 @@ installation)
   # githubAppInstallationID beside the id and key; the App is no longer Flux's writer (platform/image-automation/flux-writer.yaml, crew#325); kept for the alerts ledger
   # three from this one vault secret. Re-puts the secret with every existing key plus installation_id.
   export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-  C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$IDP/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+  C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
   V=$(cd "$IDP/platform/oci" && tofu output -raw vault_id)
   sid=$(oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"secret-name\"=='$SECRET' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output)
   [ -n "$sid" ] && [ "$sid" != null ] || { echo "BLIND   github-app no vault secret $SECRET; run: bin/idp-github-app convert <code>"; exit 2; }

@@ -27,17 +27,17 @@ def _wf(state: dict) -> None:
 
 @then("every KEY=KEY pair passed to bin/idp-vault-put has a SEED_KEY in the step's env")
 def _keys(state: dict) -> None:
-    needed = set(re.findall(r"\b([A-Z0-9_]+)=\1\b", state["run"])) | set(re.findall(r"\b[a-z_0-9]+=((?:GITHUB_APP|FLUX_WRITER)_[A-Z0-9_]+)", state["run"]))
+    needed = set(re.findall(r"\b([A-Z0-9_]+)=\1\b", state["run"])) | set(re.findall(r"\b[a-z_0-9]+=((?:GITHUB_APP|FLUX_WRITER|TEMPORAL_DB)_[A-Z0-9_]+)", state["run"]))
     assert needed, "no KEY=KEY pairs found"
     missing = {k for k in needed if f"SEED_{k}" not in state["step"]["env"]}
     assert not missing, f"no SEED_ secret for {sorted(missing)}"
 
 
-@then("the workflow is dispatch-only with entries all, prospector-engine-env, github-app and flux-writer")
+@then("the workflow is dispatch-only with entries all, prospector-engine-env, github-app, flux-writer, temporal-db and mcp-gateway")
 def _dispatch(state: dict) -> None:
     on = state["doc"][True] if True in state["doc"] else state["doc"]["on"]   # yaml parses `on:` as True
     assert list(on) == ["workflow_dispatch"]
-    assert on["workflow_dispatch"]["inputs"]["entry"]["options"] == ["all", "prospector-engine-env", "github-app", "flux-writer"]
+    assert on["workflow_dispatch"]["inputs"]["entry"]["options"] == ["all", "prospector-engine-env", "github-app", "flux-writer", "temporal-db", "mcp-gateway"]
 
 
 @then("the run step never echoes, prints or cats the seed env file and removes it at the end")

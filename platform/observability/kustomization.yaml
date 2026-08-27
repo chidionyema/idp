@@ -5,6 +5,7 @@ resources:
   - namespace.yaml
   - signoz.yaml
   - k8s-infra.yaml
+  - telemetry-coverage.yaml
   - langfuse.yaml
   - httproute.yaml
 configMapGenerator:

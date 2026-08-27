@@ -26,4 +26,5 @@ spec:
     name: estate-catalog
   path: ./
   prune: true
+  wait: true
   targetNamespace: backstage

@@ -10,6 +10,8 @@ nav:
   - Architecture:
       - architecture/index.md
       - Live estate: architecture/live.md
+  - Estate showcase: SHOWCASE.md
+  - Planned, blocking, when: NEXT.md
   - Decisions:
       - 0001 Gateway API is the routing standard: decisions/0001-gateway-api-is-the-routing-standard.md
       - 0002 Documentation is code: decisions/0002-documentation-is-code-and-the-portal-renders-it.md
@@ -34,6 +36,9 @@ nav:
   - Explanation: explanation/index.md
   - Demo:
       - Portal: demo/idp.md
+      - Estate showcase: demo/estate-showcase.md
+      - Estate next: demo/estate-next.md
+      - Trace matrix: demo/trace-matrix.md
       - Plist gate: demo/plist.md
       - k8s-infra: demo/k8s-infra.md
       - Oracle identity: demo/oci.md
@@ -51,6 +56,8 @@ nav:
       - LAW 32 gate: demo/law32.md
       - Actions pinned: demo/actions-pinned.md
       - Front-door login drill: demo/idp-login-drill.md
+      - Portability drill: demo/idp-portability-drill.md
+      - Free-tier allowance row: demo/idp-free-tier.md
       - PR report (operating-model gate): demo/pr-report.md
       - Estate security scan: demo/estate-security-scan.md
       - Estate security rollout: demo/estate-security-rollout.md
@@ -73,8 +80,13 @@ nav:
       - Policy test: demo/policy-test.md
       - Port gate: demo/port.md
       - Repo rulesets: demo/repo-rulesets.md
+      - Telemetry coverage: demo/telemetry-coverage.md
+      - Wake blocked: demo/wake-blocked.md
   - Onboarding:
+      - Trace matrix: onboarding/trace-matrix.md
       - Portal: onboarding/idp.md
+      - Estate showcase: onboarding/estate-showcase.md
+      - Estate next: onboarding/estate-next.md
       - Plist gate: onboarding/plist.md
       - Oracle identity: onboarding/oci.md
       - Flux on OKE: onboarding/oke.md
@@ -96,6 +108,8 @@ nav:
       - LAW 32 gate: onboarding/law32.md
       - Actions pinned: onboarding/actions-pinned.md
       - Front-door login drill: onboarding/idp-login-drill.md
+      - Portability drill: onboarding/idp-portability-drill.md
+      - Free-tier allowance row: onboarding/idp-free-tier.md
       - PR report (operating-model gate): onboarding/pr-report.md
       - Estate security scan: onboarding/estate-security-scan.md
       - Estate security rollout: onboarding/estate-security-rollout.md
@@ -117,3 +131,5 @@ nav:
       - Policy test: onboarding/policy-test.md
       - Port gate: onboarding/port.md
       - Repo rulesets: onboarding/repo-rulesets.md
+      - Telemetry coverage: onboarding/telemetry-coverage.md
+      - Wake blocked: onboarding/wake-blocked.md

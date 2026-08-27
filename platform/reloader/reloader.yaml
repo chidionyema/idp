@@ -1,0 +1,69 @@
+# Secret rotation reaches the pod (crew#506 CP4 incident, 2026-08-27). The router exports its
+# upstream keys once, at start (platform/llm/litellm.yaml command), so a key that ESO refreshes
+# into the Secret `litellm-upstream` is invisible until the pod restarts. GROQ_API_KEY was written
+# to the vault at 14:35Z (oke-check 33082342968: `keys set: ... GROQ_API_KEY`), `/v1/models`
+# listed `groq`, and a completion still answered `Invalid API Key` — the pod was holding the
+# pre-rotation Secret. No kube path exists from a laptop or a runner (LAW 46, R "infra is never
+# Mac-bound"), so the restart must come from inside the cluster.
+#
+# Stakater Reloader is the mature tool for exactly this (LAW 43): it watches Secrets/ConfigMaps
+# and rolls the workloads that opt in by annotation. Rejected: a Flux-side checksum annotation
+# (only fires on a git change, a vault rotation is not one); an in-cluster CronJob running
+# `kubectl rollout restart` (a script for a problem a proven tool solves, headline rule 1).
+# Chart pinned; 2.2.16 was the latest on 2026-08-27
+# (api.github.com/repos/stakater/Reloader/releases/latest).
+#
+# Scope: only the namespaces listed under `reloader.namespaces` are watched, and only workloads
+# carrying `secret.reloader.stakater.com/reload: "<name>"` are rolled (autoReloadAll stays false),
+# so a rotation never surprises a row that did not ask. `reloadOnCreate: true` because a Secret that
+# already existed when Reloader arrived never emits an update: the first GROQ_API_KEY sat in
+# `litellm-upstream` while the pod kept answering `Invalid API Key` (crew#506 CP4, 2026-08-27).
+# The price is one roll of each opted-in workload whenever Reloader itself restarts.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: reloader
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: stakater
+  namespace: reloader
+spec:
+  interval: 24h
+  url: https://stakater.github.io/stakater-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: reloader
+  namespace: reloader
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: reloader
+      version: 2.2.16
+      sourceRef:
+        kind: HelmRepository
+        name: stakater
+  values:
+    fullnameOverride: reloader
+    reloader:
+      autoReloadAll: false
+      reloadOnCreate: true
+      watchGlobally: false
+      namespaces:
+        - llm
+      readOnlyRootFileSystem: true
+      deployment:
+        # the estate policy set (prospector-main/deploy/k8s/policies) refused the chart defaults on
+        # disallow-privilege-escalation, drop-all-capabilities, disallow-capabilities-strict
+        containerSecurityContext:
+          allowPrivilegeEscalation: false
+          capabilities: { drop: ["ALL"] }
+          readOnlyRootFilesystem: true
+        # one 1.8-core node (platform/oci/main.tf); Kyverno refuses pods without limits
+        resources:
+          requests: { cpu: 10m, memory: 64Mi }
+          limits: { cpu: 100m, memory: 128Mi }

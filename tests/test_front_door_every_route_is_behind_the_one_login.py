@@ -39,6 +39,12 @@ def test_routes_exist():
     assert ROUTES, "no HTTPRoute under platform/"
 
 
+
+def api_key_enforced(cfg: str) -> bool:
+    """True when an agentgateway config carries a strict apiKey policy with a hashed key: the
+    two-part proof an `idp.estate/auth: api-key` route must show (crew#458)."""
+    return "apiKey:" in cfg and "mode: strict" in cfg and "keyHash: sha256:" in cfg
+
 @pytest.mark.parametrize("f,route", ROUTES, ids=[d["metadata"]["name"] for _, d in ROUTES])
 def test_every_route_outside_identity_is_behind_forward_auth(f, route):
     ns = route["metadata"]["namespace"]
@@ -52,6 +58,13 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
         assert cfg.exists() and "master_key: os.environ/" in cfg.read_text(), \
             f"{f}: annotated bearer-master-key but {cfg} enforces no master_key"
         return
+    # The MCP gateway (crew#458) enforces its own API key: the route may skip oauth2-proxy only when
+    # it says so AND the agentgateway config beside it carries a strict apiKey policy with a hashed key.
+    if (route["metadata"].get("annotations") or {}).get("idp.estate/auth") == "api-key":
+        gw = pathlib.Path(f).parent / "agentgateway.yaml"
+        assert gw.exists() and api_key_enforced(gw.read_text()), \
+            f"{f}: annotated api-key but {gw} enforces no strict apiKey"
+        return
     # The trace store's public API (crew#325) carries Langfuse's own project-key auth. The route may
     # skip oauth2-proxy only when it says so AND exposes nothing but /api/public/, AND the namespace
     # pulls the two project keys Langfuse enforces on that path (langfuse.yaml, from the vault).
@@ -62,6 +75,20 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
         keys = (pathlib.Path(f).parent / "langfuse.yaml").read_text()
         assert "langfuse-init-public-key" in keys and "langfuse-init-secret-key" in keys, \
             f"{f}: annotated langfuse-project-keys but langfuse.yaml pulls no project keys"
+        return
+    # The job monitor's ping path (crew#177) is called by curl from every wrapped launchd job and
+    # cannot sit behind a browser login. Healthchecks authenticates it with the project ping key in
+    # the URL (/ping/<key>/<slug>). The route may skip oauth2-proxy only when it says so AND exposes
+    # nothing but /ping/, AND the row enrols that key from the vault (healthchecks.yaml reads
+    # healthchecks-ping-key and pins it on the project).
+    if (route["metadata"].get("annotations") or {}).get("idp.estate/auth") == "healthchecks-ping-key":
+        paths = [m.get("path", {}) for rule in route["spec"]["rules"] for m in rule.get("matches", [])]
+        assert paths and all(p == {"type": "PathPrefix", "value": "/ping/"} for p in paths), \
+            f"{f}: annotated healthchecks-ping-key but exposes a path other than /ping/: {paths}"
+        row = (pathlib.Path(f).parent / "external-secret.yaml").read_text()
+        assert "healthchecks-ping-key" in row, f"{f}: annotated healthchecks-ping-key but the row pulls no ping key"
+        enrol = (pathlib.Path(f).parent / "healthchecks.yaml").read_text()
+        assert "project.ping_key = os.environ[\"PING_KEY\"]" in enrol, f"{f}: the row never pins the ping key on the project"
         return
     guarded = 0
     for rule in route["spec"]["rules"]:
