@@ -25,7 +25,13 @@ SESSIONS_DIR="$HOME/.oci/sessions"
 # the Linux runner every mtime was garbage, `-gt` errored and no live session was
 # ever detected (vault-seed 33089277235). Try BSD, then GNU, else 0.
 token_mtime() {
-  stat -f "%m" "$1" 2>/dev/null || stat -c "%Y" "$1" 2>/dev/null || echo 0
+  # GNU `stat -f` exits 0 with filesystem text, so an exit-code fallback is not
+  # enough: take the first candidate that is purely digits.
+  local m
+  for m in "$(stat -f "%m" "$1" 2>/dev/null)" "$(stat -c "%Y" "$1" 2>/dev/null)"; do
+    case "$m" in ''|*[!0-9]*) continue;; *) echo "$m"; return;; esac
+  done
+  echo 0
 }
 
 live=""
