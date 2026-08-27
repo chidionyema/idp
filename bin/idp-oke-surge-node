@@ -28,9 +28,11 @@ if [ "${1:-}" = --finish ]; then
   # only once a receipt no older than SURGE_RECEIPT_MAX_AGE_SECONDS shows the NEWEST node Ready.
   rows=$(oci ce node-pool get --node-pool-id "$POOL" --query 'data.nodes[?"lifecycle-state"==`ACTIVE`].{id:id,ip:"private-ip",t:"time-created"}' --raw-output)
   body=$(oci os object get "${ns[@]}" --bucket-name "$BUCKET" --name state/cluster --file - 2>&1) || true
-  verdict=$(printf '%s\n%s' "$rows" "$body" | python3 -c '
-import sys, json, datetime as dt
-rows_s, body = sys.stdin.read().split("\n", 1); rows = json.loads(rows_s) or []
+  # The CLI pretty-prints its JSON over many lines; run 33110054128 split stdin at the first
+  # newline and parsed "[" (JSONDecodeError char 1). The rows travel in the environment, whole.
+  verdict=$(printf '%s' "$body" | SURGE_ROWS="$rows" python3 -c '
+import sys, os, json, datetime as dt
+body = sys.stdin.read(); rows = json.loads(os.environ.get("SURGE_ROWS") or "[]") or []
 _, _, rest = body.strip().partition("\n")                   # grade line, then JSON (bin/idp-cluster-state:32)
 try: r = json.loads(rest)
 except ValueError: print("BLIND, receipt state/cluster unreadable: %s" % (body.strip().splitlines()[0] if body.strip() else "empty read")); sys.exit(0)
