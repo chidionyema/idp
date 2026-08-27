@@ -25,14 +25,14 @@ def _list(state: dict) -> None:
     state["rows"] = {l.split()[0]: l.split() for l in r.stdout.splitlines() if l.strip()}
 
 
-@then("it lists sovereign-worker built from sovereign/sovereign-worker.Dockerfile")
+@then("it lists sovereign-worker built from sovereign-worker.Dockerfile")
 def _listed(state: dict) -> None:
-    assert state["rows"].get("sovereign-worker") == ["sovereign-worker", "sovereign/sovereign-worker.Dockerfile", "sovereign"], state["rows"]
+    assert state["rows"].get("sovereign-worker") == ["sovereign-worker", "sovereign-worker.Dockerfile", "."], state["rows"]
 
 
 @then("the Dockerfile runs python -m sovereign.engine.worker as a non-root user")
 def _dockerfile() -> None:
-    lines = [l.strip() for l in (IDP / "sovereign/sovereign-worker.Dockerfile").read_text().splitlines() if l.strip() and not l.startswith("#")]
+    lines = [l.strip() for l in (IDP / "sovereign-worker.Dockerfile").read_text().splitlines() if l.strip() and not l.startswith("#")]
     assert lines[-1] == 'CMD ["python", "-m", "sovereign.engine.worker"]', lines[-1]
     assert any(l.startswith("USER ") and l != "USER root" for l in lines), lines
 

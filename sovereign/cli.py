@@ -543,6 +543,52 @@ def cmd_worker(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_kini(args: argparse.Namespace) -> int:
+    """crew#396 step 3: `kini finish` starts KiniFinishWorkflow (one run at a time, workflow id
+    config.KINI_WORKFLOW_ID); `kini status` reads its progress query and, when it has finished,
+    its result. Both talk to the engine the worker polls; nothing here runs a test locally."""
+    from temporalio.client import Client, WorkflowFailureError
+    from temporalio.exceptions import WorkflowAlreadyStartedError
+
+    from sovereign.engine import kini
+
+    async def go() -> dict[str, Any]:
+        client = await Client.connect(config.TEMPORAL_ADDRESS, namespace=config.TEMPORAL_NAMESPACE)
+        if args.kini_command == "finish":
+            try:
+                handle = await client.start_workflow(
+                    kini.WORKFLOW, config.kini_workflow_params(),
+                    id=config.KINI_WORKFLOW_ID, task_queue=config.TEMPORAL_TASK_QUEUE,
+                )
+            except WorkflowAlreadyStartedError:
+                handle = client.get_workflow_handle(config.KINI_WORKFLOW_ID)
+                return {"ok": True, "started": False, "already_running": True, "workflow_id": handle.id}
+            out = {"ok": True, "started": True, "workflow_id": handle.id, "run_id": handle.result_run_id}
+            if args.wait:
+                try:
+                    out["result"] = await handle.result()
+                    out["ok"] = bool(out["result"].get("ok"))
+                except WorkflowFailureError as e:
+                    out.update(ok=False, error=str(e))
+            return out
+        handle = client.get_workflow_handle(config.KINI_WORKFLOW_ID)
+        desc = await handle.describe()
+        out: dict[str, Any] = {"ok": True, "workflow_id": handle.id, "status": desc.status.name if desc.status else None}
+        if desc.status is not None and desc.status.name == "RUNNING":
+            out["progress"] = await handle.query("progress")
+        else:
+            try:
+                out["result"] = await handle.result()
+                out["ok"] = bool(out["result"].get("ok"))
+            except WorkflowFailureError as e:
+                out.update(ok=False, error=str(e))
+        return out
+
+    res = asyncio.run(go())
+    _emit(res, args.json)
+    return 0 if res.get("ok") else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="sb", description="Sovereign Bus")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -718,6 +764,17 @@ def main(argv: list[str] | None = None) -> int:
         p = sub.add_parser("install-plugin", help="install the hermes plugin (delegates to otto.cli)")
         _add_json(p)
         p.set_defaults(func=cmd_install_plugin)
+
+    if "kini" not in sub.choices:
+        p = sub.add_parser("kini", help="KINI checkpoints as one durable workflow (crew#396)")
+        ks = p.add_subparsers(dest="kini_command", required=True)
+        pf = ks.add_parser("finish", help="start KiniFinishWorkflow; the worker runs CP1..CP7 with retries and healing")
+        pf.add_argument("--wait", action="store_true", help="block until the workflow returns")
+        _add_json(pf)
+        pf.set_defaults(func=cmd_kini)
+        pst = ks.add_parser("status", help="progress of the running (or last) KiniFinishWorkflow")
+        _add_json(pst)
+        pst.set_defaults(func=cmd_kini)
 
     args = parser.parse_args(argv)
     return args.func(args)

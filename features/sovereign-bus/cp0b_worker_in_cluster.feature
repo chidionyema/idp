@@ -5,7 +5,7 @@ Feature: The sovereign worker runs in the cluster next to the engine
 
   Scenario: The worker image is on the estate's one image list
     Given bin/dockerfiles
-    Then it lists sovereign-worker built from sovereign/sovereign-worker.Dockerfile
+    Then it lists sovereign-worker built from sovereign-worker.Dockerfile
     And the Dockerfile runs python -m sovereign.engine.worker as a non-root user
 
   Scenario: The worker Deployment polls the in-cluster frontend and rolls on every main build
