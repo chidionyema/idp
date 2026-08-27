@@ -5,12 +5,13 @@
 because the operating model (crew#286, `docs/policy/enterprise-operating-model.md`)
 is a set of rules a PR must satisfy: an identity ships with its scope, no
 instruction line sends a person to a console, a founder-facing change names the
-word he replies with, a `platform/oci` change declares its monthly cost and its
-canary label. A rule nobody can be stopped by is a wish, so the rules run on
+word he can veto with (nothing waits for `APPROVE:` since 2026-08-27), a `platform/oci`
+change declares its monthly cost and its canary label. A rule nobody can be stopped by is a wish, so the rules run on
 every PR.
 
 Run on a live PR. On the evening it landed, idp#155 was refused because it changed
-`docs/policy/` without an `Approval-word:` line:
+`docs/policy/` without an `Approval-word:` line (that rule was retired on 2026-08-27; a
+`DENY: <word>` from the founder still refuses):
 
 ```
 $ bin/pr-report 155
@@ -37,7 +38,7 @@ $ bin/policy-test
 opmodel-ok.json      0        0        allows an identity with its grant, an approval word, a cost line and the canary label (crew#286)
 opmodel-half-provisioned.json 1        1        refuses an identity created with no grant or policy in the same PR (ZCP, crew#287)
 opmodel-gui.json     1        1        refuses an instruction line that sends a person to a console
-opmodel-no-approval.json 1        1        refuses a founder-facing change with no Approval-word line
+opmodel-no-approval.json 0        0        allows a founder-facing change with no Approval-word line (retired rule, 2026-08-27)
 opmodel-over-budget.json 1        1        refuses a platform/oci change whose declared monthly cost beats the budget
 opmodel-no-canary.json 1        1        refuses a platform/oci change with no canary label
 PASS      every policy allows its good case and refuses its bad ones

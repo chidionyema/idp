@@ -74,3 +74,35 @@ def test_flux_row_waits_on_edge_and_secret_store() -> None:
     assert {d["name"] for d in llm["spec"]["dependsOn"]} >= {"edge", "secret-store"}
     assert llm["spec"]["wait"] is True
     assert llm["spec"]["postBuild"]["substituteFrom"][0]["name"] == "estate-config"
+
+
+def test_founder_picks_models_in_the_admin_ui_not_by_pr() -> None:
+    """crew#400/crew#408 (rung 2). The founder adds models at llm.<zone>/ui; the console signs in with IDCS."""
+    assert CLUSTER_CFG["general_settings"].get("store_model_in_db") is True
+    docs = list(yaml.safe_load_all((CLUSTER / "external-secret.yaml").read_text()))
+    sso = next(d for d in docs if d["metadata"]["name"] == "litellm-sso")
+    assert {d["secretKey"] for d in sso["spec"]["data"]} == {"GENERIC_CLIENT_ID", "GENERIC_CLIENT_SECRET", "PROXY_ADMIN_ID"}
+    dep = next(d for d in yaml.safe_load_all((CLUSTER / "litellm.yaml").read_text()) if d["kind"] == "Deployment")
+    spec = dep["spec"]["template"]["spec"]
+    vol = next(v for v in spec["volumes"] if v.get("secret", {}).get("secretName") == "litellm-sso")
+    mounts = {m["name"]: m["mountPath"] for m in spec["containers"][0]["volumeMounts"]}
+    assert mounts[vol["name"]].startswith("/run/secrets/litellm/"), "the container exports /run/secrets/litellm/*/* as env"
+    env = {e["name"]: e.get("value", "") for e in spec["containers"][0]["env"]}
+    assert env["GENERIC_AUTHORIZATION_ENDPOINT"] == "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/authorize"
+    assert env["PROXY_BASE_URL"] == "https://llm.${ESTATE_ZONE}"
+    # The client is created by tofu (platform/oci/identity) with the founder grant; nothing is seeded by hand.
+    tf = (ROOT / "platform" / "oci" / "identity" / "main.tf").read_text()
+    # crew#408: the module is applied by the machine identity in oke-check, never from a laptop
+    wf = (ROOT / ".github" / "workflows" / "oke-check.yml").read_text()
+    assert "bin/idp-identity-apply apply -auto-approve" in wf and "bin/idp-identity-apply plan" in wf
+    vt = (ROOT / "platform" / "oci" / "identity" / "versions.tf").read_text()
+    assert "auth                = var.oci_auth" in vt, "identity provider must sign in as the CLI does (SecurityToken in CI)"
+    # run 33030450105: SecurityToken auth cannot read the region from the profile; it is a provider input
+    assert "region              = var.region" in vt, "identity provider needs region under SecurityToken auth"
+    step = wf.split("bin/idp-identity-apply ${{", 1)[1].split("- name:", 1)[0]
+    assert "OCI_REGION: ${{ vars.OCI_REGION }}" in step, "identity step must pass OCI_REGION"
+    assert 'display_name  = "estate-router-console"' in tf
+    assert 'redirect_uris             = ["https://llm.${var.zone}/sso/callback"]' in tf
+    # crew#407: no console password exists, so none can ever be sent.
+    for f in list(CLUSTER.glob("*.yaml")) + [ROOT / ".github" / "workflows" / "vault-seed.yml"]:
+        assert not re.search(r"UI_(USERNAME|PASSWORD)|litellm-ui", f.read_text()), f

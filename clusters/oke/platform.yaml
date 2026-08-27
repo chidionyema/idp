@@ -138,6 +138,36 @@ spec:
       - kind: ConfigMap
         name: estate-config
 ---
+# Job monitoring row (crew#177, STANDARDS.md row 21): Healthchecks at hc.<zone> through the https-hc
+# listener on prospector-edge. After identity (the front door answers its ForwardAuth) and
+# secret-store (the three vault entries platform/oci/healthchecks.tf writes). 10m like every row.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: healthchecks
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/healthchecks
+  prune: true
+  dependsOn:
+    - name: identity
+    - name: secret-store
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: healthchecks
+      namespace: healthchecks
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+---
 # Model routing row (crew#284 CP2, crew#313): LiteLLM on the cluster, reached at llm.<zone>
 # through the https-llm listener on prospector-edge. After edge (Gateway, certificate) and
 # secret-store (the upstream keys). Health-checked at 10m like every other row.
@@ -211,3 +241,28 @@ spec:
       kind: HelmRelease
       name: temporal
       namespace: temporal
+---
+# Agent identity (crew#227 CP4): SPIRE issues short-lived SVIDs to workloads on this cluster.
+# After backstage for the same reason chaos-mesh is: Kyverno and the PolicyException CRD arrive
+# with the edge row backstage already waits on.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: spire
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: backstage
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/spire
+  prune: true
+  wait: true
+  timeout: 15m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: spire
+      namespace: spire-mgmt

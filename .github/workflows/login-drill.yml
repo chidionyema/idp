@@ -7,7 +7,7 @@
 name: login-drill
 on:
   schedule:
-    - cron: "*/5 * * * *"   # every 5 minutes, the smallest clock GitHub schedules; public repo, minutes are free
+    - cron: "7 * * * *"   # hourly full sign-in; the five-minute pulse is platform/identity/front-door-heartbeat.yaml (idp#229: GitHub dropped the */5 cron)
   workflow_dispatch: {}
   push:
     branches: [main]

@@ -5,8 +5,10 @@
 # (otel-deployment: clusterMetrics, k8sEvents). Chart pinned; 0.17.0 (app 0.139.0) was
 # `helm search repo signoz/k8s-infra` on 2026-08-27. Uses the HelmRepository in signoz.yaml.
 # The agent reads /var/log/pods and the node filesystem, which the restricted profile refuses;
-# platform/edge/k8s-infra-exception.yaml waives exactly the rules bin/idp-kyverno-render shows
-# failing and nothing else.
+# platform/edge/k8s-infra-exception.yaml waives exactly the Kyverno rules bin/idp-kyverno-render
+# shows failing and nothing else. The Pod Security Admission label is the other gate, and no
+# Kyverno exception reaches it, so the release installs into observability-agent
+# (platform/edge/k8s-infra-namespace.yaml, enforce: privileged) while this HelmRelease object stays here.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -14,6 +16,8 @@ metadata:
 spec:
   interval: 1h
   timeout: 10m
+  targetNamespace: observability-agent
+  storageNamespace: observability-agent
   chart:
     spec:
       chart: k8s-infra

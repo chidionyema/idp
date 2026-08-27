@@ -88,6 +88,11 @@ litellm_settings:
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
+  # crew#400: the founder picks and adds models in the Admin UI at llm.<zone>/ui, not by PR (LAW 31).
+  # Models added there are rows in litellm-db and survive a restart; this model_list stays the floor.
+  # The console signs in through the estate identity domain (GENERIC_* env from the litellm-sso
+  # mount, external-secret.yaml); no console password exists (crew#408, ADR 0007).
+  store_model_in_db: true
   max_budget: 5.0
   budget_duration: 1d
   background_health_checks: false

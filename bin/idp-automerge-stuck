@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""crew#439 row 1: an open pull request armed for auto-merge that is not MERGEABLE is a FAIL row.
+
+idp#298 sat CONFLICTING for two hours with auto-merge armed and nothing said so; the branch push
+workflow printed ok. GitHub reports `mergeable` on the API; this row asks it. Same row grammar as
+the other oke-check rows:
+
+    ok      automerge-stuck  0 stuck of N armed
+    FAIL    automerge-stuck  M stuck: #298 CONFLICTING, #300 UNKNOWN     -- exit 1
+    BLIND   automerge-stuck  <why>                                       -- exit 2, nothing graded
+
+    bin/idp-automerge-stuck                 ask gh for the open pull requests of GITHUB_REPOSITORY (or this repo)
+    bin/idp-automerge-stuck --input FILE    grade a `gh pr list --json number,autoMergeRequest,mergeable` body on disk (the tests)
+"""
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+
+ROW = "automerge-stuck"
+
+
+def live() -> list[dict]:
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    cmd = ["gh", "pr", "list", "--state", "open", "--limit", "200",
+           "--json", "number,autoMergeRequest,mergeable"] + (["-R", repo] if repo else [])
+    try:
+        return json.loads(subprocess.run(cmd, check=True, capture_output=True, text=True).stdout)
+    except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+        print(f"BLIND   {ROW}  gh pr list failed: {str(exc)[:200]}"); sys.exit(2)
+
+
+def grade(prs: list[dict]) -> int:
+    armed = [p for p in prs if p.get("autoMergeRequest")]
+    stuck = [p for p in armed if p.get("mergeable") != "MERGEABLE"]
+    if stuck:
+        print(f"FAIL    {ROW}  {len(stuck)} stuck: " + ", ".join(f"#{p['number']} {p.get('mergeable')}" for p in stuck))
+        return 1
+    print(f"ok      {ROW}  0 stuck of {len(armed)} armed")
+    return 0
+
+
+def main() -> int:
+    if "--input" in sys.argv:
+        with open(sys.argv[sys.argv.index("--input") + 1], encoding="utf-8") as fh:
+            return grade(json.load(fh))
+    return grade(live())
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,5 +1,5 @@
 app:
-  title: Estate catalogue
+  title: Mumchimp estate
   baseUrl: http://localhost:3100
 
   # Enable all packages by default, this will discover packages from packages/app/package.json
@@ -10,78 +10,16 @@ app:
     # serve "/", which made /catalog (the path in Backstage's own links and the founder's
     # bookmark) a client-side ERROR 404 while the login drill, visiting "/", stayed green.
     # crew#307. The Home page takes "/".
-    # Visit tracking records which pages users navigate to and is disabled by default.
-    # Enable it to populate the Most Visited and Recently Visited widgets on the Home page.
-    # Visit data is stored via UserSettings storage if available, otherwise browser localStorage.
-    # - api:home/visits: true
-    # - app-root-element:home/visit-listener: true
-    - home-page-widget:home/toolkit:
-        config:
-          # The estate's own doors, not Backstage's. A portal whose toolkit
-          # links to the vendor's docs is a portal nobody has moved into.
-          tools:
-            - url: http://127.0.0.1:3200/
-              label: Traces (Langfuse)
-              icon: dashboard
-            - url: http://127.0.0.1:4000/
-              label: Model routing (LiteLLM)
-              icon: dashboard
-            - url: https://github.com/chidionyema/crew/blob/main/docs/STANDARDS.md
-              label: Standards
-              icon: docs
-            - url: https://github.com/chidionyema/crew/issues
-              label: Crew board
-              icon: github
-    - home-page-widget:home/world-clock:
-        config:
-          clockConfigs:
-            - label: LON
-              timeZone: Europe/London
-            - label: UTC
-              timeZone: UTC
+    #
+    # The home plugin's widget grid, its toolkit (whose links pointed at 127.0.0.1) and the
+    # "Welcome to Backstage" card are gone: packages/app/src/modules/home overrides
+    # `page:home` with the founder god view, read from the catalogue (crew#459).
     - page:home:
         config:
           path: /
-          defaultConfig:
-            - component: HomePageSearchBar
-              column: 0
-              row: 0
-              width: 12
-              height: 2
-              deletable: false
-            - component: GettingStarted
-              column: 0
-              row: 1
-              width: 4
-              height: 11
-            - component: HomePageStarredEntities
-              column: 4
-              row: 2
-              width: 4
-              height: 4
-            - component: HomePageToolkit
-              column: 4
-              row: 6
-              width: 4
-              height: 3
-            - component: HomePageWorldClock
-              column: 8
-              row: 6
-              width: 4
-              height: 3
-            - component: HomePageMostVisited
-              column: 4
-              row: 9
-              width: 4
-              height: 4
-            - component: HomePageRecentlyVisited
-              column: 8
-              row: 9
-              width: 4
-              height: 4
 
 organization:
-  name: Estate
+  name: Mumchimp
 
 backend:
   # Used for enabling authentication, secret is shared by all backend plugins

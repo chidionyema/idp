@@ -33,7 +33,7 @@ kind: Component
 metadata:
   name: founder-model-router
   title: "Model router (llm)"
-  description: "Every model call in the estate goes through here. Which models exist is platform/llm/config.yaml model_list; the admin console (/ui: models, keys, spend) opens once the router database lands (crew#284, crew#400)."
+  description: "Every model call in the estate goes through here. Pick and add models, keys, teams and budgets in the admin console (/ui); sign in with your estate login (the same as this catalogue); there is no console password. Tutorial: docs/onboarding/litellm.md (crew#400)."
   annotations:
     idp/updated-by: "Flux from platform/llm on merge to main"
   tags: [founder]
@@ -68,6 +68,28 @@ metadata:
       icon: dashboard
     - title: "Health"
       url: "https://langfuse.${ESTATE_ZONE}/api/public/health"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-jobs
+  title: "Jobs (healthchecks)"
+  description: "Every scheduled job pings here when it finishes; a job that did not run goes red. Standards row 21 (crew#177), the dead-man switch for the estate's cron."
+  annotations:
+    idp/updated-by: "Flux from platform/healthchecks; pings arrive live from hc-wrap.sh"
+  tags: [founder]
+  links:
+    - title: "Open"
+      url: "https://hc.${ESTATE_ZONE}"
+      icon: dashboard
+    - title: "Health"
+      url: "https://hc.${ESTATE_ZONE}/api/v3/status/"
       icon: dashboard
 spec:
   type: founder-surface
@@ -131,6 +153,8 @@ metadata:
   description: "The one platform. Open pull requests are work in flight; the security tab is Dependabot and code scanning; packages are the images the cluster runs."
   annotations:
     idp/updated-by: "Agents; every merge to main is deployed by Flux"
+    # docs/ + mkdocs.yml in this repo, built by TechDocs from GitHub (crew#459).
+    backstage.io/techdocs-ref: url:https://github.com/chidionyema/idp/tree/main/
   tags: [founder]
   links:
     - title: "Pull requests"
@@ -254,6 +278,59 @@ metadata:
     - title: "Open Telegram chat"
       url: "https://t.me/Ottototbot"
       icon: chat
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-kini-finish
+  title: "Finish KINI (one word)"
+  description: "Comment `FINISH: KINI` on any idp issue, or press Run workflow. The cluster runs the seven KINI checkpoints with retries and self-healing (crew#396); the receipt is the kini-state row of oke-check. Nothing after the word needs a laptop."
+  annotations:
+    idp/updated-by: "kini-finish.yml on the word; kini-state CronJob every 15 minutes"
+  tags: [founder]
+  links:
+    - title: "Say the word (idp issues)"
+      url: "https://github.com/chidionyema/idp/issues"
+      icon: dashboard
+    - title: "kini-finish: Run workflow"
+      url: "https://github.com/chidionyema/idp/actions/workflows/kini-finish.yml"
+      icon: dashboard
+    - title: "Receipt reader (bin/idp-kini-state)"
+      url: "https://github.com/chidionyema/idp/blob/main/bin/idp-kini-state"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-store
+  title: "The store (mumchimp)"
+  description: "The one place a customer pays this estate: the storefront and the Medusa API behind it. Revenue is read from api.<zone> by crew science/outcomes.py revenue (crew#70). Registered here because catalogue-drift found the three hostnames live and unlisted (oke-check run 33034521953)."
+  annotations:
+    idp/updated-by: "github.com/chidionyema/mumchimp-medusa on push to main (its own pipeline); this entry by hand until that repo carries a catalog-info.yaml"
+  tags: [founder, product]
+  links:
+    - title: "Open"
+      url: "https://www.${ESTATE_ZONE}"
+      icon: web
+    - title: "Apex"
+      url: "https://${ESTATE_ZONE}"
+      icon: web
+    - title: "Store API health"
+      url: "https://api.${ESTATE_ZONE}/health"
+      icon: dashboard
+    - title: "Source"
+      url: "https://github.com/chidionyema/mumchimp-medusa"
+      icon: github
 spec:
   type: founder-surface
   lifecycle: production

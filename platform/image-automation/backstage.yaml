@@ -69,11 +69,12 @@ spec:
         name: estate-agents
         email: estate-agents[bot]@users.noreply.github.com
       messageTemplate: |
-        platform/backstage/oke: catalogue image {{ range .Changed.Objects }}{{ range .Changes }}{{ .NewValue }}{{ end }}{{ end }} (crew#267)
+        platform: image update {{ range $resource, $changes := .Changed.Objects }}{{ range $_, $change := $changes }}{{ $resource.Name }} -> {{ $change.NewValue }} {{ end }}{{ end }}(crew#267)
 
-        Written by image-automation-controller from ImagePolicy flux-system/backstage.
+        Written by image-automation-controller. One automation walks ./platform for every
+        ImagePolicy marker; two automations on one push branch collide (crew#406).
     push:
       branch: flux/image-updates
   update:
-    path: ./platform/backstage/overlays/oke
+    path: ./platform
     strategy: Setters

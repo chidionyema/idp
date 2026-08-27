@@ -549,6 +549,7 @@ def cmd_kini(args: argparse.Namespace) -> int:
     its result. Both talk to the engine the worker polls; nothing here runs a test locally."""
     from temporalio.client import Client, WorkflowFailureError
     from temporalio.exceptions import WorkflowAlreadyStartedError
+    from temporalio.service import RPCError, RPCStatusCode
 
     from sovereign.engine import kini
 
@@ -572,8 +573,14 @@ def cmd_kini(args: argparse.Namespace) -> int:
                     out.update(ok=False, error=str(e))
             return out
         handle = client.get_workflow_handle(config.KINI_WORKFLOW_ID)
-        desc = await handle.describe()
+        try:
+            desc = await handle.describe()
+        except RPCError as e:
+            if e.status != RPCStatusCode.NOT_FOUND:
+                raise
+            return {"ok": True, "workflow_id": handle.id, "status": "NONE", "never_started": True}
         out: dict[str, Any] = {"ok": True, "workflow_id": handle.id, "status": desc.status.name if desc.status else None}
+        out["close_time"] = desc.close_time.isoformat() if desc.close_time else None
         if desc.status is not None and desc.status.name == "RUNNING":
             out["progress"] = await handle.query("progress")
         else:
@@ -585,6 +592,11 @@ def cmd_kini(args: argparse.Namespace) -> int:
         return out
 
     res = asyncio.run(go())
+    if args.kini_command == "receipt":
+        # The receipt platform/temporal/kini-state.yaml publishes as state/kini and
+        # bin/idp-kini-state grades: line 1 is the verdict, the rest is the JSON body.
+        sys.stdout.write(kini.receipt_head(res) + "\n" + json.dumps(res, sort_keys=True, default=str) + "\n")
+        return 0
     _emit(res, args.json)
     return 0 if res.get("ok") else 1
 
@@ -775,6 +787,8 @@ def main(argv: list[str] | None = None) -> int:
         pst = ks.add_parser("status", help="progress of the running (or last) KiniFinishWorkflow")
         _add_json(pst)
         pst.set_defaults(func=cmd_kini)
+        prc = ks.add_parser("receipt", help="the state/kini receipt: verdict line then JSON (kini-state CronJob)")
+        prc.set_defaults(func=cmd_kini, json=True)
 
     args = parser.parse_args(argv)
     return args.func(args)

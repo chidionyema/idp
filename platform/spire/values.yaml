@@ -50,6 +50,22 @@ spire-server:
     limits: { memory: 512Mi }
 
 spire-agent:
+  # Off the host network. Incident 2026-08-27 (crew#227 CP4, oke-check 33035070500): the chart
+  # default is hostNetwork: true, the API server then defaults every containerPort to a hostPort,
+  # and Kyverno's disallow-host-ports refused all eight spire-agent pods (FailedCreate). The
+  # offline render in bin/idp-kyverno-render never sees that defaulting, so the exception could
+  # not have listed it. The agent serves the Workload API on a hostPath socket, so the host
+  # network buys nothing there.
+  hostNetwork: false
+  # Incident 2026-08-27 (crew#227 CP4, cluster-state receipt 07:00:02Z): with the agent off the
+  # host network, every spiffe-proof pod failed with "workload attestation failed" although the
+  # CSI socket was mounted and the ClusterSPIFFEID held 67 entries. The chart's kubeletAddress
+  # default is "auto", which is 127.0.0.1:10250 outside OpenShift; inside a pod network that is
+  # the agent itself, not the kubelet. hostip puts the node's status.hostIP in KUBELET_ADDR
+  # (downward API) and the k8s workload attestor reads pods from the real kubelet. Verification
+  # stays at the chart default (skip), so the IP needs no certificate name.
+  kubeletAddress:
+    mode: hostip
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { memory: 256Mi }

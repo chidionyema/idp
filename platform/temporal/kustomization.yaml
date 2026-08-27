@@ -8,6 +8,8 @@ resources:
   - temporal.yaml
   - pull-secret.yaml
   - worker.yaml
+  - kini-finish.yaml
+  - kini-state.yaml
 images:
   # build-multiarch pushes ghcr.io/chidionyema/sovereign-worker:main-<run>-<sha> (crew#396 step 2).
   # The first main build after this file merges writes the tag; until then the Deployment cannot
@@ -15,4 +17,4 @@ images:
   # ImagePolicy flux-system/sovereign-worker; the marker is how it finds the line.
   - name: idp/sovereign-worker
     newName: ghcr.io/chidionyema/sovereign-worker
-    newTag: main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:sovereign-worker:tag"}
+    newTag: main-907-827239eb58b28e9e728620661117bb278c6e2fc1 # {"$imagepolicy": "flux-system:sovereign-worker:tag"}

@@ -1,52 +1,17 @@
-import { createFrontendModule } from '@backstage/frontend-plugin-api';
-import { HomePageWidgetBlueprint } from '@backstage/plugin-home-react/alpha';
-import { MarkdownContent } from '@backstage/core-components';
+// The home plugin's own page is replaced: a module for `home` that makes a page
+// extension with the default name yields the id `page:home`, which overrides the
+// plugin's page at "/". The widget grid (and the toolkit whose links pointed at
+// 127.0.0.1) goes with it; the front page is the founder god view (crew#459).
+import { createFrontendModule, PageBlueprint } from '@backstage/frontend-plugin-api';
 
-const content = `
-## Welcome to Backstage! 👋
-
-Backstage is your developer portal — a single place to manage all your
-software, services, and documentation.
-
-### Quick Start
-
-- **Explore the catalog** — Browse all your organization's software in
-  the [Software Catalog](/catalog)
-- **Create something new** — Use a [Software Template](/create) to
-  scaffold a new project in minutes
-- **Read the docs** — Find technical documentation for any service
-  right from its catalog page
-
-### Helpful Links
-
-- [Backstage Documentation](https://backstage.io/docs)
-- [Customizing Your Homepage](https://backstage.io/docs/getting-started/homepage)
-- [Adding Plugins](https://backstage.io/docs/plugins)
-- [Contributing](https://github.com/backstage/backstage/blob/master/CONTRIBUTING.md)
-
-### How to Edit This Card
-
-This widget is defined in \`packages/app/src/modules/home/homeModule.tsx\`.
-You can update the markdown content there to welcome your team with
-your own links and getting started tips.
-
-To remove this card entirely, delete the getting started widget and
-remove it from the home module's extensions array in this file.
-`;
-
-const gettingStartedWidget = HomePageWidgetBlueprint.make({
-  name: 'getting-started',
+const estateHomePage = PageBlueprint.make({
   params: {
-    name: 'GettingStarted',
-    title: 'Getting Started',
-    description: 'Tips and links to help you get started with Backstage',
-    components: async () => ({
-      Content: () => <MarkdownContent content={content} />,
-    }),
+    path: '/',
+    loader: () => import('./EstateHome').then(m => <m.EstateHome />),
   },
 });
 
 export const homeModule = createFrontendModule({
   pluginId: 'home',
-  extensions: [gettingStartedWidget],
+  extensions: [estateHomePage],
 });
