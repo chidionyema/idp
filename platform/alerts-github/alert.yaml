@@ -1,0 +1,15 @@
+# Reconcile ledger (crew#325): every Kustomization event, not only errors, so a session can read
+# "applied revision X" and "health check timed out" from the idp Actions log (provider-github.yaml).
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: reconcile-ledger
+  namespace: flux-system
+spec:
+  providerRef: { name: github-dispatch }
+  eventSeverity: info
+  summary: "estate: reconcile ledger"
+  eventSources:
+    - kind: Kustomization
+      name: "*"
+      namespace: flux-system
