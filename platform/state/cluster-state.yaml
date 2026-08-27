@@ -37,6 +37,11 @@ rules:
   - apiGroups: ["gateway.networking.k8s.io"]
     resources: ["httproutes"]
     verbs: ["get", "list"]
+  # crew#227 CP4: the SPIRE controller-manager's ClusterSPIFFEID status is the API-readable proof
+  # that workloads are registered for SVIDs; the collector has no kubectl exec into spire-server.
+  - apiGroups: ["spire.spiffe.io"]
+    resources: ["clusterspiffeids"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -202,13 +207,29 @@ data:
                             for h in (r.get("spec") or {}).get("hostnames", [])})
     except Exception as e:
         hostnames, hostnames_error = None, f"{e}"[:300]
+    # crew#227 CP4: SVIDs between agents are proven from two API rows, never asserted. (1) every
+    # ClusterSPIFFEID with the controller-manager's stats (pods selected, entries rendered); (2) every
+    # pod that mounts the csi.spiffe.io driver, which is the workload set that can hold an SVID.
+    # A list that failed is recorded, never left empty.
+    def spiffe_rows():
+        try:
+            ids = get("/apis/spire.spiffe.io/v1alpha1/clusterspiffeids")["items"]
+            entries = [{"name": i["metadata"]["name"], **{k: v for k, v in (i.get("status") or {}).get("stats", {}).items()}}
+                       for i in ids]
+            err = ""
+        except Exception as e:
+            entries, err = None, f"{e}"[:300]
+        workloads = sorted(f"{p['metadata']['namespace']}/{p['metadata']['name']}" for p in pods
+                           if any((v.get("csi") or {}).get("driver") == "csi.spiffe.io" for v in (p["spec"].get("volumes") or [])))
+        return {"clusterspiffeids": entries, "error": err, "csi_workloads": workloads}
+    spiffe = spiffe_rows()
     at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     head = (f"ok cluster-state at {at} nodes={len(node_rows)} ready={ready} pods={len(pods)} pods_not_ready={len(not_ready)}"
             f" flux={len(flux)} flux_not_ready={len(flux_not_ready)} ds={len(ds)} ds_short={len(ds_short)} events_warning={len(events)}"
-            f" hostnames={len(hostnames or [])}")
+            f" hostnames={len(hostnames or [])} spiffe_ids={len(spiffe['clusterspiffeids'] or [])} spiffe_workloads={len(spiffe['csi_workloads'])}")
     body = {"at": at, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
             "flux": flux, "flux_not_ready": flux_not_ready, "daemonsets": ds, "ds_short": ds_short, "events_warning": events,
-            "hostnames": hostnames, "hostnames_error": hostnames_error}
+            "hostnames": hostnames, "hostnames_error": hostnames_error, "spiffe": spiffe}
     sys.stdout.write(head + "\n" + json.dumps(body, sort_keys=True) + "\n")
 ---
 apiVersion: batch/v1
