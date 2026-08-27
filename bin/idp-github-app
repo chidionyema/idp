@@ -100,7 +100,6 @@ installation)
   # githubAppInstallationID beside the id and key; the App is no longer Flux's writer (platform/image-automation/flux-writer.yaml, crew#325); kept for the alerts ledger
   # three from this one vault secret. Re-puts the secret with every existing key plus installation_id.
   export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-  C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
   bundle=$("$IDP/bin/idp-cloud" secret get "$SECRET" 2>"${TMPDIR:-/tmp}/github-app.err") || { echo "BLIND   github-app $(head -1 "${TMPDIR:-/tmp}/github-app.err" | cut -c1-120); run: bin/idp-github-app convert <code>"; exit 2; }
   app_id=$(jq -r .app_id <<<"$bundle"); pem_b64=$(jq -r .pem_b64 <<<"$bundle")
   jwt=$(app_jwt "$app_id" "$pem_b64")
