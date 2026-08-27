@@ -20,7 +20,14 @@ spec:
       backoffLimit: 6   # the agent learns a new entry a few seconds after the pod starts; early attempts get "no identity issued"
       template:
         spec:
-          restartPolicy: Never
+          # crew#227 CP4, receipt 2026-08-27T08:45:03Z: seven pods per Job failed "no identity issued" and
+          # the agent logged registered=false at 08:40:42Z, the seventh backoff. The entry selector is
+          # k8s:pod-uid, the agent syncs entries every 5 s, and `spire-agent api fetch` asks once
+          # (cmd/spire-agent/cli/api/fetch_x509.go: one FetchX509SVID call, PermissionDenied on an empty
+          # cache). With restartPolicy Never every retry is a new pod, so a new uid, so a new race it
+          # loses. OnFailure restarts the container inside the same pod: the uid, and the entry the
+          # controller-manager rendered for it, survive to the second attempt.
+          restartPolicy: OnFailure
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
