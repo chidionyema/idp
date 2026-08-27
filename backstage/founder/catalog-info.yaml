@@ -123,11 +123,12 @@ kind: Component
 metadata:
   name: founder-crew-board
   title: "Crew board (every founder request)"
-  description: "Each thing the founder asks for is an issue here (LAW 18). P1 = a fire. STATE.md is the hourly estate snapshot: every row is a command and its output."
+  description: "Each thing the founder asks for is an issue here (LAW 18). P1 = a fire. STATE.md is the hourly estate snapshot: every row is a command and its output. The Docs tab renders crew/docs: standards, rulings, the science showcase (R38, crew#412)."
   annotations:
     github.com/project-slug: "chidionyema/crew"
     backstage.io/source-location: "url:https://github.com/chidionyema/crew/tree/main/"
     idp/updated-by: "Agents on every request; STATE.md hourly by launchd com.founder.estatesnapshot"
+    backstage.io/techdocs-ref: "url:https://github.com/chidionyema/crew/tree/main/"
   tags: [founder]
   links:
     - title: "Issues"
@@ -354,7 +355,7 @@ metadata:
   title: "The store (mumchimp)"
   description: "The one place a customer pays this estate: the storefront and the Medusa API behind it. Revenue is read from api.<zone> by crew science/outcomes.py revenue (crew#70). Registered here because catalogue-drift found the three hostnames live and unlisted (oke-check run 33034521953)."
   annotations:
-    github.com/project-slug: "chidionyema/mumchimp-medusa"
+    github.com/project-slug: chidionyema/mumchimp-medusa
     backstage.io/source-location: "url:https://github.com/chidionyema/mumchimp-medusa/tree/main/"
     idp/updated-by: "github.com/chidionyema/mumchimp-medusa on push to main (its own pipeline); this entry by hand until that repo carries a catalog-info.yaml"
   tags: [founder, product]
