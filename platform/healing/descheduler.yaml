@@ -75,6 +75,11 @@ spec:
             - name: RemovePodsViolatingTopologySpreadConstraint
               args:
                 constraints: [DoNotSchedule, ScheduleAnyway]
+            # crew#539, 2026-08-27: descheduler 0.36 refuses a profile that enables a plugin
+            # with no pluginConfig entry ("unable to find \"RemoveDuplicates\" plugin config",
+            # CronJob pod descheduler-29797890 Failed, receipt 33127558382); every run since the
+            # merge had exited 1 without a rebalance. No args: the defaults are the rule.
+            - name: RemoveDuplicates
           plugins:
             balance:
               enabled: [RemoveDuplicates, LowNodeUtilization, RemovePodsViolatingTopologySpreadConstraint]
