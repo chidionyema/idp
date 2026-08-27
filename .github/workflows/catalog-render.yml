@@ -1,0 +1,78 @@
+# crew#516 CP3 slice 2: the catalogue render runs off the Mac.
+#
+# Until 2026-08-27 bin/catalog-render ran only as com.estate.catalog-render on the founder's Mac,
+# because its one input, ~/.estate/state/inventory.json, lived there. estate#9 made the inventory
+# job publish that file to the estate bucket at state/inventory/latest.json, read back. This
+# workflow is the reader: it takes the object, checks out crew beside idp (estate-showcase reads
+# crew/docs/STANDARDS.md through ESTATE_CODE), and runs the same bin/catalog-render.
+#
+# It starts in --dry-run: the diff it would commit is the receipt, in the job summary, so the
+# cloud render is measured against the Mac render before the Mac row is retired (LAW 17). The
+# inputs the Mac still owns are reported BLIND by the tools themselves, never faked: the estate
+# feed (estate-next), ~/.estate/env (catalog-gen falls back to dev). Flip: `mode: commit` on
+# dispatch runs the real render, which opens the auto-merge PR the Mac row opens today.
+#
+# Secrets: the bucket keys are the SEED_R2_* repo secrets the vault seed already carries; they
+# reach rclone as RCLONE_S3_* environment, never argv.
+name: catalog-render
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run (diff in the summary) or commit (push the branch, open the PR)"
+        default: dry-run
+        type: choice
+        options: [dry-run, commit]
+  schedule:
+    # 45 minutes after each com.estate.inventory tick (scheduler/schedule.yml: 13 1,7,13,19).
+    - cron: "58 1,7,13,19 * * *"
+permissions:
+  contents: write
+  pull-requests: write
+concurrency: { group: catalog-render, cancel-in-progress: false }
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { fetch-depth: 0, path: idp }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { repository: chidionyema/crew, path: crew }   # a sibling of idp/, inside the workspace: checkout refuses any path above it
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: "3.12" }
+      - name: tools
+        run: |
+          pip install -q pyyaml
+          sudo apt-get install -y -qq rclone >/dev/null
+      - name: inventory from the bucket (estate#9 writes it; the `at` field is the receipt)
+        env:
+          RCLONE_CONFIG: /dev/null
+          RCLONE_S3_PROVIDER: Other
+          RCLONE_S3_REGION: auto
+          RCLONE_S3_FORCE_PATH_STYLE: "true"
+          RCLONE_S3_ENDPOINT: https://${{ secrets.SEED_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          RCLONE_S3_ACCESS_KEY_ID: ${{ secrets.SEED_R2_ACCESS_KEY_ID }}
+          RCLONE_S3_SECRET_ACCESS_KEY: ${{ secrets.SEED_R2_SECRET_ACCESS_KEY }}
+          BUCKET: ${{ secrets.SEED_R2_BUCKET || 'prospector-packs' }}
+        run: |
+          set -euo pipefail
+          rclone copyto ":s3:$BUCKET/state/inventory/latest.json" "$RUNNER_TEMP/inventory.json" --s3-no-check-bucket
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("inventory taken", d.get("at"), "assets", len(d.get("rows",[])))' "$RUNNER_TEMP/inventory.json" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: render
+        working-directory: idp
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INV: ${{ runner.temp }}/inventory.json
+          IDP_STATE_WORKTREE: ${{ runner.temp }}/idp-state
+          ESTATE_CODE: ${{ github.workspace }}
+          ESTATE_ENV: dev
+          MODE: ${{ inputs.mode || 'dry-run' }}
+        run: |
+          set -uo pipefail
+          git config user.name "estate-catalog-render"
+          git config user.email "estate-catalog-render@users.noreply.github.com"
+          flag=""; [ "$MODE" = dry-run ] && flag="--dry-run"
+          python3 bin/catalog-render $flag 2>&1 | tee "$RUNNER_TEMP/render.log"; rc=${PIPESTATUS[0]}
+          { echo; echo '```'; tail -60 "$RUNNER_TEMP/render.log"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
