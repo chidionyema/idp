@@ -33,7 +33,7 @@ def template_evaluates(tmpl: str) -> bool:
 
 def test_every_image_update_automation_template_ranges_the_change_map():
     found = _templates()
-    assert len(found) >= 2, found
+    assert len(found) >= 1, found          # one automation since crew#406 (shared push branch collided)
     for name, tmpl in found:
         assert template_evaluates(tmpl), f"{name}: {tmpl}"
 

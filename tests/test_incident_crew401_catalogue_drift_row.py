@@ -43,3 +43,16 @@ def test_the_collector_and_the_workflow_carry_the_row():
     assert '"hostnames": hostnames' in cs, "the receipt body must carry the hostnames list"
     wf = (ROOT / ".github/workflows/oke-check.yml").read_text()
     assert "run: bin/idp-catalogue-drift" in wf, "oke-check must run the row"
+
+
+def test_incident_crew401_a_failing_cluster_state_row_still_grades_the_hostnames(tmp_path):
+    """First live row (run 33033770482) came back BLIND because the reader exits 1 whenever the
+    cluster-state grade is FAIL (Flux not ready, crew#406). The hostnames list is independent of
+    that grade, so the grader must read the body and grade it."""
+    fake = tmp_path / "idp-cluster-state"
+    fake.write_text("#!/bin/sh\necho 'FAIL    cluster-state  flux not ready'\n"
+                    "echo '" + json.dumps({"hostnames": [f"catalogue.{ZONE}"]}) + "'\nexit 1\n")
+    fake.chmod(0o755)
+    r = subprocess.run([sys.executable, str(ROW)], capture_output=True, text=True,
+                       env={**__import__("os").environ, "IDP_CLUSTER_STATE_BIN": str(fake)})
+    assert r.returncode == 0 and r.stdout.startswith("ok"), r.stdout + r.stderr

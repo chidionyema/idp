@@ -39,13 +39,30 @@ except Exception as e:
 age = (datetime.now(timezone.utc) - parsedate_to_datetime(lm)).total_seconds() / 60
 if line1.startswith("BLIND "):
     print(f"BLIND   telemetry-coverage  {line1[:160]}"); sys.exit(2)
+def why():
+    # LAW 28: a FAIL that hides its cause is not an instrument. The receipt body names
+    # every backend the query could not reach and every pod it never saw; print both.
+    try:
+        b = json.loads(rest)
+    except Exception:
+        return "  (receipt body is not JSON)"
+    errs = b.get("backend_errors") or {}
+    miss = b.get("missing") or []
+    out = "".join(f"\n        backend {k}: {str(v)[:200]}" for k, v in errs.items())
+    out += "".join(f"\n        never seen: {m.get('ns')}/{m.get('pod')}" for m in miss[:8])
+    if len(miss) > 8:
+        out += f"\n        ... and {len(miss) - 8} more"
+    return out
 if not line1.startswith("ok "):
-    print(f"FAIL    telemetry-coverage  receipt does not start with ok: {line1[:120]!r}"); sys.exit(1)
+    print(f"FAIL    telemetry-coverage  receipt does not start with ok: {line1[:120]!r}{why()}")
+    if flag == "--json":
+        print(rest)
+    sys.exit(1)
 if age > max_min:
     print(f"FAIL    telemetry-coverage  receipt is {age:.0f} min old (max {max_min:.0f}): {line1[:120]}"); sys.exit(1)
 kv = dict(m.groups() for m in re.finditer(r"(\w+)=(\d+)", line1))
 if kv.get("missing") != "0" or int(kv.get("pods", 0)) == 0:
-    print(f"FAIL    telemetry-coverage  pods={kv.get('pods')} missing={kv.get('missing')}: {line1[:120]}"); sys.exit(1)
+    print(f"FAIL    telemetry-coverage  pods={kv.get('pods')} missing={kv.get('missing')}: {line1[:120]}{why()}"); sys.exit(1)
 print(f"ok      telemetry-coverage  {line1} ({age:.0f} min ago)")
 if flag == "--json":
     print(rest)

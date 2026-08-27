@@ -33,8 +33,11 @@ def test_incident_r29_code_alone_is_refused_and_code_with_spec_is_permitted(tmp_
     rc, out = _gate(repo)
     assert rc == 1 and "FAIL  spec-gate" in out and "app.py" in out, out
 
+    # 56a1ec5 (crew#297): a feature counts only when a tracked test binds it with scenarios();
+    # a bare .feature file is prose, so the permitted case arrives with its binding test.
     (repo / "features").mkdir()
     (repo / "features" / "app.feature").write_text("Feature: x is 2\n")
+    (repo / "test_app.py").write_text('from pytest_bdd import scenarios\nscenarios("features/app.feature")\n')
     _git(repo, "add", "."); _git(repo, "commit", "-qm", "spec")
     rc, out = _gate(repo)
     assert rc == 0 and "ok    spec-gate" in out, out

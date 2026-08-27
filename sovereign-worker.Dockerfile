@@ -20,6 +20,9 @@ COPY sovereign/requirements.txt sovereign/requirements-dev.txt /app/sovereign/
 RUN pip install --no-cache-dir -r /app/sovereign/requirements-dev.txt \
  && useradd --system --uid 10001 --create-home sovereign
 COPY sovereign /app/sovereign
+# sovereign/policy.py reads the living policy from AGENTS.md one directory above itself
+# and refuses to start without it (crew#396: 18 restarts, PolicyError: cannot read /app/AGENTS.md).
+COPY AGENTS.md /app/AGENTS.md
 COPY features /app/features
 COPY bin /app/bin
 COPY platform /app/platform

@@ -19,13 +19,13 @@ jobs:
           sudo apt-get update -q && sudo apt-get install -y -q shellcheck jq sqlite3
           pip install -q check-jsonschema sqlite-utils pyyaml dagster dagster-webserver
           pip install -q -r sovereign/requirements-dev.txt   # crew#219 R39: the bdd acceptance leg
-          curl -sSL https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
+          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
           # bin/idp-ci rung 9: helm + kyverno CLI judge HelmRelease renders against the ClusterPolicies
-          curl -sSL https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
-          curl -sSL https://github.com/kyverno/kyverno/releases/download/v1.19.0/kyverno-cli_v1.19.0_linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin kyverno
+          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
+          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/kyverno/kyverno/releases/download/v1.19.0/kyverno-cli_v1.19.0_linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin kyverno
       - name: temporal cli (bin/idp-ci runs the same bdd suite; cp27 needs the dev server)
         run: |
-          curl -sSf https://temporal.download/cli.sh | sh -s -- --version 1.8.2
+          curl -sSf --retry 5 --retry-all-errors --retry-delay 2 https://temporal.download/cli.sh | sh -s -- --version 1.8.2
           echo "$HOME/.temporalio/bin" >> "$GITHUB_PATH"
           "$HOME/.temporalio/bin/temporal" --version
       - run: bin/idp-ci
@@ -76,13 +76,13 @@ jobs:
       - name: tools
         run: |
           pip install -q -r sovereign/requirements.txt -r sovereign/requirements-dev.txt
-          curl -sSL https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
+          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
           # test_gate_langfuse_render runs bin/idp-kyverno-render for real: same pinned helm and kyverno as the idp-ci job
-          curl -sSL https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
-          curl -sSL https://github.com/kyverno/kyverno/releases/download/v1.19.0/kyverno-cli_v1.19.0_linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin kyverno
+          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
+          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/kyverno/kyverno/releases/download/v1.19.0/kyverno-cli_v1.19.0_linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin kyverno
       - name: temporal cli (cp27 runs branch workflows on the SDK's local dev server)
         run: |
-          curl -sSf https://temporal.download/cli.sh | sh -s -- --version 1.8.2
+          curl -sSf --retry 5 --retry-all-errors --retry-delay 2 https://temporal.download/cli.sh | sh -s -- --version 1.8.2
           echo "$HOME/.temporalio/bin" >> "$GITHUB_PATH"
           "$HOME/.temporalio/bin/temporal" --version
       - name: acceptance suite (strict on PRs to main)

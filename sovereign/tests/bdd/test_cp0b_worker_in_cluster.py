@@ -61,8 +61,13 @@ def _image(state: dict) -> None:
     kz = (IDP / "platform/temporal/kustomization.yaml").read_text()
     assert '{"$imagepolicy": "flux-system:sovereign-worker:tag"}' in kz
     ia = [d for d in yaml.safe_load_all((IDP / "platform/image-automation/sovereign-worker.yaml").read_text()) if d]
-    assert {d["kind"] for d in ia} == {"ImageRepository", "ImagePolicy", "ImageUpdateAutomation"}
-    assert next(d for d in ia if d["kind"] == "ImageUpdateAutomation")["spec"]["update"]["path"] == "./platform/temporal"
+    assert {d["kind"] for d in ia} == {"ImageRepository", "ImagePolicy"}
+    # crew#406: one ImageUpdateAutomation walks ./platform for every policy marker; two automations
+    # on one push branch collided ("cannot lock ref"), so the worker has no automation of its own.
+    autos = [d for f in (IDP / "platform/image-automation").glob("*.yaml") for d in yaml.safe_load_all(f.read_text())
+             if d and d.get("kind") == "ImageUpdateAutomation"]
+    assert len(autos) == 1, autos
+    assert "platform/temporal".startswith(autos[0]["spec"]["update"]["path"].removeprefix("./")), autos
 
 
 @then("every probe tests the ready file the worker writes only while polling")
