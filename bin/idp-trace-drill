@@ -40,7 +40,7 @@ LF="https://langfuse.$ZONE"
 C="${OCI_COMPARTMENT_OCID:-}"
 [ -n "$C" ] || fail config "OCI_COMPARTMENT_OCID is not set"
 vault() {  # vault <secret-name> -> decoded content on stdout, never on argv
-  local sid b64
+  local b64
   # ACTIVE only: a same-named secret pending deletion lists first and holds stale keys (run 33006811039)
   # crew#325 (run 33008917584): two vaults named estate-secrets each held an ACTIVE $1; the cluster
   # reads one, CI wrote the other, and a by-name read picked either. More than one is a split, not a hit.

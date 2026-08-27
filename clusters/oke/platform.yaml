@@ -235,6 +235,11 @@ spec:
     name: flux-system
   path: ./platform/hermes-agent
   prune: true
+  postBuild:
+    substituteFrom:
+      # ESTATE_ZONE for the estate ConfigMap's probe URLs (crew#524 CP2), like every other row.
+      - kind: ConfigMap
+        name: estate-config
   dependsOn:
     - name: secret-store
   wait: true
