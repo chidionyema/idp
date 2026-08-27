@@ -151,6 +151,8 @@ metadata:
   title: "Estate showcase, graded"
   description: "The whole estate graded against the buyer's-engineer bar: ELITE, GAP or BLIND per entity, gaps first. Regenerated after every inventory by bin/catalog-render (crew#474)."
   annotations:
+    github.com/project-slug: "chidionyema/idp"
+    backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/"
     idp/updated-by: "com.estate.catalog-render, after com.estate.inventory"
   tags: [founder, science]
   links:

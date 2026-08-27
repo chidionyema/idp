@@ -558,5 +558,19 @@ if INV="$FIX" OUT="$a" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1 \
   say "ok    links    $lk_ok; a checkout with no remote is refused"
 else say "FAIL  links    catalog-links-check passed a linkless Component or refused the clean fixture"; fail=1; fi
 
+# 7. Elite grade is continuous, not a one-off (crew#474, founder 2026-08-27:
+#    "needs to be a continuous process, not just a one off"). Every PR grades the
+#    fixture catalogue and refuses a stale page; Dagster com.estate.catalog-render
+#    grades the live one four times a day. Both ways: a rendered page passes
+#    --check, a page with one byte changed fails it.
+sc="$tmp/showcase"; mkdir -p "$sc"
+INV="$FIX" OUT="$sc" python3 "$IDP/bin/catalog-gen" >/dev/null
+if python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$sc/SHOWCASE.md" >/dev/null 2>&1 \
+   && python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$sc/SHOWCASE.md" --check >/dev/null 2>&1 \
+   && printf 'x' >> "$sc/SHOWCASE.md" \
+   && ! python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$sc/SHOWCASE.md" --check >/dev/null 2>&1; then
+  say "ok    grade    estate-showcase grades the fixture catalogue ($(grep -c '| GAP |' "$sc/SHOWCASE.md") GAP rows) and --check refuses a stale page"
+else say "FAIL  grade    estate-showcase did not render, or --check did not discriminate"; fail=1; fi
+
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"
