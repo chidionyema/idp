@@ -1,5 +1,6 @@
 """Incident, 2026-08-27 (crew#539, idp#485): `.github/workflows/vault-seed.yml` gained the line
-`put k8sgpt key=K8SGPT_LLM_API_KEY`. It names a vault FIELD, but gitleaks reads
+`put k8sgpt key=<NAME>_LLM_API_KEY` (spelled with a placeholder here: the literal form fails the
+gate this test guards, which it did on idp#497 itself). It names a vault FIELD, but gitleaks reads
 `key=<UPPER>_API_KEY` as a generic-api-key, so the security-scan job went red on the PR and,
 because CI fetched every ref, on every other open PR (idp#479, #486-#492) until idp#494 made
 the scan HEAD-only. The line had passed bin/pr-report, which ran conftest and nothing else.
@@ -28,7 +29,9 @@ def _run(path: Path) -> subprocess.CompletedProcess:
 @needs_gitleaks
 def test_incident_line_is_refused_before_the_pr_exists(tmp_path: Path) -> None:
     added = tmp_path / "pr-added.txt"
-    added.write_text("+          put k8sgpt key=K8SGPT_LLM_API_KEY\n")
+    # assembled, not written literally: the literal line would fail this repo's own gate (idp#497)
+    incident = "+          put k8sgpt key=" + "K8SGPT_LLM_" + "API_KEY\n"
+    added.write_text(incident)
     r = _run(added)
     assert r.returncode == 1, r.stdout + r.stderr
     assert r.stdout.startswith("FAIL    secrets   gitleaks found 1 leak(s)")
