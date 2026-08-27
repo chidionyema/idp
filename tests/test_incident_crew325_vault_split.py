@@ -59,7 +59,10 @@ def test_rebuild_runs_the_guard_in_check_and_apply() -> None:
 
 def test_trace_drill_refuses_a_name_active_in_two_vaults() -> None:
     s = (ROOT / "bin" / "idp-trace-drill").read_text()
-    assert "lifecycle-state\\\"=='ACTIVE'].id\"" in s and "-le 1 ] || fail vault" in s and "split store" in s
+    # crew#66 CP3: the split is detected in bin/idp-cloud (exit 3) and the drill fails on that code
+    assert '"$IDP/bin/idp-cloud" secret get' in s and "3) fail vault" in s
+    cloud = (ROOT / "bin" / "idp-cloud").read_text()
+    assert "Split: secret" in cloud and "exit 3" in cloud
 
 
 def test_incident_crew325_optional_app_secret_does_not_sit_in_secret_store() -> None:
