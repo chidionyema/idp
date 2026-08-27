@@ -79,6 +79,12 @@ def missing(root) -> list[str]:
             if "${" in u or not re.match(r"https?://", u):
                 out.append(f"{name}: link {l['url']} is not an address a person can open")
             urls.append(u)
+        repos = {mm.group(1) for l in links for mm in [re.match(r"https://github\.com/([^/]+/[^/]+)", l["url"])] if mm}
+        ann = m.get("annotations") or {}
+        if repos and ann.get("github.com/project-slug") not in repos:
+            out.append(f"{name}: links to {sorted(repos)} but github.com/project-slug names none of them")
+        if repos and not (ann.get("backstage.io/source-location") or "").startswith("url:https://github.com/"):
+            out.append(f"{name}: links to a GitHub repo but has no backstage.io/source-location")
     for dup in {x for x in names if names.count(x) > 1}:
         out.append(f"duplicate surface name {dup}")
     for dup in {x for x in urls if urls.count(x) > 1}:
@@ -99,7 +105,8 @@ def missing(root) -> list[str]:
     return out
 
 
-def test_incident_crew401_the_generated_catalogue_carries_every_surface_with_the_zone_resolved(tmp_path):
+def _gen(tmp_path):
+    """Run bin/catalog-gen over the fixture inventory; the generated documents."""
     import os
     import subprocess
     out = tmp_path / "out"
@@ -110,8 +117,12 @@ def test_incident_crew401_the_generated_catalogue_carries_every_surface_with_the
                             "CATALOG_GEN_PROBE": "0"},
                        capture_output=True, text=True)
     assert p.returncode == 0, p.stderr
-    gen = {d["metadata"]["name"]: d for d in yaml.safe_load_all((out / "catalog-info.yaml").read_text())
-           if d and d.get("spec", {}).get("type") == "founder-surface"}
+    return [d for d in yaml.safe_load_all((out / "catalog-info.yaml").read_text()) if d]
+
+
+def test_incident_crew401_the_generated_catalogue_carries_every_surface_with_the_zone_resolved(tmp_path):
+    docs = _gen(tmp_path)
+    gen = {d["metadata"]["name"]: d for d in docs if d.get("spec", {}).get("type") == "founder-surface"}
     zone = _zone(ROOT)
     for d in _surfaces(ROOT):
         name = d["metadata"]["name"]
@@ -156,3 +167,21 @@ def test_incident_crew401_a_surface_without_purpose_or_link_is_refused(tmp_path,
     docs[0]["metadata"].pop(field)
     (fake / FOUNDER).write_text(yaml.safe_dump_all(docs))
     assert [m for m in missing(fake) if docs[0]["metadata"]["name"] in m]
+
+
+def test_incident_crew412_a_repo_surface_without_a_project_slug_is_refused(tmp_path):
+    fake = _copy(tmp_path)
+    f = fake / FOUNDER
+    text = f.read_text()
+    assert "github.com/project-slug" in text
+    f.write_text(text.replace("github.com/project-slug", "github.com/project-slug-was"))
+    assert [m for m in missing(fake) if "project-slug" in m], "a repo surface with no slug must fail"
+
+
+def test_incident_crew412_founder_annotations_reach_the_generated_catalogue(tmp_path):
+    src = {d["metadata"]["name"]: d["metadata"].get("annotations") or {} for d in _surfaces(ROOT)}
+    p = _gen(tmp_path)
+    gen = {d["metadata"]["name"]: d["metadata"].get("annotations") or {} for d in p if d["metadata"]["name"] in src}
+    for name, ann in src.items():
+        keep = {k: v for k, v in ann.items() if k.startswith(("backstage.io/", "github.com/"))}
+        assert keep.items() <= gen[name].items(), f"{name}: catalog-gen dropped {set(keep) - set(gen[name])}"
