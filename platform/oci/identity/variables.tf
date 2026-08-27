@@ -13,3 +13,24 @@ variable "founder_emails" {
 variable "compartment_ocid" { type = string }
 variable "vault_ocid" { type = string }
 variable "key_ocid" { type = string }
+
+variable "region" {
+  description = "Region the provider signs requests for. SecurityToken auth cannot read it from the profile (oke-check run 33030450105: 'can not get region from Terraform configuration'), so it is passed as platform/oci does."
+  type        = string
+}
+
+variable "oci_auth" {
+  description = "Provider auth, as platform/oci: APIKey on a laptop, SecurityToken under GitHub OIDC (crew#408: applied from oke-check, never a laptop)."
+  type        = string
+  default     = "APIKey"
+  validation {
+    condition     = contains(["APIKey", "SecurityToken"], var.oci_auth)
+    error_message = "oci_auth is APIKey or SecurityToken."
+  }
+}
+
+variable "oci_profile" {
+  description = "Profile in ~/.oci/config that holds the credential."
+  type        = string
+  default     = "DEFAULT"
+}
