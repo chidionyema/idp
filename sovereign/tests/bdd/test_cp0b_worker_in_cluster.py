@@ -65,7 +65,7 @@ def _image(state: dict) -> None:
     # crew#406: one ImageUpdateAutomation walks ./platform for every policy marker; two automations
     # on one push branch collided ("cannot lock ref"), so the worker has no automation of its own.
     autos = [d for f in (IDP / "platform/image-automation").glob("*.yaml") for d in yaml.safe_load_all(f.read_text())
-             if d and d["kind"] == "ImageUpdateAutomation"]
+             if d and d.get("kind") == "ImageUpdateAutomation"]
     assert len(autos) == 1, autos
     assert "platform/temporal".startswith(autos[0]["spec"]["update"]["path"].removeprefix("./")), autos
 
