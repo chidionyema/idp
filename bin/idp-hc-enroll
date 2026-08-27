@@ -29,9 +29,11 @@ if [ -z "$key" ]; then
   via=bucket
   command -v age >/dev/null || { echo "BLIND   hc-enroll  age missing"; exit 2; }
   [ -r "$SOPS_AGE_KEY_FILE" ] || { echo "BLIND   hc-enroll  no age identity at $SOPS_AGE_KEY_FILE"; exit 2; }
-  blob=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name "$NAME" 2>"$ERR")
-  [ -n "$blob" ] || { echo "BLIND   hc-enroll  vault and bucket both unreadable: $(head -1 "$ERR" | cut -c1-100)"; exit 2; }
-  key=$(printf '%s' "$blob" | age -d -i "$SOPS_AGE_KEY_FILE" 2>"$ERR") || { echo "BLIND   hc-enroll  age decrypt failed: $(head -1 "$ERR" | cut -c1-100)"; exit 2; }
+  T=$(mktemp -d "${TMPDIR:-/tmp}/hc-enroll.XXXXXX"); trap 'rm -rf "$T"' EXIT
+  # the blob goes to a file, never a variable: $(...) drops NUL bytes and age then refuses the payload
+  "$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name "$NAME" >"$T/blob" 2>"$ERR" && [ -s "$T/blob" ] \
+    || { echo "BLIND   hc-enroll  vault and bucket both unreadable: $(head -1 "$ERR" | cut -c1-100)"; exit 2; }
+  key=$(age -d -i "$SOPS_AGE_KEY_FILE" "$T/blob" 2>"$ERR") || { echo "BLIND   hc-enroll  age decrypt failed: $(head -1 "$ERR" | cut -c1-100)"; exit 2; }
 fi
 [ -n "$key" ] || { echo "BLIND   hc-enroll  empty ping key"; exit 2; }
 D="$HOME/.estate/healthchecks"; mkdir -p "$D"; chmod 700 "$D"

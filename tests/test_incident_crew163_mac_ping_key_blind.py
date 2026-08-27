@@ -34,6 +34,7 @@ def test_publish_then_enrol_through_the_bucket_when_the_vault_is_unreadable(tmp_
     assert "recipients=1" in pub.stdout and "ping" not in pub.stdout.split("bytes=")[1]
     blob = (tmp_path / "cloud/objects/estate-drill-receipts/healthchecks/ping_key.age").read_bytes()
     assert b"0123456789abcdef" not in blob, "the bucket object must be ciphertext"
+    assert blob.startswith(b"-----BEGIN AGE ENCRYPTED FILE-----"), "armored: a raw blob has NUL bytes no shell pipeline keeps (found 2026-08-27, 3 of 6 runs)"
     (sec / "healthchecks-ping-key").unlink()  # the Mac's situation: no vault door
     enr = subprocess.run([str(ROOT / "bin/idp-hc-enroll")], capture_output=True, text=True, env=env)
     assert enr.returncode == 0 and "via=bucket" in enr.stdout, enr.stdout + enr.stderr

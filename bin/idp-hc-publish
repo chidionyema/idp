@@ -21,6 +21,7 @@ while read -r r; do case "$r" in ""|\#*) ;; *) args+=(-r "$r"); n=$((n+1));; esa
 T=$(mktemp -d "${TMPDIR:-/tmp}/hc-publish.XXXXXX"); trap 'rm -rf "$T"' EXIT
 key=$("$IDP/bin/idp-cloud" secret get healthchecks-ping-key 2>"$T/err") || { echo "BLIND   hc-publish  $(head -1 "$T/err" | cut -c1-120)"; exit 2; }
 [ -n "$key" ] || { echo "BLIND   hc-publish  empty ping key"; exit 2; }
-printf '%s\n' "$key" | age "${args[@]}" -o "$T/ping_key.age" || { echo "BLIND   hc-publish  age encrypt failed"; exit 2; }
+# -a: armored text, so the object survives every shell and log on the way (a raw age blob holds NUL bytes)
+printf '%s\n' "$key" | age -a "${args[@]}" -o "$T/ping_key.age" || { echo "BLIND   hc-publish  age encrypt failed"; exit 2; }
 "$IDP/bin/idp-cloud" object put --bucket "$BUCKET" --name "$NAME" --file "$T/ping_key.age" 2>"$T/err" || { echo "BLIND   hc-publish  $(head -1 "$T/err" | cut -c1-120)"; exit 2; }
 echo "ok      hc-publish  bucket=$BUCKET name=$NAME bytes=$(wc -c < "$T/ping_key.age" | tr -d ' ') recipients=$n"
