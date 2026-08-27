@@ -112,7 +112,7 @@ def no_key_in_repo() -> None:
         assert not re.search(r"(?i)(api_key|master_key):\s*['\"]?(sk-|[A-Za-z0-9]{32,})", f.read_text()), f
 
 
-# crew#400: the founder picks and adds models in the Admin UI; the login is the vault entry litellm-ui.
+# crew#400/crew#408: the founder picks and adds models in the Admin UI; the console signs in through IDCS.
 @given("the router runs the -database image with litellm-db in namespace llm", target_fixture="deployment")
 def deployment() -> dict:
     docs = list(yaml.safe_load_all((CLUSTER / "litellm.yaml").read_text()))
@@ -130,27 +130,43 @@ def store_model_in_db() -> None:
     assert cfg["general_settings"].get("store_model_in_db") is True
 
 
-@when("the founder opens https://llm.<zone>/ui and signs in", target_fixture="ui_secret")
-def ui_secret() -> dict:
-    es = next(d for d in yaml.safe_load_all((CLUSTER / "external-secret.yaml").read_text()) if d["metadata"]["name"] == "litellm-ui")
-    assert es["spec"]["dataFrom"][0]["extract"]["key"] == "litellm-ui"
-    return es
+@when("the founder opens https://llm.<zone>/ui and signs in", target_fixture="sso_env")
+def sso_env(deployment: dict) -> dict:
+    env = {e["name"]: e.get("value", "") for e in deployment["spec"]["template"]["spec"]["containers"][0]["env"]}
+    assert env["GENERIC_AUTHORIZATION_ENDPOINT"] == "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/authorize"
+    assert env["GENERIC_TOKEN_ENDPOINT"] == "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/token"
+    assert env["PROXY_BASE_URL"] == "https://llm.${ESTATE_ZONE}"
+    return env
 
 
-@then("the login is UI_USERNAME and UI_PASSWORD from the vault entry litellm-ui, mounted like the upstream keys")
-def ui_mounted(deployment: dict, ui_secret: dict) -> None:
+@then("the console sends the founder to the estate identity domain, the same login as the catalogue")
+def same_domain_as_catalogue(sso_env: dict) -> None:
+    cfg = yaml.safe_load((ROOT / "clusters" / "oke" / "estate-config.yaml").read_text())
+    assert "ESTATE_OIDC_DOMAIN_URL" in cfg["data"], "the domain URL is one value in estate-config"
+    tf = (ROOT / "platform" / "oci" / "identity" / "main.tf").read_text()
+    assert 'redirect_uris             = ["https://llm.${var.zone}/sso/callback"]' in tf
+    assert "oci_identity_domains_app.router_console.id" in tf, "founder_emails are granted the console app"
+
+
+@then("the OIDC client reaches the pod only from the vault, written by platform/oci/identity")
+def client_from_vault(deployment: dict) -> None:
+    es = next(d for d in yaml.safe_load_all((CLUSTER / "external-secret.yaml").read_text()) if d["metadata"]["name"] == "litellm-sso")
+    keys = {d["secretKey"]: d["remoteRef"]["key"] for d in es["spec"]["data"]}
+    assert keys == {"GENERIC_CLIENT_ID": "litellm-sso-client-id", "GENERIC_CLIENT_SECRET": "litellm-sso-client-secret",
+                    "PROXY_ADMIN_ID": "litellm-sso-admin-id"}
+    tf = (ROOT / "platform" / "oci" / "identity" / "main.tf").read_text()
+    for name in keys.values():
+        assert f'secret_name    = "{name}"' in tf, name
     spec = deployment["spec"]["template"]["spec"]
-    vol = next(v for v in spec["volumes"] if v.get("secret", {}).get("secretName") == ui_secret["spec"]["target"]["name"])
+    vol = next(v for v in spec["volumes"] if v.get("secret", {}).get("secretName") == "litellm-sso")
     mounts = {m["name"]: m["mountPath"] for m in spec["containers"][0]["volumeMounts"]}
     assert mounts[vol["name"]].startswith("/run/secrets/litellm/")
-    seed = (ROOT / ".github" / "workflows" / "vault-seed.yml").read_text()
-    assert "put litellm-ui UI_USERNAME=LITELLM_UI_USERNAME UI_PASSWORD=LITELLM_UI_PASSWORD" in seed
 
 
-@then("no username or password is written in the repository")
-def no_login_in_repo() -> None:
-    for f in CLUSTER.glob("*.yaml"):
-        assert not re.search(r"UI_(USERNAME|PASSWORD)\s*[:=]\s*['\"]?[A-Za-z0-9]", f.read_text()), f
+@then("no console username or password exists anywhere in the repository")
+def no_console_password() -> None:
+    for f in list(CLUSTER.glob("*.yaml")) + [ROOT / ".github" / "workflows" / "vault-seed.yml"]:
+        assert not re.search(r"UI_(USERNAME|PASSWORD)|litellm-ui", f.read_text()), f
 
 
 @then("every provider key the UI can bind to is an os.environ name the pod already exports")

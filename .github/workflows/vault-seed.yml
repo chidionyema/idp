@@ -12,7 +12,7 @@ on:
       entry:
         description: "which vault entry to write"
         type: choice
-        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, litellm-ui]
+        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db]
         default: all
 permissions:
   id-token: write   # the OIDC token this job trades for OCI access
@@ -69,8 +69,6 @@ jobs:
           SEED_FLUX_WRITER_IDENTITY_B64: ${{ secrets.SEED_FLUX_WRITER_IDENTITY_B64 }}
           SEED_FLUX_WRITER_PUB: ${{ secrets.SEED_FLUX_WRITER_PUB }}
           SEED_TEMPORAL_DB_PASSWORD: ${{ secrets.SEED_TEMPORAL_DB_PASSWORD }}
-          SEED_LITELLM_UI_USERNAME: ${{ secrets.SEED_LITELLM_UI_USERNAME }}
-          SEED_LITELLM_UI_PASSWORD: ${{ secrets.SEED_LITELLM_UI_PASSWORD }}
         run: |
           set -euo pipefail
           bin/idp-oci-login --check
@@ -96,9 +94,5 @@ jobs:
           if [ "$ENTRY" = all ] || [ "$ENTRY" = temporal-db ]; then
             # Temporal's Postgres password (platform/temporal/external-secret.yaml, crew#396)
             put temporal-db password=TEMPORAL_DB_PASSWORD
-          fi
-          if [ "$ENTRY" = all ] || [ "$ENTRY" = litellm-ui ]; then
-            # the Admin UI login at llm.<zone>/ui (platform/llm/external-secret.yaml litellm-ui, crew#400)
-            put litellm-ui UI_USERNAME=LITELLM_UI_USERNAME UI_PASSWORD=LITELLM_UI_PASSWORD
           fi
           rm -f "$ESTATE_ENV_FILE"
