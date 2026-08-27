@@ -345,6 +345,17 @@ jobs:
     cwd: $CODE/crew
     skip_on_battery: false
     timeout_s: 1800
+  com.estate.research-intake:
+    command:
+    - ~/.claude/scripts/hc-wrap.sh
+    - research-intake
+    - python3
+    - $CODE/crew/science/research_intake.py
+    - pull
+    cron: 12 6 * * *
+    cwd: $CODE/crew
+    skip_on_battery: false
+    timeout_s: 900
   com.founder.stuckdetector:
     command:
     - /bin/sh
