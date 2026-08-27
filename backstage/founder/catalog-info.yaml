@@ -43,8 +43,8 @@ metadata:
     idp/updated-by: "Flux from platform/llm on merge to main"
   tags: [founder]
   links:
-    - title: "API"
-      url: "https://llm.${ESTATE_ZONE}/v1/chat/completions"
+    - title: "API (OpenAPI docs; POST /v1/chat/completions)"
+      url: "https://llm.${ESTATE_ZONE}/"
       icon: dashboard
     - title: "Admin console"
       url: "https://llm.${ESTATE_ZONE}/ui"
