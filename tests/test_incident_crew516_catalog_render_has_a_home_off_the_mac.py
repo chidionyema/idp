@@ -63,3 +63,17 @@ def test_incident_crew516_the_mac_row_still_stands_until_parity():
     sched = yaml.safe_load((ROOT / "scheduler" / "schedule.yml").read_text())
     jobs = sched.get("jobs", sched)
     assert jobs["com.estate.catalog-render"]["runs_on"] == "mac"
+
+
+def test_incident_crew516_the_runner_carries_flux_and_reads_the_feed_from_the_bucket():
+    """First dry-run (33099170685): `BLIND flux missing` and NEXT.md 123 lines short because the
+    feed lived only on the Mac. The runner installs the pinned flux CLI and takes the feed
+    estate#10 publishes; ESTATE_FEED points the render at that copy."""
+    steps = _steps()
+    flux = [s for s in steps if "fluxcd/flux2/action@" in str(s.get("uses", ""))]
+    assert len(flux) == 1 and re.search(r"@[0-9a-f]{40}", flux[0]["uses"]), "flux action missing or not sha-pinned"
+    fetch = next(s for s in steps if "inventory from the bucket" in s.get("name", ""))
+    assert "state/feed/latest.md" in fetch["run"]                       # the key estate#10 writes
+    assert "not in the bucket yet" in fetch["run"], "a missing feed must be a named line, not a dead job"
+    render = next(s for s in steps if s.get("name") == "render")
+    assert render["env"]["ESTATE_FEED"].endswith("/feed.md")
