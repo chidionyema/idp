@@ -1,0 +1,10 @@
+# crew#539 CP6/CP7: the healing loops. Flux row `healing` in clusters/oke/platform.yaml, after
+# scheduling (the PriorityClass the evictor reads), llm (the router K8sGPT talks to) and secret-store.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: healing
+resources:
+  - namespace.yaml
+  - external-secret.yaml
+  - descheduler.yaml
+  - k8sgpt.yaml

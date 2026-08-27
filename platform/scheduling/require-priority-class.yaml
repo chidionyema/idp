@@ -1,0 +1,68 @@
+# LAW 45 guard for crew#539 (CP5). Two rules, two modes, on purpose (LAW 38: a guard that refuses
+# correct work is an outage):
+#   radio-room-set-is-critical      Enforce  the six named workloads must run as infrastructure-critical;
+#                                            the class the founder set is not something a later edit drops.
+#   platform-workload-names-a-class Audit    every other Deployment/StatefulSet/CronJob in an idp namespace
+#                                            without a priorityClassName is a PolicyReport row. Flipped to
+#                                            Enforce the way crew#341's secrets policy is: after a pass with
+#                                            zero violations, never before (the langfuse chart alone ships
+#                                            five workloads that would be refused today).
+# Kyverno is already the estate's admission controller (platform/edge); a shell gate here would be
+# a script for a solved problem (headline rule 1).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-priority-class
+  annotations:
+    policies.kyverno.io/title: Require a PriorityClass on platform workloads
+    policies.kyverno.io/category: crew#539 scheduling immunity
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Deployment, StatefulSet, CronJob
+    policies.kyverno.io/description: >-
+      The radio-room set (langfuse-web, langfuse-worker, agentgateway, hermes-agent-gateway,
+      telemetry-coverage, cluster-state) must run under the infrastructure-critical PriorityClass;
+      every other platform workload should name a class so the scheduler can rank it under pressure.
+spec:
+  background: true
+  rules:
+    - name: radio-room-set-is-critical
+      match:
+        any:
+          - resources:
+              kinds: [Deployment, CronJob]
+              names: [langfuse-web, langfuse-worker, agentgateway, hermes-agent-gateway, telemetry-coverage, cluster-state]
+      validate:
+        failureAction: Enforce
+        message: "crew#539: this workload is in the radio-room set and must run as priorityClassName infrastructure-critical"
+        anyPattern:
+          - spec:
+              template:
+                spec:
+                  priorityClassName: infrastructure-critical
+          - spec:
+              jobTemplate:
+                spec:
+                  template:
+                    spec:
+                      priorityClassName: infrastructure-critical
+    - name: platform-workload-names-a-class
+      match:
+        any:
+          - resources:
+              kinds: [Deployment, StatefulSet, CronJob]
+              namespaceSelector:
+                matchLabels: { app.kubernetes.io/part-of: idp }
+      validate:
+        failureAction: Audit
+        message: "crew#539: a platform workload names a priorityClassName so the scheduler can rank it under CPU pressure"
+        anyPattern:
+          - spec:
+              template:
+                spec:
+                  priorityClassName: "?*"
+          - spec:
+              jobTemplate:
+                spec:
+                  template:
+                    spec:
+                      priorityClassName: "?*"

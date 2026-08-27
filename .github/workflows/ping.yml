@@ -1,0 +1,76 @@
+# crew#539 CP3: the dead-man's switch that lives outside the blast radius. On 2026-08-27 langfuse
+# answered 503 for nine minutes and nothing paged, because the estate's only alert is a Flux
+# reconcile event raised from inside the cluster that was starving. This runs on a GitHub runner
+# every five minutes, probes every founder surface with a GET (the same list oke-check's
+# founder-links job derives from the portal, so there is one list), and on any failure posts to
+# the Telegram bot the estate already runs (SEED_HERMES_TELEGRAM_* repo secrets; no new account,
+# no new SaaS). When the previous tick failed and this one is green it posts the recovery.
+# Cloudflare Worker rejected: a second account and a wrangler deploy for the same ten lines.
+# GitHub cron ticks can drift a few minutes under load; the schedule is a floor, not a clock.
+name: ping
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ping
+  cancel-in-progress: false
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: probe every founder surface from outside the cluster
+        id: probe
+        run: |
+          set -uo pipefail
+          zone=$(awk '$1=="ESTATE_ZONE:"{print $2}' clusters/oke/estate-config.yaml)
+          test -n "$zone"
+          # github.com rows are the repo links on the portal, not cluster surfaces; oke-check probes those.
+          grep -oE 'url: "https?://[^"]+"' backstage/founder/catalog-info.yaml \
+            | sed -E 's/^url: "(.*)"$/\1/' | sed "s/\${ESTATE_ZONE}/$zone/g" \
+            | grep -v '^https://github.com/' | sort -u > founder-links.txt
+          if grep -q '\${' founder-links.txt; then echo "unsubstituted placeholder"; cat founder-links.txt; exit 1; fi
+          bad=""
+          while read -r u; do
+            # GET, never HEAD: several surfaces answer 405 to HEAD by design (memory: curl-head-probe-405).
+            code=$(curl -sS -o /dev/null -L --max-redirs 5 --max-time 20 -w '%{http_code}' "$u" || echo 000)
+            case "$code" in
+              2??|3??|401|405) echo "ok   $code $u" ;;
+              *) echo "FAIL $code $u"; bad="${bad}${code} ${u}"$'\n' ;;
+            esac
+          done < founder-links.txt
+          echo "$(wc -l < founder-links.txt) surfaces probed"
+          { echo "bad<<EOF"; printf '%s' "$bad"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+          test -z "$bad"
+      - name: previous tick's verdict
+        if: ${{ always() }}
+        id: prev
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          prev=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ping.yml --status completed --limit 1 --json conclusion --jq '.[0].conclusion // "none"')
+          echo "prev=$prev"; echo "conclusion=$prev" >> "$GITHUB_OUTPUT"
+      - name: telegram
+        if: ${{ always() && (steps.probe.outcome == 'failure' || steps.prev.outputs.conclusion == 'failure') }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.SEED_HERMES_TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT: ${{ secrets.SEED_HERMES_TELEGRAM_HOME_CHANNEL }}
+          BAD: ${{ steps.probe.outputs.bad }}
+          PROBE: ${{ steps.probe.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          if [ "$PROBE" = "failure" ]; then
+            text="🔴 ping (crew#539): founder surface down from outside the cluster"$'\n'"$BAD"$'\n'"$RUN_URL"
+          else
+            text="🟢 ping (crew#539): every founder surface answers again"$'\n'"$RUN_URL"
+          fi
+          code=$(curl -sS -o /dev/null -w '%{http_code}' "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT}" --data-urlencode "text=${text}")
+          echo "telegram sendMessage $code"
+          test "$code" = 200

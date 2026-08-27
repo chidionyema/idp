@@ -12,6 +12,7 @@ spec:
     metadata:
       labels: { app.kubernetes.io/name: agentgateway, app.kubernetes.io/part-of: idp }
     spec:
+      priorityClassName: infrastructure-critical
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true

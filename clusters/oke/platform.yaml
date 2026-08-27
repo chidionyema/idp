@@ -84,6 +84,7 @@ spec:
   # first two ticks; that is the install, not an incident (code-37, 2026-08-25).
   interval: 10m
   dependsOn:
+    - name: scheduling
     - name: backstage
   sourceRef:
     kind: GitRepository
@@ -241,6 +242,7 @@ spec:
       - kind: ConfigMap
         name: estate-config
   dependsOn:
+    - name: scheduling
     - name: secret-store
   wait: true
   timeout: 10m
@@ -266,6 +268,7 @@ spec:
   path: ./platform/mcp
   prune: true
   dependsOn:
+    - name: scheduling
     - name: edge
     - name: secret-store
   wait: true
@@ -298,6 +301,7 @@ metadata:
 spec:
   interval: 10m
   dependsOn:
+    - name: scheduling
     - name: backstage
   sourceRef:
     kind: GitRepository
@@ -453,3 +457,72 @@ spec:
       kind: Deployment
       name: cluster-autoscaler
       namespace: kube-system
+---
+# crew#539: scheduling immunity. The two PriorityClasses, the balloon and the Kyverno policy that
+# keeps the radio-room set honest. After edge (Kyverno CRDs); the rows that name
+# infrastructure-critical depend on this one so the class exists before a pod asks for it.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: scheduling
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: edge
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/scheduling
+  prune: true
+  wait: true
+  timeout: 5m
+---
+# crew#539 CP6/CP7: the self-healing loops. Descheduler rebalances after every node swap; K8sGPT
+# explains a Pending wave through the estate's own router. After scheduling (it must not evict the
+# radio room), llm (the backend) and secret-store (the router key).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: healing
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: scheduling
+    - name: llm
+    - name: secret-store
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/healing
+  prune: true
+  wait: true
+  timeout: 15m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: descheduler
+      namespace: healing
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: k8sgpt-operator
+      namespace: healing
+---
+# crew#539 CP7: the K8sGPT analyzer CR, split from the operator install so the row
+# dry-runs after core.k8sgpt.ai exists (the chaos-mesh/chaos shape).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: healing-analyzer
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: healing
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/healing/analyzer
+  prune: true
+  wait: true
