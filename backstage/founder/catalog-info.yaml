@@ -289,8 +289,11 @@ metadata:
     - title: "vault-seed: put a secret in the vault from CI"
       url: "https://github.com/chidionyema/idp/actions/workflows/vault-seed.yml"
       icon: dashboard
-    - title: "stale: closes forgotten PRs"
+    - title: "stale: closes a PR idle for 24h, branch kept"
       url: "https://github.com/chidionyema/idp/actions/workflows/stale.yml"
+      icon: dashboard
+    - title: "wake-blocked: reopens a closed PR when its Blocked-by lands"
+      url: "https://github.com/chidionyema/idp/actions/workflows/wake-blocked.yml"
       icon: dashboard
 spec:
   type: founder-surface
