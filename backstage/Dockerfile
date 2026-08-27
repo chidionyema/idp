@@ -96,8 +96,12 @@ FROM node:24-trixie-slim
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
-    apt-get install -y --no-install-recommends libsqlite3-dev && \
+    apt-get install -y --no-install-recommends libsqlite3-dev python3 python3-pip && \
     rm -rf /var/lib/apt/lists/*
+# TechDocs builds run in this process (techdocs.generator.runIn: local): a pod has no
+# Docker socket, and with runIn: docker every build failed and the docs section was
+# empty (crew#459). One pinned package brings mkdocs and the techdocs-core plugin.
+RUN pip3 install --no-cache-dir --break-system-packages mkdocs-techdocs-core==1.7.1
 # The runtime never runs npm, and the npm the base image bundles carries its own
 # node-tar. Incident 2026-08-25 (idp#125): Trivy failed the build on
 # CVE-2026-59873 in three copies of tar 6.2.1, one of them

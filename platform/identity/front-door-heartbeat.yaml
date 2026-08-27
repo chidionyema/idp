@@ -1,0 +1,75 @@
+# The front door's pulse, on the estate's own clock (idp#229, crew#307).
+#
+# login-drill.yml carried a "*/5" cron and a 20-minute heartbeat in oke-check. Measured
+# 2026-08-27 over the last 30 runs: 3 came from the cron, 17 from pushes, 10 from dispatches,
+# gaps up to 68 minutes. GitHub drops high-frequency schedules under load, so the heartbeat was
+# grading GitHub's clock, not the door. The full sign-in (headless browser, domain user) stays
+# in GitHub, hourly; the five-minute pulse runs here, where the schedule is ours.
+#
+# Every five minutes: GET the catalogue's public URL and require a 302 whose Location is on
+# the identity domain. That is the whole redirect chain -- DNS, Traefik, oauth2-proxy and the
+# domain -- graded from outside the cluster. The receipt goes to the estate-drill-receipts
+# bucket by instance principal, exactly as chaos/backstage-pod-kill writes its own;
+# bin/idp-door-heartbeat reads it and oke-check FAILs when it is older than 20 minutes or not ok.
+# Both URLs are substituted from estate-config (LAW 46); nothing here names a zone.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: front-door-heartbeat
+  namespace: identity
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 120
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 90
+      ttlSecondsAfterFinished: 900
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: heartbeat
+              image: ghcr.io/oracle/oci-cli:20260826   # the same pinned image chaos/backstage-pod-kill writes its receipt with
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -u
+                  at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+                  IDENTITY_HOST=$(printf '%s' "$IDENTITY_URL" | sed -E 's#^[a-z]+://([^/]+).*#\1#')
+                  out=$(curl -sS -o /dev/null --max-time 20 -w '%{http_code} %{redirect_url}' "$DOOR_URL" 2>&1)
+                  code=${out%% *}; loc=${out#* }
+                  lochost=$(printf '%s' "$loc" | sed -E 's#^[a-z]+://([^/]+).*#\1#')
+                  if [ "$code" = 302 ] && [ -n "$lochost" ] && [ "$lochost" = "$IDENTITY_HOST" ]; then
+                    printf 'ok front-door-heartbeat %s -> 302 %s at %s\n' "$DOOR_URL" "$lochost" "$at" > /tmp/receipt
+                  else
+                    printf 'FAIL front-door-heartbeat %s -> %s %s (expected 302 to %s) at %s\n' "$DOOR_URL" "$code" "${lochost:-no-location}" "$IDENTITY_HOST" "$at" > /tmp/receipt
+                  fi
+                  cat /tmp/receipt
+                  oci --auth instance_principal os object put --bucket-name estate-drill-receipts \
+                    --name drills/front-door-heartbeat --file /tmp/receipt --content-type text/plain --force >/dev/null
+                  grep -q '^ok ' /tmp/receipt
+              env:
+                - { name: HOME, value: /tmp }   # the CLI writes its cache under HOME; the root fs is read-only
+                - { name: DOOR_URL, value: "https://catalogue.${ESTATE_ZONE}/" }
+                - { name: IDENTITY_URL, value: "${ESTATE_OIDC_DOMAIN_URL}" }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { cpu: 200m, memory: 256Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - { name: tmp, emptyDir: {} }
