@@ -332,8 +332,8 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             ;;
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
-            ns=$(oci os ns get --query data --raw-output) || blind "oci os ns get failed"
-            if oci os bucket get --namespace "$ns" --bucket-name "$NAME" >/dev/null 2>&1; then
+            bucket_ns=$(oci os ns get --query data --raw-output) || blind "oci os ns get failed"
+            if oci os bucket get --namespace "$bucket_ns" --bucket-name "$NAME" >/dev/null 2>&1; then
               echo ok
             else
               echo "NotFound: bucket $NAME" >&2
