@@ -127,7 +127,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             ;;
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
-            MAIN=$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)
+            MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
             if [ -z "${OCI_CLI_PROFILE:-}" ]; then
               # shellcheck source=idp-oci-whoami
               source "$IDP/bin/idp-oci-whoami" || exit 2
@@ -228,7 +228,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             ;;
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
-            MAIN=$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)
+            MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
             if [ -z "${OCI_CLI_PROFILE:-}" ]; then
               # shellcheck source=idp-oci-whoami
               source "$IDP/bin/idp-oci-whoami" || exit 2
