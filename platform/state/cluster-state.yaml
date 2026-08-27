@@ -299,14 +299,62 @@ data:
         return {"clusterspiffeids": entries, "error": err, "csi_workloads": workloads, "svids": svids, "agents": agents,
                 "server": server}
     spiffe = spiffe_rows()
+    # crew#227 CP3: every pod that calls OCI proves its identity in the receipt instead of an
+    # assertion. The estate runs a BASIC_CLUSTER (platform/oci/main.tf), so per-pod OKE workload
+    # identity (an Enhanced-cluster, billed feature) was declined; the answer in place is the
+    # node's instance principal, granted by a dynamic group over the node pool (platform/oci/vault.tf).
+    # This row proves that shape: which containers call the oci CLI/SDK, which auth mode each one
+    # uses, and whether any of them still carries a static key (env var or a Secret volume named
+    # for one) -- the thing OKE workload identity and instance principal both exist to remove.
+    OCI_KEY_ENV = ("OCI_API_KEY", "OCI_PRIVATE_KEY", "OCI_API_PRIVATE_KEY", "OCI_CLI_KEY_FILE")
+
+    def calls_oci(c):
+        image = (c.get("image") or "")
+        argv = " ".join((c.get("command") or []) + (c.get("args") or []))
+        env_names = {e.get("name") for e in (c.get("env") or [])}
+        return ("oci-cli" in image or re.search(r"(^|[\s\"'])oci\s", argv) is not None
+                or bool(env_names & {"OCI_CLI_AUTH", "OCI_RESOURCE_PRINCIPAL_VERSION"}))
+
+    def identity_of(c):
+        argv = " ".join((c.get("command") or []) + (c.get("args") or []))
+        env = {e.get("name"): e.get("value") for e in (c.get("env") or [])}
+        if "--auth resource_principal" in argv or env.get("OCI_CLI_AUTH") == "resource_principal" \
+                or "OCI_RESOURCE_PRINCIPAL_VERSION" in env:
+            return "resource_principal"
+        if "--auth instance_principal" in argv or env.get("OCI_CLI_AUTH") == "instance_principal":
+            return "instance_principal"
+        return "unknown"
+
+    def static_key_names(p, c):
+        env_hit = sorted(k for k in OCI_KEY_ENV if k in {e.get("name") for e in (c.get("env") or [])})
+        mount_names = {m.get("name") for m in (c.get("volumeMounts") or [])}
+        vol_hit = sorted(v["name"] for v in (p["spec"].get("volumes") or [])
+                          if v["name"] in mount_names
+                          and "oci" in (v.get("secret") or {}).get("secretName", "").lower())
+        return env_hit + vol_hit
+
+    oci_pods = []
+    for p in pods:
+        ns, name = p["metadata"]["namespace"], p["metadata"]["name"]
+        for c in (p["spec"].get("containers") or []):
+            if not calls_oci(c):
+                continue
+            oci_pods.append({"pod": f"{ns}/{name}", "container": c["name"], "identity": identity_of(c),
+                              "static_key": static_key_names(p, c)})
+    oci_pods.sort(key=lambda r: (r["pod"], r["container"]))
+    oci_static_key_pods = sorted({r["pod"] for r in oci_pods if r["static_key"]})
+    oci_unknown_identity_pods = sorted({r["pod"] for r in oci_pods if r["identity"] == "unknown"})
     at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     head = (f"ok cluster-state at {at} nodes={len(node_rows)} ready={ready} pods={len(pods)} pods_not_ready={len(not_ready)}"
             f" flux={len(flux)} flux_not_ready={len(flux_not_ready)} ds={len(ds)} ds_short={len(ds_short)} events_warning={len(events)}"
             f" hostnames={len(hostnames or [])} spiffe_ids={len(spiffe['clusterspiffeids'] or [])} spiffe_workloads={len(spiffe['csi_workloads'])}"
-            f" svids={sum(len(r['spiffe_ids']) for r in spiffe['svids'])} spire_agents={len(spiffe['agents'])}")
+            f" svids={sum(len(r['spiffe_ids']) for r in spiffe['svids'])} spire_agents={len(spiffe['agents'])}"
+            f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)}")
     body = {"at": at, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
             "flux": flux, "flux_not_ready": flux_not_ready, "daemonsets": ds, "ds_short": ds_short, "events_warning": events,
-            "hostnames": hostnames, "hostnames_error": hostnames_error, "spiffe": spiffe}
+            "hostnames": hostnames, "hostnames_error": hostnames_error, "spiffe": spiffe,
+            "oci_identity": {"pods": oci_pods, "static_key_pods": oci_static_key_pods,
+                              "unknown_identity_pods": oci_unknown_identity_pods}}
     sys.stdout.write(head + "\n" + json.dumps(body, sort_keys=True) + "\n")
 ---
 apiVersion: batch/v1
