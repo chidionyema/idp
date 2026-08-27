@@ -41,8 +41,9 @@ def _render_chart(tmp_path):
     spec = hr["spec"]["chart"]["spec"]
     values = tmp_path / "values.yaml"
     values.write_text(yaml.safe_dump(hr["spec"].get("values", {})))
+    ns = hr["spec"].get("targetNamespace") or "observability"
     r = subprocess.run(["helm", "template", hr["metadata"]["name"], spec["chart"], "--repo", repo["spec"]["url"],
-                        "--version", spec["version"], "-n", "observability", "-f", str(values)],
+                        "--version", spec["version"], "-n", ns, "-f", str(values)],
                        capture_output=True, text=True)
     if r.returncode:
         pytest.skip(f"BLIND: helm template failed (offline?): {r.stderr[-300:]}")

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Enrol this machine's jobs with the estate job monitor (crew#177). Writes the two files
+# ~/.claude/scripts/hc-wrap.sh reads, from the vault entry the server enrols its project with
+# (platform/oci/healthchecks.tf, platform/healthchecks/healthchecks.yaml), so the Mac and the
+# server never disagree and nobody copies a key from a screen. Idempotent; run it once per machine.
+#   ok      hc-enroll  base=https://hc.<zone>/ping ping_key=<8 chars>... (33 bytes)
+#   BLIND   hc-enroll  <what could not be read>
+# Usage: idp-hc-enroll [<zone>]   env: OCI_COMPARTMENT_OCID, ESTATE_ZONE (or the argument)
+set -u
+C=${OCI_COMPARTMENT_OCID:?OCI_COMPARTMENT_OCID}
+ZONE=${1:-${ESTATE_ZONE:-}}
+[ -n "$ZONE" ] || ZONE=$(sed -n 's/^  ESTATE_ZONE: *//p' "$(dirname "$0")/../clusters/oke/estate-config.yaml" 2>/dev/null)
+[ -n "$ZONE" ] || { echo "BLIND   hc-enroll  no zone: pass it or set ESTATE_ZONE"; exit 2; }
+id=$(oci vault secret list --compartment-id "$C" --name healthchecks-ping-key --lifecycle-state ACTIVE --query 'data[0].id' --raw-output 2>&1) || { echo "BLIND   hc-enroll  secret list failed: $(printf '%s' "$id" | head -1 | cut -c1-120)"; exit 2; }
+[ -n "$id" ] && [ "$id" != null ] || { echo "BLIND   hc-enroll  no ACTIVE vault entry healthchecks-ping-key; run oke-check mode=apply first"; exit 2; }
+key=$(oci secrets secret-bundle get --secret-id "$id" --query 'data."secret-bundle-content".content' --raw-output 2>&1 | base64 -d 2>/dev/null) || { echo "BLIND   hc-enroll  secret bundle read failed"; exit 2; }
+[ -n "$key" ] || { echo "BLIND   hc-enroll  empty ping key"; exit 2; }
+D="$HOME/.estate/healthchecks"; mkdir -p "$D"; chmod 700 "$D"
+umask 077
+printf '%s\n' "$key" > "$D/ping_key"
+printf 'https://hc.%s/ping\n' "$ZONE" > "$D/base"
+echo "ok      hc-enroll  base=https://hc.$ZONE/ping ping_key=${key:0:8}... ($(wc -c < "$D/ping_key" | tr -d ' ') bytes)"
