@@ -47,7 +47,7 @@ spec:
         name: estate-agents
         email: estate-agents[bot]@users.noreply.github.com
       messageTemplate: |
-        platform/temporal: sovereign-worker image {{ range .Changed.Objects }}{{ range .Changes }}{{ .NewValue }}{{ end }}{{ end }} (crew#396)
+        platform/temporal: sovereign-worker image {{ range $resource, $changes := .Changed.Objects }}{{ range $_, $change := $changes }}{{ $change.NewValue }}{{ end }}{{ end }} (crew#396)
 
         Written by image-automation-controller from ImagePolicy flux-system/sovereign-worker.
     push:
