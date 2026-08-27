@@ -7,23 +7,22 @@
 # bucket cannot be read at all; FAIL when it has never been written or the door was not a 302
 # to the identity domain. Same shape as bin/idp-chaos-drill.
 set -uo pipefail
+IDP=$(cd "$(dirname "$0")/.." && pwd)
 NAME=front-door-heartbeat
 BUCKET="${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}"
 MAX_MIN="${DOOR_MAX_AGE_MIN:-20}"
 blind() { printf 'BLIND   door-heartbeat  %s\n' "$1"; exit 2; }
 fail()  { printf 'FAIL    door-heartbeat  %s\n' "$1"; exit 1; }
-command -v oci >/dev/null || blind "oci CLI is not installed"
 command -v python3 >/dev/null || blind "python3 is not installed"
-ns=(); [ -n "${OCI_OS_NAMESPACE:-}" ] && ns=(--namespace-name "$OCI_OS_NAMESPACE")
-head=$(oci os object head "${ns[@]}" --bucket-name "$BUCKET" --name "drills/$NAME" 2>&1)
+head=$("$IDP/bin/idp-cloud" object head --bucket "$BUCKET" --name "drills/$NAME" 2>&1)
 rc=$?
 if [ $rc -ne 0 ]; then
   case "$head" in
     *"404"*|*NotFound*|*"not found"*) fail "no receipt drills/$NAME in bucket $BUCKET: the CronJob identity/$NAME has never completed (Flux row identity not reconciled, or the bucket is not applied yet)" ;;
-    *) blind "oci os object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
+    *) blind "object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
   esac
 fi
-body=$(oci os object get "${ns[@]}" --bucket-name "$BUCKET" --name "drills/$NAME" --file - 2>/dev/null | head -1)
+body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name "drills/$NAME" 2>/dev/null | head -1)
 python3 - "$head" "$body" "$MAX_MIN" <<'PY'
 import json, sys
 from datetime import datetime, timezone
