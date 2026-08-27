@@ -10,6 +10,7 @@ nav:
   - Architecture:
       - architecture/index.md
       - Live estate: architecture/live.md
+  - Estate showcase: SHOWCASE.md
   - Decisions:
       - 0001 Gateway API is the routing standard: decisions/0001-gateway-api-is-the-routing-standard.md
       - 0002 Documentation is code: decisions/0002-documentation-is-code-and-the-portal-renders-it.md
@@ -34,6 +35,7 @@ nav:
   - Explanation: explanation/index.md
   - Demo:
       - Portal: demo/idp.md
+      - Estate showcase: demo/estate-showcase.md
       - Plist gate: demo/plist.md
       - k8s-infra: demo/k8s-infra.md
       - Oracle identity: demo/oci.md
@@ -76,6 +78,7 @@ nav:
       - Telemetry coverage: demo/telemetry-coverage.md
   - Onboarding:
       - Portal: onboarding/idp.md
+      - Estate showcase: onboarding/estate-showcase.md
       - Plist gate: onboarding/plist.md
       - Oracle identity: onboarding/oci.md
       - Flux on OKE: onboarding/oke.md

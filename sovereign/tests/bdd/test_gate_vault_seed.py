@@ -33,11 +33,11 @@ def _keys(state: dict) -> None:
     assert not missing, f"no SEED_ secret for {sorted(missing)}"
 
 
-@then("the workflow is dispatch-only with entries all, prospector-engine-env, github-app, flux-writer and temporal-db")
+@then("the workflow is dispatch-only with entries all, prospector-engine-env, github-app, flux-writer, temporal-db and mcp-gateway")
 def _dispatch(state: dict) -> None:
     on = state["doc"][True] if True in state["doc"] else state["doc"]["on"]   # yaml parses `on:` as True
     assert list(on) == ["workflow_dispatch"]
-    assert on["workflow_dispatch"]["inputs"]["entry"]["options"] == ["all", "prospector-engine-env", "github-app", "flux-writer", "temporal-db"]
+    assert on["workflow_dispatch"]["inputs"]["entry"]["options"] == ["all", "prospector-engine-env", "github-app", "flux-writer", "temporal-db", "mcp-gateway"]
 
 
 @then("the run step never echoes, prints or cats the seed env file and removes it at the end")
