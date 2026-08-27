@@ -8,7 +8,6 @@
 # Usage: idp-hc-enroll [<zone>]   env: OCI_COMPARTMENT_OCID, ESTATE_ZONE (or the argument)
 set -u
 IDP=$(cd "$(dirname "$0")/.." && pwd)
-C=${OCI_COMPARTMENT_OCID:?OCI_COMPARTMENT_OCID}
 ZONE=${1:-${ESTATE_ZONE:-}}
 [ -n "$ZONE" ] || ZONE=$(sed -n 's/^  ESTATE_ZONE: *//p' "$(dirname "$0")/../clusters/oke/estate-config.yaml" 2>/dev/null)
 [ -n "$ZONE" ] || { echo "BLIND   hc-enroll  no zone: pass it or set ESTATE_ZONE"; exit 2; }
