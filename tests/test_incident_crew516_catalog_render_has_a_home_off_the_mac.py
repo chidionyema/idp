@@ -31,6 +31,19 @@ def test_incident_crew516_render_reads_the_bucket_object_estate9_writes():
     assert "IDP_STATE_WORKTREE" in render["env"] and "ESTATE_CODE" in render["env"]
 
 
+def test_incident_crew516_both_checkouts_sit_inside_the_workspace():
+    # actions/checkout refuses "Repository path ... is not under GITHUB_WORKSPACE": a `../crew`
+    # path killed the job at step 2 on every tick (idp#445 review). Both repos are siblings
+    # under the workspace and the render runs from idp/.
+    outs = [s for s in _steps() if "actions/checkout" in str(s.get("uses", ""))]
+    paths = [str(s.get("with", {}).get("path", "")) for s in outs]
+    assert sorted(paths) == ["crew", "idp"], paths
+    assert not any(".." in x for x in paths)
+    render = next(s for s in _steps() if s.get("name") == "render")
+    assert render.get("working-directory") == "idp"
+    assert render["env"]["ESTATE_CODE"] == "${{ github.workspace }}"    # the dir holding crew/
+
+
 def test_incident_crew516_keys_reach_rclone_as_environment_never_argv():
     fetch = next(s for s in _steps() if "inventory from the bucket" in s.get("name", ""))
     assert "RCLONE_S3_ACCESS_KEY_ID" in fetch["env"] and "RCLONE_S3_SECRET_ACCESS_KEY" in fetch["env"]
