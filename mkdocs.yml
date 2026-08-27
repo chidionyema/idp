@@ -10,6 +10,7 @@ nav:
   - Architecture:
       - architecture/index.md
       - Live estate: architecture/live.md
+  - Estate showcase: SHOWCASE.md
   - Decisions:
       - 0001 Gateway API is the routing standard: decisions/0001-gateway-api-is-the-routing-standard.md
       - 0002 Documentation is code: decisions/0002-documentation-is-code-and-the-portal-renders-it.md
