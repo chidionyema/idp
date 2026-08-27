@@ -39,7 +39,7 @@ jobs:
           umask 077; mkdir -p ~/.ssh; printf '%s' "$WRITER_KEY_B64" | base64 -d > ~/.ssh/flux-writer
           ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/flux-writer -o IdentitiesOnly=yes"
-          git config user.name kini-finish; git config user.email "kini-finish@users.noreply.github.com"
+          git config user.name chidionyema; git config user.email "377396+chidionyema@users.noreply.github.com"  # the owner's noreply: a push under an unknown author leaves every check at action_required (idp#363)
           b="kini/finish-$REQUEST"
           git checkout -q -b "$b"
           git commit -qam "kini: FINISH request $REQUEST runs KiniFinishWorkflow in the cluster (crew#396)"
