@@ -16,9 +16,12 @@ metadata:
   annotations:
     # crew#483: the install failed 3 times on the Kyverno hostPath denial before the waiver
     # (platform/edge/k8s-infra-exception.yaml, merged 2026-08-27T10:26Z) existed, and
-    # helm-controller stops retrying once retries are exhausted. This is the one reset that
-    # `flux reconcile hr --reset` would set; the git-only estate has no kubectl to run it.
-    reconcile.fluxcd.io/resetAt: "2026-08-27T11:55:00Z"
+    # helm-controller stops retrying once retries are exhausted. `flux reconcile hr --reset`
+    # sets two annotations, and helm-controller only resets the failure count when resetAt
+    # carries the same value as requestedAt; resetAt alone (12:11Z) changed nothing and the
+    # release kept the pre-waiver denial. The git-only estate has no kubectl to run it.
+    reconcile.fluxcd.io/requestedAt: "2026-08-27T12:41:00Z"
+    reconcile.fluxcd.io/resetAt: "2026-08-27T12:41:00Z"
 spec:
   interval: 1h
   timeout: 10m
