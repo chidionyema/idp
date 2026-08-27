@@ -79,6 +79,7 @@ def _oauth2_proxy_in_front(state: dict) -> None:
             # strict apiKey policy with a hashed key in the config that sits beside the route.
             gw = p.parent / "agentgateway.yaml"
             assert gw.exists() and api_key_enforced(gw.read_text()), f"{p}: annotated api-key but {gw} enforces no strict apiKey"
+            continue
         if auth == "healthchecks-ping-key":
             # The job monitor's ping path (crew#177): the jobs' curl carries the project ping key
             # in the URL, so the route may expose /ping/ and nothing else, and the row must pull
