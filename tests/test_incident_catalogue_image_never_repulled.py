@@ -66,5 +66,7 @@ def test_the_automation_branch_is_graded_and_becomes_a_pull_request():
     assert branch in (ci.get("on") or ci.get(True))["push"]["branches"], "required checks would never run on the automation push"
     pr = yaml.safe_load((ROOT / ".github/workflows/image-update-pr.yml").read_text())
     assert (pr.get("on") or pr.get(True))["push"]["branches"] == [branch]
-    run = pr["jobs"]["open"]["steps"][-1]["run"]
+    run = pr["jobs"]["open"]["steps"][-1]["run"].strip()
+    if (ROOT / run).exists():  # crew#439: the step is bin/idp-image-update-pr; the rule binds the script
+        run = (ROOT / run).read_text()
     assert "gh pr merge" in run and "--auto" in run
