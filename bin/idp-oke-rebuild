@@ -151,8 +151,13 @@ packs()     { local n; n=$(curl -sS -m 20 "https://$API/catalog" | python3 -c 'i
 # A GitHub runner is outside control_plane_allowed_cidrs, so it has no kube path. Nodes are then
 # measured through the OCI API (same fact, other door); Flux state is not reachable from there
 # and the site and catalog rows stand in for it. Said as n/a, never as ok (crew#227 CP2).
-nodes_oci() { local o; o=$(oci ce node-pool list --compartment-id "$(awk -F'"' '/^compartment_ocid/{print $2}' terraform.tfvars)" --query 'data[].{n:name,s:"lifecycle-state"}' --output json) || return 1
-  jq -er 'if length==0 then "no node pools" | halt_error(1) else (map(select(.s!="ACTIVE")) as $bad | if ($bad|length)>0 then "node pools not ACTIVE: \($bad|map(.n)|join(" "))" | halt_error(1) else "\(length) node pool(s) ACTIVE (OCI API)" end) end' <<<"$o"; }
+nodes_oci() { local o n bad; o=$("$IDP/bin/idp-cloud" cluster nodepools) || return 1
+  n=$(printf '%s\n' "$o" | grep -c .)
+  bad=$(printf '%s\n' "$o" | awk '$2!="ACTIVE"{print $1}' | tr '\n' ' ')
+  bad=${bad%% }
+  if [ "$n" -lt 1 ]; then echo "no node pools"; return 1
+  elif [ -n "$bad" ]; then echo "node pools not ACTIVE: $bad"; return 1
+  else echo "$n node pool(s) ACTIVE (cloud layer)"; fi; }
 if [ -f "$KUBECONFIG" ]; then
   step nodes nodes_ready
   step flux flux_ready

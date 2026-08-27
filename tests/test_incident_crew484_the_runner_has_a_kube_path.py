@@ -23,14 +23,22 @@ def _bin(tmp: Path, nodes_out: str, nodes_rc: int = 0) -> Path:
     b = tmp / "bin"
     b.mkdir()
     (tmp / "nodes.json").write_text(nodes_out)
-    # a fake oci: identity resolves to estate-ci, cluster list/node-pool list answer, create-kubeconfig writes a file
+    # crew#66 CP5d: cluster list / node-pool list / create-kubeconfig now sit inside bin/idp-cloud's
+    # `cluster` noun. The script calls the layer; the fake layer forwards the kubeconfig mint to the
+    # fake oci so the kc-args check still pins the crew#484 invariants (same identity, no secret).
     (b / "oci").write_text(
         "#!/bin/sh\n"
         'case "$*" in\n'
         '  *"iam user get"*) echo estate-ci;;\n'
-        f"  *\"cluster list\"*) echo '{CLUSTER}';;\n"
-        f"  *\"node-pool list\"*) echo '{POOLS}';;\n"
         '  *"create-kubeconfig"*) echo "$*" >> "$TMPDIR/kc-args"; f=""; while [ $# -gt 0 ]; do [ "$1" = --file ] && f="$2"; shift; done; echo fake > "$f";;\n'
+        "esac\n"
+    )
+    (b / "idp-cloud").write_text(
+        "#!/bin/sh\n"
+        'case "$1 $2" in\n'
+        '  "cluster list") echo "oke ocid1.cluster.fake.abc";;\n'
+        '  "cluster nodepools") echo "pool ACTIVE";;\n'
+        '  "cluster kubeconfig") shift 2; cid=""; f=""; while [ $# -gt 0 ]; do case "$1" in --file) f="$2"; shift 2;; *) cid="$1"; shift;; esac; done; oci ce cluster create-kubeconfig --cluster-id "$cid" --file "$f" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT;;\n'
         "esac\n"
     )
     (b / "kubectl").write_text(f"#!/bin/sh\ncat '{tmp}/nodes.json'; exit {nodes_rc}\n")
@@ -53,7 +61,7 @@ def _token(tmp: Path) -> None:
 def _run(tmp: Path, b: Path) -> subprocess.CompletedProcess:
     env = {
         "PATH": f"{b}:/usr/bin:/bin", "TMPDIR": str(tmp), "HOME": str(tmp),
-        "OCI_CLI_AUTH": "security_token", "OCI_COMPARTMENT_OCID": "ocid1.compartment.fake",
+        "OCI_CLI_AUTH": "security_token",
         "OCI_CLI_CONFIG_FILE": str(tmp / "config"), "KUBECONFIG_OUT": str(tmp / "kc"),
     }
     return subprocess.run([str(b / "idp-verify-drill")], env=env, capture_output=True, text=True, timeout=60)
@@ -106,7 +114,10 @@ def test_a_notready_node_is_a_red_row(tmp_path: Path) -> None:
 
 def test_the_kube_row_lives_on_the_scheduled_drill_with_no_second_credential() -> None:
     script = SCRIPT.read_text()
-    assert "oci ce cluster create-kubeconfig" in script and "--token-version 2.0.0" in script
+    # crew#66 CP5d: the kubeconfig is minted through bin/idp-cloud's `cluster kubeconfig` noun;
+    # the layer still calls `oci ce cluster create-kubeconfig --token-version 2.0.0` (the exec
+    # plugin the kubeconfig carries is unchanged: same identity, no static token).
+    assert '"$IDP/bin/idp-cloud" cluster kubeconfig' in script
     assert "kubectl get nodes" in script
     wf = (ROOT / ".github" / "workflows" / "verify-drill.yml").read_text()
     assert "KUBECONFIG" not in wf or "secrets." not in wf.split("KUBECONFIG")[1][:200], "a kubeconfig secret beside the exchanged session"
