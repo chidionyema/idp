@@ -11,7 +11,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: kini-finish-0
+  name: kini-finish-33059480134
   namespace: temporal
   labels: { app.kubernetes.io/name: kini-finish }
   annotations: { kustomize.toolkit.fluxcd.io/ssa: IfNotPresent }
