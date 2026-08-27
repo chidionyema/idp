@@ -8,7 +8,7 @@ Feature: the estate vault is seeded by the machine identity, never from a laptop
   Scenario: every key the vault entries need arrives as a SEED_ secret
     Given .github/workflows/vault-seed.yml
     Then every KEY=KEY pair passed to bin/idp-vault-put has a SEED_KEY in the step's env
-    And the workflow is dispatch-only with entries all, prospector-engine-env, github-app, flux-writer and temporal-db
+    And the workflow is dispatch-only with entries all, prospector-engine-env, github-app, flux-writer, temporal-db and litellm-ui
 
   Scenario: no value can reach the log
     Given .github/workflows/vault-seed.yml

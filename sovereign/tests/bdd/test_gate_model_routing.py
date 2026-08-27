@@ -110,3 +110,52 @@ def env_refs(secret_name: str) -> None:
 def no_key_in_repo() -> None:
     for f in CLUSTER.glob("*.yaml"):
         assert not re.search(r"(?i)(api_key|master_key):\s*['\"]?(sk-|[A-Za-z0-9]{32,})", f.read_text()), f
+
+
+# crew#400: the founder picks and adds models in the Admin UI; the login is the vault entry litellm-ui.
+@given("the router runs the -database image with litellm-db in namespace llm", target_fixture="deployment")
+def deployment() -> dict:
+    docs = list(yaml.safe_load_all((CLUSTER / "litellm.yaml").read_text()))
+    dep = next(d for d in docs if d["kind"] == "Deployment")
+    image = dep["spec"]["template"]["spec"]["containers"][0]["image"]
+    assert "litellm-database:" in image, image
+    pg = list(yaml.safe_load_all((CLUSTER / "postgres.yaml").read_text()))
+    assert any(d["kind"] == "StatefulSet" and d["metadata"]["name"] == "litellm-db" for d in pg)
+    return dep
+
+
+@given("general_settings.store_model_in_db is true so a model added in the UI outlives a restart")
+def store_model_in_db() -> None:
+    cfg = yaml.safe_load((CLUSTER / "config.yaml").read_text())
+    assert cfg["general_settings"].get("store_model_in_db") is True
+
+
+@when("the founder opens https://llm.<zone>/ui and signs in", target_fixture="ui_secret")
+def ui_secret() -> dict:
+    es = next(d for d in yaml.safe_load_all((CLUSTER / "external-secret.yaml").read_text()) if d["metadata"]["name"] == "litellm-ui")
+    assert es["spec"]["dataFrom"][0]["extract"]["key"] == "litellm-ui"
+    return es
+
+
+@then("the login is UI_USERNAME and UI_PASSWORD from the vault entry litellm-ui, mounted like the upstream keys")
+def ui_mounted(deployment: dict, ui_secret: dict) -> None:
+    spec = deployment["spec"]["template"]["spec"]
+    vol = next(v for v in spec["volumes"] if v.get("secret", {}).get("secretName") == ui_secret["spec"]["target"]["name"])
+    mounts = {m["name"]: m["mountPath"] for m in spec["containers"][0]["volumeMounts"]}
+    assert mounts[vol["name"]].startswith("/run/secrets/litellm/")
+    seed = (ROOT / ".github" / "workflows" / "vault-seed.yml").read_text()
+    assert "put litellm-ui UI_USERNAME=LITELLM_UI_USERNAME UI_PASSWORD=LITELLM_UI_PASSWORD" in seed
+
+
+@then("no username or password is written in the repository")
+def no_login_in_repo() -> None:
+    for f in CLUSTER.glob("*.yaml"):
+        assert not re.search(r"UI_(USERNAME|PASSWORD)\s*[:=]\s*['\"]?[A-Za-z0-9]", f.read_text()), f
+
+
+@then("every provider key the UI can bind to is an os.environ name the pod already exports")
+def provider_keys_exported() -> None:
+    doc = (ROOT / "docs" / "onboarding" / "litellm.md").read_text()
+    named = set(re.findall(r"os\.environ/([A-Z_]+_API_KEY)", doc))
+    exported = set(re.findall(r"([A-Z_]+_API_KEY)=\1", (CLUSTER / "external-secret.yaml").read_text()))
+    assert named and named <= exported, named - exported
