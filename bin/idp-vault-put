@@ -8,11 +8,26 @@ IDP=$(cd "$(dirname "$0")/.." && pwd)
 # estate-secrets sits beside the main checkout, even when this runs from a worktree under .claude/worktrees (crew#408)
 MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
 name=$1; shift
+# No profile is a hard stop: ~/.oci/config has no DEFAULT, only session-token profiles. Discover the
+# live one the way every other bin/idp-* does (crew#503, 2026-08-27: an unset profile failed the write
+# after a one-time GitHub manifest code had already been spent).
+if [ -z "${OCI_CLI_PROFILE:-}" ]; then
+  # shellcheck source=idp-oci-whoami
+  source "$IDP/bin/idp-oci-whoami" || exit 2
+fi
+export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
 ENVF=${ESTATE_ENV_FILE:-$HOME/.estate/.env}
-[ -f "$ENVF" ] || { echo "BLIND: no env file at $ENVF"; exit 2; }
+[ "${VAULT_PUT_PREFLIGHT:-}" = 1 ] || [ -f "$ENVF" ] || { echo "BLIND: no env file at $ENVF"; exit 2; }
 export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
 C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
-V=$(cd "$IDP/platform/oci" && tofu output -raw vault_id); K=$(cd "$IDP/platform/oci" && tofu output -raw vault_key_id)
+# tofu state and .terraform live in the main checkout, never in a worktree (crew#503: a convert run from a
+# worktree spent a one-time GitHub manifest code and then failed here, losing the App's private key).
+V=$(cd "$MAIN/platform/oci" && tofu output -raw vault_id); K=$(cd "$MAIN/platform/oci" && tofu output -raw vault_key_id)
+if [ "${1:-}" = "--preflight" ] || [ "${VAULT_PUT_PREFLIGHT:-}" = 1 ]; then
+  # The same read the write path needs; callers that hold one-time material run this first.
+  oci vault secret list --compartment-id "$C" --vault-id "$V" --limit 1 --query 'length(data)' --raw-output >/dev/null \
+    && { echo "ok      vault   reachable as $OCI_CLI_PROFILE"; exit 0; } || { echo "FAIL    vault   not reachable as $OCI_CLI_PROFILE"; exit 2; }
+fi
 payload=$(python3 - "$ENVF" "$@" <<'PY'
 import sys,json,base64
 envf=sys.argv[1]; kv={}
