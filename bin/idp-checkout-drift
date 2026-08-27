@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""Grade every live checkout a scheduled job runs from: on main, not behind origin/main, clean.
+
+crew#433 (2026-08-27): ~/.claude/scripts sat 7 commits behind main while every session was
+served the old laws. crew#437: the live crew checkout on feat/research-engine-step1, 36 behind, 50
+dirty, so science-collect ran without the merged transcript collector. crew#85 (same day):
+the live idp checkout on a peer branch 56 behind main while the Dagster daemon loaded its scheduler
+from it. One class, one grader. Report mode only: nothing here resets a checkout, because a
+session may be working in it; it goes red and names the path back.
+
+Usage: idp-checkout-drift [--json]   exit 0 clean, 1 drifted, 2 a checkout could not be read
+Checkouts: ESTATE_CHECKOUTS, colon-separated, set by the scheduler row (LAW 46: no path list here).
+"""
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+WORKTREE_PREFIX = ".wt-"  # peer sessions park worktrees as <checkout>/.wt-<ticket>/; not this checkout's dirt
+
+
+def dirty_entries(porcelain: str) -> list[str]:
+    """Tracked changes and untracked files; never another session's .wt-* worktree dir (LAW 38)."""
+    out = []
+    for ln in porcelain.splitlines():
+        if not ln:
+            continue
+        name = ln[3:]
+        if ln.startswith("??") and name.rstrip("/").startswith(WORKTREE_PREFIX):
+            continue
+        out.append(name)
+    return out
+
+
+def git(repo: Path, *args: str) -> str:
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True,
+                          timeout=120).stdout.strip()
+
+
+def grade(repo: Path, fetch: bool = True) -> dict:
+    row = {"checkout": str(repo), "branch": None, "behind": None, "dirty": None, "verdict": "BLIND", "why": ""}
+    try:
+        if fetch:
+            subprocess.run(["git", "-C", str(repo), "fetch", "-q", "origin", "main"], check=True,
+                           capture_output=True, timeout=120)
+        row["branch"] = git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+        row["behind"] = int(git(repo, "rev-list", "--count", "HEAD..origin/main"))
+        row["dirty"] = len(dirty_entries(git(repo, "status", "--porcelain")))
+    except Exception as e:  # unreadable checkout: BLIND, never a verdict
+        row["why"] = f"{e}"[:200]
+        return row
+    faults = []
+    if row["branch"] != "main":
+        faults.append(f"on {row['branch']}, not main")
+    if row["behind"]:
+        faults.append(f"{row['behind']} behind origin/main")
+    if row["dirty"]:
+        faults.append(f"{row['dirty']} dirty file(s)")
+    row["verdict"] = "FAIL" if faults else "ok"
+    row["why"] = "; ".join(faults)
+    if faults:
+        row["path_back"] = f"git -C {repo} stash push -u -m 'crew437 live copies' && git -C {repo} switch main && git -C {repo} merge --ff-only origin/main"
+    return row
+
+
+def main(argv: list[str]) -> int:
+    spec = os.environ.get("ESTATE_CHECKOUTS", "")
+    repos = [Path(os.path.expandvars(p)).expanduser() for p in spec.split(":") if p]
+    if not repos:
+        print("checkout-drift: ESTATE_CHECKOUTS is empty; nothing to grade", file=sys.stderr)
+        return 2
+    rows = [grade(r, fetch=os.environ.get("ESTATE_CHECKOUTS_NO_FETCH") != "1") for r in repos]
+    blind = [r for r in rows if r["verdict"] == "BLIND"]
+    bad = [r for r in rows if r["verdict"] == "FAIL"]
+    if "--json" in argv:
+        print(json.dumps({"rows": rows, "fail": len(bad), "blind": len(blind)}, indent=1))
+    else:
+        for r in rows:
+            print(f"{r['verdict']:5} {r['checkout']}  {r['why'] or 'main, current, clean'}")
+            if r.get("path_back"):
+                print(f"      path back: {r['path_back']}")
+        print(f"checkout-drift: {len(bad)} drifted, {len(blind)} unreadable, of {len(rows)}")
+    return 1 if bad else (2 if blind else 0)  # drifted outranks unreadable; the count line carries both
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
