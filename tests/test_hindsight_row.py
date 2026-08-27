@@ -89,6 +89,9 @@ def test_the_flux_row_waits_on_the_vault_and_the_router_and_the_gateway_points_a
     assert env["HINDSIGHT_API_URL"] == "http://hindsight-api.hindsight.svc:8888"
     seed = (ROOT / ".github/workflows/vault-seed.yml").read_text()
     assert "postgres-password=HINDSIGHT_DB_PASSWORD" in seed and "SEED_HINDSIGHT_DB_PASSWORD" in seed
+    import yaml as _y
+    opts = _y.safe_load(seed)[True]["workflow_dispatch"]["inputs"]["entry"]["options"]
+    assert "hindsight" in opts, "the dispatch choice list lost `hindsight` in the #430 merge (2026-08-27)"
 
 
 # --- rung 4: the renderer incident -------------------------------------------------------------

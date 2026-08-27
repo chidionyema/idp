@@ -12,9 +12,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "check (plan, drift = FAIL) or apply (crew#289: the STAGED node-pool change, refused by main.tf above node_pool.budget_monthly_usd). Never from a laptop (crew#247)."
+        description: "check (plan, drift = FAIL), apply (crew#289: the STAGED node-pool change, refused by main.tf above node_pool.budget_monthly_usd), or surge-node (crew#516: apply, then replace the one node so a new boot volume or shape takes effect; every pod restarts once). Never from a laptop (crew#247)."
         type: choice
-        options: [check, apply]
+        options: [check, apply, surge-node]
         default: check
   pull_request:
     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]

@@ -12,7 +12,7 @@ on:
       entry:
         description: "which vault entry to write"
         type: choice
-        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway]
+        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight]
         default: all
       delete:
         description: "schedule deletion of one vault secret by name (crew#503: a mis-named entry); entry is ignored when set"

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Replace the cluster's one worker node by a surge, from a runner (crew#516 CP4, 2026-08-27).
+#
+# Why: the one A1 node evicted hermes-agent-gateway at 5.9 GB free of a 50 GB boot volume
+# (oke-check 33096065995 cluster-state, "The node was low on resource: ephemeral-storage"), and a
+# BASIC cluster has no node cycling (crew#289; UpdateNodePool refused node_cycling in run
+# 32930359052). A node-pool change (boot_volume_size, shape) reaches NEW nodes only, so the pool
+# grows by one, the new node comes ACTIVE, and the old one is deleted with the size decremented.
+# Every pod restarts once; the AD-1 block volumes follow their pods (placement_ads = [1]).
+#
+# Refuses unless exactly one node is ACTIVE: two would mean a surge is already in flight.
+# Reads nothing a laptop has: cluster id from the tofu state, compartment from the tfvars the
+# login rendered, the OCI CLI from the runner's OIDC session. Never from a laptop (crew#247).
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"; TF="$IDP/platform/oci"
+CID=$(tofu -chdir="$TF" output -raw cluster_id)
+COMP=$(sed -n 's/^compartment_ocid *= *"\(.*\)".*/\1/p' "$TF/terraform.tfvars")
+[ -n "$CID" ] && [ -n "$COMP" ] || { echo "surge: no cluster_id output or compartment_ocid in terraform.tfvars"; exit 2; }
+POOL=$(oci ce node-pool list --cluster-id "$CID" --compartment-id "$COMP" --query 'data[0].id' --raw-output)
+active() { oci ce node-pool get --node-pool-id "$POOL" --query 'data.nodes[?"lifecycle-state"==`ACTIVE`].id' --raw-output \
+  | python3 -c 'import sys,json; print("\n".join(json.load(sys.stdin) or []))'; }
+OLD=$(active); n_old=$(printf '%s\n' "$OLD" | grep -c . || true)
+[ "$n_old" -eq 1 ] || { echo "surge: expected 1 ACTIVE node in pool $POOL, found $n_old; refusing"; exit 3; }
+echo "surge: pool $POOL, old node $OLD, growing to 2"
+oci ce node-pool update --node-pool-id "$POOL" --size 2 --force >/dev/null
+NEW=""
+for _ in $(seq 1 "${SURGE_WAIT_ROUNDS:-60}"); do
+  NEW=$(active | grep -vxF "$OLD" || true); [ -n "$NEW" ] && break; sleep "${SURGE_POLL_SECONDS:-20}"
+done
+[ -n "$NEW" ] || { echo "surge: no second ACTIVE node after the wait; pool left at size 2 for a person to read"; exit 4; }
+# ACTIVE is the instance, not the kubelet; give it a settle before the old node's pods are pushed.
+sleep "${SURGE_SETTLE_SECONDS:-90}"
+oci ce node-pool delete-node --node-pool-id "$POOL" --node-id "$OLD" --is-decrement-size true --force >/dev/null
+echo "surge: new node $NEW ACTIVE, old node $OLD deleted, pool back to size 1"
