@@ -6,6 +6,7 @@ kind: Kustomization
 namespace: hermes-agent
 resources:
   - gateway.yaml
+  - estate.yaml
 images:
   - name: ghcr.io/chidionyema/hermes-agent
     newTag: main-9-455469faa54b479f0e9c1f0f85a0e6f4bbf0b09e # {"$imagepolicy": "flux-system:hermes-agent:tag"}
