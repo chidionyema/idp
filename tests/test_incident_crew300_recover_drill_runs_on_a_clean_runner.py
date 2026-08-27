@@ -110,3 +110,13 @@ def test_a_token_is_graded_by_its_shape_in_both_scripts_never_by_being_non_empty
     assert '[ -z "$tok" ]; then bl github-app' not in drill
     assert "/installation/repositories" in drill
     assert re.search(r"^\s*[^#\n]*\bghs_[A-Za-z0-9]{10,}", drill + app, re.M) is None, "a literal token in a script"
+
+
+def test_an_app_jwt_is_sent_as_bearer_never_through_gh_token() -> None:
+    """Run 33098034984: the same JWT answered 200 under `Authorization: Bearer` and 401 (`A JSON web token
+    could not be decoded`) under gh's `Authorization: token`. No App-JWT call may go through GH_TOKEN."""
+    app = (ROOT / "bin" / "idp-github-app").read_text()
+    assert 'GH_TOKEN="$jwt"' not in app
+    assert re.search(r'-H "Authorization: Bearer \$jwt"', app)
+    for path in ("/app/installations", "/app/installations/$inst/access_tokens"):
+        assert f'app_api "$jwt" {path}' in app or f'app_api "$jwt" "{path}"' in app, path
