@@ -43,7 +43,16 @@ def test_fail_receipt_names_backend_error_and_missing_pods() -> None:
 
 
 def test_ok_receipt_still_passes_with_no_cause_lines() -> None:
-    rc, out = _run("ok telemetry-coverage at X pods=45 seen=45 missing=0\n{}")
+    rc, out = _run("ok telemetry-coverage at X pods=45 seen=45 missing=0 hubble_radio_flows=12\n{}")
     assert rc == 0
     assert out.startswith("ok      telemetry-coverage")
     assert "backend " not in out and "never seen" not in out
+
+
+def test_receipt_without_the_hubble_row_is_a_miss_and_zero_names_it() -> None:
+    # crew#539 CP12: a receipt from a collector that predates the Hubble count is never clean
+    # (the crew#406 rule), and a count of 0 says what Hubble did not see.
+    rc, out = _run("ok telemetry-coverage at X pods=45 seen=45 missing=0\n{}")
+    assert rc == 1 and "hubble_radio_flows=absent" in out, out
+    rc, out = _run('ok telemetry-coverage at X pods=45 seen=45 missing=0 hubble_radio_flows=0\n{"hubble_radio_flows": 0}')
+    assert rc == 1 and "hubble_radio_flows=0" in out and "named a radio-room workload" in out, out

@@ -1,0 +1,41 @@
+# crew#539 CP12: the chained CNI configuration Cilium writes onto every node as
+# /etc/cni/net.d/05-cilium.conflist (cni.customConf=true, cni.configMap below). OKE created the
+# cluster with cni_type = "flannel" (platform/oci/main.tf) and Oracle does not let the CNI change
+# on a live cluster, so flannel keeps the pod network and IPAM and cilium-cni is chained after
+# it in generic-veth mode (docs.cilium.io/en/stable/installation/cni-chaining-generic-veth): the
+# veth flannel creates is attached to a Cilium endpoint, which is what Hubble observes and what
+# NetworkPolicy is enforced on. The flannel plugin block is kube-flannel's own default
+# (delegate hairpinMode + isDefaultGateway, portmap for hostPort); the node's original
+# 10-flannel.conflist is left in place (cni.exclusive=false) so removing Cilium is removing
+# this file. Only pods scheduled after the agent is Ready are endpoints; the radio-room set
+# restarts once on the first apply (cluster-state receipt, ds_short row).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cni-configuration
+  namespace: kube-system
+data:
+  cni-config: |-
+    {
+      "name": "generic-veth",
+      "cniVersion": "0.3.1",
+      "plugins": [
+        {
+          "type": "flannel",
+          "delegate": {
+            "hairpinMode": true,
+            "isDefaultGateway": true
+          }
+        },
+        {
+          "type": "portmap",
+          "capabilities": {
+            "portMappings": true
+          }
+        },
+        {
+          "type": "cilium-cni",
+          "chaining-mode": "generic-veth"
+        }
+      ]
+    }
