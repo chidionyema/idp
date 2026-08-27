@@ -30,9 +30,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: k3d cluster from platform/k3d/estate.yaml (crew#191)
-        uses: AbsaOSS/k3d-action@ad80fda285ceeca9b1ebef8c4b3f862f8b9124b4 # v2.4.0
+        uses: AbsaOSS/k3d-action@4e8b3239042be1dc0aed6c5eb80c13b18200fc79 # v2.4.0
         with:
           cluster-name: estate
           # the action's default k3d (v5.4.6) 404s on download and predates k3d.io/v1alpha5,
@@ -61,7 +61,7 @@ jobs:
           kubectl get helmreleases -A > receipt/helmreleases.txt 2>&1 || true
           flux get kustomizations -A | tee receipt/flux-get.txt
           bin/idp-portability-drill receipt/kustomizations.json | tee receipt/grade.txt
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: portability-receipt
