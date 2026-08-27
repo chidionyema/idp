@@ -113,9 +113,24 @@ data:
             if w and w.get("reason") not in (None, "ContainerCreating", "PodInitializing"):
                 out[c["name"]] = (w.get("reason", "") + ": " + (w.get("message") or ""))[:400]
         return out
+    # crew#396, third receipt (05:33Z): six kini-state pods were phase Failed with restarts 0, waiting {}
+    # and last_log {}, so the receipt still said nothing. A Job pod the kubelet kills for its
+    # activeDeadlineSeconds, or a pod evicted before a container ran, has no waiting state and no
+    # terminated exit code to read a log for: its reason lives in status.reason / status.message
+    # (DeadlineExceeded, Evicted, ...) and in containerStatuses[].state.terminated.reason. Both travel.
+    def failed(status):
+        out = {}
+        if status.get("reason") or status.get("message"):
+            out["pod"] = ((status.get("reason") or "") + ": " + (status.get("message") or ""))[:400]
+        for c in status.get("initContainerStatuses", []) + status.get("containerStatuses", []):
+            t = (c.get("state") or {}).get("terminated")
+            if t and (t.get("reason") or t.get("exitCode")):
+                out[c["name"]] = f"{t.get('reason', '')} exit={t.get('exitCode')}: {t.get('message') or ''}"[:400]
+        return out
     not_ready = [{"ns": p["metadata"]["namespace"], "name": p["metadata"]["name"], "phase": p["status"].get("phase"),
                   "restarts": sum(c.get("restartCount", 0) for c in p["status"].get("containerStatuses", [])),
                   "waiting": waiting(p["status"]),
+                  "failed": failed(p["status"]),
                   "last_log": last_log(p["metadata"]["namespace"], p["metadata"]["name"], p["status"].get("containerStatuses", []))}
                  for p in pods
                  if p["status"].get("phase") not in ("Succeeded",) and cond(p, "Ready") != "True"]
