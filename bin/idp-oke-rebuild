@@ -157,7 +157,16 @@ esac
 nodes_ready() { local o n; o=$($K get nodes --no-headers) || return 1; n=$(printf '%s\n' "$o" | grep -c '^[^ ]'); [ "$n" -ge 1 ] || { echo "0 nodes"; return 1; }; printf '%s\n' "$o" | awk '$2!="Ready"{f=1} END{exit f}' && echo "$n node(s) Ready" || { echo "not all Ready: $(printf '%s\n' "$o" | awk '{print $1":"$2}' | tr '\n' ' ')"; return 1; }; }
 flux_ready() { local o n bad; o=$($K get kustomizations -A --no-headers) || return 1; n=$(printf '%s\n' "$o" | grep -c '^[^ ]'); [ "$n" -ge 1 ] || { echo "0 Kustomizations"; return 1; }; bad=$(printf '%s\n' "$o" | awk '$4!="True"{print $2}' | tr '\n' ' '); [ -z "$bad" ] && echo "$n Kustomizations ready" || { echo "not ready: $bad"; return 1; }; }
 site_200()  { local c; c=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' "https://$HOST/") && [ "$c" = 200 ] && echo "https://$HOST/ $c, cert valid" || { echo "https://$HOST/ -> ${c:-no answer}"; return 1; }; }
-packs()     { local n; n=$(curl -sS -m 20 "https://$API/catalog" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(len(d) if isinstance(d,list) else len(d.get("packs",d)))') && [ "$n" = "$WANT_PACKS" ] && echo "$n packs" || { echo "catalog: ${n:-unreadable}, want $WANT_PACKS"; return 1; }; }
+# A non-JSON answer (a 503 page while the catalogue pod is Pending, run 33110366724) is named by
+# its HTTP status, never as a json.load traceback in the report (LAW 28).
+packs()     { local n; n=$(curl -sS -m 20 -w '\n%{http_code}' "https://$API/catalog" | python3 -c '
+import sys, json
+body, _, code = sys.stdin.read().rstrip("\n").rpartition("\n")
+try:
+    d = json.loads(body)
+except ValueError:
+    print("HTTP %s, not JSON" % (code or "?")); sys.exit(1)
+print(len(d) if isinstance(d, list) else len(d.get("packs", d)))') && [ "$n" = "$WANT_PACKS" ] && echo "$n packs" || { echo "catalog: ${n:-unreadable}, want $WANT_PACKS"; return 1; }; }
 # A GitHub runner is outside control_plane_allowed_cidrs, so it has no kube path. Nodes are then
 # measured through the OCI API (same fact, other door); Flux state is not reachable from there
 # and the site and catalog rows stand in for it. Said as n/a, never as ok (crew#227 CP2).
