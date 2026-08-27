@@ -12,7 +12,7 @@ on:
       entry:
         description: "which vault entry to write"
         type: choice
-        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db]
+        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway]
         default: all
 permissions:
   id-token: write   # the OIDC token this job trades for OCI access
