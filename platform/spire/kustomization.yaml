@@ -7,6 +7,7 @@ kind: Kustomization
 resources:
   - helmrelease.yaml
   - exception.yaml
+  - proof-cronjob.yaml
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
