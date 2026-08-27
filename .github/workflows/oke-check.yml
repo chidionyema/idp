@@ -226,6 +226,31 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bin/idp-automerge-stuck
 
+  founder-links:
+    # crew#503 / LAW 43: every link the portal home shows (backstage/founder/catalog-info.yaml,
+    # zone substituted the way bin/catalog-gen does it) is probed by lychee, the mature link
+    # checker, on every run. 302 to IDCS, 401 (mcp, key-gated) and 405 (POST-only chat endpoint)
+    # are the surfaces answering as designed; anything else is a red row within one schedule tick.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: urls with the zone substituted
+        run: |
+          set -euo pipefail
+          zone=$(awk '$1=="ESTATE_ZONE:"{print $2}' clusters/oke/estate-config.yaml)
+          test -n "$zone"
+          grep -oE 'url: "https?://[^"]+"' backstage/founder/catalog-info.yaml \
+            | sed -E 's/^url: "(.*)"$/\1/' | sed "s/\${ESTATE_ZONE}/$zone/g" | sort -u > founder-links.txt
+          if grep -q '\${' founder-links.txt; then echo "unsubstituted placeholder"; cat founder-links.txt; exit 1; fi
+          echo "$(wc -l < founder-links.txt) links"
+      - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: --no-progress --max-redirects 5 --accept '200..=399,401,405' --timeout 20 --retry-wait-time 5 --max-retries 2 --exclude 'github.com/chidionyema/mumchimp-medusa' founder-links.txt
+          # mumchimp-medusa is private; this repo's token cannot read it, the founder's browser can.
+          fail: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
   kini-state:
     # crew#396 step 4: the KINI run's receipt (platform/temporal/kini-state.yaml), read the same
     # way cluster-state is. Green while the last run is green, running, or never started; red when
