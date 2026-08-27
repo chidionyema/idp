@@ -27,3 +27,4 @@ Feature: The KINI checkpoints finish as one durable workflow
     Then sovereign.engine.worker registers KiniFinishWorkflow, kini_run_checkpoint and kini_cluster_ready
     And bin/idp-kini finish starts it by the one workflow id in config
     And the worker Deployment can read nodes through its own ServiceAccount
+    And the worker image carries pytest-bdd and features/ so a checkpoint can run there

@@ -188,3 +188,11 @@ def _rbac() -> None:
     crb = next(d for d in docs if d["kind"] == "ClusterRoleBinding" and d["metadata"]["name"] == "sovereign-worker-nodes")
     assert crb["roleRef"]["name"] == "sovereign-worker-nodes"
     assert any(s["kind"] == "ServiceAccount" and s["name"] == sa and s["namespace"] == "temporal" for s in crb["subjects"]), crb
+
+
+@then("the worker image carries pytest-bdd and features/ so a checkpoint can run there")
+def _image() -> None:
+    df = [l.strip() for l in (IDP / "sovereign-worker.Dockerfile").read_text().splitlines() if l.strip() and not l.startswith("#")]
+    assert any(l.startswith("RUN ") and "requirements-dev.txt" in l for l in df), df
+    assert "COPY features /app/features" in df and "COPY sovereign /app/sovereign" in df, df
+    assert "pytest-bdd" in (IDP / "sovereign/requirements-dev.txt").read_text()
