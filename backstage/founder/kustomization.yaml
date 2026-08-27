@@ -5,6 +5,9 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 configMapGenerator:
   - name: founder-catalog
+    # crew#503, 2026-08-27 15:05Z: without this line the rendered ConfigMap has no namespace and the
+    # backstage Flux Kustomization fails ("namespace not specified"), taking 7 dependents with it.
+    namespace: backstage
     files:
       - catalog-info.yaml
 generatorOptions:
