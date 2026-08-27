@@ -1,5 +1,13 @@
+# runs_on (crew#516 CP2, 2026-08-27): where each job belongs once the Mac is gone.
+#   cluster  needs only a checkout, git, gh, oci and python: rendered to a CronJob on OKE
+#   mac      reads or writes Mac-only state today; runs_on_ref is the ticket that moves it
+#   retire   exists only because the estate is on a Mac (docker/colima, launchd, load, checkouts)
+# runs_on_ref names the crew item. tests/test_incident_crew516_every_schedule_names_where_it_runs.py
+# refuses a job without both, and a `cluster` job whose command names a Mac-only path.
 jobs:
   ai.aiden.watch:
+    runs_on: mac
+    runs_on_ref: crew#516 CP4
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - watch
@@ -9,6 +17,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.agent-guard-lint:
+    runs_on: retire
+    runs_on_ref: crew#478
     command:
     - /usr/local/bin/python3
     - $CODE/agent-guard/bin/launchd-lint
@@ -17,6 +27,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.checkout-drift:
+    runs_on: retire
+    runs_on_ref: crew#479
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - checkout-drift
@@ -28,6 +40,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 600
   ai.estate.dep-alerts:
+    runs_on: cluster
+    runs_on_ref: crew#516 CP2
     command:
     - /usr/bin/python3
     - ~/.claude/scripts/estate/dep_alerts.py
@@ -36,6 +50,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.drills:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - /usr/bin/python3
     - ~/.claude/scripts/drills/run.py
@@ -45,6 +61,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.friction-relay:
+    runs_on: mac
+    runs_on_ref: crew#396
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - friction-relay
@@ -56,6 +74,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.idp:
+    runs_on: retire
+    runs_on_ref: crew#458
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - estate-idp
@@ -67,6 +87,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.key-escrow:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - /usr/bin/python3
     - ~/.claude/scripts/estate/key_escrow.py
@@ -76,6 +98,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.law-writer:
+    runs_on: mac
+    runs_on_ref: crew#396
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - law-writer
@@ -86,6 +110,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   ai.estate.sovereign-digest:
+    runs_on: cluster
+    runs_on_ref: crew#396
     command:
     - $IDP/sovereign/.venv/bin/python
     - -m
@@ -98,6 +124,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 300
   ai.estate.sovereign-self-check:
+    runs_on: cluster
+    runs_on_ref: crew#396
     ok_exit: [1]  # 1 = ran fine and reports a finding; not a crash
     command:
     - $IDP/sovereign/.venv/bin/python
@@ -112,6 +140,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 120
   ai.estate.tracked-guard:
+    runs_on: cluster
+    runs_on_ref: crew#516 CP2
     command:
     - /usr/bin/python3
     - ~/.claude/scripts/tracked.py
@@ -121,6 +151,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   ai.hermes.runaway-reaper:
+    runs_on: retire
+    runs_on_ref: crew#516 CP4
     command:
     - /usr/local/bin/python3
     - ~/.claude/scripts/estate/launchd_receipt.py
@@ -137,6 +169,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   ai.idp.reconcile:
+    runs_on: retire
+    runs_on_ref: crew#458
     command:
     - $IDP/bin/idp-reconcile
     - --fix
@@ -146,6 +180,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 300
   com.chidionyema.graphify-sweep:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - graphify-sweep
@@ -158,6 +194,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.chidionyema.guard-selftest:
+    runs_on: mac
+    runs_on_ref: crew#306
     command:
     - /usr/local/bin/python3
     - ~/.claude/scripts/estate-selftest.py
@@ -168,6 +206,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.chidionyema.reflect:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/Documents/code/prospector/.venv/bin/python
     - ~/.claude/scripts/estate/launchd_receipt.py
@@ -181,6 +221,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.estate.bundlepush:
+    runs_on: mac
+    runs_on_ref: crew#300
     command:
     - ~/.claude/bin/estate-runner
     - ~/.claude/scripts/estate/estate_bundle_push.sh
@@ -188,6 +230,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.estate.catalog-render:
+    runs_on: cluster
+    runs_on_ref: crew#503 CP6
     after: com.estate.inventory
     command:
     - ~/.claude/scripts/hc-wrap.sh
@@ -199,6 +243,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 900
   com.estate.costsentinel:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     ok_exit: [1]  # 1 = ran fine and reports a finding; not a crash
     command:
     - ~/.claude/scripts/hc-wrap.sh
@@ -210,6 +256,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.estate.downshift:
+    runs_on: retire
+    runs_on_ref: crew#85
     command:
     - /usr/local/bin/python3
     - ~/.claude/scripts/estate/estate_downshift.py
@@ -217,6 +265,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.estate.inventory:
+    runs_on: mac
+    runs_on_ref: crew#516 CP3
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - estate-inventory-real
@@ -231,6 +281,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.estate.restic-backup:
+    runs_on: mac
+    runs_on_ref: crew#300
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - estate-restic
@@ -239,6 +291,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.founder.agentcert:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - agentcert
@@ -251,6 +305,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.founder.board:
+    runs_on: mac
+    runs_on_ref: crew#412
     command:
     - /usr/local/bin/python3
     - ~/.claude/scripts/founder_board.py
@@ -261,6 +317,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.founder.configsyntaxsweep:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - /usr/local/bin/python3
     - ~/.claude/scripts/config-syntax-sweep.py
@@ -269,6 +327,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.founder.estateaudit:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - /usr/bin/python3
     - ~/.claude/scripts/estate/estate_audit.py
@@ -278,6 +338,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.founder.estatelander:
+    runs_on: cluster
+    runs_on_ref: crew#516 CP2
     command:
     - /usr/bin/python3
     - $CODE/crew/scripts/estate-lander
@@ -286,6 +348,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.founder.estatepush:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - /bin/bash
     - ~/.claude/scripts/estate/estate_push.sh
@@ -293,6 +357,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.founder.estatesnapshot:
+    runs_on: mac
+    runs_on_ref: crew#516 CP3
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - estate-snapshot
@@ -303,6 +369,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.founder.estatewatch:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - /usr/bin/python3
     - ~/.claude/scripts/estate/estate_watch.py
@@ -310,6 +378,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.founder.ingit:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - ingit
@@ -322,6 +392,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.founder.lawenforcement:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - lawenforcement
@@ -334,6 +406,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.founder.sciencecollect:
+    runs_on: mac
+    runs_on_ref: crew#516 CP5
     ok_exit: [1]  # 1 = collected fine and reports a stale or unregistered source (crew#90); not a crash
     env:
       HC_FINDINGS_EXIT: "1"  # hc-wrap: liveness stays green, the finding fails sciencecollect-findings
@@ -346,6 +420,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.estate.research-intake:
+    runs_on: cluster
+    runs_on_ref: crew#516 CP5
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - research-intake
@@ -357,6 +433,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 900
   com.founder.stuckdetector:
+    runs_on: mac
+    runs_on_ref: crew#396
     command:
     - /bin/sh
     - ~/.claude/scripts/stuck_detector_tick.sh
@@ -365,6 +443,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.backup:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - prospector-backup
@@ -384,6 +464,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.estate-inventory:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/Documents/code/prospector-live/.venv/bin/python
     - ~/.claude/scripts/estate/launchd_receipt.py
@@ -401,6 +483,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.launchd-held:
+    runs_on: retire
+    runs_on_ref: crew#458
     command:
     - ~/Documents/code/prospector/.venv/bin/python
     - ~/.claude/scripts/estate/launchd_receipt.py
@@ -418,6 +502,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.log-rotation:
+    runs_on: retire
+    runs_on_ref: crew#458
     command:
     - ~/Documents/code/prospector-live/.venv/bin/python
     - -m
@@ -431,6 +517,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.offsite-backup:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - prospector-offsite-backup
@@ -446,6 +534,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.process-audit:
+    runs_on: retire
+    runs_on_ref: crew#458
     command:
     - ~/Documents/code/prospector/.venv/bin/python
     - ~/.claude/scripts/estate/launchd_receipt.py
@@ -464,6 +554,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.prospector.restore-drill:
+    runs_on: mac
+    runs_on_ref: crew#516 CP2
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - restore-drill
