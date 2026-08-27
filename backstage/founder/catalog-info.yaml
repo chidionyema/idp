@@ -339,6 +339,9 @@ metadata:
     - title: "Open Telegram chat"
       url: "https://t.me/Ottototbot"
       icon: chat
+    - title: "The Architect on the cluster (platform/hermes-agent, crew#516 CP4)"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/hermes-agent/gateway.yaml"
+      icon: dashboard
 spec:
   type: founder-surface
   lifecycle: production

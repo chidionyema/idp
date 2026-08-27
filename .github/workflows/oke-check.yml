@@ -130,6 +130,33 @@ jobs:
           ESTATE_ENV_FILE="$f" bin/idp-vault-put --merge litellm-upstream $args
           rm -f "$f"
 
+      # crew#516 CP4: the same door for The Architect's env (platform/hermes-agent). One vault entry,
+      # hermes-agent-env, the env names the gateway reads; SEED_HERMES_* travel once and are deleted
+      # after the put. TELEGRAM_BOT_TOKEN is set last, at the swap, after the Mac gateway is booted out.
+      - name: bin/idp-vault-put hermes-agent-env (crew#516 CP4)
+        if: ${{ always() && inputs.mode == 'apply' }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.SEED_HERMES_TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS }}
+          TELEGRAM_HOME_CHANNEL: ${{ secrets.SEED_HERMES_TELEGRAM_HOME_CHANNEL }}
+          ANTHROPIC_API_KEY: ${{ secrets.SEED_ANTHROPIC_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
+          LITELLM_API_KEY: ${{ secrets.SEED_HERMES_LITELLM_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.SEED_HERMES_GITHUB_TOKEN }}
+          EXA_API_KEY: ${{ secrets.SEED_EXA_API_KEY }}
+          HERMES_AUTH_JSON: ${{ secrets.SEED_HERMES_AUTH_JSON }}
+        run: |
+          keys=TELEGRAM_BOT_TOKEN,TELEGRAM_ALLOWED_USER_IDS,TELEGRAM_HOME_CHANNEL,ANTHROPIC_API_KEY,OPENROUTER_API_KEY,LITELLM_API_KEY,GITHUB_TOKEN,EXA_API_KEY,HERMES_AUTH_JSON
+          any=0; for k in ${keys//,/ }; do [ -n "${!k:-}" ] && any=1; done
+          [ "$any" = 1 ] || { echo "n/a     hermes-agent-env   no SEED_HERMES_* secrets set; the vault keeps what it holds"; exit 0; }
+          umask 077; f=$(mktemp)
+          env | grep -E "^(${keys//,/|})=" > "$f"
+          args=""; for k in ${keys//,/ }; do args="$args $k=$k"; done
+          ESTATE_ENV_FILE="$f" bin/idp-vault-put --merge hermes-agent-env $args
+          rm -f "$f"
+
   # crew#292 CP4: the in-cluster chaos experiment leaves a receipt in Object Storage; this reads
   # it with the same machine identity and grades its age. A runner has no kube path, so the
   # receipt is the only door. Never on pull_request: the live door is not what a PR changes.

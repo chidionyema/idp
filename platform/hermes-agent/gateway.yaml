@@ -1,0 +1,172 @@
+# The Architect (hermes-agent gateway, Telegram + a2a) on OKE: crew#516 CP4, 2026-08-27.
+#
+# What runs here is the same thing the Mac's ai.architect.gateway launchd job runs: the image
+# ghcr.io/chidionyema/hermes-agent carries the hermes-v2 repo (config.yaml, SOUL.md, skills/,
+# cron/watch.jobs, cron/work.jobs) at /app/estate and boots through deploy/k8s/entrypoint.sh,
+# which copies that build over HERMES_HOME=/data (this PVC) and leaves the state on it alone:
+# state.db, sessions/, memories/, cron/jobs.json, auth.json. A new image changes what the agent
+# is, never what it remembers; a pod restart loses nothing.
+#
+# Telegram is long-polling (getUpdates), so the gateway needs no public route; the a2a port
+# (9900) is unauthenticated and stays in-cluster behind the Service. The swap is the token: one
+# TELEGRAM_BOT_TOKEN, held by exactly one process (crew#284). The Mac gateway is booted out
+# first, the token lands in the vault entry hermes-agent-env second, and this pod becomes The
+# Architect on its next Secret refresh. Never both at once: two pollers on one token is 409s
+# on both.
+#
+# Secrets: one vault entry, hermes-agent-env, the env names the gateway reads (.env on the Mac),
+# seeded by oke-check's vault-put step from SEED_HERMES_* repo secrets, never a value in git
+# (LAW 21, LAW 46). Same security shape as platform/llm/litellm.yaml: non-root, read-only root
+# filesystem, no privilege escalation, seccomp RuntimeDefault; the two writable paths are the
+# volume and /tmp.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hermes-agent
+  labels:
+    app.kubernetes.io/part-of: idp
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: hermes-agent-env
+  namespace: hermes-agent
+spec:
+  refreshInterval: 1h
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target: { name: hermes-agent-env, creationPolicy: Owner }
+  dataFrom:
+    - extract: { key: hermes-agent-env }
+---
+# HERMES_HOME. 5Gi is the Mac's checkout today (state.db, sessions, hindsight, kanban) with room.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hermes-agent-data
+  namespace: hermes-agent
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hermes-agent-gateway
+  namespace: hermes-agent
+  labels:
+    app.kubernetes.io/name: hermes-agent-gateway
+spec:
+  selector:
+    app: hermes-agent-gateway
+  ports:
+    - name: a2a
+      port: 9900
+      targetPort: a2a
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes-agent-gateway
+  namespace: hermes-agent
+  labels:
+    app: hermes-agent-gateway
+    app.kubernetes.io/name: hermes-agent-gateway
+    app.kubernetes.io/part-of: hermes-agent
+spec:
+  # One process holds the Telegram token and the volume; Recreate so a rollout never overlaps.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: hermes-agent-gateway
+  template:
+    metadata:
+      labels:
+        app: hermes-agent-gateway
+        app.kubernetes.io/name: hermes-agent-gateway
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: ghcr.io/chidionyema/hermes-agent
+          imagePullPolicy: IfNotPresent
+          # Kyverno secrets-not-from-env-vars (crew#341) refuses envFrom/secretKeyRef, the same as
+          # it refused litellm on 2026-08-26 (crew#284). The Secret is mounted as files and the
+          # image's entrypoint exports every file under HERMES_ENV_DIR as an env var itself.
+          env:
+            - name: HERMES_HOME
+              value: /data
+            - name: HERMES_ENV_DIR
+              value: /run/secrets/hermes-agent-env
+            - name: HOME
+              value: /data
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          ports:
+            - containerPort: 9900
+              name: a2a
+          # /.well-known/agent-card.json is the a2a adapter's own health surface (config.yaml
+          # platforms.a2a.enabled: true, port 9900). The first boot copies the build and renders
+          # estate.yaml before the gateway starts; the startup probe covers that.
+          startupProbe:
+            httpGet:
+              path: /.well-known/agent-card.json
+              port: a2a
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /.well-known/agent-card.json
+              port: a2a
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /.well-known/agent-card.json
+              port: a2a
+            periodSeconds: 60
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+            - name: env
+              mountPath: /run/secrets/hermes-agent-env
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: hermes-agent-data
+        - name: tmp
+          emptyDir: {}
+        - name: env
+          secret: { secretName: hermes-agent-env }

@@ -1,0 +1,11 @@
+# The Architect on OKE (crew#516 CP4). One image, pinned here; Flux image automation
+# (platform/image-automation/hermes-agent.yaml) moves the tag to the newest main-<run>-<sha>
+# hermes-v2 builds, the same way sovereign-worker and backstage move.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: hermes-agent
+resources:
+  - gateway.yaml
+images:
+  - name: ghcr.io/chidionyema/hermes-agent
+    newTag: 233cd5afd38951772d9f21774e1bd2cc39cbd93f # {"$imagepolicy": "flux-system:hermes-agent:tag"}
