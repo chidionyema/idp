@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""idp-wake-blocked: a PR closed as blocked reopens itself when its blocker lands (crew#504 CP7).
+
+Founder, 2026-08-27: "how do we ensure we revisit as quickly as possible ... there are a lot of
+dependencies in project delivery". The answer is a line in the closed PR's body, not a graph
+database and not a rebase daemon:
+
+    Blocked-by: idp#400            a PR (merged) or an issue (closed) in any estate repo
+    Blocked-by: secret signoz-root  a free-text key, resolved by `--resolved "secret signoz-root"`
+
+Every 30 minutes (the caller workflow) this reads the repo's closed, unmerged PRs, resolves each
+`Blocked-by:` key, and for a PR whose every key is resolved: PUT update-branch (GitHub merges the
+base into the branch; no checkout, no force push), reopen, comment with what resolved it. A branch
+GitHub cannot update cleanly is still reopened, labelled `needs-rebase`, and the comment says so.
+Nothing reopens while the repo has PR_CAP (10) or more open pull requests: the pr-cap-guard rule
+(claude-guards#155) holds here too, and the sleeping PR is listed instead.
+
+    idp-wake-blocked                          act on $GH_REPO
+    idp-wake-blocked --dry-run                print the plan, change nothing
+    idp-wake-blocked --resolved "secret signoz-root"   also treat this key as landed
+    idp-wake-blocked --pulls f.json --open 3 --landed idp#400 --dry-run   offline (tests)
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+
+PR_CAP = int(os.environ.get("PR_CAP", "10"))
+OWNER = os.environ.get("ESTATE_GH_OWNER", "chidionyema")
+BLOCKED_RE = re.compile(r"(?im)^\s*Blocked-by:\s*(.+?)\s*$")
+REF_RE = re.compile(r"^(?:([\w.-]+)/)?([\w.-]+)#(\d+)$")
+
+
+def gh(*args: str) -> str:
+    r = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=60, check=False)
+    if r.returncode != 0:
+        raise RuntimeError(f"gh {' '.join(args[:3])}: {r.stderr.strip()[:200]}")
+    return r.stdout
+
+
+def keys_of(body: str) -> list[str]:
+    return [k.strip() for m in BLOCKED_RE.findall(body or "") for k in m.split(",") if k.strip()]
+
+
+def ref_landed(key: str) -> bool | None:
+    """True/False for a `repo#N` key, None when the key is free text."""
+    m = REF_RE.match(key)
+    if not m:
+        return None
+    owner, repo, n = m.group(1) or OWNER, m.group(2), m.group(3)
+    try:
+        item = json.loads(gh("api", f"repos/{owner}/{repo}/issues/{n}"))
+    except RuntimeError:
+        return False
+    if item.get("pull_request"):
+        pr = json.loads(gh("api", f"repos/{owner}/{repo}/pulls/{n}"))
+        return bool(pr.get("merged_at"))
+    return item.get("state") == "closed"
+
+
+def plan(closed_prs: list[dict], landed, open_count: int, resolved: set[str]) -> list[dict]:
+    """The pure decision: which closed PRs wake, and which sleep on, with the reason.
+
+    `landed(key)` answers True/False/None like ref_landed. Both ways live here: a body with no
+    Blocked-by line never wakes; one key still open keeps the PR asleep; every key landed wakes
+    it unless the repo is at the cap."""
+    out = []
+    for pr in closed_prs:
+        keys = keys_of(pr.get("body") or "")
+        if not keys or pr.get("merged_at"):
+            continue
+        if "head" in pr and not (pr.get("head") or {}).get("repo"):
+            out.append({"number": pr["number"], "action": "skip", "reason": "head repository is gone"})
+            continue
+        state = {k: (k in resolved) or (landed(k) is True) for k in keys}
+        waiting = sorted(k for k, ok in state.items() if not ok)
+        if waiting:
+            out.append({"number": pr["number"], "action": "sleep", "waiting": waiting})
+        elif open_count >= PR_CAP:
+            out.append({"number": pr["number"], "action": "capped", "landed": keys, "open": open_count})
+        else:
+            out.append({"number": pr["number"], "action": "wake", "landed": keys})
+            open_count += 1
+    return out
+
+
+def wake(repo: str, number: int, landed: list[str]) -> str:
+    updated = True
+    try:
+        gh("api", "-X", "PUT", f"repos/{repo}/pulls/{number}/update-branch")
+    except RuntimeError:
+        updated = False
+    gh("api", "-X", "PATCH", f"repos/{repo}/pulls/{number}", "-f", "state=open")
+    note = "branch updated from base" if updated else "branch could not be updated cleanly: rebase needed"
+    if not updated:
+        gh("api", "-X", "POST", f"repos/{repo}/issues/{number}/labels", "-f", "labels[]=needs-rebase")
+    body = (f"Blocked-by {', '.join(landed)} landed; {note}; reopened and re-queued for review "
+            f"(crew#504 CP7, idp-wake-blocked).")
+    gh("api", "-X", "POST", f"repos/{repo}/issues/{number}/comments", "-f", f"body={body}")
+    return note
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--repo", default=os.environ.get("GH_REPO", ""))
+    ap.add_argument("--resolved", action="append", default=[], help="free-text key that has landed")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--pulls", help="offline: closed PRs as JSON")
+    ap.add_argument("--open", type=int, help="offline: open PR count")
+    ap.add_argument("--landed", action="append", default=[], help="offline: keys that count as landed")
+    a = ap.parse_args()
+    offline = a.pulls is not None
+    if offline:
+        closed = json.load(open(a.pulls))
+        open_count = a.open or 0
+        landed = lambda k: (k in a.landed) if REF_RE.match(k) else None  # noqa: E731
+    else:
+        if not a.repo:
+            print("BLOCKED: no --repo and no GH_REPO", file=sys.stderr)
+            return 2
+        closed = json.loads(gh("api", "--paginate", "--slurp", f"repos/{a.repo}/pulls?state=closed&per_page=100"))
+        closed = [pr for page in closed for pr in page]
+        open_count = len(json.loads(gh("api", f"repos/{a.repo}/pulls?state=open&per_page=100")))
+        landed = ref_landed
+    actions = plan(closed, landed, open_count, set(a.resolved))
+    for act in actions:
+        if act["action"] == "wake" and not a.dry_run and not offline:
+            try:
+                act["note"] = wake(a.repo, act["number"], act["landed"])
+            except RuntimeError as e:  # one PR's failure never skips the sleepers after it
+                act["action"], act["error"] = "error", str(e)[:200]
+        print(json.dumps(act))
+    woke = sum(1 for x in actions if x["action"] == "wake")
+    print(f"wake-blocked: {len(actions)} sleeping, {woke} woke, "
+          f"{sum(1 for x in actions if x['action'] == 'capped')} capped, "
+          f"{sum(1 for x in actions if x['action'] == 'error')} errors, open={open_count} cap={PR_CAP}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

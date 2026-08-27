@@ -81,6 +81,7 @@ nav:
       - Port gate: demo/port.md
       - Repo rulesets: demo/repo-rulesets.md
       - Telemetry coverage: demo/telemetry-coverage.md
+      - Wake blocked: demo/wake-blocked.md
   - Onboarding:
       - Trace matrix: onboarding/trace-matrix.md
       - Portal: onboarding/idp.md
@@ -131,3 +132,4 @@ nav:
       - Port gate: onboarding/port.md
       - Repo rulesets: onboarding/repo-rulesets.md
       - Telemetry coverage: onboarding/telemetry-coverage.md
+      - Wake blocked: onboarding/wake-blocked.md
