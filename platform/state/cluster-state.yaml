@@ -42,6 +42,11 @@ rules:
   - apiGroups: ["spire.spiffe.io"]
     resources: ["clusterspiffeids"]
     verbs: ["get", "list"]
+  # crew#483: a PolicyException on main that the cluster never admitted leaves a workload denied
+  # with no way to tell from outside; the receipt lists the exceptions the cluster actually holds.
+  - apiGroups: ["kyverno.io"]
+    resources: ["policyexceptions"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -174,7 +179,10 @@ data:
             st = o.get("status", {})
             c = next((c for c in st.get("conditions", []) if c["type"] == "Ready"), {})
             row = {"kind": kind, "ns": o["metadata"].get("namespace", ""), "name": o["metadata"]["name"],
-                   "ready": c.get("status") == "True", "message": flux_message(c.get("message", "no Ready condition yet"))}
+                   "ready": c.get("status") == "True", "message": flux_message(c.get("message", "no Ready condition yet")),
+                   # crew#483: when the Ready condition last flipped, so a denial can be dated against
+                   # the commit that was meant to fix it instead of read as fresh.
+                   "since": c.get("lastTransitionTime")}
             if kind == "ImagePolicy":
                 row["latest"] = st.get("latestImage")
             if kind == "ImageUpdateAutomation":
@@ -199,6 +207,15 @@ data:
                     row["message"] = f"Ready but last sync {st.get('refreshTime')} is older than 2x refreshInterval {iv}"
             flux.append(row)
     flux_not_ready = [r for r in flux if not r["ready"]]
+    # crew#483: the PolicyExceptions the cluster holds (kyverno.io/v2), name, namespace, policies
+    # and the match names; absent from the list means the exception on main was never admitted.
+    try:
+        policy_exceptions = [{"ns": o["metadata"].get("namespace", ""), "name": o["metadata"]["name"],
+                              "policies": sorted({e.get("policyName", "") for e in (o.get("spec") or {}).get("exceptions", [])}),
+                              "matches": [r.get("names") for a in (o.get("spec") or {}).get("match", {}).get("any", []) for r in [a.get("resources", {})]]}
+                             for o in get("/apis/kyverno.io/v2/policyexceptions")["items"]]
+    except Exception as e:
+        policy_exceptions = [{"ns": "", "name": "*", "policies": [], "matches": [], "error": f"list failed: {e}"[:300]}]
     # crew#320: a DaemonSet with fewer ready pods than desired is invisible to every row above
     # (its pods do not exist, so they are neither Running nor not-ready). k8s-infra-otel-agent
     # ran at 0/1 for a day while telemetry-coverage said seen=0 and nothing said why. The
@@ -362,9 +379,9 @@ data:
             f" flux={len(flux)} flux_not_ready={len(flux_not_ready)} ds={len(ds)} ds_short={len(ds_short)} events_warning={len(events)}"
             f" hostnames={len(hostnames or [])} spiffe_ids={len(spiffe['clusterspiffeids'] or [])} spiffe_workloads={len(spiffe['csi_workloads'])}"
             f" svids={sum(len(r['spiffe_ids']) for r in spiffe['svids'])} spire_agents={len(spiffe['agents'])}"
-            f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)}")
+            f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)} policy_exceptions={len(policy_exceptions)}")
     body = {"at": at, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
-            "flux": flux, "flux_not_ready": flux_not_ready, "daemonsets": ds, "ds_short": ds_short, "events_warning": events,
+            "flux": flux, "flux_not_ready": flux_not_ready, "policy_exceptions": policy_exceptions, "daemonsets": ds, "ds_short": ds_short, "events_warning": events,
             "hostnames": hostnames, "hostnames_error": hostnames_error, "spiffe": spiffe,
             "oci_identity": {"pods": oci_pods, "static_key_pods": oci_static_key_pods,
                               "unknown_identity_pods": oci_unknown_identity_pods}}
