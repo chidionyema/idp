@@ -52,7 +52,7 @@ def test_flux_row_substitutes_the_zone_and_waits_on_both_releases():
     assert rules["spec"]["path"] == "./platform/monitoring/rules" and rules["spec"]["dependsOn"] == [{"name": "monitoring"}]
     assert {"kind": "ConfigMap", "name": "estate-config"} in rules["spec"]["postBuild"]["substituteFrom"]
     kz2 = yaml.safe_load((MON / "rules/kustomization.yaml").read_text())
-    assert set(kz2["resources"]) == {"estate.yaml", "founder-surfaces-probe.yaml"}
+    assert set(kz2["resources"]) == {"estate.yaml", "founder-surfaces-probe.yaml", "agentgateway-servicemonitor.yaml"}
     ns = one("platform/monitoring/namespace.yaml", "Namespace")
     assert ns["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "restricted"
 
@@ -132,7 +132,7 @@ def test_probe_targets_are_exactly_the_founder_surfaces_and_the_module_accepts_4
 def test_estate_rules_carry_founder_surface_down_and_the_cp14_pvc_alert():
     pr = one("platform/monitoring/rules/estate.yaml", "PrometheusRule", "estate")
     rules = {r["alert"]: r for g in pr["spec"]["groups"] for r in g["rules"]}
-    assert set(rules) == {"FounderSurfaceDown", "PersistentVolumeAlmostFull"}
+    assert set(rules) == {"FounderSurfaceDown", "PersistentVolumeAlmostFull", "GatewayRefusals", "GatewayMetricsAbsent"}
     assert rules["FounderSurfaceDown"]["expr"] == 'probe_success{job="founder-surfaces"} == 0'
     assert rules["FounderSurfaceDown"]["labels"]["severity"] == "critical"
     pvc = rules["PersistentVolumeAlmostFull"]
@@ -191,3 +191,23 @@ def test_broken_workload_alert_lists_namespace_monitoring():
     assert (IDP / "docs/onboarding/monitoring.md").exists()
     (row,) = [r for r in yaml.safe_load((IDP / "drills/catalogue.yaml").read_text())["drills"] if r["name"] == "cluster-state"]
     assert "Watchdog" in row["proves"]
+
+
+def test_gateway_refusals_are_scraped_and_alerted(): 
+    """crew#498 folded into crew#539: the MCP gateway's refusals are a Prometheus alert. The stats
+    listener (15020) is exposed as port `metrics` on the Deployment and the Service, the
+    ServiceMonitor in rules/ (a monitoring.coreos.com CR, after the CRDs) scrapes it from
+    namespace mcp, and GatewayRefusals reads agentgateway_requests_total by status."""
+    dep = one("platform/mcp/agentgateway-deploy.yaml", "Deployment", "agentgateway")
+    (c,) = [c for c in dep["spec"]["template"]["spec"]["containers"] if c["name"] == "agentgateway"]
+    assert {"name": "metrics", "containerPort": 15020} in c["ports"], c["ports"]
+    svc = one("platform/mcp/agentgateway-deploy.yaml", "Service", "agentgateway")
+    assert {"name": "metrics", "port": 15020, "targetPort": "metrics"} in svc["spec"]["ports"]
+    sm = one("platform/monitoring/rules/agentgateway-servicemonitor.yaml", "ServiceMonitor", "agentgateway")
+    assert sm["spec"]["namespaceSelector"]["matchNames"] == ["mcp"]
+    assert sm["spec"]["selector"]["matchLabels"] == svc["metadata"]["labels"]
+    assert sm["spec"]["endpoints"][0]["port"] == "metrics"
+    pr = one("platform/monitoring/rules/estate.yaml", "PrometheusRule", "estate")
+    (r,) = [r for g in pr["spec"]["groups"] for r in g["rules"] if r.get("alert") == "GatewayRefusals"]
+    assert 'agentgateway_requests_total{status=~"4..|5.."}' in r["expr"] and r["for"] == "5m"
+    assert r["labels"]["severity"] == "warning"  # warnings reach Telegram and Robusta both
