@@ -23,6 +23,11 @@ clickhouse:
       size: 2Gi
 signoz:
   replicaCount: 1
+  # crew#495 CP8: SigNoz (>= v0.112) provisions one admin at startup from these. Email and password
+  # come from the vault through signoz.yaml valuesFrom (ExternalSecret signoz-root), never from here.
+  env:
+    SIGNOZ_USER_ROOT_ENABLED: "true"
+    SIGNOZ_USER_ROOT_ORG_NAME: "Bytesync estate"
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { cpu: 500m, memory: 1Gi }
