@@ -2,7 +2,9 @@
 # One-time tenancy bootstrap for ADR 0004, repeatable and unattended except for one browser
 # login. Rejected: `oci setup config` (interactive, writes the private key unvaulted to disk,
 # and puts the key on the founder's own admin user). This script:
-#   1. logs in once through the browser (oci session authenticate, token lives one hour);
+#   1. logs in once through the browser (the founder's one browser login, token lives one
+#      hour; crew#345: this bootstrap is the only path that needs it -- every session reads
+#      the estate through receipts, bin/idp-cluster-state and oke-check.yml on OIDC);
 #   2. creates compartment `estate`, group `estate-operators`, user `estate-tofu` and one
 #      least-privilege policy, all idempotent;
 #   3. generates the API key pair here, registers the PUBLIC half on estate-tofu, and stores
