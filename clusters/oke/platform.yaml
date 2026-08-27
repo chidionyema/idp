@@ -65,6 +65,7 @@ spec:
     name: flux-system
   path: ./platform/chaos
   prune: true
+  wait: true
 ---
 # crew#258 CP2: SigNoz, the one metrics/traces/logs store (crew/docs/STANDARDS.md "Observability").
 # Ordered after backstage so the portal keeps first claim on the single node's CPU.
