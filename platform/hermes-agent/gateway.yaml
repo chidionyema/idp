@@ -71,6 +71,10 @@ kind: Deployment
 metadata:
   name: hermes-agent-gateway
   namespace: hermes-agent
+  annotations:
+    # Reloader (platform/reloader) rolls the pod when the vault entry lands through ESO (1h refresh),
+    # the same way litellm picks up litellm-upstream: the swap seeds TELEGRAM_BOT_TOKEN and the pod restarts.
+    secret.reloader.stakater.com/reload: "hermes-agent-env"
   labels:
     app: hermes-agent-gateway
     app.kubernetes.io/name: hermes-agent-gateway

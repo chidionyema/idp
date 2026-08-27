@@ -131,3 +131,8 @@ def test_incident_apply_dispatch_is_not_displaced_by_pull_request_pushes():
     wf = yaml.safe_load((ROOT / ".github/workflows/oke-check.yml").read_text())
     assert wf["concurrency"]["group"] == "oke-check-${{ github.event_name }}"
     assert wf["concurrency"]["cancel-in-progress"] is False
+
+
+def test_the_pod_rolls_when_the_vault_entry_changes():
+    dep = _one(_docs(), "Deployment")
+    assert dep["metadata"]["annotations"]["secret.reloader.stakater.com/reload"] == _one(_docs(), "ExternalSecret")["spec"]["target"]["name"]
