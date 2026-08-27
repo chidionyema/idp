@@ -117,7 +117,9 @@ token)
   tok=$(jq -r '.token // empty' <<<"$body" 2>/dev/null || true)
   # run 33097577404: whatever gh printed was passed on as a token; a token has a shape. Run 33098351833: the
   # reason it had none was lost, so GitHub's own message travels on stderr where the drill reads it.
-  [[ "$tok" =~ ^ghs_[A-Za-z0-9]+$ ]] || { echo "DIAG    github-app access_tokens for installation $inst lane $lane returned no token: http=${code:-none} body=$(jq -c 'del(.token)' <<<"$body" 2>/dev/null | cut -c1-160 || head -c 160 <<<"$body" | tr -d '\n') curl=$(tail -1 "$TMPDIR_ERR" 2>/dev/null | cut -c1-80)" >&2; echo "BLIND   github-app no installation token for lane $lane (see DIAG)"; exit 2; }
+  # run 33099257719: http=201 with a full body and still no token — the shape of what jq handed back is the
+  # next question, so the DIAG answers it (length, prefix, every non-alphanumeric byte; never the token).
+  [[ "$tok" =~ ^ghs_[A-Za-z0-9]+$ ]] || { echo "DIAG    github-app access_tokens for installation $inst lane $lane returned no token: http=${code:-none} has_token=$(jq 'has("token")' <<<"$body" 2>/dev/null) tok_len=${#tok} tok_head=${tok:0:4} tok_odd=[$(printf %s "$tok" | tr -d 'A-Za-z0-9' | od -An -c | tr -s ' \n' ' ' | head -c 40)] jq=$(jq --version 2>&1) bash=$BASH_VERSION body=$(jq -c 'del(.token)' <<<"$body" 2>/dev/null | cut -c1-160 || head -c 160 <<<"$body" | tr -d '\n') curl=$(tail -1 "$TMPDIR_ERR" 2>/dev/null | cut -c1-80)" >&2; echo "BLIND   github-app no installation token for lane $lane (see DIAG)"; exit 2; }
   if [ -t 1 ]; then echo "ok      github-app token minted for lane $lane (installation $inst, expires in 1h); pipe it: bin/idp-github-app token $lane | gh auth login --with-token"; else printf %s "$tok"; fi
   ;;
 installation)
