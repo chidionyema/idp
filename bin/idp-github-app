@@ -31,10 +31,10 @@ app_jwt() {
 
 # app_api <jwt> <path> [curl args...]: GitHub API call authenticated by an App JWT. gh sends GH_TOKEN as
 # `Authorization: token`, which GitHub refuses for a JWT (run 33098034984: bearer_probe_http=200 on the same JWT);
-# a JWT goes as `Authorization: Bearer`. Prints the body; non-2xx exits 22 (curl --fail).
+# a JWT goes as `Authorization: Bearer`. Prints the body on every status; callers read the field they need and GitHub's .message when it is missing.
 app_api() {
   local jwt=$1 path=$2; shift 2
-  curl -sS --fail -H "Authorization: Bearer $jwt" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "$@" "https://api.github.com$path"
+  curl -sS -H "Authorization: Bearer $jwt" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "$@" "https://api.github.com$path"
 }
 # app_jwt_diag <app_id> <pem_base64> <jwt> [bundle-json]: when GitHub answers 401 to the JWT, say what was signed and with what,
 # never the key: the PEM's header line, the public modulus fingerprint (GitHub shows the same on the App's page),
@@ -47,7 +47,7 @@ app_jwt_diag() {
   rm -f "$key"
   # gh sends `Authorization: token`; GitHub documents `Bearer` for an App JWT. The probe says whether the scheme is the fault.
   local bearer; bearer=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $3" -H "Accept: application/vnd.github+json" https://api.github.com/app 2>/dev/null || echo curl-failed)
-  echo "DIAG    github-app JWT refused: bearer_probe_http=$bearer iss=$1 slug=$(jq -r '.slug // "?"' <<<"${4:-{\}}") client_id=$(jq -r '.client_id // "?"' <<<"${4:-{\}}") pem_b64_len=${#2} key_header='${hdr:-not a PEM}' pubkey_sha256=${fp:-unreadable} claims=$claims" >&2
+  echo "DIAG    github-app JWT refused: bearer_probe_http=$bearer iss=$1 slug=$(jq -r '.slug // "?"' <<<"${4:-{\}}") pem_b64_len=${#2} key_header_ok=$([ "${hdr:-}" = "-----BEGIN RSA PRIVATE KEY-----" ] && echo yes || echo no) pubkey_sha256=${fp:-unreadable} claims=$claims" >&2
 }
 case "$cmd" in
 manifest)
@@ -108,12 +108,15 @@ token)
   bundle=$("$IDP/bin/idp-cloud" secret get "$SECRET" 2>"${TMPDIR:-/tmp}/github-app.err") || { echo "BLIND   github-app $(head -1 "${TMPDIR:-/tmp}/github-app.err" | cut -c1-120); run: bin/idp-github-app convert <code>"; exit 2; }
   app_id=$(jq -r .app_id <<<"$bundle"); pem_b64=$(jq -r .pem_b64 <<<"$bundle")
   jwt=$(app_jwt "$app_id" "$pem_b64")
-  inst=$(app_api "$jwt" /app/installations 2>/dev/null | jq -r '.[0].id // empty') || { app_jwt_diag "$app_id" "$pem_b64" "$jwt" "$bundle"; inst=""; }
+  inst=$(app_api "$jwt" /app/installations 2>/dev/null | jq -r 'if type=="array" then (.[0].id // empty) else empty end' 2>/dev/null || true)
+  [[ "$inst" =~ ^[0-9]+$ ]] || app_jwt_diag "$app_id" "$pem_b64" "$jwt" "$bundle"
   # run 33097094260: gh printed the 401 body on stdout and the non-empty check took it for an id
   [[ "$inst" =~ ^[0-9]+$ ]] || { echo "BLIND   github-app App $app_id has no installation yet (or its JWT was refused; see DIAG)"; exit 2; }
-  tok=$(app_api "$jwt" "/app/installations/$inst/access_tokens" -X POST --data "$(jq -nc --argjson p "$perms" '{permissions:$p}')" 2>"$TMPDIR_ERR" | jq -r '.token // empty') || true
-  # run 33097577404: whatever gh printed was passed on as a token; a token has a shape
-  [[ "$tok" =~ ^ghs_[A-Za-z0-9]+$ ]] || { echo "BLIND   github-app access_tokens for installation $inst did not return a token: $(tail -1 "$TMPDIR_ERR" | cut -c1-120)"; exit 2; }
+  body=$(app_api "$jwt" "/app/installations/$inst/access_tokens" -X POST --data "$(jq -nc --argjson p "$perms" '{permissions:$p}')" 2>"$TMPDIR_ERR" || true)
+  tok=$(jq -r '.token // empty' <<<"$body" 2>/dev/null || true)
+  # run 33097577404: whatever gh printed was passed on as a token; a token has a shape. Run 33098351833: the
+  # reason it had none was lost, so GitHub's own message travels on stderr where the drill reads it.
+  [[ "$tok" =~ ^ghs_[A-Za-z0-9]+$ ]] || { echo "DIAG    github-app access_tokens for installation $inst lane $lane returned no token: $(jq -r '.message // empty' <<<"$body" 2>/dev/null | cut -c1-140) $(tail -1 "$TMPDIR_ERR" 2>/dev/null | cut -c1-80)" >&2; echo "BLIND   github-app no installation token for lane $lane (see DIAG)"; exit 2; }
   if [ -t 1 ]; then echo "ok      github-app token minted for lane $lane (installation $inst, expires in 1h); pipe it: bin/idp-github-app token $lane | gh auth login --with-token"; else printf %s "$tok"; fi
   ;;
 installation)
@@ -124,7 +127,8 @@ installation)
   bundle=$("$IDP/bin/idp-cloud" secret get "$SECRET" 2>"${TMPDIR:-/tmp}/github-app.err") || { echo "BLIND   github-app $(head -1 "${TMPDIR:-/tmp}/github-app.err" | cut -c1-120); run: bin/idp-github-app convert <code>"; exit 2; }
   app_id=$(jq -r .app_id <<<"$bundle"); pem_b64=$(jq -r .pem_b64 <<<"$bundle")
   jwt=$(app_jwt "$app_id" "$pem_b64")
-  inst=$(app_api "$jwt" /app/installations 2>/dev/null | jq -r '.[0].id // empty') || { app_jwt_diag "$app_id" "$pem_b64" "$jwt" "$bundle"; inst=""; }
+  inst=$(app_api "$jwt" /app/installations 2>/dev/null | jq -r 'if type=="array" then (.[0].id // empty) else empty end' 2>/dev/null || true)
+  [[ "$inst" =~ ^[0-9]+$ ]] || app_jwt_diag "$app_id" "$pem_b64" "$jwt" "$bundle"
   # run 33097094260: gh printed the 401 body on stdout and the non-empty check took it for an id
   [[ "$inst" =~ ^[0-9]+$ ]] || { echo "BLIND   github-app App $app_id has no installation yet (or its JWT was refused; see DIAG)"; exit 2; }
   tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT; chmod 600 "$tmp"
