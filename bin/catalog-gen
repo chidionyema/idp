@@ -594,10 +594,14 @@ def main() -> int:
         elif k == "scheduled_job":
             ann.update({"loaded": r.get("loaded"), "last-status": r.get("last_status"),
                         "interval-s": r.get("interval_s")})
-            if str(r.get("last_status")) != "clean":
+            if str(r.get("last_status")) not in ("clean", "running"):
                 tags.append("not-clean")
             if not r.get("loaded"):
                 tags.append("not-loaded")
+        elif k == "guard" and r.get("last_status"):
+            # crew#474: hook-outcomes.jsonl via inventory guard_outcomes(); absent = never fired in 24h
+            ann.update({"last-status": r.get("last_status"), "fired-24h": r.get("fired_24h"),
+                        "refused-24h": r.get("refused_24h")})
         elif k == "drill":
             ann.update({"last-status": r.get("last_status"), "age-h": r.get("age_h"),
                         "max-age-days": r.get("max_age_days"), "stale": r.get("stale")})

@@ -31,7 +31,42 @@ ROOT = Path(__file__).resolve().parent.parent
 WT = Path(os.environ.get("IDP_STATE_WORKTREE") or ROOT.parent / ".idp-state")
 BRANCH = "state/live-diagram"
 PAGE = "docs/architecture/live.md"
+SHOWCASE = "docs/SHOWCASE.md"
+TRACE = "docs/TRACE-MATRIX.md"          # crew#495 CP1
+TRACE_JSON = "docs/trace-matrix.json"
 INV = Path(os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json"))
+
+
+def driver_is_stale(driver: Path, on_main: Path) -> bool:
+    """crew#474, 2026-08-27: the scheduler runs $IDP/bin/catalog-render from the shared checkout,
+    and that checkout was on a peer's feature branch (feat/crew290), so the driver that ran was
+    a copy without the estate-showcase step while its own worktree sat on main. The inner steps
+    were current; the script driving them was not. Stale means: this file is not the worktree's
+    copy and its bytes differ from the worktree's copy at origin/main.
+    """
+    try:
+        if driver.resolve() == on_main.resolve():
+            return False
+        return driver.read_bytes() != on_main.read_bytes()
+    except OSError:
+        return False
+
+
+def should_hand_over(driver: Path, on_main: Path, argv: list[str], env: dict) -> bool:
+    """Only the scheduled run hands over. A branch run of a PR that edits this driver must
+    execute its own copy (code-2f, idp#377 review 5437850580)."""
+    if "--scheduled" not in argv or env.get("CATALOG_RENDER_REEXEC"):
+        return False
+    return driver_is_stale(driver, on_main)
+
+
+def reexec_from_worktree(driver: Path, on_main: Path, argv: list[str]) -> None:
+    """Hand over to the origin/main copy of this script, once, and never loop."""
+    if not should_hand_over(driver, on_main, argv, dict(os.environ)):
+        return
+    print(f"catalog-render: driver {driver} differs from origin/main; re-running {on_main}")
+    os.environ["CATALOG_RENDER_REEXEC"] = "1"
+    os.execv(sys.executable, [sys.executable, str(on_main), *argv])
 
 
 def sh(cmd: list[str], cwd: Path, timeout: int = 120) -> tuple[int, str]:
@@ -52,11 +87,14 @@ def main(argv: list[str]) -> int:
     if not INV.is_file():
         print(f"BLIND catalog-render: no inventory at {INV}; com.estate.inventory has not run", file=sys.stderr)
         return 3
-    step("fetch origin main", ["git", "fetch", "-q", "origin", "main"], ROOT)
+    # --prune: after the render PR merges with delete-branch, origin/state/live-diagram is gone but
+    # the local remote-ref still holds it, and --force-with-lease refuses with "stale info" (12:20Z).
+    step("fetch origin, prune", ["git", "fetch", "-q", "--prune", "origin"], ROOT)
     if not (WT / ".git").exists():
         sh(["git", "worktree", "prune"], ROOT)
         step("create worktree", ["git", "worktree", "add", "--detach", "-q", str(WT), "origin/main"], ROOT)
     step("move worktree to origin/main", ["git", "checkout", "-q", "--detach", "origin/main"], WT)
+    reexec_from_worktree(Path(__file__), WT / "bin" / "catalog-render", sys.argv[1:])
     # crew#401 CP5: the founder-surface cards carry a live health stamp on the scheduled render only.
     os.environ["CATALOG_GEN_PROBE"] = "1"
     step("catalog-gen", [sys.executable, str(WT / "bin" / "catalog-gen")], WT, 300)
@@ -67,7 +105,11 @@ def main(argv: list[str]) -> int:
     rc, out = sh([str(WT / "bin" / "idp-catalog-push")], WT, 300)
     print(("ok    " if rc == 0 else "BLIND ") + f"catalog-render: catalogue push: {out[-200:]}")
     step("estate-diagram", [sys.executable, str(WT / "bin" / "estate-diagram")], WT)
-    rc, diff = sh(["git", "diff", "--stat", "--", PAGE], WT)
+    # crew#474: the graded page, red rows first, from the same catalogue in the same run.
+    step("estate-showcase", [sys.executable, str(WT / "bin" / "estate-showcase")], WT)
+    # crew#495 CP1: the trace matrix is rendered from the same worktree, on the same schedule.
+    step("trace-matrix", [sys.executable, str(WT / "bin" / "trace-matrix")], WT)
+    rc, diff = sh(["git", "diff", "--stat", "--", PAGE, SHOWCASE, TRACE, TRACE_JSON], WT)
     if not diff:
         print("catalog-render: page unchanged since the last render; nothing to commit")
         return 0
@@ -75,7 +117,7 @@ def main(argv: list[str]) -> int:
         print(f"catalog-render --dry-run: would commit\n{diff}")
         return 0
     taken = step("inventory time", ["sed", "-n", "s/^# inventory taken: //p", "catalog/catalog-info.yaml"], WT)
-    step("stage", ["git", "add", PAGE], WT)
+    step("stage", ["git", "add", PAGE, SHOWCASE, TRACE, TRACE_JSON], WT)
     step("commit", ["git", "commit", "-q", "-m", f"docs(architecture): live estate page, inventory taken {taken} (crew#401)\n\nAuthor-session: com.estate.catalog-render"], WT)
     step("push", ["git", "push", "-q", "--force-with-lease", "origin", f"HEAD:refs/heads/{BRANCH}"], WT)
     rc, existing = sh(["gh", "pr", "list", "--head", BRANCH, "--state", "open", "--json", "number", "--jq", ".[0].number"], WT)
@@ -85,7 +127,14 @@ def main(argv: list[str]) -> int:
                          "--body", f"No-Issue: scheduled render of {PAGE} from the catalogue (crew#236 row 2).\n\n"
                                    f"Author-session: com.estate.catalog-render\nStandard: Service catalog row, docs/STANDARDS.md\n\n"
                                    "Generated by bin/catalog-render after com.estate.inventory. Auto-merge is on; "
-                                   "it lands when security-scan and spec-gate pass."], WT)
+                                   "it lands when security-scan and spec-gate pass.\n\n"
+                                   # crew#474: the operating-model gate refuses a body with no laws section
+                                   # (idp#376 sat BLOCKED for a day), so the generated body carries one.
+                                   "## Architecture laws\n"
+                                   f"- LAW 1 zero-gravity: n/a: generated pages only, {PAGE} and {SHOWCASE}\n"
+                                   "- LAW 2 fractal: bin/catalog-render -> bin/estate-showcase -> bin/trace-matrix\n"
+                                   f"- LAW 3 nervous system: scheduler/schedule.yml com.estate.catalog-render -> {BRANCH}\n"
+                                   "- LAW 4 calibration: n/a: no prediction made\n"], WT)
         rc, existing = sh(["gh", "pr", "list", "--head", BRANCH, "--state", "open", "--json", "number", "--jq", ".[0].number"], WT)
     step("auto-merge", ["gh", "pr", "merge", existing, "--auto", "--squash"], WT)
     print(f"catalog-render: {PAGE} pushed to {BRANCH}, PR #{existing} set to auto-merge")

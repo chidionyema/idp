@@ -102,3 +102,21 @@ drills:
       Every pod Running for more than ten minutes wrote a log line or a metric sample that SigNoz
       stored in the last hour, measured by querying ClickHouse and diffing against the API server
       (crew#320, LAW 50: coverage is proved by the backend, never by scanning files).
+  - name: portability
+    workflow: portability-drill.yml
+    job: hydrate
+    schedule: "23 5 * * 1"
+    max_age_hours: 194
+    proves: >-
+      In the last week the whole clusters/oke/ Flux tree was applied to a vanilla k3d cluster on a
+      runner with no OCI identity and at least drills/portability-floor.txt layers came Ready, so
+      the platform hydrates a foreign cluster from git alone (crew#488, LAW 19).
+  - name: free-tier
+    workflow: oke-check.yml
+    job: free-tier
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    proves: >-
+      The limits API granted the tenancy at least the A1 cores and memory platform/oci/variables.tf
+      assumes free and enough to hold what it provisions, so the allowance OCI halved once
+      (ADR 0004) has not moved again without a red row (crew#488 CP3).

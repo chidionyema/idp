@@ -13,6 +13,7 @@ metadata:
   title: "The catalogue (this god view)"
   description: "Every service, hostname, job, guard, drill, port and this list. One login (auth). If something is not here, the gate in tests/test_incident_crew401_* refused the change that added it."
   annotations:
+    backstage.io/kubernetes-label-selector: "app.kubernetes.io/part-of=idp"
     idp/updated-by: "Flux image automation on every main build (platform/image-automation/backstage.yaml); inventory entities by bin/idp-catalog-push"
   tags: [founder]
   links:
@@ -35,6 +36,8 @@ metadata:
   title: "Model router (llm)"
   description: "Every model call in the estate goes through here. Pick and add models, keys, teams and budgets in the admin console (/ui); sign in with your estate login (the same as this catalogue); there is no console password. Tutorial: docs/onboarding/litellm.md (crew#400)."
   annotations:
+    backstage.io/kubernetes-namespace: llm
+    backstage.io/kubernetes-label-selector: "app.kubernetes.io/name=litellm"
     github.com/project-slug: "chidionyema/idp"
     backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/"
     idp/updated-by: "Flux from platform/llm on merge to main"
@@ -70,6 +73,24 @@ metadata:
       icon: dashboard
     - title: "Health"
       url: "https://langfuse.${ESTATE_ZONE}/api/public/health"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-telemetry
+  title: "Telemetry (SigNoz)"
+  description: "Every workload's traces, metrics and logs land here (LAW 50). The telemetry-coverage receipt in oke-check is the count of pods this backend has seen; the SLO alert rules (crew#495) are declared against it."
+  annotations:
+    idp/updated-by: "Flux from platform/observability; rows arrive live from the OTel collector"
+  tags: [founder]
+  links:
+    - title: "Open"
+      url: "https://signoz.${ESTATE_ZONE}"
       icon: dashboard
 spec:
   type: founder-surface
@@ -152,6 +173,24 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: founder-showcase
+  title: "Science showcase and founder demo"
+  description: "Every science and research capability on one page, generated from the lane's own stores four times a day (crew#403). A capability that cannot describe and demo itself is refused in CI. The demo is one command: bin/founder-demo in crew."
+  annotations:
+    github.com/project-slug: "chidionyema/crew"
+    backstage.io/source-location: "url:https://github.com/chidionyema/crew/tree/main/"
+    idp/updated-by: "Dagster com.founder.sciencecollect (37 1,7,13,19 * * *) runs science/showcase.py; verify.d/27-showcase-check.sh on every crew PR"
+  tags: [founder, science]
+  links:
+    - title: "Showcase (generated page)"
+      url: "https://github.com/chidionyema/crew/blob/main/docs/science/SHOWCASE.md"
+      icon: dashboard
+    - title: "Founder demo (bin/founder-demo)"
+      url: "https://github.com/chidionyema/crew/blob/main/bin/founder-demo"
+      icon: docs
+    - title: "Tracked item crew#403"
+      url: "https://github.com/chidionyema/crew/issues/403"
+      icon: dashboard
   name: founder-mcp-gateway
   title: "MCP gateway (tools for every agent session)"
   description: "The one MCP row (crew#458): agentgateway on the cluster fronting the GitHub MCP server, behind the estate login and a per-session API key. A session points its MCP url at /github/mcp here instead of a container on the founder Mac."
@@ -237,6 +276,9 @@ metadata:
       icon: dashboard
     - title: "kyverno-secrets-drill: policy refuses a bad secret"
       url: "https://github.com/chidionyema/idp/actions/workflows/kyverno-secrets-drill.yml"
+      icon: dashboard
+    - title: "portability-drill: the platform hydrates on a cluster with no OCI"
+      url: "https://github.com/chidionyema/idp/actions/workflows/portability-drill.yml"
       icon: dashboard
     - title: "drill-heartbeat: every drill ran on time"
       url: "https://github.com/chidionyema/idp/actions/workflows/drill-heartbeat.yml"

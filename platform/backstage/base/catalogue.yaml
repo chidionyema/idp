@@ -31,6 +31,9 @@ spec:
       labels:
         app.kubernetes.io/name: catalogue
     spec:
+      # rbac.yaml: read-only cluster view for the Kubernetes tab (crew#412 row 2).
+      serviceAccountName: catalogue
+      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000   # `USER node` in backstage/Dockerfile
