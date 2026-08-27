@@ -921,6 +921,22 @@
   "ticket": "crew#297"
  },
  {
+  "feature": "features/assurance/estate-next.feature",
+  "title": "What is planned, what is blocking, when (crew#403 CP6)",
+  "scenarios": [
+   "An open checkpoint with no Expect line is a red row",
+   "An open checkpoint named on a lane's red line is BLOCKING and dated",
+   "A handoff older than the lane window does not make a checkpoint ACTIVE"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_gate_estate_next.py"
+  ],
+  "status": "BOUND",
+  "added_in": "a5d2421",
+  "pr": 402,
+  "ticket": "crew#403"
+ },
+ {
   "feature": "features/assurance/trace-matrix.feature",
   "title": "Every scenario traces to the test that runs it",
   "scenarios": [
