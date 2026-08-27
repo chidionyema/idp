@@ -38,6 +38,9 @@ spec:
       namespace: observability
     - kind: HelmRelease
       name: "*"
+      namespace: reloader
+    - kind: HelmRelease
+      name: "*"
       namespace: spire-mgmt
     - kind: HelmRelease
       name: "*"
