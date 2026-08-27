@@ -300,3 +300,32 @@ spec:
       kind: HelmRelease
       name: spire
       namespace: spire-mgmt
+---
+# KEDA and its HTTP add-on: the estate's one autoscaler, so a request-scoped product workload can
+# sit at zero replicas and wake on the first request (crew#488 CP7). After observability so the
+# operator's OTLP export has a collector to reach; the product opts in from its own repo.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: keda
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: observability
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/keda
+  prune: true
+  wait: true
+  timeout: 15m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: keda
+      namespace: keda
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: keda-add-ons-http
+      namespace: keda

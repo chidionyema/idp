@@ -29,6 +29,9 @@ spec:
       namespace: identity
     - kind: HelmRelease
       name: "*"
+      namespace: keda
+    - kind: HelmRelease
+      name: "*"
       namespace: kyverno
     - kind: HelmRelease
       name: "*"
