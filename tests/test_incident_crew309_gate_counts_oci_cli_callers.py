@@ -52,4 +52,6 @@ def test_the_live_number_is_the_one_the_audit_measured():
     line = [l for l in r.stdout.splitlines() if "bound to the oci CLI" in l]
     assert line, r.stdout
     n = int(line[0].split(":")[1].split()[0])
-    assert n <= 25, f"{n} operator files call the oci CLI; the audited floor was 25 — a new one needs its own reason"
+    # 25 audited on main (crew#309); idp#441 adds two on merge (recover-drill.yml, bin/idp-recover-drill: the
+    # clean-runner recovery drill reads the vault and R2 keys through the CLI until the primitive layer lands).
+    assert n <= 27, f"{n} operator files call the oci CLI; the audited ceiling is 27 — a new one needs its own reason"
