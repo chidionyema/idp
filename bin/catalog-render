@@ -57,6 +57,8 @@ def main(argv: list[str]) -> int:
         sh(["git", "worktree", "prune"], ROOT)
         step("create worktree", ["git", "worktree", "add", "--detach", "-q", str(WT), "origin/main"], ROOT)
     step("move worktree to origin/main", ["git", "checkout", "-q", "--detach", "origin/main"], WT)
+    # crew#401 CP5: the founder-surface cards carry a live health stamp on the scheduled render only.
+    os.environ["CATALOG_GEN_PROBE"] = "1"
     step("catalog-gen", [sys.executable, str(WT / "bin" / "catalog-gen")], WT, 300)
     # crew#401 CP4: the cluster's catalogue is this file as an OCI artifact (clusters/oke/catalog.yaml).
     # Until 2026-08-27 nothing pushed it on a schedule; the artifact on ghcr was 24 hours behind the

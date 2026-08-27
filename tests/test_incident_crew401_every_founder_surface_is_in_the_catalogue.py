@@ -11,7 +11,9 @@ properties over the checkout; rung 4 for the incident itself):
   2. every workflow a person can press (workflow_dispatch) is a link on a founder surface;
   3. every founder surface says what it is for, who updates it, and has at least one link;
      no link carries an unsubstituted variable; names and URLs are unique;
-  4. the portal loads the file (app-config.yaml location) and the image carries it (Dockerfile).
+  4. the portal never loads the file directly (Backstage does not expand ${ESTATE_ZONE} in an
+     entity file); bin/catalog-gen carries every surface into the generated catalogue with the
+     zone resolved, and stamps health only when CATALOG_GEN_PROBE=1 (CP5).
 
 Proved both ways: the checkout passes; a copy with one extra route or one extra button fails.
 """
@@ -88,12 +90,37 @@ def missing(root) -> list[str]:
     for wf in _buttons(root):
         if not any(u.endswith(f"/actions/workflows/{wf}") for u in urls):
             out.append(f"workflow button {wf} has no founder surface link")
+    # Rule 4 (CP5, 2026-08-27): the portal must NOT load the file directly. Backstage does not
+    # expand ${ESTATE_ZONE} in an entity file; the generated catalogue (bin/catalog-gen) is the
+    # only path, and it substitutes the zone and stamps health.
     app = yaml.safe_load((root / "backstage/app-config.yaml").read_text())
-    if not any(loc.get("target", "").endswith("founder/catalog-info.yaml") for loc in app["catalog"]["locations"]):
-        out.append("app-config.yaml does not load the founder location")
-    if "COPY --chown=node:node founder ./founder" not in (root / "backstage/Dockerfile").read_text():
-        out.append("Dockerfile does not copy founder/ into the image")
+    if any("founder/catalog-info.yaml" in loc.get("target", "") for loc in app["catalog"]["locations"]):
+        out.append("app-config.yaml loads founder/catalog-info.yaml directly: ${ESTATE_ZONE} would reach the portal unexpanded")
     return out
+
+
+def test_incident_crew401_the_generated_catalogue_carries_every_surface_with_the_zone_resolved(tmp_path):
+    import os
+    import subprocess
+    out = tmp_path / "out"
+    out.mkdir()
+    p = subprocess.run([str(ROOT / "bin" / "catalog-gen")],
+                       env={**os.environ, "INV": str(ROOT / "tests" / "fixtures" / "inventory.json"),
+                            "OUT": str(out), "ESTATE_ENV": "dev", "CATALOG_GEN_ROOT": str(ROOT),
+                            "CATALOG_GEN_PROBE": "0"},
+                       capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    gen = {d["metadata"]["name"]: d for d in yaml.safe_load_all((out / "catalog-info.yaml").read_text())
+           if d and d.get("spec", {}).get("type") == "founder-surface"}
+    zone = _zone(ROOT)
+    for d in _surfaces(ROOT):
+        name = d["metadata"]["name"]
+        assert name in gen, f"{name} missing from the generated catalogue"
+        for l in gen[name]["metadata"]["links"]:
+            assert "${" not in l["url"], f"{name}: {l['url']} reached the catalogue unexpanded"
+        assert all(l["url"].replace("${ESTATE_ZONE}", zone) in {g["url"] for g in gen[name]["metadata"]["links"]}
+                   for l in d["metadata"]["links"]), name
+        assert "estate/health" not in gen[name]["metadata"].get("annotations", {}), "no probe without CATALOG_GEN_PROBE=1"
 
 
 def test_incident_crew401_the_checkout_lists_every_founder_surface():

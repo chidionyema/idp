@@ -191,13 +191,9 @@ catalog:
       rules:
         - allow: [Component, Resource, Domain, System, Group]
 
-    # Every founder-facing surface with an Open link (crew#401). Hand-written on purpose:
-    # a hostname, a board, a button or a console is a decision, not an inventory row, and
-    # the gate in tests/ refuses a route or a workflow button that is not listed here.
-    - type: file
-      target: ../../founder/catalog-info.yaml
-      rules:
-        - allow: [Component]
+    # The founder's surfaces (crew#401) are hand-written in backstage/founder/catalog-info.yaml
+    # but reach the portal only through the generated estate catalogue above: bin/catalog-gen
+    # substitutes ${ESTATE_ZONE} (Backstage does not) and stamps each card with its health.
 
     # Templates the scaffolder actually offers. One real one beats the
     # create-app example, which advertised "Example Node.js Template" to
