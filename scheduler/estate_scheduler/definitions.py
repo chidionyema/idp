@@ -36,7 +36,8 @@ import yaml
 
 try:
     from .load_gate import CORES, load_ceiling, load_verdict
-except ImportError:  # loaded as a bare file, not a package
+except ImportError:  # loaded as a bare file, not a package (dagster -f definitions.py)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from load_gate import CORES, load_ceiling, load_verdict  # type: ignore[no-redef]
 from dagster import (
     DagsterRunStatus,
