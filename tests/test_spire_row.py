@@ -180,3 +180,19 @@ def test_incident_crew227_cp4_agent_off_host_network_must_reach_the_kubelet_by_n
     cm = _one(docs, "ConfigMap", "spire-agent")
     conf = "".join(cm["data"].values())   # chart 0.30.1 writes agent.conf as JSON
     assert '"node_name_env": "KUBELET_ADDR"' in conf, conf[-600:]
+
+
+def test_incident_crew227_cp4_proof_pod_retries_inside_the_same_pod_uid():
+    """crew#227 CP4, cluster-state receipt 2026-08-27T08:45:03Z: seven spiffe-proof pods of Job 29796990
+    Failed with `PermissionDenied desc = no identity issued`; the agent logged `No identity issued
+    registered=false` at 08:40:42Z, the seventh backoff attempt. The controller-manager renders one
+    entry per pod with selector k8s:pod-uid, the agent syncs every 5 s, and `spire-agent api fetch`
+    calls FetchX509SVID once. Rule (rung 4): a proof pod that selects by pod-uid retries inside the
+    same pod (restartPolicy OnFailure), never as a new pod (Never), because a new pod is a new uid
+    and a new race."""
+    for name in ("proof-cronjob.yaml", "proof.yaml"):
+        docs = _docs(SPIRE / name)
+        job = next(d for d in docs if d["kind"] in ("Job", "CronJob"))
+        spec = job["spec"]["jobTemplate"]["spec"] if job["kind"] == "CronJob" else job["spec"]
+        pod = spec["template"]["spec"]
+        assert pod.get("restartPolicy") == "OnFailure", f"{name}: {pod.get('restartPolicy')}"
