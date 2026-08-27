@@ -145,3 +145,18 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: hermes-agent
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/hermes-agent
+  prune: true
+  wait: true
+  timeout: 10m

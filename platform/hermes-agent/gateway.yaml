@@ -1,0 +1,157 @@
+# hermes-agent (Otto/The Architect gateway) on OKE, as a genuine standby -- crew#290/crew#286.
+#
+# WHY THIS EXISTS. crew#345/crew#322: Mac is primary, Oracle is active standby, gated to
+# revisit only when crew#227 CP3 lands. This is the first real, provable piece of that
+# standby: the same gateway image the Mac runs (Dockerfile, this repo's twin), deployed
+# independently on OKE, reading its config/secrets via ExternalSecrets from estate-vault --
+# not a copy of the Mac's local .env, not a manual credential placement. It runs ALONGSIDE
+# the Mac, never in front of it; nothing routes user traffic here yet (LAW 11: a cutover is
+# a founder decision, this is proof the standby CAN run, not a switch to make it primary).
+#
+# Same security shape as prospector-scheduler.yaml (deploy/k8s/base/scheduler.yaml,
+# proven live: SecretSynced true, pod Running): non-root, read-only root filesystem, no
+# privilege escalation, seccomp RuntimeDefault, envFrom a Secret ExternalSecrets syncs
+# from OCI Vault -- never a static credential baked into the image or the manifest
+# (crew#227 CP3's own target, and crew#341's Kyverno policy would refuse anything else).
+#
+# Deliberately NOT wired into any Ingress/Ceritifcate/DNS yet -- this proves the gateway
+# process itself can start and reach its config from OCI identity alone. Exposing it
+# publicly, wiring the a2a port (9900) through Traefik, and any actual failover routing
+# are separate, later decisions.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hermes-agent
+---
+# Non-secret runtime config (a2a enabled, port). The Mac's own config.yaml is the source
+# this was copied from -- kept in sync by hand for now; a generator is future work, not
+# invented here speculatively (LAW 43).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hermes-agent-config
+  namespace: hermes-agent
+data:
+  config.yaml: |
+    platforms:
+      a2a:
+        enabled: true
+        extra:
+          port: 9900
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: hermes-agent-env
+  namespace: hermes-agent
+spec:
+  refreshInterval: 1h
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: hermes-agent-env
+  data:
+    - secretKey: ANTHROPIC_API_KEY
+      remoteRef: { key: anthropic-api-key }
+    - secretKey: OPENROUTER_API_KEY
+      remoteRef: { key: openrouter-api-key }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes-agent-gateway
+  namespace: hermes-agent
+  labels:
+    app: hermes-agent-gateway
+    app.kubernetes.io/name: hermes-agent-gateway
+    app.kubernetes.io/part-of: hermes-agent
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: hermes-agent-gateway
+  template:
+    metadata:
+      labels:
+        app: hermes-agent-gateway
+        app.kubernetes.io/name: hermes-agent-gateway
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: ghcr.io/chidionyema/hermes-agent:set-by-an-overlay
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: hermes-agent-env
+          env:
+            - name: HERMES_HOME
+              value: /app
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          ports:
+            - containerPort: 9900
+              name: a2a
+          # /.well-known/agent-card.json is the a2a adapter's own real health surface,
+          # proven live on the Mac tonight (curl -> 200). Reuse it rather than inventing
+          # a synthetic probe.
+          readinessProbe:
+            httpGet:
+              path: /.well-known/agent-card.json
+              port: 9900
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /.well-known/agent-card.json
+              port: 9900
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: hermes-state
+              # HERMES_HOME/proxy is created 0o700 at runtime for the CA key, audit log
+              # and pidfile (agent/proxy_sources/iron_proxy.py _proxy_state_dir) --
+              # readOnlyRootFilesystem means /app itself cannot take a new directory,
+              # so this must be a real writable mount, not an assumption.
+              mountPath: /app/proxy
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: hermes-agent-config
+        - name: hermes-state
+          emptyDir: {}

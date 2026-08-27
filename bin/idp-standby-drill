@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# crew#290/crew#286/crew#345: proves the hermes-agent standby on OKE can run independently of
+# the Mac -- reads its config from a ClusterSecretStore-backed Secret (OCI Vault, workload
+# identity, zero static credential), starts, and answers its own real health surface. Same
+# shape as bin/idp-chaos-drill and bin/idp-login-drill: one line, one verdict, graded from
+# outside the cluster by a runner holding no static key (the OIDC-exchanged session token
+# oke-check.yml already sets up).
+#
+# WHAT THIS PROVES, AND WHAT IT DOES NOT. Proves the standby CAN start and serve traffic on
+# its own, entirely disconnected from the Mac -- the real, checkable half of "if the Mac dies,
+# does Oracle pick up." Does NOT prove failover routing, DNS cutover, or session continuity --
+# those are crew#290's Layer 3 design, separately scoped, not invented here. This drill never
+# touches the live Mac gateway process; the Mac stays untouched and primary throughout
+# (LAW 11 -- a cutover is a founder decision, this is proof of capability, not a switch).
+#
+#   ok      standby-drill  hermes-agent-gateway Ready, /.well-known/agent-card.json -> 200 (4.2s)
+#   FAIL    standby-drill  <stage> <detail>
+#   BLIND   standby-drill  <why>            -- no kubectl/session; nothing was graded
+set -uo pipefail
+NS=hermes-agent
+DEPLOY=hermes-agent-gateway
+blind() { printf 'BLIND   standby-drill  %s\n' "$1"; exit 2; }
+fail()  { printf 'FAIL    standby-drill  %s\n' "$1"; exit 1; }
+
+command -v kubectl >/dev/null || blind "kubectl is not installed"
+kubectl get ns "$NS" >/dev/null 2>&1 || fail "namespace $NS does not exist -- platform/hermes-agent/gateway.yaml never applied"
+
+ready=$(kubectl -n "$NS" get deploy "$DEPLOY" -o jsonpath='{.status.readyReplicas}' 2>&1)
+if [ -z "$ready" ] || [ "$ready" -lt 1 ] 2>/dev/null; then
+  reason=$(kubectl -n "$NS" get pods -l app="$DEPLOY" -o jsonpath='{.items[0].status.containerStatuses[0].state}' 2>&1)
+  fail "deployment $DEPLOY has $ready ready replicas: $reason"
+fi
+
+# Prove the secret genuinely came from the vault (ExternalSecrets), not a manually-placed one --
+# SecretSynced is the real, live signal, same check this session used to confirm
+# prospector-engine-env earlier tonight.
+synced=$(kubectl -n "$NS" get externalsecret hermes-agent-env -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>&1)
+[ "$synced" = "True" ] || fail "ExternalSecret hermes-agent-env not synced: $synced"
+
+start=$(date +%s)
+resp=$(kubectl -n "$NS" run standby-drill-probe --rm -i --restart=Never --image=curlimages/curl:8.11.0 --quiet -- \
+  curl -sS -o /dev/null -w '%{http_code}' --max-time 8 "http://${DEPLOY}.${NS}.svc.cluster.local:9900/.well-known/agent-card.json" 2>&1)
+elapsed=$(( $(date +%s) - start ))
+
+[ "$resp" = "200" ] || fail "agent-card probe returned '$resp' (expected 200) after ${elapsed}s"
+printf 'ok      standby-drill  %s Ready, /.well-known/agent-card.json -> 200 (%ss)\n' "$DEPLOY" "$elapsed"
