@@ -921,6 +921,21 @@
   "ticket": null
  },
  {
+  "feature": "features/assurance/trace-matrix.feature",
+  "title": "Every scenario traces to the test that runs it",
+  "scenarios": [
+   "A feature nothing runs is listed first and counted as a finding",
+   "A repository where every feature is bound passes the check"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_gate_trace_matrix.py"
+  ],
+  "status": "BOUND",
+  "added_in": "99d2939",
+  "pr": 389,
+  "ticket": "crew#495"
+ },
+ {
   "feature": "features/chaos/chaos-target-namespace-labelled.feature",
   "title": "A chaos experiment targets a namespace Chaos Mesh is allowed to inject into",
   "scenarios": [
