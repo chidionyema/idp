@@ -49,6 +49,24 @@ permissions:
   pull-requests: write
 
 jobs:
+  # crew#227 CP5: a check on a PR can only be re-run by a workflow on that PR's head, so the
+  # founder's `APPROVE: <word>` comment (issue_comment event, default-branch checkout) reruns
+  # the gate run that judged the head instead of judging here. Only the repository owner's
+  # login triggers it; anyone else's comment is ignored.
+  rejudge-on-founder-word:
+    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.user.login == github.repository_owner && (startsWith(github.event.comment.body, 'APPROVE:') || startsWith(github.event.comment.body, 'DENY:'))
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pull-requests: read, actions: write }
+    steps:
+      - name: rerun the gate on the pull request head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.issue.number }}
+        run: |
+          sha=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json headRefOid -q .headRefOid)
+          run=$(gh run list --repo "$GITHUB_REPOSITORY" --commit "$sha" --event pull_request --json databaseId,name -q '.[] | select(.name == "ci" or (.name | test("operating-model"))) | .databaseId' | head -1)
+          [ -n "$run" ] || { echo "BLIND no pull_request run found for $sha"; exit 0; }
+          gh run rerun "$run" --repo "$GITHUB_REPOSITORY" --failed && echo "rerun $run for #$PR at $sha"
   operating-model-gate:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

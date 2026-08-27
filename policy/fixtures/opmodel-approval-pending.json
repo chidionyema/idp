@@ -1,6 +1,6 @@
 {
  "pr": {
-  "number": 1,
+  "number": 5,
   "files": [
    "platform/oci/identity/main.tf",
    "platform/identity/oauth2-proxy.yaml"
@@ -11,9 +11,7 @@
    "canary"
   ],
   "founder": "chidionyema",
-  "approvals": [
-   "front-door"
-  ],
+  "approvals": [],
   "denials": []
  },
  "budget_monthly_usd": 50,

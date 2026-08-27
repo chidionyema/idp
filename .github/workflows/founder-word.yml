@@ -1,0 +1,10 @@
+# crew#227 CP5: the founder's `APPROVE: <word>` / `DENY: <word>` comment on a pull request re-judges
+# that PR's operating-model gate. Its own workflow so a comment never starts the build matrix in ci.yml.
+name: founder-word
+on:
+  issue_comment:
+    types: [created]
+jobs:
+  gate:
+    uses: ./.github/workflows/operating-model-gate.yml
+    secrets: inherit
