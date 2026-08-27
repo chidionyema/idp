@@ -2,7 +2,8 @@
 # into the ConfigMap the HelmRelease reads (valuesFrom), so the file and the cluster cannot drift.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: spire-mgmt
+# No kustomization-wide namespace: the PolicyException must stay in `kyverno`, the one namespace
+# Kyverno reads exceptions from (crew#325 incident); the generator names its own namespace below.
 resources:
   - helmrelease.yaml
   - exception.yaml
@@ -10,5 +11,6 @@ generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
   - name: spire-values
+    namespace: spire-mgmt
     files:
       - values.yaml
