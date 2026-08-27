@@ -15,7 +15,10 @@
 #
 # Scope: only the namespaces listed under `reloader.namespaces` are watched, and only workloads
 # carrying `secret.reloader.stakater.com/reload: "<name>"` are rolled (autoReloadAll stays false),
-# so a rotation never surprises a row that did not ask.
+# so a rotation never surprises a row that did not ask. `reloadOnCreate: true` because a Secret that
+# already existed when Reloader arrived never emits an update: the first GROQ_API_KEY sat in
+# `litellm-upstream` while the pod kept answering `Invalid API Key` (crew#506 CP4, 2026-08-27).
+# The price is one roll of each opted-in workload whenever Reloader itself restarts.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -48,7 +51,7 @@ spec:
     fullnameOverride: reloader
     reloader:
       autoReloadAll: false
-      reloadOnCreate: false
+      reloadOnCreate: true
       watchGlobally: false
       namespaces:
         - llm
