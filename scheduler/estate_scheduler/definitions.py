@@ -3,8 +3,12 @@
 Each entry in schedule.yml becomes one Dagster job (one op that runs the
 command) and one cron schedule. What the plists could not do lives here:
 
-  max_load         the schedule skips, with a reason, while the 1-minute load
-                   average is above it (2026-08-24: load 30 froze the Dock)
+  load gate        the schedule skips, with a reason, while the 1-minute load
+                   average is above max_load_per_core x cores (default 2.0;
+                   2026-08-24: load 30 froze the Dock). Per core, because a bare
+                   number describes one machine: a flat 6.0 on this 12-core Mac
+                   skipped 3836 ticks in 24h and ran nothing for 16 hours
+                   (crew#85, 2026-08-27). An explicit max_load still wins.
   skip_on_battery  the schedule skips while the Mac is discharging
   after            a run_status_sensor starts this job when the named job
                    succeeds; the cron on such a job is optional
@@ -94,6 +98,33 @@ def load1() -> float:
     return os.getloadavg()[0]
 
 
+CORES = os.cpu_count() or 1
+LOAD_PER_CORE = float(os.environ.get("ESTATE_MAX_LOAD_PER_CORE", "2.0"))
+
+
+def load_ceiling(spec: dict, cores: int = CORES) -> float:
+    """The 1-minute load above which this job skips.
+
+    An explicit max_load is a deliberate per-job choice and is honoured as
+    written. Otherwise the ceiling scales with the machine: os.getloadavg()
+    counts runnable threads, so the same 10.0 is a bored 12-core box and a
+    drowning 2-core one.
+    """
+    if "max_load" in spec:
+        return float(spec["max_load"])
+    return float(spec.get("max_load_per_core", LOAD_PER_CORE)) * cores
+
+
+def load_gate(label: str, spec: dict, current: float, cores: int = CORES) -> SkipReason | None:
+    ceiling = load_ceiling(spec, cores)
+    if current > ceiling:
+        return SkipReason(
+            f"{label}: load {current:.1f} > {ceiling:.1f} "
+            f"({current / cores:.2f} per core, ceiling {ceiling / cores:.2f})"
+        )
+    return None
+
+
 def on_battery() -> bool:
     try:
         out = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True, timeout=5).stdout
@@ -166,7 +197,7 @@ def _job_metadata(label: str, spec: dict, source: str) -> dict:
 
 
 def _skip_note(spec: dict) -> str:
-    parts = [f"1-minute load average is above {float(spec.get('max_load', 6.0)):.1f}"]
+    parts = [f"1-minute load average is above {load_ceiling(spec):.1f} ({CORES} cores)"]
     if spec.get("skip_on_battery"):
         parts.append("the laptop is on battery")
     parts.append(f"the breaker is open after {BREAKER_TRIP} consecutive failures")
@@ -198,7 +229,6 @@ def make_job(label: str, spec: dict):
 
 
 def make_schedule(label: str, spec: dict, the_job):
-    max_load = float(spec.get("max_load", 6.0))
     battery = bool(spec.get("skip_on_battery", False))
 
     text, _ = describe_job(label, spec)
@@ -213,9 +243,9 @@ def make_schedule(label: str, spec: dict, the_job):
         default_status=DefaultScheduleStatus.RUNNING,
     )
     def _sched(context):
-        current = load1()
-        if current > max_load:
-            return SkipReason(f"{label}: load {current:.1f} > max_load {max_load}")
+        skip = load_gate(label, spec, load1())
+        if skip is not None:
+            return skip
         if battery and on_battery():
             return SkipReason(f"{label}: on battery")
         if circuit_open(context.instance, the_job.name):
