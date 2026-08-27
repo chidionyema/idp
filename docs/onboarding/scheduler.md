@@ -71,3 +71,21 @@ Check what the dashboard will show before you reload:
 
 ## Definition of done
 `bin/scheduler-status` exits 0: every Dagster daemon healthy and at least one tick in the last 10 minutes.
+
+## Code locations from other repos (crew#140)
+
+`scheduler/workspace.yaml` is the list. Every entry is a path relative to that directory, so
+`..` is this checkout and `../..` is the directory that holds every checkout; no entry names
+a machine or a home (LAW 46).
+
+| location | file | what it declares |
+|---|---|---|
+| `estate-scheduler` | `scheduler/estate_scheduler/definitions.py` | one job and one cron per row of `schedule.yml` |
+| `estate-facts` | `../../crew/science/scheduler/estate_dagster/facts.py` | one asset per source in `crew/science/sources.json`, each with the freshness window that file declares; observed every 15 minutes |
+
+`bin/scheduler-up` imports both before it starts anything and refuses, with the location named,
+if either does not load; on a running webserver it reloads the workspace and
+`scheduler/reload_check.py` refuses a location that came back as a `PythonError`. To add a
+third location: one entry here, one load line in `bin/scheduler-up`, and the package's
+dependencies must install on this venv's interpreter (`dagster-dbt` does not on Python 3.14,
+which is why the crew dbt model is not registered).
