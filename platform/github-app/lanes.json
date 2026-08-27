@@ -1,9 +1,23 @@
 {
-  "_comment": "Permissions an installation token is narrowed to at mint time (POST /app/installations/{id}/access_tokens). A lane never gets more than the App's default_permissions in manifest.json.",
+  "_comment": "Permissions an installation token is narrowed to at mint time (POST /app/installations/{id}/access_tokens). A lane never gets more than the App's default_permissions in manifest.json. The recovery lane (bin/idp-recover-drill, crew#300) clones and reads; it never writes.",
   "platform-engineer": {
-    "metadata": "read", "contents": "write", "pull_requests": "write", "issues": "write", "workflows": "write", "actions": "write", "checks": "read"
+    "metadata": "read",
+    "contents": "write",
+    "pull_requests": "write",
+    "issues": "write",
+    "workflows": "write",
+    "actions": "write",
+    "checks": "read"
   },
   "application-engineer": {
-    "metadata": "read", "contents": "write", "pull_requests": "write", "issues": "write", "checks": "read"
+    "metadata": "read",
+    "contents": "write",
+    "pull_requests": "write",
+    "issues": "write",
+    "checks": "read"
+  },
+  "recovery": {
+    "metadata": "read",
+    "contents": "read"
   }
 }

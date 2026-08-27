@@ -40,3 +40,26 @@ grades green through `bin/idp-cluster-state` (fresh, every node Ready). That rec
 from inside every 15 minutes by the CronJob `cluster-state` (`platform/state/`, idp#267) on the
 worker node's instance principal. The proof of the ticket is 24 consecutive green scheduled
 runs, counted by crew's estate snapshot.
+
+## Weekly, on a machine that has never seen the estate (crew#300)
+
+Demo: `gh workflow run recover-drill.yml -R chidionyema/idp && gh run watch -R chidionyema/idp`
+
+Recovery was a plan until 2026-08-27; now it is a drill. `recover-drill.yml` runs every Sunday at
+04:41 UTC on a clean ubuntu runner holding only the OCI session it exchanged its OIDC token for,
+and `bin/idp-recover-drill` prints one row per thing a rebuild needs and one verdict:
+
+| Row | What it measures |
+|---|---|
+| `github-app` | an App installation token minted for the lane `recovery` (`platform/github-app/lanes.json`: metadata read, contents read, nothing else) |
+| `repo` ×3 | `chidionyema/idp`, `chidionyema/crew`, `chidionyema/claude-estate` clone on that token; the row names the tip commit |
+| `bundles` | every `bundles/<repo>/latest.bundle` in the R2 escrow (`estate_bundle_push.sh` on the Mac writes them hourly) is read with the keys the vault holds in `prospector-engine-env`, passes `git bundle verify`, and every complete history is cloned; incremental bundles are counted as needing their remote, which is the escrow job's own written limitation |
+| `boot` | `bin/idp-verify-drill` from the fresh idp clone grades the live cluster on the same session |
+
+The vault is found by its display name (`estate-secrets`), never through tofu state: a fresh
+machine has none. `bin/idp-github-app` takes the vault it found as `ESTATE_VAULT_OCID` for the
+same reason. The rows are the artifact `recover-receipt`; `drills/catalogue.yaml` row
+`recover-clean-machine` turns a week without a green run into a red row of `bin/idp-verify`.
+
+What a green run does not prove: the R2 escrow is a second vendor with static keys on the Mac
+(risk register, crew#516), and an incremental bundle restores only next to its GitHub remote.

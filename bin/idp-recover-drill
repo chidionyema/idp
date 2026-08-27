@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# crew#300 / crew#516 CP8: recover the estate on a machine that has never seen it.
+#
+# Runs from .github/workflows/recover-drill.yml on a clean ubuntu runner holding only the OCI
+# session the job exchanged its GitHub OIDC token for (service user estate-ci). Nothing from a
+# laptop: no key file, no rclone config, no ~/.claude. Rows, then one verdict line:
+#
+#   ok      github-app   installation token minted for lane recovery (read-only)
+#   ok      repo         chidionyema/idp tip 1a2b3c4 (2026-08-27T16:58:07Z)        one per load-bearing repo
+#   ok      bundles      24 bundle(s) in R2, 24 verified, 8 complete histories cloned, 16 incremental (need their remote)
+#   ok      boot         verify-drill from the fresh clone: ok verify-drill 3/3 rows green
+#   ok      recover-drill 6/6 rows green
+#
+# Where the copies are (measured, not assumed): the load-bearing repos live on GitHub; the Mac's
+# ~/.claude/scripts/estate/estate_bundle_push.sh escrows every repo that has no remote, or has
+# commits its remote lacks, to Cloudflare R2 bucket $R2_BUCKET at bundles/<repo>/latest.bundle.
+# Its written limitation holds here too: an incremental bundle restores only next to its remote,
+# so those are verified (`git bundle verify`) and counted, complete histories are cloned as well.
+# The R2 keys reach this runner from the vault (entry prospector-engine-env) on the OIDC identity;
+# the GitHub clones use an App installation token narrowed to the read-only lane `recovery`.
+# FAIL when a row is red, BLIND (exit 2) when a row cannot be measured. Never asks anything.
+set -uo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+COMP="${OCI_COMPARTMENT_OCID:?OCI_COMPARTMENT_OCID}"
+VAULT_NAME="${ESTATE_VAULT_NAME:-estate-secrets}"
+REPOS="${RECOVER_REPOS:-chidionyema/idp chidionyema/crew chidionyema/claude-estate}"
+WORK="${RECOVER_WORK:-$(mktemp -d)}"
+OUT="${RECOVER_RECEIPT_DIR:-$WORK/receipt}"; mkdir -p "$OUT"
+red=0; blind=0; okn=0
+say()  { printf '%-7s %-12s %s\n' "$1" "$2" "$3" | tee -a "$OUT/rows.txt"; }
+ok()   { say ok "$1" "$2"; okn=$((okn+1)); }
+fail() { say FAIL "$1" "$2"; red=$((red+1)); }
+bl()   { say BLIND "$1" "$2"; blind=$((blind+1)); }
+for c in oci git jq python3; do command -v "$c" >/dev/null || { say BLIND recover-drill "$c is not installed"; exit 2; }; done
+[ "${OCI_CLI_AUTH:-}" = security_token ] || { say BLIND recover-drill "OCI_CLI_AUTH is '${OCI_CLI_AUTH:-}', not security_token: no exchanged session in this environment"; exit 2; }
+
+# --- the vault, by name: a fresh machine has no tofu state to ask -----------------------------
+V=$(oci kms management vault list --compartment-id "$COMP" --all \
+      --query "data[?\"display-name\"=='$VAULT_NAME' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output 2>/dev/null || true)
+[ -n "$V" ] && [ "$V" != null ] || { say BLIND vault "no ACTIVE vault named $VAULT_NAME in the compartment"; exit 2; }
+vault_json() { # <secret-name> → the JSON the entry holds, or empty
+  local sid; sid=$(oci vault secret list --compartment-id "$COMP" --vault-id "$V" --all \
+    --query "data[?\"secret-name\"=='$1' && \"lifecycle-state\"=='ACTIVE'].id | [0]" --raw-output 2>/dev/null || true)
+  [ -n "$sid" ] && [ "$sid" != null ] || return 1
+  oci secrets secret-bundle get --secret-id "$sid" --query 'data."secret-bundle-content".content' --raw-output 2>/dev/null | base64 -d
+}
+
+# --- github-app: the clones authenticate as the App, narrowed to a read-only lane -------------
+tok=$(ESTATE_VAULT_OCID="$V" "$IDP/bin/idp-github-app" token recovery 2>"$OUT/github-app.err" | cat) || true
+if [ -z "$tok" ]; then bl github-app "no installation token: $(tail -1 "$OUT/github-app.err" 2>/dev/null)"
+else ok github-app "installation token minted for lane recovery (read-only)"; fi
+
+# --- repo: every load-bearing repo clones from its remote on a machine with no key -------------
+auth=$(printf 'x-access-token:%s' "${tok:-}" | base64 | tr -d '\n')
+for r in $REPOS; do
+  name=${r##*/}
+  if [ -z "$tok" ]; then bl repo "$r not cloned: no token"; continue; fi
+  if git -c credential.helper= -c "http.extraHeader=Authorization: Basic $auth" clone -q "https://github.com/$r" "$WORK/$name" 2>"$OUT/clone-$name.err"; then
+    tip=$(git -C "$WORK/$name" log -1 --format='%h (%cI)')
+    ok repo "$r tip $tip"
+  else fail repo "$r clone failed: $(tail -1 "$OUT/clone-$name.err")"; fi
+done
+
+# --- bundles: the escrow of what GitHub does not hold, read back and verified ------------------
+if ! command -v rclone >/dev/null; then bl bundles "rclone is not installed"
+elif ! env_json=$(vault_json prospector-engine-env) || [ -z "$env_json" ]; then bl bundles "vault entry prospector-engine-env not readable: the R2 keys are not in the vault"
+else
+  export RCLONE_S3_PROVIDER=Other RCLONE_S3_REGION=auto RCLONE_S3_FORCE_PATH_STYLE=true
+  RCLONE_S3_ENDPOINT="https://$(jq -r .R2_ACCOUNT_ID <<<"$env_json").r2.cloudflarestorage.com"; export RCLONE_S3_ENDPOINT
+  RCLONE_S3_ACCESS_KEY_ID=$(jq -r .R2_ACCESS_KEY_ID <<<"$env_json"); export RCLONE_S3_ACCESS_KEY_ID
+  RCLONE_S3_SECRET_ACCESS_KEY=$(jq -r .R2_SECRET_ACCESS_KEY <<<"$env_json"); export RCLONE_S3_SECRET_ACCESS_KEY
+  B=$(jq -r '.R2_BUCKET // "prospector-packs"' <<<"$env_json")
+  dirs=$(rclone lsf ":s3:$B/bundles/" --dirs-only 2>"$OUT/rclone.err" | tr -d / || true)
+  n=0; verified=0; full=0; incr=0; broken=""
+  if [ -z "$dirs" ]; then bl bundles "no bundles listed under $B/bundles/: $(tail -1 "$OUT/rclone.err")"
+  else
+    mkdir -p "$WORK/bundles"
+    for d in $dirs; do
+      n=$((n+1)); f="$WORK/bundles/$d.bundle"
+      rclone copyto ":s3:$B/bundles/$d/latest.bundle" "$f" 2>/dev/null || { broken="$broken $d(no-latest)"; continue; }
+      if ! git bundle verify "$f" >"$OUT/bundle-$d.txt" 2>&1; then
+        # an incremental bundle verifies only against a repo holding its prerequisites; record it as such
+        if grep -q 'requires these' "$OUT/bundle-$d.txt"; then incr=$((incr+1)); verified=$((verified+1)); printf '%s incremental %s\n' "$d" "$(du -k "$f" | cut -f1)KB" >> "$OUT/bundles.txt"
+        else broken="$broken $d"; fi
+        continue
+      fi
+      verified=$((verified+1))
+      if git clone -q --bare "$f" "$WORK/bundles/$d.git" 2>/dev/null; then full=$((full+1)); printf '%s complete tip %s\n' "$d" "$(git -C "$WORK/bundles/$d.git" log -1 --format=%h 2>/dev/null || echo ?)" >> "$OUT/bundles.txt"
+      else broken="$broken $d(clone)"; fi
+    done
+    if [ -n "$broken" ]; then fail bundles "$n bundle(s) in R2, $verified verified, broken:$broken"
+    else ok bundles "$n bundle(s) in R2, $verified verified, $full complete histories cloned, $incr incremental (need their remote)"; fi
+  fi
+fi
+
+# --- boot: the fresh idp clone proves the platform with its own drill, on this session ---------
+if [ -x "$WORK/idp/bin/idp-verify-drill" ]; then
+  line=$("$WORK/idp/bin/idp-verify-drill" 2>&1 | tee "$OUT/verify-drill.txt" | tail -1)
+  case "$line" in ok*) ok boot "verify-drill from the fresh clone: $line";; FAIL*) fail boot "verify-drill from the fresh clone: $line";; *) bl boot "verify-drill from the fresh clone: $line";; esac
+else bl boot "no fresh idp clone to boot from"; fi
+
+total=$((okn+red+blind))
+if [ "$red" -gt 0 ]; then say FAIL recover-drill "$red of $total row(s) red"; exit 1; fi
+if [ "$blind" -gt 0 ]; then say BLIND recover-drill "$blind of $total row(s) not measured"; exit 2; fi
+say ok recover-drill "$total/$total rows green"

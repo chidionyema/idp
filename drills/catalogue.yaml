@@ -162,3 +162,15 @@ drills:
       rows per science.source in ClickHouse over the last 24 hours and writes the count as a receipt;
       at least one source is the only green, and a backend that cannot answer is BLIND
       (crew#516 CP5, LAW 50: the lane is graded by querying the backend, never by scanning files).
+
+  - name: recover-clean-machine
+    workflow: recover-drill.yml
+    job: recover
+    schedule: "41 4 * * 0"
+    max_age_hours: 194
+    proves: >-
+      In the last week a runner that had never seen the estate, holding only the OCI session it
+      exchanged its GitHub OIDC token for, cloned every load-bearing repository with an App token
+      narrowed to the read-only lane recovery, read back and verified every escrow bundle the Mac
+      pushes to R2 (keys from the vault, not a laptop), and booted the platform's own verify-drill
+      from the fresh clone. crew#300's acceptance criterion: recovery is a drill, not a plan.

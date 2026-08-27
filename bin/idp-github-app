@@ -29,6 +29,17 @@ app_jwt() {
   rm -f "$key"
 }
 
+# app_jwt_diag <app_id> <pem_base64> <jwt>: when GitHub answers 401 to the JWT, say what was signed and with what,
+# never the key: the PEM's header line, the public modulus fingerprint (GitHub shows the same on the App's page),
+# the decoded claims. Run 33095767831 (crew#503) died on `A JSON web token could not be decoded` with nothing else.
+app_jwt_diag() {
+  local key hdr fp claims
+  key=$(mktemp); chmod 600 "$key"; printf %s "$2" | base64 -d > "$key" 2>/dev/null
+  hdr=$(head -1 "$key" 2>/dev/null); fp=$(openssl rsa -in "$key" -pubout 2>/dev/null | openssl sha256 | cut -d' ' -f2 | cut -c1-16)
+  claims=$(printf %s "$3" | cut -d. -f2 | tr '_-' '/+' | awk '{printf "%s", $0; n=length($0)%4; if(n) for(i=n;i<4;i++) printf "="}' | base64 -d 2>/dev/null)
+  rm -f "$key"
+  echo "DIAG    github-app JWT refused: iss=$1 pem_b64_len=${#2} key_header='${hdr:-not a PEM}' pubkey_sha256=${fp:-unreadable} claims=$claims" >&2
+}
 case "$cmd" in
 manifest)
   url=$(repo_url); redirect="${GITHUB_APP_REDIRECT_URL:-$url/issues}"
@@ -87,7 +98,7 @@ token)
   bundle=$("$IDP/bin/idp-cloud" secret get "$SECRET" 2>"${TMPDIR:-/tmp}/github-app.err") || { echo "BLIND   github-app $(head -1 "${TMPDIR:-/tmp}/github-app.err" | cut -c1-120); run: bin/idp-github-app convert <code>"; exit 2; }
   app_id=$(jq -r .app_id <<<"$bundle"); pem_b64=$(jq -r .pem_b64 <<<"$bundle")
   jwt=$(app_jwt "$app_id" "$pem_b64")
-  inst=$(GH_TOKEN="$jwt" gh api /app/installations -q '.[0].id')
+  inst=$(GH_TOKEN="$jwt" gh api /app/installations -q '.[0].id') || app_jwt_diag "$app_id" "$pem_b64" "$jwt"
   [ -n "$inst" ] && [ "$inst" != null ] || { echo "BLIND   github-app App $app_id has no installation yet"; exit 2; }
   tok=$(GH_TOKEN="$jwt" gh api -X POST "/app/installations/$inst/access_tokens" --input <(jq -n --argjson p "$perms" '{permissions:$p}') -q .token)
   if [ -t 1 ]; then echo "ok      github-app token minted for lane $lane (installation $inst, expires in 1h); pipe it: bin/idp-github-app token $lane | gh auth login --with-token"; else printf %s "$tok"; fi
@@ -100,7 +111,7 @@ installation)
   bundle=$("$IDP/bin/idp-cloud" secret get "$SECRET" 2>"${TMPDIR:-/tmp}/github-app.err") || { echo "BLIND   github-app $(head -1 "${TMPDIR:-/tmp}/github-app.err" | cut -c1-120); run: bin/idp-github-app convert <code>"; exit 2; }
   app_id=$(jq -r .app_id <<<"$bundle"); pem_b64=$(jq -r .pem_b64 <<<"$bundle")
   jwt=$(app_jwt "$app_id" "$pem_b64")
-  inst=$(GH_TOKEN="$jwt" gh api /app/installations -q '.[0].id')
+  inst=$(GH_TOKEN="$jwt" gh api /app/installations -q '.[0].id') || app_jwt_diag "$app_id" "$pem_b64" "$jwt"
   [ -n "$inst" ] && [ "$inst" != null ] || { echo "BLIND   github-app App $app_id has no installation yet"; exit 2; }
   tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT; chmod 600 "$tmp"
   jq -r --arg i "$inst" '. + {installation_id: $i} | to_entries[] | "V_\(.key)=\(.value)"' <<<"$bundle" > "$tmp"
