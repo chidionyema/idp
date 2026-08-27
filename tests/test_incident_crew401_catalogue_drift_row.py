@@ -56,3 +56,19 @@ def test_incident_crew401_a_failing_cluster_state_row_still_grades_the_hostnames
     r = subprocess.run([sys.executable, str(ROW)], capture_output=True, text=True,
                        env={**__import__("os").environ, "IDP_CLUSTER_STATE_BIN": str(fake)})
     assert r.returncode == 0 and r.stdout.startswith("ok"), r.stdout + r.stderr
+
+
+def test_incident_crew401_a_product_onboarded_by_url_is_registered_and_an_unfetchable_location_is_blind(tmp_path, monkeypatch):
+    """CP4 gap (1), 2026-08-27: the row read only backstage/**/catalog-info.yaml, so
+    www.mumchimp.com (a product onboarded by URL, crew#282) was FAIL on every receipt. Both ways:
+    a host named by a url location passes; a location that does not fetch is BLIND, never FAIL."""
+    product = tmp_path / "catalog-info.yaml"
+    product.write_text("spec:\n  links:\n    - url: https://shop.${ESTATE_ZONE}/\n")
+    cfg = tmp_path / "app-config.yaml"
+    cfg.write_text(f"catalog:\n  locations:\n    - type: url\n      target: file://{product}\n")
+    monkeypatch.setenv("IDP_APP_CONFIG", str(cfg))
+    r = _grade({"hostnames": [f"shop.{ZONE}"]}, tmp_path)
+    assert r.returncode == 0 and r.stdout.startswith("ok      catalogue-drift  0 unregistered"), r.stdout
+    cfg.write_text(f"catalog:\n  locations:\n    - type: url\n      target: file://{tmp_path}/missing.yaml\n")
+    r = _grade({"hostnames": [f"shop.{ZONE}"]}, tmp_path)
+    assert r.returncode == 2 and r.stdout.startswith("BLIND") and "missing.yaml" in r.stdout, r.stdout

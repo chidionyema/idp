@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """crew#401 CP4: the hostnames the cluster publishes, diffed against the catalogue.
 
-The catalogue (backstage/**/catalog-info.yaml) is what the founder sees; an HTTPRoute the
-catalogue does not name is a surface nobody can find from the portal. The cluster-state
+The catalogue is what the founder sees: backstage/**/catalog-info.yaml in this repo plus every
+`type: url` location app-config.container.yaml names (products are onboarded by URL, crew#282,
+so a product hostname is only ever registered there). An HTTPRoute the catalogue does not name
+is a surface nobody can find from the portal. A url location that cannot be fetched is BLIND,
+never a clean row and never a FAIL blamed on the product. The cluster-state
 receipt (platform/state/cluster-state.yaml, key `hostnames`) is the live list, read the way
 bin/idp-cluster-state reads it: from Object Storage, never a kube path. Same row grammar:
 
@@ -21,6 +24,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.request
 
 IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -40,6 +44,28 @@ def catalogue_hosts(z: str) -> set[str]:
             for m in re.finditer(r"url:\s*[\"']?https?://([^\"'/\s]+)", fh.read()):
                 hosts.add(m.group(1).replace("${ESTATE_ZONE}", z).lower())
     return hosts
+
+
+def url_location_hosts(z: str) -> tuple[set[str], str]:
+    """Hosts named by the catalog-info.yaml files app-config.container.yaml onboards by URL.
+    Returns (hosts, error); error names the first location that did not fetch."""
+    cfg = os.environ.get("IDP_APP_CONFIG") or os.path.join(IDP, "backstage", "app-config.container.yaml")
+    with open(cfg, encoding="utf-8") as fh:
+        targets = re.findall(r"-\s*type:\s*url\s*\n\s*target:\s*(\S+)", fh.read())
+    hosts: set[str] = set()
+    for t in targets:
+        raw = re.sub(r"^https://github\.com/([^/]+/[^/]+)/blob/", r"https://raw.githubusercontent.com/\1/", t)
+        req = urllib.request.Request(raw)
+        if os.environ.get("GH_TOKEN") and raw.startswith("https://raw.githubusercontent.com/"):
+            req.add_header("Authorization", f"Bearer {os.environ['GH_TOKEN']}")
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                text = resp.read().decode("utf-8", "replace")
+        except Exception as e:  # noqa: BLE001 - the row reports BLIND with the reason
+            return hosts, f"{t}: {e}"[:200]
+        for m in re.finditer(r"url:\s*[\"']?https?://([^\"'/\s]+)", text):
+            hosts.add(m.group(1).replace("${ESTATE_ZONE}", z).lower())
+    return hosts, ""
 
 
 def receipt_body(arg: str | None) -> dict:
@@ -67,7 +93,12 @@ def main() -> int:
         print("BLIND   catalogue-drift  receipt carries no hostnames list (collector predates crew#401 CP4, or the HTTPRoute list failed: "
               f"{str(body.get('hostnames_error', ''))[:120]})")
         return 2
-    known = catalogue_hosts(zone())
+    z = zone()
+    known = catalogue_hosts(z)
+    url_hosts, err = url_location_hosts(z)
+    if err:
+        print(f"BLIND   catalogue-drift  a url location in app-config.container.yaml did not fetch: {err}"); return 2
+    known |= url_hosts
     if not known:
         print("BLIND   catalogue-drift  the catalogue names no https URL; nothing to diff against"); return 2
     unregistered = sorted(h for h in {x.lower() for x in live} if h not in known)
