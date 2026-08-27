@@ -11,6 +11,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write  # crew#439: bin/idp-image-update-pr dispatches ci.yml after refreshing a conflict
 jobs:
   open:
     runs-on: ubuntu-latest

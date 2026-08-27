@@ -99,8 +99,27 @@ def test_an_unknown_mergeable_state_is_never_reported_ok(tmp_path):
 def test_the_workflow_runs_the_script_and_ci_can_be_dispatched():
     wf = (ROOT / ".github/workflows/image-update-pr.yml").read_text()
     assert "run: bin/idp-image-update-pr" in wf and "fetch-depth: 0" in wf
+    # 09cd04a6 review of idp#319: without actions: write the dispatch is a 403 after the push.
+    assert "actions: write" in wf
     assert "workflow_dispatch:" in (ROOT / ".github/workflows/ci.yml").read_text()
     assert os.access(SCRIPT, os.X_OK)
+
+
+def test_the_oke_check_row_fails_on_a_stuck_armed_pr_and_is_ok_when_none_is(tmp_path):
+    """crew#439 row 1, both ways: the row grades the exact shape gh pr list returns."""
+    row = ROOT / "bin" / "idp-automerge-stuck"
+    stuck = tmp_path / "stuck.json"
+    stuck.write_text('[{"number": 298, "autoMergeRequest": {"enabledAt": "t"}, "mergeable": "CONFLICTING"},'
+                     ' {"number": 300, "autoMergeRequest": null, "mergeable": "CONFLICTING"},'
+                     ' {"number": 301, "autoMergeRequest": {"enabledAt": "t"}, "mergeable": "MERGEABLE"}]')
+    r = subprocess.run([str(row), "--input", str(stuck)], capture_output=True, text=True)
+    assert r.returncode == 1 and r.stdout.strip() == "FAIL    automerge-stuck  1 stuck: #298 CONFLICTING", r.stdout
+    clean = tmp_path / "clean.json"
+    clean.write_text('[{"number": 301, "autoMergeRequest": {"enabledAt": "t"}, "mergeable": "MERGEABLE"},'
+                     ' {"number": 300, "autoMergeRequest": null, "mergeable": "CONFLICTING"}]')
+    r = subprocess.run([str(row), "--input", str(clean)], capture_output=True, text=True)
+    assert r.returncode == 0 and r.stdout.strip() == "ok      automerge-stuck  0 stuck of 1 armed", r.stdout
+    assert "run: bin/idp-automerge-stuck" in (ROOT / ".github/workflows/oke-check.yml").read_text()
 
 
 if __name__ == "__main__":
