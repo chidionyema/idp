@@ -45,6 +45,7 @@ jobs:
         run: |
           pip install -q pyyaml
           sudo apt-get install -y -qq rclone >/dev/null
+      - uses: fluxcd/flux2/action@ed8c5f2c24d57715d08423d3c1a7b0554ceb030e # v2.9.4 -- idp-catalog-push needs the flux CLI (run 33099170685: "BLIND flux missing")
       - name: inventory from the bucket (estate#9 writes it; the `at` field is the receipt)
         env:
           RCLONE_CONFIG: /dev/null
@@ -59,11 +60,16 @@ jobs:
           set -euo pipefail
           rclone copyto ":s3:$BUCKET/state/inventory/latest.json" "$RUNNER_TEMP/inventory.json" --s3-no-check-bucket
           python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("inventory taken", d.get("at"), "assets", len(d.get("rows",[])))' "$RUNNER_TEMP/inventory.json" | tee -a "$GITHUB_STEP_SUMMARY"
+          # the session feed (estate#10 publishes it beside the inventory); absent = estate-next says BLIND itself
+          if rclone copyto ":s3:$BUCKET/state/feed/latest.md" "$RUNNER_TEMP/feed.md" --s3-no-check-bucket 2>/dev/null; then
+            echo "feed taken, last handoff $(grep -E '^## ' "$RUNNER_TEMP/feed.md" | tail -1 | cut -c4-40)" | tee -a "$GITHUB_STEP_SUMMARY"
+          else echo "feed: not in the bucket yet (state/feed/latest.md), NEXT.md renders BLIND" | tee -a "$GITHUB_STEP_SUMMARY"; fi
       - name: render
         working-directory: idp
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INV: ${{ runner.temp }}/inventory.json
+          ESTATE_FEED: ${{ runner.temp }}/feed.md
           IDP_STATE_WORKTREE: ${{ runner.temp }}/idp-state
           ESTATE_CODE: ${{ github.workspace }}
           ESTATE_ENV: dev
