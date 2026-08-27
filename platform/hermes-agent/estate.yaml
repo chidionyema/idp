@@ -22,15 +22,15 @@ data:
     services:
       - key: store-web
         app: prospector-store-web
-        url: https://mumchimp.com/
+        url: https://${ESTATE_ZONE}/
         expect: "2xx"
-        note: "The store runs on the OKE cluster (idp/clusters) behind mumchimp.com since the Fly exit (R1, crew#78). Measured 200 on 2026-08-26."
+        note: "The store runs on the OKE cluster (idp/clusters) behind ${ESTATE_ZONE} since the Fly exit (R1, crew#78). Measured 200 on 2026-08-26."
 
       - key: store-api
         app: prospector-store-api
-        url: https://api.mumchimp.com/
+        url: https://api.${ESTATE_ZONE}/
         expect: "any-answer"
-        note: "The store API on OKE behind api.mumchimp.com. Answers 404 on /, /health, /healthz and /api/health, measured 2026-08-26; a 404 here is not a fault, silence is."
+        note: "The store API on OKE behind api.${ESTATE_ZONE}. Answers 404 on /, /health, /healthz and /api/health, measured 2026-08-26; a 404 here is not a fault, silence is."
 
     # Hosts this estate reaches that are not one of the probed services above.
     # The old platform has zero apps (measured 2026-08-26); the estate runs on OKE (idp/clusters).
@@ -93,5 +93,5 @@ data:
       catalog_oci: oci://ghcr.io/chidionyema/idp/estate-catalog:latest
       catalog_repo: chidionyema/idp
       catalog_path: catalog/catalog-info.yaml
-      include: mumchimp.com
+      include: ${ESTATE_ZONE}
       chat_env: TELEGRAM_HOME_CHANNEL
