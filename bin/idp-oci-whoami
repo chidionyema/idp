@@ -21,13 +21,20 @@ set -uo pipefail
 SESSIONS_DIR="$HOME/.oci/sessions"
 [ -d "$SESSIONS_DIR" ] || { echo "BLIND   oci-whoami: no $SESSIONS_DIR on this machine; sessions read state through bin/idp-cluster-state or gh workflow run oke-check.yml -f mode=check (crew#345), no login"; exit 2; }
 
+# crew#503: `stat -f %m` is BSD/macOS; GNU stat -f prints filesystem status, so on
+# the Linux runner every mtime was garbage, `-gt` errored and no live session was
+# ever detected (vault-seed 33089277235). Try BSD, then GNU, else 0.
+token_mtime() {
+  stat -f "%m" "$1" 2>/dev/null || stat -c "%Y" "$1" 2>/dev/null || echo 0
+}
+
 live=""
 newest_mtime=0
 for d in "$SESSIONS_DIR"/*/; do
   name="$(basename "$d")"
   [ -f "$d/token" ] || continue
   if oci session validate --profile "$name" --local >/dev/null 2>&1; then
-    mtime=$(stat -f "%m" "$d/token" 2>/dev/null || echo 0)
+    mtime=$(token_mtime "$d/token")
     if [ "$mtime" -gt "$newest_mtime" ]; then
       live="$name"
       newest_mtime="$mtime"
