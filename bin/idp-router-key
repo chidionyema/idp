@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# idp-router-key: mint one LiteLLM virtual key for a consumer and put it in the vault, from CI.
+#
+#   bin/idp-router-key <consumer> <model>[,<model>...]
+#
+# The estate's router (platform/llm) is the only place a model key exists; every workload gets a
+# router virtual key, never a vendor key (LAW 34). Before this, each consumer's key was a SEED_*
+# repository secret a person minted in the console and pasted (hindsight, mcp-gateway) — a hand
+# per consumer, against LAW 27 and R5. Here CI reads the master key from the vault entry
+# `litellm-upstream` (the way bin/idp-trace-drill does), calls /key/generate, and writes the new
+# key to vault entry <consumer>, field `key`, through bin/idp-vault-put. No value is printed.
+#
+# Idempotent: when the vault already holds a key the router still accepts (/key/info 200), it is
+# kept; a missing or refused key is replaced. Budget: estate-defaults.yaml llm.virtual_key_daily_usd.
+# Exit 0 ok, 1 FAIL (router refused, vault has no master key), 2 BLIND (missing tool or config).
+set -euo pipefail
+IDP=$(cd "$(dirname "$0")/.." && pwd)
+CONSUMER=${1:?consumer (the vault entry name, e.g. k8sgpt)}
+MODELS=${2:?model names the key may call, comma separated (rows of platform/llm/config.yaml)}
+CLOUD=${IDP_CLOUD:-$IDP/bin/idp-cloud}            # overridable so a test needs no vault
+VAULT_PUT=${IDP_VAULT_PUT:-$IDP/bin/idp-vault-put}
+for t in curl jq python3; do command -v "$t" >/dev/null || { echo "BLIND   router-key   $t missing"; exit 2; }; done
+CFG="$IDP/clusters/oke/estate-config.yaml"
+ZONE=$(awk '/ESTATE_ZONE:/{print $2}' "$CFG" 2>/dev/null || true)
+[ -n "$ZONE" ] || { echo "BLIND   router-key   no ESTATE_ZONE in $CFG"; exit 2; }
+LLM=${ROUTER_URL:-https://llm.$ZONE}
+BUDGET=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['llm']['virtual_key_daily_usd'])" "$IDP/estate-defaults.yaml") \
+  || { echo "BLIND   router-key   estate-defaults.yaml has no llm.virtual_key_daily_usd"; exit 2; }
+
+# --- an existing key the router still accepts is kept ------------------------------------------
+rc=0; cur=$("$CLOUD" secret get "$CONSUMER" 2>/dev/null) || rc=$?
+[ "$rc" -le 1 ] || { echo "FAIL    router-key   vault read of $CONSUMER exited $rc (split or unreadable)"; exit 1; }
+if [ "$rc" -eq 0 ]; then
+  k=$(printf '%s' "$cur" | jq -r '.key // empty' 2>/dev/null || true)
+  if [ -n "$k" ]; then
+    code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $k" "$LLM/key/info" || echo 000)
+    unset k
+    if [ "$code" = 200 ]; then echo "ok      router-key   $CONSUMER: the vault key is accepted by $LLM (kept)"; exit 0; fi
+    echo "info    router-key   $CONSUMER: the vault key answered $code at $LLM/key/info; minting a new one"
+  fi
+fi
+unset cur
+
+# --- mint with the master key, which only the vault holds ---------------------------------------
+MASTER=$("$CLOUD" secret get litellm-upstream 2>/dev/null | jq -r '.LITELLM_MASTER_KEY // empty' 2>/dev/null || true)
+[ -n "$MASTER" ] || { echo "FAIL    router-key   litellm-upstream holds no LITELLM_MASTER_KEY"; exit 1; }
+alias="$CONSUMER-$(date -u +%Y%m%dT%H%M%SZ)"    # key_alias is unique per router; the timestamp makes rotation a new alias
+body=$(jq -n --arg a "$alias" --arg c "$CONSUMER" --argjson b "$BUDGET" --arg m "$MODELS" \
+  '{key_alias: $a, models: ($m | split(",")), max_budget: $b, budget_duration: "1d", metadata: {consumer: $c, minted_by: "bin/idp-router-key"}}')
+err="${TMPDIR:-/tmp}/router-key.err"
+resp=$(curl -sS -f -X POST -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' -d "$body" "$LLM/key/generate" 2>"$err") \
+  || { unset MASTER; echo "FAIL    router-key   $LLM/key/generate refused: $(head -c 160 "$err")"; exit 1; }
+unset MASTER
+KEY=$(printf '%s' "$resp" | jq -r '.key // empty'); unset resp
+[ -n "$KEY" ] || { echo "FAIL    router-key   /key/generate answered without a key"; exit 1; }
+f=$(mktemp); umask 077; printf 'ROUTER_KEY=%s\n' "$KEY" > "$f"; unset KEY
+ESTATE_ENV_FILE="$f" "$VAULT_PUT" "$CONSUMER" key=ROUTER_KEY >/dev/null
+rm -f "$f"
+echo "ok      router-key   $CONSUMER: minted alias $alias (models $MODELS, $BUDGET USD/day), written to vault entry $CONSUMER field key"
