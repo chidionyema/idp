@@ -34,13 +34,42 @@ import re
 import sys
 from pathlib import Path
 
+import subprocess
+
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 CATALOG = ROOT / "catalog" / "catalog-info.yaml"
 OUT = ROOT / "docs" / "SHOWCASE.md"
 #: LAW 46: the sibling checkout is named by ESTATE_CODE, never by a literal path.
-CODE = Path(os.environ.get("ESTATE_CODE") or ROOT.parent)
+
+
+def code_root(root: Path) -> Path:
+    """The directory the sibling checkouts live in.
+
+    ESTATE_CODE wins. Otherwise the parent of the MAIN checkout, found through
+    `git rev-parse --git-common-dir`, never `root.parent`: on 2026-08-27 the
+    scheduled page was rendered from a scratch worktree, `root.parent` was that
+    scratch directory, and the live page read "Standards rows: 0 of 0" and
+    "Science: BLIND (no page at .../scratchpad/crew/...)" (crew#474).
+    """
+    env = os.environ.get("ESTATE_CODE")
+    if env:
+        return Path(env)
+    try:
+        common = subprocess.run(["git", "-C", str(root), "rev-parse", "--git-common-dir"],
+                                capture_output=True, text=True, check=False)
+        if common.returncode == 0 and common.stdout.strip():
+            git_dir = Path(common.stdout.strip())
+            if not git_dir.is_absolute():
+                git_dir = root / git_dir
+            return git_dir.resolve().parent.parent
+    except OSError:
+        pass
+    return root.parent
+
+
+CODE = code_root(ROOT)
 STANDARDS = CODE / "crew" / "docs" / "STANDARDS.md"
 SCIENCE = CODE / "crew" / "docs" / "science" / "SHOWCASE.md"
 
