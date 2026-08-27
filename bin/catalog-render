@@ -87,7 +87,9 @@ def main(argv: list[str]) -> int:
     if not INV.is_file():
         print(f"BLIND catalog-render: no inventory at {INV}; com.estate.inventory has not run", file=sys.stderr)
         return 3
-    step("fetch origin main", ["git", "fetch", "-q", "origin", "main"], ROOT)
+    # --prune: after the render PR merges with delete-branch, origin/state/live-diagram is gone but
+    # the local remote-ref still holds it, and --force-with-lease refuses with "stale info" (12:20Z).
+    step("fetch origin, prune", ["git", "fetch", "-q", "--prune", "origin"], ROOT)
     if not (WT / ".git").exists():
         sh(["git", "worktree", "prune"], ROOT)
         step("create worktree", ["git", "worktree", "add", "--detach", "-q", str(WT), "origin/main"], ROOT)
