@@ -3,7 +3,10 @@ Ready, and the box still could not be ticked, because nothing in the receipt say
 registered for an SVID; the collector has no kubectl exec into spire-server. Rule: the receipt
 carries every ClusterSPIFFEID with the controller-manager's stats and every pod that mounts the
 csi.spiffe.io driver, and the ClusterRole allows the list. Rung 4, incident test, both ways:
-a pod with the csi volume is named, a pod without one is not, a failed list is recorded."""
+a pod with the csi volume is named, a pod without one is not, a failed list is recorded.
+Third row (idp#329 follow-up, first receipt 33042911059 showed csi_workloads [] and no possession proof):
+a finished CSI workload's log yields its SPIFFE IDs; a log that could not be read is recorded as an error row;
+a pod that has not finished is not asked."""
 import json
 import subprocess
 import sys
@@ -26,20 +29,31 @@ def test_receipt_names_spiffe_ids_and_csi_workloads_and_the_role_allows_the_list
     collect = next(d for d in docs if d["kind"] == "ConfigMap")["data"]["collect.py"]
     compile(collect, "collect.py", "exec")
     assert '"spiffe": spiffe' in collect
-    src = collect.split("def spiffe_rows", 1)[1].split("spiffe = spiffe_rows()", 1)[0]
+    src = collect.split("def pod_log", 1)[1].split("spiffe = spiffe_rows()", 1)[0]
+    csi = [{"name": "s", "csi": {"driver": "csi.spiffe.io"}}]
     pods = [
-        {"metadata": {"namespace": "a", "name": "with-svid"}, "spec": {"volumes": [{"name": "s", "csi": {"driver": "csi.spiffe.io"}}]}},
+        {"metadata": {"namespace": "a", "name": "with-svid"}, "status": {"phase": "Succeeded"},
+         "spec": {"containers": [{"name": "fetch"}], "volumes": csi}},
+        {"metadata": {"namespace": "a", "name": "log-broken"}, "status": {"phase": "Succeeded"},
+         "spec": {"containers": [{"name": "fetch"}], "volumes": csi}},
+        {"metadata": {"namespace": "a", "name": "still-running"}, "status": {"phase": "Running"},
+         "spec": {"containers": [{"name": "fetch"}], "volumes": csi}},
         {"metadata": {"namespace": "a", "name": "plain"}, "spec": {"volumes": [{"name": "d", "emptyDir": {}}]}},
     ]
+    stub = ("def pod_log(ns, name, c):\n"
+            "    return 'log read failed: 500' if name == 'log-broken' else 'SPIFFE ID:\\t\\tspiffe://estate/ns/a/sa/proof\\nyours\\n'\n")
+    svids = [{"pod": "a/with-svid", "container": "fetch", "spiffe_ids": ["spiffe://estate/ns/a/sa/proof"], "error": ""},
+             {"pod": "a/log-broken", "container": "fetch", "spiffe_ids": [], "error": "log read failed: 500"}]
+    csi_workloads = ["a/log-broken", "a/still-running", "a/with-svid"]
     ids = {"items": [{"metadata": {"name": "agents"}, "status": {"stats": {"podsSelected": 3, "entriesToRender": 3}}}]}
-    prog = (f"pods = {pods!r}\nimport json\n"
+    prog = (f"pods = {pods!r}\nimport json, re\n"
             f"def get(path): return {ids!r}\n"
-            "def spiffe_rows" + src + "\nprint(json.dumps(spiffe_rows()))\n")
+            "def pod_log" + src + stub + "\nprint(json.dumps(spiffe_rows()))\n")
     got = json.loads(subprocess.run([sys.executable, "-c", prog], capture_output=True, text=True, check=True).stdout)
     assert got == {"clusterspiffeids": [{"name": "agents", "podsSelected": 3, "entriesToRender": 3}],
-                   "error": "", "csi_workloads": ["a/with-svid"]}
-    failing = (f"pods = {pods!r}\nimport json\n"
+                   "error": "", "csi_workloads": csi_workloads, "svids": svids}
+    failing = (f"pods = {pods!r}\nimport json, re\n"
                "def get(path): raise RuntimeError('403 forbidden')\n"
-               "def spiffe_rows" + src + "\nprint(json.dumps(spiffe_rows()))\n")
+               "def pod_log" + src + stub + "\nprint(json.dumps(spiffe_rows()))\n")
     got = json.loads(subprocess.run([sys.executable, "-c", failing], capture_output=True, text=True, check=True).stdout)
-    assert got["clusterspiffeids"] is None and "403" in got["error"] and got["csi_workloads"] == ["a/with-svid"]
+    assert got["clusterspiffeids"] is None and "403" in got["error"] and got["csi_workloads"] == csi_workloads and got["svids"] == svids
