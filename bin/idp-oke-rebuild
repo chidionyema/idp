@@ -161,12 +161,17 @@ packs()     { local n; n=$(curl -sS -m 20 "https://$API/catalog" | python3 -c 'i
 # A GitHub runner is outside control_plane_allowed_cidrs, so it has no kube path. Nodes are then
 # measured through the OCI API (same fact, other door); Flux state is not reachable from there
 # and the site and catalog rows stand in for it. Said as n/a, never as ok (crew#227 CP2).
-nodes_oci() { local o n bad; o=$("$IDP/bin/idp-cloud" cluster nodepools) || return 1
+# A pool the autoscaler is resizing is UPDATING for a few minutes; that is the platform working,
+# not a red row (crew#539 CP4, run 33125334695: main went red on "not ACTIVE: a1-spot" with no
+# state named). Every non-ACTIVE pool is printed as name(STATE); only UPDATING passes.
+nodes_oci() { local o n bad busy; o=$("$IDP/bin/idp-cloud" cluster nodepools) || return 1
   n=$(printf '%s\n' "$o" | grep -c .)
-  bad=$(printf '%s\n' "$o" | awk '$2!="ACTIVE"{print $1}' | tr '\n' ' ')
-  bad=${bad%% }
+  bad=$(printf '%s\n' "$o" | awk '$2!="ACTIVE" && $2!="UPDATING"{print $1"("$2")"}' | tr '\n' ' ')
+  busy=$(printf '%s\n' "$o" | awk '$2=="UPDATING"{print $1}' | tr '\n' ' ')
+  bad=${bad%% }; busy=${busy%% }
   if [ "$n" -lt 1 ]; then echo "no node pools"; return 1
-  elif [ -n "$bad" ]; then echo "node pools not ACTIVE: $bad"; return 1
+  elif [ -n "$bad" ]; then echo "node pools not ACTIVE: $bad${busy:+; UPDATING: $busy}"; return 1
+  elif [ -n "$busy" ]; then echo "$n node pool(s), UPDATING (resize in flight): $busy (cloud layer)"
   else echo "$n node pool(s) ACTIVE (cloud layer)"; fi; }
 if [ -f "$KUBECONFIG" ]; then
   step nodes nodes_ready
