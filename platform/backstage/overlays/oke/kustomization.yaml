@@ -11,6 +11,9 @@ resources:
   - ../../base
   - backstage-external-secret.yaml
   - httproute.yaml
+  # crew#503 CP6: backstage/founder is a kustomization of its own (a directory base may live anywhere;
+  # a file outside the overlay may not, and plain `kustomize build` in the tests refuses it).
+  - ../../../../backstage/founder
 images:
   # build-multiarch pushes ghcr.io/chidionyema/<image name from bin/dockerfiles>:<commit sha>
   # and nothing else (its header: a moving tag leaves a rollback nothing to roll back to).
@@ -56,11 +59,3 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/volumeMounts/-
         value: {name: founder, mountPath: /estate/founder, readOnly: true}
-configMapGenerator:
-  # Flux and bin/idp-ci both build with LoadRestrictionsNone, so the file stays where the tests,
-  # bin/catalog-gen and the founder-links gate read it.
-  - name: founder-catalog
-    files:
-      - catalog-info.yaml=../../../../backstage/founder/catalog-info.yaml
-generatorOptions:
-  disableNameSuffixHash: true
