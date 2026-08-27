@@ -31,7 +31,10 @@ module "oke" {
       ocpus            = var.worker_ocpus
       memory           = var.worker_memory_gb
       size             = 1
-      boot_volume_size = 50
+      # 100, not 50 (crew#516 CP4, 2026-08-27): at 50 GB the node evicted hermes-agent-gateway with
+      # 5.9 GB free under the 6.25 GB threshold (87 pods' images; oke-check 33096065995). Block storage
+      # is 200 GB Always Free and the PVCs claim 21 GB. Reaches a NEW node only: oke-check mode=surge-node.
+      boot_volume_size = 100
       # crew#289 (2026-08-26): a shape change reaches only new nodes; the running node stayed at
       # 2 OCPU / 12 GB after the pool moved to 4 / 24. node_cycling_* was tried and UpdateNodePool
       # refused it in run 32930359052: the cluster is BASIC_CLUSTER (`oci ce cluster get`), and OKE
