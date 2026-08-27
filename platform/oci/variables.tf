@@ -27,7 +27,7 @@ variable "ssh_public_key" {
 # the same rule over `tofu output -json capacity`.
 variable "worker_ocpus" {
   type    = number
-  default = 4
+  default = 6
 }
 
 variable "worker_memory_gb" {

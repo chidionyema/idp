@@ -61,4 +61,6 @@ def test_incident_bucket_recreated_after_state_loss(tmp_path: Path) -> None:
 
 def test_rebuild_runs_the_guard_before_every_apply() -> None:
     s = (ROOT / "bin" / "idp-oke-rebuild").read_text()
-    assert s.count('step recreate-guard "$IDP/bin/idp-recreate-guard"') == s.count("step tofu-apply") == 2
+    # The invariant is guard-before-every-apply, not the apply count: --surge-node (crew#516) added a third.
+    n = s.count("step tofu-apply")
+    assert n >= 2 and s.count('step recreate-guard "$IDP/bin/idp-recreate-guard"') == n
