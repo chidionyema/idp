@@ -40,6 +40,17 @@ spec:
     - kind: GitRepository
       name: "*"
       namespace: flux-system
+    # crew#406: the image roll. A registry scan that fails, a policy with no candidate or an
+    # automation that cannot push sat frozen for a day with no page; these rows end that.
+    - kind: ImageRepository
+      name: "*"
+      namespace: flux-system
+    - kind: ImagePolicy
+      name: "*"
+      namespace: flux-system
+    - kind: ImageUpdateAutomation
+      name: "*"
+      namespace: flux-system
 ---
 # Reconcile ledger (crew#325): every Kustomization event, not only errors, so a session can read
 # "applied revision X" and "health check timed out" from the idp Actions log (provider-github.yaml).

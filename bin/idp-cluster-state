@@ -4,7 +4,7 @@
 # minutes from the node's instance principal; this reads it with whatever OCI auth the caller has
 # (a runner's exchanged OIDC session in oke-check.yml). Same grading shape as bin/idp-chaos-drill.
 #   ok      cluster-state  <line 1 of the receipt>   -- fresh, every node Ready
-#   FAIL    cluster-state  <why>                     -- receipt missing, stale or a node not Ready
+#   FAIL    cluster-state  <why>                     -- receipt missing, stale, a node not Ready or a Flux object not Ready (crew#406)
 #   BLIND   cluster-state  <why>                     -- no oci CLI or no session; nothing was graded
 # Print the JSON body with --json. Max age 60 min = 4 schedule slots. Override CLUSTER_STATE_MAX_AGE_MIN.
 set -uo pipefail
@@ -42,6 +42,16 @@ if age > max_min:
 kv = dict(m.groups() for m in re.finditer(r"(\w+)=(\d+)", line1))
 if kv.get("nodes") != kv.get("ready") or int(kv.get("nodes", 0)) == 0:
     print(f"FAIL    cluster-state  nodes={kv.get('nodes')} ready={kv.get('ready')}: {line1[:120]}"); sys.exit(1)
+# crew#406: a receipt with no flux count predates the Flux rows and is graded as a miss, never as clean.
+if "flux_not_ready" not in kv:
+    print(f"FAIL    cluster-state  receipt carries no flux_not_ready count (collector predates crew#406): {line1[:120]}"); sys.exit(1)
+if int(kv["flux_not_ready"]) > 0:
+    try:
+        bad = json.loads(rest).get("flux_not_ready", [])
+        why = "; ".join(f"{r['kind']} {r['ns']}/{r['name']}: {r['message'][:100]}" for r in bad[:4])
+    except Exception:
+        why = "body unreadable"
+    print(f"FAIL    cluster-state  {kv['flux_not_ready']} Flux object(s) not Ready: {why}"); sys.exit(1)
 print(f"ok      cluster-state  {line1} ({age:.0f} min ago)")
 if flag == "--json":
     print(rest)
