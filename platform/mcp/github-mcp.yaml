@@ -29,6 +29,8 @@ spec:
           env:
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
             - { name: OTEL_SERVICE_NAME, value: mcp-github }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }   # crew#458: writable /tmp under readOnlyRootFilesystem
           resources:
             requests: { cpu: 20m, memory: 32Mi }
             limits: { cpu: 300m, memory: 128Mi }
@@ -43,6 +45,9 @@ spec:
             tcpSocket: { port: http }
             periodSeconds: 30
             failureThreshold: 3
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 16Mi }
 ---
 apiVersion: v1
 kind: Service
