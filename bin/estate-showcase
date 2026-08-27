@@ -64,6 +64,8 @@ def grade(doc: dict) -> tuple[str, str]:
         if not md.get("description"):
             return GAP, "no description; a buyer cannot tell what it is"
         if typ == "service":
+            if "estate/dirty" not in ann or "estate/offsite" not in ann:
+                return BLIND, "estate/dirty or estate/offsite absent; not inventoried (LAW 15)"
             gaps = []
             if ann.get("estate/dirty", "0") != "0":
                 gaps.append(f"estate/dirty={ann['estate/dirty']} uncommitted files")

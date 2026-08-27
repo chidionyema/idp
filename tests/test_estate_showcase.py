@@ -39,6 +39,8 @@ def synth(rng: random.Random) -> list:
                      "spec": {"type": rng.choice(["scheduled-job", "guard"])}})
     for i in range(rng.randint(0, 4)):
         md = {"name": f"repo-{i}", "annotations": {"estate/dirty": str(rng.choice([0, 0, 3])), "estate/offsite": "True"}}
+        if rng.random() < 0.2:      # REWORK 5437556292: a service nobody inventoried is BLIND, never Elite
+            md["annotations"].pop(rng.choice(["estate/dirty", "estate/offsite"]))
         if rng.random() < 0.7:
             md["description"] = "a repository"
         docs.append({"kind": "Component", "metadata": md, "spec": {"type": "service"}})
@@ -111,3 +113,16 @@ def test_incident_crew474_guards_and_groups_are_graded_not_blind():
     assert m.grade({"kind": "Resource", "spec": {"type": "guard"}, "metadata": {}})[0] == m.BLIND
     assert m.grade({"kind": "Domain", "metadata": {"description": "the platform"}})[0] == m.ELITE
     assert m.grade({"kind": "Domain", "metadata": {}})[0] == m.GAP
+
+
+def test_incident_5437556292_uninventoried_service_is_blind_not_elite():
+    import importlib.util
+    from importlib.machinery import SourceFileLoader
+    p = pathlib.Path(__file__).resolve().parents[1] / "bin" / "estate-showcase"
+    spec = importlib.util.spec_from_file_location("es_r", p, loader=SourceFileLoader("es_r", str(p)))
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+    described = {"kind": "Component", "spec": {"type": "service"}, "metadata": {"description": "x", "annotations": {}}}
+    assert m.grade(described)[0] == m.BLIND
+    inventoried = {"kind": "Component", "spec": {"type": "service"},
+                   "metadata": {"description": "x", "annotations": {"estate/dirty": "0", "estate/offsite": "True"}}}
+    assert m.grade(inventoried)[0] == m.ELITE
