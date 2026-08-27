@@ -47,7 +47,7 @@ oci_compartment() {
   MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
   if [ -z "${OCI_CLI_PROFILE:-}" ]; then
     # shellcheck source=idp-oci-whoami
-    source "$IDP/bin/idp-oci-whoami" || return 2
+    source "$IDP/bin/idp-oci-whoami" >&2 || return 2
   fi
   export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
   export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
@@ -159,7 +159,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
             if [ -z "${OCI_CLI_PROFILE:-}" ]; then
               # shellcheck source=idp-oci-whoami
-              source "$IDP/bin/idp-oci-whoami" || exit 2
+              source "$IDP/bin/idp-oci-whoami" >&2 || exit 2
             fi
             export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
             export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
@@ -194,7 +194,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
             if [ -z "${OCI_CLI_PROFILE:-}" ]; then
               # shellcheck source=idp-oci-whoami
-              source "$IDP/bin/idp-oci-whoami" || exit 2
+              source "$IDP/bin/idp-oci-whoami" >&2 || exit 2
             fi
             export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
             export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
@@ -230,7 +230,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
             if [ -z "${OCI_CLI_PROFILE:-}" ]; then
               # shellcheck source=idp-oci-whoami
-              source "$IDP/bin/idp-oci-whoami" || exit 2
+              source "$IDP/bin/idp-oci-whoami" >&2 || exit 2
             fi
             export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
             export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
@@ -263,7 +263,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
             if [ -z "${OCI_CLI_PROFILE:-}" ]; then
               # shellcheck source=idp-oci-whoami
-              source "$IDP/bin/idp-oci-whoami" || exit 2
+              source "$IDP/bin/idp-oci-whoami" >&2 || exit 2
             fi
             export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
             export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
@@ -296,7 +296,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
             if [ -z "${OCI_CLI_PROFILE:-}" ]; then
               # shellcheck source=idp-oci-whoami
-              source "$IDP/bin/idp-oci-whoami" || exit 2
+              source "$IDP/bin/idp-oci-whoami" >&2 || exit 2
             fi
             export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
             export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
