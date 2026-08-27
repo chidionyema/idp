@@ -1,3 +1,34 @@
+# The heal activity (sovereign/engine/kini.py cluster_ready) asks the API whether every node is
+# Ready: the in-cluster form of bin/idp-cluster-state. Read-only, nodes only.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sovereign-worker
+  namespace: temporal
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sovereign-worker-nodes
+rules:
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sovereign-worker-nodes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sovereign-worker-nodes
+subjects:
+  - kind: ServiceAccount
+    name: sovereign-worker
+    namespace: temporal
+---
 # crew#396 step 2: the sovereign worker polls the in-cluster engine, so a workflow keeps
 # running with the laptop closed. Image from sovereign/sovereign-worker.Dockerfile; the tag
 # below is rewritten by image-automation-controller (platform/image-automation/sovereign-worker.yaml).
@@ -20,6 +51,7 @@ spec:
         app.kubernetes.io/name: sovereign-worker
         app.kubernetes.io/part-of: idp
     spec:
+      serviceAccountName: sovereign-worker
       imagePullSecrets:
         - name: ghcr-pull   # mirrored from backstage/ghcr-pull by pull-secret.yaml
       securityContext:

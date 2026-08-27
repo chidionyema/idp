@@ -168,6 +168,37 @@ KEYS: dict[str, KeySpec] = {
     "temporal.task_queue": KeySpec("sovereign", "str", "TEMPORAL_TASK_QUEUE", ""),
     "temporal.db_filename": KeySpec(str(_estate_home() / "temporal" / "dev.db"), "path", "TEMPORAL_DB", ""),
 
+    # crew#396 step 3: KiniFinishWorkflow. One activity per KINI checkpoint (crew#284 CP1-CP7);
+    # each runs the bdd files bound to that checkpoint and returns pass / fail / unbound /
+    # platform-fault. Paths are relative to kini.sovereign_dir; an empty list is "unbound".
+    "kini.checkpoint_count": KeySpec(7, "int", "KINI_CHECKPOINT_COUNT", "CP1..CPn"),
+    "kini.cp1_tests": KeySpec("tests/bdd/test_self_aware_cp1.py", "str", "KINI_CP1_TESTS", "space-separated pytest paths"),
+    "kini.cp2_tests": KeySpec("tests/bdd/test_self_aware_cp2.py tests/bdd/test_cp2_litellm_real.py", "str", "KINI_CP2_TESTS", ""),
+    "kini.cp3_tests": KeySpec("tests/bdd/test_self_aware_cp3.py tests/bdd/test_cp3_worker_registry.py", "str", "KINI_CP3_TESTS", ""),
+    "kini.cp4_tests": KeySpec("", "str", "KINI_CP4_TESTS", "presence UI: unbound until its feature lands"),
+    "kini.cp5_tests": KeySpec("", "str", "KINI_CP5_TESTS", "daily digest: unbound until its feature lands"),
+    "kini.cp6_tests": KeySpec("", "str", "KINI_CP6_TESTS", "auto-termination: unbound until its feature lands"),
+    "kini.cp7_tests": KeySpec("", "str", "KINI_CP7_TESTS", "identity: unbound until its feature lands"),
+    "kini.sovereign_dir": KeySpec(str(Path(__file__).resolve().parent), "path", "KINI_SOVEREIGN_DIR", "pytest cwd; bdd_features_base_dir=.. resolves from here"),
+    "kini.pytest_args": KeySpec(["-q", "-p", "no:cacheprovider"], "list", "KINI_PYTEST_ARGS", "the worker's rootfs is read-only"),
+    "kini.pytest_exit_no_tests": KeySpec(5, "int", None, "pytest exit code for 'no tests collected'"),
+    "kini.output_tail_lines": KeySpec(40, "int", "KINI_OUTPUT_TAIL_LINES", "lines of pytest output kept in the result"),
+    "kini.cp_timeout_s": KeySpec(900, "int", "KINI_CP_TIMEOUT_S", "start_to_close per checkpoint activity"),
+    "kini.cp_heartbeat_s": KeySpec(60, "int", "KINI_CP_HEARTBEAT_S", "heartbeat interval while pytest runs"),
+    "kini.heartbeat_timeout_s": KeySpec(120, "int", "KINI_HEARTBEAT_TIMEOUT_S", "Temporal heartbeat_timeout on both activities"),
+    "kini.cp_attempts": KeySpec(3, "int", "KINI_CP_ATTEMPTS", "RetryPolicy maximum_attempts per checkpoint activity"),
+    "kini.heal_attempts": KeySpec(3, "int", "KINI_HEAL_ATTEMPTS", "RetryPolicy maximum_attempts for the heal activity"),
+    "kini.heal_timeout_s": KeySpec(600, "int", "KINI_HEAL_TIMEOUT_S", "how long the heal activity waits for the cluster to report ready"),
+    "kini.heal_poll_s": KeySpec(30, "int", "KINI_HEAL_POLL_S", "pause between a platform-fault and the re-run"),
+    "kini.heal_max_rounds": KeySpec(5, "int", "KINI_HEAL_MAX_ROUNDS", "platform-fault -> heal -> re-run rounds per checkpoint before giving up"),
+    "kini.workflow_id": KeySpec("kini-finish", "str", "KINI_WORKFLOW_ID", "one run at a time: Temporal refuses a second start while it runs"),
+    "kini.k8s_host_env": KeySpec("KUBERNETES_SERVICE_HOST", "str", None, "set only inside a pod"),
+    "kini.k8s_port_env": KeySpec("KUBERNETES_SERVICE_PORT", "str", None, ""),
+    "kini.k8s_token_file": KeySpec("/var/run/secrets/kubernetes.io/serviceaccount/token", "path", "KINI_K8S_TOKEN_FILE", ""),
+    "kini.k8s_ca_file": KeySpec("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt", "path", "KINI_K8S_CA_FILE", ""),
+    "kini.k8s_nodes_path": KeySpec("/api/v1/nodes", "str", None, "the same probe platform/state reads for the cluster-state receipt"),
+    "kini.k8s_request_timeout_s": KeySpec(15, "int", "KINI_K8S_REQUEST_TIMEOUT_S", ""),
+
     "receipts.path": KeySpec(str(_estate_home() / "sovereign" / "receipts.jsonl"), "path", "SB_RECEIPTS", ""),
     "receipts.keychain_service": KeySpec("sovereign-receipts", "str", None, "macOS Keychain -s"),
     "receipts.keychain_account": KeySpec("estate", "str", None, "macOS Keychain -a"),
@@ -559,6 +590,46 @@ TEMPORAL_ADDRESS: str = _R["temporal.address"].value or f"{TEMPORAL_HOST}:{TEMPO
 TEMPORAL_NAMESPACE: str = _R["temporal.namespace"].value
 TEMPORAL_TASK_QUEUE: str = _R["temporal.task_queue"].value
 TEMPORAL_DB: Path = Path(_R["temporal.db_filename"].value)
+
+KINI_CHECKPOINT_COUNT: int = _R["kini.checkpoint_count"].value
+KINI_CP_TESTS: dict[int, list[str]] = {
+    n: str(_R[f"kini.cp{n}_tests"].value or "").split() for n in range(1, KINI_CHECKPOINT_COUNT + 1)
+}
+KINI_SOVEREIGN_DIR: Path = Path(_R["kini.sovereign_dir"].value)
+KINI_PYTEST_ARGS: list[str] = _R["kini.pytest_args"].value
+KINI_PYTEST_EXIT_NO_TESTS: int = _R["kini.pytest_exit_no_tests"].value
+KINI_OUTPUT_TAIL_LINES: int = _R["kini.output_tail_lines"].value
+KINI_CP_TIMEOUT_S: int = _R["kini.cp_timeout_s"].value
+KINI_CP_HEARTBEAT_S: int = _R["kini.cp_heartbeat_s"].value
+KINI_HEARTBEAT_TIMEOUT_S: int = _R["kini.heartbeat_timeout_s"].value
+KINI_CP_ATTEMPTS: int = _R["kini.cp_attempts"].value
+KINI_HEAL_ATTEMPTS: int = _R["kini.heal_attempts"].value
+KINI_HEAL_TIMEOUT_S: int = _R["kini.heal_timeout_s"].value
+KINI_HEAL_POLL_S: int = _R["kini.heal_poll_s"].value
+KINI_HEAL_MAX_ROUNDS: int = _R["kini.heal_max_rounds"].value
+KINI_WORKFLOW_ID: str = _R["kini.workflow_id"].value
+KINI_K8S_HOST_ENV: str = _R["kini.k8s_host_env"].value
+KINI_K8S_PORT_ENV: str = _R["kini.k8s_port_env"].value
+KINI_K8S_TOKEN_FILE: Path = Path(_R["kini.k8s_token_file"].value)
+KINI_K8S_CA_FILE: Path = Path(_R["kini.k8s_ca_file"].value)
+KINI_K8S_NODES_PATH: str = _R["kini.k8s_nodes_path"].value
+KINI_K8S_REQUEST_TIMEOUT_S: int = _R["kini.k8s_request_timeout_s"].value
+
+
+def kini_workflow_params() -> dict[str, Any]:
+    """Everything KiniFinishWorkflow needs, carried in params: a workflow never imports
+    sovereign.config (see sovereign/engine/workflow.py), so the trigger hands it these."""
+    return {
+        "checkpoints": list(range(1, KINI_CHECKPOINT_COUNT + 1)),
+        "cp_timeout_s": KINI_CP_TIMEOUT_S,
+        "cp_heartbeat_s": KINI_CP_HEARTBEAT_S,
+        "heartbeat_timeout_s": KINI_HEARTBEAT_TIMEOUT_S,
+        "cp_attempts": KINI_CP_ATTEMPTS,
+        "heal_attempts": KINI_HEAL_ATTEMPTS,
+        "heal_timeout_s": KINI_HEAL_TIMEOUT_S,
+        "heal_poll_s": KINI_HEAL_POLL_S,
+        "heal_max_rounds": KINI_HEAL_MAX_ROUNDS,
+    }
 
 SB_RECEIPTS: Path = Path(_R["receipts.path"].value)
 RECEIPTS_HEAD: Path = Path(_R["receipts.head_dir"].value) / _R["receipts.head_filename"].value
