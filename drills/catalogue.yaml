@@ -102,3 +102,12 @@ drills:
       Every pod Running for more than ten minutes wrote a log line or a metric sample that SigNoz
       stored in the last hour, measured by querying ClickHouse and diffing against the API server
       (crew#320, LAW 50: coverage is proved by the backend, never by scanning files).
+  - name: free-tier
+    workflow: oke-check.yml
+    job: free-tier
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    proves: >-
+      The limits API granted the tenancy at least the A1 cores and memory platform/oci/variables.tf
+      assumes free and enough to hold what it provisions, so the allowance OCI halved once
+      (ADR 0004) has not moved again without a red row (crew#488 CP3).
