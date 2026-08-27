@@ -13,6 +13,11 @@ model_list:
       api_key: os.environ/MINIMAX_API_KEY
       timeout: 300
       max_tokens: 8192
+    model_info:
+      # crew#506 CP1: the router refuses an oversized turn before it leaves the estate.
+      # MiniMax-M2 context window is 204,800 tokens; a turn above it 400s here instead of
+      # walking the fallback chain into unfunded lanes (the 2026-08-27 Telegram outage).
+      max_input_tokens: 204800
 
   - model_name: minimax_m27
     litellm_params:
@@ -68,10 +73,14 @@ model_list:
 
 router_settings:
   fallbacks:
-    - minimax: [minimax-or, minimax_m27, deepseek]
-    - deepseek: [deepseek-or, minimax]
+    # crew#506 CP1 (2026-08-27): first hop is the other funded direct vendor, the OpenRouter
+    # deployment is the second. OpenRouter sat at ~2,400 tokens of credit and Google prepaid
+    # was empty, so the crew#284 order (OpenRouter first) walked every turn through 402/429
+    # before reaching a lane that answers. Consensus still survives any one account dry.
+    - minimax: [deepseek, minimax-or]
+    - deepseek: [minimax, deepseek-or]
     - openrouter: [minimax, deepseek]
-    - gemini: [gemini-or, minimax, deepseek]
+    - gemini: [minimax, deepseek, gemini-or]
   num_retries: 2
   allowed_fails: 3
   cooldown_time: 60
