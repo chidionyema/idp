@@ -32,6 +32,8 @@ WT = Path(os.environ.get("IDP_STATE_WORKTREE") or ROOT.parent / ".idp-state")
 BRANCH = "state/live-diagram"
 PAGE = "docs/architecture/live.md"
 SHOWCASE = "docs/SHOWCASE.md"
+TRACE = "docs/TRACE-MATRIX.md"          # crew#495 CP1
+TRACE_JSON = "docs/trace-matrix.json"
 INV = Path(os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json"))
 
 
@@ -103,7 +105,9 @@ def main(argv: list[str]) -> int:
     step("estate-diagram", [sys.executable, str(WT / "bin" / "estate-diagram")], WT)
     # crew#474: the graded page, red rows first, from the same catalogue in the same run.
     step("estate-showcase", [sys.executable, str(WT / "bin" / "estate-showcase")], WT)
-    rc, diff = sh(["git", "diff", "--stat", "--", PAGE, SHOWCASE], WT)
+    # crew#495 CP1: the trace matrix is rendered from the same worktree, on the same schedule.
+    step("trace-matrix", [sys.executable, str(WT / "bin" / "trace-matrix")], WT)
+    rc, diff = sh(["git", "diff", "--stat", "--", PAGE, SHOWCASE, TRACE, TRACE_JSON], WT)
     if not diff:
         print("catalog-render: page unchanged since the last render; nothing to commit")
         return 0
@@ -111,7 +115,7 @@ def main(argv: list[str]) -> int:
         print(f"catalog-render --dry-run: would commit\n{diff}")
         return 0
     taken = step("inventory time", ["sed", "-n", "s/^# inventory taken: //p", "catalog/catalog-info.yaml"], WT)
-    step("stage", ["git", "add", PAGE, SHOWCASE], WT)
+    step("stage", ["git", "add", PAGE, SHOWCASE, TRACE, TRACE_JSON], WT)
     step("commit", ["git", "commit", "-q", "-m", f"docs(architecture): live estate page, inventory taken {taken} (crew#401)\n\nAuthor-session: com.estate.catalog-render"], WT)
     step("push", ["git", "push", "-q", "--force-with-lease", "origin", f"HEAD:refs/heads/{BRANCH}"], WT)
     rc, existing = sh(["gh", "pr", "list", "--head", BRANCH, "--state", "open", "--json", "number", "--jq", ".[0].number"], WT)
