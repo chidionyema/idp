@@ -28,10 +28,10 @@ router serves right now, including anything added in the console.
    `bin/idp-identity-apply`.
 3. Models → Add Model. Pick the provider, type the public model name, and for the credential
    reference the key the pod already holds: `os.environ/MINIMAX_API_KEY`,
-   `os.environ/DEEPSEEK_API_KEY`, `os.environ/OPENROUTER_API_KEY`, `os.environ/GEMINI_API_KEY`.
+   `os.environ/DEEPSEEK_API_KEY`, `os.environ/OPENROUTER_API_KEY`, `os.environ/GEMINI_API_KEY`, `os.environ/GROQ_API_KEY`.
    A provider the vault does not hold a key for needs the key added to the vault entry
-   `litellm-upstream` first (`bin/idp-vault-put`, run by the `oke-check` apply step from
-   `SEED_*` repository secrets, never from a laptop).
+   `litellm-upstream` first (`bin/idp-vault-put --merge`, run by the `oke-check` apply step from
+   whichever `SEED_*` repository secrets are set, never from a laptop; one new key, no re-seed).
 4. Save. `store_model_in_db: true` in `general_settings` means the row is in `litellm-db` and
    survives a pod restart; `platform/llm/config.yaml` is never edited for this.
 

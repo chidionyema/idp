@@ -70,6 +70,26 @@ model_list:
       api_key: os.environ/OPENROUTER_API_KEY
       timeout: 300
 
+  # --- crew#506 CP4: the free tier (2026-08-27) ----------------------------------------
+  # Groq's free plan answers openai/gpt-oss-120b at 131k context with no card on file, so it
+  # is the first free hop for every job that is not the moat's paid MiniMax lane. Model ids
+  # are the ones the key lists at api.groq.com/openai/v1/models on 2026-08-27; llama-3.3-70b
+  # is not on the plan. Rate limits are per minute, so the chain drops to a paid direct lane
+  # rather than retrying (allowed_fails 3, cooldown 60).
+  - model_name: groq
+    litellm_params:
+      model: groq/openai/gpt-oss-120b
+      api_key: os.environ/GROQ_API_KEY
+      timeout: 120
+    model_info:
+      max_input_tokens: 131072
+  - model_name: groq-fast
+    litellm_params:
+      model: groq/openai/gpt-oss-20b
+      api_key: os.environ/GROQ_API_KEY
+      timeout: 60
+    model_info:
+      max_input_tokens: 131072
   - model_name: gemini
     litellm_params:
       model: gemini/gemini-2.5-flash
@@ -125,6 +145,10 @@ router_settings:
     - deepseek: [minimax]
     - openrouter: [minimax, deepseek]
     - gemini: [minimax, deepseek]
+    # crew#506 CP4: a free lane that rate-limits falls to the paid direct lanes, never to
+    # another free lane first; the chain still ends in the cheap model (cp30).
+    - groq: [minimax, deepseek]
+    - groq-fast: [groq, deepseek]
   num_retries: 2
   # A tier that keeps failing is taken out of the chain rather than retried into the
   # ground. This is the circuit breaker prospector/breaker.py hand-rolls.

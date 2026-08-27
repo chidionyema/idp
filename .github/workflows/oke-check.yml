@@ -116,12 +116,18 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.SEED_GROQ_API_KEY }}
           LITELLM_MASTER_KEY: ${{ secrets.SEED_LITELLM_MASTER_KEY }}
         run: |
-          [ -n "$LITELLM_MASTER_KEY" ] || { echo "n/a     litellm-upstream   no SEED_* secrets set; the vault keeps what it holds"; exit 0; }
+          # crew#506 CP4: --merge overlays whichever SEED_* keys are set on the entry the vault holds,
+          # so adding one provider (Groq) never needs every key re-seeded or the master key present.
+          keys=MINIMAX_API_KEY,DEEPSEEK_API_KEY,OPENROUTER_API_KEY,GEMINI_API_KEY,GROQ_API_KEY,LITELLM_MASTER_KEY
+          any=0; for k in ${keys//,/ }; do [ -n "${!k:-}" ] && any=1; done
+          [ "$any" = 1 ] || { echo "n/a     litellm-upstream   no SEED_* secrets set; the vault keeps what it holds"; exit 0; }
           umask 077; f=$(mktemp)
-          env | grep -E '^(MINIMAX_API_KEY|DEEPSEEK_API_KEY|OPENROUTER_API_KEY|GEMINI_API_KEY|LITELLM_MASTER_KEY)=' > "$f"
-          ESTATE_ENV_FILE="$f" bin/idp-vault-put litellm-upstream MINIMAX_API_KEY=MINIMAX_API_KEY DEEPSEEK_API_KEY=DEEPSEEK_API_KEY OPENROUTER_API_KEY=OPENROUTER_API_KEY GEMINI_API_KEY=GEMINI_API_KEY LITELLM_MASTER_KEY=LITELLM_MASTER_KEY
+          env | grep -E "^(${keys//,/|})=" > "$f"
+          args=""; for k in ${keys//,/ }; do args="$args $k=$k"; done
+          ESTATE_ENV_FILE="$f" bin/idp-vault-put --merge litellm-upstream $args
           rm -f "$f"
 
   # crew#292 CP4: the in-cluster chaos experiment leaves a receipt in Object Storage; this reads
