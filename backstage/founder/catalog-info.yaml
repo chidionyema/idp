@@ -239,3 +239,22 @@ spec:
   lifecycle: experimental
   owner: group:default/platform
   system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-telegram
+  title: "Telegram (the founder's phone)"
+  description: "Where every session's deliveries, STAGED notices and founder blockers land, sent by founder-deliver.py through the estate bot. Open the chat with @Ottototbot; every message carries the URL of the thing it is about."
+  annotations:
+    idp/updated-by: "founder-deliver.py on every delivery; founder-blocker.py on every STAGED or blocker"
+  tags: [founder]
+  links:
+    - title: "Open Telegram chat"
+      url: "https://t.me/Ottototbot"
+      icon: chat
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
