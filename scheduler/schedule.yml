@@ -22,6 +22,8 @@ jobs:
     - checkout-drift
     - /usr/bin/python3
     - $CODE/idp/bin/idp-checkout-drift
+    env:
+      ESTATE_CHECKOUTS: $CODE/crew:$CODE/idp:$CODE/hermes-v2:~/.claude/scripts
     cron: 17 * * * *
     skip_on_battery: false
     timeout_s: 600

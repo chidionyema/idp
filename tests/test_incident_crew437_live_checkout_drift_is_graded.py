@@ -47,3 +47,16 @@ def test_a_clean_main_checkout_passes_and_a_stale_branch_fails_with_a_path_back(
 
     r = _run(tmp_path / "missing")
     assert r.returncode == 2 and "1 unreadable" in r.stdout
+
+
+def test_a_peer_worktree_dir_is_not_this_checkouts_dirt(tmp_path):
+    _, live = _make(tmp_path, "parked")
+    (live / ".wt-crew999").mkdir()
+    (live / ".wt-crew999" / "f.txt").write_text("peer session worktree\n")
+    r = _run(live)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "main, current, clean" in r.stdout
+
+    r = subprocess.run([sys.executable, str(TOOL)], capture_output=True, text=True,
+                       env={k: v for k, v in os.environ.items() if k != "ESTATE_CHECKOUTS"})
+    assert r.returncode == 2 and "ESTATE_CHECKOUTS is empty" in r.stderr

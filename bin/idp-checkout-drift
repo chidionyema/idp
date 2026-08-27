@@ -9,7 +9,7 @@ from it. One class, one grader. Report mode only: nothing here resets a checkout
 session may be working in it; it goes red and names the path back.
 
 Usage: idp-checkout-drift [--json]   exit 0 clean, 1 drifted, 2 a checkout could not be read
-Checkouts: ESTATE_CHECKOUTS (colon-separated) or the estate default below.
+Checkouts: ESTATE_CHECKOUTS, colon-separated, set by the scheduler row (LAW 46: no path list here).
 """
 from __future__ import annotations
 
@@ -19,9 +19,20 @@ import subprocess
 import sys
 from pathlib import Path
 
-HOME = Path(os.environ.get("HOME", "~")).expanduser()
-CODE = Path(os.environ.get("ESTATE_CODE", HOME / "dev" / "code"))
-DEFAULT = [CODE / "crew", CODE / "idp", CODE / "hermes-v2", HOME / ".claude" / "scripts"]
+WORKTREE_PREFIX = ".wt-"  # peer sessions park worktrees as <checkout>/.wt-<ticket>/; not this checkout's dirt
+
+
+def dirty_entries(porcelain: str) -> list[str]:
+    """Tracked changes and untracked files; never another session's .wt-* worktree dir (LAW 38)."""
+    out = []
+    for ln in porcelain.splitlines():
+        if not ln:
+            continue
+        name = ln[3:]
+        if ln.startswith("??") and name.rstrip("/").startswith(WORKTREE_PREFIX):
+            continue
+        out.append(name)
+    return out
 
 
 def git(repo: Path, *args: str) -> str:
@@ -37,7 +48,7 @@ def grade(repo: Path, fetch: bool = True) -> dict:
                            capture_output=True, timeout=120)
         row["branch"] = git(repo, "rev-parse", "--abbrev-ref", "HEAD")
         row["behind"] = int(git(repo, "rev-list", "--count", "HEAD..origin/main"))
-        row["dirty"] = len([ln for ln in git(repo, "status", "--porcelain").splitlines() if ln])
+        row["dirty"] = len(dirty_entries(git(repo, "status", "--porcelain")))
     except Exception as e:  # unreadable checkout: BLIND, never a verdict
         row["why"] = f"{e}"[:200]
         return row
@@ -56,8 +67,11 @@ def grade(repo: Path, fetch: bool = True) -> dict:
 
 
 def main(argv: list[str]) -> int:
-    spec = os.environ.get("ESTATE_CHECKOUTS")
-    repos = [Path(p).expanduser() for p in spec.split(":") if p] if spec else DEFAULT
+    spec = os.environ.get("ESTATE_CHECKOUTS", "")
+    repos = [Path(os.path.expandvars(p)).expanduser() for p in spec.split(":") if p]
+    if not repos:
+        print("checkout-drift: ESTATE_CHECKOUTS is empty; nothing to grade", file=sys.stderr)
+        return 2
     rows = [grade(r, fetch=os.environ.get("ESTATE_CHECKOUTS_NO_FETCH") != "1") for r in repos]
     blind = [r for r in rows if r["verdict"] == "BLIND"]
     bad = [r for r in rows if r["verdict"] == "FAIL"]
@@ -69,7 +83,7 @@ def main(argv: list[str]) -> int:
             if r.get("path_back"):
                 print(f"      path back: {r['path_back']}")
         print(f"checkout-drift: {len(bad)} drifted, {len(blind)} unreadable, of {len(rows)}")
-    return 2 if blind and not bad else (1 if bad else 0)
+    return 1 if bad else (2 if blind else 0)  # drifted outranks unreadable; the count line carries both
 
 
 if __name__ == "__main__":
