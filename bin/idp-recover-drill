@@ -47,8 +47,18 @@ vault_json() { # <secret-name> → the JSON the entry holds, or empty
 
 # --- github-app: the clones authenticate as the App, narrowed to a read-only lane -------------
 tok=$(ESTATE_VAULT_OCID="$V" "$IDP/bin/idp-github-app" token recovery 2>"$OUT/github-app.err" | cat) || true
-if [ -z "$tok" ]; then bl github-app "no installation token: $(grep -m1 '^DIAG' "$OUT/github-app.err" 2>/dev/null || tail -1 "$OUT/github-app.err" 2>/dev/null)"
-else ok github-app "installation token minted for lane recovery (read-only)"; fi
+# run 33097577404: a non-empty string was graded a token and three clones then failed with 401. A token has a
+# shape, and the installation's own repository list says whether the clones can succeed before git is asked.
+if ! [[ "$tok" =~ ^ghs_[A-Za-z0-9]+$ ]]; then bl github-app "no installation token: $(grep -m1 '^DIAG' "$OUT/github-app.err" 2>/dev/null || tail -1 "$OUT/github-app.err" 2>/dev/null)"; tok=""
+else
+  curl -sS -H "Authorization: Bearer $tok" -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/installation/repositories?per_page=100" >"$OUT/installation-repos.json" 2>"$OUT/installation-repos.err" || true
+  seen=$(jq -r '[.repositories[]?.full_name] | join(" ")' "$OUT/installation-repos.json" 2>/dev/null || true)
+  missing=""; for r in $REPOS; do case " $seen " in *" $r "*) ;; *) missing="$missing $r";; esac; done
+  if [ -z "$seen" ]; then fail github-app "token minted but the installation lists no repositories: $(jq -r '.message // empty' "$OUT/installation-repos.json" 2>/dev/null | cut -c1-80)"
+  elif [ -n "$missing" ]; then fail github-app "installation sees $(wc -w <<<"$seen" | tr -d ' ') repo(s) but not:$missing"
+  else ok github-app "installation token minted for lane recovery (read-only); installation sees $(wc -w <<<"$seen" | tr -d ' ') repo(s) incl. all of: $REPOS"; fi
+fi
 
 # --- repo: every load-bearing repo clones from its remote on a machine with no key -------------
 auth=$(printf 'x-access-token:%s' "${tok:-}" | base64 | tr -d '\n')

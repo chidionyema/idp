@@ -94,6 +94,7 @@ seed)
   echo "ok      github-app SEED_GITHUB_APP_* on $repo; vault-seed.yml entry=github-app dispatched"
   ;;
 token)
+  TMPDIR_ERR=$(mktemp); trap 'rm -f "$TMPDIR_ERR"' EXIT
   lane=${1:?lane name from platform/github-app/lanes.json}
   perms=$(jq -c --arg l "$lane" '.[$l] // empty' "$D/lanes.json"); [ -n "$perms" ] || { echo "REFUSED: no lane '$lane' in $D/lanes.json"; exit 2; }
   export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
@@ -103,7 +104,9 @@ token)
   inst=$(GH_TOKEN="$jwt" gh api /app/installations -q '.[0].id' 2>/dev/null) || { app_jwt_diag "$app_id" "$pem_b64" "$jwt" "$bundle"; inst=""; }
   # run 33097094260: gh printed the 401 body on stdout and the non-empty check took it for an id
   [[ "$inst" =~ ^[0-9]+$ ]] || { echo "BLIND   github-app App $app_id has no installation yet (or its JWT was refused; see DIAG)"; exit 2; }
-  tok=$(GH_TOKEN="$jwt" gh api -X POST "/app/installations/$inst/access_tokens" --input <(jq -n --argjson p "$perms" '{permissions:$p}') -q .token)
+  tok=$(GH_TOKEN="$jwt" gh api -X POST "/app/installations/$inst/access_tokens" --input <(jq -n --argjson p "$perms" '{permissions:$p}') -q .token 2>"$TMPDIR_ERR") || true
+  # run 33097577404: whatever gh printed was passed on as a token; a token has a shape
+  [[ "$tok" =~ ^ghs_[A-Za-z0-9]+$ ]] || { echo "BLIND   github-app access_tokens for installation $inst did not return a token: $(tail -1 "$TMPDIR_ERR" | cut -c1-120)"; exit 2; }
   if [ -t 1 ]; then echo "ok      github-app token minted for lane $lane (installation $inst, expires in 1h); pipe it: bin/idp-github-app token $lane | gh auth login --with-token"; else printf %s "$tok"; fi
   ;;
 installation)

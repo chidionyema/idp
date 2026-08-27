@@ -96,3 +96,17 @@ def test_the_incremental_bundle_check_matches_what_git_actually_prints(tmp_path:
     r = subprocess.run(["git", "bundle", "verify", str(tmp_path / "inc.bundle")], cwd=empty, capture_output=True, text=True)
     assert r.returncode != 0
     assert re.search(pat, r.stdout + r.stderr), f"script pattern {pat!r} does not match git's wording: {r.stderr!r}"
+
+
+def test_a_token_is_graded_by_its_shape_in_both_scripts_never_by_being_non_empty() -> None:
+    """Run 33097577404: `[ -z "$tok" ]` graded whatever gh printed as a token and three clones then
+    failed with 401. Both the drill and bin/idp-github-app must match the token against its shape and
+    the drill must ask the installation which repositories it sees before git is asked."""
+    drill = SCRIPT.read_text()
+    app = (ROOT / "bin" / "idp-github-app").read_text()
+    shape = r'=~ \^ghs_\[A-Za-z0-9\]\+\$'
+    assert re.search(shape, drill), "bin/idp-recover-drill does not grade the token by shape"
+    assert re.search(shape, app), "bin/idp-github-app does not grade the token by shape"
+    assert '[ -z "$tok" ]; then bl github-app' not in drill
+    assert "/installation/repositories" in drill
+    assert re.search(r"^\s*[^#\n]*\bghs_[A-Za-z0-9]{10,}", drill + app, re.M) is None, "a literal token in a script"
