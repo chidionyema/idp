@@ -51,7 +51,14 @@ oci_compartment() {
   fi
   export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
   export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-  printf '%s' "${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}"
+  # Order: env, the tfvars the provisioner already rendered (the runner has that and no age key —
+  # idp#490 check job: nodes went BLIND for this), then the sops envelope on a laptop.
+  if [ -n "${OCI_COMPARTMENT_OCID:-}" ]; then printf '%s' "$OCI_COMPARTMENT_OCID"; return 0; fi
+  if [ -f "$IDP/platform/oci/terraform.tfvars" ]; then
+    local T; T=$(awk -F'"' '/^compartment_ocid/{print $2}' "$IDP/platform/oci/terraform.tfvars")
+    if [ -n "$T" ]; then printf '%s' "$T"; return 0; fi
+  fi
+  sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml"
 }
 
 case "$prim" in
