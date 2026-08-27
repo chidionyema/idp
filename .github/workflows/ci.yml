@@ -6,6 +6,11 @@ on:
     # (crew#267). The required checks run on that push, so the pull request that
     # image-update-pr.yml opens with GITHUB_TOKEN (which fires no pull_request run) is still graded.
     branches: [main, flux/image-updates]
+# A newer run on the same ref supersedes the older one: on 2026-08-27 20:23Z idp had 9 running and
+# 20 queued runs, 12 of them stale duplicates, and a one-line oke-check waited 19 min (crew#516).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   offline-gate:
     runs-on: ubuntu-latest
