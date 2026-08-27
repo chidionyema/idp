@@ -22,7 +22,12 @@ if [ $rc -ne 0 ]; then
     *) blind "object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
   esac
 fi
-body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name state/cluster 2>/dev/null)
+# stderr kept: with 2>/dev/null a failed read was an empty body and graded FAIL "does not start
+# with ok: ''" — a FAIL that the cluster did nothing to earn (crew#66 row from idp#465, the class
+# that hid the surge's reads). A read that fails is BLIND and names the error.
+body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name state/cluster 2>&1) \
+  || blind "object get failed: $(printf '%s' "$body" | tail -1 | cut -c1-160)"
+[ -n "$body" ] || blind "object get returned an empty body"
 python3 - "$head" "$body" "$MAX_MIN" "${1:-}" <<'PY'
 import json, re, sys
 from datetime import datetime, timezone
