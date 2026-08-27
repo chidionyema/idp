@@ -25,3 +25,18 @@ What a runner cannot see: it is outside `control_plane_allowed_cidrs`, so the `f
 
 Residual static credentials on this path: the OIDC client secret and the S3 key pair, both GitHub
 repository secrets. `bin/static-secret-gate` counts them (idp#102).
+
+## Hourly, with nobody logged in (crew#345)
+
+Demo: `gh workflow run verify-drill.yml -R chidionyema/idp && gh run watch -R chidionyema/idp`
+
+A laptop's OCI browser session is a 60-minute JWT, refreshable to 24 h from the login and then
+dead; a `--no-browser` token-exchange session cannot be refreshed at all (measured 2026-08-26,
+crew#345). So no scheduled verification runs from a laptop. `verify-drill.yml` runs every hour
+on the same `estate-ci` identity as above and `bin/idp-verify-drill` prints three rows: the
+session subject is `estate-ci` and a token exchange (a person's OCID or a browser login is a
+red row), the cluster and node pools are ACTIVE, and the cluster's own receipt `state/cluster`
+grades green through `bin/idp-cluster-state` (fresh, every node Ready). That receipt is written
+from inside every 15 minutes by the CronJob `cluster-state` (`platform/state/`, idp#267) on the
+worker node's instance principal. The proof of the ticket is 24 consecutive green scheduled
+runs, counted by crew's estate snapshot.

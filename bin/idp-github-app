@@ -8,7 +8,7 @@
 #   bin/idp-github-app status          which identity gh acts as, and whether it is the App
 # GitHub creates Apps only through the manifest flow, which ends in a browser redirect (crew#288);
 # that single Create tap is the one hand step. Everything after it is API.
-# Tokens: JWT from `gh token` (Link-/gh-token), narrowed via the REST API; nothing is printed but the token,
+# Tokens: the App JWT is signed here with openssl (RS256; no gh extension, runners have none), narrowed via the REST API; nothing is printed but the token,
 # on request, and only when stdout is not a terminal.
 set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
@@ -19,6 +19,17 @@ SECRET=github-app
 cmd=${1:-}; shift || true
 
 repo_url() { gh repo view --json url -q .url; }
+b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+# app_jwt <app_id> <pem_base64>: a 9-minute RS256 JWT for the App, signed with openssl so it works on any
+# runner (crew#503: the Link-/gh-token extension minted it before, and CI has no extensions).
+app_jwt() {
+  local now key hp
+  now=$(date -u +%s)
+  key=$(mktemp); chmod 600 "$key"; printf %s "$2" | base64 -d > "$key"
+  hp="$(printf '{"alg":"RS256","typ":"JWT"}' | b64url).$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' "$((now-60))" "$((now+540))" "$1" | b64url)"
+  printf '%s.%s' "$hp" "$(printf %s "$hp" | openssl dgst -sha256 -sign "$key" | b64url)"
+  rm -f "$key"
+}
 
 case "$cmd" in
 manifest)
@@ -81,7 +92,7 @@ token)
   [ -n "$sid" ] && [ "$sid" != null ] || { echo "BLIND   github-app no vault secret $SECRET; run: bin/idp-github-app convert <code>"; exit 2; }
   bundle=$(oci secrets secret-bundle get --secret-id "$sid" --query 'data."secret-bundle-content".content' --raw-output | base64 -d)
   app_id=$(jq -r .app_id <<<"$bundle"); pem_b64=$(jq -r .pem_b64 <<<"$bundle")
-  jwt=$(gh token generate --jwt --app-id "$app_id" --base64-key "$pem_b64" --token-only)
+  jwt=$(app_jwt "$app_id" "$pem_b64")
   inst=$(GH_TOKEN="$jwt" gh api /app/installations -q '.[0].id')
   [ -n "$inst" ] && [ "$inst" != null ] || { echo "BLIND   github-app App $app_id has no installation yet"; exit 2; }
   tok=$(GH_TOKEN="$jwt" gh api -X POST "/app/installations/$inst/access_tokens" --input <(jq -n --argjson p "$perms" '{permissions:$p}') -q .token)
@@ -98,7 +109,7 @@ installation)
   [ -n "$sid" ] && [ "$sid" != null ] || { echo "BLIND   github-app no vault secret $SECRET; run: bin/idp-github-app convert <code>"; exit 2; }
   bundle=$(oci secrets secret-bundle get --secret-id "$sid" --query 'data."secret-bundle-content".content' --raw-output | base64 -d)
   app_id=$(jq -r .app_id <<<"$bundle"); pem_b64=$(jq -r .pem_b64 <<<"$bundle")
-  jwt=$(gh token generate --jwt --app-id "$app_id" --base64-key "$pem_b64" --token-only)
+  jwt=$(app_jwt "$app_id" "$pem_b64")
   inst=$(GH_TOKEN="$jwt" gh api /app/installations -q '.[0].id')
   [ -n "$inst" ] && [ "$inst" != null ] || { echo "BLIND   github-app App $app_id has no installation yet"; exit 2; }
   tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT; chmod 600 "$tmp"

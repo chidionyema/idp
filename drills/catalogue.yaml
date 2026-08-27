@@ -83,6 +83,17 @@ drills:
       The cluster wrote its own state receipt (nodes, pods not Ready) to Object Storage from the
       node's identity within the last hour and a runner with no kube path and no laptop session
       token read it back through OIDC (crew#345: bin/idp-cluster-state grades freshness and Ready).
+  - name: verify-drill
+    workflow: verify-drill.yml
+    job: verify-drill
+    schedule: "23 * * * *"
+    max_age_hours: 3
+    proves: >-
+      In the last hour a runner holding no key, on the estate-ci machine identity, named its own
+      session subject as that service user, saw the cluster and node pools ACTIVE through the OCI
+      API, and graded the cluster's own state/cluster receipt (platform/state, bin/idp-cluster-state)
+      written from inside on the node's instance principal. Twenty-four green rows in a row is crew#345's acceptance
+      criterion: live verification with nobody logged in.
 
   - name: kini-finish
     workflow: oke-check.yml
