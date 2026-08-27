@@ -54,7 +54,10 @@ def why():
         out += f"\n        ... and {len(miss) - 8} more"
     return out
 if not line1.startswith("ok "):
-    print(f"FAIL    telemetry-coverage  receipt does not start with ok: {line1[:120]!r}{why()}"); sys.exit(1)
+    print(f"FAIL    telemetry-coverage  receipt does not start with ok: {line1[:120]!r}{why()}")
+    if flag == "--json":
+        print(rest)
+    sys.exit(1)
 if age > max_min:
     print(f"FAIL    telemetry-coverage  receipt is {age:.0f} min old (max {max_min:.0f}): {line1[:120]}"); sys.exit(1)
 kv = dict(m.groups() for m in re.finditer(r"(\w+)=(\d+)", line1))
