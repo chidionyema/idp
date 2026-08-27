@@ -494,8 +494,15 @@ def main() -> int:
             # TechDocs renders MkDocs. Annotating a repo that has no mkdocs.yml
             # gives the portal a Docs tab that 404s, which is the empty-shell
             # failure again. Measured 2026-08-24: 1 of 26 repos has one.
+            # crew#459: the portal runs in a pod, not on the laptop that
+            # generated this file, so `dir:.` can never be built there and the
+            # Docs section stayed empty. A GitHub repo gets the URL form, which
+            # the TechDocs builder fetches at read time; `dir:.` is kept only
+            # for a repo with no GitHub remote (laptop-only rendering).
+            gh = github_slug(r.get("remote"))
             if os.path.exists(os.path.join(r.get("path", ""), "mkdocs.yml")):
-                ann["backstage.io/techdocs-ref"] = "dir:."
+                ann["backstage.io/techdocs-ref"] = (
+                    f"url:https://github.com/{gh}/tree/main/" if gh else "dir:.")
                 tags.append("has-docs")
                 techdocs += 1
             else:
@@ -506,7 +513,6 @@ def main() -> int:
             # each entity page. Measured before this change: 0 of 245 entities
             # carried a single well-known annotation, so the portal rendered
             # 245 pages with no way back to the code.
-            gh = github_slug(r.get("remote"))
             if gh:
                 ann["github.com/project-slug"] = gh
                 # The repository root, not the checked-out branch. A branch URL
