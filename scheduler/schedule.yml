@@ -334,6 +334,9 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.founder.sciencecollect:
+    ok_exit: [1]  # 1 = collected fine and reports a stale or unregistered source (crew#90); not a crash
+    env:
+      HC_FINDINGS_EXIT: "1"  # hc-wrap: liveness stays green, the finding fails sciencecollect-findings
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - sciencecollect
