@@ -1,0 +1,46 @@
+# crew#539 row 6 (founder, 2026-08-27: after the 2->1 node swap the old node ran hot while the
+# new one sat empty, and a person ran the restarts). The Kubernetes SIGs Descheduler (LAW 43,
+# kubernetes-sigs/descheduler, Apache-2.0) is a CronJob that evicts pods the scheduler would
+# place better today: the chart's default profile carries LowNodeUtilization (thresholds 20%,
+# targets 50%), RemoveDuplicates, RemovePodsHavingTooManyRestarts and the affinity/taint/topology
+# strategies. Evicted pods respect PodDisruptionBudgets; nothing here runs as root.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: descheduler
+  namespace: kube-system
+spec:
+  interval: 24h
+  url: https://kubernetes-sigs.github.io/descheduler/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: descheduler
+  namespace: kube-system
+spec:
+  interval: 1h
+  timeout: 10m
+  chart:
+    spec:
+      chart: descheduler
+      version: 0.36.0
+      sourceRef:
+        kind: HelmRepository
+        name: descheduler
+  install:
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3 }
+  values:
+    kind: CronJob
+    schedule: "*/5 * * * *"
+    successfulJobsHistoryLimit: 3
+    failedJobsHistoryLimit: 3
+    cmdOptions:
+      v: 3
+    # The pool that needed this was CPU-starved (Insufficient cpu, 2026-08-27 19:45Z receipt):
+    # the chart's 500m request would itself go Pending. A five-minute pass needs far less.
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 500m, memory: 256Mi }

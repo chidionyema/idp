@@ -430,3 +430,47 @@ spec:
       kind: HelmRelease
       name: hindsight
       namespace: hindsight
+---
+# crew#539 row 6: rebalance after a node swap without a person (platform/descheduler).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: descheduler
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/descheduler
+  prune: true
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: descheduler
+      namespace: kube-system
+---
+# crew#539 row 7: crash logs reach Telegram before the pod is gone (platform/robusta).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: robusta
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: secret-store
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/robusta
+  prune: true
+  wait: true
+  timeout: 15m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: robusta
+      namespace: robusta
