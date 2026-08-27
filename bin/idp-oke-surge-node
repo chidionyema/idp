@@ -9,6 +9,8 @@
 # Every pod restarts once; the AD-1 block volumes follow their pods (placement_ads = [1]).
 #
 # Refuses unless exactly one node is ACTIVE: two would mean a surge is already in flight.
+# `--finish` is the second half (crew#516 run 33101801971): the pool already holds old and new,
+# a fresh run with a fresh token reads the receipt and deletes the oldest node once the newest is Ready.
 # Reads nothing a laptop has: cluster id from the tofu state, compartment from the tfvars the
 # login rendered, the OCI CLI from the runner's OIDC session. Never from a laptop (crew#247).
 set -euo pipefail
@@ -19,6 +21,33 @@ COMP=$(sed -n 's/^compartment_ocid *= *"\(.*\)".*/\1/p' "$TF/terraform.tfvars")
 POOL=$(oci ce node-pool list --cluster-id "$CID" --compartment-id "$COMP" --query 'data[0].id' --raw-output)
 active() { oci ce node-pool get --node-pool-id "$POOL" --query 'data.nodes[?"lifecycle-state"==`ACTIVE`].id' --raw-output \
   | python3 -c 'import sys,json; print("\n".join(json.load(sys.stdin) or []))'; }
+BUCKET="${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}"; ns=(); [ -n "${OCI_OS_NAMESPACE:-}" ] && ns=(--namespace-name "$OCI_OS_NAMESPACE")
+if [ "${1:-}" = --finish ]; then
+  # Second half, from a fresh run with a fresh token (crew#516 run 33101801971 exit 4/5): the pool
+  # holds the old and the new node; delete the OLDEST (by time-created) with the size decremented,
+  # only once a receipt no older than SURGE_RECEIPT_MAX_AGE_SECONDS shows the NEWEST node Ready.
+  rows=$(oci ce node-pool get --node-pool-id "$POOL" --query 'data.nodes[?"lifecycle-state"==`ACTIVE`].{id:id,ip:"private-ip",t:"time-created"}' --raw-output)
+  body=$(oci os object get "${ns[@]}" --bucket-name "$BUCKET" --name state/cluster --file - 2>&1) || true
+  [ -n "$body" ] && [ "${body:0:1}" = "{" ] || { echo "surge-finish: BLIND, receipt state/cluster unreadable: ${body:-empty read}; nothing deleted"; exit 5; }
+  verdict=$(printf '%s\n%s' "$rows" "$body" | python3 -c '
+import sys, json, datetime as dt
+rows_s, body = sys.stdin.read().split("\n", 1); rows = json.loads(rows_s) or []
+if len(rows) != 2: print("REFUSE expected 2 ACTIVE nodes in the pool, found %d" % len(rows)); sys.exit(0)
+rows.sort(key=lambda r: r["t"]); old, new = rows
+r = json.loads(body); at = dt.datetime.fromisoformat(str(r.get("at", "")).replace("Z", "+00:00"))
+age = (dt.datetime.now(dt.timezone.utc) - at).total_seconds()
+if age > int(sys.argv[1]): print("STALE receipt written %ds ago (%s)" % (age, r.get("at"))); sys.exit(0)
+ready = any(n.get("name") == new["ip"] and n.get("ready") is True for n in r.get("nodes", []))
+print(("OK %s %s %s" if ready else "NOTREADY %s %s %s") % (old["id"], new["id"], new["ip"]))
+' "${SURGE_RECEIPT_MAX_AGE_SECONDS:-1800}")
+  set -- $verdict
+  case "$1" in
+    OK) oci ce node-pool delete-node --node-pool-id "$POOL" --node-id "$2" --is-decrement-size true --force >/dev/null
+        echo "surge-finish: new node $3 Ready as $4 in receipt state/cluster; old node $2 deleted, pool back to size 1"; exit 0 ;;
+    NOTREADY) echo "surge-finish: newest node $3 ($4) not Ready in the receipt yet; old node $2 kept"; exit 4 ;;
+    *) echo "surge-finish: $verdict; nothing deleted"; exit 3 ;;
+  esac
+fi
 OLD=$(active); n_old=$(printf '%s\n' "$OLD" | grep -c . || true)
 [ "$n_old" -eq 1 ] || { echo "surge: expected 1 ACTIVE node in pool $POOL, found $n_old; refusing"; exit 3; }
 echo "surge: pool $POOL, old node $OLD, growing to 2"
@@ -35,19 +64,29 @@ done
 # this surge began, node row name == the new node's private IP, ready == true.
 T_SURGE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 NEW_IP=$(oci ce node-pool get --node-pool-id "$POOL" --query "data.nodes[?id=='$NEW'].\"private-ip\" | [0]" --raw-output)
-BUCKET="${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}"; ns=(); [ -n "${OCI_OS_NAMESPACE:-}" ] && ns=(--namespace-name "$OCI_OS_NAMESPACE")
-ready() { oci os object get "${ns[@]}" --bucket-name "$BUCKET" --name state/cluster --file - 2>/dev/null | python3 -c '
+# The read is loud (crew#516 run 33101801971: the last polls printed nothing and the gate went
+# blind; the receipt written at 19:00:03Z had the new node Ready all along): an empty or failed
+# `oci os object get` is BLIND, printed on stderr, never silently "not Ready". The runner's
+# OIDC session token lives shorter than 45 polls, so the loop gives up early on the third
+# consecutive BLIND read and names `--finish` (a fresh run, fresh token) as the second half.
+receipt() { oci os object get "${ns[@]}" --bucket-name "$BUCKET" --name state/cluster --file - 2>&1; }
+ready() { local body; body=$(receipt) || true
+  [ -n "$body" ] && [ "${body:0:1}" = "{" ] || { echo "BLIND   receipt state/cluster unreadable: ${body:-empty read}" >&2; return 9; }
+  printf '%s' "$body" | python3 -c '
 import sys, json
 r = json.load(sys.stdin); ip, t0 = sys.argv[1], sys.argv[2]
 if str(r.get("at", "")) < t0: sys.exit(0)            # written before the surge began: not evidence
 for n in r.get("nodes", []):
     if n.get("name") == ip and n.get("ready") is True: print(n["name"])
 ' "$NEW_IP" "$T_SURGE"; }
-READY=""
+READY=""; blind=0
 for _ in $(seq 1 "${SURGE_READY_ROUNDS:-45}"); do
-  READY=$(ready || true); [ -n "$READY" ] && break; sleep "${SURGE_READY_POLL_SECONDS:-60}"
+  READY=$(ready) && blind=0 || { [ $? -eq 9 ] && blind=$((blind+1)); }
+  [ -n "$READY" ] && break
+  [ "$blind" -ge "${SURGE_BLIND_LIMIT:-3}" ] && { echo "surge: new node $NEW ($NEW_IP) is ACTIVE; the Ready gate went BLIND $blind times running (receipt unreadable, the run's session token is likely expired); old node $OLD kept, pool left at size 2. Finish from a fresh run: oke-check mode=surge-finish"; exit 5; }
+  sleep "${SURGE_READY_POLL_SECONDS:-60}"
 done
-[ -n "$READY" ] || { echo "surge: new node $NEW ($NEW_IP) is ACTIVE but never Ready in the cluster receipt; old node $OLD kept, pool left at size 2"; exit 4; }
+[ -n "$READY" ] || { echo "surge: new node $NEW ($NEW_IP) is ACTIVE but never Ready in the cluster receipt; old node $OLD kept, pool left at size 2. Once the receipt shows it Ready: oke-check mode=surge-finish"; exit 4; }
 echo "surge: new node $NEW Ready as $READY (receipt state/cluster written after $T_SURGE)"
 oci ce node-pool delete-node --node-pool-id "$POOL" --node-id "$OLD" --is-decrement-size true --force >/dev/null
 echo "surge: new node $NEW ACTIVE, old node $OLD deleted, pool back to size 1"
