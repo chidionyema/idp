@@ -125,6 +125,28 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: founder-mcp-gateway
+  title: "MCP gateway (tools for every agent session)"
+  description: "The one MCP row (crew#458): agentgateway on the cluster fronting the GitHub MCP server, behind the estate login and a per-session API key. A session points its MCP url at /github/mcp here instead of a container on the founder Mac."
+  annotations:
+    idp/updated-by: "Flux from platform/mcp/ on every main merge; the gateway key and GitHub token by the vault-seed workflow, entry mcp-gateway"
+  tags: [founder]
+  links:
+    - title: "GitHub MCP endpoint"
+      url: "https://mcp.${ESTATE_ZONE}/github/mcp"
+      icon: cloud
+    - title: "Gateway config"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/mcp/agentgateway.yaml"
+      icon: docs
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: founder-platform-repo
   title: "Platform repository (idp)"
   description: "The one platform. Open pull requests are work in flight; the security tab is Dependabot and code scanning; packages are the images the cluster runs."
@@ -278,28 +300,6 @@ metadata:
     - title: "Receipt reader (bin/idp-kini-state)"
       url: "https://github.com/chidionyema/idp/blob/main/bin/idp-kini-state"
       icon: dashboard
-spec:
-  type: founder-surface
-  lifecycle: production
-  owner: group:default/platform
-  system: system:default/estate
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: founder-mcp
-  title: "MCP gateway (tools for every agent session)"
-  description: "The one MCP row (crew#458): agentgateway on the cluster fronting the GitHub MCP server, behind the estate login and a per-session API key. A session points its MCP url at /github/mcp here instead of a container on the founder Mac."
-  annotations:
-    idp/updated-by: "Flux from platform/mcp/ on every main merge; the gateway key and GitHub token by the vault-seed workflow, entry mcp-gateway"
-  tags: [founder]
-  links:
-    - title: "GitHub MCP endpoint"
-      url: "https://mcp.${ESTATE_ZONE}/github/mcp"
-      icon: cloud
-    - title: "Gateway config"
-      url: "https://github.com/chidionyema/idp/blob/main/platform/mcp/agentgateway.yaml"
-      icon: docs
 spec:
   type: founder-surface
   lifecycle: production
