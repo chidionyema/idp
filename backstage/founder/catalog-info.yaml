@@ -78,6 +78,28 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: founder-jobs
+  title: "Jobs (healthchecks)"
+  description: "Every scheduled job pings here when it finishes; a job that did not run goes red. Standards row 21 (crew#177), the dead-man switch for the estate's cron."
+  annotations:
+    idp/updated-by: "Flux from platform/healthchecks; pings arrive live from hc-wrap.sh"
+  tags: [founder]
+  links:
+    - title: "Open"
+      url: "https://hc.${ESTATE_ZONE}"
+      icon: dashboard
+    - title: "Health"
+      url: "https://hc.${ESTATE_ZONE}/api/v3/status/"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: founder-login
   title: "The one login (auth)"
   description: "oauth2-proxy in front of every hostname on the zone; Oracle IDCS is the identity provider. There is no second login anywhere."
