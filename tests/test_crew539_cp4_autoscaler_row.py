@@ -31,7 +31,7 @@ def test_nodes_flag_min_is_one_and_max_is_estate_defaults_max_nodes():
     defaults = yaml.safe_load((ROOT / "estate-defaults.yaml").read_text())["node_pool"]
     cmd = _deployment()["spec"]["template"]["spec"]["containers"][0]["command"]
     nodes = [a for a in cmd if a.startswith("--nodes=")]
-    assert len(nodes) == 1, cmd
+    assert nodes, cmd  # crew#539 CP10 adds a second line for the preemptible pool; the first is the on-demand pool
     lo, hi, pool = nodes[0].split("=", 1)[1].split(":")
     assert lo == "1" and int(hi) == defaults["max_nodes"] and defaults["max_nodes"] >= 2
     assert pool == "$(NODEPOOL_ID)", "the pool id comes from the vault-fed Secret, never a literal"

@@ -77,3 +77,22 @@ deny contains msg if {
 	input.capacity.burst.max_nodes < 1
 	msg := "capacity.burst.max_nodes is below 1; the autoscaler floor is one node"
 }
+
+# crew#539 CP10: the preemptible pool is priced with the burst under the same cap. Absent spot rows
+# (an older capacity.json) are read as no spot pool.
+spot_monthly_usd := input.capacity.spot.max_nodes * input.capacity.spot.node_usd_hr * input.capacity.spot.hours_monthly
+
+deny contains msg if {
+	input.capacity.spot
+	(monthly_usd + burst_monthly_usd + spot_monthly_usd) > input.capacity.monthly_cap_usd
+	msg := sprintf(
+		"base pool USD %.2f plus burst USD %.2f plus %v preemptible node(s) for %v h at USD %.3f/h (USD %.2f) is over estate-defaults node_pool.budget_monthly_usd %v: FOUNDER ACTION, not STAGED.",
+		[monthly_usd, burst_monthly_usd, input.capacity.spot.max_nodes, input.capacity.spot.hours_monthly, input.capacity.spot.node_usd_hr, spot_monthly_usd, input.capacity.monthly_cap_usd],
+	)
+}
+
+deny contains msg if {
+	input.capacity.spot
+	input.capacity.spot.node_usd_hr >= input.capacity.burst.node_usd_hr
+	msg := "capacity.spot.node_usd_hr is not below the on-demand burst price; a preemptible pool that costs on-demand money is a misconfiguration, not a saving"
+}

@@ -10,3 +10,4 @@ resources:
   - priorityclasses.yaml
   - balloon.yaml
   - require-priority-class.yaml
+  - capacity-affinity.yaml

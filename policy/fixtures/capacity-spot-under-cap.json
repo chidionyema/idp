@@ -1,0 +1,28 @@
+{
+  "_comment": "crew#539 CP10, the good case: base USD 42.34 + burst USD 5.76 + one preemptible node for 30 h at USD 0.048/h (half of 0.096) = USD 1.44; total 49.54 under the USD 50 cap. Must PASS.",
+  "capacity": {
+    "ocpus": 6,
+    "memory_gb": 24,
+    "free": {
+      "ocpus": 2,
+      "memory_gb": 12
+    },
+    "price_usd_hr": {
+      "ocpu": 0.01,
+      "memory_gb": 0.0015
+    },
+    "monthly_cap_usd": 50,
+    "burst": {
+      "max_nodes": 2,
+      "hours_monthly": 60,
+      "node_usd_hr": 0.096,
+      "monthly_usd": 5.76
+    },
+    "spot": {
+      "max_nodes": 1,
+      "hours_monthly": 30,
+      "node_usd_hr": 0.048,
+      "monthly_usd": 1.44
+    }
+  }
+}
