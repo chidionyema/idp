@@ -78,23 +78,3 @@ spec:
         resources:
           requests: { cpu: 50m, memory: 64Mi }
           limits: { cpu: 500m, memory: 256Mi }
----
-apiVersion: core.k8sgpt.ai/v1alpha1
-kind: K8sGPT
-metadata:
-  name: estate
-  namespace: healing
-spec:
-  ai:
-    enabled: true
-    backend: openai
-    baseUrl: http://litellm.llm.svc:4000/v1
-    model: minimax
-    secret:
-      name: k8sgpt
-      key: key
-    anonymized: true
-    language: english
-  noCache: false
-  repository: ghcr.io/k8sgpt-ai/k8sgpt
-  version: v0.4.37

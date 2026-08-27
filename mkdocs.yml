@@ -55,6 +55,7 @@ nav:
       - EU AI Act: demo/ai-act.md
       - LAW 32 gate: demo/law32.md
       - Actions pinned: demo/actions-pinned.md
+      - Scheduling immunity: demo/scheduling-immunity.md
       - Front-door login drill: demo/idp-login-drill.md
       - Portability drill: demo/idp-portability-drill.md
       - Free-tier allowance row: demo/idp-free-tier.md
@@ -133,3 +134,4 @@ nav:
       - Repo rulesets: onboarding/repo-rulesets.md
       - Telemetry coverage: onboarding/telemetry-coverage.md
       - Wake blocked: onboarding/wake-blocked.md
+      - Scheduling immunity: onboarding/scheduling-immunity.md

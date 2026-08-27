@@ -485,3 +485,21 @@ spec:
       kind: HelmRelease
       name: k8sgpt-operator
       namespace: healing
+---
+# crew#539 CP7: the K8sGPT analyzer CR, split from the operator install so the row
+# dry-runs after core.k8sgpt.ai exists (the chaos-mesh/chaos shape).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: healing-analyzer
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: healing
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/healing/analyzer
+  prune: true
+  wait: true
