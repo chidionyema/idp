@@ -54,7 +54,7 @@ def test_incident_crew320_backend_query_grades_both_ways():
 
     head, body = mod.main(kube=kube, clickhouse=down, now=NOW)
     assert head.startswith("BLIND telemetry-coverage"), head
-    assert set(body["backend_errors"]) == {"logs", "metrics"}
+    assert set(body["backend_errors"]) == {"traces", "logs", "metrics"}
 
     # One table down is still a verdict, with the error recorded.
     def half(sql):

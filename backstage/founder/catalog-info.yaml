@@ -259,6 +259,9 @@ metadata:
     - title: "kyverno-secrets-drill: policy refuses a bad secret"
       url: "https://github.com/chidionyema/idp/actions/workflows/kyverno-secrets-drill.yml"
       icon: dashboard
+    - title: "portability-drill: the platform hydrates on a cluster with no OCI"
+      url: "https://github.com/chidionyema/idp/actions/workflows/portability-drill.yml"
+      icon: dashboard
     - title: "drill-heartbeat: every drill ran on time"
       url: "https://github.com/chidionyema/idp/actions/workflows/drill-heartbeat.yml"
       icon: dashboard
