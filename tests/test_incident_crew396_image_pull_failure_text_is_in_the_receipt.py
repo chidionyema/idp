@@ -65,3 +65,22 @@ def test_a_failed_job_pod_that_never_restarted_carries_its_current_log():
     got = json.loads(r.stdout)
     assert set(got["out"]) == {"step", "looping"} and got["out"]["step"] == "Traceback: boom\n"
     assert [u.split("container=")[1] for u in got["asked"]] == ["step&previous=false&tailLines=8", "looping&previous=true&tailLines=8"]
+
+
+def test_third_receipt_a_killed_job_pod_names_its_pod_reason_and_terminated_reason():
+    """Third receipt (05:33Z, oke-check 33042332456): six kini-state pods were phase Failed, restarts 0,
+    waiting {} and last_log {}. Both ways in one run: failed() names the pod-level reason and a
+    container's terminated reason and exit code; a pod with no reason and a running container is {}."""
+    collect = _collect()
+    assert '"failed": failed(p["status"])' in collect
+    src = collect.split("def failed", 1)[1].split("not_ready = [", 1)[0]
+    killed = {"phase": "Failed", "reason": "DeadlineExceeded", "message": "Pod was active longer than the specified deadline",
+              "containerStatuses": [{"name": "step", "restartCount": 0,
+                                     "state": {"terminated": {"reason": "Error", "exitCode": 137}}}]}
+    quiet = {"phase": "Running", "containerStatuses": [{"name": "web", "restartCount": 0, "state": {"running": {}}}]}
+    prog = "def failed" + src + f"\nimport json; print(json.dumps(failed({killed!r}))); print(json.dumps(failed({quiet!r})))"
+    out = subprocess.run([sys.executable, "-c", prog], capture_output=True, text=True, check=True).stdout.splitlines()
+    got = json.loads(out[0])
+    assert got["pod"].startswith("DeadlineExceeded: Pod was active longer")
+    assert got["step"] == "Error exit=137: "
+    assert json.loads(out[1]) == {}
