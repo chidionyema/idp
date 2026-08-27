@@ -449,9 +449,9 @@ jobs:
     # minutes, not a day. Exit 2 = BLIND (no feed, or the board unreadable): a finding, not a crash.
     runs_on: mac
     runs_on_ref: crew#516 CP5
-    ok_exit: [2]
+    ok_exit: [3]
     env:
-      HC_FINDINGS_EXIT: "2"
+      HC_FINDINGS_EXIT: "3"
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - board-assign
