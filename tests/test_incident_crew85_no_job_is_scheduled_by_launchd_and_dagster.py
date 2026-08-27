@@ -14,7 +14,7 @@ TOOL = ROOT / "bin/idp-launchd-retire"
 
 def test_overlap_is_the_intersection_and_nothing_else():
     ns = {}
-    exec(compile(TOOL.read_text(), str(TOOL), "exec"), {"__name__": "lib", **ns}, ns)
+    exec(compile(TOOL.read_text(), str(TOOL), "exec"), {"__name__": "lib", "__file__": str(TOOL)}, ns)
     assert ns["overlap"]({"a", "b"}, {"b", "c"}) == ["b"]
     assert ns["overlap"]({"a"}, {"c"}) == []
 
