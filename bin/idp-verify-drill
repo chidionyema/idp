@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# crew#345: live verification on a machine identity, never on a person's browser session.
+#
+# On 2026-08-26 live cluster verification stopped at least five times because the laptop's OCI
+# session had expired. Measured, not guessed: a browser session token is a 60-minute JWT
+# (exp - iat), refreshable to 24 h from the login and then dead; a `--no-browser` token-exchange
+# session has sess_exp == exp and cannot be refreshed at all. A platform whose health check
+# needs a person awake every hour is not durable (crew#250 R35).
+#
+# This drill runs from .github/workflows/verify-drill.yml every hour, holding only the OCI
+# session the job exchanged its GitHub OIDC token for (service user estate-ci, trust
+# github-actions-estate, bin/idp-oci-bootstrap). Three rows, then one verdict line:
+#
+#   ok      identity     session subject is service user estate-ci (token exchange, no login)
+#   ok      cluster      1 cluster ACTIVE, 1/1 node pool(s) ACTIVE
+#   ok      receipt      ok cluster-state ... nodes=1 ready=1 ... (12 min ago)
+#   ok      verify-drill 3/3 rows green
+#
+# The receipt row is the cluster's own word, written every 15 minutes from inside by
+# platform/state/cluster-state.yaml on the node's instance principal and graded by
+# bin/idp-cluster-state (idp#267); a runner has no kube path and this is the door it reads through.
+# FAIL when any row is red, BLIND (exit 2) when a row cannot be measured. Never asks anything.
+set -uo pipefail
+COMP="${OCI_COMPARTMENT_OCID:?OCI_COMPARTMENT_OCID}"
+EXPECT_USER="${ESTATE_CI_USER:-estate-ci}"
+red=0; blind=0
+say()  { printf '%-7s %-12s %s\n' "$1" "$2" "$3"; }
+fail() { say FAIL "$1" "$2"; red=$((red+1)); }
+bl()   { say BLIND "$1" "$2"; blind=$((blind+1)); }
+command -v oci >/dev/null || { say BLIND verify-drill "oci CLI is not installed"; exit 2; }
+command -v python3 >/dev/null || { say BLIND verify-drill "python3 is not installed"; exit 2; }
+[ "${OCI_CLI_AUTH:-}" = security_token ] || { say BLIND verify-drill "OCI_CLI_AUTH is '${OCI_CLI_AUTH:-}', not security_token: no exchanged session in this environment"; exit 2; }
+
+# --- identity: whose session is this? A person's OCID here is the incident, not a pass. ------
+tok=$(awk -F'[ =]+' '/^security_token_file/{print $2; exit}' "${OCI_CLI_CONFIG_FILE:-$HOME/.oci/config}" 2>/dev/null)
+if [ -z "$tok" ] || [ ! -r "$tok" ]; then bl identity "no security_token_file in the oci config: the token exchange step did not run"
+else
+  claims=$(python3 - "$tok" <<'PY'
+import base64, json, sys
+seg = open(sys.argv[1]).read().strip().split(".")[1]
+c = json.loads(base64.urlsafe_b64decode(seg + "=" * (-len(seg) % 4)))
+print(c.get("sub", ""), c.get("ttype", ""), (c.get("exp", 0) - c.get("iat", 0)) // 60)
+PY
+  )
+  sub=${claims%% *}; rest=${claims#* }; ttype=${rest%% *}; ttl=${rest#* }
+  name=$(oci iam user get --user-id "$sub" --query 'data.name' --raw-output 2>/dev/null || true)
+  if [ -z "$name" ]; then bl identity "session subject ${sub:0:24}... (ttype=$ttype, ${ttl} min): iam user get refused, cannot name it"
+  elif [ "$name" != "$EXPECT_USER" ]; then fail identity "session subject is $name, expected service user $EXPECT_USER: a person's login is running the platform check"
+  elif [ "$ttype" != te ]; then fail identity "session subject is $name but ttype=$ttype is not a token exchange (te): a browser login, not the machine identity"
+  else say ok identity "session subject is service user $name (token exchange, ${ttl} min, no login)"; fi
+fi
+
+# --- cluster: the control plane and node pools answer through the OCI API ------------------
+cl=$(oci ce cluster list --compartment-id "$COMP" --lifecycle-state ACTIVE --query 'data[].{n:name,id:id}' --output json 2>&1)
+if ! printf '%s' "$cl" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if isinstance(d,list) else 1)' 2>/dev/null; then bl cluster "oci ce cluster list failed: $(printf '%s' "$cl" | tail -1 | cut -c1-160)"
+else
+  n_cl=$(printf '%s' "$cl" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
+  if [ "$n_cl" -lt 1 ]; then fail cluster "no ACTIVE cluster in the compartment"
+  else
+    np=$(oci ce node-pool list --compartment-id "$COMP" --query 'data[].{n:name,s:"lifecycle-state"}' --output json 2>/dev/null || echo '[]')
+    read -r n_all n_ok < <(printf '%s' "$np" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d), sum(1 for p in d if p["s"]=="ACTIVE"))')
+    if [ "$n_all" -lt 1 ] || [ "$n_ok" != "$n_all" ]; then fail cluster "$n_cl cluster ACTIVE, $n_ok/$n_all node pool(s) ACTIVE"
+    else say ok cluster "$n_cl cluster ACTIVE, $n_ok/$n_all node pool(s) ACTIVE"; fi
+  fi
+fi
+
+# --- receipt: the cluster's own verdict, written every 15 min by platform/state (idp#267) and
+# graded by bin/idp-cluster-state for freshness and Ready. One writer, one reader, reused here.
+line=$("$(dirname "$0")/idp-cluster-state" 2>&1 | tail -1)
+case "$line" in
+  ok*)    say ok receipt "$(printf '%s' "$line" | sed -E 's/^ok +cluster-state +//')";;
+  FAIL*)  fail receipt "$(printf '%s' "$line" | sed -E 's/^FAIL +cluster-state +//')";;
+  *)      bl receipt "$(printf '%s' "$line" | sed -E 's/^BLIND +cluster-state +//')";;
+esac
+
+if [ "$red" -gt 0 ]; then say FAIL verify-drill "$red row(s) red, $blind blind"; exit 1; fi
+if [ "$blind" -gt 0 ]; then say BLIND verify-drill "$blind row(s) not measured"; exit 2; fi
+say ok verify-drill "3/3 rows green on the machine identity"
