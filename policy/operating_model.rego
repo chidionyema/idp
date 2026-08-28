@@ -86,7 +86,7 @@ deny contains msg if {
 # `DENY: <word>` comment from the repository owner's login (bin/pr-report pr.denials) is refused.
 # No word, no APPROVE, and a green PR merges. The word said on Telegram is still not evidence.
 
-founder_facing_prefixes := {"backstage/", "platform/identity/", "platform/edge/", "docs/policy/", "estate-defaults.yaml"}
+founder_facing_prefixes := {"backstage/", "platform/identity/", "platform/edge/", "docs/reference/policy/", "estate-defaults.yaml"}
 
 touches_founder_facing if {
 	some f in input.pr.files
