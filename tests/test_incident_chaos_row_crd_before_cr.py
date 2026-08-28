@@ -84,6 +84,58 @@ def _rows():
     return out
 
 
+#: The GitRepository this repository is served to Flux as. A row pointing at any other source
+#: names a path inside somebody else's checkout, so `kubectl kustomize` here cannot render it.
+LOCAL_SOURCE = "flux-system"
+
+
+def _foreign_rows():
+    """Rows whose `sourceRef` is not this repository, read off the Kustomization rather than listed.
+
+    crew#488. The sweeps below used to answer `if docs is None: continue` -- a row that failed to
+    render was silently not checked, and a hand-maintained skip list would have grown one entry per
+    complaint, which is the defect the closure rewrite removed in the first place. Three rows are
+    foreign today (`estate-catalog` off an OCIRepository, `gateway-api-crds` off the upstream
+    gateway-api GitRepository, `prospector` off the product's own), and every one of them is
+    foreign because of a field, not because somebody typed its name.
+    """
+    out = set()
+    for f in sorted(glob.glob(str(ROOT / "clusters" / "*" / "*.yaml"))):
+        for d in yaml.safe_load_all(open(f)):
+            if d and d.get("kind") == "Kustomization" and d["spec"].get("path") \
+                    and d["spec"].get("sourceRef", {}).get("name") != LOCAL_SOURCE:
+                out.add(d["metadata"]["name"])
+    return out
+
+
+def _sweep(rows, offenders_for, counter):
+    """Run one offender check over every row of this repository at once.
+
+    Returns `(offences, seen, asked)`. `offences` carries one line per row, and the sweep does not
+    stop at the first: a check that asserts inside the loop reports one row per run, so a tree with
+    three faults needs three runs to show three faults (LAW 28 -- an instrument you have to
+    re-trigger to see the rest of the fault is not showing you the fault).
+
+    A row of this repository that will not render is an offence too, not a skip.
+    """
+    foreign = _foreign_rows()
+    offences, seen, asked = [], 0, 0
+    for name, (path, _) in sorted(rows.items()):
+        docs = _docs(path)
+        if docs is None:
+            if name not in foreign:
+                offences.append(f"row {name} ({path}) does not render, and its source is "
+                                f"{LOCAL_SOURCE}, so the sweep cannot say whether it is clean")
+            continue
+        seen += 1
+        asked += sum(counter(d) for d in docs)
+        bad = offenders_for(name, docs)
+        if bad:
+            offences.append(f"row {name} ({path.relative_to(ROOT)}), whose closure is "
+                            f"{sorted(_closure(name, rows))}: " + ", ".join(bad))
+    return offences, seen, asked
+
+
 def _closure(name, rows, seen=None):
     seen = set() if seen is None else seen
     for parent in rows.get(name, (None, set()))[1]:
@@ -289,17 +341,12 @@ def test_no_flux_row_names_a_priority_class_its_ordering_has_not_created_yet():
     rows = _rows()
     providers = _priority_class_providers(rows)
     assert len(providers) >= 2, f"the tree renders {providers} -- the sweep found no PriorityClass to check against"
-    seen, asked = 0, 0
-    for name, (path, _) in sorted(rows.items()):
-        docs = _docs(path)
-        if docs is None:
-            continue
-        seen += 1
-        asked += sum(len(_named(d, "priorityClassName")) for d in docs)
-        bad = priority_class_offenders(docs, providers, _closure(name, rows), row=name)
-        assert bad == [], (
-            f"row {name} ({path.relative_to(ROOT)}) creates pods the API server will refuse; its "
-            f"closure is {sorted(_closure(name, rows))}: " + ", ".join(bad))
+    offences, seen, asked = _sweep(
+        rows,
+        lambda name, docs: priority_class_offenders(docs, providers, _closure(name, rows), row=name),
+        lambda d: len(_named(d, "priorityClassName")))
+    assert offences == [], (
+        "these rows create pods the API server will refuse:\n  " + "\n  ".join(offences))
     assert seen > 25 and asked >= 10, (
         f"{seen} rows rendered and {asked} priorityClassName reference(s) read -- a sweep that "
         f"reads nothing passes for the wrong reason")
@@ -456,17 +503,12 @@ def test_no_flux_row_reaches_into_a_namespace_its_ordering_has_not_created_yet()
     rows = _rows()
     providers = _namespace_providers(rows)
     assert len(providers) >= 15, f"only {len(providers)} namespace(s) traced to a row -- the sweep is not reading the tree"
-    seen, asked = 0, 0
-    for name, (path, _) in sorted(rows.items()):
-        docs = _docs(path)
-        if docs is None:
-            continue
-        seen += 1
-        asked += sum(len(_namespaces_used(d)) for d in docs)
-        bad = namespace_offenders(docs, providers, _closure(name, rows), row=name)
-        assert bad == [], (
-            f"row {name} ({path.relative_to(ROOT)}) applies into a namespace that does not exist "
-            f"yet; its closure is {sorted(_closure(name, rows))}: " + ", ".join(bad))
+    offences, seen, asked = _sweep(
+        rows,
+        lambda name, docs: namespace_offenders(docs, providers, _closure(name, rows), row=name),
+        lambda d: len(_namespaces_used(d)))
+    assert offences == [], (
+        "these rows apply into a namespace that does not exist yet:\n  " + "\n  ".join(offences))
     assert seen > 25 and asked >= 100, (
         f"{seen} rows rendered and {asked} namespace reference(s) read -- a sweep that reads "
         f"nothing passes for the wrong reason")
@@ -521,3 +563,35 @@ def test_the_namespaces_kubernetes_and_flux_install_create_are_the_only_free_one
     assert _namespace_providers(_rows()).keys() & BUILTIN_NAMESPACES == set()
     docs = [{"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "c", "namespace": "kube-system"}}]
     assert namespace_offenders(docs, {}, set(), row="metrics-server") == []
+
+
+def test_every_row_of_this_repository_renders_and_a_row_that_does_not_is_an_offence():
+    """The silent-miss guard. `if docs is None: continue` checked nothing and said nothing; a row
+    of this repository that stops rendering (a moved path, a broken kustomization) would leave the
+    sweep passing on 36 rows instead of 37, and the count bound alone would not notice one."""
+    rows = _rows()
+    foreign = _foreign_rows()
+    assert foreign == {"estate-catalog", "gateway-api-crds", "prospector"}, sorted(foreign)
+    local = {n for n in rows if n not in foreign}
+    assert len(local) >= 35, sorted(local)
+    unrenderable = sorted(n for n in local if _docs(rows[n][0]) is None)
+    assert unrenderable == [], (
+        "rows served from this repository that kubectl kustomize will not build: "
+        + ", ".join(unrenderable))
+
+    #: And the offence is reported, not skipped: a row pointed at a directory that does not exist.
+    offences, _, _ = _sweep({"invented": (ROOT / "no-such-directory", set())},
+                            lambda name, docs: [], lambda d: 0)
+    assert len(offences) == 1 and "does not render" in offences[0], offences
+
+
+def test_the_sweep_reports_every_offending_row_in_one_run():
+    """LAW 28. Asserting inside the loop showed one row per run, so the tree that produced this
+    incident -- `edge`, `chaos`, `cluster-state` and `spire` all wrong at once -- would have taken
+    four runs to read. Two bad rows in, two lines out."""
+    renders = _rows()["scheduling"][0]  # any path this repository really builds
+    bad_rows = {"a": (renders, set()), "b": (renders, set())}
+    offences, seen, asked = _sweep(bad_rows, lambda name, docs: [f"{name} is wrong"], lambda d: 1)
+    assert len(offences) == 2, offences
+    assert offences[0].startswith("row a") and offences[1].startswith("row b"), offences
+    assert seen == 2 and asked > 0, (seen, asked)
