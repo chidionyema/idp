@@ -37,6 +37,7 @@ POLICY = ROOT / "platform/tailscale/policy.hujson"
 # Sunshine's listening block, from its network configuration docs: TCP 47984 (HTTPS), 47989 (HTTP),
 # 47990 (web UI) and 48010 (RTSP); UDP 47998/47999/48000/48002 (video, control, audio, mic) and
 # 48010. The dst range below must contain every one of them.
+FOUNDER_SRC = "group:founder"
 SUNSHINE_PORTS = [47984, 47989, 47990, 47998, 47999, 48000, 48002, 48010]
 SHORTCUT_SSH_PORT = 22
 
@@ -115,13 +116,13 @@ def test_the_cluster_still_reaches_the_mac_on_ssh_and_nothing_else(policy):
 @pytest.mark.parametrize("port", SUNSHINE_PORTS)
 def test_the_founder_reaches_sunshine_on_every_port_it_listens_on(policy, port):
     """One missing port is a stream that connects and then stalls -- worse than a clean refusal."""
-    member = _dst_ports(policy, "tag:founder-mac").get("autogroup:member", set())
+    member = _dst_ports(policy, "tag:founder-mac").get(FOUNDER_SRC, set())
     assert port in member, f"Sunshine listens on {port} and no rule lets the founder's phone reach it"
 
 
 def test_the_ios_shortcut_can_ssh_to_wake_the_mac(policy):
     """Action 1 of the Shortcut is `caffeinate -u -t 2` over SSH; without 22 the Mac never wakes."""
-    member = _dst_ports(policy, "tag:founder-mac").get("autogroup:member", set())
+    member = _dst_ports(policy, "tag:founder-mac").get(FOUNDER_SRC, set())
     assert SHORTCUT_SSH_PORT in member
 
 
@@ -133,8 +134,65 @@ def test_tailscale_ssh_also_admits_the_founder_not_only_the_cluster(policy):
     the founder in `acls` and forgets `ssh` refuses the Shortcut anyway.
     """
     srcs = {s for r in policy["ssh"] if r.get("action") in ("accept", "check") for s in r["src"]}
-    assert "autogroup:member" in srcs
+    assert FOUNDER_SRC in srcs
     assert "tag:k8s" in srcs, "the cluster's own SSH rule was dropped while adding the founder's"
+
+
+def test_tailscale_ssh_needs_the_acls_rule_as_well(policy):
+    """The `:22` in the acls dst is load-bearing, and a header cannot stop someone deleting it.
+
+    "For a connection to be permitted, the tailnet policy file must contain rules permitting both
+    network access and SSH access" (tailscale.com/kb/1193/tailscale-ssh). `--ssh` adds the second
+    gate; it does not replace the first. The failure this refuses is a reader who sees the ssh rule
+    naming the same connection, concludes the acls `:22` is dead weight, removes it -- and gets SSH
+    refused with an ssh rule still sitting there looking correct (peer review, session 78caaa17).
+    """
+    member = _dst_ports(policy, "tag:founder-mac").get(FOUNDER_SRC, set())
+    assert SHORTCUT_SSH_PORT in member, (
+        "port 22 left the acls rule. Tailscale SSH needs BOTH an acls rule and an ssh rule; "
+        "the ssh entry alone does not permit the connection (kb/1193)")
+
+
+def test_the_founder_is_named_not_taken_from_whoever_is_in_the_tailnet(policy):
+    """`autogroup:member` is dynamic; the founder's spec for this tag is identity, not membership.
+
+    With `autogroup:member` the first person added to the tailnet later -- a buyer's engineer in
+    diligence, a contractor, a second account -- silently gets Moonlight streaming of the founder's
+    desktop and SSH as his Unix user, with nothing red and no PUT failure. Naming the login makes a
+    second person a deliberate edit to this file (peer review, session 78caaa17 on idp#606).
+    """
+    srcs = {s for r in policy["acls"] for s in r["src"]}
+    srcs |= {s for r in policy["ssh"] for s in r["src"]}
+    assert "autogroup:member" not in srcs, "membership is not identity; name the login"
+    assert policy["groups"][FOUNDER_SRC] == ["${FOUNDER_TAILNET_USER}"]
+
+
+def test_every_placeholder_the_policy_uses_is_one_the_applier_substitutes():
+    """A `${...}` missing from envsubst's allow-list is PUT as a literal and matches nobody.
+
+    `envsubst '${A},${B}'` is a single-variable allow-list: anything not in it survives verbatim,
+    Tailscale accepts it as a user that does not exist, and the rule silently matches no one with
+    a 200 coming back. This is the trap that made this exact change three files instead of one
+    (peer review, session 78caaa17). The applier also refuses a rendered body with a surviving
+    `${`, which is the runtime half of the same rule.
+    """
+    applier = (ROOT / "bin/idp-tailscale-policy").read_text()
+    used = set(re.findall(r"\$\{([A-Z_][A-Z0-9_]*)\}", POLICY.read_text()))
+    assert used == {"FOUNDER_MAC_USER", "FOUNDER_TAILNET_USER"}, used
+    allowed = set(re.findall(r"envsubst '([^']*)'", applier)[0].replace("$", "")
+                  .replace("{", "").replace("}", "").split(","))
+    assert used <= allowed, f"not substituted, would be PUT as a literal: {used - allowed}"
+    for name in used:
+        assert f'read_cfg {name}' in applier, f"{name} is never read from estate-config"
+        assert f'{name} is empty' in applier, f"{name} has no empty-value guard; it must fail closed"
+    assert "*'${'*)" in applier, "the applier no longer refuses a body with a surviving placeholder"
+
+
+def test_estate_config_declares_both_founder_keys_and_neither_is_a_literal():
+    """LAW 46 and LAW 21: the values are the founder's hand, empty in git until he fills them."""
+    cfg = (ROOT / "clusters/oke/estate-config.yaml").read_text()
+    for name in ("FOUNDER_MAC_USER", "FOUNDER_TAILNET_USER"):
+        assert f'{name}: ""' in cfg, f"{name} is missing or carries a literal value in git"
 
 
 def test_the_founder_is_not_given_the_whole_mac(policy):
@@ -143,7 +201,7 @@ def test_the_founder_is_not_given_the_whole_mac(policy):
     The fix for being locked out is a named set of ports, not `*`. A wildcard would pass every
     test above and quietly undo the thing crew#516 CP5 was for.
     """
-    member = _dst_ports(policy, "tag:founder-mac").get("autogroup:member", set())
+    member = _dst_ports(policy, "tag:founder-mac").get(FOUNDER_SRC, set())
     assert len(member) < 1000, "the founder's rule opened the whole device; name the ports"
     assert member <= {SHORTCUT_SSH_PORT} | set(range(47984, 48011))
 
@@ -155,6 +213,7 @@ def test_no_username_host_or_account_is_a_literal(policy):
     for rule in policy["ssh"]:
         assert rule["users"] == ["${FOUNDER_MAC_USER}"]
     assert "@" not in json.dumps(policy), "a literal login reached the policy body"
+    assert policy["groups"]["group:founder"] == ["${FOUNDER_TAILNET_USER}"]
 
 
 def test_the_reason_this_file_changed_is_written_in_it(policy):
@@ -167,3 +226,4 @@ def test_the_reason_this_file_changed_is_written_in_it(policy):
     assert "crew#562" in text
     assert "deny-by-default" in text or "default deny" in text
     assert "removes any user-based authentication" in text
+    assert "permitting both" in text, "the acls-and-ssh conjunction (kb/1193) left the header"

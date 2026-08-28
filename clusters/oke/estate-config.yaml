@@ -28,3 +28,11 @@ data:
   # secret below.
   FOUNDER_MAC_USER: ""
   FOUNDER_MAC_TS_IP: ""
+  # crew#562: the founder's tailnet LOGIN, which is not the same thing as FOUNDER_MAC_USER above --
+  # that one is the Unix account on the Mac. platform/tailscale/policy.hujson names this one as the
+  # only member of group:founder, the rule that lets his iPhone reach his own tagged Mac (Moonlight
+  # to Sunshine, and the Shortcut's SSH). Deliberately a named login rather than autogroup:member:
+  # membership is dynamic, so the first person added to the tailnet later would inherit streaming of
+  # his desktop with nothing red. Empty until he fills it; bin/idp-tailscale-policy prints BLIND and
+  # exits 2 rather than PUT a policy naming nobody.
+  FOUNDER_TAILNET_USER: ""
