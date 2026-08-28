@@ -63,6 +63,10 @@ for path in sorted(paths):
         if d and d.get("kind") == "PolicyException" and d["metadata"].get("namespace") == "kyverno":
             (out / f"{n}.yaml").write_text(yaml.safe_dump(d)); n += 1
         if d and d.get("kind") == "ClusterPolicy":
+            # platform/scheduling's kustomization stamps a namespace on its ClusterPolicies; the API
+            # server ignores it on a cluster-scoped object, the CLI skips the policy with an error
+            # count and no verdict. Strip it so the policy is judged, not skipped.
+            d["metadata"].pop("namespace", None)
             with open(out.parent / "policies.yaml", "a") as f: f.write("---\n" + yaml.safe_dump(d)); est += 1
 print(f"exceptions {n} PolicyExceptions in namespace kyverno across clusters/oke paths")
 print(f"policies  +{est} estate ClusterPolicies from clusters/oke paths (platform/edge, platform/scheduling)")
