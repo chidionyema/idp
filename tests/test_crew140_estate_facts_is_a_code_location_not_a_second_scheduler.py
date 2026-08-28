@@ -36,7 +36,7 @@ def test_workspace_names_both_locations_by_relative_path():
 
 def test_scheduler_up_refuses_a_missing_or_broken_facts_location():
     text = (ROOT / "bin" / "scheduler-up").read_text()
-    assert 'FACTS="$IDP/../crew/science/scheduler"' in text
+    assert 'crew/science/scheduler"' in text and "idp-repo-root" in text
     assert "from estate_dagster.facts import defs" in text
     # the refusal path is a stated FAIL with exit 1, before the daemon is started
     assert text.index("code location estate-facts") < text.index("dagster-daemon\" run")

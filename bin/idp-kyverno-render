@@ -18,7 +18,12 @@ IDP="$(cd "$(dirname "$0")/.." && pwd)"
 S="$(mktemp -d)"; trap 'rm -rf "$S"' EXIT
 for t in helm kubectl kyverno python3; do command -v "$t" >/dev/null || { echo "BLIND  $t is not installed; nothing was judged"; exit 2; }; done
 
-pol="${IDP_KYVERNO_POLICIES:-$IDP/../prospector-main/deploy/k8s/policies}"
+# Beside the PRIMARY checkout, not beside this one. This said "$IDP/.." until 2026-08-28, and
+# every agent session works in a linked worktree under a temp directory with no prospector next to
+# it, so the default resolved to nothing and the judge went BLIND on every local run -- which is
+# how CI became the only thing in the estate that ever judged a render (crew#516).
+primary="$("$IDP/bin/idp-repo-root" "$IDP")"
+pol="${IDP_KYVERNO_POLICIES:-$primary/../prospector-main/deploy/k8s/policies}"
 if [ -f "$pol/kustomization.yaml" ]; then src="$pol"
 else src="$IDP/tests/fixtures/kyverno/upstream"; fi
 kubectl kustomize "$src" > "$S/policies.yaml"

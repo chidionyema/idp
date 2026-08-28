@@ -22,7 +22,9 @@ log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 "$IDP/.venv/bin/python" -c "import sys; sys.path.insert(0, '$IDP/scheduler'); from estate_scheduler.definitions import defs; print('schedule.yml ok:', len(list(defs.jobs or [])), 'jobs')"
 # crew#140: the second location lives in the crew checkout beside this one. Same rule: a
 # location that does not import is a stated refusal here, never a daemon that ticks half a tree.
-FACTS="$IDP/../crew/science/scheduler"
+# Beside the PRIMARY checkout, not beside this one: run from a worktree and "$IDP/.." is a
+# temp directory with no crew in it (crew#516, same class as idp-kyverno-render).
+FACTS="$("$IDP/bin/idp-repo-root" "$IDP")/../crew/science/scheduler"
 [ -f "$FACTS/estate_dagster/facts.py" ] || { log "FAIL      code location estate-facts: $FACTS/estate_dagster/facts.py is not there (crew checkout beside idp)"; exit 1; }
 ( cd "$FACTS" && "$IDP/.venv/bin/python" -c "from estate_dagster.facts import defs, SPECS; print('estate-facts ok:', len(SPECS), 'assets')" )
 
