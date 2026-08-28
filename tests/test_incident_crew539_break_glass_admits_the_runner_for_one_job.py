@@ -75,7 +75,7 @@ def test_unknown_playbook_is_refused_and_list_names_both(tmp_path):
     p, _ = _run("rm-rf-everything", tmp_path)
     assert p.returncode == 64
     listed = subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
-    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node", "dns-per-namespace", "tcp-per-node"]
+    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node", "dns-per-namespace", "tcp-per-node", "node-drain", "node-uncordon"]
 
 
 def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
@@ -91,7 +91,7 @@ def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
 def test_workflow_offers_break_glass_with_a_named_playbook():
     wf = WORKFLOW.read_text()
     assert "surge-finish, break-glass]" in wf
-    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node]" in wf
+    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon]" in wf
     assert "BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}" in wf
 
 
@@ -310,8 +310,17 @@ def test_tcp_per_node_connects_from_inside_the_failing_namespace_pinned_to_every
 
 def test_diagnose_prints_the_clickhouse_limit_at_every_link_and_the_cronjobs(tmp_path):
     # run 33144117286: signoz.v40 carried the 4Gi limit and the clickhouse pod kept "maximum: 1.80
-    # GiB"; the link that did not roll has to be named from the CHI, the StatefulSet and the pod
-    p, calls = _run("diagnose", tmp_path)
+    # GiB"; the link that did not roll has to be named from the CHI, the StatefulSet and the pod.
+    # Run 33145711762: `-l app=clickhouse-operator` matched nothing; the operator is found by name.
+    bin_dir, log = _fake_path(tmp_path)
+    (bin_dir / "kubectl").write_text(
+        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
+        "case \"$*\" in\n"
+        "  *'get pods -A --no-headers'*) printf 'kube-system coredns-1 1/1 Running 0 1h\\nobservability signoz-clickhouse-operator-9946d55c-n8z7q 2/2 Running 1 2h\\n';;\n"
+        "  *) cat >/dev/null 2>&1; echo ok;;\nesac\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "diagnose"], capture_output=True, text=True, env=env)
+    calls = log.read_text().splitlines()
     assert p.returncode == 0, p.stdout + p.stderr
     assert "--- clickhouse-installation" in p.stdout
     assert "--- clickhouse-operator-log" in p.stdout
@@ -320,8 +329,8 @@ def test_diagnose_prints_the_clickhouse_limit_at_every_link_and_the_cronjobs(tmp
     assert "get chi -A -o jsonpath" in joined
     assert "get sts -A -l clickhouse.altinity.com/chi" in joined
     assert "get pods -A -l clickhouse.altinity.com/chi" in joined
-    assert "get pods -A -l app=clickhouse-operator -o jsonpath" in joined
-    assert "logs -n" in joined and "-l app=clickhouse-operator --tail=40" in joined
+    assert "get pods -A --no-headers" in joined
+    assert "logs -n observability signoz-clickhouse-operator-9946d55c-n8z7q --all-containers --tail=40" in joined
     assert "get cronjobs,jobs -A" in joined
 
 
@@ -355,3 +364,112 @@ def test_probe_log_prints_every_target_line_not_only_the_last(tmp_path):
     assert p.returncode == 0, p.stdout + p.stderr
     assert "FAIL a.observability.svc.cluster.local:5432" in p.stdout, p.stdout
     assert "ok b.observability.svc.cluster.local:6379" in p.stdout, p.stdout
+
+
+def _node_drain_kubectl(bin_dir: Path, log: Path, pods: str, nodes: str = "10.0.148.221 True \\n10.0.159.197 True \\n") -> None:
+    (bin_dir / "kubectl").write_text(
+        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
+        "case \"$*\" in\n"
+        "  *'get pods -A -o jsonpath'*) printf '" + pods + "';;\n"
+        "  *'get nodes -o jsonpath'*) printf '" + nodes + "';;\n"
+        "  *) cat >/dev/null 2>&1; echo ok;;\nesac\n"
+    )
+
+
+def test_node_drain_retires_the_node_carrying_the_crashing_pods_and_only_that_node(tmp_path):
+    # crew#539 5448912676: clickhouse, langfuse-web and langfuse-worker all crashed on 10.0.148.221,
+    # each timing out to a Service whose backend was on that same node; the replica on 10.0.159.197
+    # ran. The node is picked from the pods, never typed; it is cordoned before it is drained; the
+    # drain keeps DaemonSets and lets emptyDir go so the autoscaler can remove the empty node.
+    bin_dir, log = _fake_path(tmp_path)
+    _node_drain_kubectl(bin_dir, log,
+        "10.0.148.221 observability/langfuse-web-a Running false \\n"
+        "10.0.148.221 observability/langfuse-worker-a Running false \\n"
+        "10.0.148.221 observability/chi-0 Running false \\n"
+        "10.0.159.197 observability/langfuse-web-b Running true \\n"
+        "10.0.159.197 observability/migrator Succeeded false \\n"
+        "10.0.159.197 healing/descheduler-1 Failed false \\n"
+        "10.0.159.197 healing/descheduler-2 Failed false \\n"
+        "10.0.159.197 healing/descheduler-3 Failed false \\n"
+        "10.0.159.197 healing/descheduler-4 Failed false \\n"
+        "10.0.159.197 healing/descheduler-5 Failed false \\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    calls = log.read_text().splitlines()
+    assert "--- target 10.0.148.221" in p.stdout, p.stdout
+    cordon = [i for i, c in enumerate(calls) if c.endswith("cordon 10.0.148.221")]
+    drain = [i for i, c in enumerate(calls) if "drain 10.0.148.221 --ignore-daemonsets --delete-emptydir-data --timeout=600s" in c]
+    assert cordon and drain and cordon[0] < drain[0], calls
+    assert not any("10.0.159.197" in c for c in calls if "cordon" in c or "drain" in c), calls
+    assert "observability/langfuse-web-a" in p.stdout and "observability/migrator" not in p.stdout
+    assert "healing/descheduler-1" not in p.stdout   # five Failed job pods on .197 do not out-vote three crashers on .221
+
+
+def test_node_drain_reads_every_container_not_only_the_first(tmp_path):
+    # idp#540 review: a 2/3 pod whose third container crashes is sick; $4 alone missed it
+    bin_dir, log = _fake_path(tmp_path)
+    _node_drain_kubectl(bin_dir, log,
+        "10.0.159.197 observability/operator Running true true false \\n"
+        "10.0.148.221 a/ok Running true true true \\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "--- target 10.0.159.197" in p.stdout, p.stdout
+
+
+def test_node_drain_touches_nothing_when_every_pod_runs(tmp_path):
+    bin_dir, log = _fake_path(tmp_path)
+    _node_drain_kubectl(bin_dir, log, "10.0.148.221 a/b Running true \\n10.0.159.197 a/c Succeeded false \\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0 and "nothing to drain" in p.stdout, p.stdout + p.stderr
+    assert not any(("cordon" in c or "drain" in c) for c in log.read_text().splitlines())
+
+
+def test_node_uncordon_is_the_undo(tmp_path):
+    bin_dir, log = _fake_path(tmp_path)
+    (bin_dir / "kubectl").write_text(
+        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
+        "case \"$*\" in\n  *'get nodes -o jsonpath'*) printf '10.0.148.221 ';;\n  *) echo ok;;\nesac\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-uncordon"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "kubectl --request-timeout=60s uncordon 10.0.148.221" in log.read_text()
+
+
+def test_node_drain_never_picks_a_node_that_is_not_ready(tmp_path):
+    # a NotReady node carries every pod the scheduler gave up on; it is the cloud layer's to replace
+    bin_dir, log = _fake_path(tmp_path)
+    _node_drain_kubectl(bin_dir, log,
+        "10.0.1.1 a/x Running false \\n10.0.1.1 a/y Running false \\n10.0.1.1 a/z Pending \\n"
+        "10.0.148.221 observability/langfuse-web-a Running false \\n10.0.159.197 a/ok Running true \\n",
+        nodes="10.0.1.1 False \\n10.0.148.221 True \\n10.0.159.197 True \\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "--- target 10.0.148.221" in p.stdout, p.stdout
+    assert not any("10.0.1.1" in c for c in log.read_text().splitlines() if "cordon" in c or "drain" in c)
+
+
+def test_node_drain_refuses_the_only_ready_node(tmp_path):
+    bin_dir, log = _fake_path(tmp_path)
+    _node_drain_kubectl(bin_dir, log, "10.0.148.221 a/x Running false \\n",
+                        nodes="10.0.148.221 True \\n10.0.159.197 False \\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
+    assert p.returncode == 1 and "only Ready node; refusing" in p.stdout, p.stdout + p.stderr
+    assert not any(("cordon" in c or "drain" in c) for c in log.read_text().splitlines())
+
+
+def test_node_uncordon_uncordons_every_cordoned_node_and_nothing_else(tmp_path):
+    bin_dir, log = _fake_path(tmp_path)
+    (bin_dir / "kubectl").write_text(
+        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
+        "case \"$*\" in\n  *'get nodes -o jsonpath'*) printf '10.0.148.221 10.0.1.1 ';;\n  *) echo ok;;\nesac\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-uncordon"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    calls = [c for c in log.read_text().splitlines() if "uncordon" in c]
+    assert sorted(calls) == sorted(["kubectl --request-timeout=60s uncordon 10.0.148.221", "kubectl --request-timeout=60s uncordon 10.0.1.1"]), calls
+    assert not any("drain" in c or " cordon " in c for c in log.read_text().splitlines())
