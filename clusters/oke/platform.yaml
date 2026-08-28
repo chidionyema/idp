@@ -592,7 +592,22 @@ spec:
   dependsOn:
     - name: edge
     - name: secret-store
-    - name: robusta
+    # crew#573, measured 2026-08-28T12:44Z (oke-check 33172282641). `- name: robusta` was here and
+    # it cost the estate every alert it has. robusta's HelmRelease went `Failed`, so this row never
+    # became Ready, so `monitoring-rules` and `chaos` never did either — 4 of the 6 not-Ready Flux
+    # objects — and `grep -c kps- ` over that run's full pod dump is 0: no Prometheus, no
+    # Alertmanager, no kube-state-metrics in the cluster at all. `KubePodCrashLooping` and
+    # `KubePodNotReady` are declared here (`defaultRules.create: true`, `kubernetesApps` not
+    # disabled) and have never once fired, which is why hindsight-api crash-looped 13h at 0/1 ready
+    # with nothing red anywhere (crew#573).
+    #
+    # The dependency bought nothing even when robusta was healthy. alertmanager-config.yaml routes
+    # `receiver: telegram` by default and sends warnings to robusta on a second route carrying
+    # `continue: true` — a copy, not the delivery path. A webhook receiver whose service is absent
+    # makes Alertmanager retry that one notification; it does not stop Alertmanager starting and it
+    # does not stop the telegram receiver. So robusta is a consumer of this row, never a
+    # prerequisite for it, and the reverse edge is not added here either: robusta watches the API
+    # server directly and needs nothing from Prometheus to do it.
   sourceRef:
     kind: GitRepository
     name: flux-system
