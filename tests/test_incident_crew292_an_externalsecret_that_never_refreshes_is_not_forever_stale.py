@@ -16,6 +16,10 @@ Rules this file holds:
   5. The class, not the instance: for every interval the collector accepts there is an age at
      which the row reads ok. A grading rule with a permanently-red configuration is an outage
      (LAW 38), and that is the shape this incident was.
+  6. A fixture is dated against a clock this file pins, never against the wall clock. A test
+     whose verdict depends on the hour it runs at is an instrument that reports a failure it
+     invented (LAW 28), and it fails closed onto everyone: this one took the whole bdd job red
+     on every open pull request, two hours after it was written.
 
 The function is lifted out of the deployed ConfigMap by ast and executed. Nothing here asserts on
 the text of the source: a mutation to the rule has to turn a named test red.
@@ -131,20 +135,31 @@ def test_the_externalsecret_branch_calls_the_rule_rather_than_grading_inline_aga
 # ExternalSecret in the estate carries "0" today, so this is a fence around a forward risk.
 
 
-def _rows(*secrets):
+def _rows(*secrets, now=NOW):
     """Run collect.py's real flux loop over these ExternalSecrets and return the rows it built.
 
     The loop is module-level code, not a function, so it is lifted as the `for` statement it is
     and executed with the helpers it calls and a `get` that hands it these objects. Nothing here
     reads the source as text: the row this asserts on is the row the cluster's collector builds.
+
+    The clock is pinned, and that is rule 6. Unlike `stale_sync`, which is handed its `now`, the
+    loop calls `datetime.now(timezone.utc)` itself (collect.py, the ExternalSecret branch), so the
+    only way to answer it is the `datetime` it is executed with. Left as the real one, every
+    fixture dated relative to NOW is a fuse: it reads fresh while the suite is written and
+    not-ready some hours later, on no edit at all.
     """
+    class _PinnedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
     tree = ast.parse(_collect())
     loop = next(n for n in tree.body
                 if isinstance(n, ast.For) and getattr(n.iter, "id", "") == "FLUX")
-    helpers = [n for n in tree.body if isinstance(n, ast.FunctionDef)
-               and n.name in {"refresh_seconds", "stale_sync", "flux_message", "helm_last_attempt"}]
-    assert len(helpers) == 4, [h.name for h in helpers]
-    ns = {"re": re, "datetime": datetime, "timezone": timezone, "flux": [],
+    wanted = {"refresh_seconds", "stale_sync", "flux_message", "helm_last_attempt", "wanted_from"}
+    helpers = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in wanted]
+    assert {h.name for h in helpers} == wanted, wanted - {h.name for h in helpers}
+    ns = {"re": re, "datetime": _PinnedClock, "timezone": timezone, "flux": [],
           "FLUX": [("ExternalSecret", "/apis/external-secrets.io/v1/externalsecrets")],
           "get": lambda _path: {"items": list(secrets)}}
     exec(compile(ast.Module(body=helpers + [loop], type_ignores=[]), "collect.py", "exec"), ns)
@@ -190,3 +205,26 @@ def test_the_mode_the_row_reports_is_the_interval_the_rule_graded(iv, mode):
     assert secs == mode
     assert (secs == 0) == (_stale_sync()(spec, _at(timedelta(days=400)), NOW) == "")
     assert written == ("1h" if iv is None else str(iv))
+
+
+def test_the_collector_row_is_graded_against_a_clock_this_file_pins():
+    """Rule 6. The mistake it closes, and the reason it is two calls rather than one.
+
+    `test_a_row_that_is_actually_polled_is_not_labelled_exempt` dated its ExternalSecret five
+    minutes before NOW and asserted the row read ready. But the loop asks the wall clock, and
+    nothing here answered it, so at 14:27Z on the day it was written -- NOW plus the two-hour
+    floor -- the row it builds turned not-ready and bdd went red on every open pull request,
+    with no edit to the rule and nothing wrong with the estate (run 33180385032, reported by
+    session 3fd0a0 on idp#607, whose diff touched neither this file nor the collector).
+
+    One call could not catch it: unpinned, a five-minute-old fixture still reads ready for the
+    first two hours, which is exactly how it was merged green. Two clocks and one input can,
+    because unpinned they are the same clock and the two verdicts below cannot both hold.
+    """
+    es = _es("1h", _at(timedelta(minutes=5))["refreshTime"])
+    fresh, = _rows(es, now=NOW)
+    assert fresh["ready"] is True
+    assert "older than" not in (fresh["message"] or "")
+    late, = _rows(es, now=NOW + timedelta(hours=3))
+    assert late["ready"] is False
+    assert "older than 2x refreshInterval 1h" in late["message"]
