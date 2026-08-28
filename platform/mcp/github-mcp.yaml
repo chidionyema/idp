@@ -7,13 +7,25 @@ metadata:
   namespace: mcp
   labels: { app.kubernetes.io/name: github-mcp, app.kubernetes.io/part-of: idp }
 spec:
-  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  replicas: 2   # crew#539: the second hop behind mcp.${ESTATE_ZONE}
   selector:
     matchLabels: { app.kubernetes.io/name: github-mcp }
   template:
     metadata:
       labels: { app.kubernetes.io/name: github-mcp, app.kubernetes.io/part-of: idp }
     spec:
+      # Two replicas on one node are one replica. mcp.${ESTATE_ZONE} graded green on the
+      # gateway while this, the server it proxies to, ran a single pod -- so the surface still
+      # died with a node. crew#539.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: github-mcp }
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true

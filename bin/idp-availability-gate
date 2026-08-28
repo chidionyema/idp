@@ -171,7 +171,7 @@ def main(argv):
         row("BLIND", "no platform/ directory renders an HTTPRoute -- nothing found to grade")
         return 2
     waivers, failed, graded, waived, blind = load_waivers(), [], 0, 0, 0
-    elsewhere, settled = {}, set()
+    elsewhere, settled, renders = {}, set(), []
 
     for d in targets:
         objs, err = render(d)
@@ -180,6 +180,10 @@ def main(argv):
             row("BLIND", "%s: kustomize build failed: %s" % (d, err))
             continue
         routes = [o for o in objs if o.get("kind") == "HTTPRoute"]
+        renders.append((d, objs, {r["metadata"].get("namespace", "") for r in routes}
+                        | {b.get("namespace", r["metadata"].get("namespace", ""))
+                           for r in routes for rl in r.get("spec", {}).get("rules") or []
+                           for b in rl.get("backendRefs") or []}))
         svcs = {(o["metadata"].get("namespace", ""), o["metadata"]["name"]): o
                 for o in objs if o.get("kind") == "Service"}
         seen = set()
@@ -258,6 +262,34 @@ def main(argv):
         blind += 1
         row("BLIND", "%-26s %s is routed to but no kustomization renders a Deployment for it "
                      "-- it serves the founder and nothing grades it" % (hosts, surface))
+
+    # Second hop. mcp.${ESTATE_ZONE} graded green on agentgateway while estate-mcp and github-mcp
+    # -- the servers it proxies to -- each ran one pod, so the surface still died with a node.
+    # Resolving a proxy's own config would be fragile; every Deployment sharing a namespace with a
+    # founder-facing route is in that route's blast radius, so all of them are graded. StatefulSets
+    # are not: a database is one instance by design here, named in the standard as not guaranteed.
+    for d, objs, routed_ns in renders:
+        for o in objs:
+            if o.get("kind") != "Deployment":
+                continue
+            ns, nm = o["metadata"].get("namespace", ""), o["metadata"]["name"]
+            surface = "%s/%s" % (ns, nm)
+            if ns not in routed_ns or surface in settled:
+                continue
+            settled.add(surface)
+            bad, replicas = grade(objs, nm, ns)
+            w = waivers.get(surface)
+            if bad and w and w.get("reason") and w.get("issue"):
+                waived += 1
+                row("WAIVED", "%-26s %s: %s (%s)" % ("(behind a route)", surface, w["reason"], w["issue"]))
+            elif bad:
+                failed.append(surface)
+                for b in bad:
+                    row("FAIL", "%-26s %s: %s" % ("(behind a route)", surface, b))
+            else:
+                graded += 1
+                row("ok", "%-26s %s: %d replicas, PDB, anti-affinity, probes -- survives one node"
+                    % ("(behind a route)", surface, replicas))
 
     tail = " (%d waived)" % waived if waived else ""
     if blind:
