@@ -455,8 +455,8 @@ else say "FAIL  vmmount  bin/vm-shared-path selftest"; printf '%s\n' "$out" | se
 # Zero static secrets (security-policy.md row, kini-master-spec 4.1/4.4, crew#227). Proved both
 # ways on fixtures; the live host count is reported by bin/idp-verify, not gated here, because
 # it is an open incident until crew#227 lands and a gate that refuses correct work is an outage.
-if STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/good ESTATE_CODE=tests/fixtures/static-secret/good ESTATE_SECRETS=/nonexistent bin/static-secret-gate >/dev/null \
-   && ! STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/bad ESTATE_CODE=tests/fixtures/static-secret/bad/code ESTATE_SECRETS=/nonexistent bin/static-secret-gate >/dev/null; then
+if STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/good ESTATE_CODE=tests/fixtures/static-secret/good ESTATE_SECRETS=tests/fixtures/static-secret/good/vault bin/static-secret-gate >/dev/null \
+   && ! STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/bad ESTATE_CODE=tests/fixtures/static-secret/bad/code ESTATE_SECRETS=tests/fixtures/static-secret/good/vault bin/static-secret-gate >/dev/null; then
   say "ok    secrets  static-secret-gate passes the empty fixture and refuses the one with a key and a .env"
 else say "FAIL  secrets  bin/static-secret-gate fixtures"; fail=1; fi
 # crew#586 CP1: the founder's ethos as seven measured tenet rows; a row without a command is refused (LAW 44).
