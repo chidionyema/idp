@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# .githooks/pre-push -- the estate hook router (core.hooksPath, ~/.estate/guards/hooks) runs this
+# before every push from idp, then nothing else: a repo hook replaces the shared LAW 32 default, so
+# this file must run that gate itself (last).
+#
+# crew#584 CP2 (founder 2026-08-28, "the loop is a hook, not a habit"): 13 failing commits in the
+# last 100 CI runs, 2 of them a wall-clock fixture since fixed, 11 real reds that a laptop could have
+# refused in seconds -- offline-gate/bdd (the tests) 40 of 55 failed jobs, the PR-body gates 9.
+# Mean 8 commits per merged PR, 7.2 min per CI run. This hook runs, in order:
+#   1. bin/idp-tests-for   the tests whose source names a changed file, on every core
+#   2. bin/pr-report       the PR-body gates CI's operating-model-gate/spec-gate would refuse
+#   3. the shared LAW 32 gate the router would have run
+# A red refuses the push. Not the full suite (founder ruling 2026-08-28); CI stays the proof.
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+"$IDP/bin/idp-tests-for"
+"$IDP/bin/pr-report"
+shared="$(git config --get core.hooksPath 2>/dev/null || true)/law32-default"
+if [ -x "$shared" ]; then exec "$shared" "$@"; fi
+exit 0

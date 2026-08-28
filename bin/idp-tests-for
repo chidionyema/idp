@@ -35,5 +35,19 @@ if [ -z "$sel" ]; then echo "ok    tests-for: $(printf '%s\n' "$changed" | wc -l
 n=$(printf '%s\n' "$sel" | wc -l | tr -d ' ')
 echo "tests-for: $n test file(s) read the changed files"
 if [ "$list" = 1 ]; then printf '%s\n' "$sel"; exit 0; fi
+# The venv lives beside the main checkout; a worktree has none of its own (LAW 46: resolved, never typed).
+main="$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)/.."
+py="${IDP_PY:-}"
+for c in "$IDP/.venv/bin/python" "$main/.venv/bin/python"; do [ -n "$py" ] || { [ -x "$c" ] && py="$c"; }; done
+py="${py:-python3}"
+# sovereign/ has its own pytest.ini (bdd_features_base_dir, resolved from cwd=sovereign, as CI's bdd job does
+# with `cd sovereign`); a mixed argument list makes pytest pick the repo-root pyproject.toml instead and every
+# feature path misses. So two runs, each from the tree that owns it, and the exit code is the worse of the two.
+root_sel=$(printf '%s\n' "$sel" | grep -v '^sovereign/' || true)
+sov_sel=$(printf '%s\n' "$sel" | grep '^sovereign/' | sed 's#^sovereign/##' || true)
+rc=0
 # shellcheck disable=SC2086
-cd "$IDP" && exec "${IDP_PY:-$IDP/.venv/bin/python}" -m pytest -q $sel
+if [ -n "$root_sel" ]; then (cd "$IDP" && "$py" -m pytest -q $root_sel) || rc=$?; fi
+# shellcheck disable=SC2086
+if [ -n "$sov_sel" ]; then (cd "$IDP/sovereign" && "$py" -m pytest -q $sov_sel) || rc=$?; fi
+exit $rc
