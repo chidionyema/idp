@@ -48,8 +48,13 @@ def test_recover_drill_is_catalogued_with_its_own_cron_verbatim() -> None:
 def test_the_recovery_lane_can_only_read_and_the_vault_is_found_by_name_not_tofu_state() -> None:
     lanes = json.loads((ROOT / "platform" / "github-app" / "lanes.json").read_text())
     assert lanes["recovery"] == {"metadata": "read", "contents": "read"}, lanes["recovery"]
+    # since crew#66 CP1 the secret read goes through the one primitive, bin/idp-cloud; the override a
+    # runner without tofu state needs lives there and reaches it through the environment
     app = (ROOT / "bin" / "idp-github-app").read_text()
-    assert app.count("V=${ESTATE_VAULT_OCID:-$(cd") == 2, "both vault lookups must accept the override a runner without tofu state needs"
+    assert app.count('"$IDP/bin/idp-cloud" secret get "$SECRET"') == 2, "both token paths read the key through bin/idp-cloud"
+    assert "tofu output" not in app and "oci vault secret list" not in app
+    cloud = (ROOT / "bin" / "idp-cloud").read_text()
+    assert cloud.count("V=${ESTATE_VAULT_OCID:-$(cd") >= 2, "idp-cloud vault lookups must accept the override a runner without tofu state needs"
     script = SCRIPT.read_text()
     assert "tofu output" not in script and "oci kms management vault list" in script
     assert 'ESTATE_VAULT_OCID="$V"' in script
