@@ -1,0 +1,2 @@
+import subprocess
+subprocess.run(["oci", "limits", "value", "list"])
