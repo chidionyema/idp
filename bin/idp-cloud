@@ -29,8 +29,8 @@ blind() { printf 'BLIND   cloud  %s\n' "$1" >&2; exit 2; }
 # (bin/idp-bootstrap-sunshine, oke-check apply run 33217075374, 2026-08-28: "written but does not
 # read back complete"). Bounded: 24 tries, 5 s apart.
 settle_secret() { # <base64 payload> -> 0 once `secret get` returns it; exit 2 (BLIND) after 120 s
-  local want="$1" got i
-  for i in $(seq 1 24); do
+  local want="$1" got
+  for _ in $(seq 1 24); do
     got=$("$0" secret get "$NAME" 2>/dev/null | base64 | tr -d '\n') && [ "$got" = "$want" ] && return 0
     sleep 5
   done
