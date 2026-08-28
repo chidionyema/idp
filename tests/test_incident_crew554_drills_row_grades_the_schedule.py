@@ -36,15 +36,21 @@ def test_expected_firings_match_the_cron_promise() -> None:
 
 
 def _fake_gh(b: Path, runs_spec: list, now: datetime) -> None:
+    """A gh that answers only the exact calls the row makes: `gh run list --json updatedAt` for
+    freshness and the runs API for firings. Any other shape fails the way the real gh does
+    (`Unknown JSON field: "actor"` cost this PR a red row on 2026-08-28)."""
     ts = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-    runs = [{"createdAt": ts, "event": ev, "actor": {"login": who}} for ev, who in runs_spec]
+    runs = [{"created_at": ts, "event": ev, "triggering_actor": {"login": who}} for ev, who in runs_spec]
     (b / "gh").write_text(
         "#!/usr/bin/env python3\n"
         "import sys, json\n"
         "a = sys.argv[1:]\n"
         "if a[:2] == ['auth', 'status']: sys.exit(0)\n"
-        "if a and 'event' in a[-1]: print(json.dumps(%s)); sys.exit(0)\n"
-        "print(json.dumps([{'updatedAt': '%s'}]))\n" % (json.dumps(runs), ts)
+        "if a[:2] == ['api', '--paginate'] and a[2].startswith('repos/{owner}/{repo}/actions/workflows/login-drill.yml/runs?created=>=') and a[3] == '--jq':\n"
+        "    rows = [{'createdAt': r['created_at'], 'event': r['event'], 'actor': r['triggering_actor']['login']} for r in %s]\n"
+        "    print(json.dumps(rows)); sys.exit(0)\n"
+        "if a[:2] == ['run', 'list'] and a[-2:] == ['--json', 'updatedAt']: print(json.dumps([{'updatedAt': '%s'}])); sys.exit(0)\n"
+        "print('fake gh: unexpected call', a, file=sys.stderr); sys.exit(1)\n" % (json.dumps(runs), ts)
     )
     (b / "gh").chmod((b / "gh").stat().st_mode | stat.S_IEXEC)
 

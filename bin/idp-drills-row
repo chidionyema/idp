@@ -102,17 +102,20 @@ def scheduled_firings(wf, since):
     estate's GitHub App (platform/drills/drill-dispatcher.yaml, crew#554 CP3) -- the App only
     dispatches when GitHub's cron did not, so the two never double-count an hour. A human dispatch
     is a hand, not a clock, and does not count. Returns (fired, by_app); None if gh failed."""
+    # `gh run list --json` has no actor field; the runs API carries event + triggering_actor.
     try:
-        r = gh(["run", "list", "--workflow", wf, "--limit", "300",
-                "--json", "createdAt,event,actor"])
+        r = gh(["api", "--paginate", "repos/{owner}/{repo}/actions/workflows/%s/runs?created=>=%s&per_page=100"
+                % (wf, since), "--jq", "[.workflow_runs[] | {createdAt: .created_at, event: .event, actor: .triggering_actor.login}]"])
     except subprocess.TimeoutExpired:
         return None
     if r.returncode != 0:
         return None
-    try:
-        runs = json.loads(r.stdout or "[]")
-    except json.JSONDecodeError:
-        return None
+    runs = []
+    for page in (r.stdout or "").splitlines():
+        try:
+            runs.extend(json.loads(page))
+        except json.JSONDecodeError:
+            return None
     fired, by_app = 0, 0
     for x in runs:
         if x.get("createdAt", "") < since:
@@ -120,7 +123,7 @@ def scheduled_firings(wf, since):
         ev = x.get("event")
         if ev == "schedule":
             fired += 1
-        elif ev == "workflow_dispatch" and str((x.get("actor") or {}).get("login", "")).endswith("[bot]"):
+        elif ev == "workflow_dispatch" and str(x.get("actor") or "").endswith("[bot]"):
             fired += 1
             by_app += 1
     return fired, by_app
