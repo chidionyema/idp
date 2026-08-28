@@ -48,8 +48,10 @@ metadata:
   namespace: healthchecks
   labels: { app.kubernetes.io/name: healthchecks, app.kubernetes.io/part-of: idp }
 spec:
-  replicas: 1
-  strategy: { type: Recreate }
+  replicas: 2   # crew#539: one pod is one node event away from a 503
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
   selector:
     matchLabels: { app.kubernetes.io/name: healthchecks }
   template:
@@ -57,6 +59,15 @@ spec:
       labels: { app.kubernetes.io/name: healthchecks, app.kubernetes.io/part-of: idp }
     spec:
       automountServiceAccountToken: false
+      # Two replicas on one node are one replica. DoNotSchedule, not ScheduleAnyway: a
+      # best-effort spread silently collapses onto one node exactly when the cluster is tight,
+      # which is the moment the spread was for.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: healthchecks }
       securityContext:
         runAsNonRoot: true
         # The image's `useradd --system hc` (docker/Dockerfile) takes the first free system uid,
@@ -75,8 +86,18 @@ spec:
             - |
               set -eu
               for f in /run/secrets/healthchecks/*; do export "$(basename "$f")=$(cat "$f")"; done
-              python manage.py migrate --noinput
-              python manage.py shell < /enrol/enrol.py
+              # crew#539: with two replicas both init containers start together. Django takes
+              # no lock of its own -- concurrent migrate deadlocks on DDL, and enrol.py's
+              # filter-then-create would race two founder users. One Postgres advisory lock
+              # covers both; it is held for this session and released when the shell exits.
+              python manage.py shell <<'PY'
+              from django.core.management import call_command
+              from django.db import connection
+              with connection.cursor() as cur:
+                  cur.execute("SELECT pg_advisory_lock(553901)")
+              call_command("migrate", interactive=False)
+              exec(open("/enrol/enrol.py").read())
+              PY
           workingDir: /opt/healthchecks
           envFrom:
             - configMapRef: { name: healthchecks-env }

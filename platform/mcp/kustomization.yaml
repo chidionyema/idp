@@ -6,6 +6,7 @@ resources:
   - external-secret.yaml
   - pull-secret.yaml
   - agentgateway-deploy.yaml
+  - availability.yaml
   - github-mcp.yaml
   - estate-mcp.yaml
   - httproute.yaml

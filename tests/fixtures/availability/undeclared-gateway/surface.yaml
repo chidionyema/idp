@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+  labels:
+    # The label that arms platform/scheduling/require-availability.yaml. The gate fails a
+    # namespace it graded green without it: CI must prove the cluster refuses the regression too,
+    # not only the pull request.
+    availability.idp/tier: founder-facing
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: demo, namespace: demo }
+spec:
+  parentRefs:
+    - name: nobody-declared-me
+      namespace: demo
+  hostnames: ["demo.example"]
+  rules:
+    - backendRefs: [{ name: demo, port: 80 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: demo, namespace: demo }
+spec:
+  selector: { app.kubernetes.io/name: demo }
+  ports: [{ port: 80 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: demo, namespace: demo }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app.kubernetes.io/name: demo }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: demo }
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: demo }
+      containers:
+        - name: demo
+          image: registry.k8s.io/pause:3.10
+          readinessProbe: { httpGet: { path: /, port: 80 } }
+          livenessProbe: { httpGet: { path: /, port: 80 } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: demo, namespace: demo }
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: demo }

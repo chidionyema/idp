@@ -7,4 +7,5 @@ metadata:
   labels:
     app.kubernetes.io/part-of: idp
     pod-security.kubernetes.io/enforce: restricted
+    availability.idp/tier: founder-facing
     idp.estate/edge-attach: "true"

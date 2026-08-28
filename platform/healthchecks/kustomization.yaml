@@ -7,4 +7,5 @@ resources:
   - env.yaml
   - postgres.yaml
   - healthchecks.yaml
+  - availability.yaml
   - httproute.yaml

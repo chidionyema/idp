@@ -5,13 +5,25 @@ metadata:
   namespace: mcp
   labels: { app.kubernetes.io/name: agentgateway, app.kubernetes.io/part-of: idp }
 spec:
-  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  replicas: 2   # crew#539: one pod is one node event away from a 503
   selector:
     matchLabels: { app.kubernetes.io/name: agentgateway }
   template:
     metadata:
       labels: { app.kubernetes.io/name: agentgateway, app.kubernetes.io/part-of: idp }
     spec:
+      # Two replicas on one node are one replica. DoNotSchedule, not ScheduleAnyway: a
+      # best-effort spread silently collapses onto one node exactly when the cluster is tight,
+      # which is the moment the spread was for.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: agentgateway }
       priorityClassName: infrastructure-critical
       automountServiceAccountToken: false
       securityContext:

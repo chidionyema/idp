@@ -9,6 +9,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base
+  - availability.yaml
   - backstage-external-secret.yaml
   - httproute.yaml
   # crew#503 CP6: backstage/founder is a kustomization of its own (a directory base may live anywhere;
@@ -30,12 +31,49 @@ images:
   - name: postgres
     newName: docker.io/library/postgres
 patches:
+  # The label that arms admission. platform/scheduling/require-availability.yaml refuses a
+  # Deployment below the standard in any namespace carrying it, and bin/idp-availability-gate
+  # FAILS a namespace it graded green that does not. It is set here and not in the base because
+  # the base is the k3d shape: one node, one replica, where the policy would refuse correct work.
+  - target:
+      kind: Namespace
+      name: backstage
+    patch: |
+      - op: add
+        path: /metadata/labels/availability.idp~1tier
+        value: founder-facing
   # ghcr packages under this account are private (anonymous manifest GET: 403, 2026-08-25).
   # idp-flux-bootstrap writes ghcr-pull in every namespace that pulls; catalog.yaml uses it too.
   - target:
       kind: Deployment
       name: catalogue
     patch: |
+      # crew#539, 2026-08-28: one replica with strategy Recreate meant a single cordon
+      # (10.0.148.221, 06:20:36Z) left the catalogue Pending and the founder looking at a 503
+      # for ~15 minutes (login-drill 33148483050). Two replicas that may not share a node, and
+      # a rollout that never takes the last one down, is what makes a node operation survivable.
+      # Base keeps replicas 1 and Recreate: k3d is one node, where a second replica cannot be
+      # placed and would sit Pending for ever.
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: replace
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+      # requiredDuringScheduling, not preferred: preferred is advisory, and the whole failure
+      # was two pods that could end up on one node. With the node pool floor at 1 (autoscaler,
+      # platform/oci/main.tf) a single-node estate runs one Ready replica and one Pending --
+      # which is the honest state, and still one more than it had.
+      - op: add
+        path: /spec/template/spec/affinity
+        value:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels: {app.kubernetes.io/name: catalogue}
+                topologyKey: kubernetes.io/hostname
       - op: add
         path: /spec/template/spec/imagePullSecrets
         value: [{name: ghcr-pull}]
