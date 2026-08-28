@@ -115,7 +115,7 @@ def test_the_clock_comes_from_the_date_header_of_githubs_own_response():
         assert cmd[:3] == ["gh", "api", "-i"], cmd
         return subprocess.CompletedProcess(cmd, 0, stdout=f"HTTP/2.0 200 OK\r\nDate: {served}\r\n\r\n{{}}\n", stderr="")
 
-    got = mod.github_now(run=fake)
+    got = mod.served_now(run=fake)
     assert got == datetime(2026, 8, 28, 6, 30, tzinfo=timezone.utc), got
 
 
@@ -127,13 +127,13 @@ def test_a_response_with_no_usable_clock_is_none_and_never_this_machines(stdout,
     """None, not a fallback. Falling back to the local clock here is the defect with a longer code
     path, and the page refuses to build rather than print ages nobody can trust."""
     fake = lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
-    assert mod.github_now(run=fake) is None
+    assert mod.served_now(run=fake) is None
 
 
 def test_the_page_refuses_rather_than_falling_back_when_github_sends_no_clock(tmp_path, monkeypatch, capsys):
     """End to end: no clock, no page. The window itself is `now - 24h`, so there is nothing honest
     to print, and writing yesterday's file over again would be worse than an exit."""
-    monkeypatch.setattr(mod, "github_now", lambda *a, **k: None)
+    monkeypatch.setattr(mod, "served_now", lambda *a, **k: None)
     out = tmp_path / "FOUNDER.md"
     for name in ("merged", "open", "issues"):
         (tmp_path / f"{name}.json").write_text("[]")

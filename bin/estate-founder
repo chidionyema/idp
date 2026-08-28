@@ -31,13 +31,19 @@ import json
 import os
 import re
 import subprocess
-from email.utils import parsedate_to_datetime
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "FOUNDER.md"
+
+#: crew#583 CP5. The clock every age on this page is measured against comes from GitHub, not from
+#: this machine, and bin/lib/receipt_age.py is the one module in the estate allowed near that
+#: arithmetic -- so the function lives there and this file borrows it rather than keeping a second
+#: copy to get wrong (LAW 2).
+sys.path.insert(0, str(ROOT / "bin" / "lib"))
+from receipt_age import served_now  # noqa: E402 - path has to be set before the import
 CREW = os.environ.get("ESTATE_CREW_REPO", "chidionyema/crew")
 OWNER = os.environ.get("ESTATE_GITHUB_OWNER", CREW.split("/")[0])
 WINDOW_H = int(os.environ.get("ESTATE_FOUNDER_WINDOW_H", "24"))
@@ -151,48 +157,6 @@ def founder_checkpoints(issues: list[dict]) -> list[dict]:
     return rows
 
 
-def github_now(run=subprocess.run) -> "datetime | None":
-    """GitHub's own clock, taken from the `Date` header of a response GitHub has just served.
-
-    crew#583 CP5. Every age on this page is `now - <a stamp GitHub wrote>`, and until this
-    function existed `now` was `datetime.now(timezone.utc)` -- this machine's clock, subtracted
-    from somebody else's stamp. A MacBook whose battery dies flat comes back at the RTC's default
-    epoch, and then every age here is wrong by years in whichever direction the reset landed.
-
-    The failure is quiet, which is what makes it the founder's problem rather than a bug report.
-    `stuck` keeps a pull request only when `hours_since(...) >= REVIEW_H`, a bound with nothing
-    under it: a clock behind the stamps makes every age negative, no age clears 2, and the page
-    says "Nothing is stuck: every open pull request has a verdict" while the reviews pile up. The
-    page he reads to find out what is waiting on a person would be the last thing to tell him.
-
-    So the local clock is not asked. `rate_limit` is the cheapest authenticated endpoint GitHub
-    has -- it does not itself count against the limit -- and every HTTP response carries a `Date`
-    (RFC 9110 6.6.1, "an origin server MUST send a Date header field"). That clock stamped
-    `created_at` and `merged_at` too, so the subtraction is one clock minus itself and a dead RTC
-    changes nothing.
-
-    None, never a fallback, when the header is missing or unreadable. Falling back to the local
-    clock is the defect with a longer code path; the callers render BLIND instead of a number and
-    the rest of the page still builds (LAW 38: the page is not an outage because one column
-    cannot be measured).
-    """
-    try:
-        p = run(["gh", "api", "-i", "rate_limit"], capture_output=True, text=True, timeout=30)
-    except Exception:  # noqa: BLE001 - gh missing, no network, or a hang is all the same answer
-        return None
-    if p.returncode != 0:
-        return None
-    for line in (p.stdout or "").splitlines():
-        if not line.strip():  # end of the header block; the body is JSON and holds no clock
-            break
-        if line.lower().startswith("date:"):
-            try:
-                return parsedate_to_datetime(line.split(":", 1)[1].strip())
-            except Exception:  # noqa: BLE001 - a malformed Date is not a clock
-                return None
-    return None
-
-
 def hours_since(ts: str, now: "datetime | None") -> "float | None":
     """Hours between `now` and a stamp GitHub wrote, or None when that cannot be measured.
 
@@ -299,7 +263,7 @@ def main(argv: list[str]) -> int:
     #: `datetime.now` in this file on purpose -- the guard in
     #: tests/test_guard_freshness_is_never_measured_against_this_machines_clock.py holds it that way.
     now = (datetime.strptime(a.now[:16], "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
-           if a.now else github_now())
+           if a.now else served_now())
     if now is None:
         #: The search window needs a clock too. Without one the page cannot say what merged in the
         #: last 24 hours at all, so this is the one place a missing clock is fatal rather than BLIND.
