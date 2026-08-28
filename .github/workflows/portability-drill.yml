@@ -90,14 +90,19 @@ jobs:
           curl -sfL https://get.k3s.io | sh -
           echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> "$GITHUB_ENV"
           export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-          kubectl wait node --all --for=condition=Ready --timeout=120s
+          # crew#539 CP12: with --flannel-backend=none the node carries no CNI yet, so it never
+          # reports Ready (Oracle's own procedure hits the same order on OKE) — the node-ready
+          # wait moves after Cilium installs, below. The DaemonSet's own hostNetwork pods
+          # tolerate the NotReady/NetworkUnavailable taints and schedule regardless.
           kubectl get node -o wide
       - name: Cilium replaces k3s's flannel (crew#539 CP12, rehearsal of the OKE break-glass playbook)
         run: |
           set -euo pipefail
           helm install cilium oci://quay.io/cilium/charts/cilium --version 1.20.1 --namespace kube-system -f platform/cni/cilium-values.yaml
           kubectl rollout status ds/cilium -n kube-system --timeout=300s
+          kubectl wait node --all --for=condition=Ready --timeout=120s
           kubectl -n kube-system get pods
+          kubectl get node -o wide
       - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
       - name: flux install, then the same tree OKE runs, from this commit
         env:

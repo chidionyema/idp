@@ -47,6 +47,9 @@ def test_incident_crew392_a_pod_seen_only_in_traces_counts_and_an_unseen_pod_sti
     assert body["missing"] == [{"ns": "mcp", "pod": "github-mcp-1"}], "the pod in no table is still missing"
 
     def both(sql):
+        # crew#539 CP12: the same run also answers the Hubble radio-room count.
+        if "hubble" in sql:
+            return {("4",)}
         return {("mcp", "agentgateway-1"), ("mcp", "github-mcp-1")} if "signoz_traces" in sql else set()
 
     head, _ = mod.main(kube=lambda _: pods, clickhouse=both, now=NOW)
