@@ -5,7 +5,10 @@
 
 Prints one `drills` row per catalogue entry, one `schedule` row per scheduled workflow, and a
 summary row; exit 0 green, 1 a drill is stale or never ran or its cron fired under 80% of what
-it promises in the last 24h, 2 BLIND (cannot ask GitHub). The firing count exists because on
+it promises in the last 24h, 2 BLIND (cannot ask GitHub). A run may not grade itself: the workflow
+this process is running inside (GITHUB_RUN_ID + GITHUB_WORKFLOW_REF) is printed and its clock is
+still counted, but its freshness is not read from its own run history -- that was a fixpoint that
+kept verify-drill.yml red on its own account for ever (crew#292, crew#300, idp#441). The firing count exists because on
 2026-08-28 every hourly cron on the account fired 1-3 times a day (crew#554): "last green 1.2h
 ago" from a push run said nothing about whether the schedule was alive. Called by bin/idp-verify (laptop, behind a
 live Backstage) and by bin/idp-verify-drill (hourly in CI on the machine identity). It lived as
@@ -129,8 +132,47 @@ def scheduled_firings(wf, since):
     return fired, by_app
 
 
+def in_flight_workflow():
+    """The workflow file this row is running inside, or "" off a runner (crew#292, crew#300).
+
+    bin/idp-verify-drill runs this row from .github/workflows/verify-drill.yml, and
+    drills/catalogue.yaml catalogues verify-drill.yml. Grading a workflow by its own run history
+    from inside one of its runs is a fixpoint: the run in flight has no conclusion yet, so the
+    newest verdict available is a previous run's, and the moment that one is red every later run
+    is red for that reason alone and can never go green again. Measured 2026-08-28:
+    `gh run list --workflow verify-drill.yml --status success --limit 1 --json updatedAt`
+    answered `[]` while the last twelve completed runs were all `failure`, so the "no successful
+    run ... has ever been recorded" branch below fired on every run and guaranteed it would fire
+    on the next one. The loop cannot open without this function.
+
+    GITHUB_WORKFLOW_REF is `owner/repo/.github/workflows/<file>@<ref>` and names the file exactly;
+    GITHUB_WORKFLOW carries only the workflow's `name:` field, matched here against the catalogued
+    files on disk. No workflow name is written in this file (LAW 46)."""
+    if not os.environ.get("GITHUB_RUN_ID"):
+        return ""
+    path = os.environ.get("GITHUB_WORKFLOW_REF", "").split("@", 1)[0]
+    marker = "/.github/workflows/"
+    if marker in path:
+        return path.rsplit("/", 1)[-1]
+    name = os.environ.get("GITHUB_WORKFLOW", "")
+    if not name:
+        return ""
+    for d in entries:
+        wf = d.get("workflow", "")
+        f = os.path.join(root, ".github", "workflows", wf)
+        if not os.path.isfile(f):
+            continue
+        try:
+            if ((yaml.safe_load(open(f, encoding="utf-8")) or {}).get("name") or "") == name:
+                return wf
+        except yaml.YAMLError:
+            continue
+    return ""
+
+
 now = datetime.now(timezone.utc)
-graded, stale, pending = 0, [], 0
+self_wf = in_flight_workflow()
+graded, stale, pending, in_flight = 0, [], 0, []
 for d in entries:
     name = d.get("name", "?")
     wf = d.get("workflow", "")
@@ -139,6 +181,16 @@ for d in entries:
     if d.get("pending"):
         pending += 1
         row("n/a", "%-22s %s not merged yet -- declared in the catalogue, never graded" % (label, wf))
+        continue
+    # A run may not grade itself (crew#292, crew#300). This entry's workflow is the one this
+    # process is running inside: its verdict is the other rows of this very run, printed above and
+    # below, not the conclusion of some earlier run of itself. Its clock is still graded -- the
+    # schedule section further down counts this workflow's firings like any other, so a drill whose
+    # cron has died is still red here while it is running.
+    if wf and wf == self_wf:
+        in_flight.append(wf)
+        row("ok", "%-22s %s is the run computing this row (run %s) -- graded by this run's own rows, never by its own run history (crew#292)"
+            % (label, wf, os.environ.get("GITHUB_RUN_ID", "?")))
         continue
     graded += 1
     # GitHub keeps run history for a deleted workflow, so a retired file still answers "last
@@ -149,6 +201,8 @@ for d in entries:
         row("FAIL", "%-22s .github/workflows/%s does not exist -- the catalogue names a retired workflow; fix the entry or the file" % (label, wf))
         continue
     try:
+        # `--status success` is a conclusion, so a queued or in_progress run can never be the one
+        # graded here: freshness is always the age of a completed, green run (crew#292, crew#300).
         r = gh(["run", "list", "--workflow", wf, "--status", "success", "--limit", "1",
                 "--json", "updatedAt"])
     except subprocess.TimeoutExpired:
@@ -209,6 +263,7 @@ for d in entries:
         row("ok", "%-22s %s fired %d of %d promised in 24h (%s)" % ("schedule", wf, got, want, how))
 
 tail = " (%d pending)" % pending if pending else ""
+tail += " (%d in flight: %s)" % (len(in_flight), ", ".join(in_flight)) if in_flight else ""
 dead = [x for x in stale if x.startswith("schedule:")]
 old_ = [x for x in stale if not x.startswith("schedule:")]
 if stale:
