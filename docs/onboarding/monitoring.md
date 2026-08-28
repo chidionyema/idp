@@ -11,6 +11,7 @@ Nothing to do per workload for the built-in rules. What fires without touching y
 - `TargetDown` for any scrape target, `KubePersistentVolumeFillingUp`
 - `FounderSurfaceDown`: a founder surface failed its in-cluster GET for 5 minutes
 - `PersistentVolumeAlmostFull`: a PVC under 10 % free for 10 minutes (→ Telegram + Robusta)
+- `GatewayRefusals`: the MCP gateway answered 4xx/5xx for 5 minutes; `GatewayMetricsAbsent` when its scrape is gone (crew#498)
 - `Watchdog`: always firing; the receipt reads it as proof the pipeline evaluates and delivers
 
 Adding a rule: a `PrometheusRule` in your namespace is honoured (`ruleSelectorNilUsesHelmValues:
