@@ -124,7 +124,9 @@ pb_diagnose() {
   # StatefulSet -> pod is four links; print the memory limit at each so the broken one is named.
   show clickhouse-installation sh -c "$K get chi -A -o wide 2>&1; $K get chi -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{\"\tCHI podTemplate limits: \"}{range .spec.templates.podTemplates[*]}{.spec.containers[0].resources.limits}{end}{\"\n\"}{end}' 2>&1; $K get sts -A -l clickhouse.altinity.com/chi -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{\"\tsts limits: \"}{.spec.template.spec.containers[0].resources.limits}{\"\tobservedGeneration=\"}{.status.observedGeneration}{\" generation=\"}{.metadata.generation}{\"\n\"}{end}' 2>&1; $K get pods -A -l clickhouse.altinity.com/chi -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{\"\tpod limits: \"}{.spec.containers[0].resources.limits}{\"\n\"}{end}' 2>&1"
   # kubectl logs takes no -A (idp#538 review): resolve the operator's namespace first.
-  show clickhouse-operator-log sh -c "ns=\$($K get pods -A -l app=clickhouse-operator -o jsonpath='{.items[0].metadata.namespace}' 2>/dev/null); [ -n \"\$ns\" ] || { echo 'no pod with app=clickhouse-operator'; exit 0; }; $K logs -n \"\$ns\" -l app=clickhouse-operator --tail=40 --prefix 2>&1 | tail -40"
+  # run 33145711762: `-l app=clickhouse-operator` matched nothing (the signoz chart labels the
+  # operator pod by its own names); the pod is found by name, which every chart version keeps
+  show clickhouse-operator-log sh -c "set -- \$($K get pods -A --no-headers 2>/dev/null | awk '\$2 ~ /clickhouse-operator/ {print \$1, \$2; exit}'); [ -n \"\${2:-}\" ] || { echo 'no pod named *clickhouse-operator*'; exit 0; }; $K logs -n \"\$1\" \"\$2\" --all-containers --tail=40 --prefix 2>&1 | tail -40"
   # Run 33143467334: 21 descheduler pods in Error with no row saying whether the CronJob's later
   # runs succeed; jobs are the receipt, pods are the history.
   show cronjobs $K get cronjobs,jobs -A
@@ -274,9 +276,11 @@ pb_helm_retry() {
 # Ready node carrying the most pods that are not Running/Succeeded, and the placement before and
 # after is the receipt. Undo: node-uncordon.
 sick_pods() {
-  # "<node> <ns>/<pod> <phase> <ready…>" for every pod that is not Running-and-ready and not Succeeded
+  # "<node> <ns>/<pod> <phase> <ready…>" for every Pending pod and every Running pod with any
+  # container not ready. Succeeded and Failed are finished pods (Jobs); idp#540 review: 21 Failed
+  # descheduler pods on the healthy node would have out-voted the three crashers
   $K get pods -A -o jsonpath='{range .items[*]}{.spec.nodeName}{" "}{.metadata.namespace}{"/"}{.metadata.name}{" "}{.status.phase}{" "}{range .status.containerStatuses[*]}{.ready}{" "}{end}{"\n"}{end}' 2>/dev/null \
-    | awk '$1!="" && $3!="Succeeded" && ($3!="Running" || $4=="false")'
+    | awk '$1!="" && $3!="Succeeded" && $3!="Failed" { sick=($3!="Running"); for(i=4;i<=NF;i++) if($i=="false") sick=1; if(sick) print }'
 }
 ready_nodes() { $K get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{"\n"}{end}' 2>/dev/null | awk '$2=="True"{print $1}'; }
 # the pick is among Ready nodes only: a NotReady node is the cloud layer's to replace, and draining

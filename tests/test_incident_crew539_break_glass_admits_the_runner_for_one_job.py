@@ -310,8 +310,17 @@ def test_tcp_per_node_connects_from_inside_the_failing_namespace_pinned_to_every
 
 def test_diagnose_prints_the_clickhouse_limit_at_every_link_and_the_cronjobs(tmp_path):
     # run 33144117286: signoz.v40 carried the 4Gi limit and the clickhouse pod kept "maximum: 1.80
-    # GiB"; the link that did not roll has to be named from the CHI, the StatefulSet and the pod
-    p, calls = _run("diagnose", tmp_path)
+    # GiB"; the link that did not roll has to be named from the CHI, the StatefulSet and the pod.
+    # Run 33145711762: `-l app=clickhouse-operator` matched nothing; the operator is found by name.
+    bin_dir, log = _fake_path(tmp_path)
+    (bin_dir / "kubectl").write_text(
+        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
+        "case \"$*\" in\n"
+        "  *'get pods -A --no-headers'*) printf 'kube-system coredns-1 1/1 Running 0 1h\\nobservability signoz-clickhouse-operator-9946d55c-n8z7q 2/2 Running 1 2h\\n';;\n"
+        "  *) cat >/dev/null 2>&1; echo ok;;\nesac\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "diagnose"], capture_output=True, text=True, env=env)
+    calls = log.read_text().splitlines()
     assert p.returncode == 0, p.stdout + p.stderr
     assert "--- clickhouse-installation" in p.stdout
     assert "--- clickhouse-operator-log" in p.stdout
@@ -320,8 +329,8 @@ def test_diagnose_prints_the_clickhouse_limit_at_every_link_and_the_cronjobs(tmp
     assert "get chi -A -o jsonpath" in joined
     assert "get sts -A -l clickhouse.altinity.com/chi" in joined
     assert "get pods -A -l clickhouse.altinity.com/chi" in joined
-    assert "get pods -A -l app=clickhouse-operator -o jsonpath" in joined
-    assert "logs -n" in joined and "-l app=clickhouse-operator --tail=40" in joined
+    assert "get pods -A --no-headers" in joined
+    assert "logs -n observability signoz-clickhouse-operator-9946d55c-n8z7q --all-containers --tail=40" in joined
     assert "get cronjobs,jobs -A" in joined
 
 
@@ -379,7 +388,11 @@ def test_node_drain_retires_the_node_carrying_the_crashing_pods_and_only_that_no
         "10.0.148.221 observability/chi-0 Running false \\n"
         "10.0.159.197 observability/langfuse-web-b Running true \\n"
         "10.0.159.197 observability/migrator Succeeded false \\n"
-        "10.0.159.197 healing/descheduler-x Failed false \\n")
+        "10.0.159.197 healing/descheduler-1 Failed false \\n"
+        "10.0.159.197 healing/descheduler-2 Failed false \\n"
+        "10.0.159.197 healing/descheduler-3 Failed false \\n"
+        "10.0.159.197 healing/descheduler-4 Failed false \\n"
+        "10.0.159.197 healing/descheduler-5 Failed false \\n")
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
     p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
     assert p.returncode == 0, p.stdout + p.stderr
@@ -390,6 +403,19 @@ def test_node_drain_retires_the_node_carrying_the_crashing_pods_and_only_that_no
     assert cordon and drain and cordon[0] < drain[0], calls
     assert not any("10.0.159.197" in c for c in calls if "cordon" in c or "drain" in c), calls
     assert "observability/langfuse-web-a" in p.stdout and "observability/migrator" not in p.stdout
+    assert "healing/descheduler-1" not in p.stdout   # five Failed job pods on .197 do not out-vote three crashers on .221
+
+
+def test_node_drain_reads_every_container_not_only_the_first(tmp_path):
+    # idp#540 review: a 2/3 pod whose third container crashes is sick; $4 alone missed it
+    bin_dir, log = _fake_path(tmp_path)
+    _node_drain_kubectl(bin_dir, log,
+        "10.0.159.197 observability/operator Running true true false \\n"
+        "10.0.148.221 a/ok Running true true true \\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "--- target 10.0.159.197" in p.stdout, p.stdout
 
 
 def test_node_drain_touches_nothing_when_every_pod_runs(tmp_path):
