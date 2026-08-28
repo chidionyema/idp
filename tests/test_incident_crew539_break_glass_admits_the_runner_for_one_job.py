@@ -75,7 +75,7 @@ def test_unknown_playbook_is_refused_and_list_names_both(tmp_path):
     p, _ = _run("rm-rf-everything", tmp_path)
     assert p.returncode == 64
     listed = subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
-    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node", "dns-per-namespace"]
+    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node", "dns-per-namespace", "tcp-per-node"]
 
 
 def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
@@ -91,7 +91,7 @@ def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
 def test_workflow_offers_break_glass_with_a_named_playbook():
     wf = WORKFLOW.read_text()
     assert "surge-finish, break-glass]" in wf
-    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace]" in wf
+    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node]" in wf
     assert "BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}" in wf
 
 
@@ -275,3 +275,34 @@ def test_dns_per_namespace_resolves_every_headless_service_from_inside_the_faili
     assert any("wait pod/dns-probe-ns-1 -n observability" in c for c in calls)
     assert any("delete pod/dns-probe-ns-2 -n observability --ignore-not-found --wait=false" in c for c in calls)
     assert any("-l k8s-app=kube-dns" in c for c in calls), "coredns is read per namespace"
+
+
+def test_tcp_per_node_connects_from_inside_the_failing_namespace_pinned_to_every_node(tmp_path):
+    # run 33143467334: langfuse-web on 10.0.148.221 got P1001 to langfuse-postgresql:5432 while the
+    # postgres pod was Running with endpoints and every name resolved (33142680663); dns-per-node
+    # only proved UDP to a ClusterIP a node can answer locally -> prove TCP through a ClusterIP
+    # from every node, inside the namespace whose NetworkPolicies apply
+    bin_dir, log = _fake_path(tmp_path)
+    k = bin_dir / "kubectl"
+    k.write_text(
+        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
+        "case \"$*\" in\n"
+        "  *'get helmreleases -A -o jsonpath'*) printf 'False observability\\nTrue keda\\n';;\n"
+        "  *'get svc -n observability -o jsonpath'*) printf 'langfuse-postgresql.observability.svc.cluster.local:5432 langfuse-redis.observability.svc.cluster.local:6379 ';;\n"
+        "  *'get nodes -o jsonpath'*) printf '10.0.148.221 10.0.159.197';;\n"
+        "  *'apply -f -'*) cat >> \"" + str(log) + ".yaml\"; echo ok;;\n"
+        "  *) cat >/dev/null 2>&1; echo ok;;\nesac\n"
+    )
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "tcp-per-node"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    pods = (log.parent / (log.name + ".yaml")).read_text()
+    assert pods.count("kind: Pod") == 2, pods
+    assert "nodeName: 10.0.148.221" in pods and "nodeName: 10.0.159.197" in pods
+    assert "namespace: observability" in pods and "namespace: kube-system" not in pods
+    assert "nc -z -w3" in pods
+    assert "langfuse-postgresql.observability.svc.cluster.local:5432" in pods
+    assert "langfuse-redis.observability.svc.cluster.local:6379" in pods
+    assert "--- from node 10.0.148.221 into observability" in p.stdout
+    assert "get pods -n observability -o wide" in log.read_text()
+    assert "networkpolicies" in log.read_text()
