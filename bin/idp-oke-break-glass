@@ -265,14 +265,47 @@ pb_helm_retry() {
   show kustomizations $K get kustomizations -A
 }
 
+# node-drain: run 33144789785 + diagnose 33144117286 (crew#539 5448912676): every crashing
+# observability pod (clickhouse, langfuse-web, langfuse-worker) sat on the 6h-old spot replacement
+# 10.0.148.221, each timing out to a Service whose backend was on that same node, while the
+# replica on the other node and every cross-node probe answered. A node whose same-node ClusterIP
+# path drops packets is retired the way Kubernetes retires a node: cordon, drain, and let the
+# cluster-autoscaler remove the empty node and add a fresh one. The target is not typed: it is the
+# Ready node carrying the most pods that are not Running/Succeeded, and the placement before and
+# after is the receipt. Undo: node-uncordon.
+sick_pods() {
+  # "<node> <ns>/<pod> <phase> <ready…>" for every pod that is not Running-and-ready and not Succeeded
+  $K get pods -A -o jsonpath='{range .items[*]}{.spec.nodeName}{" "}{.metadata.namespace}{"/"}{.metadata.name}{" "}{.status.phase}{" "}{range .status.containerStatuses[*]}{.ready}{" "}{end}{"\n"}{end}' 2>/dev/null \
+    | awk '$1!="" && $3!="Succeeded" && ($3!="Running" || $4=="false")'
+}
+pick_sick_node() { sick_pods | awk '{n[$1]++} END{for(k in n) print n[k], k}' | sort -rn | head -1 | awk '{print $2}'; }
+pb_node_drain() {
+  show nodes-before $K get nodes -o wide
+  show pods-not-ready-by-node sh -c "$(declare -f sick_pods); K='$K'; sick_pods | sort"
+  local node; node=$(pick_sick_node)
+  [ -n "$node" ] || { echo "no pod outside Running/Succeeded: nothing to drain"; return 0; }
+  echo "--- target $node"
+  step cordon $K cordon "$node"
+  step drain $K drain "$node" --ignore-daemonsets --delete-emptydir-data --timeout=600s
+  show nodes-after $K get nodes -o wide
+  show pods-after $K get pods -A -o wide --field-selector=status.phase!=Succeeded
+}
+pb_node_uncordon() {
+  local n
+  for n in $($K get nodes -o jsonpath='{range .items[?(@.spec.unschedulable==true)]}{.metadata.name}{" "}{end}'); do step "uncordon-$n" $K uncordon "$n"; done
+  show nodes $K get nodes -o wide
+}
+
 case "${1:-}" in
-  --list) echo "diagnose cilium-unchain helm-retry dns-per-node dns-per-namespace tcp-per-node"; exit 0 ;;
+  --list) echo "diagnose cilium-unchain helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon"; exit 0 ;;
   diagnose) pb_diagnose ;;
   dns-per-node) pb_dns_per_node ;;
   dns-per-namespace) pb_dns_per_namespace ;;
   tcp-per-node) pb_tcp_per_node ;;
   cilium-unchain) pb_cilium_unchain ;;
   helm-retry) pb_helm_retry ;;
+  node-drain) pb_node_drain ;;
+  node-uncordon) pb_node_uncordon ;;
   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
 esac
 [ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }

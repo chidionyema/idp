@@ -75,7 +75,7 @@ def test_unknown_playbook_is_refused_and_list_names_both(tmp_path):
     p, _ = _run("rm-rf-everything", tmp_path)
     assert p.returncode == 64
     listed = subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
-    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node", "dns-per-namespace", "tcp-per-node"]
+    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node", "dns-per-namespace", "tcp-per-node", "node-drain", "node-uncordon"]
 
 
 def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
@@ -91,7 +91,7 @@ def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
 def test_workflow_offers_break_glass_with_a_named_playbook():
     wf = WORKFLOW.read_text()
     assert "surge-finish, break-glass]" in wf
-    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node]" in wf
+    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon]" in wf
     assert "BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}" in wf
 
 
@@ -355,3 +355,57 @@ def test_probe_log_prints_every_target_line_not_only_the_last(tmp_path):
     assert p.returncode == 0, p.stdout + p.stderr
     assert "FAIL a.observability.svc.cluster.local:5432" in p.stdout, p.stdout
     assert "ok b.observability.svc.cluster.local:6379" in p.stdout, p.stdout
+
+
+def _node_drain_kubectl(bin_dir: Path, log: Path, pods: str) -> None:
+    (bin_dir / "kubectl").write_text(
+        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
+        "case \"$*\" in\n"
+        "  *'get pods -A -o jsonpath'*) printf '" + pods + "';;\n"
+        "  *) cat >/dev/null 2>&1; echo ok;;\nesac\n"
+    )
+
+
+def test_node_drain_retires_the_node_carrying_the_crashing_pods_and_only_that_node(tmp_path):
+    # crew#539 5448912676: clickhouse, langfuse-web and langfuse-worker all crashed on 10.0.148.221,
+    # each timing out to a Service whose backend was on that same node; the replica on 10.0.159.197
+    # ran. The node is picked from the pods, never typed; it is cordoned before it is drained; the
+    # drain keeps DaemonSets and lets emptyDir go so the autoscaler can remove the empty node.
+    bin_dir, log = _fake_path(tmp_path)
+    _node_drain_kubectl(bin_dir, log,
+        "10.0.148.221 observability/langfuse-web-a Running false \\n"
+        "10.0.148.221 observability/langfuse-worker-a Running false \\n"
+        "10.0.148.221 observability/chi-0 Running false \\n"
+        "10.0.159.197 observability/langfuse-web-b Running true \\n"
+        "10.0.159.197 observability/migrator Succeeded false \\n"
+        "10.0.159.197 healing/descheduler-x Failed false \\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    calls = log.read_text().splitlines()
+    assert "--- target 10.0.148.221" in p.stdout, p.stdout
+    cordon = [i for i, c in enumerate(calls) if c.endswith("cordon 10.0.148.221")]
+    drain = [i for i, c in enumerate(calls) if "drain 10.0.148.221 --ignore-daemonsets --delete-emptydir-data --timeout=600s" in c]
+    assert cordon and drain and cordon[0] < drain[0], calls
+    assert not any("10.0.159.197" in c for c in calls if "cordon" in c or "drain" in c), calls
+    assert "observability/langfuse-web-a" in p.stdout and "observability/migrator" not in p.stdout
+
+
+def test_node_drain_touches_nothing_when_every_pod_runs(tmp_path):
+    bin_dir, log = _fake_path(tmp_path)
+    _node_drain_kubectl(bin_dir, log, "10.0.148.221 a/b Running true \\n10.0.159.197 a/c Succeeded false \\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0 and "nothing to drain" in p.stdout, p.stdout + p.stderr
+    assert not any(("cordon" in c or "drain" in c) for c in log.read_text().splitlines())
+
+
+def test_node_uncordon_is_the_undo(tmp_path):
+    bin_dir, log = _fake_path(tmp_path)
+    (bin_dir / "kubectl").write_text(
+        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
+        "case \"$*\" in\n  *'get nodes -o jsonpath'*) printf '10.0.148.221 ';;\n  *) echo ok;;\nesac\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-uncordon"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "kubectl --request-timeout=60s uncordon 10.0.148.221" in log.read_text()
