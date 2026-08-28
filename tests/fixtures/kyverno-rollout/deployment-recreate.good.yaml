@@ -1,0 +1,18 @@
+# Recreate never surges: every old pod is deleted before any new one is created, so hostname
+# anti-affinity cannot deadlock it. It costs downtime, which is a different policy's business.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: recreate, namespace: backstage}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: recreate}}
+  strategy: {type: Recreate}
+  template:
+    metadata: {labels: {app: recreate}}
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector: {matchLabels: {app: recreate}}
+      containers: [{name: c, image: busybox}]
