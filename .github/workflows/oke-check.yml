@@ -225,6 +225,34 @@ jobs:
           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
         run: bin/idp-chaos-drill
 
+  # crew#539 DoD 2: the in-cluster page drill (platform/chaos/langfuse-alert-drill.yaml) fails
+  # langfuse-web for 8 minutes and writes whether FounderSurfaceDown fired and Telegram was sent.
+  # Same door as chaos-drill: the receipt, read with the machine identity, never a kube path.
+  alert-drill:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: "3.12" }
+      - name: oci cli
+        run: pip install -q oci-cli
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: bin/idp-chaos-drill langfuse-alert-drill alert-drill
+        env:
+          OCI_CLI_AUTH: security_token   # every oci call in the run uses the exchanged session token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
+        run: bin/idp-chaos-drill langfuse-alert-drill alert-drill
+
   free-tier:
     # crew#488 CP3: the Always Free allowance, asked of the limits API every day and graded
     # against platform/oci/variables.tf. OCI halved it once (ADR 0004); this is where the next
