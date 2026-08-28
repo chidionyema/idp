@@ -8,9 +8,11 @@
 #
 # Every hour at :03 this Job authenticates as the estate's GitHub App (the same Secret Flux's
 # githubdispatch Provider reads, platform/alerts-github/github-app.yaml), narrowed to
-# actions:write + metadata:read, and for each hourly workflow in the catalogue: if a run already
-# started in this UTC hour (GitHub's own schedule got through, or a push), it does nothing; else
-# it POSTs workflow_dispatch on the default branch. No receipt object: the reading is the drills
+# actions:write + metadata:read, and for each hourly workflow in the catalogue: if the CLOCK
+# already ran it in this UTC hour (GitHub's own schedule got through, or this Job already did),
+# it does nothing; else it POSTs workflow_dispatch on the default branch. A push does not count
+# and never did the job: measured over 24h on 2026-08-28, 16 of login-drill's 24 hours were
+# covered only by a push, so deferring to one is deferring the heartbeat to whoever is working. No receipt object: the reading is the drills
 # row itself (bin/idp-drills-row, hourly in verify-drill) -- if this Job stops, the drills go
 # stale and that row is red within max_age_hours. WORKFLOWS must equal the catalogue's hourly
 # rows; tests/test_incident_crew554_drills_run_on_the_estates_clock.py refuses drift.
@@ -84,12 +86,31 @@ spec:
                           return e.code, e.read()[:200].decode(errors="replace")
 
 
+                  def by_the_clock(r):
+                      """True if this run is the hourly heartbeat itself: GitHub's cron, or this Job.
+                      A push, a pull_request or a hand dispatch is somebody working, and stops the
+                      moment they do -- which is exactly the hour a heartbeat has to cover."""
+                      ev = r.get("event")
+                      if ev == "schedule":
+                          return True
+                      actor = str(((r.get("triggering_actor") or {}).get("login")) or "")
+                      return ev == "workflow_dispatch" and actor.endswith("[bot]")
+
+
                   def plan(runs, now):
-                      """'dispatch' unless a run of this workflow already started in the current UTC hour."""
+                      """'dispatch' unless the CLOCK already ran this workflow in the current UTC hour.
+
+                      Measured 2026-08-28 11:5xZ over 24h, the reason this is not "any run": of the
+                      24 hours, login-drill had a run in 19 but only 3 were clock-driven, 16 being
+                      push-only; trace-drill 13 push-only, verify-drill 11. Suppressing on a push
+                      handed those hours back to whoever happened to be pushing, and bin/idp-drills-row
+                      counts only schedule + App runs, so the row read them as dropped and could never
+                      go green on a repo anyone works in. The two now use one definition of the clock
+                      and tests/test_incident_crew554_drills_run_on_the_estates_clock.py holds them to it."""
                       hour = now.replace(minute=0, second=0, microsecond=0)
                       for r in runs:
                           at = datetime.strptime(r["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                          if at >= hour:
+                          if at >= hour and by_the_clock(r):
                               return "skipped: %s run %s started %s" % (r.get("event"), r.get("id"), r["created_at"])
                       return "dispatch"
 
@@ -111,7 +132,9 @@ spec:
                           print(f"FAIL drill-dispatcher GET /repos/{repo} -> {code} at {stamp}"); sys.exit(1)
                       ref, failed = meta["default_branch"], 0
                       for wf in workflows:
-                          code, page = call("GET", f"/repos/{repo}/actions/workflows/{wf}/runs?per_page=5", token)
+                          # 30, not 5: with pushes no longer suppressing, the clock run still has to be FOUND,
+                          # and login-drill alone took 24 push runs in 24h (crew#554).
+                          code, page = call("GET", f"/repos/{repo}/actions/workflows/{wf}/runs?per_page=30", token)
                           runs = page.get("workflow_runs", []) if code == 200 and isinstance(page, dict) else []
                           verdict = plan(runs, at)
                           if verdict != "dispatch":
