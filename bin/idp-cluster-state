@@ -4,7 +4,7 @@
 # minutes from the node's instance principal; this reads it with whatever OCI auth the caller has
 # (a runner's exchanged OIDC session in oke-check.yml). Same grading shape as bin/idp-chaos-drill.
 #   ok      cluster-state  <line 1 of the receipt>   -- fresh, every node Ready
-#   FAIL    cluster-state  <why>                     -- receipt missing, stale, a node not Ready or a Flux object not Ready (crew#406)
+#   FAIL    cluster-state  <why>                     -- receipt missing, stale, a node not Ready, a Flux object not Ready (crew#406), no PrometheusRule or no Watchdog alert (crew#539)
 #   BLIND   cluster-state  <why>                     -- no oci CLI or no session; nothing was graded
 # Print the JSON body with --json. Max age 60 min = 4 schedule slots. Override CLUSTER_STATE_MAX_AGE_MIN.
 set -uo pipefail
@@ -22,12 +22,25 @@ if [ $rc -ne 0 ]; then
     *) blind "object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
   esac
 fi
-body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name state/cluster 2>/dev/null)
-python3 - "$head" "$body" "$MAX_MIN" "${1:-}" <<'PY'
+# stderr kept: with 2>/dev/null a failed read was an empty body and graded FAIL "does not start
+# with ok: ''" — a FAIL that the cluster did nothing to earn (crew#66 row from idp#465, the class
+# that hid the surge's reads). A read that fails is BLIND and names the error.
+body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name state/cluster 2>&1) \
+  || blind "object get failed: $(printf '%s' "$body" | tail -1 | cut -c1-160)"
+[ -n "$body" ] || blind "object get returned an empty body"
+# crew#539 (2026-08-28 00:28Z, run 33129788480): the outage receipt (36 Flux rows, 40 pods with
+# their last log) outgrew ARG_MAX and `python3: Argument list too long` graded the estate BLIND
+# at the moment it needed reading. The body travels by file, never by argv.
+bodyf=$(mktemp); trap 'rm -f "$bodyf"' EXIT; printf '%s' "$body" > "$bodyf"
+python3 - "$head" "$bodyf" "$MAX_MIN" "${1:-}" <<'PY'
+import os as _os
+def _body_arg(a):
+    # crew#539: the receipt is a file path when the caller wrote it out (ARG_MAX, run 33129788480); a literal body is still accepted for the test harnesses.
+    return (open(a, encoding='utf-8', errors='replace').read() if _os.path.isfile(a) else a).strip()
 import json, re, sys
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-head, body, max_min, flag = sys.argv[1], sys.argv[2].strip(), float(sys.argv[3]), sys.argv[4]
+head, body, max_min, flag = sys.argv[1], _body_arg(sys.argv[2]), float(sys.argv[3]), sys.argv[4]
 line1, _, rest = body.partition("\n")
 try:
     lm = json.loads(head)["last-modified"]
@@ -73,6 +86,16 @@ if int(kv["ds_short"]) > 0:
     except Exception:
         why = "body unreadable"
     print(f"FAIL    cluster-state  {kv['ds_short']} DaemonSet(s) short of desired: {why}"); sys.exit(1)
+# crew#539 DoD 1: a cluster with no PrometheusRule, or an Alertmanager that does not show the
+# always-firing Watchdog, has no alerting -- absent counts grade FAIL like every other row.
+if "monitoring_rules" not in kv or "alert_watchdog" not in kv:
+    print(f"FAIL    cluster-state  receipt carries no monitoring_rules/alert_watchdog (collector predates crew#539 DoD 1): {line1[:120]}"); sys.exit(1)
+if int(kv["monitoring_rules"]) == 0 or int(kv["alert_watchdog"]) == 0:
+    try:
+        why = (json.loads(rest).get("monitoring") or {}).get("error") or "no error recorded"
+    except Exception as e:
+        why = f"body unreadable: {e}"
+    print(f"FAIL    cluster-state  monitoring_rules={kv['monitoring_rules']} alert_watchdog={kv['alert_watchdog']}: {why[:300]}"); sys.exit(1)
 print(f"ok      cluster-state  {line1} ({age:.0f} min ago)")
 if flag == "--json":
     print(rest)

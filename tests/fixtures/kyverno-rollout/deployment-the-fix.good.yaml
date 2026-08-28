@@ -1,0 +1,17 @@
+# What origin/main carries after idp#564 (c6e6026): give a pod back before taking one.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: catalogue, namespace: backstage}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: catalogue}}
+  strategy: {type: RollingUpdate, rollingUpdate: {maxSurge: 0, maxUnavailable: 1}}
+  template:
+    metadata: {labels: {app: catalogue}}
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector: {matchLabels: {app: catalogue}}
+      containers: [{name: c, image: busybox}]

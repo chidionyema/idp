@@ -20,11 +20,24 @@ cfg=$(awk '/ESTATE_OIDC_DOMAIN_URL:/{print $2}' "$IDP/clusters/oke/estate-config
 # compartment: the CI variable when the job sets it, else the vault, as bin/idp-vault-put
 C="${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}"
 # vault and key: the ones the existing estate secrets already live in; placeholders are imported, never re-created
-CID=$(oci vault secret list --compartment-id "$C" --name oauth2-proxy-client-id --query 'data[0].id' --raw-output 2>/dev/null || true)
-CSEC=$(oci vault secret list --compartment-id "$C" --name oauth2-proxy-client-secret --query 'data[0].id' --raw-output 2>/dev/null || true)
-[ -n "$CID" ] || { echo "FAIL    identity vault secret oauth2-proxy-client-id not found in compartment; platform/identity has never been bootstrapped"; exit 2; }
-V=$(oci vault secret get --secret-id "$CID" --query 'data."vault-id"' --raw-output)
-K=$(oci vault secret get --secret-id "$CID" --query 'data."key-id"' --raw-output)
+# crew#66 CP5b: vault reads go through bin/idp-cloud (one primitive layer). A layer exit 1 (NotFound) is FAIL;
+# a layer exit 3 (Split) or any other non-zero is BLIND (exit 2), never treated as a silent empty value.
+# one stderr file per describe: a BLIND on client-id must print client-id's line, never client-secret's
+err_id="${TMPDIR:-/tmp}/identity-id.err"; : > "$err_id"
+err_sec="${TMPDIR:-/tmp}/identity-secret.err"; : > "$err_sec"
+desc_id=$("$IDP/bin/idp-cloud" secret describe oauth2-proxy-client-id 2>"$err_id"); rc_id=$?
+desc_sec=$("$IDP/bin/idp-cloud" secret describe oauth2-proxy-client-secret 2>"$err_sec"); rc_sec=$?
+case "$rc_id" in
+  0) CID=$(printf '%s' "$desc_id" | jq -r .id); V=$(printf '%s' "$desc_id" | jq -r '."vault-id"'); K=$(printf '%s' "$desc_id" | jq -r '."key-id"');;
+  1) echo "FAIL    identity vault secret oauth2-proxy-client-id not found in compartment; platform/identity has never been bootstrapped"; exit 2;;
+  *) echo "BLIND   identity $(head -1 "$err_id")"; exit 2;;
+esac
+[ -n "$CID" ] && [ "$CID" != null ] || { echo "FAIL    identity vault secret oauth2-proxy-client-id not found in compartment; platform/identity has never been bootstrapped"; exit 2; }
+case "$rc_sec" in
+  0) CSEC=$(printf '%s' "$desc_sec" | jq -r .id);;
+  1) CSEC="";;
+  *) echo "BLIND   identity $(head -1 "$err_sec")"; exit 2;;
+esac
 # Incident 2026-08-26 02:31Z (crew#269): the first sign-in returned 500. oauth2-proxy read
 # /admin/v1/SigningCert/jwk to verify the id_token and the domain answered 401: a new domain keeps its
 # signing certificate private. The OpenTofu resource cannot set one flag (PutSetting replaces the

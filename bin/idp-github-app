@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # One GitHub App for the estate's agents; one installation token per lane (crew#286 CP7).
 #   bin/idp-github-app manifest        print the one-tap URL that creates the App (founder taps Create once)
-#   bin/idp-github-app convert <code>  exchange the manifest code for the App; SEED_GITHUB_APP_* repo secrets + vault-seed.yml write the vault from CI
+#   bin/idp-github-app convert <code>  exchange the manifest code for the App; the vault is written in this process when an OCI
+#                                      session is live (root trust, crew#577), else SEED_GITHUB_APP_* repo secrets + vault-seed.yml from CI
 #   bin/idp-github-app seed <file>     retry the repo-secret write from a key file convert kept
 #   bin/idp-github-app token <lane>    mint an installation token narrowed to platform/github-app/lanes.json
 #   bin/idp-github-app installation    record the App's installation id in the vault (Flux's git writer reads it, crew#267)
+#   bin/idp-github-app refresh         mint the tokens workloads read from the vault (mcp-gateway.GITHUB_MCP_TOKEN, hermes-agent-env.GITHUB_TOKEN)
+#                                      from the App, replacing the PATs a person pasted (crew#577); run hourly by verify-drill
 #   bin/idp-github-app status          which identity gh acts as, and whether it is the App
 # GitHub creates Apps only through the manifest flow, which ends in a browser redirect (crew#288);
 # that single Create tap is the one hand step. Everything after it is API.
@@ -29,6 +32,26 @@ app_jwt() {
   rm -f "$key"
 }
 
+# app_api <jwt> <path> [curl args...]: GitHub API call authenticated by an App JWT. gh sends GH_TOKEN as
+# `Authorization: token`, which GitHub refuses for a JWT (run 33098034984: bearer_probe_http=200 on the same JWT);
+# a JWT goes as `Authorization: Bearer`. Prints the body on every status; callers read the field they need and GitHub's .message when it is missing.
+app_api() {
+  local jwt=$1 path=$2; shift 2
+  curl -sS -H "Authorization: Bearer $jwt" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "$@" "https://api.github.com$path"
+}
+# app_jwt_diag <app_id> <pem_base64> <jwt> [bundle-json]: when GitHub answers 401 to the JWT, say what was signed and with what,
+# never the key: the PEM's header line, the public modulus fingerprint (GitHub shows the same on the App's page),
+# the decoded claims. Run 33095767831 (crew#503) died on `A JSON web token could not be decoded` with nothing else.
+app_jwt_diag() {
+  local key hdr fp claims
+  key=$(mktemp); chmod 600 "$key"; printf %s "$2" | base64 -d > "$key" 2>/dev/null
+  hdr=$(head -1 "$key" 2>/dev/null); fp=$(openssl rsa -in "$key" -pubout 2>/dev/null | openssl sha256 | cut -d' ' -f2 | cut -c1-16)
+  claims=$(printf %s "$3" | cut -d. -f2 | tr '_-' '/+' | awk '{printf "%s", $0; n=length($0)%4; if(n) for(i=n;i<4;i++) printf "="}' | base64 -d 2>/dev/null)
+  rm -f "$key"
+  # gh sends `Authorization: token`; GitHub documents `Bearer` for an App JWT. The probe says whether the scheme is the fault.
+  local bearer; bearer=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $3" -H "Accept: application/vnd.github+json" https://api.github.com/app 2>/dev/null || echo curl-failed)
+  echo "DIAG    github-app JWT refused: bearer_probe_http=$bearer iss=$1 slug=$(jq -r '.slug // "?"' <<<"${4:-{\}}") pem_b64_len=${#2} key_header_ok=$([ "${hdr:-}" = "-----BEGIN RSA PRIVATE KEY-----" ] && echo yes || echo no) pubkey_sha256=${fp:-unreadable} claims=$claims" >&2
+}
 case "$cmd" in
 manifest)
   url=$(repo_url); redirect="${GITHUB_APP_REDIRECT_URL:-$url/issues}"
@@ -54,12 +77,31 @@ convert)
   # was not live). Prove the CI write path BEFORE spending the code: gh can set a repo secret and the
   # seed workflow exists.
   repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-  gh secret set SEED_GITHUB_APP_PREFLIGHT --repo "$repo" --body "$(date -u +%FT%TZ)" >/dev/null 2>&1 \
-    && gh workflow view vault-seed.yml --repo "$repo" >/dev/null 2>&1 \
-    || { echo "FAIL    github-app CI pre-flight failed (gh secret set / vault-seed.yml on $repo); the code was NOT spent" >&2; exit 2; }
+  # Root trust (crew#66, crew#577): when this process holds a live OCI session, the vault is written
+  # here, in-process, and no repository secret ever carries the key. The CI path below stays for a
+  # runner that has no session. Either way the write path is proved BEFORE the code is spent.
+  direct=""
+  if OCI_CLI_PROFILE=$("$IDP/bin/idp-oci-whoami" 2>/dev/null) && [ -n "$OCI_CLI_PROFILE" ]; then
+    export OCI_CLI_PROFILE OCI_CLI_AUTH=security_token
+    VAULT_PUT_PREFLIGHT=1 "$IDP/bin/idp-vault-put" "$SECRET" --preflight >/dev/null 2>&1 && direct=1
+  fi
+  if [ -z "$direct" ]; then
+    gh secret set SEED_GITHUB_APP_PREFLIGHT --repo "$repo" --body "$(date -u +%FT%TZ)" >/dev/null 2>&1 \
+      && gh workflow view vault-seed.yml --repo "$repo" >/dev/null 2>&1 \
+      || { echo "FAIL    github-app no OCI session and the CI pre-flight failed (gh secret set / vault-seed.yml on $repo); the code was NOT spent" >&2; exit 2; }
+  fi
   out=$(gh api -X POST "/app-manifests/$code/conversions")
   tmp=$(mktemp); chmod 600 "$tmp"
   jq -r '"GITHUB_APP_ID=\(.id)\nGITHUB_APP_SLUG=\(.slug)\nGITHUB_APP_CLIENT_ID=\(.client_id)\nGITHUB_APP_PEM_B64=\(.pem|@base64)"' <<<"$out" > "$tmp"
+  if [ -n "$direct" ]; then
+    if ESTATE_ENV_FILE="$tmp" "$IDP/bin/idp-vault-put" "$SECRET" app_id=GITHUB_APP_ID slug=GITHUB_APP_SLUG client_id=GITHUB_APP_CLIENT_ID pem_b64=GITHUB_APP_PEM_B64 >/dev/null; then
+      rm -f "$tmp"
+      echo "ok      github-app $(jq -r .slug <<<"$out") (id $(jq -r .id <<<"$out")) -> vault entry $SECRET written in-process; install it once: $(jq -r .html_url <<<"$out")/installations/new, then bin/idp-github-app installation"
+      exit 0
+    fi
+    echo "FAIL    github-app vault write failed; the App exists and its key is kept at $tmp (0600). Retry: bin/idp-github-app seed $tmp; then rm -P $tmp" >&2
+    exit 1
+  fi
   # If a write fails the key is NOT deleted: it exists nowhere else. Keep it 0600 and say how to retry.
   ok=1
   while IFS='=' read -r k v; do
@@ -81,15 +123,27 @@ seed)
   echo "ok      github-app SEED_GITHUB_APP_* on $repo; vault-seed.yml entry=github-app dispatched"
   ;;
 token)
+  TMPDIR_ERR=$(mktemp); trap 'rm -f "$TMPDIR_ERR"' EXIT
   lane=${1:?lane name from platform/github-app/lanes.json}
   perms=$(jq -c --arg l "$lane" '.[$l] // empty' "$D/lanes.json"); [ -n "$perms" ] || { echo "REFUSED: no lane '$lane' in $D/lanes.json"; exit 2; }
   export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
   bundle=$("$IDP/bin/idp-cloud" secret get "$SECRET" 2>"${TMPDIR:-/tmp}/github-app.err") || { echo "BLIND   github-app $(head -1 "${TMPDIR:-/tmp}/github-app.err" | cut -c1-120); run: bin/idp-github-app convert <code>"; exit 2; }
   app_id=$(jq -r .app_id <<<"$bundle"); pem_b64=$(jq -r .pem_b64 <<<"$bundle")
   jwt=$(app_jwt "$app_id" "$pem_b64")
-  inst=$(GH_TOKEN="$jwt" gh api /app/installations -q '.[0].id')
-  [ -n "$inst" ] && [ "$inst" != null ] || { echo "BLIND   github-app App $app_id has no installation yet"; exit 2; }
-  tok=$(GH_TOKEN="$jwt" gh api -X POST "/app/installations/$inst/access_tokens" --input <(jq -n --argjson p "$perms" '{permissions:$p}') -q .token)
+  inst=$(app_api "$jwt" /app/installations 2>/dev/null | jq -r 'if type=="array" then (.[0].id // empty) else empty end' 2>/dev/null || true)
+  [[ "$inst" =~ ^[0-9]+$ ]] || app_jwt_diag "$app_id" "$pem_b64" "$jwt" "$bundle"
+  # run 33097094260: gh printed the 401 body on stdout and the non-empty check took it for an id
+  [[ "$inst" =~ ^[0-9]+$ ]] || { echo "BLIND   github-app App $app_id has no installation yet (or its JWT was refused; see DIAG)"; exit 2; }
+  raw=$(app_api "$jwt" "/app/installations/$inst/access_tokens" -X POST --data "$(jq -nc --argjson p "$perms" '{permissions:$p}')" -w $'\nhttp_code=%{http_code}' 2>"$TMPDIR_ERR" || true)
+  code=${raw##*http_code=}; body=${raw%$'\n'http_code=*}
+  tok=$(jq -r '.token // empty' <<<"$body" 2>/dev/null || true)
+  # run 33097577404: whatever gh printed was passed on as a token; a token has a shape. Run 33098351833: the
+  # reason it had none was lost, so GitHub's own message travels on stderr where the drill reads it.
+  # run 33099762534: the token GitHub mints is 390 bytes with `_` and `.` in it (the long installation-token
+  # format), so the shape is `ghs_` then [A-Za-z0-9_.-]; the old alphanumeric-only shape refused a good token.
+  # run 33099257719: http=201 with a full body and still no token — the shape of what jq handed back is the
+  # next question, so the DIAG answers it (length, prefix, every non-alphanumeric byte; never the token).
+  [[ "$tok" =~ ^ghs_[A-Za-z0-9_.-]+$ ]] || { echo "DIAG    github-app access_tokens for installation $inst lane $lane returned no token: http=${code:-none} has_token=$(jq 'has("token")' <<<"$body" 2>/dev/null) tok_len=${#tok} tok_head=${tok:0:4} tok_odd=[$(printf %s "$tok" | tr -d 'A-Za-z0-9' | od -An -c | tr -s ' \n' ' ' | head -c 40)] jq=$(jq --version 2>&1) bash=$BASH_VERSION body=$(jq -c 'del(.token)' <<<"$body" 2>/dev/null | cut -c1-160 || head -c 160 <<<"$body" | tr -d '\n') curl=$(tail -1 "$TMPDIR_ERR" 2>/dev/null | cut -c1-80)" >&2; echo "BLIND   github-app no installation token for lane $lane (see DIAG)"; exit 2; }
   if [ -t 1 ]; then echo "ok      github-app token minted for lane $lane (installation $inst, expires in 1h); pipe it: bin/idp-github-app token $lane | gh auth login --with-token"; else printf %s "$tok"; fi
   ;;
 installation)
@@ -100,13 +154,35 @@ installation)
   bundle=$("$IDP/bin/idp-cloud" secret get "$SECRET" 2>"${TMPDIR:-/tmp}/github-app.err") || { echo "BLIND   github-app $(head -1 "${TMPDIR:-/tmp}/github-app.err" | cut -c1-120); run: bin/idp-github-app convert <code>"; exit 2; }
   app_id=$(jq -r .app_id <<<"$bundle"); pem_b64=$(jq -r .pem_b64 <<<"$bundle")
   jwt=$(app_jwt "$app_id" "$pem_b64")
-  inst=$(GH_TOKEN="$jwt" gh api /app/installations -q '.[0].id')
-  [ -n "$inst" ] && [ "$inst" != null ] || { echo "BLIND   github-app App $app_id has no installation yet"; exit 2; }
+  inst=$(app_api "$jwt" /app/installations 2>/dev/null | jq -r 'if type=="array" then (.[0].id // empty) else empty end' 2>/dev/null || true)
+  [[ "$inst" =~ ^[0-9]+$ ]] || app_jwt_diag "$app_id" "$pem_b64" "$jwt" "$bundle"
+  # run 33097094260: gh printed the 401 body on stdout and the non-empty check took it for an id
+  [[ "$inst" =~ ^[0-9]+$ ]] || { echo "BLIND   github-app App $app_id has no installation yet (or its JWT was refused; see DIAG)"; exit 2; }
   tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT; chmod 600 "$tmp"
   jq -r --arg i "$inst" '. + {installation_id: $i} | to_entries[] | "V_\(.key)=\(.value)"' <<<"$bundle" > "$tmp"
   # shellcheck disable=SC2046
   ESTATE_ENV_FILE="$tmp" "$IDP/bin/idp-vault-put" "$SECRET" $(jq -r --arg i "$inst" '. + {installation_id: $i} | keys[] | "\(.)=V_\(.)"' <<<"$bundle")
   echo "ok      github-app installation $inst recorded in vault secret $SECRET"
+  ;;
+refresh)
+  # The two workloads that read a GitHub token out of the vault (platform/mcp: GITHUB_MCP_TOKEN,
+  # platform/hermes-agent: GITHUB_TOKEN) used to hold a PAT a person minted in the console and pasted
+  # (SEED_GITHUB_MCP_TOKEN, SEED_HERMES_GITHUB_TOKEN). An installation token of the App does the same
+  # job with a lane's permissions and expires in an hour, so it is re-minted here every hour by
+  # bin/idp-verify-drill (machine identity, no laptop) and the ExternalSecrets refresh every 15 minutes
+  # (platform/github-app/token-consumers.json names entry, field and lane). Nothing is printed but names.
+  CONSUMERS="$D/token-consumers.json"
+  [ -f "$CONSUMERS" ] || { echo "BLIND   github-app no $CONSUMERS"; exit 2; }
+  n=0
+  while IFS=$'\t' read -r entry field lane; do
+    [ -n "$entry" ] || continue
+    tok=$("$0" token "$lane" </dev/null) || { echo "FAIL    github-app refresh: no token for lane $lane ($entry.$field)"; exit 1; }
+    f=$(mktemp); chmod 600 "$f"; printf 'GH_INSTALLATION_TOKEN=%s\n' "$tok" > "$f"; unset tok
+    ESTATE_ENV_FILE="$f" "$IDP/bin/idp-vault-put" --merge "$entry" "$field=GH_INSTALLATION_TOKEN" >/dev/null || { rm -f "$f"; echo "FAIL    github-app refresh: vault write of $entry.$field refused"; exit 1; }
+    rm -f "$f"; n=$((n+1))
+    echo "ok      github-app refresh: $entry.$field <- installation token, lane $lane (expires in 1h)"
+  done < <(jq -r '.consumers[] | [.entry, .field, .lane] | @tsv' "$CONSUMERS")
+  echo "ok      github-app refresh: $n token(s) re-minted from the App; no PAT anywhere"
   ;;
 status)
   who=$(gh api /user -q .login 2>/dev/null || true)

@@ -208,7 +208,7 @@ until resolved.
 
 The founder is the builder, the operator, and the validator. There is no crew to hide behind.
 
-- **The founder must be able to operate the feature from any device they own**: laptop, phone,
+- **The feature is operable by the founder from any device they own**: laptop, phone,
   or voice, without asking anyone.
 - **The system must teach the founder, not a manual.** Every surface offers interactive guidance
   on first use.

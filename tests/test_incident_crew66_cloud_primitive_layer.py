@@ -103,7 +103,7 @@ def test_cluster_state_reads_a_file_backend_receipt_end_to_end(tmp_path):
         "ok cluster-state at 2026-08-27T00:00:00Z nodes=1 ready=1 pods=0 pods_not_ready=0"
         " flux=0 flux_not_ready=0 ds=0 ds_short=0 events_warning=0"
         " hostnames=0 spiffe_ids=0 spiffe_workloads=0 svids=0 spire_agents=0"
-        " oci_pods=0 oci_static_key_pods=0 policy_exceptions=0"
+        " oci_pods=0 oci_static_key_pods=0 policy_exceptions=0 monitoring_rules=1 alert_watchdog=1"
     )
     body = {
         "at": "2026-08-27T00:00:00Z",
@@ -176,3 +176,147 @@ def test_vault_put_round_trip_on_file_backend(tmp_path):
     assert "updated" in p2.stdout, p2.stdout
     body2 = json.loads(secret_path.read_text())
     assert body2.get("KA") == "x" and body2.get("KB") == "y" and body2.get("KC") == "y", body2
+
+
+def test_cp5a_secret_describe(tmp_path):
+    secrets = tmp_path / "secrets"
+    secrets.mkdir()
+    (secrets / "withmeta").write_text("secret-bytes")
+    (secrets / "withmeta.meta.json").write_text(json.dumps({"id": "ocid1.secret.oc1..abc", "vault-id": "ocid1.vault.oc1..xyz", "key-id": "ocid1.key.oc1..k"}))
+    r = _run(tmp_path, "secret", "describe", "withmeta")
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout) == {"id": "ocid1.secret.oc1..abc", "vault-id": "ocid1.vault.oc1..xyz", "key-id": "ocid1.key.oc1..k"}
+
+    (secrets / "barefile").write_text("bare")
+    r = _run(tmp_path, "secret", "describe", "barefile")
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout) == {"id": "file:barefile", "vault-id": "file", "key-id": "file"}
+
+    r = _run(tmp_path, "secret", "describe", "absent")
+    assert r.returncode == 1
+    assert "NotFound" in r.stderr
+
+    (secrets / "splitme").write_text("v")
+    (secrets / "splitme.split").write_text("")
+    r = _run(tmp_path, "secret", "describe", "splitme")
+    assert r.returncode == 3
+    assert "Split" in r.stderr
+
+
+def test_cp5a_secret_list_with_vault_flag(tmp_path):
+    (tmp_path / "secrets").mkdir()
+    (tmp_path / "secrets" / "topA").write_text("a")
+    (tmp_path / "secrets" / "topB").write_text("b")
+    (tmp_path / "vaults" / "v1" / "secrets").mkdir(parents=True)
+    (tmp_path / "vaults" / "v1" / "secrets" / "vaultA").write_text("a")
+    (tmp_path / "vaults" / "v1" / "secrets" / "vaultB").write_text("b")
+
+    listed = _run(tmp_path, "secret", "list", "--vault", "v1")
+    assert listed.returncode == 0, listed.stderr
+    assert listed.stdout.strip().splitlines() == ["vaultA", "vaultB"]
+
+    unknown = _run(tmp_path, "secret", "list", "--vault", "nope")
+    assert unknown.returncode == 0
+    assert unknown.stdout == ""
+
+    plain = _run(tmp_path, "secret", "list")
+    assert plain.returncode == 0, plain.stderr
+    assert plain.stdout.strip().splitlines() == ["topA", "topB"]
+
+
+def test_cp5a_vault_list(tmp_path):
+    r = _run(tmp_path, "vault", "list")
+    assert r.returncode == 0
+    assert r.stdout == ""
+
+    vaults = tmp_path / "vaults"
+    vaults.mkdir()
+    (vaults / "vB").mkdir()
+    (vaults / "vB" / "name").write_text("Bravo")
+    (vaults / "vA").mkdir()
+    (vaults / "vA" / "name").write_text("Alpha")
+    (vaults / "vC").mkdir()
+    (vaults / "vC" / "name").write_text("Charlie")
+
+    r = _run(tmp_path, "vault", "list")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip().splitlines() == ["Alpha vA", "Bravo vB", "Charlie vC"]
+
+
+def test_cp5a_bucket_head(tmp_path):
+    r = _run(tmp_path, "bucket", "head", "nope")
+    assert r.returncode == 1
+    assert "NotFound" in r.stderr
+    assert "bucket" in r.stderr
+
+    (tmp_path / "objects" / "estate-drill-receipts").mkdir(parents=True)
+    r = _run(tmp_path, "bucket", "head", "estate-drill-receipts")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "ok"
+
+
+def test_cp5a_header_documents_new_verbs():
+    text = (ROOT / "bin" / "idp-cloud").read_text()
+    block_lines = []
+    for line in text.splitlines():
+        if line.startswith("#"):
+            block_lines.append(line)
+        else:
+            break
+    block = "\n".join(block_lines)
+    assert "secret describe" in block
+    assert "--vault" in block
+    assert "vault list" in block
+    assert "bucket head" in block
+    assert "cluster list" in block
+    assert "cluster nodepools" in block
+    assert "cluster kubeconfig" in block
+    assert "--region" in block
+
+
+def test_cp5d_cluster_list_on_file_backend(tmp_path):
+    r = _run(tmp_path, "cluster", "list")
+    assert r.returncode == 0
+    assert r.stdout == ""   # no clusters/ dir yet
+
+    for cid, name in [("ocid1.cluster.aaa", "Alpha"), ("ocid1.cluster.ccc", "Charlie"), ("ocid1.cluster.bbb", "Bravo")]:
+        d = tmp_path / "clusters" / cid
+        d.mkdir(parents=True)
+        (d / "name").write_text(name)
+    r = _run(tmp_path, "cluster", "list")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip().splitlines() == ["Alpha ocid1.cluster.aaa", "Bravo ocid1.cluster.bbb", "Charlie ocid1.cluster.ccc"]
+
+
+def test_cp5d_cluster_nodepools_on_file_backend(tmp_path):
+    r = _run(tmp_path, "cluster", "nodepools")
+    assert r.returncode == 0
+    assert r.stdout == ""
+
+    (tmp_path / "nodepools").mkdir()
+    for name, state in [("pool-b", "ACTIVE"), ("pool-a", "ACTIVE"), ("pool-c", "UPDATING")]:
+        (tmp_path / "nodepools" / name).write_text(state)
+    r = _run(tmp_path, "cluster", "nodepools")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip().splitlines() == ["pool-a ACTIVE", "pool-b ACTIVE", "pool-c UPDATING"]
+
+
+def test_cp5d_cluster_kubeconfig_copies_the_file_and_chmods_600(tmp_path):
+    d = tmp_path / "clusters" / "ocid1.cluster.x"
+    d.mkdir(parents=True)
+    (d / "kubeconfig").write_text("apiVersion: v1\nclusters: []\n")
+    out = tmp_path / "kube"
+    r = _run(tmp_path, "cluster", "kubeconfig", "ocid1.cluster.x", "--file", str(out))
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == ""
+    assert out.read_text() == "apiVersion: v1\nclusters: []\n"
+    assert (out.stat().st_mode & 0o777) == 0o600
+
+
+def test_cp5d_cluster_kubeconfig_missing_cluster_is_exit_1_notfound(tmp_path):
+    out = tmp_path / "kube"
+    r = _run(tmp_path, "cluster", "kubeconfig", "ocid1.cluster.absent", "--file", str(out))
+    assert r.returncode == 1
+    assert "NotFound" in r.stderr
+    assert "ocid1.cluster.absent" in r.stderr
+    assert not out.exists()

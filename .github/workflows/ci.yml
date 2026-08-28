@@ -6,17 +6,35 @@ on:
     # (crew#267). The required checks run on that push, so the pull request that
     # image-update-pr.yml opens with GITHUB_TOKEN (which fires no pull_request run) is still graded.
     branches: [main, flux/image-updates]
+# A newer run on the same ref supersedes the older one: on 2026-08-27 20:23Z idp had 9 running and
+# 20 queued runs, 12 of them stale duplicates, and a one-line oke-check waited 19 min (crew#516).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   offline-gate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # bin/law32-gate diffs the PR against origin/main
+      # crew#539, 2026-08-28: bin/idp-kyverno-render judges renders against this estate's
+      # ClusterPolicies, and two of them -- no-optional-secret-references and
+      # money-rail-single-writer -- live in prospector, not here. CI had no copy, so it silently
+      # judged 24 of 26 policies and called platform/robusta clean; admission then refused the
+      # same Deployment, the release went Failed, and monitoring stayed down 8h. The repo is
+      # public, so the default token reads it and no secret is involved. The script is BLIND
+      # (never a pass) without this checkout.
+      - name: estate ClusterPolicies (outside the workspace on purpose)
+        # multiarch-gate and the other repo-root sweeps walk the filesystem, not git, so a tree
+        # parked under $GITHUB_WORKSPACE makes idp CI grade prospector's shell scripts, and
+        # .gitignore does not help a gate that globs. actions/checkout refuses a path outside the
+        # workspace, so this is a clone. The repo is public: no credential, no secret.
+        run: git clone --depth 1 https://github.com/chidionyema/prospector "$RUNNER_TEMP/kyverno-policies"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: "3.12" }
       - name: tools
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q shellcheck jq sqlite3
+          sudo apt-get update -q && sudo apt-get install -y -q shellcheck jq sqlite3 age
           pip install -q check-jsonschema sqlite-utils pyyaml dagster dagster-webserver
           pip install -q -r sovereign/requirements-dev.txt   # crew#219 R39: the bdd acceptance leg
           curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
@@ -32,6 +50,7 @@ jobs:
           "$HOME/.temporalio/bin/temporal" --version
       - run: bin/idp-ci
         env:
+          IDP_KYVERNO_POLICIES: ${{ runner.temp }}/kyverno-policies/deploy/k8s/policies
           MIGRATE_HEALTH_WAIT: "240"
 
   # crew#286: the Estate-as-Platform operating model as a gate. One job, one script, the
@@ -69,10 +88,43 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/spec-gate       # R29: code changes carry an executable spec
 
+  # crew#66, founder 2026-08-28: "we must make it mathematically impossible for an agent to
+  # merge one" -- one manual setup step. policy/no-manual-steps.rego reads the README*.md,
+  # docs/**/*.md and platform/** files THIS pull request changes, and its body. Scoped to the
+  # changed files because main still carries two pre-existing prose hits (bin/idp-no-toil
+  # --sweep lists them) and a gate that reds main on day one is an outage, not a guard.
+  # The PR body is judged twice on purpose and it costs nothing: the same rego is in policy/,
+  # so bin/pr-report's conftest run in operating-model-gate above sees it too.
+  no-toil-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pull-requests: read }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: conftest 0.62.0   # same pinned build offline-gate and operating-model-gate install
+        run: curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
+      - name: no-toil gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bin/idp-no-toil "${{ github.event.pull_request.number }}"
+
   bdd:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # crew#539, 2026-08-28: bin/idp-kyverno-render judges renders against this estate's
+      # ClusterPolicies, and two of them -- no-optional-secret-references and
+      # money-rail-single-writer -- live in prospector, not here. CI had no copy, so it silently
+      # judged 24 of 26 policies and called platform/robusta clean; admission then refused the
+      # same Deployment, the release went Failed, and monitoring stayed down 8h. The repo is
+      # public, so the default token reads it and no secret is involved. The script is BLIND
+      # (never a pass) without this checkout.
+      - name: estate ClusterPolicies (outside the workspace on purpose)
+        # multiarch-gate and the other repo-root sweeps walk the filesystem, not git, so a tree
+        # parked under $GITHUB_WORKSPACE makes idp CI grade prospector's shell scripts, and
+        # .gitignore does not help a gate that globs. actions/checkout refuses a path outside the
+        # workspace, so this is a clone. The repo is public: no credential, no secret.
+        run: git clone --depth 1 https://github.com/chidionyema/prospector "$RUNNER_TEMP/kyverno-policies"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: "3.12" }
       - name: tools
@@ -90,10 +142,17 @@ jobs:
       - name: acceptance suite (strict on PRs to main)
         env:
           SB_BDD_STRICT: ${{ github.base_ref == 'main' && '1' || '0' }}
+          # test_gate_langfuse_render and test_gate_llm_admission run bin/idp-kyverno-render for
+          # real, so this step is a judging step and needs the estate-only policies like the
+          # others. Without it the script is BLIND (rc 2), which is the correct verdict and a
+          # failing one -- crew#539 is the 8h outage that happened when it was a pass instead.
+          IDP_KYVERNO_POLICIES: ${{ runner.temp }}/kyverno-policies/deploy/k8s/policies
         run: |
           echo "base_ref=${{ github.base_ref }} SB_BDD_STRICT=$SB_BDD_STRICT"
           cd sovereign && python -m pytest tests/bdd -q -p no:cacheprovider
       - name: ruff (crew#325 step 3; the rule set is pyproject.toml)
         run: pip install -q ruff==0.15.18 && ruff check .
       - name: pytest tests (crew#325 step 2, every file under tests/ in one run)
+        env:
+          IDP_KYVERNO_POLICIES: ${{ runner.temp }}/kyverno-policies/deploy/k8s/policies
         run: python -m pytest tests -q -p no:cacheprovider

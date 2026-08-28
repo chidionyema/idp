@@ -34,7 +34,9 @@ def _one(docs, kind):
 def _container(docs):
     dep = _one(docs, "Deployment")
     spec = dep["spec"]["template"]["spec"]
-    (c,) = spec["containers"]
+    # crew#516 CP5 added a `tailscale` sidecar (platform/hermes-agent/tailscale.yaml); this helper
+    # is about the `gateway` container specifically.
+    (c,) = [c for c in spec["containers"] if c["name"] == "gateway"]
     return spec, c
 
 
@@ -70,10 +72,12 @@ def test_secrets_are_files_the_container_exports_never_pod_env():
     mounts = {m["mountPath"]: m for m in c["volumeMounts"]}
     assert mounts[env_dir]["readOnly"] is True
     vols = {v["name"]: v for v in spec["volumes"]}
-    secret = vols[mounts[env_dir]["name"]]["secret"]["secretName"]
-    es = _one(docs, "ExternalSecret")
-    assert es["spec"]["target"]["name"] == secret
-    assert es["spec"]["dataFrom"] == [{"extract": {"key": "hermes-agent-env"}}]
+    # crew#516 CP4: the env dir is a projected volume -- the vault entry plus the in-cluster a2a token.
+    secrets = [s["secret"]["name"] for s in vols[mounts[env_dir]["name"]]["projected"]["sources"]]
+    ess = {d["metadata"]["name"]: d for d in docs if d and d.get("kind") == "ExternalSecret"}
+    assert secrets == ["hermes-agent-env", "hermes-agent-a2a"] and set(secrets) == set(ess)
+    assert ess["hermes-agent-env"]["spec"]["target"]["name"] == "hermes-agent-env"
+    assert ess["hermes-agent-env"]["spec"]["dataFrom"] == [{"extract": {"key": "hermes-agent-env"}}]
 
 
 def test_the_build_is_the_image_not_a_configmap_copy():
@@ -115,8 +119,16 @@ def test_oke_check_seeds_the_entry_the_pod_reads():
     steps = [s for s in wf["jobs"]["check"]["steps"] if "hermes-agent-env" in s.get("name", "")]
     (step,) = steps
     assert "bin/idp-vault-put --merge hermes-agent-env" in step["run"]
-    for key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USER_IDS", "ANTHROPIC_API_KEY", "LITELLM_API_KEY", "GITHUB_TOKEN", "HERMES_AUTH_JSON"):
+    # crew#66 root trust (crew#576, #577, #579): only configuration rides this step; every credential
+    # the gateway reads is born by a bootstrapper and lands in the same entry with --merge.
+    for key in ("TELEGRAM_ALLOWED_USER_IDS", "TELEGRAM_ALLOWED_USERS", "TELEGRAM_HOME_CHANNEL", "HERMES_AUTH_JSON"):
         assert key in step["env"] and key in step["run"], key
+    for key in ("TELEGRAM_BOT_TOKEN", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "LITELLM_API_KEY", "GITHUB_TOKEN", "EXA_API_KEY"):
+        assert key not in step["env"], f"{key} is born by a bootstrapper, never pasted (crew#66 root trust)"
+    registry = (ROOT / "platform/vendors/consoles.yaml").read_text()
+    assert "TELEGRAM_BOT_TOKEN" in registry and "hermes-agent-env" in registry, "the bot token has a vendor row"
+    assert "hermes-agent-env" in (ROOT / "bin/idp-estate-seed").read_text(), "LITELLM_API_KEY has an estate-seed row"
+    assert "hermes-agent-env" in (ROOT / "platform/github-app/token-consumers.json").read_text(), "GITHUB_TOKEN has a consumer row"
 
 
 @pytest.mark.skipif(subprocess.run(["which", "kustomize"], capture_output=True).returncode != 0, reason="kustomize not on PATH")
@@ -135,4 +147,8 @@ def test_incident_apply_dispatch_is_not_displaced_by_pull_request_pushes():
 
 def test_the_pod_rolls_when_the_vault_entry_changes():
     dep = _one(_docs(), "Deployment")
-    assert dep["metadata"]["annotations"]["secret.reloader.stakater.com/reload"] == _one(_docs(), "ExternalSecret")["spec"]["target"]["name"]
+    # crew#516 CP5: hermes-agent-tailscale's ExternalSecret lives in tailscale.yaml, a sibling
+    # manifest in the same Kustomization -- still a Secret this Deployment mounts and should roll on.
+    all_docs = _docs() + list(yaml.safe_load_all((DIR / "tailscale.yaml").read_text()))
+    targets = sorted(d["spec"]["target"]["name"] for d in all_docs if d and d.get("kind") == "ExternalSecret")
+    assert sorted(dep["metadata"]["annotations"]["secret.reloader.stakater.com/reload"].split(",")) == targets

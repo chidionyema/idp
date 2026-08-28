@@ -1,0 +1,104 @@
+# Vendor credential registry for bin/idp-bootstrap-vendors (crew#66 root trust, crew#579).
+#
+# Every model, search and messaging vendor the estate pays is born here, once, and lands in the
+# vault entries its ExternalSecrets read. A vendor whose key can be minted by an API or a mature
+# CLI after one SSO is `kind: cli`; the rest have no create-key API (measured 2026-08-28: Anthropic's
+# Admin API lists and updates keys but does not create them; OpenRouter's /api/v1/keys needs a
+# provisioning key that is itself console-born; DeepSeek, Minimax, Groq and Exa publish no key API),
+# so they are `kind: console`: the driver opens the vendor's key page in the estate browser profile,
+# the founder's whole part is the vendor login when the profile has no live session, the driver
+# creates the key, reads it once from the page, proves it against `verify` and writes it. A `verify`
+# that answers anything but 2xx is a FAIL before any vault write (LAW 15). Nothing is ever pasted.
+#
+# Fields: kind (console|cli|telegram), page (the key page), name_hint (what the console calls the
+# create button), shape (regex the key must match, anchored by the driver), verify (method, url,
+# auth header template — {key} is substituted in-process, never on argv), targets (vault entry +
+# field pairs; bin/idp-vault-put --merge, other keys untouched).
+vendors:
+  anthropic:
+    kind: console
+    page: https://console.anthropic.com/settings/keys
+    name_hint: "create key"
+    shape: "sk-ant-[A-Za-z0-9_-]{60,}"
+    verify: { method: GET, url: https://api.anthropic.com/v1/models, headers: { x-api-key: "{key}", anthropic-version: "2023-06-01" } }
+    targets:
+      - { entry: prospector-engine-env, field: ANTHROPIC_API_KEY }
+      - { entry: hermes-agent-env, field: ANTHROPIC_API_KEY }
+  openrouter:
+    kind: console
+    page: https://openrouter.ai/settings/keys
+    name_hint: "create key"
+    shape: "sk-or-v1-[0-9a-f]{64}"
+    verify: { method: GET, url: https://openrouter.ai/api/v1/auth/key, headers: { Authorization: "Bearer {key}" } }
+    targets:
+      - { entry: litellm-upstream, field: OPENROUTER_API_KEY }
+      - { entry: prospector-engine-env, field: OPENROUTER_API_KEY }
+      - { entry: hermes-agent-env, field: OPENROUTER_API_KEY }
+  deepseek:
+    kind: console
+    page: https://platform.deepseek.com/api_keys
+    name_hint: "create new api key"
+    shape: "sk-[0-9a-f]{32}"
+    verify: { method: GET, url: https://api.deepseek.com/models, headers: { Authorization: "Bearer {key}" } }
+    targets:
+      - { entry: litellm-upstream, field: DEEPSEEK_API_KEY }
+      - { entry: prospector-engine-env, field: DEEPSEEK_API_KEY }
+  minimax:
+    kind: console
+    page: https://platform.minimax.io/user-center/basic-information/interface-key
+    name_hint: "create new secret key"
+    shape: "eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+"
+    verify: { method: GET, url: https://api.minimax.io/v1/models, headers: { Authorization: "Bearer {key}" } }
+    targets:
+      - { entry: litellm-upstream, field: MINIMAX_API_KEY }
+      - { entry: prospector-engine-env, field: MINIMAX_API_KEY }
+  groq:
+    kind: console
+    page: https://console.groq.com/keys
+    name_hint: "create api key"
+    shape: "gsk_[A-Za-z0-9]{40,}"
+    verify: { method: GET, url: https://api.groq.com/openai/v1/models, headers: { Authorization: "Bearer {key}" } }
+    targets:
+      - { entry: litellm-upstream, field: GROQ_API_KEY }
+  gemini:
+    # Google is the one vendor with a key API: gcloud (one SSO) mints an API key restricted to the
+    # Generative Language API. No console.
+    kind: cli
+    cli:
+      login: "gcloud auth login --brief"
+      create: "gcloud services api-keys create --display-name=estate-gemini --api-target=service=generativelanguage.googleapis.com --format=value(response.name)"
+      read: "gcloud services api-keys get-key-string {name} --format=value(keyString)"
+    shape: "AIza[A-Za-z0-9_-]{35}"
+    verify: { method: GET, url: "https://generativelanguage.googleapis.com/v1beta/models?key={key}", headers: {} }
+    targets:
+      - { entry: litellm-upstream, field: GEMINI_API_KEY }
+  exa:
+    kind: console
+    page: https://dashboard.exa.ai/api-keys
+    name_hint: "create"
+    shape: "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    verify: { method: POST, url: https://api.exa.ai/search, headers: { x-api-key: "{key}", Content-Type: application/json }, body: '{"query":"estate bootstrap","numResults":1}' }
+    targets:
+      - { entry: prospector-engine-env, field: EXA_API_KEY }
+      - { entry: hermes-agent-env, field: EXA_API_KEY }
+  telegram:
+    # BotFather has no HTTP API; the driver talks to it on web.telegram.org (the founder's Telegram
+    # login is the one hand) and reads the token from BotFather's reply. One bot per target.
+    kind: telegram
+    page: https://web.telegram.org/k/#@BotFather
+    shape: "[0-9]{8,10}:[A-Za-z0-9_-]{35}"
+    verify: { method: GET, url: "https://api.telegram.org/bot{key}/getMe", headers: {} }
+    targets:
+      - { entry: hermes-agent-env, field: TELEGRAM_BOT_TOKEN, bot: estate_hermes_bot }
+      - { entry: flux-telegram, field: token, bot: estate_alerts_bot }
+  stripe:
+    kind: console
+    page: https://dashboard.stripe.com/apikeys
+    name_hint: "create secret key"
+    shape: "sk_(live|test)_[A-Za-z0-9]{24,}"
+    verify: { method: GET, url: https://api.stripe.com/v1/balance, headers: { Authorization: "Bearer {key}" } }
+    targets:
+      - { entry: prospector-store-api-env, field: Stripe__SecretKey }
+# Not here yet (crew#579 stays open for them): Mailjet (a key AND a secret pair, two fields), the
+# store's Google OAuth client (console.cloud.google.com has no gcloud command that creates a web
+# OAuth client). Both are prospector-store-api-env fields.

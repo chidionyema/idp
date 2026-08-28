@@ -47,6 +47,16 @@ rules:
   - apiGroups: ["kyverno.io"]
     resources: ["policyexceptions"]
     verbs: ["get", "list"]
+  # crew#539 DoD 1: the receipt counts the PrometheusRules the cluster holds and reads the
+  # Watchdog alert from Alertmanager's API through the API-server proxy — proof the rule
+  # pipeline is evaluating, not that manifests exist in git.
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["prometheusrules"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["services/proxy"]
+    resourceNames: ["kps-alertmanager:9093"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -172,6 +182,84 @@ data:
             return msg
         return msg[:600] + " ... " + msg[-1400:]
 
+    def helm_last_attempt(st: dict) -> dict:
+        # crew#524 CP1, 2026-08-27: HelmRelease hindsight/hindsight sat "reconciliation in progress"
+        # for 2.5 hours across four receipts while the Kustomization above it said 'HelmRelease
+        # status: Failed'. The Ready condition says only that Flux is busy; the Released /
+        # Remediated conditions and the failure counters say what the last helm attempt did and
+        # why. A receipt that says "in progress" for a release that is failing is not a receipt
+        # (LAW 28). Returns {} when there is nothing beyond Ready to say.
+        out = {}
+        others = [c for c in st.get("conditions", []) if c.get("type") in ("Released", "Remediated", "TestSuccess") and c.get("message")]
+        if others:
+            last = max(others, key=lambda c: c.get("lastTransitionTime") or "")
+            out["last_attempt"] = f'{last["type"]}={last.get("status")}: ' + flux_message(last["message"])
+        for k in ("failures", "installFailures", "upgradeFailures"):
+            if st.get(k):
+                out[k] = st[k]
+        return out
+
+    # crew#292: an ExternalSecret's refreshInterval "0" is ESO's "sync once, then never poll".
+    # platform/hermes-agent/gateway.yaml declares it on purpose, so that a rotation under a
+    # running gateway stays a deliberate act. Grading its frozen refreshTime against an interval
+    # it does not have made that row not-ready two hours after it synced, with no later age at
+    # which it could recover, and every verify-drill run went red on it (22 of 22 failed, first
+    # green never recorded). A guard that refuses correct work is an outage (LAW 38): an explicit
+    # zero has no interval to be late against, and the Ready condition still governs the row.
+    def refresh_seconds(spec):
+        """ESO's effective refreshInterval for this ExternalSecret, in seconds, and as written.
+
+        Zero is not "missing": it is ESO's own "sync once, then never poll", and the only
+        interval with no age at which the secret is late.
+        """
+        raw = (spec or {}).get("refreshInterval")
+        iv = "1h" if raw is None else str(raw)
+        parts = re.findall(r"(\d+)([smh])", iv)
+        if parts:
+            return sum(int(n) * {"s": 1, "m": 60, "h": 3600}[u] for n, u in parts), iv
+        if re.fullmatch(r"\s*\d+\s*", iv):
+            return int(iv), iv   # a bare number carries no unit; the only one ESO accepts here is 0
+        return 3600, iv          # unparseable, so grade it against ESO's own default interval
+
+    # crew#292: ESO's own not-ready message is "could not get secret data from provider" and
+    # nothing else. It names neither the store it asked nor the key it wanted, so a vault entry
+    # that was never seeded, a store that is unreachable and a property that is misspelled all
+    # read identically -- an instrument that destroys the cause of the failure it reports
+    # (LAW 28), which nobody can attribute from (LAW 29). tailscale/tailscale-operator-secret
+    # sat BLIND on that sentence in verify-drill 33176874659 while the real cause was three hops
+    # away: no SEED_TAILSCALE_OAUTH_* repository secret, so vault-seed.yml never wrote the
+    # `tailscale-operator` entry the ExternalSecret reads. The row now carries what it asked for.
+    def wanted_from(spec):
+        """Which store and which remote keys this ExternalSecret asked for, as one clause."""
+        spec = spec or {}
+        ref = spec.get("secretStoreRef") or {}
+        store = "{}/{}".format(ref.get("kind") or "SecretStore", ref.get("name") or "?")
+        keys = []
+        for d in spec.get("data") or []:
+            r = d.get("remoteRef") or {}
+            k = r.get("key") or "?"
+            keys.append("{}[{}]".format(k, r["property"]) if r.get("property") else k)
+        for d in spec.get("dataFrom") or []:
+            for r in (d.get("extract"), d.get("find")):
+                if isinstance(r, dict) and r.get("key"):
+                    keys.append(r["key"])
+        uniq = list(dict.fromkeys(keys))
+        return "wanted {} from {}".format(", ".join(uniq) or "no keys declared in spec", store)
+
+    def stale_sync(spec, status, now):
+        """The not-ready message for an ExternalSecret that stopped refreshing, else ""."""
+        secs, iv = refresh_seconds(spec)
+        if secs == 0:
+            return ""
+        seen = (status or {}).get("refreshTime")
+        try:
+            last = datetime.strptime(str(seen)[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+            age = (now - last).total_seconds()
+        except Exception:
+            age = None
+        if age is None or age > max(2 * secs, 7200):
+            return f"Ready but last sync {seen} is older than 2x refreshInterval {iv}"
+        return ""
     flux = []
     for kind, path in FLUX:
         try:
@@ -187,6 +275,16 @@ data:
                    # crew#483: when the Ready condition last flipped, so a denial can be dated against
                    # the commit that was meant to fix it instead of read as fresh.
                    "since": c.get("lastTransitionTime")}
+            if kind == "HelmRepository" and (o.get("spec") or {}).get("type") == "oci" and not c:
+                # crew#524, 2026-08-27: an OCI HelmRepository is static — source-controller never
+                # reconciles it and it carries no Ready condition (Flux docs, HelmRepository
+                # "type: oci"). Receipt 33127558382 graded hindsight/hindsight "no Ready condition
+                # yet" on every snapshot and the cluster-state row went FAIL on it: a guard that
+                # refuses correct work (LAW 38). Ready by construction, and the row says why.
+                row["ready"] = True
+                row["message"] = "oci source: static, carries no Ready condition"
+            if kind == "HelmRelease":
+                row.update(helm_last_attempt(st))
             if kind == "ImagePolicy":
                 row["latest"] = st.get("latestImage")
             if kind == "ImageUpdateAutomation":
@@ -198,17 +296,21 @@ data:
                 # forever while the upstream rotates under it. The row carries the last sync time
                 # and is graded not-ready once it is older than twice its refreshInterval (floor 2h).
                 row["last_sync"] = st.get("refreshTime")
-                iv = str((o.get("spec") or {}).get("refreshInterval") or "1h")
-                mult = {"s": 1, "m": 60, "h": 3600}
-                secs = sum(int(n) * mult[u] for n, u in re.findall(r"(\d+)([smh])", iv)) or 3600
-                try:
-                    last = datetime.strptime(str(st.get("refreshTime"))[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
-                    age = (datetime.now(timezone.utc) - last).total_seconds()
-                except Exception:
-                    age = None
-                if row["ready"] and (age is None or age > max(2 * secs, 7200)):
+                # crew#292 review: exempting refreshInterval "0" from staleness grading is
+                # correct, but an exemption a reader has to infer from a missing message is
+                # the cheapest way to turn a red row green. The row says which mode it is in,
+                # so a second "0" appearing in the estate is visible rather than silent.
+                row["refresh"] = "manual" if refresh_seconds(o.get("spec"))[0] == 0 else "auto"
+                stale = stale_sync(o.get("spec"), st, datetime.now(timezone.utc))
+                if row["ready"] and stale:
                     row["ready"] = False
-                    row["message"] = f"Ready but last sync {st.get('refreshTime')} is older than 2x refreshInterval {iv}"
+                    row["message"] = stale
+                if not row["ready"]:
+                    # Whatever made it not-ready -- ESO's own message, a stale sync, or no Ready
+                    # condition at all -- the row says which store and which keys it asked for,
+                    # so the reader can go straight to the entry instead of guessing.
+                    row["message"] = flux_message(
+                        "{}; {}".format(row["message"], wanted_from(o.get("spec"))))
             flux.append(row)
     flux_not_ready = [r for r in flux if not r["ready"]]
     # crew#483: the PolicyExceptions the cluster holds (kyverno.io/v2), name, namespace, policies
@@ -245,9 +347,17 @@ data:
             return datetime.strptime(t[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
         except Exception:
             return 0
+    def event_message(msg: str) -> str:
+        # crew#539, 2026-08-27: receipt 33125739247 cut the autoscaler's Warning at 300 characters,
+        # one word before the name of the OCI limit it hit ("(400, LimitExceeded"), and the Kyverno
+        # audit at "failed at pa". Same class as flux_message (crew#483): the actionable part of a
+        # long message is at its end. Keep 500 whole; past that, the head and the tail.
+        if len(msg) <= 500:
+            return msg
+        return msg[:200] + " ... " + msg[-300:]
     events = sorted(({"at": (e.get("lastTimestamp") or e.get("eventTime") or "")[:19], "ns": e["involvedObject"].get("namespace", ""),
                       "kind": e["involvedObject"].get("kind"), "name": e["involvedObject"].get("name"),
-                      "reason": e.get("reason"), "count": e.get("count", 1), "message": (e.get("message") or "")[:300]}
+                      "reason": e.get("reason"), "count": e.get("count", 1), "message": event_message(e.get("message") or "")}
                      for e in ev_items if ev_time(e) >= cutoff), key=lambda r: r["at"], reverse=True)[:60]
     # crew#401 CP4: the hostnames the cluster publishes (HTTPRoute). bin/idp-catalogue-drift diffs
     # them against backstage/**/catalog-info.yaml; a list that failed is recorded, never left empty.
@@ -378,17 +488,36 @@ data:
     oci_pods.sort(key=lambda r: (r["pod"], r["container"]))
     oci_static_key_pods = sorted({r["pod"] for r in oci_pods if r["static_key"]})
     oci_unknown_identity_pods = sorted({r["pod"] for r in oci_pods if r["identity"] == "unknown"})
+    # crew#539 DoD 1: monitoring_rules is the count of PrometheusRule objects the cluster holds
+    # (0 or absent grades FAIL in bin/idp-cluster-state); alert_watchdog=1 means Alertmanager's
+    # API returned the always-firing Watchdog alert, so rules are evaluated and delivered end to
+    # end. The proxy path is the API server's, so no cluster hostname or port is a literal here
+    # beyond the Service name the chart fixes (fullnameOverride: kps).
+    monitoring_rules, monitoring_error, alert_watchdog, alert_names = 0, "", 0, []
+    try:
+        rules = get("/apis/monitoring.coreos.com/v1/prometheusrules")
+        monitoring_rules = len(rules.get("items") or [])
+    except Exception as e:
+        monitoring_error = f"prometheusrules: {str(e)[:200]}"
+    try:
+        alerts = get("/api/v1/namespaces/monitoring/services/kps-alertmanager:9093/proxy/api/v2/alerts")
+        alert_names = sorted({(a.get("labels") or {}).get("alertname", "") for a in alerts})
+        alert_watchdog = int("Watchdog" in alert_names)
+    except Exception as e:
+        monitoring_error = (monitoring_error + "; " if monitoring_error else "") + f"alertmanager: {str(e)[:200]}"
     at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     head = (f"ok cluster-state at {at} nodes={len(node_rows)} ready={ready} pods={len(pods)} pods_not_ready={len(not_ready)}"
             f" flux={len(flux)} flux_not_ready={len(flux_not_ready)} ds={len(ds)} ds_short={len(ds_short)} events_warning={len(events)}"
             f" hostnames={len(hostnames or [])} spiffe_ids={len(spiffe['clusterspiffeids'] or [])} spiffe_workloads={len(spiffe['csi_workloads'])}"
             f" svids={sum(len(r['spiffe_ids']) for r in spiffe['svids'])} spire_agents={len(spiffe['agents'])}"
-            f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)} policy_exceptions={len(policy_exceptions)}")
+            f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)} policy_exceptions={len(policy_exceptions)}"
+            f" monitoring_rules={monitoring_rules} alert_watchdog={alert_watchdog}")
     body = {"at": at, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
             "flux": flux, "flux_not_ready": flux_not_ready, "policy_exceptions": policy_exceptions, "daemonsets": ds, "ds_short": ds_short, "events_warning": events,
             "hostnames": hostnames, "hostnames_error": hostnames_error, "spiffe": spiffe,
             "oci_identity": {"pods": oci_pods, "static_key_pods": oci_static_key_pods,
-                              "unknown_identity_pods": oci_unknown_identity_pods}}
+                              "unknown_identity_pods": oci_unknown_identity_pods},
+            "monitoring": {"rules": monitoring_rules, "alerts_firing": alert_names, "error": monitoring_error}}
     sys.stdout.write(head + "\n" + json.dumps(body, sort_keys=True) + "\n")
 ---
 apiVersion: batch/v1
@@ -409,6 +538,7 @@ spec:
       activeDeadlineSeconds: 180
       template:
         spec:
+          priorityClassName: infrastructure-critical
           serviceAccountName: cluster-state
           automountServiceAccountToken: true
           restartPolicy: Never
@@ -431,8 +561,9 @@ spec:
                 - { name: collect, mountPath: /collect, readOnly: true }
                 - { name: tmp, mountPath: /tmp }
               resources:
-                requests: { cpu: 50m, memory: 128Mi }
-                limits: { cpu: 200m, memory: 256Mi }
+                # crew#539 CP9: requests == limits -> Guaranteed QoS
+                requests: { cpu: 100m, memory: 256Mi }
+                limits: { cpu: 100m, memory: 256Mi }
               securityContext:
                 runAsNonRoot: true
                 runAsUser: 1000

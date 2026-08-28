@@ -19,7 +19,9 @@
 #   FAIL    login-drill  <stage> <detail>
 #
 # Stages, so a failure names the layer that broke: config, python, vault, browser, redirect,
-# credentials, password-change, session, catalogue, identity.
+# credentials, password-change, session, catalogue, identity, entities, shell, home, surfaces, path.
+# `surfaces` is the founder's own front page: crew#307 CP2, added 2026-08-28 after he opened the
+# portal and could not see his own UI surfaces while every other row in this drill was green.
 #
 # Python with Playwright: $DRILL_PYTHON if set, else python3. CI installs it in the job.
 set -uo pipefail
@@ -57,6 +59,18 @@ esac
 export DRILL_PASSWORD
 unset B64 SID
 export DRILL_USER="${DRILL_USER:-estate-drill}" DRILL_ZONE="$ZONE" DRILL_DOMAIN="$DOMAIN"
+
+# crew#307 CP2, founder 2026-08-28: "cant see my ui surfaces". The floor for the home page is the
+# repository's own founder catalogue, counted here, never a number typed into the driver: a surface
+# added to backstage/founder/catalog-info.yaml is graded the next hour without touching this file.
+FOUNDER_FILE="$IDP/backstage/founder/catalog-info.yaml"
+[ -f "$FOUNDER_FILE" ] || fail config "no $FOUNDER_FILE"
+DRILL_SURFACES_EXPECTED=$(grep -c '^ *type: founder-surface *$' "$FOUNDER_FILE")
+[ "$DRILL_SURFACES_EXPECTED" -gt 0 ] || fail config "$FOUNDER_FILE declares no founder-surface entity"
+export DRILL_SURFACES_EXPECTED
+# The founder cannot read a log. The drill photographs the page it graded so a red row comes with
+# the picture of what he would have seen (LAW 28: an instrument nobody reads is not an instrument).
+export DRILL_SHOT="${DRILL_SHOT:-${TMPDIR:-/tmp}/login-drill-home.png}"
 
 # The password crosses into python as an environment variable only. It is never an argument, so
 # it never appears in ps, and the driver never prints it.
@@ -234,6 +248,81 @@ with sync_playwright() as p:
         fail("entities", "catalogue API answered 200 with zero entities; the catalogue is empty for a signed-in user")
     if page_errors:
         fail("shell", f"{len(page_errors)} JavaScript error(s) while rendering; first: {page_errors[0][:200]}")
+
+    # 6b. The page the founder actually lands on. crew#307 closed the shell hole and then the
+    # per-path hole, and still nothing graded "/" itself: the god view (EstateHome, crew#459)
+    # draws one card per founder-surface entity, and it can draw zero inside a perfectly healthy
+    # shell that passes every check above. Founder, 2026-08-28: "cant see my ui surfaces".
+    #
+    # Two numbers, because one cannot say which half broke (LAW 29). The API count is what the
+    # catalogue ingested; the card count is what the page drew. Ingested but not drawn is the
+    # frontend; neither is the founder-catalog ConfigMap or the /estate/founder location that
+    # loads it. The FAIL line names which, so the next session does not start by guessing.
+    expected = int(os.environ.get("DRILL_SURFACES_EXPECTED", "0"))
+    try:
+        surf = page.request.get(
+            f"{HOME}api/catalog/entities?filter=spec.type=founder-surface&fields=metadata.name",
+            headers={"Authorization": f"Bearer {token}"})
+        n_surfaces = len(surf.json()) if surf.status == 200 else -1
+        surf_detail = "" if surf.status == 200 else f"API answered {surf.status}: {surf.text()[:120]}"
+    except (PWError, ValueError) as e:
+        n_surfaces, surf_detail = -1, str(e)[:120]
+
+    try:
+        page.goto(HOME, wait_until="domcontentloaded")
+    except PWError as e:
+        fail("home", f"{HOME} did not reload for the home-page check: {e}")
+    # Wait for the god view to settle: it fetches the catalogue, so the cards arrive after load.
+    # Either outcome ends the wait -- a card, or the page's own honest empty state -- so a real
+    # zero is graded rather than timing out into an ambiguous one.
+    try:
+        page.locator("a:has-text('Catalogue entry'), [data-testid='no-surfaces']").first.wait_for(
+            state="visible", timeout=TIMEOUT)
+    except PWError:
+        pass
+    # Counted on the deep link every SurfaceCard renders, not on a data-testid: InfoCard is a
+    # Backstage component and does not promise to forward unknown props to the DOM.
+    cards = page.locator("a:has-text('Catalogue entry')").count()
+    empty = page.locator("[data-testid='no-surfaces']").count() > 0
+    shot = os.environ.get("DRILL_SHOT")
+    if shot:
+        try:
+            page.screenshot(path=shot, full_page=True)
+        except PWError:
+            pass
+    print(f"home    login-drill  {cards} surface cards drawn on /, "
+          f"{n_surfaces} founder-surface entities in the catalogue, {expected} declared in the repository")
+    # A missing surface is one of two different outages and the founder cannot tell them apart from
+    # a count. Backstage keeps every configured location as a Location entity and hangs the read
+    # error off its status, so the catalogue itself says which: a location that is absent means the
+    # portal is running an image whose app-config never declared it; a location that is present and
+    # errored means the file behind it is not on disk -- the ConfigMap did not reach the mount.
+    # Printed before the FAIL so the row a session reads already names the layer (LAW 29).
+    if n_surfaces < expected:
+        try:
+            locs = page.request.get(f"{HOME}api/catalog/entities?filter=kind=location",
+                                    headers={"Authorization": f"Bearer {token}"})
+            for e in (locs.json() if locs.status == 200 else []):
+                tgt = e.get("spec", {}).get("target", "?")
+                errs = [i.get("error", {}).get("message", "")
+                        for i in e.get("status", {}).get("items", []) if i.get("level") == "error"]
+                print(f"loc     login-drill  {tgt}  {'; '.join(errs)[:180] or 'no error'}")
+            if locs.status != 200:
+                print(f"loc     login-drill  the locations filter answered {locs.status}")
+        except (PWError, ValueError) as e:
+            print(f"loc     login-drill  could not read the locations: {str(e)[:120]}")
+
+    if n_surfaces < 0:
+        fail("surfaces", f"the catalogue API would not answer the founder-surface filter: {surf_detail}")
+    if n_surfaces < expected:
+        fail("surfaces", f"the catalogue holds {n_surfaces} founder-surface entities and the repository "
+                         f"declares {expected}; the founder-catalog ConfigMap or the /estate/founder "
+                         f"location is not reaching the portal")
+    if cards < expected:
+        fail("surfaces", f"the home page drew {cards} surface cards from {n_surfaces} entities"
+                         f"{' and rendered its no-surfaces message' if empty else ''}; the founder lands "
+                         f"on {HOME} and sees {cards} of his {expected} surfaces")
+
     body_text = page.inner_text("body")
     # 2026-08-26 (crew#307): /catalog rendered "ERROR 404: PAGE NOT FOUND" inside a healthy shell
     # while this drill, visiting "/" and grading the word "Catalog" in the sidebar, stayed green.
@@ -292,5 +381,5 @@ with sync_playwright() as p:
     ctx.close()
     browser.close()
 
-print(f"ok      login-drill  signed in as {USER}, catalogue rendered as {ref}, {n_entities} entities read, 0 js errors, in {time.time() - started:.1f}s")
+print(f"ok      login-drill  signed in as {USER}, catalogue rendered as {ref}, {n_entities} entities read, {cards} founder surfaces on the home page, 0 js errors, in {time.time() - started:.1f}s")
 PYDRIVER

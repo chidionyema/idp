@@ -52,6 +52,11 @@ def test_the_live_number_is_the_one_the_audit_measured():
     line = [l for l in r.stdout.splitlines() if "bound to the oci CLI" in l]
     assert line, r.stdout
     n = int(line[0].split(":")[1].split()[0])
-    # 25 audited on main (crew#309); idp#441 adds two on merge (recover-drill.yml, bin/idp-recover-drill: the
-    # clean-runner recovery drill reads the vault and R2 keys through the CLI until the primitive layer lands).
-    assert n <= 27, f"{n} operator files call the oci CLI; the audited ceiling is 27 — a new one needs its own reason"
+    # 15 measured on origin/main 9c915ee, 2026-08-28, by ./bin/cloud-agnostic-gate (crew#66: the 27 ceiling left
+    # 12 files of slack for a new direct caller to hide in); idp#441 adds two on merge (recover-drill.yml,
+    # bin/idp-recover-drill: the clean-runner recovery drill reads the vault and R2 keys through the CLI until the
+    # primitive layer lands). Lower it again in the PR that removes a caller; never raise it without its own reason.
+    # 18 measured on branch feat/crew66-root-trust, 2026-08-28 (main 15 + 3): bin/idp-bootstrap-cloudflare,
+    # bin/idp-bootstrap-tailscale, bin/idp-bootstrap-vendors write the vendor credentials the root of trust mints
+    # into the vault through the secret-write primitive (crew#66 root trust); they go when bin/idp-secret lands.
+    assert n <= 18, f"{n} operator files call the oci CLI; the measured ceiling is 18 — a new one needs its own reason"

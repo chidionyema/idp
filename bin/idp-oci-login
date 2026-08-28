@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# provider-adapter: oci — this file IS the provider door (session sign-in / tenancy-root IAM); it is not a caller of one. Every other bin/idp-* goes through bin/idp-cloud (crew#66).
 # Render ~/.oci/config and the key file from the vault, prove the identity works, and print
 # the Always Free A1 capacity (ADR 0004 step 1 receipt). Idempotent; safe to run hourly.
 # --check: exit 0 when the identity answers, 1 when it does not, 2 BLIND when the vault has

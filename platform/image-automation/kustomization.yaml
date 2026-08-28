@@ -4,3 +4,4 @@ resources:
   - pull-secret.yaml
   - sovereign-worker.yaml
   - hermes-agent.yaml
+  - estate-mcp.yaml

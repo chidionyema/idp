@@ -9,6 +9,14 @@
 #
 # Weekly, and on any PR that touches the drill itself, so the change ships with its green run
 # (LAW 22). Cost: £0, GitHub-hosted runner.
+#
+# crew#488 CP2: the same tree on a second provider and a second distribution in the same run.
+# Job k3s installs k3s (no docker, no k3d) straight on the runner VM — GitHub-hosted runners are
+# Azure machines, so nothing here touches OCI — hydrates the identical clusters/oke/ tree from the
+# same commit, grades it against the same floor, and prints the wall-clock and the cost of the
+# run. The founder unparked CP2 on 2026-08-27 22:10Z with "got public if billing is issue": the
+# repository is public, so the provider is the free runner and no OpenTofu-created node is billed.
+# The node is destroyed with the runner when the job ends.
 name: portability-drill
 on:
   schedule:
@@ -18,8 +26,13 @@ on:
     paths:
       - .github/workflows/portability-drill.yml
       - bin/idp-portability-drill
+      - bin/idp-hydrate
       - drills/portability-floor.txt
       - platform/k3d/estate.yaml
+      # R43 (crew#66): every change to the tree Flux applies is proved to hydrate on a second
+      # provider before it merges; the k3s job is a required status check on main.
+      - platform/**
+      - clusters/**
 permissions:
   contents: read
 concurrency:
@@ -44,13 +57,7 @@ jobs:
         env:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REF: ${{ github.head_ref || github.ref_name }}
-        run: |
-          set -euo pipefail
-          flux install --components-extra=image-reflector-controller,image-automation-controller
-          kubectl apply -f clusters/oke/estate-config.yaml
-          flux create source git flux-system --url="https://github.com/${GITHUB_REPOSITORY}" --branch="$REF" --commit="$SHA" --interval=10m
-          for f in clusters/oke/*.yaml; do kubectl apply -f "$f"; done
-          echo "applied $(kubectl get kustomizations -A --no-headers | wc -l) Kustomizations"
+        run: bin/idp-hydrate
       - name: wait for what can come up
         run: kubectl wait kustomization --all -A --for=condition=Ready --timeout=600s || true
       - name: grade against the floor
@@ -65,4 +72,76 @@ jobs:
         if: always()
         with:
           name: portability-receipt
+          path: receipt/
+
+  k3s:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: k3s on the runner VM, the second provider (crew#488 CP2)
+        env:
+          # https://github.com/k3s-io/k3s/releases — the release train platform/k3d/estate.yaml tracks
+          INSTALL_K3S_VERSION: v1.33.4+k3s1
+          # the estate's own traefik and servicelb come from the Flux tree, not from k3s; crew#539
+          # CP12: k3s's own flannel is disabled the same way OKE's is (--flannel-backend=none) and
+          # its NetworkPolicy controller is off (--disable-network-policy) so Cilium owns both,
+          # matching Oracle's own procedure (https://docs.oracle.com/en/learn/oke-flannel-to-cilium-cni-plugin/index.html).
+          INSTALL_K3S_EXEC: server --disable traefik --disable servicelb --write-kubeconfig-mode 644 --flannel-backend=none --disable-network-policy
+        run: |
+          set -euo pipefail
+          echo "T0=$(date +%s)" >> "$GITHUB_ENV"
+          curl -sfL https://get.k3s.io | sh -
+          echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> "$GITHUB_ENV"
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          # crew#539 CP12: with --flannel-backend=none the node carries no CNI yet, so it never
+          # reports Ready (Oracle's own procedure hits the same order on OKE) — the node-ready
+          # wait moves after Cilium installs, below. The DaemonSet's own hostNetwork pods
+          # tolerate the NotReady/NetworkUnavailable taints and schedule regardless.
+          kubectl get node -o wide
+      - name: Cilium replaces k3s's flannel (crew#539 CP12, rehearsal of the OKE break-glass playbook)
+        run: |
+          set -euo pipefail
+          helm install cilium oci://quay.io/cilium/charts/cilium --version 1.20.1 --namespace kube-system -f platform/cni/cilium-values.yaml
+          kubectl rollout status ds/cilium -n kube-system --timeout=300s
+          # crew#307, 2026-08-28: `kubectl wait --all` does NOT wait for a resource to appear.
+          # It resolves its selector once, and an empty set is `error: no matching resources
+          # found` with exit 1 -- the --timeout never enters into it. k3s systemd had been up
+          # eleven seconds and had not registered its Node, so this step failed on a healthy
+          # cluster at 10:18:32Z (run 33162838535) and the second provider went unproved. It is
+          # still reachable after the Cilium move below: the DaemonSet rollout can complete on a
+          # Node object that the API server has only just accepted. A red that means "the runner
+          # was slow" teaches every session to press re-run without reading, which is how a real
+          # red gets pressed through too.
+          until kubectl get node -o name 2>/dev/null | grep -q .; do sleep 2; done
+          kubectl wait node --all --for=condition=Ready --timeout=120s
+          kubectl -n kube-system get pods
+          kubectl get node -o wide
+      - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
+      - name: flux install, then the same tree OKE runs, from this commit
+        env:
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REF: ${{ github.head_ref || github.ref_name }}
+        run: bin/idp-hydrate
+      - name: wait for what can come up
+        run: kubectl wait kustomization --all -A --for=condition=Ready --timeout=600s || true
+      - name: grade against the floor, then the wall-clock and the cost of the run
+        env:
+          PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          set -euo pipefail
+          mkdir -p receipt
+          kubectl get kustomizations -A -o json > receipt/kustomizations.json
+          kubectl get helmreleases -A > receipt/helmreleases.txt 2>&1 || true
+          flux get kustomizations -A | tee receipt/flux-get.txt
+          bin/idp-portability-drill receipt/kustomizations.json | tee receipt/grade.txt
+          secs=$(( $(date +%s) - T0 ))
+          # GitHub-hosted Linux minutes are free on a public repository; a private one is billed
+          # per minute at the rate on https://docs.github.com/en/billing/managing-billing-for-github-actions/about-billing-for-github-actions
+          if [ "$PRIVATE" = "false" ]; then cost="£0.00 (public repository, GitHub-hosted ubuntu-latest)"; else cost="$(( (secs + 59) / 60 )) billed minutes (private repository; see the billing page for the rate)"; fi
+          echo "ok      portability-k3s  provider=github-hosted-azure distro=k3s wall_clock=${secs}s cost=${cost}" | tee -a receipt/grade.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: portability-receipt-k3s
           path: receipt/

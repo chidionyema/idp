@@ -36,7 +36,8 @@ spec:
 ---
 # A second GitRepository for the same repo because the bootstrap one (flux-system) holds a
 # read-only deploy key (bin/idp-flux-bootstrap: --read-write-key=false). This one authenticates
-# with the read-write deploy key `flux-writer` (platform/image-automation/flux-writer.yaml, crew#325).
+# as the estate-agents GitHub App (`provider: github`; platform/image-automation/flux-writer.yaml
+# renders the App's id, installation id and key from vault entry github-app; crew#66 root trust).
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
@@ -44,7 +45,8 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  url: ssh://git@github.com/chidionyema/idp
+  url: https://github.com/chidionyema/idp
+  provider: github   # the estate-agents App (flux-writer.yaml renders githubApp* from vault entry github-app)
   ref:
     branch: main
   secretRef:

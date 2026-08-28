@@ -64,8 +64,9 @@ spec:
               command: ["pg_isready", "-U", "backstage", "-d", "backstage"]
             periodSeconds: 10
           resources:
-            requests: { cpu: 100m, memory: 128Mi }
-            limits: { memory: 512Mi }
+            # crew#539 CP9: requests == limits -> Guaranteed QoS
+            requests: { cpu: 100m, memory: 512Mi }
+            limits: { cpu: 100m, memory: 512Mi }
           volumeMounts:
             - name: pgdata
               mountPath: /var/lib/postgresql/data

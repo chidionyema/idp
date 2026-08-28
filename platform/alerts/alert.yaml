@@ -26,6 +26,9 @@ spec:
       namespace: external-secrets
     - kind: HelmRelease
       name: "*"
+      namespace: healing
+    - kind: HelmRelease
+      name: "*"
       namespace: hindsight
     - kind: HelmRelease
       name: "*"
@@ -38,13 +41,25 @@ spec:
       namespace: kyverno
     - kind: HelmRelease
       name: "*"
+      namespace: metrics-server
+    - kind: HelmRelease
+      name: "*"
+      namespace: monitoring
+    - kind: HelmRelease
+      name: "*"
       namespace: observability
     - kind: HelmRelease
       name: "*"
       namespace: reloader
     - kind: HelmRelease
       name: "*"
+      namespace: robusta
+    - kind: HelmRelease
+      name: "*"
       namespace: spire-mgmt
+    - kind: HelmRelease
+      name: "*"
+      namespace: tailscale
     - kind: HelmRelease
       name: "*"
       namespace: temporal

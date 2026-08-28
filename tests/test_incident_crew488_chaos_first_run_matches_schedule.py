@@ -14,9 +14,12 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parents[1] / "platform" / "chaos"
 
 
-def _pair():
-    schedule = yaml.safe_load((ROOT / "backstage-pod-kill.yaml").read_text())
-    workflow = yaml.safe_load((ROOT / "backstage-pod-kill-first-run.yaml").read_text())
+PAIRS = ("backstage-pod-kill", "langfuse-alert-drill")   # crew#539 DoD 2 added the second
+
+
+def _pair(name="backstage-pod-kill"):
+    schedule = yaml.safe_load((ROOT / f"{name}.yaml").read_text())
+    workflow = yaml.safe_load((ROOT / f"{name}-first-run.yaml").read_text())
     return schedule, workflow
 
 
@@ -29,10 +32,11 @@ def _same(schedule, workflow) -> bool:
 
 
 def test_first_run_equals_schedule_both_ways():
-    schedule, workflow = _pair()
-    assert _same(schedule, workflow)
-    drifted = copy.deepcopy(workflow)
-    drifted["spec"]["templates"][0]["deadline"] = "1s"
-    assert not _same(schedule, drifted)
     kust = yaml.safe_load((ROOT / "kustomization.yaml").read_text())
-    assert "backstage-pod-kill-first-run.yaml" in kust["resources"]
+    for name in PAIRS:
+        schedule, workflow = _pair(name)
+        assert _same(schedule, workflow), name
+        drifted = copy.deepcopy(workflow)
+        drifted["spec"]["templates"][0]["deadline"] = "1s"
+        assert not _same(schedule, drifted), name
+        assert f"{name}.yaml" in kust["resources"] and f"{name}-first-run.yaml" in kust["resources"], name

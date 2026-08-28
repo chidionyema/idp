@@ -1,0 +1,15 @@
+# crew#539: a founder-facing surface survives losing one node.
+# 2026-08-28 06:20-06:39Z one node was cordoned, the single litellm pod had nowhere to land, and
+# the surface answered 503. maxUnavailable 1 is deliberate: a budget whose floor equals the replica
+# count refuses every drain for ever -- that is what the clickhouse PDB did to this same drain at
+# 06:30:43Z. Graded by bin/idp-availability-gate in bin/idp-ci.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: litellm
+  namespace: llm
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm

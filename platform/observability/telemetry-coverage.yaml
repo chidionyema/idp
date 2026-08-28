@@ -72,6 +72,15 @@ data:
         "metrics": f"SELECT DISTINCT JSONExtractString(labels, 'k8s_namespace_name'), JSONExtractString(labels, 'k8s_pod_name') "
                    f"FROM signoz_metrics.distributed_time_series_v4 WHERE unix_milli > (toUnixTimestamp(now()) - {WINDOW_SEC}) * 1000",
     }
+    # crew#539 CP12: Hubble (platform/cni/cilium-values.yaml, applied by bin/idp-oke-break-glass
+    # cilium-replace) labels every flow with the workload on each end; the radio-room set is the
+    # founder's question, so the receipt counts the last hour's series that name one. The names
+    # are the radio-room set of platform/scheduling/require-priority-class.yaml.
+    RADIO_ROOM = os.environ.get("RADIO_ROOM", "agentgateway,hermes-agent-gateway,langfuse-web,langfuse-worker").split(",")
+    _names = ",".join(f"'{n}'" for n in RADIO_ROOM)
+    HUBBLE_SQL = (f"SELECT count() FROM signoz_metrics.distributed_time_series_v4 "
+                  f"WHERE metric_name = 'hubble_flows_processed_total' AND unix_milli > (toUnixTimestamp(now()) - {WINDOW_SEC}) * 1000 "
+                  f"AND (JSONExtractString(labels, 'destination_workload') IN ({_names}) OR JSONExtractString(labels, 'source_workload') IN ({_names}))")
     def main(kube=kube, clickhouse=clickhouse, now=None):
         now = now or datetime.now(timezone.utc)
         at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -92,13 +101,20 @@ data:
             except Exception as e:  # a backend that cannot answer is BLIND, never a pass
                 errors[name] = str(e)[:160]
         missing = sorted(set(running) - seen)
+        hubble = -1  # -1: the backend did not answer; 0: it answered and Hubble named no radio-room flow
+        try:
+            hubble = int(next(iter(clickhouse(HUBBLE_SQL)))[0])
+        except Exception as e:
+            errors["hubble"] = str(e)[:160]
         body = {"at": at, "pods_running": len(running), "pods_seen": len(seen),
-                "missing": [{"ns": ns, "pod": pod} for ns, pod in missing], "backend_errors": errors}
-        if len(errors) == len(QUERIES):
+                "missing": [{"ns": ns, "pod": pod} for ns, pod in missing], "backend_errors": errors,
+                "hubble_radio_flows": hubble}
+        if len(errors) >= len(QUERIES) + 1:
             head = f"BLIND telemetry-coverage at {at} backend unreachable: {'; '.join(errors.values())}"
         else:
-            verdict = "ok" if not missing else "FAIL"
-            head = f"{verdict} telemetry-coverage at {at} pods={len(running)} seen={len(running) - len(missing)} missing={len(missing)}"
+            verdict = "ok" if not missing and hubble > 0 else "FAIL"
+            head = (f"{verdict} telemetry-coverage at {at} pods={len(running)} seen={len(running) - len(missing)} "
+                    f"missing={len(missing)} hubble_radio_flows={hubble}")
         return head, body
     if __name__ == "__main__":
         head, body = main()
@@ -121,6 +137,7 @@ spec:
       activeDeadlineSeconds: 180
       template:
         spec:
+          priorityClassName: infrastructure-critical
           serviceAccountName: telemetry-coverage
           automountServiceAccountToken: true
           restartPolicy: Never
@@ -144,8 +161,9 @@ spec:
                 - { name: clickhouse-auth, mountPath: /secrets, readOnly: true }   # Kyverno: the password is a file, never an env var
                 - { name: tmp, mountPath: /tmp }
               resources:
-                requests: { cpu: 50m, memory: 128Mi }
-                limits: { cpu: 200m, memory: 256Mi }
+                # crew#539 CP9: requests == limits -> Guaranteed QoS
+                requests: { cpu: 100m, memory: 256Mi }
+                limits: { cpu: 100m, memory: 256Mi }
               securityContext:
                 runAsNonRoot: true
                 runAsUser: 1000

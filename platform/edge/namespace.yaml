@@ -5,6 +5,11 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: edge
+  labels:
+    # The front door. bin/idp-availability-gate fails if this label is missing from a namespace
+    # whose surfaces it graded green: the label is what makes the cluster refuse a regression
+    # (platform/scheduling/require-availability.yaml), and CI proves it is here.
+    availability.idp/tier: founder-facing
 ---
 apiVersion: v1
 kind: Namespace

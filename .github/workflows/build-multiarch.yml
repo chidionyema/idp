@@ -25,6 +25,11 @@ permissions:
   packages: write
 env:
   REGISTRY: ghcr.io
+# A newer run on the same ref supersedes the older one: on 2026-08-27 20:23Z idp had 9 running and
+# 20 queued runs, 12 of them stale duplicates, and a one-line oke-check waited 19 min (crew#516).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   discover:
     runs-on: ubuntu-latest
@@ -32,10 +37,17 @@ jobs:
       dockerfiles: ${{ steps.find.outputs.list }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # bin/dockerfiles --changed-since needs the base commit
+      # Build only the images the change reaches: on 2026-08-27 every run built all
+      # images on both architectures (six builds) for a one-line YAML edit (crew#516).
+      # A pull request diffs against its base; a push against the commit before it;
+      # an unknown ref (first push, force-push) builds everything.
       - id: find
         run: |
-          list=$(bin/dockerfiles --json)
-          echo "list=$list" >> "$GITHUB_OUTPUT"; echo "dockerfiles: $list"
+          if [ "${{ github.event_name }}" = pull_request ]; then base="origin/${{ github.base_ref }}"; else base="${{ github.event.before }}"; fi
+          list=$(bin/dockerfiles --json --changed-since "$base")
+          echo "list=$list" >> "$GITHUB_OUTPUT"; echo "dockerfiles (changed since $base): $list"
   build:
     needs: discover
     if: needs.discover.outputs.dockerfiles != '[]'
@@ -197,7 +209,21 @@ jobs:
         run: |
           image='${{ steps.tag.outputs.image }}'
           digest=$(docker buildx imagetools inspect "$image:${{ github.sha }}" --format '{{.Manifest.Digest}}')
-          cosign sign --yes "$image@$digest"
+          # `--new-bundle-format=false` IS THE WHOLE REASON KYVERNO CAN READ THIS.
+          #
+          # cosign-installer v4.1.2 installs cosign v3.0.6, and v3 flipped
+          # `--new-bundle-format` to default true (cmd/cosign/cli/options/sign.go:155).
+          # In that mode the signature is written as a Sigstore bundle v0.3 OCI
+          # *referrer* -- GHCR answers /v2/.../referrers/ with 404, so it lands on
+          # the referrers tag fallback `sha256-<hex>` with no suffix. Measured on
+          # ghcr.io/chidionyema/sovereign-worker@sha256:346446686948aa64ca8cc41bda1e
+          # 34e618b512e713d58d11a89bad1f1090c8e3 (run 33166323423): 608 tags, 182 of
+          # them `sha256-<hex>`, ZERO ending `.sig`. Kyverno's verifier looks for the
+          # legacy `sha256-<hex>.sig` tag and reports `no signatures found`, so an
+          # Enforce policy would refuse every image this workflow builds.
+          # `--use-signing-config` must go with it: its help says it requires the new
+          # bundle format.
+          cosign sign --yes --new-bundle-format=false --use-signing-config=false "$image@$digest"
           echo "signed $image@$digest"
 
           # VERIFY IT HERE, IN THIS RUN.
@@ -213,12 +239,26 @@ jobs:
           # in the public Fulcio root -- which is every GitHub repository there
           # is, so it would pass on an image signed by a stranger.
           cosign verify "$image@$digest" \
+            --new-bundle-format=false \
             --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             > /tmp/cosign-verify.json
           echo "verified $image@$digest"
+
+          # AND PROVE IT WITH SOMETHING THAT IS NOT COSIGN.
+          #
+          # The two commands above both ran cosign, so a storage format only cosign
+          # could find still printed a full green `Verification for ...` block --
+          # which is exactly what happened for every signature this workflow wrote
+          # before this commit. A third party has to be able to FIND the signature,
+          # and the legacy tag is where every third party looks. docker is not
+          # cosign, and this fails the job if the tag is absent.
+          sigtag="sha256-${digest#sha256:}.sig"
+          docker buildx imagetools inspect "$image:$sigtag" > /dev/null
+          echo "third party can find it: $image:$sigtag"
           echo
           echo "anyone can repeat that with:"
           echo "  cosign verify $image@$digest \\"
+          echo "    --new-bundle-format=false \\"
           echo "    --certificate-identity-regexp '^https://github.com/${{ github.repository }}/' \\"
           echo "    --certificate-oidc-issuer https://token.actions.githubusercontent.com" 

@@ -14,8 +14,13 @@ on:
       mode:
         description: "check (plan, drift = FAIL), apply (crew#289: the STAGED node-pool change, refused by main.tf above node_pool.budget_monthly_usd), or surge-node (crew#516: apply, then replace the one node so a new boot volume or shape takes effect; every pod restarts once), or surge-finish (the surge's second half when its Ready gate went blind, run 33101801971: delete the old node once the receipt shows the new one Ready). Never from a laptop (crew#247)."
         type: choice
-        options: [check, apply, surge-node, surge-finish]
+        options: [check, apply, surge-node, surge-finish, break-glass]
         default: check
+      playbook:
+        description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose and architect-doctor are read-only."
+        type: choice
+        options: [diagnose, architect-doctor, cilium-unchain, cilium-replace, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll]
+        default: diagnose
   pull_request:
     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
 permissions:
@@ -35,7 +40,7 @@ jobs:
     if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     # 25 for check/apply; surge-node waits up to ~65 min for the new node to be ACTIVE then Ready in the receipt (crew#516)
-    timeout-minutes: ${{ inputs.mode == 'surge-node' && 90 || 25 }}
+    timeout-minutes: ${{ inputs.mode == 'surge-node' && 90 || inputs.mode == 'break-glass' && 45 || 25 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -77,6 +82,7 @@ jobs:
           OCI_S3_SECRET_KEY: ${{ secrets.OCI_S3_SECRET_KEY }}
           OKE_SSH_PUBKEY_TEXT: ${{ vars.OKE_SSH_PUBKEY }}
           OKE_ALLOWED_CIDRS: ${{ vars.OKE_ALLOWED_CIDRS }}
+          BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}   # crew#539: read by --break-glass only
           ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}   # platform/oci/langfuse.tf seeds the Langfuse login
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # bin/idp-drill-heartbeat reads login-drill runs; without it the row is BLIND (run 32988930880)
         run: bin/idp-oke-rebuild --${{ inputs.mode || 'check' }}
@@ -94,6 +100,38 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bin/idp-github-app installation || { rc=$?; [ "$rc" = 2 ] && echo "BLIND   github-app has no installation yet; install the App on chidionyema and re-run apply" || exit "$rc"; }
+      # crew#66 root trust (crew#577): the GitHub tokens workloads read (platform/github-app/token-consumers.json)
+      # are installation tokens of the App, narrowed to a lane, re-minted here and hourly by
+      # bin/idp-verify-drill; no PAT is ever pasted. Exit 2 is BLIND (App not installed yet).
+      - name: bin/idp-github-app refresh (crew#577)
+        if: ${{ always() && inputs.mode == 'apply' }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bin/idp-github-app refresh || { rc=$?; [ "$rc" = 2 ] && echo "BLIND   github-app tokens not refreshed: no installation yet" || exit "$rc"; }
+      # crew#516 CP5, founder's locked spec (crew#66 5451926212, Phase 2): platform/tailscale/policy.hujson
+      # is git-tracked, applied here (no admin-console edit -- the no-toil rule). Exit 2 is BLIND
+      # (vault entry or FOUNDER_MAC_USER not seeded yet).
+      - name: bin/idp-tailscale-policy apply (crew#516 CP5)
+        if: ${{ always() && inputs.mode == 'apply' }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+        run: |
+          bin/idp-tailscale-policy apply || { rc=$?; [ "$rc" = 2 ] && echo "BLIND   tailscale-policy has nothing to apply yet (see the line above)" || exit "$rc"; }
+      # crew#163 residual / crew#345 box 3: a Mac has no OCI identity, so the job monitor's ping key
+      # reaches it through the receipts bucket, encrypted to the Mac's age recipient, refreshed hourly.
+      - name: bin/idp-hc-publish (crew#163)
+        if: ${{ always() }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
+        run: |
+          sudo apt-get install -y -q age >/dev/null
+          bin/idp-hc-publish
       # crew#408: the identity domain's OIDC clients (front door, router console) and their vault
       # secrets are platform/oci/identity. Until this step it had no CI caller: bin/idp-identity-apply
       # ran from a laptop whose OCI session expires (crew#247, R26). The same machine identity plans
@@ -108,53 +146,36 @@ jobs:
           ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}
         run: |
           if [ "${{ inputs.mode }}" = apply ]; then bin/idp-identity-apply apply -auto-approve; else bin/idp-identity-apply plan; fi
-      # crew#325: the model-routing row reads one JSON vault secret, litellm-upstream. trace-drill run
-      # 33007689530 found the ACTIVE secret holding a raw value, not the envelope, so ExternalSecret
-      # llm/litellm-upstream cannot extract it. The values live only on the operator's laptop, which
-      # has no OCI identity (crew#227), so they travel once as SEED_* GitHub secrets, the same machine
-      # identity puts them, and the SEED_* secrets are deleted after the put. With none set: n/a.
-      - name: bin/idp-vault-put litellm-upstream (crew#325)
+      # crew#66 root trust (5453747447; crew#575, crew#576): every estate-born entry -- the router
+      # master key, the Postgres passwords, the store's JWT signing key and internal keys, the MCP
+      # gateway key, the cookie secret, Backstage's env, and the router keys hindsight and hermes
+      # hold -- is minted here by the machine identity and kept when the vault already holds a
+      # well-formed value. Vendor keys are bin/idp-bootstrap-vendors', never a SEED_* secret (crew#579).
+      - name: bin/idp-estate-seed (crew#66 root trust)
         if: ${{ always() && inputs.mode == 'apply' }}
         env:
           OCI_CLI_AUTH: security_token
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-          MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.SEED_GROQ_API_KEY }}
-          LITELLM_MASTER_KEY: ${{ secrets.SEED_LITELLM_MASTER_KEY }}
-        run: |
-          # crew#506 CP4: --merge overlays whichever SEED_* keys are set on the entry the vault holds,
-          # so adding one provider (Groq) never needs every key re-seeded or the master key present.
-          keys=MINIMAX_API_KEY,DEEPSEEK_API_KEY,OPENROUTER_API_KEY,GEMINI_API_KEY,GROQ_API_KEY,LITELLM_MASTER_KEY
-          any=0; for k in ${keys//,/ }; do [ -n "${!k:-}" ] && any=1; done
-          [ "$any" = 1 ] || { echo "n/a     litellm-upstream   no SEED_* secrets set; the vault keeps what it holds"; exit 0; }
-          umask 077; f=$(mktemp)
-          env | grep -E "^(${keys//,/|})=" > "$f"
-          args=""; for k in ${keys//,/ }; do args="$args $k=$k"; done
-          ESTATE_ENV_FILE="$f" bin/idp-vault-put --merge litellm-upstream $args
-          rm -f "$f"
+        run: bin/idp-estate-seed
 
       # crew#516 CP4: the same door for The Architect's env (platform/hermes-agent). One vault entry,
       # hermes-agent-env, the env names the gateway reads; SEED_HERMES_* travel once and are deleted
-      # after the put. TELEGRAM_BOT_TOKEN is set last, at the swap, after the Mac gateway is booted out.
+      # after the put. crew#66 root trust: only configuration rides here (allowed users, home channel,
+      # the auth store); the bot token, vendor keys, router key and GitHub token are born by
+      # bin/idp-bootstrap-vendors, bin/idp-estate-seed and bin/idp-github-app refresh (crew#576, #577, #579).
       - name: bin/idp-vault-put hermes-agent-env (crew#516 CP4)
         if: ${{ always() && inputs.mode == 'apply' }}
         env:
           OCI_CLI_AUTH: security_token
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.SEED_HERMES_TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS }}
+          # crew#516 CP4 (receipt 33116314460, "Unauthorized user ... on telegram"): hermes-agent reads
+          # TELEGRAM_ALLOWED_USERS (gateway/run.py); the cockpit reads TELEGRAM_ALLOWED_USER_IDS. Both carry the one value.
+          TELEGRAM_ALLOWED_USERS: ${{ secrets.SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS }}
           TELEGRAM_HOME_CHANNEL: ${{ secrets.SEED_HERMES_TELEGRAM_HOME_CHANNEL }}
-          ANTHROPIC_API_KEY: ${{ secrets.SEED_ANTHROPIC_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
-          LITELLM_API_KEY: ${{ secrets.SEED_HERMES_LITELLM_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.SEED_HERMES_GITHUB_TOKEN }}
-          EXA_API_KEY: ${{ secrets.SEED_EXA_API_KEY }}
           HERMES_AUTH_JSON: ${{ secrets.SEED_HERMES_AUTH_JSON }}
         run: |
-          keys=TELEGRAM_BOT_TOKEN,TELEGRAM_ALLOWED_USER_IDS,TELEGRAM_HOME_CHANNEL,ANTHROPIC_API_KEY,OPENROUTER_API_KEY,LITELLM_API_KEY,GITHUB_TOKEN,EXA_API_KEY,HERMES_AUTH_JSON
+          keys=TELEGRAM_ALLOWED_USER_IDS,TELEGRAM_ALLOWED_USERS,TELEGRAM_HOME_CHANNEL,HERMES_AUTH_JSON
           any=0; for k in ${keys//,/ }; do [ -n "${!k:-}" ] && any=1; done
           [ "$any" = 1 ] || { echo "n/a     hermes-agent-env   no SEED_HERMES_* secrets set; the vault keeps what it holds"; exit 0; }
           umask 077; f=$(mktemp)
@@ -162,6 +183,18 @@ jobs:
           args=""; for k in ${keys//,/ }; do args="$args $k=$k"; done
           ESTATE_ENV_FILE="$f" bin/idp-vault-put --merge hermes-agent-env $args
           rm -f "$f"
+
+      # crew#539 CP4: the Cluster Autoscaler's node pool id, found by name after the apply, so the
+      # row platform/oci/autoscaler never carries an OCID. Exit 2 is BLIND (no ACTIVE pool yet).
+      - name: bin/idp-autoscaler-seed (crew#539 CP4)
+        if: ${{ always() && inputs.mode == 'apply' }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          OCI_CLUSTER_NAME: ${{ vars.OCI_CLUSTER_NAME || 'estate' }}
+        run: |
+          bin/idp-autoscaler-seed || { rc=$?; [ "$rc" = 2 ] && echo "BLIND   oke-autoscaler   no ACTIVE pool yet; the vault keeps what it holds" || exit "$rc"; }
 
   # crew#292 CP4: the in-cluster chaos experiment leaves a receipt in Object Storage; this reads
   # it with the same machine identity and grades its age. A runner has no kube path, so the
@@ -192,6 +225,34 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
         run: bin/idp-chaos-drill
+
+  # crew#539 DoD 2: the in-cluster page drill (platform/chaos/langfuse-alert-drill.yaml) fails
+  # langfuse-web for 8 minutes and writes whether FounderSurfaceDown fired and Telegram was sent.
+  # Same door as chaos-drill: the receipt, read with the machine identity, never a kube path.
+  alert-drill:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: "3.12" }
+      - name: oci cli
+        run: pip install -q oci-cli
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: bin/idp-chaos-drill langfuse-alert-drill alert-drill
+        env:
+          OCI_CLI_AUTH: security_token   # every oci call in the run uses the exchanged session token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
+        run: bin/idp-chaos-drill langfuse-alert-drill alert-drill
 
   free-tier:
     # crew#488 CP3: the Always Free allowance, asked of the limits API every day and graded
@@ -257,8 +318,10 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
         run: bin/idp-catalogue-drift
-      # crew#439: an open pull request armed for auto-merge that is not MERGEABLE is a red row, so a
-      # conflicting flux/image-updates PR never sits silent again.
+      # crew#439: an open pull request armed for auto-merge that will never merge on its own is a
+      # red row, so a stuck flux/image-updates PR never sits silent again. crew#516 widened it from
+      # `mergeable` to the blocking reason: idp#486 was armed and MERGEABLE for twelve hours behind
+      # a security-scan that had already concluded red, and every estate image stayed frozen.
       - name: bin/idp-automerge-stuck
         if: ${{ always() }}
         env:
@@ -289,6 +352,11 @@ jobs:
           # mumchimp-medusa is private; this repo's token cannot read it, the founder's browser can.
           fail: true
           token: ${{ secrets.GITHUB_TOKEN }}
+      # the default GITHUB_TOKEN reads Actions runs of public estate repos; private ones need the estate token, crew#535 CP2b
+      - name: actions-refused (crew#535)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 bin/idp-actions-refused --limit 5 | tee -a "$GITHUB_STEP_SUMMARY" || true
 
   kini-state:
     # crew#396 step 4: the KINI run's receipt (platform/temporal/kini-state.yaml), read the same

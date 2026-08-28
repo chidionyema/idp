@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# bin/idp-tests-for -- print the test files that read any file changed on this branch, then run them.
+#
+# crew#584 (founder 2026-08-28): agents ran the whole suite serially for a change touching a handful of
+# files. pytest-testmon was the first answer and is rejected: it selects by Python coverage, and 127 of
+# the 230 test files read YAML, shell and workflow files instead -- after a YAML-only edit it answered
+# "no tests ran" (measured, a false green). Here a test is selected when it names a changed path (or its
+# basename) in its source; a test file that changed is selected by itself. Nothing is hand-mapped.
+#
+#   bin/idp-tests-for            # select against origin/main, run with -n auto (pyproject addopts)
+#   bin/idp-tests-for --list     # print the selection only
+#   bin/idp-tests-for --base X   # diff against another ref
+#
+# Exit 0 when nothing changed (the message says so); CI on a fresh checkout still runs everything.
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+base=origin/main; list=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --list) list=1 ;;
+    --base) base="$2"; shift ;;
+    *) echo "usage: bin/idp-tests-for [--list] [--base REF]" >&2; exit 64 ;;
+  esac; shift
+done
+changed=$( { git -C "$IDP" diff --name-only "$base"...HEAD; git -C "$IDP" diff --name-only HEAD; git -C "$IDP" ls-files --others --exclude-standard; } | sort -u )
+if [ -z "$changed" ]; then echo "ok    tests-for: nothing changed against $base, nothing to run"; exit 0; fi
+sel=$(
+  for f in $changed; do
+    case "$f" in tests/test_*.py|sovereign/tests/*/*.py) echo "$f" ;; esac
+    b=$(basename "$f")
+    grep -rlF --include='*.py' -e "$f" -e "$b" "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null | sed "s#^$IDP/##" || true
+  done | sort -u
+)
+if [ -z "$sel" ]; then echo "ok    tests-for: $(printf '%s\n' "$changed" | wc -l | tr -d ' ') changed file(s), no test names them (CI runs the suite)"; exit 0; fi
+n=$(printf '%s\n' "$sel" | wc -l | tr -d ' ')
+echo "tests-for: $n test file(s) read the changed files"
+if [ "$list" = 1 ]; then printf '%s\n' "$sel"; exit 0; fi
+# The venv lives beside the main checkout; a worktree has none of its own (LAW 46: resolved, never typed).
+main="$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)/.."
+py="${IDP_PY:-}"
+for c in "$IDP/.venv/bin/python" "$main/.venv/bin/python"; do [ -n "$py" ] || { [ -x "$c" ] && py="$c"; }; done
+py="${py:-python3}"
+# sovereign/ has its own pytest.ini (bdd_features_base_dir, resolved from cwd=sovereign, as CI's bdd job does
+# with `cd sovereign`); a mixed argument list makes pytest pick the repo-root pyproject.toml instead and every
+# feature path misses. So two runs, each from the tree that owns it, and the exit code is the worse of the two.
+root_sel=$(printf '%s\n' "$sel" | grep -v '^sovereign/' || true)
+sov_sel=$(printf '%s\n' "$sel" | grep '^sovereign/' | sed 's#^sovereign/##' || true)
+rc=0
+# shellcheck disable=SC2086
+if [ -n "$root_sel" ]; then (cd "$IDP" && "$py" -m pytest -q $root_sel) || rc=$?; fi
+# shellcheck disable=SC2086
+if [ -n "$sov_sel" ]; then (cd "$IDP/sovereign" && "$py" -m pytest -q $sov_sel) || rc=$?; fi
+exit $rc

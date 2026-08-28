@@ -1,0 +1,4 @@
+tap "LizardByte/homebrew"
+brew "sunshine"
+cask "deskpad"
+cask "tailscale"

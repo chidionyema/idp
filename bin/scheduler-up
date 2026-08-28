@@ -10,11 +10,21 @@ export DAGSTER_HOME="$IDP/run/dagster"
 mkdir -p "$DAGSTER_HOME"
 cp "$IDP/scheduler/dagster.yaml" "$DAGSTER_HOME/dagster.yaml"
 PORT=3210
+# The catalog's Dagster entity provider (crew#468) reads this URL from
+# backstage/app-config.yaml's `${DAGSTER_GRAPHQL_URL:-...}` default, which already names this
+# exact host and port; export it too so a shell that sources this script, or a launchd plist
+# built from it, carries the same value instead of a second copy of the literal (LAW 46).
+export DAGSTER_GRAPHQL_URL="http://127.0.0.1:$PORT/graphql"
 log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 
 # Fail early if schedule.yml does not load: a scheduler with a broken policy
 # file ticks nothing and says nothing.
 "$IDP/.venv/bin/python" -c "import sys; sys.path.insert(0, '$IDP/scheduler'); from estate_scheduler.definitions import defs; print('schedule.yml ok:', len(list(defs.jobs or [])), 'jobs')"
+# crew#140: the second location lives in the crew checkout beside this one. Same rule: a
+# location that does not import is a stated refusal here, never a daemon that ticks half a tree.
+FACTS="$IDP/../crew/science/scheduler"
+[ -f "$FACTS/estate_dagster/facts.py" ] || { log "FAIL      code location estate-facts: $FACTS/estate_dagster/facts.py is not there (crew checkout beside idp)"; exit 1; }
+( cd "$FACTS" && "$IDP/.venv/bin/python" -c "from estate_dagster.facts import defs, SPECS; print('estate-facts ok:', len(SPECS), 'assets')" )
 
 if ! pgrep -qf "[d]agster-daemon run"; then  # bracket: never match a shell whose own command line names it (crew#85)
   ( cd "$IDP/scheduler" && nohup "$IDP/.venv/bin/dagster-daemon" run -w workspace.yaml > "$IDP/run/dagster-daemon.out" 2>&1 & echo $! > "$IDP/run/dagster-daemon.pid" )

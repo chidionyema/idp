@@ -52,6 +52,18 @@ drills:
       Workflow wrote its receipt from the node's own identity, and a runner holding no key read
       it back (bin/idp-chaos-drill grades the receipt's age, max 194h).
 
+  - name: alert-drill
+    workflow: oke-check.yml
+    job: alert-drill
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    proves: >-
+      In the last week Chaos Mesh failed every langfuse-web pod for 8 minutes and, while it was
+      down, Alertmanager held an active FounderSurfaceDown for langfuse and its telegram receiver
+      delivered it (crew#539 DoD 2: the founder's phone learns of a dead surface within 5 minutes
+      of it dying); the receipt is written from the node's identity and graded by
+      bin/idp-chaos-drill langfuse-alert-drill alert-drill (age max 194h).
+
   - name: trace-drill
     workflow: trace-drill.yml
     job: trace-drill
@@ -82,7 +94,9 @@ drills:
     proves: >-
       The cluster wrote its own state receipt (nodes, pods not Ready) to Object Storage from the
       node's identity within the last hour and a runner with no kube path and no laptop session
-      token read it back through OIDC (crew#345: bin/idp-cluster-state grades freshness and Ready).
+      token read it back through OIDC (crew#345: bin/idp-cluster-state grades freshness and Ready);
+      the cluster holds PrometheusRules and Alertmanager shows the Watchdog alert, so the alert
+      pipeline is evaluating and delivering (crew#539 DoD 1).
   - name: verify-drill
     workflow: verify-drill.yml
     job: verify-drill
@@ -93,7 +107,9 @@ drills:
       session subject as that service user, saw the cluster and node pools ACTIVE through the OCI
       API, and graded the cluster's own state/cluster receipt (platform/state, bin/idp-cluster-state)
       written from inside on the node's instance principal. Twenty-four green rows in a row is crew#345's acceptance
-      criterion: live verification with nobody logged in.
+      criterion: live verification with nobody logged in. Since crew#66 root trust the same run also
+      grades the root-trust row (bin/idp-root-trust): every vault entry an ExternalSecret reads is
+      registered in docs/policy/root-trust.md with a bootstrapper on disk or a ticket, hourly.
 
   - name: kini-finish
     workflow: oke-check.yml
@@ -122,6 +138,15 @@ drills:
       In the last week the whole clusters/oke/ Flux tree was applied to a vanilla k3d cluster on a
       runner with no OCI identity and at least drills/portability-floor.txt layers came Ready, so
       the platform hydrates a foreign cluster from git alone (crew#488, LAW 19).
+  - name: portability-k3s
+    workflow: portability-drill.yml
+    job: k3s
+    schedule: "23 5 * * 1"
+    max_age_hours: 194
+    proves: >-
+      In the last week the same clusters/oke/ tree hydrated a k3s node on a second provider (the
+      GitHub-hosted Azure runner, no docker, no OCI) from the same commit, met the same floor, and
+      the run printed its wall-clock and its cost (crew#488 CP2, LAW 19).
   - name: free-tier
     workflow: oke-check.yml
     job: free-tier

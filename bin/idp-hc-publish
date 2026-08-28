@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Publish the job-monitor ping key where a Mac with no cloud identity can read it (crew#163 residual,
+# crew#345 box 3, crew#516 CP9). The Mac's laptop OCI sessions are retired and it holds no API key,
+# so bin/idp-hc-enroll's vault read went BLIND and every Mac job pinged 127.0.0.1:8000 (measured
+# 2026-08-27, crew#345). What the Mac does hold: the S3 keys of the estate's state backend (the sops
+# envelope) and the estate age identity. So the hourly check run reads the ping key from the vault,
+# encrypts it to the age recipients in platform/healthchecks/mac.recipients (public halves, committed)
+# and puts one object in the receipts bucket. Nothing new is minted; no key is printed.
+#   ok      hc-publish  bucket=<b> name=healthchecks/ping_key.age bytes=<n> recipients=<r>
+#   BLIND   hc-publish  <what could not be read>   (exit 2)
+# Usage: idp-hc-publish   env: HC_RECEIPTS_BUCKET (default estate-drill-receipts), HC_RECIPIENTS (file)
+set -u
+IDP=$(cd "$(dirname "$0")/.." && pwd)
+BUCKET=${HC_RECEIPTS_BUCKET:-estate-drill-receipts}
+NAME=healthchecks/ping_key.age
+RECIPIENTS=${HC_RECIPIENTS:-$IDP/platform/healthchecks/mac.recipients}
+command -v age >/dev/null || { echo "BLIND   hc-publish  age missing"; exit 2; }
+args=(); n=0
+while read -r r; do case "$r" in ""|\#*) ;; *) args+=(-r "$r"); n=$((n+1));; esac; done < "$RECIPIENTS"
+[ "$n" -gt 0 ] || { echo "BLIND   hc-publish  no recipients in $RECIPIENTS"; exit 2; }
+T=$(mktemp -d "${TMPDIR:-/tmp}/hc-publish.XXXXXX"); trap 'rm -rf "$T"' EXIT
+key=$("$IDP/bin/idp-cloud" secret get healthchecks-ping-key 2>"$T/err") || { echo "BLIND   hc-publish  $(head -1 "$T/err" | cut -c1-120)"; exit 2; }
+[ -n "$key" ] || { echo "BLIND   hc-publish  empty ping key"; exit 2; }
+# -a: armored text, so the object survives every shell and log on the way (a raw age blob holds NUL bytes)
+printf '%s\n' "$key" | age -a "${args[@]}" -o "$T/ping_key.age" || { echo "BLIND   hc-publish  age encrypt failed"; exit 2; }
+"$IDP/bin/idp-cloud" object put --bucket "$BUCKET" --name "$NAME" --file "$T/ping_key.age" 2>"$T/err" || { echo "BLIND   hc-publish  $(head -1 "$T/err" | cut -c1-120)"; exit 2; }
+echo "ok      hc-publish  bucket=$BUCKET name=$NAME bytes=$(wc -c < "$T/ping_key.age" | tr -d ' ') recipients=$n"

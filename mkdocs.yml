@@ -11,6 +11,7 @@ nav:
       - architecture/index.md
       - Live estate: architecture/live.md
   - Estate showcase: SHOWCASE.md
+  - "Founder: shipped, changed for you, stuck": FOUNDER.md
   - Planned, blocking, when: NEXT.md
   - Decisions:
       - 0001 Gateway API is the routing standard: decisions/0001-gateway-api-is-the-routing-standard.md
@@ -40,6 +41,7 @@ nav:
       - Estate next: demo/estate-next.md
       - Trace matrix: demo/trace-matrix.md
       - Plist gate: demo/plist.md
+      - Namespace fences: demo/ns-fence-gate.md
       - k8s-infra: demo/k8s-infra.md
       - Oracle identity: demo/oci.md
       - Flux on OKE: demo/oke.md
@@ -55,6 +57,7 @@ nav:
       - EU AI Act: demo/ai-act.md
       - LAW 32 gate: demo/law32.md
       - Actions pinned: demo/actions-pinned.md
+      - Scheduling immunity: demo/scheduling-immunity.md
       - Front-door login drill: demo/idp-login-drill.md
       - Portability drill: demo/idp-portability-drill.md
       - Free-tier allowance row: demo/idp-free-tier.md
@@ -82,8 +85,10 @@ nav:
       - Repo rulesets: demo/repo-rulesets.md
       - Telemetry coverage: demo/telemetry-coverage.md
       - Wake blocked: demo/wake-blocked.md
+      - Founder god's view: demo/estate-founder.md
   - Onboarding:
       - Trace matrix: onboarding/trace-matrix.md
+      - Namespace fences: onboarding/ns-fence-gate.md
       - Portal: onboarding/idp.md
       - Estate showcase: onboarding/estate-showcase.md
       - Estate next: onboarding/estate-next.md
@@ -91,6 +96,7 @@ nav:
       - Oracle identity: onboarding/oci.md
       - Flux on OKE: onboarding/oke.md
       - Cloud-agnostic: onboarding/cloud-agnostic.md
+      - Cluster autoscaler: onboarding/autoscaler.md
       - Estate zone: onboarding/estate-zone.md
       - k8s-infra: onboarding/k8s-infra.md
       - Langfuse: onboarding/langfuse.md
@@ -111,6 +117,7 @@ nav:
       - Portability drill: onboarding/idp-portability-drill.md
       - Free-tier allowance row: onboarding/idp-free-tier.md
       - PR report (operating-model gate): onboarding/pr-report.md
+      - Monitoring (Prometheus, Alertmanager): onboarding/monitoring.md
       - Estate security scan: onboarding/estate-security-scan.md
       - Estate security rollout: onboarding/estate-security-rollout.md
       - Spec gate: onboarding/spec-gate.md
@@ -133,3 +140,5 @@ nav:
       - Repo rulesets: onboarding/repo-rulesets.md
       - Telemetry coverage: onboarding/telemetry-coverage.md
       - Wake blocked: onboarding/wake-blocked.md
+      - Scheduling immunity: onboarding/scheduling-immunity.md
+      - Founder god's view: onboarding/estate-founder.md

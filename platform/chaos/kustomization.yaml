@@ -5,3 +5,5 @@ kind: Kustomization
 resources:
   - backstage-pod-kill.yaml
   - backstage-pod-kill-first-run.yaml
+  - langfuse-alert-drill.yaml
+  - langfuse-alert-drill-first-run.yaml
