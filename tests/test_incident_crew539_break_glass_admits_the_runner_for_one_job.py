@@ -75,7 +75,7 @@ def test_unknown_playbook_is_refused_and_list_names_both(tmp_path):
     p, _ = _run("rm-rf-everything", tmp_path)
     assert p.returncode == 64
     listed = subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
-    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node"]
+    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node", "dns-per-namespace"]
 
 
 def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
@@ -91,7 +91,7 @@ def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
 def test_workflow_offers_break_glass_with_a_named_playbook():
     wf = WORKFLOW.read_text()
     assert "surge-finish, break-glass]" in wf
-    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node]" in wf
+    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace]" in wf
     assert "BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}" in wf
 
 
@@ -103,7 +103,7 @@ def test_dns_probe_pod_passes_the_cluster_pod_security_policies():
     import yaml
     src = PLAYBOOK.read_text()
     block = src[src.index("apiVersion: v1\nkind: Pod"):src.index("YAML\n", src.index("kind: Pod"))]
-    block = block.replace("$pin", "  nodeName: 10.0.0.1").replace("$name", "dns-probe").replace("$fqdn", "github.com")
+    block = block.replace("$pin", "  nodeName: 10.0.0.1").replace("$name", "dns-probe").replace("$fqdn", "github.com").replace("$ns", "kube-system")
     pod = yaml.safe_load(block)
     assert pod["metadata"]["namespace"] == "kube-system"
     assert pod["spec"]["nodeName"] == "10.0.0.1", "the probe can be pinned to a node (dns-per-node)"
@@ -244,3 +244,34 @@ def test_dns_per_node_pins_an_in_cluster_and_an_external_lookup_to_every_node(tm
     assert "kubernetes.default.svc.cluster.local" in manifests and '"github.com"' in manifests
     assert "--- node 10.0.1.1" in p.stdout and "--- node 10.0.2.2" in p.stdout
     assert any("-l k8s-app=kube-dns" in c for c in calls), "coredns itself is read last"
+
+
+def test_dns_per_namespace_resolves_every_headless_service_from_inside_the_failing_namespace(tmp_path):
+    # run 33141542523: DNS answers on every node, yet clickhouse cannot resolve its ZooKeeper
+    # headless name and coredns says NXDOMAIN for its per-replica Service -> ask from inside the ns
+    bin_dir, log = _fake_path(tmp_path)
+    k = bin_dir / "kubectl"
+    k.write_text(
+        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
+        "case \"$*\" in\n"
+        "  *'get helmreleases -A -o jsonpath'*) printf 'False observability\\nTrue keda\\nFalse observability\\nFalse robusta\\n';;\n"
+        "  *'get svc -n observability -o jsonpath'*) printf 'signoz-zookeeper-headless signoz-clickhouse-headless ';;\n"
+        "  *'get svc -n robusta -o jsonpath'*) printf '';;\n"
+        "  *'apply -f -'*) cat >> \"" + str(log) + ".yaml\"; echo ok;;\n"
+        "  *) cat >/dev/null 2>&1; echo ok;;\nesac\n"
+    )
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "dns-per-namespace"], capture_output=True, text=True, env=env)
+    calls = log.read_text().splitlines()
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "--- namespace observability" in p.stdout and "--- namespace robusta" in p.stdout
+    assert "--- namespace keda" not in p.stdout, "a Ready namespace is not probed"
+    assert any("get svc,endpointslices -n observability" in c for c in calls)
+    assert [c for c in calls if MUTATING.match(c) and "dns-probe-ns-" not in c] == [], "only the probe pods are written"
+    manifests = (log.parent / (log.name + ".yaml")).read_text()
+    assert manifests.count("namespace: observability") == 2, "one probe per headless Service, inside the namespace"
+    assert '"signoz-zookeeper-headless.observability.svc.cluster.local"' in manifests
+    assert '"signoz-clickhouse-headless.observability.svc.cluster.local"' in manifests
+    assert any("wait pod/dns-probe-ns-1 -n observability" in c for c in calls)
+    assert any("delete pod/dns-probe-ns-2 -n observability --ignore-not-found --wait=false" in c for c in calls)
+    assert any("-l k8s-app=kube-dns" in c for c in calls), "coredns is read per namespace"
