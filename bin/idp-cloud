@@ -21,6 +21,9 @@ set -uo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 BACKEND=${IDP_CLOUD_BACKEND:-oci}
 blind() { printf 'BLIND   cloud  %s\n' "$1" >&2; exit 2; }
+# A grading line is one line. Fold a multi-line CLI diagnosis onto it, drop anything shaped like
+# a bearer token or key so a diagnosis can never become a leak, and cap it so one row stays one row.
+oneline() { printf '%s' "$1" | tr '\n\r\t' '   ' | sed -E 's/[A-Za-z0-9_-]{40,}/<redacted>/g; s/  +/ /g; s/^ //' | cut -c1-300; }
 prim=$1; verb=$2; shift 2
 BUCKET=""; NAME=""; FILE=""; PREFIX=""; VAULT=""; REGION=""
 while [ $# -gt 0 ]; do
@@ -420,10 +423,19 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             ;;
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
+            # crew#292: `|| blind "create-kubeconfig failed"` threw away the only sentence that
+            # said why. bin/idp-kube then took tail -1 of the combined output, which is this
+            # line, so the CLI's ServiceError never reached the receipt: 7 of 7 verify-drill runs
+            # read carried `BLIND kube create-kubeconfig failed` with no cause anywhere in the
+            # log, and nobody could attribute it (LAW 28, LAW 29). oci writes its diagnosis to
+            # stderr, so stderr is captured and travels in the blind line. stdout is discarded:
+            # the kubeconfig goes to --file, and a token must never land in a log.
             if [ -n "$REGION" ]; then
-              oci ce cluster create-kubeconfig --cluster-id "$NAME" --file "$FILE" --region "$REGION" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT || blind "oci ce cluster create-kubeconfig failed"
+              why=$(oci ce cluster create-kubeconfig --cluster-id "$NAME" --file "$FILE" --region "$REGION" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT 2>&1 >/dev/null) \
+                || blind "oci ce cluster create-kubeconfig failed: $(oneline "$why")"
             else
-              oci ce cluster create-kubeconfig --cluster-id "$NAME" --file "$FILE" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT || blind "oci ce cluster create-kubeconfig failed"
+              why=$(oci ce cluster create-kubeconfig --cluster-id "$NAME" --file "$FILE" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT 2>&1 >/dev/null) \
+                || blind "oci ce cluster create-kubeconfig failed: $(oneline "$why")"
             fi
             ;;
           *) blind "unknown backend $BACKEND";;
