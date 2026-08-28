@@ -71,13 +71,14 @@ def _cosign_invocations(verb):
             stripped = line.strip()
             if stripped.startswith("#"):
                 continue
-            # `echo "  cosign verify ..."` is a human-facing instruction, not an
-            # invocation -- it runs echo. It is checked separately, as a block,
-            # by test_the_printed_repro_command_still_works: it is spread over
-            # several echo lines, so line-at-a-time flag matching cannot judge it.
-            if re.match(r"(echo|printf|cat)\b", stripped):
-                continue
-            if re.search(rf"\bcosign\s+{verb}\b", stripped):
+            # A `cosign` inside a quoted string is TEXT, not a command: the retry
+            # loop's `echo "cosign sign failed twice"` and the printed repro
+            # instructions both mention it without running it. Judging those as
+            # invocations fails a workflow that is correct, which is its own
+            # outage (LAW 38). Strip quoted spans before deciding, then match the
+            # flags against the original line -- flags are never quoted.
+            bare = re.sub(r"\"[^\"]*\"|'[^']*'", " ", stripped)
+            if re.search(rf"\bcosign\s+{verb}\b", bare):
                 found.append((wf, job, step, stripped))
     return found
 
