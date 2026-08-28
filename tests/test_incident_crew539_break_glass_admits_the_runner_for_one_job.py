@@ -306,3 +306,29 @@ def test_tcp_per_node_connects_from_inside_the_failing_namespace_pinned_to_every
     assert "--- from node 10.0.148.221 into observability" in p.stdout
     assert "get pods -n observability -o wide" in log.read_text()
     assert "networkpolicies" in log.read_text()
+
+
+def test_diagnose_prints_the_clickhouse_limit_at_every_link_and_the_cronjobs(tmp_path):
+    # run 33144117286: signoz.v40 carried the 4Gi limit and the clickhouse pod kept "maximum: 1.80
+    # GiB"; the link that did not roll has to be named from the CHI, the StatefulSet and the pod
+    p, calls = _run("diagnose", tmp_path)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "--- clickhouse-installation" in p.stdout
+    assert "--- clickhouse-operator-log" in p.stdout
+    assert "--- cronjobs" in p.stdout
+    joined = "\n".join(calls)
+    assert "get chi -A -o jsonpath" in joined
+    assert "get sts -A -l clickhouse.altinity.com/chi" in joined
+    assert "get pods -A -l clickhouse.altinity.com/chi" in joined
+    assert "get pods -A -l app=clickhouse-operator -o jsonpath" in joined
+    assert "logs -n" in joined and "-l app=clickhouse-operator --tail=40" in joined
+    assert "get cronjobs,jobs -A" in joined
+
+
+def test_no_logs_call_carries_all_namespaces():
+    # idp#538 review: `kubectl logs -A` is not a flag (v1.36.4: unknown shorthand flag 'A'); the
+    # row printed the error and PASSed
+    import re
+    src = PLAYBOOK.read_text()
+    offenders = [a for a in re.findall(r"\$K logs ([^|;\n]*)", src) if re.search(r"(^|\s)-A(\s|$)", a)]
+    assert offenders == [], offenders
