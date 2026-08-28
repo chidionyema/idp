@@ -27,6 +27,8 @@ on:
       - .github/workflows/portability-drill.yml
       - bin/idp-portability-drill
       - bin/idp-hydrate
+      - bin/idp-flux-settle
+      - drills/portability-oci-reds.txt
       - drills/portability-floor.txt
       - platform/k3d/estate.yaml
       # R43 (crew#66): every change to the tree Flux applies is proved to hydrate on a second
@@ -58,14 +60,19 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REF: ${{ github.head_ref || github.ref_name }}
         run: bin/idp-hydrate
-      - name: wait for what can come up
-        run: kubectl wait kustomization --all -A --for=condition=Ready --timeout=600s || true
+      - name: wait until every layer has settled (Ready, or red for a reason), not for a timeout
+        run: bin/idp-flux-settle || true
       - name: grade against the floor
         run: |
           set -euo pipefail
           mkdir -p receipt
           kubectl get kustomizations -A -o json > receipt/kustomizations.json
           kubectl get helmreleases -A > receipt/helmreleases.txt 2>&1 || true
+          # crew#488 CP5: a ROOT-RED must be diagnosable from the receipt alone; run 33212542369
+          # said "HelmRelease/edge/traefik Failed" and nothing about why the pod never came.
+          kubectl get pods -A -o wide > receipt/pods.txt 2>&1 || true
+          kubectl get events -A --field-selector type=Warning --sort-by=.lastTimestamp > receipt/events-warning.txt 2>&1 || true
+          kubectl get svc -A > receipt/services.txt 2>&1 || true
           flux get kustomizations -A | tee receipt/flux-get.txt
           bin/idp-portability-drill receipt/kustomizations.json | tee receipt/grade.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -123,8 +130,8 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REF: ${{ github.head_ref || github.ref_name }}
         run: bin/idp-hydrate
-      - name: wait for what can come up
-        run: kubectl wait kustomization --all -A --for=condition=Ready --timeout=600s || true
+      - name: wait until every layer has settled (Ready, or red for a reason), not for a timeout
+        run: bin/idp-flux-settle || true
       - name: grade against the floor, then the wall-clock and the cost of the run
         env:
           PRIVATE: ${{ github.event.repository.private }}
@@ -133,6 +140,11 @@ jobs:
           mkdir -p receipt
           kubectl get kustomizations -A -o json > receipt/kustomizations.json
           kubectl get helmreleases -A > receipt/helmreleases.txt 2>&1 || true
+          # crew#488 CP5: a ROOT-RED must be diagnosable from the receipt alone; run 33212542369
+          # said "HelmRelease/edge/traefik Failed" and nothing about why the pod never came.
+          kubectl get pods -A -o wide > receipt/pods.txt 2>&1 || true
+          kubectl get events -A --field-selector type=Warning --sort-by=.lastTimestamp > receipt/events-warning.txt 2>&1 || true
+          kubectl get svc -A > receipt/services.txt 2>&1 || true
           flux get kustomizations -A | tee receipt/flux-get.txt
           bin/idp-portability-drill receipt/kustomizations.json | tee receipt/grade.txt
           secs=$(( $(date +%s) - T0 ))
