@@ -121,7 +121,19 @@ clickhouse_counts_15m() {
   local chpod pw
   chpod=$($K get pods -n observability -l clickhouse.altinity.com/chi -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
   [ -n "$chpod" ] || { echo "no pod with label clickhouse.altinity.com/chi in observability"; return 0; }
-  pw=$($K get secret clickhouse-auth -n observability -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null)
+  pw=$($K get secret clickhouse-auth -n observability -o jsonpath='{.data.password}' 2>/dev/null)
+  # crew#483 CI: a Secret lookup that returns anything other than well-formed base64 (missing,
+  # empty, or a CI fixture standing in for an unscripted call) still reaches `base64 -d` on the
+  # bare `pw=$(... | base64 -d)` form -- `base64 -d` does not refuse malformed input, it emits
+  # whatever bytes the input decodes to, including raw non-UTF-8 bytes that then ride along as a
+  # --password argument and corrupt every downstream log this playbook's own invocation record is
+  # read back from (bdd/offline-gate run 33160519723: `UnicodeDecodeError ... invalid start byte`,
+  # traced to "ok" -> byte 0xa2). Refuse to decode anything that is not valid base64 shape instead.
+  if [ -z "$pw" ] || [ $(( ${#pw} % 4 )) -ne 0 ] || ! printf '%s' "$pw" | grep -qE '^[A-Za-z0-9+/]*={0,2}$'; then
+    echo "clickhouse-auth secret in observability did not decode to a usable password"
+    return 0
+  fi
+  pw=$(printf '%s' "$pw" | base64 -d 2>/dev/null)
   $K exec -n observability "$chpod" -c clickhouse -- clickhouse-client --user admin --password "$pw" -q \
     "SELECT 'logs', count() FROM signoz_logs.distributed_logs_v2 WHERE timestamp > toUInt64(toUnixTimestamp(now()) - 900) * 1000000000" 2>&1
   $K exec -n observability "$chpod" -c clickhouse -- clickhouse-client --user admin --password "$pw" -q \
