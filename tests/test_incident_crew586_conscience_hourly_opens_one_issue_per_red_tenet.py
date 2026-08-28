@@ -1,0 +1,37 @@
+"""crew#586 CP3: the hourly conscience run keeps one issue per red tenet and never two.
+
+Shape tests on .github/workflows/conscience.yml: it is scheduled, it looks the issue up by
+exact title before creating, it closes on green, and only BLIND (exit 2) fails the run.
+"""
+import pathlib
+import yaml
+
+WF = pathlib.Path(__file__).resolve().parents[1] / ".github" / "workflows" / "conscience.yml"
+
+
+def load():
+    return yaml.safe_load(WF.read_text()), WF.read_text()
+
+
+def test_hourly_schedule_and_dispatch():
+    wf, _ = load()
+    on = wf.get("on") or wf.get(True)
+    assert on["schedule"][0]["cron"].split()[1] == "*" and "workflow_dispatch" in on
+
+
+def test_lookup_by_exact_title_before_create():
+    _, text = load()
+    assert 'select(.title == \\"$title\\")' in text and "gh issue create" in text
+    assert text.index("gh issue list") < text.index("gh issue create")
+
+
+def test_green_closes_and_only_blind_fails():
+    _, text = load()
+    assert "gh issue close" in text
+    assert '[ "$rc" -ne 2 ]' in text and "steps.grade.outputs.rc != '2'" in text
+
+
+def test_receipt_is_kept():
+    wf, _ = load()
+    steps = wf["jobs"]["grade"]["steps"]
+    assert any("upload-artifact" in (s.get("uses") or "") and "conscience.json" in str(s.get("with")) for s in steps)
