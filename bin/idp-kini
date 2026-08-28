@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-# `idp kini finish`: start the KINI checkpoint workflow on the estate's engine and go away
-# (crew#396). `idp kini status`: where it is. Thin shim over `bin/sb kini`, which owns the venv.
-# LAW 46: the checkout is computed from this file's location.
-set -euo pipefail
-IDP="$(cd "$(dirname "$0")/.." && pwd)"
-exec "$IDP/bin/sb" kini "$@"

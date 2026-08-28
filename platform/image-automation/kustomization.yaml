@@ -1,7 +1,0 @@
-resources:
-  - flux-writer.yaml
-  - backstage.yaml
-  - pull-secret.yaml
-  - sovereign-worker.yaml
-  - hermes-agent.yaml
-  - estate-mcp.yaml
