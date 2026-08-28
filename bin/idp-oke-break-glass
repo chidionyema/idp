@@ -71,6 +71,14 @@ YAML
   step cni-config-remove $K delete ds cni-unchain -n kube-system --ignore-not-found --wait=false
   step coredns-restart $K rollout restart deploy/coredns -n kube-system
   step coredns-ready $K rollout status deploy/coredns -n kube-system --timeout=180s
+  # run 33133317589: with sandboxes working again, the admission webhooks that were rescheduled
+  # during the outage (external-secrets webhook, kyverno admission) still sat in a dead sandbox,
+  # so every ExternalSecret/ClusterSecretStore dry-run failed with EOF and secret-store plus its
+  # ~35 dependents stayed not Ready. Restart them onto fresh sandboxes before Flux reconciles.
+  step webhooks-restart $K rollout restart deploy -n external-secrets
+  step kyverno-restart $K rollout restart deploy -n kyverno
+  step webhooks-ready $K rollout status deploy -n external-secrets --timeout=180s
+  step kyverno-ready $K rollout status deploy -n kyverno --timeout=180s
   # kyverno (run 33133317589): a bare `kubectl run` pod is refused by require-run-as-nonroot,
   # require-ro-rootfs and restrict-seccomp-strict, so the probe carries the same hardened
   # securityContext every platform workload does. nslookup needs no root and no writable fs.
