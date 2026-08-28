@@ -34,8 +34,8 @@ def _tree(tmp, register):
     (tmp / "bin" / "idp-bootstrap-alpha").write_text("#!/bin/sh\n")
     (tmp / "platform" / "x").mkdir(parents=True)
     (tmp / "platform" / "x" / "es.yaml").write_text(ES)
-    (tmp / "docs" / "policy").mkdir(parents=True)
-    (tmp / "docs" / "policy" / "root-trust.md").write_text(HEAD + register)
+    (tmp / "docs" / "reference" / "policy").mkdir(parents=True)
+    (tmp / "docs" / "reference" / "policy" / "root-trust.md").write_text(HEAD + register)
 
 
 def _run(tmp, *args):

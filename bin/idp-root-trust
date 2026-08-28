@@ -23,7 +23,7 @@ import yaml
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 IDP = os.environ.get("IDP_ROOT") or os.path.dirname(HERE)
-REGISTER = os.path.join(IDP, "docs", "policy", "root-trust.md")
+REGISTER = os.path.join(IDP, "docs", "reference", "policy", "root-trust.md")
 BIN = os.path.join(IDP, "bin")
 PLATFORM = os.path.join(IDP, "platform")
 IN_ESTATE = ("ESO generator", "Terraform")
