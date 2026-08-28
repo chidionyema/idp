@@ -7,6 +7,7 @@ on:
     - cron: "41 * * * *"
   workflow_dispatch: {}
 permissions:
+  id-token: write        # traded for the OCI session that reads the App key by name (as conscience.yml)
   contents: write
   pull-requests: write
 concurrency:
@@ -18,7 +19,31 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: oci cli
+        run: pip install -q oci-cli
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      # First sweep (run 33217536191): github.token could not comment on crew or claude-guards
+      # ("Resource not accessible by integration") nor merge a PR touching a workflow file. The
+      # estate App's platform-engineer lane can; a failed mint falls back to github.token and says so.
       - name: sweep every open PR, merge the green, name the old
         env:
-          GH_TOKEN: ${{ secrets.ESTATE_PR_TOKEN || secrets.GITHUB_TOKEN }}
-        run: bin/idp-pr-age --act
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          if tok=$(bin/idp-github-app token platform-engineer 2>&1); then
+            echo "::add-mask::$tok"; export GH_TOKEN="$tok"; echo "ok    sweep acts as the estate App (lane platform-engineer)"
+          else
+            echo "BLIND sweep lane: ${tok:0:160} (acting as github.token: idp only, no workflow-file merges)"
+          fi
+          bin/idp-pr-age --act

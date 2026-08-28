@@ -81,3 +81,11 @@ def test_the_sweep_is_hourly_and_acts():
     steps = wf["jobs"]["sweep"]["steps"]
     assert any("bin/idp-pr-age --act" in (s.get("run") or "") for s in steps)
     assert wf["permissions"]["pull-requests"] == "write"
+
+
+def test_the_sweep_acts_as_the_estate_app_not_the_job_token():
+    """Run 33217536191: github.token was refused on crew and claude-guards and on a workflow-file merge."""
+    wf = (ROOT / ".github/workflows/pr-age.yml").read_text()
+    assert "bin/idp-github-app token platform-engineer" in wf
+    assert "::add-mask::" in wf and "BLIND sweep lane" in wf
+    assert yaml.safe_load(wf)["permissions"]["id-token"] == "write"
