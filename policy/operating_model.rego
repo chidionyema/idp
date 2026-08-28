@@ -192,6 +192,11 @@ deny contains msg if {
 # grades the shape of the line (a `/`, a backtick, an `->`, or `n/a: <reason>`); whether the
 # command proves the law is the reviewer's job, and the per-law mechanical gates land as the
 # layers do (LAW 1 bin/cloud-agnostic-gate is live).
+#
+# PAUSED 2026-08-28 (founder, crew#254 5456132029, after the gate refused idp#625 twice): "lets pause
+# this for now", "causing delivery friction, needs to be betetr designed", "agents dont undertnd the
+# languae used", "needs nore precision". The section is still read and printed as a warning; it
+# never blocks a merge until the four laws are rewritten as one command each, in plain words.
 
 laws := {"1": "zero-gravity", "2": "fractal", "3": "nervous system", "4": "calibration"}
 
@@ -203,13 +208,13 @@ law_line_ok(n) if {
 
 # Only a PR input is graded: the other fixtures in policy/fixtures (node pools, placement,
 # commands) carry no pr at all and are not pull requests.
-deny contains msg if {
+warn contains msg if {
 	is_string(input.pr.body)
 	not has_laws_heading
 	msg := "rule=architecture_laws | the PR body has no `## Architecture laws` section | fix: copy the four-line checklist from crew/docs/ARCHITECTURE_LAWS.md into the body; each line a command, a path or `n/a: <reason>`"
 }
 
-deny contains msg if {
+warn contains msg if {
 	is_string(input.pr.body)
 	has_laws_heading
 	some n, slug in laws
