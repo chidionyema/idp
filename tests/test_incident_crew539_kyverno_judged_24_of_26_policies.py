@@ -19,6 +19,7 @@ Deployment admission then refused. Rule (rung 4): the judge is BLIND, never a pa
 estate-only policies are not in the set, and CI checks them out so it is not blind.
 """
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -85,20 +86,56 @@ def test_the_judge_is_blind_not_green_without_the_estate_policies(tmp_path: Path
     assert "ok    render" not in r.stdout, "nothing may be graded once the set is known short"
 
 
-def test_ci_checks_the_estate_policies_out_for_every_job_that_judges() -> None:
+def _judging_steps(job: dict) -> list:
+    """Steps that actually invoke the judge, found by the command, not by the step's name.
+
+    The first version of this guard matched the whole `run:` string against "bin/idp-ci" or the
+    exact text "pytest tests", so the bdd job -- which spells it `cd sovereign && python -m pytest
+    tests/bdd`, and whose test_gate_llm_admission shells bin/idp-kyverno-render for real -- was not
+    counted as judging. It had no policies, the judge went BLIND, and this test stayed green while
+    CI went red: the same blindness the PR closes, one level up.
+    """
+    out = []
+    for s in job.get("steps", []):
+        for line in str(s.get("run", "")).splitlines():
+            line = line.strip()
+            if line.startswith("pip ") or line.startswith("curl "):
+                continue
+            if re.search(r"(^|&&\s*)(cd \S+ && )?(python -m pytest|pytest |bin/idp-ci\b)", line):
+                out.append(s)
+                break
+    return out
+
+
+def test_every_step_that_runs_the_judge_is_pointed_at_the_estate_policies() -> None:
     """And the reason it was blind for months: no job ever had prospector's policies."""
     wf = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
-    judging = [name for name, job in wf["jobs"].items()
-               if any("bin/idp-ci" in str(s.get("run", "")) or "pytest tests" in str(s.get("run", ""))
-                      for s in job.get("steps", []))]
+    judging = {name: _judging_steps(job) for name, job in wf["jobs"].items()}
+    judging = {n: s for n, s in judging.items() if s}
     assert judging, "no job runs the judge at all"
-    for name in judging:
-        steps = wf["jobs"][name]["steps"]
-        checkouts = [s.get("with", {}).get("repository") for s in steps if "checkout" in str(s.get("uses", ""))]
-        assert "chidionyema/prospector" in checkouts, f"job {name} judges with no estate policies"
-        env = [s.get("env", {}).get("IDP_KYVERNO_POLICIES") for s in steps if s.get("env")]
-        assert any(e and ".kyverno-policies/deploy/k8s/policies" in e for e in env), \
-            f"job {name} checks the policies out and never points the judge at them"
+    for name, steps in judging.items():
+        clones = [str(s.get("run", "")) for s in wf["jobs"][name]["steps"]]
+        assert any("chidionyema/prospector" in c for c in clones), \
+            f"job {name} judges with no estate policies"
+        for s in steps:
+            env = (s.get("env") or {}).get("IDP_KYVERNO_POLICIES", "")
+            assert "kyverno-policies/deploy/k8s/policies" in env, \
+                f"job {name} step {s.get('name', s.get('run'))!r} runs the judge blind"
+
+
+def test_the_policies_are_never_cloned_into_the_workspace() -> None:
+    """offline-gate went red the first time this landed: multiarch-gate walks the filesystem, not
+    git, so prospector's deploy/targets/k8s.sh became an idp CI finding. A .gitignore entry does
+    not help a gate that globs -- the tree has to be somewhere the sweeps do not reach."""
+    wf = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    for name, job in wf["jobs"].items():
+        for s in job.get("steps", []):
+            run = str(s.get("run", ""))
+            if "chidionyema/prospector" in run:
+                assert "$RUNNER_TEMP/" in run, f"job {name} clones prospector into the workspace"
+            with_ = s.get("with") or {}
+            assert with_.get("repository") != "chidionyema/prospector", \
+                f"job {name} uses actions/checkout, which cannot place it outside the workspace"
 
 
 def test_the_guard_names_both_estate_policies() -> None:
@@ -106,3 +143,18 @@ def test_the_guard_names_both_estate_policies() -> None:
     guard = (ROOT / "bin/idp-kyverno-render").read_text()
     for want in ESTATE_ONLY:
         assert want in guard, f"{want} is not in the BLIND check"
+
+
+def test_the_auth_emptydir_is_only_honest_while_the_robusta_ui_is_off() -> None:
+    """The emptyDir replaces a secret the chart renders only when the UI is on. Turn the UI on and
+    this patch silently keeps mounting an empty directory at /etc/robusta/auth: an unauthenticated
+    runner, no denial, no crash, no alert. A comment 120 lines from the value it depends on is not
+    a guard, so the values it rests on are asserted here (code-2d, review 5449915505)."""
+    doc = [d for d in yaml.safe_load_all((ROOT / "platform/robusta/robusta.yaml").read_text())
+           if d and d.get("kind") == "HelmRelease"][0]
+    values = doc["spec"]["values"]
+    assert values["enableHolmesGPT"] is False, \
+        "the UI is on: robusta-auth-config-secret is now real and the emptyDir must go"
+    sinks = [next(iter(s)) for s in values["sinksConfig"]]
+    assert sinks == ["telegram_sink"], \
+        f"a sink other than telegram is configured ({sinks}); re-check whether the UI is reached"
