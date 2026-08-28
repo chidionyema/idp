@@ -1,0 +1,138 @@
+# LiteLLM proxy as an estate service (crew#284 CP2). Until 2026-08-26 the router only ran in a
+# colima VM on the founder's 16 GB Mac; stopping colima to save the machine (load 131, 17 MB
+# free) took every routed model call and CP1's photo intake down with it (crew#313). A router
+# is a platform layer, and platform layers run on the cluster.
+#
+# Postgres: postgres.yaml, so the router mints budgeted virtual keys and keeps a spend ledger,
+# the same -database image as llm/litellm.yml. Until 2026-08-26 the cluster ran without one and
+# the one caller held the master key; the CP2 spec (features/sovereign-bus/cp2_litellm_real.feature)
+# says the kernel's key is never the master key, and /key/generate answered "DB not connected".
+# DATABASE_URL is composed in-container from the mounted LITELLM_DB_PASSWORD, never stored whole.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: llm
+  labels: { app.kubernetes.io/name: litellm, app.kubernetes.io/part-of: idp }
+  # Reloader (platform/reloader) rolls this Deployment when the named Secret changes, because the
+  # command below exports the keys once at start (crew#506 CP4: a rotated GROQ_API_KEY sat in the
+  # Secret while the pod answered `Invalid API Key`).
+  annotations:
+    secret.reloader.stakater.com/reload: "litellm-upstream"
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  replicas: 2   # crew#539: one pod is one node event away from a 503
+  selector:
+    matchLabels: { app.kubernetes.io/name: litellm }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: litellm, app.kubernetes.io/part-of: idp }
+    spec:
+      # Two replicas on one node are one replica. DoNotSchedule, not ScheduleAnyway: a
+      # best-effort spread silently collapses onto one node exactly when the cluster is tight,
+      # which is the moment the spread was for.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: litellm }
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: litellm
+          # Same line and version as llm/litellm.yml; tests hold the version equal.
+          image: ghcr.io/berriai/litellm-database:v1.98.0
+          # Kyverno (secrets-not-from-env-vars, no-optional-secret-references) refused the first
+          # shape of this Deployment on 2026-08-26: envFrom secretRef, one of them optional. The
+          # llm Kustomization sat "dry-run failed" and llm.mumchimp.com never got a record
+          # (crew#284). Secrets are mounted as files and exported by the container itself, which
+          # is what `os.environ/...` in config.yaml reads; neither Secret is optional, so a missing
+          # vault entry keeps the pod Pending naming it instead of starting a half-keyed router.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              for f in /run/secrets/litellm/*/*; do
+                export "$(basename "$f")=$(cat "$f")"
+              done
+              export DATABASE_URL="postgresql://litellm:$(cat /run/secrets/litellm/upstream/LITELLM_DB_PASSWORD)@litellm-db.llm.svc:5432/litellm"
+              exec litellm --config /etc/litellm/config.yaml --port 4000 --host 0.0.0.0
+          ports:
+            - { name: http, containerPort: 4000 }
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: LITELLM_LOG, value: INFO }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            - { name: OTEL_EXPORTER, value: otlp_http }
+            - { name: LANGFUSE_HOST, value: "http://langfuse-web.observability.svc:3000" }
+            # crew#408: the Admin UI signs in through the estate identity domain (ADR 0007); the
+            # client id, secret and admin id are the litellm-sso mount. Endpoints come from
+            # estate-config, so no domain URL is typed here (LAW 46).
+            - { name: GENERIC_AUTHORIZATION_ENDPOINT, value: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/authorize" }
+            - { name: GENERIC_TOKEN_ENDPOINT, value: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/token" }
+            - { name: GENERIC_USERINFO_ENDPOINT, value: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/userinfo" }
+            - { name: GENERIC_SCOPE, value: "openid email profile" }
+            - { name: GENERIC_USER_ID_ATTRIBUTE, value: email }
+            - { name: GENERIC_USER_EMAIL_ATTRIBUTE, value: email }
+            - { name: PROXY_BASE_URL, value: "https://llm.${ESTATE_ZONE}" }
+          volumeMounts:
+            - { name: config, mountPath: /etc/litellm, readOnly: true }
+            - { name: upstream, mountPath: /run/secrets/litellm/upstream, readOnly: true }
+            - { name: langfuse, mountPath: /run/secrets/litellm/langfuse, readOnly: true }
+            - { name: sso, mountPath: /run/secrets/litellm/sso, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            # OOMKilled at 1Gi within 19s of start on the -database image (Prisma engine plus the
+            # proxy), 10 restarts on 2026-08-26 23:2xZ; node has 20Gi allocatable.
+            requests: { cpu: 100m, memory: 512Mi }
+            limits: { cpu: 1000m, memory: 2Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            httpGet: { path: /health/readiness, port: http }
+            periodSeconds: 10
+          # The -database image runs Prisma migrations before it listens (idp#262). With no
+          # startupProbe the kubelet killed the pod on liveness before :4000 opened, 8 restarts
+          # in 20 minutes on 2026-08-26 23:2xZ. Liveness only counts once startup has passed.
+          startupProbe:
+            httpGet: { path: /health/liveliness, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /health/liveliness, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: config
+          configMap: { name: litellm-config }
+        - name: upstream
+          secret: { secretName: litellm-upstream }
+        - name: langfuse
+          secret: { secretName: litellm-langfuse }
+        - name: sso
+          secret: { secretName: litellm-sso }   # crew#408: OIDC client for llm.<zone>/ui, written by tofu
+        - name: tmp
+          emptyDir: { sizeLimit: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: llm
+  labels: { app.kubernetes.io/name: litellm }
+spec:
+  selector: { app.kubernetes.io/name: litellm }
+  ports:
+    - { name: http, port: 4000, targetPort: http }

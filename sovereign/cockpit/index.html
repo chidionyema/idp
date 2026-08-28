@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Otto</title>
+<!-- Telegram's own script, guarded: the cockpit runs standalone in a laptop
+     browser too, where this file 404s or is blocked and nothing below may
+     depend on it having loaded. Sanctioned by sovereign/CONTRACT.md
+     "Cockpit" -- it is Telegram's own asset, not a third-party CDN, and the
+     page works fully offline whether or not it loads. Everything else this
+     page needs (cytoscape.js) is vendored under /vendor/, no CDN. -->
+<script src="https://telegram.org/js/telegram-web-app.js" onerror="window.__tgFailed=true"></script>
+<script src="/vendor/cytoscape.min.js"></script>
+<style>
+  :root{
+    --bg:#f4f5f7; --panel:#ffffff; --text:#111318; --sub:#5b6270; --border:#e2e4e9;
+    --accent:#2f6fed; --danger:#d1453b; --ok:#1a9b5c; --warn:#c8860a; --pill-bg:#eef1f6;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1115; --panel:#181b21; --text:#eef0f4; --sub:#9aa1ad; --border:#2a2e37;
+      --accent:#5b8dfc; --danger:#ff6b62; --ok:#3fce8f; --warn:#f0ad4e; --pill-bg:#20242c;
+    }
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    overscroll-behavior:none;}
+  .hidden{display:none !important}
+
+  /* ---- Ghost: the whole page is the dot, nothing else renders. ---- */
+  #ghost{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:18px;cursor:pointer;padding:24px;text-align:center;}
+  #ghost-dot{width:min(34vw,140px);height:min(34vw,140px);border-radius:50%;
+    background:#8e8e93;transition:background-color .3s ease;}
+  #ghost-dot.emergency{animation:pulse 1.1s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(231,76,60,.55)}50%{box-shadow:0 0 0 22px rgba(231,76,60,0)}}
+  /* align-self:stretch takes the line out of the default
+     align-items:center fit-content codepath so it wraps inside the
+     row instead of growing past it. Plain px, not min()/calc(): the
+     local pr-evidence.py screenshot tool floors narrow --window-size
+     requests at ~500 CSS px on this Chrome/macOS build (Chromium
+     issue class: legacy headless ignores --window-size below the host
+     minimum window size), so a math-function max-width could not be
+     verified against a genuine narrow viewport here and is avoided on
+     that account; a fixed px value is unaffected by container width
+     and needs no such check. crew#284 CP4. */
+  #ghost-line{font-size:14px;color:var(--sub);max-width:480px;
+    align-self:stretch;overflow-wrap:break-word;word-break:break-word}
+  #ghost-hint{font-size:12px;color:var(--sub);opacity:.6}
+
+  /* ---- Spatial: the estate topology, entered only by a click. ---- */
+  #spatial{position:fixed;inset:0;display:flex;flex-direction:column;background:var(--bg)}
+  header{flex:0 0 auto;display:flex;align-items:center;gap:8px;
+    padding:10px 12px;background:var(--panel);border-bottom:1px solid var(--border);}
+  header .counts{flex:1;font-size:13px;color:var(--sub);min-width:0;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  header button{appearance:none;border:1px solid var(--border);background:var(--pill-bg);
+    color:var(--text);border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;
+    min-height:38px;min-width:38px;cursor:pointer}
+  header button:active{opacity:.7}
+  #cy{flex:1 1 auto;min-height:0;width:100%}
+
+  #decision{position:absolute;left:12px;right:12px;top:66px;z-index:6;
+    background:var(--panel);border:1px solid var(--warn);border-radius:12px;
+    padding:12px 14px;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+  #decision .ask{font-size:13px;margin:4px 0 10px}
+  #decision .actions{display:flex;gap:8px}
+  #decision .queue{font-size:11px;color:var(--sub);margin-top:8px}
+
+  #hover-card{position:absolute;z-index:5;background:var(--panel);border:1px solid var(--border);
+    border-radius:10px;padding:8px 10px;font-size:12px;pointer-events:none;
+    box-shadow:0 4px 14px rgba(0,0,0,.16);max-width:min(80vw,320px)}
+  #hover-card div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .panel{border-top:1px solid var(--border);background:var(--panel);max-height:42vh;
+    overflow:auto}
+  .panel .body{padding:10px 12px}
+  .panel.collapsed .body{display:none}
+  .empty{padding:10px 0;color:var(--sub);font-size:13px}
+  textarea{width:100%;box-sizing:border-box;background:var(--bg);color:var(--text);
+    border:1px solid var(--border);border-radius:8px;padding:8px}
+  button.start,button.log{appearance:none;border:1px solid var(--border);background:var(--pill-bg);
+    color:var(--text);border-radius:9px;padding:9px 13px;font-size:13px;font-weight:600;
+    min-height:38px;cursor:pointer}
+  button.approve{color:var(--ok);border-color:var(--ok);background:var(--pill-bg)}
+  button.deny,button.stop{color:var(--danger);border-color:var(--danger);background:var(--pill-bg)}
+  button{min-height:38px}
+
+  .receipt{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    padding:4px 12px;border-bottom:1px solid var(--border);white-space:pre-wrap;word-break:break-word}
+  .receipt:last-child{border-bottom:none}
+</style>
+</head>
+<body>
+
+<div id="ghost" onclick="enterSpatial('founder_click')">
+  <div id="ghost-dot"></div>
+  <div id="ghost-line">loading…</div>
+  <div id="ghost-hint">tap for Spatial</div>
+</div>
+
+<div id="spatial" class="hidden">
+  <header>
+    <button id="btn-back" onclick="leaveSpatial()" aria-label="back">‹</button>
+    <div class="counts" id="counts"></div>
+    <button class="start" onclick="togglePanel('start')">+</button>
+    <button class="log" onclick="togglePanel('log')">log</button>
+  </header>
+  <div id="decision" class="hidden"></div>
+  <div id="cy"></div>
+  <div id="hover-card" class="hidden"></div>
+
+  <section class="panel collapsed" id="panel-start">
+    <div class="body">
+      <textarea id="start-task" rows="3" placeholder="What should the agent do? Plain English. It runs in this estate and every step lands in the receipt chain."></textarea>
+      <div style="display:flex;gap:.5rem;align-items:center;margin-top:.5rem;flex-wrap:wrap">
+        <label>budget <input id="start-budget" type="number" min="1" style="width:7em" placeholder="default"></label>
+        <button class="start" id="start-btn" onclick="startSession()">Start</button>
+        <span id="start-msg" class="empty" style="padding:0"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel collapsed" id="panel-log">
+    <div class="body" id="log-body"><div class="empty">no receipts</div></div>
+  </section>
+</div>
+
+<script>
+"use strict";
+let POLL_MS = 3000; // cp22: overwritten by GET /api/config's cockpit.poll_s before the first poll
+let tg = null;
+if (window.Telegram && window.Telegram.WebApp) {
+  tg = window.Telegram.WebApp;
+  try {
+    tg.ready(); tg.expand();
+    const t = tg.themeParams || {};
+    const root = document.documentElement.style;
+    if (t.bg_color) root.setProperty("--bg", t.bg_color);
+    if (t.secondary_bg_color) root.setProperty("--panel", t.secondary_bg_color);
+    if (t.text_color) root.setProperty("--text", t.text_color);
+    if (t.hint_color) root.setProperty("--sub", t.hint_color);
+    if (t.button_color) root.setProperty("--accent", t.button_color);
+  } catch (e) { /* Telegram not actually hosting us; ignore */ }
+}
+
+async function api(path, opts){
+  opts = opts || {};
+  const headers = Object.assign({}, opts.headers || {});
+  if (tg && tg.initData) headers["X-Telegram-Init-Data"] = tg.initData;
+  if (opts.body) headers["Content-Type"] = "application/json";
+  const res = await fetch(path, Object.assign({}, opts, { headers }));
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error("HTTP " + res.status + ": " + text);
+  }
+  const ct = res.headers.get("content-type") || "";
+  return ct.includes("application/json") ? res.json() : res.text();
+}
+
+function esc(s){
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => (
+    {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+// ---------------------------------------------------------------------
+// Ghost: the default. Dot colour + at most one line. Nothing else runs
+// until the founder taps (spec §2.1).
+// ---------------------------------------------------------------------
+
+let ghostTimer = null;
+
+async function pollGhost(){
+  try {
+    const s = await api("/api/status");
+    const dot = document.getElementById("ghost-dot");
+    const line = document.getElementById("ghost-line");
+    dot.style.backgroundColor = s.dot || "grey";
+    dot.classList.toggle("emergency", Boolean(s.emergency));
+    line.textContent = s.emergency || s.line || "";
+  } catch (e) {
+    document.getElementById("ghost-line").textContent = "offline";
+  }
+}
+
+function inSpatial(){
+  return !document.getElementById("spatial").classList.contains("hidden");
+}
+
+// ---------------------------------------------------------------------
+// Spatial: the estate topology. Entered only by a founder click (or a
+// catastrophe raising the dot to red -- the founder still taps through
+// from Ghost to look, spec §2.1's own boundary condition, never an
+// unrequested screen change).
+// ---------------------------------------------------------------------
+
+let cy = null;
+let spatialTimer = null;
+let lastSessions = [];
+let decisionQueue = [];
+let decisionIndex = 0;
+
+function ensureCy(){
+  if (cy) return cy;
+  cy = cytoscape({
+    container: document.getElementById("cy"),
+    style: [
+      { selector: "node", style: {
+          "background-color": "data(colour)",
+          "width": "data(size)",
+          "height": "data(size)",
+          "label": "",
+          "border-width": 0,
+        } },
+      { selector: "edge", style: {
+          "width": "data(thickness)",
+          "line-color": "#8e8e93",
+          "target-arrow-shape": "triangle",
+          "target-arrow-color": "#8e8e93",
+          "curve-style": "bezier",
+          "opacity": 0.6,
+        } },
+    ],
+    layout: { name: "cose", animate: false },
+    userZoomingEnabled: true,
+    userPanningEnabled: true,
+    boxSelectionEnabled: false,
+    autoungrabify: true,
+  });
+  cy.on("mouseover", "node", showHoverCard);
+  cy.on("mouseout", "node", hideHoverCard);
+  cy.on("tap", "node", showHoverCard); // touch: tap shows the same card
+  cy.on("cxttap", "node", onRightClickNode);
+  document.getElementById("cy").addEventListener("contextmenu", e => e.preventDefault());
+  return cy;
+}
+
+function showHoverCard(evt){
+  const node = evt.target;
+  const d = node.data();
+  const card = document.getElementById("hover-card");
+  card.innerHTML =
+    `<div><b>${esc(d.task || d.id)}</b></div>` +
+    `<div>hash: ${esc((d.hash || "-").toString().slice(0, 12))}</div>` +
+    `<div>budget: ${esc(d.budget_remaining)} / ${esc(d.budget)}</div>` +
+    `<div>heartbeat: ${esc(d.last_heartbeat || "-")}</div>`;
+  const pos = node.renderedPosition();
+  const box = document.getElementById("cy").getBoundingClientRect();
+  card.style.left = Math.min(box.width - 160, Math.max(4, pos.x - 80)) + "px";
+  card.style.top = Math.max(4, pos.y - 74) + "px";
+  card.classList.remove("hidden");
+}
+
+function hideHoverCard(){
+  document.getElementById("hover-card").classList.add("hidden");
+}
+
+async function onRightClickNode(evt){
+  const id = evt.target.data("id");
+  if (!id) return;
+  if (!window.confirm("Halt " + id + "?")) return;
+  try {
+    await api(`/api/sessions/${id}/stop`, { method: "POST", body: JSON.stringify({ by: "founder", text: "halt from Spatial" }) });
+  } catch (e) { console.error(e); }
+  await refreshSpatial();
+}
+
+function renderGraph(graph){
+  ensureCy();
+  cy.elements().remove();
+  const eles = (graph.nodes || []).map(n => ({ data: n })).concat(
+    (graph.edges || []).map(e => ({ data: Object.assign({ thickness: 2 }, e) }))
+  );
+  cy.add(eles);
+  cy.layout({ name: "cose", animate: false }).run();
+}
+
+function renderCounts(status){
+  document.getElementById("counts").textContent =
+    `${status.running || 0} running · ${status.waiting || 0} waiting · ${status.total || 0} total`;
+}
+
+function renderDecision(){
+  const el = document.getElementById("decision");
+  if (decisionQueue.length === 0) {
+    el.classList.add("hidden");
+    el.innerHTML = "";
+    return;
+  }
+  if (decisionIndex >= decisionQueue.length) decisionIndex = 0;
+  const s = decisionQueue[decisionIndex];
+  el.classList.remove("hidden");
+  el.innerHTML =
+    `<div><b>${esc(s.repo || s.session_id)}</b></div>` +
+    `<div class="ask">${esc(s.asking || s.task || "waiting on you")}</div>` +
+    `<div class="actions">
+       <button class="approve" onclick="decide('${esc(s.session_id)}','approve')">Approve</button>
+       <button class="deny" onclick="decide('${esc(s.session_id)}','deny')">Deny</button>
+     </div>` +
+    (decisionQueue.length > 1
+      ? `<div class="queue">${decisionIndex + 1} of ${decisionQueue.length} · <a href="#" onclick="event.preventDefault();nextDecision()">next</a></div>`
+      : "");
+}
+
+function nextDecision(){
+  decisionIndex = (decisionIndex + 1) % Math.max(decisionQueue.length, 1);
+  renderDecision();
+}
+
+async function decide(id, kind){
+  try {
+    await api(`/api/sessions/${id}/${kind}`, { method: "POST", body: JSON.stringify({ by: "founder", text: "" }) });
+  } catch (e) { console.error(e); }
+  await refreshSpatial();
+}
+
+async function refreshSpatial(){
+  try {
+    const [graph, status, sessions] = await Promise.all([
+      api("/api/spatial"), api("/api/status"), api("/api/sessions"),
+    ]);
+    lastSessions = sessions || [];
+    renderGraph(graph);
+    renderCounts(status);
+    decisionQueue = lastSessions.filter(s => s.status === "waiting");
+    renderDecision();
+  } catch (e) {
+    document.getElementById("counts").textContent = "error: " + e.message;
+  }
+}
+
+function enterSpatial(){
+  document.getElementById("ghost").classList.add("hidden");
+  document.getElementById("spatial").classList.remove("hidden");
+  clearInterval(ghostTimer);
+  refreshSpatial();
+  spatialTimer = setInterval(refreshSpatial, POLL_MS);
+  window.requestAnimationFrame(() => cy && cy.resize());
+}
+
+function leaveSpatial(){
+  document.getElementById("spatial").classList.add("hidden");
+  document.getElementById("ghost").classList.remove("hidden");
+  clearInterval(spatialTimer);
+  pollGhost();
+  ghostTimer = setInterval(pollGhost, POLL_MS);
+}
+
+// ---------------------------------------------------------------------
+// The two things that may appear inside Spatial only on request: Start
+// and the log (the old Inbox, collapsed, newest first, one line each).
+// ---------------------------------------------------------------------
+
+function togglePanel(name){
+  const panel = document.getElementById("panel-" + name);
+  const collapsed = panel.classList.toggle("collapsed");
+  if (!collapsed && name === "log") loadLog();
+}
+
+async function loadLog(){
+  const body = document.getElementById("log-body");
+  try {
+    const items = await api("/api/inbox");
+    body.innerHTML = (items || []).length
+      ? items.map(item => `<div class="receipt">${esc(item.line || item.text || item.raw || JSON.stringify(item))}</div>`).join("")
+      : `<div class="empty">no receipts</div>`;
+  } catch (e) {
+    body.innerHTML = `<div class="empty">error: ${esc(e.message)}</div>`;
+  }
+}
+
+async function startSession(){
+  const task = document.getElementById("start-task").value.trim();
+  const budgetRaw = document.getElementById("start-budget").value;
+  const msg = document.getElementById("start-msg");
+  const btn = document.getElementById("start-btn");
+  if (!task) { msg.textContent = "say what to do first"; return; }
+  btn.disabled = true; msg.textContent = "starting…";
+  try {
+    const body = { task, by: "founder" };
+    if (budgetRaw) body.budget = parseInt(budgetRaw, 10);
+    const res = await api("/api/sessions", { method: "POST", body: JSON.stringify(body) });
+    msg.textContent = "started " + res.session_id;
+    document.getElementById("start-task").value = "";
+    await refreshSpatial();
+  } catch (e) {
+    msg.textContent = String(e.message || e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function boot(){
+  try {
+    const cfg = await api("/api/config");
+    if (cfg && typeof cfg["cockpit.poll_s"] === "number") {
+      POLL_MS = cfg["cockpit.poll_s"] * 1000;
+    }
+  } catch (e) {
+    console.error("config fetch failed, using default poll interval", e);
+  }
+  await pollGhost();
+  ghostTimer = setInterval(pollGhost, POLL_MS);
+}
+boot();
+</script>
+</body>
+</html>

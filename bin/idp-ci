@@ -1,0 +1,660 @@
+#!/usr/bin/env bash
+# The offline gate. Everything here runs with no secrets, no Docker daemon and no
+# estate on the machine, so GitHub Actions and a laptop get the same verdict.
+# Live checks (services up, portal matches inventory) stay in bin/idp-verify.
+#
+# Rungs, per ~/AGENTS.md "How to test": one incident test named for the bug it
+# caught, and mechanical checks a tool already provides. No example tests.
+set -uo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+fail=0
+say() { printf '%s\n' "$*"; }
+need() { command -v "$1" >/dev/null || { say "FAIL  $1 is not installed"; exit 2; }; }
+need shellcheck; need docker; need conftest; need check-jsonschema; need sqlite-utils; need jq; need python3
+
+MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
+
+# 1. Every script parses and passes shellcheck at warning level.
+for f in "$IDP"/bin/*; do
+  head -1 "$f" | grep -q bash || continue
+  bash -n "$f" && shellcheck -S warning "$f" >/dev/null \
+    && say "ok    shell    $(basename "$f")" || { say "FAIL  shell    $(basename "$f")"; fail=1; }
+done
+
+# 1b. No file hardcodes where this repo lives. 17 of 19 scripts carried
+#     $HOME/dev/code/idp on 2026-08-24 and the first one CI ran failed on the
+#     runner. Founder: "no hardcoding -- law" (LAW 46). Proved both ways: the
+#     .bad fixture must be refused and the .good fixture must pass.
+HARDCODE='dev/code/[a-z]|/Users/chidi''onyema|/home/[a-z]+/'   # split so this line does not match itself
+hardcode_scan() { grep -nE "$HARDCODE" "$1" | grep -vE '^[0-9]+:\s*#' ; }
+if hardcode_scan "$IDP/tests/fixtures/hardcoded-path.bad.sh" >/dev/null && ! hardcode_scan "$IDP/tests/fixtures/hardcoded-path.good.sh" >/dev/null; then
+  say "ok    guard    hardcoded-path guard refuses the bad fixture and passes the good one"
+else say "FAIL  guard    hardcoded-path guard is not discriminating"; fail=1; fi
+hits=0
+while IFS= read -r f; do
+  if out=$(hardcode_scan "$f"); then say "FAIL  hardcode $f"; printf '%s\n' "$out" | sed 's/^/      /'; hits=$((hits+1)); fi
+done < <(cd "$IDP" && git ls-files bin llm observability mcp launchd '*.py' '*.yml' '*.yaml' '*.json' 2>/dev/null | grep -v '^tests/fixtures/')
+[ "$hits" -eq 0 ] && say "ok    hardcode 0 files hardcode a checkout path" || fail=1
+
+# 1c. A conditional whose verdict is a pipeline into grep, in a script that sets
+#     `pipefail`. Incident 2026-08-25: the portprobe test read
+#     `port-gate | grep -q '<message>'`, port-gate exited 1 on purpose, pipefail
+#     reported that 1, and the leg failed with the message exactly right -- it
+#     cost a debugging round to attribute. The class is wider than one test: the
+#     same shape decides whether bin/idp-up re-points the tailnet link and
+#     whether bin/langfuse-status calls Langfuse down, and there a failing
+#     left-hand command inverts the answer silently.
+#
+#     A pipeline inside `$( )` is legal: its VALUE is the test, not its status.
+#     So is one whose left side is printf/echo/cat/head, which is the fix shape.
+#     Refusing those would refuse correct work (LAW 38).
+# The `([0-9]+:)?` prefix is not decoration: grep -n stamps a line number on
+# every line, and an anchored pattern without it silently matches nothing on the
+# second pass -- which is a guard that never refuses anything.
+PIPEVERDICT='^([0-9]+:)?[[:space:]]*(if|elif|while)[[:space:]].*\|[[:space:]]*(/usr/bin/)?grep[[:space:]]+-[a-zA-Z]*[qc]'
+pipeverdict_scan() {
+  /usr/bin/grep -q 'pipefail' "$1" || return 1
+  # `$( ... )` spans are removed first: a pipeline in a command substitution is
+  # graded by its output, and the enclosing test is what decides the branch.
+  grep -nE "$PIPEVERDICT" "$1" \
+    | sed 's/\$([^)]*)//g' \
+    | grep -E "$PIPEVERDICT" \
+    | grep -vE '^[0-9]+:[[:space:]]*(if|elif|while)[[:space:]]+(!?[[:space:]]*)?(printf|echo|cat|head)[[:space:]]'
+}
+if pipeverdict_scan "$IDP/tests/fixtures/pipefail-verdict.bad.sh" >/dev/null && ! pipeverdict_scan "$IDP/tests/fixtures/pipefail-verdict.good.sh" >/dev/null; then
+  say "ok    guard    pipefail-verdict guard refuses the bad fixture and passes the good one"
+else say "FAIL  guard    pipefail-verdict guard is not discriminating"; fail=1; fi
+pv=0
+for f in "$IDP"/bin/*; do
+  [ -f "$f" ] || continue
+  if out=$(pipeverdict_scan "$f"); then say "FAIL  pipeverdict $(basename "$f")"; printf '%s\n' "$out" | sed 's/^/      /'; pv=$((pv+1)); fi
+done
+[ "$pv" -eq 0 ] && say "ok    pipeverdict 0 scripts let a pipeline's exit status stand in for a grep match" || fail=1
+
+# 2. Compose files are valid. Values are placeholders; compose only checks shape.
+for c in llm/litellm.yml observability/langfuse.yml mcp/agentgateway.yml; do
+  # shellcheck disable=SC2046  # NAME=placeholder pairs are meant to split
+  if env $(grep -ho '\${[A-Z_]*}' "$IDP/$c" | tr -d '${}' | sort -u | sed 's/$/=placeholder/') \
+       docker compose -f "$IDP/$c" config -q 2>/dev/null; then say "ok    compose  $c"
+  else say "FAIL  compose  $c"; fail=1; fi
+done
+
+# 2b. The agentgateway config validates against the schema of the pinned release. Same
+#     class as the ClickHouse XML: a config nobody checks before its reader starts.
+AG_TAG=$(grep -o 'agentgateway/agentgateway:v[0-9.]*' "$IDP/mcp/agentgateway.yml" | cut -d: -f2)
+if check-jsonschema --schemafile "https://raw.githubusercontent.com/agentgateway/agentgateway/$AG_TAG/schema/config.json" \
+     "$IDP/mcp/agentgateway.yaml" >/dev/null 2>&1; then say "ok    schema   mcp/agentgateway.yaml against agentgateway $AG_TAG"
+else say "FAIL  schema   mcp/agentgateway.yaml does not match agentgateway $AG_TAG's config schema"; fail=1; fi
+
+# 3. The licence and placement policies say yes to good fixtures and no to bad ones.
+if out=$("$IDP/bin/policy-test" 2>&1); then say "ok    policy   fixtures pass and fail as expected"
+else say "FAIL  policy   bin/policy-test"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
+# 4. incident_2026_08_24_dropped_assets: N inventory rows must yield N catalog
+#    entities and N database rows. catalog-gen silently dropped slug-colliding
+#    assets and db-gen doubled its table when two runs shared one tmp file.
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+FIX="$IDP/tests/fixtures/inventory.json"
+n=$(jq '.rows|length' "$FIX")
+INV="$FIX" OUT="$tmp" python3 "$IDP/bin/catalog-gen" >/dev/null
+# Count the entities that came from a row: every one carries estate/kind. The
+# vendor Resources catalog-gen synthesises are not assets and must not inflate
+# this, or the incident test stops meaning "no asset was dropped".
+got=$(grep -c '^    estate/kind: ' "$tmp/catalog-info.yaml")
+INV="$FIX" DB="$tmp/estate.db" SU="$(command -v sqlite-utils)" "$IDP/bin/db-gen" >/dev/null 2>&1 &
+INV="$FIX" DB="$tmp/estate.db" SU="$(command -v sqlite-utils)" "$IDP/bin/db-gen" >/dev/null 2>&1 &
+wait
+rows=$(sqlite3 "$tmp/estate.db" 'select count(*) from assets')
+if [ "$got" -eq "$n" ] && [ "$rows" -eq "$n" ]; then say "ok    incident 2026-08-24 dropped assets: $n rows -> $got entities, $rows db rows (two concurrent db-gens)"
+else say "FAIL  incident 2026-08-24 dropped assets: $n rows -> $got entities, $rows db rows"; fail=1; fi
+
+# 4b. Idempotency, as a property: one inventory, two runs, zero bytes different.
+#     Founder, 2026-08-24: "we need to take idempotency serious across platform".
+#     This is rung 2 of ~/AGENTS.md "How to test" -- a property, not an example, so
+#     it survives any rewrite of catalog-gen. It is not decoration: catalog/ is
+#     gitignored and rebuilt on every idp-up, and Backstage re-reads the file, so a
+#     generator that reorders a map or stamps a clock churns the portal and the
+#     estate.db rows on every refresh with nothing having changed.
+a="$tmp/idem-a"; b="$tmp/idem-b"
+INV="$FIX" OUT="$a" python3 "$IDP/bin/catalog-gen" >/dev/null
+INV="$FIX" OUT="$b" python3 "$IDP/bin/catalog-gen" >/dev/null
+if cmp -s "$a/catalog-info.yaml" "$b/catalog-info.yaml"; then
+  say "ok    idempot  catalog-gen twice over one inventory: identical ($(wc -c < "$a/catalog-info.yaml" | tr -d ' ') bytes)"
+else say "FAIL  idempot  catalog-gen is not deterministic:"; diff "$a/catalog-info.yaml" "$b/catalog-info.yaml" | head -10 | sed 's/^/      /'; fail=1; fi
+
+# 4c. The catalogue must carry relationships. An entity list with no edges renders
+#     exactly like a mapped estate and is the failure a peer session named on
+#     2026-08-24: "Backstage doesn't magically discover your architecture". Two
+#     edge kinds are derivable from the inventory and both must appear.
+edges=$(grep -c '^  dependsOn:$' "$a/catalog-info.yaml" || true)
+vend=$(grep -c '^    - resource:default/vendor-' "$a/catalog-info.yaml" || true)
+cont=$(grep -c '^    - component:default/' "$a/catalog-info.yaml" || true)
+if [ "$edges" -gt 0 ] && [ "$vend" -gt 0 ] && [ "$cont" -gt 0 ]; then
+  say "ok    graph    $edges entities carry dependsOn: $cont containment, $vend vendor-coupling"
+else say "FAIL  graph    catalogue has no relationship graph (dependsOn=$edges containment=$cont vendor=$vend)"; fail=1; fi
+
+# 4d. Referential integrity, proved both ways. A dependsOn/owner/system reference
+#     that names an entity nobody defined renders in the portal as a live link to a
+#     404, which is indistinguishable from a working graph until someone clicks it.
+#     Measured 2026-08-24 before this check: the hand-written catalog-info.yaml
+#     carried 6 such references (5 platform-layer Resources that were never defined
+#     and group:default/platform-engineering) and the portal showed no error at all.
+#     The same pass refuses a duplicate entity ref, which is how one file silently
+#     overwrote another's component:default/idp.
+refcheck() { python3 "$IDP/bin/catalog-refcheck" "$1" >/dev/null 2>&1; }
+cat > "$tmp/bad-refs.yaml" <<'BADYAML'
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: only-entity
+spec:
+  type: service
+  owner: group:default/platform
+  system: system:default/estate
+  dependsOn:
+    - resource:default/nothing-defines-this
+BADYAML
+if refcheck "$a/catalog-info.yaml" && ! refcheck "$tmp/bad-refs.yaml"; then
+  say "ok    refs     every entity reference resolves; a dangling one is refused ($(python3 "$IDP/bin/catalog-refcheck" "$a/catalog-info.yaml"))"
+else
+  say "FAIL  refs     catalog-refcheck cannot tell a resolvable catalogue from a dangling one:"
+  python3 "$IDP/bin/catalog-refcheck" "$a/catalog-info.yaml" | sed 's/^/      /'
+  fail=1
+fi
+
+# 4a. Ports: the catalog is the port registry. catalog-gen must refuse an
+#     inventory where two things claim one port and pass one where they do not.
+#     3200 went to the scheduler UI while an ssh forward held it (2026-08-24).
+if ! INV="$IDP/tests/fixtures/inventory.port-collision.json" OUT="$tmp" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1 \
+   && INV="$FIX" OUT="$tmp" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1 \
+   && grep -qE "estate/port: '?9901'?" "$tmp/catalog-info.yaml"; then
+  say "ok    ports    catalog-gen refuses a port claimed twice, passes the clean inventory, emits port entities"
+else say "FAIL  ports    catalog-gen port guard is not discriminating"; fail=1; fi
+
+# 4e. incident_2026_08_25_false_port_collision. A container's published port and
+#     the listener the inventory already attributed to that container
+#     (~/.estate/scripts/inventory.py:690 sets listener.owner) are ONE claim.
+#     catalog-gen counted them as two, exempting only `process == "ssh"` -- which
+#     graded which program holds the socket instead of whether the inventory had
+#     attributed it. Nine of the ten published ports here are ssh-forwarded, so
+#     the exemption hid it; colima forwards 80 and 443 through `limactl
+#     hostagent`, fell outside it, and the generator refused the entire catalogue
+#     over two ports with exactly one owner each. `ai.estate.idp` last exit status
+#     3, catalog/catalog-info.yaml frozen at 2026-08-24 22:10 while the hourly job
+#     kept failing. Both ways, because a guard only ever seen refusing has never
+#     been shown to permit (LAW 38): the attributed fixture must generate, and
+#     inventory.port-collision.json (where a second, unattributed process claims
+#     the same port) must still be refused.
+if INV="$IDP/tests/fixtures/inventory.published-port.json" OUT="$tmp/pub" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1 \
+   && ! INV="$IDP/tests/fixtures/inventory.port-collision.json" OUT="$tmp/pub2" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1; then
+  say "ok    incident 2026-08-25 false port collision: an attributed listener is one claim with its container, an unattributed one is still two"
+else say "FAIL  incident 2026-08-25 false port collision: catalog-gen cannot tell a container's own forward from a second claimant"; fail=1; fi
+
+# 4f. incident_2026_08_25_containment_through_a_link. owning_repo() compared
+#     paths as strings, so an asset that reaches its repository through a linked
+#     worktree or a symlink read as untracked and got the outside-any-repo tag --
+#     which is how LAW 24 is surfaced, so it read as "load-bearing and in no
+#     repository we track". Measured on the 2026-08-24T21:49:59Z inventory: 14 of
+#     47. A real repository with a real linked worktree and a real symlink is
+#     built here rather than a hand-written .git file, because the claim under
+#     test is that git resolves them, not that a parser of mine does.
+wt="$tmp/wt"; mkdir -p "$wt"
+(
+  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
+  export GIT_AUTHOR_NAME=ci GIT_AUTHOR_EMAIL=ci@ci GIT_COMMITTER_NAME=ci GIT_COMMITTER_EMAIL=ci@ci
+  git init -q -b main "$wt/myrepo"
+  : > "$wt/myrepo/README"
+  git -C "$wt/myrepo" add README && git -C "$wt/myrepo" commit -qm init
+  git -C "$wt/myrepo" worktree add -q -b live "$wt/myrepo-live"
+) >/dev/null 2>&1
+ln -s "$wt/myrepo" "$wt/myrepo-link"
+mkdir -p "$wt/myrepo-live/deploy" "$wt/myrepo-link/sub" "$wt/nowhere"
+python3 - "$wt" > "$wt/inv.json" <<'PYFIX'
+import json, sys
+w = sys.argv[1]
+def c(i, path): return {"kind": "container", "id": i, "path": path, "root": "(outside)",
+                        "image": "e:1", "project": "p", "service": i, "health": "none",
+                        "running": True, "published_ports": "", "pinned": True, "coupling": "none"}
+print(json.dumps({"at": "2026-08-25T00:00:00Z", "findings": [], "rows": [
+    {"kind": "repo", "id": "myrepo", "path": w + "/myrepo", "root": "(outside)", "remote": "",
+     "offsite": False, "branch": "main", "tracked_files": 1, "dirty": 0, "coupling": "none"},
+    c("in-worktree", w + "/myrepo-live/deploy"),
+    c("through-symlink", w + "/myrepo-link/sub"),
+    c("really-orphaned", w + "/nowhere"),
+]}))
+PYFIX
+INV="$wt/inv.json" OUT="$wt/out" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1
+tagged() { python3 - "$wt/out/catalog-info.yaml" "$1" <<'PYT'
+import re, sys
+for d in open(sys.argv[1]).read().split('\n---\n'):
+    if re.search(r"^  name: '?%s'?$" % re.escape(sys.argv[2]), d, re.M):
+        sys.exit(0 if 'outside-any-repo' in d else 1)
+sys.exit(2)
+PYT
+}
+st() { tagged "$1" >/dev/null 2>&1; echo $?; }   # 0 tagged, 1 not tagged, 2 entity missing
+# Compared exactly, never with `!`: a negated call accepts 2 as well as 1, so a
+# vanished entity would read as a pass. That silent-miss shape has cost this repo
+# before (bin/idp-ci "incident 2026-08-24 dropped assets").
+if [ "$(st in-worktree)" = 1 ] && [ "$(st through-symlink)" = 1 ] && [ "$(st really-orphaned)" = 0 ]; then
+  say "ok    incident 2026-08-25 containment through a link: a worktree and a symlink resolve to their repo, a genuine orphan keeps outside-any-repo"
+else say "FAIL  incident 2026-08-25 containment through a link: in-worktree=$(st in-worktree) through-symlink=$(st through-symlink) really-orphaned=$(st really-orphaned), want 1 1 0 (0 tagged, 1 not tagged, 2 entity missing)"; fail=1; fi
+
+# 4c. Port lock (crew#186 CP4, R22 mechanism 4): a compose publication not
+#     declared in catalog/ports.yaml, or off loopback without non_loopback (R20),
+#     fails. Proved both ways: the rogue fixture is refused, the repo passes.
+# R36 (crew#250): no provider-specific annotation or service outside the compute provisioner.
+# Proved both ways on fixtures, then run on the repo.
+if ! CLOUD_AGNOSTIC_ROOT="$IDP/tests/fixtures/cloud-agnostic/bad" python3 "$IDP/bin/cloud-agnostic-gate" >/dev/null 2>&1 \
+   && CLOUD_AGNOSTIC_ROOT="$IDP/tests/fixtures/cloud-agnostic/good" python3 "$IDP/bin/cloud-agnostic-gate" >/dev/null 2>&1 \
+   && out=$(python3 "$IDP/bin/cloud-agnostic-gate" 2>&1); then
+  say "ok    agnostic cloud-agnostic-gate refuses a provider annotation, permits a plain Service, and the repo is clean"
+else say "FAIL  agnostic cloud-agnostic-gate is not discriminating or the platform names a cloud outside platform/oci"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
+# crew#269 (founder: "as always configurable"): the DNS zone is one value in clusters/*/estate-config.yaml;
+# a platform file naming it as a literal fails. Proved both ways on fixtures, then run on the repo.
+if ! ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" >/dev/null 2>&1 \
+   && ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/good" python3 "$IDP/bin/estate-zone-gate" >/dev/null 2>&1 \
+   && out=$(python3 "$IDP/bin/estate-zone-gate" 2>&1); then
+  say "ok    zone     estate-zone-gate refuses a literal zone, permits \${ESTATE_ZONE}, and the repo is clean"
+else say "FAIL  zone     estate-zone-gate is not discriminating or the platform names the zone outside clusters/*/estate-config.yaml"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
+if ! COMPOSE_GLOB='tests/fixtures/ports-bad/*.yml' python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
+   && out=$(python3 "$IDP/bin/port-gate" 2>&1); then
+  say "ok    portlock $(printf '%s' "$out" | tail -1 | sed 's/^ok *ports *//')"
+else say "FAIL  portlock port-gate is not discriminating or the repo has an undeclared bind"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+# --live must refuse a listener bound to a different address than its row declares, and pass the matching one.
+if ! REG=tests/fixtures/ports-live/ports.yaml INV=tests/fixtures/ports-live/inventory.bad.json COMPOSE_GLOB=none BIN_DIR=none python3 "$IDP/bin/port-gate" --live >/dev/null 2>&1 \
+   && REG=tests/fixtures/ports-live/ports.yaml INV=tests/fixtures/ports-live/inventory.good.json COMPOSE_GLOB=none BIN_DIR=none python3 "$IDP/bin/port-gate" --live >/dev/null 2>&1; then
+  say "ok    portbind port-gate --live refuses a bind that differs from the declared address and passes a matching one"
+else say "FAIL  portbind port-gate --live does not discriminate on bind address"; fail=1; fi
+# Incident 2026-08-25: the hourly ai.estate.idp job exited non-zero for a day
+#     because bin/idp-verify curled 127.0.0.1:8001 after the one-renderer ruling
+#     (#22) deleted the thing that served it. The class is a surface removed in
+#     one file and still probed from another. Proved three ways, because a guard
+#     seen only refusing has not been shown to permit (LAW 38): the ledger with a
+#     row removed must FAIL and name the probing file, the real ledger must pass,
+#     and prose about a dead port in a comment must stay legal.
+probe_reg=$(mktemp); grep -v 'port: 8000' "$IDP/catalog/ports.yaml" > "$probe_reg"
+probe_cmt="$tmp/probe-comment"; cp -R "$IDP/bin" "$probe_cmt"
+# The port is passed as an argument rather than written inline: this file is
+# itself scanned by the gate, and a literal loopback URL on a non-comment line
+# here is a probe of an undeclared port -- which the gate correctly refuses.
+printf '\n# historical: 127.0.0.1:%s was the old thing, deleted 2026-08-25\n' 9999 >> "$probe_cmt/idp-status"
+# The output is captured before it is matched, not piped into grep: this file
+# runs under `set -o pipefail`, so `port-gate | grep -q` reports port-gate's
+# deliberate exit 1 and the leg fails even when the message is exactly right.
+probe_out=$(REG="$probe_reg" COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" 2>&1)
+if printf '%s' "$probe_out" | grep -q 'placement-audit.*probes 127.0.0.1:8000' \
+   && ! REG="$probe_reg" COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
+   && COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
+   && BIN_DIR="$probe_cmt" COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" >/dev/null 2>&1; then
+  say "ok    portprobe incident 2026-08-25: a script may only probe a declared port; the gate names the probing file, passes the real ledger, and a comment about a dead port stays legal"
+else say "FAIL  portprobe port-gate does not catch a script probing an undeclared port, or refuses the real ledger"; fail=1; fi
+rm -f "$probe_reg"
+# R24 multi-arch: a build step naming fewer than both architectures is refused; the compliant one passes; this repo is clean.
+if ! python3 "$IDP/bin/multiarch-gate" tests/fixtures/multiarch/bad >/dev/null 2>&1 \
+   && python3 "$IDP/bin/multiarch-gate" tests/fixtures/multiarch/good >/dev/null 2>&1 \
+   && python3 "$IDP/bin/multiarch-gate" "$IDP" >/dev/null 2>&1 \
+   && { cp -R "$IDP" "$tmp/ma" && touch "$tmp/ma/mcp/Dockerfile.stray" && ! python3 "$IDP/bin/multiarch-gate" "$tmp/ma" >/dev/null 2>&1; }; then
+  say "ok    multiarch multiarch-gate refuses a single-arch build-push-action, a raw docker build and a Dockerfile-shaped file nothing builds; passes the dual-arch fixture; this repo is clean"
+else say "FAIL  multiarch multiarch-gate does not discriminate, or this repo has a single-arch build (R24)"; python3 "$IDP/bin/multiarch-gate" "$IDP" | sed 's/^/      /'; fail=1; fi
+# Security policy (crew#198): a control without a proof command is a wish (LAW 44).
+#     Proved both ways: the bad fixture names a command that does not exist.
+if ! python3 "$IDP/bin/security-policy-gate" tests/fixtures/security-policy/bad.md >/dev/null 2>&1 \
+   && python3 "$IDP/bin/security-policy-gate" tests/fixtures/security-policy/good.md >/dev/null 2>&1 \
+   && python3 "$IDP/bin/security-policy-gate" >/dev/null 2>&1; then
+  say "ok    security-policy every control on docs/reference/security-policy.md names a proof command that exists; gate proved both ways"
+else say "FAIL  security-policy gate does not discriminate, or a control has no proof"; python3 "$IDP/bin/security-policy-gate" | sed 's/^/      /'; fail=1; fi
+# AI Act (crew#202): Arts. 9, 10, 11 kept voluntarily. Proved both ways: the bad
+#     fixture has an overdue risk review and a technical file missing section 9.
+if ! TODAY=2026-08-25 python3 "$IDP/bin/ai-act-gate" tests/fixtures/ai-act/bad >/dev/null 2>&1 \
+   && TODAY=2026-08-25 python3 "$IDP/bin/ai-act-gate" tests/fixtures/ai-act/good >/dev/null 2>&1 \
+   && python3 "$IDP/bin/ai-act-gate" "$IDP" >/dev/null 2>&1; then
+  say "ok    ai-act   every registered AI system has its Annex IV file, risk entries and declared data; gate proved both ways"
+else say "FAIL  ai-act   gate does not discriminate, or a registered system has a gap"; python3 "$IDP/bin/ai-act-gate" "$IDP" | sed 's/^/      /'; fail=1; fi
+# LAW 32 at the PR (founder, 2026-08-25): a new bin file needs docs/demo + docs/onboarding;
+# every such page has 200 chars of prose and is in the nav. Proved both ways in one run.
+if python3 "$IDP/bin/law32-gate" --added bin/supply-chain >/dev/null 2>&1 \
+   && ! python3 "$IDP/bin/law32-gate" --added bin/feature-with-no-pages >/dev/null 2>&1 \
+   && python3 "$IDP/bin/law32-gate" >/dev/null 2>&1; then
+  say "ok    law32    every new bin file has its demo and onboarding; every page is above the prose floor and in the nav; gate proved both ways"
+else say "FAIL  law32    a feature shipped without demo/onboarding, or a page is thin or unlisted"; python3 "$IDP/bin/law32-gate" | sed 's/^/      /'; fail=1; fi
+
+# launchd templates (idp#49 incident): every launchd/*.plist.tmpl renders to a plist that parses.
+if python3 "$IDP/bin/plist-gate" >/dev/null 2>&1 \
+   && ! python3 "$IDP/bin/plist-gate" tests/fixtures/plist/bad.plist.tmpl >/dev/null 2>&1 \
+   && ! python3 "$IDP/bin/plist-gate" tests/fixtures/plist/bare-argv.plist.tmpl >/dev/null 2>&1 \
+   && ! python3 "$IDP/bin/plist-gate" tests/fixtures/plist/orphaned-children.plist.tmpl >/dev/null 2>&1 \
+   && python3 "$IDP/bin/plist-gate" tests/fixtures/plist/abandoned-children.plist.tmpl >/dev/null 2>&1; then
+  say "ok    plist    every launchd template renders to a plist that parses and names its job; gate proved both ways"
+else say "FAIL  plist    a launchd template does not render to a valid plist, or the gate does not discriminate"; python3 "$IDP/bin/plist-gate" | sed 's/^/      /'; fail=1; fi
+
+# --live must take its own reading, not grade a saved file. Poison the default
+# inventory with a violation that is not true of this machine: a gate that still
+# reads the file reports it, a gate that reads lsof does not. Measured 2026-08-24:
+# the file was 73 minutes stale and failed 7107 for a bind corrected 45 min earlier,
+# and -- the half that matters -- never once mentioned the *:8080 that was live.
+poison="$tmp/poisonhome"; mkdir -p "$poison/.estate/state"
+printf '{"rows":[{"kind":"listener","port":7107,"bind":"*","process":"node","owner":"poison"}]}\n' \
+  > "$poison/.estate/state/inventory.json"
+poison_out=$(HOME="$poison" python3 "$IDP/bin/port-gate" --live 2>&1)   # captured: pipefail would report port-gate's status, not grep's
+if printf '%s' "$poison_out" | grep -q 'poison'; then
+  say "FAIL  portlive port-gate --live is reading ~/.estate/state/inventory.json, not the machine"; fail=1
+else say "ok    portlive port-gate --live reads the machine, not a saved inventory"; fi
+# Reconcile (crew#186 CP3): a rogue container is a finding, the clean fixture is not.
+rec_out=$(python3 "$IDP/bin/idp-reconcile" --ps tests/fixtures/reconcile/ps.rogue.jsonl 2>&1)   # grep -q under pipefail would SIGPIPE it
+if [ "$(printf '%s' "$rec_out" | grep -c 'rogue       rogue-redis')" != 1 ] \
+   || ! python3 "$IDP/bin/idp-reconcile" --ps tests/fixtures/reconcile/ps.good.jsonl >/dev/null 2>&1; then
+  say "FAIL  reconcile idp-reconcile does not discriminate rogue from owned"; fail=1
+else say "ok    reconcile idp-reconcile names the rogue fixture and passes the clean one"; fi
+# Manifest runner (crew#186 CP5): no health endpoint and :latest are refused; a valid manifest with a declared port dry-runs clean.
+ap="$IDP/bin/idp-apply"; export APPLY_LEDGER="$tmp/apply.jsonl"
+if ! "$ap" tests/fixtures/manifests/no-health.yaml >/dev/null 2>&1 && ! "$ap" tests/fixtures/manifests/latest-tag.yaml >/dev/null 2>&1 \
+   && ! "$ap" tests/fixtures/manifests/cp5-caddy.yaml --dry-run >/dev/null 2>&1 \
+   && REG=tests/fixtures/manifests/ports.yaml "$ap" tests/fixtures/manifests/cp5-caddy.yaml --dry-run >/dev/null 2>&1; then
+  say "ok    manifest idp-apply refuses no-health, :latest and an undeclared port; a declared manifest dry-runs clean"
+else say "FAIL  manifest idp-apply does not discriminate"; fail=1; fi
+unset APPLY_LEDGER
+
+# Catalogue on k8s (Phase 2 of ADR 0004): the base renders, every Service is ClusterIP, no image is :latest;
+# a fixture overlay that flips the catalogue Service to NodePort must be refused.
+kz() { kubectl kustomize --load-restrictor LoadRestrictionsNone "$1" 2>/dev/null; }
+kguard() { local out; out="$(kz "$1")" || return 1; ! grep -q 'type: NodePort\|type: LoadBalancer\|hostPort:\|hostNetwork: true\|:latest' <<<"$out"; }
+if command -v kubectl >/dev/null && kguard platform/backstage/base && ! kguard tests/fixtures/kustomize/nodeport; then
+  say "ok    kustomize platform/backstage/base renders ClusterIP-only; the NodePort fixture is refused"
+elif ! command -v kubectl >/dev/null; then say "skip  kustomize kubectl not installed"
+else say "FAIL  kustomize base does not render clean or the NodePort fixture passed"; fail=1; fi
+
+# 4d. Migration gate (crew#186 CP1, R22 mechanism 1): the scheduler migration
+#     applies healthy, applies again without changing state, and rolls back to
+#     the pre-state, on a pristine temp home. Skipped only if dagster is absent,
+#     and then it says BLIND rather than ok.
+if "$IDP/bin/migration-gate" "$IDP/tests/fixtures/migration-not-idempotent" >/dev/null 2>&1; then
+  say "FAIL  migration gate accepted a migration whose second apply adds a resource"; fail=1
+else say "ok    migration gate refuses the non-idempotent fixture"; fi
+if "$MPY" -c "import dagster" 2>/dev/null; then
+  if out=$(PATH="$(dirname "$MPY"):$PATH" "$IDP/bin/migration-gate" "$IDP/bin/scheduler-migrate" 2>&1); then say "$out"
+  else say "$out"; fail=1; fi
+else say "BLIND migration dagster not importable; gate not run"; fail=1; fi
+
+# 5. Every generated entity validates against the published Backstage schema.
+python3 - "$tmp/catalog-info.yaml" "$tmp/docs" <<'PY'
+import sys, os, yaml, json
+src, out = sys.argv[1], sys.argv[2]; os.makedirs(out)
+for i, d in enumerate(yaml.safe_load_all(open(src))):
+    json.dump(d, open(f"{out}/{i}.json", "w"))
+PY
+if check-jsonschema --schemafile https://json.schemastore.org/catalog-info.json "$tmp"/docs/*.json >/dev/null 2>&1; then
+  say "ok    schema   $(ls "$tmp"/docs | wc -l | tr -d ' ') entity documents valid"
+else say "FAIL  schema   check-jsonschema rejected a generated entity"; fail=1; fi
+
+# 6. AGENTS.md is the rules table for this repo (crew#180 CP6). Every row names a gate
+#    and two fixtures; the gate must refuse must-fail and pass must-pass in this same run.
+#    A row that is missing, or whose gate cannot tell the fixtures apart, fails here, so a
+#    rule cannot exist without its proof (LAW 44) and no gate refuses good work (LAW 38).
+policy_gate() { conftest test --parser json -p "$IDP/policy" "$1" >/dev/null 2>&1; }
+bind_audit() { "$IDP/bin/bind-audit" --table "$1" >/dev/null 2>&1; }
+ns_fence_gate() { python3 "$IDP/bin/ns-fence-gate" "$1" >/dev/null 2>&1; }
+job_described() { ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe "$1" ) >/dev/null 2>&1; }
+# A code location is loaded by PATH by workspace.yaml, never as a package. Loading
+# it any other way here would grade a proxy: on 2026-08-25 definitions.py imported a
+# sibling with `from .describe import`, passed every offline check, and put the live
+# code location in PythonError the moment it reloaded. So: load it the way it runs.
+defs_validate() { ( cd "$(dirname "$1")" && DAGSTER_HOME="$(mktemp -d)" "$MPY" -m dagster definitions validate -f "$(basename "$1")" ) >/dev/null 2>&1; }
+rows=0
+while IFS='|' read -r _ rule gate bad good _; do
+  rule=$(echo "$rule" | xargs); gate=$(echo "$gate" | xargs); bad=$(echo "$bad" | xargs); good=$(echo "$good" | xargs)
+  [ -n "$gate" ] || continue
+  rows=$((rows+1))
+  if ! declare -F "$gate" >/dev/null; then say "FAIL  agents   row '$rule' names no gate function: $gate"; fail=1; continue; fi
+  if [ ! -f "$IDP/$bad" ] || [ ! -f "$IDP/$good" ]; then say "FAIL  agents   row '$rule' has a missing fixture"; fail=1; continue; fi
+  refused=0; passed=0
+  case "$gate" in
+    hardcode_scan) hardcode_scan "$IDP/$bad" >/dev/null && refused=1; hardcode_scan "$IDP/$good" >/dev/null || passed=1 ;;
+    *)             "$gate" "$IDP/$bad" || refused=1;              "$gate" "$IDP/$good" && passed=1 ;;
+  esac
+  if [ "$refused" -eq 1 ] && [ "$passed" -eq 1 ]; then say "ok    agents   $gate refuses $(basename "$bad"), passes $(basename "$good")"
+  else say "FAIL  agents   row '$rule': refused=$refused passed=$passed"; fail=1; fi
+done < <(grep -E '^\| .* \| .* \| .* \| .* \|$' "$IDP/AGENTS.md" | grep -vE '^\| (rule|---)')
+[ "$rows" -ge 1 ] && say "ok    agents   AGENTS.md: $rows rule rows, each proved both ways" || { say "FAIL  agents   AGENTS.md has no rule rows"; fail=1; }
+
+# 7. The bind audit proves itself both ways with no machine under it. R20: the
+#    gateway is the only process that may bind a non-loopback address. The AGENTS.md
+#    row above already runs bind_audit on the two recorded tables; this runs the
+#    script's own selftest, which is the part that would silently rot if the
+#    allow-list parser broke.
+# 7. A scheduled job with no description is a job nobody can act on: the Dagster UI
+#    shows 40 names like com_founder_estateaudit and nothing else. The description is
+#    derived from the target script's docstring, so the selftest checks the derivation
+#    -- that it looks behind a wrapper, and that it refuses to invent prose from a
+#    command line. Coverage over the real 40 needs the scripts, so it lives in idp-verify.
+# 7b. The real code location loads the way workspace.yaml loads it: by file path.
+if ! "$MPY" -c "import dagster" 2>/dev/null; then
+  say "BLIND codeloc dagster not importable; the code location was not loaded"; fail=1
+elif defs_validate "$IDP/scheduler/estate_scheduler/definitions.py"; then
+  say "ok    codeloc  scheduler/estate_scheduler/definitions.py loads by file path, as workspace.yaml loads it"
+else say "FAIL  codeloc  the code location does not load by file path -- the dashboard will show PythonError"; fail=1; fi
+
+if out=$( ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe --selftest ) 2>&1); then
+  say "ok    describe job descriptions derive from the script, and are refused when absent"
+else say "FAIL  describe estate_scheduler.describe --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
+# vm-shared-path must refuse a source outside the VM-shared tree and permit one inside it.
+if out=$(VM_SHARED_ROOTS="$HOME" "$IDP/bin/vm-shared-path" "$HOME" 2>&1) \
+   && ! VM_SHARED_ROOTS="$HOME" "$IDP/bin/vm-shared-path" /private/tmp >/dev/null 2>&1; then
+  say "ok    vmmount  vm-shared-path permits a path under the shared root and refuses one outside it"
+else say "FAIL  vmmount  bin/vm-shared-path selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
+# Zero static secrets (security-policy.md row, kini-master-spec 4.1/4.4, crew#227). Proved both
+# ways on fixtures; the live host count is reported by bin/idp-verify, not gated here, because
+# it is an open incident until crew#227 lands and a gate that refuses correct work is an outage.
+if STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/good ESTATE_CODE=tests/fixtures/static-secret/good ESTATE_SECRETS=/nonexistent bin/static-secret-gate >/dev/null \
+   && ! STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/bad ESTATE_CODE=tests/fixtures/static-secret/bad/code ESTATE_SECRETS=/nonexistent bin/static-secret-gate >/dev/null; then
+  say "ok    secrets  static-secret-gate passes the empty fixture and refuses the one with a key and a .env"
+else say "FAIL  secrets  bin/static-secret-gate fixtures"; fail=1; fi
+if bin/owner-account-gate tests/fixtures/owner-accounts/good.yaml >/dev/null \
+   && ! bin/owner-account-gate tests/fixtures/owner-accounts/bad.yaml >/dev/null; then
+  say "ok    owners   owner-account-gate passes a provider with a second owner and refuses one without"
+else say "FAIL  owners   bin/owner-account-gate fixtures"; fail=1; fi
+if out=$("$IDP/bin/bind-audit" --selftest 2>&1); then say "ok    binds    bind-audit refuses an unknown listener and permits an allow-listed one"
+else say "FAIL  binds    bin/bind-audit --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
+# 7b. The fences the estate's own namespaces ship with (crew#191). The AGENTS.md row
+#    above proves ns-fence-gate can tell a fenced namespace from a flat one; this
+#    runs it over the manifests that are actually committed, because a gate that
+#    works on fixtures and is never pointed at the real thing protects fixtures.
+#    Measured on `estate` before these existed: a pod in one namespace reached a pod
+#    in another by IP, no credential, HTTP 200 in 4ms. Report-only until crew#191
+#    fences the namespaces that exist today (2026-08-27: 76 defects across 19): a
+#    gate that refuses every namespace on main is the outage (LAW 38), and a count
+#    that falls to 0 is the moment this row becomes a FAIL.
+if out=$(cd "$IDP" && python3 bin/ns-fence-gate platform 2>&1); then
+  say "ok    fences   $(printf '%s' "$out" | sed 's/^ok *ns-fence-gate: //')"
+else say "warn  fences   $(printf '%s' "$out" | head -1 | sed 's/^FAIL *ns-fence-gate: //') -- crew#191 fences them; report-only until 0"; fi
+
+# 8. crew#216 CP1: the get_estate_inventory MCP tool. Property (byte ceiling holds over
+#    many synthetic catalog sizes) and incident (stale snapshot disclosed, proved both
+#    ways) tests against the plugin's pure functions -- offline, no docker daemon needed.
+#    Live round-trip through the gateway is bin/mcp-status, which idp-verify runs.
+if out=$("$MPY" "$IDP/tests/test_cp1_estate_inventory.py" 2>&1); then
+  say "ok    cp1      $(printf '%s' "$out" | grep -c '^ok    ') property/incident checks pass (crew#216)"
+else say "FAIL  cp1      tests/test_cp1_estate_inventory.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+if out=$("$MPY" "$IDP/tests/test_estate_diagram.py" 2>&1); then say "ok    diagram  tests/test_estate_diagram.py"
+else say "FAIL  diagram  tests/test_estate_diagram.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
+# 9. crew#216 CP2: the get_workload_state(app) MCP tool. Property (byte ceiling holds
+#    over >=500 (dependency-count x metric-sample-count x ceiling) combinations) and
+#    incident (no raw log/timeseries array ever leaves the payload, an unknown app
+#    degrades rather than raises) tests against the plugin's pure functions -- offline,
+#    no docker daemon needed. Live round-trip through the gateway is bin/mcp-status.
+if out=$("$MPY" "$IDP/tests/test_cp2_workload_state.py" 2>&1); then
+  say "ok    cp2      $(printf '%s' "$out" | grep -c '^ok    ') property/incident checks pass (crew#216)"
+else say "FAIL  cp2      tests/test_cp2_workload_state.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
+# 10. crew#216 CP3: the get_workload_logs(app, tail=50) MCP tool, the separate
+#     drill-down get_workload_state's docstring names. Differential (tail_lines vs
+#     a naive whole-file reference), property (tail bound holds over line-count x
+#     requested-tail combinations, including a 1,000,000-line request) and incident
+#     (a scheduled_job's own plist resolves to its log in one call; a non-job asset
+#     degrades; the two tools are registered separately) tests -- offline, no
+#     docker daemon needed. Live round-trip through the gateway is bin/mcp-status.
+if out=$("$MPY" "$IDP/tests/test_cp3_workload_logs.py" 2>&1); then
+  say "ok    cp3      $(printf '%s' "$out" | grep -c '^ok    ') property/incident checks pass (crew#216)"
+else say "FAIL  cp3      tests/test_cp3_workload_logs.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
+
+# 11. crew#219 R39: the acceptance suite is executable. The 35 Gherkin files in
+#     features/sovereign-bus/ were prose until now -- crew#200 measured "61
+#     .feature files in idp, 0 step dirs". pytest-bdd binds them to pytest, so
+#     this is one more leg of the gate that already exists and not a second
+#     runner (the tool rejected is behave, which brings its own).
+#
+#     Proved both ways in the same run, because a gate only ever seen passing
+#     has never been shown to refuse (LAW 38): the unbound fixture must fail
+#     with StepDefinitionNotFoundError -- not merely fail, or a typo in a
+#     feature path would satisfy the guard -- and the real suite must pass.
+BDD_PY="$MPY"
+"$BDD_PY" -c 'import pytest_bdd' >/dev/null 2>&1 || BDD_PY=python3
+if ! "$BDD_PY" -c 'import pytest_bdd' >/dev/null 2>&1; then
+  say "FAIL  bdd      pytest-bdd is not installed: pip install -r sovereign/requirements-dev.txt"; fail=1
+else
+  # Captured, never piped into grep: this script sets pipefail and pytest exits
+  # non-zero on purpose here, which is the incident guard 1c is about.
+  bdd_bad=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/fixtures/bdd/unbound" -q 2>&1)
+  bdd_good=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/bdd" -q 2>&1); bdd_good_rc=$?
+  if printf '%s' "$bdd_bad" | grep -q 'StepDefinitionNotFoundError' && [ "$bdd_good_rc" -eq 0 ]; then
+    say "ok    bdd      $(printf '%s' "$bdd_good" | grep -oE '[0-9]+ passed' | head -1), $(printf '%s' "$bdd_good" | grep -c '^  pending ') feature(s) pending; an unbound step is refused"
+    printf '%s' "$bdd_good" | grep '^  pending ' | sed 's/^/      /'
+  else
+    say "FAIL  bdd      sovereign/tests/bdd (rc=$bdd_good_rc), or the unbound fixture was not refused for the right reason"
+    printf '%s\n' "$bdd_good" | tail -25 | sed 's/^/      /'
+    printf '%s\n' "$bdd_bad" | tail -5 | sed 's/^/  bad /'
+    fail=1
+  fi
+fi
+
+# 8b. Every incident test (rung 4, one per bug, named for it). Incident 2026-08-25: six
+#     tests/test_incident_*.py files existed and none ran anywhere -- this script ran four
+#     named files and the bdd suite, ci.yml ran sovereign/tests/bdd. A PR body that says
+#     "bin/idp-ci runs the incident test on every PR" was a claim with no receipt. Tests
+#     that need kyverno or a sibling checkout skip as BLIND and say so; a skip is printed.
+inc=$("$BDD_PY" -m pytest -q -p no:cacheprovider "$IDP"/tests/test_incident_*.py 2>&1); inc_rc=$?
+if [ "$inc_rc" -eq 0 ]; then
+  say "ok    incident $(printf '%s' "$inc" | grep -oE '[0-9]+ passed' | head -1), $(printf '%s' "$inc" | grep -oE '[0-9]+ skipped' | head -1 || printf '0 skipped') (BLIND skips)"
+  printf '%s\n' "$inc" | grep -oE 'BLIND: [^)]*' | sort -u | sed 's/^/      /'
+else
+  say "FAIL  incident tests/test_incident_*.py (rc=$inc_rc)"; printf '%s\n' "$inc" | tail -20 | sed 's/^/      /'; fail=1
+fi
+
+# 9. Every Flux HelmRelease under platform/ renders clean against the cluster's Kyverno
+#    ClusterPolicies (helm template + the release's own postRenderers), both ways: the
+#    unpatched-chart fixture must be refused. Kyverno judges at admission, after merge;
+#    this judges before the PR. BLIND (rc 2) when helm/kyverno are missing, never a pass.
+if command -v kyverno >/dev/null && command -v helm >/dev/null; then
+  # Every HelmRelease dir, plus any dir shipping a plain workload (crew#284: the litellm
+  # Deployment was never judged and the cluster refused it after merge; crew#539 2026-08-28: the
+  # robusta release carried no postRenderers, was never judged, and admission refused it on 15 rules).
+  dirs=$(cd "$IDP" && { grep -lE '^kind: HelmRelease' platform/*/*.yaml platform/*/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && echo "$d"; done; grep -lE '^kind: (Deployment|StatefulSet|DaemonSet|Job|CronJob)$' platform/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && echo "$d"; done; } | sort -u)
+  # rc 2 is BLIND: the judge ran but not against the whole policy set, and crew#539 is what that
+  # costs -- CI printed "render clean" for a Deployment admission refused, because the two
+  # estate-only policies live in prospector and CI had no copy. Blind and failing are different
+  # facts and the operator needs to be told which one this is.
+  kyv=$( (cd "$IDP" && bin/idp-kyverno-render $dirs) 2>&1 ); kyv_rc=$?
+  if [ -z "$dirs" ]; then say "FAIL  kyverno  no platform dir shipped a HelmRelease or a workload; the judge had nothing"; fail=1
+  elif [ "$kyv_rc" = 2 ]; then
+    say "BLIND kyverno  the judge did not see the whole policy set; no render was judged"
+    printf '%s\n' "$kyv" | grep '^BLIND' | sed 's/^/      /'; fail=1
+  elif [ "$kyv_rc" != 0 ]; then
+    say "FAIL  kyverno  a HelmRelease or workload render fails admission policy"
+    # crew#292: this line was `grep -E '^(FAIL|      )'`. It reads the verdict shapes the judge
+    # prints when it reaches a verdict, and nothing else. A render that dies before any verdict --
+    # kustomize `error: must build at directory`, a helm template failure, a missing chart -- prints
+    # neither shape, the grep matched nothing, and the operator was left with the headline and a bare
+    # underline: no dir, no policy, no cause (offline-gate on run 33173089759). An instrument that
+    # destroys the cause is not an instrument (LAW 28) and nobody can attribute from it (LAW 29).
+    # Every line that is not an `ok` verdict travels, tail-capped so one rung stays one screen.
+    #
+    # crew#292 again, 2026-08-28: the cap above was `| tail -40` over the whole block, and with two
+    # failing dirs it ate the first one whole. Measured on the shipped block: `platform/state` with 25
+    # policy lines followed by `platform/litellm` with 25 gives 52 non-`ok` lines, the cap keeps the
+    # last 40, and `FAIL  plain    platform/state` survives in zero of them -- the block opens
+    # mid-stream on `policy rule-12 -> state-collector failed` with no dir above it and nothing saying
+    # 12 lines were cut. The operator reads one failing dir where there are two and attributes to the
+    # wrong one: the same shape the `grep -E '^(FAIL|      )'` above cost us (LAW 28, LAW 29), moved
+    # to a threshold instead of removed. That case is not hypothetical -- it is what a Kyverno policy
+    # bump looks like, which is exactly when the cap fires.
+    #
+    # So the cap stays 40 lines total (a rung is still one screen) but it is no longer blind or
+    # silent: the `FAIL` lines are the index into the failure and are printed first, uncapped, then
+    # one line saying how many were dropped, then the tail of what is left. Under 40 lines this is
+    # byte-identical to the block above it.
+    body=$(printf '%s\n' "$kyv" | grep -vE '^ok ')
+    n=$(printf '%s\n' "$body" | grep -c . )
+    if [ "$n" -gt 40 ]; then
+      dirs_failed=$(printf '%s\n' "$body" | grep -c '^FAIL')
+      printf '%s\n' "$body" | grep '^FAIL' | sed 's/^/      /'
+      say "      ... $((n - 40)) of $n lines dropped by the cap; $dirs_failed dir(s) failed, named above"
+      rest=$((40 - dirs_failed - 1)); [ "$rest" -lt 0 ] && rest=0
+      printf '%s\n' "$body" | grep -vE '^FAIL' | tail -n "$rest" | sed 's/^/      /'
+    else
+      printf '%s\n' "$body" | sed 's/^/      /'
+    fi
+    fail=1
+  elif (cd "$IDP" && bin/idp-kyverno-render tests/fixtures/kyverno/must-fail >/dev/null 2>&1); then
+    say "FAIL  kyverno  the must-fail fixture passed; the judge admits an unpatched chart"; fail=1
+  else say "ok    kyverno  $(echo "$dirs" | tr '\n' ' ')render clean; the unpatched-chart fixture is refused"; fi
+else say "BLIND kyverno  helm or kyverno CLI not installed; HelmRelease renders were not judged"; fail=1; fi
+
+# 9b. crew#483: Flux post-build substitution judged with the tool Flux runs. Every Kustomization
+#     that declares postBuild renders (kustomize build | flux envsubst --strict) with its sources'
+#     keys; the fixture carrying an unescaped shell `${out%% *}` must be refused and the `$$`
+#     form must pass. BLIND (rc 2) when flux or kustomize is missing, never a pass.
+es_out=$(cd "$IDP" && bin/idp-envsubst-gate 2>&1); es_rc=$?
+if [ "$es_rc" -eq 2 ]; then say "BLIND envsubst $(printf '%s' "$es_out" | tail -1)"; fail=1
+elif [ "$es_rc" -eq 0 ] && (cd "$IDP" && bin/idp-envsubst-gate tests/fixtures/envsubst/good >/dev/null 2>&1) && ! (cd "$IDP" && bin/idp-envsubst-gate tests/fixtures/envsubst/bad >/dev/null 2>&1); then
+  say "ok    envsubst $(printf '%s' "$es_out" | grep -c '^ok') Kustomization(s) substitute clean; the unescaped-shell fixture is refused"
+else say "FAIL  envsubst a postBuild Kustomization is refused by flux envsubst --strict, or the fixtures did not prove both ways:"; printf '%s\n' "$es_out" | grep -v '^ok' | sed 's/^/      /'; fail=1; fi
+
+# 10. crew#269 row 3: a Component with no URL a person can open fails the PR, both ways.
+#     The clean fixture must pass bin/catalog-links-check and a checkout with no remote
+#     must be refused. Row 2 made every route an Open link; this keeps a linkless
+#     entity from landing again (sweep on the live inventory before this: N=2).
+lk="$tmp/links-bad"; mkdir -p "$lk"
+if INV="$FIX" OUT="$a" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1 \
+   && lk_ok=$(python3 "$IDP/bin/catalog-links-check" "$a/catalog-info.yaml") \
+   && INV="$IDP/tests/fixtures/inventory.no-remote.json" OUT="$lk" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1 \
+   && ! python3 "$IDP/bin/catalog-links-check" "$lk/catalog-info.yaml" >/dev/null 2>&1; then
+  say "ok    links    $lk_ok; a checkout with no remote is refused"
+else say "FAIL  links    catalog-links-check passed a linkless Component or refused the clean fixture"; fail=1; fi
+
+# 7. Elite grade is continuous, not a one-off (crew#474, founder 2026-08-27:
+#    "needs to be a continuous process, not just a one off"). Every PR grades the
+#    fixture catalogue and refuses a stale page; Dagster com.estate.catalog-render
+#    grades the live one four times a day. Both ways: a rendered page passes
+#    --check, a page with one byte changed fails it.
+sc="$tmp/showcase"; mkdir -p "$sc"
+INV="$FIX" OUT="$sc" python3 "$IDP/bin/catalog-gen" >/dev/null
+if python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$sc/SHOWCASE.md" >/dev/null 2>&1 \
+   && python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$sc/SHOWCASE.md" --check >/dev/null 2>&1 \
+   && printf 'x' >> "$sc/SHOWCASE.md" \
+   && ! python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$sc/SHOWCASE.md" --check >/dev/null 2>&1; then
+  say "ok    grade    estate-showcase grades the fixture catalogue ($(grep -c '| GAP |' "$sc/SHOWCASE.md") GAP rows) and --check refuses a stale page"
+else say "FAIL  grade    estate-showcase did not render, or --check did not discriminate"; fail=1; fi
+
+# 8. Every surface the founder can open survives losing one node (crew#539, docs/policy/
+#    availability-standard.md). 2026-08-28 06:20-06:39Z a cordon took catalogue to 503 for
+#    fifteen minutes because the manifest said replicas 1 and platform/ held no PDB; nothing
+#    could fail that review because nothing required otherwise. Both ways, on rendered
+#    manifests: the manifest catalogue actually carried into that drain is refused, the shape
+#    it carries now passes, and the live platform/ is clean -- BLIND (2) counts as a failure,
+#    so a surface the gate cannot resolve never passes quietly.
+if ! python3 "$IDP/bin/idp-availability-gate" tests/fixtures/availability/bad >/dev/null 2>&1 \
+   && python3 "$IDP/bin/idp-availability-gate" tests/fixtures/availability/good >/dev/null 2>&1 \
+   && out=$(python3 "$IDP/bin/idp-availability-gate" 2>&1); then
+  say "ok    ha       $(printf '%s' "$out" | tail -1 | sed 's/^ok *availability *//')"
+  printf '%s\n' "$out" | grep '^WAIVED' | sed 's/^/      /' || true
+else say "FAIL  ha       a routed surface does not survive losing one node, or the gate is not discriminating"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
+[ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
+exit "$fail"

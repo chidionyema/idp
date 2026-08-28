@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Render launchd/*.plist.tmpl for this machine and load it. launchd expands no
+# variables, so the tracked file is a template and the absolute paths are
+# written here, once, by envsubst (gettext) rather than committed (LAW 46).
+set -euo pipefail
+# IDP_ROOT lets the installer be run from a worktree while the jobs point at the
+# permanent checkout (crew#280: two jobs were installed from /tmp/claude-501/wt-idp-oke
+# and died with it). Optional label args limit the install to those jobs.
+IDP="${IDP_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+case "$IDP" in /tmp/*|/private/tmp/*|/var/folders/*|*/.wt-*) echo "refusing: $IDP is a temporary checkout; set IDP_ROOT to the permanent one (LAW 46)"; exit 2;; esac
+ONLY=("$@")
+command -v envsubst >/dev/null || { echo "envsubst missing -- brew install gettext"; exit 2; }
+DEST="$HOME/Library/LaunchAgents"; mkdir -p "$DEST"
+# launchd does not search PATH for ProgramArguments[0]; a bare name exits 78 with an empty
+# log (2026-08-25, ai.estate.temporal). Binaries are resolved here, once, per machine.
+TEMPORAL_BIN="$(command -v temporal || true)"
+# crew#396: ai.estate.temporal.plist.tmpl is retired; the engine is platform/temporal on the cluster.
+for t in "$IDP"/launchd/*.plist.tmpl; do
+  name="$(basename "${t%.tmpl}")"
+  if [ "${#ONLY[@]}" -gt 0 ]; then
+    keep=0; for o in "${ONLY[@]}"; do [ "$name" = "ai.estate.$o.plist" ] && keep=1; done
+    [ "$keep" = 1 ] || continue
+  fi
+  IDP="$IDP" HOME="$HOME" PATH="$PATH" TEMPORAL_BIN="$TEMPORAL_BIN" envsubst '${IDP} ${HOME} ${PATH} ${TEMPORAL_BIN}' < "$t" > "$DEST/$name"
+  plutil -lint "$DEST/$name" >/dev/null
+  label="${name%.plist}"
+  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$DEST/$name"
+  echo "loaded  $label  <- $DEST/$name"
+  # Dead-man monitoring (crew#177) is applied by the estate's own migration tool, so an
+  # install never silently drops the Healthchecks wrap it had before.
+  WRAP="$HOME/.claude/scripts/estate/wrap-jobs.py"
+  [ -f "$WRAP" ] && python3 "$WRAP" --fix "$label" | tail -1 || echo "no wrap-jobs.py on this machine; $label is unwrapped"
+done

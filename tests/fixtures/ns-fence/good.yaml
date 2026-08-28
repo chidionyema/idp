@@ -1,0 +1,64 @@
+# The same shape as platform/k8s/namespaces/*.yaml: a namespace nobody can reach
+# into, whose pods cannot reach out, that can still resolve names and still runs
+# a pod that declares no resources at all.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fixture-fenced
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: defaults
+  namespace: fixture-fenced
+spec:
+  limits:
+    - type: Container
+      default: {cpu: 500m, memory: 512Mi}
+      defaultRequest: {cpu: 50m, memory: 128Mi}
+      max: {cpu: "1", memory: 768Mi}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: budget
+  namespace: fixture-fenced
+spec:
+  hard:
+    requests.cpu: 500m
+    requests.memory: 512Mi
+    limits.cpu: "1"
+    limits.memory: 768Mi
+    pods: "15"
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: fixture-fenced
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: fixture-fenced
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

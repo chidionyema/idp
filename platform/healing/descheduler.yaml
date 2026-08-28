@@ -1,0 +1,87 @@
+# crew#539 CP6. After the 2->1 node swap on 2026-08-27 the survivor ran hot while nothing rebalanced
+# and a person ran the restarts. The Kubernetes SIGs Descheduler (LAW 43, kubernetes-sigs/descheduler,
+# Apache-2.0, chart 0.36.0 read from https://kubernetes-sigs.github.io/descheduler/ index on
+# 2026-08-27) runs as a CronJob and evicts pods the scheduler would place better today. Values and
+# the 50m request come from d5ae1960's build (branch feat/crew539-descheduler-robusta b2e3b14): the
+# chart's default 500m request would itself go Pending on the pool that needed this.
+# The radio room is never evicted: DefaultEvictor priorityThreshold = infrastructure-critical, so
+# only pods below that class are candidates. RemovePodsViolatingNodeAffinity is CP10 (d5ae1960,
+# preemptible pool) and is added there, not here.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: descheduler
+  namespace: healing
+spec:
+  interval: 24h
+  url: https://kubernetes-sigs.github.io/descheduler/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: descheduler
+  namespace: healing
+spec:
+  interval: 1h
+  timeout: 10m
+  chart:
+    spec:
+      chart: descheduler
+      version: 0.36.0
+      sourceRef:
+        kind: HelmRepository
+        name: descheduler
+  install:
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3 }
+  values:
+    kind: CronJob
+    schedule: "*/10 * * * *"
+    successfulJobsHistoryLimit: 3
+    failedJobsHistoryLimit: 3
+    cmdOptions:
+      v: 3
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 500m, memory: 256Mi }
+    podSecurityContext:
+      seccompProfile: { type: RuntimeDefault }
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: { drop: [ALL] }
+      privileged: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 1000
+    deschedulerPolicy:
+      profiles:
+        - name: rebalance-after-node-swap
+          pluginConfig:
+            - name: DefaultEvictor
+              args:
+                ignorePvcPods: true
+                evictLocalStoragePods: true
+                priorityThreshold:
+                  name: infrastructure-critical
+            - name: RemovePodsHavingTooManyRestarts
+              args:
+                podRestartThreshold: 5
+                includingInitContainers: true
+            - name: LowNodeUtilization
+              args:
+                thresholds: { cpu: 20, memory: 20, pods: 20 }
+                targetThresholds: { cpu: 60, memory: 60, pods: 60 }
+            - name: RemovePodsViolatingTopologySpreadConstraint
+              args:
+                constraints: [DoNotSchedule, ScheduleAnyway]
+            # crew#539, 2026-08-27: descheduler 0.36 refuses a profile that enables a plugin
+            # with no pluginConfig entry ("unable to find \"RemoveDuplicates\" plugin config",
+            # CronJob pod descheduler-29797890 Failed, receipt 33127558382); every run since the
+            # merge had exited 1 without a rebalance. No args: the defaults are the rule.
+            - name: RemoveDuplicates
+          plugins:
+            balance:
+              enabled: [RemoveDuplicates, LowNodeUtilization, RemovePodsViolatingTopologySpreadConstraint]
+            deschedule:
+              enabled: [RemovePodsHavingTooManyRestarts]

@@ -1,0 +1,88 @@
+# cert-manager with the Gateway API solver enabled, which is what the http01.gatewayHTTPRoute
+# solver in prospector's ClusterIssuer needs. CRDs are managed by the chart so a version bump
+# here carries them.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: jetstack
+  namespace: cert-manager
+spec:
+  interval: 24h
+  url: https://charts.jetstack.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cert-manager
+  namespace: cert-manager
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: cert-manager
+      version: v1.21.1
+      sourceRef:
+        kind: HelmRepository
+        name: jetstack
+  values:
+    crds:
+      enabled: true
+    config:
+      apiVersion: controller.config.cert-manager.io/v1alpha1
+      kind: ControllerConfiguration
+      enableGatewayAPI: true
+    # Incident 2026-08-26 (crew#325): Kyverno require-requests-limits refused every cert-manager
+    # pod for 41 hours (FailedCreate on all three ReplicaSets) because only requests were set, so
+    # no certificate was ever issued on OKE. Limits on each component, and on the
+    # startupapicheck Job the chart runs after install.
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    webhook:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+    cainjector:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 256Mi
+    startupapicheck:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+---
+# cainjector is the one cert-manager container the chart renders with no probe (helm template
+# cert-manager v1.21.1: probes on controller and webhook only, none under cainjector), so Kyverno
+# require-pod-probes refuses it. The exception covers that one rule for that one workload and
+# lives in namespace kyverno, the only namespace platform/edge/kyverno.yaml honours exceptions from.
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: cert-manager-cainjector-probes
+  namespace: kyverno
+spec:
+  match:
+    any:
+      - resources:
+          namespaces: [cert-manager]
+          kinds: [Pod, Deployment, ReplicaSet]
+          names: [cert-manager-cainjector*]
+  exceptions:
+    - policyName: require-pod-probes
+      ruleNames: [validate-probes, autogen-validate-probes]

@@ -1,0 +1,14 @@
+# must-pass fixture: every job here resolves to a real description.
+jobs:
+  test.described.from-docstring:
+    command: [/usr/bin/python3, $IDP/tests/fixtures/describe/documented.py]
+    cron: "0 4 * * *"
+  test.described.explicit:
+    # a command that is not a script we own may say so in the file itself
+    command: [/bin/echo, hello]
+    description: Says hello, so that a job with no script of ours is still documented.
+    cron: "0 5 * * *"
+  test.described.through-a-wrapper:
+    # the wrapper must be skipped and documented.py found behind it
+    command: [~/.claude/scripts/hc-wrap.sh, slug, /usr/bin/python3, $IDP/tests/fixtures/describe/documented.py]
+    cron: "0 6 * * *"

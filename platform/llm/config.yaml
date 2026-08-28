@@ -1,0 +1,134 @@
+# LiteLLM config for the cluster. Every hosted model here is the same entry as llm/config.yaml
+# (tests/test_llm_row.py diffs them); what is missing is on purpose:
+#   - the ollama* entries: they point at the founder's Mac (host.docker.internal), which the
+#     cluster cannot reach. The free local lane stays on the laptop compose.
+#   - the ollama fallbacks, for the same reason.
+# `vision` is an alias so photo intake names a capability, not a vendor (crew#284 CP1).
+
+model_list:
+  - model_name: minimax
+    litellm_params:
+      model: openai/MiniMax-M2
+      api_base: https://api.minimax.io/v1
+      api_key: os.environ/MINIMAX_API_KEY
+      timeout: 300
+      max_tokens: 8192
+    model_info:
+      # crew#506 CP1: the router refuses an oversized turn before it leaves the estate.
+      # MiniMax-M2 context window is 204,800 tokens; a turn above it 400s here instead of
+      # walking the fallback chain into unfunded lanes (the 2026-08-27 Telegram outage).
+      max_input_tokens: 204800
+
+  - model_name: minimax_m27
+    litellm_params:
+      model: openai/MiniMax-Text-01
+      api_base: https://api.minimax.io/v1
+      api_key: os.environ/MINIMAX_API_KEY
+      timeout: 300
+
+  - model_name: deepseek
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+      timeout: 300
+
+  - model_name: openrouter
+    litellm_params:
+      model: openrouter/deepseek/deepseek-chat
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 300
+
+  # crew#284: every direct consensus account (MiniMax, DeepSeek, Gemini) answered 429 on balance on
+  # 2026-08-26 while the OpenRouter account answered 200. These three route the same models through
+  # OpenRouter and sit first in each fallback chain, so consensus survives one empty account.
+  - model_name: minimax-or
+    litellm_params:
+      model: openrouter/minimax/minimax-m2
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 300
+
+  - model_name: deepseek-or
+    litellm_params:
+      model: openrouter/deepseek/deepseek-chat
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 300
+
+  - model_name: gemini-or
+    litellm_params:
+      model: openrouter/google/gemini-2.5-flash
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 300
+
+  # --- crew#506 CP4: the free tier (2026-08-27) ----------------------------------------
+  # Groq's free plan answers openai/gpt-oss-120b at 131k context with no card on file, so it
+  # is the first free hop for every job that is not the moat's paid MiniMax lane. Model ids
+  # are the ones the key lists at api.groq.com/openai/v1/models on 2026-08-27; llama-3.3-70b
+  # is not on the plan. Rate limits are per minute, so the chain drops to a paid direct lane
+  # rather than retrying (allowed_fails 3, cooldown 60).
+  - model_name: groq
+    litellm_params:
+      model: groq/openai/gpt-oss-120b
+      api_key: os.environ/GROQ_API_KEY
+      timeout: 120
+    model_info:
+      max_input_tokens: 131072
+  - model_name: groq-fast
+    litellm_params:
+      model: groq/openai/gpt-oss-20b
+      api_key: os.environ/GROQ_API_KEY
+      timeout: 60
+    model_info:
+      max_input_tokens: 131072
+  - model_name: gemini
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 300
+
+  - model_name: vision
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 300
+
+router_settings:
+  fallbacks:
+    # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat
+    # at ~2,400 tokens of credit and Google prepaid was empty, so the crew#284 order (OpenRouter
+    # first) walked every turn through 402/429 before reaching a lane that answers. Consensus
+    # still survives any one account dry. Every chain not headed by the cheap model ends in it
+    # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
+    # job aliases) but sit in no chain while the account is unfunded: a hop that always
+    # answers 402 is latency, not redundancy.
+    - minimax: [deepseek]
+    - deepseek: [minimax]
+    - openrouter: [minimax, deepseek]
+    - gemini: [minimax, deepseek]
+    # crew#506 CP4: a free lane that rate-limits falls to the paid direct lanes, never to
+    # another free lane first; the chain still ends in the cheap model (cp30).
+    - groq: [minimax, deepseek]
+    - groq-fast: [groq, deepseek]
+  num_retries: 2
+  allowed_fails: 3
+  cooldown_time: 60
+
+litellm_settings:
+  callbacks: ["otel"]
+  # Every routed call lands in Langfuse (platform/observability) as a trace, whatever product made
+  # it: tracing at the router is the one instrument, not one SDK per product (crew#325 showcase).
+  # Keys arrive as env from the litellm-langfuse ExternalSecret; LANGFUSE_HOST is set in litellm.yaml.
+  success_callback: ["langfuse"]
+  failure_callback: ["langfuse"]
+  drop_params: true
+  turn_off_message_logging: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # crew#400: the founder picks and adds models in the Admin UI at llm.<zone>/ui, not by PR (LAW 31).
+  # Models added there are rows in litellm-db and survive a restart; this model_list stays the floor.
+  # The console signs in through the estate identity domain (GENERIC_* env from the litellm-sso
+  # mount, external-secret.yaml); no console password exists (crew#408, ADR 0007).
+  store_model_in_db: true
+  max_budget: 5.0
+  budget_duration: 1d
+  background_health_checks: false

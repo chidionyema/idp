@@ -1,0 +1,119 @@
+# crew#539 DoD item 1 (founder, 2026-08-27, "nothing watched the estate"): the one Prometheus and
+# the one Alertmanager. kube-prometheus-stack (LAW 43: Prometheus Operator + Alertmanager +
+# kube-state-metrics + the upstream rule set) — not a curl loop, not a second SigNoz alert path.
+# SigNoz stays the long store for every signal (docs/onboarding/k8s-infra.md); this Prometheus
+# keeps two days, exists to evaluate rules, and pages through Alertmanager -> Telegram
+# (platform/monitoring/alertmanager-config.yaml) and -> Robusta (crew#539 CP14).
+#
+# Sized for the pool that was CPU-starved the day this was written: no Grafana (SigNoz has the
+# UI), no node-exporter (k8s-infra's kubeletMetrics preset already lands node metrics in SigNoz;
+# the node rule groups are off with it), no scrapes of the managed control plane OKE does not
+# expose (etcd, scheduler, controller-manager, kube-proxy — their TargetDown rows would be noise).
+# Requests summed from the blocks below: 320m CPU / 1152Mi across operator (+reloader),
+# prometheus, alertmanager and KSM; blackbox adds 20m / 48Mi. Live usage is the receipt's job.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: prometheus-community
+  namespace: monitoring
+spec:
+  interval: 24h
+  url: https://prometheus-community.github.io/helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: monitoring
+spec:
+  interval: 1h
+  timeout: 15m
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: 88.6.0
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+  install:
+    crds: CreateReplace
+    remediation: { retries: 3 }
+  upgrade:
+    crds: CreateReplace
+    remediation: { retries: 3 }
+  values:
+    fullnameOverride: kps
+    cleanPrometheusOperatorObjectNames: true
+    grafana:
+      enabled: false
+    nodeExporter:
+      enabled: false
+    kubeEtcd:
+      enabled: false
+    kubeScheduler:
+      enabled: false
+    kubeControllerManager:
+      enabled: false
+    kubeProxy:
+      enabled: false
+    defaultRules:
+      create: true
+      rules:
+        etcd: false
+        kubeControllerManager: false
+        kubeProxy: false
+        kubeSchedulerAlerting: false
+        kubeSchedulerRecording: false
+        node: false
+        nodeExporterAlerting: false
+        nodeExporterRecording: false
+        windows: false
+    prometheusOperator:
+      # No admission webhook: one less cert Job and one less hostile row for the restricted
+      # profile; PrometheusRule syntax is checked by tests/ before it is merged.
+      admissionWebhooks:
+        enabled: false
+      tls:
+        enabled: false
+      resources:
+        requests: { cpu: 50m, memory: 128Mi }
+        limits: { cpu: 50m, memory: 128Mi }
+      prometheusConfigReloader:
+        resources:
+          requests: { cpu: 10m, memory: 32Mi }
+          limits: { cpu: 10m, memory: 32Mi }
+    kube-state-metrics:
+      resources:
+        requests: { cpu: 20m, memory: 96Mi }
+        limits: { cpu: 20m, memory: 96Mi }
+    alertmanager:
+      enabled: true
+      alertmanagerSpec:
+        replicas: 1
+        retention: 120h
+        configSecret: alertmanager-telegram
+        resources:
+          requests: { cpu: 40m, memory: 128Mi }
+          limits: { cpu: 40m, memory: 128Mi }
+    prometheus:
+      enabled: true
+      prometheusSpec:
+        replicas: 1
+        retention: 2d
+        retentionSize: 3GB
+        # Every PrometheusRule, ServiceMonitor, PodMonitor and Probe in the cluster is honoured,
+        # not only the chart's own: platform/monitoring/rules/ holds ours.
+        ruleSelectorNilUsesHelmValues: false
+        serviceMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelectorNilUsesHelmValues: false
+        probeSelectorNilUsesHelmValues: false
+        scrapeConfigSelectorNilUsesHelmValues: false
+        resources:
+          requests: { cpu: 200m, memory: 768Mi }
+          limits: { cpu: 200m, memory: 768Mi }
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              accessModes: [ReadWriteOnce]
+              resources:
+                requests: { storage: 5Gi }

@@ -1,0 +1,19 @@
+# Copied verbatim into .github/workflows/security-scan.yml of every active
+# estate repository by bin/estate-security-rollout. The job name is the
+# required status check named in platform/github/ruleset.@active.security-scan.json.
+# `@main` on a same-owner action is the stated deviation from bin/actions-pinned:
+# a SHA would need re-pinning in every repository on every idp change.
+name: security-scan
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: chidionyema/idp/.github/actions/security-scan@main
+  spec-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: chidionyema/idp/.github/actions/spec-gate@main

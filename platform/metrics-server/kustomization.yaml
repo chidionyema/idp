@@ -1,0 +1,5 @@
+# The metrics-server row: one file, one chart, values inline (the reloader shape).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - metrics-server.yaml

@@ -1,0 +1,28 @@
+# The Architect's image (crew#516 CP4): hermes-v2's build-agent-image workflow pushes
+# ghcr.io/chidionyema/hermes-agent:main-<run>-<sha> on every merge to main; the newest run wins
+# and the automation writes it into platform/hermes-agent/kustomization.yaml.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: hermes-agent
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/hermes-agent
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: hermes-agent
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: hermes-agent
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc

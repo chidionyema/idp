@@ -1,0 +1,65 @@
+# external-dns writes Cloudflare from HTTPRoute hostnames and the Gateway's load-balancer address.
+# The token comes from platform/prospector/cloudflare-external-secret.yaml (Secret cloudflare-api-token in
+# this namespace, key CF_API_TOKEN), scoped to Zone:DNS:Edit on the estate zone (clusters/<cluster>/estate-config.yaml, ESTATE_ZONE).
+#
+# Policy is upsert-only with a TXT registry: it creates and updates only records it owns and
+# never deletes. Records that predate it (the Fly CNAMEs) are foreign to it and are removed once
+# by hand; docs/onboarding/oci.md has the step.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: external-dns
+  namespace: edge
+spec:
+  interval: 24h
+  url: https://kubernetes-sigs.github.io/external-dns/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: external-dns
+  namespace: edge
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: external-dns
+      version: 1.21.1
+      sourceRef:
+        kind: HelmRepository
+        name: external-dns
+  values:
+    # registry.k8s.io blobs return HTTP 400 from the OKE node (CDN redirect); this is the
+    # upstream multi-arch image copied verbatim with `crane copy`, pinned by digest.
+    image:
+      repository: ghcr.io/chidionyema/mirror/external-dns
+      tag: v0.21.0@sha256:f53faaf71cb270d1ca9dce6ea0c94bfebf1a18696263487f0fbc74b9bf2bd7ff
+    imagePullSecrets:
+      - name: ghcr-pull
+    provider:
+      name: cloudflare
+    sources:
+      - gateway-httproute
+    policy: upsert-only
+    txtOwnerId: oke-estate
+    domainFilters:
+      - ${ESTATE_ZONE}
+    # Kyverno (prospector policies) refuses secrets as env vars and pods without limits.
+    # external-dns reads the token from a file when the env value is file:<path>.
+    env:
+      - name: CF_API_TOKEN
+        value: file:/var/run/secrets/cloudflare/CF_API_TOKEN
+    extraVolumes:
+      - name: cloudflare
+        secret:
+          secretName: cloudflare-api-token
+    extraVolumeMounts:
+      - name: cloudflare
+        mountPath: /var/run/secrets/cloudflare
+        readOnly: true
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 128Mi

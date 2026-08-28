@@ -1,0 +1,385 @@
+#!/usr/bin/env bash
+# The front door, driven the way a person drives it (crew#292 CP1).
+#
+# bin/idp-verify's login row follows a redirect chain and never carries a credential, so it
+# proves the door redirects and nothing more. It cannot tell a working sign-in from a domain
+# that hands every user a password-reset page. This drill signs in for real, in a headless
+# browser, as the domain user platform/oci/identity creates for exactly this purpose, and then
+# looks for the Backstage shell. Nothing else proves the whole chain -- Traefik, oauth2-proxy,
+# the identity domain, the app grant, the session cookie and the catalogue render -- at once.
+#
+# The password is Terraform's (random_password), lives only in the OCI vault as
+# front-door-drill-password, and is read here into an environment variable that is never echoed
+# and never reaches a log or an argv. No credential is typed, pasted or committed (LAW 46).
+#
+#   bin/idp-login-drill
+#
+# Prints exactly one line and exits 0 only on a rendered catalogue:
+#   ok      login-drill  signed in as estate-drill, catalogue rendered in 4.1s
+#   FAIL    login-drill  <stage> <detail>
+#
+# Stages, so a failure names the layer that broke: config, python, vault, browser, redirect,
+# credentials, password-change, session, catalogue, identity, entities, shell, home, surfaces, path.
+# `surfaces` is the founder's own front page: crew#307 CP2, added 2026-08-28 after he opened the
+# portal and could not see his own UI surfaces while every other row in this drill was green.
+#
+# Python with Playwright: $DRILL_PYTHON if set, else python3. CI installs it in the job.
+set -uo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+# estate-secrets sits beside the main checkout, even when this runs from a worktree under .claude/worktrees (crew#408)
+MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
+export SUPPRESS_LABEL_WARNING=True
+fail() { printf 'FAIL    login-drill  %s %s\n' "$1" "$2"; exit 1; }
+
+CFG="$IDP/clusters/oke/estate-config.yaml"
+[ -f "$CFG" ] || fail config "no $CFG"
+ZONE=$(awk '/ESTATE_ZONE:/{print $2}' "$CFG")
+DOMAIN=$(awk '/ESTATE_OIDC_DOMAIN_URL:/{print $2}' "$CFG")
+[ -n "$ZONE" ] || fail config "clusters/oke/estate-config.yaml has no ESTATE_ZONE"
+[ -n "$DOMAIN" ] || fail config "clusters/oke/estate-config.yaml has no ESTATE_OIDC_DOMAIN_URL"
+
+PY="${DRILL_PYTHON:-python3}"
+command -v "$PY" >/dev/null 2>&1 || fail python "no interpreter at '$PY'; set DRILL_PYTHON"
+"$PY" -c 'import playwright' >/dev/null 2>&1 || fail python "$PY has no playwright; pip install playwright && playwright install chromium"
+
+# --- the password, by name, out of the vault the client secrets already live in ---------------
+export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}
+C="${OCI_COMPARTMENT_OCID:-}"
+if [ -z "$C" ]; then
+  SEC="${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml"
+  [ -f "$SEC" ] || fail config "no OCI_COMPARTMENT_OCID in the environment and no $SEC"
+  C=$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "$SEC" 2>/dev/null) || fail config "cannot decrypt $SEC"
+fi
+DRILL_PASSWORD=$("$IDP/bin/idp-cloud" secret get front-door-drill-password 2>"${TMPDIR:-/tmp}/login-drill.err") || case $? in
+  1) fail vault "no secret front-door-drill-password in the compartment; run bin/idp-identity-apply apply -auto-approve";;
+  3) fail vault "$(head -1 "${TMPDIR:-/tmp}/login-drill.err")";;
+  *) fail vault "secret-bundle for front-door-drill-password is empty or unreadable by this identity";;
+esac
+[ -n "$DRILL_PASSWORD" ] || fail vault "front-door-drill-password decodes to nothing"
+export DRILL_PASSWORD
+unset B64 SID
+export DRILL_USER="${DRILL_USER:-estate-drill}" DRILL_ZONE="$ZONE" DRILL_DOMAIN="$DOMAIN"
+
+# crew#307 CP2, founder 2026-08-28: "cant see my ui surfaces". The floor for the home page is the
+# repository's own founder catalogue, counted here, never a number typed into the driver: a surface
+# added to backstage/founder/catalog-info.yaml is graded the next hour without touching this file.
+FOUNDER_FILE="$IDP/backstage/founder/catalog-info.yaml"
+[ -f "$FOUNDER_FILE" ] || fail config "no $FOUNDER_FILE"
+DRILL_SURFACES_EXPECTED=$(grep -c '^ *type: founder-surface *$' "$FOUNDER_FILE")
+[ "$DRILL_SURFACES_EXPECTED" -gt 0 ] || fail config "$FOUNDER_FILE declares no founder-surface entity"
+export DRILL_SURFACES_EXPECTED
+# The founder cannot read a log. The drill photographs the page it graded so a red row comes with
+# the picture of what he would have seen (LAW 28: an instrument nobody reads is not an instrument).
+export DRILL_SHOT="${DRILL_SHOT:-${TMPDIR:-/tmp}/login-drill-home.png}"
+
+# The password crosses into python as an environment variable only. It is never an argument, so
+# it never appears in ps, and the driver never prints it.
+"$PY" - <<'PYDRIVER'
+import os, re, sys, time
+from urllib.parse import urlparse
+
+USER = os.environ["DRILL_USER"]
+PASSWORD = os.environ["DRILL_PASSWORD"]
+ZONE = os.environ["DRILL_ZONE"]
+DOMAIN_HOST = urlparse(os.environ["DRILL_DOMAIN"]).hostname or ""
+HOME = f"https://catalogue.{ZONE}/"
+TIMEOUT = float(os.environ.get("DRILL_TIMEOUT_MS", "30000"))
+
+
+def fail(stage, detail):
+    detail = re.sub(re.escape(PASSWORD), "<redacted>", str(detail)).replace("\n", " ")[:200]
+    print(f"FAIL    login-drill  {stage} {detail}")
+    sys.exit(1)
+
+
+try:
+    from playwright.sync_api import sync_playwright, Error as PWError
+except Exception as e:  # pragma: no cover - guarded by the shell above
+    fail("python", f"playwright import failed: {e}")
+
+# A page the domain shows instead of the catalogue. Named so a failure says which one.
+RESET_MARKERS = ("resetpwd", "changepwd", "/ui/v1/resetpassword")
+RESET_TEXT = re.compile(r"(change your password|new password|password (has )?expired|reset your password)", re.I)
+
+# Read off the live page 2026-08-26, not guessed. The password input's id contains a pipe
+# ("idcs-signin-basic-signin-form-password|input"), which no #id selector can match, and neither
+# button carries an id -- so the sign-in button is found by its text, never by being the first
+# submit button on the page. The first submit button is the domain's "Acknowledge" banner.
+USER_SELECTORS = ["#idcs-signin-basic-signin-form-username",
+                  "input[name='username']", "input[autocomplete='username']",
+                  "input[placeholder*='User name' i]",
+                  "input[type='email']", "input[type='text']:visible"]
+PASS_SELECTORS = ["[id='idcs-signin-basic-signin-form-password|input']",
+                  "input[name='password']", "input[type='password']"]
+SUBMIT_SELECTORS = ["#idcs-signin-basic-signin-form-submit-button",
+                    "button:has-text('Sign In')", "button:has-text('Sign in')",
+                    "input[type='submit'][value*='Sign' i]"]
+# A consent or notice banner the domain shows in front of the form. Dismissed, never bypassed:
+# it carries no authentication decision, and leaving it up hides the sign-in button.
+BANNER_SELECTORS = ["button:has-text('Acknowledge')", "button:has-text('Accept')"]
+
+
+def first(page, selectors, what):
+    for s in selectors:
+        loc = page.locator(s).first
+        try:
+            loc.wait_for(state="visible", timeout=4000)
+            return loc
+        except PWError:
+            continue
+    fail("credentials", f"no {what} field on {page.url}")
+
+
+started = time.time()
+with sync_playwright() as p:
+    try:
+        browser = p.chromium.launch(headless=True)
+    except PWError as e:
+        fail("browser", f"chromium will not launch: {e}")
+    ctx = browser.new_context(ignore_https_errors=False)
+    ctx.set_default_timeout(TIMEOUT)
+    page = ctx.new_page()
+
+    # 1. the door must hand an anonymous visitor to the identity domain, not serve the catalogue
+    try:
+        page_errors = []
+        page.on("pageerror", lambda e: page_errors.append(str(e)))
+        page.goto(HOME, wait_until="domcontentloaded")
+    except PWError as e:
+        fail("redirect", f"{HOME} did not load: {e}")
+    host = urlparse(page.url).hostname or ""
+    if host != DOMAIN_HOST:
+        fail("redirect", f"{HOME} landed on {host}, expected the identity domain {DOMAIN_HOST}")
+
+    # 2. sign in as the drill user
+    for b in BANNER_SELECTORS:
+        loc = page.locator(b).first
+        try:
+            if loc.is_visible(timeout=2000):
+                loc.click()
+        except PWError:
+            pass
+
+    first(page, USER_SELECTORS, "username").fill(USER)
+    first(page, PASS_SELECTORS, "password").fill(PASSWORD)
+    try:
+        first(page, SUBMIT_SELECTORS, "submit").click()
+    except PWError as e:
+        fail("credentials", f"sign-in button would not click: {e}")
+
+    # 3. a first-login password change is a real failure of this drill, not something to bypass.
+    #    The drill's password is Terraform's; a domain that demands a new one has taken the
+    #    account out of Terraform's hands, and no script here is allowed to put it back.
+    try:
+        page.wait_for_url(lambda u: urlparse(u).hostname != DOMAIN_HOST, timeout=TIMEOUT)
+    except PWError:
+        u = page.url
+        body = ""
+        try:
+            body = page.locator("body").inner_text(timeout=3000)
+        except PWError:
+            pass
+        if any(m in u.lower() for m in RESET_MARKERS) or RESET_TEXT.search(body or ""):
+            fail("password-change",
+                 f"the domain is demanding a new password for {USER} at {u}; the drill will not set one -- "
+                 "re-run bin/idp-identity-apply apply, or clear the must-change flag on the user")
+        fail("credentials", f"never left the identity domain; still at {u}")
+
+    landed = urlparse(page.url).hostname or ""
+    if landed != f"catalogue.{ZONE}":
+        page.wait_for_timeout(5000)
+        landed = urlparse(page.url).hostname or ""
+    if landed != f"catalogue.{ZONE}":
+        body = ""
+        try:
+            body = " ".join(page.locator("body").inner_text(timeout=3000).split())[:240]
+        except PWError:
+            pass
+        fail("session", f"signed in but landed on {page.url.split('?')[0]}, expected catalogue.{ZONE}; page says: {body}")
+
+    # 4. the session must actually serve the catalogue: 200 and the Backstage shell
+    try:
+        resp = page.goto(HOME, wait_until="domcontentloaded")
+    except PWError as e:
+        fail("catalogue", f"{HOME} did not reload with the session cookie: {e}")
+    if resp is None or resp.status != 200:
+        fail("catalogue", f"{HOME} answered {getattr(resp, 'status', 'no response')} to the signed-in session")
+    try:
+        page.locator("text=Catalog").first.wait_for(state="visible", timeout=TIMEOUT)
+    except PWError:
+        fail("catalogue", f"{HOME} answered 200 but no Backstage shell rendered (no 'Catalog' in the page)")
+
+    # 5. the whole path, not just the door: the door's headers must reach Backstage's own
+    # auth provider and come back as a signed-in identity. On 2026-08-26 the door was green
+    # while Backstage still showed its guest "Enter" page, and that page threw a TypeError.
+    if page.locator("button:has-text('Enter')").count() > 0 or "Enter as a Guest" in page.inner_text("body"):
+        fail("identity", f"{HOME} rendered Backstage's guest sign-in page; the door's identity never reached the auth provider")
+    try:
+        who = page.request.post(f"{HOME}api/auth/oauth2Proxy/refresh", headers={"x-requested-with": "XMLHttpRequest"})
+    except PWError as e:
+        fail("identity", f"auth provider oauth2Proxy did not answer: {e}")
+    if who.status != 200:
+        fail("identity", f"auth provider oauth2Proxy answered {who.status} to the door's session: {who.text()[:240]}")
+    try:
+        ref = who.json()["backstageIdentity"]["identity"]["userEntityRef"]
+        token = who.json()["backstageIdentity"]["token"]
+    except (ValueError, KeyError, TypeError):
+        fail("identity", f"auth provider oauth2Proxy answered 200 without a Backstage identity: {who.text()[:240]}")
+    if "guest" in ref or not ref.startswith("user:"):
+        fail("identity", f"signed in as {ref}, not a user the identity domain vouched for")
+
+    # 6. crew#307, founder: "the drills need to be thorough". A rendered shell with a valid
+    # identity can still be a broken portal. The signed-in session must read the catalogue
+    # through the API, the page must have thrown no JavaScript error, and no error page may
+    # be on screen. Each is a separate stage so the FAIL line names the layer.
+    try:
+        # The door cookie opens the proxy; the catalogue API wants the Backstage token the
+        # refresh call issued (run 32968658397 answered 401 Missing credentials without it).
+        ents = page.request.get(f"{HOME}api/catalog/entities?limit=5", headers={"Authorization": f"Bearer {token}"})
+    except PWError as e:
+        fail("entities", f"catalogue API did not answer the signed-in session: {e}")
+    if ents.status != 200:
+        fail("entities", f"{HOME}api/catalog/entities answered {ents.status}: {ents.text()[:200]}")
+    try:
+        n_entities = len(ents.json())
+    except ValueError:
+        fail("entities", f"catalogue API answered 200 with no JSON list: {ents.text()[:200]}")
+    if n_entities == 0:
+        fail("entities", "catalogue API answered 200 with zero entities; the catalogue is empty for a signed-in user")
+    if page_errors:
+        fail("shell", f"{len(page_errors)} JavaScript error(s) while rendering; first: {page_errors[0][:200]}")
+
+    # 6b. The page the founder actually lands on. crew#307 closed the shell hole and then the
+    # per-path hole, and still nothing graded "/" itself: the god view (EstateHome, crew#459)
+    # draws one card per founder-surface entity, and it can draw zero inside a perfectly healthy
+    # shell that passes every check above. Founder, 2026-08-28: "cant see my ui surfaces".
+    #
+    # Two numbers, because one cannot say which half broke (LAW 29). The API count is what the
+    # catalogue ingested; the card count is what the page drew. Ingested but not drawn is the
+    # frontend; neither is the founder-catalog ConfigMap or the /estate/founder location that
+    # loads it. The FAIL line names which, so the next session does not start by guessing.
+    expected = int(os.environ.get("DRILL_SURFACES_EXPECTED", "0"))
+    try:
+        surf = page.request.get(
+            f"{HOME}api/catalog/entities?filter=spec.type=founder-surface&fields=metadata.name",
+            headers={"Authorization": f"Bearer {token}"})
+        n_surfaces = len(surf.json()) if surf.status == 200 else -1
+        surf_detail = "" if surf.status == 200 else f"API answered {surf.status}: {surf.text()[:120]}"
+    except (PWError, ValueError) as e:
+        n_surfaces, surf_detail = -1, str(e)[:120]
+
+    try:
+        page.goto(HOME, wait_until="domcontentloaded")
+    except PWError as e:
+        fail("home", f"{HOME} did not reload for the home-page check: {e}")
+    # Wait for the god view to settle: it fetches the catalogue, so the cards arrive after load.
+    # Either outcome ends the wait -- a card, or the page's own honest empty state -- so a real
+    # zero is graded rather than timing out into an ambiguous one.
+    try:
+        page.locator("a:has-text('Catalogue entry'), [data-testid='no-surfaces']").first.wait_for(
+            state="visible", timeout=TIMEOUT)
+    except PWError:
+        pass
+    # Counted on the deep link every SurfaceCard renders, not on a data-testid: InfoCard is a
+    # Backstage component and does not promise to forward unknown props to the DOM.
+    cards = page.locator("a:has-text('Catalogue entry')").count()
+    empty = page.locator("[data-testid='no-surfaces']").count() > 0
+    shot = os.environ.get("DRILL_SHOT")
+    if shot:
+        try:
+            page.screenshot(path=shot, full_page=True)
+        except PWError:
+            pass
+    print(f"home    login-drill  {cards} surface cards drawn on /, "
+          f"{n_surfaces} founder-surface entities in the catalogue, {expected} declared in the repository")
+    # A missing surface is one of two different outages and the founder cannot tell them apart from
+    # a count. Backstage keeps every configured location as a Location entity and hangs the read
+    # error off its status, so the catalogue itself says which: a location that is absent means the
+    # portal is running an image whose app-config never declared it; a location that is present and
+    # errored means the file behind it is not on disk -- the ConfigMap did not reach the mount.
+    # Printed before the FAIL so the row a session reads already names the layer (LAW 29).
+    if n_surfaces < expected:
+        try:
+            locs = page.request.get(f"{HOME}api/catalog/entities?filter=kind=location",
+                                    headers={"Authorization": f"Bearer {token}"})
+            for e in (locs.json() if locs.status == 200 else []):
+                tgt = e.get("spec", {}).get("target", "?")
+                errs = [i.get("error", {}).get("message", "")
+                        for i in e.get("status", {}).get("items", []) if i.get("level") == "error"]
+                print(f"loc     login-drill  {tgt}  {'; '.join(errs)[:180] or 'no error'}")
+            if locs.status != 200:
+                print(f"loc     login-drill  the locations filter answered {locs.status}")
+        except (PWError, ValueError) as e:
+            print(f"loc     login-drill  could not read the locations: {str(e)[:120]}")
+
+    if n_surfaces < 0:
+        fail("surfaces", f"the catalogue API would not answer the founder-surface filter: {surf_detail}")
+    if n_surfaces < expected:
+        fail("surfaces", f"the catalogue holds {n_surfaces} founder-surface entities and the repository "
+                         f"declares {expected}; the founder-catalog ConfigMap or the /estate/founder "
+                         f"location is not reaching the portal")
+    if cards < expected:
+        fail("surfaces", f"the home page drew {cards} surface cards from {n_surfaces} entities"
+                         f"{' and rendered its no-surfaces message' if empty else ''}; the founder lands "
+                         f"on {HOME} and sees {cards} of his {expected} surfaces")
+
+    body_text = page.inner_text("body")
+    # 2026-08-26 (crew#307): /catalog rendered "ERROR 404: PAGE NOT FOUND" inside a healthy shell
+    # while this drill, visiting "/" and grading the word "Catalog" in the sidebar, stayed green.
+    # Every published path is visited and graded on its own content, not on the shell.
+    # Every path the sidebar publishes, graded on a string only that page renders. A path that
+    # is not in this table is not published; adding a plugin means adding its row here.
+    PUBLISHED = (
+        ("catalog", "text=Owner"),
+        ("catalog-graph", "text=Catalog Graph"),
+        ("catalog-import", "text=Register an existing component"),
+        ("api-docs", "text=APIs"),
+        ("docs", "text=Owned"),  # the TechDocs index heading is "Docs" (shell text too); "Owned" is its ownership picker, "Documentation" was Backstage 1.x
+        ("create", "text=Templates"),  # the scaffolder page heading is "Templates"; "Create a new component" was Backstage 1.x
+        ("search", "text=Search"),
+        ("settings", "text=Settings"),
+        ("visualizer", "text=Visualizer"),
+    )
+    broken = []
+    for path, must_see in PUBLISHED:
+        before = len(page_errors)
+        try:
+            r = page.goto(f"{HOME}{path}", wait_until="domcontentloaded")
+        except PWError as e:
+            broken.append(f"{path}: did not load ({str(e)[:60]})"); continue
+        if r is None or r.status != 200:
+            broken.append(f"{path}: answered {getattr(r, 'status', 'no response')}"); continue
+        body = page.locator("body").inner_text()
+        if "PAGE NOT FOUND" in body or "ERROR 404" in body:
+            broken.append(f"{path}: client-side 404 inside the shell"); continue
+        try:
+            page.locator(must_see).first.wait_for(state="visible", timeout=TIMEOUT)
+        except PWError:
+            # Say what the page did render, so a broken row can be graded from the log alone
+            # (LAW 28): a locator that drifted reads differently from a plugin that never loaded.
+            try:
+                seen = " ".join(page.locator("body").inner_text(timeout=3000).split())[:400]
+            except PWError:
+                seen = ""
+            # A plugin's error boundary prints "Error in catalog" and swallows the stack; the
+            # JavaScript error itself is what names the bug (run 33000031203 showed "TypeEr").
+            errs = "; ".join(e[:300] for e in page_errors[before:]) or "none"
+            broken.append(f"{path}: rendered but not its own content ({must_see} never appeared); "
+                          f"page says: {seen}; js errors: {errs}")
+    print(f"paths   login-drill  {len(PUBLISHED) - len(broken)}/{len(PUBLISHED)} published paths render their own content")
+    if broken:
+        # One line per path: fail() caps its detail at 200 chars, which hid the third
+        # broken path on run 32991079528.
+        for b in broken:
+            print(f"broken  login-drill  {b}")
+        fail("path", f"{len(broken)} of {len(PUBLISHED)} published paths broken: " + ", ".join(b.split(":")[0] for b in broken))
+
+    for marker in ("Something went wrong", "Unexpected error", "Internal Server Error", "Failed to sign in", "PAGE NOT FOUND"):
+        if marker in body_text:
+            fail("shell", f"{HOME} rendered an error page: '{marker}'")
+
+    ctx.close()
+    browser.close()
+
+print(f"ok      login-drill  signed in as {USER}, catalogue rendered as {ref}, {n_entities} entities read, {cards} founder surfaces on the home page, 0 js errors, in {time.time() - started:.1f}s")
+PYDRIVER

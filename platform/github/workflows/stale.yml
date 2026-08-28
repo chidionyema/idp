@@ -1,0 +1,44 @@
+# Pull requests with no activity for 24 hours are labelled `stale` and closed in the same run
+# (crew#504 CP2, was 7+7 days under crew#299; actions/stale parses days-before-pr-close with
+# parseInt, so the only sub-day close is 0, and the close comment is the notice). Issues are
+# never touched: the board lives in issues and its items wait on founder words by design.
+# Label `keep-open` exempts a PR.
+#
+# Why: on 2026-08-26 the estate held 66 open PRs and 0 were mergeable; on 2026-08-27, 113
+# open across seven repos, and the runners thrashed behind them. A PR nobody has touched in a
+# day is inventory that hides the ones being worked; the platform closes it and says so, and
+# the close comment carries the two ways back: reopen, or a `Blocked-by:` line that
+# wake-blocked.yml acts on the moment the blocker lands (crew#504 CP7).
+name: stale
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch: {}
+permissions:
+  pull-requests: write
+  issues: write
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11.0.0
+        with:
+          days-before-issue-stale: -1
+          days-before-issue-close: -1
+          days-before-pr-stale: 1
+          days-before-pr-close: 0
+          stale-pr-label: stale
+          exempt-pr-labels: keep-open
+          exempt-draft-pr: false
+          delete-branch: false
+          operations-per-run: 200
+          stale-pr-message: >
+            No push, comment or review for 24 hours: closing now (crew#504: a PR with no live
+            owner for a day is inventory, not progress; 113 of them thrashed the runners on
+            2026-08-27). Label `keep-open` before the day is up to exempt a PR.
+          close-pr-message: >
+            Closed after 24 hours without activity; the branch is kept. Two ways back:
+            `gh pr reopen <this number>` when an owner picks it up, or add a line
+            `Blocked-by: <repo>#<n>` to this body and it reopens itself, branch updated,
+            when that lands (wake-blocked.yml, crew#504 CP7).

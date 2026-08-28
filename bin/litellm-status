@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# What the router is, what it is routing, and what it has spent.
+#
+# Standard: bin/langfuse-status's contract -- exit non-zero only when the thing is actually
+# down, because a status command that returns 0 either way cannot be used as a check
+# (LAW 28).
+# Rejected: `docker ps | grep litellm`, which reports that a container exists and not that
+# the proxy answers. A running container with a refused config is the exact failure this
+# has to catch.
+set -uo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+LLM="$IDP/llm"
+ENVF="$LLM/.env"
+
+probe() {
+  local c
+  c=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 4 "$1" 2>/dev/null || true)
+  case "$c" in "" | 000) echo "down" ;; *) echo "$c" ;; esac
+}
+
+live=$(probe http://127.0.0.1:4000/health/liveliness)
+echo "PROXY      LOCAL                          HTTP   BASE URL FOR EVERY AGENT"
+printf "%-10s %-30s %-6s %s\n" "litellm" "127.0.0.1:4000" "$live" "http://127.0.0.1:4000/v1"
+
+echo
+echo "MODELS IT SERVES"
+if [ "$live" = "200" ] && [ -r "$ENVF" ]; then
+  # The master key authenticates; it is passed on stdin-ish via the environment and never
+  # echoed. `grep -m1` reads one line out of a 600 file into this process only.
+  key=$(grep -m1 '^LITELLM_MASTER_KEY=' "$ENVF" | cut -d= -f2-)
+  curl -sS --max-time 6 -H "Authorization: Bearer $key" http://127.0.0.1:4000/v1/models 2>/dev/null \
+    | python3 -c 'import json,sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("  could not parse the model list"); raise SystemExit
+for m in d.get("data", []):
+    print("  " + m.get("id", "?"))' || echo "  none returned"
+else
+  echo "  proxy is not answering -- bin/litellm-up"
+fi
+
+echo
+echo "CONTAINERS"
+names=$(docker ps --filter 'label=com.docker.compose.project=litellm' --format '{{.Names}}' 2>/dev/null)
+if [ -n "$names" ]; then
+  # shellcheck disable=SC2086
+  docker stats --no-stream --format '  {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}' $names 2>/dev/null \
+    | sort | expand -t 34,58
+  echo "  ---"
+  echo "  ceilings: litellm 512m + litellm-db 256m = 768m"
+else
+  echo "  none running -- bin/litellm-up"
+fi
+
+echo
+echo "WHAT STILL DOES NOT GO THROUGH THIS PROXY, ON PURPOSE"
+echo "  claude_cli   local CLI on a subscription, not an API key -- prospector/claude_cli.py"
+echo "  gemini_cli   same -- prospector/gemini_cli.py"
+
+[ "$live" = "200" ] || exit 1
+exit 0

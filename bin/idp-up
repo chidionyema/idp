@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Start the catalogue and publish it on the tailnet.
+#
+# ONE RENDERER. Founder ruling, 2026-08-24: "ive seen 5 ui faces today", and
+# "backstge is for catalog". Backstage is the catalogue and there is no second
+# one. The Datasette fallback this script used to start on 8001 served the same
+# facts under the title "Estate catalogue -- fallback renderer", which meant the
+# owner of the estate met two pages claiming to be the catalogue and had no way
+# to know which one to believe.
+#
+# The argument it was removed against was availability: a second renderer with
+# no shared runtime survives a broken node_modules or a Backstage upgrade. That
+# is a real property and it is not worth what it cost. A fallback nobody was
+# told about is not availability, it is a second source of truth that is right
+# by coincidence. If the portal being down during an upgrade becomes a real
+# problem, the answer is to make the upgrade not take it down.
+#
+#   catalogue   Backstage   node   localhost:3100
+set -euo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+RUN="$IDP/logs"; mkdir -p "$RUN"
+PORT_PRIMARY=3100
+
+log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
+
+# 1. Regenerate the catalogue from the one source. db-gen stays: estate.db is
+#    the queryable copy of the same facts, and dropping a renderer is not a
+#    reason to stop producing the data underneath it.
+"$IDP/bin/catalog-gen"
+"$IDP/bin/db-gen"
+
+# 2. The catalogue.
+if [ -d "$IDP/backstage/node_modules" ]; then
+  # localhost, NOT 127.0.0.1. Backstage's app binds [::1] only, so a v4 probe
+  # returns 000 and this script concludes it is down every single time -- then
+  # starts a second `yarn start` on top of a portal that was already serving.
+  # Measured 2026-08-24: curl 127.0.0.1:3100 -> 000, curl localhost:3100 -> 200,
+  # while lsof showed `node 56620 IPv6 TCP [::1]:3100 (LISTEN)`.
+  if ! curl -fsS -o /dev/null "http://localhost:$PORT_PRIMARY" 2>/dev/null; then
+    ( cd "$IDP/backstage"
+      export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh" >/dev/null
+      export PATH="$HOME/.nvm/versions/node/v22.13.1/bin:$PATH"
+      export PORT="$PORT_PRIMARY"
+      nohup yarn start > "$RUN/backstage.log" 2>&1 &
+      echo $! > "$RUN/backstage.pid" )
+    log "catalogue starting on $PORT_PRIMARY (pid $(cat "$RUN/backstage.pid")) -- first boot takes a minute"
+  else
+    log "catalogue already up on $PORT_PRIMARY"
+  fi
+else
+  log "catalogue NOT BUILT ($IDP/backstage/node_modules missing) -- nothing is serving"
+fi
+
+# 4. Publish on the tailnet. Not the public internet: the catalogue is a map of
+#    every asset the estate owns, and LAW 21 says the default is closed. Going
+#    public is bin/idp-publish, which is one command and the founder's call.
+if command -v tailscale >/dev/null; then
+  # 8443 is only claimed when nothing holds it. This runs hourly under launchd,
+  # and re-pointing it every hour would silently undo a hand-made change to
+  # where the published link goes -- the link would move back on its own, which
+  # is the worst kind of bug because it looks like it worked and then does not.
+  # Captured, not piped: this script runs under `set -o pipefail`, so a failing
+  # `tailscale serve status` would decide the branch instead of the match.
+  serve_status=$(tailscale serve status 2>/dev/null || true)
+  if printf '%s' "$serve_status" | grep -q ':8443'; then
+    log "publish   8443 already points somewhere -- left alone"
+  else
+    tailscale serve --bg --http=8443 "http://127.0.0.1:$PORT_PRIMARY" >/dev/null 2>&1 || true
+  fi
+  host=$(tailscale status --json | /usr/local/bin/jq -r '.Self.DNSName' | sed 's/\.$//')
+  log "catalogue http://$host:8443/"
+fi
+
+"$IDP/bin/idp-status"
+
+# 5. Up is not the same as correct. On 2026-08-24 Backstage rejected 141 of 194
+#    entities and served the remaining 53 as a healthy-looking portal, so the
+#    last step is proving what is published matches the inventory. --wait
+#    because a cold Backstage takes a couple of minutes to ingest.
+echo
+"$IDP/bin/idp-verify" --wait

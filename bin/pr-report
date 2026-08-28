@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Reshape one pull request into the input policy/operating_model.rego reads, then run the
+# gate. Structured rejection (crew#286 CP10): every deny line carries rule=<name> and a
+# fix:, and --comment posts them back on the PR so the author never reads a bare red cross.
+#
+#   pr-report <number>            write reports/pr.json and run conftest; exit 1 on a deny
+#   pr-report <number> --comment  same, and post the deny lines as one PR comment
+#
+# The budget comes from estate-defaults.yaml infrastructure.monthly_cap_usd (crew#281); a
+# number typed here would be a second copy of it.
+#
+# IDP_ROOT lets the policy and the budget live in a different checkout from the pull
+# request being judged (crew#292 CP3). The reusable workflow checks the caller repo out
+# to . and idp to ./.idp, then sets IDP_ROOT=./.idp: `gh pr view` reads the caller's PR
+# from the working directory, and conftest reads the one copy of the policy from idp.
+# Unset, it is the script's own repo, which is what every local run does.
+set -uo pipefail
+IDP="${IDP_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+[ -d "$IDP/policy" ] || { echo "BLIND no policy dir at $IDP/policy (IDP_ROOT=${IDP_ROOT:-unset})"; exit 2; }
+REPORTS="${PR_REPORT_DIR:-$IDP/reports}"
+# crew#584: no number = the PR of the current branch (the pre-push hook calls it that way); no PR yet is ok.
+n="${1:-}"; comment="${2:-}"
+if [ -z "$n" ]; then
+  n=$(gh pr view --json number -q .number 2>/dev/null || true)
+  [ -n "$n" ] || { echo "ok    pr-report: no PR for this branch yet, gates run when one exists"; exit 0; }
+fi
+for t in gh jq conftest python3; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
+mkdir -p "$REPORTS"
+budget=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['infrastructure']['monthly_cap_usd'])" "$IDP/estate-defaults.yaml")
+gh pr view "$n" --json number,body,labels,files -q '{number: .number, body: .body, labels: [.labels[].name], files: [.files[].path]}' > "$REPORTS/pr-meta.json" || exit 2
+gh pr diff "$n" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true
+# LAW 45 (crew#539, idp#485): the same gitleaks CI's security-scan runs, over the lines this PR
+# adds, so a flagged line is refused here and never reaches a job log. BLIND (no gitleaks) is
+# exit 2 like any missing tool; a laptop is told what to install, CI installs it.
+secrets=$("$IDP/bin/idp-pr-secrets" "$REPORTS/pr-added.txt"); src=$?
+printf '%s\n' "$secrets"
+[ "$src" -eq 2 ] && exit 2
+# crew#227 CP5: the founder's approval is a comment from the repository owner's GitHub login
+# (2FA-authenticated), never a word relayed from chat. Every `APPROVE: <word>` / `DENY: <word>`
+# he wrote on this PR lands in pr.json; the policy compares them with the Approval-word line.
+founder=$(gh repo view --json owner -q .owner.login 2>/dev/null || echo "")
+gh pr view "$n" --json comments -q --arg f "$founder" \
+  '{founder: $f, approvals: [.comments[] | select(.author.login == $f) | .body | capture("(?m)^APPROVE:\\s*(?<w>\\S+)") | .w], denials: [.comments[] | select(.author.login == $f) | .body | capture("(?m)^DENY:\\s*(?<w>\\S+)") | .w]}' \
+  > "$REPORTS/pr-words.json" 2>/dev/null || echo '{"founder": "", "approvals": [], "denials": []}' > "$REPORTS/pr-words.json"
+# The drills the policy may name: the catalogue on IDP_ROOT plus, when the PR itself changes
+# drills/catalogue.yaml, the catalogue at the PR head. Without the second copy the drill_named
+# rule's own fix ("add the drill to the catalogue in this PR") could never pass: idp#191 was
+# refused for naming the row it added (incident test tests/test_incident_gate_read_catalogue_from_main.py).
+cats=("$IDP/drills/catalogue.yaml")
+if jq -e '.files | index("drills/catalogue.yaml")' "$REPORTS/pr-meta.json" >/dev/null; then
+  head_sha=$(gh pr view "$n" --json headRefOid -q .headRefOid)
+  repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+  if gh api "repos/$repo/contents/drills/catalogue.yaml?ref=$head_sha" -H 'Accept: application/vnd.github.raw+json' > "$REPORTS/pr-catalogue.yaml" 2>/dev/null; then
+    cats+=("$REPORTS/pr-catalogue.yaml")
+  fi
+fi
+drills=$("$IDP/bin/idp-drill-names" "${cats[@]}" 2>/dev/null || echo '[]')
+jq -n --slurpfile m "$REPORTS/pr-meta.json" --slurpfile w "$REPORTS/pr-words.json" --rawfile a "$REPORTS/pr-added.txt" --argjson b "$budget" --argjson d "$drills" \
+  '{pr: ($m[0] + {added: $a} + $w[0]), budget_monthly_usd: $b, drills: $d}' > "$REPORTS/pr.json"
+out=$(conftest test --parser json -p "$IDP/policy" "$REPORTS/pr.json" 2>&1); rc=$?
+if [ "$src" -eq 1 ]; then
+  out=$(printf '%s\nFAIL - pr.json - main - rule=no_secret_added fix: gitleaks flagged an added line (bin/idp-pr-secrets reports/pr-added.txt); rename the field or remove the value, never allow-list it\n' "$out"); rc=1
+fi
+printf '%s\n' "$out" | grep -E 'FAIL|rule=' | sed 's/^.*FAIL - [^-]*- main - //'
+if [ "$rc" -ne 0 ] && [ "$comment" = "--comment" ]; then
+  # crew#66: policy/no-manual-steps.rego's deny is the founder's sentence verbatim and carries no
+  # rule= prefix, so the comment grep reads it by its own opening words or the author gets a red
+  # cross with an empty comment under it.
+  body=$(printf 'operating-model gate (policy/operating_model.rego) refused this PR. Each line names the rule and the fix.\n\n'; printf '%s\n' "$out" | grep -oE '(rule=|Policy Violation:).*' | sed 's/^/- /'; printf '\nRe-run: bin/pr-report %s\n' "$n")
+  gh pr comment "$n" -b "$body" >/dev/null && echo "commented on #$n"
+fi
+[ "$rc" -eq 0 ] && echo "PASS    operating-model gate #$n" || echo "FAIL    operating-model gate #$n"
+exit "$rc"

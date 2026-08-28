@@ -1,0 +1,18 @@
+# What the Sovereign Bus acceptance suite needs, on top of requirements.txt.
+# `bin/idp-ci` runs `pytest sovereign/tests/bdd -q` against these; the GitHub
+# Actions workflow installs this file in its `tools` step.
+#
+# pytest-bdd, not behave (LAW 43): the repository already holds 61 Gherkin
+# .feature files and pytest-bdd binds them to pytest, so idp-ci keeps one test
+# runner. behave would be a second runner with its own reporting.
+pytest>=8.0
+pytest-bdd>=8.0
+# crew#584 (founder 2026-08-28, "we spend too much time running tests"): parallelism is the default
+# nobody types (pyproject.toml addopts = -n auto). Measured on the idp#609 change set, 17 files:
+# serial 160 s -> 17.34 s, same 3 reds. pytest-testmon was tried and rejected the same day: it selects
+# by Python coverage and returned "no tests ran" after a YAML-only edit (false green); selection is
+# bin/idp-tests-for. CI keeps the full suite as the proof.
+pytest-xdist>=3.6
+-r requirements.txt
+# bin/catalog-gen and bin/catalog-links-check import yaml; the bdd steps run them (crew#297)
+pyyaml>=6.0

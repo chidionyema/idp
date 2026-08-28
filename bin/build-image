@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# build-image: the one way an estate image gets built (ruling R24).
+#
+#   bin/build-image --push -t ghcr.io/OWNER/NAME:TAG [-f Dockerfile] CONTEXT
+#   bin/build-image --load -t NAME:TAG            [-f Dockerfile] CONTEXT
+#
+# --push builds linux/amd64 AND linux/arm64 and pushes one manifest list. A
+# `--platform` naming anything else is refused: that is the single-arch push
+# R24 forbids. --load builds for the machine you are on only, because the docker
+# driver cannot load a manifest list into a local daemon (buildx limitation);
+# it never pushes, so nothing single-arch can leave the machine through here.
+set -euo pipefail
+PLATFORMS="linux/amd64,linux/arm64"
+mode=""; args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --push) mode=push ;;
+    --load) mode=load ;;
+    --platform|--platform=*)
+      v="${1#--platform=}"; [ "$v" = "$1" ] && { shift; v="$1"; }
+      if [ "$mode" != load ] && [ "$(tr ',' '\n' <<<"$v" | sort | paste -sd, -)" != "$PLATFORMS" ]; then
+        echo "build-image: refused: --platform $v is not $PLATFORMS (R24: one tag, two architectures)" >&2; exit 2
+      fi ;;
+    *) args+=("$1") ;;
+  esac; shift
+done
+[ -n "$mode" ] || { echo "build-image: choose --push (multi-arch to a registry) or --load (native only, local)" >&2; exit 2; }
+if [ "$mode" = push ]; then
+  exec docker buildx build --platform "$PLATFORMS" --push "${args[@]}"
+else
+  exec docker buildx build --load "${args[@]}"
+fi

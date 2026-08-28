@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Stop the catalogue and unpublish its ports. The off switch LAW 32 requires,
+# and the one thing the founder should be able to run without reading anything.
+#
+# It stops processes and removes tailscale listeners. It deletes nothing: the
+# generated catalogue stays on disk, so bin/idp-up brings the whole thing back.
+set -uo pipefail
+
+stopped=0
+
+kill_port() {
+  local port="$1" what="$2" pids
+  pids=$(lsof -nP -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
+  if [ -z "$pids" ]; then
+    echo "  $what on $port: was not running"
+    return
+  fi
+  # TERM first, then check. A renderer that ignores TERM is a bug worth seeing,
+  # so the KILL is reported rather than done quietly.
+  echo "$pids" | xargs kill 2>/dev/null || true
+  sleep 1
+  local left
+  left=$(lsof -nP -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
+  if [ -n "$left" ]; then
+    echo "$left" | xargs kill -9 2>/dev/null || true
+    echo "  $what on $port: stopped (needed SIGKILL -- it ignored SIGTERM)"
+  else
+    echo "  $what on $port: stopped"
+  fi
+  stopped=$((stopped + 1))
+}
+
+echo "CATALOGUE"
+kill_port 3100 "Backstage app"
+kill_port 7107 "Backstage backend"
+
+echo
+echo "PUBLISHED PORTS"
+for p in 8443 10000; do
+  # Captured, not piped: this script runs under `set -o pipefail`, so a failing
+  # `tailscale serve status` would decide the branch instead of the match.
+  serve_status=$(tailscale serve status 2>/dev/null || true)
+  if printf '%s' "$serve_status" | grep -q ":$p"; then
+    tailscale serve --http="$p" off >/dev/null 2>&1 \
+      && echo "  $p: unpublished" \
+      || echo "  $p: could not unpublish -- check 'tailscale serve status'"
+  else
+    echo "  $p: was not published"
+  fi
+done
+
+echo
+echo "The catalogue is still on disk. bin/idp-up brings it all back."

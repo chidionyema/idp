@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Does the licence policy say YES to correct work, as well as NO to bad work?
+#
+# LAW 38: a guard that refuses correct work is an outage, and a gate with only
+# refusal tests is a gate nobody has proved is safe to install. So this runs
+# paired controls -- one fixture that must pass and two that must fail -- and
+# checks the exit code each time rather than eyeballing the output.
+#
+# It uses conftest itself as the runner. There is no bespoke test harness here
+# on purpose: the thing under test is the policy, and the tool that will run it
+# in anger is the tool that should run it here.
+#
+#   policy-test        run every fixture, print a table, exit non-zero on any surprise
+set -uo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+FIX="$IDP/policy/fixtures"
+fail=0
+
+command -v conftest >/dev/null || { echo "conftest is not installed -- brew install conftest"; exit 2; }
+
+# fixture : expected exit code : what it proves
+cases=(
+  "clean.json:0:allows an ordinary permissive tree, including packages with no licence metadata"
+  "sell-blocking.json:1:refuses AGPL, SSPL, BUSL, Elastic, non-commercial CC and Commons Clause"
+  "broken-scan.json:1:refuses a full parts list with no terms in it, instead of calling it clean"
+  "placement-ok.json:0:allows short-interval desk jobs that are monitored and awake-hours only"
+  "placement-misplaced.json:1:refuses sleep-window schedules, never-pinged jobs and survival work on a laptop"
+  "placement-blind.json:1:refuses a monitored job whose check could not be read, so a monitoring outage cannot read as a pass"
+  "opmodel-ok.json:0:allows an identity with its grant, an approval word, a cost line and the canary label (crew#286)"
+  "opmodel-half-provisioned.json:1:refuses an identity created with no grant or policy in the same PR (ZCP, crew#287)"
+  "opmodel-gui.json:1:refuses an instruction line that sends a person to a console"
+  "opmodel-no-approval.json:0:allows a founder-facing change with no Approval-word line (founder 2026-08-27: no founder friction; the word is only his veto handle)"
+  "opmodel-approval-pending.json:0:allows a founder-facing change whose word the founder has not written on the PR; green merges (founder 2026-08-27)"
+  "opmodel-approval-other-word.json:0:allows when the founder approved a different word than the PR declares; only DENY: is read"
+  "opmodel-denied.json:1:refuses a founder-facing change the founder replied DENY: to, even with an APPROVE: on the same PR"
+  "opmodel-over-budget.json:1:refuses a platform/oci change whose declared monthly cost beats the budget"
+  "opmodel-no-canary.json:1:refuses a platform/oci change with no canary label"
+  "opmodel-no-drill.json:1:refuses a platform/ or clusters/ change that names no drill (founder 2026-08-26: test discipline)"
+  "opmodel-unknown-drill.json:1:refuses a Drill: line naming nothing in drills/catalogue.yaml"
+  "opmodel-drill-added-in-pr.json:0:allows a Drill: line naming a row this PR adds to drills/catalogue.yaml (idp#191 was refused for its own row)"
+  "notoil-doc-manual.json:1:refuses a doc that tells a person to mint a credential and hand it to a secret (crew#66)"
+  "notoil-doc-founder-action.json:0:allows a FOUNDER ACTION line that names a URL or a single word, the LAW 47 register's one tap (crew#66)"
+)
+
+printf '%-20s %-8s %-8s %s\n' FIXTURE EXPECT GOT PROVES
+printf '%-20s %-8s %-8s %s\n' -------------------- -------- -------- ------
+
+for c in "${cases[@]}"; do
+  f=${c%%:*}; rest=${c#*:}; want=${rest%%:*}; why=${rest#*:}
+  out=$(conftest test --parser json -p "$IDP/policy" "$FIX/$f" 2>&1)
+  got=$?
+  if [ "$got" -eq "$want" ]; then mark=""; else mark="  <-- WRONG"; fail=1; fi
+  printf '%-20s %-8s %-8s %s%s\n' "$f" "$want" "$got" "$why" "$mark"
+  [ -n "$mark" ] && printf '%s\n' "$out" | sed 's/^/      /'
+done
+
+echo
+if [ "$fail" -eq 0 ]; then
+  echo "PASS      every policy allows its good case and refuses its bad ones"
+else
+  echo "FAIL      the policy did not behave as specified -- see above"
+fi
+exit "$fail"

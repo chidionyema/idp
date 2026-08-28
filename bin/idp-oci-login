@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# provider-adapter: oci — this file IS the provider door (session sign-in / tenancy-root IAM); it is not a caller of one. Every other bin/idp-* goes through bin/idp-cloud (crew#66).
+# Render ~/.oci/config and the key file from the vault, prove the identity works, and print
+# the Always Free A1 capacity (ADR 0004 step 1 receipt). Idempotent; safe to run hourly.
+# --check: exit 0 when the identity answers, 1 when it does not, 2 BLIND when the vault has
+# no OCI key yet. Also writes platform/oci/terraform.tfvars (identifiers only, gitignored).
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+# estate-secrets sits beside the main checkout, even when this runs from a worktree under .claude/worktrees (crew#408)
+MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
+VAULT="${ESTATE_SECRETS:-$(dirname "$MAIN")/estate-secrets}"
+export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
+ENV_NAME="${OCI_ENV:-dev}"
+export SUPPRESS_LABEL_WARNING=True   # the OCI_API_KEY marker the CLI wants breaks the OpenTofu provider
+command -v oci >/dev/null || { echo "BLIND oci missing"; exit 2; }
+# Two identities, one script (crew#227 CP2). OCI_CI=1: a workflow already exchanged its GitHub
+# OIDC token for a one-hour OCI session token (gtrevorrow/oci-token-exchange-action) and wrote
+# ~/.oci/config; the identifiers arrive as environment variables set from GitHub secrets and
+# variables. Nothing is read from a vault and no private key touches the runner's disk.
+# Otherwise: the laptop path, API key rendered from the sops vault.
+AUTH=APIKey; PROFILE=DEFAULT
+if [ "${OCI_CI:-}" = 1 ]; then
+  for v in OCI_TENANCY_OCID OCI_COMPARTMENT_OCID OCI_REGION OCI_OS_NAMESPACE OCI_S3_ACCESS_KEY OCI_S3_SECRET_KEY OKE_SSH_PUBKEY_TEXT OKE_ALLOWED_CIDRS ESTATE_FOUNDER_EMAIL; do
+    [ -n "${!v:-}" ] || { echo "BLIND oci     OCI_CI=1 but $v is unset"; exit 2; }
+  done
+  vget() { printf %s "${!1}"; }
+  AUTH=SecurityToken; PROFILE="${OCI_CLI_PROFILE:-DEFAULT}"; export OCI_CLI_AUTH=security_token OCI_CLI_PROFILE="$PROFILE"
+  grep -q '^security_token_file' "$HOME/.oci/config" 2>/dev/null || { echo "BLIND oci     OCI_CI=1 but ~/.oci/config holds no session token: run the token exchange step first"; exit 2; }
+else
+  # crew#227 CP2 residual (2026-08-26): the laptop path no longer renders the API key. The
+  # platform is checked, planned and applied from Actions on a machine identity (R26: infra
+  # is never Mac-bound). OCI_LAPTOP_KEY=1 is the transition escape until the key is deleted.
+  [ "${OCI_LAPTOP_KEY:-}" = 1 ] || { echo "BLIND oci     laptop runs render no key; run the platform from Actions: gh workflow run oke-check.yml -f mode=check|apply (OCI_LAPTOP_KEY=1 to override until crew#227 deletes the key)"; exit 2; }
+  command -v sops >/dev/null || { echo "BLIND sops missing"; exit 2; }
+  vget() { sops -d --extract "[\"$1\"]" "$VAULT/secrets/$ENV_NAME/$1.yaml" 2>/dev/null; }
+  [ -e "$VAULT/secrets/$ENV_NAME/OCI_FINGERPRINT.yaml" ] || { echo "BLIND oci     no API key in the vault yet; run bin/idp-oci-bootstrap"; exit 2; }
+  D="$HOME/.oci"; mkdir -p "$D"; chmod 700 "$D"
+  KEY="$D/estate-tofu.pem"; umask 077
+  vget OCI_API_PRIVATE_KEY > "$KEY"; chmod 600 "$KEY"   # no OCI_API_KEY marker: the oci CLI suggests it, the OpenTofu provider rejects the file with it (2026-08-25)
+  # Only [DEFAULT] is ours. Other profiles (the bootstrap session token) are kept: this script
+  # used to overwrite the whole file and dropped [estate-bootstrap] twice on 2026-08-25.
+  OTHERS=$([ -f "$D/config" ] && awk '/^\[/{keep=($0!="[DEFAULT]")} keep' "$D/config" || true)
+  { printf '[DEFAULT]\nuser=%s\nfingerprint=%s\ntenancy=%s\nregion=%s\nkey_file=%s\n' "$(vget OCI_USER_OCID)" "$(vget OCI_FINGERPRINT)" "$(vget OCI_TENANCY_OCID)" "$(vget OCI_REGION)" "$KEY"
+    [ -n "$OTHERS" ] && printf '\n%s\n' "$OTHERS"; } > "$D/config"
+  chmod 600 "$D/config"
+fi
+COMP="$(vget OCI_COMPARTMENT_OCID)"
+# Worker SSH key: a dedicated pair, created once, private half stays on this machine only.
+SSH_PUB="${OCI_SSH_PUBKEY:-$HOME/.ssh/oke-estate.pub}"
+if [ -n "${OKE_SSH_PUBKEY_TEXT:-}" ]; then SSH_PUB_TEXT="$OKE_SSH_PUBKEY_TEXT"   # CI: the public half, a GitHub variable
+else [ -f "$SSH_PUB" ] || ssh-keygen -q -t ed25519 -N "" -C oke-estate -f "${SSH_PUB%.pub}"; SSH_PUB_TEXT="$(cat "$SSH_PUB")"; fi
+# The API endpoint admits only the CIDRs below (module default is none). The egress address of
+# this machine is measured each login, never typed (LAW 46); a Mac on a new network re-runs login.
+# CI passes the applied list (OKE_ALLOWED_CIDRS) so a plan from a runner reports real drift only.
+if [ -n "${OKE_ALLOWED_CIDRS:-}" ]; then CIDRS="$OKE_ALLOWED_CIDRS"
+else
+  EGRESS="$(curl -fsS --max-time 10 https://api.ipify.org)"
+  [[ "$EGRESS" =~ ^[0-9.]+$ ]] || { echo "BLIND oci     could not measure the egress IP" >&2; exit 2; }
+  CIDRS="\"$EGRESS/32\""
+fi
+# crew#220 hand step 1: remote state. OpenTofu 1.12 has no native "oci" backend (that is
+# Terraform 1.13+), so state goes through Object Storage's S3-compatible endpoint with a customer
+# secret key that bin/idp-oci-bootstrap creates for the estate-tofu user. Rendered as a
+# git-ignored *_override.tf so a checkout without the key still plans against local state, and
+# bin/idp-oke-rebuild then reports state-remote as BLIND instead of pretending.
+NS="$(vget OCI_OS_NAMESPACE || true)"; S3K="$(vget OCI_S3_ACCESS_KEY || true)"; S3S="$(vget OCI_S3_SECRET_KEY || true)"
+if [ -n "$NS" ] && [ -n "$S3K" ] && [ -n "$S3S" ]; then
+  # one state file per module: the cluster's and platform/oci/identity's (crew#281, crew#288) share the bucket
+  for pair in "platform/oci:${OCI_CLUSTER_NAME:-estate}" "platform/oci/identity:identity"; do
+    mod="${pair%%:*}"; skey="${pair##*:}"
+    cat > "$IDP/$mod/backend_override.tf" <<BK
+terraform {
+  backend "s3" {
+    bucket                      = "estate-tofu-state"
+    key                         = "$skey/terraform.tfstate"
+    region                      = "$(vget OCI_REGION)"
+    endpoints                   = { s3 = "https://$NS.compat.objectstorage.$(vget OCI_REGION).oraclecloud.com" }
+    access_key                  = "$S3K"
+    secret_key                  = "$S3S"
+    skip_region_validation      = true
+    skip_credentials_validation = true
+    skip_requesting_account_id  = true
+    skip_metadata_api_check     = true
+    skip_s3_checksum            = true
+    use_path_style              = true
+  }
+}
+BK
+    chmod 600 "$IDP/$mod/backend_override.tf"
+  done
+  echo "ok      state   backend_override.tf rendered for platform/oci and platform/oci/identity (bucket estate-tofu-state)"
+else
+  rm -f "$IDP/platform/oci/backend_override.tf" "$IDP/platform/oci/identity/backend_override.tf"; echo "BLIND   state   no OCI_S3_* in the vault: local state (crew#220 hand step 1; run bin/idp-oci-bootstrap)"
+fi
+FE_LINE=""; [ -z "${ESTATE_FOUNDER_EMAIL:-}" ] || FE_LINE="founder_email               = \"$ESTATE_FOUNDER_EMAIL\""
+cat > "$IDP/platform/oci/terraform.tfvars" <<TFV
+tenancy_ocid                = "$(vget OCI_TENANCY_OCID)"
+compartment_ocid            = "$COMP"
+region                      = "$(vget OCI_REGION)"
+ssh_public_key              = "$SSH_PUB_TEXT"
+control_plane_allowed_cidrs = [$CIDRS]
+oci_auth                    = "$AUTH"
+oci_profile                 = "$PROFILE"
+$FE_LINE
+TFV
+
+# A key uploaded seconds ago answers 401 for a few minutes (measured 2026-08-25: ~6 min
+# between upload and first 200). Retry for up to 8 minutes only when the key is that fresh.
+tries=1; [ "${1:-}" = --check ] || tries=16
+for i in $(seq 1 "$tries"); do
+  out=$(oci iam region-subscription list --query 'data[0]."region-name"' --raw-output 2>&1 | grep -v '^Warning' | head -1) && [ "${out#ocid}" = "$out" ] && [[ "$out" =~ ^[a-z]+-[a-z]+-[0-9]$ ]] && break
+  [ "$i" = "$tries" ] && { echo "FAIL  oci     identity refused: ${out:0:160}"; exit 1; }
+  echo "wait  oci     401 after a fresh key upload; retry $i/$tries in 30s"; sleep 30
+done
+AD=$(oci iam availability-domain list --compartment-id "$(vget OCI_TENANCY_OCID)" --query 'data[0].name' --raw-output)
+CORES=$(oci limits resource-availability get --service-name compute --limit-name standard-a1-core-count \
+        --compartment-id "$(vget OCI_TENANCY_OCID)" --availability-domain "$AD" --query 'data.available' --raw-output 2>/dev/null || echo "?")
+echo "ok    oci     identity ($AUTH) answers in $out; A1 cores available in $AD: $CORES"

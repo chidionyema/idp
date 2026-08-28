@@ -1,0 +1,160 @@
+# Healthchecks (healthchecks/healthchecks, BSD-3), STANDARDS.md row 21, crew#177. One Deployment:
+# the init container migrates the database and enrols the founder's project with the ping key the
+# vault holds, so the Mac's ~/.estate/healthchecks/ping_key (bin/idp-hc-enroll writes it from the
+# same vault entry) and the server agree without a person opening a settings page. Sign-in is the
+# front door: oauth2-proxy answers the ForwardAuth subrequest and Traefik copies
+# X-Auth-Request-Email onto the request; Django reads it as REMOTE_USER_HEADER and creates or
+# finds the user by that email (hc/accounts/backends.py CustomHeaderBackend). No password exists
+# anywhere for this app (ADR 0007), and REGISTRATION_OPEN is off so only the front door admits.
+apiVersion: v1
+kind: Service
+metadata:
+  name: healthchecks
+  namespace: healthchecks
+  labels: { app.kubernetes.io/name: healthchecks, app.kubernetes.io/part-of: idp }
+spec:
+  selector: { app.kubernetes.io/name: healthchecks }
+  ports:
+    - { name: http, port: 8000, targetPort: 8000 }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: healthchecks-enrol
+  namespace: healthchecks
+data:
+  # Idempotent: one founder user, one project named "estate", its ping key = the vault entry.
+  enrol.py: |
+    import os
+    from django.contrib.auth.models import User
+    from hc.accounts.models import Profile, Project
+    email = os.environ["FOUNDER_EMAIL"]
+    user = User.objects.filter(email=email).first()
+    if user is None:
+        user = User.objects.create(username=email[:150], email=email)
+        Profile.objects.get_or_create(user=user)
+    project = Project.objects.filter(owner=user).order_by("id").first()
+    if project is None:
+        project = Project(owner=user)
+    project.name = "estate"
+    project.ping_key = os.environ["PING_KEY"]
+    project.save()
+    print("enrolled", project.name, "for", email)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: healthchecks
+  namespace: healthchecks
+  labels: { app.kubernetes.io/name: healthchecks, app.kubernetes.io/part-of: idp }
+spec:
+  replicas: 2   # crew#539: one pod is one node event away from a 503
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app.kubernetes.io/name: healthchecks }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: healthchecks, app.kubernetes.io/part-of: idp }
+    spec:
+      automountServiceAccountToken: false
+      # Two replicas on one node are one replica. DoNotSchedule, not ScheduleAnyway: a
+      # best-effort spread silently collapses onto one node exactly when the cluster is tight,
+      # which is the moment the spread was for.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: healthchecks }
+      securityContext:
+        runAsNonRoot: true
+        # The image's `useradd --system hc` (docker/Dockerfile) takes the first free system uid,
+        # 999 on python:slim; the pod pins the number so runAsNonRoot can be verified, and nothing
+        # on the read-only root depends on file ownership (the database is Postgres, not /data).
+        runAsUser: 999
+        runAsGroup: 999
+        seccompProfile: { type: RuntimeDefault }
+      initContainers:
+        - name: migrate-and-enrol
+          image: docker.io/healthchecks/healthchecks:v4.3
+          # Secrets are mounted as files and exported by the container itself (the cluster policy
+          # secrets-not-from-env-vars refuses Secret-backed env; same shape as platform/llm/litellm.yaml).
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              for f in /run/secrets/healthchecks/*; do export "$(basename "$f")=$(cat "$f")"; done
+              # crew#539: with two replicas both init containers start together. Django takes
+              # no lock of its own -- concurrent migrate deadlocks on DDL, and enrol.py's
+              # filter-then-create would race two founder users. One Postgres advisory lock
+              # covers both; it is held for this session and released when the shell exits.
+              python manage.py shell <<'PY'
+              from django.core.management import call_command
+              from django.db import connection
+              with connection.cursor() as cur:
+                  cur.execute("SELECT pg_advisory_lock(553901)")
+              call_command("migrate", interactive=False)
+              exec(open("/enrol/enrol.py").read())
+              PY
+          workingDir: /opt/healthchecks
+          envFrom:
+            - configMapRef: { name: healthchecks-env }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: enrol, mountPath: /enrol, readOnly: true }
+            - { name: secrets, mountPath: /run/secrets/healthchecks, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 256Mi }
+      containers:
+        - name: healthchecks
+          image: docker.io/healthchecks/healthchecks:v4.3
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              for f in /run/secrets/healthchecks/*; do export "$(basename "$f")=$(cat "$f")"; done
+              exec uwsgi /opt/healthchecks/docker/uwsgi.ini
+          ports:
+            - { containerPort: 8000, name: http }
+          envFrom:
+            - configMapRef: { name: healthchecks-env }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          # crew#483: the kubelet probes with the pod IP as Host, Django's ALLOWED_HOSTS
+          # (env.yaml, hc.${ESTATE_ZONE}) answers 400, and the pod crash-looped 9 times on
+          # a liveness failure. The probe presents the one allowed host.
+          readinessProbe:
+            httpGet:
+              path: /api/v3/status/
+              port: 8000
+              httpHeaders: [{ name: Host, value: "hc.${ESTATE_ZONE}" }]
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v3/status/
+              port: 8000
+              httpHeaders: [{ name: Host, value: "hc.${ESTATE_ZONE}" }]
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 50m, memory: 192Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:
+            - { name: secrets, mountPath: /run/secrets/healthchecks, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: secrets
+          secret: { secretName: healthchecks }
+        - name: enrol
+          configMap: { name: healthchecks-enrol }
+        - name: tmp
+          emptyDir: {}

@@ -1,0 +1,91 @@
+# The first run of the langfuse-alert-drill Schedule on the day it is applied, not the first
+# Monday after (crew#483 residual: a Schedule's first tick is the next cron match). Its spec is
+# the Schedule's spec.workflow, byte for byte; tests/test_incident_crew488_chaos_first_run_matches_schedule.py
+# fails the moment they differ. This run is crew#539 DoD item 2's receipt.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Workflow
+metadata:
+  name: langfuse-alert-drill-first-run
+  namespace: observability
+spec:
+  entry: entry
+  templates:
+  - name: entry
+    templateType: Serial
+    deadline: 600s
+    children:
+    - experiment
+  - name: experiment
+    templateType: Parallel
+    deadline: 570s
+    children:
+    - fail-web
+    - receipt
+  - name: fail-web
+    templateType: PodChaos
+    deadline: 540s
+    podChaos:
+      action: pod-failure
+      mode: all
+      duration: 8m
+      selector:
+        namespaces:
+        - observability
+        labelSelectors:
+          app.kubernetes.io/name: langfuse
+          app: web
+  - name: receipt
+    templateType: Task
+    deadline: 560s
+    task:
+      container:
+        name: receipt
+        image: ghcr.io/oracle/oci-cli:20260826
+        command:
+        - /bin/sh
+        - -c
+        args:
+        - "set -eu\npython3 - <<'PY'\nimport datetime, json, time, urllib.parse, urllib.request\nAM =\
+          \ \"http://kps-alertmanager.monitoring.svc:9093\"\nPROM = \"http://kps-prometheus.monitoring.svc:9090\"\
+          \ndef get(url):\n    with urllib.request.urlopen(url, timeout=10) as r:\n        return json.load(r)\n\
+          def now():\n    return datetime.datetime.now(datetime.timezone.utc).strftime(\"%Y-%m-%dT%H:%M:%SZ\"\
+          )\nstart, line, err = time.time(), None, \"\"\nwhile time.time() - start < 480:\n    try:\n\
+          \        alerts = [a for a in get(AM + \"/api/v2/alerts?active=true&filter=\" + urllib.parse.quote('alertname=\"\
+          FounderSurfaceDown\"'))\n                  if \"langfuse\" in a[\"labels\"].get(\"instance\"\
+          , \"\")]\n        q = get(PROM + \"/api/v1/query?query=\" + urllib.parse.quote('sum(increase(alertmanager_notifications_total{integration=\"\
+          telegram\"}[15m]))'))[\"data\"][\"result\"]\n        sent = float(q[0][\"value\"][1]) if q else\
+          \ 0.0\n        if alerts and sent > 0:\n            line = f\"ok langfuse-alert-drill FounderSurfaceDown\
+          \ firing for {alerts[0]['labels']['instance']} telegram_notifications={sent:.0f} after {int(time.time()\
+          \ - start)}s at {now()}\"\n            break\n    except Exception as e:\n        err = str(e)[:80]\n\
+          \    time.sleep(30)\nif line is None:\n    line = f\"FAIL langfuse-alert-drill no FounderSurfaceDown\
+          \ for langfuse with a telegram notification within 480s at {now()} {err}\"\nopen(\"/tmp/receipt\"\
+          , \"w\").write(line + \"\\n\")\nprint(line)\nPY\noci --auth instance_principal os object put\
+          \ --bucket-name estate-drill-receipts \\\n  --name chaos/langfuse-alert-drill --file /tmp/receipt\
+          \ --content-type text/plain --force\n"
+        env:
+        - name: HOME
+          value: /tmp
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}

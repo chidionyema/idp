@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Stop the LiteLLM proxy. Keeps the database volume.
+#
+# Standard: bin/langfuse-down. Rejected: `docker compose down -v` as the default, because
+# -v destroys the spend ledger and the virtual keys, and a stop command that silently
+# deletes an audit trail is the opposite of what this stack is for. --wipe asks for it.
+set -euo pipefail
+
+LLM="$(cd "$(dirname "$0")/.." && pwd)/llm"
+COMPOSE=(docker compose --env-file "$LLM/.env" -f "$LLM/litellm.yml")
+
+if [ "${1:-}" = "--wipe" ]; then
+  echo "This deletes the spend ledger and every virtual key. Ctrl-C within 5s to stop."
+  sleep 5
+  "${COMPOSE[@]}" down -v
+  echo "wiped"
+else
+  "${COMPOSE[@]}" down
+  echo "stopped; the database volume is kept (--wipe removes it)"
+fi

@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# What is running on the laptop that has no business being on a laptop.
+#
+# The estate keeps reporting missed schedules. The cause is not mysterious and
+# it is not a bug in any individual job: a MacBook sleeps, and a job scheduled
+# for 03:30 on a machine whose lid is shut at 03:30 does not run. Measured
+# 2026-08-24 against the live Healthchecks instance: of 10 checks with a daily
+# period, 7 had never received a single ping. Of the 25 sub-daily checks, 4 had
+# never pinged. Same jobs, same wrapper, same machine -- the only thing that
+# differs is whether the schedule falls inside the hours the laptop is awake.
+#
+# So this reads every loaded launchd job, works out when it wants to run, and
+# grades it against policy/placement.rego, which encodes one rule: work that
+# must happen whether or not a person is at the desk does not live on the desk.
+#
+#   placement-audit           write reports/placement.json and grade it
+#   placement-audit --json    just the inventory, no grading
+#
+# It reads. It changes nothing. Moving a job is a decision with a blast radius
+# and it is not this script's to make.
+set -uo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+OUT="$IDP/reports"
+JQ=/usr/local/bin/jq
+AGENTS="$HOME/Library/LaunchAgents"
+HCDIR="$HOME/.estate/healthchecks"
+
+mkdir -p "$OUT"
+
+# --- 1. what Healthchecks knows ----------------------------------------------
+# Optional. The inventory is still worth having without it; the ping history is
+# what turns "this looks wrong" into "this has never once run".
+hc="{}"
+if [ -f "$HCDIR/api_key" ]; then
+  raw=$(curl -s --max-time 10 -H "X-Api-Key: $(cat "$HCDIR/api_key")" \
+        http://127.0.0.1:8000/api/v3/checks/ 2>/dev/null)
+  if [ -n "$raw" ] && printf '%s' "$raw" | $JQ -e '.checks' >/dev/null 2>&1; then
+    hc=$(printf '%s' "$raw" | $JQ '[.checks[]|{key:(.slug//.name),value:{status,last_ping,period:.timeout,grace}}]|from_entries')
+  fi
+fi
+printf '%s' "$hc" > "$OUT/.hc-cache.json"
+
+# --- 2. every loaded job, and when it wants to run ---------------------------
+# The slug a job pings under is its second argument to hc-wrap.sh, which is the
+# only reliable join between launchd and Healthchecks. Jobs that are not wrapped
+# simply have no check, which is itself worth seeing.
+{
+echo '['
+first=1
+for f in "$AGENTS"/*.plist; do
+  label=$(basename "$f" .plist)
+  case "$label" in com.apple.*|com.adobe.*|com.valvesoftware.*|homebrew.*) continue;; esac
+  j=$(plutil -convert json -o - "$f" 2>/dev/null) || continue
+  [ -z "$j" ] && continue
+  [ $first -eq 1 ] || echo ','
+  first=0
+  printf '%s' "$j" | $JQ --arg label "$label" --slurpfile hc "$OUT/.hc-cache.json" '
+    . as $p
+    | ($p.ProgramArguments // []) as $argv
+    | (if ($argv[0] // "") | test("hc-wrap") then ($argv[1] // null) else null end) as $slug
+    | ($argv | join(" ")) as $cmd
+    | (if $p.StartInterval then $p.StartInterval
+       elif $p.StartCalendarInterval then 86400
+       elif ($p.KeepAlive != null) then 0
+       else null end) as $period
+    | (if $p.StartCalendarInterval then
+         (if ($p.StartCalendarInterval|type) == "array"
+          then [$p.StartCalendarInterval[].Hour // 0]
+          else [$p.StartCalendarInterval.Hour // 0] end)
+       else [] end) as $hours
+    | {
+        label: $label,
+        slug: $slug,
+        schedule: (if $p.KeepAlive then "keepalive"
+                   elif $p.StartCalendarInterval then "calendar"
+                   elif $p.StartInterval then "interval"
+                   elif $p.WatchPaths then "watchpaths"
+                   else "manual" end),
+        period_seconds: $period,
+        hours: $hours,
+        # Hours the lid is realistically shut. Not a guess: see docs/onboarding/placement.md.
+        asleep_hours: [$hours[] | select(. >= 0 and . < 8)],
+        command: $cmd,
+        check: ($hc[0][$slug // "__none__"] // null)
+      }'
+done
+echo ']'
+} | $JQ -s '{jobs: .[0]}' > "$OUT/placement.json"
+
+rm -f "$OUT/.hc-cache.json"
+
+n=$($JQ '.jobs|length' "$OUT/placement.json")
+wrapped=$($JQ '[.jobs[]|select(.slug!=null)]|length' "$OUT/placement.json")
+# Three states, not two, and they must never be added together. "never pinged"
+# is a fact about the job. "unreadable" is a fact about Healthchecks being down,
+# and reporting it as never-pinged makes a monitoring outage look like 34 dead
+# jobs -- or, worse, makes the policy quieter. Measured 2026-08-24: it did both.
+never=$($JQ '[.jobs[]|select(.slug!=null and .check!=null and .check.last_ping==null)]|length' "$OUT/placement.json")
+blind=$($JQ '[.jobs[]|select(.slug!=null and .check==null)]|length' "$OUT/placement.json")
+echo "inventory  $n estate jobs, $wrapped monitored, $never never pinged -> reports/placement.json"
+if [ "$blind" -gt 0 ]; then
+  echo "BLIND      $blind monitored jobs have no readable check record -- Healthchecks at"
+  echo "           127.0.0.1:8000 did not answer, so their state is UNKNOWN, not fine."
+fi
+
+[ "${1:-}" = "--json" ] && exit 0
+
+# --- 3. grade it --------------------------------------------------------------
+echo
+set +e
+conftest test --parser json -p "$IDP/policy/placement.rego" "$OUT/placement.json" 2>&1 \
+  | tee "$OUT/placement-policy.txt"
+rc=${PIPESTATUS[0]}
+set -e
+
+echo
+if [ "$rc" -eq 0 ]; then
+  echo "PASS       nothing is scheduled on this laptop that needs a machine that stays awake"
+else
+  echo "FAIL       jobs are placed on hardware that cannot honour their schedule -- see above"
+  echo "           docs/onboarding/placement.md says where each class belongs and why"
+fi
+exit "$rc"

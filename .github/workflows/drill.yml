@@ -1,2 +1,0 @@
-run: |
-  oci os object put --bucket-name b

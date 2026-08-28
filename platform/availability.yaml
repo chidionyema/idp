@@ -1,0 +1,61 @@
+# The availability policy in data: what is waived, what the front door is, and what must meet the
+# standard even though no route names it. bin/idp-availability-gate reads this file and nothing else.
+#
+# ## waivers
+# Surfaces that do not meet the availability standard yet, named one by one.
+#
+# A waiver is not a pass. bin/idp-availability-gate prints a WAIVED row for every entry on every
+# run, so the debt is read out loud each time CI speaks, and a waiver with no reason or no issue
+# is a FAIL, not a skip. The list is meant to reach zero; idp#544 is the work that empties it.
+#
+# There is no wildcard and no default: a surface nobody named is BLIND (exit 2), never green.
+waivers:
+  - surface: observability/signoz
+    reason: >-
+      SigNoz stands on one ClickHouse; two replicas against a single database moves the single
+      point of failure rather than removing it. HA here is a ClickHouse topology change, not a
+      replica count.
+    issue: chidionyema/idp#544
+  - surface: observability/langfuse-web
+    reason: >-
+      A component of the langfuse chart (langfuse-values.yaml:32,44 set replicas 1), sharing the
+      same ClickHouse and Postgres as signoz.
+    issue: chidionyema/idp#544
+  - surface: observability/signoz-otel-collector
+    reason: >-
+      A component of the signoz chart; this repository renders no Deployment for it, so the values
+      are the only lever and they follow the signoz row above.
+    issue: chidionyema/idp#544
+  - surface: hermes-agent/hermes-agent-gateway
+    reason: >-
+      One Telegram token may be long-polled by exactly one process (two are 409s on both,
+      gateway.yaml:18-23) and HERMES_HOME is a ReadWriteOnce volume holding state.db, so
+      replicas 2 here is an outage, not a fix. The remedy is a webhook or a lease, not a number.
+    issue: chidionyema/idp#547
+
+# ## front_doors
+# Every HTTPRoute names a Gateway in parentRefs, and something implements that Gateway. Nothing in
+# a manifest says what: gatewayClassName points at a GatewayClass the controller registers at
+# runtime. So the mapping is declared here, once, and the gate refuses to be green without it --
+# a parentRef no row below claims is BLIND, which is how a new gateway can never arrive unseen.
+#
+# This row is the one the estate missed until 2026-08-28: seven surfaces were hardened to survive
+# a node while the single Traefik pod they all entered through was not, which made every one of
+# them decorative.
+front_doors:
+  - gateway: prospector/prospector-edge
+    implemented_by: edge/traefik
+    path: platform/edge
+    reason: >-
+      GatewayClass traefik, the only type: LoadBalancer in platform/. Every founder-facing
+      hostname enters the cluster through this workload.
+
+# ## also_graded
+# Workloads that carry founder traffic without an HTTPRoute of their own (a ClusterIP other
+# services call). Named by a human, graded exactly like a routed surface.
+also_graded:
+  - surface: hermes-agent/hermes-agent-gateway
+    path: platform/hermes-agent
+    reason: >-
+      The agent gateway every hermes workload calls: no route reaches it, so nothing in the
+      topology would have graded it.

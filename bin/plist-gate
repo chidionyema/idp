@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""Every launchd/*.plist.tmpl must render to a plist that parses.
+
+Incident (idp#49, 2026-08-25): a template was merged in which a string replace had
+inserted a comment between every character. CI was green because nothing rendered
+it. The installed plist was 671 KB and launchd ran the stale loaded definition.
+
+Renders each template the way bin/idp-install-launchd does (${IDP} ${HOME} ${PATH}
+only), parses it with plistlib, and requires Label and ProgramArguments. Exit 0
+when every template parses, 1 with the file and reason otherwise, 2 BLIND when
+there is no launchd/ directory to grade.
+"""
+import os, plistlib, re, sys
+from pathlib import Path
+
+ROOT = Path(os.environ.get("IDP") or Path(__file__).resolve().parent.parent)
+SUBST = {"TEMPORAL_BIN": "/opt/rendered/temporal",
+         "IDP": str(ROOT), "HOME": os.environ.get("HOME", "/nonexistent"),
+         "PATH": os.environ.get("PATH", "/usr/bin")}
+
+def render(text: str) -> str:
+    return re.sub(r"\$\{(IDP|HOME|PATH|TEMPORAL_BIN)\}", lambda m: SUBST[m.group(1)], text)
+
+def grade(path: Path) -> str | None:
+    raw = path.read_text()
+    if len(raw) > 64_000:
+        return f"{len(raw)} bytes; a launchd job definition is not that long"
+    try:
+        d = plistlib.loads(render(raw).encode())
+    except Exception as e:  # plistlib raises several types
+        return f"does not parse: {type(e).__name__}: {e}"
+    for key in ("Label", "ProgramArguments"):
+        if key not in d:
+            return f"missing {key}"
+    if d["Label"] != path.name.removesuffix(".plist.tmpl"):
+        return f"Label {d['Label']!r} does not match the file name"
+    argv0 = (d["ProgramArguments"] or [""])[0]
+    if not str(argv0).startswith("/"):
+        # launchd never searches PATH for argv[0]; a bare name exits 78 with an empty log
+        # (2026-08-25, ai.estate.temporal). Template it as ${IDP}/... or a resolved ${*_BIN}.
+        return f"ProgramArguments[0] {argv0!r} is not an absolute path"
+    # A job whose program backgrounds children and exits needs AbandonProcessGroup, or
+    # launchd kills the whole process group the moment the program returns. 2026-08-25:
+    # ai.estate.scheduler ran 28 times in 10-minute ticks and dagster-daemon never lived
+    # past the exit of scheduler-up; every schedule and sensor in the estate was dead.
+    prog = Path(render(str(argv0)))
+    if prog.is_file() and not d.get("KeepAlive"):
+        body = prog.read_text(errors="replace")
+        if re.search(r"\bnohup\b|\bsetsid\b|\bdisown\b", body) and not d.get("AbandonProcessGroup"):
+            return (f"{prog.name} backgrounds children (nohup/setsid/disown) and the job has no "
+                    f"AbandonProcessGroup; launchd kills them when {prog.name} exits")
+    return None
+
+def main(argv: list[str]) -> int:
+    files = [Path(a) for a in argv[1:]] or sorted((ROOT / "launchd").glob("*.plist.tmpl"))
+    if not files:
+        print("BLIND plist-gate: no launchd/*.plist.tmpl to grade"); return 2
+    bad = 0
+    for f in files:
+        why = grade(f)
+        print(f"{'FAIL' if why else 'ok  '} {f.relative_to(ROOT) if f.is_relative_to(ROOT) else f}" + (f": {why}" if why else ""))
+        bad += bool(why)
+    return 1 if bad else 0
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
