@@ -473,7 +473,7 @@ kind: Component
 metadata:
   name: founder-screen
   title: "Estate Mac screen (in the browser)"
-  description: "Path 2 of the screen-access matrix (docs/decisions/decision-matrix.yaml founder-screen-access, crew#562): Apache Guacamole in the cluster, behind the one login. Needs one switch on the Mac, once: System Settings > General > Sharing > Screen Sharing on (the estate alerts you while it is off). Then: Open, pick 'Estate Mac', type the Mac login when asked (it is never stored). VNC over the tailnet: fine for logs, files and settings; the phone path (Pair my phone) is the one for a desktop at full speed."
+  description: "Path 2 of the screen-access matrix (docs/decisions/decision-matrix.yaml founder-screen-access, crew#562): Apache Guacamole in the cluster, behind the one login. Setup and use: docs/how-to/onboarding/founder-screen-access.md. Needs one switch on the Mac, once: System Settings > General > Sharing > Screen Sharing on (the estate alerts you while it is off). Then: Open, pick 'Estate Mac', type the Mac login when asked (it is never stored). VNC over the tailnet: fine for logs, files and settings; the phone path (Pair my phone) is the one for a desktop at full speed."
   annotations:
     idp/updated-by: "platform/guacamole (Flux row guacamole); the connection is seeded by the pod's init container from platform/guacamole/guacamole.yaml"
   tags: [founder]
