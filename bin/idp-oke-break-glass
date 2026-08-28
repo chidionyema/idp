@@ -48,7 +48,7 @@ $pin
       securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
 YAML
   step "$name-answers" $K wait pod/"$name" -n "$ns" --for=jsonpath='{.status.phase}'=Succeeded --timeout=180s
-  step "$name-log" $K logs pod/"$name" -n "$ns"
+  show "$name-log" $K logs pod/"$name" -n "$ns"   # show, not step: one line per target is the receipt
   step "$name-remove" $K delete pod/"$name" -n "$ns" --ignore-not-found --wait=false
 }
 

@@ -332,3 +332,26 @@ def test_no_logs_call_carries_all_namespaces():
     src = PLAYBOOK.read_text()
     offenders = [a for a in re.findall(r"\$K logs ([^|;\n]*)", src) if re.search(r"(^|\s)-A(\s|$)", a)]
     assert offenders == [], offenders
+
+
+def test_probe_log_prints_every_target_line_not_only_the_last(tmp_path):
+    # run 33144789785: the probe measured langfuse-postgresql:5432 and langfuse-redis:6379 but the
+    # log row went through step(), which keeps the last line -> only signoz-zookeeper-metrics
+    # survived and the answer the run existed for was thrown away. The log is the receipt: every
+    # line of it is printed.
+    bin_dir, log = _fake_path(tmp_path)
+    k = bin_dir / "kubectl"
+    k.write_text(
+        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
+        "case \"$*\" in\n"
+        "  *'get helmreleases -A -o jsonpath'*) printf 'False observability\\n';;\n"
+        "  *'get svc -n observability -o jsonpath'*) printf 'a.observability.svc.cluster.local:5432 b.observability.svc.cluster.local:6379 ';;\n"
+        "  *'get nodes -o jsonpath'*) printf '10.0.148.221';;\n"
+        "  *'logs pod/tcp-probe-1'*) printf 'FAIL a.observability.svc.cluster.local:5432\\nok b.observability.svc.cluster.local:6379\\n';;\n"
+        "  *) cat >/dev/null 2>&1; echo ok;;\nesac\n"
+    )
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "tcp-per-node"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "FAIL a.observability.svc.cluster.local:5432" in p.stdout, p.stdout
+    assert "ok b.observability.svc.cluster.local:6379" in p.stdout, p.stdout
