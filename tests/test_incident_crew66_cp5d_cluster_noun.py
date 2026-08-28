@@ -75,7 +75,7 @@ def test_a_one_cluster_two_active_pools_is_an_ok_row(tmp_path: Path) -> None:
     # the layer: one cluster, two ACTIVE pools, kubeconfig write
     _fake(b, "idp-cloud", '''
         case "$1 $2" in
-          "cluster list") echo "oke ocid1.cluster.fake.abc";;
+          "cluster list") echo "estate ocid1.cluster.fake.abc";;
           "cluster nodepools") printf "pool-a ACTIVE\\npool-b ACTIVE\\n";;
           "cluster kubeconfig") f=""; shift 2; while [ $# -gt 0 ]; do [ "$1" = --file ] && f="$2"; shift; done; echo fake > "$f";;
         esac
@@ -108,7 +108,7 @@ def test_a_updating_pool_keeps_the_cluster_row_ok_and_names_it(tmp_path: Path) -
     _fake(b, "idp-loop-meter", "echo 'ok    loop-meter: median PR wall-clock this week 274s (n=27), last week 400s (n=31)'")  # crew#584 CP4 loop row
     _fake(b, "idp-cloud", '''
         case "$1 $2" in
-          "cluster list") echo "oke ocid1.cluster.fake.abc";;
+          "cluster list") echo "estate ocid1.cluster.fake.abc";;
           "cluster nodepools") printf "pool-a ACTIVE\\npool-b UPDATING\\n";;
           "cluster kubeconfig") f=""; shift 2; while [ $# -gt 0 ]; do [ "$1" = --file ] && f="$2"; shift; done; echo fake > "$f";;
         esac

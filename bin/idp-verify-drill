@@ -80,11 +80,17 @@ else
     # --- kube: the same exchanged session, spoken to the API server (crew#484). The kubeconfig's
     # exec plugin runs `oci ce cluster generate-token` under OCI_CLI_AUTH=security_token, so no
     # second credential exists. A 403 is the IAM gap named on the row, never a silent skip.
-    cid=$(printf '%s\n' "$cl" | awk 'NR==1{print $2}')
+    # crew#345, 2026-08-28: three clusters are ACTIVE in the compartment and `awk NR==1` took the
+    # first by name -- not the estate -- so create-kubeconfig failed on every hourly run (12 red in
+    # a row, 14:03-19:50Z) while oke-check, which names its cluster, stayed green. The cluster is
+    # named, the same way oke-check names it; a missing name is BLIND with the list on the row.
+    want="${OCI_CLUSTER_NAME:-estate}"
+    cid=$(printf '%s\n' "$cl" | awk -v n="$want" '$1==n{print $2; exit}')
     kc="${KUBECONFIG_OUT:-${TMPDIR:-/tmp}/idp-verify-drill-kubeconfig}"
     if ! command -v kubectl >/dev/null; then bl kube "kubectl is not installed on this runner"
+    elif [ -z "$cid" ]; then bl kube "no ACTIVE cluster named $want; ACTIVE: $(printf '%s\n' "$cl" | awk '{print $1}' | paste -sd, -) -- set OCI_CLUSTER_NAME"
     elif ! out=$("$IDP/bin/idp-cloud" cluster kubeconfig "$cid" --file "$kc" 2>&1); then
-      bl kube "create-kubeconfig failed: $(printf '%s' "$out" | tail -1 | cut -c1-160)"
+      bl kube "create-kubeconfig failed ($want): $(printf '%s' "$out" | tail -1 | sed -E 's/.*"code": "([^"]+)".*"message": "([^"]+)".*/\1: \2/' | cut -c1-240)"
     else
       # The exit code is the verdict; the body is only read on failure (idp#447 review: a healthy
       # node's resourceVersion 12403 must never read as a 403).
