@@ -234,6 +234,11 @@ pb_diagnose() {
   show cronjobs $K get cronjobs,jobs -A
   show endpoints-empty sh -c "$K get endpoints -A | awk 'NR==1 || \$3==\"<none>\"'"
   show warnings sh -c "$K get events -A --field-selector type=Warning --sort-by=.lastTimestamp | tail -60"
+  # Founder, 2026-08-29: "can you look at backstage logs for errors". The portal is the founder
+  # surface and its pods are among the 93/99 the collector has never seen (run 33217075374), so
+  # the only place its errors can be read is here. Error and warn lines from every catalogue pod
+  # and postgres, newest last; a namespace with no such pod prints that instead of nothing.
+  show backstage-errors sh -c "$K logs -n backstage -l app.kubernetes.io/name=catalogue --all-containers --tail=400 --prefix 2>&1 | grep -iE 'error|warn|fail|exception|ECONN|refused' | tail -60; echo '--- backstage pods'; $K get pods -n backstage -o wide; echo '--- postgres'; $K logs -n backstage postgres-0 --tail=100 2>&1 | grep -iE 'error|fatal|warn' | tail -20"
   # Run 33210647434 (2026-08-28): the warnings table printed `admission webhook "validate.kyverno.svc-fail"
   # denied the request: ...` for replicaset tailscale/operator -- the column cut the policy name and
   # the rule off, and bin/idp-kyverno-render passes the same manifest locally, so the row that names
