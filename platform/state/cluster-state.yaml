@@ -199,6 +199,35 @@ data:
                 out[k] = st[k]
         return out
 
+    # crew#292: an ExternalSecret's refreshInterval "0" is ESO's "sync once, then never poll".
+    # platform/hermes-agent/gateway.yaml declares it on purpose, so that a rotation under a
+    # running gateway stays a deliberate act. Grading its frozen refreshTime against an interval
+    # it does not have made that row not-ready two hours after it synced, with no later age at
+    # which it could recover, and every verify-drill run went red on it (22 of 22 failed, first
+    # green never recorded). A guard that refuses correct work is an outage (LAW 38): an explicit
+    # zero has no interval to be late against, and the Ready condition still governs the row.
+    def stale_sync(spec, status, now):
+        """The not-ready message for an ExternalSecret that stopped refreshing, else ""."""
+        raw = (spec or {}).get("refreshInterval")
+        iv = "1h" if raw is None else str(raw)
+        parts = re.findall(r"(\d+)([smh])", iv)
+        if parts:
+            secs = sum(int(n) * {"s": 1, "m": 60, "h": 3600}[u] for n, u in parts)
+        elif re.fullmatch(r"\s*\d+\s*", iv):
+            secs = int(iv)   # a bare number carries no unit; the only one ESO accepts here is 0
+        else:
+            secs = 3600      # unparseable, so grade it against ESO's own default interval
+        if secs == 0:
+            return ""
+        seen = (status or {}).get("refreshTime")
+        try:
+            last = datetime.strptime(str(seen)[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+            age = (now - last).total_seconds()
+        except Exception:
+            age = None
+        if age is None or age > max(2 * secs, 7200):
+            return f"Ready but last sync {seen} is older than 2x refreshInterval {iv}"
+        return ""
     flux = []
     for kind, path in FLUX:
         try:
@@ -235,17 +264,10 @@ data:
                 # forever while the upstream rotates under it. The row carries the last sync time
                 # and is graded not-ready once it is older than twice its refreshInterval (floor 2h).
                 row["last_sync"] = st.get("refreshTime")
-                iv = str((o.get("spec") or {}).get("refreshInterval") or "1h")
-                mult = {"s": 1, "m": 60, "h": 3600}
-                secs = sum(int(n) * mult[u] for n, u in re.findall(r"(\d+)([smh])", iv)) or 3600
-                try:
-                    last = datetime.strptime(str(st.get("refreshTime"))[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
-                    age = (datetime.now(timezone.utc) - last).total_seconds()
-                except Exception:
-                    age = None
-                if row["ready"] and (age is None or age > max(2 * secs, 7200)):
+                stale = stale_sync(o.get("spec"), st, datetime.now(timezone.utc))
+                if row["ready"] and stale:
                     row["ready"] = False
-                    row["message"] = f"Ready but last sync {st.get('refreshTime')} is older than 2x refreshInterval {iv}"
+                    row["message"] = stale
             flux.append(row)
     flux_not_ready = [r for r in flux if not r["ready"]]
     # crew#483: the PolicyExceptions the cluster holds (kyverno.io/v2), name, namespace, policies
