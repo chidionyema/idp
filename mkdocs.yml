@@ -13,6 +13,9 @@ nav:
   - Estate showcase: SHOWCASE.md
   - Conscience: CONSCIENCE.md
   - "Founder: shipped, changed for you, stuck": FOUNDER.md
+  - "Union: the founder and the crew":
+      - The road to 9D (two stages): /docs/default/component/crew/ROAD-TO-9D/
+      - Depth-psychology audit, 2026-08-28: /docs/default/component/crew/audits/depth-psychology-founder-and-crew-2026-08-28/
   - Planned, blocking, when: NEXT.md
   - Decisions:
       - 0001 Gateway API is the routing standard: decisions/0001-gateway-api-is-the-routing-standard.md
