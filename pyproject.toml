@@ -13,3 +13,9 @@ select = ["E9", "F63", "F7", "F82"]
 include = ["tests"]
 pythonVersion = "3.12"
 typeCheckingMode = "basic"
+
+[tool.pytest.ini_options]
+# crew#584: the default nobody types. --testmon runs only the tests whose coverage touches a
+# changed file (a fresh checkout, as in CI, has no .testmondata and runs everything); -n auto
+# spreads them over every core. Measured 2026-08-28: 160 s -> 17.34 s on the same 17 files.
+addopts = "--testmon -n auto"

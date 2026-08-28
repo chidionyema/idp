@@ -7,6 +7,12 @@
 # runner. behave would be a second runner with its own reporting.
 pytest>=8.0
 pytest-bdd>=8.0
+# crew#584 (founder 2026-08-28, "we spend too much time running tests"): selection and parallelism
+# are the default nobody types, set in pyproject.toml [tool.pytest.ini_options]. Measured on the
+# idp#609 change set, 17 files: serial 160 s -> `-n auto` 17.34 s (9.2x), same 3 reds; the second
+# testmon run of an unchanged tree selects 0 tests. CI keeps the full suite as the proof.
+pytest-testmon>=2.1
+pytest-xdist>=3.6
 -r requirements.txt
 # bin/catalog-gen and bin/catalog-links-check import yaml; the bdd steps run them (crew#297)
 pyyaml>=6.0
