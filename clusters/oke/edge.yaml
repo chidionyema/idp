@@ -94,6 +94,9 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
+  # crew#488 CP5: an admission webhook that is still booting (ESO 'ca cert not yet ready') fails the
+  # first apply; without this the next try is the 10m interval and a fresh cluster reads red for it.
+  retryInterval: 1m
   dependsOn:
     - name: edge
   sourceRef:
@@ -156,6 +159,9 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
+  # crew#488 CP5: an admission webhook that is still booting (ESO 'ca cert not yet ready') fails the
+  # first apply; without this the next try is the 10m interval and a fresh cluster reads red for it.
+  retryInterval: 1m
   dependsOn:
     - name: edge
   sourceRef:

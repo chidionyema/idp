@@ -338,6 +338,9 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
+    # crew#488 CP5: this row applies objects into namespace backstage; on a fresh cluster it ran
+    # before the backstage row created it and graded as a root portability break.
+    - name: backstage
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -383,6 +386,9 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
+    # crew#488 CP5: this row applies objects into namespace backstage; on a fresh cluster it ran
+    # before the backstage row created it and graded as a root portability break.
+    - name: backstage
   sourceRef:
     kind: GitRepository
     name: flux-system
