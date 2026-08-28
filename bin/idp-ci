@@ -459,6 +459,10 @@ if STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/good ESTATE_CODE=tests/f
    && ! STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/bad ESTATE_CODE=tests/fixtures/static-secret/bad/code ESTATE_SECRETS=/nonexistent bin/static-secret-gate >/dev/null; then
   say "ok    secrets  static-secret-gate passes the empty fixture and refuses the one with a key and a .env"
 else say "FAIL  secrets  bin/static-secret-gate fixtures"; fail=1; fi
+# crew#586 CP1: the founder's ethos as seven measured tenet rows; a row without a command is refused (LAW 44).
+if out=$(python3 "$IDP/bin/idp-conscience" --selftest 2>&1); then
+  say "ok    ethos    idp-conscience scores the good fixture 2/2, the bad 1/2, and refuses a tenet with no command"
+else say "FAIL  ethos    bin/idp-conscience --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 if bin/owner-account-gate tests/fixtures/owner-accounts/good.yaml >/dev/null \
    && ! bin/owner-account-gate tests/fixtures/owner-accounts/bad.yaml >/dev/null; then
   say "ok    owners   owner-account-gate passes a provider with a second owner and refuses one without"
