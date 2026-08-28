@@ -24,6 +24,8 @@ nav:
       - 0004 Oracle OKE is the Kubernetes target: decisions/0004-oracle-oke-is-the-kubernetes-target.md
       - 0005 Chaos Mesh is the chaos framework: decisions/0005-chaos-mesh-is-the-chaos-framework.md
       - 0006 The platform answers for itself over one MCP: decisions/0006-the-platform-answers-for-itself-over-one-mcp.md
+      - 0007 The front door is federated login: decisions/0007-the-front-door-is-federated-login-with-no-local-password.md
+      - 0008 Every founder action is a portal button: decisions/0008-every-founder-action-is-a-portal-button.md
   - Specs:
       - KINI.AI master spec: specs/kini-master-spec.md
       - Phone idea flow: specs/phone-idea-flow.md
