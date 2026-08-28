@@ -53,7 +53,8 @@ jobs:
           set -o pipefail
           bin/idp-conscience 2>&1 | tee conscience.out; rc=${PIPESTATUS[0]}
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
-          [ "$rc" -ne 2 ]   # BLIND is the only failure; a red tenet is an issue, not a red run
+          # run 33200707064: failing here skipped every step gated on this step's output, founder line
+          # included. The job still fails on BLIND -- in the last step, after the surfaces have run.
       - name: summary
         if: always()
         working-directory: idp
@@ -65,10 +66,10 @@ jobs:
       # `science.source=conscience`, so science-facts counts it from ClickHouse. The ingest password
       # is read from the vault by name over the same OIDC -> OCI exchange oke-check uses; never printed.
       - name: oci cli
-        if: ${{ !cancelled() && steps.grade.outputs.rc != '' }}   # run 33198014582: one BLIND row hid the founder line, the issues and the page
+        if: ${{ steps.grade.outputs.rc != '' }}
         run: pip install -q oci-cli
       - name: OCI session token from the GitHub OIDC token
-        if: ${{ !cancelled() && steps.grade.outputs.rc != '' }}   # run 33198014582: one BLIND row hid the founder line, the issues and the page
+        if: ${{ steps.grade.outputs.rc != '' }}
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
           oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
@@ -76,7 +77,7 @@ jobs:
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           oci_region: ${{ vars.OCI_REGION }}
       - name: receipt to the collector
-        if: ${{ !cancelled() && steps.grade.outputs.rc != '' }}   # run 33198014582: one BLIND row hid the founder line, the issues and the page
+        if: ${{ steps.grade.outputs.rc != '' }}
         working-directory: idp
         env:
           OCI_CLI_AUTH: security_token
@@ -90,7 +91,7 @@ jobs:
           export OTLP_INGEST_PASSWORD OTEL_EXPORTER_OTLP_ENDPOINT="https://signoz.$zone"
           python3 bin/lib/conscience_emit.py reports/conscience.json | tee -a conscience.out
       - name: one issue per red tenet
-        if: ${{ !cancelled() && steps.grade.outputs.rc != '' }}   # run 33198014582: one BLIND row hid the founder line, the issues and the page
+        if: ${{ steps.grade.outputs.rc != '' }}
         working-directory: idp
         env:
           GH_TOKEN: ${{ github.token }}
@@ -117,7 +118,7 @@ jobs:
       # already runs (same send as ping.yml, crew#539). The move is against the receipt of the
       # newest successful run at least 23 hours old; with none, it is the first reading.
       - name: founder line
-        if: ${{ !cancelled() && steps.grade.outputs.rc != '' && (github.event.schedule == '23 7 * * *' || inputs.founder_line == true) }}
+        if: ${{ steps.grade.outputs.rc != '' && (github.event.schedule == '23 7 * * *' || inputs.founder_line == true) }}
         working-directory: idp
         env:
           GH_TOKEN: ${{ github.token }}
@@ -148,7 +149,7 @@ jobs:
       # auto-merge, the same shape as bin/catalog-render (crew#401): one branch, force-with-lease,
       # one open PR at a time, merged when the gates pass. Never a direct push to main.
       - name: portal page
-        if: ${{ !cancelled() && steps.grade.outputs.rc != '' && (github.event.schedule == '23 7 * * *' || inputs.founder_line == true) }}
+        if: ${{ steps.grade.outputs.rc != '' && (github.event.schedule == '23 7 * * *' || inputs.founder_line == true) }}
         working-directory: idp
         env:
           GH_TOKEN: ${{ github.token }}
@@ -178,3 +179,8 @@ jobs:
           fi
           gh pr merge "$n" --auto --squash
           echo "page -> $BRANCH, PR #$n set to auto-merge"
+      - name: BLIND fails the job, after every surface has had its turn
+        run: |
+          rc="${{ steps.grade.outputs.rc }}"
+          [ -n "$rc" ] || { echo "grade step wrote no rc"; exit 1; }
+          [ "$rc" -ne 2 ]   # BLIND is the only failure; a red tenet is an issue, not a red run
