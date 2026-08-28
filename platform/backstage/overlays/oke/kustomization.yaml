@@ -54,6 +54,13 @@ patches:
       # a rollout that never takes the last one down, is what makes a node operation survivable.
       # Base keeps replicas 1 and Recreate: k3d is one node, where a second replica cannot be
       # placed and would sit Pending for ever.
+      # crew#539, 2026-08-28 10:12Z (oke-check 33162263652): maxSurge 1 with required
+      # per-hostname anti-affinity and replicas == nodes is a deadlock by construction -- the
+      # surge pod needs a third node, ReplicaSet catalogue-8647bbdc59 "timed out progressing",
+      # pod Pending 17m "0/2 nodes are available: 2 node(s) didn't match pod anti-affinity
+      # rules", and every Flux row behind backstage waited on it. maxUnavailable 1 / maxSurge 0:
+      # a rollout replaces one replica in place, the other keeps serving, the PDB
+      # (availability.yaml, maxUnavailable 1) already permits exactly that.
       - op: replace
         path: /spec/replicas
         value: 2
@@ -61,7 +68,7 @@ patches:
         path: /spec/strategy
         value:
           type: RollingUpdate
-          rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+          rollingUpdate: {maxUnavailable: 1, maxSurge: 0}
       # requiredDuringScheduling, not preferred: preferred is advisory, and the whole failure
       # was two pods that could end up on one node. With the node pool floor at 1 (autoscaler,
       # platform/oci/main.tf) a single-node estate runs one Ready replica and one Pending --
