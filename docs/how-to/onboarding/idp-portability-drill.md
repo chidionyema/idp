@@ -17,10 +17,20 @@ fix the layer instead, or record on crew#488 why it can never hydrate without OC
 
 ## Read a failure
 
-Each `not-ready` line quotes the Flux condition message. A layer red because its ExternalSecret
-waits on the OCI vault is expected on this cluster and is not a regression. A layer red because
-a manifest references a node label, a storage class or an address only OKE has is the finding
-the drill exists for; fix it in the manifest so the same tree runs anywhere.
+Each red layer prints one line with Flux's own message, and the first word says what kind of red
+it is (crew#488 CP5):
+
+- `cascaded` — the message is `dependency X is not ready`: a row above it is red, this one is
+  not. Counted, never judged.
+- `oci-red` — red for a reason of its own that `drills/portability-oci-reds.txt` names for that
+  layer (the vault ConfigMap, the private catalog artifact). Expected on a cluster with no OCI.
+- `ROOT-RED` — red for a reason of its own that nothing names. The run FAILs whatever the floor
+  says: a CRD applied before its operator, a chart that will not template, a node label only one
+  cloud has. Fix it in the tree so the same tree runs anywhere; add a row to the reds file only
+  when the reason really is the missing cloud, and say why on crew#488.
+
+Before CP5 the run `ok portability ready 2/38 (floor 2)` hid four root breaks behind thirty-two
+cascades (run 33208911991).
 
 ## Grade it locally
 
