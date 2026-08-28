@@ -75,7 +75,7 @@ def test_unknown_playbook_is_refused_and_list_names_both(tmp_path):
     p, _ = _run("rm-rf-everything", tmp_path)
     assert p.returncode == 64
     listed = subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
-    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node", "dns-per-namespace", "tcp-per-node", "node-drain", "node-uncordon"]
+    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node", "dns-per-namespace", "tcp-per-node", "node-drain", "node-uncordon", "chi-resize"]
 
 
 def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
@@ -91,7 +91,7 @@ def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
 def test_workflow_offers_break_glass_with_a_named_playbook():
     wf = WORKFLOW.read_text()
     assert "surge-finish, break-glass]" in wf
-    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon]" in wf
+    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize]" in wf
     assert "BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}" in wf
 
 
@@ -473,3 +473,48 @@ def test_node_uncordon_uncordons_every_cordoned_node_and_nothing_else(tmp_path):
     calls = [c for c in log.read_text().splitlines() if "uncordon" in c]
     assert sorted(calls) == sorted(["kubectl --request-timeout=60s uncordon 10.0.148.221", "kubectl --request-timeout=60s uncordon 10.0.1.1"]), calls
     assert not any("drain" in c or " cordon " in c for c in log.read_text().splitlines())
+
+
+def _chi_kubectl(bin_dir: Path, log: Path, values: str, chis: str = "observability/signoz-clickhouse ") -> None:
+    (bin_dir / "kubectl").write_text(
+        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
+        "case \"$*\" in\n"
+        "  *'get configmap signoz-values -n observability'*) printf '" + values + "';;\n"
+        "  *'get chi -A -o jsonpath={range .items[*]}{.metadata.namespace}/{.metadata.name}{\" \"}{end}'*) printf '" + chis + "';;\n"
+        "  *) cat >/dev/null 2>&1; echo ok;;\nesac\n"
+    )
+
+
+def test_chi_resize_patches_the_installation_to_what_the_values_configmap_declares(tmp_path):
+    # run 33147086133: signoz.v41 upgrade to 4Gi failed on its pre-upgrade migrator Job, whose init
+    # containers wait for a ClickHouse that exits 137 at 2Gi. The value is read from the ConfigMap
+    # the HelmRelease already consumes, the CHI is patched to it, and the StatefulSet roll is waited on.
+    bin_dir, log = _fake_path(tmp_path)
+    _chi_kubectl(bin_dir, log, "clickhouse:\\n  resources:\\n    requests: {cpu: 1000m, memory: 4Gi}\\n    limits: {cpu: 1000m, memory: 4Gi}\\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "chi-resize"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    calls = log.read_text().splitlines()
+    patch = [c for c in calls if "patch chi signoz-clickhouse -n observability --type=json" in c]
+    assert len(patch) == 1, calls
+    assert '"memory":"4Gi"' in patch[0] and "/spec/templates/podTemplates/0/spec/containers/0/resources" in patch[0], patch
+    assert '"requests":{"cpu":"1000m","memory":"4Gi"}' in patch[0], patch   # requests == limits stays (Guaranteed QoS)
+    assert any("rollout status sts -n observability -l clickhouse.altinity.com/chi=signoz-clickhouse --timeout=600s" in c for c in calls), calls
+    assert calls.index(patch[0]) < [i for i, c in enumerate(calls) if "rollout status" in c][0]
+    assert "--- want " in p.stdout and "--- chi-before" in p.stdout and "--- chi-after" in p.stdout, p.stdout
+
+
+def test_chi_resize_refuses_when_the_values_declare_no_resources(tmp_path):
+    # a typed fallback would be the hardcode LAW 46 forbids: no declared value, no patch
+    bin_dir, log = _fake_path(tmp_path)
+    _chi_kubectl(bin_dir, log, "clickhouse:\\n  persistence: {size: 20Gi}\\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "chi-resize"], capture_output=True, text=True, env=env)
+    assert p.returncode != 0 and "no clickhouse.resources" in p.stdout, p.stdout + p.stderr
+    assert not any("patch" in c for c in log.read_text().splitlines())
+
+
+def test_chi_resize_is_listed_and_wired():
+    assert "chi-resize" in subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
+    wf = (PLAYBOOK.parent.parent / ".github" / "workflows" / "oke-check.yml").read_text()
+    assert "chi-resize" in wf
