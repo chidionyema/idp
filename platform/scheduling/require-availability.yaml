@@ -21,7 +21,8 @@ metadata:
     policies.kyverno.io/subject: Deployment, PodDisruptionBudget
     policies.kyverno.io/description: >-
       2026-08-28 06:20-06:39Z: cordoning one node put the only catalogue pod into Pending and
-      https://catalogue.mumchimp.com answered 503 for 15 minutes. Nothing was broken -- the
+      the catalogue hostname answered 503 for 15 minutes (the zone is a cluster row, never a
+      literal here). Nothing was broken -- the
       manifest said replicas 1 and platform/ held no PodDisruptionBudget at all. These rules make
       that manifest impossible to admit.
 spec:
