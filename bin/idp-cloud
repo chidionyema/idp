@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # One primitive layer between the estate's operator scripts and whichever cloud holds its state (crew#66 CP1, crew#309).
-#   bin/idp-cloud object head --bucket B --name N     JSON with "last-modified" (RFC 1123) and "content-length"; exit 1 with NotFound on stderr when absent
+#   bin/idp-cloud object head --bucket B --name N     JSON with "last-modified" (RFC 1123), "date"
+#                                                     (the store's own clock as it answered -- crew#583) and "content-length";
+#                                                     exit 1 with NotFound on stderr when absent
 #   bin/idp-cloud object get  --bucket B --name N     body on stdout
 #   bin/idp-cloud object put  --bucket B --name N --file F
 #   bin/idp-cloud object list --bucket B [--prefix P] one name per line
@@ -78,7 +80,11 @@ from datetime import datetime, timezone
 from email.utils import format_datetime
 p=os.environ["FILE_PATH"]
 mtime=os.path.getmtime(p); size=os.path.getsize(p)
-print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime, timezone.utc), usegmt=True), "content-length": size}))'
+# "date" is what the clock that stamped this object said as it answered the read. For the oci
+# backend that is the storage service, and for this one it is this machine -- which is the point:
+# the reader subtracts the two, so a wrong clock cancels itself out instead of inventing an age
+# (crew#583). Both come from the same clock, so both move together.
+print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime, timezone.utc), usegmt=True), "date": format_datetime(datetime.now(timezone.utc), usegmt=True), "content-length": size}))'
             ;;
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
