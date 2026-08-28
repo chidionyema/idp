@@ -38,6 +38,9 @@ def test_every_surface_step_runs_on_a_receipt_and_blind_still_fails_the_job():
     text = WF.read_text()
     grade = text[text.index("id: grade"):text.index("- name: summary")]
     assert '[ "$rc" -ne 2 ]' not in grade, "a failing grade step skips every step gated on its output"
+    assert "rc=0; bin/idp-conscience 2>&1 | tee conscience.out || rc=$?" in grade, \
+        "bash -eo pipefail aborts the step at the grader's exit 2 unless the pipeline's status is caught (run 33202718520)"
+    assert "PIPESTATUS" not in grade
     last = text[text.rindex("- name:"):]
     assert "BLIND fails the job" in last and '[ "$rc" -ne 2 ]' in last
     for step in ("receipt to the collector", "one issue per red tenet", "founder line", "portal page"):

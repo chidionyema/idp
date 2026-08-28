@@ -79,10 +79,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}   # the research row's clock is the API Date header (crew#583), never this runner's
         run: |
           set -o pipefail
-          bin/idp-conscience 2>&1 | tee conscience.out; rc=${PIPESTATUS[0]}
+          # Runs 33200707064 and 33202718520: this shell is `bash -eo pipefail`, so exit 2 from the
+          # grader aborted the step on this very line, before rc was ever written, and every step
+          # gated on rc was skipped -- founder line included. The pipeline's own status is caught;
+          # the job still fails on BLIND, in the last step, after the surfaces have run.
+          rc=0; bin/idp-conscience 2>&1 | tee conscience.out || rc=$?
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
-          # run 33200707064: failing here skipped every step gated on this step's output, founder line
-          # included. The job still fails on BLIND -- in the last step, after the surfaces have run.
       - name: summary
         if: always()
         working-directory: idp
