@@ -35,7 +35,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: .github/requirements/login-drill.txt
+          # Both files, because login-drill.txt starts with `-r oci-cli.txt`: a key that hashed only
+          # the referring file would keep restoring a stale cache after oci-cli.txt changed,
+          # while reading exactly like a key that tracked the install (crew#488 CP6).
+          cache-dependency-path: |
+            .github/requirements/login-drill.txt
+            .github/requirements/oci-cli.txt
       - name: oci cli and a headless browser
         run: |
           pip install -q -r .github/requirements/login-drill.txt

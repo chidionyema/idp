@@ -43,7 +43,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: .github/requirements/conscience.txt
+          # Both files, because conscience.txt starts with `-r oci-cli.txt`: a key that hashed only
+          # the referring file would keep restoring a stale cache after oci-cli.txt changed,
+          # while reading exactly like a key that tracked the install (crew#488 CP6).
+          cache-dependency-path: |
+            .github/requirements/conscience.txt
+            .github/requirements/oci-cli.txt
       - name: tools the tenet rows call
         run: pip install -q -r .github/requirements/conscience.txt
       - name: OCI session token from the GitHub OIDC token

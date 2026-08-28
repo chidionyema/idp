@@ -92,3 +92,42 @@ def test_every_cache_key_hashes_at_least_one_file_that_exists(path):
                     "%s::%s hashes %r, which matches no file in the repository: the key would be "
                     "constant and the cache would never hold what the job installs"
                     % (path.name, name, pattern))
+
+
+def _requires(req: Path):
+    """The other requirements files `req` pulls in with `-r`, resolved as pip resolves them:
+    relative to the file that names them."""
+    out = []
+    for line in req.read_text(encoding="utf-8").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line.startswith("-r "):
+            out.append((req.parent / line[3:].strip()).resolve())
+    return out
+
+
+def test_a_key_hashes_every_requirements_file_its_install_actually_reads():
+    """The transitive half of the rule above, and it bit this very branch.
+
+    `.github/requirements/conscience.txt` and `login-drill.txt` each begin `-r oci-cli.txt`, so the
+    wheels those jobs install change when oci-cli.txt changes. Both first shipped hashing only
+    their own file: the key would have stayed constant while the install moved, restoring a stale
+    cache and reading exactly like a key that tracked it. That is the same silent-green shape this
+    file exists to refuse, so it is asserted rather than remembered."""
+    missing = []
+    for path, name, steps in _jobs():
+        for step in _setups(steps):
+            with_ = step.get("with") or {}
+            if with_.get("cache") != "pip":
+                continue
+            hashed = {(ROOT / pattern).resolve()
+                      for pattern in str(with_.get("cache-dependency-path") or "").split()}
+            for req in list(hashed):
+                if not req.is_file():
+                    continue
+                for pulled in _requires(req):
+                    if pulled not in hashed:
+                        missing.append("%s::%s hashes %s but not %s, which %s pulls in with -r"
+                                       % (path.name, name, req.name, pulled.name, req.name))
+    assert missing == [], (
+        "these keys hash a requirements file but not everything it reads, so the cache goes stale "
+        "without the key changing: %s" % missing)
