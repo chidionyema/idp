@@ -130,3 +130,32 @@ def test_the_security_page_lists_exactly_the_policies_the_tree_applies():
     begin, end = "<!-- admission-policies:begin -->\n", "<!-- admission-policies:end -->"
     assert begin in page and end in page
     assert page.split(begin, 1)[1].split(end, 1)[0] == r.stdout, "page table differs from bin/idp-admission-policies; regenerate"
+
+
+def docs(rel: str) -> list[dict]:
+    return [d for d in yaml.safe_load_all((ROOT / rel).read_text()) if d]
+
+
+def test_the_priority_classes_exist_before_the_front_door_names_one():
+    """Runs 33212542369/33212575403: traefik names infrastructure-critical, the class lived in
+    `scheduling`, and scheduling waited on edge. A fresh cluster deadlocked; OKE only escaped
+    because the class predated the dependsOn."""
+    plat = {d["metadata"]["name"]: d for d in docs("clusters/oke/platform.yaml")}
+    edge = {d["metadata"]["name"]: d for d in docs("clusters/oke/edge.yaml")}
+    pc = plat["priority-classes"]["spec"]
+    assert pc["path"] == "./platform/priority-classes" and "dependsOn" not in pc
+    assert "priority-classes" in {d["name"] for d in edge["edge"]["spec"]["dependsOn"]}
+    assert "priority-classes" in {d["name"] for d in plat["scheduling"]["spec"]["dependsOn"]}
+    names = {d["metadata"]["name"] for d in docs("platform/priority-classes/priorityclasses.yaml")}
+    assert "infrastructure-critical" in names
+    assert "priorityclasses.yaml" not in yaml.safe_load((ROOT / "platform/scheduling/kustomization.yaml").read_text())["resources"]
+
+
+def test_the_drill_clusters_have_two_nodes_because_the_front_door_spreads():
+    """traefik: replicas 2, hostname spread, DoNotSchedule (crew#555). One node can never seat
+    the second pod; weakening the spread is refused by require-availability, so the drill
+    clusters grow a node instead of the tree losing a law."""
+    wf = (ROOT / ".github/workflows/portability-drill.yml").read_text()
+    assert "--config=platform/k3d/estate.yaml --agents 1" in wf
+    assert "rancher/k3s:v1.33.4-k3s1 agent --server" in wf
+    assert "kubectl wait node --all --for=condition=Ready" in wf.split("rancher/k3s:v1.33.4-k3s1 agent --server")[1]

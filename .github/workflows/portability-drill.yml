@@ -53,7 +53,12 @@ jobs:
           # the action's default k3d (v5.4.6) 404s on download and predates k3d.io/v1alpha5,
           # the apiVersion platform/k3d/estate.yaml declares (run 33062980960)
           k3d-version: v5.9.0
-          args: --config=platform/k3d/estate.yaml
+          # crew#488 CP5: a second node. The estate's front door runs two traefik replicas
+          # spread hostname/DoNotSchedule (crew#555: a routed surface survives one node), so a
+          # one-node cluster can never seat the second pod and edge reads red forever (runs
+          # 33212542369, 33212575403). estate.yaml stays one node for the founder's 16 GB Mac;
+          # a CLI flag overrides the file on the runner, which has the memory and nothing else on it.
+          args: --config=platform/k3d/estate.yaml --agents 1
       - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
       - name: flux install, then the same tree OKE runs, from this commit
         env:
@@ -123,6 +128,23 @@ jobs:
           until kubectl get node -o name 2>/dev/null | grep -q .; do sleep 2; done
           kubectl wait node --all --for=condition=Ready --timeout=120s
           kubectl -n kube-system get pods
+          kubectl get node -o wide
+      - name: a second node, so the front door's two replicas can spread (crew#488 CP5, crew#555)
+        run: |
+          set -euo pipefail
+          # One VM cannot run two k3s kubelets, so the second node is the k3s image itself
+          # joined as an agent over Docker -- the same way k3d builds every one of its nodes.
+          # Cilium wants bpffs and a cgroup2 mount inside the node, as k3d's own Cilium
+          # guide prescribes; without them the cilium pod on this node crash-loops.
+          IP=$(hostname -I | awk '{print $1}')
+          TOKEN=$(sudo cat /var/lib/rancher/k3s/server/node-token)
+          docker run -d --name k3s-agent-2 --hostname k3s-agent-2 --privileged \
+            --tmpfs /run --tmpfs /var/run \
+            rancher/k3s:v1.33.4-k3s1 agent --server "https://${IP}:6443" --token "${TOKEN}" --node-name k3s-agent-2
+          docker exec k3s-agent-2 sh -c 'mount bpffs -t bpf /sys/fs/bpf && mount --make-shared /sys/fs/bpf && mkdir -p /run/cilium/cgroupv2 && mount -t cgroup2 none /run/cilium/cgroupv2 && mount --make-shared /run/cilium/cgroupv2'
+          until kubectl get node k3s-agent-2 -o name 2>/dev/null | grep -q .; do sleep 2; done
+          kubectl rollout status ds/cilium -n kube-system --timeout=300s
+          kubectl wait node --all --for=condition=Ready --timeout=180s
           kubectl get node -o wide
       - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
       - name: flux install, then the same tree OKE runs, from this commit

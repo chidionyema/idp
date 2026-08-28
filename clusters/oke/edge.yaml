@@ -63,6 +63,7 @@ spec:
   dependsOn:
     - name: gateway-api-crds
     - name: kyverno
+    - name: priority-classes
   sourceRef:
     kind: GitRepository
     name: flux-system
