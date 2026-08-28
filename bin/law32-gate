@@ -79,6 +79,15 @@ def main(argv):
             blind = f"BLIND law32 cannot diff against origin/main ({err[0]}); new-bin check skipped"
     names = feature_names()
     for f in added:
+        # Check 1 says "every EXECUTABLE added under bin/", and until crew#583 the code did not
+        # look. bin/lib/receipt_age.py is 0644 and imported by four readers; it is not a command
+        # a founder can run, so a docs/demo page for it would be a page about nothing. A file is
+        # exempt only when it is on disk AND not executable -- a name with no file behind it (the
+        # bin/feature-with-no-pages fixture idp-ci proves the gate with) is still graded, and
+        # `chmod +x` on anything under bin/lib puts it straight back under the rule.
+        p = os.path.join(ROOT, f)
+        if os.path.isfile(p) and not os.access(p, os.X_OK):
+            continue
         stem = os.path.basename(f)
         if not has_pair(stem, names):
             fails.append(f"{f}: no docs/demo/<n>.md + docs/onboarding/<n>.md for a feature named <n> where <n> is '{stem}' or a hyphen-prefix of it")
