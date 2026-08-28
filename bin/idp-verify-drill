@@ -126,7 +126,7 @@ esac
 # sentence that lands through any other door - a merged base, a vendored doc, a pre-gate file -
 # is invisible until something reads the whole tree. This row is that reader, hourly, and red
 # alerts like every other row. bin/idp-no-toil --sweep prints the file and line of every hit.
-toil_out=$("$IDP/bin/idp-no-toil" --sweep 2>&1); toil_rc=$?
+toil_out=$("$(dirname "$0")/idp-no-toil" --sweep 2>&1); toil_rc=$?
 case "$toil_rc" in
   0) say ok no-toil "$(printf '%s\n' "$toil_out" | tail -1 | sed -E 's/^PASS +no-toil gate +//')";;
   1) printf '%s\n' "$toil_out" | grep -vE '^(PASS|FAIL) +no-toil gate' | sed 's/^/        /'
