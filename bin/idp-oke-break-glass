@@ -21,8 +21,11 @@ show() { local name="$1"; shift; echo "--- $name"; "$@" 2>&1 | head -60; }
 # node when one is named, run in kube-system unless a namespace is given (dns-per-namespace asks
 # from inside the failing namespace), shaped like every platform workload so kyverno admits it
 # (see the comment above pb_cilium_unchain). Prints the pod's phase and its answer, then removes it.
-dns_probe() {
-  local name="$1" node="$2" fqdn="$3" ns="${4:-kube-system}" pin=""
+probe_pod() {
+  # probe_pod <pod-name> <nodeName-or-empty> <namespace> <command-json>: one busybox pod, restricted
+  # profile, pinned to a node when one is named; prints its log and removes it. dns_probe and
+  # tcp_probe are the two shapes.
+  local name="$1" node="$2" ns="$3" cmd="$4" pin=""
   [ -n "$node" ] && pin="  nodeName: $node"
   step "$name-clear" $K delete pod/"$name" -n "$ns" --ignore-not-found --wait=true --timeout=60s
   step "$name-apply" $K apply -f - <<YAML
@@ -38,15 +41,29 @@ $pin
   containers:
     - name: probe
       image: public.ecr.aws/docker/library/busybox:1.36
-      command: ["nslookup", "$fqdn"]
+      command: $cmd
       resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { cpu: 100m, memory: 32Mi } }
       readinessProbe: { exec: { command: ["true"] } }
       livenessProbe: { exec: { command: ["true"] } }
       securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
 YAML
-  step "$name-answers" $K wait pod/"$name" -n "$ns" --for=jsonpath='{.status.phase}'=Succeeded --timeout=120s
+  step "$name-answers" $K wait pod/"$name" -n "$ns" --for=jsonpath='{.status.phase}'=Succeeded --timeout=180s
   step "$name-log" $K logs pod/"$name" -n "$ns"
   step "$name-remove" $K delete pod/"$name" -n "$ns" --ignore-not-found --wait=false
+}
+
+dns_probe() {
+  local name="$1" node="$2" fqdn="$3" ns="${4:-kube-system}"
+  probe_pod "$name" "$node" "$ns" "[\"nslookup\", \"$fqdn\"]"
+}
+
+# tcp_probe <pod-name> <nodeName> <namespace> "<host:port> ...": one busybox `nc -z -w3` per
+# target, printing `ok host:port` or `FAIL host:port`; the pod exits 0 either way so the log is
+# the receipt, not the phase.
+tcp_probe() {
+  local name="$1" node="$2" ns="$3" targets="$4" script
+  script="for t in $targets; do h=\${t%:*}; p=\${t##*:}; if nc -z -w3 \$h \$p; then echo ok \$t; else echo FAIL \$t; fi; done"
+  probe_pod "$name" "$node" "$ns" "[\"sh\", \"-c\", \"$script\"]"
 }
 
 # dns-per-node: run 33140351385 (diagnose at b4f7bec) showed clickhouse failing on
@@ -193,6 +210,32 @@ pb_dns_per_namespace() {
   done
 }
 
+# tcp-per-node: run 33143467334 (diagnose at 66db95a) had langfuse-web on 10.0.148.221 failing
+# `P1001 Can't reach database server at langfuse-postgresql:5432` while langfuse-postgresql was in
+# neither pods-not-running nor endpoints-empty and dns-per-namespace (33142680663) resolved every
+# name. dns-per-node only proved UDP to coredns's ClusterIP, which a node can answer locally. The
+# untested path is pod-to-pod TCP through a ClusterIP across nodes: from a probe inside each
+# not-Ready namespace, pinned to every node in turn, connect to every Service port of that
+# namespace and print the reachable matrix beside the pods' placement.
+pb_tcp_per_node() {
+  local namespaces ns node targets i=0
+  namespaces=$($K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{" "}{.metadata.namespace}{"\n"}{end}' 2>/dev/null | awk '$1=="False"{print $2}' | sort -u)
+  echo "--- namespaces-not-ready"; printf '%s\n' "${namespaces:-none}"
+  for ns in $namespaces; do
+    echo "--- namespace $ns"
+    show "$ns-placement" $K get pods -n "$ns" -o wide
+    # first port of every ClusterIP Service: the one its clients name (postgres 5432, redis 6379)
+    targets=$($K get svc -n "$ns" -o jsonpath='{range .items[?(@.spec.clusterIP!="None")]}{.metadata.name}{"."}'"$ns"'{".svc.cluster.local:"}{.spec.ports[0].port}{" "}{end}')
+    [ -z "$targets" ] && { echo "no ClusterIP Service in $ns"; continue; }
+    for node in $($K get nodes -o jsonpath='{.items[*].metadata.name}'); do
+      i=$((i+1))
+      echo "--- from node $node into $ns"
+      tcp_probe "tcp-probe-$i" "$node" "$ns" "$targets"
+    done
+  done
+  show networkpolicies $K get networkpolicies,ciliumnetworkpolicies -A 2>&1
+}
+
 # helm-retry: a HelmRelease that failed during an outage stays Failed after the outage ends,
 # because helm-controller spends its remediation retries once and then waits for a spec change
 # (langfuse: "Deployment/observability/langfuse-web status: Failed" 31h after the Cilium chain).
@@ -214,10 +257,11 @@ pb_helm_retry() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose cilium-unchain helm-retry dns-per-node dns-per-namespace"; exit 0 ;;
+  --list) echo "diagnose cilium-unchain helm-retry dns-per-node dns-per-namespace tcp-per-node"; exit 0 ;;
   diagnose) pb_diagnose ;;
   dns-per-node) pb_dns_per_node ;;
   dns-per-namespace) pb_dns_per_namespace ;;
+  tcp-per-node) pb_tcp_per_node ;;
   cilium-unchain) pb_cilium_unchain ;;
   helm-retry) pb_helm_retry ;;
   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
