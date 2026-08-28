@@ -10,7 +10,6 @@ spec:
   interval: 10m
   dependsOn:
     - name: secret-store
-    - name: backstage
   sourceRef:
     kind: GitRepository
     name: flux-system

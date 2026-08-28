@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# crew#66, founder 2026-08-28: "Laptop kubeconfig points at a local k3d that isn't running — well it
+# shouldn't, don't repeat mistakes … solve once and forever." Sessions were running bare `kubectl`
+# against whatever ~/.kube/config pointed at (a dead k3d-estate context, connection refused on
+# 127.0.0.1:6445) and grading the estate BLIND while the cluster was fine.
+#
+# This is the one way a laptop or a runner speaks to the estate cluster. The kubeconfig comes from
+# bin/idp-cloud cluster kubeconfig (the same path oke-check.yml and bin/idp-verify-drill use), never
+# from a hand-set context, and it is cached under $XDG_STATE_HOME/idp for IDP_KUBE_MAX_AGE_MIN
+# minutes (default 30) so a session pays the cloud round trip once.
+#   bin/idp-kube get pods -n observability
+#   bin/idp-kube --refresh get nodes          # rebuild the kubeconfig now
+#   bin/idp-kube                              # print the kubeconfig path only
+# Grading, same shape as every bin/idp-*: `BLIND   kube  <why>` exit 2 when no cluster could be
+# reached; the why names bin/idp-oci-login when the session is the gap. kubectl's own exit code
+# otherwise. rule-guard (claude-guards policy/command.rego, bare_kubectl) refuses bare kubectl and
+# names this file.
+set -uo pipefail
+IDP=$(cd "$(dirname "$0")/.." && pwd)
+blind() { printf 'BLIND   kube  %s\n' "$1" >&2; exit 2; }
+STATE="${IDP_KUBE_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/idp}"
+KC="$STATE/kubeconfig"
+MAX_MIN="${IDP_KUBE_MAX_AGE_MIN:-30}"
+refresh=0
+if [ "${1:-}" = "--refresh" ]; then refresh=1; shift; fi
+command -v kubectl >/dev/null || blind "kubectl is not installed"
+fresh=0
+if [ "$refresh" -eq 0 ] && [ -f "$KC" ] && [ -n "$(find "$KC" -mmin "-$MAX_MIN" 2>/dev/null)" ]; then fresh=1; fi
+if [ "$fresh" -eq 0 ]; then
+  cl=$("$IDP/bin/idp-cloud" cluster list 2>&1) || blind "cluster list failed: $(printf '%s' "$cl" | tail -1 | cut -c1-160) -- refresh the session with bin/idp-oci-login"
+  cid=$(printf '%s\n' "$cl" | awk 'NR==1{print $2}')
+  [ -n "$cid" ] || blind "no ACTIVE cluster in the compartment"
+  mkdir -p "$STATE" && chmod 700 "$STATE"
+  out=$("$IDP/bin/idp-cloud" cluster kubeconfig "$cid" --file "$KC" 2>&1) || blind "create-kubeconfig failed: $(printf '%s' "$out" | tail -1 | cut -c1-160)"
+  chmod 600 "$KC"
+fi
+if [ $# -eq 0 ]; then printf 'ok      kube  kubeconfig %s\n' "$KC"; exit 0; fi
+KUBECONFIG="$KC" exec kubectl "$@"

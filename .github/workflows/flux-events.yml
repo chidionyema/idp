@@ -1,20 +1,31 @@
-# Reconcile ledger (crew#325). Flux's github-dispatch Provider (platform/alerts-github/provider-github.yaml)
-# sends every flux-system Kustomization event here as a repository_dispatch. The run does one
-# thing: print the event as a receipt, so a session with no kube path can read what the cluster
-# did with a commit. Read it with:
+# Reconcile ledger and alarm (crew#325; crew#307 CP3, 2026-08-28). Flux's github-dispatch Provider
+# (platform/alerts-github/provider-github.yaml) sends every flux-system Kustomization event here as
+# a repository_dispatch.
+#
+# It used to only print. On 2026-08-27 16:05 the catalogue Deployment stopped rolling; Flux said
+# "health check failed ... Deployment/backstage/catalogue status: 'Failed'" every ten minutes for
+# seventeen hours, this workflow printed each one and exited 0, and a red cluster showed a green
+# run. Nobody read a ledger, so the founder found it himself by opening the portal (crew#307).
+# LAW 28: an instrument nobody reads is not an instrument.
+#
+# Now a severity=error event opens (or comments on) a P0 issue naming the object and fails the run,
+# and the recovery event closes it. Read the ledger the same way:
 #   gh run list -R chidionyema/idp --workflow flux-events.yml --limit 20
 #   gh run view <id> -R chidionyema/idp --log | grep -E '^(event|object|severity|revision|message)'
 name: flux-events
 on:
   repository_dispatch:
-permissions: {}
+permissions:
+  contents: read
+  issues: write
 jobs:
   ledger:
     name: ${{ github.event.action }}
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 5
     steps:
       - name: receipt
+        id: receipt
         env:
           PAYLOAD: ${{ toJSON(github.event.client_payload) }}
           ACTION: ${{ github.event.action }}
@@ -25,3 +36,64 @@ jobs:
             "severity  \(.severity // "?")",
             "revision  \(.metadata.revision // "-")",
             "message   \(.message // "?")"'
+          {
+            printf 'object=%s\n' "$(printf '%s' "$PAYLOAD" | jq -r '"\(.involvedObject.kind // "?")/\(.involvedObject.name // "?").\(.involvedObject.namespace // "?")"')"
+            printf 'severity=%s\n' "$(printf '%s' "$PAYLOAD" | jq -r '.severity // "?"')"
+            printf 'revision=%s\n' "$(printf '%s' "$PAYLOAD" | jq -r '.metadata.revision // "-"')"
+            printf 'message<<EOM\n%s\nEOM\n' "$(printf '%s' "$PAYLOAD" | jq -r '.message // "?"')"
+          } >> "$GITHUB_OUTPUT"
+
+      # One open issue per object, commented on every repeat: seventeen hours of the same failure
+      # is one row on the board, not a hundred. The title is the dedupe key, so it may not carry
+      # the message or the revision.
+      - name: a red reconcile is a P0 on the board, not a green run nobody opens
+        if: steps.receipt.outputs.severity == 'error'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # crew#307, 2026-08-28: this job has no checkout, and `gh` with no repository to infer
+          # exits `fatal: not a git repository`. Every gh call below died there, so the alarm
+          # detected the red and opened nothing -- and the step's own `exit 1` painted the run red
+          # anyway, so it looked from outside exactly like an alarm that worked. Run 33163766050
+          # caught `HelmRelease/robusta/robusta status: 'Failed'` at 10:32:53Z and filed no issue.
+          # GH_REPO names it once for the whole step, so a gh call added later cannot forget.
+          GH_REPO: ${{ github.repository }}
+          OBJECT: ${{ steps.receipt.outputs.object }}
+          REVISION: ${{ steps.receipt.outputs.revision }}
+          MESSAGE: ${{ steps.receipt.outputs.message }}
+        run: |
+          title="P0: Flux cannot reconcile $OBJECT"
+          body=$(printf '%s\n\nrevision: %s\nrun: %s/%s/actions/runs/%s\n\nThe cluster is not running what main says. Until this closes, every check that reads the live estate is grading an older revision.\n' \
+            "$MESSAGE" "$REVISION" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
+          n=$(gh issue list --state open --search "in:title \"$title\"" --json number,title -q ".[] | select(.title == \"$title\") | .number" | head -1)
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --body "$body"
+          else
+            gh label create P0 --color B60205 --description "service down for the founder" --force >/dev/null 2>&1 || true
+            gh issue create --title "$title" --label P0 --body "$body"
+          fi
+          echo "::error::$OBJECT $MESSAGE"
+          exit 1
+
+      # The recovery event is the only thing that closes it, so the board tracks the cluster and
+      # never a session's opinion of the cluster. "Health check passed" and nothing weaker: the
+      # stalled rollout emitted an info "Deployment/backstage/catalogue configured" five minutes
+      # before it timed out again (flux-events 33157844551 -> 33158187251). Applied is not healthy.
+      - name: a healthy reconcile closes the P0 it opened
+        if: steps.receipt.outputs.severity == 'info' && contains(steps.receipt.outputs.message, 'Health check passed')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # crew#307, 2026-08-28: this job has no checkout, and `gh` with no repository to infer
+          # exits `fatal: not a git repository`. Every gh call below died there, so the alarm
+          # detected the red and opened nothing -- and the step's own `exit 1` painted the run red
+          # anyway, so it looked from outside exactly like an alarm that worked. Run 33163766050
+          # caught `HelmRelease/robusta/robusta status: 'Failed'` at 10:32:53Z and filed no issue.
+          # GH_REPO names it once for the whole step, so a gh call added later cannot forget.
+          GH_REPO: ${{ github.repository }}
+          OBJECT: ${{ steps.receipt.outputs.object }}
+          REVISION: ${{ steps.receipt.outputs.revision }}
+          MESSAGE: ${{ steps.receipt.outputs.message }}
+        run: |
+          title="P0: Flux cannot reconcile $OBJECT"
+          n=$(gh issue list --state open --search "in:title \"$title\"" --json number,title -q ".[] | select(.title == \"$title\") | .number" | head -1)
+          [ -n "$n" ] || exit 0
+          gh issue close "$n" --comment "$(printf 'Recovered at revision %s: %s\n\nrun: %s/%s/actions/runs/%s\n' "$REVISION" "$MESSAGE" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")"

@@ -552,12 +552,25 @@ fi
 #    unpatched-chart fixture must be refused. Kyverno judges at admission, after merge;
 #    this judges before the PR. BLIND (rc 2) when helm/kyverno are missing, never a pass.
 if command -v kyverno >/dev/null && command -v helm >/dev/null; then
-  # HelmRelease dirs with postRenderers, plus any dir shipping a plain workload (crew#284: the
-  # litellm Deployment was never judged and the cluster refused it after merge).
-  dirs=$(cd "$IDP" && { grep -lE '^kind: HelmRelease' platform/*/*.yaml platform/*/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && grep -q postRenderers "$d"/*.yaml && echo "$d"; done; grep -lE '^kind: (Deployment|StatefulSet|DaemonSet|Job|CronJob)$' platform/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && echo "$d"; done; } | sort -u)
-  if [ -n "$dirs" ] && (cd "$IDP" && bin/idp-kyverno-render $dirs) && ! (cd "$IDP" && bin/idp-kyverno-render tests/fixtures/kyverno/must-fail >/dev/null 2>&1); then
-    say "ok    kyverno  $(echo "$dirs" | tr '\n' ' ')render clean; the unpatched-chart fixture is refused"
-  else say "FAIL  kyverno  a HelmRelease render fails admission policy, or the must-fail fixture passed"; fail=1; fi
+  # Every HelmRelease dir, plus any dir shipping a plain workload (crew#284: the litellm
+  # Deployment was never judged and the cluster refused it after merge; crew#539 2026-08-28: the
+  # robusta release carried no postRenderers, was never judged, and admission refused it on 15 rules).
+  dirs=$(cd "$IDP" && { grep -lE '^kind: HelmRelease' platform/*/*.yaml platform/*/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && echo "$d"; done; grep -lE '^kind: (Deployment|StatefulSet|DaemonSet|Job|CronJob)$' platform/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && echo "$d"; done; } | sort -u)
+  # rc 2 is BLIND: the judge ran but not against the whole policy set, and crew#539 is what that
+  # costs -- CI printed "render clean" for a Deployment admission refused, because the two
+  # estate-only policies live in prospector and CI had no copy. Blind and failing are different
+  # facts and the operator needs to be told which one this is.
+  kyv=$( (cd "$IDP" && bin/idp-kyverno-render $dirs) 2>&1 ); kyv_rc=$?
+  if [ -z "$dirs" ]; then say "FAIL  kyverno  no platform dir shipped a HelmRelease or a workload; the judge had nothing"; fail=1
+  elif [ "$kyv_rc" = 2 ]; then
+    say "BLIND kyverno  the judge did not see the whole policy set; no render was judged"
+    printf '%s\n' "$kyv" | grep '^BLIND' | sed 's/^/      /'; fail=1
+  elif [ "$kyv_rc" != 0 ]; then
+    say "FAIL  kyverno  a HelmRelease or workload render fails admission policy"
+    printf '%s\n' "$kyv" | grep -E '^(FAIL|      )' | sed 's/^/      /'; fail=1
+  elif (cd "$IDP" && bin/idp-kyverno-render tests/fixtures/kyverno/must-fail >/dev/null 2>&1); then
+    say "FAIL  kyverno  the must-fail fixture passed; the judge admits an unpatched chart"; fail=1
+  else say "ok    kyverno  $(echo "$dirs" | tr '\n' ' ')render clean; the unpatched-chart fixture is refused"; fi
 else say "BLIND kyverno  helm or kyverno CLI not installed; HelmRelease renders were not judged"; fail=1; fi
 
 # 9b. crew#483: Flux post-build substitution judged with the tool Flux runs. Every Kustomization
@@ -595,6 +608,20 @@ if python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$
    && ! python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$sc/SHOWCASE.md" --check >/dev/null 2>&1; then
   say "ok    grade    estate-showcase grades the fixture catalogue ($(grep -c '| GAP |' "$sc/SHOWCASE.md") GAP rows) and --check refuses a stale page"
 else say "FAIL  grade    estate-showcase did not render, or --check did not discriminate"; fail=1; fi
+
+# 8. Every surface the founder can open survives losing one node (crew#539, docs/policy/
+#    availability-standard.md). 2026-08-28 06:20-06:39Z a cordon took catalogue to 503 for
+#    fifteen minutes because the manifest said replicas 1 and platform/ held no PDB; nothing
+#    could fail that review because nothing required otherwise. Both ways, on rendered
+#    manifests: the manifest catalogue actually carried into that drain is refused, the shape
+#    it carries now passes, and the live platform/ is clean -- BLIND (2) counts as a failure,
+#    so a surface the gate cannot resolve never passes quietly.
+if ! python3 "$IDP/bin/idp-availability-gate" tests/fixtures/availability/bad >/dev/null 2>&1 \
+   && python3 "$IDP/bin/idp-availability-gate" tests/fixtures/availability/good >/dev/null 2>&1 \
+   && out=$(python3 "$IDP/bin/idp-availability-gate" 2>&1); then
+  say "ok    ha       $(printf '%s' "$out" | tail -1 | sed 's/^ok *availability *//')"
+  printf '%s\n' "$out" | grep '^WAIVED' | sed 's/^/      /' || true
+else say "FAIL  ha       a routed surface does not survive losing one node, or the gate is not discriminating"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"

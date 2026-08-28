@@ -43,6 +43,7 @@ def _bin(tmp: Path, nodes_out: str, nodes_rc: int = 0) -> Path:
     )
     (b / "kubectl").write_text(f"#!/bin/sh\ncat '{tmp}/nodes.json'; exit {nodes_rc}\n")
     (b / "idp-cluster-state").write_text("#!/bin/sh\necho 'ok      cluster-state nodes=1 ready=1 (3 min ago)'\n")
+    (b / "idp-drills-row").write_text("#!/bin/sh\necho 'ok        drills    login-drill  login-drill.yml last green 1.0h ago (max 26h)'\n")
     for f in b.iterdir():
         f.chmod(f.stat().st_mode | stat.S_IEXEC)
     # the script reads idp-cluster-state beside itself: run a copy of the script from the fake bin
@@ -72,7 +73,7 @@ def test_a_ready_node_read_through_the_api_server_is_an_ok_row(tmp_path: Path) -
     _token(tmp_path)
     r = _run(tmp_path, b)
     assert "ok      kube         1/1 node(s) Ready through the API server" in r.stdout, r.stdout + r.stderr
-    assert r.returncode == 0 and "4/4 rows green" in r.stdout
+    assert r.returncode == 0 and "5/5 rows green" in r.stdout
     args = (tmp_path / "kc-args").read_text()
     assert "--token-version 2.0.0" in args and "--cluster-id ocid1.cluster.fake.abc" in args   # the exec plugin, not a static token
     assert not (tmp_path / "kc").exists(), "the kubeconfig outlived the run"

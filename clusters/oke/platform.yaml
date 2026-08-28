@@ -34,8 +34,11 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
+  # Platform rows never wait on the portal (crew#539, 2026-08-28: one stalled catalogue rollout held
+  # 15 rows — observability, spire, temporal, keda, monitoring, science — behind Deployment/backstage/catalogue).
+  # Only `chaos` (the experiments that target the portal) depends on backstage.
   dependsOn:
-    - name: backstage
+    - name: scheduling
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -61,6 +64,7 @@ spec:
   dependsOn:
     - name: chaos-mesh
     - name: monitoring   # crew#539 DoD 2: langfuse-alert-drill asks kps-alertmanager and kps-prometheus
+    - name: backstage   # the experiments kill portal pods; they are the one row that waits for it
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -69,7 +73,8 @@ spec:
   wait: true
 ---
 # crew#258 CP2: SigNoz, the one metrics/traces/logs store (crew/docs/STANDARDS.md "Observability").
-# Ordered after backstage so the portal keeps first claim on the single node's CPU.
+# Was ordered after backstage "so the portal keeps first claim on the single node's CPU" — the single
+# node is gone (4 OCPU shape, crew#289 CP3) and the edge held the whole store behind one portal rollout.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -86,7 +91,6 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
-    - name: backstage
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -169,6 +173,31 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
+---
+# Live usage row (crew#539, 2026-08-28): metrics-server so `kubectl top`, the descheduler and any
+# operator can read node and pod usage instead of allocated requests. After scheduling (the
+# PriorityClass it names). Health-checked at 10m like every other row.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: metrics-server
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/metrics-server
+  prune: true
+  dependsOn:
+    - name: scheduling
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: metrics-server
+      namespace: metrics-server
 ---
 # Model routing row (crew#284 CP2, crew#313): LiteLLM on the cluster, reached at llm.<zone>
 # through the https-llm listener on prospector-edge. After edge (Gateway, certificate) and
@@ -303,7 +332,6 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
-    - name: backstage
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -348,7 +376,7 @@ metadata:
 spec:
   interval: 10m
   dependsOn:
-    - name: backstage
+    - name: scheduling
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -604,6 +632,31 @@ spec:
   path: ./platform/monitoring/rules
   prune: true
   wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+---
+# The hourly drills on the estate's clock (crew#554). GitHub fired its hourly schedules 1-3 times a
+# day account-wide (measured 2026-08-28); this CronJob dispatches them as the GitHub App every
+# hour. After secret-store (the App Secret is an ExternalSecret) and alerts-github (which owns it).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: drills
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/drills
+  prune: true
+  dependsOn:
+    - name: secret-store
+    - name: alerts-github
+  wait: true
+  timeout: 5m
   postBuild:
     substituteFrom:
       - kind: ConfigMap

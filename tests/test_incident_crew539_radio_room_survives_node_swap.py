@@ -7,7 +7,7 @@ traces didn't detect this, what happened to autoscaling".
 The fix is three Kubernetes-native primitives (founder spec, verbatim on crew#539) plus a guard:
 balloon pods the scheduler preempts for headroom, an infrastructure-critical PriorityClass on the
 radio-room set, an out-of-cluster ping that posts to Telegram, and a Kyverno policy that refuses
-any of the six that drops the class. This file is the offline proof of each; no sockets.
+any of the radio-room set that drops the class (traefik joined it on crew#555). This file is the offline proof of each; no sockets.
 """
 import pathlib
 import re
@@ -17,6 +17,9 @@ import yaml
 IDP = pathlib.Path(__file__).resolve().parents[1]
 SCHED = IDP / "platform/scheduling"
 RADIO_ROOM = {
+    # crew#555: the front door joined the set. Every hostname the founder can open enters through
+    # this pod; a radio room nobody can reach is not a radio room.
+    "traefik": "platform/edge/traefik.yaml",
     "langfuse-web": "platform/observability/langfuse.yaml",
     "langfuse-worker": "platform/observability/langfuse.yaml",
     "agentgateway": "platform/mcp/agentgateway-deploy.yaml",
@@ -95,7 +98,7 @@ def test_flux_rows_seat_the_class_before_anyone_names_it():
         assert "scheduling" in deps, row
     assert {d["name"] for d in rows["healing"]["spec"]["dependsOn"]} >= {"scheduling", "llm"}
     kust = yaml.safe_load((SCHED / "kustomization.yaml").read_text())
-    assert set(kust["resources"]) == {"namespace.yaml", "priorityclasses.yaml", "balloon.yaml", "require-priority-class.yaml", "capacity-affinity.yaml"}
+    assert set(kust["resources"]) == {"namespace.yaml", "priorityclasses.yaml", "balloon.yaml", "require-priority-class.yaml", "capacity-affinity.yaml", "require-availability.yaml"}
 
 
 def test_ping_lives_outside_the_cluster_and_pages_the_existing_bot():

@@ -43,7 +43,19 @@ spec:
     runner:
       sendAdditionalTelemetry: false
       hardenedFs: true
+      # Receipt 33128543299 (2026-08-28 00:09Z): Kyverno refused robusta-runner and robusta-forwarder
+      # (drop ALL, runAsNonRoot, seccomp, probes, ro rootfs). The image has no USER line, so the pod
+      # pins uid 1000 and HOME leaves /root (the chart's /root/.cache mount sits under a 0700 dir).
+      securityContext:
+        pod: { runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+        container:
+          allowPrivilegeEscalation: false
+          privileged: false
+          runAsNonRoot: true
+          capabilities: { drop: [ALL] }
+          seccompProfile: { type: RuntimeDefault }
       additional_env_vars:
+        - { name: HOME, value: /tmp }
         - name: TELEGRAM_BOT_TOKEN
           valueFrom: { secretKeyRef: { name: robusta-telegram, key: token } }
         - name: TELEGRAM_CHAT_ID
@@ -53,6 +65,16 @@ spec:
         requests: { cpu: 100m, memory: 512Mi }
         limits: { cpu: 100m, memory: 512Mi }
     kubewatch:
+      securityContext:
+        pod: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+        container:
+          allowPrivilegeEscalation: false
+          privileged: false
+          runAsUser: 1000
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+          capabilities: { drop: [ALL] }
+          seccompProfile: { type: RuntimeDefault }
       resources:
         requests: { cpu: 20m, memory: 128Mi }
         limits: { cpu: 20m, memory: 128Mi }
@@ -84,3 +106,66 @@ spec:
               max_events: 8
               included_types: [Warning, Normal]
         sinks: [telegram]
+  # The chart has no probe values and gives the hardenedFs init container no securityContext.
+  # kubewatch serves /metrics on :2112 unconditionally (pkg/client/run.go); the runner serves
+  # /healthz on :5000 (src/robusta/runner/web.py).
+  postRenderers:
+    - kustomize:
+        patches:
+          - target: { kind: Deployment, name: robusta-forwarder }
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: { name: robusta-forwarder }
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: kubewatch
+                        readinessProbe: { httpGet: { path: /metrics, port: 2112 }, periodSeconds: 15 }
+                        livenessProbe: { httpGet: { path: /metrics, port: 2112 }, periodSeconds: 30, failureThreshold: 5 }
+          - target: { kind: Deployment, name: robusta-runner }
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: { name: robusta-runner }
+              spec:
+                template:
+                  spec:
+                    initContainers:
+                      - name: setup-venv
+                        resources:
+                          requests: { cpu: 50m, memory: 128Mi }
+                          limits: { cpu: 200m, memory: 256Mi }
+                        securityContext:
+                          allowPrivilegeEscalation: false
+                          runAsNonRoot: true
+                          readOnlyRootFilesystem: true
+                          capabilities: { drop: [ALL] }
+                          seccompProfile: { type: RuntimeDefault }
+                    containers:
+                      - name: runner
+                        readinessProbe: { httpGet: { path: /healthz, port: 5000 }, periodSeconds: 15 }
+                        livenessProbe: { httpGet: { path: /healthz, port: 5000 }, initialDelaySeconds: 60, periodSeconds: 30, failureThreshold: 5 }
+                        # crew#539, 2026-08-28: chart 0.48.0 marks three secret references
+                        # `optional: true`, and `no-optional-secret-references` (the 2026-08-24
+                        # incident written as a rule) refuses every one. Admission denied the
+                        # upgrade, the release went Failed, and Flux could not remediate it
+                        # ("missing target release for rollback"), which held monitoring and
+                        # monitoring-rules down. The rule is right, so nothing is excused here:
+                        # the two secrets the chart itself renders are declared required, and
+                        # the third is not a secret at all.
+                        envFrom:
+                          - secretRef: { name: robusta-runner-secret }
+                    volumes:
+                      # The chart renders robusta-playbooks-config-secret, so it is required.
+                      - name: playbooks-config-secret
+                        secret: { secretName: robusta-playbooks-config-secret, optional: null }
+                      # robusta-auth-config-secret is rendered by nothing in this estate and
+                      # created by nothing: the Robusta UI is off (enableHolmesGPT false, the
+                      # only sink is telegram). Today the kubelet mounts an empty directory at
+                      # /etc/robusta/auth because the reference is optional; an emptyDir mounts
+                      # the same empty directory, and refers to no secret to be optional about.
+                      - name: auth-config-secret
+                        secret: null
+                        emptyDir: {}

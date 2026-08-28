@@ -10,23 +10,223 @@
 # Every playbook prints one receipt line per step and exits non-zero when a step fails. A
 # playbook is added here, reviewed, and named in the workflow input; nothing is typed ad hoc.
 set -uo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
 K="kubectl --request-timeout=60s"
 FAILED=""
 step() { local name="$1"; shift; local out rc; out=$("$@" 2>&1); rc=$?
   printf '%-5s %-22s rc=%-3s %s\n' "$([ $rc -eq 0 ] && echo ok || echo FAIL)" "$name" "$rc" "$(printf %s "$out" | tail -1 | cut -c1-110)"
   [ $rc -eq 0 ] || { FAILED="$FAILED $name"; printf '%s\n' "$out" | tail -6 | sed 's/^/      | /'; }; return $rc; }
 show() { local name="$1"; shift; echo "--- $name"; "$@" 2>&1 | head -60; }
+# show_redacted is show for anything that prints a workload's own output: same shape, every line
+# through redact() first, so reading a log is never the thing that leaks a token (LAW 21).
+# crew#483 reuses this for the collector/agent logs and the ClickHouse count queries, which carry
+# the admin password as a --password argument; redact() (defined below, crew#516) is the one
+# redaction helper in bin/ (`rg redact bin/`, 2026-08-28) and covers both cases already.
+show_redacted() { local name="$1"; shift; echo "--- $name"; "$@" 2>&1 | redact | head -60; }
+
+# dns_probe <pod-name> <nodeName-or-empty> <fqdn> [namespace]: one busybox nslookup, pinned to a
+# node when one is named, run in kube-system unless a namespace is given (dns-per-namespace asks
+# from inside the failing namespace), shaped like every platform workload so kyverno admits it
+# (see the comment above pb_cilium_unchain). Prints the pod's phase and its answer, then removes it.
+probe_pod() {
+  # probe_pod <pod-name> <nodeName-or-empty> <namespace> <command-json>: one busybox pod, restricted
+  # profile, pinned to a node when one is named; prints its log and removes it. dns_probe and
+  # tcp_probe are the two shapes.
+  local name="$1" node="$2" ns="$3" cmd="$4" pin=""
+  [ -n "$node" ] && pin="  nodeName: $node"
+  step "$name-clear" $K delete pod/"$name" -n "$ns" --ignore-not-found --wait=true --timeout=60s
+  step "$name-apply" $K apply -f - <<YAML
+apiVersion: v1
+kind: Pod
+metadata: { name: $name, namespace: $ns, labels: { app: dns-probe, crew: "539" } }
+spec:
+  restartPolicy: Never
+  priorityClassName: system-cluster-critical
+  tolerations: [{ operator: Exists }]
+$pin
+  securityContext: { runAsNonRoot: true, runAsUser: 65534, seccompProfile: { type: RuntimeDefault } }
+  containers:
+    - name: probe
+      image: public.ecr.aws/docker/library/busybox:1.36
+      command: $cmd
+      resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { cpu: 100m, memory: 32Mi } }
+      readinessProbe: { exec: { command: ["true"] } }
+      livenessProbe: { exec: { command: ["true"] } }
+      securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+YAML
+  step "$name-answers" $K wait pod/"$name" -n "$ns" --for=jsonpath='{.status.phase}'=Succeeded --timeout=180s
+  show "$name-log" $K logs pod/"$name" -n "$ns"   # show, not step: one line per target is the receipt
+  step "$name-remove" $K delete pod/"$name" -n "$ns" --ignore-not-found --wait=false
+}
+
+dns_probe() {
+  local name="$1" node="$2" fqdn="$3" ns="${4:-kube-system}"
+  probe_pod "$name" "$node" "$ns" "[\"nslookup\", \"$fqdn\"]"
+}
+
+# tcp_probe <pod-name> <nodeName> <namespace> "<host:port> ...": one busybox `nc -z -w3` per
+# target, printing `ok host:port` or `FAIL host:port`; the pod exits 0 either way so the log is
+# the receipt, not the phase.
+tcp_probe() {
+  local name="$1" node="$2" ns="$3" targets="$4" script
+  script="for t in $targets; do h=\${t%:*}; p=\${t##*:}; if nc -z -w3 \$h \$p; then echo ok \$t; else echo FAIL \$t; fi; done"
+  probe_pod "$name" "$node" "$ns" "[\"sh\", \"-c\", \"$script\"]"
+}
+
+# dns-per-node: run 33140351385 (diagnose at b4f7bec) showed clickhouse failing on
+# "Cannot use ZooKeeper host signoz-zookeeper-0.signoz-zookeeper-headless:2181 due to DNS error"
+# and langfuse-web on "Can't reach database server at langfuse-postgresql:5432" while every
+# Service had endpoints and no node reported pressure: the pods could not resolve, and both sat
+# on one node. One nslookup of an in-cluster name and one of github.com is run pinned to EVERY
+# node, so a DNS fault is attributed to the node it lives on before anything is restarted.
+pb_dns_per_node() {
+  local node i=0
+  for node in $($K get nodes -o jsonpath='{.items[*].metadata.name}'); do
+    i=$((i+1))
+    echo "--- node $node"
+    dns_probe "dns-probe-svc-$i" "$node" kubernetes.default.svc.cluster.local
+    dns_probe "dns-probe-ext-$i" "$node" github.com
+  done
+  show coredns $K get pods -n kube-system -l k8s-app=kube-dns -o wide
+  show coredns-log sh -c "$K logs -n kube-system -l k8s-app=kube-dns --tail=20 --prefix | grep -vE ' - .* NOERROR ' | tail -30"
+}
+
+# telemetry_log <namespace> <pod-name-substring>: the pod's own log, all containers, or a named
+# reason nothing printed -- a chart rename that moves the pod name is then visible in the run
+# instead of a silently empty section.
+telemetry_log() {
+  local ns="$1" pat="$2" pod
+  pod=$($K get pods -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null | grep -m1 "$pat")
+  [ -n "$pod" ] || { echo "no pod matching *$pat* in $ns"; return 0; }
+  $K logs "$pod" -n "$ns" --all-containers --tail=80 --prefix 2>&1
+}
+# collector_config_dump: the ConfigMap the signoz-otel-collector mounts, found by name rather than
+# typed (the chart's exact ConfigMap name is not declared anywhere in platform/, LAW 46), filtered
+# to the receiver/exporter/endpoint lines a chart upgrade or a values change would move.
+collector_config_dump() {
+  local cm
+  cm=$($K get configmap -n observability -o name 2>/dev/null | grep -m1 otel-collector | sed 's#^configmap/##')
+  [ -n "$cm" ] || { echo "no ConfigMap matching *otel-collector* in observability"; return 0; }
+  $K get configmap "$cm" -n observability -o yaml 2>&1 \
+    | grep -E '^[[:space:]]*(receivers|exporters|clickhouselogsexporter|clickhousetracesexporter|clickhousemetricswrite|otlp|endpoint|datasource):'
+}
+# clickhouse_counts_15m: crew#483 (run 33156980292, 08:45Z): pods_running=80 pods_seen=1 missing=80
+# backend_errors={} -- the coverage query answered and answered nearly empty, which is not the same
+# fault as a backend nothing can reach. The same three tables telemetry-coverage.yaml queries
+# (platform/observability/telemetry-coverage.yaml QUERIES), counted for the last 15 minutes instead
+# of the coverage job's 60, from inside the ClickHouse pod itself (kubectl exec, native protocol,
+# no extra network hop or exporter needed to answer "is anything landing right now"). The admin
+# password is read once from the Secret every other init container in this namespace already
+# reads the same way (platform/observability/langfuse.yaml:85) and is never echoed.
+clickhouse_counts_15m() {
+  local chpod pw
+  chpod=$($K get pods -n observability -l clickhouse.altinity.com/chi -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+  [ -n "$chpod" ] || { echo "no pod with label clickhouse.altinity.com/chi in observability"; return 0; }
+  pw=$($K get secret clickhouse-auth -n observability -o jsonpath='{.data.password}' 2>/dev/null)
+  # crew#483 CI: a Secret lookup that returns anything other than well-formed base64 (missing,
+  # empty, or a CI fixture standing in for an unscripted call) still reaches `base64 -d` on the
+  # bare `pw=$(... | base64 -d)` form -- `base64 -d` does not refuse malformed input, it emits
+  # whatever bytes the input decodes to, including raw non-UTF-8 bytes that then ride along as a
+  # --password argument and corrupt every downstream log this playbook's own invocation record is
+  # read back from (bdd/offline-gate run 33160519723: `UnicodeDecodeError ... invalid start byte`,
+  # traced to "ok" -> byte 0xa2). Refuse to decode anything that is not valid base64 shape instead.
+  # A compound `if ... || ! printf | grep -q ...; then` line trips bin/idp-ci's
+  # pipeverdict_scan guard (bin/idp-ci:54-62): its printf/echo/cat/head exemption only
+  # recognizes a bare `if printf | grep -q; then` pipeline, not one clause of an `||`
+  # chain. Compute the base64-shape check into a plain variable first, outside any
+  # if/elif/while condition, so no grep -q pipe's exit status ever sits inside one.
+  pw_b64_shaped=0
+  printf '%s' "$pw" | grep -qE '^[A-Za-z0-9+/]*={0,2}$' && pw_b64_shaped=1
+  if [ -z "$pw" ] || [ $(( ${#pw} % 4 )) -ne 0 ] || [ "$pw_b64_shaped" -eq 0 ]; then
+    echo "clickhouse-auth secret in observability did not decode to a usable password"
+    return 0
+  fi
+  pw=$(printf '%s' "$pw" | base64 -d 2>/dev/null)
+  $K exec -n observability "$chpod" -c clickhouse -- clickhouse-client --user admin --password "$pw" -q \
+    "SELECT 'logs', count() FROM signoz_logs.distributed_logs_v2 WHERE timestamp > toUInt64(toUnixTimestamp(now()) - 900) * 1000000000" 2>&1
+  $K exec -n observability "$chpod" -c clickhouse -- clickhouse-client --user admin --password "$pw" -q \
+    "SELECT 'traces', count() FROM signoz_traces.distributed_signoz_index_v3 WHERE timestamp > now() - INTERVAL 900 SECOND" 2>&1
+  $K exec -n observability "$chpod" -c clickhouse -- clickhouse-client --user admin --password "$pw" -q \
+    "SELECT 'metrics', count() FROM signoz_metrics.distributed_time_series_v4 WHERE unix_milli > (toUnixTimestamp(now()) - 900) * 1000" 2>&1
+}
+# otlp_endpoints_by_workload: every Deployment carrying OTEL_EXPORTER_OTLP_ENDPOINT, read from the
+# live objects (never from the checked-out manifests -- what is APPLIED is what can be wrong).
+otlp_endpoints_by_workload() {
+  $K get deploy -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\t"}{range .spec.template.spec.containers[*].env[?(@.name=="OTEL_EXPORTER_OTLP_ENDPOINT")]}{.value}{end}{"\n"}{end}' 2>/dev/null \
+    | awk -F'\t' '$2!=""'
+}
 
 # diagnose: read-only. Nodes, the system pods, every Flux source and Kustomization, the failing
 # HelmReleases and the last warnings. This is the first playbook of any incident.
 pb_diagnose() {
   show nodes $K get nodes -o wide
+  # Run 33139372173: every red pod sat on one node and every failure was "the process is not
+  # answering on its port" (clickhouse startup probe refused x202, signoz 500, langfuse P1001,
+  # redis closed). That is what starvation looks like; the reason is on the node, not in the
+  # pod. Node conditions, live usage and allocated requests/limits are read first so the repair
+  # can be attributed (LAW 29) before a probe or a resource line is touched.
+  show node-pressure sh -c "$K top nodes; $K get nodes -o jsonpath='{range .items[*]}{.metadata.name}{\"\t\"}{range .status.conditions[*]}{.type}={.status}{\" \"}{end}{\"\n\"}{end}'; $K describe nodes | grep -E '^Name:|Allocated resources|^  (cpu|memory|ephemeral-storage) ' "
   show kube-system $K get pods -n kube-system -o wide
   show cni-chain $K get ds,deploy -n kube-system -l app.kubernetes.io/part-of=cilium
   show gitrepositories $K get gitrepositories -A
   show kustomizations $K get kustomizations -A
-  show helmreleases-not-ready $K get helmreleases -A --no-headers
-  show warnings $K get events -A --field-selector type=Warning --sort-by=.lastTimestamp
+  # The printer column truncates the Ready message to `...`, and the reason is always past the cut:
+  # run 33149570222 printed `admission webhook "validate.kyverno.svc-fail" denied the request: ...`
+  # for robusta and never the policy name, so the diagnose named the wall and not the door. Reading
+  # the condition directly is what the stalled-deployments row below already does.
+  show helmreleases-not-ready $K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{"\t"}{end}{.metadata.namespace}/{.metadata.name}{"\t"}{.metadata.creationTimestamp}{"\t"}{range .status.conditions[?(@.type=="Ready")]}{.reason}: {.message}{end}{"\n"}{end}'
+  # A HelmRelease says "Deployment X status: Failed" and nothing else; the reason lives on the
+  # Deployment's Progressing condition and on the pods it could not roll (run 33136391785 printed
+  # the HelmRelease line for langfuse-web three times and never why).
+  show stalled-deployments $K get deploy -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Progressing")]}{.status}{"\t"}{end}{.metadata.namespace}/{.metadata.name}{"\t"}{.status.readyReplicas}/{.spec.replicas}{"\t"}{range .status.conditions[?(@.type=="Progressing")]}{.reason}: {.message}{end}{"\n"}{end}'
+  show pods-not-running $K get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded -o wide
+  # Run 33138549588 named the stalled ReplicaSet and stopped: the pod was Running, so the reason
+  # (a readiness probe, a crash, a mount) was only in its events and log. Every pod that is
+  # Running but not Ready is described and its last log lines printed; for pods that ended in
+  # Failed (a CronJob erroring every tick) the newest one per namespace is read the same way.
+  local unready failed
+  unready=$($K get pods -A -o jsonpath='{range .items[?(@.status.phase=="Running")]}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{" "}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null | awk '$1=="False"{print $2" "$3}')
+  failed=$($K get pods -A --field-selector=status.phase=Failed --sort-by=.metadata.creationTimestamp -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null | awk '{last[$1]=$2} END{for (ns in last) print ns" "last[ns]}')
+  local ns name
+  printf '%s\n%s\n' "$unready" "$failed" | while read -r ns name; do
+    [ -n "$name" ] || continue
+    show "pod $ns/$name" sh -c "$K describe pod $name -n $ns | sed -n '/^Node:/p;/^Containers:/,\$p' | grep -E '^Node:|State|Reason|Exit Code|Ready|Message|Warning|Normal|Liveness|Readiness|Back-off|Failed|Error' | tail -25"
+    show "log $ns/$name" $K logs "$name" -n "$ns" --all-containers --tail=30 --prefix
+  done
+  # langfuse-web could not reach langfuse-postgresql:5432 while the postgres pod was Running: a
+  # Service with no ready address is the difference, and it is only visible on the Endpoints.
+  # Run 33144117286: idp#536 raised clickhouse to 4Gi, Helm reported signoz.v40, and the pod kept
+  # logging "maximum: 1.80 GiB" because nothing rolled it. Helm -> ClickHouseInstallation ->
+  # StatefulSet -> pod is four links; print the memory limit at each so the broken one is named.
+  show clickhouse-installation sh -c "$K get chi -A -o wide 2>&1; $K get chi -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{\"\tCHI podTemplate limits: \"}{range .spec.templates.podTemplates[*]}{.spec.containers[0].resources.limits}{end}{\"\n\"}{end}' 2>&1; $K get sts -A -l clickhouse.altinity.com/chi -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{\"\tsts limits: \"}{.spec.template.spec.containers[0].resources.limits}{\"\tobservedGeneration=\"}{.status.observedGeneration}{\" generation=\"}{.metadata.generation}{\"\n\"}{end}' 2>&1; $K get pods -A -l clickhouse.altinity.com/chi -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{\"\tpod limits: \"}{.spec.containers[0].resources.limits}{\"\n\"}{end}' 2>&1"
+  # kubectl logs takes no -A (idp#538 review): resolve the operator's namespace first.
+  # run 33145711762: `-l app=clickhouse-operator` matched nothing (the signoz chart labels the
+  # operator pod by its own names); the pod is found by name, which every chart version keeps
+  show clickhouse-operator-log sh -c "set -- \$($K get pods -A --no-headers 2>/dev/null | awk '\$2 ~ /clickhouse-operator/ {print \$1, \$2; exit}'); [ -n \"\${2:-}\" ] || { echo 'no pod named *clickhouse-operator*'; exit 0; }; $K logs -n \"\$1\" \"\$2\" --all-containers --tail=40 --prefix 2>&1 | tail -40"
+  # Run 33143467334: 21 descheduler pods in Error with no row saying whether the CronJob's later
+  # runs succeed; jobs are the receipt, pods are the history.
+  show cronjobs $K get cronjobs,jobs -A
+  show endpoints-empty sh -c "$K get endpoints -A | awk 'NR==1 || \$3==\"<none>\"'"
+  show warnings sh -c "$K get events -A --field-selector type=Warning --sort-by=.lastTimestamp | tail -60"
+  # --- telemetry (crew#483): run 33156980292 (08:45Z) printed pods_running=80 pods_seen=1
+  # missing=80 backend_errors={} and nothing above ever looks at the collector's own words -- the
+  # pod-not-ready branch above only tails a pod when it is unready, and both telemetry components
+  # were Ready throughout. This answers where the other 79 pods' telemetry is lost: pod health for
+  # signoz-otel-collector and both k8s-infra components; each one's own log; the collector's live
+  # receiver/exporter config; the ClickHouse row counts for the last 15 minutes from the exact
+  # tables the coverage job queries; the OTLP endpoint every workload is told to use; and which
+  # Deployments actually carry that env var. Read-only throughout.
+  local ns
+  for ns in observability observability-agent; do
+    show "telemetry-pods-$ns" $K get pods -n "$ns" -o wide
+  done
+  show_redacted collector-log telemetry_log observability otel-collector
+  show_redacted k8s-infra-agent-log telemetry_log observability-agent otel-agent
+  show_redacted k8s-infra-deployment-log telemetry_log observability-agent otel-deployment
+  show collector-config collector_config_dump
+  show_redacted clickhouse-counts-15m clickhouse_counts_15m
+  show otlp-endpoint-declared $K get helmrelease k8s-infra -n observability -o jsonpath='{"k8s-infra otelCollectorEndpoint: "}{.spec.values.otelCollectorEndpoint}{"\n"}'
+  show otlp-endpoint-workloads otlp_endpoints_by_workload
   $K get nodes >/dev/null || FAILED="$FAILED nodes"
 }
 
@@ -35,7 +235,9 @@ pb_diagnose() {
 # config Cilium wrote to every node is removed by a privileged one-shot DaemonSet (cni.uninstall
 # is off by default in Cilium 1.14+, so pod removal leaves 05-cilium.conflist behind and every new
 # pod sandbox would still call a cilium-cni whose agent is gone); coredns is restarted onto the
-# flannel-only chain; then Flux fetches main and converges on the tree without Cilium.
+# flannel-only chain; then Flux fetches main and converges on the tree without Cilium. This is
+# also the rollback for cilium-replace (below): after this runs, re-apply the flannel DaemonSet
+# cilium-replace saved to $RUNNER_TEMP/kube-flannel-ds.yaml.
 pb_cilium_unchain() {
   step flux-kustomization $K delete kustomization -n flux-system cilium --ignore-not-found --wait=false
   step helmrelease $K delete helmrelease -n kube-system cilium --ignore-not-found --wait=false
@@ -53,6 +255,9 @@ spec:
     metadata: { labels: { app: cni-unchain } }
     spec:
       tolerations: [{ operator: Exists }]
+      # run 33132419902 (diagnose): with the chain left behind every new sandbox fails at cilium-cni,
+      # so the helper itself would never start on the pod network. hostNetwork pods call no CNI.
+      hostNetwork: true
       hostPID: true
       priorityClassName: system-node-critical
       containers:
@@ -68,17 +273,389 @@ YAML
   step cni-config-remove $K delete ds cni-unchain -n kube-system --ignore-not-found --wait=false
   step coredns-restart $K rollout restart deploy/coredns -n kube-system
   step coredns-ready $K rollout status deploy/coredns -n kube-system --timeout=180s
-  step dns-answers $K run dns-probe-$$ --rm -i --restart=Never --image=public.ecr.aws/docker/library/busybox:1.36 --command -- nslookup github.com
+  # run 33133317589: with sandboxes working again, the admission webhooks that were rescheduled
+  # during the outage (external-secrets webhook, kyverno admission) still sat in a dead sandbox,
+  # so every ExternalSecret/ClusterSecretStore dry-run failed with EOF and secret-store plus its
+  # ~35 dependents stayed not Ready. Restart them onto fresh sandboxes before Flux reconciles.
+  step webhooks-restart $K rollout restart deploy -n external-secrets
+  step kyverno-restart $K rollout restart deploy -n kyverno
+  step webhooks-ready $K rollout status deploy -n external-secrets --timeout=180s
+  step kyverno-ready $K rollout status deploy -n kyverno --timeout=180s
+  # kyverno (runs 33133317589, 33134611331): a `kubectl run` pod is refused by require-run-as-nonroot,
+  # require-ro-rootfs, restrict-seccomp-strict, disallow-default-namespace, require-pod-probes and
+  # require-requests-limits, so the probe is a full Pod manifest in kube-system shaped like every
+  # platform workload. nslookup needs no root, no writable fs and no privilege.
+  dns_probe dns-probe '' github.com
   step flux-source flux reconcile source git flux-system -n flux-system --timeout=3m
   step flux-tree flux reconcile kustomization flux-system -n flux-system --timeout=5m
+  # run 33134611331: reconciling flux-system does not cascade to its children, so secret-store kept
+  # the dry-run EOF from before the webhook restart in its status. Force it, then read the tree.
+  step secret-store flux reconcile kustomization secret-store -n flux-system --timeout=5m
   show kustomizations $K get kustomizations -A
 }
 
+# cilium-replace: crew#539 CP12 correction (founder, 2026-08-28, twice: "are we getting hubble or
+# not" -> yes). idp#505 chained Cilium after OKE's flannel; idp#514 reverted it because chaining
+# took coredns down and Flux could not even fetch the revert. The supported shape, Oracle's own
+# tutorial (https://docs.oracle.com/en/learn/oke-flannel-to-cilium-cni-plugin/index.html), is
+# Cilium REPLACING flannel: the flannel DaemonSet is saved first (rollback material) then removed,
+# Cilium installs from platform/cni/cilium-values.yaml (ipam.mode=kubernetes,
+# kubeProxyReplacement=false, Hubble on), and every non-hostNetwork pod in the namespaces that
+# must come back first is deleted so the kubelet reschedules it onto the new network -- one
+# namespace at a time, --wait=false so this does not block on a pod the new CNI has not reached
+# yet. THE FOUNDER FROZE DRAIN AND CORDON FOR THIS PLAYBOOK (crew#539 5449358659, the node-drain
+# cordon window itself paged as an outage): cilium-replace never cordons and never drains: a pod
+# is deleted and the scheduler places its replacement, nothing is evicted off a node by name.
+# Rollback: bin/idp-oke-break-glass cilium-unchain, then `kubectl apply -f` the saved
+# kube-flannel-ds.yaml (cilium-replace does not re-apply it itself: the two rollback steps are
+# reviewed by a human before they run on a cluster mid-outage).
+pb_cilium_replace() {
+  local receipt_dir="${RUNNER_TEMP:-/tmp}" ns pods pod
+  step flannel-save sh -c "$K get ds kube-flannel-ds -n kube-system -o yaml > '$receipt_dir/kube-flannel-ds.yaml'"
+  step flannel-delete $K delete -n kube-system daemonset kube-flannel-ds
+  step cilium-install helm install cilium oci://quay.io/cilium/charts/cilium --version 1.20.1 --namespace kube-system -f "$IDP/platform/cni/cilium-values.yaml"
+  step cilium-ready $K rollout status ds/cilium -n kube-system --timeout=600s
+  for ns in flux-system observability edge backstage identity drills; do
+    pods=$($K get pods -n "$ns" -o jsonpath='{range .items[?(@.spec.hostNetwork!=true)]}{.metadata.name}{" "}{end}' 2>/dev/null)
+    for pod in $pods; do
+      step "reschedule-$ns-$pod" $K delete pod "$pod" -n "$ns" --wait=false
+    done
+  done
+  show cilium-pods $K get pods -n kube-system
+  show pods-not-running $K get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded
+}
+
+# dns-per-namespace: run 33141542523 (dns-per-node at 421fe6d) resolved an in-cluster and an
+# external name from every node, so the DNS plane is sound; yet clickhouse still logged
+# "ZooKeeper host signoz-zookeeper-0.signoz-zookeeper-headless:2181 ... Temporary DNS error" and
+# coredns answered NXDOMAIN to that pod for chi-signoz-clickhouse-cluster-0-0.observability.svc,
+# a per-replica Service the operator should hold. The names that fail are the namespace's own
+# headless Services, which resolve only while their pods are ready. For every namespace holding a
+# Ready=False HelmRelease: list its Services and EndpointSlices, resolve every headless Service
+# from a probe pod INSIDE that namespace (its policies, its search path), then grep coredns for
+# that namespace's names that did not answer NOERROR.
+pb_dns_per_namespace() {
+  local namespaces ns name i=0
+  namespaces=$($K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{" "}{.metadata.namespace}{"\n"}{end}' 2>/dev/null | awk '$1=="False"{print $2}' | sort -u)
+  echo "--- namespaces-not-ready"; printf '%s\n' "${namespaces:-none}"
+  for ns in $namespaces; do
+    echo "--- namespace $ns"
+    show "$ns-services" $K get svc,endpointslices -n "$ns"
+    for name in $($K get svc -n "$ns" -o jsonpath='{range .items[?(@.spec.clusterIP=="None")]}{.metadata.name}{" "}{end}'); do
+      i=$((i+1))
+      dns_probe "dns-probe-ns-$i" '' "$name.$ns.svc.cluster.local" "$ns"
+    done
+    show "$ns-coredns-log" sh -c "$K logs -n kube-system -l k8s-app=kube-dns --tail=2000 2>&1 | grep -F '.$ns.svc.' | grep -v NOERROR | tail -40"
+  done
+}
+
+# tcp-per-node: run 33143467334 (diagnose at 66db95a) had langfuse-web on 10.0.148.221 failing
+# `P1001 Can't reach database server at langfuse-postgresql:5432` while langfuse-postgresql was in
+# neither pods-not-running nor endpoints-empty and dns-per-namespace (33142680663) resolved every
+# name. dns-per-node only proved UDP to coredns's ClusterIP, which a node can answer locally. The
+# untested path is pod-to-pod TCP through a ClusterIP across nodes: from a probe inside each
+# not-Ready namespace, pinned to every node in turn, connect to every Service port of that
+# namespace and print the reachable matrix beside the pods' placement.
+pb_tcp_per_node() {
+  local namespaces ns node targets i=0
+  namespaces=$($K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{" "}{.metadata.namespace}{"\n"}{end}' 2>/dev/null | awk '$1=="False"{print $2}' | sort -u)
+  echo "--- namespaces-not-ready"; printf '%s\n' "${namespaces:-none}"
+  for ns in $namespaces; do
+    echo "--- namespace $ns"
+    show "$ns-placement" $K get pods -n "$ns" -o wide
+    # first port of every ClusterIP Service: the one its clients name (postgres 5432, redis 6379)
+    targets=$($K get svc -n "$ns" -o jsonpath='{range .items[?(@.spec.clusterIP!="None")]}{.metadata.name}{"."}'"$ns"'{".svc.cluster.local:"}{.spec.ports[0].port}{" "}{end}')
+    [ -z "$targets" ] && { echo "no ClusterIP Service in $ns"; continue; }
+    for node in $($K get nodes -o jsonpath='{.items[*].metadata.name}'); do
+      i=$((i+1))
+      echo "--- from node $node into $ns"
+      tcp_probe "tcp-probe-$i" "$node" "$ns" "$targets"
+    done
+  done
+  show networkpolicies $K get networkpolicies,ciliumnetworkpolicies -A 2>&1
+}
+
+# helm-retry: a HelmRelease that failed during an outage stays Failed after the outage ends,
+# because helm-controller spends its remediation retries once and then waits for a spec change
+# (langfuse: "Deployment/observability/langfuse-web status: Failed" 31h after the Cilium chain).
+# `flux reconcile --reset` zeroes the failure counters and runs the upgrade again on the healthy
+# cluster; a release that is Ready is left alone. Then the Kustomizations that depend on those
+# releases are reconciled so their status is fresh (reconcile does not cascade, idp#525).
+# crew#516 CP4 / crew#524 CP5, 2026-08-28: The Architect's gateway was 1/1 Ready and Applied for
+# 15h while Telegram answered nobody, and the estate had no way to find out why. `diagnose` tails a
+# pod's log only when the pod is NOT ready, the estate MCP that exposes get_workload_logs answers
+# 401, and the founder's Mac gateway -- the fallback -- had been booted out as step one of the
+# cutover. A deployment reporting healthy is not the product working, and there was no route to the
+# difference (LAW 28). This playbook is that route: read-only, and it never prints a secret VALUE.
+#
+# What it answers, in the order the failure happens: does the pod exist and has it been restarting;
+# did ESO actually produce the env Secret and which KEY NAMES landed in it (a missing
+# TELEGRAM_BOT_TOKEN is silent -- the gateway starts fine and simply serves no chat); and what the
+# container itself says. Every log line goes through redact(), so a token pasted into a log by the
+# app does not become a CI artefact.
+redact() {
+  # Telegram bot tokens are <8-10 digits>:<~35 chars>; the length is not contractual, so the rule
+  # is {30,} rather than the 35 the current ones happen to be. The second pattern catches anything
+  # after a key/token/secret/password word, and its value class includes ':' so a two-part value is
+  # taken whole -- without that, `TOKEN=1234567890:AAA...` redacts to nothing, because the digits
+  # before the colon are only 10 characters. Neither rule is a substitute for not logging secrets:
+  # this is the floor, so that reading a log can never be the thing that leaks one.
+  sed -E -e 's/[0-9]{8,10}:[A-Za-z0-9_-]{30,}/<REDACTED-BOT-TOKEN>/g' \
+         -e 's/(([Tt][Oo][Kk][Ee][Nn]|[Kk][Ee][Yy]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd])["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?)[A-Za-z0-9_.:\-]{12,}/\1<REDACTED>/g'
+}
+
+pb_architect_doctor() {
+  local ns=hermes-agent
+  show pods $K get pods -n "$ns" -o wide
+  show restarts $K get pods -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[*].restartCount}{"\t"}{.status.containerStatuses[*].lastState.terminated.reason}{"\n"}{end}'
+  show externalsecrets $K get externalsecrets -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.conditions[*]}{.type}={.status} {.reason}: {.message}{end}{"\n"}{end}'
+  # KEY NAMES only. `-o jsonpath={.data}` would print the values; keys() prints what the pod can
+  # read, which is the whole question -- an env Secret missing TELEGRAM_BOT_TOKEN is the silent way
+  # for a green pod to serve nobody.
+  # go-template, not jsonpath: `{range $.data}{@}{end}` iterates the map and prints the VALUES.
+  # This prints the keys and nothing else -- what the pod can read, never what it reads.
+  show env-key-names $K get secret hermes-agent-env -n "$ns" -o go-template='{{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}'
+  show_redacted telegram-lifecycle sh -c "$K logs deploy/hermes-agent-gateway -n $ns --all-containers --tail=2000 2>&1 | grep -iE 'telegram|getupdates|conflict|409|unauthoriz|401|polling|sink|allowed_user' | tail -40"
+  show_redacted gateway-log sh -c "$K logs deploy/hermes-agent-gateway -n $ns --all-containers --tail=80 --prefix 2>&1"
+  show_redacted gateway-log-previous sh -c "$K logs deploy/hermes-agent-gateway -n $ns --all-containers --tail=40 --previous 2>&1 || echo 'no previous container (it has not restarted)'"
+}
+
+pb_helm_retry() {
+  local failed
+  failed=$($K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{" "}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null | awk '$1=="False"{print $2" "$3}')
+  echo "--- helmreleases-failed"; printf '%s\n' "${failed:-none}"
+  local ns name
+  while read -r ns name; do
+    [ -n "$name" ] || continue
+    step "retry-$name" flux reconcile helmrelease "$name" -n "$ns" --reset --timeout=15m </dev/null
+  done <<<"$failed"
+  show helmreleases $K get helmreleases -A --no-headers
+  step observability flux reconcile kustomization observability -n flux-system --timeout=5m
+  show kustomizations $K get kustomizations -A
+}
+
+# node-drain: run 33144789785 + diagnose 33144117286 (crew#539 5448912676): every crashing
+# observability pod (clickhouse, langfuse-web, langfuse-worker) sat on the 6h-old spot replacement
+# 10.0.148.221, each timing out to a Service whose backend was on that same node, while the
+# replica on the other node and every cross-node probe answered. A node whose same-node ClusterIP
+# path drops packets is retired the way Kubernetes retires a node: cordon, drain, and let the
+# cluster-autoscaler remove the empty node and add a fresh one. The target is not typed: it is the
+# Ready node carrying the most pods that are not Running/Succeeded, and the placement before and
+# after is the receipt. Undo: node-uncordon.
+sick_pods() {
+  # "<node> <ns>/<pod> <phase> <ready…>" for every Pending pod and every Running pod with any
+  # container not ready. Succeeded and Failed are finished pods (Jobs); idp#540 review: 21 Failed
+  # descheduler pods on the healthy node would have out-voted the three crashers
+  $K get pods -A -o jsonpath='{range .items[*]}{.spec.nodeName}{" "}{.metadata.namespace}{"/"}{.metadata.name}{" "}{.status.phase}{" "}{range .status.containerStatuses[*]}{.ready}{" "}{end}{"\n"}{end}' 2>/dev/null \
+    | awk '$1!="" && $3!="Succeeded" && $3!="Failed" { sick=($3!="Running"); for(i=4;i<=NF;i++) if($i=="false") sick=1; if(sick) print }'
+}
+ready_nodes() { $K get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{"\n"}{end}' 2>/dev/null | awk '$2=="True"{print $1}'; }
+# the pick is among Ready nodes only: a NotReady node is the cloud layer's to replace, and draining
+# it would only evict pods the scheduler has already given up on
+pick_sick_node() { sick_pods | awk -v r="$(ready_nodes | tr '\n' ' ')" 'BEGIN{split(r,a," "); for(i in a) ok[a[i]]=1} ok[$1]{n[$1]++} END{for(k in n) print n[k], k}' | sort -rn | head -1 | awk '{print $2}'; }
+# drain_preflight <node>: prints "ok preflight ..." and returns 0, or prints the FAIL lines and
+# returns 1. Two refusals: a PodDisruptionBudget with disruptionsAllowed 0 that covers a pod on the
+# node (kubectl drain would wait on it until its timeout), and the pods leaving the node asking for
+# more cpu or memory than the other Ready nodes have free (they would leave as Pending). DaemonSet
+# pods stay on the node and count for neither; mirror pods likewise.
+DRAIN_PREFLIGHT_PY=$(cat <<'PYEOF'
+import json, re, sys
+node = sys.argv[1]
+pods_j, pdb_j, nodes_j = sys.stdin.read().split("@@SEP@@\n")
+def load(t):
+    try: return json.loads(t).get("items", [])
+    except Exception: return []
+pods, pdbs, nodes = load(pods_j), load(pdb_j), load(nodes_j)
+def qty(v, kind):
+    if v is None: return 0.0
+    v = str(v)
+    m = re.fullmatch(r"([0-9.]+)([a-zA-Z]*)", v)
+    if not m: return 0.0
+    n, u = float(m.group(1)), m.group(2)
+    if kind == "cpu": return n / 1000 if u == "m" else n
+    mult = {"": 1, "Ki": 2**10, "Mi": 2**20, "Gi": 2**30, "Ti": 2**40, "k": 1e3, "M": 1e6, "G": 1e9, "T": 1e12}
+    return n * mult.get(u, 1)
+def stays(p):
+    owners = p.get("metadata", {}).get("ownerReferences") or []
+    return any(o.get("kind") == "DaemonSet" for o in owners) or "kubernetes.io/config.mirror" in (p.get("metadata", {}).get("annotations") or {})
+def req(p, kind):
+    return sum(qty((c.get("resources") or {}).get("requests", {}).get(kind), kind) for c in p.get("spec", {}).get("containers", []))
+def phase_counts(p): return p.get("status", {}).get("phase") in ("Succeeded", "Failed")
+leaving = [p for p in pods if p.get("spec", {}).get("nodeName") == node and not stays(p) and not phase_counts(p)]
+fail = []
+# A PDB selector this playbook cannot evaluate is a refusal, not a skip. Measured by 09cd04a6
+# (idp#543 review 5449475253): a 0-disruption PDB selecting by matchExpressions read as an empty
+# matchLabels dict, matched nothing, and the node was cordoned with RC 0 -- the exact silent pass
+# the 06:20Z outage came through. matchLabels is the only shape proved here, so anything else in
+# a namespace that has pods leaving refuses and names what it could not read.
+for b in pdbs:
+    st = b.get("status") or {}
+    if st.get("disruptionsAllowed", 1) != 0: continue
+    ns, bname = b["metadata"]["namespace"], b["metadata"]["name"]
+    here = [p for p in leaving if p["metadata"]["namespace"] == ns]
+    if not here: continue
+    spec_sel = b.get("spec", {}).get("selector")
+    sel = (spec_sel or {}).get("matchLabels") or {}
+    if spec_sel is None or (spec_sel or {}).get("matchExpressions") or not sel:
+        shape = "matchExpressions" if (spec_sel or {}).get("matchExpressions") else ("null selector" if spec_sel is None else "empty selector")
+        fail.append(f"FAIL  node-drain: PodDisruptionBudget {ns}/{bname} allows 0 disruptions and its selector is a {shape}, which this playbook cannot evaluate; {len(here)} pod(s) leaving {node} are in {ns} and it may cover them; refusing")
+        continue
+    for p in here:
+        if all((p["metadata"].get("labels") or {}).get(k) == v for k, v in sel.items()):
+            fail.append(f"FAIL  node-drain: PodDisruptionBudget {ns}/{bname} allows 0 disruptions and covers {ns}/{p['metadata']['name']}; drain would wait on it until timeout; refusing")
+need_cpu, need_mem = sum(req(p, "cpu") for p in leaving), sum(req(p, "memory") for p in leaving)
+peers = []
+for n in nodes:
+    name = n["metadata"]["name"]
+    ready = any(c.get("type") == "Ready" and c.get("status") == "True" for c in n.get("status", {}).get("conditions", []))
+    if name == node or not ready or n.get("spec", {}).get("unschedulable"): continue
+    alloc = n.get("status", {}).get("allocatable") or {}
+    used_cpu = sum(req(p, "cpu") for p in pods if p.get("spec", {}).get("nodeName") == name and not phase_counts(p))
+    used_mem = sum(req(p, "memory") for p in pods if p.get("spec", {}).get("nodeName") == name and not phase_counts(p))
+    peers.append((name, max(0.0, qty(alloc.get("cpu"), "cpu") - used_cpu), max(0.0, qty(alloc.get("memory"), "memory") - used_mem)))
+free_cpu, free_mem = sum(c for _, c, _ in peers), sum(m for _, _, m in peers)
+gi = lambda b: f"{b/2**30:.2f}Gi"
+if need_cpu > free_cpu or need_mem > free_mem:
+    fail.append(f"FAIL  node-drain: {len(leaving)} pod(s) leaving {node} request cpu {need_cpu:.2f} / memory {gi(need_mem)}; the other Ready nodes have cpu {free_cpu:.2f} / memory {gi(free_mem)} free; they would leave as Pending; refusing")
+# A cluster total is not a placement. Measured by 09cd04a6 (idp#543 review 5449475253): one 4Gi
+# pod leaving with two peers at 3Gi free each passed the total check and drained, and the pod had
+# nowhere to land. The scheduler fits a pod on ONE node, so every pod leaving must fit on one.
+for p in leaving:
+    pc, pm = req(p, "cpu"), req(p, "memory")
+    if any(fc >= pc and fm >= pm for _, fc, fm in peers): continue
+    best = ", ".join(f"{n} cpu {c:.2f} / memory {gi(m)}" for n, c, m in peers) or "none"
+    fail.append(f"FAIL  node-drain: {p['metadata']['namespace']}/{p['metadata']['name']} requests cpu {pc:.2f} / memory {gi(pm)} and no single Ready node has room for it (free: {best}); the scheduler places per node, not per cluster; refusing")
+    break
+if fail:
+    print("\n".join(fail)); sys.exit(1)
+print(f"ok    preflight              {len(leaving)} pod(s) leaving need cpu {need_cpu:.2f} / memory {gi(need_mem)}, other Ready nodes have cpu {free_cpu:.2f} / memory {gi(free_mem)} free and each leaving pod fits on one of them; no PodDisruptionBudget at 0 covers them")
+print("namespaces=" + ",".join(sorted({p["metadata"]["namespace"] for p in leaving})))
+PYEOF
+)
+# alert_silence add|expire: founder 2026-08-28 06:43Z, "catalogue says no available server, lots of
+# errors coming on telegram" — the 06:36Z catalogue 503 was this playbook's own cordon window
+# (crew#539 5449358659). A planned drain pages the founder as if it were an outage, so the window
+# is silenced in Alertmanager and the silence is expired again when the playbook ends. amtool is
+# Alertmanager's own client and ships in its image (LAW 43): no alert state is hand-rolled here.
+#
+# THE MATCHER IS THE NAMESPACE, NOT THE NODE. Found by 09cd04a6 (idp#543 review 5449475253):
+# `node=<name>` silenced nothing, because no alerting rule under platform/monitoring carries a
+# node label and the telegram route groups by [alertname, namespace]
+# (platform/monitoring/alertmanager-config.yaml:30). A silence can only match a label the alert
+# actually has, so the window is silenced per namespace of the pods that are leaving — one
+# silence each, every id expired when the playbook ends.
+AM_NS="${AM_NS:-monitoring}"
+AM_PORT="${AM_PORT:-9093}"   # in-pod, reached through kubectl exec; declared in catalog/ports.yaml
+alert_silence() {
+  local action="$1" arg="${2:-}" pod ns id ids=""
+  pod=$($K get pods -n "$AM_NS" -l app.kubernetes.io/name=alertmanager -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+  [ -n "$pod" ] || { echo "no alertmanager pod in $AM_NS: not silencing"; return 0; }
+  case "$action" in
+    add)
+      for ns in $(printf '%s' "$arg" | tr ',' ' '); do
+        id=$($K exec -n "$AM_NS" "$pod" -c alertmanager -- amtool --alertmanager.url=http://localhost:$AM_PORT silence add "namespace=$ns" --duration=30m --comment="idp-oke-break-glass node-drain (crew#539)" 2>/dev/null | tail -1)
+        [ -n "$id" ] && ids="${ids:+$ids }$id"
+      done
+      printf '%s\n' "$ids" ;;
+    expire)
+      for id in $arg; do
+        $K exec -n "$AM_NS" "$pod" -c alertmanager -- amtool --alertmanager.url=http://localhost:$AM_PORT silence expire "$id" >/dev/null 2>&1
+      done ;;
+  esac
+}
+
+drain_preflight() {
+  local node="$1"
+  { $K get pods -A -o json 2>/dev/null; echo '@@SEP@@'; $K get pdb -A -o json 2>/dev/null; echo '@@SEP@@'; $K get nodes -o json 2>/dev/null; } \
+    | python3 -c "$DRAIN_PREFLIGHT_PY" "$node"
+}
+
+pb_node_drain() {
+  show nodes-before $K get nodes -o wide
+  show pods-not-ready-by-node sh -c "$(declare -f sick_pods); K='$K'; sick_pods | sort"
+  local node; node=$(pick_sick_node)
+  [ -n "$node" ] || { echo "no pod outside Running/Succeeded on a Ready node: nothing to drain"; return 0; }
+  echo "--- target $node"
+  # refusing to drain the last Ready node: the workloads would have nowhere to go and the API's
+  # own pods (coredns, kube-proxy are DaemonSets, but the autoscaler and flux are not) would be evicted into Pending
+  local ready; ready=$(ready_nodes | wc -l | tr -d ' ')
+  [ "$ready" -gt 1 ] || { echo "FAIL  node-drain: $node is the only Ready node; refusing"; FAILED="$FAILED node-drain"; return 1; }
+  # run 33147195670: cordon ok, then drain timed out after 10m on the single-replica clickhouse
+  # pod (its PodDisruptionBudget allows 0 disruptions) while langfuse-postgresql and the catalogue
+  # sat Pending on <none>: the other node had no room. The cordon itself was the outage. Both are
+  # knowable before anything is touched, so both are checked first and either refuses the drain.
+  local verdict; verdict=$(drain_preflight "$node") || { printf '%s\n' "$verdict"; FAILED="$FAILED node-drain"; return 1; }
+  # the preflight's last line names the namespaces the pods are leaving; that is what Alertmanager
+  # can actually match on, so it is what gets silenced. It is not part of the human verdict.
+  local nss; nss=$(printf '%s\n' "$verdict" | sed -n 's/^namespaces=//p')
+  printf '%s\n' "$verdict" | grep -v '^namespaces='
+  local silence; silence=$(alert_silence add "$nss")
+  echo "--- silence ${silence:-none}"
+  step cordon $K cordon "$node"
+  step drain $K drain "$node" --ignore-daemonsets --delete-emptydir-data --timeout=600s
+  alert_silence expire "$silence"   # the window closes with the playbook, however the drain ended
+  show nodes-after $K get nodes -o wide
+  show pods-after $K get pods -A -o wide --field-selector=status.phase!=Succeeded
+}
+pb_node_uncordon() {
+  local n
+  for n in $($K get nodes -o jsonpath='{range .items[?(@.spec.unschedulable==true)]}{.metadata.name}{" "}{end}'); do step "uncordon-$n" $K uncordon "$n"; done
+  show nodes $K get nodes -o wide
+}
+
+# chi-resize: run 33147086133 (diagnose after idp#536): the signoz HelmRelease carries 4Gi for
+# clickhouse, and "Helm upgrade failed ... pre-upgrade hooks failed: timeout waiting for
+# Job/observability/signoz-telemetrystore-migrator". The migrator's init containers wait for a
+# ClickHouse that is Ready; ClickHouse exits 137 at the old 2Gi every few minutes; the 4Gi that
+# would let it live sits behind the hook that waits for it. Helm cannot break its own deadlock,
+# so the ClickHouseInstallation is patched to the value the HelmRelease already declares (read
+# from the values ConfigMap, never typed here); the Altinity operator rolls the StatefulSet, the
+# pod comes up at 4Gi, the migrator finishes and the next Helm reconcile converges on the same
+# value: there is nothing to undo, the patch IS the declared state.
+CHI_VALUES="${CHI_VALUES:-observability/signoz-values}"   # <namespace>/<ConfigMap> holding values.yaml
+chi_links() {
+  $K get chi -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\tCHI podTemplate limits: "}{range .spec.templates.podTemplates[*]}{.spec.containers[0].resources.limits}{end}{"\n"}{end}' 2>&1
+  $K get sts -A -l clickhouse.altinity.com/chi -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\tsts limits: "}{.spec.template.spec.containers[0].resources.limits}{"\n"}{end}' 2>&1
+  $K get pods -A -l clickhouse.altinity.com/chi -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\tpod limits: "}{.spec.containers[0].resources.limits}{"\t"}{.status.phase}{"\n"}{end}' 2>&1
+}
+pb_chi_resize() {
+  local want
+  want=$($K get configmap "${CHI_VALUES#*/}" -n "${CHI_VALUES%/*}" -o jsonpath='{.data.values\.yaml}' 2>/dev/null \
+    | python3 -c 'import sys,json,yaml; r=(yaml.safe_load(sys.stdin) or {}).get("clickhouse",{}).get("resources"); print(json.dumps(r,separators=(",",":")) if r else "")')
+  [ -n "$want" ] || { echo "FAIL  chi-resize: no clickhouse.resources in ConfigMap $CHI_VALUES"; FAILED="$FAILED chi-resize"; return 1; }
+  local want_mem
+  want_mem=$(printf %s "$want" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("limits",{}).get("memory",""))')
+  [ -n "$want_mem" ] || { echo "FAIL  chi-resize: the declared resources carry no limits.memory"; FAILED="$FAILED chi-resize"; return 1; }
+  echo "--- want $want"
+  show chi-before chi_links
+  local row ns name
+  for row in $($K get chi -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{" "}{end}' 2>/dev/null); do
+    ns="${row%/*}"; name="${row#*/}"
+    step "patch-$name" $K patch chi "$name" -n "$ns" --type=json -p "[{\"op\":\"replace\",\"path\":\"/spec/templates/podTemplates/0/spec/containers/0/resources\",\"value\":$want}]"
+    # run 33148549633: the patch landed on the CHI and `rollout status` answered "complete" in the
+    # same second -- against the OLD StatefulSet, because the Altinity operator reconciles
+    # CHI -> sts asynchronously. chi-after then printed 2Gi at sts and pod and the run still PASSed.
+    # Wait for the operator to carry the value onto the sts spec first; only then wait for the roll.
+    step "reconcile-$name" $K wait sts -n "$ns" -l "clickhouse.altinity.com/chi=$name" --for=jsonpath='{.spec.template.spec.containers[0].resources.limits.memory}'="$want_mem" --timeout=600s
+    step "rollout-$name" $K rollout status sts -n "$ns" -l "clickhouse.altinity.com/chi=$name" --timeout=600s
+  done
+  show chi-after chi_links
+}
+
 case "${1:-}" in
-  --list) echo "diagnose cilium-unchain"; exit 0 ;;
+  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize"; exit 0 ;;
   diagnose) pb_diagnose ;;
+  architect-doctor) pb_architect_doctor ;;
+  dns-per-node) pb_dns_per_node ;;
+  dns-per-namespace) pb_dns_per_namespace ;;
+  tcp-per-node) pb_tcp_per_node ;;
   cilium-unchain) pb_cilium_unchain ;;
-  *) echo "usage: $0 <diagnose|cilium-unchain>"; exit 64 ;;
+  cilium-replace) pb_cilium_replace ;;
+  helm-retry) pb_helm_retry ;;
+  node-drain) pb_node_drain ;;
+  node-uncordon) pb_node_uncordon ;;
+  chi-resize) pb_chi_resize ;;
+  *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
 esac
 [ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }
 echo "FAIL  break-glass $1 broken:$FAILED"; exit 1

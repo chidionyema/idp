@@ -200,6 +200,9 @@ jobs:
     - $CODE
     cron: 57 1,7,13,19 * * *
     skip_on_battery: false
+    ok_exit: [1]  # 1 = swept fine and reports a repo with no graph, a missing hook or a stale graph; not a crash (2026-08-28: breaker open after 3 findings runs, row dark)
+    env:
+      HC_FINDINGS_EXIT: "1"  # hc-wrap: liveness stays green, the finding fails graphify-sweep-findings
     timeout_s: 1800
   com.chidionyema.guard-selftest:
     runs_on: mac
@@ -231,6 +234,7 @@ jobs:
   com.estate.bundlepush:
     runs_on: mac
     runs_on_ref: crew#300
+    ok_exit: [2]  # 2 = every repo escrowed, and one was skipped (named in the log: oversize); not a crash. Runs df9d7e69 and 3× on 2026-08-25 printed BUNDLE PUSH GREEN then exit 2, and the breaker held the job open for 52h
     command:
     - ~/.claude/bin/estate-runner
     - ~/.claude/scripts/estate/estate_bundle_push.sh
@@ -255,6 +259,8 @@ jobs:
     runs_on: mac
     runs_on_ref: crew#516 CP2
     ok_exit: [1]  # 1 = ran fine and reports a finding; not a crash
+    env:
+      HC_FINDINGS_EXIT: "1"  # hc-wrap: liveness stays green, the finding fails estate-costsentinel-findings
     command:
     - ~/.claude/scripts/hc-wrap.sh
     - estate-costsentinel
@@ -322,6 +328,7 @@ jobs:
     - --html
     - ~/.claude/state/founder-board.html
     cron: 43 0,2,4,6,8,10,12,14,16,18,20,22 * * *
+    ok_exit: [1]  # 1 = board built and a row is red; a finding, not a crash (2026-08-28: breaker open, row dark)
     cwd: '~'
     skip_on_battery: false
     timeout_s: 1800
@@ -400,6 +407,9 @@ jobs:
     cron: 35 0,2,4,6,8,10,12,14,16,18,20,22 * * *
     cwd: ~/.claude/scripts/estate
     skip_on_battery: false
+    ok_exit: [1]  # 1 = graded fine and found a load-bearing hole; a finding, not a crash (2026-08-28: breaker open, row dark)
+    env:
+      HC_FINDINGS_EXIT: "1"  # hc-wrap: liveness stays green, the finding fails ingit-findings
     timeout_s: 1800
   com.founder.lawenforcement:
     runs_on: mac
@@ -414,6 +424,9 @@ jobs:
     cron: 51 0,2,4,6,8,10,12,14,16,18,20,22 * * *
     cwd: $CODE/crew
     skip_on_battery: false
+    ok_exit: [1]  # 1 = graded fine and found a gap or a dead guard; a finding, not a crash (2026-08-28: breaker open, row dark)
+    env:
+      HC_FINDINGS_EXIT: "1"  # hc-wrap: liveness stays green, the finding fails lawenforcement-findings
     timeout_s: 1800
   com.founder.sciencecollect:
     runs_on: mac
