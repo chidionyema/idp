@@ -63,6 +63,14 @@ def test_cilium_unchain_removes_the_release_before_the_cni_config_and_ends_with_
     assert "delete ds cni-unchain -n kube-system" in joined, "the privileged helper is not left on the cluster"
 
 
+def test_cni_cleanup_helper_runs_on_the_host_network():
+    """run 33132419902: with the chained config left behind, cilium-cni fails every new sandbox,
+    so a helper on the pod network can never start. hostNetwork pods call no CNI."""
+    src = PLAYBOOK.read_text()
+    helper = src[src.index("name: cni-unchain"):src.index("YAML\n", src.index("name: cni-unchain"))]
+    assert "hostNetwork: true" in helper
+
+
 def test_unknown_playbook_is_refused_and_list_names_both(tmp_path):
     p, _ = _run("rm-rf-everything", tmp_path)
     assert p.returncode == 64
