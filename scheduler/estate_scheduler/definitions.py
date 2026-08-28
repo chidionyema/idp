@@ -117,15 +117,36 @@ def on_battery() -> bool:
     return "discharging" in out
 
 
-def _recent_statuses(instance, job_name: str, n: int) -> list[DagsterRunStatus]:
+SPEC_HASH_TAG = "estate/spec-hash"
+
+
+def spec_hash(spec: dict) -> str:
+    """Twelve hex chars over the row as schedule.yml states it, so a run carries which
+    version of the row it executed."""
+    import hashlib
+
+    return hashlib.sha256(json.dumps(spec, sort_keys=True, default=str).encode()).hexdigest()[:12]
+
+
+def _recent_statuses(instance, job_name: str, n: int, tags: dict | None = None) -> list[DagsterRunStatus]:
     from dagster import RunsFilter
 
-    records = instance.get_run_records(RunsFilter(job_name=job_name), limit=n)
+    records = instance.get_run_records(RunsFilter(job_name=job_name, tags=tags or None), limit=n)
     return [r.dagster_run.status for r in records]
 
 
-def circuit_open(instance, job_name: str) -> bool:
-    recent = _recent_statuses(instance, job_name, BREAKER_TRIP)
+def circuit_open(instance, job_name: str, current_hash: str | None = None) -> bool:
+    """Three consecutive failures of the row AS IT NOW STANDS open the breaker.
+
+    crew#539 (2026-08-28, 09cd04a6 measured from run/dagster/schedules/schedules.db): 24 jobs
+    sat circuit-open, some since 2026-08-25 02:30. com.estate.costsentinel tripped on exit 1
+    before ok_exit [1] landed (crew#85); the fix landed, the breaker never re-closed, and the
+    row stayed dark for 18 hours until a person launched it by hand. A run records the
+    spec_hash of the row it executed; failures under an older hash belong to a row that no
+    longer exists and do not count. Editing the row in schedule.yml is the reset.
+    """
+    tags = {SPEC_HASH_TAG: current_hash} if current_hash else None
+    recent = _recent_statuses(instance, job_name, BREAKER_TRIP, tags)
     return len(recent) == BREAKER_TRIP and all(s == DagsterRunStatus.FAILURE for s in recent)
 
 
@@ -216,6 +237,7 @@ def make_job(label: str, spec: dict):
             "estate/owner": label.split(".")[1] if label.count(".") >= 2 else label.split(".")[0],
             "dagster/max_runtime": str(int(spec.get("timeout_s", 1800)) + 60),
             "dagster/priority": str(int(spec.get("priority", 0))),
+            SPEC_HASH_TAG: spec_hash(spec),
         },
     )
     def _job():
@@ -244,8 +266,8 @@ def make_schedule(label: str, spec: dict, the_job):
             return skip
         if battery and on_battery():
             return SkipReason(f"{label}: on battery")
-        if circuit_open(context.instance, the_job.name):
-            return SkipReason(f"{label}: circuit open after {BREAKER_TRIP} failures; run it by hand to reset")
+        if circuit_open(context.instance, the_job.name, spec_hash(spec)):
+            return SkipReason(f"{label}: circuit open after {BREAKER_TRIP} failures of this row; edit the row or run it by hand to reset")
         return RunRequest(run_key=None)
 
     return _sched
@@ -260,7 +282,7 @@ def make_dependency_sensor(label: str, spec: dict, the_job, upstream_job):
         default_status=DefaultSensorStatus.RUNNING,
     )
     def _after(context):
-        if circuit_open(context.instance, the_job.name):
+        if circuit_open(context.instance, the_job.name, spec_hash(spec)):
             return SkipReason(f"{label}: circuit open")
         return RunRequest(run_key=context.dagster_run.run_id)
 
@@ -283,6 +305,9 @@ def estate_failure_log(context):
 def build() -> Definitions:
     spec = load_spec()
     jobs, schedules, sensors = {}, [], [estate_failure_log]
+    # A row graded `runs_on: retire` (crew#516) has left the Mac; it gets no job and no
+    # schedule. crew#539: ai.idp.reconcile kept ticking retired and failing exit 2.
+    spec = {label: s for label, s in spec.items() if s.get("runs_on") != "retire"}
     for label, s in spec.items():
         jobs[label] = make_job(label, s)
     for label, s in spec.items():
