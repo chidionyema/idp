@@ -108,3 +108,20 @@ def test_dns_probe_pod_passes_the_cluster_pod_security_policies():
     c = spec["containers"][0]["securityContext"]
     assert c["readOnlyRootFilesystem"] is True and c["allowPrivilegeEscalation"] is False
     assert c["capabilities"]["drop"] == ["ALL"]
+
+
+def test_cilium_unchain_restarts_the_admission_webhooks_after_coredns_and_before_flux(tmp_path):
+    """run 33133317589: the chain was removed and coredns rolled out, but the ESO webhook and kyverno
+    admission pods rescheduled during the outage stayed in dead sandboxes, so secret-store and its
+    dependents failed dry-run with EOF. The playbook restarts them onto fresh sandboxes before Flux."""
+    p, calls = _run("cilium-unchain", tmp_path)
+    assert p.returncode == 0, p.stdout + p.stderr
+    joined = "\n".join(calls)
+    order = [
+        joined.index("rollout status deploy/coredns"),
+        joined.index("rollout restart deploy -n external-secrets"),
+        joined.index("rollout restart deploy -n kyverno"),
+        joined.index("rollout status deploy -n external-secrets"),
+        joined.index("reconcile source git flux-system"),
+    ]
+    assert order == sorted(order), calls
