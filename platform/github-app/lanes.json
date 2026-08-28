@@ -1,5 +1,5 @@
 {
-  "_comment": "Permissions an installation token is narrowed to at mint time (POST /app/installations/{id}/access_tokens). A lane never gets more than the App's default_permissions in manifest.json.",
+  "_comment": "Permissions an installation token is narrowed to at mint time (POST /app/installations/{id}/access_tokens). A lane never gets more than the App's default_permissions in manifest.json. The recovery lane (crew#290/crew#300) is read-only: bin/idp-escrow and bin/idp-recover-drill clone with it and can never write to a repository.",
   "platform-engineer": {
     "metadata": "read",
     "contents": "write",
@@ -17,6 +17,10 @@
     "checks": "read"
   },
   "conscience-reader": {
+    "metadata": "read",
+    "contents": "read"
+  },
+  "recovery": {
     "metadata": "read",
     "contents": "read"
   }
