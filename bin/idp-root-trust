@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""Root-trust gate (crew#66 ruling 5453747447, crew#580): every vault entry an ExternalSecret
+reads is born by a bootstrapper, or is ticketed.
+
+Reads the register table in docs/policy/root-trust.md and every ExternalSecret under platform/.
+Grades three things, never a proxy:
+  1. every vault key an ExternalSecret reads (data[].remoteRef.key, dataFrom[].extract.key) has a
+     register row; an unregistered key is a credential born nobody knows how -> FAIL;
+  2. a MEETS row names a bootstrapper that exists as a file under bin/, or one of the two
+     in-estate birth paths (`ESO generator`, Terraform `oci_vault_secret`) -> else FAIL;
+  3. a MISS or PARTIAL row names a crew ticket (crew#N) -> else FAIL (a miss without a ticket is
+     a documented procedure, the thing the ruling refuses).
+Prints one line per finding, then a count line. Exit 0 = PASS (`--check` additionally requires
+every row MEETS, the end state the founder set: exit 1 while any MISS/PARTIAL remains).
+No network, no secret values: it reads two kinds of file and nothing else.
+"""
+import glob
+import os
+import re
+import sys
+
+import yaml
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+IDP = os.environ.get("IDP_ROOT") or os.path.dirname(HERE)
+REGISTER = os.path.join(IDP, "docs", "policy", "root-trust.md")
+BIN = os.path.join(IDP, "bin")
+PLATFORM = os.path.join(IDP, "platform")
+IN_ESTATE = ("ESO generator", "Terraform")
+VERDICTS = {"MEETS", "PARTIAL", "MISS"}
+
+
+def register_rows(text):
+    rows = []
+    for line in text.splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) != 6 or cells[4] not in VERDICTS:
+            continue
+        keys = re.findall(r"`([^`]+)`", cells[0])
+        rows.append({"keys": [k.split(" ")[0] for k in keys] or [cells[0]], "verdict": cells[4], "path": cells[5], "raw": cells[0]})
+    return rows
+
+
+def external_secret_keys(root):
+    found = {}
+    for f in sorted(glob.glob(os.path.join(root, "**", "*.yaml"), recursive=True)):
+        try:
+            with open(f) as fh:
+                docs = list(yaml.safe_load_all(fh))
+        except Exception:
+            continue
+        for d in docs:
+            if not isinstance(d, dict) or d.get("kind") != "ExternalSecret":
+                continue
+            spec = d.get("spec") or {}
+            for it in spec.get("data") or []:
+                k = ((it or {}).get("remoteRef") or {}).get("key")
+                if k:
+                    found.setdefault(k, set()).add(os.path.relpath(f, IDP))
+            for it in spec.get("dataFrom") or []:
+                k = ((it or {}).get("extract") or {}).get("key")
+                if k:
+                    found.setdefault(k, set()).add(os.path.relpath(f, IDP))
+    return found
+
+
+def grade(rows, keys, bin_dir):
+    findings = []
+    registered = {}
+    for r in rows:
+        for k in r["keys"]:
+            registered.setdefault(k, []).append(r)
+        if r["verdict"] == "MEETS":
+            tools = re.findall(r"`bin/([^`]+)`", r["path"])
+            if tools:
+                for t in tools:
+                    if not os.path.isfile(os.path.join(bin_dir, t)):
+                        findings.append(f"FAIL    {r['raw']}: MEETS names bin/{t} which does not exist")
+            elif not any(m in r["path"] for m in IN_ESTATE):
+                findings.append(f"FAIL    {r['raw']}: MEETS names no bootstrapper under bin/ and no in-estate birth path")
+        elif not re.search(r"crew#\d+", r["path"]):
+            findings.append(f"FAIL    {r['raw']}: {r['verdict']} without a crew ticket")
+    for k, files in sorted(keys.items()):
+        if k not in registered:
+            findings.append(f"FAIL    {k}: read by {', '.join(sorted(files))} but absent from the register")
+    return findings, registered
+
+
+def main(argv):
+    check = "--check" in argv
+    if not os.path.isfile(REGISTER):
+        print(f"FAIL    root-trust: {REGISTER} missing")
+        return 1
+    with open(REGISTER) as fh:
+        rows = register_rows(fh.read())
+    keys = external_secret_keys(PLATFORM)
+    findings, registered = grade(rows, keys, BIN)
+    for line in findings:
+        print(line)
+    counts = {v: sum(1 for r in rows if r["verdict"] == v) for v in ("MEETS", "PARTIAL", "MISS")}
+    summary = f"{len(keys)} vault entries read by ExternalSecrets, {len(rows)} register rows: MEETS {counts['MEETS']} PARTIAL {counts['PARTIAL']} MISS {counts['MISS']}"
+    if findings:
+        print(f"FAIL    root-trust: {len(findings)} finding(s); {summary}")
+        return 1
+    if check and (counts["PARTIAL"] or counts["MISS"]):
+        print(f"FAIL    root-trust --check: {counts['PARTIAL'] + counts['MISS']} row(s) not MEETS; {summary}")
+        return 1
+    print(f"PASS    root-trust: every entry registered, every MEETS row has its bootstrapper, every miss its ticket; {summary}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

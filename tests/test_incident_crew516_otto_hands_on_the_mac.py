@@ -140,7 +140,11 @@ def test_vault_seed_carries_the_one_oauth_client_entry_never_a_reusable_key():
     assert "tailscale-operator" in options
     assert "hermes-agent-tailscale" not in options, "the design that entry belonged to (5451614620) was rejected"
     raw = VAULT_SEED.read_text()
-    assert "put tailscale-operator client_id=TAILSCALE_OAUTH_CLIENT_ID client_secret=TAILSCALE_OAUTH_CLIENT_SECRET" in raw
+    # crew#66 root trust (5453747447, crew#576): the OAuth client is born by bin/idp-bootstrap-tailscale,
+    # which writes the vault itself; vault-seed REFUSES the entry instead of pasting it from a GitHub secret.
+    assert "put tailscale-operator client_id=" not in raw, "the pasted-secret path is gone (crew#66 root trust)"
+    assert "born by bin/idp-bootstrap-tailscale, never seeded by hand" in raw
+    assert "TAILSCALE_OAUTH_CLIENT_SECRET" not in raw, "no GitHub secret holds the client secret"
     assert "SEED_TS_AUTHKEY" not in raw, "the reusable-key seeding path (5451614620) is gone, not just renamed"
 
 

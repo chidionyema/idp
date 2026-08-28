@@ -79,7 +79,7 @@ def test_router_accepted_key_is_kept_and_nothing_is_minted(tmp_path: Path) -> No
     assert r.returncode == 0, r.stdout + r.stderr
     log = fk["log"].read_text()
     assert "key/generate" not in log and "put " not in log, log
-    assert r.stdout.startswith("ok      router-key   k8sgpt: the vault key is accepted by https://router.test (kept)"), r.stdout
+    assert r.stdout.startswith("ok      router-key   k8sgpt: the vault key (k8sgpt.key) is accepted by https://router.test (kept)"), r.stdout
 
 
 def test_router_refused_key_is_replaced(tmp_path: Path) -> None:

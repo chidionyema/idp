@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # One GitHub App for the estate's agents; one installation token per lane (crew#286 CP7).
 #   bin/idp-github-app manifest        print the one-tap URL that creates the App (founder taps Create once)
-#   bin/idp-github-app convert <code>  exchange the manifest code for the App; SEED_GITHUB_APP_* repo secrets + vault-seed.yml write the vault from CI
+#   bin/idp-github-app convert <code>  exchange the manifest code for the App; the vault is written in this process when an OCI
+#                                      session is live (root trust, crew#577), else SEED_GITHUB_APP_* repo secrets + vault-seed.yml from CI
 #   bin/idp-github-app seed <file>     retry the repo-secret write from a key file convert kept
 #   bin/idp-github-app token <lane>    mint an installation token narrowed to platform/github-app/lanes.json
 #   bin/idp-github-app installation    record the App's installation id in the vault (Flux's git writer reads it, crew#267)
+#   bin/idp-github-app refresh         mint the tokens workloads read from the vault (mcp-gateway.GITHUB_MCP_TOKEN, hermes-agent-env.GITHUB_TOKEN)
+#                                      from the App, replacing the PATs a person pasted (crew#577); run hourly by verify-drill
 #   bin/idp-github-app status          which identity gh acts as, and whether it is the App
 # GitHub creates Apps only through the manifest flow, which ends in a browser redirect (crew#288);
 # that single Create tap is the one hand step. Everything after it is API.
@@ -74,12 +77,31 @@ convert)
   # was not live). Prove the CI write path BEFORE spending the code: gh can set a repo secret and the
   # seed workflow exists.
   repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-  gh secret set SEED_GITHUB_APP_PREFLIGHT --repo "$repo" --body "$(date -u +%FT%TZ)" >/dev/null 2>&1 \
-    && gh workflow view vault-seed.yml --repo "$repo" >/dev/null 2>&1 \
-    || { echo "FAIL    github-app CI pre-flight failed (gh secret set / vault-seed.yml on $repo); the code was NOT spent" >&2; exit 2; }
+  # Root trust (crew#66, crew#577): when this process holds a live OCI session, the vault is written
+  # here, in-process, and no repository secret ever carries the key. The CI path below stays for a
+  # runner that has no session. Either way the write path is proved BEFORE the code is spent.
+  direct=""
+  if OCI_CLI_PROFILE=$("$IDP/bin/idp-oci-whoami" 2>/dev/null) && [ -n "$OCI_CLI_PROFILE" ]; then
+    export OCI_CLI_PROFILE OCI_CLI_AUTH=security_token
+    VAULT_PUT_PREFLIGHT=1 "$IDP/bin/idp-vault-put" "$SECRET" --preflight >/dev/null 2>&1 && direct=1
+  fi
+  if [ -z "$direct" ]; then
+    gh secret set SEED_GITHUB_APP_PREFLIGHT --repo "$repo" --body "$(date -u +%FT%TZ)" >/dev/null 2>&1 \
+      && gh workflow view vault-seed.yml --repo "$repo" >/dev/null 2>&1 \
+      || { echo "FAIL    github-app no OCI session and the CI pre-flight failed (gh secret set / vault-seed.yml on $repo); the code was NOT spent" >&2; exit 2; }
+  fi
   out=$(gh api -X POST "/app-manifests/$code/conversions")
   tmp=$(mktemp); chmod 600 "$tmp"
   jq -r '"GITHUB_APP_ID=\(.id)\nGITHUB_APP_SLUG=\(.slug)\nGITHUB_APP_CLIENT_ID=\(.client_id)\nGITHUB_APP_PEM_B64=\(.pem|@base64)"' <<<"$out" > "$tmp"
+  if [ -n "$direct" ]; then
+    if ESTATE_ENV_FILE="$tmp" "$IDP/bin/idp-vault-put" "$SECRET" app_id=GITHUB_APP_ID slug=GITHUB_APP_SLUG client_id=GITHUB_APP_CLIENT_ID pem_b64=GITHUB_APP_PEM_B64 >/dev/null; then
+      rm -f "$tmp"
+      echo "ok      github-app $(jq -r .slug <<<"$out") (id $(jq -r .id <<<"$out")) -> vault entry $SECRET written in-process; install it once: $(jq -r .html_url <<<"$out")/installations/new, then bin/idp-github-app installation"
+      exit 0
+    fi
+    echo "FAIL    github-app vault write failed; the App exists and its key is kept at $tmp (0600). Retry: bin/idp-github-app seed $tmp; then rm -P $tmp" >&2
+    exit 1
+  fi
   # If a write fails the key is NOT deleted: it exists nowhere else. Keep it 0600 and say how to retry.
   ok=1
   while IFS='=' read -r k v; do
@@ -141,6 +163,26 @@ installation)
   # shellcheck disable=SC2046
   ESTATE_ENV_FILE="$tmp" "$IDP/bin/idp-vault-put" "$SECRET" $(jq -r --arg i "$inst" '. + {installation_id: $i} | keys[] | "\(.)=V_\(.)"' <<<"$bundle")
   echo "ok      github-app installation $inst recorded in vault secret $SECRET"
+  ;;
+refresh)
+  # The two workloads that read a GitHub token out of the vault (platform/mcp: GITHUB_MCP_TOKEN,
+  # platform/hermes-agent: GITHUB_TOKEN) used to hold a PAT a person minted in the console and pasted
+  # (SEED_GITHUB_MCP_TOKEN, SEED_HERMES_GITHUB_TOKEN). An installation token of the App does the same
+  # job with a lane's permissions and expires in an hour, so it is re-minted here every hour by
+  # bin/idp-verify-drill (machine identity, no laptop) and the ExternalSecrets refresh every 15 minutes
+  # (platform/github-app/token-consumers.json names entry, field and lane). Nothing is printed but names.
+  CONSUMERS="$D/token-consumers.json"
+  [ -f "$CONSUMERS" ] || { echo "BLIND   github-app no $CONSUMERS"; exit 2; }
+  n=0
+  while IFS=$'\t' read -r entry field lane; do
+    [ -n "$entry" ] || continue
+    tok=$("$0" token "$lane" </dev/null) || { echo "FAIL    github-app refresh: no token for lane $lane ($entry.$field)"; exit 1; }
+    f=$(mktemp); chmod 600 "$f"; printf 'GH_INSTALLATION_TOKEN=%s\n' "$tok" > "$f"; unset tok
+    ESTATE_ENV_FILE="$f" "$IDP/bin/idp-vault-put" --merge "$entry" "$field=GH_INSTALLATION_TOKEN" >/dev/null || { rm -f "$f"; echo "FAIL    github-app refresh: vault write of $entry.$field refused"; exit 1; }
+    rm -f "$f"; n=$((n+1))
+    echo "ok      github-app refresh: $entry.$field <- installation token, lane $lane (expires in 1h)"
+  done < <(jq -r '.consumers[] | [.entry, .field, .lane] | @tsv' "$CONSUMERS")
+  echo "ok      github-app refresh: $n token(s) re-minted from the App; no PAT anywhere"
   ;;
 status)
   who=$(gh api /user -q .login 2>/dev/null || true)
