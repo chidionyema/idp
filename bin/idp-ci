@@ -457,6 +457,12 @@ else say "FAIL  secrets  bin/static-secret-gate fixtures"; fail=1; fi
 if out=$(python3 "$IDP/bin/idp-conscience" --selftest 2>&1); then
   say "ok    ethos    idp-conscience scores the good fixture 2/2, the bad 1/2, and refuses a tenet with no command"
 else say "FAIL  ethos    bin/idp-conscience --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+# crew#586 CP2: the conscience rules judge a PR both ways (policy/conscience.rego).
+if ! policy_gate_out=$(conftest test --parser json -p "$IDP/policy" "$IDP/policy/fixtures/conscience-bad.json" 2>&1) \
+   && [ "$(printf '%s\n' "$policy_gate_out" | grep -oE 'rule=(no_provider_in_diff|no_floating_tag|new_script_has_a_test|incident_has_a_guard|new_dependency_has_a_ledger_entry)' | sort -u | wc -l | xargs)" = "5" ] \
+   && conftest test --parser json -p "$IDP/policy" "$IDP/policy/fixtures/conscience-clean.json" >/dev/null 2>&1; then
+  say "ok    ethos    conscience.rego fires all 5 rules on conscience-bad.json and none on conscience-clean.json"
+else say "FAIL  ethos    policy/conscience.rego fixtures"; fail=1; fi
 if bin/owner-account-gate tests/fixtures/owner-accounts/good.yaml >/dev/null \
    && ! bin/owner-account-gate tests/fixtures/owner-accounts/bad.yaml >/dev/null; then
   say "ok    owners   owner-account-gate passes a provider with a second owner and refuses one without"
