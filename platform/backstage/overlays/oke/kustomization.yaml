@@ -88,12 +88,31 @@ patches:
         path: /spec/template/spec/containers/0/env/-
         value: {name: APP_BASE_URL, value: "https://catalogue.${ESTATE_ZONE}"}
       # crew#503 CP6: the founder's surfaces reach the portal from git through Flux, never from a
-      # laptop push. The ConfigMap below carries backstage/founder/catalog-info.yaml; Flux
-      # postBuild substitutes ${ESTATE_ZONE} in it like every other manifest here, and the
-      # container mounts it at /estate/founder (app-config.container.yaml location).
-      - op: add
-        path: /spec/template/spec/volumes/-
-        value: {name: founder, configMap: {name: founder-catalog}}
-      - op: add
-        path: /spec/template/spec/containers/0/volumeMounts/-
-        value: {name: founder, mountPath: /estate/founder, readOnly: true}
+      # laptop push. The ConfigMap carries backstage/founder/catalog-info.yaml; Flux postBuild
+      # substitutes ${ESTATE_ZONE} in it like every other manifest here, and app-config.container
+      # .yaml reads it as a catalog location at /estate/founder/catalog-info.yaml.
+      #
+      # crew#307, 2026-08-28. It was first written as a second volumeMount at /estate/founder,
+      # nested inside the /estate ConfigMap mount. A ConfigMap volume is mounted read-only, so
+      # the kubelet cannot create the `founder` directory inside it; the new pod never started,
+      # the rollout stalled from 2026-08-27 16:05, and the founder kept looking at the old
+      # ReplicaSet -- an image whose app-config never declared the location. Flux said so every
+      # ten minutes ("health check failed ... Deployment/backstage/catalogue status: 'Failed'",
+      # flux-events runs 33157104551 and 33157772740) and nothing read it. Founder, 2026-08-28:
+      # "cant see my ui surfaces".
+      #
+      # One projected volume, two sources, no nested mount: `items.path` may carry a
+      # subdirectory, so founder-catalog lands at /estate/founder/catalog-info.yaml inside the
+      # same volume the estate catalogue already fills. The location path in the image does not
+      # move, so this needs no rebuild -- it rolls on the next reconcile.
+      - op: replace
+        path: /spec/template/spec/volumes/0
+        value:
+          name: estate
+          projected:
+            sources:
+              - configMap: {name: estate-catalog}
+              - configMap:
+                  name: founder-catalog
+                  items:
+                    - {key: catalog-info.yaml, path: founder/catalog-info.yaml}
