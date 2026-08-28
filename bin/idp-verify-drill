@@ -16,7 +16,8 @@
 #   ok      kube         1/1 node(s) Ready through the API server, kubeconfig from the exchanged session
 #   ok      receipt      ok cluster-state ... nodes=1 ready=1 ... (12 min ago)
 #   ok      no-toil      no README, doc or platform file asks a person for a hand (N document(s))
-#   ok      verify-drill 6/6 rows green
+#   ok      root-trust   every entry registered, every MEETS row has its bootstrapper, every miss its ticket
+#   ok      verify-drill 7/7 rows green
 #
 # The receipt row is the cluster's own word, written every 15 minutes from inside by
 # platform/state/cluster-state.yaml on the node's instance principal and graded by
@@ -134,6 +135,17 @@ case "$toil_rc" in
   *) bl no-toil "$(printf '%s\n' "$toil_out" | tail -1 | cut -c1-160)";;
 esac
 
+# --- root-trust: every vault entry an ExternalSecret reads is born by a bootstrapper or ticketed
+# (crew#66 ruling 5453747447, crew#580, docs/policy/root-trust.md). Hourly so an entry that
+# lands by hand through any door is red within the hour, like every other row.
+rt_out=$(python3 "$(dirname "$0")/idp-root-trust" 2>&1); rt_rc=$?
+case "$rt_rc" in
+  0) say ok root-trust "$(printf '%s\n' "$rt_out" | tail -1 | sed -E 's/^PASS +root-trust: //' | cut -c1-160)";;
+  1) printf '%s\n' "$rt_out" | grep -v '^FAIL    root-trust:' | sed 's/^/        /'
+     fail root-trust "$(printf '%s\n' "$rt_out" | tail -1 | sed -E 's/^FAIL +root-trust: //' | cut -c1-160)";;
+  *) bl root-trust "$(printf '%s\n' "$rt_out" | tail -1 | cut -c1-160)";;
+esac
+
 if [ "$red" -gt 0 ]; then say FAIL verify-drill "$red row(s) red, $blind blind"; exit 1; fi
 if [ "$blind" -gt 0 ]; then say BLIND verify-drill "$blind row(s) not measured"; exit 2; fi
-say ok verify-drill "6/6 rows green on the machine identity"
+say ok verify-drill "7/7 rows green on the machine identity"

@@ -306,6 +306,12 @@ if ! python3 "$IDP/bin/security-policy-gate" tests/fixtures/security-policy/bad.
    && python3 "$IDP/bin/security-policy-gate" >/dev/null 2>&1; then
   say "ok    security-policy every control on docs/reference/security-policy.md names a proof command that exists; gate proved both ways"
 else say "FAIL  security-policy gate does not discriminate, or a control has no proof"; python3 "$IDP/bin/security-policy-gate" | sed 's/^/      /'; fail=1; fi
+# Root trust (crew#66 ruling 5453747447, crew#580): every vault entry an ExternalSecret reads is
+#     born by a bootstrapper on disk or ticketed. Proved both ways by
+#     tests/test_incident_crew66_root_trust_register.py; here the live register is graded.
+if python3 "$IDP/bin/idp-root-trust" >/dev/null 2>&1; then
+  say "ok    root-trust $(python3 "$IDP/bin/idp-root-trust" | tail -1 | sed -E 's/^PASS +root-trust: //')"
+else say "FAIL  root-trust an ExternalSecret reads a credential nobody registered, or a register row has no bootstrapper/ticket"; python3 "$IDP/bin/idp-root-trust" | sed 's/^/      /'; fail=1; fi
 # AI Act (crew#202): Arts. 9, 10, 11 kept voluntarily. Proved both ways: the bad
 #     fixture has an overdue risk review and a technical file missing section 9.
 if ! TODAY=2026-08-25 python3 "$IDP/bin/ai-act-gate" tests/fixtures/ai-act/bad >/dev/null 2>&1 \

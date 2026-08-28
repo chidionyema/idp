@@ -78,8 +78,6 @@ jobs:
           SEED_HINDSIGHT_LLM_BASE_URL: ${{ secrets.SEED_HINDSIGHT_LLM_BASE_URL }}
           SEED_MCP_GATEWAY_KEY: ${{ secrets.SEED_MCP_GATEWAY_KEY }}
           SEED_GITHUB_MCP_TOKEN: ${{ secrets.SEED_GITHUB_MCP_TOKEN }}
-          SEED_TAILSCALE_OAUTH_CLIENT_ID: ${{ secrets.SEED_TAILSCALE_OAUTH_CLIENT_ID }}
-          SEED_TAILSCALE_OAUTH_CLIENT_SECRET: ${{ secrets.SEED_TAILSCALE_OAUTH_CLIENT_SECRET }}
         run: |
           set -euo pipefail
           bin/idp-oci-login --check
@@ -121,14 +119,11 @@ jobs:
             put mcp-gateway MCP_GATEWAY_KEY=MCP_GATEWAY_KEY GITHUB_MCP_TOKEN=GITHUB_MCP_TOKEN
           fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = tailscale-operator ]; then
-            # crew#516 CP5, founder's locked spec (crew#66 5451926212 — "so we solve the problem
-            # once"): one Tailscale OAuth client (scope auth_keys + policy_file, tag tag:k8s),
-            # minted once in the Tailscale console exactly like every other SEED_ key (the founder's
-            # own risk note on the issue: Tailscale has no API that creates an OAuth client). It
-            # authenticates the in-cluster operator (platform/tailscale/operator.yaml) AND — because
-            # an OAuth client secret is itself a valid TS_AUTHKEY (containerboot, tailscale.com/kb)
-            # — mints the hermes-agent sidecar's own ephemeral, tag:k8s key at pod start
-            # (platform/hermes-agent/tailscale.yaml). One client, two consumers, one seeding path.
-            put tailscale-operator client_id=TAILSCALE_OAUTH_CLIENT_ID client_secret=TAILSCALE_OAUTH_CLIENT_SECRET
+            # Retired by the root-trust ruling (crew#66 5453747447): the Tailscale OAuth client is
+            # born by bin/idp-bootstrap-tailscale, which writes the vault itself. A SEED_TAILSCALE_*
+            # value set by a person is the MISS docs/policy/root-trust.md refuses, so this entry
+            # is refused here too. One client, two consumers (platform/tailscale/operator.yaml,
+            # platform/hermes-agent/tailscale.yaml), one birth path.
+            echo "FAIL    tailscale-operator is born by bin/idp-bootstrap-tailscale, never seeded by hand (crew#66 root trust)"; exit 1
           fi
           rm -f "$ESTATE_ENV_FILE"
