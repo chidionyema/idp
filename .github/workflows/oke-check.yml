@@ -17,9 +17,9 @@ on:
         options: [check, apply, surge-node, surge-finish, break-glass]
         default: check
       playbook:
-        description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose is read-only."
+        description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose and architect-doctor are read-only."
         type: choice
-        options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize]
+        options: [diagnose, architect-doctor, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize]
         default: diagnose
   pull_request:
     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
