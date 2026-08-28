@@ -63,6 +63,7 @@ spec:
   interval: 10m
   dependsOn:
     - name: chaos-mesh
+    - name: monitoring   # crew#539 DoD 2: langfuse-alert-drill asks kps-alertmanager and kps-prometheus
     - name: backstage   # the experiments kill portal pods; they are the one row that waits for it
   sourceRef:
     kind: GitRepository
