@@ -60,7 +60,7 @@ kind: Component
 metadata:
   name: founder-model-router
   title: "Model router (llm)"
-  description: "Every model call in the estate goes through here. Pick and add models, keys, teams and budgets in the admin console (/ui); sign in with your estate login (the same as this catalogue); there is no console password. Tutorial: docs/onboarding/litellm.md (crew#400)."
+  description: "Every model call in the estate goes through here. Pick and add models, keys, teams and budgets in the admin console (/ui); sign in with your estate login (the same as this catalogue); there is no console password. Tutorial: docs/how-to/onboarding/litellm.md (crew#400)."
   annotations:
     backstage.io/kubernetes-namespace: llm
     backstage.io/kubernetes-label-selector: "app.kubernetes.io/name=litellm"
@@ -277,7 +277,7 @@ metadata:
       url: "https://github.com/chidionyema/idp/blob/main/docs/index.md"
       icon: dashboard
     - title: "Live diagram"
-      url: "https://github.com/chidionyema/idp/blob/main/docs/architecture/live.md"
+      url: "https://github.com/chidionyema/idp/blob/main/docs/explanation/architecture/live.md"
       icon: dashboard
 spec:
   type: founder-surface

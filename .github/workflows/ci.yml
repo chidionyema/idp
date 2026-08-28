@@ -37,6 +37,7 @@ jobs:
           sudo apt-get update -q && sudo apt-get install -y -q shellcheck jq sqlite3 age
           pip install -q check-jsonschema sqlite-utils pyyaml dagster dagster-webserver
           pip install -q -r sovereign/requirements-dev.txt   # crew#219 R39: the bdd acceptance leg
+          pip install -q "mkdocs<2" mkdocs-techdocs-core   # bin/idp-ci rung 8c: docs site builds --strict (ADR 0002)
           curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
           # bin/idp-ci rung 9: helm + kyverno CLI judge HelmRelease renders against the ClusterPolicies
           curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
@@ -76,7 +77,7 @@ jobs:
   # every pending mark without a named owner -- into a failure. On every
   # other target it is the same command with the same permissive verdict, so
   # the two branches differ only in what a skip means, never in what runs.
-  # Definition of Done v2.1, section 3.3 (docs/policy/definition-of-done.md):
+  # Definition of Done v2.1, section 3.3 (docs/reference/policy/definition-of-done.md):
   # secrets in git history, known-vulnerable dependencies, and a security
   # policy row without a proof each block merge. The check is
   # bin/estate-security-scan, the same command that prints the receipt on the

@@ -197,7 +197,7 @@ def test_broken_workload_alert_lists_namespace_monitoring():
     alert = one("platform/alerts/alert.yaml", "Alert", "broken-workload")
     ns = {s["namespace"] for s in alert["spec"]["eventSources"] if s["kind"] == "HelmRelease"}
     assert "monitoring" in ns
-    assert (IDP / "docs/onboarding/monitoring.md").exists()
+    assert (IDP / "docs/how-to/onboarding/monitoring.md").exists()
     (row,) = [r for r in yaml.safe_load((IDP / "drills/catalogue.yaml").read_text())["drills"] if r["name"] == "cluster-state"]
     assert "Watchdog" in row["proves"]
 

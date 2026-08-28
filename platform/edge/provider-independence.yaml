@@ -8,7 +8,7 @@
 # door is refused, and bin/idp-kyverno-render judges these same rules against every rendered PR
 # so the refusal happens before merge. The one hole is declared beside it: provider-edge-exception.yaml
 # names the traefik Service that clusters/oke/edge.yaml patches with the load-balancer shape.
-# Written control: docs/policy/provider-independence.md. Proof it refuses and passes:
+# Written control: docs/reference/policy/provider-independence.md. Proof it refuses and passes:
 # tests/test_incident_crew66_provider_independence_policy.py (LAW 38: applied to every plain
 # manifest under platform/ with zero violations before it merged).
 # The provider names below are regex text inside a rule; bin/cloud-agnostic-gate hunts the
