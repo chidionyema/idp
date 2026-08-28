@@ -40,13 +40,22 @@ def _collect() -> str:
     return next(d for d in docs if d["kind"] == "ConfigMap")["data"]["collect.py"]
 
 
-def _stale_sync():
-    """The real function out of the manifest the cluster runs, executed, not string-matched."""
-    fn = next(n for n in ast.walk(ast.parse(_collect()))
-              if isinstance(n, ast.FunctionDef) and n.name == "stale_sync")
+def _lift(*names):
+    """The real functions out of the manifest the cluster runs, executed, not string-matched."""
+    tree = ast.parse(_collect())
+    fns = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name in names]
+    assert {f.name for f in fns} == set(names), f"missing from collect.py: {set(names) - {f.name for f in fns}}"
     ns = {"re": re, "datetime": datetime, "timezone": timezone}
-    exec(compile(ast.Module(body=[fn], type_ignores=[]), "collect.py", "exec"), ns)
-    return ns["stale_sync"]
+    exec(compile(ast.Module(body=fns, type_ignores=[]), "collect.py", "exec"), ns)
+    return [ns[n] for n in names]
+
+
+def _stale_sync():
+    return _lift("refresh_seconds", "stale_sync")[1]
+
+
+def _refresh_seconds():
+    return _lift("refresh_seconds")[0]
 
 
 def _at(age: timedelta) -> dict:
@@ -112,3 +121,72 @@ def test_the_externalsecret_branch_calls_the_rule_rather_than_grading_inline_aga
     inline = [n for n in ast.walk(tree) if isinstance(n, ast.Constant)
               and isinstance(n.value, str) and "older than 2x refreshInterval" in n.value]
     assert len(inline) == 1, "the message is built in one place, so one edit changes the rule"
+
+
+# --- crew#292 review (session 78caaa17): the exemption is declared, not inferred -------------
+#
+# "0" exempts a row from staleness grading, and an exemption you can only see by the absence of
+# a message is the cheapest way to turn a red receipt row green. Rule 5 above guards the
+# permanently-RED shape; these guard its mirror, permanently-GREEN-and-silent. Exactly one
+# ExternalSecret in the estate carries "0" today, so this is a fence around a forward risk.
+
+
+def _rows(*secrets):
+    """Run collect.py's real flux loop over these ExternalSecrets and return the rows it built.
+
+    The loop is module-level code, not a function, so it is lifted as the `for` statement it is
+    and executed with the helpers it calls and a `get` that hands it these objects. Nothing here
+    reads the source as text: the row this asserts on is the row the cluster's collector builds.
+    """
+    tree = ast.parse(_collect())
+    loop = next(n for n in tree.body
+                if isinstance(n, ast.For) and getattr(n.iter, "id", "") == "FLUX")
+    helpers = [n for n in tree.body if isinstance(n, ast.FunctionDef)
+               and n.name in {"refresh_seconds", "stale_sync", "flux_message", "helm_last_attempt"}]
+    assert len(helpers) == 4, [h.name for h in helpers]
+    ns = {"re": re, "datetime": datetime, "timezone": timezone, "flux": [],
+          "FLUX": [("ExternalSecret", "/apis/external-secrets.io/v1/externalsecrets")],
+          "get": lambda _path: {"items": list(secrets)}}
+    exec(compile(ast.Module(body=helpers + [loop], type_ignores=[]), "collect.py", "exec"), ns)
+    return ns["flux"]
+
+
+def _es(interval, refreshed, ready=True):
+    return {"metadata": {"namespace": "hermes-agent", "name": "hermes-agent-a2a"},
+            "spec": {} if interval is None else {"refreshInterval": interval},
+            "status": {"refreshTime": refreshed,
+                       "conditions": [{"type": "Ready", "status": "True" if ready else "False",
+                                       "message": "Secret was synced"}]}}
+
+
+def test_the_row_the_collector_builds_says_which_refresh_mode_it_is_in():
+    """A reader sees `manual`, rather than inferring an exemption from a missing message."""
+    manual, = _rows(_es("0", LIVE_FROZEN["refreshTime"]))
+    assert manual["refresh"] == "manual"
+    assert manual["ready"] is True
+    assert "older than" not in (manual["message"] or "")
+
+
+def test_a_row_that_is_actually_polled_is_not_labelled_exempt():
+    fresh, = _rows(_es("1h", _at(timedelta(minutes=5))["refreshTime"]))
+    assert fresh["refresh"] == "auto"
+    assert fresh["ready"] is True
+
+
+def test_the_label_does_not_rescue_a_row_the_staleness_rule_still_fails():
+    """`auto` and not-ready is the crew#387 outcome, unchanged by the label."""
+    stale, = _rows(_es("1h", "2026-08-01T00:00:00Z"))
+    assert stale["refresh"] == "auto"
+    assert stale["ready"] is False
+    assert "older than 2x refreshInterval 1h" in stale["message"]
+
+
+@pytest.mark.parametrize("iv,mode", [("0", 0), (0, 0), ("0s", 0), ("1h", 3600), (None, 3600),
+                                     ("15m", 900), ("30s", 30), ("nonsense", 3600)])
+def test_the_mode_the_row_reports_is_the_interval_the_rule_graded(iv, mode):
+    """One parse, two readers: the label can never disagree with the grading."""
+    spec = {} if iv is None else {"refreshInterval": iv}
+    secs, written = _refresh_seconds()(spec)
+    assert secs == mode
+    assert (secs == 0) == (_stale_sync()(spec, _at(timedelta(days=400)), NOW) == "")
+    assert written == ("1h" if iv is None else str(iv))
