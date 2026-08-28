@@ -64,6 +64,18 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 2
+      # crew#307, 2026-08-28: maxSurge 1 / maxUnavailable 0 made this Deployment permanently
+      # un-rollable, and silently. A surge asks the scheduler for a THIRD catalogue pod before
+      # any old one is deleted, and the hard hostname anti-affinity below plus a two-node pool
+      # means there is no node left to put it on. Pod catalogue-8647bbdc59-kjc9j sat `Pending`
+      # with node `<none>` while the two old pods served happily, so the estate looked healthy
+      # from outside; Flux reported `timeout waiting for: [Deployment/backstage/catalogue
+      # status: 'InProgress']` (oke-check run 33161593926) and no revision could ever land.
+      #
+      # maxSurge 0 / maxUnavailable 1 rolls the other way round: one old pod is removed first,
+      # which frees its node, and the new pod takes that node. One replica serves throughout,
+      # which is the same floor the PodDisruptionBudget in availability.yaml already sets.
+      # tests/test_incident_crew307_a_surge_needs_a_spare_node.py refuses the deadlock shape.
       - op: replace
         path: /spec/strategy
         value:

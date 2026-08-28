@@ -104,6 +104,16 @@ jobs:
           set -euo pipefail
           helm install cilium oci://quay.io/cilium/charts/cilium --version 1.20.1 --namespace kube-system -f platform/cni/cilium-values.yaml
           kubectl rollout status ds/cilium -n kube-system --timeout=300s
+          # crew#307, 2026-08-28: `kubectl wait --all` does NOT wait for a resource to appear.
+          # It resolves its selector once, and an empty set is `error: no matching resources
+          # found` with exit 1 -- the --timeout never enters into it. k3s systemd had been up
+          # eleven seconds and had not registered its Node, so this step failed on a healthy
+          # cluster at 10:18:32Z (run 33162838535) and the second provider went unproved. It is
+          # still reachable after the Cilium move below: the DaemonSet rollout can complete on a
+          # Node object that the API server has only just accepted. A red that means "the runner
+          # was slow" teaches every session to press re-run without reading, which is how a real
+          # red gets pressed through too.
+          until kubectl get node -o name 2>/dev/null | grep -q .; do sleep 2; done
           kubectl wait node --all --for=condition=Ready --timeout=120s
           kubectl -n kube-system get pods
           kubectl get node -o wide
