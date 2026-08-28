@@ -117,7 +117,8 @@ metadata:
   annotations:
     # Reloader (platform/reloader) rolls the pod when the vault entry lands through ESO (1h refresh),
     # the same way litellm picks up litellm-upstream: the swap seeds TELEGRAM_BOT_TOKEN and the pod restarts.
-    secret.reloader.stakater.com/reload: "hermes-agent-env,hermes-agent-a2a"
+    # crew#516 CP5: hermes-agent-tailscale added so the sidecar re-authenticates on a key rotation.
+    secret.reloader.stakater.com/reload: "hermes-agent-env,hermes-agent-a2a,hermes-agent-tailscale"
   labels:
     app: hermes-agent-gateway
     app.kubernetes.io/name: hermes-agent-gateway
@@ -172,6 +173,13 @@ spec:
             # public by design; every POST needs the token.
             - name: A2A_HOST
               value: 0.0.0.0
+            # crew#516 CP5: mac-run.yaml's only variables (LAW 46 — the Mac's tailnet IP and login
+            # user are named nowhere else). ConfigMap, not Secret: neither is a credential, Tailscale
+            # SSH authenticates by tailnet node identity, not by these values.
+            - name: FOUNDER_MAC_USER
+              value: "${FOUNDER_MAC_USER}"
+            - name: FOUNDER_MAC_TS_IP
+              value: "${FOUNDER_MAC_TS_IP}"
           ports:
             - containerPort: 9900
               name: a2a
@@ -226,6 +234,80 @@ spec:
             - name: estate
               mountPath: /etc/hermes
               readOnly: true
+            # crew#516 CP5: the founder's mac-run script, executable, never baked into the image.
+            - name: mac-run
+              mountPath: /usr/local/bin/mac-run
+              subPath: mac-run
+              readOnly: true
+        # crew#516 CP5 (founder order, crew#66 5451614620 + addendum): the tailnet identity for
+        # this pod, so the gateway container's mac-run reaches the Mac through the SOCKS5 proxy
+        # below instead of a sidecar-free "figure out the network" ask nobody made of Otto.
+        # TS_USERSPACE=true: no tun device, no NET_ADMIN, unchanged securityContext (LAW 21).
+        # TS_KUBE_SECRET="": state lives on the existing PVC, not a second Kubernetes Secret this
+        # pod would need RBAC to write. TS_AUTHKEY is a file (Kyverno secrets-not-from-env-vars,
+        # crew#341; verified against containerboot's own source,
+        # github.com/tailscale/tailscale/blob/main/cmd/containerboot/main.go: "If the value begins
+        # with file:, it is treated as a path to a file containing the key").
+        - name: tailscale
+          image: ghcr.io/tailscale/tailscale:v1.80.2
+          env:
+            - name: TS_AUTHKEY
+              value: file:/run/secrets/hermes-agent-tailscale/TS_AUTHKEY
+            - name: TS_HOSTNAME
+              value: hermes-pod
+            - name: TS_USERSPACE
+              value: "true"
+            - name: TS_STATE_DIR
+              value: /data/tailscale
+            - name: TS_KUBE_SECRET
+              value: ""
+            - name: TS_SOCKET
+              value: /tmp/tailscaled.sock
+            - name: TS_SOCKS5_SERVER
+              value: localhost:1055
+            - name: TS_EXTRA_ARGS
+              value: --advertise-tags=tag:k8s
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 50m, memory: 64Mi }
+          # require-pod-probes (Kyverno, autogen-validate-probes) needs every container in the pod
+          # to carry one; `tailscale status --socket` talks to the local tailscaled over the same
+          # TS_SOCKET this container sets, so a probe failure is the sidecar's own state, not the
+          # gateway's a2a endpoint.
+          readinessProbe:
+            exec:
+              command: ["tailscale", "--socket=/tmp/tailscaled.sock", "status", "--json"]
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["tailscale", "--socket=/tmp/tailscaled.sock", "status", "--json"]
+            periodSeconds: 60
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            exec:
+              command: ["tailscale", "--socket=/tmp/tailscaled.sock", "status", "--json"]
+            periodSeconds: 10
+            failureThreshold: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+            - name: tailscale-authkey
+              mountPath: /run/secrets/hermes-agent-tailscale
+              readOnly: true
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -239,3 +321,7 @@ spec:
               - secret: { name: hermes-agent-a2a }   # crew#516 CP4: A2A_BEARER_TOKEN
         - name: estate
           configMap: { name: hermes-agent-estate }
+        - name: mac-run
+          configMap: { name: hermes-agent-mac-run, defaultMode: 0755 }
+        - name: tailscale-authkey
+          secret: { secretName: hermes-agent-tailscale }

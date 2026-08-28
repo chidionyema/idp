@@ -193,6 +193,15 @@ pb_diagnose() {
     show "pod $ns/$name" sh -c "$K describe pod $name -n $ns | sed -n '/^Node:/p;/^Containers:/,\$p' | grep -E '^Node:|State|Reason|Exit Code|Ready|Message|Warning|Normal|Liveness|Readiness|Back-off|Failed|Error' | tail -25"
     show "log $ns/$name" $K logs "$name" -n "$ns" --all-containers --tail=30 --prefix
   done
+  # crew#539, 2026-08-28 (run 33169347978): robusta-runner sat in Init:CrashLoopBackOff for 4h in
+  # phase Pending, so the branch above (Running, not Ready) never tailed it and the run listed the
+  # pod without a word from it. A pod whose init container crashes is Pending, and its init log is
+  # the only line that says why; --all-containers includes init containers.
+  pending=$($K get pods -A --field-selector=status.phase=Pending -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null)
+  while read -r ns name; do
+    [ -n "$name" ] || continue
+    show "init-log $ns/$name" $K logs "$name" -n "$ns" --all-containers --tail=30 --prefix
+  done <<<"$pending"
   # langfuse-web could not reach langfuse-postgresql:5432 while the postgres pod was Running: a
   # Service with no ready address is the difference, and it is only visible on the Endpoints.
   # Run 33144117286: idp#536 raised clickhouse to 4Gi, Helm reported signoz.v40, and the pod kept
@@ -420,6 +429,29 @@ pb_architect_doctor() {
   show_redacted gateway-log-previous sh -c "$K logs deploy/hermes-agent-gateway -n $ns --all-containers --tail=40 --previous 2>&1 || echo 'no previous container (it has not restarted)'"
 }
 
+# catalogue-roll: crew#412, 2026-08-28: idp#564 (c6e6026) pinned the right portal image at 11:00Z
+# and the serving ReplicaSet was still catalogue-8647bbdc59 seventy minutes later (login-drill
+# 33168523304 red, "0 founder-surface entities"). The estate had a playbook to retry a HelmRelease
+# and none to make Flux apply a Kustomization now, so the founder surface waited on the interval
+# (LAW 20, LAW 31). This forces the git source and the backstage Kustomization, waits on the
+# rollout, and prints the image the Deployment serves -- the run itself answers "is the portal on
+# main now", instead of the next oke-check happening to notice.
+pb_catalogue_roll() {
+  step flux-source flux reconcile source git flux-system -n flux-system --timeout=3m
+  step backstage flux reconcile kustomization backstage -n flux-system --with-source --timeout=5m
+  show image $K get deploy catalogue -n backstage -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+  step rollout $K rollout status deploy/catalogue -n backstage --timeout=10m
+  show replicasets $K get rs -n backstage
+  show pods $K get pods -n backstage -o wide
+  # login-drill 33170826547 (12:24Z, after the roll to main-1747): five of the six locations that
+  # app-config.container.yaml declares are registered and /estate/founder/catalog-info.yaml is not.
+  # Two different faults print the same count: the projected ConfigMap never reached the mount, or
+  # the catalogue read it and refused it. The mount listing and the catalogue's own words about
+  # that location are the only two lines that tell them apart, so the roll prints both.
+  show founder-mount $K exec deploy/catalogue -n backstage -- ls -la /estate /estate/founder
+  show_redacted founder-location sh -c "$K logs deploy/catalogue -n backstage --tail=4000 2>&1 | grep -iE 'founder|/estate/|location' | tail -40"
+}
+
 pb_helm_retry() {
   local failed
   failed=$($K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{" "}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null | awk '$1=="False"{print $2" "$3}')
@@ -643,7 +675,7 @@ pb_chi_resize() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize"; exit 0 ;;
+  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   dns-per-node) pb_dns_per_node ;;
@@ -652,6 +684,7 @@ case "${1:-}" in
   cilium-unchain) pb_cilium_unchain ;;
   cilium-replace) pb_cilium_replace ;;
   helm-retry) pb_helm_retry ;;
+  catalogue-roll) pb_catalogue_roll ;;
   node-drain) pb_node_drain ;;
   node-uncordon) pb_node_uncordon ;;
   chi-resize) pb_chi_resize ;;

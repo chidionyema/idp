@@ -19,7 +19,7 @@ on:
       playbook:
         description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose and architect-doctor are read-only."
         type: choice
-        options: [diagnose, architect-doctor, cilium-unchain, cilium-replace, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize]
+        options: [diagnose, architect-doctor, cilium-unchain, cilium-replace, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll]
         default: diagnose
   pull_request:
     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
@@ -100,6 +100,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bin/idp-github-app installation || { rc=$?; [ "$rc" = 2 ] && echo "BLIND   github-app has no installation yet; install the App on chidionyema and re-run apply" || exit "$rc"; }
+      # crew#516 CP5, founder's locked spec (crew#66 5451926212, Phase 2): platform/tailscale/policy.hujson
+      # is git-tracked, applied here (no admin-console edit -- the no-toil rule). Exit 2 is BLIND
+      # (vault entry or FOUNDER_MAC_USER not seeded yet).
+      - name: bin/idp-tailscale-policy apply (crew#516 CP5)
+        if: ${{ always() && inputs.mode == 'apply' }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+        run: |
+          bin/idp-tailscale-policy apply || { rc=$?; [ "$rc" = 2 ] && echo "BLIND   tailscale-policy has nothing to apply yet (see the line above)" || exit "$rc"; }
       # crew#163 residual / crew#345 box 3: a Mac has no OCI identity, so the job monitor's ping key
       # reaches it through the receipts bucket, encrypted to the Mac's age recipient, refreshed hourly.
       - name: bin/idp-hc-publish (crew#163)

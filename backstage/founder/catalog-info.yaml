@@ -424,3 +424,37 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-otto
+  title: "Otto (the Architect agent)"
+  description: "The one agent that acts for you from anywhere (crew#516): message @Ottototbot on Telegram (see the founder-telegram surface) in, a PR or a run URL out. Runs in-cluster with a single Telegram poller (replicas 1, strategy Recreate — two pollers on one token 409 each other) and, since CP5, executes its shell tools on your Mac through mac-run, a wrapper that reaches your machine over its own Tailscale sidecar instead of the container's own sandbox, so it always has your machine's tools and files. Model calls route through the estate's one router (see founder-model-router); traces land in Langfuse (see founder-traces). No ssh key is ever held by this pod — the tailnet does the authenticating."
+  annotations:
+    backstage.io/kubernetes-id: hermes-agent-gateway
+    backstage.io/kubernetes-namespace: hermes-agent
+    backstage.io/kubernetes-label-selector: "app.kubernetes.io/name=hermes-agent-gateway"
+    github.com/project-slug: "chidionyema/idp"
+    backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/platform/hermes-agent/"
+    idp/updated-by: "Flux from platform/hermes-agent on every main merge; image automation moves the tag"
+  # Telegram (founder-telegram) and Traces (founder-traces) are not repeated as links here: the
+  # crew#401 catalogue gate refuses a duplicate link URL anywhere in this file, and both surfaces
+  # already carry their own canonical link -- described in prose above instead (LAW 43: reuse the
+  # existing surface rather than duplicate its URL).
+  tags: [founder]
+  links:
+    - title: "Agent card (source; a2a stays in-cluster, never published)"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/hermes-agent/gateway.yaml"
+      icon: docs
+    - title: "Executor (what it is allowed to run, and where)"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/hermes-agent/estate.yaml"
+      icon: docs
+    - title: "Tracked item crew#516"
+      url: "https://github.com/chidionyema/crew/issues/516"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate

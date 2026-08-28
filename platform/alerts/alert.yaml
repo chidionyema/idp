@@ -59,6 +59,9 @@ spec:
       namespace: spire-mgmt
     - kind: HelmRelease
       name: "*"
+      namespace: tailscale
+    - kind: HelmRelease
+      name: "*"
       namespace: temporal
     # --- end generated ---
     - kind: GitRepository
