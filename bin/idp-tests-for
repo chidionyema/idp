@@ -28,8 +28,8 @@ sel=$(
   for f in $changed; do
     case "$f" in tests/test_*.py|sovereign/tests/*/*.py) echo "$f" ;; esac
     b=$(basename "$f")
-    grep -rlF --include='*.py' -e "$f" -e "$b" "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null | sed "s#^$IDP/##" || true
-  done | grep -v '/fixtures/' | sort -u   # crew#584: a fixture tree holds must-fail props (sovereign/tests/fixtures/bdd/unbound), never a test to run
+    grep -rlF --include='*.py' -e "$f" -e "$b" "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null | sed "s#^$IDP/##" | grep -v '/fixtures/' || true   # a fixture under tests/fixtures is proof material, not a test (test_unbound.py fails by design)
+  done | sort -u
 )
 if [ -z "$sel" ]; then echo "ok    tests-for: $(printf '%s\n' "$changed" | wc -l | tr -d ' ') changed file(s), no test names them (CI runs the suite)"; exit 0; fi
 n=$(printf '%s\n' "$sel" | wc -l | tr -d ' ')
