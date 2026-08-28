@@ -6,7 +6,10 @@
 #   bin/idp-no-toil <pr-number>   the README*.md, docs/**/*.md and platform/** files that PR
 #                                 changes, plus its body from `gh pr view --json body`
 #   bin/idp-no-toil --sweep       every such file in the working tree (the LAW 45 sweep; this
-#                                 is the mode that produced the "Existing hits" list)
+#                                 is the mode that produced the "Existing hits" list). Vendored
+#                                 trees (node_modules, venv, vendor) at any depth are pruned:
+#                                 on 2026-08-28 the sweep spent >5 min in backstage/node_modules
+#                                 and graded four upstream READMEs as our toil (crew#66)
 #   bin/idp-no-toil --files a b   named files only (what the template test uses)
 #
 # Scoped to the changed files on purpose. main carries pre-existing prose hits (see the sweep),
@@ -41,7 +44,7 @@ files=()
 case "$mode" in
   --sweep)
     while IFS= read -r f; do files+=("$f"); done < <(
-      find . -path ./.git -prune -o -path ./node_modules -prune -o -type f \
+      find . \( -name .git -o -name node_modules -o -name .venv -o -name venv -o -name vendor \) -prune -o -type f \
         \( -name 'README*.md' -o -path './docs/*.md' -o -path './platform/*' \) -print | sed 's|^\./||' | sort
     )
     ;;

@@ -15,7 +15,8 @@
 #   ok      cluster      1 cluster ACTIVE, 1/1 node pool(s) ACTIVE
 #   ok      kube         1/1 node(s) Ready through the API server, kubeconfig from the exchanged session
 #   ok      receipt      ok cluster-state ... nodes=1 ready=1 ... (12 min ago)
-#   ok      verify-drill 4/4 rows green
+#   ok      no-toil      no README, doc or platform file asks a person for a hand (N document(s))
+#   ok      verify-drill 6/6 rows green
 #
 # The receipt row is the cluster's own word, written every 15 minutes from inside by
 # platform/state/cluster-state.yaml on the node's instance principal and graded by
@@ -119,6 +120,20 @@ case "$drills_rc" in
   *) bl drills "cannot ask GitHub for drill runs (rows above)";;
 esac
 
+# --- no-toil: nothing in README*.md, docs/**/*.md or platform/** asks a person for a hand
+# (crew#66, founder 2026-08-28: "wee need to also audit the platfron for anything that breaks
+# this standard and alert"). The PR gate (ci.yml no-toil-gate) judges only changed files, so a
+# sentence that lands through any other door - a merged base, a vendored doc, a pre-gate file -
+# is invisible until something reads the whole tree. This row is that reader, hourly, and red
+# alerts like every other row. bin/idp-no-toil --sweep prints the file and line of every hit.
+toil_out=$("$IDP/bin/idp-no-toil" --sweep 2>&1); toil_rc=$?
+case "$toil_rc" in
+  0) say ok no-toil "$(printf '%s\n' "$toil_out" | tail -1 | sed -E 's/^PASS +no-toil gate +//')";;
+  1) printf '%s\n' "$toil_out" | grep -vE '^(PASS|FAIL) +no-toil gate' | sed 's/^/        /'
+     fail no-toil "$(printf '%s\n' "$toil_out" | grep -c 'Policy Violation') file(s) ask a person for a hand (lines above)";;
+  *) bl no-toil "$(printf '%s\n' "$toil_out" | tail -1 | cut -c1-160)";;
+esac
+
 if [ "$red" -gt 0 ]; then say FAIL verify-drill "$red row(s) red, $blind blind"; exit 1; fi
 if [ "$blind" -gt 0 ]; then say BLIND verify-drill "$blind row(s) not measured"; exit 2; fi
-say ok verify-drill "5/5 rows green on the machine identity"
+say ok verify-drill "6/6 rows green on the machine identity"
