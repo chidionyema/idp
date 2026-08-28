@@ -17,4 +17,4 @@ def test_put_settles_after_both_create_and_update():
 
 
 def test_settle_is_a_bounded_read_back_of_the_same_payload():
-    assert re.search(r"settle_secret\(\) \{.*?for i in \$\(seq 1 24\).*?secret get \"\$NAME\".*?\[ \"\$got\" = \"\$want\" \].*?sleep 5.*?blind", CLOUD, re.S)
+    assert re.search(r"settle_secret\(\) \{.*?for _ in \$\(seq 1 24\).*?secret get \"\$NAME\".*?\[ \"\$got\" = \"\$want\" \].*?sleep 5.*?blind", CLOUD, re.S)
