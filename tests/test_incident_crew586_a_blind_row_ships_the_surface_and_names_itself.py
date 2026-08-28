@@ -33,12 +33,18 @@ def test_grade_step_carries_the_api_clock_token():
 
 
 def test_every_surface_step_runs_on_a_receipt_and_blind_still_fails_the_job():
+    # run 33200707064: the grade step failing on rc=2 skipped all six gated steps, founder line
+    # included. The grade step never fails now; the last step does, after every surface has run.
     text = WF.read_text()
-    assert '[ "$rc" -ne 2 ]' in text
+    grade = text[text.index("id: grade"):text.index("- name: summary")]
+    assert '[ "$rc" -ne 2 ]' not in grade, "a failing grade step skips every step gated on its output"
+    last = text[text.rindex("- name:"):]
+    assert "BLIND fails the job" in last and '[ "$rc" -ne 2 ]' in last
     for step in ("receipt to the collector", "one issue per red tenet", "founder line", "portal page"):
         assert step in text
     assert "steps.grade.outputs.rc != '2'" not in text
-    assert text.count("!cancelled() && steps.grade.outputs.rc != ''") >= 5
+    assert "cancelled()" not in text, "a gate on a failed step's output is what run 33200707064 skipped"
+    assert text.count("if: ${{ steps.grade.outputs.rc != ''") >= 5
 
 
 def test_founder_line_names_blind_rows_apart_from_red():
