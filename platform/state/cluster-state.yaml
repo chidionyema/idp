@@ -214,6 +214,14 @@ data:
                    # crew#483: when the Ready condition last flipped, so a denial can be dated against
                    # the commit that was meant to fix it instead of read as fresh.
                    "since": c.get("lastTransitionTime")}
+            if kind == "HelmRepository" and (o.get("spec") or {}).get("type") == "oci" and not c:
+                # crew#524, 2026-08-27: an OCI HelmRepository is static — source-controller never
+                # reconciles it and it carries no Ready condition (Flux docs, HelmRepository
+                # "type: oci"). Receipt 33127558382 graded hindsight/hindsight "no Ready condition
+                # yet" on every snapshot and the cluster-state row went FAIL on it: a guard that
+                # refuses correct work (LAW 38). Ready by construction, and the row says why.
+                row["ready"] = True
+                row["message"] = "oci source: static, carries no Ready condition"
             if kind == "HelmRelease":
                 row.update(helm_last_attempt(st))
             if kind == "ImagePolicy":
