@@ -13,6 +13,10 @@
 # A red refuses the push. Not the full suite (founder ruling 2026-08-28); CI stays the proof.
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
+# Incident 2026-08-28: git exports GIT_DIR/GIT_INDEX_FILE/GIT_PREFIX to hooks, so every test that builds a
+# throwaway repo (git init in tmp) committed into THIS branch when run from here -- five junk commits, one
+# of them 841 files deleted (crew#584). The tests run in a clean git environment, always.
+for v in $(compgen -e | grep '^GIT_' || true); do unset "$v"; done
 "$IDP/bin/idp-tests-for"
 "$IDP/bin/pr-report"
 shared="$(git config --get core.hooksPath 2>/dev/null || true)/law32-default"
