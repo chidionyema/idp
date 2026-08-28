@@ -141,9 +141,9 @@ def _rows(*secrets):
     tree = ast.parse(_collect())
     loop = next(n for n in tree.body
                 if isinstance(n, ast.For) and getattr(n.iter, "id", "") == "FLUX")
-    helpers = [n for n in tree.body if isinstance(n, ast.FunctionDef)
-               and n.name in {"refresh_seconds", "stale_sync", "flux_message", "helm_last_attempt"}]
-    assert len(helpers) == 4, [h.name for h in helpers]
+    wanted = {"refresh_seconds", "stale_sync", "flux_message", "helm_last_attempt", "wanted_from"}
+    helpers = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in wanted]
+    assert {h.name for h in helpers} == wanted, wanted - {h.name for h in helpers}
     ns = {"re": re, "datetime": datetime, "timezone": timezone, "flux": [],
           "FLUX": [("ExternalSecret", "/apis/external-secrets.io/v1/externalsecrets")],
           "get": lambda _path: {"items": list(secrets)}}
