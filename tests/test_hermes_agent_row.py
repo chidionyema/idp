@@ -119,8 +119,16 @@ def test_oke_check_seeds_the_entry_the_pod_reads():
     steps = [s for s in wf["jobs"]["check"]["steps"] if "hermes-agent-env" in s.get("name", "")]
     (step,) = steps
     assert "bin/idp-vault-put --merge hermes-agent-env" in step["run"]
-    for key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USER_IDS", "TELEGRAM_ALLOWED_USERS", "ANTHROPIC_API_KEY", "LITELLM_API_KEY", "GITHUB_TOKEN", "HERMES_AUTH_JSON"):
+    # crew#66 root trust (crew#576, #577, #579): only configuration rides this step; every credential
+    # the gateway reads is born by a bootstrapper and lands in the same entry with --merge.
+    for key in ("TELEGRAM_ALLOWED_USER_IDS", "TELEGRAM_ALLOWED_USERS", "TELEGRAM_HOME_CHANNEL", "HERMES_AUTH_JSON"):
         assert key in step["env"] and key in step["run"], key
+    for key in ("TELEGRAM_BOT_TOKEN", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "LITELLM_API_KEY", "GITHUB_TOKEN", "EXA_API_KEY"):
+        assert key not in step["env"], f"{key} is born by a bootstrapper, never pasted (crew#66 root trust)"
+    registry = (ROOT / "platform/vendors/consoles.yaml").read_text()
+    assert "TELEGRAM_BOT_TOKEN" in registry and "hermes-agent-env" in registry, "the bot token has a vendor row"
+    assert "hermes-agent-env" in (ROOT / "bin/idp-estate-seed").read_text(), "LITELLM_API_KEY has an estate-seed row"
+    assert "hermes-agent-env" in (ROOT / "platform/github-app/token-consumers.json").read_text(), "GITHUB_TOKEN has a consumer row"
 
 
 @pytest.mark.skipif(subprocess.run(["which", "kustomize"], capture_output=True).returncode != 0, reason="kustomize not on PATH")
