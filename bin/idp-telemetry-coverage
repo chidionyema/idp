@@ -59,6 +59,11 @@ def why():
     out += "".join(f"\n        never seen: {m.get('ns')}/{m.get('pod')}" for m in miss[:8])
     if len(miss) > 8:
         out += f"\n        ... and {len(miss) - 8} more"
+    # crew#539 CP12: Hubble (platform/cni/cilium-values.yaml, applied by cilium-replace) is proved
+    # by the flows it labelled with a radio-room workload; a count of 0 in the last hour is the
+    # CNI not observing pods.
+    if "hubble_radio_flows" in b and int(b["hubble_radio_flows"]) <= 0:
+        out += f"\n        hubble: {b['hubble_radio_flows']} hubble_flows_processed_total series named a radio-room workload in the last hour (platform/cni/cilium-values.yaml)"
     return out
 if not line1.startswith("ok "):
     print(f"FAIL    telemetry-coverage  receipt does not start with ok: {line1[:120]!r}{why()}")
@@ -67,9 +72,13 @@ if not line1.startswith("ok "):
     sys.exit(1)
 if age > max_min:
     print(f"FAIL    telemetry-coverage  receipt is {age:.0f} min old (max {max_min:.0f}): {line1[:120]}"); sys.exit(1)
-kv = dict(m.groups() for m in re.finditer(r"(\w+)=(\d+)", line1))
+kv = dict(m.groups() for m in re.finditer(r"(\w+)=(-?\d+)", line1))
 if kv.get("missing") != "0" or int(kv.get("pods", 0)) == 0:
     print(f"FAIL    telemetry-coverage  pods={kv.get('pods')} missing={kv.get('missing')}: {line1[:120]}{why()}"); sys.exit(1)
+# crew#539 CP12: a receipt written before the Hubble row (no hubble_radio_flows) is graded as a
+# miss, never as clean (same rule as cluster-state's flux_not_ready, crew#406).
+if int(kv.get("hubble_radio_flows", 0)) <= 0:
+    print(f"FAIL    telemetry-coverage  hubble_radio_flows={kv.get('hubble_radio_flows', 'absent')}: {line1[:120]}{why()}"); sys.exit(1)
 print(f"ok      telemetry-coverage  {line1} ({age:.0f} min ago)")
 if flag == "--json":
     print(rest)
