@@ -60,9 +60,11 @@ def test_no_pr_or_nothing_new_or_blind_is_never_refused(tmp_path):
     repo, env = _repo(tmp_path, None)
     assert _run(repo, env).returncode == 0
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True).stdout.strip()
+    # The PR's head must be THIS repo's HEAD: two `git init` + empty commits only share a sha when
+    # they land in the same second (the test was flaky on 2026-08-28, idp#629 push refused by it).
     repo2, env2 = _repo(tmp_path / "same", _pr(head, ["SUCCESS"]))
     head2 = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo2, capture_output=True, text=True).stdout.strip()
-    repo2, env2 = _repo(tmp_path / "same2", _pr(head2, ["SUCCESS"]))
+    (tmp_path / "same" / "bin" / "gh").write_text("#!/bin/sh\ncat <<'EOF'\n" + json.dumps(_pr(head2, ["SUCCESS"])) + "\nEOF\n")
     out = _run(repo2, env2)
     assert out.returncode == 0 and "nothing new" in out.stdout, out.stdout
 

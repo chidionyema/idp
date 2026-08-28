@@ -1,9 +1,23 @@
 {
   "_comment": "Permissions an installation token is narrowed to at mint time (POST /app/installations/{id}/access_tokens). A lane never gets more than the App's default_permissions in manifest.json.",
   "platform-engineer": {
-    "metadata": "read", "contents": "write", "pull_requests": "write", "issues": "write", "workflows": "write", "actions": "write", "checks": "read"
+    "metadata": "read",
+    "contents": "write",
+    "pull_requests": "write",
+    "issues": "write",
+    "workflows": "write",
+    "actions": "write",
+    "checks": "read"
   },
   "application-engineer": {
-    "metadata": "read", "contents": "write", "pull_requests": "write", "issues": "write", "checks": "read"
+    "metadata": "read",
+    "contents": "write",
+    "pull_requests": "write",
+    "issues": "write",
+    "checks": "read"
+  },
+  "conscience-reader": {
+    "metadata": "read",
+    "contents": "read"
   }
 }
