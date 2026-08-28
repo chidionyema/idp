@@ -51,6 +51,9 @@ jobs:
       - run: bin/idp-ci
         env:
           IDP_KYVERNO_POLICIES: ${{ runner.temp }}/kyverno-policies/deploy/k8s/policies
+          # crew#584 zero-bottleneck law: on a PR the kyverno rung judges the platform dirs the
+          # diff touches (fetch-depth 0 above makes the three-dot diff real); empty on main = every dir
+          IDP_CI_BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
           MIGRATE_HEALTH_WAIT: "240"
 
   # crew#286: the Estate-as-Platform operating model as a gate. One job, one script, the
@@ -149,10 +152,10 @@ jobs:
           IDP_KYVERNO_POLICIES: ${{ runner.temp }}/kyverno-policies/deploy/k8s/policies
         run: |
           echo "base_ref=${{ github.base_ref }} SB_BDD_STRICT=$SB_BDD_STRICT"
-          cd sovereign && python -m pytest tests/bdd -q -p no:cacheprovider
+          cd sovereign && python -m pytest tests/bdd -q -p no:cacheprovider -n auto   # crew#584: four cores, not one
       - name: ruff (crew#325 step 3; the rule set is pyproject.toml)
         run: pip install -q ruff==0.15.18 && ruff check .
       - name: pytest tests (crew#325 step 2, every file under tests/ in one run)
         env:
           IDP_KYVERNO_POLICIES: ${{ runner.temp }}/kyverno-policies/deploy/k8s/policies
-        run: python -m pytest tests -q -p no:cacheprovider
+        run: python -m pytest tests -q -p no:cacheprovider -n auto   # crew#584: four cores, not one
