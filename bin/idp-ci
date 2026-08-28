@@ -8,7 +8,20 @@
 set -uo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 fail=0
-say() { printf '%s\n' "$*"; }
+# crew#584 (founder 2026-08-28, "we should already have diagnostics"): every line carries the
+# seconds the rung before it took, and the run ends with the slowest rungs -- in the log, and in
+# the GitHub step summary when there is one. Where the time goes is read, never dug out of a log.
+_T_LAST=$SECONDS; _T_ROWS=""
+say() {
+  local now=$SECONDS; local d=$((now - _T_LAST)); _T_LAST=$now
+  if [ "$d" -ge 3 ]; then _T_ROWS+="$d $*"$'\n'; printf '%s  (%ss)\n' "$*" "$d"; else printf '%s\n' "$*"; fi
+}
+timing_summary() {
+  local rows; rows=$(printf '%s' "$_T_ROWS" | sort -rn | head -5 | sed -E 's/^([0-9]+) (.{0,90}).*/\1s  \2/')
+  [ -n "$rows" ] || return 0
+  printf 'timing   %ss total; slowest rungs:\n' "$SECONDS"; printf '%s\n' "$rows" | sed 's/^/         /'
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf '## bin/idp-ci %ss\n\n```\n%s\n```\n' "$SECONDS" "$rows" >> "$GITHUB_STEP_SUMMARY"; fi
+}
 need() { command -v "$1" >/dev/null || { say "FAIL  $1 is not installed"; exit 2; }; }
 need shellcheck; need docker; need conftest; need check-jsonschema; need sqlite-utils; need jq; need python3
 
@@ -530,6 +543,12 @@ else say "FAIL  cp3      tests/test_cp3_workload_logs.py"; printf '%s\n' "$out" 
 #     has never been shown to refuse (LAW 38): the unbound fixture must fail
 #     with StepDefinitionNotFoundError -- not merely fail, or a typo in a
 #     feature path would satisfy the guard -- and the real suite must pass.
+# crew#584, measured on run 33202098401: these two suites took 132 of offline-gate's 211 s, and
+# ci.yml's bdd job ran the same two suites again, strictly, in parallel. In CI the bdd job owns
+# them and offline-gate sets IDP_CI_SKIP_PYTEST=1; locally (pre-push, bin/idp-ci by hand) they run.
+if [ "${IDP_CI_SKIP_PYTEST:-0}" = 1 ]; then
+  say "skip  bdd+incident: run once, by the ci bdd job (IDP_CI_SKIP_PYTEST=1)"
+else
 BDD_PY="$MPY"
 "$BDD_PY" -c 'import pytest_bdd' >/dev/null 2>&1 || BDD_PY=python3
 # crew#584 zero-bottleneck law (founder 2026-08-28: "zero bottleneck law optinise ruthlessly"): run
@@ -566,6 +585,7 @@ if [ "$inc_rc" -eq 0 ]; then
 else
   say "FAIL  incident tests/test_incident_*.py (rc=$inc_rc)"; printf '%s\n' "$inc" | tail -20 | sed 's/^/      /'; fail=1
 fi
+fi  # IDP_CI_SKIP_PYTEST
 
 # 9. Every Flux HelmRelease under platform/ renders clean against the cluster's Kyverno
 #    ClusterPolicies (helm template + the release's own postRenderers), both ways: the
@@ -697,5 +717,6 @@ if ! python3 "$IDP/bin/idp-availability-gate" tests/fixtures/availability/bad >/
   printf '%s\n' "$out" | grep '^WAIVED' | sed 's/^/      /' || true
 else say "FAIL  ha       a routed surface does not survive losing one node, or the gate is not discriminating"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
+timing_summary
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"
