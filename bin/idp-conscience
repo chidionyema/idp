@@ -100,18 +100,27 @@ def ledger_fresh(hours: int) -> int:
     except (OSError, json.JSONDecodeError) as e:
         print(f"BLIND research ledger unreadable at {ledger}: {e}")
         return 2
-    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=hours)
-    stamps = []
-    for row in lines:
-        for k in ("ts", "timestamp", "date", "when", "at"):
-            if k in row:
-                try:
-                    stamps.append(dt.datetime.fromisoformat(str(row[k]).replace("Z", "+00:00")))
-                except ValueError:
-                    pass
-                break
-    fresh = [s for s in stamps if (s if s.tzinfo else s.replace(tzinfo=dt.timezone.utc)) >= cutoff]
-    print(f"research ledger: {len(fresh)} entr{'y' if len(fresh) == 1 else 'ies'} inside {hours}h of {len(lines)}")
+    # crew#583: this row used to build `cutoff = now - hours` here and call every entry newer than
+    # it fresh. On a Mac whose battery has gone flat the RTC resets to 1970, `cutoff` lands decades
+    # before every stamp in the file, and a research ledger that had been dead for years printed a
+    # green tenet row. The age now comes from bin/lib/receipt_age.py, the one place in the estate
+    # allowed near this arithmetic, and it refuses -- BLIND, exit 2 -- when the clock reads earlier
+    # than the newest entry it is grading. A local file carries no served clock the way an object
+    # head does, so this is the weaker of the two properties the helper offers, and local_ledger_age
+    # documents exactly which one: not "the local clock is absent", but "no clock error can make
+    # this row green".
+    sys.path.insert(0, str(IDP / "bin" / "lib"))
+    from receipt_age import local_ledger_age
+
+    age_h = local_ledger_age(lines, ("ts", "timestamp", "date", "when", "at"), 3600.0, "research",
+                             dt.datetime.now(dt.timezone.utc))
+    fresh = age_h <= hours
+    if age_h == float("inf"):
+        print(f"research ledger: no entry carries a stamp, of {len(lines)}")
+        return 1
+    print(f"research ledger: newest entry {age_h:.1f}h old, inside {hours}h of {len(lines)} entries"
+          if fresh else
+          f"research ledger: newest entry {age_h:.1f}h old, older than {hours}h of {len(lines)} entries")
     return 0 if fresh else 1
 
 
