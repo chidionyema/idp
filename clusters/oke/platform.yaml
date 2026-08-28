@@ -169,6 +169,31 @@ spec:
       - kind: ConfigMap
         name: estate-config
 ---
+# Live usage row (crew#539, 2026-08-28): metrics-server so `kubectl top`, the descheduler and any
+# operator can read node and pod usage instead of allocated requests. After scheduling (the
+# PriorityClass it names). Health-checked at 10m like every other row.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: metrics-server
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/metrics-server
+  prune: true
+  dependsOn:
+    - name: scheduling
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: metrics-server
+      namespace: metrics-server
+---
 # Model routing row (crew#284 CP2, crew#313): LiteLLM on the cluster, reached at llm.<zone>
 # through the https-llm listener on prospector-edge. After edge (Gateway, certificate) and
 # secret-store (the upstream keys). Health-checked at 10m like every other row.

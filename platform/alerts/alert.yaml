@@ -41,6 +41,9 @@ spec:
       namespace: kyverno
     - kind: HelmRelease
       name: "*"
+      namespace: metrics-server
+    - kind: HelmRelease
+      name: "*"
       namespace: monitoring
     - kind: HelmRelease
       name: "*"
