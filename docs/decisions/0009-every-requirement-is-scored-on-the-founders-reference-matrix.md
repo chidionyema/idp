@@ -53,10 +53,35 @@ weights; a session scores candidates against them, in the open, and builds the t
   rule 2: "You may not hand the founder a menu").
 - Per-session criteria. LAW 43's research still happens; its output is now scores in the file.
 
+## Enforcement (founder, 2026-08-28, crew#562 5458078376)
+
+> "i like the natri, enforce it" / "rigorously, cant be cheated" / "need evidence" / "and we eed to rview weekly"
+
+The weights were confirmed by those words; the protocol behind each is `bin/matrix-gate`:
+
+- **Evidence.** Every score cell is `{score: 0-5, evidence: URL | repo path | cmd: …}`. A bare number
+  or a sentence is refused.
+- **Cannot be cheated.** The weights are locked to the founder's receipt: `weights_history` carries
+  the sha256 of the weights, and a changed weight without a new receipted entry is refused. The
+  recorded decision must be the arithmetic top score; inside `tie_band` any candidate may be chosen
+  on the founder's word (`tie_receipt`), outside it no receipt can pick a loser. Every candidate
+  scores every criterion. `--verify-receipts` checks, through the GitHub API, that every receipt
+  is a comment written by the repository owner's login. The honest limit: sessions post with his
+  token, so a receipt quotes him verbatim and LAW 49's veto window stands on every change.
+- **At the PR.** `policy/operating_model.rego` rule `matrix_cited`: a PR that adds an ADR or a new
+  `HelmRelease` on a platform layer names `Matrix: <slug>` or is refused.
+- **Weekly.** `.github/workflows/matrix-review.yml` runs `bin/matrix-gate --review --verify-receipts`
+  every Monday: every evidence URL must still answer, every decision past `next_review` is listed,
+  and the report is posted on the standing "Weekly matrix review" issue.
+
 ## Consequences
 
 - A PR that introduces or replaces a tool, vendor or user-facing flow cites the decision slug in
-  its body; the operating-model gate can grow a `Matrix:` rule once the weights are confirmed.
-- The first worked decision is `founder-screen-access`: Sunshine + Moonlight 385, Apple Screen
-  Sharing 345, Guacamole 340 out of 500. The tool a session had proposed came last once the
-  founder's own questions carried weight.
+  its body (`Matrix: <slug>`); the gate refuses the two shapes it can see mechanically.
+- The first worked decision is `founder-screen-access`. Four candidates were scored with
+  evidence, then the founder's own proposals were added as candidates and scored the same way:
+  keep-both 395, Sunshine + Moonlight 385, three-paths 370, Apple Screen Sharing 345, Guacamole
+  340, Sunshine + community browser bridge 345 out of 500. The top three sit inside the tie band,
+  and his word (crew#562 5458131885, "as many as we can, 3") is the recorded tie receipt. A
+  pasted claim that "Sunshine has a WebRTC endpoint" was checked and refused as evidence: it is
+  an open feature request (LizardByte discussion #333).

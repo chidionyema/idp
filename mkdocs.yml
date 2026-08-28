@@ -24,6 +24,7 @@ nav:
       - 0004 Oracle OKE is the Kubernetes target: decisions/0004-oracle-oke-is-the-kubernetes-target.md
       - 0005 Chaos Mesh is the chaos framework: decisions/0005-chaos-mesh-is-the-chaos-framework.md
       - 0006 The platform answers for itself over one MCP: decisions/0006-the-platform-answers-for-itself-over-one-mcp.md
+      - 0009 Every requirement is scored on the reference matrix: decisions/0009-every-requirement-is-scored-on-the-founders-reference-matrix.md
   - Specs:
       - KINI.AI master spec: specs/kini-master-spec.md
       - Phone idea flow: specs/phone-idea-flow.md
@@ -45,6 +46,7 @@ nav:
       - Estate showcase: demo/estate-showcase.md
       - Estate next: demo/estate-next.md
       - Trace matrix: demo/trace-matrix.md
+      - Matrix gate: demo/matrix.md
       - Plist gate: demo/plist.md
       - Namespace fences: demo/ns-fence-gate.md
       - k8s-infra: demo/k8s-infra.md
@@ -99,6 +101,7 @@ nav:
       - Estate showcase: onboarding/estate-showcase.md
       - Estate next: onboarding/estate-next.md
       - Plist gate: onboarding/plist.md
+      - Decision matrix: onboarding/matrix.md
       - Oracle identity: onboarding/oci.md
       - Flux on OKE: onboarding/oke.md
       - Cloud-agnostic: onboarding/cloud-agnostic.md
