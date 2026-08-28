@@ -26,6 +26,11 @@ pb_diagnose() {
   show gitrepositories $K get gitrepositories -A
   show kustomizations $K get kustomizations -A
   show helmreleases-not-ready $K get helmreleases -A --no-headers
+  # A HelmRelease says "Deployment X status: Failed" and nothing else; the reason lives on the
+  # Deployment's Progressing condition and on the pods it could not roll (run 33136391785 printed
+  # the HelmRelease line for langfuse-web three times and never why).
+  show stalled-deployments $K get deploy -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Progressing")]}{.status}{"\t"}{end}{.metadata.namespace}/{.metadata.name}{"\t"}{.status.readyReplicas}/{.spec.replicas}{"\t"}{range .status.conditions[?(@.type=="Progressing")]}{.reason}: {.message}{end}{"\n"}{end}'
+  show pods-not-running $K get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded -o wide
   show warnings $K get events -A --field-selector type=Warning --sort-by=.lastTimestamp
   $K get nodes >/dev/null || FAILED="$FAILED nodes"
 }
@@ -112,11 +117,32 @@ YAML
   show kustomizations $K get kustomizations -A
 }
 
+# helm-retry: a HelmRelease that failed during an outage stays Failed after the outage ends,
+# because helm-controller spends its remediation retries once and then waits for a spec change
+# (langfuse: "Deployment/observability/langfuse-web status: Failed" 31h after the Cilium chain).
+# `flux reconcile --reset` zeroes the failure counters and runs the upgrade again on the healthy
+# cluster; a release that is Ready is left alone. Then the Kustomizations that depend on those
+# releases are reconciled so their status is fresh (reconcile does not cascade, idp#525).
+pb_helm_retry() {
+  local failed
+  failed=$($K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{" "}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null | awk '$1=="False"{print $2" "$3}')
+  echo "--- helmreleases-failed"; printf '%s\n' "${failed:-none}"
+  local ns name
+  while read -r ns name; do
+    [ -n "$name" ] || continue
+    step "retry-$name" flux reconcile helmrelease "$name" -n "$ns" --reset --timeout=15m </dev/null
+  done <<<"$failed"
+  show helmreleases $K get helmreleases -A --no-headers
+  step observability flux reconcile kustomization observability -n flux-system --timeout=5m
+  show kustomizations $K get kustomizations -A
+}
+
 case "${1:-}" in
-  --list) echo "diagnose cilium-unchain"; exit 0 ;;
+  --list) echo "diagnose cilium-unchain helm-retry"; exit 0 ;;
   diagnose) pb_diagnose ;;
   cilium-unchain) pb_cilium_unchain ;;
-  *) echo "usage: $0 <diagnose|cilium-unchain>"; exit 64 ;;
+  helm-retry) pb_helm_retry ;;
+  *) echo "usage: $0 <diagnose|cilium-unchain|helm-retry>"; exit 64 ;;
 esac
 [ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }
 echo "FAIL  break-glass $1 broken:$FAILED"; exit 1
