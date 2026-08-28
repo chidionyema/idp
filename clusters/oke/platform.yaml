@@ -74,6 +74,8 @@ spec:
   interval: 10m
   dependsOn:
     - name: chaos-mesh
+    # crew#488: the langfuse alert drill's Schedule and Workflow land in the observability namespace.
+    - name: observability
     - name: monitoring   # crew#539 DoD 2: langfuse-alert-drill asks kps-alertmanager and kps-prometheus
     - name: backstage   # the experiments kill portal pods; they are the one row that waits for it
   sourceRef:
@@ -346,6 +348,8 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
+    # crew#488: ServiceAccount/cluster-state lands in the backstage namespace.
+    - name: backstage
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -391,6 +395,8 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
+    # crew#488: CronJob/spiffe-proof lands in the backstage namespace.
+    - name: backstage
   sourceRef:
     kind: GitRepository
     name: flux-system

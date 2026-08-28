@@ -10,6 +10,8 @@ spec:
   interval: 10m
   dependsOn:
     - name: secret-store
+    # crew#488: ServiceAccount/ghcr-pull-reader lands in the backstage namespace.
+    - name: backstage
   sourceRef:
     kind: GitRepository
     name: flux-system

@@ -361,3 +361,163 @@ def test_a_kyverno_pattern_is_not_read_as_a_pod_asking_for_a_class():
     assert priority_class_offenders([policy], {}, set(), row="scheduling") == []
     assert priority_class_offenders([balloon], {"balloon": "priority-classes"}, set(), row="scheduling") == [
         "Deployment/balloon asks for balloon (needs row 'priority-classes')"]
+
+
+#: The namespaces a cluster has before this tree applies: Kubernetes' four, plus flux-system,
+#: which `bin/idp-hydrate` creates with `flux install`. Everything else is created by a row, and
+#: like the PriorityClasses that map is measured -- `_namespace_providers()` reads the Namespace
+#: objects out of the rendered rows rather than trusting a list somebody kept up to date.
+BUILTIN_NAMESPACES = {"default", "kube-system", "kube-public", "kube-node-lease", "flux-system"}
+
+
+def _namespaces_used(doc):
+    """Every namespace a rendered document needs to exist before it is applied.
+
+    `metadata.namespace` for the object itself, and for a HelmRelease also `spec.targetNamespace`
+    and `spec.storageNamespace`: the release lands somewhere other than where the HelmRelease
+    object lives, and Helm refuses a release into a namespace that is not there.
+    """
+    out = set()
+    ns = doc.get("metadata", {}).get("namespace")
+    if ns:
+        out.add(ns)
+    spec = doc.get("spec")
+    if doc.get("kind") == "HelmRelease" and isinstance(spec, dict):
+        for key in ("targetNamespace", "storageNamespace"):
+            if isinstance(spec.get(key), str):
+                out.add(spec[key])
+    return out
+
+
+def _namespaces_provided(docs):
+    """Every namespace a row's rendered documents bring into existence.
+
+    A Namespace object, and a HelmRelease with `install.createNamespace`: Helm creates the
+    namespace itself there and no Namespace document is rendered, so a map built only from
+    Namespace objects would call every row waiting on that release an offender -- a guard
+    refusing correct work (LAW 38), which is how allow-lists start being widened by hand. No row
+    in this tree uses `install.createNamespace` today (measured 2026-08-28, 0 of 40 rows); this
+    branch is what keeps adding one from being refused.
+    """
+    out = set()
+    for d in docs:
+        if d.get("kind") == "Namespace":
+            out.add(d["metadata"]["name"])
+        spec = d.get("spec")
+        if d.get("kind") == "HelmRelease" and isinstance(spec, dict) \
+                and spec.get("install", {}).get("createNamespace"):
+            ns = spec.get("targetNamespace") or d["metadata"].get("namespace")
+            if ns:
+                out.add(ns)
+    return out
+
+
+def _namespace_providers(rows):
+    """Namespace name -> the row that creates it, read from the rendered tree."""
+    out = {}
+    for name, (path, _) in rows.items():
+        for ns in sorted(_namespaces_provided(_docs(path) or ())):
+            out.setdefault(ns, name)
+    return out
+
+
+def namespace_offenders(docs, providers, available, row=None):
+    """Objects placed in a namespace the ordering has not created yet.
+
+    The third face of the same rule, and the one the drill found last: `flux-system/cluster-state:
+    ServiceAccount/backstage/cluster-state not found: namespaces "backstage" not found`. A
+    namespace is cluster-scoped and named, exactly like a CRD or a PriorityClass, and a row that
+    reaches into one it does not own has to be ordered after the row that does.
+    """
+    bad = []
+    for d in docs:
+        for ns in sorted(_namespaces_used(d)):
+            if ns in BUILTIN_NAMESPACES:
+                continue
+            provider = providers.get(ns)
+            if provider is not None and (provider in available or provider == row):
+                continue
+            where = f"needs row '{provider}'" if provider else f"no row creates Namespace/{ns}"
+            bad.append(f"{d['kind']}/{d['metadata']['name']} lands in {ns} ({where})")
+    return sorted(bad)
+
+
+def test_no_flux_row_reaches_into_a_namespace_its_ordering_has_not_created_yet():
+    """crew#488, run 33214748124. Three of that run's five ROOT-REDs were one sentence:
+
+        flux-system/cluster-state: ServiceAccount/backstage/cluster-state not found:
+          namespaces "backstage" not found
+        flux-system/spire: CronJob/backstage/spiffe-proof not found: namespaces "backstage" not found
+
+    Three rows put objects into namespaces owned by rows they did not depend on. On OKE every
+    namespace has existed for months, so the missing edges were invisible; from zero they are the
+    difference between a layer that comes up and one that never does.
+    """
+    rows = _rows()
+    providers = _namespace_providers(rows)
+    assert len(providers) >= 15, f"only {len(providers)} namespace(s) traced to a row -- the sweep is not reading the tree"
+    seen, asked = 0, 0
+    for name, (path, _) in sorted(rows.items()):
+        docs = _docs(path)
+        if docs is None:
+            continue
+        seen += 1
+        asked += sum(len(_namespaces_used(d)) for d in docs)
+        bad = namespace_offenders(docs, providers, _closure(name, rows), row=name)
+        assert bad == [], (
+            f"row {name} ({path.relative_to(ROOT)}) applies into a namespace that does not exist "
+            f"yet; its closure is {sorted(_closure(name, rows))}: " + ", ".join(bad))
+    assert seen > 25 and asked >= 100, (
+        f"{seen} rows rendered and {asked} namespace reference(s) read -- a sweep that reads "
+        f"nothing passes for the wrong reason")
+
+
+def test_the_cluster_state_incident_shape_is_refused():
+    """Both directions, on the exact object the drill named."""
+    docs = [{"apiVersion": "v1", "kind": "ServiceAccount",
+             "metadata": {"name": "cluster-state", "namespace": "backstage"}}]
+    providers = {"backstage": "backstage"}
+    assert namespace_offenders(docs, providers, {"scheduling"}, row="cluster-state") == [
+        "ServiceAccount/cluster-state lands in backstage (needs row 'backstage')"]
+    assert namespace_offenders(docs, providers, {"scheduling", "backstage"}, row="cluster-state") == []
+
+
+def test_a_helm_release_installing_somewhere_else_is_read_at_its_target_namespace():
+    """`metadata.namespace` is where the HelmRelease object lives; the chart lands in
+    `spec.targetNamespace`, and Helm refuses a release into a namespace that is not there. A guard
+    reading only the first would call this row clean."""
+    docs = [{"apiVersion": "helm.toolkit.fluxcd.io/v2", "kind": "HelmRelease",
+             "metadata": {"name": "kube-prometheus-stack", "namespace": "flux-system"},
+             "spec": {"targetNamespace": "monitoring"}}]
+    assert namespace_offenders(docs, {"monitoring": "monitoring"}, set(), row="alerts") == [
+        "HelmRelease/kube-prometheus-stack lands in monitoring (needs row 'monitoring')"]
+
+
+def test_a_namespace_a_helm_release_creates_itself_counts_as_provided():
+    """Written after a mutation that deleted the `install.createNamespace` branch stayed green:
+    the old version of this test passed a providers map it had built by hand, so it never ran the
+    function it was about. It now reads the fixture through `_namespaces_provided`, the same call
+    the sweep makes."""
+    hr = {"apiVersion": "helm.toolkit.fluxcd.io/v2", "kind": "HelmRelease",
+          "metadata": {"name": "chaos-mesh", "namespace": "flux-system"},
+          "spec": {"targetNamespace": "chaos-mesh", "install": {"createNamespace": True}}}
+    assert _namespaces_provided([hr]) == {"chaos-mesh"}
+    assert _namespaces_provided([{"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "spire"}}]) == {"spire"}
+    without = dict(hr, spec={"targetNamespace": "chaos-mesh"})
+    assert _namespaces_provided([without]) == set(), (
+        "a HelmRelease that does not ask Helm to create the namespace provides nothing")
+
+
+def test_a_namespace_no_row_creates_is_an_offender_and_never_waved_through():
+    """The default-deny branch again. Nothing to wait for is not the same as nothing to check."""
+    docs = [{"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "c", "namespace": "invented"}}]
+    assert namespace_offenders(docs, {"backstage": "backstage"}, {"backstage"}, row="x") == [
+        "ConfigMap/c lands in invented (no row creates Namespace/invented)"]
+
+
+def test_the_namespaces_kubernetes_and_flux_install_create_are_the_only_free_ones():
+    """The over-fix guard on the last of the three maps. A namespace this tree creates appearing
+    in the built-in set is the flat-allow-list habit arriving for the third time."""
+    assert _namespace_providers(_rows()).keys() & BUILTIN_NAMESPACES == set()
+    docs = [{"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "c", "namespace": "kube-system"}}]
+    assert namespace_offenders(docs, {}, set(), row="metrics-server") == []
