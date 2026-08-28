@@ -13,3 +13,10 @@ select = ["E9", "F63", "F7", "F82"]
 include = ["tests"]
 pythonVersion = "3.12"
 typeCheckingMode = "basic"
+
+[tool.pytest.ini_options]
+# crew#584: the default nobody types. -n auto spreads the run over every core (measured 2026-08-28:
+# 160 s -> 17.34 s on the same 17 files). Selection is NOT testmon: it tracks Python coverage only, and
+# after a YAML-only edit to oke-check.yml it answered "no tests ran" -- a false green, measured the same
+# day. bin/idp-tests-for names the tests that read a changed file; CI runs everything on a fresh checkout.
+addopts = "-n auto"

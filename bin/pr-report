@@ -18,7 +18,12 @@ set -uo pipefail
 IDP="${IDP_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 [ -d "$IDP/policy" ] || { echo "BLIND no policy dir at $IDP/policy (IDP_ROOT=${IDP_ROOT:-unset})"; exit 2; }
 REPORTS="${PR_REPORT_DIR:-$IDP/reports}"
-n="${1:?pr number}"; comment="${2:-}"
+# crew#584: no number = the PR of the current branch (the pre-push hook calls it that way); no PR yet is ok.
+n="${1:-}"; comment="${2:-}"
+if [ -z "$n" ]; then
+  n=$(gh pr view --json number -q .number 2>/dev/null || true)
+  [ -n "$n" ] || { echo "ok    pr-report: no PR for this branch yet, gates run when one exists"; exit 0; }
+fi
 for t in gh jq conftest python3; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
 mkdir -p "$REPORTS"
 budget=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['infrastructure']['monthly_cap_usd'])" "$IDP/estate-defaults.yaml")
