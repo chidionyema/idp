@@ -8,20 +8,29 @@
 # which is too late; this runs the same ClusterPolicies before the PR is opened.
 #
 # Usage: bin/idp-kyverno-render <dir-with-kustomization> [more dirs...]
-# Policies: $IDP_KYVERNO_POLICIES (a kustomize dir), else prospector's deploy/k8s/policies
-# when that checkout sits beside this one, else the same pinned upstream set (public, no token;
-# the two estate-only policies are absent and the verdict says so).
+# Policies: this repo's own ClusterPolicies under platform/ are always loaded, from here, because
+# they are here (bin/idp-kyverno-own-policies). On top of them: $IDP_KYVERNO_POLICIES (a kustomize
+# dir), else prospector's deploy/k8s/policies when that checkout sits beside this one, else the
+# same pinned upstream set (public, no token; the two estate-only policies are absent and the
+# verdict says so).
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 S="$(mktemp -d)"; trap 'rm -rf "$S"' EXIT
 for t in helm kubectl kyverno python3; do command -v "$t" >/dev/null || { echo "BLIND  $t is not installed; nothing was judged"; exit 2; }; done
 
-pol="${IDP_KYVERNO_POLICIES:-$IDP/../prospector-main/deploy/k8s/policies}"
+# Beside the PRIMARY checkout, not beside this one. This said "$IDP/.." until 2026-08-28, and
+# every agent session works in a linked worktree under a temp directory with no prospector next to
+# it, so the default resolved to nothing and the judge went BLIND on every local run -- which is
+# how CI became the only thing in the estate that ever judged a render (crew#516).
+primary="$("$IDP/bin/idp-repo-root" "$IDP")"
+pol="${IDP_KYVERNO_POLICIES:-$primary/../prospector-main/deploy/k8s/policies}"
 if [ -f "$pol/kustomization.yaml" ]; then src="$pol"
 else src="$IDP/tests/fixtures/kyverno/upstream"; fi
 kubectl kustomize "$src" > "$S/policies.yaml"
+own=$("$IDP/bin/idp-kyverno-own-policies" "$IDP/platform" "$S/policies.yaml")
 n=$(grep -c '^kind: ClusterPolicy' "$S/policies.yaml")
-echo "policies  $n ClusterPolicies from $src"
+echo "policies  $n ClusterPolicies: $src plus this repo's platform/"
+echo "own       ${own:-none}"
 
 # The fallback set is the pinned upstream library and nothing else. The two policies this estate
 # wrote itself -- no-optional-secret-references and money-rail-single-writer -- live in the
