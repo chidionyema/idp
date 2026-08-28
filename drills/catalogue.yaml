@@ -107,7 +107,9 @@ drills:
       session subject as that service user, saw the cluster and node pools ACTIVE through the OCI
       API, and graded the cluster's own state/cluster receipt (platform/state, bin/idp-cluster-state)
       written from inside on the node's instance principal. Twenty-four green rows in a row is crew#345's acceptance
-      criterion: live verification with nobody logged in.
+      criterion: live verification with nobody logged in. Since crew#66 root trust the same run also
+      grades the root-trust row (bin/idp-root-trust): every vault entry an ExternalSecret reads is
+      registered in docs/policy/root-trust.md with a bootstrapper on disk or a ticket, hourly.
 
   - name: kini-finish
     workflow: oke-check.yml
