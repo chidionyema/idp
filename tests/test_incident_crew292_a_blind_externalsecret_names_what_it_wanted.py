@@ -44,7 +44,7 @@ MANIFEST = ROOT / "platform/state/cluster-state.yaml"
 
 # the live spec, verbatim from platform/tailscale/external-secret.yaml
 LIVE_SPEC = {
-    "secretStoreRef": {"name": "oci-vault", "kind": "ClusterSecretStore"},
+    "secretStoreRef": {"name": "estate-vault", "kind": "ClusterSecretStore"},
     "data": [
         {"secretKey": "client_id",
          "remoteRef": {"key": "tailscale-operator", "property": "client_id"}},
@@ -105,7 +105,7 @@ def test_the_live_blind_row_now_names_the_store_and_both_keys_it_wanted():
     """Rule 1, on the exact row that was blind in run 33176874659."""
     row = _rows(_es(LIVE_SPEC, False, ESO_MESSAGE))[0]
     assert row["ready"] is False
-    assert "ClusterSecretStore/oci-vault" in row["message"]
+    assert "ClusterSecretStore/estate-vault" in row["message"]
     assert "tailscale-operator[client_id]" in row["message"]
     assert "tailscale-operator[client_secret]" in row["message"]
 
@@ -175,11 +175,12 @@ def test_a_missing_store_ref_does_not_crash_the_whole_snapshot():
 
 
 def test_the_store_kind_is_named_because_a_namespaced_store_is_a_different_object():
-    """SecretStore/oci-vault and ClusterSecretStore/oci-vault are two different places to look."""
+    """A namespaced SecretStore and a ClusterSecretStore of the same name are two
+    different places to look, so the kind is part of the answer."""
     f = _wanted_from()
-    assert "ClusterSecretStore/oci-vault" in f({"secretStoreRef": {"name": "oci-vault",
+    assert "ClusterSecretStore/estate-vault" in f({"secretStoreRef": {"name": "estate-vault",
                                                                   "kind": "ClusterSecretStore"}})
-    assert "SecretStore/oci-vault" in f({"secretStoreRef": {"name": "oci-vault"}})
+    assert "SecretStore/estate-vault" in f({"secretStoreRef": {"name": "estate-vault"}})
 
 
 def test_the_declaration_this_incident_was_found_on_still_reads_the_way_the_test_assumes():
@@ -189,4 +190,13 @@ def test_the_declaration_this_incident_was_found_on_still_reads_the_way_the_test
     es = next(d for d in docs if d["kind"] == "ExternalSecret")
     keys = {(d["remoteRef"]["key"], d["remoteRef"].get("property")) for d in es["spec"]["data"]}
     assert keys == {("tailscale-operator", "client_id"), ("tailscale-operator", "client_secret")}
-    assert _wanted_from()(es["spec"]).startswith("wanted tailscale-operator[client_id]")
+    # The store is asserted too, not just the keys. This file first shipped with LIVE_SPEC naming
+    # `oci-vault` while the manifest said `estate-vault`, and every test still passed because
+    # nothing here ever compared the two: a fixture graded against itself (peer review, session
+    # 78caaa17 on idp#602). A row that sends the reader to a store that does not exist is worse
+    # than the six words it replaced.
+    assert es["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": "estate-vault"}
+    assert LIVE_SPEC["secretStoreRef"] == es["spec"]["secretStoreRef"]
+    assert _wanted_from()(es["spec"]) == (
+        "wanted tailscale-operator[client_id], tailscale-operator[client_secret] "
+        "from ClusterSecretStore/estate-vault")
