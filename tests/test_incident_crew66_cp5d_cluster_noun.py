@@ -2,7 +2,9 @@
 callers (bin/idp-verify-drill, bin/idp-oke-rebuild, bin/idp-flux-bootstrap) move off `oci ce` and
 read through the layer. Rung 4, incident test, both ways: a one-cluster, two-ACTIVE-pool layer
 response makes the cluster row an ok; a layer exit 2 makes the row a BLIND that names why; a UPDATING
-pool makes it FAIL with the same wording the OCI branch had. The script-side gate is "no `oci ce`
+pool is a resize in flight: ok, naming the pool (idp#507 / crew#539 CP4, the same verdict
+bin/idp-oke-rebuild gives; a DELETING pool stays FAIL and is named — see
+test_incident_crew516_verify_drill_cluster_row_tolerates_resize.py). The script-side gate is "no `oci ce`
 outside a comment" (the cp5b test uses the same comment-excluding pattern)."""
 import base64
 import json
@@ -81,9 +83,11 @@ def test_a_one_cluster_two_active_pools_is_an_ok_row(tmp_path: Path) -> None:
     assert r.returncode == 0 and "4/4 rows green" in r.stdout
 
 
-def test_a_updating_pool_makes_the_cluster_row_a_fail(tmp_path: Path) -> None:
-    """One pool ACTIVE, one UPDATING -> the row grades FAIL with the same wording the OCI branch
-    used (n_ok/n_all, here 1/2)."""
+def test_a_updating_pool_keeps_the_cluster_row_ok_and_names_it(tmp_path: Path) -> None:
+    """One pool ACTIVE, one UPDATING -> the row grades ok and names the resizing pool: the
+    autoscaler resizing a pool is the platform working, not a red row (idp#507, crew#539 CP4).
+    Until idp#548 this case asserted FAIL, and every verify-drill.yml run on 2026-08-28 was red
+    on it while a1-spot resized (crew#516 CP1)."""
     b = _bin(tmp_path)
     _fake(b, "oci", '''
         case "$*" in
@@ -103,8 +107,8 @@ def test_a_updating_pool_makes_the_cluster_row_a_fail(tmp_path: Path) -> None:
     (b / "idp-verify-drill").chmod(0o755)
     _token(tmp_path)
     r = _run(tmp_path, b)
-    assert "FAIL    cluster      1 cluster ACTIVE, 1/2 node pool(s) ACTIVE" in r.stdout, r.stdout + r.stderr
-    assert r.returncode == 1
+    assert "ok      cluster      1 cluster ACTIVE, 1/2 node pool(s) ACTIVE, UPDATING (resize in flight): pool-b" in r.stdout, r.stdout + r.stderr
+    assert "FAIL    cluster" not in r.stdout
 
 
 def test_a_layer_exit_2_on_cluster_list_makes_the_row_blind(tmp_path: Path) -> None:
