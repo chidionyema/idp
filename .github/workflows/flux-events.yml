@@ -50,6 +50,13 @@ jobs:
         if: steps.receipt.outputs.severity == 'error'
         env:
           GH_TOKEN: ${{ github.token }}
+          # crew#307, 2026-08-28: this job has no checkout, and `gh` with no repository to infer
+          # exits `fatal: not a git repository`. Every gh call below died there, so the alarm
+          # detected the red and opened nothing -- and the step's own `exit 1` painted the run red
+          # anyway, so it looked from outside exactly like an alarm that worked. Run 33163766050
+          # caught `HelmRelease/robusta/robusta status: 'Failed'` at 10:32:53Z and filed no issue.
+          # GH_REPO names it once for the whole step, so a gh call added later cannot forget.
+          GH_REPO: ${{ github.repository }}
           OBJECT: ${{ steps.receipt.outputs.object }}
           REVISION: ${{ steps.receipt.outputs.revision }}
           MESSAGE: ${{ steps.receipt.outputs.message }}
@@ -75,6 +82,13 @@ jobs:
         if: steps.receipt.outputs.severity == 'info' && contains(steps.receipt.outputs.message, 'Health check passed')
         env:
           GH_TOKEN: ${{ github.token }}
+          # crew#307, 2026-08-28: this job has no checkout, and `gh` with no repository to infer
+          # exits `fatal: not a git repository`. Every gh call below died there, so the alarm
+          # detected the red and opened nothing -- and the step's own `exit 1` painted the run red
+          # anyway, so it looked from outside exactly like an alarm that worked. Run 33163766050
+          # caught `HelmRelease/robusta/robusta status: 'Failed'` at 10:32:53Z and filed no issue.
+          # GH_REPO names it once for the whole step, so a gh call added later cannot forget.
+          GH_REPO: ${{ github.repository }}
           OBJECT: ${{ steps.receipt.outputs.object }}
           REVISION: ${{ steps.receipt.outputs.revision }}
           MESSAGE: ${{ steps.receipt.outputs.message }}
