@@ -32,6 +32,32 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: founder-gods-view
+  title: "Founder: what shipped, what changed for you, what is stuck"
+  description: "The three questions, answered from GitHub every render (crew#412, R38): every PR merged in 24h by repository, model and session; the Use: line of each one that changed something you touch; every PR with no REVIEW: verdict and every checkpoint that waits on you. Never typed by a session."
+  annotations:
+    idp/updated-by: "bin/estate-founder, run by catalog-render four times a day (docs/FOUNDER.md lands on main through the render PR)"
+    backstage.io/techdocs-ref: url:https://github.com/chidionyema/idp/tree/main/
+  tags: [founder]
+  links:
+    - title: "Open (portal)"
+      url: "https://catalogue.${ESTATE_ZONE}/docs/default/component/founder-gods-view/FOUNDER/"
+      icon: dashboard
+    - title: "Open (GitHub, docs/FOUNDER.md)"
+      url: "https://github.com/chidionyema/idp/blob/main/docs/FOUNDER.md"
+      icon: dashboard
+    - title: "Planned, blocking, when (NEXT.md)"
+      url: "https://github.com/chidionyema/idp/blob/main/docs/NEXT.md"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: founder-model-router
   title: "Model router (llm)"
   description: "Every model call in the estate goes through here. Pick and add models, keys, teams and budgets in the admin console (/ui); sign in with your estate login (the same as this catalogue); there is no console password. Tutorial: docs/onboarding/litellm.md (crew#400)."

@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+"""estate-founder: the founder's god's view, generated (crew#412, R38).
+
+Founder, 2026-08-28, verbatim: "where is the founders gods view ... why the fuck do i make a
+request and have to remind you all the fucking time ... and keep having to ask for update on
+capabilities ... i dont want to do this again ... why is everything half baked, half finished,
+always something not done ... always leaving the last 20% never finished". He asked for one page
+three times in 24 hours and got a typed answer each time; LAW 44 says the fourth time is a
+protocol. This file is it: three questions, answered from GitHub alone, never from a session's
+memory, on the same schedule and through the same PR as docs/NEXT.md.
+
+    What shipped        every pull request merged in the window, by repository, with the crew
+                        issue it names; the model and session from the merge commit's trailers
+                        when the repository is checked out beside this one
+    What changed for me the `Use:` line of every merged pull request that carries one (the
+                        handoff shape in ~/AGENTS.md); a merged PR with no `Use:` line changed
+                        nothing the founder touches, and says so
+    What is stuck       open pull requests with no `REVIEW:` verdict after REVIEW_H hours, and
+                        every open checkpoint that waits on the founder himself
+
+    estate-founder                       write docs/FOUNDER.md from gh
+    estate-founder --merged f.json --open f.json --issues f.json --out p.md   from files (tests)
+    estate-founder --check               exit 1 when docs/FOUNDER.md differs from the inputs
+
+Nothing here is typed by hand. A window with nothing merged is a row that says so (LAW 28).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "docs" / "FOUNDER.md"
+CREW = os.environ.get("ESTATE_CREW_REPO", "chidionyema/crew")
+OWNER = os.environ.get("ESTATE_GITHUB_OWNER", CREW.split("/")[0])
+WINDOW_H = int(os.environ.get("ESTATE_FOUNDER_WINDOW_H", "24"))
+REVIEW_H = int(os.environ.get("ESTATE_FOUNDER_REVIEW_H", "2"))
+
+ISSUE_RE = re.compile(r"\b(crew|idp|cg|prospector|hermes-v2)#(\d+)")
+USE_RE = re.compile(r"^\s*(?:[-*]\s*)?\**Use:?\**:?\s*(.+?)\s*$", re.M)
+CP_RE = re.compile(r"^\s*- \[ \] \**(CP[\w.-]*)\**[:\s]*(.*)$")
+FOUNDER_CP_RE = re.compile(r"\bfounder\b.*\b(confirm|receipt|opens|closes|replies|picks|decision)", re.I)
+REVIEW_RE = re.compile(r"^\s*(?:\**)?REVIEW:\s*(KEEP|REWORK|NOT-RAISING-THE-BAR)", re.M)
+SESSION_RE = re.compile(r"Claude-Session: \S*/(session_\w+)")
+MODEL_RE = re.compile(r"Co-Authored-By: (Claude [^<\n]+?)\s*<")
+
+
+def gh_json(args: list[str], run=subprocess.run) -> list:
+    """`gh api --paginate` prints one JSON document per page; join them."""
+    out = run(["gh", "api", "--paginate", *args], capture_output=True, text=True, check=True).stdout
+    rows: list = []
+    for page in out.splitlines():
+        if page.strip():
+            doc = json.loads(page)
+            rows.extend(doc if isinstance(doc, list) else [doc])
+    return rows
+
+
+def fetch_merged(since: str, run=subprocess.run) -> list[dict]:
+    q = f"is:pr is:merged author:{OWNER} merged:>={since}"
+    return [pr_row(x) for x in gh_json(["-X", "GET", "search/issues", "-f", f"q={q}", "-f", "per_page=100",
+                                        "--jq", ".items[]"], run)]
+
+
+def fetch_open(run=subprocess.run) -> list[dict]:
+    q = f"is:pr is:open author:{OWNER}"
+    return [pr_row(x) for x in gh_json(["-X", "GET", "search/issues", "-f", f"q={q}", "-f", "per_page=100",
+                                        "--jq", ".items[]"], run)]
+
+
+def fetch_issues(run=subprocess.run) -> list[dict]:
+    rows = gh_json([f"repos/{CREW}/issues?state=open&per_page=100",
+                    "--jq", '.[] | {number, title, body, url: .html_url, pr: (.pull_request != null)}'], run)
+    return [r for r in rows if not r.get("pr")]
+
+
+def fetch_verdicts(pr: dict, run=subprocess.run) -> str:
+    """The newest REVIEW: line among the PR's comments, or '' when nobody has graded it."""
+    repo = pr["repo"]
+    out = run(["gh", "api", "--paginate", f"repos/{repo}/issues/{pr['number']}/comments?per_page=100",
+               "--jq", ".[].body"], capture_output=True, text=True).stdout
+    found = REVIEW_RE.findall(out or "")
+    return found[-1] if found else ""
+
+
+def pr_row(x: dict) -> dict:
+    url = x.get("html_url") or ""
+    repo = "/".join(url.split("/")[3:5]) if url.startswith("https://github.com/") else x.get("repo", "")
+    return {"repo": repo, "number": x.get("number"), "title": x.get("title") or "", "body": x.get("body") or "",
+            "url": url, "merged_at": (x.get("pull_request") or {}).get("merged_at") or x.get("merged_at") or "",
+            "created_at": x.get("created_at") or "", "merge_commit": x.get("merge_commit", "")}
+
+
+def trailers(repo: str, since: str, code_root: Path, run=subprocess.run) -> dict[str, int]:
+    """Merge commits on origin/main since the window opened, counted by session and model. The
+    repository must be checked out beside this one (ESTATE_CODE); otherwise the count is BLIND."""
+    d = code_root / repo.split("/")[-1]
+    if not (d / ".git").exists():
+        return {}
+    p = run(["git", "-C", str(d), "log", "origin/main", f"--since={since}", "--format=%b"],
+            capture_output=True, text=True)
+    if p.returncode != 0:
+        return {}
+    counts: dict[str, int] = {}
+    for m in SESSION_RE.findall(p.stdout):
+        counts[m] = counts.get(m, 0) + 1
+    for m in MODEL_RE.findall(p.stdout):
+        counts[m.strip()] = counts.get(m.strip(), 0) + 1
+    return counts
+
+
+def code_root(root: Path) -> Path:
+    env = os.environ.get("ESTATE_CODE")
+    if env:
+        return Path(env)
+    try:
+        common = subprocess.run(["git", "-C", str(root), "rev-parse", "--git-common-dir"],
+                                capture_output=True, text=True, check=True).stdout.strip()
+        return Path(common if os.path.isabs(common) else root / common).resolve().parent.parent
+    except (subprocess.CalledProcessError, OSError):
+        return root.parent
+
+
+def issue_tag(pr: dict) -> str:
+    m = ISSUE_RE.search(pr["title"]) or ISSUE_RE.search(pr["body"][:600])
+    return f"{m.group(1)}#{m.group(2)}" if m else "—"
+
+
+def use_line(pr: dict) -> str:
+    """The `Use:` line, or '' when there is none or it says `nothing` (live 06:31Z: 7 of 18 did)."""
+    m = USE_RE.search(pr["body"])
+    use = m.group(1).strip() if m else ""
+    return "" if re.match(r"^[`*]*nothing\b", use, re.I) else use
+
+
+def founder_checkpoints(issues: list[dict]) -> list[dict]:
+    rows = []
+    for issue in issues:
+        for line in (issue.get("body") or "").splitlines():
+            m = CP_RE.match(line)
+            if m and FOUNDER_CP_RE.search(m.group(2)):
+                rows.append({"issue": issue["number"], "url": issue.get("url", ""), "cp": m.group(1),
+                             "what": m.group(2).strip()[:110]})
+    return rows
+
+
+def hours_since(ts: str, now: datetime) -> float:
+    try:
+        t = datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return 0.0
+    return (now - t).total_seconds() / 3600
+
+
+def render(merged: list[dict], open_prs: list[dict], issues: list[dict], by_repo_trailers: dict[str, dict[str, int]],
+           taken: str, now: datetime) -> str:
+    since = (now - timedelta(hours=WINDOW_H)).strftime("%Y-%m-%dT%H:%MZ")
+    by_repo: dict[str, list[dict]] = {}
+    for pr in sorted(merged, key=lambda p: p["merged_at"], reverse=True):
+        by_repo.setdefault(pr["repo"], []).append(pr)
+    changed = [(pr, use_line(pr)) for pr in merged if use_line(pr)]
+    # Stuck is scoped to the repositories the estate is shipping to: a May PR on a parked repository is
+    # not a reviewer's debt this week (live 06:31Z listed haworks#5, 2987h). No merge in the window, no row.
+    live_repos = set(by_repo)
+    stuck = [pr for pr in open_prs if pr["repo"] in live_repos and not pr.get("verdict")
+             and hours_since(pr["created_at"], now) >= REVIEW_H]
+    waiting = founder_checkpoints(issues)
+    out = [
+        "# Founder: what shipped, what changed for you, what is stuck",
+        "",
+        f"GENERATED by `bin/estate-founder` at {taken} from GitHub alone: pull requests merged since {since} "
+        f"({WINDOW_H}h), open pull requests, and the open checkpoints of `{CREW}` (crew#412, R38). "
+        "Nothing here is typed by hand; a session that answers these questions from memory instead of this page is the defect.",
+        "",
+        "## The bar",
+        "",
+        f"- Shipped: **{len(merged)} pull requests merged** in {WINDOW_H}h across {len(by_repo)} repositories",
+        f"- Changed for you: **{len(changed)}** of them carry a `Use:` line (something you touch); the rest changed nothing you touch",
+        f"- Stuck: **{len(stuck)} pull requests** with no `REVIEW:` verdict after {REVIEW_H}h; **{len(waiting)} checkpoints wait on you**",
+        "",
+        "## What changed for you",
+        "",
+    ]
+    if changed:
+        out += ["| Merged | Use | PR |", "|---|---|---|"]
+        for pr, use in sorted(changed, key=lambda c: c[0]["merged_at"], reverse=True):
+            out.append(f"| {pr['merged_at'][:16]}Z | {use.replace('|', '/')} | [{pr['repo'].split('/')[-1]}#{pr['number']}]({pr['url']}) |")
+    else:
+        out.append(f"Nothing merged in {WINDOW_H}h carries a `Use:` line: nothing you touch changed.")
+    out += ["", "## What is stuck", ""]
+    if stuck or waiting:
+        out += ["| Who | What | Waiting since | Link |", "|---|---|---|---|"]
+        for pr in sorted(stuck, key=lambda p: p["created_at"]):
+            out.append(f"| reviewer | {pr['title'].replace('|', '/')[:100]} | {hours_since(pr['created_at'], now):.0f}h, no REVIEW: line | "
+                       f"[{pr['repo'].split('/')[-1]}#{pr['number']}]({pr['url']}) |")
+        for r in sorted(waiting, key=lambda r: (r["issue"], r["cp"])):
+            out.append(f"| you | {r['cp']} {r['what'].replace('|', '/')} | open | [crew#{r['issue']}]({r['url']}) |")
+    else:
+        out.append("Nothing is stuck: every open pull request has a verdict and no checkpoint names you.")
+    out += ["", "## What shipped", ""]
+    if not merged:
+        out.append(f"No pull request merged since {since}.")
+    for repo, prs in sorted(by_repo.items(), key=lambda kv: -len(kv[1])):
+        out += [f"### {repo} — {len(prs)} merged", ""]
+        tr = by_repo_trailers.get(repo) or {}
+        if tr:
+            models = ", ".join(f"{k} {v}" for k, v in sorted(tr.items()) if k.startswith("Claude"))
+            sessions = ", ".join(f"{k[-6:]} {v}" for k, v in sorted(tr.items(), key=lambda kv: -kv[1]) if k.startswith("session_"))
+            out += [f"By model (merge-commit trailers): {models or 'none'}. By session: {sessions or 'none'}.", ""]
+        else:
+            out += ["By model / session: BLIND (repository not checked out beside this one; set ESTATE_CODE).", ""]
+        out += ["| Merged | Issue | Title |", "|---|---|---|"]
+        for pr in prs:
+            out.append(f"| {pr['merged_at'][:16]}Z | {issue_tag(pr)} | [{pr['title'].replace('|', '/')[:110]}]({pr['url']}) |")
+        out.append("")
+    return "\n".join(out).rstrip("\n") + "\n"
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("--merged", help="JSON file of merged PRs (tests); default: gh search")
+    ap.add_argument("--open", help="JSON file of open PRs with a `verdict` field (tests); default: gh search + comments")
+    ap.add_argument("--issues", help="JSON file of open crew issues (tests); default: gh api")
+    ap.add_argument("--out", default=str(OUT))
+    ap.add_argument("--taken", help="timestamp to print; default now UTC")
+    ap.add_argument("--now", help="clock, YYYY-MM-DDTHH:MMZ (tests); default now UTC")
+    ap.add_argument("--check", action="store_true", help="exit 1 when the page on disk differs from the inputs")
+    a = ap.parse_args(argv)
+    now = datetime.strptime(a.now[:16], "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc) if a.now else datetime.now(timezone.utc)
+    since = (now - timedelta(hours=WINDOW_H)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    offline = bool(a.merged or a.open or a.issues)
+    merged = json.loads(Path(a.merged).read_text()) if a.merged else fetch_merged(since)
+    if a.open:
+        open_prs = json.loads(Path(a.open).read_text())
+    else:
+        open_prs = fetch_open()
+        for pr in open_prs:
+            pr["verdict"] = fetch_verdicts(pr)
+    issues = json.loads(Path(a.issues).read_text()) if a.issues else fetch_issues()
+    root = code_root(ROOT)
+    by_repo_trailers = {} if offline else {repo: trailers(repo, since, root) for repo in {p["repo"] for p in merged}}
+    taken = a.taken or now.strftime("%Y-%m-%dT%H:%MZ")
+    page = render(merged, open_prs, issues, by_repo_trailers, taken, now)
+    out = Path(a.out)
+    body = lambda s: s.split("\n", 3)[3]
+    if a.check:
+        if out.is_file() and body(out.read_text(encoding="utf-8")) == body(page):
+            print(f"ok    estate-founder: {out} matches the inputs")
+            return 0
+        print(f"FAIL  estate-founder: {out} is not what the inputs say; run bin/estate-founder")
+        return 1
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(page, encoding="utf-8")
+    print(f"estate-founder: {len(merged)} merged, {sum(1 for p in open_prs if not p.get('verdict'))} unreviewed, "
+          f"{len(founder_checkpoints(issues))} on the founder -> {os.path.relpath(out)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -11,6 +11,7 @@ nav:
       - architecture/index.md
       - Live estate: architecture/live.md
   - Estate showcase: SHOWCASE.md
+  - "Founder: shipped, changed for you, stuck": FOUNDER.md
   - Planned, blocking, when: NEXT.md
   - Decisions:
       - 0001 Gateway API is the routing standard: decisions/0001-gateway-api-is-the-routing-standard.md
