@@ -193,6 +193,15 @@ pb_diagnose() {
     show "pod $ns/$name" sh -c "$K describe pod $name -n $ns | sed -n '/^Node:/p;/^Containers:/,\$p' | grep -E '^Node:|State|Reason|Exit Code|Ready|Message|Warning|Normal|Liveness|Readiness|Back-off|Failed|Error' | tail -25"
     show "log $ns/$name" $K logs "$name" -n "$ns" --all-containers --tail=30 --prefix
   done
+  # crew#539, 2026-08-28 (run 33169347978): robusta-runner sat in Init:CrashLoopBackOff for 4h in
+  # phase Pending, so the branch above (Running, not Ready) never tailed it and the run listed the
+  # pod without a word from it. A pod whose init container crashes is Pending, and its init log is
+  # the only line that says why; --all-containers includes init containers.
+  pending=$($K get pods -A --field-selector=status.phase=Pending -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null)
+  while read -r ns name; do
+    [ -n "$name" ] || continue
+    show "init-log $ns/$name" $K logs "$name" -n "$ns" --all-containers --tail=30 --prefix
+  done <<<"$pending"
   # langfuse-web could not reach langfuse-postgresql:5432 while the postgres pod was Running: a
   # Service with no ready address is the difference, and it is only visible on the Endpoints.
   # Run 33144117286: idp#536 raised clickhouse to 4Gi, Helm reported signoz.v40, and the pod kept
