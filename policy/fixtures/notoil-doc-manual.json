@@ -1,0 +1,10 @@
+{
+  "file_path": "docs/how-to/tailscale.md",
+  "content": [
+    "# Tailscale operator",
+    "",
+    "create one Tailscale OAuth client (scope auth_keys, tag tag:k8s) and paste it into the vault secret the PR names",
+    "",
+    "Flux reconciles the HelmRelease from there."
+  ]
+}

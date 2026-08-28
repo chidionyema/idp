@@ -160,6 +160,14 @@ catalog:
       rules:
         - allow: [Template]
 
+    # crew#66: the Day-0 shape for a third-party connection. It exists so an agent asked to
+    # add a new tool cannot invent a credential-carrying step -- the template offers no such
+    # option, and the pull request that lands its output is graded by the same rule.
+    - type: file
+      target: ../../templates/external-integration/template.yaml
+      rules:
+        - allow: [Template]
+
     # The guest identity. Load-bearing, not an example: the guest auth provider
     # resolves user:default/guest through the catalog, so removing this file
     # breaks sign-in.

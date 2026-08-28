@@ -106,9 +106,16 @@ catalog:
       rules:
         - allow: [Component, System]
 
-    # The only scaffolder template the portal offers.
+    # The scaffolder templates the portal offers.
     - type: file
       target: /app/templates/estate-component/template.yaml
+      rules:
+        - allow: [Template]
+
+    # crew#66: the Day-0 shape for a third-party connection, so a new integration inherits
+    # the zero-touch authentication path instead of an agent inventing one.
+    - type: file
+      target: /app/templates/external-integration/template.yaml
       rules:
         - allow: [Template]
 

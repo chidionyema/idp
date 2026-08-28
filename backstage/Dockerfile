@@ -119,7 +119,8 @@ COPY --from=deps --chown=node:node /app ./
 COPY --from=build --chown=node:node /app/packages/backend/dist/bundle/ ./
 COPY --chown=node:node app-config*.yaml ./
 # templates/ and examples/ are catalog locations, not decoration:
-# templates/estate-component is the only scaffolder template the portal offers,
+# templates/estate-component and templates/external-integration are the scaffolder
+# templates the portal offers (the second is the crew#66 Day-0 integration shape),
 # and examples/org.yaml carries user:default/guest, which the guest auth
 # provider resolves through the catalog. Drop it and sign-in breaks.
 COPY --chown=node:node templates ./templates
