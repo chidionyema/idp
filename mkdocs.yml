@@ -26,6 +26,7 @@ nav:
       - 0006 The platform answers for itself over one MCP: decisions/0006-the-platform-answers-for-itself-over-one-mcp.md
       - 0007 The front door is federated login: decisions/0007-the-front-door-is-federated-login-with-no-local-password.md
       - 0008 Every founder action is a portal button: decisions/0008-every-founder-action-is-a-portal-button.md
+      - 0009 Every requirement is scored on the reference matrix: decisions/0009-every-requirement-is-scored-on-the-founders-reference-matrix.md
   - Specs:
       - KINI.AI master spec: reference/specs/kini-master-spec.md
       - Phone idea flow: reference/specs/phone-idea-flow.md
@@ -49,6 +50,7 @@ nav:
       - Estate showcase: tutorials/demo/estate-showcase.md
       - Estate next: tutorials/demo/estate-next.md
       - Trace matrix: tutorials/demo/trace-matrix.md
+      - Matrix gate: tutorials/demo/matrix.md
       - Plist gate: tutorials/demo/plist.md
       - Namespace fences: tutorials/demo/ns-fence-gate.md
       - k8s-infra: tutorials/demo/k8s-infra.md
@@ -103,6 +105,7 @@ nav:
       - Estate showcase: how-to/onboarding/estate-showcase.md
       - Estate next: how-to/onboarding/estate-next.md
       - Plist gate: how-to/onboarding/plist.md
+      - Decision matrix: how-to/onboarding/matrix.md
       - Oracle identity: how-to/onboarding/oci.md
       - Flux on OKE: how-to/onboarding/oke.md
       - Cloud-agnostic: how-to/onboarding/cloud-agnostic.md
