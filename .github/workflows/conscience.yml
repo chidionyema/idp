@@ -13,10 +13,18 @@ name: conscience
 on:
   schedule:
     - cron: "23 * * * *"
+    - cron: "23 7 * * *"   # crew#586 CP4: the founder's line, once every 24 hours
   workflow_dispatch:
+    inputs:
+      founder_line:
+        description: "Send the founder's Telegram line from this run too"
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
   issues: write
+  actions: read
 concurrency:
   group: conscience
   cancel-in-progress: false
@@ -71,3 +79,33 @@ jobs:
             elif [ -n "$n" ]; then gh issue close "$n" --comment "$body" >/dev/null; echo "green $tenet -> #$n closed"
             else echo "green $tenet"; fi
           done
+      # crew#586 CP4: one line to the founder every 24 hours, on the Telegram bot the estate
+      # already runs (same send as ping.yml, crew#539). The move is against the receipt of the
+      # newest successful run at least 23 hours old; with none, it is the first reading.
+      - name: founder line
+        if: github.event.schedule == '23 7 * * *' || inputs.founder_line == true
+        working-directory: idp
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.SEED_HERMES_TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT: ${{ secrets.SEED_HERMES_TELEGRAM_HOME_CHANNEL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          now=$(python3 -c 'import json; r=json.load(open("reports/conscience.json")); print(r["score"]["green"], r["score"]["total"], " ".join(t["name"] for t in r["tenets"] if not t["ok"]))')
+          read -r green total reds <<< "$now"
+          cutoff=$(date -u -d '23 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          prev_run=$(gh run list --workflow conscience.yml --status success --limit 50 --json databaseId,createdAt --jq "[.[] | select(.createdAt < \"$cutoff\")][0].databaseId // empty")
+          move="first reading"
+          if [ -n "$prev_run" ] && gh run download "$prev_run" -n conscience-receipt -D prev >/dev/null 2>&1; then
+            prev_green=$(python3 -c 'import json; print(json.load(open("prev/conscience.json"))["score"]["green"])')
+            d=$((green - prev_green)); move=$(printf 'moved %+d since yesterday' "$d")
+          fi
+          if [ -z "$reds" ]; then text="🧠 conscience $green/$total, $move — every tenet green; the estate is more itself than it was"
+          else text="🧠 conscience $green/$total, $move — red: $reds"; fi
+          text="$text"$'\n'"$RUN_URL"
+          code=$(curl -sS -o /dev/null -w '%{http_code}' "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT}" --data-urlencode "text=${text}")
+          echo "telegram sendMessage $code: ${text%%$'\n'*}"
+          test "$code" = 200
