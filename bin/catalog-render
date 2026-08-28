@@ -115,7 +115,10 @@ def main(argv: list[str]) -> int:
     # crew#403 CP6: planned / blocking / when, before the showcase so its bar can quote it.
     step("estate-next", [sys.executable, str(WT / "bin" / "estate-next")], WT)
     # crew#412 (R38): the founder's three questions, from GitHub, on the same schedule.
-    step("estate-founder", [sys.executable, str(WT / "bin" / "estate-founder")], WT, 300)
+    # crew#596: the same goal block is the pinned GOAL message in the home channel (Otto's), refreshed here;
+    # --dry-run and a runner with no token leave the pin alone.
+    telegram = ["--telegram"] if not dry and os.environ.get("TELEGRAM_BOT_TOKEN") else []
+    step("estate-founder", [sys.executable, str(WT / "bin" / "estate-founder"), *telegram], WT, 300)
     step("estate-showcase", [sys.executable, str(WT / "bin" / "estate-showcase")], WT)
     # crew#495 CP1: the trace matrix is rendered from the same worktree, on the same schedule.
     step("trace-matrix", [sys.executable, str(WT / "bin" / "trace-matrix")], WT)

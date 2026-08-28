@@ -79,6 +79,8 @@ jobs:
           ESTATE_CODE: ${{ github.workspace }}
           ESTATE_ENV: dev
           MODE: ${{ inputs.mode || 'dry-run' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.SEED_HERMES_TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_HOME_CHANNEL: ${{ secrets.SEED_HERMES_TELEGRAM_HOME_CHANNEL }}
         run: |
           set -uo pipefail
           git config user.name "estate-catalog-render"
