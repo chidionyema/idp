@@ -145,12 +145,44 @@ case "$MODE" in
     step surge-node "$IDP/bin/idp-oke-surge-node" ;;
   --surge-finish)
     step surge-finish "$IDP/bin/idp-oke-surge-node" --finish ;;
+  --break-glass)
+    # crew#539 (2026-08-28): the runner is admitted to the API endpoint for this job only. The
+    # runner's egress /32 is appended to the applied list, tofu applies it (one NSG rule), the
+    # kubeconfig is minted on the same one-hour session token, ONE named playbook from
+    # bin/idp-oke-break-glass runs, and the original list is applied again on every exit path
+    # (trap): a failed playbook never leaves the door open. Never from a laptop (crew#345).
+    [ -n "${OCI_CI:-}" ] || { echo "exit 3: --break-glass runs from Actions only (gh workflow run oke-check.yml -f mode=break-glass -f playbook=diagnose)"; exit 3; }
+    PLAYBOOK="${BREAK_GLASS_PLAYBOOK:-diagnose}"
+    "$IDP/bin/idp-oke-break-glass" --list | tr ' ' '\n' | grep -qx "$PLAYBOOK" || { echo "exit 64: unknown playbook '$PLAYBOOK'; known: $("$IDP/bin/idp-oke-break-glass" --list)"; exit 64; }
+    ORIG_CIDRS="$OKE_ALLOWED_CIDRS"
+    EGRESS="$(curl -fsS --max-time 10 https://api.ipify.org)"
+    [[ "$EGRESS" =~ ^[0-9.]+$ ]] || { echo "exit 2: could not measure the runner's egress IP"; exit 2; }
+    bg_revoke() {
+      export OKE_ALLOWED_CIDRS="$ORIG_CIDRS"
+      step revoke-login "$IDP/bin/idp-oci-login"
+      step revoke-apply tofu apply -auto-approve "${TFVARS[@]}"
+      rm -f "$KUBECONFIG"
+      echo "ok    break-glass        runner $EGRESS/32 removed from control_plane_allowed_cidrs (trap)"
+    }
+    trap bg_revoke EXIT
+    export OKE_ALLOWED_CIDRS="$ORIG_CIDRS, \"$EGRESS/32\""
+    step admit-login "$IDP/bin/idp-oci-login"
+    step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" || { echo "exit 3: recreate-guard refused; import the live resource"; exit 3; }
+    step admit-apply tofu apply -auto-approve "${TFVARS[@]}"
+    CID=$(tofu output -raw cluster_id 2>/dev/null); [ -n "$CID" ] || { blind kubeconfig "no cluster_id output"; exit 2; }
+    step kubeconfig "$IDP/bin/idp-cloud" cluster kubeconfig "$CID" --file "$KUBECONFIG" --region "$OCI_REGION"
+    step api-answers kubectl --request-timeout=30s get --raw /version
+    echo "--- playbook $PLAYBOOK (bin/idp-oke-break-glass)"
+    "$IDP/bin/idp-oke-break-glass" "$PLAYBOOK"; prc=$?
+    printf '%-5s %-18s rc=%-3s %4ss  %s\n' "$([ $prc -eq 0 ] && echo ok || echo FAIL)" "playbook" "$prc" 0 "$PLAYBOOK"
+    [ $prc -eq 0 ] || FAILED="$FAILED playbook"
+    bg_revoke; trap - EXIT ;;
   --teardown-rebuild)
     step tofu-destroy tofu destroy -auto-approve "${TFVARS[@]}"
     step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" || { echo "exit 3: recreate-guard refused; import the live resource"; exit 3; }
     step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
     step flux-bootstrap "$IDP/bin/idp-flux-bootstrap" ;;
-  *) echo "usage: $0 [--check|--apply|--surge-node|--surge-finish|--teardown-rebuild|--plan-pool]"; exit 64 ;;
+  *) echo "usage: $0 [--check|--apply|--surge-node|--surge-finish|--break-glass|--teardown-rebuild|--plan-pool]"; exit 64 ;;
 esac
 
 # --- verify: the platform answers, measured from outside ---------------------------------------

@@ -14,8 +14,13 @@ on:
       mode:
         description: "check (plan, drift = FAIL), apply (crew#289: the STAGED node-pool change, refused by main.tf above node_pool.budget_monthly_usd), or surge-node (crew#516: apply, then replace the one node so a new boot volume or shape takes effect; every pod restarts once), or surge-finish (the surge's second half when its Ready gate went blind, run 33101801971: delete the old node once the receipt shows the new one Ready). Never from a laptop (crew#247)."
         type: choice
-        options: [check, apply, surge-node, surge-finish]
+        options: [check, apply, surge-node, surge-finish, break-glass]
         default: check
+      playbook:
+        description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose is read-only."
+        type: choice
+        options: [diagnose, cilium-unchain]
+        default: diagnose
   pull_request:
     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
 permissions:
@@ -35,7 +40,7 @@ jobs:
     if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     # 25 for check/apply; surge-node waits up to ~65 min for the new node to be ACTIVE then Ready in the receipt (crew#516)
-    timeout-minutes: ${{ inputs.mode == 'surge-node' && 90 || 25 }}
+    timeout-minutes: ${{ inputs.mode == 'surge-node' && 90 || inputs.mode == 'break-glass' && 45 || 25 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -77,6 +82,7 @@ jobs:
           OCI_S3_SECRET_KEY: ${{ secrets.OCI_S3_SECRET_KEY }}
           OKE_SSH_PUBKEY_TEXT: ${{ vars.OKE_SSH_PUBKEY }}
           OKE_ALLOWED_CIDRS: ${{ vars.OKE_ALLOWED_CIDRS }}
+          BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}   # crew#539: read by --break-glass only
           ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}   # platform/oci/langfuse.tf seeds the Langfuse login
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # bin/idp-drill-heartbeat reads login-drill runs; without it the row is BLIND (run 32988930880)
         run: bin/idp-oke-rebuild --${{ inputs.mode || 'check' }}
