@@ -34,8 +34,11 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
+  # Platform rows never wait on the portal (crew#539, 2026-08-28: one stalled catalogue rollout held
+  # 15 rows — observability, spire, temporal, keda, monitoring, science — behind Deployment/backstage/catalogue).
+  # Only `chaos` (the experiments that target the portal) depends on backstage.
   dependsOn:
-    - name: backstage
+    - name: scheduling
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -60,6 +63,7 @@ spec:
   interval: 10m
   dependsOn:
     - name: chaos-mesh
+    - name: backstage   # the experiments kill portal pods; they are the one row that waits for it
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -68,7 +72,8 @@ spec:
   wait: true
 ---
 # crew#258 CP2: SigNoz, the one metrics/traces/logs store (crew/docs/STANDARDS.md "Observability").
-# Ordered after backstage so the portal keeps first claim on the single node's CPU.
+# Was ordered after backstage "so the portal keeps first claim on the single node's CPU" — the single
+# node is gone (4 OCPU shape, crew#289 CP3) and the edge held the whole store behind one portal rollout.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -85,7 +90,6 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
-    - name: backstage
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -327,7 +331,6 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
-    - name: backstage
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -372,7 +375,7 @@ metadata:
 spec:
   interval: 10m
   dependsOn:
-    - name: backstage
+    - name: scheduling
   sourceRef:
     kind: GitRepository
     name: flux-system
