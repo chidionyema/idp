@@ -149,6 +149,20 @@ spec:
                   spec:
                     initContainers:
                       - name: setup-venv
+                        # crew#539, 2026-08-28 (diagnose 33172481714): the chart's init runs
+                        # `cp -a "${SRC}/." /venv-writable/` and died on
+                        # `cp: preserving times for '/venv-writable/.': Operation not permitted`,
+                        # Init:CrashLoopBackOff for 5h. The copy itself succeeded; -a then sets
+                        # the times of the emptyDir root, which uid 1000 does not own (the kubelet
+                        # creates it root-owned with fsGroup 1000; utimes needs the owner or
+                        # CAP_FOWNER, and every capability is dropped). site-packages needs its
+                        # bytes, not its timestamps or ownership: same source, -R instead of -a.
+                        command:
+                          - sh
+                          - -c
+                          - >
+                            SRC="/venv/lib/python$(python -V | cut -d' ' -f2 | cut -d. -f1,2)/site-packages" &&
+                            cp -R "${SRC}/." /venv-writable/
                         resources:
                           requests: { cpu: 50m, memory: 128Mi }
                           limits: { cpu: 200m, memory: 256Mi }
