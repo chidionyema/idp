@@ -322,6 +322,7 @@ jobs:
     - --html
     - ~/.claude/state/founder-board.html
     cron: 43 0,2,4,6,8,10,12,14,16,18,20,22 * * *
+    ok_exit: [1]  # 1 = board built and a row is red; a finding, not a crash (2026-08-28: breaker open, row dark)
     cwd: '~'
     skip_on_battery: false
     timeout_s: 1800
@@ -400,6 +401,9 @@ jobs:
     cron: 35 0,2,4,6,8,10,12,14,16,18,20,22 * * *
     cwd: ~/.claude/scripts/estate
     skip_on_battery: false
+    ok_exit: [1]  # 1 = graded fine and found a load-bearing hole; a finding, not a crash (2026-08-28: breaker open, row dark)
+    env:
+      HC_FINDINGS_EXIT: "1"  # hc-wrap: liveness stays green, the finding fails ingit-findings
     timeout_s: 1800
   com.founder.lawenforcement:
     runs_on: mac
@@ -414,6 +418,9 @@ jobs:
     cron: 51 0,2,4,6,8,10,12,14,16,18,20,22 * * *
     cwd: $CODE/crew
     skip_on_battery: false
+    ok_exit: [1]  # 1 = graded fine and found a gap or a dead guard; a finding, not a crash (2026-08-28: breaker open, row dark)
+    env:
+      HC_FINDINGS_EXIT: "1"  # hc-wrap: liveness stays green, the finding fails lawenforcement-findings
     timeout_s: 1800
   com.founder.sciencecollect:
     runs_on: mac
