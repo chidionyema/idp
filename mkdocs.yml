@@ -11,6 +11,7 @@ nav:
       - architecture/index.md
       - Live estate: architecture/live.md
   - Estate showcase: SHOWCASE.md
+  - "Founder: shipped, changed for you, stuck": FOUNDER.md
   - Planned, blocking, when: NEXT.md
   - Decisions:
       - 0001 Gateway API is the routing standard: decisions/0001-gateway-api-is-the-routing-standard.md
@@ -84,6 +85,7 @@ nav:
       - Repo rulesets: demo/repo-rulesets.md
       - Telemetry coverage: demo/telemetry-coverage.md
       - Wake blocked: demo/wake-blocked.md
+      - Founder god's view: demo/estate-founder.md
   - Onboarding:
       - Trace matrix: onboarding/trace-matrix.md
       - Namespace fences: onboarding/ns-fence-gate.md
@@ -139,3 +141,4 @@ nav:
       - Telemetry coverage: onboarding/telemetry-coverage.md
       - Wake blocked: onboarding/wake-blocked.md
       - Scheduling immunity: onboarding/scheduling-immunity.md
+      - Founder god's view: onboarding/estate-founder.md
