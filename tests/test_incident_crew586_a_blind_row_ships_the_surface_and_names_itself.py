@@ -44,7 +44,7 @@ def test_every_surface_step_runs_on_a_receipt_and_blind_still_fails_the_job():
         assert step in text
     assert "steps.grade.outputs.rc != '2'" not in text
     assert "cancelled()" not in text, "a gate on a failed step's output is what run 33200707064 skipped"
-    assert text.count("if: ${{ steps.grade.outputs.rc != ''") >= 5
+    assert text.count("if: ${{ steps.grade.outputs.rc != ''") == 4  # collector, issues, founder line, page (OCI session precedes the grade)
 
 
 def test_founder_line_names_blind_rows_apart_from_red():
