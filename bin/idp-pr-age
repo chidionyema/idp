@@ -16,6 +16,7 @@ Age is measured against GitHub's clock (bin/lib/ledger_fresh.authority_now), nev
 With `--act` (crew#607 CP2/CP3) the table is acted on, never only printed: a `green` row gets
 `gh pr merge --auto --merge` so it merges the moment nothing holds it, and a row over the bound gets one
 `PR AGE:` comment on its own thread naming the reason (never repeated while the reason is unchanged).
+A red or conflicting row is made a draft at the bound and closed at six bounds (CP4, the red clock).
 
 Usage: bin/idp-pr-age [--repos idp,crew,claude-guards] [--act] [--json FILE ...]   (--json: test injection)
 """
@@ -84,6 +85,15 @@ def act(repo: str, n: int, age_h: float, why: str, max_h: float) -> str:
         return "auto-merge" if p.returncode == 0 else f"auto-merge-refused:{(p.stderr or p.stdout).strip()[:80]}"
     if age_h <= max_h:
         return "-"
+    if why.startswith("red:") or why == "conflict":
+        # CP4, the red clock: a red PR is a draft at the bound and closed at six bounds (24h on the
+        # founder's 4). The branch stays; reopening is one click once it is green.
+        if age_h > 6 * max_h:
+            p = gh("pr", "close", str(n), "-R", slug, "--comment",
+                   f"PR AGE: closed at {age_h:.1f}h, still {why} (red clock: draft at {max_h:g}h, closed at "
+                   f"{6 * max_h:g}h; crew#607 CP4). Reopen when it is green.")
+            return "closed" if p.returncode == 0 else f"close-refused:{(p.stderr or p.stdout).strip()[:80]}"
+        gh("pr", "ready", str(n), "-R", slug, "--undo")
     line = f"PR AGE: {age_h:.1f}h open, reason: {why} (bound {max_h:g}h, founder 2026-08-28: 4 maximum; crew#607)"
     p = gh("pr", "view", str(n), "-R", slug, "--json", "comments", "-q", "[.comments[].body]|last // \"\"")
     if p.returncode == 0 and p.stdout.strip().startswith("PR AGE:") and f"reason: {why} " in p.stdout:

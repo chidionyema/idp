@@ -57,6 +57,18 @@ def test_a_row_over_the_bound_is_told_why_once(monkeypatch):
     assert mod.act("crew", 605, 7.2, "conflict", 4) == "commented", "a new reason is a new line"
 
 
+def test_the_red_clock_drafts_at_the_bound_and_closes_at_six(monkeypatch):
+    mod, rec = _wire(monkeypatch)
+    assert mod.act("crew", 605, 6.2, "red:review-gate", 4) == "commented"
+    assert ["pr", "ready", "605", "-R", "chidionyema/crew", "--undo"] in rec.calls, "drafted at the bound"
+    mod, rec = _wire(monkeypatch)
+    assert mod.act("idp", 623, 25.0, "conflict", 4) == "closed"
+    assert rec.calls[0][:3] == ["pr", "close", "623"] and "Reopen when it is green" in rec.calls[0][-1]
+    mod, rec = _wire(monkeypatch)
+    assert mod.act("idp", 641, 25.0, "blocked-by-policy", 4) == "commented", "only red rows are on the clock"
+    assert not any(c[1] in ("close", "ready") for c in rec.calls)
+
+
 def test_a_young_red_row_is_left_alone(monkeypatch):
     mod, rec = _wire(monkeypatch)
     assert mod.act("idp", 648, 1.0, "pending:hydrate", 4) == "-"
