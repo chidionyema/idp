@@ -147,3 +147,25 @@ spec:
                       - name: runner
                         readinessProbe: { httpGet: { path: /healthz, port: 5000 }, periodSeconds: 15 }
                         livenessProbe: { httpGet: { path: /healthz, port: 5000 }, initialDelaySeconds: 60, periodSeconds: 30, failureThreshold: 5 }
+                        # crew#539, 2026-08-28: chart 0.48.0 marks three secret references
+                        # `optional: true`, and `no-optional-secret-references` (the 2026-08-24
+                        # incident written as a rule) refuses every one. Admission denied the
+                        # upgrade, the release went Failed, and Flux could not remediate it
+                        # ("missing target release for rollback"), which held monitoring and
+                        # monitoring-rules down. The rule is right, so nothing is excused here:
+                        # the two secrets the chart itself renders are declared required, and
+                        # the third is not a secret at all.
+                        envFrom:
+                          - secretRef: { name: robusta-runner-secret }
+                    volumes:
+                      # The chart renders robusta-playbooks-config-secret, so it is required.
+                      - name: playbooks-config-secret
+                        secret: { secretName: robusta-playbooks-config-secret, optional: null }
+                      # robusta-auth-config-secret is rendered by nothing in this estate and
+                      # created by nothing: the Robusta UI is off (enableHolmesGPT false, the
+                      # only sink is telegram). Today the kubelet mounts an empty directory at
+                      # /etc/robusta/auth because the reference is optional; an emptyDir mounts
+                      # the same empty directory, and refers to no secret to be optional about.
+                      - name: auth-config-secret
+                        secret: null
+                        emptyDir: {}

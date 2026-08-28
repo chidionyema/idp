@@ -52,3 +52,5 @@ platform/**/backend_override.tf
 platform/oci/identity/backend_override.tf
 platform/oci/identity/.terraform*
 platform/oci/identity/*.tfstate*
+
+# CI checks prospector's ClusterPolicies out here so idp-kyverno-render judges all 26 (crew#539).
