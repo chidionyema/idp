@@ -95,8 +95,10 @@ spec:
 
                   def main():
                       repo, workflows = os.environ["GITHUB_REPO"], os.environ["WORKFLOWS"].split()
-                      app_id, inst = os.environ["GITHUB_APP_ID"], os.environ["GITHUB_APP_INSTALLATION_ID"]
-                      pem = open(os.environ["GITHUB_APP_KEY_FILE"], "rb").read()
+                      d = os.environ["GITHUB_APP_DIR"]
+                      app_id = open(os.path.join(d, "githubAppID")).read().strip()
+                      inst = open(os.path.join(d, "githubAppInstallationID")).read().strip()
+                      pem = open(os.path.join(d, "githubAppPrivateKey"), "rb").read()
                       at = datetime.now(timezone.utc)
                       stamp = at.strftime("%Y-%m-%dT%H:%M:%SZ")
                       code, tok = call("POST", f"/app/installations/{inst}/access_tokens", app_jwt(app_id, pem), {"permissions": PERMISSIONS})
@@ -128,11 +130,9 @@ spec:
                 - { name: HOME, value: /tmp }
                 - { name: GITHUB_REPO, value: "${ESTATE_GITHUB_REPO}" }
                 - { name: WORKFLOWS, value: "login-drill.yml trace-drill.yml verify-drill.yml stale.yml" }
-                - { name: GITHUB_APP_KEY_FILE, value: /var/run/github-app/githubAppPrivateKey }
-                - name: GITHUB_APP_ID
-                  valueFrom: { secretKeyRef: { name: github-app, key: githubAppID } }
-                - name: GITHUB_APP_INSTALLATION_ID
-                  valueFrom: { secretKeyRef: { name: github-app, key: githubAppInstallationID } }
+                # kyverno secrets-not-from-env-vars: the App's id, installation id and key are files
+                # from the mounted Secret, never env values (offline-gate refused the secretKeyRef form).
+                - { name: GITHUB_APP_DIR, value: /var/run/github-app }
               resources:
                 requests: { cpu: 50m, memory: 128Mi }
                 limits: { cpu: 200m, memory: 256Mi }
@@ -146,4 +146,4 @@ spec:
           volumes:
             - { name: tmp, emptyDir: {} }
             - name: github-app
-              secret: { secretName: github-app, items: [{ key: githubAppPrivateKey, path: githubAppPrivateKey }] }
+              secret: { secretName: github-app, defaultMode: 256 }

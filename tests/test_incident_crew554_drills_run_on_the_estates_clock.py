@@ -56,9 +56,11 @@ def test_dispatcher_is_a_restricted_hourly_cronjob_on_the_pinned_image() -> None
     sc = c["securityContext"]
     assert sc["readOnlyRootFilesystem"] and sc["capabilities"] == {"drop": ["ALL"]} and not sc["allowPrivilegeEscalation"]
     assert c["image"] in (ROOT / "platform/chaos/backstage-pod-kill.yaml").read_text(), "one pinned image for every estate CronJob"
-    refs = {e["valueFrom"]["secretKeyRef"]["name"] for e in c["env"] if "valueFrom" in e}
+    assert not any("valueFrom" in e for e in c["env"]), "kyverno secrets-not-from-env-vars: the App identity is files, never env"
     vols = {v["secret"]["secretName"] for v in pod["volumes"] if "secret" in v}
-    assert refs == vols == {"github-app"}
+    assert vols == {"github-app"}
+    env = {e["name"]: e["value"] for e in c["env"]}
+    assert env["GITHUB_APP_DIR"] in {vm["mountPath"] for vm in c["volumeMounts"] if vm["name"] == "github-app"}
     es = [d for d in yaml.safe_load_all((ROOT / "platform/alerts-github/github-app.yaml").read_text()) if d][0]
     assert es["spec"]["target"]["name"] == "github-app" and es["metadata"]["namespace"] == "flux-system"
     assert "drill-dispatcher.yaml" in (ROOT / "platform/drills/kustomization.yaml").read_text()
