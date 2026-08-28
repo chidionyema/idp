@@ -31,7 +31,20 @@ pb_diagnose() {
   # the HelmRelease line for langfuse-web three times and never why).
   show stalled-deployments $K get deploy -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Progressing")]}{.status}{"\t"}{end}{.metadata.namespace}/{.metadata.name}{"\t"}{.status.readyReplicas}/{.spec.replicas}{"\t"}{range .status.conditions[?(@.type=="Progressing")]}{.reason}: {.message}{end}{"\n"}{end}'
   show pods-not-running $K get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded -o wide
-  show warnings $K get events -A --field-selector type=Warning --sort-by=.lastTimestamp
+  # Run 33138549588 named the stalled ReplicaSet and stopped: the pod was Running, so the reason
+  # (a readiness probe, a crash, a mount) was only in its events and log. Every pod that is
+  # Running but not Ready is described and its last log lines printed; for pods that ended in
+  # Failed (a CronJob erroring every tick) the newest one per namespace is read the same way.
+  local unready failed
+  unready=$($K get pods -A -o jsonpath='{range .items[?(@.status.phase=="Running")]}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{" "}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null | awk '$1=="False"{print $2" "$3}')
+  failed=$($K get pods -A --field-selector=status.phase=Failed --sort-by=.metadata.creationTimestamp -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null | awk '{last[$1]=$2} END{for (ns in last) print ns" "last[ns]}')
+  local ns name
+  printf '%s\n%s\n' "$unready" "$failed" | while read -r ns name; do
+    [ -n "$name" ] || continue
+    show "pod $ns/$name" sh -c "$K describe pod $name -n $ns | sed -n '/^Containers:/,\$p' | grep -E 'State|Reason|Exit Code|Ready|Message|Warning|Normal|Liveness|Readiness|Back-off|Failed|Error' | tail -25"
+    show "log $ns/$name" $K logs "$name" -n "$ns" --all-containers --tail=30 --prefix
+  done
+  show warnings sh -c "$K get events -A --field-selector type=Warning --sort-by=.lastTimestamp | tail -60"
   $K get nodes >/dev/null || FAILED="$FAILED nodes"
 }
 

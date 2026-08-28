@@ -175,3 +175,28 @@ def test_helm_retry_resets_only_failed_releases_then_refreshes_observability(tmp
     ], "a Ready release is left alone; every Failed one is reset"
     assert calls.index(resets[-1]) < calls.index("flux reconcile kustomization observability -n flux-system --timeout=5m")
     assert [c for c in calls if MUTATING.match(c) and "reconcile" not in c] == [], "helm-retry only reconciles"
+
+
+def test_diagnose_describes_and_logs_every_unready_and_failed_pod_and_reads_the_newest_warnings(tmp_path):
+    # run 33138549588: langfuse-web's new ReplicaSet "timed out progressing", pod Running, reason never printed;
+    # 21 descheduler pods in Error; the warnings row showed the oldest 60 events (sorted ascending, head)
+    bin_dir, log = _fake_path(tmp_path)
+    k = bin_dir / "kubectl"
+    k.write_text(
+        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
+        "case \"$*\" in\n"
+        "  *'phase==\"Running\"'*) printf 'False observability langfuse-web-1\\nTrue observability langfuse-worker-1\\n';;\n"
+        "  *status.phase=Failed*) printf 'healing descheduler-old\\nhealing descheduler-new\\n';;\n"
+        "  *) echo ok;;\nesac\n"
+    )
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "diagnose"], capture_output=True, text=True, env=env)
+    calls = log.read_text().splitlines()
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert any("describe pod langfuse-web-1 -n observability" in c for c in calls)
+    assert any(c.endswith("logs langfuse-web-1 -n observability --all-containers --tail=30 --prefix") for c in calls)
+    assert not any("langfuse-worker-1" in c for c in calls), "a Ready pod is not described"
+    assert any("describe pod descheduler-new -n healing" in c for c in calls)
+    assert not any("descheduler-old" in c for c in calls), "only the newest Failed pod per namespace"
+    assert "--sort-by=.lastTimestamp | tail -60" in PLAYBOOK.read_text()
+    assert [c for c in calls if MUTATING.match(c)] == []
