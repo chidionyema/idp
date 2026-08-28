@@ -17,7 +17,7 @@ set -uo pipefail
 repo="${1:-${IDP_REPO:-chidionyema/idp}}"
 week=$((7 * 86400))
 runs=$(gh run list --repo "$repo" --workflow ci --event pull_request --status success \
-         --json createdAt,updatedAt --limit 500 2>/dev/null) || { echo "BLIND loop-meter: gh cannot list ci runs for $repo"; exit 2; }
+         --json createdAt,updatedAt --limit 1000 2>/dev/null) || { echo "BLIND loop-meter: gh cannot list ci runs for $repo"; exit 2; }
 [ -n "$runs" ] && [ "$runs" != "null" ] || { echo "BLIND loop-meter: gh returned no runs for $repo"; exit 2; }
 read -r this_n this_med last_n last_med < <(printf '%s' "$runs" | python3 -c '
 import json, sys, statistics
