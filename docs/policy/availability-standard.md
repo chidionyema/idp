@@ -21,6 +21,12 @@ An HTTPRoute is the definition of founder-facing: if a route reaches it, it is g
 | 3 | replicas kept off one node: a required `podAntiAffinity` or a `DoNotSchedule` `topologySpreadConstraint` on `kubernetes.io/hostname` | two replicas on one node are one replica; `ScheduleAnyway` collapses onto one node exactly when the cluster is tight, which is the moment the spread was for |
 | 4 | a `readinessProbe` and a `livenessProbe` | a rollout with no readiness gate takes the last healthy pod down before the new one serves |
 
+The blast radius is the namespace, not the one pod a route points at. `mcp.${ESTATE_ZONE}` graded
+green on its gateway while `estate-mcp` and `github-mcp` -- the servers that gateway proxies to --
+each ran a single pod, so the surface still died with a node. Every Deployment sharing a namespace
+with a routed surface is graded. StatefulSets are not: a database here is one instance by design,
+which is stated below rather than hidden.
+
 A Helm-backed surface is graded on the values this repository sets, because a chart's default is
 not a decision anyone here made -- oauth2-proxy 10.7.0 defaults to `replicaCount: 1`.
 
