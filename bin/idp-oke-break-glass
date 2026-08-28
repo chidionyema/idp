@@ -17,17 +17,18 @@ step() { local name="$1"; shift; local out rc; out=$("$@" 2>&1); rc=$?
   [ $rc -eq 0 ] || { FAILED="$FAILED $name"; printf '%s\n' "$out" | tail -6 | sed 's/^/      | /'; }; return $rc; }
 show() { local name="$1"; shift; echo "--- $name"; "$@" 2>&1 | head -60; }
 
-# dns_probe <pod-name> <nodeName-or-empty> <fqdn>: one busybox nslookup, pinned to a node when one
-# is named, shaped like every platform workload so kyverno admits it (see the comment above
-# pb_cilium_unchain). Prints the pod's phase and its answer, then removes it.
+# dns_probe <pod-name> <nodeName-or-empty> <fqdn> [namespace]: one busybox nslookup, pinned to a
+# node when one is named, run in kube-system unless a namespace is given (dns-per-namespace asks
+# from inside the failing namespace), shaped like every platform workload so kyverno admits it
+# (see the comment above pb_cilium_unchain). Prints the pod's phase and its answer, then removes it.
 dns_probe() {
-  local name="$1" node="$2" fqdn="$3" pin=""
+  local name="$1" node="$2" fqdn="$3" ns="${4:-kube-system}" pin=""
   [ -n "$node" ] && pin="  nodeName: $node"
-  step "$name-clear" $K delete pod/"$name" -n kube-system --ignore-not-found --wait=true --timeout=60s
+  step "$name-clear" $K delete pod/"$name" -n "$ns" --ignore-not-found --wait=true --timeout=60s
   step "$name-apply" $K apply -f - <<YAML
 apiVersion: v1
 kind: Pod
-metadata: { name: $name, namespace: kube-system, labels: { app: dns-probe, crew: "539" } }
+metadata: { name: $name, namespace: $ns, labels: { app: dns-probe, crew: "539" } }
 spec:
   restartPolicy: Never
   priorityClassName: system-cluster-critical
@@ -43,9 +44,9 @@ $pin
       livenessProbe: { exec: { command: ["true"] } }
       securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
 YAML
-  step "$name-answers" $K wait pod/"$name" -n kube-system --for=jsonpath='{.status.phase}'=Succeeded --timeout=120s
-  step "$name-log" $K logs pod/"$name" -n kube-system
-  step "$name-remove" $K delete pod/"$name" -n kube-system --ignore-not-found --wait=false
+  step "$name-answers" $K wait pod/"$name" -n "$ns" --for=jsonpath='{.status.phase}'=Succeeded --timeout=120s
+  step "$name-log" $K logs pod/"$name" -n "$ns"
+  step "$name-remove" $K delete pod/"$name" -n "$ns" --ignore-not-found --wait=false
 }
 
 # dns-per-node: run 33140351385 (diagnose at b4f7bec) showed clickhouse failing on
@@ -168,6 +169,30 @@ YAML
   show kustomizations $K get kustomizations -A
 }
 
+# dns-per-namespace: run 33141542523 (dns-per-node at 421fe6d) resolved an in-cluster and an
+# external name from every node, so the DNS plane is sound; yet clickhouse still logged
+# "ZooKeeper host signoz-zookeeper-0.signoz-zookeeper-headless:2181 ... Temporary DNS error" and
+# coredns answered NXDOMAIN to that pod for chi-signoz-clickhouse-cluster-0-0.observability.svc,
+# a per-replica Service the operator should hold. The names that fail are the namespace's own
+# headless Services, which resolve only while their pods are ready. For every namespace holding a
+# Ready=False HelmRelease: list its Services and EndpointSlices, resolve every headless Service
+# from a probe pod INSIDE that namespace (its policies, its search path), then grep coredns for
+# that namespace's names that did not answer NOERROR.
+pb_dns_per_namespace() {
+  local namespaces ns name i=0
+  namespaces=$($K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{" "}{.metadata.namespace}{"\n"}{end}' 2>/dev/null | awk '$1=="False"{print $2}' | sort -u)
+  echo "--- namespaces-not-ready"; printf '%s\n' "${namespaces:-none}"
+  for ns in $namespaces; do
+    echo "--- namespace $ns"
+    show "$ns-services" $K get svc,endpointslices -n "$ns"
+    for name in $($K get svc -n "$ns" -o jsonpath='{range .items[?(@.spec.clusterIP=="None")]}{.metadata.name}{" "}{end}'); do
+      i=$((i+1))
+      dns_probe "dns-probe-ns-$i" '' "$name.$ns.svc.cluster.local" "$ns"
+    done
+    show "$ns-coredns-log" sh -c "$K logs -n kube-system -l k8s-app=kube-dns --tail=2000 2>&1 | grep -F '.$ns.svc.' | grep -v NOERROR | tail -40"
+  done
+}
+
 # helm-retry: a HelmRelease that failed during an outage stays Failed after the outage ends,
 # because helm-controller spends its remediation retries once and then waits for a spec change
 # (langfuse: "Deployment/observability/langfuse-web status: Failed" 31h after the Cilium chain).
@@ -189,12 +214,13 @@ pb_helm_retry() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose cilium-unchain helm-retry dns-per-node"; exit 0 ;;
+  --list) echo "diagnose cilium-unchain helm-retry dns-per-node dns-per-namespace"; exit 0 ;;
   diagnose) pb_diagnose ;;
   dns-per-node) pb_dns_per_node ;;
+  dns-per-namespace) pb_dns_per_namespace ;;
   cilium-unchain) pb_cilium_unchain ;;
   helm-retry) pb_helm_retry ;;
-  *) echo "usage: $0 <diagnose|cilium-unchain|helm-retry>"; exit 64 ;;
+  *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
 esac
 [ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }
 echo "FAIL  break-glass $1 broken:$FAILED"; exit 1
