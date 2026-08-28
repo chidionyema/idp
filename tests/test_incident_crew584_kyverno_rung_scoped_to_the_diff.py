@@ -85,3 +85,11 @@ def test_ci_hands_the_base_ref_to_the_rung_on_pull_requests_only() -> None:
     wf = (ROOT / ".github/workflows/ci.yml").read_text()
     assert "IDP_CI_BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}" in wf
     assert "with: { fetch-depth: 0 }" in wf.split("offline-gate:")[1].split("bin/idp-ci")[0]
+
+
+def test_ci_cancels_only_a_pull_requests_own_obsolete_run_never_main() -> None:
+    """20 of the last 40 main runs were cancelled by the next merge (gh run list --branch main --limit 40,
+    2026-08-28): those commits never got a verdict. A PR push still cancels its own obsolete run."""
+    wf = (ROOT / ".github/workflows/ci.yml").read_text()
+    assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in wf
+    assert "cancel-in-progress: true" not in wf.split("jobs:")[0]
