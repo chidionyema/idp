@@ -160,7 +160,10 @@ case "$MODE" in
     bg_revoke() {
       export OKE_ALLOWED_CIDRS="$ORIG_CIDRS"
       step revoke-login "$IDP/bin/idp-oci-login"
-      step revoke-apply tofu apply -auto-approve "${TFVARS[@]}"
+      # guard-before-every-apply (test_incident_vault_recreated_after_state_loss); a refusal here
+      # is printed, never obeyed: the original list goes back whatever the plan says
+      step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" || echo "      | revoke: the guard refused; the original list is applied regardless"
+      step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
       rm -f "$KUBECONFIG"
       echo "ok    break-glass        runner $EGRESS/32 removed from control_plane_allowed_cidrs (trap)"
     }
@@ -168,7 +171,7 @@ case "$MODE" in
     export OKE_ALLOWED_CIDRS="$ORIG_CIDRS, \"$EGRESS/32\""
     step admit-login "$IDP/bin/idp-oci-login"
     step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" || { echo "exit 3: recreate-guard refused; import the live resource"; exit 3; }
-    step admit-apply tofu apply -auto-approve "${TFVARS[@]}"
+    step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
     CID=$(tofu output -raw cluster_id 2>/dev/null); [ -n "$CID" ] || { blind kubeconfig "no cluster_id output"; exit 2; }
     step kubeconfig "$IDP/bin/idp-cloud" cluster kubeconfig "$CID" --file "$KUBECONFIG" --region "$OCI_REGION"
     step api-answers kubectl --request-timeout=30s get --raw /version
