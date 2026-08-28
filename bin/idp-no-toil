@@ -86,7 +86,7 @@ out=$(conftest test --parser json -p "$POLICY" "${inputs[@]}" 2>&1); rc=$?
 # Strip the temp prefix so the FAIL line names the real path, and print the offending lines
 # beside it: the message is the founder's sentence verbatim, so the location has to come from
 # here or the author is told what is wrong without being told where.
-printf '%s\n' "$out" | grep -E 'FAIL|Policy Violation' | sed "s|$docs/||; s|\.json - main - | - |" | sed "s|$work/PR-body.json|PR body|"
+printf '%s\n' "$out" | grep -E 'FAIL|Policy Violation' | sed "s|$docs/||; s|\.json - main - | - |; s|$work/PR-body|PR body|"
 if [ "$rc" -ne 0 ]; then
   echo "--- the lines that tripped it ---"
   for f in "${files[@]:-}"; do
