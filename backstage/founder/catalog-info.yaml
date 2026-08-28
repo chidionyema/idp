@@ -220,6 +220,15 @@ metadata:
     - title: "Tracked item crew#403"
       url: "https://github.com/chidionyema/crew/issues/403"
       icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: founder-mcp-gateway
   title: "MCP gateway (tools for every agent session)"
   description: "The one MCP row (crew#458): agentgateway on the cluster fronting the GitHub MCP server, behind the estate login and a per-session API key. A session points its MCP url at /github/mcp here instead of a container on the founder Mac."
