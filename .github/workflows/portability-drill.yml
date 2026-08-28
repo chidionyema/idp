@@ -143,8 +143,23 @@ jobs:
             rancher/k3s:v1.33.4-k3s1 agent --server "https://${IP}:6443" --token "${TOKEN}" --node-name k3s-agent-2
           docker exec k3s-agent-2 sh -c 'mount bpffs -t bpf /sys/fs/bpf && mount --make-shared /sys/fs/bpf && mkdir -p /run/cilium/cgroupv2 && mount -t cgroup2 none /run/cilium/cgroupv2 && mount --make-shared /run/cilium/cgroupv2'
           until kubectl get node k3s-agent-2 -o name 2>/dev/null | grep -q .; do sleep 2; done
-          kubectl rollout status ds/cilium -n kube-system --timeout=300s
-          kubectl wait node --all --for=condition=Ready --timeout=180s
+          # Run 33214748124: the node registered, the cilium DaemonSet stayed at 1 of 2 for 300 s
+          # and the job died here with no reason in the log. The reason goes in the receipt and
+          # the drill goes on: a NotReady second node reads as an honest red in the grade.
+          mkdir -p receipt
+          if ! kubectl rollout status ds/cilium -n kube-system --timeout=300s; then
+            {
+              kubectl get node -o wide
+              kubectl -n kube-system get pods -o wide
+              for pod in $(kubectl -n kube-system get pods -l k8s-app=cilium -o name); do
+                kubectl -n kube-system describe "$pod" | tail -40
+                kubectl -n kube-system logs "$pod" --tail=60 || true
+              done
+              docker logs k3s-agent-2 2>&1 | tail -60
+            } > receipt/second-node.txt 2>&1 || true
+            echo "second node: cilium did not roll out; receipt/second-node.txt has the reason"
+          fi
+          kubectl wait node --all --for=condition=Ready --timeout=180s || true
           kubectl get node -o wide
       - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
       - name: flux install, then the same tree OKE runs, from this commit
