@@ -192,15 +192,32 @@ pb_diagnose() {
     [ -n "$name" ] || continue
     show "pod $ns/$name" sh -c "$K describe pod $name -n $ns | sed -n '/^Node:/p;/^Containers:/,\$p' | grep -E '^Node:|State|Reason|Exit Code|Ready|Message|Warning|Normal|Liveness|Readiness|Back-off|Failed|Error' | tail -25"
     show "log $ns/$name" $K logs "$name" -n "$ns" --all-containers --tail=30 --prefix
+    # crew#570 CP1, proved 2026-08-28T12:46Z (run 33172282641). A crash-looping container is
+    # BETWEEN attempts for most of any window this runs in, so the current log is empty and the
+    # words that name the fault exist only in the previous attempt. The robusta init crash-loop
+    # held six Flux kustomizations not-Ready for hours, and the one line of cause --
+    #   cp: preserving times for '/venv-writable/.': Operation not permitted
+    # -- was never once printed by the tail above. --previous exits nonzero when there is no
+    # previous attempt, which is the ordinary case here and is not an error.
+    show "log-previous $ns/$name" sh -c "$K logs '$name' -n '$ns' --all-containers --previous --tail=30 --prefix 2>&1 | tail -30"
   done
   # crew#539, 2026-08-28 (run 33169347978): robusta-runner sat in Init:CrashLoopBackOff for 4h in
   # phase Pending, so the branch above (Running, not Ready) never tailed it and the run listed the
   # pod without a word from it. A pod whose init container crashes is Pending, and its init log is
   # the only line that says why; --all-containers includes init containers.
+  local pending
   pending=$($K get pods -A --field-selector=status.phase=Pending -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null)
   while read -r ns name; do
     [ -n "$name" ] || continue
+    # The restart count and the reason live in the pod's events, not in either log: it was
+    # `Back-off restarting failed container setup-venv ... (x7 over 5m44s)` that said the init
+    # container was looping rather than merely slow to start.
+    show "pod $ns/$name" sh -c "$K describe pod $name -n $ns | sed -n '/^Node:/p;/^Containers:/,\$p' | grep -E '^Node:|State|Reason|Exit Code|Ready|Message|Warning|Normal|Liveness|Readiness|Back-off|Failed|Error' | tail -25"
     show "init-log $ns/$name" $K logs "$name" -n "$ns" --all-containers --tail=30 --prefix
+    # An init container that crash-loops is the case this block was written for, and it is exactly
+    # the case whose current log is empty between attempts. Without this line the block reports a
+    # Pending pod and says nothing about why (crew#570 CP1).
+    show "init-log-previous $ns/$name" sh -c "$K logs '$name' -n '$ns' --all-containers --previous --tail=30 --prefix 2>&1 | tail -30"
   done <<<"$pending"
   # langfuse-web could not reach langfuse-postgresql:5432 while the postgres pod was Running: a
   # Service with no ready address is the difference, and it is only visible on the Endpoints.
