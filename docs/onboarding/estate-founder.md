@@ -10,7 +10,7 @@ Open the portal, catalogue, **Founder: what shipped, what changed for you, what 
 
 Every merged pull request must carry a `Use:` line in its body when it changes something the founder touches (the handoff shape in `~/AGENTS.md`). That line is what the page shows him; a pull request without one shows him nothing, deliberately. Write `Use: nothing` when that is honest.
 
-A checkpoint that needs the founder must say so in its text with one of the words the page looks for: confirm, receipt, opens, closes, replies, picks, decision. That is how the checkpoint reaches his stuck list.
+A checkpoint that waits on the founder says so in its text with one of the words the page looks for: confirm, receipt, opens, closes, replies, picks, decision. That is how the checkpoint reaches his stuck list.
 
 ## Extending it
 
