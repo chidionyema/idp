@@ -98,10 +98,13 @@ def expected_firings(cron, end, hours=24):
 
 
 def scheduled_firings(wf, since):
-    """Scheduled runs of one workflow that started in the last 24h, from gh; None if gh failed."""
+    """Firings of one workflow in the last 24h: GitHub's own schedule, plus workflow_dispatch by the
+    estate's GitHub App (platform/drills/drill-dispatcher.yaml, crew#554 CP3) -- the App only
+    dispatches when GitHub's cron did not, so the two never double-count an hour. A human dispatch
+    is a hand, not a clock, and does not count. Returns (fired, by_app); None if gh failed."""
     try:
-        r = gh(["run", "list", "--workflow", wf, "--event", "schedule", "--limit", "300",
-                "--json", "createdAt"])
+        r = gh(["run", "list", "--workflow", wf, "--limit", "300",
+                "--json", "createdAt,event,actor"])
     except subprocess.TimeoutExpired:
         return None
     if r.returncode != 0:
@@ -110,7 +113,18 @@ def scheduled_firings(wf, since):
         runs = json.loads(r.stdout or "[]")
     except json.JSONDecodeError:
         return None
-    return sum(1 for x in runs if x.get("createdAt", "") >= since)
+    fired, by_app = 0, 0
+    for x in runs:
+        if x.get("createdAt", "") < since:
+            continue
+        ev = x.get("event")
+        if ev == "schedule":
+            fired += 1
+        elif ev == "workflow_dispatch" and str((x.get("actor") or {}).get("login", "")).endswith("[bot]"):
+            fired += 1
+            by_app += 1
+    return fired, by_app
+
 
 now = datetime.now(timezone.utc)
 graded, stale, pending = 0, [], 0
@@ -176,17 +190,20 @@ for d in entries:
     want = expected_firings(cron, now)
     if want == 0:
         continue
-    got = scheduled_firings(wf, since)
-    seen[wf] = (got, want)
-    if got is None:
+    counted = scheduled_firings(wf, since)
+    seen[wf] = (counted, want)
+    if counted is None:
         stale.append("schedule:" + wf)
-        row("FAIL", "%-22s %s scheduled runs in 24h could not be listed (cron %s)" % ("schedule", wf, cron))
-    elif got < 0.8 * want:
+        row("FAIL", "%-22s %s runs in 24h could not be listed (cron %s)" % ("schedule", wf, cron))
+        continue
+    got, by_app = counted
+    how = "cron %s, %d dispatched by the App" % (cron, by_app)
+    if got < 0.8 * want:
         stale.append("schedule:" + wf)
-        row("FAIL", "%-22s %s fired %d of %d promised in 24h (cron %s) -- GitHub is dropping the schedule, crew#554"
-            % ("schedule", wf, got, want, cron))
+        row("FAIL", "%-22s %s fired %d of %d promised in 24h (%s) -- GitHub dropped the schedule and the dispatcher did not cover it, crew#554"
+            % ("schedule", wf, got, want, how))
     else:
-        row("ok", "%-22s %s fired %d of %d promised in 24h (cron %s)" % ("schedule", wf, got, want, cron))
+        row("ok", "%-22s %s fired %d of %d promised in 24h (%s)" % ("schedule", wf, got, want, how))
 
 tail = " (%d pending)" % pending if pending else ""
 dead = [x for x in stale if x.startswith("schedule:")]

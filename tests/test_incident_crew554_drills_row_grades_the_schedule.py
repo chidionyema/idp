@@ -35,24 +35,25 @@ def test_expected_firings_match_the_cron_promise() -> None:
     assert ns["expected_firings"]("not a cron", end) == 0
 
 
-def _fake_gh(b: Path, sched_runs: int, now: datetime) -> None:
-    runs = [{"createdAt": now.strftime("%Y-%m-%dT%H:%M:%SZ")} for _ in range(sched_runs)]
+def _fake_gh(b: Path, runs_spec: list, now: datetime) -> None:
+    ts = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    runs = [{"createdAt": ts, "event": ev, "actor": {"login": who}} for ev, who in runs_spec]
     (b / "gh").write_text(
         "#!/usr/bin/env python3\n"
         "import sys, json\n"
         "a = sys.argv[1:]\n"
         "if a[:2] == ['auth', 'status']: sys.exit(0)\n"
-        "if '--event' in a: print(json.dumps(%s)); sys.exit(0)\n"
-        "print(json.dumps([{'updatedAt': '%s'}]))\n" % (json.dumps(runs), now.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        "if a and 'event' in a[-1]: print(json.dumps(%s)); sys.exit(0)\n"
+        "print(json.dumps([{'updatedAt': '%s'}]))\n" % (json.dumps(runs), ts)
     )
     (b / "gh").chmod((b / "gh").stat().st_mode | stat.S_IEXEC)
 
 
-def _estate(tmp: Path, sched_runs: int) -> tuple[Path, Path]:
+def _estate(tmp: Path, sched_runs: int, dispatched: list | None = None) -> tuple[Path, Path]:
     now = datetime.now(timezone.utc)
     b = tmp / "bin"
     b.mkdir()
-    _fake_gh(b, sched_runs, now)
+    _fake_gh(b, [("schedule", "github-actions[bot]")] * sched_runs + (dispatched or []), now)
     wfd = tmp / ".github" / "workflows"
     wfd.mkdir(parents=True)
     (wfd / "login-drill.yml").write_text("name: login-drill\n")
@@ -79,3 +80,18 @@ def test_a_cron_that_fired_every_hour_is_green(tmp_path: Path) -> None:
     r = _run(tmp_path, b, cat)
     assert "ok        drills    schedule               login-drill.yml fired 24 of 24 promised" in r.stdout, r.stdout + r.stderr
     assert r.returncode == 0 and "1/1 schedules alive" in r.stdout
+
+
+def test_the_apps_dispatches_count_as_firings(tmp_path: Path) -> None:
+    """crew#554 CP3 hands the clock to drill-dispatcher; the row must read its work as alive."""
+    b, cat = _estate(tmp_path, 2, [("workflow_dispatch", "idp-estate[bot]")] * 22)
+    r = _run(tmp_path, b, cat)
+    assert "ok        drills    schedule               login-drill.yml fired 24 of 24 promised" in r.stdout, r.stdout
+    assert "22 dispatched by the App" in r.stdout and r.returncode == 0
+
+
+def test_a_persons_dispatches_are_a_hand_not_a_clock(tmp_path: Path) -> None:
+    b, cat = _estate(tmp_path, 2, [("workflow_dispatch", "chidionyema")] * 22 + [("push", "chidionyema")] * 5)
+    r = _run(tmp_path, b, cat)
+    assert "FAIL      drills    schedule               login-drill.yml fired 2 of 24 promised" in r.stdout, r.stdout
+    assert "0 dispatched by the App" in r.stdout and r.returncode == 1
