@@ -23,6 +23,14 @@ The rules this file holds:
      indented `policy ... failed` lines under it.
   4. `ok` verdicts are dropped. Twenty-four clean dirs must not bury the failing one.
   5. The block is tail-capped, so a judge that floods cannot flood the receipt.
+  6. The cap never eats a `FAIL` line and never truncates in silence. Rules 1-5 shipped with
+     `| tail -40` over the whole block, and every test above has exactly one failing dir, so the
+     cap never bit. `bin/idp-kyverno-render $dirs` judges ~25 dirs in one run: with two failing
+     dirs at 25 policy lines each, the last 40 of 52 lines contain the second dir's header and
+     none of the first's, and the block opens mid-stream on an indented policy line with no dir
+     above it and no note that 12 lines were cut -- the operator reads one failing dir where
+     there are two. That is rule 1 defeated by a threshold instead of by a grep. A Kyverno policy
+     bump fails many dirs at once, which is when the cap fires, so this is the ordinary case.
 
 The block is not copied here. It is read out of bin/idp-ci at the line where the
 kyverno rung decides a non-zero rc, and executed, so a change to that file is graded
@@ -111,3 +119,54 @@ def test_the_rung_that_calls_this_arm_is_the_one_that_captured_the_judge():
     """The arm is reached from the real capture, not from a branch nothing runs."""
     src = CI.read_text()
     assert 'kyv=$( (cd "$IDP" && bin/idp-kyverno-render $dirs) 2>&1 ); kyv_rc=$?' in src
+
+
+# ---------------------------------------------------------------------------
+# Rule 6. crew#292, 2026-08-28.
+# ---------------------------------------------------------------------------
+
+
+def _two_failing_dirs(policy_lines=25):
+    """What a policy bump looks like: two dirs refused, each with its own policy list."""
+    out = ["ok    render   external-dns (edge, 0 patches): pass: 32, fail: 0"]
+    for d in ("platform/state", "platform/litellm"):
+        out.append(f"FAIL  plain    {d}: pass: 30, fail: {policy_lines}")
+        out += [f"      policy rule-{i} -> {d.split('/')[1]} failed" for i in range(policy_lines)]
+    return "\n".join(out)
+
+
+def test_the_cap_never_eats_a_failing_dir():
+    """The regression: `| tail -40` kept zero lines naming the first dir."""
+    out = run(_two_failing_dirs())
+    assert "platform/state" in out, out
+    assert "platform/litellm" in out, out
+
+
+def test_a_capped_block_names_every_failing_dir_before_it_drops_anything():
+    """The `FAIL` lines are the index into the failure, so they come first and uncapped."""
+    out = run(_two_failing_dirs())
+    body = [ln.strip() for ln in out.splitlines() if ln != HEAD and ln.strip()]
+    heads = [i for i, ln in enumerate(body) if ln.startswith("FAIL  plain")]
+    assert len(heads) == 2, body[:6]
+    assert heads == [0, 1], "a dropped line came before a dir header; the index is not first"
+
+
+def test_the_cap_says_how_many_lines_it_dropped():
+    """A silent truncation reads as `that was all of it`. 52 in, 40 out, 12 named."""
+    out = run(_two_failing_dirs())
+    assert "12 of 52 lines dropped by the cap" in out, out
+    assert "2 dir(s) failed" in out, out
+
+
+def test_a_block_that_fits_is_not_annotated_at_all():
+    """Under the cap nothing is added: the 24-clean-dirs and tool-error cases are untouched."""
+    out = run("FAIL  plain    platform/state: pass: 30, fail: 1\n      policy x -> y failed")
+    assert "dropped by the cap" not in out, out
+    body = [ln for ln in out.splitlines() if ln != HEAD and ln.strip()]
+    assert len(body) == 2, body
+
+
+def test_the_capped_block_is_still_one_screen():
+    """Rule 5 is not traded away to buy rule 6: the total is still 40 lines."""
+    body = [ln for ln in run(_two_failing_dirs()).splitlines() if ln != HEAD and ln.strip()]
+    assert len(body) == 40, len(body)

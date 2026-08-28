@@ -42,7 +42,16 @@ def test_flux_row_substitutes_the_zone_and_waits_on_both_releases():
     subs = row["spec"]["postBuild"]["substituteFrom"]
     assert {"kind": "ConfigMap", "name": "estate-config"} in subs
     deps = {d["name"] for d in row["spec"]["dependsOn"]}
-    assert {"edge", "secret-store", "robusta"} <= deps, deps
+    # crew#573: this line read `{"edge", "secret-store", "robusta"} <= deps` and it held the estate
+    # blind. It encoded "robusta is wired in" as a Flux dependency, but the wiring is the webhook
+    # receiver in alertmanager-config.yaml, which test_alertmanager_routes_to_telegram... below
+    # asserts directly. As a `dependsOn` it only meant "no Prometheus unless robusta is healthy":
+    # robusta's HelmRelease went Failed, this row never became Ready, and oke-check 33172282641
+    # found 0 kps- pods in the cluster while hindsight-api crash-looped 13h unremarked.
+    assert {"edge", "secret-store"} <= deps, deps
+    assert "robusta" not in deps, (
+        "robusta consumes this row's alerts; it is never a prerequisite for them (crew#573)"
+    )
     hc = {(h["kind"], h["name"], h["namespace"]) for h in row["spec"]["healthChecks"]}
     assert hc == {("HelmRelease", "kube-prometheus-stack", "monitoring"), ("HelmRelease", "blackbox", "monitoring")}
     kz = yaml.safe_load((MON / "kustomization.yaml").read_text())
