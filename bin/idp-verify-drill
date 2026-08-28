@@ -97,6 +97,19 @@ case "$line" in
   *)      bl receipt "$(printf '%s' "$line" | sed -E 's/^BLIND +cluster-state +//')";;
 esac
 
+# --- drills: the scheduled drills actually fired (crew#292 CP2). bin/idp-drills-row grades the
+# last successful run of every workflow in drills/catalogue.yaml against its max_age_hours. It
+# used to live only inside bin/idp-verify, which no workflow runs and which exits before the row
+# whenever Backstage is not on 7107 - so nothing scheduled had ever printed it. Here it runs
+# hourly on the machine identity; exit 1 = a drill is stale or never ran, 2 = cannot ask GitHub.
+drills_out=$("$(dirname "$0")/idp-drills-row" "$IDP/drills/catalogue.yaml" "$IDP" 2>&1); drills_rc=$?
+printf '%s\n' "$drills_out"
+case "$drills_rc" in
+  0) say ok drills "every catalogued drill ran inside its window";;
+  1) fail drills "a catalogued drill is stale or never ran (rows above)";;
+  *) bl drills "cannot ask GitHub for drill runs (rows above)";;
+esac
+
 if [ "$red" -gt 0 ]; then say FAIL verify-drill "$red row(s) red, $blind blind"; exit 1; fi
 if [ "$blind" -gt 0 ]; then say BLIND verify-drill "$blind row(s) not measured"; exit 2; fi
-say ok verify-drill "4/4 rows green on the machine identity"
+say ok verify-drill "5/5 rows green on the machine identity"
