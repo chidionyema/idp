@@ -518,3 +518,206 @@ def test_chi_resize_is_listed_and_wired():
     assert "chi-resize" in subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
     wf = (PLAYBOOK.parent.parent / ".github" / "workflows" / "oke-check.yml").read_text()
     assert "chi-resize" in wf
+
+
+import json
+
+
+def _preflight_kubectl(bin_dir: Path, log: Path, tmp_path: Path, pods_json: dict, pdb_json: dict, nodes_json: dict) -> None:
+    # run 33147195670 shape: three sick pods on .221, one Ready peer; the JSON answers drive drain_preflight
+    for name, doc in (("pods", pods_json), ("pdb", pdb_json), ("nodes", nodes_json)):
+        (tmp_path / f"{name}.json").write_text(json.dumps(doc))
+    (bin_dir / "kubectl").write_text(
+        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
+        "case \"$*\" in\n"
+        "  *'get pods -A -o jsonpath'*) printf '10.0.148.221 observability/chi-0 Running false \\n10.0.159.197 a/ok Running true \\n';;\n"
+        "  *'get nodes -o jsonpath'*) printf '10.0.148.221 True \\n10.0.159.197 True \\n';;\n"
+        f"  *'get pods -A -o json'*) cat '{tmp_path}/pods.json';;\n"
+        f"  *'get pdb -A -o json'*) cat '{tmp_path}/pdb.json';;\n"
+        f"  *'get nodes -o json'*) cat '{tmp_path}/nodes.json';;\n"
+        "  *'-l app.kubernetes.io/name=alertmanager'*) printf '';;\n"   # no monitoring stack unless a test adds one
+        "  *) cat >/dev/null 2>&1; echo ok;;\nesac\n"
+    )
+
+
+def _pod(ns, name, node, cpu="100m", mem="256Mi", labels=None, daemonset=False, phase="Running"):
+    p = {"metadata": {"namespace": ns, "name": name, "labels": labels or {}},
+         "spec": {"nodeName": node, "containers": [{"name": "c", "resources": {"requests": {"cpu": cpu, "memory": mem}}}]},
+         "status": {"phase": phase}}
+    if daemonset:
+        p["metadata"]["ownerReferences"] = [{"kind": "DaemonSet", "name": "ds"}]
+    return p
+
+
+def _nodes(peer_cpu="2", peer_mem="8Gi"):
+    return {"items": [
+        {"metadata": {"name": "10.0.148.221"}, "spec": {}, "status": {"allocatable": {"cpu": "2", "memory": "8Gi"}, "conditions": [{"type": "Ready", "status": "True"}]}},
+        {"metadata": {"name": "10.0.159.197"}, "spec": {}, "status": {"allocatable": {"cpu": peer_cpu, "memory": peer_mem}, "conditions": [{"type": "Ready", "status": "True"}]}},
+    ]}
+
+
+def _run_drain(tmp_path, pods, pdbs, nodes):
+    bin_dir, log = _fake_path(tmp_path)
+    _preflight_kubectl(bin_dir, log, tmp_path, {"items": pods}, {"items": pdbs}, nodes)
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
+    return p, log.read_text().splitlines()
+
+
+def test_node_drain_refuses_when_a_pdb_at_zero_covers_a_pod_on_the_node(tmp_path):
+    # run 33147195670: `ok cordon` then 10 minutes on chi-signoz-clickhouse-cluster-0-0-0, whose single-
+    # replica PDB allows 0 disruptions; the cordon was the outage. Now refused before the cordon.
+    pods = [_pod("observability", "chi-0", "10.0.148.221", labels={"clickhouse.altinity.com/chi": "signoz-clickhouse"}),
+            _pod("a", "ok", "10.0.159.197")]
+    pdbs = [{"metadata": {"namespace": "observability", "name": "signoz-clickhouse"},
+             "spec": {"selector": {"matchLabels": {"clickhouse.altinity.com/chi": "signoz-clickhouse"}}},
+             "status": {"disruptionsAllowed": 0}}]
+    p, calls = _run_drain(tmp_path, pods, pdbs, _nodes())
+    assert p.returncode == 1, p.stdout + p.stderr
+    assert "PodDisruptionBudget observability/signoz-clickhouse allows 0 disruptions and covers observability/chi-0" in p.stdout, p.stdout
+    assert not any("cordon" in c or "drain" in c for c in calls), calls
+
+
+def test_node_drain_refuses_when_the_other_nodes_cannot_hold_what_leaves(tmp_path):
+    # run 33147195670: langfuse-postgresql-0 and backstage/catalogue left .221 as Pending on <none>
+    pods = [_pod("observability", "chi-0", "10.0.148.221", cpu="1", mem="4Gi"),
+            _pod("observability", "postgres", "10.0.148.221", cpu="500m", mem="1Gi"),
+            _pod("a", "busy", "10.0.159.197", cpu="1500m", mem="6Gi")]
+    p, calls = _run_drain(tmp_path, pods, [], _nodes(peer_cpu="2", peer_mem="8Gi"))   # peer free: 0.5 cpu / 2Gi; leaving needs 1.5 / 5Gi
+    assert p.returncode == 1, p.stdout + p.stderr
+    assert "would leave as Pending; refusing" in p.stdout and "request cpu 1.50 / memory 5.00Gi" in p.stdout, p.stdout
+    assert not any("cordon" in c or "drain" in c for c in calls), calls
+
+
+def test_node_drain_proceeds_when_pdbs_allow_and_the_peer_has_room_and_daemonsets_do_not_count(tmp_path):
+    pods = [_pod("observability", "chi-0", "10.0.148.221", cpu="1", mem="4Gi", labels={"app": "ch"}),
+            _pod("kube-system", "flannel", "10.0.148.221", cpu="1", mem="4Gi", daemonset=True),      # stays; would break the sum if counted
+            _pod("healing", "done", "10.0.148.221", cpu="1", mem="4Gi", phase="Succeeded"),          # finished; not moved
+            _pod("a", "ok", "10.0.159.197", cpu="500m", mem="2Gi")]
+    pdbs = [{"metadata": {"namespace": "observability", "name": "ch"}, "spec": {"selector": {"matchLabels": {"app": "ch"}}}, "status": {"disruptionsAllowed": 1}}]
+    p, calls = _run_drain(tmp_path, pods, pdbs, _nodes(peer_cpu="2", peer_mem="8Gi"))   # peer free 1.5 / 6Gi ≥ 1 / 4Gi
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "ok    preflight" in p.stdout and "1 pod(s) leaving" in p.stdout, p.stdout
+    assert any(c.endswith("cordon 10.0.148.221") for c in calls) and any("drain 10.0.148.221" in c for c in calls), calls
+
+
+def test_chi_resize_waits_for_the_operator_to_carry_the_patch_before_waiting_on_the_roll(tmp_path):
+    # run 33148549633: the CHI patch landed and `rollout status` answered "complete" in the same
+    # second against the OLD StatefulSet — the Altinity operator reconciles CHI -> sts asynchronously
+    # — so chi-after printed 2Gi at sts and pod and the run still PASSed. The reconcile is waited on
+    # with kubectl's own --for=jsonpath before the roll, and the order is the guard.
+    bin_dir, log = _fake_path(tmp_path)
+    _chi_kubectl(bin_dir, log, "clickhouse:\\n  resources:\\n    requests: {cpu: 1000m, memory: 4Gi}\\n    limits: {cpu: 1000m, memory: 4Gi}\\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "chi-resize"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    calls = log.read_text().splitlines()
+    wait = [i for i, c in enumerate(calls) if "wait sts -n observability -l clickhouse.altinity.com/chi=signoz-clickhouse" in c
+            and "--for=jsonpath={.spec.template.spec.containers[0].resources.limits.memory}=4Gi" in c and "--timeout=600s" in c]
+    patch = [i for i, c in enumerate(calls) if "patch chi signoz-clickhouse" in c]
+    roll = [i for i, c in enumerate(calls) if "rollout status sts" in c]
+    assert wait and patch and roll, calls
+    assert patch[0] < wait[0] < roll[0], calls
+
+
+def test_node_drain_silences_alertmanager_for_the_window_and_expires_it_after(tmp_path):
+    # founder 2026-08-28 06:43Z: "lots of errors coming on telegram" during the 06:20-06:30Z cordon
+    # window (crew#539 5449358659). A planned drain opens an Alertmanager silence with amtool -- the
+    # Alertmanager's own client -- and expires it when the playbook ends, however the drain ended.
+    pods = [_pod("observability", "chi-0", "10.0.148.221", cpu="100m", mem="256Mi"), _pod("a", "ok", "10.0.159.197")]
+    bin_dir, log = _fake_path(tmp_path)
+    _preflight_kubectl(bin_dir, log, tmp_path, {"items": pods}, {"items": []}, _nodes())
+    (bin_dir / "kubectl").write_text((bin_dir / "kubectl").read_text().replace(
+        "  *'-l app.kubernetes.io/name=alertmanager'*) printf '';;",
+        "  *'-l app.kubernetes.io/name=alertmanager'*) printf alertmanager-0;;\n"
+        "  *'amtool'*'silence add'*) echo sil-4242;;\n"
+        "  *) cat >/dev/null 2>&1; echo ok;;"))
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    calls = log.read_text().splitlines()
+    add = [i for i, c in enumerate(calls) if "amtool" in c and "silence add namespace=observability" in c and "--duration=30m" in c]
+    cordon = [i for i, c in enumerate(calls) if c.endswith("cordon 10.0.148.221")]
+    expire = [i for i, c in enumerate(calls) if "silence expire sil-4242" in c]
+    assert add and cordon and expire, calls
+    assert add[0] < cordon[0] < expire[0], calls          # silence opens before the cordon, closes after the drain
+    assert "--- silence sil-4242" in p.stdout, p.stdout
+
+
+def test_node_drain_still_runs_when_there_is_no_alertmanager_to_silence(tmp_path):
+    # the silence is best-effort: a cluster without the monitoring stack must still be drainable
+    pods = [_pod("observability", "chi-0", "10.0.148.221", cpu="100m", mem="256Mi"), _pod("a", "ok", "10.0.159.197")]
+    p, calls = _run_drain(tmp_path, pods, [], _nodes())
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "not silencing" in p.stdout, p.stdout
+    assert any(c.endswith("cordon 10.0.148.221") for c in calls), calls
+
+
+def test_node_drain_refuses_a_zero_disruption_pdb_it_cannot_evaluate(tmp_path):
+    # 09cd04a6, idp#543 review 5449475253: a 0-disruption PDB selecting by matchExpressions read as
+    # an empty matchLabels dict, so nothing matched, RC was 0 and the node was cordoned -- the same
+    # silent pass that produced the 06:20Z outage. A selector this playbook cannot evaluate refuses.
+    pods = [_pod("observability", "chi-0", "10.0.148.221", labels={"clickhouse.altinity.com/chi": "signoz-clickhouse"}),
+            _pod("a", "ok", "10.0.159.197")]
+    pdbs = [{"metadata": {"namespace": "observability", "name": "by-expression"},
+             "spec": {"selector": {"matchExpressions": [
+                 {"key": "clickhouse.altinity.com/chi", "operator": "In", "values": ["signoz-clickhouse"]}]}},
+             "status": {"disruptionsAllowed": 0}}]
+    p, calls = _run_drain(tmp_path, pods, pdbs, _nodes())
+    assert p.returncode == 1, p.stdout + p.stderr
+    assert "observability/by-expression allows 0 disruptions and its selector is a matchExpressions" in p.stdout, p.stdout
+    assert not any("cordon" in c or "drain" in c for c in calls), calls
+
+
+def test_node_drain_ignores_an_unevaluable_pdb_in_a_namespace_with_nothing_leaving(tmp_path):
+    # ...and the control: refusing on EVERY unevaluable PDB anywhere would make the playbook
+    # unusable on a real cluster. Only a namespace that actually has pods leaving can block.
+    pods = [_pod("observability", "chi-0", "10.0.148.221", cpu="100m", mem="256Mi"), _pod("a", "ok", "10.0.159.197")]
+    pdbs = [{"metadata": {"namespace": "elsewhere", "name": "by-expression"},
+             "spec": {"selector": {"matchExpressions": [{"key": "app", "operator": "Exists"}]}},
+             "status": {"disruptionsAllowed": 0}}]
+    p, calls = _run_drain(tmp_path, pods, pdbs, _nodes())
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert any(c.endswith("cordon 10.0.148.221") for c in calls), calls
+
+
+def test_node_drain_refuses_when_no_single_node_can_hold_the_biggest_pod(tmp_path):
+    # 09cd04a6, idp#543 review 5449475253: the capacity check summed free space across peers, but
+    # the scheduler fits a pod on ONE node. A 4Gi pod leaving, two peers with 3Gi free each: the
+    # total said 6Gi and it passed and drained, and the pod had nowhere to land.
+    pods = [_pod("observability", "chi-0", "10.0.148.221", cpu="100m", mem="4Gi"),
+            _pod("a", "fills-1", "10.0.159.197", cpu="100m", mem="5Gi"),
+            _pod("a", "fills-2", "10.0.159.198", cpu="100m", mem="5Gi")]
+    nodes = {"items": [
+        {"metadata": {"name": "10.0.148.221"}, "spec": {}, "status": {"allocatable": {"cpu": "2", "memory": "8Gi"}, "conditions": [{"type": "Ready", "status": "True"}]}},
+        {"metadata": {"name": "10.0.159.197"}, "spec": {}, "status": {"allocatable": {"cpu": "2", "memory": "8Gi"}, "conditions": [{"type": "Ready", "status": "True"}]}},
+        {"metadata": {"name": "10.0.159.198"}, "spec": {}, "status": {"allocatable": {"cpu": "2", "memory": "8Gi"}, "conditions": [{"type": "Ready", "status": "True"}]}},
+    ]}
+    p, calls = _run_drain(tmp_path, pods, [], nodes)   # cluster total free 6Gi > 4Gi, but no single node has 4Gi
+    assert p.returncode == 1, p.stdout + p.stderr
+    assert "no single Ready node has room for it" in p.stdout and "observability/chi-0" in p.stdout, p.stdout
+    assert not any("cordon" in c or "drain" in c for c in calls), calls
+
+
+def test_node_drain_silences_every_namespace_that_loses_a_pod(tmp_path):
+    # the telegram route groups by [alertname, namespace] (platform/monitoring/alertmanager-config.yaml:30),
+    # so one silence per namespace losing a pod, and every id expired when the playbook ends.
+    pods = [_pod("observability", "chi-0", "10.0.148.221", cpu="100m", mem="256Mi"),
+            _pod("backstage", "catalogue-0", "10.0.148.221", cpu="100m", mem="256Mi"),
+            _pod("a", "ok", "10.0.159.197")]
+    bin_dir, log = _fake_path(tmp_path)
+    _preflight_kubectl(bin_dir, log, tmp_path, {"items": pods}, {"items": []}, _nodes())
+    (bin_dir / "kubectl").write_text((bin_dir / "kubectl").read_text().replace(
+        "  *'-l app.kubernetes.io/name=alertmanager'*) printf '';;",
+        "  *'-l app.kubernetes.io/name=alertmanager'*) printf alertmanager-0;;\n"
+        "  *'amtool'*'silence add namespace=backstage'*) echo sil-back;;\n"
+        "  *'amtool'*'silence add namespace=observability'*) echo sil-obs;;\n"
+        "  *) cat >/dev/null 2>&1; echo ok;;"))
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    calls = log.read_text().splitlines()
+    assert any("silence add namespace=backstage" in c for c in calls), calls
+    assert any("silence add namespace=observability" in c for c in calls), calls
+    assert any("silence expire sil-back" in c for c in calls) and any("silence expire sil-obs" in c for c in calls), calls
+    assert "namespaces=" not in p.stdout, p.stdout        # the machine line is not part of the human verdict
