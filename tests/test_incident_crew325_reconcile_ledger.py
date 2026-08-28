@@ -36,4 +36,13 @@ def test_the_dispatch_has_a_workflow_that_prints_it() -> None:
     # PyYAML reads the bare key `on` as boolean True.
     triggers = wf.get("on", wf.get(True))
     assert "repository_dispatch" in triggers, triggers
-    assert wf["permissions"] == {}, "the ledger run needs no token; anything more is a surface"
+    # crew#307, 2026-08-28: this workflow was a ledger -- it printed the reconcile and exited 0,
+    # so a red cluster produced a green run. Flux reported `Deployment/backstage/catalogue
+    # status: 'Failed'` every ten minutes from 2026-08-27 16:05 and nothing read it, and the
+    # founder's portal served a stale pod for seventeen hours. It is now an alarm: a red event
+    # opens a P0 issue and fails the run. An alarm that cannot open the issue is the ledger
+    # again, so `issues: write` is the job, not a surface. The scope is still the smallest that
+    # does it -- this asserts equality, so `actions: write`, `contents: write` or
+    # `pull-requests: write` still fail here.
+    assert wf["permissions"] == {"contents": "read", "issues": "write"}, (
+        "the alarm opens a P0 and nothing else: contents:read + issues:write exactly")
