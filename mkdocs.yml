@@ -7,6 +7,7 @@ plugins:
 nav:
   - Home: index.md
   - Definition of Done: reference/policy/definition-of-done.md
+  - Documentation policy: reference/policy/documentation.md
   - Architecture:
       - explanation/architecture/index.md
       - Live estate: explanation/architecture/live.md
@@ -37,6 +38,7 @@ nav:
       - reference/index.md
       - Oracle tenancy: reference/oci-tenancy.md
       - Security policy: reference/security-policy.md
+      - Laws and guards (generated): reference/laws-and-guards.md
       - EU AI Act: reference/eu-ai-act.md
   - AI systems:
       - ai-systems/index.md
