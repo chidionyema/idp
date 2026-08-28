@@ -37,6 +37,13 @@ if not entries:
     sys.exit(2)
 
 
+# How far a completed run's timestamp may sit ahead of this clock before the clock is the thing
+# that is wrong. `now` is sampled once at the top of the report and a run can conclude in the
+# seconds after that, so a small positive lead is ordinary; five minutes is far past ordinary and
+# well under the smallest max_age_hours in drills/catalogue.yaml.
+CLOCK_GRACE_H = 5.0 / 60.0
+
+
 def gh(args):
     return subprocess.run(["gh"] + args, cwd=root, capture_output=True, text=True, timeout=60)
 
@@ -226,6 +233,18 @@ for d in entries:
     ts = datetime.strptime(runs[0]["updatedAt"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     age = (now - ts).total_seconds() / 3600.0
     cap = float(d.get("max_age_hours", 26))
+    # A completed run cannot have finished after the clock that is reading it. When it looks that
+    # way the local clock is behind GitHub's, and `age > cap` is then false for every drill no
+    # matter how dead it is -- the report prints "last green -9599.0h ago (max 3h)" and exits 0.
+    # This is not hypothetical on this estate: a flat battery resets the Mac clock (the 1970
+    # timestamps of 2026-08-27), and every age computed against it is negative. Freshness that
+    # cannot be measured is BLIND, never green, and one skewed clock invalidates every age in the
+    # report, not only this row -- so this exits rather than failing one entry.
+    if age < -CLOCK_GRACE_H:
+        row("BLIND", "%-22s %s last green %s is %.1fh in the future -- this machine's clock is "
+                     "behind GitHub, so no drill age in this report can be trusted (fix the clock)"
+            % (label, wf, runs[0]["updatedAt"], -age))
+        sys.exit(2)
     if age > cap:
         stale.append(name)
         row("FAIL", "%-22s %s last green %.1fh ago, older than %gh (cron %s)"

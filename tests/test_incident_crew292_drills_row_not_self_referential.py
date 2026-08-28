@@ -11,6 +11,14 @@ successful run of verify-drill.yml has ever been recorded", failed the run, and 
 same answer an hour later. Nothing about the platform could open that loop; only this file could.
 
 Every test here drives the real script with a fake `gh` on PATH. No network socket is opened.
+
+2026-08-28, the same file again: a +400-day clock sweep over the suite printed
+`ok  drills  login-drill  login-drill.yml last green -9599.0h ago (max 3h)` and exit 0. The age is
+a subtraction of two clocks and only its upper bound was ever graded, so a machine whose clock sits
+behind GitHub's grades every drill fresh however dead it is -- and this estate has that machine: a
+flat battery resets the Mac clock, which is where the 1970 timestamps of 2026-08-27 came from. That
+is an allow-list with a silent miss case, in the one instrument that is supposed to notice silence.
+The last four tests hold the lower bound shut.
 """
 from __future__ import annotations
 
@@ -168,3 +176,58 @@ def test_freshness_is_the_age_of_a_completed_green_run(tmp_path: Path) -> None:
     r2 = _run(tmp_path / "b", b2, cat2, _in_ci())
     assert "login-drill.yml last green 9.0h ago, older than 3h" in r2.stdout, r2.stdout + r2.stderr
     assert r2.returncode == 1, r2.stdout
+
+
+def test_a_green_run_dated_after_this_clock_is_blind_never_fresh(tmp_path: Path) -> None:
+    """The defect. A completed run cannot conclude after the clock reading it; when it looks that
+    way the clock is wrong, and `age > cap` is false for every drill however dead. BLIND, not ok."""
+    now = datetime.now(timezone.utc)
+    ahead = (now + timedelta(hours=9)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    b, cat = _estate(tmp_path, [("login-drill.yml", 3)], {"login-drill.yml": ahead},
+                     {"login-drill.yml": _hourly(24, now)})
+    r = _run(tmp_path, b, cat)
+    assert "last green %s is 9.0h in the future" % ahead in r.stdout, r.stdout + r.stderr
+    assert r.stdout.startswith("BLIND"), r.stdout
+    assert "ok " not in r.stdout, r.stdout
+    assert r.returncode == 2, r.stdout
+
+
+def test_the_skew_verdict_names_the_clock_as_the_thing_to_fix(tmp_path: Path) -> None:
+    """A verdict nobody can act on is not an instrument (LAW 28). The row says which machine is
+    wrong and what to do, because the drill it is printed against is not the broken thing."""
+    now = datetime.now(timezone.utc)
+    ahead = (now + timedelta(hours=9)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    b, cat = _estate(tmp_path, [("login-drill.yml", 3)], {"login-drill.yml": ahead},
+                     {"login-drill.yml": _hourly(24, now)})
+    r = _run(tmp_path, b, cat)
+    assert "this machine's clock is behind GitHub" in r.stdout, r.stdout + r.stderr
+    assert "fix the clock" in r.stdout, r.stdout
+
+
+def test_a_run_concluding_seconds_after_the_clock_was_read_is_still_fresh(tmp_path: Path) -> None:
+    """The mirror, and the reason the bound is not zero: `now` is sampled once at the top of the
+    report, so a run that concludes in the seconds after it leads the clock quite honestly."""
+    now = datetime.now(timezone.utc)
+    lead = (now + timedelta(seconds=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    b, cat = _estate(tmp_path, [("login-drill.yml", 3)], {"login-drill.yml": lead},
+                     {"login-drill.yml": _hourly(24, now)})
+    r = _run(tmp_path, b, cat)
+    assert "in the future" not in r.stdout, r.stdout + r.stderr
+    assert "login-drill.yml last green" in r.stdout, r.stdout + r.stderr
+    assert r.returncode == 0, r.stdout
+
+
+def test_one_skewed_clock_stops_the_whole_report_not_just_its_own_row(tmp_path: Path) -> None:
+    """A wrong clock is wrong for every age in the report, so the report stops. Failing the one
+    entry would leave the other rows printed as verdicts computed against the same bad clock."""
+    now = datetime.now(timezone.utc)
+    ahead = (now + timedelta(hours=9)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ok = (now - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    b, cat = _estate(tmp_path, [("login-drill.yml", 3), ("verify-drill.yml", 3)],
+                     {"login-drill.yml": ahead, "verify-drill.yml": ok},
+                     {"login-drill.yml": _hourly(24, now), "verify-drill.yml": _hourly(24, now)})
+    r = _run(tmp_path, b, cat)
+    assert "in the future" in r.stdout, r.stdout + r.stderr
+    assert "verify-drill.yml last green" not in r.stdout, r.stdout
+    assert "green within window" not in r.stdout, r.stdout
+    assert r.returncode == 2, r.stdout
