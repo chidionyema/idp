@@ -7,7 +7,6 @@ kind: Kustomization
 namespace: scheduling
 resources:
   - namespace.yaml
-  - priorityclasses.yaml
   - balloon.yaml
   - require-priority-class.yaml
   - require-availability.yaml

@@ -32,6 +32,17 @@ it is (crew#488 CP5):
 Before CP5 the run `ok portability ready 2/38 (floor 2)` hid four root breaks behind thirty-two
 cascades (run 33208911991).
 
+## Why the drill clusters have two nodes
+
+The front door runs two traefik replicas spread across hostnames with `DoNotSchedule`
+(crew#555: a routed surface survives one node), and `require-availability` refuses a
+weaker spread. On one node the second pod never seats and `edge` reads ROOT-RED forever
+(runs 33212542369, 33212575403). So the k3d job passes `--agents 1` over
+`platform/k3d/estate.yaml` (which stays one node for the founder's 16 GB Mac) and the k3s
+job joins a second node from the `rancher/k3s` image over Docker. The PriorityClasses the
+front door names live in their own layer, `priority-classes`, that `edge` waits on; they
+used to sit in `scheduling`, which waits on `edge`, a deadlock on every fresh cluster.
+
 ## Grade it locally
 
 `bin/idp-portability-drill <kustomizations.json>` takes the JSON `kubectl get kustomizations -A -o json`
