@@ -55,10 +55,6 @@ NOT_YET_MIGRATED = {
     # here would have collided with work in flight. crew#583 CP2.
     "bin/idp-cluster-state",
     "bin/idp-telemetry-coverage",
-    # crew#583 CP4, and the one with teeth: a negative age passes its `age > max` STALE check, so a
-    # clock behind the receipt makes a stale receipt look fresh and the script then runs
-    # `oci ce node-pool delete-node` against a live node. Unowned.
-    "bin/idp-oke-surge-node",
     # Found by this guard rather than by the sweep that wrote it, which is the point of writing it:
     # hours_since() subtracts a GitHub timestamp from the local clock for every row of the founder's
     # report, and its `except ValueError: return 0.0` turns a stamp it cannot parse into "0 hours
