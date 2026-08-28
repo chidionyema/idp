@@ -221,6 +221,31 @@ data:
             return int(iv), iv   # a bare number carries no unit; the only one ESO accepts here is 0
         return 3600, iv          # unparseable, so grade it against ESO's own default interval
 
+    # crew#292: ESO's own not-ready message is "could not get secret data from provider" and
+    # nothing else. It names neither the store it asked nor the key it wanted, so a vault entry
+    # that was never seeded, a store that is unreachable and a property that is misspelled all
+    # read identically -- an instrument that destroys the cause of the failure it reports
+    # (LAW 28), which nobody can attribute from (LAW 29). tailscale/tailscale-operator-secret
+    # sat BLIND on that sentence in verify-drill 33176874659 while the real cause was three hops
+    # away: no SEED_TAILSCALE_OAUTH_* repository secret, so vault-seed.yml never wrote the
+    # `tailscale-operator` entry the ExternalSecret reads. The row now carries what it asked for.
+    def wanted_from(spec):
+        """Which store and which remote keys this ExternalSecret asked for, as one clause."""
+        spec = spec or {}
+        ref = spec.get("secretStoreRef") or {}
+        store = "{}/{}".format(ref.get("kind") or "SecretStore", ref.get("name") or "?")
+        keys = []
+        for d in spec.get("data") or []:
+            r = d.get("remoteRef") or {}
+            k = r.get("key") or "?"
+            keys.append("{}[{}]".format(k, r["property"]) if r.get("property") else k)
+        for d in spec.get("dataFrom") or []:
+            for r in (d.get("extract"), d.get("find")):
+                if isinstance(r, dict) and r.get("key"):
+                    keys.append(r["key"])
+        uniq = list(dict.fromkeys(keys))
+        return "wanted {} from {}".format(", ".join(uniq) or "no keys declared in spec", store)
+
     def stale_sync(spec, status, now):
         """The not-ready message for an ExternalSecret that stopped refreshing, else ""."""
         secs, iv = refresh_seconds(spec)
@@ -280,6 +305,12 @@ data:
                 if row["ready"] and stale:
                     row["ready"] = False
                     row["message"] = stale
+                if not row["ready"]:
+                    # Whatever made it not-ready -- ESO's own message, a stale sync, or no Ready
+                    # condition at all -- the row says which store and which keys it asked for,
+                    # so the reader can go straight to the entry instead of guessing.
+                    row["message"] = flux_message(
+                        "{}; {}".format(row["message"], wanted_from(o.get("spec"))))
             flux.append(row)
     flux_not_ready = [r for r in flux if not r["ready"]]
     # crew#483: the PolicyExceptions the cluster holds (kyverno.io/v2), name, namespace, policies
