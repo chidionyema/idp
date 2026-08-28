@@ -357,11 +357,12 @@ def test_probe_log_prints_every_target_line_not_only_the_last(tmp_path):
     assert "ok b.observability.svc.cluster.local:6379" in p.stdout, p.stdout
 
 
-def _node_drain_kubectl(bin_dir: Path, log: Path, pods: str) -> None:
+def _node_drain_kubectl(bin_dir: Path, log: Path, pods: str, nodes: str = "10.0.148.221 True \\n10.0.159.197 True \\n") -> None:
     (bin_dir / "kubectl").write_text(
         "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
         "case \"$*\" in\n"
         "  *'get pods -A -o jsonpath'*) printf '" + pods + "';;\n"
+        "  *'get nodes -o jsonpath'*) printf '" + nodes + "';;\n"
         "  *) cat >/dev/null 2>&1; echo ok;;\nesac\n"
     )
 
@@ -409,3 +410,40 @@ def test_node_uncordon_is_the_undo(tmp_path):
     p = subprocess.run([str(PLAYBOOK), "node-uncordon"], capture_output=True, text=True, env=env)
     assert p.returncode == 0, p.stdout + p.stderr
     assert "kubectl --request-timeout=60s uncordon 10.0.148.221" in log.read_text()
+
+
+def test_node_drain_never_picks_a_node_that_is_not_ready(tmp_path):
+    # a NotReady node carries every pod the scheduler gave up on; it is the cloud layer's to replace
+    bin_dir, log = _fake_path(tmp_path)
+    _node_drain_kubectl(bin_dir, log,
+        "10.0.1.1 a/x Running false \\n10.0.1.1 a/y Running false \\n10.0.1.1 a/z Pending \\n"
+        "10.0.148.221 observability/langfuse-web-a Running false \\n10.0.159.197 a/ok Running true \\n",
+        nodes="10.0.1.1 False \\n10.0.148.221 True \\n10.0.159.197 True \\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "--- target 10.0.148.221" in p.stdout, p.stdout
+    assert not any("10.0.1.1" in c for c in log.read_text().splitlines() if "cordon" in c or "drain" in c)
+
+
+def test_node_drain_refuses_the_only_ready_node(tmp_path):
+    bin_dir, log = _fake_path(tmp_path)
+    _node_drain_kubectl(bin_dir, log, "10.0.148.221 a/x Running false \\n",
+                        nodes="10.0.148.221 True \\n10.0.159.197 False \\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
+    assert p.returncode == 1 and "only Ready node; refusing" in p.stdout, p.stdout + p.stderr
+    assert not any(("cordon" in c or "drain" in c) for c in log.read_text().splitlines())
+
+
+def test_node_uncordon_uncordons_every_cordoned_node_and_nothing_else(tmp_path):
+    bin_dir, log = _fake_path(tmp_path)
+    (bin_dir / "kubectl").write_text(
+        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
+        "case \"$*\" in\n  *'get nodes -o jsonpath'*) printf '10.0.148.221 10.0.1.1 ';;\n  *) echo ok;;\nesac\n")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-uncordon"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    calls = [c for c in log.read_text().splitlines() if "uncordon" in c]
+    assert sorted(calls) == sorted(["kubectl --request-timeout=60s uncordon 10.0.148.221", "kubectl --request-timeout=60s uncordon 10.0.1.1"]), calls
+    assert not any("drain" in c or " cordon " in c for c in log.read_text().splitlines())

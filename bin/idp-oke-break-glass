@@ -278,13 +278,20 @@ sick_pods() {
   $K get pods -A -o jsonpath='{range .items[*]}{.spec.nodeName}{" "}{.metadata.namespace}{"/"}{.metadata.name}{" "}{.status.phase}{" "}{range .status.containerStatuses[*]}{.ready}{" "}{end}{"\n"}{end}' 2>/dev/null \
     | awk '$1!="" && $3!="Succeeded" && ($3!="Running" || $4=="false")'
 }
-pick_sick_node() { sick_pods | awk '{n[$1]++} END{for(k in n) print n[k], k}' | sort -rn | head -1 | awk '{print $2}'; }
+ready_nodes() { $K get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{"\n"}{end}' 2>/dev/null | awk '$2=="True"{print $1}'; }
+# the pick is among Ready nodes only: a NotReady node is the cloud layer's to replace, and draining
+# it would only evict pods the scheduler has already given up on
+pick_sick_node() { sick_pods | awk -v r="$(ready_nodes | tr '\n' ' ')" 'BEGIN{split(r,a," "); for(i in a) ok[a[i]]=1} ok[$1]{n[$1]++} END{for(k in n) print n[k], k}' | sort -rn | head -1 | awk '{print $2}'; }
 pb_node_drain() {
   show nodes-before $K get nodes -o wide
   show pods-not-ready-by-node sh -c "$(declare -f sick_pods); K='$K'; sick_pods | sort"
   local node; node=$(pick_sick_node)
-  [ -n "$node" ] || { echo "no pod outside Running/Succeeded: nothing to drain"; return 0; }
+  [ -n "$node" ] || { echo "no pod outside Running/Succeeded on a Ready node: nothing to drain"; return 0; }
   echo "--- target $node"
+  # refusing to drain the last Ready node: the workloads would have nowhere to go and the API's
+  # own pods (coredns, kube-proxy are DaemonSets, but the autoscaler and flux are not) would be evicted into Pending
+  local ready; ready=$(ready_nodes | wc -l | tr -d ' ')
+  [ "$ready" -gt 1 ] || { echo "FAIL  node-drain: $node is the only Ready node; refusing"; FAILED="$FAILED node-drain"; return 1; }
   step cordon $K cordon "$node"
   step drain $K drain "$node" --ignore-daemonsets --delete-emptydir-data --timeout=600s
   show nodes-after $K get nodes -o wide
