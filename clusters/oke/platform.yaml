@@ -661,3 +661,33 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
+---
+# crew#516 CP5, founder's locked spec (crew#66 5451926212, Phase 1): the Tailscale Kubernetes
+# operator, authenticated by the one OAuth client vault-seed.yml seeds (secret-store). Two designs
+# were tried and rejected before this one (5451614620/5451623095: a hand-pasted reusable auth key;
+# 5451900443 point 1: an interactive login URL) -- history left in git history, not repeated here.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: tailscale
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/tailscale
+  prune: true
+  dependsOn:
+    - name: secret-store
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: tailscale-operator
+      namespace: tailscale
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config

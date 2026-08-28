@@ -60,8 +60,21 @@ data:
       never: [icebox]
       checkouts: ..
       runtime: claude
+      # crew#516 CP5 (founder order 2026-08-28, crew#66 5451614620 + addendum, supersedes the
+      # operator/mac-egress design of the first CP5 pass, crew#66 5451452409): Otto stays in this
+      # pod (the single Telegram poller lock) and executes on the founder's Mac through mac-run
+      # (platform/hermes-agent/mac-run.yaml), an ssh wrapper that reaches the tailnet through this
+      # pod's own tailscale sidecar (tailscale.yaml). Authentication is Tailscale SSH by the Mac's
+      # tailnet node identity; no key of ours is generated, mounted or held (LAW 21, LAW 46).
+      # --allowedTools is unchanged: git and gh only, now run on the Mac instead of the container.
+      #
+      # Founder's own prompting shift (crew#66 5451614620) for whatever text drives this runtime:
+      # "Whenever you need to interact with the codebase, do not use local tools. Write your
+      # script, save it to a file, and execute it using mac-run 'cat script.sh | bash'." This repo
+      # (idp) does not carry hermes-v2's system prompt (SOUL.md, a separate repo) to place that
+      # sentence into — recorded here as Not done, with the follow-up path, rather than claimed.
       runtimes:
-        claude: [claude, -p, "{prompt}", --permission-mode, acceptEdits, --allowedTools, "Bash(git *) Bash(gh *)"]
+        claude: [mac-run, claude, -p, "{prompt}", --permission-mode, acceptEdits, --allowedTools, "Bash(git *) Bash(gh *)"]
         gemini: [gemini, -p, "{prompt}", --yolo]
         opencode: [opencode, run, "{prompt}"]
         codex: [codex, exec, --full-auto, "{prompt}"]

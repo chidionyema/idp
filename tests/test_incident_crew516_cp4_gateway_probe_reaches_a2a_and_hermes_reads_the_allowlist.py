@@ -36,7 +36,10 @@ def test_a2a_token_is_generated_in_cluster_and_projected_into_the_env_dir():
     (env_vol,) = [v for v in spec["volumes"] if v["name"] == "env"]
     names = [s["secret"]["name"] for s in env_vol["projected"]["sources"]]
     assert names == ["hermes-agent-env", "hermes-agent-a2a"]
-    (c,) = spec["containers"]
+    # crew#516 CP5 added a `tailscale` sidecar (platform/hermes-agent/tailscale.yaml,
+    # tests/test_incident_crew516_otto_hands_on_the_mac.py); this test is about the `gateway`
+    # container specifically, so name it rather than assume the pod holds exactly one container.
+    (c,) = [c for c in spec["containers"] if c["name"] == "gateway"]
     env = {e["name"]: e.get("value") for e in c["env"]}
     assert env["A2A_HOST"] == "0.0.0.0" and env["HERMES_ENV_DIR"] == "/run/secrets/hermes-agent-env"
     (m,) = [m for m in c["volumeMounts"] if m["name"] == "env"]
