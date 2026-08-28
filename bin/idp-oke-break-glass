@@ -286,6 +286,85 @@ ready_nodes() { $K get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}
 # the pick is among Ready nodes only: a NotReady node is the cloud layer's to replace, and draining
 # it would only evict pods the scheduler has already given up on
 pick_sick_node() { sick_pods | awk -v r="$(ready_nodes | tr '\n' ' ')" 'BEGIN{split(r,a," "); for(i in a) ok[a[i]]=1} ok[$1]{n[$1]++} END{for(k in n) print n[k], k}' | sort -rn | head -1 | awk '{print $2}'; }
+# drain_preflight <node>: prints "ok preflight ..." and returns 0, or prints the FAIL lines and
+# returns 1. Two refusals: a PodDisruptionBudget with disruptionsAllowed 0 that covers a pod on the
+# node (kubectl drain would wait on it until its timeout), and the pods leaving the node asking for
+# more cpu or memory than the other Ready nodes have free (they would leave as Pending). DaemonSet
+# pods stay on the node and count for neither; mirror pods likewise.
+DRAIN_PREFLIGHT_PY=$(cat <<'PYEOF'
+import json, re, sys
+node = sys.argv[1]
+pods_j, pdb_j, nodes_j = sys.stdin.read().split("@@SEP@@\n")
+def load(t):
+    try: return json.loads(t).get("items", [])
+    except Exception: return []
+pods, pdbs, nodes = load(pods_j), load(pdb_j), load(nodes_j)
+def qty(v, kind):
+    if v is None: return 0.0
+    v = str(v)
+    m = re.fullmatch(r"([0-9.]+)([a-zA-Z]*)", v)
+    if not m: return 0.0
+    n, u = float(m.group(1)), m.group(2)
+    if kind == "cpu": return n / 1000 if u == "m" else n
+    mult = {"": 1, "Ki": 2**10, "Mi": 2**20, "Gi": 2**30, "Ti": 2**40, "k": 1e3, "M": 1e6, "G": 1e9, "T": 1e12}
+    return n * mult.get(u, 1)
+def stays(p):
+    owners = p.get("metadata", {}).get("ownerReferences") or []
+    return any(o.get("kind") == "DaemonSet" for o in owners) or "kubernetes.io/config.mirror" in (p.get("metadata", {}).get("annotations") or {})
+def req(p, kind):
+    return sum(qty((c.get("resources") or {}).get("requests", {}).get(kind), kind) for c in p.get("spec", {}).get("containers", []))
+def phase_counts(p): return p.get("status", {}).get("phase") in ("Succeeded", "Failed")
+leaving = [p for p in pods if p.get("spec", {}).get("nodeName") == node and not stays(p) and not phase_counts(p)]
+fail = []
+for b in pdbs:
+    st = b.get("status") or {}
+    if st.get("disruptionsAllowed", 1) != 0: continue
+    sel = (b.get("spec", {}).get("selector") or {}).get("matchLabels") or {}
+    ns = b["metadata"]["namespace"]
+    for p in leaving:
+        if p["metadata"]["namespace"] == ns and sel and all((p["metadata"].get("labels") or {}).get(k) == v for k, v in sel.items()):
+            fail.append(f"FAIL  node-drain: PodDisruptionBudget {ns}/{b['metadata']['name']} allows 0 disruptions and covers {ns}/{p['metadata']['name']}; drain would wait on it until timeout; refusing")
+need_cpu, need_mem = sum(req(p, "cpu") for p in leaving), sum(req(p, "memory") for p in leaving)
+free_cpu = free_mem = 0.0
+for n in nodes:
+    name = n["metadata"]["name"]
+    ready = any(c.get("type") == "Ready" and c.get("status") == "True" for c in n.get("status", {}).get("conditions", []))
+    if name == node or not ready or n.get("spec", {}).get("unschedulable"): continue
+    alloc = n.get("status", {}).get("allocatable") or {}
+    used_cpu = sum(req(p, "cpu") for p in pods if p.get("spec", {}).get("nodeName") == name and not phase_counts(p))
+    used_mem = sum(req(p, "memory") for p in pods if p.get("spec", {}).get("nodeName") == name and not phase_counts(p))
+    free_cpu += max(0.0, qty(alloc.get("cpu"), "cpu") - used_cpu)
+    free_mem += max(0.0, qty(alloc.get("memory"), "memory") - used_mem)
+gi = lambda b: f"{b/2**30:.2f}Gi"
+if need_cpu > free_cpu or need_mem > free_mem:
+    fail.append(f"FAIL  node-drain: {len(leaving)} pod(s) leaving {node} request cpu {need_cpu:.2f} / memory {gi(need_mem)}; the other Ready nodes have cpu {free_cpu:.2f} / memory {gi(free_mem)} free; they would leave as Pending; refusing")
+if fail:
+    print("\n".join(fail)); sys.exit(1)
+print(f"ok    preflight              {len(leaving)} pod(s) leaving need cpu {need_cpu:.2f} / memory {gi(need_mem)}, other Ready nodes have cpu {free_cpu:.2f} / memory {gi(free_mem)} free; no PodDisruptionBudget at 0 covers them")
+PYEOF
+)
+# alert_silence add|expire: founder 2026-08-28 06:43Z, "catalogue says no available server, lots of
+# errors coming on telegram" — the 06:36Z catalogue 503 was this playbook's own cordon window
+# (crew#539 5449358659). A planned drain pages the founder as if it were an outage, so the window
+# is silenced in Alertmanager and the silence is expired again when the playbook ends. amtool is
+# Alertmanager's own client and ships in its image (LAW 43): no alert state is hand-rolled here.
+AM_NS="${AM_NS:-monitoring}"
+alert_silence() {
+  local action="$1" arg="${2:-}" pod
+  pod=$($K get pods -n "$AM_NS" -l app.kubernetes.io/name=alertmanager -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+  [ -n "$pod" ] || { echo "no alertmanager pod in $AM_NS: not silencing"; return 0; }
+  case "$action" in
+    add)    $K exec -n "$AM_NS" "$pod" -c alertmanager -- amtool --alertmanager.url=http://localhost:9093 silence add "node=$arg" --duration=30m --comment="idp-oke-break-glass node-drain of $arg (crew#539)" 2>/dev/null | tail -1 ;;
+    expire) [ -n "$arg" ] && $K exec -n "$AM_NS" "$pod" -c alertmanager -- amtool --alertmanager.url=http://localhost:9093 silence expire "$arg" >/dev/null 2>&1 ;;
+  esac
+}
+
+drain_preflight() {
+  local node="$1"
+  { $K get pods -A -o json 2>/dev/null; echo '@@SEP@@'; $K get pdb -A -o json 2>/dev/null; echo '@@SEP@@'; $K get nodes -o json 2>/dev/null; } \
+    | python3 -c "$DRAIN_PREFLIGHT_PY" "$node"
+}
+
 pb_node_drain() {
   show nodes-before $K get nodes -o wide
   show pods-not-ready-by-node sh -c "$(declare -f sick_pods); K='$K'; sick_pods | sort"
@@ -296,8 +375,17 @@ pb_node_drain() {
   # own pods (coredns, kube-proxy are DaemonSets, but the autoscaler and flux are not) would be evicted into Pending
   local ready; ready=$(ready_nodes | wc -l | tr -d ' ')
   [ "$ready" -gt 1 ] || { echo "FAIL  node-drain: $node is the only Ready node; refusing"; FAILED="$FAILED node-drain"; return 1; }
+  # run 33147195670: cordon ok, then drain timed out after 10m on the single-replica clickhouse
+  # pod (its PodDisruptionBudget allows 0 disruptions) while langfuse-postgresql and the catalogue
+  # sat Pending on <none>: the other node had no room. The cordon itself was the outage. Both are
+  # knowable before anything is touched, so both are checked first and either refuses the drain.
+  local verdict; verdict=$(drain_preflight "$node") || { printf '%s\n' "$verdict"; FAILED="$FAILED node-drain"; return 1; }
+  printf '%s\n' "$verdict"
+  local silence; silence=$(alert_silence add "$node")
+  echo "--- silence ${silence:-none}"
   step cordon $K cordon "$node"
   step drain $K drain "$node" --ignore-daemonsets --delete-emptydir-data --timeout=600s
+  alert_silence expire "$silence"   # the window closes with the playbook, however the drain ended
   show nodes-after $K get nodes -o wide
   show pods-after $K get pods -A -o wide --field-selector=status.phase!=Succeeded
 }
@@ -327,12 +415,20 @@ pb_chi_resize() {
   want=$($K get configmap "${CHI_VALUES#*/}" -n "${CHI_VALUES%/*}" -o jsonpath='{.data.values\.yaml}' 2>/dev/null \
     | python3 -c 'import sys,json,yaml; r=(yaml.safe_load(sys.stdin) or {}).get("clickhouse",{}).get("resources"); print(json.dumps(r,separators=(",",":")) if r else "")')
   [ -n "$want" ] || { echo "FAIL  chi-resize: no clickhouse.resources in ConfigMap $CHI_VALUES"; FAILED="$FAILED chi-resize"; return 1; }
+  local want_mem
+  want_mem=$(printf %s "$want" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("limits",{}).get("memory",""))')
+  [ -n "$want_mem" ] || { echo "FAIL  chi-resize: the declared resources carry no limits.memory"; FAILED="$FAILED chi-resize"; return 1; }
   echo "--- want $want"
   show chi-before chi_links
   local row ns name
   for row in $($K get chi -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{" "}{end}' 2>/dev/null); do
     ns="${row%/*}"; name="${row#*/}"
     step "patch-$name" $K patch chi "$name" -n "$ns" --type=json -p "[{\"op\":\"replace\",\"path\":\"/spec/templates/podTemplates/0/spec/containers/0/resources\",\"value\":$want}]"
+    # run 33148549633: the patch landed on the CHI and `rollout status` answered "complete" in the
+    # same second -- against the OLD StatefulSet, because the Altinity operator reconciles
+    # CHI -> sts asynchronously. chi-after then printed 2Gi at sts and pod and the run still PASSed.
+    # Wait for the operator to carry the value onto the sts spec first; only then wait for the roll.
+    step "reconcile-$name" $K wait sts -n "$ns" -l "clickhouse.altinity.com/chi=$name" --for=jsonpath='{.spec.template.spec.containers[0].resources.limits.memory}'="$want_mem" --timeout=600s
     step "rollout-$name" $K rollout status sts -n "$ns" -l "clickhouse.altinity.com/chi=$name" --timeout=600s
   done
   show chi-after chi_links
