@@ -75,7 +75,7 @@ def test_unknown_playbook_is_refused_and_list_names_both(tmp_path):
     p, _ = _run("rm-rf-everything", tmp_path)
     assert p.returncode == 64
     listed = subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
-    assert listed == ["diagnose", "cilium-unchain"]
+    assert listed == ["diagnose", "cilium-unchain", "helm-retry"]
 
 
 def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
@@ -91,7 +91,7 @@ def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
 def test_workflow_offers_break_glass_with_a_named_playbook():
     wf = WORKFLOW.read_text()
     assert "surge-finish, break-glass]" in wf
-    assert "options: [diagnose, cilium-unchain]" in wf
+    assert "options: [diagnose, cilium-unchain, helm-retry]" in wf
     assert "BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}" in wf
 
 
@@ -147,3 +147,31 @@ def test_cilium_unchain_restarts_the_admission_webhooks_after_coredns_and_before
         joined.index("reconcile source git flux-system"),
     ]
     assert order == sorted(order), calls
+
+
+def test_diagnose_prints_why_a_deployment_stalled_not_only_that_it_did(tmp_path):
+    # run 33136391785: three lines said "Deployment/observability/langfuse-web status: Failed", none said why
+    p, calls = _run("diagnose", tmp_path)
+    assert p.returncode == 0
+    assert any("get deploy -A" in c and "Progressing" in c and ".reason" in c for c in calls)
+    assert any("get pods -A --field-selector=status.phase!=Running" in c for c in calls)
+
+
+def test_helm_retry_resets_only_failed_releases_then_refreshes_observability(tmp_path):
+    bin_dir, log = _fake_path(tmp_path)
+    k = bin_dir / "kubectl"
+    k.write_text(
+        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
+        "case \"$*\" in *helmreleases*jsonpath*) printf 'False observability langfuse\\nTrue observability signoz\\nFalse robusta robusta\\n';; *) echo ok;; esac\n"
+    )
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "helm-retry"], capture_output=True, text=True, env=env)
+    calls = log.read_text().splitlines()
+    assert p.returncode == 0, p.stdout + p.stderr
+    resets = [c for c in calls if c.startswith("flux reconcile helmrelease")]
+    assert resets == [
+        "flux reconcile helmrelease langfuse -n observability --reset --timeout=15m",
+        "flux reconcile helmrelease robusta -n robusta --reset --timeout=15m",
+    ], "a Ready release is left alone; every Failed one is reset"
+    assert calls.index(resets[-1]) < calls.index("flux reconcile kustomization observability -n flux-system --timeout=5m")
+    assert [c for c in calls if MUTATING.match(c) and "reconcile" not in c] == [], "helm-retry only reconciles"
