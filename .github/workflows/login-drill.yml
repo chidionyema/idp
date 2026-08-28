@@ -68,7 +68,7 @@ jobs:
         if: always()
         run: |
           line=$(grep -E '^(ok|FAIL) +login-drill' drill.out | tail -1 || true)
-          home=$(grep -E '^(home|paths) +login-drill' drill.out || true)
+          home=$(grep -E '^(home|loc|paths) +login-drill' drill.out || true)
           printf '### login-drill\n```\n%s\n%s\n```\n' "${home:-no home row}" "${line:-no verdict line: the drill died before printing one}" >> "$GITHUB_STEP_SUMMARY"
       - name: a failed drill is an open P0 on this repository, never a badge nobody reads
         if: failure()

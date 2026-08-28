@@ -292,6 +292,26 @@ with sync_playwright() as p:
             pass
     print(f"home    login-drill  {cards} surface cards drawn on /, "
           f"{n_surfaces} founder-surface entities in the catalogue, {expected} declared in the repository")
+    # A missing surface is one of two different outages and the founder cannot tell them apart from
+    # a count. Backstage keeps every configured location as a Location entity and hangs the read
+    # error off its status, so the catalogue itself says which: a location that is absent means the
+    # portal is running an image whose app-config never declared it; a location that is present and
+    # errored means the file behind it is not on disk -- the ConfigMap did not reach the mount.
+    # Printed before the FAIL so the row a session reads already names the layer (LAW 29).
+    if n_surfaces < expected:
+        try:
+            locs = page.request.get(f"{HOME}api/catalog/entities?filter=kind=location",
+                                    headers={"Authorization": f"Bearer {token}"})
+            for e in (locs.json() if locs.status == 200 else []):
+                tgt = e.get("spec", {}).get("target", "?")
+                errs = [i.get("error", {}).get("message", "")
+                        for i in e.get("status", {}).get("items", []) if i.get("level") == "error"]
+                print(f"loc     login-drill  {tgt}  {'; '.join(errs)[:180] or 'no error'}")
+            if locs.status != 200:
+                print(f"loc     login-drill  the locations filter answered {locs.status}")
+        except (PWError, ValueError) as e:
+            print(f"loc     login-drill  could not read the locations: {str(e)[:120]}")
+
     if n_surfaces < 0:
         fail("surfaces", f"the catalogue API would not answer the founder-surface filter: {surf_detail}")
     if n_surfaces < expected:
