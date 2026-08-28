@@ -180,7 +180,7 @@ jobs:
           git config user.name "conscience[bot]"; git config user.email "conscience@users.noreply.github.com"
           git add docs/CONSCIENCE.md docs/conscience-history.jsonl
           git diff --cached --quiet && { echo "page unchanged"; exit 0; }
-          score=$(python3 -c 'import json; r=json.load(open("reports/conscience.json"))["score"]; print(f"{r[\"green\"]}/{r[\"total\"]}")')
+          score=$(python3 -c 'import json; r=json.load(open("reports/conscience.json"))["score"]; print(str(r["green"]) + "/" + str(r["total"]))')
           git commit -q -m "docs(conscience): daily page, $score tenets green (crew#586 CP5)" -m "Author-session: com.estate.conscience"
           git push -q --force-with-lease origin "HEAD:refs/heads/$BRANCH"
           n=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
