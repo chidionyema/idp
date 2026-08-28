@@ -1,0 +1,40 @@
+# crew#539 CP12 correction (founder, 2026-08-28, twice: "are we getting hubble or not" -> yes).
+# idp#505 chained Cilium after OKE's flannel (generic-veth); idp#514 reverted it — the chain took
+# coredns down and Flux could not even fetch the revert (the CNI is the cluster's own choice,
+# never a Flux row). The supported shape, from Oracle's own tutorial, is Cilium REPLACING
+# flannel: https://docs.oracle.com/en/learn/oke-flannel-to-cilium-cni-plugin/index.html
+# (flannel's DaemonSet removed, Cilium becomes the CNI). OKE's Terraform provider has no
+# cni_type=CILIUM enum (6.29: OCI_VCN_IP_NATIVE, FLANNEL_OVERLAY), so the swap happens in-cluster
+# with these values, not at cluster-create time. Hubble metrics: docs.cilium.io/en/stable/observability/metrics/.
+#
+# A plain helm values file, deliberately NOT referenced by any kustomization: the CNI is applied
+# by hand (bin/idp-oke-break-glass playbook cilium-replace) or rehearsed in CI
+# (.github/workflows/portability-drill.yml, job k3s), never by helm-controller (idp#514). Rollback
+# is the cilium-unchain playbook plus the flannel DaemonSet manifest cilium-replace saves first.
+#
+# `helm install cilium oci://quay.io/cilium/charts/cilium --version 1.20.1 --namespace kube-system -f platform/cni/cilium-values.yaml`
+ipam:
+  mode: kubernetes
+kubeProxyReplacement: false
+operator:
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { cpu: 500m, memory: 512Mi }
+hubble:
+  enabled: true
+  relay:
+    enabled: true
+  metrics:
+    enabled:
+      - dns
+      - drop
+      - tcp
+      - flow
+      - port-distribution
+      - icmp
+    enableOpenMetrics: true
+    port: 9965
