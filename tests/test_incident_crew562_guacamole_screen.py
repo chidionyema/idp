@@ -74,3 +74,19 @@ def test_the_surface_is_behind_the_one_login_listed_and_probed():
     assert "- https://catalogue.${ESTATE_ZONE}/screen/" in probe
     flux = (ROOT / "clusters" / "oke" / "platform.yaml").read_text()
     assert "path: ./platform/guacamole" in flux
+
+
+def test_a_first_time_user_is_told_the_one_prerequisite_and_the_estate_measures_it():
+    """Founder, 2026-08-28: "how will a first time user know this" -- the card says it, the probe measures it."""
+    card = next(d for d in yaml.safe_load_all((ROOT / "backstage" / "founder" / "catalog-info.yaml").read_text())
+                if d and d["metadata"]["name"] == "founder-screen")
+    assert "System Settings > General > Sharing > Screen Sharing" in card["metadata"]["description"]
+    probe = next(d for d in yaml.safe_load_all((ROOT / "platform" / "monitoring" / "rules" / "founder-mac-screen-sharing-probe.yaml").read_text()) if d)
+    assert probe["spec"]["module"] == "mac_screen_sharing"
+    assert probe["spec"]["targets"]["staticConfig"]["static"] == ["founder-mac-vnc.guacamole.svc.cluster.local:5900"]
+    bb = (ROOT / "platform" / "monitoring" / "blackbox.yaml").read_text()
+    assert re.search(r"mac_screen_sharing:\n\s+prober: tcp", bb)
+    rules = (ROOT / "platform" / "monitoring" / "rules" / "estate.yaml").read_text()
+    assert 'probe_success{job="founder-mac-screen-sharing"} == 0' in rules
+    assert "Sharing > Screen Sharing on" in rules, "the alert names the one switch in plain English"
+    assert "founder-mac-screen-sharing-probe.yaml" in (ROOT / "platform" / "monitoring" / "rules" / "kustomization.yaml").read_text()
