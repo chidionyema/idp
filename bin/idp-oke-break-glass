@@ -420,6 +420,22 @@ pb_architect_doctor() {
   show_redacted gateway-log-previous sh -c "$K logs deploy/hermes-agent-gateway -n $ns --all-containers --tail=40 --previous 2>&1 || echo 'no previous container (it has not restarted)'"
 }
 
+# catalogue-roll: crew#412, 2026-08-28: idp#564 (c6e6026) pinned the right portal image at 11:00Z
+# and the serving ReplicaSet was still catalogue-8647bbdc59 seventy minutes later (login-drill
+# 33168523304 red, "0 founder-surface entities"). The estate had a playbook to retry a HelmRelease
+# and none to make Flux apply a Kustomization now, so the founder surface waited on the interval
+# (LAW 20, LAW 31). This forces the git source and the backstage Kustomization, waits on the
+# rollout, and prints the image the Deployment serves -- the run itself answers "is the portal on
+# main now", instead of the next oke-check happening to notice.
+pb_catalogue_roll() {
+  step flux-source flux reconcile source git flux-system -n flux-system --timeout=3m
+  step backstage flux reconcile kustomization backstage -n flux-system --with-source --timeout=5m
+  show image $K get deploy catalogue -n backstage -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+  step rollout $K rollout status deploy/catalogue -n backstage --timeout=10m
+  show replicasets $K get rs -n backstage
+  show pods $K get pods -n backstage -o wide
+}
+
 pb_helm_retry() {
   local failed
   failed=$($K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{" "}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null | awk '$1=="False"{print $2" "$3}')
@@ -643,7 +659,7 @@ pb_chi_resize() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize"; exit 0 ;;
+  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   dns-per-node) pb_dns_per_node ;;
@@ -652,6 +668,7 @@ case "${1:-}" in
   cilium-unchain) pb_cilium_unchain ;;
   cilium-replace) pb_cilium_replace ;;
   helm-retry) pb_helm_retry ;;
+  catalogue-roll) pb_catalogue_roll ;;
   node-drain) pb_node_drain ;;
   node-uncordon) pb_node_uncordon ;;
   chi-resize) pb_chi_resize ;;
