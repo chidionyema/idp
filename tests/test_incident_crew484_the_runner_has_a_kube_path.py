@@ -36,7 +36,7 @@ def _bin(tmp: Path, nodes_out: str, nodes_rc: int = 0) -> Path:
     (b / "idp-cloud").write_text(
         "#!/bin/sh\n"
         'case "$1 $2" in\n'
-        '  "cluster list") echo "oke ocid1.cluster.fake.abc";;\n'
+        '  "cluster list") echo "estate ocid1.cluster.fake.abc";;\n'
         '  "cluster nodepools") echo "pool ACTIVE";;\n'
         '  "cluster kubeconfig") shift 2; cid=""; f=""; while [ $# -gt 0 ]; do case "$1" in --file) f="$2"; shift 2;; *) cid="$1"; shift;; esac; done; oci ce cluster create-kubeconfig --cluster-id "$cid" --file "$f" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT;;\n'
         "esac\n"
