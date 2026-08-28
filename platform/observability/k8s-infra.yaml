@@ -43,7 +43,7 @@ spec:
     # crew#483: this chart's otlphttp exporter (presets.otlphttpExporter.enabled defaults true,
     # confirmed via `helm show values signoz/k8s-infra --version 0.17.0`) takes the raw value of
     # otelCollectorEndpoint as OTEL_EXPORTER_OTLP_ENDPOINT verbatim
-    # (templates/_config.tpl:327 `endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}`) -- it does not
+    # (templates/_config.tpl:327 sets the exporter's endpoint from that env var directly) -- it does not
     # add a scheme or switch ports itself. The old value (bare host:4317, the gRPC port with no
     # scheme) made every otel-agent/otel-deployment export fail with
     # "unsupported protocol scheme \"signoz-otel-collector.observability.svc\"" (run 33160603986,
