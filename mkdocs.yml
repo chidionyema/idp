@@ -40,7 +40,9 @@ nav:
   - AI systems:
       - ai-systems/index.md
       - Prospector technical file: ai-systems/prospector/technical-file.md
-  - Explanation: explanation/index.md
+  - Explanation:
+      - explanation/index.md
+      - Founder self-service, the field (crew#66): explanation/founder-self-service-research.md
   - Demo:
       - Portal: demo/idp.md
       - Conscience: demo/conscience.md
