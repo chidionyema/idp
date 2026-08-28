@@ -39,6 +39,7 @@ spec:
             runAsNonRoot: true
             runAsUser: 1000
             runAsGroup: 1000
+            fsGroup: 1000                      # the github-app Secret is 0400; owned by the pod group, readable by uid 1000 (REWORK 9b57aef)
             seccompProfile: { type: RuntimeDefault }
           containers:
             - name: dispatcher

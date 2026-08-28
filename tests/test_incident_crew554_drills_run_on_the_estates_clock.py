@@ -52,6 +52,8 @@ def test_dispatcher_is_a_restricted_hourly_cronjob_on_the_pinned_image() -> None
     assert hour == "*" and minute.isdigit() and cj["spec"]["concurrencyPolicy"] == "Forbid"
     pod = cj["spec"]["jobTemplate"]["spec"]["template"]["spec"]
     assert pod["securityContext"]["runAsNonRoot"] is True and pod["automountServiceAccountToken"] is False
+    psc = pod["securityContext"]
+    assert psc.get("runAsUser", 0) != 0 and psc.get("fsGroup") == psc["runAsUser"], "the 0400 Secret is readable only when the pod group owns it (REWORK 9b57aef)"
     c = _container()
     sc = c["securityContext"]
     assert sc["readOnlyRootFilesystem"] and sc["capabilities"] == {"drop": ["ALL"]} and not sc["allowPrivilegeEscalation"]
