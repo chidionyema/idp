@@ -11,6 +11,7 @@ resources:
   - scheduling-exception.yaml
   - hindsight-exception.yaml
   - robusta-exception.yaml
+  - tailscale-operator-exception.yaml
   - kyverno.yaml
   - provider-independence.yaml
   - provider-edge-exception.yaml

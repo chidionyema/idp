@@ -36,6 +36,13 @@ Phase 2 — Network & virtual display:
 
 - [ ] Tailscale: sign in with SSO, turn "Run at Login" ON, record the host's Tailscale IP as
       `<HOST_TAILSCALE_IP>` (kept by the founder, never committed — LAW 46/21)
+- [ ] `tailscale up --ssh --advertise-tags=tag:founder-mac`: turns on Tailscale SSH (node-identity
+      auth, no key) and tags this device `tag:founder-mac`, the one the tailnet policy names
+      (`platform/tailscale/policy.hujson`, crew#516 CP5, founder's locked spec crew#66 5451926212).
+      That policy is git-tracked and CI-applied (`bin/idp-tailscale-policy apply`, run from
+      oke-check's apply job) — no admin-console edit, no ACL step here. Separate from the
+      "Remote Login (SSH)" toggle above, which the iOS Shortcut uses; this one is what Otto's
+      sidecar (`platform/hermes-agent/tailscale.yaml`) reaches through `mac-run`.
 - [ ] DeskPad: create a virtual display at 1170x2532, scaled/HiDPI, mode Extended (not Mirrored)
 - [ ] Sunshine Web UI (`https://localhost:47990`): set admin username/password
       (`<SUNSHINE_ADMIN_USER>` / `<SUNSHINE_ADMIN_PASSWORD>`, kept by the founder)

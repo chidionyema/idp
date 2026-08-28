@@ -34,7 +34,9 @@ def _one(docs, kind):
 def _container(docs):
     dep = _one(docs, "Deployment")
     spec = dep["spec"]["template"]["spec"]
-    (c,) = spec["containers"]
+    # crew#516 CP5 added a `tailscale` sidecar (platform/hermes-agent/tailscale.yaml); this helper
+    # is about the `gateway` container specifically.
+    (c,) = [c for c in spec["containers"] if c["name"] == "gateway"]
     return spec, c
 
 
@@ -137,5 +139,8 @@ def test_incident_apply_dispatch_is_not_displaced_by_pull_request_pushes():
 
 def test_the_pod_rolls_when_the_vault_entry_changes():
     dep = _one(_docs(), "Deployment")
-    targets = sorted(d["spec"]["target"]["name"] for d in _docs() if d and d.get("kind") == "ExternalSecret")
+    # crew#516 CP5: hermes-agent-tailscale's ExternalSecret lives in tailscale.yaml, a sibling
+    # manifest in the same Kustomization -- still a Secret this Deployment mounts and should roll on.
+    all_docs = _docs() + list(yaml.safe_load_all((DIR / "tailscale.yaml").read_text()))
+    targets = sorted(d["spec"]["target"]["name"] for d in all_docs if d and d.get("kind") == "ExternalSecret")
     assert sorted(dep["metadata"]["annotations"]["secret.reloader.stakater.com/reload"].split(",")) == targets

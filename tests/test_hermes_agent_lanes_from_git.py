@@ -39,7 +39,8 @@ def test_nothing_secret_sits_in_the_estate():
 def test_the_gateway_mounts_it_and_points_the_entrypoint_at_it():
     dep = [d for d in yaml.safe_load_all((DIR / "gateway.yaml").read_text()) if d and d["kind"] == "Deployment"][0]
     spec = dep["spec"]["template"]["spec"]
-    (c,) = spec["containers"]
+    # crew#516 CP5 added a `tailscale` sidecar; this test is about the `gateway` container.
+    (c,) = [c for c in spec["containers"] if c["name"] == "gateway"]
     env = {e["name"]: e.get("value") for e in c["env"]}
     mounts = {m["name"]: m for m in c["volumeMounts"]}
     vols = {v["name"]: v for v in spec["volumes"]}

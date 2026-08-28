@@ -1,0 +1,23 @@
+# One rule the vendor chart cannot satisfy, scoped to the one pod it renders, nothing wider.
+# Lives in platform/edge for the same reason temporal-exception.yaml/hindsight-exception.yaml do:
+# Kyverno honours exceptions from namespace kyverno only (crew#325).
+# require-pod-probes: chart tailscale-operator 1.102.3's templates/deployment.yaml sets no
+# liveness/readiness/startup probe on the `operator` container and exposes no values field that
+# would add one (verified by reading the template, 2026-08-28: only operatorConfig.securityContext/
+# podSecurityContext/resources are conditionally rendered; there is no probes key anywhere in it).
+# Same class as hindsight-exception.yaml: an upstream limitation, not this estate's choice.
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: tailscale-operator-no-probes
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: require-pod-probes
+      ruleNames: [require-pod-probes, autogen-validate-probes]
+  match:
+    any:
+      - resources:
+          kinds: [Deployment, Pod, ReplicaSet]
+          namespaces: [tailscale]
+          names: [operator*]

@@ -23,7 +23,10 @@ def test_the_row_states_why_the_pod_is_the_sandbox():
 
 def test_the_container_keeps_the_sandbox_shape_and_mounts_no_docker_socket():
     spec = _deployment()["spec"]["template"]["spec"]
-    (c,) = spec["containers"]
+    # crew#516 CP5 added a `tailscale` sidecar to this pod (platform/hermes-agent/tailscale.yaml);
+    # the sandbox container itself is named `gateway`, checked here specifically rather than
+    # assumed to be the pod's only container.
+    c = next(x for x in spec["containers"] if x["name"] == "gateway")
     sc = c["securityContext"]
     assert sc["readOnlyRootFilesystem"] is True and sc["allowPrivilegeEscalation"] is False
     assert sc["privileged"] is False and sc["capabilities"] == {"drop": ["ALL"]} and sc["runAsNonRoot"] is True
