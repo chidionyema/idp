@@ -75,7 +75,7 @@ def test_unknown_playbook_is_refused_and_list_names_both(tmp_path):
     p, _ = _run("rm-rf-everything", tmp_path)
     assert p.returncode == 64
     listed = subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
-    assert listed == ["diagnose", "cilium-unchain", "helm-retry"]
+    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node"]
 
 
 def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
@@ -91,7 +91,7 @@ def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
 def test_workflow_offers_break_glass_with_a_named_playbook():
     wf = WORKFLOW.read_text()
     assert "surge-finish, break-glass]" in wf
-    assert "options: [diagnose, cilium-unchain, helm-retry]" in wf
+    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node]" in wf
     assert "BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}" in wf
 
 
@@ -103,8 +103,10 @@ def test_dns_probe_pod_passes_the_cluster_pod_security_policies():
     import yaml
     src = PLAYBOOK.read_text()
     block = src[src.index("apiVersion: v1\nkind: Pod"):src.index("YAML\n", src.index("kind: Pod"))]
+    block = block.replace("$pin", "  nodeName: 10.0.0.1").replace("$name", "dns-probe").replace("$fqdn", "github.com")
     pod = yaml.safe_load(block)
     assert pod["metadata"]["namespace"] == "kube-system"
+    assert pod["spec"]["nodeName"] == "10.0.0.1", "the probe can be pinned to a node (dns-per-node)"
     spec = pod["spec"]
     assert spec["securityContext"]["runAsNonRoot"] is True
     assert spec["securityContext"]["seccompProfile"]["type"] == "RuntimeDefault"
@@ -215,3 +217,30 @@ def test_diagnose_reads_node_pressure_and_empty_endpoints_before_any_pod(tmp_pat
     assert any("get endpoints -A" in c for c in calls)
     assert "--- node-pressure" in p.stdout and "--- endpoints-empty" in p.stdout
     assert [c for c in calls if MUTATING.match(c)] == []
+
+
+def test_dns_per_node_pins_an_in_cluster_and_an_external_lookup_to_every_node(tmp_path):
+    # run 33140351385: clickhouse "ZooKeeper host ... DNS error", langfuse-web "Can't reach
+    # langfuse-postgresql:5432", every Service with endpoints, no node pressure -> resolve per node
+    bin_dir, log = _fake_path(tmp_path)
+    k = bin_dir / "kubectl"
+    k.write_text(
+        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
+        "case \"$*\" in\n"
+        "  *'get nodes -o jsonpath'*) printf '10.0.1.1 10.0.2.2';;\n"
+        "  *'apply -f -'*) cat >> \"" + str(log) + ".yaml\"; echo ok;;\n"
+        "  *) cat >/dev/null 2>&1; echo ok;;\nesac\n"
+    )
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "dns-per-node"], capture_output=True, text=True, env=env)
+    calls = log.read_text().splitlines()
+    assert p.returncode == 0, p.stdout + p.stderr
+    for i in (1, 2):
+        assert any(f"wait pod/dns-probe-svc-{i} -n kube-system" in c for c in calls)
+        assert any(f"wait pod/dns-probe-ext-{i} -n kube-system" in c for c in calls)
+        assert any(f"delete pod/dns-probe-ext-{i} -n kube-system --ignore-not-found --wait=false" in c for c in calls)
+    manifests = (log.parent / (log.name + ".yaml")).read_text()
+    assert manifests.count("nodeName: 10.0.1.1") == 2 and manifests.count("nodeName: 10.0.2.2") == 2
+    assert "kubernetes.default.svc.cluster.local" in manifests and '"github.com"' in manifests
+    assert "--- node 10.0.1.1" in p.stdout and "--- node 10.0.2.2" in p.stdout
+    assert any("-l k8s-app=kube-dns" in c for c in calls), "coredns itself is read last"
