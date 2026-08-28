@@ -434,6 +434,13 @@ pb_catalogue_roll() {
   step rollout $K rollout status deploy/catalogue -n backstage --timeout=10m
   show replicasets $K get rs -n backstage
   show pods $K get pods -n backstage -o wide
+  # login-drill 33170826547 (12:24Z, after the roll to main-1747): five of the six locations that
+  # app-config.container.yaml declares are registered and /estate/founder/catalog-info.yaml is not.
+  # Two different faults print the same count: the projected ConfigMap never reached the mount, or
+  # the catalogue read it and refused it. The mount listing and the catalogue's own words about
+  # that location are the only two lines that tell them apart, so the roll prints both.
+  show founder-mount $K exec deploy/catalogue -n backstage -- ls -la /estate /estate/founder
+  show_redacted founder-location sh -c "$K logs deploy/catalogue -n backstage --tail=4000 2>&1 | grep -iE 'founder|/estate/|location' | tail -40"
 }
 
 pb_helm_retry() {
