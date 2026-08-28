@@ -211,3 +211,13 @@ def test_rows_behind_a_booting_webhook_retry_in_a_minute_not_ten():
     """Run 33214748124: ESO's webhook answered 'ca cert not yet ready' once; the next try was 10m."""
     for row in ("prospector-platform", "dns"):
         assert _spec(row).get("retryInterval") == "1m", row
+
+
+def test_dns_waits_for_the_row_that_makes_its_secret_and_the_k3s_agent_shares_its_mounts():
+    """Run 33216301296: external-dns mounts cloudflare-api-token (an ExternalSecret in
+    platform/prospector) -> dns waits on prospector-platform; cilium-agent on the k3s agent needed
+    /var/run rshared ('not a shared or slave mount')."""
+    assert "prospector-platform" in _depends_on("dns")
+    assert "cloudflare-api-token" in (ROOT / "platform/prospector/cloudflare-external-secret.yaml").read_text()
+    wf = (ROOT / ".github/workflows/portability-drill.yml").read_text()
+    assert "mount --make-rshared /var/run" in wf

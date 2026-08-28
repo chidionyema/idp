@@ -134,6 +134,8 @@ jobs:
           set -euo pipefail
           # One VM cannot run two k3s kubelets, so the second node is the k3s image itself
           # joined as an agent over Docker -- the same way k3d builds every one of its nodes.
+          # Run 33216301296: cilium-agent on the agent read 'path "/var/run/netns" is mounted on "/var/run"
+          # but it is not a shared or slave mount' (the --tmpfs is private by default) -> rshared first.
           # Cilium wants bpffs and a cgroup2 mount inside the node, as k3d's own Cilium
           # guide prescribes; without them the cilium pod on this node crash-loops.
           IP=$(hostname -I | awk '{print $1}')
@@ -141,7 +143,7 @@ jobs:
           docker run -d --name k3s-agent-2 --hostname k3s-agent-2 --privileged \
             --tmpfs /run --tmpfs /var/run \
             rancher/k3s:v1.33.4-k3s1 agent --server "https://${IP}:6443" --token "${TOKEN}" --node-name k3s-agent-2
-          docker exec k3s-agent-2 sh -c 'mount bpffs -t bpf /sys/fs/bpf && mount --make-shared /sys/fs/bpf && mkdir -p /run/cilium/cgroupv2 && mount -t cgroup2 none /run/cilium/cgroupv2 && mount --make-shared /run/cilium/cgroupv2'
+          docker exec k3s-agent-2 sh -c 'mount --make-rshared / && mount --make-rshared /run && mount --make-rshared /var/run && mount bpffs -t bpf /sys/fs/bpf && mount --make-shared /sys/fs/bpf && mkdir -p /run/cilium/cgroupv2 && mount -t cgroup2 none /run/cilium/cgroupv2 && mount --make-shared /run/cilium/cgroupv2'
           until kubectl get node k3s-agent-2 -o name 2>/dev/null | grep -q .; do sleep 2; done
           # Run 33214748124: the node registered, the cilium DaemonSet stayed at 1 of 2 for 300 s
           # and the job died here with no reason in the log. The reason goes in the receipt and
