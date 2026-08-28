@@ -3,7 +3,7 @@ nature — signing in to the cloud session and reading the tenancy-root IAM poli
 themselves as the adapter, and bin/cloud-agnostic-gate grades that declaration instead of counting
 their lines as accidental coupling.
 
-Rule: bin/idp-oci-login, bin/idp-oci-whoami and bin/idp-iam-policy-drift carry
+Rule: bin/idp-oci-login, bin/idp-oci-whoami, bin/idp-iam-policy-drift and bin/idp-oci-s3 (crew#163) carry
 `# provider-adapter: oci` on line 2; the gate honours the marker only under
 bin/idp-oci-* / bin/idp-iam-* and prints `declared outside <prefixes>` otherwise. Rung 5."""
 import importlib.machinery
@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GATE = ROOT / "bin" / "cloud-agnostic-gate"
-ADAPTER_FILES = ("bin/idp-oci-login", "bin/idp-oci-whoami", "bin/idp-iam-policy-drift")
+ADAPTER_FILES = ("bin/idp-oci-login", "bin/idp-oci-whoami", "bin/idp-iam-policy-drift", "bin/idp-oci-s3")
 MARKER = "# provider-adapter: oci — this file IS the provider door (session sign-in / tenancy-root IAM); it is not a caller of one. Every other bin/idp-* goes through bin/idp-cloud (crew#66)."
 
 
@@ -113,4 +113,4 @@ def test_an_extensionless_bin_script_is_scanned_so_the_real_adapters_count(tmp_p
 def test_the_live_tree_reports_the_three_declared_adapters() -> None:
     r = subprocess.run([str(GATE)], capture_output=True, text=True)
     assert r.returncode == 0, r.stdout
-    assert "cloud-agnostic-gate: 3 declared adapter file(s)" in r.stdout, r.stdout
+    assert "cloud-agnostic-gate: 4 declared adapter file(s)" in r.stdout, r.stdout
