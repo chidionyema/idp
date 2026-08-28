@@ -38,6 +38,7 @@ nav:
   - Explanation: explanation/index.md
   - Demo:
       - Portal: demo/idp.md
+      - Conscience: demo/conscience.md
       - Estate showcase: demo/estate-showcase.md
       - Estate next: demo/estate-next.md
       - Trace matrix: demo/trace-matrix.md
@@ -91,6 +92,7 @@ nav:
       - Trace matrix: onboarding/trace-matrix.md
       - Namespace fences: onboarding/ns-fence-gate.md
       - Portal: onboarding/idp.md
+      - Conscience: onboarding/conscience.md
       - Estate showcase: onboarding/estate-showcase.md
       - Estate next: onboarding/estate-next.md
       - Plist gate: onboarding/plist.md

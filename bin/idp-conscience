@@ -13,8 +13,8 @@ run exits 2: a tenet nobody can measure is a wish (LAW 44).
                                              first, and the trend from docs/conscience-history.jsonl
                                              (one line appended per render; the portal shows it, crew#586 CP5)
   bin/idp-conscience --ledger-fresh-hours H  the `research` row: exit 0 when the crew research
-                                             ledger has an entry inside H hours, 1 otherwise,
-                                             2 when the ledger cannot be read
+                                             ledger has an entry inside H hours of the GitHub API's
+                                             clock (bin/lib/ledger_fresh.py), 1 otherwise, 2 BLIND
 
 CONSCIENCE_TENETS points at another tenets file (fixtures); CONSCIENCE_REPORT at another
 receipt path; ESTATE_CODE at the directory holding every checkout (LAW 46).
@@ -99,34 +99,12 @@ def grade(tenets: pathlib.Path, report: pathlib.Path, cwd: pathlib.Path) -> int:
 
 
 def ledger_fresh(hours: int) -> int:
-    ledger = CODE / "crew" / "science" / "RESEARCH-LEDGER.jsonl"
-    try:
-        lines = [json.loads(line) for line in ledger.read_text().splitlines() if line.strip()]
-    except (OSError, json.JSONDecodeError) as e:
-        print(f"BLIND research ledger unreadable at {ledger}: {e}")
-        return 2
-    # crew#583: this row used to build `cutoff = now - hours` here and call every entry newer than
-    # it fresh. On a Mac whose battery has gone flat the RTC resets to 1970, `cutoff` lands decades
-    # before every stamp in the file, and a research ledger that had been dead for years printed a
-    # green tenet row. The age now comes from bin/lib/receipt_age.py, the one place in the estate
-    # allowed near this arithmetic, and it refuses -- BLIND, exit 2 -- when the clock reads earlier
-    # than the newest entry it is grading. A local file carries no served clock the way an object
-    # head does, so this is the weaker of the two properties the helper offers, and local_ledger_age
-    # documents exactly which one: not "the local clock is absent", but "no clock error can make
-    # this row green".
+    """The `research` row. The age is measured in bin/lib/ledger_fresh.py against the GitHub API's
+    clock, never this machine's (crew#583 guard: a file that parses a foreign stamp may not also
+    ask the local clock; this file stamps the receipt it writes, so the reader lives elsewhere)."""
     sys.path.insert(0, str(IDP / "bin" / "lib"))
-    from receipt_age import local_ledger_age
-
-    age_h = local_ledger_age(lines, ("ts", "timestamp", "date", "when", "at"), 3600.0, "research",
-                             dt.datetime.now(dt.timezone.utc))
-    fresh = age_h <= hours
-    if age_h == float("inf"):
-        print(f"research ledger: no entry carries a stamp, of {len(lines)}")
-        return 1
-    print(f"research ledger: newest entry {age_h:.1f}h old, inside {hours}h of {len(lines)} entries"
-          if fresh else
-          f"research ledger: newest entry {age_h:.1f}h old, older than {hours}h of {len(lines)} entries")
-    return 0 if fresh else 1
+    from ledger_fresh import ledger_fresh as _fresh
+    return _fresh(CODE / "crew" / "science" / "RESEARCH-LEDGER.jsonl", hours)
 
 
 def page(report: pathlib.Path, page_path: pathlib.Path, history: pathlib.Path) -> int:
