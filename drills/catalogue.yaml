@@ -82,7 +82,9 @@ drills:
     proves: >-
       The cluster wrote its own state receipt (nodes, pods not Ready) to Object Storage from the
       node's identity within the last hour and a runner with no kube path and no laptop session
-      token read it back through OIDC (crew#345: bin/idp-cluster-state grades freshness and Ready).
+      token read it back through OIDC (crew#345: bin/idp-cluster-state grades freshness and Ready);
+      the cluster holds PrometheusRules and Alertmanager shows the Watchdog alert, so the alert
+      pipeline is evaluating and delivering (crew#539 DoD 1).
   - name: verify-drill
     workflow: verify-drill.yml
     job: verify-drill

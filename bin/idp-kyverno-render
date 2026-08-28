@@ -123,6 +123,14 @@ def _is_test_hook(d):
     hooks = (d["metadata"].get("annotations") or {}).get("helm.sh/hook", "")
     return hooks and all(h.strip().startswith("test") for h in hooks.split(","))
 p = sys.argv[1]; docs = [d for d in yaml.safe_load_all(open(p)) if d and not _is_test_hook(d)]
+# A chart may emit a key with no value (`volumes:` on kube-prometheus-stack's operator when no
+# volume is configured). The API server drops a null field before admission sees it; the CLI
+# does not, and disallow-host-path failed the operator over a hostPath it never had (crew#539).
+def _drop_null(x):
+    if isinstance(x, dict): return {k: _drop_null(v) for k, v in x.items() if v is not None}
+    if isinstance(x, list): return [_drop_null(v) for v in x]
+    return x
+docs = [_drop_null(d) for d in docs]
 # Kyverno autogen covers Deployment/StatefulSet/DaemonSet but not Job/CronJob, so the CLI passed a
 # migrator Job whose Pod admission then refused (2026-08-25, require-pod-probes). Judge the Pod
 # a Job or CronJob would create, with the ownerReference admission would see.

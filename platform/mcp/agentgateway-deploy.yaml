@@ -25,6 +25,7 @@ spec:
           args: ["-f", "/config/agentgateway.yaml"]
           ports:
             - { name: http, containerPort: 3000 }
+            - { name: metrics, containerPort: 15020 }   # crew#498: stats listener, scraped by platform/monitoring/rules/agentgateway-servicemonitor.yaml
           env:
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
             - { name: OTEL_SERVICE_NAME, value: mcp-agentgateway }
@@ -65,3 +66,4 @@ spec:
   selector: { app.kubernetes.io/name: agentgateway }
   ports:
     - { name: http, port: 3000, targetPort: http }
+    - { name: metrics, port: 15020, targetPort: metrics }
