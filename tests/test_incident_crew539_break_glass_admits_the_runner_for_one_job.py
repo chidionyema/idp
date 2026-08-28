@@ -636,7 +636,7 @@ def test_node_drain_silences_alertmanager_for_the_window_and_expires_it_after(tm
     p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
     assert p.returncode == 0, p.stdout + p.stderr
     calls = log.read_text().splitlines()
-    add = [i for i, c in enumerate(calls) if "amtool" in c and "silence add node=10.0.148.221" in c and "--duration=30m" in c]
+    add = [i for i, c in enumerate(calls) if "amtool" in c and "silence add namespace=observability" in c and "--duration=30m" in c]
     cordon = [i for i, c in enumerate(calls) if c.endswith("cordon 10.0.148.221")]
     expire = [i for i, c in enumerate(calls) if "silence expire sil-4242" in c]
     assert add and cordon and expire, calls
@@ -651,3 +651,73 @@ def test_node_drain_still_runs_when_there_is_no_alertmanager_to_silence(tmp_path
     assert p.returncode == 0, p.stdout + p.stderr
     assert "not silencing" in p.stdout, p.stdout
     assert any(c.endswith("cordon 10.0.148.221") for c in calls), calls
+
+
+def test_node_drain_refuses_a_zero_disruption_pdb_it_cannot_evaluate(tmp_path):
+    # 09cd04a6, idp#543 review 5449475253: a 0-disruption PDB selecting by matchExpressions read as
+    # an empty matchLabels dict, so nothing matched, RC was 0 and the node was cordoned -- the same
+    # silent pass that produced the 06:20Z outage. A selector this playbook cannot evaluate refuses.
+    pods = [_pod("observability", "chi-0", "10.0.148.221", labels={"clickhouse.altinity.com/chi": "signoz-clickhouse"}),
+            _pod("a", "ok", "10.0.159.197")]
+    pdbs = [{"metadata": {"namespace": "observability", "name": "by-expression"},
+             "spec": {"selector": {"matchExpressions": [
+                 {"key": "clickhouse.altinity.com/chi", "operator": "In", "values": ["signoz-clickhouse"]}]}},
+             "status": {"disruptionsAllowed": 0}}]
+    p, calls = _run_drain(tmp_path, pods, pdbs, _nodes())
+    assert p.returncode == 1, p.stdout + p.stderr
+    assert "observability/by-expression allows 0 disruptions and its selector is a matchExpressions" in p.stdout, p.stdout
+    assert not any("cordon" in c or "drain" in c for c in calls), calls
+
+
+def test_node_drain_ignores_an_unevaluable_pdb_in_a_namespace_with_nothing_leaving(tmp_path):
+    # ...and the control: refusing on EVERY unevaluable PDB anywhere would make the playbook
+    # unusable on a real cluster. Only a namespace that actually has pods leaving can block.
+    pods = [_pod("observability", "chi-0", "10.0.148.221", cpu="100m", mem="256Mi"), _pod("a", "ok", "10.0.159.197")]
+    pdbs = [{"metadata": {"namespace": "elsewhere", "name": "by-expression"},
+             "spec": {"selector": {"matchExpressions": [{"key": "app", "operator": "Exists"}]}},
+             "status": {"disruptionsAllowed": 0}}]
+    p, calls = _run_drain(tmp_path, pods, pdbs, _nodes())
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert any(c.endswith("cordon 10.0.148.221") for c in calls), calls
+
+
+def test_node_drain_refuses_when_no_single_node_can_hold_the_biggest_pod(tmp_path):
+    # 09cd04a6, idp#543 review 5449475253: the capacity check summed free space across peers, but
+    # the scheduler fits a pod on ONE node. A 4Gi pod leaving, two peers with 3Gi free each: the
+    # total said 6Gi and it passed and drained, and the pod had nowhere to land.
+    pods = [_pod("observability", "chi-0", "10.0.148.221", cpu="100m", mem="4Gi"),
+            _pod("a", "fills-1", "10.0.159.197", cpu="100m", mem="5Gi"),
+            _pod("a", "fills-2", "10.0.159.198", cpu="100m", mem="5Gi")]
+    nodes = {"items": [
+        {"metadata": {"name": "10.0.148.221"}, "spec": {}, "status": {"allocatable": {"cpu": "2", "memory": "8Gi"}, "conditions": [{"type": "Ready", "status": "True"}]}},
+        {"metadata": {"name": "10.0.159.197"}, "spec": {}, "status": {"allocatable": {"cpu": "2", "memory": "8Gi"}, "conditions": [{"type": "Ready", "status": "True"}]}},
+        {"metadata": {"name": "10.0.159.198"}, "spec": {}, "status": {"allocatable": {"cpu": "2", "memory": "8Gi"}, "conditions": [{"type": "Ready", "status": "True"}]}},
+    ]}
+    p, calls = _run_drain(tmp_path, pods, [], nodes)   # cluster total free 6Gi > 4Gi, but no single node has 4Gi
+    assert p.returncode == 1, p.stdout + p.stderr
+    assert "no single Ready node has room for it" in p.stdout and "observability/chi-0" in p.stdout, p.stdout
+    assert not any("cordon" in c or "drain" in c for c in calls), calls
+
+
+def test_node_drain_silences_every_namespace_that_loses_a_pod(tmp_path):
+    # the telegram route groups by [alertname, namespace] (platform/monitoring/alertmanager-config.yaml:30),
+    # so one silence per namespace losing a pod, and every id expired when the playbook ends.
+    pods = [_pod("observability", "chi-0", "10.0.148.221", cpu="100m", mem="256Mi"),
+            _pod("backstage", "catalogue-0", "10.0.148.221", cpu="100m", mem="256Mi"),
+            _pod("a", "ok", "10.0.159.197")]
+    bin_dir, log = _fake_path(tmp_path)
+    _preflight_kubectl(bin_dir, log, tmp_path, {"items": pods}, {"items": []}, _nodes())
+    (bin_dir / "kubectl").write_text((bin_dir / "kubectl").read_text().replace(
+        "  *'-l app.kubernetes.io/name=alertmanager'*) printf '';;",
+        "  *'-l app.kubernetes.io/name=alertmanager'*) printf alertmanager-0;;\n"
+        "  *'amtool'*'silence add namespace=backstage'*) echo sil-back;;\n"
+        "  *'amtool'*'silence add namespace=observability'*) echo sil-obs;;\n"
+        "  *) cat >/dev/null 2>&1; echo ok;;"))
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    calls = log.read_text().splitlines()
+    assert any("silence add namespace=backstage" in c for c in calls), calls
+    assert any("silence add namespace=observability" in c for c in calls), calls
+    assert any("silence expire sil-back" in c for c in calls) and any("silence expire sil-obs" in c for c in calls), calls
+    assert "namespaces=" not in p.stdout, p.stdout        # the machine line is not part of the human verdict

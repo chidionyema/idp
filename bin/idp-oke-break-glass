@@ -316,16 +316,28 @@ def req(p, kind):
 def phase_counts(p): return p.get("status", {}).get("phase") in ("Succeeded", "Failed")
 leaving = [p for p in pods if p.get("spec", {}).get("nodeName") == node and not stays(p) and not phase_counts(p)]
 fail = []
+# A PDB selector this playbook cannot evaluate is a refusal, not a skip. Measured by 09cd04a6
+# (idp#543 review 5449475253): a 0-disruption PDB selecting by matchExpressions read as an empty
+# matchLabels dict, matched nothing, and the node was cordoned with RC 0 -- the exact silent pass
+# the 06:20Z outage came through. matchLabels is the only shape proved here, so anything else in
+# a namespace that has pods leaving refuses and names what it could not read.
 for b in pdbs:
     st = b.get("status") or {}
     if st.get("disruptionsAllowed", 1) != 0: continue
-    sel = (b.get("spec", {}).get("selector") or {}).get("matchLabels") or {}
-    ns = b["metadata"]["namespace"]
-    for p in leaving:
-        if p["metadata"]["namespace"] == ns and sel and all((p["metadata"].get("labels") or {}).get(k) == v for k, v in sel.items()):
-            fail.append(f"FAIL  node-drain: PodDisruptionBudget {ns}/{b['metadata']['name']} allows 0 disruptions and covers {ns}/{p['metadata']['name']}; drain would wait on it until timeout; refusing")
+    ns, bname = b["metadata"]["namespace"], b["metadata"]["name"]
+    here = [p for p in leaving if p["metadata"]["namespace"] == ns]
+    if not here: continue
+    spec_sel = b.get("spec", {}).get("selector")
+    sel = (spec_sel or {}).get("matchLabels") or {}
+    if spec_sel is None or (spec_sel or {}).get("matchExpressions") or not sel:
+        shape = "matchExpressions" if (spec_sel or {}).get("matchExpressions") else ("null selector" if spec_sel is None else "empty selector")
+        fail.append(f"FAIL  node-drain: PodDisruptionBudget {ns}/{bname} allows 0 disruptions and its selector is a {shape}, which this playbook cannot evaluate; {len(here)} pod(s) leaving {node} are in {ns} and it may cover them; refusing")
+        continue
+    for p in here:
+        if all((p["metadata"].get("labels") or {}).get(k) == v for k, v in sel.items()):
+            fail.append(f"FAIL  node-drain: PodDisruptionBudget {ns}/{bname} allows 0 disruptions and covers {ns}/{p['metadata']['name']}; drain would wait on it until timeout; refusing")
 need_cpu, need_mem = sum(req(p, "cpu") for p in leaving), sum(req(p, "memory") for p in leaving)
-free_cpu = free_mem = 0.0
+peers = []
 for n in nodes:
     name = n["metadata"]["name"]
     ready = any(c.get("type") == "Ready" and c.get("status") == "True" for c in n.get("status", {}).get("conditions", []))
@@ -333,14 +345,24 @@ for n in nodes:
     alloc = n.get("status", {}).get("allocatable") or {}
     used_cpu = sum(req(p, "cpu") for p in pods if p.get("spec", {}).get("nodeName") == name and not phase_counts(p))
     used_mem = sum(req(p, "memory") for p in pods if p.get("spec", {}).get("nodeName") == name and not phase_counts(p))
-    free_cpu += max(0.0, qty(alloc.get("cpu"), "cpu") - used_cpu)
-    free_mem += max(0.0, qty(alloc.get("memory"), "memory") - used_mem)
+    peers.append((name, max(0.0, qty(alloc.get("cpu"), "cpu") - used_cpu), max(0.0, qty(alloc.get("memory"), "memory") - used_mem)))
+free_cpu, free_mem = sum(c for _, c, _ in peers), sum(m for _, _, m in peers)
 gi = lambda b: f"{b/2**30:.2f}Gi"
 if need_cpu > free_cpu or need_mem > free_mem:
     fail.append(f"FAIL  node-drain: {len(leaving)} pod(s) leaving {node} request cpu {need_cpu:.2f} / memory {gi(need_mem)}; the other Ready nodes have cpu {free_cpu:.2f} / memory {gi(free_mem)} free; they would leave as Pending; refusing")
+# A cluster total is not a placement. Measured by 09cd04a6 (idp#543 review 5449475253): one 4Gi
+# pod leaving with two peers at 3Gi free each passed the total check and drained, and the pod had
+# nowhere to land. The scheduler fits a pod on ONE node, so every pod leaving must fit on one.
+for p in leaving:
+    pc, pm = req(p, "cpu"), req(p, "memory")
+    if any(fc >= pc and fm >= pm for _, fc, fm in peers): continue
+    best = ", ".join(f"{n} cpu {c:.2f} / memory {gi(m)}" for n, c, m in peers) or "none"
+    fail.append(f"FAIL  node-drain: {p['metadata']['namespace']}/{p['metadata']['name']} requests cpu {pc:.2f} / memory {gi(pm)} and no single Ready node has room for it (free: {best}); the scheduler places per node, not per cluster; refusing")
+    break
 if fail:
     print("\n".join(fail)); sys.exit(1)
-print(f"ok    preflight              {len(leaving)} pod(s) leaving need cpu {need_cpu:.2f} / memory {gi(need_mem)}, other Ready nodes have cpu {free_cpu:.2f} / memory {gi(free_mem)} free; no PodDisruptionBudget at 0 covers them")
+print(f"ok    preflight              {len(leaving)} pod(s) leaving need cpu {need_cpu:.2f} / memory {gi(need_mem)}, other Ready nodes have cpu {free_cpu:.2f} / memory {gi(free_mem)} free and each leaving pod fits on one of them; no PodDisruptionBudget at 0 covers them")
+print("namespaces=" + ",".join(sorted({p["metadata"]["namespace"] for p in leaving})))
 PYEOF
 )
 # alert_silence add|expire: founder 2026-08-28 06:43Z, "catalogue says no available server, lots of
@@ -348,14 +370,30 @@ PYEOF
 # (crew#539 5449358659). A planned drain pages the founder as if it were an outage, so the window
 # is silenced in Alertmanager and the silence is expired again when the playbook ends. amtool is
 # Alertmanager's own client and ships in its image (LAW 43): no alert state is hand-rolled here.
+#
+# THE MATCHER IS THE NAMESPACE, NOT THE NODE. Found by 09cd04a6 (idp#543 review 5449475253):
+# `node=<name>` silenced nothing, because no alerting rule under platform/monitoring carries a
+# node label and the telegram route groups by [alertname, namespace]
+# (platform/monitoring/alertmanager-config.yaml:30). A silence can only match a label the alert
+# actually has, so the window is silenced per namespace of the pods that are leaving — one
+# silence each, every id expired when the playbook ends.
 AM_NS="${AM_NS:-monitoring}"
+AM_PORT="${AM_PORT:-9093}"   # in-pod, reached through kubectl exec; declared in catalog/ports.yaml
 alert_silence() {
-  local action="$1" arg="${2:-}" pod
+  local action="$1" arg="${2:-}" pod ns id ids=""
   pod=$($K get pods -n "$AM_NS" -l app.kubernetes.io/name=alertmanager -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
   [ -n "$pod" ] || { echo "no alertmanager pod in $AM_NS: not silencing"; return 0; }
   case "$action" in
-    add)    $K exec -n "$AM_NS" "$pod" -c alertmanager -- amtool --alertmanager.url=http://localhost:9093 silence add "node=$arg" --duration=30m --comment="idp-oke-break-glass node-drain of $arg (crew#539)" 2>/dev/null | tail -1 ;;
-    expire) [ -n "$arg" ] && $K exec -n "$AM_NS" "$pod" -c alertmanager -- amtool --alertmanager.url=http://localhost:9093 silence expire "$arg" >/dev/null 2>&1 ;;
+    add)
+      for ns in $(printf '%s' "$arg" | tr ',' ' '); do
+        id=$($K exec -n "$AM_NS" "$pod" -c alertmanager -- amtool --alertmanager.url=http://localhost:$AM_PORT silence add "namespace=$ns" --duration=30m --comment="idp-oke-break-glass node-drain (crew#539)" 2>/dev/null | tail -1)
+        [ -n "$id" ] && ids="${ids:+$ids }$id"
+      done
+      printf '%s\n' "$ids" ;;
+    expire)
+      for id in $arg; do
+        $K exec -n "$AM_NS" "$pod" -c alertmanager -- amtool --alertmanager.url=http://localhost:$AM_PORT silence expire "$id" >/dev/null 2>&1
+      done ;;
   esac
 }
 
@@ -380,8 +418,11 @@ pb_node_drain() {
   # sat Pending on <none>: the other node had no room. The cordon itself was the outage. Both are
   # knowable before anything is touched, so both are checked first and either refuses the drain.
   local verdict; verdict=$(drain_preflight "$node") || { printf '%s\n' "$verdict"; FAILED="$FAILED node-drain"; return 1; }
-  printf '%s\n' "$verdict"
-  local silence; silence=$(alert_silence add "$node")
+  # the preflight's last line names the namespaces the pods are leaving; that is what Alertmanager
+  # can actually match on, so it is what gets silenced. It is not part of the human verdict.
+  local nss; nss=$(printf '%s\n' "$verdict" | sed -n 's/^namespaces=//p')
+  printf '%s\n' "$verdict" | grep -v '^namespaces='
+  local silence; silence=$(alert_silence add "$nss")
   echo "--- silence ${silence:-none}"
   step cordon $K cordon "$node"
   step drain $K drain "$node" --ignore-daemonsets --delete-emptydir-data --timeout=600s
