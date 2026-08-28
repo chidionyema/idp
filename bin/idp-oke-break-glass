@@ -53,6 +53,9 @@ spec:
     metadata: { labels: { app: cni-unchain } }
     spec:
       tolerations: [{ operator: Exists }]
+      # run 33132419902 (diagnose): with the chain left behind every new sandbox fails at cilium-cni,
+      # so the helper itself would never start on the pod network. hostNetwork pods call no CNI.
+      hostNetwork: true
       hostPID: true
       priorityClassName: system-node-critical
       containers:
