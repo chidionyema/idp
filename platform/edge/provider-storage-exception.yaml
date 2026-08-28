@@ -1,0 +1,22 @@
+# The second declared hole in provider-independence.yaml (R43), and a temporary one. values.yaml
+# and langfuse-values.yaml pin storageClass oci-bv for the langfuse-postgresql, signoz and
+# signoz-zookeeper StatefulSets; those objects already exist on the cluster, and a StatefulSet's
+# volumeClaimTemplates are immutable, so moving them onto a cluster-named StorageClass is a data
+# migration (crew#66 follow-up), not a values edit. Scoped to exactly those three names: any new
+# StatefulSet naming a provider storage class is still refused. Namespace kyverno: admission
+# honours exceptions from nowhere else (platform/edge/kyverno.yaml features.policyExceptions).
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: provider-observability-storage-legacy
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: provider-independence
+      ruleNames: [no-provider-storage-class-in-templates]
+  match:
+    any:
+      - resources:
+          kinds: [StatefulSet]
+          namespaces: [observability]
+          names: [langfuse-postgresql, signoz, signoz-zookeeper]

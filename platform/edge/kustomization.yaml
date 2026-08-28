@@ -14,3 +14,4 @@ resources:
   - kyverno.yaml
   - provider-independence.yaml
   - provider-edge-exception.yaml
+  - provider-storage-exception.yaml
