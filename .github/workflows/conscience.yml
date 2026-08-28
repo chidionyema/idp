@@ -1,0 +1,73 @@
+# The Conscience, hourly (crew#586 CP3): grade main against the founder's ethos and keep one
+# open issue per red tenet, never two. Same shape as drill-heartbeat.yml: a schedule, the
+# script, the step summary, and `gh issue` for the loud part. Founder, 2026-08-28: "an
+# eternal, ambient, active presence that keeps everyone and everything in the estate aligned."
+#
+# One issue per tenet, titled `conscience: <tenet> is red`, labelled `conscience`. A red row
+# comments on its open issue or opens it; a green row closes its issue with the receipt line.
+# No issue is ever opened twice for one tenet (the 113-open-PR thrash of 2026-08-27, crew#504).
+#
+# crew is checked out beside idp so the `research` row can read the research ledger
+# (ESTATE_CODE, LAW 46). fetch-depth 0 is for the `better` row's `git log --since`.
+name: conscience
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: conscience
+  cancel-in-progress: false
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { path: idp, fetch-depth: 0 }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { repository: chidionyema/crew, path: crew }
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: "3.12" }
+      - name: tools the tenet rows call
+        run: pip install -q pyyaml ruff==0.15.18
+      - name: bin/idp-conscience
+        id: grade
+        working-directory: idp
+        env:
+          ESTATE_CODE: ${{ github.workspace }}
+        run: |
+          set -o pipefail
+          bin/idp-conscience 2>&1 | tee conscience.out; rc=${PIPESTATUS[0]}
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          [ "$rc" -ne 2 ]   # BLIND is the only failure; a red tenet is an issue, not a red run
+      - name: summary
+        if: always()
+        working-directory: idp
+        run: cat conscience.out >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with: { name: conscience-receipt, path: idp/reports/conscience.json, retention-days: 30 }
+      - name: one issue per red tenet
+        if: steps.grade.outputs.rc != '2'
+        working-directory: idp
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh label create conscience --color 5319E7 --description "a tenet of the founder's ethos is red" --force >/dev/null 2>&1 || true
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          python3 -c 'import json; [print(t["name"], "green" if t["ok"] else "red", t["how"], "|", t["ethos"]) for t in json.load(open("reports/conscience.json"))["tenets"]]' \
+          | while IFS= read -r line; do
+            tenet=${line%% *}; rest=${line#* }; state=${rest%% *}; detail=${rest#* }
+            title="conscience: $tenet is red"
+            n=$(gh issue list --state open --label conscience --search "\"$title\" in:title" --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -1)
+            body=$(printf '%s\n\nMeasured: `%s` (%s)\nRun: %s\nBoard: https://github.com/chidionyema/crew/issues/586\n' "$detail" "$tenet" "$state" "$run_url")
+            if [ "$state" = red ]; then
+              if [ -n "$n" ]; then gh issue comment "$n" --body "$body" >/dev/null; echo "red   $tenet -> #$n (commented)"
+              else gh issue create --title "$title" --label conscience --body "$body" >/dev/null; echo "red   $tenet -> opened"; fi
+            elif [ -n "$n" ]; then gh issue close "$n" --comment "$body" >/dev/null; echo "green $tenet -> #$n closed"
+            else echo "green $tenet"; fi
+          done
