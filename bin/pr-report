@@ -55,8 +55,11 @@ if jq -e '.files | index("drills/catalogue.yaml")' "$REPORTS/pr-meta.json" >/dev
   fi
 fi
 drills=$("$IDP/bin/idp-drill-names" "${cats[@]}" 2>/dev/null || echo '[]')
-jq -n --slurpfile m "$REPORTS/pr-meta.json" --slurpfile w "$REPORTS/pr-words.json" --rawfile a "$REPORTS/pr-added.txt" --argjson b "$budget" --argjson d "$drills" \
-  '{pr: ($m[0] + {added: $a} + $w[0]), budget_monthly_usd: $b, drills: $d}' > "$REPORTS/pr.json"
+# ADR 0009 (crew#562): the scored decisions a PR may cite with `Matrix: <slug>`; the rule
+# matrix_cited also accepts a slug the PR itself adds to the matrix.
+matrix=$(python3 "$IDP/bin/matrix-gate" --slugs 2>/dev/null || echo '[]')
+jq -n --slurpfile m "$REPORTS/pr-meta.json" --slurpfile w "$REPORTS/pr-words.json" --rawfile a "$REPORTS/pr-added.txt" --argjson b "$budget" --argjson d "$drills" --argjson x "$matrix" \
+  '{pr: ($m[0] + {added: $a} + $w[0]), budget_monthly_usd: $b, drills: $d, matrix: $x}' > "$REPORTS/pr.json"
 out=$(conftest test --parser json -p "$IDP/policy" "$REPORTS/pr.json" 2>&1); rc=$?
 if [ "$src" -eq 1 ]; then
   out=$(printf '%s\nFAIL - pr.json - main - rule=no_secret_added fix: gitleaks flagged an added line (bin/idp-pr-secrets reports/pr-added.txt); rename the field or remove the value, never allow-list it\n' "$out"); rc=1
