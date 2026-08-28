@@ -96,18 +96,40 @@ def test_workflow_offers_break_glass_with_a_named_playbook():
 
 
 def test_dns_probe_pod_passes_the_cluster_pod_security_policies():
-    """run 33133317589: the unchain landed but `dns-answers` failed because kyverno refused a bare
-    `kubectl run` pod (require-run-as-nonroot, require-ro-rootfs, restrict-seccomp-strict). The probe
-    carries the same hardened securityContext every platform workload does."""
-    import json
+    """runs 33133317589 and 33134611331: the unchain landed but `dns-answers` failed because kyverno
+    refused the `kubectl run` probe pod — first require-run-as-nonroot / require-ro-rootfs /
+    restrict-seccomp-strict, then disallow-default-namespace / require-pod-probes /
+    require-requests-limits. The probe is a full Pod manifest shaped like every platform workload."""
+    import yaml
     src = PLAYBOOK.read_text()
-    line = src[src.index("step dns-answers"):src.index("--command -- nslookup", src.index("step dns-answers"))]
-    spec = json.loads(line[line.index("--overrides='") + len("--overrides='"):line.index("' \\")])["spec"]
+    block = src[src.index("apiVersion: v1\nkind: Pod"):src.index("YAML\n", src.index("kind: Pod"))]
+    pod = yaml.safe_load(block)
+    assert pod["metadata"]["namespace"] == "kube-system"
+    spec = pod["spec"]
     assert spec["securityContext"]["runAsNonRoot"] is True
     assert spec["securityContext"]["seccompProfile"]["type"] == "RuntimeDefault"
-    c = spec["containers"][0]["securityContext"]
-    assert c["readOnlyRootFilesystem"] is True and c["allowPrivilegeEscalation"] is False
-    assert c["capabilities"]["drop"] == ["ALL"]
+    assert spec["priorityClassName"]
+    c = spec["containers"][0]
+    assert c["resources"]["requests"]["cpu"] and c["resources"]["limits"]["memory"]
+    assert c["readinessProbe"] and c["livenessProbe"]
+    assert c["securityContext"]["readOnlyRootFilesystem"] is True
+    assert c["securityContext"]["allowPrivilegeEscalation"] is False
+    assert c["securityContext"]["capabilities"]["drop"] == ["ALL"]
+
+
+def test_cilium_unchain_forces_secret_store_after_the_tree_and_removes_the_probe(tmp_path):
+    """run 33134611331: the webhooks rolled out, yet `secret-store` still showed the dry-run EOF
+    from before the restart — `flux reconcile kustomization flux-system` does not cascade. The
+    playbook forces secret-store after the tree, and the probe pod is not left in kube-system."""
+    p, calls = _run("cilium-unchain", tmp_path)
+    assert p.returncode == 0, p.stdout + p.stderr
+    joined = "\n".join(calls)
+    assert joined.index("reconcile kustomization flux-system") < joined.index("reconcile kustomization secret-store")
+    # review idp#525: a leftover probe (a prior run died before remove, or already Succeeded) makes
+    # apply a no-op and dns-answers reads the old verdict; clear it, waiting, before the apply.
+    clear = joined.index("delete pod/dns-probe -n kube-system --ignore-not-found --wait=true")
+    assert clear < joined.index("apply -f -", joined.index("rollout status deploy/coredns"))
+    assert joined.index("wait pod/dns-probe") < joined.index("delete pod/dns-probe", clear + 1)
 
 
 def test_cilium_unchain_restarts_the_admission_webhooks_after_coredns_and_before_flux(tmp_path):
