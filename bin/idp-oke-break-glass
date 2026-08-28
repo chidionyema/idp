@@ -21,6 +21,12 @@ show() { local name="$1"; shift; echo "--- $name"; "$@" 2>&1 | head -60; }
 # HelmReleases and the last warnings. This is the first playbook of any incident.
 pb_diagnose() {
   show nodes $K get nodes -o wide
+  # Run 33139372173: every red pod sat on one node and every failure was "the process is not
+  # answering on its port" (clickhouse startup probe refused x202, signoz 500, langfuse P1001,
+  # redis closed). That is what starvation looks like; the reason is on the node, not in the
+  # pod. Node conditions, live usage and allocated requests/limits are read first so the repair
+  # can be attributed (LAW 29) before a probe or a resource line is touched.
+  show node-pressure sh -c "$K top nodes; $K get nodes -o jsonpath='{range .items[*]}{.metadata.name}{\"\t\"}{range .status.conditions[*]}{.type}={.status}{\" \"}{end}{\"\n\"}{end}'; $K describe nodes | grep -E '^Name:|Allocated resources|^  (cpu|memory|ephemeral-storage) ' "
   show kube-system $K get pods -n kube-system -o wide
   show cni-chain $K get ds,deploy -n kube-system -l app.kubernetes.io/part-of=cilium
   show gitrepositories $K get gitrepositories -A
@@ -44,6 +50,9 @@ pb_diagnose() {
     show "pod $ns/$name" sh -c "$K describe pod $name -n $ns | sed -n '/^Containers:/,\$p' | grep -E 'State|Reason|Exit Code|Ready|Message|Warning|Normal|Liveness|Readiness|Back-off|Failed|Error' | tail -25"
     show "log $ns/$name" $K logs "$name" -n "$ns" --all-containers --tail=30 --prefix
   done
+  # langfuse-web could not reach langfuse-postgresql:5432 while the postgres pod was Running: a
+  # Service with no ready address is the difference, and it is only visible on the Endpoints.
+  show endpoints-empty sh -c "$K get endpoints -A | awk 'NR==1 || \$3==\"<none>\"'"
   show warnings sh -c "$K get events -A --field-selector type=Warning --sort-by=.lastTimestamp | tail -60"
   $K get nodes >/dev/null || FAILED="$FAILED nodes"
 }

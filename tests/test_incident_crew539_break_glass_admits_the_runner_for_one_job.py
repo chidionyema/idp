@@ -200,3 +200,18 @@ def test_diagnose_describes_and_logs_every_unready_and_failed_pod_and_reads_the_
     assert not any("descheduler-old" in c for c in calls), "only the newest Failed pod per namespace"
     assert "--sort-by=.lastTimestamp | tail -60" in PLAYBOOK.read_text()
     assert [c for c in calls if MUTATING.match(c)] == []
+
+
+def test_diagnose_reads_node_pressure_and_empty_endpoints_before_any_pod(tmp_path):
+    # run 33139372173: six pods red on one node, each "not answering on its port"; the node's
+    # conditions, usage and allocation, and Services with no ready address, were never printed
+    p, calls = _run("diagnose", tmp_path)
+    assert p.returncode == 0, p.stdout + p.stderr
+    top = next(i for i, c in enumerate(calls) if c.endswith("top nodes"))
+    first_pod = next((i for i, c in enumerate(calls) if "describe pod" in c), len(calls))
+    assert top < first_pod, "the node is read before any pod is blamed"
+    assert any("describe nodes" in c for c in calls)
+    assert any("get nodes -o jsonpath=" in c and "conditions" in c for c in calls)
+    assert any("get endpoints -A" in c for c in calls)
+    assert "--- node-pressure" in p.stdout and "--- endpoints-empty" in p.stdout
+    assert [c for c in calls if MUTATING.match(c)] == []
