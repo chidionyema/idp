@@ -23,6 +23,21 @@ kubectl kustomize "$src" > "$S/policies.yaml"
 n=$(grep -c '^kind: ClusterPolicy' "$S/policies.yaml")
 echo "policies  $n ClusterPolicies from $src"
 
+# The fallback set is the pinned upstream library and nothing else. The two policies this estate
+# wrote itself -- no-optional-secret-references and money-rail-single-writer -- live in the
+# prospector checkout, and they are the two that encode incidents this estate actually had, so a
+# verdict reached without them is the one verdict that cannot be trusted.
+# crew#539, 2026-08-28: CI has never had that checkout. It judged platform/robusta against 24
+# policies, printed "render clean", and the cluster then refused the same Deployment on
+# no-optional-secret-references -- the release went Failed, Flux could not remediate it, and
+# monitoring and monitoring-rules stayed down for 8h. BLIND, never a pass (LAW 28).
+for want in no-optional-secret-references money-rail-single-writer; do
+  grep -q "^  name: $want$" "$S/policies.yaml" && continue
+  echo "BLIND  policies  $want is not in the set from $src; the estate-only policies were not"
+  echo "                 judged. Point IDP_KYVERNO_POLICIES at prospector deploy/k8s/policies."
+  exit 2
+done
+
 # PolicyExceptions are handed to the CLI as admission sees them: Kyverno honours only the ones in
 # namespace kyverno (platform/edge/kyverno.yaml features.policyExceptions), wherever in the estate
 # they are declared, so every path a clusters/oke Kustomization points at is rendered once here.
