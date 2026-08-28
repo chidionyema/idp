@@ -54,5 +54,3 @@ platform/oci/identity/.terraform*
 platform/oci/identity/*.tfstate*
 
 # CI checks prospector's ClusterPolicies out here so idp-kyverno-render judges all 26 (crew#539).
-# crew#584 pytest-testmon state, per checkout
-.testmondata*

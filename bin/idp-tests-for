@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# bin/idp-tests-for -- print the test files that read any file changed on this branch, then run them.
+#
+# crew#584 (founder 2026-08-28): agents ran the whole suite serially for a change touching a handful of
+# files. pytest-testmon was the first answer and is rejected: it selects by Python coverage, and 127 of
+# the 230 test files read YAML, shell and workflow files instead -- after a YAML-only edit it answered
+# "no tests ran" (measured, a false green). Here a test is selected when it names a changed path (or its
+# basename) in its source; a test file that changed is selected by itself. Nothing is hand-mapped.
+#
+#   bin/idp-tests-for            # select against origin/main, run with -n auto (pyproject addopts)
+#   bin/idp-tests-for --list     # print the selection only
+#   bin/idp-tests-for --base X   # diff against another ref
+#
+# Exit 0 when nothing changed (the message says so); CI on a fresh checkout still runs everything.
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+base=origin/main; list=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --list) list=1 ;;
+    --base) base="$2"; shift ;;
+    *) echo "usage: bin/idp-tests-for [--list] [--base REF]" >&2; exit 64 ;;
+  esac; shift
+done
+changed=$( { git -C "$IDP" diff --name-only "$base"...HEAD; git -C "$IDP" diff --name-only HEAD; git -C "$IDP" ls-files --others --exclude-standard; } | sort -u )
+if [ -z "$changed" ]; then echo "ok    tests-for: nothing changed against $base, nothing to run"; exit 0; fi
+sel=$(
+  for f in $changed; do
+    case "$f" in tests/test_*.py|sovereign/tests/*/*.py) echo "$f" ;; esac
+    b=$(basename "$f")
+    rg -l -F -e "$f" -e "$b" "$IDP/tests" "$IDP/sovereign/tests" --glob '*.py' 2>/dev/null | sed "s#^$IDP/##" || true
+  done | sort -u
+)
+if [ -z "$sel" ]; then echo "ok    tests-for: $(printf '%s\n' "$changed" | wc -l | tr -d ' ') changed file(s), no test names them (CI runs the suite)"; exit 0; fi
+n=$(printf '%s\n' "$sel" | wc -l | tr -d ' ')
+echo "tests-for: $n test file(s) read the changed files"
+if [ "$list" = 1 ]; then printf '%s\n' "$sel"; exit 0; fi
+# shellcheck disable=SC2086
+cd "$IDP" && exec "${IDP_PY:-$IDP/.venv/bin/python}" -m pytest -q $sel

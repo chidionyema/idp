@@ -523,7 +523,6 @@ else
   # non-zero on purpose here, which is the incident guard 1c is about.
   bdd_bad=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/fixtures/bdd/unbound" -q 2>&1)
   bdd_good=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/bdd" -q 2>&1); bdd_good_rc=$?
-  [ "$bdd_good_rc" -eq 5 ] && bdd_good_rc=0  # crew#584 testmon: nothing changed, nothing selected
   if printf '%s' "$bdd_bad" | grep -q 'StepDefinitionNotFoundError' && [ "$bdd_good_rc" -eq 0 ]; then
     say "ok    bdd      $(printf '%s' "$bdd_good" | grep -oE '[0-9]+ passed' | head -1), $(printf '%s' "$bdd_good" | grep -c '^  pending ') feature(s) pending; an unbound step is refused"
     printf '%s' "$bdd_good" | grep '^  pending ' | sed 's/^/      /'
@@ -541,9 +540,6 @@ fi
 #     "bin/idp-ci runs the incident test on every PR" was a claim with no receipt. Tests
 #     that need kyverno or a sibling checkout skip as BLIND and say so; a skip is printed.
 inc=$("$BDD_PY" -m pytest -q -p no:cacheprovider "$IDP"/tests/test_incident_*.py 2>&1); inc_rc=$?
-# crew#584: pytest-testmon is the default (pyproject.toml); on an unchanged tree it selects 0 tests and
-# pytest exits 5. That is "nothing to re-run", not a failure; CI on a fresh checkout still runs everything.
-[ "$inc_rc" -eq 5 ] && inc_rc=0
 if [ "$inc_rc" -eq 0 ]; then
   say "ok    incident $(printf '%s' "$inc" | grep -oE '[0-9]+ passed' | head -1), $(printf '%s' "$inc" | grep -oE '[0-9]+ skipped' | head -1 || printf '0 skipped') (BLIND skips)"
   printf '%s\n' "$inc" | grep -oE 'BLIND: [^)]*' | sort -u | sed 's/^/      /'
