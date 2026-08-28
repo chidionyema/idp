@@ -30,6 +30,20 @@ which is stated below rather than hidden.
 A Helm-backed surface is graded on the values this repository sets, because a chart's default is
 not a decision anyone here made -- oauth2-proxy 10.7.0 defaults to `replicaCount: 1`.
 
+## The front door is a surface too
+
+Seven surfaces that each survive a node are decorative if the one workload they all enter through
+does not. Every HTTPRoute names a Gateway in `parentRefs`; nothing in any manifest says which
+workload implements that Gateway, because `gatewayClassName` is resolved by a controller at
+runtime. So `platform/availability.yaml` declares the mapping (`prospector/prospector-edge` ->
+`edge/traefik`), the gate grades that workload by the same four requirements, and **a `parentRef`
+no row claims is BLIND** -- a new gateway cannot arrive unseen. Traefik ran `replicas: 1` until
+2026-08-28 and no manifest, review or instrument anywhere said so.
+
+The same file's `also_graded` list holds workloads that carry founder traffic without a route of
+their own (`hermes-agent/hermes-agent-gateway`, a ClusterIP every hermes workload calls). Named by
+a human, graded identically.
+
 ## What is guaranteed, and what is not
 
 Guaranteed, and provable by drilling it: **any one node can be cordoned, drained, replaced or lost
@@ -46,7 +60,33 @@ Not guaranteed, stated plainly rather than discovered later:
   milliseconds. Making that highly available is a topology change with a mature operator, not a
   replica count.
 - **Observability.** SigNoz and Langfuse stand on a single ClickHouse and are waived by name in
-  `platform/availability-waivers.yaml` against idp#544. The estate can go blind without going down.
+  `platform/availability.yaml` against idp#544. The estate can go blind without going down.
+- **The agent gateway.** `hermes-agent/hermes-agent-gateway` holds one Telegram token (two
+  long-pollers are 409s on both) and one ReadWriteOnce volume carrying `state.db`. Two replicas
+  there is an outage, not a fix; idp#547 carries the real remedy (webhook, or a lease). A node
+  loss stops The Architect until the pod reschedules.
+
+## Why it went unshouted, and what stops that
+
+Prometheus, Robusta and SigNoz are runtime monitors: they scream when something is *already*
+dying. None of them reads a manifest and says "Traefik has no PodDisruptionBudget" the day before
+a drain. The gap was configuration auditing, and the estate had none. Three things close it, and
+each one is loud in a different place:
+
+| When | What | Where the red light is |
+|---|---|---|
+| Before merge | `bin/idp-availability-gate` in `bin/idp-ci` | the PR is refused; `FAIL`/`BLIND` rows name the surface and the hostname |
+| At admission | `platform/scheduling/require-availability.yaml` (Kyverno `Enforce`) | `kubectl apply`, a chart upgrade or a hand edit is rejected by the API server with the reason |
+| Every run, for ever | the `WAIVED` rows | every waiver prints its reason and its open issue on every single CI run |
+
+The gate and admission cannot drift apart: Kyverno is scoped by the namespace label
+`availability.idp/tier: founder-facing`, and the gate **FAILS any namespace whose surfaces it just
+passed that does not carry that label** -- CI proves the cluster is armed, rather than assuming it.
+
+There is deliberately no PDB-existence rule in the ClusterPolicy: the `apiCall` shape it needs
+panics Kyverno CLI 1.19.0, which `bin/idp-kyverno-render` and CI both run, and a policy that takes
+the estate's own judge down is a worse outage than the one it prevents. The gate does that check
+instead, on the whole rendered directory at once, where apply ordering does not exist.
 
 ## How it is enforced
 

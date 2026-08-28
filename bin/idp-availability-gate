@@ -23,7 +23,12 @@ It must, in the RENDERED manifests (a base with replicas 1 that an overlay patch
   4. a readinessProbe and a livenessProbe -- a rollout with no readiness gate takes the last
      healthy pod down before the new one serves
 
-A surface that cannot meet this yet is named in platform/availability-waivers.yaml with a reason
+The gateway every route names is graded too: platform/availability.yaml says which workload
+implements it, and a gateway no row claims is BLIND. Seven surfaces that each survive a node are
+decorative if the single pod they all enter through does not -- that was true here until
+2026-08-28, and no manifest anywhere said so.
+
+A surface that cannot meet this yet is named in platform/availability.yaml with a reason
 and an open issue, and prints WAIVED. There is no silent pass: an unreadable render, a missing
 kustomize, an unresolvable backend is BLIND (exit 2), never green.
 
@@ -36,7 +41,7 @@ import sys
 import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WAIVERS = os.path.join(ROOT, "platform", "availability-waivers.yaml")
+CONFIG = os.path.join(ROOT, "platform", "availability.yaml")
 
 
 def row(status, text):
@@ -66,11 +71,14 @@ def dirs_with_routes():
     return sorted(d for d in out if not any(o != d and d.startswith(o + os.sep) for o in out))
 
 
-def load_waivers():
-    if not os.path.exists(WAIVERS):
-        return {}
-    doc = yaml.safe_load(open(WAIVERS, encoding="utf-8")) or {}
-    return {w["surface"]: w for w in (doc.get("waivers") or [])}
+def load_config():
+    """(waivers by surface, front doors by gateway, list of also_graded)."""
+    doc = {}
+    if os.path.exists(CONFIG):
+        doc = yaml.safe_load(open(CONFIG, encoding="utf-8")) or {}
+    return ({w["surface"]: w for w in (doc.get("waivers") or [])},
+            {f["gateway"]: f for f in (doc.get("front_doors") or [])},
+            list(doc.get("also_graded") or []))
 
 
 def selects(selector, labels):
@@ -140,26 +148,57 @@ def grade_helm(hr):
     Probes come from the chart's templates and are not graded here -- the row says so rather than
     passing quietly."""
     v = (hr.get("spec") or {}).get("values") or {}
+    dv = v.get("deployment") or {}
     bad = []
-    replicas = v.get("replicaCount", v.get("replicas", 1))
+    # Three spellings in three charts: oauth2-proxy replicaCount, langfuse replicas, traefik
+    # deployment.replicas. Reading only the first is how the front door stayed invisible.
+    replicas = v.get("replicaCount", v.get("replicas", dv.get("replicas", 1)))
     if not isinstance(replicas, int) or replicas < 2:
         bad.append("values set replicas %s: a chart default of 1 is still a single point of failure"
                    % replicas)
-    pdb = v.get("podDisruptionBudget") or {}
+    pdb = v.get("podDisruptionBudget") or dv.get("podDisruptionBudget") or {}
     if not pdb.get("enabled"):
         bad.append("values do not enable the chart's podDisruptionBudget")
     else:
         mn, mx = pdb.get("minAvailable"), pdb.get("maxUnavailable")
         if mx is None and isinstance(mn, int) and isinstance(replicas, int) and mn >= replicas:
             bad.append("PDB minAvailable %s with %s replicas refuses every drain for ever" % (mn, replicas))
-    keys = [c.get("topologyKey") for c in v.get("topologySpreadConstraints") or []
+    keys = [c.get("topologyKey") for c in
+            (v.get("topologySpreadConstraints") or dv.get("topologySpreadConstraints") or [])
             if c.get("whenUnsatisfiable") == "DoNotSchedule"]
     keys += [t.get("topologyKey") for t in
-             (((v.get("affinity") or {}).get("podAntiAffinity") or {})
+             (((v.get("affinity") or dv.get("affinity") or {}).get("podAntiAffinity") or {})
               .get("requiredDuringSchedulingIgnoredDuringExecution") or [])]
     if "kubernetes.io/hostname" not in keys:
         bad.append("nothing in the values keeps the replicas off one node")
     return bad, replicas
+
+
+def judge(objs, surface, waivers):
+    """(status, [detail], replicas, kind) for one surface rendered in objs.
+
+    A Deployment is graded on the rendered object; a HelmRelease on the values we set, because a
+    chart default is nobody's decision. Neither present is BLIND: the surface exists, and nothing
+    here can see it."""
+    ns, _, nm = surface.partition("/")
+    bad, replicas = grade(objs, nm, ns)
+    kind = ""
+    if bad is None:
+        hr = next((o for o in objs if o.get("kind") == "HelmRelease"
+                   and o["metadata"]["name"] == nm
+                   and o["metadata"].get("namespace", ns) == ns), None)
+        if hr is None:
+            return "BLIND", ["no Deployment and no HelmRelease named %s in %s renders here" % (nm, ns)], None, ""
+        bad, replicas = grade_helm(hr)
+        kind = " (HelmRelease)"
+    w = waivers.get(surface)
+    if bad and w:
+        if not w.get("reason") or not w.get("issue"):
+            return "FAIL", ["waiver for %s has no reason or issue" % surface], replicas, kind
+        return "WAIVED", ["%s (%s)" % (w["reason"], w["issue"])], replicas, kind
+    if bad:
+        return "FAIL", bad, replicas, kind
+    return "ok", [], replicas, kind
 
 
 def main(argv):
@@ -170,8 +209,15 @@ def main(argv):
     if not targets:
         row("BLIND", "no platform/ directory renders an HTTPRoute -- nothing found to grade")
         return 2
-    waivers, failed, graded, waived, blind = load_waivers(), [], 0, 0, 0
-    elsewhere, settled, renders = {}, set(), []
+    waivers, fronts, also = load_config()
+    failed, graded, waived, blind = [], 0, 0, 0
+    elsewhere, settled, renders, gateways = {}, set(), [], {}
+    ns_labels, passed = {}, set()
+
+    def note_namespaces(objs):
+        for o in objs:
+            if o.get("kind") == "Namespace":
+                ns_labels[o["metadata"]["name"]] = o["metadata"].get("labels") or {}
 
     for d in targets:
         objs, err = render(d)
@@ -179,6 +225,7 @@ def main(argv):
             blind += 1
             row("BLIND", "%s: kustomize build failed: %s" % (d, err))
             continue
+        note_namespaces(objs)
         routes = [o for o in objs if o.get("kind") == "HTTPRoute"]
         renders.append((d, objs, {r["metadata"].get("namespace", "") for r in routes}
                         | {b.get("namespace", r["metadata"].get("namespace", ""))
@@ -192,6 +239,8 @@ def main(argv):
         for rt in routes:
             rns = rt["metadata"].get("namespace", "")
             hosts = ", ".join(rt.get("spec", {}).get("hostnames") or ["(no hostname)"])
+            for pr in rt.get("spec", {}).get("parentRefs") or []:
+                gateways.setdefault("%s/%s" % (pr.get("namespace", rns), pr.get("name")), set()).add(hosts)
             for rule in rt.get("spec", {}).get("rules") or []:
                 for ref in rule.get("backendRefs") or []:
                     ns, nm = ref.get("namespace", rns), ref.get("name")
@@ -215,6 +264,7 @@ def main(argv):
                                 row("FAIL", "%-26s %s (HelmRelease): %s" % (hosts, surface, b))
                         else:
                             graded += 1
+                            passed.add(surface)
                             row("ok", "%-26s %s (HelmRelease): %d replicas, PDB, spread -- "
                                       "survives one node; probes come from the chart and are not graded here"
                                 % (hosts, surface, replicas))
@@ -247,6 +297,7 @@ def main(argv):
                             row("FAIL", "%-26s %s: %s" % (hosts, surface, b))
                     else:
                         graded += 1
+                        passed.add(surface)
                         row("ok", "%-26s %s: %d replicas, PDB, anti-affinity, probes -- survives one node"
                             % (hosts, surface, replicas))
 
@@ -288,8 +339,93 @@ def main(argv):
                     row("FAIL", "%-26s %s: %s" % ("(behind a route)", surface, b))
             else:
                 graded += 1
+                passed.add(surface)
                 row("ok", "%-26s %s: %d replicas, PDB, anti-affinity, probes -- survives one node"
                     % ("(behind a route)", surface, replicas))
+
+    # The front door. Seven surfaces that each survive a node are decorative if the one workload
+    # they all enter through does not, and no manifest says which workload that is -- so
+    # platform/availability.yaml declares it and a gateway nobody declared is BLIND, never absent.
+    for gw, hostsets in sorted(gateways.items()):
+        hosts = "%d hostname(s)" % len({h for hs in hostsets for h in hs.split(", ")})
+        f = fronts.get(gw)
+        if not f or not f.get("implemented_by") or not f.get("path"):
+            blind += 1
+            row("BLIND", "%-26s gateway %s carries every route above and platform/availability.yaml "
+                         "names no workload implementing it -- the front door is ungraded" % (hosts, gw))
+            continue
+        objs, err = render(f["path"])
+        if objs is None:
+            blind += 1
+            row("BLIND", "%-26s front door %s: kustomize build %s failed: %s" % (hosts, gw, f["path"], err))
+            continue
+        note_namespaces(objs)
+        surface = f["implemented_by"]
+        status, details, replicas, kind = judge(objs, surface, waivers)
+        settled.add(surface)
+        if status == "ok":
+            graded += 1
+            passed.add(surface)
+            row("ok", "%-26s %s%s implements %s: %d replicas, PDB, spread -- the front door survives one node"
+                % (hosts, surface, kind, gw, replicas))
+        elif status == "WAIVED":
+            waived += 1
+            row("WAIVED", "%-26s %s (front door): %s" % (hosts, surface, details[0]))
+        elif status == "BLIND":
+            blind += 1
+            row("BLIND", "%-26s front door %s: %s" % (hosts, gw, details[0]))
+        else:
+            failed.append(surface)
+            for b in details:
+                row("FAIL", "%-26s %s%s is the front door for %s: %s" % (hosts, surface, kind, gw, b))
+
+    # Workloads a human named: founder traffic reaches them without a route of their own.
+    for a in also:
+        surface, path = a.get("surface"), a.get("path")
+        if not surface or not path:
+            blind += 1
+            row("BLIND", "an also_graded row names no surface or no path")
+            continue
+        if surface in settled:
+            continue
+        objs, err = render(path)
+        if objs is None:
+            blind += 1
+            row("BLIND", "%-26s %s: kustomize build %s failed: %s" % ("(named by hand)", surface, path, err))
+            continue
+        note_namespaces(objs)
+        status, details, replicas, kind = judge(objs, surface, waivers)
+        settled.add(surface)
+        if status == "ok":
+            graded += 1
+            passed.add(surface)
+            row("ok", "%-26s %s%s: %d replicas, PDB, anti-affinity, probes -- survives one node"
+                % ("(named by hand)", surface, kind, replicas))
+        elif status == "WAIVED":
+            waived += 1
+            row("WAIVED", "%-26s %s: %s" % ("(named by hand)", surface, details[0]))
+        elif status == "BLIND":
+            blind += 1
+            row("BLIND", "%-26s %s: %s" % ("(named by hand)", surface, details[0]))
+        else:
+            failed.append(surface)
+            for b in details:
+                row("FAIL", "%-26s %s%s: %s" % ("(named by hand)", surface, kind, b))
+
+    # CI is not the cluster. A namespace whose surfaces pass here must also carry the label that
+    # arms platform/scheduling/require-availability.yaml, or a `kubectl apply` or a chart upgrade
+    # that never sees a PR can put it back on one pod and admission will take it. This is the row
+    # that keeps the two halves of the standard from drifting apart.
+    for ns in sorted({sfc.partition("/")[0] for sfc in passed}):
+        if ns not in ns_labels:
+            failed.append(ns)
+            row("FAIL", "%-26s namespace %s renders no Namespace object here, so the gate cannot "
+                        "prove the cluster enforces what CI just passed" % ("(admission)", ns))
+        elif ns_labels[ns].get("availability.idp/tier") != "founder-facing":
+            failed.append(ns)
+            row("FAIL", "%-26s namespace %s passes in CI but the cluster would accept a regression: "
+                        "it does not carry availability.idp/tier=founder-facing, so the Kyverno "
+                        "policy require-availability does not cover it" % ("(admission)", ns))
 
     tail = " (%d waived)" % waived if waived else ""
     if blind:

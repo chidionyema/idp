@@ -1,0 +1,100 @@
+# crew#555 / idp#545. The CI gate (bin/idp-availability-gate) refuses a PR that drops a
+# founder-facing surface below the standard. This is the same standard at admission, so a
+# `kubectl apply`, a chart upgrade or a hand edit that never sees a PR is refused by the cluster
+# itself -- configuration auditing before the outage, not runtime monitoring after it.
+#
+# Scope is a namespace label, not a name list: a namespace carrying
+# `availability.idp/tier: founder-facing` is enforced, and bin/idp-availability-gate FAILS any
+# namespace whose surfaces it graded green that does not carry the label. So the two cannot drift:
+# CI proves the label is on every namespace the cluster must enforce.
+#
+# StatefulSets are deliberately out of scope: every database here is one instance by design and
+# docs/policy/availability-standard.md says so out loud rather than pretending otherwise.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-availability
+  annotations:
+    policies.kyverno.io/title: Founder-facing workloads survive losing one node
+    policies.kyverno.io/category: crew#555 availability standard
+    policies.kyverno.io/severity: critical
+    policies.kyverno.io/subject: Deployment, PodDisruptionBudget
+    policies.kyverno.io/description: >-
+      2026-08-28 06:20-06:39Z: cordoning one node put the only catalogue pod into Pending and
+      https://catalogue.mumchimp.com answered 503 for 15 minutes. Nothing was broken -- the
+      manifest said replicas 1 and platform/ held no PodDisruptionBudget at all. These rules make
+      that manifest impossible to admit.
+spec:
+  background: true
+  rules:
+    - name: founder-facing-runs-two
+      match:
+        any:
+          - resources:
+              kinds: [Deployment]
+              namespaceSelector:
+                matchLabels: { availability.idp/tier: founder-facing }
+      validate:
+        failureAction: Enforce
+        message: >-
+          crew#555: a founder-facing Deployment runs at least 2 replicas. One pod is one node
+          event away from a 503 (the catalogue outage of 2026-08-28 06:20Z). If this workload
+          genuinely cannot be two (one token, one RWO volume), it belongs in
+          platform/availability.yaml with an open issue, not at replicas 1 in a founder-facing
+          namespace.
+        pattern:
+          spec:
+            replicas: ">1"
+    - name: founder-facing-spreads-across-nodes
+      match:
+        any:
+          - resources:
+              kinds: [Deployment]
+              namespaceSelector:
+                matchLabels: { availability.idp/tier: founder-facing }
+      validate:
+        failureAction: Enforce
+        message: >-
+          crew#555: two replicas on one node are one replica. Needs a required podAntiAffinity or
+          a DoNotSchedule topologySpreadConstraint on kubernetes.io/hostname.
+        anyPattern:
+          - spec:
+              template:
+                spec:
+                  affinity:
+                    podAntiAffinity:
+                      requiredDuringSchedulingIgnoredDuringExecution:
+                        - topologyKey: kubernetes.io/hostname
+          - spec:
+              template:
+                spec:
+                  topologySpreadConstraints:
+                    - topologyKey: kubernetes.io/hostname
+                      whenUnsatisfiable: DoNotSchedule
+    - name: a-pdb-never-refuses-every-drain
+      match:
+        any:
+          - resources:
+              kinds: [PodDisruptionBudget]
+      validate:
+        failureAction: Enforce
+        message: >-
+          crew#555: this budget leaves the drain no move at all. maxUnavailable 0 (or a
+          minAvailable of 100%) is what the clickhouse budget did to the drain at 06:30:43Z on
+          2026-08-28: kubectl drain retried and gave up. State a budget that permits one eviction.
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.maxUnavailable || '' }}"
+                operator: AnyIn
+                value: [0, "0", "0%"]
+              - key: "{{ request.object.spec.minAvailable || '' }}"
+                operator: AnyIn
+                value: ["100%"]
+    # There is deliberately NO rule here asserting that a PodDisruptionBudget exists. The obvious
+    # shape -- a context apiCall listing poddisruptionbudgets in the namespace -- panics the
+    # Kyverno CLI 1.19.0 that bin/idp-kyverno-render and CI run ("you must register resource to
+    # list kind ... Resource=poddisruptionbudgets"), so shipping it would take the estate's own
+    # policy judge down on every PR. bin/idp-availability-gate is the enforcing check for PDB
+    # existence and is the better one anyway: it reads the whole rendered directory at once, where
+    # apply ordering does not exist, and it refuses the PR before anything reaches the cluster.

@@ -31,7 +31,27 @@ spec:
         name: traefik
   values:
     deployment:
-      replicas: 1
+      # Two, on two nodes. Everything the founder can open enters through this pod: at replicas 1
+      # the seven surfaces behind it that survive a node drain (bin/idp-availability-gate) are
+      # decorative, because the front door dies with the node it happens to sit on.
+      replicas: 2
+    # Named in the PriorityClass description as routing: the front door is seated on a node before
+    # anything else, and evicts the balloon rather than queueing behind it.
+    priorityClassName: infrastructure-critical
+    podDisruptionBudget:
+      enabled: true
+      # minAvailable, not maxUnavailable: with 2 replicas both leave the drain exactly one move,
+      # and minAvailable states the floor the front door must keep rather than the ceiling it may
+      # lose. Never raise it to 2 -- minAvailable == replicas is the shape that refused every
+      # drain on the clickhouse PDB at 06:30:43Z.
+      minAvailable: 1
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: traefik
     providers:
       kubernetesGateway:
         enabled: true
@@ -47,7 +67,19 @@ spec:
       dashboard:
         enabled: false
     service:
-      type: LoadBalancer
+      # `spec:`, not `type:` at this level. The chart passes this map straight into the Service
+      # spec (values.yaml: "Additional entries here will be added to the Service spec"); a bare
+      # `service.type` is not a key the chart reads, so the LoadBalancer this estate has always
+      # had came from the chart's own default and nothing here decided it. Proved by
+      # `helm template ... | grep externalTrafficPolicy` returning nothing until this moved.
+      spec:
+        type: LoadBalancer
+        # Local, not Cluster: the load balancer sends traffic only to nodes running a healthy
+        # Traefik pod (no second hop through a node that has none) and the client IP survives to
+        # oauth2-proxy and the access log. Safe because the spread constraint above puts one pod
+        # on each node; a node without one is health-checked out of the backend set rather than
+        # blackholing.
+        externalTrafficPolicy: Local
       # No provider annotations here (R36): the cluster row (clusters/<cluster>/edge.yaml)
       # patches in the load-balancer shape its cloud needs.
     resources:

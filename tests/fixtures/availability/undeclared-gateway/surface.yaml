@@ -12,6 +12,9 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata: { name: demo, namespace: demo }
 spec:
+  parentRefs:
+    - name: nobody-declared-me
+      namespace: demo
   hostnames: ["demo.example"]
   rules:
     - backendRefs: [{ name: demo, port: 80 }]

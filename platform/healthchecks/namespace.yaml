@@ -8,4 +8,5 @@ metadata:
   name: healthchecks
   labels:
     pod-security.kubernetes.io/enforce: restricted
+    availability.idp/tier: founder-facing
     idp.estate/edge-attach: "true"

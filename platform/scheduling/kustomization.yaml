@@ -10,4 +10,5 @@ resources:
   - priorityclasses.yaml
   - balloon.yaml
   - require-priority-class.yaml
+  - require-availability.yaml
   - capacity-affinity.yaml
