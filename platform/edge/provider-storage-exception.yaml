@@ -20,3 +20,28 @@ spec:
           kinds: [StatefulSet]
           namespaces: [observability]
           names: [langfuse-postgresql, signoz, signoz-zookeeper]
+---
+# The third declared hole (crew#66, R43 sweep 2026-08-28), same class of problem as the one above
+# but a plain PersistentVolumeClaim rather than a StatefulSet's volumeClaimTemplates: the seaweedfs
+# s3 sub-chart under langfuse-values.yaml (s3.allInOne.data.storageClass) has pinned oci-bv since
+# the langfuse HelmRelease first merged (crew#286 CP6, b4bb657), and the object it renders is a
+# standalone PersistentVolumeClaim, already created and bound on the live cluster. spec.storageClassName
+# is immutable on a PersistentVolumeClaim once it exists, so dropping the field from the values file
+# is a data migration (delete and recreate the claim, losing the SeaweedFS volume), not a values
+# edit; the values file stays on oci-bv until that migration is planned. Namespace kyverno:
+# admission honours exceptions from nowhere else (platform/edge/kyverno.yaml features.policyExceptions).
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: provider-observability-storage-legacy-pvc
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: provider-independence
+      ruleNames: [no-provider-storage-class]
+  match:
+    any:
+      - resources:
+          kinds: [PersistentVolumeClaim]
+          namespaces: [observability]
+          names: [langfuse-s3-all-in-one-data]
