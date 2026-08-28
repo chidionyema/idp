@@ -82,9 +82,18 @@ spec:
         externalTrafficPolicy: Local
       # No provider annotations here (R36): the cluster row (clusters/<cluster>/edge.yaml)
       # patches in the load-balancer shape its cloud needs.
+    # Guaranteed QoS: requests == limits on cpu AND memory, because the front door joined the
+    # radio-room set on crew#555 and crew#539 CP9 is that the set the kubelet must evict last is
+    # Guaranteed. It was Burstable (50m request, no cpu limit, a 256Mi ceiling four times its
+    # request), which is the class the kubelet reaches for second under memory pressure.
+    # 300m is a ceiling, not a reservation: this edge carries a handful of internal hostnames at
+    # single-digit requests per second, and 300m x 2 replicas is 15% of one 4-OCPU node. Raise
+    # both numbers together if that ever stops being true -- raising only the limit silently
+    # demotes it back to Burstable, and require-priority-class refuses that at admission.
     resources:
       requests:
-        cpu: 50m
-        memory: 64Mi
+        cpu: 300m
+        memory: 256Mi
       limits:
+        cpu: 300m
         memory: 256Mi
