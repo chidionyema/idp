@@ -10,9 +10,7 @@ on:
 # 20 queued runs, 12 of them stale duplicates, and a one-line oke-check waited 19 min (crew#516).
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  # crew#584 (founder 2026-08-28): 20 of the last 40 main runs were cancelled by the next merge, so
-  # those commits never got a verdict. A PR push still cancels its own obsolete run; main never does.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 jobs:
   offline-gate:
     runs-on: ubuntu-latest
