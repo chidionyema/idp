@@ -183,3 +183,10 @@ drills:
       rows per science.source in ClickHouse over the last 24 hours and writes the count as a receipt;
       at least one source is the only green, and a backend that cannot answer is BLIND
       (crew#516 CP5, LAW 50: the lane is graded by querying the backend, never by scanning files).
+  - name: drift-reversal
+    workflow: drift-drill.yml
+    job: drift
+    schedule: "41 4 * * *"
+    max_age_hours: 26
+    proves: A hand-edit to a field the source declares is reverted on a live cluster, and the drill prints how many seconds it stayed live, so the architecture's claim that Flux reverts drift is a measured number rather than the word immediately. It also records whether an undeclared annotation survives, which is the case Flux does not cover.
+
