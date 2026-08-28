@@ -21,7 +21,7 @@ IDP = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT = IDP / "bin" / "idp-bootstrap-tailscale"
 
 
-def _estate(tmp_path, operator=None, seed=("kSEED123456", "tskey-client-seed-1"), mint_ok=True):
+def _estate(tmp_path, operator=None, seed=("kSEED123456", "tskey-client-seed-1"), mint_ok=True, delete_code="204", seed_scope="oauth_keys"):
     sh = tmp_path / "shims"; sh.mkdir()
     log = tmp_path / "curl.log"; vault = tmp_path / "vault.json"; log.touch()
     vault.write_text(json.dumps({k: v for k, v in {
@@ -32,8 +32,8 @@ def _estate(tmp_path, operator=None, seed=("kSEED123456", "tskey-client-seed-1")
     (sh / "curl").write_text(f'''#!/bin/bash
 echo "$@" >> "{log}"
 case "$*" in
-  *oauth/token*) case "$*" in *-u\\ *dead*) echo '{{"message":"invalid_client"}}';; *) echo '{{"access_token":"at-1","scope":"auth_keys devices:core policy_file"}}';; esac;;
-  *DELETE*) exit 0;;
+  *oauth/token*) pair=$(cat); echo "$pair" >> "{log}"; case "$pair" in *dead*) echo '{{"message":"invalid_client"}}';; *SEED*) echo '{{"access_token":"at-seed","scope":"{seed_scope}"}}';; *) echo '{{"access_token":"at-1","scope":"auth_keys devices:core policy_file"}}';; esac;;
+  *DELETE*) printf '{delete_code}'; exit 0;;
   *tailnet/-/keys*) echo '{mint}';;
   *) echo '{{}}';;
 esac
@@ -75,6 +75,9 @@ def test_incident_crew66_the_operator_client_is_minted_by_post_keys_with_the_thr
     v = json.load(open(vault))["tailscale-operator"]
     assert v == {"client_id": "kNEW987654", "client_secret": "tskey-client-new-1"}
     assert "tskey-client" not in p.stdout, "a secret reached stdout"
+    for l in log.read_text().splitlines():
+        if "oauth/token" in l:
+            assert "tskey-client" not in l, "a client secret reached curl's argv"
 
 
 def test_incident_crew66_no_seed_is_one_named_human_step_and_nothing_is_minted(tmp_path):
@@ -114,3 +117,20 @@ def test_incident_crew66_an_api_refusal_writes_nothing(tmp_path):
     p = _run(env)
     assert p.returncode == 1 and "scope oauth_keys required" in p.stdout, p.stdout + p.stderr
     assert "tailscale-operator" not in json.load(open(vault))
+
+
+def test_incident_crew66_a_refused_delete_on_rotate_is_a_failure_not_a_deleted_line(tmp_path):
+    """Reviewer 14ed6c8b on idp#624: curl without -f exits 0 on 403, so a refused DELETE printed
+    "deleted" while the superseded credential stayed live."""
+    env, log, vault = _estate(tmp_path, operator=("kOLD111111", "tskey-client-old-1"), delete_code="403")
+    p = _run(env, "--rotate")
+    assert p.returncode == 1 and "NOT deleted" in p.stdout and "403" in p.stdout, p.stdout + p.stderr
+    assert "deleted" not in p.stdout.replace("NOT deleted", "")
+    assert json.load(open(vault))["tailscale-operator"]["client_id"] == "kNEW987654", "the new client is vaulted before the old one is retired"
+
+
+def test_incident_crew66_a_seed_with_more_than_oauth_keys_is_refused_before_minting(tmp_path):
+    env, log, vault = _estate(tmp_path, seed_scope="oauth_keys users devices:core")
+    p = _run(env)
+    assert p.returncode == 1 and "more than oauth_keys" in p.stdout, p.stdout + p.stderr
+    assert "tailnet/-/keys" not in log.read_text()
