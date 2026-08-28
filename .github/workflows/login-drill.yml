@@ -52,14 +52,24 @@ jobs:
           OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
           OCI_REGION: ${{ vars.OCI_REGION }}
+          DRILL_SHOT: ${{ runner.temp }}/login-drill-home.png
         run: |
           set -o pipefail
           bin/idp-login-drill 2>&1 | tee drill.out
+      - name: the picture of the page it graded, red or green
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: login-drill-home
+          path: ${{ runner.temp }}/login-drill-home.png
+          if-no-files-found: warn
+          retention-days: 14
       - name: the verdict is on the run summary, pass or fail
         if: always()
         run: |
           line=$(grep -E '^(ok|FAIL) +login-drill' drill.out | tail -1 || true)
-          printf '### login-drill\n```\n%s\n```\n' "${line:-no verdict line: the drill died before printing one}" >> "$GITHUB_STEP_SUMMARY"
+          home=$(grep -E '^(home|paths) +login-drill' drill.out || true)
+          printf '### login-drill\n```\n%s\n%s\n```\n' "${home:-no home row}" "${line:-no verdict line: the drill died before printing one}" >> "$GITHUB_STEP_SUMMARY"
       - name: a failed drill is an open P0 on this repository, never a badge nobody reads
         if: failure()
         env:
