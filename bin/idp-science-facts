@@ -35,11 +35,19 @@ if [ $rc -ne 0 ]; then
   esac
 fi
 body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name science/facts 2>/dev/null)
-python3 - "$head" "$body" "$MAX_MIN" "$JSON" "$SOURCES" <<'PY'
+# crew#539 (2026-08-28 00:28Z, run 33129788480): the outage receipt (36 Flux rows, 40 pods with
+# their last log) outgrew ARG_MAX and `python3: Argument list too long` graded the estate BLIND
+# at the moment it needed reading. The body travels by file, never by argv.
+bodyf=$(mktemp); trap 'rm -f "$bodyf"' EXIT; printf '%s' "$body" > "$bodyf"
+python3 - "$head" "$bodyf" "$MAX_MIN" "$JSON" "$SOURCES" <<'PY'
+import os as _os
+def _body_arg(a):
+    # crew#539: the receipt is a file path when the caller wrote it out (ARG_MAX, run 33129788480); a literal body is still accepted for the test harnesses.
+    return (open(a, encoding='utf-8', errors='replace').read() if _os.path.isfile(a) else a).strip()
 import json, re, sys
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-head, body, max_min, flag, sources_path = sys.argv[1], sys.argv[2].strip(), float(sys.argv[3]), sys.argv[4], sys.argv[5]
+head, body, max_min, flag, sources_path = sys.argv[1], _body_arg(sys.argv[2]), float(sys.argv[3]), sys.argv[4], sys.argv[5]
 line1, _, rest = body.partition("\n")
 try:
     lm = json.loads(head)["last-modified"]
