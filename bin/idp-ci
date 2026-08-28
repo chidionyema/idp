@@ -574,7 +574,33 @@ if command -v kyverno >/dev/null && command -v helm >/dev/null; then
     # underline: no dir, no policy, no cause (offline-gate on run 33173089759). An instrument that
     # destroys the cause is not an instrument (LAW 28) and nobody can attribute from it (LAW 29).
     # Every line that is not an `ok` verdict travels, tail-capped so one rung stays one screen.
-    printf '%s\n' "$kyv" | grep -vE '^ok ' | tail -40 | sed 's/^/      /'; fail=1
+    #
+    # crew#292 again, 2026-08-28: the cap above was `| tail -40` over the whole block, and with two
+    # failing dirs it ate the first one whole. Measured on the shipped block: `platform/state` with 25
+    # policy lines followed by `platform/litellm` with 25 gives 52 non-`ok` lines, the cap keeps the
+    # last 40, and `FAIL  plain    platform/state` survives in zero of them -- the block opens
+    # mid-stream on `policy rule-12 -> state-collector failed` with no dir above it and nothing saying
+    # 12 lines were cut. The operator reads one failing dir where there are two and attributes to the
+    # wrong one: the same shape the `grep -E '^(FAIL|      )'` above cost us (LAW 28, LAW 29), moved
+    # to a threshold instead of removed. That case is not hypothetical -- it is what a Kyverno policy
+    # bump looks like, which is exactly when the cap fires.
+    #
+    # So the cap stays 40 lines total (a rung is still one screen) but it is no longer blind or
+    # silent: the `FAIL` lines are the index into the failure and are printed first, uncapped, then
+    # one line saying how many were dropped, then the tail of what is left. Under 40 lines this is
+    # byte-identical to the block above it.
+    body=$(printf '%s\n' "$kyv" | grep -vE '^ok ')
+    n=$(printf '%s\n' "$body" | grep -c . )
+    if [ "$n" -gt 40 ]; then
+      dirs_failed=$(printf '%s\n' "$body" | grep -c '^FAIL')
+      printf '%s\n' "$body" | grep '^FAIL' | sed 's/^/      /'
+      say "      ... $((n - 40)) of $n lines dropped by the cap; $dirs_failed dir(s) failed, named above"
+      rest=$((40 - dirs_failed - 1)); [ "$rest" -lt 0 ] && rest=0
+      printf '%s\n' "$body" | grep -vE '^FAIL' | tail -n "$rest" | sed 's/^/      /'
+    else
+      printf '%s\n' "$body" | sed 's/^/      /'
+    fi
+    fail=1
   elif (cd "$IDP" && bin/idp-kyverno-render tests/fixtures/kyverno/must-fail >/dev/null 2>&1); then
     say "FAIL  kyverno  the must-fail fixture passed; the judge admits an unpatched chart"; fail=1
   else say "ok    kyverno  $(echo "$dirs" | tr '\n' ' ')render clean; the unpatched-chart fixture is refused"; fi
