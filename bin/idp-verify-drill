@@ -136,6 +136,17 @@ case "$toil_rc" in
   *) bl no-toil "$(printf '%s\n' "$toil_out" | tail -1 | cut -c1-160)";;
 esac
 
+# --- conscience: the founder's ethos and the engineering tenets, one grade, hourly, and a red row
+# files its own crew issue (crew#584, founder 2026-08-28: "we neasure everything but we dont act
+# ont i"). Until this row the grade ran only as a CI selftest and a 9-minute CI was red nowhere.
+con_out=$(python3 "$(dirname "$0")/idp-conscience" --act 2>&1); con_rc=$?
+case "$con_rc" in
+  0) say ok conscience "$(printf '%s\n' "$con_out" | grep -E '^score ' | cut -c1-160)";;
+  1) printf '%s\n' "$con_out" | grep -E '^(red  |filed )' | sed 's/^/        /'
+     fail conscience "$(printf '%s\n' "$con_out" | grep -E '^score ' | cut -c1-120) -- each red row is filed on the board (lines above)";;
+  *) bl conscience "$(printf '%s\n' "$con_out" | grep -E 'BLIND' | tail -1 | cut -c1-160)";;
+esac
+
 # --- root-trust: every vault entry an ExternalSecret reads is born by a bootstrapper or ticketed
 # (crew#66 ruling 5453747447, crew#580, docs/policy/root-trust.md). Hourly so an entry that
 # lands by hand through any door is red within the hour, like every other row.

@@ -124,6 +124,113 @@ def ledger_fresh(hours: int) -> int:
     return 0 if fresh else 1
 
 
+# --- engineering measurers (crew#584, founder 2026-08-28: "why did i need to tel the crew to optinise
+# the tests ... the engineerig phisolophi is weak. we should not be renided for the engineering
+# tenents"). Each is one number GitHub already holds, printed on the last stdout line so a tenets
+# row can read it. `gh` is the estate's GitHub client (LAW 43); the board and the repo are derived
+# from the checkout's own remote, never typed (LAW 46). BLIND (exit 2) when gh cannot answer.
+
+def _gh(*args: str) -> str | None:
+    try:
+        p = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return p.stdout if p.returncode == 0 else None
+
+
+def _runs(limit: int = 30, status: str | None = None) -> list[dict] | None:
+    args = ["run", "list", "--workflow", "ci.yml", "--branch", "main", "--limit", str(limit),
+            "--json", "createdAt,updatedAt,conclusion,attempt,databaseId"]
+    if status:
+        args += ["--status", status]
+    out = _gh(*args)
+    return None if out is None else json.loads(out)
+
+
+def _minutes(run: dict) -> float:
+    a = dt.datetime.fromisoformat(run["createdAt"].replace("Z", "+00:00"))
+    b = dt.datetime.fromisoformat(run["updatedAt"].replace("Z", "+00:00"))
+    return (b - a).total_seconds() / 60
+
+
+def ci_minutes() -> int:
+    """Wall-clock minutes of the latest green ci.yml run on main (the loop every merge waits on)."""
+    runs = _runs(1, "success")
+    if not runs:
+        print("BLIND gh cannot list main's ci.yml runs"); return 2
+    m = _minutes(runs[0])
+    print(f"ci.yml run {runs[0]['databaseId']} on main took {m:.1f} min"); print(int(m + 0.999)); return 0
+
+
+def ci_minutes_day() -> int:
+    """Runner minutes ci.yml spent on main in the last 24 h -- the CI bill, and what a faster gate cuts."""
+    runs = _runs(300)
+    if runs is None:
+        print("BLIND gh cannot list main's ci.yml runs"); return 2
+    now = dt.datetime.now(dt.timezone.utc)
+    day = [r for r in runs if (now - dt.datetime.fromisoformat(r["createdAt"].replace("Z", "+00:00"))).total_seconds() < 86400]
+    total = sum(_minutes(r) for r in day)
+    print(f"{len(day)} ci.yml run(s) on main in 24h, {total:.0f} runner-minutes"); print(int(total)); return 0
+
+
+def flakes(days: int) -> int:
+    """Runs on main that failed and then passed on a rerun: a rerun that changes the verdict is a flaky test."""
+    runs = _runs(300)
+    if runs is None:
+        print("BLIND gh cannot list main's ci.yml runs"); return 2
+    now = dt.datetime.now(dt.timezone.utc)
+    n = sum(1 for r in runs if r.get("attempt", 1) > 1 and r["conclusion"] == "success"
+            and (now - dt.datetime.fromisoformat(r["createdAt"].replace("Z", "+00:00"))).days < days)
+    print(f"{n} rerun(s) turned a red main run green in {days} day(s)"); print(n); return 0
+
+
+def prs_older(hours: int) -> int:
+    """Open pull requests older than `hours`: a PR nobody merges is inventory rotting (founder: "too many open prs")."""
+    out = _gh("pr", "list", "--state", "open", "--limit", "100", "--json", "number,createdAt")
+    if out is None:
+        print("BLIND gh cannot list open pull requests"); return 2
+    now = dt.datetime.now(dt.timezone.utc)
+    old = [pr["number"] for pr in json.loads(out)
+           if (now - dt.datetime.fromisoformat(pr["createdAt"].replace("Z", "+00:00"))).total_seconds() > hours * 3600]
+    print(f"{len(old)} open PR(s) older than {hours}h: {' '.join('#%d' % n for n in old) or 'none'}"); print(len(old)); return 0
+
+
+def board() -> str | None:
+    """The crew board this checkout reports to: <owner of this repo>/crew, or CONSCIENCE_BOARD."""
+    if os.environ.get("CONSCIENCE_BOARD"):
+        return os.environ["CONSCIENCE_BOARD"]
+    owner = _gh("repo", "view", "--json", "owner", "--jq", ".owner.login")
+    return f"{owner.strip()}/crew" if owner else None
+
+
+def act(report: pathlib.Path) -> int:
+    """A red row is work, not a report (founder 2026-08-28: "we neasure everything but we dont act
+    ont i"). Every red row gets one open issue on the board, keyed by the row's name -- created the
+    first hour it is red, commented on every later hour with the fresh value -- so the goal-guard
+    injects it into every session and a lane claims it. Green rows open nothing. Returns the number
+    of red rows so the caller's exit code still says red."""
+    rows = json.loads(report.read_text())["tenets"]
+    red = [r for r in rows if r["ok"] is False]
+    repo = board()
+    if red and repo is None:
+        print("BLIND cannot name the board (gh repo view failed); red rows not filed"); return 2
+    for r in red:
+        title = f"conscience: {r['name']} is red"
+        found = _gh("issue", "list", "--repo", repo, "--state", "open", "--search", f'"{title}" in:title',
+                    "--json", "number,title", "--jq", f'[.[] | select(.title == "{title}")][0].number')
+        line = (f"`{r['name']}` measured **{r['how']}**, green when `{r['green']}`.\n\n"
+                f"Ethos: {r['ethos']}\n\nMeasure: `{r['measure']}`\n\n"
+                f"Filed by bin/idp-conscience --act; the row goes green when the measure does, and this issue is the work.")
+        if found and found.strip():
+            _gh("issue", "comment", found.strip(), "--repo", repo, "--body", line)
+            print(f"filed {r['name']:<15} -> {repo}#{found.strip()} (updated)")
+        else:
+            url = _gh("issue", "create", "--repo", repo, "--title", title, "--label", "conscience", "--body",
+                      f"Tracked: crew#584\n\n{line}") or ""
+            print(f"filed {r['name']:<15} -> {url.strip() or 'create failed'}")
+    return len(red)
+
+
 def selftest() -> int:
     fx = IDP / "tests" / "fixtures" / "conscience"
     import tempfile
@@ -142,4 +249,15 @@ if __name__ == "__main__":
         sys.exit(selftest())
     if "--ledger-fresh-hours" in sys.argv:
         sys.exit(ledger_fresh(int(sys.argv[sys.argv.index("--ledger-fresh-hours") + 1])))
-    sys.exit(grade(TENETS, REPORT, IDP))
+    if "--ci-minutes" in sys.argv:
+        sys.exit(ci_minutes())
+    if "--ci-minutes-day" in sys.argv:
+        sys.exit(ci_minutes_day())
+    if "--flakes-days" in sys.argv:
+        sys.exit(flakes(int(sys.argv[sys.argv.index("--flakes-days") + 1])))
+    if "--pr-older-hours" in sys.argv:
+        sys.exit(prs_older(int(sys.argv[sys.argv.index("--pr-older-hours") + 1])))
+    rc = grade(TENETS, REPORT, IDP)
+    if "--act" in sys.argv and rc != 2:
+        act(REPORT)
+    sys.exit(rc)

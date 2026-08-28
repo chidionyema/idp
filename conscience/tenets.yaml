@@ -60,3 +60,74 @@ tenets:
     green: ">= 1"
     pr_rule: incident_has_a_guard
     mode: warn
+  # --- engineering tenets (crew#584). Founder, 2026-08-28: "why did i need to tel the crew to
+  # optinise the tests ... the engineerig phisolophi is weak. we should not be renided for the
+  # engineering tenents"; "optinisation should be standrd"; "security should be standaed";
+  # "perofrnance should be standard"; "cost optinasation should be standard"; "sound, resilient
+  # solutions that are robust and battke tested should be standard"; "these are basics".
+  # Until these rows existed nothing in the estate was red at a 9-minute CI (run 33195096448:
+  # offline-gate 8m50s, the kyverno rung 4m10s of it) and the founder had to say it. Now a red row
+  # files its own crew issue (bin/idp-conscience --act, hourly from bin/idp-verify-drill).
+  - name: fast-ci
+    ethos: Optimisation is standard. The gate every merge waits on runs in five minutes or less.
+    measure: python3 bin/idp-conscience --ci-minutes
+    reads: stdout
+    green: "<= 5"
+    pr_rule: ci_budget_kept
+    mode: warn
+  - name: fast-loop
+    ethos: Optimisation is standard. The tests for a change run in under thirty seconds on the laptop.
+    measure: "s=$(date +%s); bin/idp-tests-for --base HEAD~1 >/dev/null 2>&1; echo $(( $(date +%s) - s ))"
+    reads: stdout
+    green: "<= 30"
+    pr_rule: ci_budget_kept
+    mode: warn
+  - name: main-green
+    ethos: Main is never left red. A red main is the fire, and the fire is put out first (LAW 1).
+    measure: "gh run list --workflow ci.yml --branch main --limit 1 --json conclusion --jq 'if .[0].conclusion == \"success\" then 1 else 0 end'"
+    reads: stdout
+    green: "== 1"
+    pr_rule: main_green
+    mode: warn
+  - name: short-lived-prs
+    ethos: A pull request is merged or closed within a day. Open PRs are inventory rotting.
+    measure: python3 bin/idp-conscience --pr-older-hours 24
+    reads: stdout
+    green: "== 0"
+    pr_rule: pr_age
+    mode: warn
+  - name: no-flake
+    ethos: A test that fails and then passes on a rerun is a defect, never a rerun button.
+    measure: python3 bin/idp-conscience --flakes-days 7
+    reads: stdout
+    green: "== 0"
+    pr_rule: no_rerun_to_green
+    mode: warn
+  - name: cost
+    ethos: Cost optimisation is standard. CI on main spends under three runner-hours a day.
+    measure: python3 bin/idp-conscience --ci-minutes-day
+    reads: stdout
+    green: "<= 180"
+    pr_rule: ci_budget_kept
+    mode: warn
+  - name: performance
+    ethos: Performance is standard. The front door answers, proved by the cluster's own five-minute heartbeat.
+    measure: bin/idp-door-heartbeat
+    reads: exit
+    green: "== 0"
+    pr_rule: drill_named
+    mode: warn
+  - name: no-toil
+    ethos: Nothing asks a person for a hand. Seamless is the deliverable (LAW 20, LAW 31).
+    measure: bin/idp-no-toil --sweep
+    reads: exit
+    green: "== 0"
+    pr_rule: no_manual_step
+    mode: warn
+  - name: battle-tested
+    ethos: Sound, resilient, battle-tested. A new script names the mature tool it rejected and the gap (LAW 43).
+    measure: "git log --since=168.hours --diff-filter=A --name-only --pretty=format: -- bin | grep -v '^$' | sort -u | xargs grep -L '^# Rejected:' 2>/dev/null | wc -l"
+    reads: stdout
+    green: "== 0"
+    pr_rule: new_script_names_the_rejected_tool
+    mode: warn

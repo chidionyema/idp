@@ -42,5 +42,5 @@ def test_tenet_with_no_command_is_a_wish(tmp_path):
 def test_real_tenets_each_carry_a_command():
     import yaml
     rows = yaml.safe_load((IDP / "conscience" / "tenets.yaml").read_text())["tenets"]
-    assert len(rows) == 7
+    assert len(rows) == 16  # 7 ethos rows + 9 engineering rows (crew#584)
     assert all(r["measure"] and r["ethos"] and r["pr_rule"] for r in rows)
