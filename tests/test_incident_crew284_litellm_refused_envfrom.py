@@ -18,7 +18,10 @@ def test_ci_judges_every_plain_workload_dir() -> None:
     ci = (ROOT / "bin" / "idp-ci").read_text()
     assert "Deployment|StatefulSet|DaemonSet|Job|CronJob" in ci, "idp-ci step 9 lists HelmRelease dirs only"
     tool = (ROOT / "bin" / "idp-kyverno-render").read_text()
-    assert 'kinds = {"Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Pod"}' in tool
+    # crew#66 R43 widened the judged kinds beyond pods: provider-independence refuses a Service,
+    # Ingress, PersistentVolumeClaim or secret store too, not only the workloads crew#284 fixed.
+    assert 'kinds = {"Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Pod",' in tool
+    assert '"Service", "Ingress", "PersistentVolumeClaim", "ClusterSecretStore", "SecretStore"}' in tool
 
 
 def test_litellm_takes_no_secret_from_env() -> None:

@@ -12,3 +12,6 @@ resources:
   - hindsight-exception.yaml
   - robusta-exception.yaml
   - kyverno.yaml
+  - provider-independence.yaml
+  - provider-edge-exception.yaml
+  - provider-storage-exception.yaml
