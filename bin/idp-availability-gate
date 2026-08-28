@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+"""Every founder-facing surface survives losing one node (crew#539).
+
+    bin/idp-availability-gate [dir ...]        # default: every platform/ dir that renders an HTTPRoute
+
+2026-08-28 06:20-06:39Z: cordoning one node (10.0.148.221) put the only catalogue pod into
+Pending -- the other node had no room -- and https://catalogue.mumchimp.com answered 503 to the
+founder for ~15 minutes (login-drill run 33148483050). Nothing was broken: the manifest said
+`replicas: 1`, `strategy: Recreate`, and platform/ contained no PodDisruptionBudget at all. The
+estate had no availability standard, so no review could fail one. This is that standard, and it
+runs in bin/idp-ci before the PR rather than in an incident report after it.
+
+A surface is graded when an HTTPRoute routes to it, because that is what the founder can open.
+It must, in the RENDERED manifests (a base with replicas 1 that an overlay patches to 2 is fine
+-- grading the file text would grade a proxy):
+
+  1. replicas >= 2                      one pod is one node away from a 503
+  2. a PodDisruptionBudget selecting it, expressed as maxUnavailable, never as a minAvailable
+     equal to the replica count -- that shape refuses every drain for ever, which is what the
+     clickhouse PDB did to this same drain at 06:30:43Z
+  3. podAntiAffinity requiredDuringScheduling on kubernetes.io/hostname -- two replicas on one
+     node are one replica
+  4. a readinessProbe and a livenessProbe -- a rollout with no readiness gate takes the last
+     healthy pod down before the new one serves
+
+A surface that cannot meet this yet is named in platform/availability-waivers.yaml with a reason
+and an open issue, and prints WAIVED. There is no silent pass: an unreadable render, a missing
+kustomize, an unresolvable backend is BLIND (exit 2), never green.
+
+Exit 0 all graded surfaces pass, 1 a surface is below the standard, 2 BLIND.
+"""
+import os
+import subprocess
+import sys
+
+import yaml
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+WAIVERS = os.path.join(ROOT, "platform", "availability-waivers.yaml")
+
+
+def row(status, text):
+    print("%-9s %-12s %s" % (status, "availability", text))
+
+
+def render(d):
+    r = subprocess.run(["kustomize", "build", d], cwd=ROOT, capture_output=True, text=True, timeout=180)
+    if r.returncode != 0:
+        return None, (r.stderr.strip().splitlines() or [""])[-1]
+    try:
+        return [o for o in yaml.safe_load_all(r.stdout) if o], None
+    except yaml.YAMLError as e:
+        return None, str(e)[:120]
+
+
+def dirs_with_routes():
+    out = []
+    for base, _, files in os.walk(os.path.join(ROOT, "platform")):
+        if "kustomization.yaml" not in files:
+            continue
+        rel = os.path.relpath(base, ROOT)
+        if any("kind: HTTPRoute" in open(os.path.join(base, f), encoding="utf-8", errors="ignore").read()
+               for f in files if f.endswith(".yaml")):
+            out.append(rel)
+    # An overlay renders its base; grading both would grade the base twice and wrongly.
+    return sorted(d for d in out if not any(o != d and d.startswith(o + os.sep) for o in out))
+
+
+def load_waivers():
+    if not os.path.exists(WAIVERS):
+        return {}
+    doc = yaml.safe_load(open(WAIVERS, encoding="utf-8")) or {}
+    return {w["surface"]: w for w in (doc.get("waivers") or [])}
+
+
+def selects(selector, labels):
+    m = (selector or {}).get("matchLabels") or {}
+    return bool(m) and all(labels.get(k) == v for k, v in m.items())
+
+
+def grade(objs, name, ns):
+    """Grade the Deployment named `name` in `ns`; returns (list of failures, replicas)."""
+    dep = next((o for o in objs if o.get("kind") == "Deployment"
+                and o["metadata"]["name"] == name
+                and o["metadata"].get("namespace", ns) == ns), None)
+    if dep is None:
+        return None, None
+    spec = dep.get("spec") or {}
+    tpl = (spec.get("template") or {}).get("spec") or {}
+    labels = ((spec.get("template") or {}).get("metadata") or {}).get("labels") or {}
+    bad = []
+
+    replicas = spec.get("replicas", 1)
+    if replicas < 2:
+        bad.append("replicas %s: one pod is one node event away from a 503" % replicas)
+
+    pdbs = [o for o in objs if o.get("kind") == "PodDisruptionBudget"
+            and selects((o.get("spec") or {}).get("selector"), labels)]
+    if not pdbs:
+        bad.append("no PodDisruptionBudget selects it: a drain may evict every replica at once")
+    for p in pdbs:
+        ps, nm = p.get("spec") or {}, p["metadata"]["name"]
+        mn = ps.get("minAvailable")
+        # Either shape is correct as long as it leaves the drain a move. minAvailable 1 of 2 is
+        # a real budget; minAvailable equal to the replica count is the deadlock -- that is the
+        # shape the clickhouse PDB had, and kubectl drain gave up on it at 06:30:43Z.
+        if "maxUnavailable" not in ps:
+            if not isinstance(mn, int):
+                bad.append("PDB %s expresses its budget as a percentage or not at all: "
+                           "state it in pods so the arithmetic against %s replicas is checkable"
+                           % (nm, replicas))
+            elif replicas and mn >= replicas:
+                bad.append("PDB %s minAvailable %s with %s replicas leaves no pod that may be "
+                           "evicted: it refuses every drain for ever" % (nm, mn, replicas))
+
+    # Two ways to say "not on the same node", both hard. Requiring one specific spelling would
+    # be a guard that refuses correct work, which is its own outage.
+    aa = ((tpl.get("affinity") or {}).get("podAntiAffinity") or {})
+    keys = [t.get("topologyKey") for t in aa.get("requiredDuringSchedulingIgnoredDuringExecution") or []]
+    keys += [c.get("topologyKey") for c in tpl.get("topologySpreadConstraints") or []
+             if c.get("whenUnsatisfiable") == "DoNotSchedule" and c.get("maxSkew", 1) <= 1]
+    if "kubernetes.io/hostname" not in keys:
+        bad.append("nothing keeps the replicas apart: needs a required podAntiAffinity or a "
+                   "DoNotSchedule topologySpreadConstraint on kubernetes.io/hostname, or two "
+                   "replicas may share one node and be one eviction")
+
+    for c in tpl.get("containers") or []:
+        for probe in ("readinessProbe", "livenessProbe"):
+            if probe not in c:
+                bad.append("container %s has no %s" % (c.get("name", "?"), probe))
+    return bad, replicas
+
+
+def grade_helm(hr):
+    """Grade a Flux HelmRelease by the values we set on it.
+
+    A chart's own default is not a decision anyone here made: oauth2-proxy 10.7.0 defaults to
+    replicaCount 1, which is why every surface behind it was one node event from a 503 while each
+    of them looked healthy in its own manifest. So the values file must say the number out loud.
+    Probes come from the chart's templates and are not graded here -- the row says so rather than
+    passing quietly."""
+    v = (hr.get("spec") or {}).get("values") or {}
+    bad = []
+    replicas = v.get("replicaCount", v.get("replicas", 1))
+    if not isinstance(replicas, int) or replicas < 2:
+        bad.append("values set replicas %s: a chart default of 1 is still a single point of failure"
+                   % replicas)
+    pdb = v.get("podDisruptionBudget") or {}
+    if not pdb.get("enabled"):
+        bad.append("values do not enable the chart's podDisruptionBudget")
+    else:
+        mn, mx = pdb.get("minAvailable"), pdb.get("maxUnavailable")
+        if mx is None and isinstance(mn, int) and isinstance(replicas, int) and mn >= replicas:
+            bad.append("PDB minAvailable %s with %s replicas refuses every drain for ever" % (mn, replicas))
+    keys = [c.get("topologyKey") for c in v.get("topologySpreadConstraints") or []
+            if c.get("whenUnsatisfiable") == "DoNotSchedule"]
+    keys += [t.get("topologyKey") for t in
+             (((v.get("affinity") or {}).get("podAntiAffinity") or {})
+              .get("requiredDuringSchedulingIgnoredDuringExecution") or [])]
+    if "kubernetes.io/hostname" not in keys:
+        bad.append("nothing in the values keeps the replicas off one node")
+    return bad, replicas
+
+
+def main(argv):
+    if not subprocess.run(["which", "kustomize"], capture_output=True).returncode == 0:
+        row("BLIND", "kustomize is not installed -- availability cannot be graded, and unmeasured is not green")
+        return 2
+    targets = argv[1:] or dirs_with_routes()
+    if not targets:
+        row("BLIND", "no platform/ directory renders an HTTPRoute -- nothing found to grade")
+        return 2
+    waivers, failed, graded, waived, blind = load_waivers(), [], 0, 0, 0
+    elsewhere, settled = {}, set()
+
+    for d in targets:
+        objs, err = render(d)
+        if objs is None:
+            blind += 1
+            row("BLIND", "%s: kustomize build failed: %s" % (d, err))
+            continue
+        routes = [o for o in objs if o.get("kind") == "HTTPRoute"]
+        svcs = {(o["metadata"].get("namespace", ""), o["metadata"]["name"]): o
+                for o in objs if o.get("kind") == "Service"}
+        seen = set()
+        helm = {(o["metadata"].get("namespace", ""), o["metadata"]["name"]): o
+                for o in objs if o.get("kind") == "HelmRelease"}
+        for rt in routes:
+            rns = rt["metadata"].get("namespace", "")
+            hosts = ", ".join(rt.get("spec", {}).get("hostnames") or ["(no hostname)"])
+            for rule in rt.get("spec", {}).get("rules") or []:
+                for ref in rule.get("backendRefs") or []:
+                    ns, nm = ref.get("namespace", rns), ref.get("name")
+                    if (ns, nm) in seen:
+                        continue
+                    seen.add((ns, nm))
+                    surface = "%s/%s" % (ns, nm)
+                    elsewhere.setdefault(surface, hosts)
+                    hr = helm.get((ns, nm))
+                    if hr is not None and svcs.get((ns, nm)) is None:
+                        bad, replicas = grade_helm(hr)
+                        settled.add(surface)
+                        w = waivers.get(surface)
+                        if bad and w and w.get("reason") and w.get("issue"):
+                            waived += 1
+                            row("WAIVED", "%-26s %s: %s (%s)" % (hosts, surface, w["reason"], w["issue"]))
+                            continue
+                        if bad:
+                            failed.append(surface)
+                            for b in bad:
+                                row("FAIL", "%-26s %s (HelmRelease): %s" % (hosts, surface, b))
+                        else:
+                            graded += 1
+                            row("ok", "%-26s %s (HelmRelease): %d replicas, PDB, spread -- "
+                                      "survives one node; probes come from the chart and are not graded here"
+                                % (hosts, surface, replicas))
+                        continue
+                    if svcs.get((ns, nm)) is None:
+                        # A backend defined by another kustomization (backstage routes to
+                        # identity/oauth2-proxy). Deferring is only honest if some directory
+                        # really does grade it, so this is recorded and settled at the end --
+                        # an allow-list with a silent miss case is how 10 criticals went dark.
+                        continue
+                    bad, replicas = grade(objs, nm, ns)
+                    if bad is None:
+                        blind += 1
+                        row("BLIND", "%-26s no Deployment named %s in %s -- cannot grade what serves it" % (hosts, nm, ns))
+                        continue
+                    w = waivers.get(surface)
+                    if bad and w:
+                        if not w.get("issue") or not w.get("reason"):
+                            failed.append(surface)
+                            row("FAIL", "%-26s waiver for %s has no reason or issue" % (hosts, surface))
+                            continue
+                        waived += 1
+                        settled.add(surface)
+                        row("WAIVED", "%-26s %s: %s (%s)" % (hosts, surface, w["reason"], w["issue"]))
+                        continue
+                    settled.add(surface)
+                    if bad:
+                        failed.append(surface)
+                        for b in bad:
+                            row("FAIL", "%-26s %s: %s" % (hosts, surface, b))
+                    else:
+                        graded += 1
+                        row("ok", "%-26s %s: %d replicas, PDB, anti-affinity, probes -- survives one node"
+                            % (hosts, surface, replicas))
+
+    # Nothing gets to be someone else's problem: a backend no directory graded is BLIND here.
+    for surface, hosts in sorted(elsewhere.items()):
+        if surface in settled:
+            continue
+        w = waivers.get(surface)
+        if w and w.get("reason") and w.get("issue"):
+            waived += 1
+            row("WAIVED", "%-26s %s: %s (%s)" % (hosts, surface, w["reason"], w["issue"]))
+            continue
+        blind += 1
+        row("BLIND", "%-26s %s is routed to but no kustomization renders a Deployment for it "
+                     "-- it serves the founder and nothing grades it" % (hosts, surface))
+
+    tail = " (%d waived)" % waived if waived else ""
+    if blind:
+        row("BLIND", "%d surface(s) could not be graded" % blind)
+        return 2
+    if failed:
+        row("FAIL", "%d of %d graded surface(s) below the standard: %s%s"
+            % (len(set(failed)), graded + len(set(failed)), ", ".join(sorted(set(failed))), tail))
+        return 1
+    row("ok", "%d/%d graded surface(s) survive losing one node%s" % (graded, graded, tail))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

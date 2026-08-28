@@ -597,5 +597,19 @@ if python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$
   say "ok    grade    estate-showcase grades the fixture catalogue ($(grep -c '| GAP |' "$sc/SHOWCASE.md") GAP rows) and --check refuses a stale page"
 else say "FAIL  grade    estate-showcase did not render, or --check did not discriminate"; fail=1; fi
 
+# 8. Every surface the founder can open survives losing one node (crew#539, docs/policy/
+#    availability-standard.md). 2026-08-28 06:20-06:39Z a cordon took catalogue to 503 for
+#    fifteen minutes because the manifest said replicas 1 and platform/ held no PDB; nothing
+#    could fail that review because nothing required otherwise. Both ways, on rendered
+#    manifests: the manifest catalogue actually carried into that drain is refused, the shape
+#    it carries now passes, and the live platform/ is clean -- BLIND (2) counts as a failure,
+#    so a surface the gate cannot resolve never passes quietly.
+if ! python3 "$IDP/bin/idp-availability-gate" tests/fixtures/availability/bad >/dev/null 2>&1 \
+   && python3 "$IDP/bin/idp-availability-gate" tests/fixtures/availability/good >/dev/null 2>&1 \
+   && out=$(python3 "$IDP/bin/idp-availability-gate" 2>&1); then
+  say "ok    ha       $(printf '%s' "$out" | tail -1 | sed 's/^ok *availability *//')"
+  printf '%s\n' "$out" | grep '^WAIVED' | sed 's/^/      /' || true
+else say "FAIL  ha       a routed surface does not survive losing one node, or the gate is not discriminating"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"
