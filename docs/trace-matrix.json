@@ -921,6 +921,19 @@
   "ticket": "crew#297"
  },
  {
+  "feature": "docs/prose/verification-identity-live.feature",
+  "title": "The platform verifies its own health every hour with no person logged in",
+  "scenarios": [
+   "A runner grades the cluster's own verdict on the machine identity",
+   "Twenty-four hours with nobody awake"
+  ],
+  "bound_by": [],
+  "status": "PROSE",
+  "added_in": "f0a7268",
+  "pr": 269,
+  "ticket": "crew#345"
+ },
+ {
   "feature": "features/assurance/estate-next.feature",
   "title": "What is planned, what is blocking, when (crew#403 CP6)",
   "scenarios": [
@@ -1006,6 +1019,7 @@
    "A receipt from a collector that predates the Flux rows grades FAIL, never clean",
    "A DaemonSet short of its desired count grades FAIL",
    "A receipt from a collector that predates the DaemonSet row grades FAIL, never clean",
+   "A receipt from a collector that predates the monitoring row grades FAIL, never clean",
    "An ExternalSecret that is Ready but has not refreshed in twice its interval grades FAIL"
   ],
   "bound_by": [
@@ -1652,8 +1666,8 @@
   "feature": "features/stale_pr.feature",
   "title": "a pull request with no live owner does not sit in the queue",
   "scenarios": [
-   "a pull request idle for seven days is warned",
-   "a warned pull request idle for seven more days is closed",
+   "a pull request idle for a day is closed",
+   "the close message names both ways back",
    "activity or keep-open cancels the clock",
    "issues are never touched"
   ],
