@@ -79,14 +79,35 @@ YAML
   step kyverno-restart $K rollout restart deploy -n kyverno
   step webhooks-ready $K rollout status deploy -n external-secrets --timeout=180s
   step kyverno-ready $K rollout status deploy -n kyverno --timeout=180s
-  # kyverno (run 33133317589): a bare `kubectl run` pod is refused by require-run-as-nonroot,
-  # require-ro-rootfs and restrict-seccomp-strict, so the probe carries the same hardened
-  # securityContext every platform workload does. nslookup needs no root and no writable fs.
-  step dns-answers $K run dns-probe-$$ --rm -i --restart=Never --image=public.ecr.aws/docker/library/busybox:1.36 \
-    --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"probe","image":"public.ecr.aws/docker/library/busybox:1.36","command":["nslookup","github.com"],"securityContext":{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]}}}]}}' \
-    --command -- nslookup github.com
+  # kyverno (runs 33133317589, 33134611331): a `kubectl run` pod is refused by require-run-as-nonroot,
+  # require-ro-rootfs, restrict-seccomp-strict, disallow-default-namespace, require-pod-probes and
+  # require-requests-limits, so the probe is a full Pod manifest in kube-system shaped like every
+  # platform workload. nslookup needs no root, no writable fs and no privilege.
+  step dns-probe-apply $K apply -f - <<'YAML'
+apiVersion: v1
+kind: Pod
+metadata: { name: dns-probe, namespace: kube-system, labels: { app: dns-probe, crew: "539" } }
+spec:
+  restartPolicy: Never
+  priorityClassName: system-cluster-critical
+  securityContext: { runAsNonRoot: true, runAsUser: 65534, seccompProfile: { type: RuntimeDefault } }
+  containers:
+    - name: probe
+      image: public.ecr.aws/docker/library/busybox:1.36
+      command: ["nslookup", "github.com"]
+      resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { cpu: 100m, memory: 32Mi } }
+      readinessProbe: { exec: { command: ["true"] } }
+      livenessProbe: { exec: { command: ["true"] } }
+      securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+YAML
+  step dns-answers $K wait pod/dns-probe -n kube-system --for=jsonpath='{.status.phase}'=Succeeded --timeout=120s
+  step dns-probe-log $K logs pod/dns-probe -n kube-system
+  step dns-probe-remove $K delete pod/dns-probe -n kube-system --ignore-not-found --wait=false
   step flux-source flux reconcile source git flux-system -n flux-system --timeout=3m
   step flux-tree flux reconcile kustomization flux-system -n flux-system --timeout=5m
+  # run 33134611331: reconciling flux-system does not cascade to its children, so secret-store kept
+  # the dry-run EOF from before the webhook restart in its status. Force it, then read the tree.
+  step secret-store flux reconcile kustomization secret-store -n flux-system --timeout=5m
   show kustomizations $K get kustomizations -A
 }
 
