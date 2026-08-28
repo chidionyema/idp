@@ -48,6 +48,7 @@ jobs:
         working-directory: idp
         env:
           ESTATE_CODE: ${{ github.workspace }}
+          GH_TOKEN: ${{ github.token }}   # the research row's clock is the API Date header (crew#583), never this runner's
         run: |
           set -o pipefail
           bin/idp-conscience 2>&1 | tee conscience.out; rc=${PIPESTATUS[0]}
@@ -64,10 +65,10 @@ jobs:
       # `science.source=conscience`, so science-facts counts it from ClickHouse. The ingest password
       # is read from the vault by name over the same OIDC -> OCI exchange oke-check uses; never printed.
       - name: oci cli
-        if: steps.grade.outputs.rc != '2'
+        if: ${{ !cancelled() && steps.grade.outputs.rc != '' }}   # run 33198014582: one BLIND row hid the founder line, the issues and the page
         run: pip install -q oci-cli
       - name: OCI session token from the GitHub OIDC token
-        if: steps.grade.outputs.rc != '2'
+        if: ${{ !cancelled() && steps.grade.outputs.rc != '' }}   # run 33198014582: one BLIND row hid the founder line, the issues and the page
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
           oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
@@ -75,7 +76,7 @@ jobs:
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           oci_region: ${{ vars.OCI_REGION }}
       - name: receipt to the collector
-        if: steps.grade.outputs.rc != '2'
+        if: ${{ !cancelled() && steps.grade.outputs.rc != '' }}   # run 33198014582: one BLIND row hid the founder line, the issues and the page
         working-directory: idp
         env:
           OCI_CLI_AUTH: security_token
@@ -89,7 +90,7 @@ jobs:
           export OTLP_INGEST_PASSWORD OTEL_EXPORTER_OTLP_ENDPOINT="https://signoz.$zone"
           python3 bin/lib/conscience_emit.py reports/conscience.json | tee -a conscience.out
       - name: one issue per red tenet
-        if: steps.grade.outputs.rc != '2'
+        if: ${{ !cancelled() && steps.grade.outputs.rc != '' }}   # run 33198014582: one BLIND row hid the founder line, the issues and the page
         working-directory: idp
         env:
           GH_TOKEN: ${{ github.token }}
@@ -97,23 +98,26 @@ jobs:
         run: |
           gh label create conscience --color 5319E7 --description "a tenet of the founder's ethos is red" --force >/dev/null 2>&1 || true
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          python3 -c 'import json; [print(t["name"], "green" if t["ok"] else "red", t["how"], "|", t["ethos"]) for t in json.load(open("reports/conscience.json"))["tenets"]]' \
+          python3 -c 'import json; [print(t["name"], "green" if t["ok"] else ("BLIND" if t["ok"] is None else "red"), t["how"], "|", t["ethos"]) for t in json.load(open("reports/conscience.json"))["tenets"]]' \
           | while IFS= read -r line; do
             tenet=${line%% *}; rest=${line#* }; state=${rest%% *}; detail=${rest#* }
-            title="conscience: $tenet is red"
-            n=$(gh issue list --state open --label conscience --search "\"$title\" in:title" --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -1)
             body=$(printf '%s\n\nMeasured: `%s` (%s)\nRun: %s\nBoard: https://github.com/chidionyema/crew/issues/586\n' "$detail" "$tenet" "$state" "$run_url")
-            if [ "$state" = red ]; then
-              if [ -n "$n" ]; then gh issue comment "$n" --body "$body" >/dev/null; echo "red   $tenet -> #$n (commented)"
-              else gh issue create --title "$title" --label conscience --body "$body" >/dev/null; echo "red   $tenet -> opened"; fi
-            elif [ -n "$n" ]; then gh issue close "$n" --comment "$body" >/dev/null; echo "green $tenet -> #$n closed"
-            else echo "green $tenet"; fi
+            # one open issue per tenet and state: "is red" or "is BLIND"; the other state's issue closes
+            for other in red BLIND; do
+              title="conscience: $tenet is $other"
+              n=$(gh issue list --state open --label conscience --search "\"$title\" in:title" --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -1)
+              if [ "$state" = "$other" ]; then
+                if [ -n "$n" ]; then gh issue comment "$n" --body "$body" >/dev/null; echo "$state $tenet -> #$n (commented)"
+                else gh issue create --title "$title" --label conscience --body "$body" >/dev/null; echo "$state $tenet -> opened"; fi
+              elif [ -n "$n" ]; then gh issue close "$n" --comment "$body" >/dev/null; echo "$state $tenet -> #$n ($other) closed"; fi
+            done
+            [ "$state" = green ] && echo "green $tenet"
           done
       # crew#586 CP4: one line to the founder every 24 hours, on the Telegram bot the estate
       # already runs (same send as ping.yml, crew#539). The move is against the receipt of the
       # newest successful run at least 23 hours old; with none, it is the first reading.
       - name: founder line
-        if: github.event.schedule == '23 7 * * *' || inputs.founder_line == true
+        if: ${{ !cancelled() && steps.grade.outputs.rc != '' && (github.event.schedule == '23 7 * * *' || inputs.founder_line == true) }}
         working-directory: idp
         env:
           GH_TOKEN: ${{ github.token }}
@@ -123,17 +127,17 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -uo pipefail
-          now=$(python3 -c 'import json; r=json.load(open("reports/conscience.json")); print(r["score"]["green"], r["score"]["total"], " ".join(t["name"] for t in r["tenets"] if not t["ok"]))')
-          read -r green total reds <<< "$now"
+          now=$(python3 -c 'import json; r=json.load(open("reports/conscience.json")); print(r["score"]["green"], r["score"]["total"], ",".join(t["name"] for t in r["tenets"] if t["ok"] is False) or "-", ",".join(t["name"] for t in r["tenets"] if t["ok"] is None) or "-")')
+          read -r green total reds blinds <<< "$now"; reds=${reds#-}; blinds=${blinds#-}
           cutoff=$(date -u -d '23 hours ago' +%Y-%m-%dT%H:%M:%SZ)
-          prev_run=$(gh run list --workflow conscience.yml --status success --limit 50 --json databaseId,createdAt --jq "[.[] | select(.createdAt < \"$cutoff\")][0].databaseId // empty")
+          prev_run=$(gh run list --workflow conscience.yml --status completed --limit 50 --json databaseId,createdAt --jq "[.[] | select(.createdAt < \"$cutoff\")][0].databaseId // empty")
           move="first reading"
           if [ -n "$prev_run" ] && gh run download "$prev_run" -n conscience-receipt -D prev >/dev/null 2>&1; then
             prev_green=$(python3 -c 'import json; print(json.load(open("prev/conscience.json"))["score"]["green"])')
             d=$((green - prev_green)); move=$(printf 'moved %+d since yesterday' "$d")
           fi
-          if [ -z "$reds" ]; then text="🧠 conscience $green/$total, $move — every tenet green; the estate is more itself than it was"
-          else text="🧠 conscience $green/$total, $move — red: $reds"; fi
+          if [ -z "$reds$blinds" ]; then text="🧠 conscience $green/$total, $move — every tenet green; the estate is more itself than it was"
+          else text="🧠 conscience $green/$total, $move${reds:+ — red: $reds}${blinds:+ — BLIND (not measurable, never green): $blinds}"; fi
           text="$text"$'\n'"$RUN_URL"
           code=$(curl -sS -o /dev/null -w '%{http_code}' "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT}" --data-urlencode "text=${text}")
@@ -144,7 +148,7 @@ jobs:
       # auto-merge, the same shape as bin/catalog-render (crew#401): one branch, force-with-lease,
       # one open PR at a time, merged when the gates pass. Never a direct push to main.
       - name: portal page
-        if: github.event.schedule == '23 7 * * *' || inputs.founder_line == true
+        if: ${{ !cancelled() && steps.grade.outputs.rc != '' && (github.event.schedule == '23 7 * * *' || inputs.founder_line == true) }}
         working-directory: idp
         env:
           GH_TOKEN: ${{ github.token }}

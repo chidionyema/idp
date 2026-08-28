@@ -28,7 +28,12 @@ def test_lookup_by_exact_title_before_create():
 def test_green_closes_and_only_blind_fails():
     _, text = load()
     assert "gh issue close" in text
-    assert '[ "$rc" -ne 2 ]' in text and "steps.grade.outputs.rc != '2'" in text
+    assert '[ "$rc" -ne 2 ]' in text
+    # run 33198014582: gating every later step on rc != 2 hid the founder line, the issues and the page
+    # behind one BLIND row. The run stays red; the surface still ships from the receipt.
+    assert "steps.grade.outputs.rc != '2'" not in text
+    assert text.count("!cancelled() && steps.grade.outputs.rc != ''") >= 5
+    assert "conscience: $tenet is $other" in text and "for other in red BLIND" in text
 
 
 def test_receipt_is_kept():
