@@ -209,7 +209,21 @@ jobs:
         run: |
           image='${{ steps.tag.outputs.image }}'
           digest=$(docker buildx imagetools inspect "$image:${{ github.sha }}" --format '{{.Manifest.Digest}}')
-          cosign sign --yes "$image@$digest"
+          # `--new-bundle-format=false` IS THE WHOLE REASON KYVERNO CAN READ THIS.
+          #
+          # cosign-installer v4.1.2 installs cosign v3.0.6, and v3 flipped
+          # `--new-bundle-format` to default true (cmd/cosign/cli/options/sign.go:155).
+          # In that mode the signature is written as a Sigstore bundle v0.3 OCI
+          # *referrer* -- GHCR answers /v2/.../referrers/ with 404, so it lands on
+          # the referrers tag fallback `sha256-<hex>` with no suffix. Measured on
+          # ghcr.io/chidionyema/sovereign-worker@sha256:346446686948aa64ca8cc41bda1e
+          # 34e618b512e713d58d11a89bad1f1090c8e3 (run 33166323423): 608 tags, 182 of
+          # them `sha256-<hex>`, ZERO ending `.sig`. Kyverno's verifier looks for the
+          # legacy `sha256-<hex>.sig` tag and reports `no signatures found`, so an
+          # Enforce policy would refuse every image this workflow builds.
+          # `--use-signing-config` must go with it: its help says it requires the new
+          # bundle format.
+          cosign sign --yes --new-bundle-format=false --use-signing-config=false "$image@$digest"
           echo "signed $image@$digest"
 
           # VERIFY IT HERE, IN THIS RUN.
@@ -225,12 +239,26 @@ jobs:
           # in the public Fulcio root -- which is every GitHub repository there
           # is, so it would pass on an image signed by a stranger.
           cosign verify "$image@$digest" \
+            --new-bundle-format=false \
             --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             > /tmp/cosign-verify.json
           echo "verified $image@$digest"
+
+          # AND PROVE IT WITH SOMETHING THAT IS NOT COSIGN.
+          #
+          # The two commands above both ran cosign, so a storage format only cosign
+          # could find still printed a full green `Verification for ...` block --
+          # which is exactly what happened for every signature this workflow wrote
+          # before this commit. A third party has to be able to FIND the signature,
+          # and the legacy tag is where every third party looks. docker is not
+          # cosign, and this fails the job if the tag is absent.
+          sigtag="sha256-${digest#sha256:}.sig"
+          docker buildx imagetools inspect "$image:$sigtag" > /dev/null
+          echo "third party can find it: $image:$sigtag"
           echo
           echo "anyone can repeat that with:"
           echo "  cosign verify $image@$digest \\"
+          echo "    --new-bundle-format=false \\"
           echo "    --certificate-identity-regexp '^https://github.com/${{ github.repository }}/' \\"
           echo "    --certificate-oidc-issuer https://token.actions.githubusercontent.com" 
