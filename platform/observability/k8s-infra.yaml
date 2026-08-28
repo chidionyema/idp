@@ -40,8 +40,21 @@ spec:
     remediation: { retries: 3 }
   values:
     clusterName: oke
-    # gRPC OTLP on the SigNoz collector; LiteLLM uses the HTTP port 4318 of the same Service.
-    otelCollectorEndpoint: signoz-otel-collector.observability.svc:4317
+    # crew#483: this chart's otlphttp exporter (presets.otlphttpExporter.enabled defaults true,
+    # confirmed via `helm show values signoz/k8s-infra --version 0.17.0`) takes the raw value of
+    # otelCollectorEndpoint as OTEL_EXPORTER_OTLP_ENDPOINT verbatim
+    # (templates/_config.tpl:327 sets the exporter's endpoint from that env var directly) -- it does not
+    # add a scheme or switch ports itself. The old value (bare host:4317, the gRPC port with no
+    # scheme) made every otel-agent/otel-deployment export fail with
+    # "unsupported protocol scheme \"signoz-otel-collector.observability.svc\"" (run 33160603986,
+    # 09:44-09:45Z), which is why ClickHouse saw logs=0 metrics=0 for the same 15 minutes traces=272
+    # kept landing (traces come from LiteLLM/agentgateway/etc, which already use the HTTP port with
+    # a scheme -- see otlp-endpoint-workloads in bin/idp-oke-break-glass pb_diagnose). Matching that
+    # working form: HTTP port 4318, with the scheme the otlphttp exporter requires.
+    otelCollectorEndpoint: http://signoz-otel-collector.observability.svc:4318
+    # otelInsecure governs the exporter's TLS insecure flag (_config.tpl:330 `tls: insecure:`),
+    # a separate knob from the endpoint's own scheme above; already correct for a plain-http
+    # collector Service and left unchanged.
     otelInsecure: true
     presets:
       logsCollection: { enabled: true }
