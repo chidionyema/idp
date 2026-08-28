@@ -10,4 +10,5 @@ resources:
   - temporal-exception.yaml
   - scheduling-exception.yaml
   - hindsight-exception.yaml
+  - robusta-exception.yaml
   - kyverno.yaml

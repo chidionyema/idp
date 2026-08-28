@@ -1,0 +1,19 @@
+# Robusta's documented secret path is `{{ env.X }}` in sinksConfig resolved from the runner's env
+# (docs.robusta.dev "Managing Secrets"); there is no file form for a sink token, so the runner
+# alone is excused from the two secrets-from-env rules. Every other policy still applies to it.
+# Lives in platform/edge because Kyverno honours exceptions from namespace kyverno only (crew#325).
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: robusta-secrets-from-env
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: secrets-not-from-env-vars
+      ruleNames: [secrets-not-from-env-vars, secrets-not-from-envfrom, autogen-secrets-not-from-env-vars, autogen-secrets-not-from-envfrom]
+  match:
+    any:
+      - resources:
+          kinds: [Deployment, Pod, ReplicaSet]
+          namespaces: [robusta]
+          names: [robusta-runner*]
