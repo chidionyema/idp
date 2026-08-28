@@ -5,6 +5,32 @@
 // from clusters/oke/estate-config.yaml before PUTting the ACL, the same substitution source Flux
 // uses for the Kubernetes manifests. Applied by CI (bin/idp-tailscale-policy apply, oke-check's
 // apply job), never by hand in the admin console — the no-toil rule this file exists to satisfy.
+//
+// crew#562 refines that spec, and the refinement is why the second rule below exists. The founder
+// then asked for iPhone -> Mac remote desk over this same tailnet (Moonlight to Sunshine, plus an
+// iOS Shortcut that SSHes `caffeinate -u -t 2`), and his acceptance line is "i see it seanlessly
+// nno firction". Applying THIS file as it stood would have made that impossible, silently, and
+// only after it had already been seen working:
+//
+//   - A policy file with an `acls` section is deny-by-default; the tailnet's default "allow all"
+//     rule is replaced, not extended (tailscale.com/kb/1018/acls: "Using a default deny policy
+//     prevents communication between devices without explicit access to each other").
+//   - "Applying a tag to a device removes any user-based authentication ... A device cannot
+//     simultaneously use tag-based and user-based identities" (tailscale.com/kb/1068/tags). The
+//     moment the Mac runs `--advertise-tags=tag:founder-mac` it stops being the founder's device
+//     and becomes a tagged one, so his phone reaches it only through a rule that names it.
+//
+// So with one rule (tag:k8s -> tag:founder-mac:22) his own iPhone matches nothing: Moonlight gets
+// no route to Sunshine and the Shortcut's SSH is refused. Nothing would have gone red — the ACL
+// PUT succeeds, the operator is happy, and the only symptom is the founder's stream not starting.
+// It has not bitten yet purely because the OAuth client this applier reads does not exist, so the
+// policy has never actually been PUT; the day someone creates it, the remote desk breaks.
+//
+// The lock-down the founder asked for is about which MACHINES may reach the Mac. His own devices
+// are him. `autogroup:member` is every human member of this tailnet, and the ports are named
+// rather than `*`: 22 for the Shortcut, and 47984-48010, the block Sunshine listens on (TCP
+// 47984/47989/47990/48010 and UDP 47998/47999/48000/48002/48010, docs.lizardbyte.dev network
+// configuration). The cluster still gets exactly port 22 and nothing else.
 {
   "tagOwners": {
     "tag:k8s":          [],
@@ -12,11 +38,24 @@
   },
   "acls": [
     {"action": "accept", "src": ["tag:k8s"], "dst": ["tag:founder-mac:22"]},
+    // crew#562: the founder's own phone and laptop reaching his tagged Mac. Without this the
+    // remote desk cannot work at all, because tagging took his user identity off the device.
+    {"action": "accept", "src": ["autogroup:member"],
+     "dst":    ["tag:founder-mac:22", "tag:founder-mac:47984-48010"]},
   ],
   "ssh": [
     {
       "action": "check",
       "src":    ["tag:k8s"],
+      "dst":    ["tag:founder-mac"],
+      "users":  ["${FOUNDER_MAC_USER}"],
+    },
+    // crew#562, second half of the same trap. The founder's sitting runs `tailscale up --ssh`, so
+    // Tailscale intercepts port 22 on that device and the `ssh` block -- not the `acls` block --
+    // decides the Shortcut's SSH. An acl rule alone would still leave it refused.
+    {
+      "action": "accept",
+      "src":    ["autogroup:member"],
       "dst":    ["tag:founder-mac"],
       "users":  ["${FOUNDER_MAC_USER}"],
     },

@@ -43,6 +43,13 @@ Phase 2 — Network & virtual display:
       oke-check's apply job) — no admin-console edit, no ACL step here. Separate from the
       "Remote Login (SSH)" toggle above, which the iOS Shortcut uses; this one is what Otto's
       sidecar (`platform/hermes-agent/tailscale.yaml`) reaches through `mac-run`.
+      Tagging the Mac takes your user identity off it ("applying a tag to a device removes any
+      user-based authentication", tailscale.com/kb/1068/tags), and that policy file is
+      deny-by-default, so your phone reaches the Mac only through a rule that names it. That rule
+      is in the file (crew#562): `autogroup:member` to `tag:founder-mac` on 22 and 47984-48010,
+      the block Sunshine listens on. Nothing for you to do here — it is noted because before
+      crew#562 the file had only the cluster's rule, and applying it would have stopped your
+      stream with nothing turning red.
 - [ ] DeskPad: create a virtual display at 1170x2532, scaled/HiDPI, mode Extended (not Mirrored)
 - [ ] Sunshine Web UI (`https://localhost:47990`): set admin username/password
       (`<SUNSHINE_ADMIN_USER>` / `<SUNSHINE_ADMIN_PASSWORD>`, kept by the founder)
