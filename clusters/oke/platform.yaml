@@ -19,6 +19,11 @@ spec:
   dependsOn:
     - name: external-secrets
     - name: secret-store
+    # The overlay also carries HTTPRoute/catalogue and Middleware/login-forward-auth, whose CRDs
+    # come from gateway-api-crds and the Traefik chart in `edge` -- so on an empty cluster the row
+    # dry-ran those two before either existed. Found by the closure-aware CRD-before-CR guard,
+    # which the flat PRE_INSTALLED set had been widened past (crew#488).
+    - name: edge
   postBuild:
     substituteFrom:
       # ESTATE_ZONE (idp#140): the zone is one value in clusters/oke/estate-config.yaml; not
@@ -97,6 +102,9 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
+    # Four ExternalSecrets (clickhouse-auth, langfuse-init, otlp-ingest-users, signoz-root) are in
+    # this row; external-secrets.io only exists once the ESO chart has landed (crew#488).
+    - name: external-secrets
   sourceRef:
     kind: GitRepository
     name: flux-system
