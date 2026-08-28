@@ -9,7 +9,7 @@
 # CI proves the label is on every namespace the cluster must enforce.
 #
 # StatefulSets are deliberately out of scope: every database here is one instance by design and
-# docs/policy/availability-standard.md says so out loud rather than pretending otherwise.
+# docs/reference/policy/availability-standard.md says so out loud rather than pretending otherwise.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:

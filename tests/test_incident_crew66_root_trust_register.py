@@ -82,7 +82,7 @@ def test_gate_opens_no_socket(monkeypatch, tmp_path):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     _tree(tmp_path, "| `alpha` | x | p | api | MEETS | `bin/idp-bootstrap-alpha` |\n| `beta` | x | p | h | MISS | crew#1 |\n")
-    rows = mod.register_rows((tmp_path / "docs/policy/root-trust.md").read_text())
+    rows = mod.register_rows((tmp_path / "docs/reference/policy/root-trust.md").read_text())
     keys = mod.external_secret_keys(str(tmp_path / "platform"))
     findings, _ = mod.grade(rows, keys, str(tmp_path / "bin"))
     assert findings == []

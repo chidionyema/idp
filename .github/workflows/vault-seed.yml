@@ -1,6 +1,6 @@
 # crew#284 CP1/CP2, crew#248: the estate vault is written by the machine identity, never a laptop
 # (crew#227 deleted the OCI API key; crew#247: infra is never Mac-bound). crew#66 root trust
-# (5453747447, docs/policy/root-trust.md): an entry a bootstrapper births is never seeded from a
+# (5453747447, docs/reference/policy/root-trust.md): an entry a bootstrapper births is never seeded from a
 # pasted GitHub secret; this workflow now carries only github-app (the four keys bin/idp-github-app
 # convert produces when no OCI session is live) and k8sgpt (a router key minted here, never pasted).
 # Every other entry chosen by name is refused with the command that owns it. Values travel from the
@@ -69,7 +69,7 @@ jobs:
           env | sed -n 's/^SEED_//p' > "$ESTATE_ENV_FILE"
           put() { bin/idp-vault-put "$@"; }
           if [ -n "${{ inputs.delete }}" ]; then bin/idp-vault-put --delete "${{ inputs.delete }}"; exit; fi
-          # crew#66 root trust (5453747447, docs/policy/root-trust.md): an entry a bootstrapper births is
+          # crew#66 root trust (5453747447, docs/reference/policy/root-trust.md): an entry a bootstrapper births is
           # never seeded from a pasted secret. Chosen by name it is refused with the command that owns it;
           # under `all` those entries are skipped, so `all` still writes what this workflow owns.
           #   tailscale-operator: born by bin/idp-bootstrap-tailscale, never seeded by hand (crew#576)

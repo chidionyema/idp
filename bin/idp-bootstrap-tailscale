@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Root trust for Tailscale, one command, no hands after the seed (crew#66; docs/policy/root-trust.md).
+# Root trust for Tailscale, one command, no hands after the seed (crew#66; docs/reference/policy/root-trust.md).
 #   bin/idp-bootstrap-tailscale              mint the operator OAuth client through the API and write vault entry `tailscale-operator`
 #   bin/idp-bootstrap-tailscale --check      exit 0 when the vault entry still exchanges for a token, 1 when it does not
 #   bin/idp-bootstrap-tailscale --rotate     mint a new client even though the vault entry already works, and delete the old one
