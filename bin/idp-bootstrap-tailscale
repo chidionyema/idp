@@ -22,7 +22,7 @@
 set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 SECRET=tailscale-operator
-CONSOLE=${TAILSCALE_CONSOLE_URL:-https://login.tailscale.com/admin/settings/oauth}
+CONSOLE=${TAILSCALE_CONSOLE_URL:-https://console.tailscale.com/admin/settings/trust-credentials}
 API=${TAILSCALE_API_URL:-https://api.tailscale.com}
 TAG=${TAILSCALE_K8S_TAG:-tag:k8s}
 HOME_DIR=${ESTATE_HOME:-$HOME/.estate}
@@ -90,7 +90,7 @@ fi
 
 # 4. drive the Trust credentials page. Output of the driver is exactly two lines on fd 3: client_id, client_secret.
 P=$(mktemp -d); trap 'rm -rf "$P"' EXIT; umask 077
-DESC="estate-operator $(date -u +%Y-%m-%dT%H:%MZ)"
+DESC="estateoperator$(date -u +%Y%m%d%H%M)"   # the console allows alphanumerics only (measured 2026-08-28)
 say "" console "opening $CONSOLE in the estate browser profile; if Tailscale asks you to sign in, complete SSO — that is the only hand"
 "$PY" - "$CONSOLE" "$PROFILE" "$DESC" "$TAG" "$P/cred" <<'PY'
 import re, sys, time
@@ -99,7 +99,11 @@ console, profile, desc, tag, out = sys.argv[1:6]
 SSO_WAIT_S = 300
 def step(name): print(f"        step    {name}", flush=True)
 with sync_playwright() as p:
-    ctx = p.chromium.launch_persistent_context(profile, headless=False, viewport={"width": 1280, "height": 900})
+    # idp#619: Google SSO refused the bundled Chromium ("This browser or app may not be secure"): it flags
+    # the automation switch. The installed Chrome without that switch is what the founder signs in with.
+    ctx = p.chromium.launch_persistent_context(profile, headless=False, viewport={"width": 1280, "height": 900},
+                                               channel="chrome", ignore_default_args=["--enable-automation"],
+                                               args=["--disable-blink-features=AutomationControlled"])
     page = ctx.pages[0] if ctx.pages else ctx.new_page()
     page.goto(console, wait_until="domcontentloaded")
     step("console opened")
@@ -113,38 +117,34 @@ with sync_playwright() as p:
     else:
         sys.exit("FAIL    console   no Trust credentials page after 5 minutes; SSO not completed")
     step("signed in")
-    page.get_by_role("button", name=re.compile(r"generate oauth client", re.I)).first.click()
-    step("generate dialog")
-    dialog = page.get_by_role("dialog").first
-    dialog.wait_for(state="visible", timeout=15000)
-    desc_box = dialog.get_by_label(re.compile(r"description", re.I)).first
-    desc_box.fill(desc)
-    # every scope row carries a Write checkbox; tick the three we need. Write implies read.
-    for scope in ("auth_keys", "devices:core", "policy_file"):
-        row = dialog.locator("tr, li, div", has_text=re.compile(rf"^\s*{re.escape(scope)}\b", re.I)).filter(
-            has=dialog.get_by_role("checkbox")).first
-        box = row.get_by_role("checkbox", name=re.compile(r"write", re.I)).first
-        if not box.count():
-            box = row.get_by_role("checkbox").last
-        box.check()
-        step(f"scope {scope} write")
-    # auth_keys asks for tags; the tag picker appears once the scope is ticked.
-    tags = dialog.get_by_placeholder(re.compile(r"tag", re.I)).or_(dialog.get_by_label(re.compile(r"tags?", re.I))).first
-    tags.click(); tags.fill(tag); tags.press("Enter")
-    step(f"tag {tag}")
-    dialog.get_by_role("button", name=re.compile(r"^generate( client)?$", re.I)).first.click()
-    step("generated")
-    # The secret is shown exactly once: read it from the field/code block Tailscale renders, never screenshot it.
-    result = page.get_by_role("dialog").first
-    result.wait_for(state="visible", timeout=15000)
-    text = result.inner_text()
-    cid = re.search(r"\b(k[A-Za-z0-9]{10,})\b", text)
-    sec = re.search(r"\b(tskey-client-[A-Za-z0-9-]+)\b", text)
-    if not (cid and sec):
-        sys.exit("FAIL    console   generated, but the client id / secret were not found on the result dialog (selector drift); revoke the client named " + desc + " and rerun after the driver is fixed")
+    # Founder, 2026-08-28, after four selector-drift failures in a row: "why so fragile ... needs to be
+    # one shot". A vendor console is not an API; every button name in it is the vendor's to change.
+    # So the driver drives nothing. It opens the wizard, the founder makes the clicks the console asks
+    # for (the notification names them), and the driver waits for the page that shows the generated
+    # client and reads it: two regexes on the vendor's own key formats, nothing else to drift. The
+    # secret still never passes through a hand or a clipboard: page -> this process -> the vault.
+    page.goto(console.rstrip("/") + "/add", wait_until="domcontentloaded")
+    print("        FOUNDER ACTION: in the Chrome window: OAuth -> description (letters and digits only) -> Continue -> "
+          f"tab Keys: tick Auth keys WRITE and add tag {tag} -> tab Devices: tick Devices core WRITE -> "
+          "tab General: tick Policy file WRITE -> Generate credential. The script reads the result itself.", flush=True)
+    deadline = time.time() + SSO_WAIT_S * 2
+    cid = sec = None
+    while time.time() < deadline:
+        try:
+            text = page.inner_text("body")
+        except Exception:
+            text = ""
+        cid = re.search(r"\b(k[A-Za-z0-9]{10,})\b", text)
+        sec = re.search(r"\b(tskey-client-[A-Za-z0-9-]+)\b", text)
+        if cid and sec:
+            break
+        time.sleep(2)
+    else:
+        sys.exit("FAIL    console   no generated client on the page after 10 minutes; nothing written")
+    step("generated (read from the page)")
     with open(out, "w") as f:
         f.write(cid.group(1) + "\n" + sec.group(1) + "\n")
-    done = result.get_by_role("button", name=re.compile(r"done|close", re.I))
+    done = page.get_by_role("button", name=re.compile(r"^(done|close)$", re.I))
     if done.count(): done.first.click()
     ctx.close()
 PY
