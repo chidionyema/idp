@@ -40,6 +40,21 @@ spec:
     clusterName: oke
     enablePrometheusStack: false
     enableHolmesGPT: false
+    # crew#539, 2026-08-28: run 33162263652 (`bin/idp-oke-rebuild --break-glass`) showed
+    # robusta-forwarder and robusta-runner stuck `ImageInspectError`/`Init:ImageInspectError`;
+    # the pod event was `InspectFailed: short name mode is enforcing, but image name
+    # robustadev/kubewatch:v2.16.1 returns ambiguous list` (and robusta-runner:0.48.0 the
+    # same). The chart's templates (forwarder.yaml:49, runner.yaml:78/95) render
+    # `{{ .Values.image.registry }}/{{ .Values.kubewatch|runner.imageName }}` — the default
+    # `image.registry: robustadev` (chart values.yaml:639) has no registry host, so it is an
+    # unqualified short name. The node's container runtime has short-name resolution set to
+    # enforcing with more than one unqualified-search registry configured, and containers/image
+    # refuses to guess between them (github.com/containers/image, short-name resolution). Every
+    # other HelmRelease in this estate that names an image gives it a full host
+    # (`platform/llm/litellm.yaml`: `ghcr.io/berriai/litellm-database`); this one line brings
+    # robusta to the same shape instead of a per-node runtime config change (LAW 23).
+    image:
+      registry: docker.io/robustadev
     runner:
       sendAdditionalTelemetry: false
       hardenedFs: true
