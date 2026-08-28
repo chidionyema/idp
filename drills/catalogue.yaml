@@ -124,6 +124,15 @@ drills:
       In the last week the whole clusters/oke/ Flux tree was applied to a vanilla k3d cluster on a
       runner with no OCI identity and at least drills/portability-floor.txt layers came Ready, so
       the platform hydrates a foreign cluster from git alone (crew#488, LAW 19).
+  - name: portability-k3s
+    workflow: portability-drill.yml
+    job: k3s
+    schedule: "23 5 * * 1"
+    max_age_hours: 194
+    proves: >-
+      In the last week the same clusters/oke/ tree hydrated a k3s node on a second provider (the
+      GitHub-hosted Azure runner, no docker, no OCI) from the same commit, met the same floor, and
+      the run printed its wall-clock and its cost (crew#488 CP2, LAW 19).
   - name: free-tier
     workflow: oke-check.yml
     job: free-tier
