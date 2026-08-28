@@ -48,6 +48,7 @@ absent here is red. Audit of 2026-08-28 (crew#66, session a0d64ea4): re-graded b
 | `langfuse-init-public-key`, `langfuse-init-secret-key`, `langfuse-init-user-password`, `langfuse-init-user-email`, `clickhouse-admin-password` | platform/observability/langfuse.yaml, platform/llm/external-secret.yaml | estate (Terraform random) | `random_password` + `oci_vault_secret` (platform/oci/langfuse.tf) | MEETS | `bin/idp-identity-apply` |
 | `hermes-agent-a2a` | platform/hermes-agent/gateway.yaml | estate (in-cluster) | ESO `Password` generator | MEETS | ESO generator |
 | `temporal-db` | platform/temporal/external-secret.yaml | estate Postgres | `openssl rand` in-process → vault, kept when well-formed | MEETS | `bin/idp-estate-seed` |
+| `sunshine-auth` | platform/backstage/overlays/oke/sunshine-egress.yaml | estate (CI runner) | `/dev/urandom` in-process → vault, kept when complete; the Mac adopts it over the tailnet (`--adopt` via `mac-run`, crew#562 path 1) | MEETS | `bin/idp-bootstrap-sunshine` |
 | `hindsight` (`postgres-password`) | platform/hindsight/external-secret.yaml | estate Postgres | `openssl rand` in-process → vault | MEETS | `bin/idp-estate-seed` |
 | `hindsight` (`HINDSIGHT_API_LLM_API_KEY`) | platform/hindsight/external-secret.yaml | estate router | `POST /key/generate` via `bin/idp-router-key --entry hindsight` | MEETS | `bin/idp-estate-seed` |
 | `mcp-gateway` (`MCP_GATEWAY_KEY`) | platform/mcp/external-secret.yaml | estate | `openssl rand` in-process → vault | MEETS | `bin/idp-estate-seed` |
