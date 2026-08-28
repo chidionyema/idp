@@ -307,8 +307,39 @@ pb_node_uncordon() {
   show nodes $K get nodes -o wide
 }
 
+# chi-resize: run 33147086133 (diagnose after idp#536): the signoz HelmRelease carries 4Gi for
+# clickhouse, and "Helm upgrade failed ... pre-upgrade hooks failed: timeout waiting for
+# Job/observability/signoz-telemetrystore-migrator". The migrator's init containers wait for a
+# ClickHouse that is Ready; ClickHouse exits 137 at the old 2Gi every few minutes; the 4Gi that
+# would let it live sits behind the hook that waits for it. Helm cannot break its own deadlock,
+# so the ClickHouseInstallation is patched to the value the HelmRelease already declares (read
+# from the values ConfigMap, never typed here); the Altinity operator rolls the StatefulSet, the
+# pod comes up at 4Gi, the migrator finishes and the next Helm reconcile converges on the same
+# value: there is nothing to undo, the patch IS the declared state.
+CHI_VALUES="${CHI_VALUES:-observability/signoz-values}"   # <namespace>/<ConfigMap> holding values.yaml
+chi_links() {
+  $K get chi -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\tCHI podTemplate limits: "}{range .spec.templates.podTemplates[*]}{.spec.containers[0].resources.limits}{end}{"\n"}{end}' 2>&1
+  $K get sts -A -l clickhouse.altinity.com/chi -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\tsts limits: "}{.spec.template.spec.containers[0].resources.limits}{"\n"}{end}' 2>&1
+  $K get pods -A -l clickhouse.altinity.com/chi -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\tpod limits: "}{.spec.containers[0].resources.limits}{"\t"}{.status.phase}{"\n"}{end}' 2>&1
+}
+pb_chi_resize() {
+  local want
+  want=$($K get configmap "${CHI_VALUES#*/}" -n "${CHI_VALUES%/*}" -o jsonpath='{.data.values\.yaml}' 2>/dev/null \
+    | python3 -c 'import sys,json,yaml; r=(yaml.safe_load(sys.stdin) or {}).get("clickhouse",{}).get("resources"); print(json.dumps(r,separators=(",",":")) if r else "")')
+  [ -n "$want" ] || { echo "FAIL  chi-resize: no clickhouse.resources in ConfigMap $CHI_VALUES"; FAILED="$FAILED chi-resize"; return 1; }
+  echo "--- want $want"
+  show chi-before chi_links
+  local row ns name
+  for row in $($K get chi -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{" "}{end}' 2>/dev/null); do
+    ns="${row%/*}"; name="${row#*/}"
+    step "patch-$name" $K patch chi "$name" -n "$ns" --type=json -p "[{\"op\":\"replace\",\"path\":\"/spec/templates/podTemplates/0/spec/containers/0/resources\",\"value\":$want}]"
+    step "rollout-$name" $K rollout status sts -n "$ns" -l "clickhouse.altinity.com/chi=$name" --timeout=600s
+  done
+  show chi-after chi_links
+}
+
 case "${1:-}" in
-  --list) echo "diagnose cilium-unchain helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon"; exit 0 ;;
+  --list) echo "diagnose cilium-unchain helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize"; exit 0 ;;
   diagnose) pb_diagnose ;;
   dns-per-node) pb_dns_per_node ;;
   dns-per-namespace) pb_dns_per_namespace ;;
@@ -317,6 +348,7 @@ case "${1:-}" in
   helm-retry) pb_helm_retry ;;
   node-drain) pb_node_drain ;;
   node-uncordon) pb_node_uncordon ;;
+  chi-resize) pb_chi_resize ;;
   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
 esac
 [ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }
