@@ -10,5 +10,4 @@ resources:
   - temporal-exception.yaml
   - scheduling-exception.yaml
   - hindsight-exception.yaml
-  - cilium-exception.yaml
   - kyverno.yaml

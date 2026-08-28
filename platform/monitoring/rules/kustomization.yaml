@@ -6,3 +6,4 @@ namespace: monitoring
 resources:
   - estate.yaml
   - founder-surfaces-probe.yaml
+  - agentgateway-servicemonitor.yaml
