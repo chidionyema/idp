@@ -46,7 +46,7 @@ def test_the_measured_run_shape_is_red_not_green():
     items += [_ks(f"layer-{i}", False, CASCADE) for i in range(32)]
     verdict, lines = drill.grade(items, floor=2, reds=REDS)
     assert verdict.startswith("FAIL    portability  root-red not on drills/portability-oci-reds.txt: edge backstage"), verdict
-    assert "(ready 2/38, cascaded 32)" in verdict
+    assert "(ready 2/38, cascaded 32, pending 0)" in verdict
     assert sum(ln.startswith("  cascaded ") for ln in lines) == 32
     assert sum(ln.startswith("  oci-red ") for ln in lines) == 2
     assert sum(ln.startswith("  ROOT-RED ") for ln in lines) == 2
@@ -58,7 +58,7 @@ def test_only_named_roots_and_cascades_is_green_and_the_floor_still_bites():
              _ks("secret-store", False, "failed to substitute from ConfigMap/estate-vars"),
              _ks("backstage", False, CASCADE)]
     ok, _ = drill.grade(items, floor=4, reds=REDS)
-    assert ok.startswith("ok      portability  ready 4/7 (root-red 2 all named, cascaded 1)"), ok
+    assert ok.startswith("ok      portability  ready 4/7 (root-red 2 all named, cascaded 1, pending 0)"), ok
     fail, _ = drill.grade(items, floor=5, reds=REDS)
     assert fail.startswith("FAIL    portability  ready 4/7 is below the floor 5"), fail
 
@@ -159,3 +159,65 @@ def test_the_drill_clusters_have_two_nodes_because_the_front_door_spreads():
     assert "--config=platform/k3d/estate.yaml --agents 1" in wf
     assert "rancher/k3s:v1.33.4-k3s1 agent --server" in wf
     assert "kubectl wait node --all --for=condition=Ready" in wf.split("rancher/k3s:v1.33.4-k3s1 agent --server")[1]
+
+
+def _spec(row: str) -> dict:
+    for f in sorted((ROOT / "clusters" / "oke").glob("*.yaml")):
+        for d in docs(f"clusters/oke/{f.name}"):
+            if d.get("kind") == "Kustomization" and d["metadata"]["name"] == row:
+                return d["spec"]
+    raise AssertionError(f"no Kustomization {row}")
+
+
+def _depends_on(row: str) -> set[str]:
+    return {d["name"] for d in _spec(row).get("dependsOn", [])}
+
+
+def _ready(name: str) -> dict:
+    return _ks(name, True)
+
+
+def test_a_row_flux_has_not_judged_yet_is_pending_not_a_root():
+    """Run 33214748124: observability sat at Ready=Unknown/Progressing and was graded ROOT-RED.
+    Not ready, not a root: it counts as pending and never fails the run on its own."""
+    items = [_ready("edge"), _ready("kyverno"),
+             {"metadata": {"name": "observability", "namespace": "flux-system"},
+              "status": {"conditions": [{"type": "Ready", "status": "Unknown", "reason": "Progressing",
+                                         "message": "Reconciliation in progress"}]}}]
+    verdict, lines = drill.grade(items, 2)
+    assert verdict.startswith("ok"), verdict
+    assert "pending 1" in verdict
+    assert any(line.startswith("  pending    flux-system/observability") for line in lines)
+    assert not any("ROOT-RED" in line for line in lines)
+
+
+def test_the_rows_that_write_into_backstage_wait_for_backstage():
+    """Run 33214748124: cluster-state and spire applied ServiceAccount/CronJob into namespace
+    backstage before the backstage row created it -> 'namespaces "backstage" not found'."""
+    for row in ("cluster-state", "spire"):
+        assert "backstage" in _depends_on(row), row
+
+
+def test_the_singleton_dns_controller_is_excepted_from_runs_two_by_name():
+    """Run 33214748124: require-availability denied external-dns (one replica by design)."""
+    exc = docs("platform/edge/external-dns-exception.yaml")[0]
+    assert exc["spec"]["exceptions"][0]["policyName"] == "require-availability"
+    assert exc["spec"]["match"]["any"][0]["resources"]["names"] == ["external-dns"]
+    assert exc["spec"]["match"]["any"][0]["resources"]["kinds"] == ["Deployment"]
+    assert "external-dns-exception.yaml" in docs("platform/edge/kustomization.yaml")[0]["resources"]
+
+
+def test_rows_behind_a_booting_webhook_retry_in_a_minute_not_ten():
+    """Run 33214748124: ESO's webhook answered 'ca cert not yet ready' once; the next try was 10m."""
+    for row in ("prospector-platform", "dns"):
+        assert _spec(row).get("retryInterval") == "1m", row
+
+
+def test_dns_waits_for_the_row_that_makes_its_secret_and_the_k3s_agent_shares_its_mounts():
+    """Run 33216301296: external-dns mounts cloudflare-api-token (an ExternalSecret in
+    platform/prospector) -> dns waits on prospector-platform; cilium-agent on the k3s agent needed
+    /var/run rshared ('not a shared or slave mount')."""
+    assert "prospector-platform" in _depends_on("dns")
+    assert "cloudflare-api-token" in (ROOT / "platform/prospector/cloudflare-external-secret.yaml").read_text()
+    wf = (ROOT / ".github/workflows/portability-drill.yml").read_text()
+    assert "mount --make-rshared /var/run" in wf

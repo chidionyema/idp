@@ -348,7 +348,8 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
-    # crew#488: ServiceAccount/cluster-state lands in the backstage namespace.
+    # crew#488 CP5: this row applies objects into namespace backstage; on a fresh cluster it ran
+    # before the backstage row created it and graded as a root portability break.
     - name: backstage
   sourceRef:
     kind: GitRepository
@@ -395,7 +396,8 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
-    # crew#488: CronJob/spiffe-proof lands in the backstage namespace.
+    # crew#488 CP5: this row applies objects into namespace backstage; on a fresh cluster it ran
+    # before the backstage row created it and graded as a root portability break.
     - name: backstage
   sourceRef:
     kind: GitRepository

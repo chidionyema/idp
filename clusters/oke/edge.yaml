@@ -94,6 +94,9 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
+  # crew#488 CP5: an admission webhook that is still booting (ESO 'ca cert not yet ready') fails the
+  # first apply; without this the next try is the 10m interval and a fresh cluster reads red for it.
+  retryInterval: 1m
   dependsOn:
     - name: edge
     # Three ExternalSecrets (cloudflare-api-token, prospector-engine-env, prospector-store-api-env)
@@ -159,8 +162,15 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
+  # crew#488 CP5: an admission webhook that is still booting (ESO 'ca cert not yet ready') fails the
+  # first apply; without this the next try is the 10m interval and a fresh cluster reads red for it.
+  retryInterval: 1m
   dependsOn:
     - name: edge
+    # crew#488 CP5, run 33216301296: external-dns mounts secret cloudflare-api-token, which the
+    # prospector-platform row's ExternalSecret creates; with no vault the pod never starts and dns read
+    # as a root break instead of the cascade it is.
+    - name: prospector-platform
   sourceRef:
     kind: GitRepository
     name: flux-system

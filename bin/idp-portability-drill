@@ -46,6 +46,7 @@ def read_floor(path: str) -> int:
     return int(lines[0])
 
 
+PENDING = {"Progressing", "Reconciling"}
 CASCADE = re.compile(r"dependency '?[\w./-]+'? is not ready")
 
 
@@ -70,7 +71,7 @@ def grade(items: list[dict], floor: int, reds: list[tuple[str, str]] = ()) -> tu
         return ("FAIL    portability  floor is 0: a drill that cannot fail grades nothing (LAW 44)", [])
     if not items:
         return ("FAIL    portability  no Kustomization was applied; the drill itself is broken", [])
-    ready, lines, cascaded, oci, roots = 0, [], 0, 0, []
+    ready, lines, cascaded, oci, roots, pending = 0, [], 0, 0, [], 0
     for it in items:
         meta = it.get("metadata", {})
         short = meta.get("name", "?")
@@ -81,7 +82,11 @@ def grade(items: list[dict], floor: int, reds: list[tuple[str, str]] = ()) -> tu
             ready += 1
             continue
         msg = rc.get("message") or "no Ready condition yet"
-        if CASCADE.search(msg):
+        if rc.get("status") == "Unknown" or rc.get("reason") in PENDING:
+            # Flux has not judged it yet (Progressing / Unknown): not ready, not a root.
+            pending += 1
+            lines.append(f"  pending    {name}: {msg[:160]}")
+        elif CASCADE.search(msg):
             cascaded += 1
             lines.append(f"  cascaded   {name}: {msg[:160]}")
         elif any(layer == short and why in msg for layer, why in reds):
@@ -93,10 +98,10 @@ def grade(items: list[dict], floor: int, reds: list[tuple[str, str]] = ()) -> tu
     total = len(items)
     if roots:
         return (f"FAIL    portability  root-red not on drills/portability-oci-reds.txt: {' '.join(roots)} "
-                f"(ready {ready}/{total}, cascaded {cascaded})", lines)
+                f"(ready {ready}/{total}, cascaded {cascaded}, pending {pending})", lines)
     if ready < floor:
         return (f"FAIL    portability  ready {ready}/{total} is below the floor {floor}", lines)
-    return (f"ok      portability  ready {ready}/{total} (root-red {oci} all named, cascaded {cascaded}) "
+    return (f"ok      portability  ready {ready}/{total} (root-red {oci} all named, cascaded {cascaded}, pending {pending}) "
             f"on a cluster with no OCI (floor {floor})", lines)
 
 

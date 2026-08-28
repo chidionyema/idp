@@ -1,5 +1,5 @@
 """crew#583: bin/law32-gate failed the PR that introduced bin/lib/receipt_age.py, demanding a
-docs/demo page for it (offline-gate 33189215410). The module is 0644 and imported by four readers;
+docs/tutorials/demo page for it (offline-gate 33189215410). The module is 0644 and imported by four readers;
 it is not a command anyone runs, so that page would have been prose about nothing -- a guard
 refusing correct work, which LAW 38 calls an outage.
 
@@ -35,17 +35,17 @@ def test_the_same_file_with_the_executable_bit_is_a_command_again(tmp_path):
     the sibling test read it executable in another worker (red on main from ed198a3)."""
     import shutil
     (tmp_path / "bin/lib").mkdir(parents=True)
-    for d in ("demo", "onboarding"):
+    for d in ("tutorials/demo", "how-to/onboarding"):
         (tmp_path / "docs" / d).mkdir(parents=True)
     shutil.copy(GATE, tmp_path / "bin/law32-gate")
     f = tmp_path / "bin/lib/receipt_age.py"
     shutil.copy(ROOT / "bin/lib/receipt_age.py", f)
     f.chmod(0o644)
     r = subprocess.run([sys.executable, str(tmp_path / "bin/law32-gate"), "--added", "bin/lib/receipt_age.py"], capture_output=True, text=True)
-    assert "receipt_age.py: no docs/demo" not in r.stdout, r.stdout + r.stderr
+    assert "receipt_age.py: no docs/tutorials/demo" not in r.stdout, r.stdout + r.stderr
     f.chmod(0o755)
     r = subprocess.run([sys.executable, str(tmp_path / "bin/law32-gate"), "--added", "bin/lib/receipt_age.py"], capture_output=True, text=True)
-    assert r.returncode == 1 and "receipt_age.py: no docs/demo" in r.stdout, r.stdout + r.stderr
+    assert r.returncode == 1 and "receipt_age.py: no docs/tutorials/demo" in r.stdout, r.stdout + r.stderr
 
 
 def test_a_name_with_no_file_behind_it_is_still_graded():
@@ -54,7 +54,7 @@ def test_a_name_with_no_file_behind_it_is_still_graded():
     silently stop proving anything and the gate would pass everything."""
     assert not (ROOT / "bin/feature-with-no-pages").exists()
     r = _gate("bin/feature-with-no-pages")
-    assert r.returncode == 1 and "feature-with-no-pages: no docs/demo" in r.stdout, r.stdout + r.stderr
+    assert r.returncode == 1 and "feature-with-no-pages: no docs/tutorials/demo" in r.stdout, r.stdout + r.stderr
 
 
 def test_a_real_command_with_its_pages_still_passes():

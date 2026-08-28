@@ -2,7 +2,7 @@
 """catalog-render: put the live architecture page on main on a schedule, through a pull request.
 
 crew#236 row 2, second half. bin/catalog-gen and bin/estate-diagram already turn the inventory
-into catalog/catalog-info.yaml and docs/architecture/live.md; this job runs them after every
+into catalog/catalog-info.yaml and docs/explanation/architecture/live.md; this job runs them after every
 inventory run (scheduler/schedule.yml: com.estate.catalog-render, after: com.estate.inventory)
 and lands the page on main. Nothing here is a new collector or renderer.
 
@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 WT = Path(os.environ.get("IDP_STATE_WORKTREE") or ROOT.parent / ".idp-state")
 BRANCH = "state/live-diagram"
-PAGE = "docs/architecture/live.md"
+PAGE = "docs/explanation/architecture/live.md"
 SHOWCASE = "docs/SHOWCASE.md"
 TRACE = "docs/TRACE-MATRIX.md"          # crew#495 CP1
 NEXT = "docs/NEXT.md"                   # crew#403 CP6
