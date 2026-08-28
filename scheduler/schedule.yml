@@ -231,6 +231,7 @@ jobs:
   com.estate.bundlepush:
     runs_on: mac
     runs_on_ref: crew#300
+    ok_exit: [2]  # 2 = every repo escrowed, and one was skipped (named in the log: oversize); not a crash. Runs df9d7e69 and 3× on 2026-08-25 printed BUNDLE PUSH GREEN then exit 2, and the breaker held the job open for 52h
     command:
     - ~/.claude/bin/estate-runner
     - ~/.claude/scripts/estate/estate_bundle_push.sh
