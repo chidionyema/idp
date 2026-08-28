@@ -10,6 +10,7 @@
 # Every playbook prints one receipt line per step and exits non-zero when a step fails. A
 # playbook is added here, reviewed, and named in the workflow input; nothing is typed ad hoc.
 set -uo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
 K="kubectl --request-timeout=60s"
 FAILED=""
 step() { local name="$1"; shift; local out rc; out=$("$@" 2>&1); rc=$?
@@ -140,7 +141,9 @@ pb_diagnose() {
 # config Cilium wrote to every node is removed by a privileged one-shot DaemonSet (cni.uninstall
 # is off by default in Cilium 1.14+, so pod removal leaves 05-cilium.conflist behind and every new
 # pod sandbox would still call a cilium-cni whose agent is gone); coredns is restarted onto the
-# flannel-only chain; then Flux fetches main and converges on the tree without Cilium.
+# flannel-only chain; then Flux fetches main and converges on the tree without Cilium. This is
+# also the rollback for cilium-replace (below): after this runs, re-apply the flannel DaemonSet
+# cilium-replace saved to $RUNNER_TEMP/kube-flannel-ds.yaml.
 pb_cilium_unchain() {
   step flux-kustomization $K delete kustomization -n flux-system cilium --ignore-not-found --wait=false
   step helmrelease $K delete helmrelease -n kube-system cilium --ignore-not-found --wait=false
@@ -195,6 +198,37 @@ YAML
   # the dry-run EOF from before the webhook restart in its status. Force it, then read the tree.
   step secret-store flux reconcile kustomization secret-store -n flux-system --timeout=5m
   show kustomizations $K get kustomizations -A
+}
+
+# cilium-replace: crew#539 CP12 correction (founder, 2026-08-28, twice: "are we getting hubble or
+# not" -> yes). idp#505 chained Cilium after OKE's flannel; idp#514 reverted it because chaining
+# took coredns down and Flux could not even fetch the revert. The supported shape, Oracle's own
+# tutorial (https://docs.oracle.com/en/learn/oke-flannel-to-cilium-cni-plugin/index.html), is
+# Cilium REPLACING flannel: the flannel DaemonSet is saved first (rollback material) then removed,
+# Cilium installs from platform/cni/cilium-values.yaml (ipam.mode=kubernetes,
+# kubeProxyReplacement=false, Hubble on), and every non-hostNetwork pod in the namespaces that
+# must come back first is deleted so the kubelet reschedules it onto the new network -- one
+# namespace at a time, --wait=false so this does not block on a pod the new CNI has not reached
+# yet. THE FOUNDER FROZE DRAIN AND CORDON FOR THIS PLAYBOOK (crew#539 5449358659, the node-drain
+# cordon window itself paged as an outage): cilium-replace never cordons and never drains: a pod
+# is deleted and the scheduler places its replacement, nothing is evicted off a node by name.
+# Rollback: bin/idp-oke-break-glass cilium-unchain, then `kubectl apply -f` the saved
+# kube-flannel-ds.yaml (cilium-replace does not re-apply it itself: the two rollback steps are
+# reviewed by a human before they run on a cluster mid-outage).
+pb_cilium_replace() {
+  local receipt_dir="${RUNNER_TEMP:-/tmp}" ns pods pod
+  step flannel-save sh -c "$K get ds kube-flannel-ds -n kube-system -o yaml > '$receipt_dir/kube-flannel-ds.yaml'"
+  step flannel-delete $K delete -n kube-system daemonset kube-flannel-ds
+  step cilium-install helm install cilium oci://quay.io/cilium/charts/cilium --version 1.20.1 --namespace kube-system -f "$IDP/platform/cni/cilium-values.yaml"
+  step cilium-ready $K rollout status ds/cilium -n kube-system --timeout=600s
+  for ns in flux-system observability edge backstage identity drills; do
+    pods=$($K get pods -n "$ns" -o jsonpath='{range .items[?(@.spec.hostNetwork!=true)]}{.metadata.name}{" "}{end}' 2>/dev/null)
+    for pod in $pods; do
+      step "reschedule-$ns-$pod" $K delete pod "$pod" -n "$ns" --wait=false
+    done
+  done
+  show cilium-pods $K get pods -n kube-system
+  show pods-not-running $K get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded
 }
 
 # dns-per-namespace: run 33141542523 (dns-per-node at 421fe6d) resolved an in-cluster and an
@@ -476,12 +510,13 @@ pb_chi_resize() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose cilium-unchain helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize"; exit 0 ;;
+  --list) echo "diagnose cilium-unchain cilium-replace helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize"; exit 0 ;;
   diagnose) pb_diagnose ;;
   dns-per-node) pb_dns_per_node ;;
   dns-per-namespace) pb_dns_per_namespace ;;
   tcp-per-node) pb_tcp_per_node ;;
   cilium-unchain) pb_cilium_unchain ;;
+  cilium-replace) pb_cilium_replace ;;
   helm-retry) pb_helm_retry ;;
   node-drain) pb_node_drain ;;
   node-uncordon) pb_node_uncordon ;;

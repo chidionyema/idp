@@ -79,8 +79,11 @@ jobs:
         env:
           # https://github.com/k3s-io/k3s/releases — the release train platform/k3d/estate.yaml tracks
           INSTALL_K3S_VERSION: v1.33.4+k3s1
-          # the estate's own traefik and servicelb come from the Flux tree, not from k3s
-          INSTALL_K3S_EXEC: server --disable traefik --disable servicelb --write-kubeconfig-mode 644
+          # the estate's own traefik and servicelb come from the Flux tree, not from k3s; crew#539
+          # CP12: k3s's own flannel is disabled the same way OKE's is (--flannel-backend=none) and
+          # its NetworkPolicy controller is off (--disable-network-policy) so Cilium owns both,
+          # matching Oracle's own procedure (https://docs.oracle.com/en/learn/oke-flannel-to-cilium-cni-plugin/index.html).
+          INSTALL_K3S_EXEC: server --disable traefik --disable servicelb --write-kubeconfig-mode 644 --flannel-backend=none --disable-network-policy
         run: |
           set -euo pipefail
           echo "T0=$(date +%s)" >> "$GITHUB_ENV"
@@ -89,6 +92,12 @@ jobs:
           export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
           kubectl wait node --all --for=condition=Ready --timeout=120s
           kubectl get node -o wide
+      - name: Cilium replaces k3s's flannel (crew#539 CP12, rehearsal of the OKE break-glass playbook)
+        run: |
+          set -euo pipefail
+          helm install cilium oci://quay.io/cilium/charts/cilium --version 1.20.1 --namespace kube-system -f platform/cni/cilium-values.yaml
+          kubectl rollout status ds/cilium -n kube-system --timeout=300s
+          kubectl -n kube-system get pods
       - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
       - name: flux install, then the same tree OKE runs, from this commit
         env:

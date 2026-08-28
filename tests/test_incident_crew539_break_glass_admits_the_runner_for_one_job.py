@@ -26,7 +26,7 @@ def _fake_path(tmp_path: Path) -> tuple[Path, Path]:
     log = tmp_path / "calls.log"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    for tool in ("kubectl", "flux"):
+    for tool in ("kubectl", "flux", "helm"):
         f = bin_dir / tool
         f.write_text(f'#!/bin/sh\nprintf \'%s %s\\n\' "{tool}" "$*" >> "{log}"\ncat >/dev/null 2>&1 || true\necho ok\n')
         f.chmod(f.stat().st_mode | stat.S_IEXEC)
@@ -63,6 +63,34 @@ def test_cilium_unchain_removes_the_release_before_the_cni_config_and_ends_with_
     assert "delete ds cni-unchain -n kube-system" in joined, "the privileged helper is not left on the cluster"
 
 
+def test_cilium_replace_deletes_flannel_before_helm_install_and_never_drains_or_cordons(tmp_path, monkeypatch):
+    # crew#539 CP12 correction: Cilium REPLACES flannel (Oracle's own procedure), never chains
+    # after it (idp#514). The flannel DaemonSet is saved for rollback and deleted before Cilium
+    # installs, and the founder froze drain/cordon for this playbook (crew#539 5449358659: the
+    # cordon window itself paged as an outage) — cilium-replace only ever deletes pods to let the
+    # scheduler reschedule them, it never cordons or drains a node by name.
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    p, calls = _run("cilium-replace", tmp_path)
+    assert p.returncode == 0, p.stdout + p.stderr
+    joined = "\n".join(calls)
+    assert "delete -n kube-system daemonset kube-flannel-ds" in joined
+    assert "helm install cilium oci://quay.io/cilium/charts/cilium" in joined
+    save = joined.index("get ds kube-flannel-ds -n kube-system -o yaml")
+    delete = joined.index("delete -n kube-system daemonset kube-flannel-ds")
+    install = joined.index("helm install cilium oci://quay.io/cilium/charts/cilium")
+    ready = joined.index("rollout status ds/cilium -n kube-system --timeout=600s")
+    assert save < delete < install < ready, calls
+    assert (tmp_path / "kube-flannel-ds.yaml").exists(), "the flannel manifest is saved before it is deleted (rollback material)"
+    assert not any("cordon" in c or "drain" in c for c in calls), calls
+    assert "cilium-values.yaml" in joined
+
+
+def test_cilium_replace_is_listed_and_wired():
+    assert "cilium-replace" in subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
+    wf = WORKFLOW.read_text()
+    assert "cilium-replace" in wf
+
+
 def test_cni_cleanup_helper_runs_on_the_host_network():
     """run 33132419902: with the chained config left behind, cilium-cni fails every new sandbox,
     so a helper on the pod network can never start. hostNetwork pods call no CNI."""
@@ -75,7 +103,7 @@ def test_unknown_playbook_is_refused_and_list_names_both(tmp_path):
     p, _ = _run("rm-rf-everything", tmp_path)
     assert p.returncode == 64
     listed = subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
-    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node", "dns-per-namespace", "tcp-per-node", "node-drain", "node-uncordon", "chi-resize"]
+    assert listed == ["diagnose", "cilium-unchain", "cilium-replace", "helm-retry", "dns-per-node", "dns-per-namespace", "tcp-per-node", "node-drain", "node-uncordon", "chi-resize"]
 
 
 def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
@@ -91,7 +119,7 @@ def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
 def test_workflow_offers_break_glass_with_a_named_playbook():
     wf = WORKFLOW.read_text()
     assert "surge-finish, break-glass]" in wf
-    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize]" in wf
+    assert "options: [diagnose, cilium-unchain, cilium-replace, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize]" in wf
     assert "BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}" in wf
 
 
