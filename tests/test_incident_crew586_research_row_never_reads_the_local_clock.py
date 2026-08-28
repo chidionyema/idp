@@ -22,9 +22,10 @@ def test_an_entry_inside_the_window_is_fresh(tmp_path, capsys):
     assert "from the API clock" in capsys.readouterr().out
 
 
-def test_a_1970_stamp_and_a_future_stamp_are_both_stale(tmp_path):
+def test_a_1970_stamp_is_stale_and_a_future_stamp_is_a_clock_behind_the_ledger(tmp_path, capsys):
     assert ledger_fresh(_ledger(tmp_path, "1970-01-01T00:00:00Z"), 168, now=NOW) == 1
-    assert ledger_fresh(_ledger(tmp_path, "2027-08-28T12:00:00Z"), 168, now=NOW) == 1
+    assert ledger_fresh(_ledger(tmp_path, "2027-08-28T12:00:00Z"), 168, now=NOW) == 2
+    assert "behind the ledger" in capsys.readouterr().out
 
 
 def test_the_same_ledger_grades_the_same_whatever_this_machine_thinks(tmp_path):

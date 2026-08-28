@@ -17,6 +17,7 @@ import subprocess
 from email.utils import parsedate_to_datetime
 
 STAMP_KEYS = ("ts", "timestamp", "date", "when", "at")
+SKEW = dt.timedelta(minutes=5)   # a writer's clock may run this far ahead of GitHub's; more is a dead clock
 
 
 def authority_now() -> dt.datetime | None:
@@ -51,17 +52,28 @@ def stamps(ledger: pathlib.Path) -> tuple[list[dt.datetime], int]:
 
 
 def ledger_fresh(ledger: pathlib.Path, hours: int, now: dt.datetime | None = None) -> int:
-    """0 fresh, 1 stale, 2 BLIND. `now` is injected by tests; callers leave it to the authority."""
+    """0 fresh, 1 stale, 2 BLIND. `now` is injected by tests; callers leave it to the authority.
+    The newest entry decides. An entry ahead of the authority clock means a clock is behind the
+    ledger (the crew#583 incident) and the row is BLIND, never green."""
     try:
         seen, n = stamps(ledger)
     except (OSError, ValueError) as e:
         print(f"BLIND research ledger unreadable at {ledger}: {e}")
         return 2
+    if not seen:
+        print(f"research ledger: no entry carries a stamp, of {n}")
+        return 1
     now = now or authority_now()
     if now is None:
         print("BLIND research ledger: no clock to measure against (gh api gave no Date header); the local clock is not one")
         return 2
-    cutoff = now - dt.timedelta(hours=hours)
-    fresh = [s for s in seen if cutoff <= s <= now]
-    print(f"research ledger: {len(fresh)} entr{'y' if len(fresh) == 1 else 'ies'} inside {hours}h of {n} (now {now.isoformat(timespec='seconds')} from the API clock)")
-    return 0 if fresh else 1
+    newest = max(seen)
+    if newest > now + SKEW:
+        print(f"BLIND research ledger: a clock is behind the ledger; newest entry {newest.isoformat(timespec='seconds')} "
+              f"is ahead of the API clock {now.isoformat(timespec='seconds')}")
+        return 2
+    age_h = (now - newest).total_seconds() / 3600.0
+    verdict = "inside" if age_h <= hours else "older than"
+    print(f"research ledger: newest entry {age_h:.1f}h old, {verdict} {hours}h of {n} entries "
+          f"(now {now.isoformat(timespec='seconds')} from the API clock)")
+    return 0 if age_h <= hours else 1

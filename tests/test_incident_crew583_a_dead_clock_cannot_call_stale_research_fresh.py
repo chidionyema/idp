@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -48,7 +50,7 @@ def _ledger(tmp_path: Path, *offsets: dt.timedelta, key: str = "ts") -> Path:
 
 def _row(tmp_path: Path, hours: int = 24) -> subprocess.CompletedProcess:
     return subprocess.run([sys.executable, str(CONSCIENCE), "--ledger-fresh-hours", str(hours)],
-                          capture_output=True, text=True, env={"PATH": "/usr/bin:/bin",
+                          capture_output=True, text=True, env={"PATH": "/usr/bin:/bin:" + os.path.dirname(shutil.which("gh") or "/usr/local/bin/gh"),  "HOME": os.environ.get("HOME", ""), "GH_TOKEN": os.environ.get("GH_TOKEN", ""),  # idp#619: `now` is the GitHub API clock; gh needs its login
                                                                "ESTATE_CODE": str(tmp_path)})
 
 
