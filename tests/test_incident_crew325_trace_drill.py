@@ -66,24 +66,23 @@ def test_github_app_installation_step_runs_even_when_a_drill_row_is_red() -> Non
     assert "always()" in cond and "inputs.mode == 'apply'" in cond, cond
 
 
-def test_litellm_upstream_seed_step_runs_on_apply_and_never_echoes_a_value() -> None:
+def test_litellm_upstream_is_minted_on_apply_and_never_echoes_a_value() -> None:
     """trace-drill run 33007689530: the ACTIVE vault secret litellm-upstream held a raw value, not the
-    JSON envelope ExternalSecret llm/litellm-upstream extracts. The apply job re-puts it through
-    bin/idp-vault-put from SEED_* secrets; the step is always()-gated, exits 0 with no seed, and no
-    line echoes a key variable."""
-    wf = yaml.safe_load((ROOT / ".github" / "workflows" / "oke-check.yml").read_text())
-    steps = [s for j in wf["jobs"].values() for s in j.get("steps", []) if "idp-vault-put litellm-upstream" in s.get("name", "")]
+    JSON envelope ExternalSecret llm/litellm-upstream extracts. The apply job used to re-put it from
+    SEED_* secrets; crew#66 root trust (crew#575) replaced that with bin/idp-estate-seed, which mints
+    the master key in-process and keeps a well-formed one. The step is still always()-gated on apply,
+    no SEED_LITELLM_MASTER_KEY exists anywhere, and no line echoes a key variable."""
+    wf_text = (ROOT / ".github" / "workflows" / "oke-check.yml").read_text()
+    wf = yaml.safe_load(wf_text)
+    steps = [s for j in wf["jobs"].values() for s in j.get("steps", []) if "idp-estate-seed" in s.get("name", "")]
     assert len(steps) == 1, steps
     step = steps[0]
     assert "always()" in str(step["if"]) and "inputs.mode == 'apply'" in str(step["if"])
-    assert step["env"]["LITELLM_MASTER_KEY"] == "${{ secrets.SEED_LITELLM_MASTER_KEY }}"
-    run = step["run"]
-    # crew#506 CP4: the put merges whichever SEED_* keys are set; the master key is one of the
-    # keys it may carry, no longer the gate.
-    assert "bin/idp-vault-put --merge litellm-upstream" in run and "LITELLM_MASTER_KEY" in run
-    gate = next(l for l in run.split("\n") if "exit 0" in l)
-    assert "n/a" in gate, "no seed -> n/a and exit 0"
-    assert not re.search(r"echo[^\n]*\$\{?(MINIMAX|DEEPSEEK|OPENROUTER|GEMINI|LITELLM)_", run), "a value echoed"
+    assert step["run"].strip() == "bin/idp-estate-seed"
+    assert "SEED_LITELLM_MASTER_KEY" not in wf_text and "idp-vault-put litellm-upstream" not in wf_text
+    seed = (ROOT / "bin" / "idp-estate-seed").read_text()
+    assert "litellm-upstream" in seed and "LITELLM_MASTER_KEY" in seed, "the master key is one PLAN row"
+    assert not re.search(r"echo[^\n]*\$\{?(MINIMAX|DEEPSEEK|OPENROUTER|GEMINI|LITELLM)_", seed), "a value echoed"
 
 
 def test_incident_crew325_trace_drill_default_model_is_a_funded_router_route() -> None:

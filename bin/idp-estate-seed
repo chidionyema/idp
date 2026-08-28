@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# idp-estate-seed: every estate-born credential, minted in-process and written to the vault. No hands.
+#
+#   bin/idp-estate-seed                 mint whatever is missing; keep whatever already works
+#   bin/idp-estate-seed --preflight     prove the vault is writable, list every entry/key it would mint, write nothing
+#   bin/idp-estate-seed --rotate <entry>  mint that entry's estate-born keys anew (the workload rolls on the ExternalSecret refresh)
+#
+# Root trust (docs/policy/root-trust.md, crew#66 founder 2026-08-28, crew#575, crew#576): a Postgres
+# password, an internal API key, a cookie secret, a JWT signing key, a router master key are born by
+# the estate, not by a person. Before this each one was a SEED_* repository secret somebody generated
+# in a terminal and pasted into the GitHub console (vault-seed.yml), and `prospector-store-api-env`
+# and `backstage-env` had no writer at all. Here every value is produced by python `secrets` or
+# openssl in this process, verified for shape, written through bin/idp-vault-put (--merge: a vendor
+# key already in the same entry is never touched), and never printed. Router keys are minted by
+# bin/idp-router-key from the master key the vault holds, so the router is the only place a model
+# credential exists (LAW 34). Idempotent: a key that is present and well-formed is kept, so a rerun
+# is a no-op; --rotate <entry> is the one way to replace one, and it is deliberate because the
+# workload that consumes the old value keeps running on it until its ExternalSecret refreshes.
+#
+# What this does NOT mint, and who does: vendor keys (bin/idp-bootstrap-vendors, crew#579),
+# Cloudflare (bin/idp-bootstrap-cloudflare, crew#578), GitHub tokens (bin/idp-github-app refresh,
+# crew#577), Tailscale (bin/idp-bootstrap-tailscale), IDCS/Terraform-born entries (bin/idp-oke-rebuild).
+# The umbrella bin/idp-bootstrap-estate runs them all in order.
+#
+# Exit 0 ok, 1 FAIL (a mint or a write refused), 2 BLIND (no vault session, missing tool).
+set -euo pipefail
+IDP=$(cd "$(dirname "$0")/.." && pwd)
+CLOUD=${IDP_CLOUD:-$IDP/bin/idp-cloud}            # overridable so a test needs no vault
+VAULT_PUT=${IDP_VAULT_PUT:-$IDP/bin/idp-vault-put}
+ROUTER_KEY=${IDP_ROUTER_KEY:-$IDP/bin/idp-router-key}
+MODE=${1:-mint}; ROTATE=""
+case "$MODE" in
+  mint|--preflight) ;;
+  --rotate) ROTATE=${2:?entry to rotate}; MODE=mint ;;
+  *) sed -n 2,6p "$0"; exit 2 ;;
+esac
+say()  { printf '%-7s %-24s %s\n' "$1" "$2" "$3"; }
+fail() { say FAIL "$1" "$2"; exit 1; }
+bl()   { say BLIND "$1" "$2"; exit 2; }
+for t in python3 jq openssl; do command -v "$t" >/dev/null || bl deps "$t missing"; done
+CFG="$IDP/clusters/oke/estate-config.yaml"
+ZONE=$(awk '/ESTATE_ZONE:/{print $2}' "$CFG" 2>/dev/null || true)
+[ -n "$ZONE" ] || bl config "no ESTATE_ZONE in $CFG"
+
+# --- the plan: entry, key, generator. One row per estate-born credential the register names. ------
+# generators: hex32 (64 hex chars), urlsafe32 (base64url, 32 bytes: what oauth2-proxy and Backstage
+# expect), sk (LiteLLM master key shape sk-<hex>), rsa_pem_b64 (PKCS#8 RSA 2048, base64 of the PEM:
+# the store API accepts raw or base64 PEM and base64 survives a JSON string, Store.Api
+# Identity/ConfigJwtSigningKeyProvider.cs), copy:<entry>.<key> (the same value another entry holds,
+# so two sides of one shared secret never drift), const:<value> (derived from the zone, not secret).
+PLAN=$(cat <<EOF
+temporal-db               password                    hex32
+hindsight                 postgres-password           hex32
+hindsight                 HINDSIGHT_API_LLM_BASE_URL  const:https://llm.$ZONE
+mcp-gateway               MCP_GATEWAY_KEY             hex32
+backstage-env             BACKEND_SECRET              urlsafe32
+backstage-env             POSTGRES_PASSWORD           hex32
+litellm-upstream          LITELLM_MASTER_KEY          sk
+prospector-store-api-env  Jwt__SigningKeyPem          rsa_pem_b64
+prospector-store-api-env  Store__InternalApiKey       hex32
+prospector-store-api-env  Store__EntitlementsApiKey   hex32
+prospector-engine-env     STORE_API_URL               const:http://prospector-store-api.prospector.svc:8080
+prospector-engine-env     STORE_INTERNAL_API_KEY      copy:prospector-store-api-env.Store__InternalApiKey
+EOF
+)
+# raw (non-JSON) entries: the ExternalSecret reads the whole secret as the value (remoteRef without property)
+RAW_PLAN="oauth2-proxy-cookie-secret urlsafe32"
+# router keys: consumer entry, field, models (rows of platform/llm/config.yaml); minted by bin/idp-router-key
+ROUTER_PLAN=$(cat <<EOF
+hindsight         HINDSIGHT_API_LLM_API_KEY  minimax
+hermes-agent-env  LITELLM_API_KEY            minimax,deepseek
+EOF
+)
+
+if [ "$MODE" = --preflight ]; then
+  VAULT_PUT_PREFLIGHT=1 "$VAULT_PUT" estate-seed --preflight | sed 's/^/        /' || bl vault "not reachable"
+  n=0
+  while read -r e k g; do [ -n "$e" ] || continue; say "" "$e" "$k <- ${g%%:*}"; n=$((n+1)); done <<<"$PLAN"
+  while read -r e g; do [ -n "$e" ] || continue; say "" "$e" "(raw) <- $g"; n=$((n+1)); done <<<"$RAW_PLAN"
+  while read -r e k m; do [ -n "$e" ] || continue; say "" "$e" "$k <- router key ($m)"; n=$((n+1)); done <<<"$ROUTER_PLAN"
+  say ok preflight "$n keys would be minted or kept; nothing written"
+  exit 0
+fi
+
+# --- helpers ----------------------------------------------------------------------------------------
+gen() { # <generator> -> value on stdout
+  case "$1" in
+    hex32)       python3 -c 'import secrets; print(secrets.token_hex(32))' ;;
+    urlsafe32)   python3 -c 'import secrets; print(secrets.token_urlsafe(32))' ;;
+    sk)          python3 -c 'import secrets; print("sk-"+secrets.token_hex(24))' ;;
+    rsa_pem_b64) openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 2>/dev/null | base64 | tr -d '\n' ;;
+    const:*)     printf '%s' "${1#const:}" ;;
+    copy:*)      local ref=${1#copy:}; "$CLOUD" secret get "${ref%%.*}" 2>/dev/null | jq -r --arg k "${ref#*.}" '.[$k] // empty' ;;
+    *)           return 1 ;;
+  esac
+}
+wellformed() { # <generator> <value> -> 0 when the value has the shape the generator produces
+  case "$1" in
+    hex32)       [[ "$2" =~ ^[0-9a-f]{64}$ ]] ;;
+    urlsafe32)   [[ "$2" =~ ^[A-Za-z0-9_-]{40,}$ ]] ;;
+    sk)          [[ "$2" =~ ^sk-[0-9a-f]{48}$ ]] ;;
+    rsa_pem_b64) printf '%s' "$2" | base64 -d 2>/dev/null | grep -q 'BEGIN PRIVATE KEY' ;;
+    const:*)     [ "$2" = "${1#const:}" ] ;;
+    copy:*)      [ "$2" = "$(gen "$1")" ] ;;
+  esac
+}
+read_entry() { # <entry> -> JSON on stdout ("" when absent); exit 2 on a split/unreadable vault
+  local rc=0 out; out=$("$CLOUD" secret get "$1" 2>/dev/null) || rc=$?
+  [ "$rc" -le 1 ] || bl "$1" "vault read exited $rc (split or unreadable)"
+  printf '%s' "$out"
+}
+minted=0; kept=0
+put_key() { # <entry> <key> <generator>
+  local e=$1 k=$2 g=$3 cur have=""
+  cur=$(read_entry "$e")
+  [ -n "$cur" ] && have=$(jq -r --arg k "$k" '.[$k] // empty' <<<"$cur" 2>/dev/null || true)
+  if [ -n "$have" ] && [ "$ROTATE" != "$e" ] && wellformed "$g" "$have"; then
+    say ok "$e" "$k present and well-formed; kept"; kept=$((kept+1)); unset have; return
+  fi
+  unset have
+  local v; v=$(gen "$g") || fail "$e" "generator $g unknown"
+  [ -n "$v" ] || fail "$e" "$k: generator ${g%%:*} produced nothing (a copy: source is not minted yet?)"
+  local f; f=$(mktemp); umask 077; printf 'SEED_VALUE=%s\n' "$v" > "$f"; unset v
+  ESTATE_ENV_FILE="$f" "$VAULT_PUT" --merge "$e" "$k=SEED_VALUE" >/dev/null || { rm -f "$f"; fail "$e" "vault write of $k refused"; }
+  rm -f "$f"
+  say ok "$e" "$k minted (${g%%:*}) and written"; minted=$((minted+1))
+}
+put_raw() { # <entry> <generator>: the whole secret is the value
+  local e=$1 g=$2 cur
+  cur=$(read_entry "$e")
+  if [ -n "$cur" ] && [ "$ROTATE" != "$e" ] && wellformed "$g" "$cur"; then
+    say ok "$e" "present and well-formed; kept"; kept=$((kept+1)); unset cur; return
+  fi
+  unset cur
+  local f; f=$(mktemp); umask 077; gen "$g" > "$f"
+  "$CLOUD" secret put "$e" --file "$f" >/dev/null || { rm -f "$f"; fail "$e" "vault write refused"; }
+  rm -f "$f"
+  say ok "$e" "minted ($g) and written (raw)"; minted=$((minted+1))
+}
+
+# --- 1. the vault must be writable before anything is minted ------------------------------------
+VAULT_PUT_PREFLIGHT=1 "$VAULT_PUT" estate-seed --preflight >/dev/null || bl vault "not reachable (no OCI session?)"
+
+# --- 2. estate-born values ---------------------------------------------------------------------
+while read -r e k g; do [ -n "$e" ] || continue; put_key "$e" "$k" "$g"; done <<<"$PLAN"
+while read -r e g; do [ -n "$e" ] || continue; put_raw "$e" "$g"; done <<<"$RAW_PLAN"
+
+# --- 3. router keys, from the master key just proven present -------------------------------------
+while read -r e k m; do
+  [ -n "$e" ] || continue
+  if [ "$ROTATE" = "$e" ]; then ROUTER_ROTATE=1; else ROUTER_ROTATE=""; fi
+  ROUTER_ROTATE=$ROUTER_ROTATE "$ROUTER_KEY" "$e" "$m" --entry "$e" --field "$k" | sed 's/^/        /' || fail "$e" "router key $k not minted"
+done <<<"$ROUTER_PLAN"
+
+say ok estate-seed "$minted minted, $kept kept; ExternalSecrets pick them up within their refreshInterval (flux reconcile kustomization <name> to hurry)"

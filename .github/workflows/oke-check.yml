@@ -100,6 +100,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bin/idp-github-app installation || { rc=$?; [ "$rc" = 2 ] && echo "BLIND   github-app has no installation yet; install the App on chidionyema and re-run apply" || exit "$rc"; }
+      # crew#66 root trust (crew#577): the GitHub tokens workloads read (platform/github-app/token-consumers.json)
+      # are installation tokens of the App, narrowed to a lane, re-minted here and hourly by
+      # bin/idp-verify-drill; no PAT is ever pasted. Exit 2 is BLIND (App not installed yet).
+      - name: bin/idp-github-app refresh (crew#577)
+        if: ${{ always() && inputs.mode == 'apply' }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bin/idp-github-app refresh || { rc=$?; [ "$rc" = 2 ] && echo "BLIND   github-app tokens not refreshed: no installation yet" || exit "$rc"; }
       # crew#516 CP5, founder's locked spec (crew#66 5451926212, Phase 2): platform/tailscale/policy.hujson
       # is git-tracked, applied here (no admin-console edit -- the no-toil rule). Exit 2 is BLIND
       # (vault entry or FOUNDER_MAC_USER not seeded yet).
@@ -135,56 +146,36 @@ jobs:
           ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}
         run: |
           if [ "${{ inputs.mode }}" = apply ]; then bin/idp-identity-apply apply -auto-approve; else bin/idp-identity-apply plan; fi
-      # crew#325: the model-routing row reads one JSON vault secret, litellm-upstream. trace-drill run
-      # 33007689530 found the ACTIVE secret holding a raw value, not the envelope, so ExternalSecret
-      # llm/litellm-upstream cannot extract it. The values live only on the operator's laptop, which
-      # has no OCI identity (crew#227), so they travel once as SEED_* GitHub secrets, the same machine
-      # identity puts them, and the SEED_* secrets are deleted after the put. With none set: n/a.
-      - name: bin/idp-vault-put litellm-upstream (crew#325)
+      # crew#66 root trust (5453747447; crew#575, crew#576): every estate-born entry -- the router
+      # master key, the Postgres passwords, the store's JWT signing key and internal keys, the MCP
+      # gateway key, the cookie secret, Backstage's env, and the router keys hindsight and hermes
+      # hold -- is minted here by the machine identity and kept when the vault already holds a
+      # well-formed value. Vendor keys are bin/idp-bootstrap-vendors', never a SEED_* secret (crew#579).
+      - name: bin/idp-estate-seed (crew#66 root trust)
         if: ${{ always() && inputs.mode == 'apply' }}
         env:
           OCI_CLI_AUTH: security_token
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-          MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.SEED_GROQ_API_KEY }}
-          LITELLM_MASTER_KEY: ${{ secrets.SEED_LITELLM_MASTER_KEY }}
-        run: |
-          # crew#506 CP4: --merge overlays whichever SEED_* keys are set on the entry the vault holds,
-          # so adding one provider (Groq) never needs every key re-seeded or the master key present.
-          keys=MINIMAX_API_KEY,DEEPSEEK_API_KEY,OPENROUTER_API_KEY,GEMINI_API_KEY,GROQ_API_KEY,LITELLM_MASTER_KEY
-          any=0; for k in ${keys//,/ }; do [ -n "${!k:-}" ] && any=1; done
-          [ "$any" = 1 ] || { echo "n/a     litellm-upstream   no SEED_* secrets set; the vault keeps what it holds"; exit 0; }
-          umask 077; f=$(mktemp)
-          env | grep -E "^(${keys//,/|})=" > "$f"
-          args=""; for k in ${keys//,/ }; do args="$args $k=$k"; done
-          ESTATE_ENV_FILE="$f" bin/idp-vault-put --merge litellm-upstream $args
-          rm -f "$f"
+        run: bin/idp-estate-seed
 
       # crew#516 CP4: the same door for The Architect's env (platform/hermes-agent). One vault entry,
       # hermes-agent-env, the env names the gateway reads; SEED_HERMES_* travel once and are deleted
-      # after the put. TELEGRAM_BOT_TOKEN is set last, at the swap, after the Mac gateway is booted out.
+      # after the put. crew#66 root trust: only configuration rides here (allowed users, home channel,
+      # the auth store); the bot token, vendor keys, router key and GitHub token are born by
+      # bin/idp-bootstrap-vendors, bin/idp-estate-seed and bin/idp-github-app refresh (crew#576, #577, #579).
       - name: bin/idp-vault-put hermes-agent-env (crew#516 CP4)
         if: ${{ always() && inputs.mode == 'apply' }}
         env:
           OCI_CLI_AUTH: security_token
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.SEED_HERMES_TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS }}
           # crew#516 CP4 (receipt 33116314460, "Unauthorized user ... on telegram"): hermes-agent reads
           # TELEGRAM_ALLOWED_USERS (gateway/run.py); the cockpit reads TELEGRAM_ALLOWED_USER_IDS. Both carry the one value.
           TELEGRAM_ALLOWED_USERS: ${{ secrets.SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS }}
           TELEGRAM_HOME_CHANNEL: ${{ secrets.SEED_HERMES_TELEGRAM_HOME_CHANNEL }}
-          ANTHROPIC_API_KEY: ${{ secrets.SEED_ANTHROPIC_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
-          LITELLM_API_KEY: ${{ secrets.SEED_HERMES_LITELLM_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.SEED_HERMES_GITHUB_TOKEN }}
-          EXA_API_KEY: ${{ secrets.SEED_EXA_API_KEY }}
           HERMES_AUTH_JSON: ${{ secrets.SEED_HERMES_AUTH_JSON }}
         run: |
-          keys=TELEGRAM_BOT_TOKEN,TELEGRAM_ALLOWED_USER_IDS,TELEGRAM_ALLOWED_USERS,TELEGRAM_HOME_CHANNEL,ANTHROPIC_API_KEY,OPENROUTER_API_KEY,LITELLM_API_KEY,GITHUB_TOKEN,EXA_API_KEY,HERMES_AUTH_JSON
+          keys=TELEGRAM_ALLOWED_USER_IDS,TELEGRAM_ALLOWED_USERS,TELEGRAM_HOME_CHANNEL,HERMES_AUTH_JSON
           any=0; for k in ${keys//,/ }; do [ -n "${!k:-}" ] && any=1; done
           [ "$any" = 1 ] || { echo "n/a     hermes-agent-env   no SEED_HERMES_* secrets set; the vault keeps what it holds"; exit 0; }
           umask 077; f=$(mktemp)

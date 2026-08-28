@@ -17,7 +17,8 @@
 #   ok      receipt      ok cluster-state ... nodes=1 ready=1 ... (12 min ago)
 #   ok      no-toil      no README, doc or platform file asks a person for a hand (N document(s))
 #   ok      root-trust   every entry registered, every MEETS row has its bootstrapper, every miss its ticket
-#   ok      verify-drill 7/7 rows green
+#   ok      github-tokens 2 token(s) re-minted from the App
+#   ok      verify-drill 8/8 rows green
 #
 # The receipt row is the cluster's own word, written every 15 minutes from inside by
 # platform/state/cluster-state.yaml on the node's instance principal and graded by
@@ -146,6 +147,16 @@ case "$rt_rc" in
   *) bl root-trust "$(printf '%s\n' "$rt_out" | tail -1 | cut -c1-160)";;
 esac
 
+# --- github-tokens: the tokens workloads read (platform/github-app/token-consumers.json) are one-hour
+# installation tokens of the App; each is re-minted here every hour and the ExternalSecrets that render
+# them refresh every 15 minutes (crew#66 root trust, crew#577). No PAT anywhere.
+gt_out=$("$(dirname "$0")/idp-github-app" refresh 2>&1); gt_rc=$?
+case "$gt_rc" in
+  0) say ok github-tokens "$(printf '%s\n' "$gt_out" | tail -1 | cut -c1-160)";;
+  2) bl github-tokens "$(printf '%s\n' "$gt_out" | tail -1 | cut -c1-160)";;
+  *) fail github-tokens "$(printf '%s\n' "$gt_out" | tail -1 | cut -c1-160)";;
+esac
+
 if [ "$red" -gt 0 ]; then say FAIL verify-drill "$red row(s) red, $blind blind"; exit 1; fi
 if [ "$blind" -gt 0 ]; then say BLIND verify-drill "$blind row(s) not measured"; exit 2; fi
-say ok verify-drill "7/7 rows green on the machine identity"
+say ok verify-drill "8/8 rows green on the machine identity"

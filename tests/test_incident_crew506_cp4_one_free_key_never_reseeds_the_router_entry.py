@@ -53,13 +53,17 @@ def test_merge_with_nothing_set_writes_nothing(tmp_path: pathlib.Path) -> None:
     assert r.returncode != 0 and r.stdout == ""
 
 
-def test_apply_step_merges_whichever_seed_keys_are_set() -> None:
+def test_every_writer_of_the_router_entry_merges_and_no_seed_secret_remains() -> None:
+    """crew#66 root trust (crew#575, crew#579): the SEED_* step is gone; the entry is now written by
+    bin/idp-estate-seed (master key) and bin/idp-bootstrap-vendors (provider keys). Both must --merge,
+    or one new provider would again re-seed every key -- the incident this file closes."""
     wf = (ROOT / ".github" / "workflows" / "oke-check.yml").read_text()
-    step = wf[wf.index("bin/idp-vault-put litellm-upstream") :]
-    step = step[: step.index("\n  # ")]
-    assert "SEED_GROQ_API_KEY" in step
-    assert "bin/idp-vault-put --merge litellm-upstream" in step
-    assert '[ -n "$LITELLM_MASTER_KEY" ] ||' not in step, "the step must not require the master key to add one provider"
+    assert "SEED_GROQ_API_KEY" not in wf and "bin/idp-vault-put --merge litellm-upstream" not in wf
+    assert re.search(r"^\s+run: bin/idp-estate-seed\s*$", wf, re.M)
+    seed = (ROOT / "bin" / "idp-estate-seed").read_text()
+    assert "--merge" in seed, "estate-seed writes one key at a time on top of what the vault holds"
+    vendors = (ROOT / "bin" / "idp-bootstrap-vendors").read_text()
+    assert '"--merge", entry' in vendors, "a vendor key lands beside the others, never over them"
 
 
 def test_groq_lane_in_both_router_configs_with_the_key_documented() -> None:

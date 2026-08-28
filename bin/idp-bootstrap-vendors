@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+# Root trust for every vendor credential, one command, no paste (crew#66 founder 2026-08-28; crew#579).
+#   bin/idp-bootstrap-vendors                  mint every vendor key the vault is missing (platform/vendors/consoles.yaml), verify, write
+#   bin/idp-bootstrap-vendors --only <vendor>  one vendor
+#   bin/idp-bootstrap-vendors --preflight      prove the vault and the driver, list what would be minted, write nothing
+#   bin/idp-bootstrap-vendors --rotate         mint anew even where the vault key still verifies
+#
+# The founder's plan named "--interactive (prompts once for external vendor API keys)". A prompt is a
+# paste, and the ruling is that he never pastes a secret; so this drives each vendor's own key page
+# (Playwright, the estate browser profile under ~/.estate) and his only act per vendor is the login
+# when the profile has no live session. Gemini is minted by gcloud after one SSO (kind: cli),
+# Telegram by talking to BotFather on web.telegram.org (kind: telegram). Every key is proved against
+# the vendor's API before bin/idp-vault-put writes it (--merge: the other keys of the entry are kept).
+# A key the vault already holds that still verifies is kept. Nothing is printed but vendor and key NAMES.
+# Selectors drift; a vendor whose page changed fails loud with the fix line, never silently.
+set -euo pipefail
+IDP=$(cd "$(dirname "$0")/.." && pwd)
+REG="$IDP/platform/vendors/consoles.yaml"
+HOME_DIR=${ESTATE_HOME:-$HOME/.estate}
+VENV="$HOME_DIR/bootstrap-venv"
+MODE=mint; ONLY=""; ROTATE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --preflight) MODE=preflight; shift ;;
+    --rotate) ROTATE=1; shift ;;
+    --only) ONLY=${2:?vendor}; shift 2 ;;
+    *) sed -n 2,6p "$0"; exit 2 ;;
+  esac
+done
+say()  { printf '%-7s %-20s %s\n' "$1" "$2" "$3"; }
+bl()   { say BLIND "$1" "$2"; exit 2; }
+for t in python3 curl jq; do command -v "$t" >/dev/null || bl deps "$t missing"; done
+[ -f "$REG" ] || bl registry "no $REG"
+mkdir -p "$HOME_DIR"; chmod 700 "$HOME_DIR"
+if ! "$VENV/bin/python" -c 'import playwright, yaml' >/dev/null 2>&1; then
+  say "" driver "installing playwright + pyyaml into $VENV (once)"
+  python3 -m venv "$VENV" >/dev/null; "$VENV/bin/pip" install -q playwright pyyaml >/dev/null; "$VENV/bin/playwright" install chromium >/dev/null
+fi
+PY="$VENV/bin/python"
+
+if [ "$MODE" = mint ]; then
+  if ! OCI_CLI_PROFILE=$("$IDP/bin/idp-oci-whoami" 2>/dev/null); then
+    MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
+    SV="${ESTATE_SECRETS:-$(dirname "$MAIN")/estate-secrets}/secrets/${OCI_ENV:-dev}"
+    export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
+    region=$(sops -d --extract '["OCI_REGION"]' "$SV/OCI_REGION.yaml" 2>/dev/null); tenancy=$(sops -d --extract '["OCI_TENANCY_NAME"]' "$SV/OCI_TENANCY_NAME.yaml" 2>/dev/null)
+    [ -n "$region" ] && [ -n "$tenancy" ] || bl oci "no live session and no OCI_REGION / OCI_TENANCY_NAME in $SV"
+    say "" oci "no live session: the browser opens once for OCI SSO"
+    oci session authenticate --region "$region" --tenancy-name "$tenancy" --profile-name estate-bootstrap >/dev/null || bl oci "session sign-in did not complete"
+    OCI_CLI_PROFILE=$("$IDP/bin/idp-oci-whoami") || bl oci "signed in, but no session profile is live"
+  fi
+  export OCI_CLI_PROFILE OCI_CLI_AUTH=security_token
+fi
+VAULT_PUT_PREFLIGHT=1 "$IDP/bin/idp-vault-put" vendors --preflight | sed 's/^/        /' || bl vault "not reachable"
+
+export IDP REG HOME_DIR MODE ONLY ROTATE
+exec "$PY" - <<'PY'
+import os, re, sys, json, time, subprocess, tempfile, shlex, urllib.request
+import yaml
+IDP, REG, HOME, MODE, ONLY, ROTATE = (os.environ[k] for k in ("IDP", "REG", "HOME_DIR", "MODE", "ONLY", "ROTATE"))
+reg = yaml.safe_load(open(REG))["vendors"]
+def say(st, who, msg): print(f"{st:<7} {who:<20} {msg}", flush=True)
+def step(s): print(f"        step    {s}", flush=True)
+
+def vault_get(entry):
+    r = subprocess.run([f"{IDP}/bin/idp-cloud", "secret", "get", entry], capture_output=True, text=True)
+    if r.returncode == 0:
+        try: return json.loads(r.stdout)
+        except ValueError: return {"_raw": r.stdout.strip()}
+    if r.returncode == 1: return {}
+    say("BLIND", entry, f"vault read exited {r.returncode} (split or unreadable)"); sys.exit(2)
+
+def vault_put(entry, field, value):
+    fd, path = tempfile.mkstemp(); os.write(fd, f"V_KEY={value}\n".encode()); os.close(fd)
+    try:
+        r = subprocess.run([f"{IDP}/bin/idp-vault-put", "--merge", entry, f"{field}=V_KEY"], env={**os.environ, "ESTATE_ENV_FILE": path}, capture_output=True, text=True)
+    finally:
+        os.unlink(path)
+    if r.returncode != 0: say("FAIL", entry, f"vault write of {field} refused: {r.stderr.strip()[:120]}"); sys.exit(1)
+
+def verify(v, key):
+    spec = v["verify"]; url = spec["url"].replace("{key}", key)
+    headers = {k: val.replace("{key}", key) for k, val in (spec.get("headers") or {}).items()}
+    data = spec.get("body", "").encode() if spec.get("body") else None
+    req = urllib.request.Request(url, data=data, method=spec["method"], headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp: return 200 <= resp.status < 300
+    except Exception: return False
+
+def drive_console(name, v):
+    from playwright.sync_api import sync_playwright
+    profile = f"{HOME}/{name}-browser"; shape = re.compile(rf"\b({v['shape']})\b"); hint = re.compile(v.get("name_hint", "create"), re.I)
+    say("", name, f"opening {v['page']}; if {name} asks you to sign in, do — that is the only hand")
+    with sync_playwright() as p:
+        ctx = p.chromium.launch_persistent_context(profile, headless=False, viewport={"width": 1280, "height": 900})
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page.goto(v["page"], wait_until="domcontentloaded"); step("key page opened")
+        create = page.get_by_role("button", name=hint).or_(page.get_by_role("link", name=hint))
+        deadline = time.time() + 300
+        while time.time() < deadline:
+            if create.count() and create.first.is_visible(): break
+            time.sleep(2)
+        else:
+            sys.exit(f"FAIL    {name:<20} no '{v.get('name_hint')}' control after 5 minutes: login not completed or selector drift (platform/vendors/consoles.yaml name_hint)")
+        step("signed in"); create.first.click()
+        label = f"estate {time.strftime('%Y-%m-%dT%H:%MZ', time.gmtime())}"
+        box = page.get_by_role("textbox").filter(has_not=page.locator("[type=password]"))
+        if box.count() and box.last.is_visible():
+            box.last.fill(label); step("named")
+            confirm = page.get_by_role("button", name=re.compile(r"^(create|generate|create key|create secret key|create api key|create new api key|create new secret key)$", re.I))
+            if confirm.count(): confirm.last.click(); step("created")
+        page.wait_for_timeout(2000)
+        text = page.inner_text("body")
+        m = shape.search(text)
+        if not m:
+            reveal = page.get_by_role("button", name=re.compile(r"reveal|show|copy", re.I))
+            if reveal.count(): reveal.first.click(); page.wait_for_timeout(500); m = shape.search(page.inner_text("body"))
+        if not m:
+            sys.exit(f"FAIL    {name:<20} key created but not found on the page (shape {v['shape']}); revoke the key named '{label}' in the console and rerun after the driver is fixed")
+        done = page.get_by_role("button", name=re.compile(r"^(done|close|got it)$", re.I))
+        if done.count(): done.first.click()
+        ctx.close()
+        return m.group(1)
+
+def drive_cli(name, v):
+    c = v["cli"]
+    if subprocess.run(["gcloud", "auth", "print-access-token"], capture_output=True).returncode != 0:
+        say("", name, "gcloud has no session: the browser opens once for Google SSO")
+        subprocess.run(shlex.split(c["login"]), check=True)
+    created = subprocess.run(shlex.split(c["create"]), capture_output=True, text=True, check=True).stdout.strip()
+    key = subprocess.run(shlex.split(c["read"].replace("{name}", created)), capture_output=True, text=True, check=True).stdout.strip()
+    step(f"minted by gcloud: {created}")
+    return key
+
+def drive_telegram(name, v, bot):
+    from playwright.sync_api import sync_playwright
+    profile = f"{HOME}/telegram-browser"; shape = re.compile(rf"\b({v['shape']})\b")
+    say("", name, f"opening {v['page']}; if Telegram asks you to sign in (QR or phone code), do — that is the only hand")
+    with sync_playwright() as p:
+        ctx = p.chromium.launch_persistent_context(profile, headless=False, viewport={"width": 1280, "height": 900})
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page.goto(v["page"], wait_until="domcontentloaded")
+        box = page.get_by_role("textbox").filter(has_text=re.compile("")).last
+        deadline = time.time() + 300
+        while time.time() < deadline:
+            if page.locator(".input-message-input").count(): break
+            time.sleep(2)
+        else:
+            sys.exit(f"FAIL    {name:<20} no chat with BotFather after 5 minutes: login not completed")
+        inp = page.locator(".input-message-input").first
+        for line in ("/newbot", f"estate {bot}", bot):
+            inp.fill(line); inp.press("Enter"); page.wait_for_timeout(2500); step(f"sent {line.split()[0]}")
+        text = page.inner_text("body")
+        m = shape.search(text)
+        if not m:
+            sys.exit(f"FAIL    {name:<20} BotFather did not answer with a token for @{bot} (name taken, or the chat did not render); read the reply in the chat and rerun with a free bot name")
+        ctx.close()
+        return m.group(1)
+
+minted = kept = 0
+for name, v in reg.items():
+    if ONLY and name != ONLY: continue
+    targets = v["targets"]
+    if MODE == "preflight":
+        say("", name, f"{v['kind']} -> " + ", ".join(f"{t['entry']}.{t['field']}" for t in targets)); continue
+    if v["kind"] == "telegram":
+        for t in targets:
+            cur = vault_get(t["entry"]).get(t["field"], "")
+            if cur and not ROTATE and verify(v, cur): say("ok", name, f"{t['entry']}.{t['field']} verifies; kept"); kept += 1; continue
+            key = drive_telegram(name, v, t["bot"])
+            if not verify(v, key): say("FAIL", name, f"@{t['bot']} token does not answer getMe"); sys.exit(1)
+            vault_put(t["entry"], t["field"], key); del key; minted += 1
+            say("ok", name, f"@{t['bot']} minted, verified, written to {t['entry']}.{t['field']}")
+        continue
+    # one key per vendor, fanned out to every target; kept when every target already verifies
+    have = [vault_get(t["entry"]).get(t["field"], "") for t in targets]
+    if not ROTATE and all(have) and all(verify(v, k) for k in set(have)):
+        say("ok", name, "every target verifies; kept"); kept += 1; del have; continue
+    del have
+    key = drive_console(name, v) if v["kind"] == "console" else drive_cli(name, v)
+    if not re.fullmatch(v["shape"], key): say("FAIL", name, "the key read does not match the registry shape"); sys.exit(1)
+    if not verify(v, key): say("FAIL", name, f"the new key is refused by {v['verify']['url'].split('{')[0]}; revoke it in the console"); sys.exit(1)
+    for t in targets: vault_put(t["entry"], t["field"], key)
+    del key; minted += 1
+    say("ok", name, "minted, verified, written to " + ", ".join(f"{t['entry']}.{t['field']}" for t in targets))
+if MODE == "preflight": say("ok", "preflight", f"{len(reg)} vendors registered; nothing written")
+else: say("ok", "vendors", f"{minted} minted, {kept} kept; ExternalSecrets refresh within 1h")
+PY
