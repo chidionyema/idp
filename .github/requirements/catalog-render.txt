@@ -1,0 +1,3 @@
+# catalog-render.yml: pyyaml for the render step, sqlite-utils for the state it writes.
+pyyaml
+sqlite-utils
