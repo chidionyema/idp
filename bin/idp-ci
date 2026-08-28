@@ -567,7 +567,14 @@ if command -v kyverno >/dev/null && command -v helm >/dev/null; then
     printf '%s\n' "$kyv" | grep '^BLIND' | sed 's/^/      /'; fail=1
   elif [ "$kyv_rc" != 0 ]; then
     say "FAIL  kyverno  a HelmRelease or workload render fails admission policy"
-    printf '%s\n' "$kyv" | grep -E '^(FAIL|      )' | sed 's/^/      /'; fail=1
+    # crew#292: this line was `grep -E '^(FAIL|      )'`. It reads the verdict shapes the judge
+    # prints when it reaches a verdict, and nothing else. A render that dies before any verdict --
+    # kustomize `error: must build at directory`, a helm template failure, a missing chart -- prints
+    # neither shape, the grep matched nothing, and the operator was left with the headline and a bare
+    # underline: no dir, no policy, no cause (offline-gate on run 33173089759). An instrument that
+    # destroys the cause is not an instrument (LAW 28) and nobody can attribute from it (LAW 29).
+    # Every line that is not an `ok` verdict travels, tail-capped so one rung stays one screen.
+    printf '%s\n' "$kyv" | grep -vE '^ok ' | tail -40 | sed 's/^/      /'; fail=1
   elif (cd "$IDP" && bin/idp-kyverno-render tests/fixtures/kyverno/must-fail >/dev/null 2>&1); then
     say "FAIL  kyverno  the must-fail fixture passed; the judge admits an unpatched chart"; fail=1
   else say "ok    kyverno  $(echo "$dirs" | tr '\n' ' ')render clean; the unpatched-chart fixture is refused"; fi
