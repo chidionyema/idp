@@ -31,6 +31,7 @@ import json
 import os
 import re
 import subprocess
+from email.utils import parsedate_to_datetime
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -150,12 +151,67 @@ def founder_checkpoints(issues: list[dict]) -> list[dict]:
     return rows
 
 
-def hours_since(ts: str, now: datetime) -> float:
+def github_now(run=subprocess.run) -> "datetime | None":
+    """GitHub's own clock, taken from the `Date` header of a response GitHub has just served.
+
+    crew#583 CP5. Every age on this page is `now - <a stamp GitHub wrote>`, and until this
+    function existed `now` was `datetime.now(timezone.utc)` -- this machine's clock, subtracted
+    from somebody else's stamp. A MacBook whose battery dies flat comes back at the RTC's default
+    epoch, and then every age here is wrong by years in whichever direction the reset landed.
+
+    The failure is quiet, which is what makes it the founder's problem rather than a bug report.
+    `stuck` keeps a pull request only when `hours_since(...) >= REVIEW_H`, a bound with nothing
+    under it: a clock behind the stamps makes every age negative, no age clears 2, and the page
+    says "Nothing is stuck: every open pull request has a verdict" while the reviews pile up. The
+    page he reads to find out what is waiting on a person would be the last thing to tell him.
+
+    So the local clock is not asked. `rate_limit` is the cheapest authenticated endpoint GitHub
+    has -- it does not itself count against the limit -- and every HTTP response carries a `Date`
+    (RFC 9110 6.6.1, "an origin server MUST send a Date header field"). That clock stamped
+    `created_at` and `merged_at` too, so the subtraction is one clock minus itself and a dead RTC
+    changes nothing.
+
+    None, never a fallback, when the header is missing or unreadable. Falling back to the local
+    clock is the defect with a longer code path; the callers render BLIND instead of a number and
+    the rest of the page still builds (LAW 38: the page is not an outage because one column
+    cannot be measured).
+    """
+    try:
+        p = run(["gh", "api", "-i", "rate_limit"], capture_output=True, text=True, timeout=30)
+    except Exception:  # noqa: BLE001 - gh missing, no network, or a hang is all the same answer
+        return None
+    if p.returncode != 0:
+        return None
+    for line in (p.stdout or "").splitlines():
+        if not line.strip():  # end of the header block; the body is JSON and holds no clock
+            break
+        if line.lower().startswith("date:"):
+            try:
+                return parsedate_to_datetime(line.split(":", 1)[1].strip())
+            except Exception:  # noqa: BLE001 - a malformed Date is not a clock
+                return None
+    return None
+
+
+def hours_since(ts: str, now: "datetime | None") -> "float | None":
+    """Hours between `now` and a stamp GitHub wrote, or None when that cannot be measured.
+
+    None rather than 0.0 (crew#583 CP5). `except ValueError: return 0.0` read an unparseable
+    stamp as "0 hours ago", which is not a refusal to measure -- it is the freshest possible
+    answer, on the page whose whole job is to say what has been waiting too long.
+
+    A negative age is also None: both stamps come from GitHub, so `now` earlier than the stamp is
+    not skew, it is a pull request claiming to have been opened after the response that listed
+    it. Neither direction is allowed to read as "not stuck".
+    """
+    if now is None:
+        return None
     try:
         t = datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
     except ValueError:
-        return 0.0
-    return (now - t).total_seconds() / 3600
+        return None
+    h = (now - t).total_seconds() / 3600
+    return None if h < 0 else h
 
 
 def render(merged: list[dict], open_prs: list[dict], issues: list[dict], by_repo_trailers: dict[str, dict[str, int]],
@@ -168,8 +224,12 @@ def render(merged: list[dict], open_prs: list[dict], issues: list[dict], by_repo
     # Stuck is scoped to the repositories the estate is shipping to: a May PR on a parked repository is
     # not a reviewer's debt this week (live 06:31Z listed haworks#5, 2987h). No merge in the window, no row.
     live_repos = set(by_repo)
-    stuck = [pr for pr in open_prs if pr["repo"] in live_repos and not pr.get("verdict")
-             and hours_since(pr["created_at"], now) >= REVIEW_H]
+    #: An unreviewed pull request whose age cannot be measured is carried, not dropped. The old
+    #: filter compared an age to REVIEW_H and a None or a negative silently fell out of the list,
+    #: which reads on the page as "nothing is waiting on a reviewer" (crew#583 CP5).
+    unreviewed = [(pr, hours_since(pr["created_at"], now)) for pr in open_prs
+                  if pr["repo"] in live_repos and not pr.get("verdict")]
+    stuck = [(pr, h) for pr, h in unreviewed if h is None or h >= REVIEW_H]
     waiting = founder_checkpoints(issues)
     out = [
         "# Founder: what shipped, what changed for you, what is stuck",
@@ -196,8 +256,11 @@ def render(merged: list[dict], open_prs: list[dict], issues: list[dict], by_repo
     out += ["", "## What is stuck", ""]
     if stuck or waiting:
         out += ["| Who | What | Waiting since | Link |", "|---|---|---|---|"]
-        for pr in sorted(stuck, key=lambda p: p["created_at"]):
-            out.append(f"| reviewer | {pr['title'].replace('|', '/')[:100]} | {hours_since(pr['created_at'], now):.0f}h, no REVIEW: line | "
+        for pr, h in sorted(stuck, key=lambda c: c[0]["created_at"]):
+            waited = (f"{h:.0f}h, no REVIEW: line" if h is not None else
+                      "BLIND: GitHub's clock did not come back with the listing, so no age here "
+                      "is measurable; no REVIEW: line")
+            out.append(f"| reviewer | {pr['title'].replace('|', '/')[:100]} | {waited} | "
                        f"[{pr['repo'].split('/')[-1]}#{pr['number']}]({pr['url']}) |")
         for r in sorted(waiting, key=lambda r: (r["issue"], r["cp"])):
             out.append(f"| you | {r['cp']} {r['what'].replace('|', '/')} | open | [crew#{r['issue']}]({r['url']}) |")
@@ -232,7 +295,17 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--now", help="clock, YYYY-MM-DDTHH:MMZ (tests); default now UTC")
     ap.add_argument("--check", action="store_true", help="exit 1 when the page on disk differs from the inputs")
     a = ap.parse_args(argv)
-    now = datetime.strptime(a.now[:16], "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc) if a.now else datetime.now(timezone.utc)
+    #: crew#583 CP5: GitHub's clock, or the one a test names, and no third option. There is no
+    #: `datetime.now` in this file on purpose -- the guard in
+    #: tests/test_guard_freshness_is_never_measured_against_this_machines_clock.py holds it that way.
+    now = (datetime.strptime(a.now[:16], "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
+           if a.now else github_now())
+    if now is None:
+        #: The search window needs a clock too. Without one the page cannot say what merged in the
+        #: last 24 hours at all, so this is the one place a missing clock is fatal rather than BLIND.
+        print("BLIND estate-founder: GitHub did not send a Date header, and this machine's clock is "
+              "not a substitute for it (crew#583). Nothing written.", file=sys.stderr)
+        return 2
     since = (now - timedelta(hours=WINDOW_H)).strftime("%Y-%m-%dT%H:%M:%SZ")
     offline = bool(a.merged or a.open or a.issues)
     merged = json.loads(Path(a.merged).read_text()) if a.merged else fetch_merged(since)
