@@ -83,6 +83,7 @@ YAML
   # require-ro-rootfs, restrict-seccomp-strict, disallow-default-namespace, require-pod-probes and
   # require-requests-limits, so the probe is a full Pod manifest in kube-system shaped like every
   # platform workload. nslookup needs no root, no writable fs and no privilege.
+  step dns-probe-clear $K delete pod/dns-probe -n kube-system --ignore-not-found --wait=true --timeout=60s
   step dns-probe-apply $K apply -f - <<'YAML'
 apiVersion: v1
 kind: Pod

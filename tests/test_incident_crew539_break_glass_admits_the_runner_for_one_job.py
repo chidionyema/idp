@@ -125,7 +125,11 @@ def test_cilium_unchain_forces_secret_store_after_the_tree_and_removes_the_probe
     assert p.returncode == 0, p.stdout + p.stderr
     joined = "\n".join(calls)
     assert joined.index("reconcile kustomization flux-system") < joined.index("reconcile kustomization secret-store")
-    assert joined.index("wait pod/dns-probe") < joined.index("delete pod/dns-probe")
+    # review idp#525: a leftover probe (a prior run died before remove, or already Succeeded) makes
+    # apply a no-op and dns-answers reads the old verdict; clear it, waiting, before the apply.
+    clear = joined.index("delete pod/dns-probe -n kube-system --ignore-not-found --wait=true")
+    assert clear < joined.index("apply -f -", joined.index("rollout status deploy/coredns"))
+    assert joined.index("wait pod/dns-probe") < joined.index("delete pod/dns-probe", clear + 1)
 
 
 def test_cilium_unchain_restarts_the_admission_webhooks_after_coredns_and_before_flux(tmp_path):
