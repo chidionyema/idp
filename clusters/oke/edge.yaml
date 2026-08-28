@@ -96,6 +96,9 @@ spec:
   interval: 10m
   dependsOn:
     - name: edge
+    # Three ExternalSecrets (cloudflare-api-token, prospector-engine-env, prospector-store-api-env)
+    # are in this row and dry-ran before the ESO CRDs existed on an empty cluster (crew#488).
+    - name: external-secrets
   sourceRef:
     kind: GitRepository
     name: flux-system
