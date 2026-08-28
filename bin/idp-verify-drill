@@ -62,7 +62,16 @@ else
     np=$("$IDP/bin/idp-cloud" cluster nodepools 2>/dev/null) || np=""
     n_all=$(printf '%s\n' "$np" | grep -c .)
     n_ok=$(printf '%s\n' "$np" | awk '$2=="ACTIVE"' | grep -c .)
-    if [ "$n_all" -lt 1 ] || [ "$n_ok" != "$n_all" ]; then fail cluster "$n_cl cluster ACTIVE, $n_ok/$n_all node pool(s) ACTIVE"
+    # A pool the autoscaler is resizing is UPDATING for minutes; that is the platform working,
+    # not a red row. bin/idp-oke-rebuild grades it the same way since idp#507 (crew#539 CP4);
+    # this row kept failing "1/2 node pool(s) ACTIVE" on the a1-spot resize for every run of
+    # verify-drill.yml on 2026-08-28 (crew#516 CP1). Every non-ACTIVE pool is printed as
+    # name(STATE); only UPDATING passes.
+    np_bad=$(printf '%s\n' "$np" | awk '$2!="ACTIVE" && $2!="UPDATING"{print $1"("$2")"}' | tr '\n' ' '); np_bad=${np_bad%% }
+    np_busy=$(printf '%s\n' "$np" | awk '$2=="UPDATING"{print $1}' | tr '\n' ' '); np_busy=${np_busy%% }
+    if [ "$n_all" -lt 1 ]; then fail cluster "$n_cl cluster ACTIVE, no node pools"
+    elif [ -n "$np_bad" ]; then fail cluster "$n_cl cluster ACTIVE, $n_ok/$n_all node pool(s) ACTIVE; not ACTIVE: $np_bad${np_busy:+; UPDATING: $np_busy}"
+    elif [ -n "$np_busy" ]; then say ok cluster "$n_cl cluster ACTIVE, $n_ok/$n_all node pool(s) ACTIVE, UPDATING (resize in flight): $np_busy"
     else say ok cluster "$n_cl cluster ACTIVE, $n_ok/$n_all node pool(s) ACTIVE"; fi
     # --- kube: the same exchanged session, spoken to the API server (crew#484). The kubeconfig's
     # exec plugin runs `oci ce cluster generate-token` under OCI_CLI_AUTH=security_token, so no
