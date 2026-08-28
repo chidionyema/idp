@@ -573,3 +573,61 @@ spec:
       kind: HelmRelease
       name: cilium
       namespace: kube-system
+---
+# crew#539 DoD item 1: the one Prometheus + Alertmanager, the founder-surface probe and the
+# estate's rules (platform/monitoring). Pages go to Telegram from the flux-telegram vault entry
+# and, for warnings, to Robusta (CP14). ESTATE_ZONE substitutes into the Probe targets.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: monitoring
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: edge
+    - name: secret-store
+    - name: robusta
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/monitoring
+  prune: true
+  wait: true
+  timeout: 20m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: kube-prometheus-stack
+      namespace: monitoring
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: blackbox
+      namespace: monitoring
+---
+# crew#539 DoD 1, second half: the estate's PrometheusRules and the founder-surface Probe are
+# monitoring.coreos.com CRs, so they apply after the chart row lands its CRDs (incident
+# 2026-08-25: a chart and its own CRs in one row never reconcile).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: monitoring-rules
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: monitoring
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/monitoring/rules
+  prune: true
+  wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config

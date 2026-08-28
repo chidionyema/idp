@@ -36,7 +36,7 @@ def _grade(receipt: str):
 def _receipt(ds_short: list, events: list, with_count: bool = True) -> str:
     head = "ok cluster-state at 2026-08-27T01:00:00Z nodes=1 ready=1 pods=45 pods_not_ready=0 flux=20 flux_not_ready=0"
     if with_count:
-        head += f" ds=3 ds_short={len(ds_short)} events_warning={len(events)}"
+        head += f" ds=3 ds_short={len(ds_short)} events_warning={len(events)} monitoring_rules=1 alert_watchdog=1"
     return head + "\n" + json.dumps({"flux_not_ready": [], "ds_short": ds_short, "events_warning": events})
 
 

@@ -1,0 +1,34 @@
+# The estate's own rules, on top of the upstream set the chart ships (KubePodNotReady,
+# KubePodCrashLooping, KubeNodeNotReady, TargetDown, KubePersistentVolumeFillingUp, Watchdog …).
+#   FounderSurfaceDown       a founder surface failed its probe for 5 minutes (crew#539 DoD 1)
+#   PersistentVolumeAlmostFull  a PVC is over 90 % used for 10 minutes (crew#539 CP14): this is
+#                            the alert Robusta receives through Alertmanager's robusta route
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: estate
+  namespace: monitoring
+spec:
+  groups:
+    - name: estate.founder-surfaces
+      rules:
+        - alert: FounderSurfaceDown
+          expr: probe_success{job="founder-surfaces"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "founder surface {{ $labels.instance }} is down"
+            description: "The in-cluster probe of {{ $labels.instance }} has failed for 5 minutes (blackbox module founder)."
+    - name: estate.storage
+      rules:
+        - alert: PersistentVolumeAlmostFull
+          expr: |
+            kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes < 0.10
+            and kubelet_volume_stats_capacity_bytes > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is over 90% full"
+            description: "{{ $value | humanizePercentage }} free on {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} for 10 minutes."

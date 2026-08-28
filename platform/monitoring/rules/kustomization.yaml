@@ -1,0 +1,8 @@
+# crew#539 DoD 1, second half: the estate's PrometheusRules and the founder-surface Probe. Applied
+# by the monitoring-rules Flux row after the chart's CRDs exist (incident 2026-08-25: CRD before CR).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+resources:
+  - estate.yaml
+  - founder-surfaces-probe.yaml

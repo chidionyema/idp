@@ -115,6 +115,7 @@ nav:
       - Portability drill: onboarding/idp-portability-drill.md
       - Free-tier allowance row: onboarding/idp-free-tier.md
       - PR report (operating-model gate): onboarding/pr-report.md
+      - Monitoring (Prometheus, Alertmanager): onboarding/monitoring.md
       - Estate security scan: onboarding/estate-security-scan.md
       - Estate security rollout: onboarding/estate-security-rollout.md
       - Spec gate: onboarding/spec-gate.md

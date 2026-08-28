@@ -47,6 +47,16 @@ rules:
   - apiGroups: ["kyverno.io"]
     resources: ["policyexceptions"]
     verbs: ["get", "list"]
+  # crew#539 DoD 1: the receipt counts the PrometheusRules the cluster holds and reads the
+  # Watchdog alert from Alertmanager's API through the API-server proxy — proof the rule
+  # pipeline is evaluating, not that manifests exist in git.
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["prometheusrules"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["services/proxy"]
+    resourceNames: ["kps-alertmanager:9093"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -405,17 +415,36 @@ data:
     oci_pods.sort(key=lambda r: (r["pod"], r["container"]))
     oci_static_key_pods = sorted({r["pod"] for r in oci_pods if r["static_key"]})
     oci_unknown_identity_pods = sorted({r["pod"] for r in oci_pods if r["identity"] == "unknown"})
+    # crew#539 DoD 1: monitoring_rules is the count of PrometheusRule objects the cluster holds
+    # (0 or absent grades FAIL in bin/idp-cluster-state); alert_watchdog=1 means Alertmanager's
+    # API returned the always-firing Watchdog alert, so rules are evaluated and delivered end to
+    # end. The proxy path is the API server's, so no cluster hostname or port is a literal here
+    # beyond the Service name the chart fixes (fullnameOverride: kps).
+    monitoring_rules, monitoring_error, alert_watchdog, alert_names = 0, "", 0, []
+    try:
+        rules = get("/apis/monitoring.coreos.com/v1/prometheusrules")
+        monitoring_rules = len(rules.get("items") or [])
+    except Exception as e:
+        monitoring_error = f"prometheusrules: {str(e)[:200]}"
+    try:
+        alerts = get("/api/v1/namespaces/monitoring/services/kps-alertmanager:9093/proxy/api/v2/alerts")
+        alert_names = sorted({(a.get("labels") or {}).get("alertname", "") for a in alerts})
+        alert_watchdog = int("Watchdog" in alert_names)
+    except Exception as e:
+        monitoring_error = (monitoring_error + "; " if monitoring_error else "") + f"alertmanager: {str(e)[:200]}"
     at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     head = (f"ok cluster-state at {at} nodes={len(node_rows)} ready={ready} pods={len(pods)} pods_not_ready={len(not_ready)}"
             f" flux={len(flux)} flux_not_ready={len(flux_not_ready)} ds={len(ds)} ds_short={len(ds_short)} events_warning={len(events)}"
             f" hostnames={len(hostnames or [])} spiffe_ids={len(spiffe['clusterspiffeids'] or [])} spiffe_workloads={len(spiffe['csi_workloads'])}"
             f" svids={sum(len(r['spiffe_ids']) for r in spiffe['svids'])} spire_agents={len(spiffe['agents'])}"
-            f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)} policy_exceptions={len(policy_exceptions)}")
+            f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)} policy_exceptions={len(policy_exceptions)}"
+            f" monitoring_rules={monitoring_rules} alert_watchdog={alert_watchdog}")
     body = {"at": at, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
             "flux": flux, "flux_not_ready": flux_not_ready, "policy_exceptions": policy_exceptions, "daemonsets": ds, "ds_short": ds_short, "events_warning": events,
             "hostnames": hostnames, "hostnames_error": hostnames_error, "spiffe": spiffe,
             "oci_identity": {"pods": oci_pods, "static_key_pods": oci_static_key_pods,
-                              "unknown_identity_pods": oci_unknown_identity_pods}}
+                              "unknown_identity_pods": oci_unknown_identity_pods},
+            "monitoring": {"rules": monitoring_rules, "alerts_firing": alert_names, "error": monitoring_error}}
     sys.stdout.write(head + "\n" + json.dumps(body, sort_keys=True) + "\n")
 ---
 apiVersion: batch/v1
