@@ -60,6 +60,7 @@ spec:
   interval: 10m
   dependsOn:
     - name: chaos-mesh
+    - name: monitoring   # crew#539 DoD 2: langfuse-alert-drill asks kps-alertmanager and kps-prometheus
   sourceRef:
     kind: GitRepository
     name: flux-system

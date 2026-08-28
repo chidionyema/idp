@@ -28,10 +28,23 @@ Demo, from a laptop with no kube path (the CI runner does the same):
     bin/idp-cluster-state
     # ok      cluster-state  ok cluster-state at ... monitoring_rules=N alert_watchdog=1 (M min ago)
 
-Drill (crew#539 DoD item 2): scale langfuse-web to 0; `KubeDeploymentReplicasMismatch` and
-`FounderSurfaceDown` (langfuse) reach Telegram within 5 minutes; scale back and the resolved
-message follows. The rule set is under `kubectl get prometheusrule -A` on the cluster, and the
-receipt's `monitoring.alerts_firing` lists what Alertmanager holds right now.
+Drill (crew#539 DoD item 2, `platform/chaos/langfuse-alert-drill.yaml`): every Monday 03:30Z a
+Chaos Mesh Schedule fails every langfuse-web pod for 8 minutes (nobody scales a Deployment from a
+laptop, ADR 0005). A Task beside it polls Alertmanager for an active `FounderSurfaceDown` whose
+instance is langfuse and Prometheus for `alertmanager_notifications_total{integration="telegram"}`
+rising, then writes one line to the drill-receipts bucket from the node's identity:
+
+    ok langfuse-alert-drill FounderSurfaceDown firing for https://langfuse.<zone> telegram_notifications=N after Ns at <time>
+
+`langfuse-alert-drill-first-run.yaml` is the same Workflow run once on the day it is applied, so
+the receipt exists before the first Monday. Graded from outside the cluster, no kube path:
+
+    bin/idp-chaos-drill langfuse-alert-drill alert-drill
+    # ok      alert-drill  ok langfuse-alert-drill FounderSurfaceDown firing for ... (Hh old, max 194h)
+
+`drills/catalogue.yaml` row `alert-drill` runs that in `oke-check.yml`; a missing, stale or FAIL
+receipt is a red job, silence is never green. The receipt's `monitoring.alerts_firing` in
+`bin/idp-cluster-state` lists what Alertmanager holds right now.
 
 SigNoz remains the long store for logs, traces and metrics (`docs/onboarding/k8s-infra.md`);
 this Prometheus keeps two days and exists to alert. Changing it: edit the `values:` block in

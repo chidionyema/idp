@@ -52,6 +52,18 @@ drills:
       Workflow wrote its receipt from the node's own identity, and a runner holding no key read
       it back (bin/idp-chaos-drill grades the receipt's age, max 194h).
 
+  - name: alert-drill
+    workflow: oke-check.yml
+    job: alert-drill
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    proves: >-
+      In the last week Chaos Mesh failed every langfuse-web pod for 8 minutes and, while it was
+      down, Alertmanager held an active FounderSurfaceDown for langfuse and its telegram receiver
+      delivered it (crew#539 DoD 2: the founder's phone learns of a dead surface within 5 minutes
+      of it dying); the receipt is written from the node's identity and graded by
+      bin/idp-chaos-drill langfuse-alert-drill alert-drill (age max 194h).
+
   - name: trace-drill
     workflow: trace-drill.yml
     job: trace-drill
