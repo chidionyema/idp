@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# The no-toil gate's runner (crew#66). Feeds the files a pull request changes -- and its body --
+# to policy/no-manual-steps.rego, one conftest document per file, so the FAIL line names the
+# file a human has to open.
+#
+#   bin/idp-no-toil <pr-number>   the README*.md, docs/**/*.md and platform/** files that PR
+#                                 changes, plus its body from `gh pr view --json body`
+#   bin/idp-no-toil --sweep       every such file in the working tree (the LAW 45 sweep; this
+#                                 is the mode that produced the "Existing hits" list)
+#   bin/idp-no-toil --files a b   named files only (what the template test uses)
+#
+# Scoped to the changed files on purpose. main carries pre-existing prose hits (see the sweep),
+# and a gate that turns main red on day one is an outage, not a guard (LAW 38). Fixing those
+# lines is a separate pull request.
+#
+# IDP_ROOT lets the policy live in a different checkout from the repository being judged, the
+# same way bin/pr-report resolves it (crew#292 CP3).
+set -uo pipefail
+IDP="${IDP_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+POLICY="$IDP/policy/no-manual-steps.rego"
+[ -f "$POLICY" ] || { echo "BLIND no policy at $POLICY"; exit 2; }
+for t in conftest python3; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
+
+mode="${1:?usage: idp-no-toil <pr-number> | --sweep | --files <path>...}"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+docs="$work/docs"; mkdir -p "$docs"
+
+# Which paths the policy is willing to judge. Kept identical to the rego's scanned() rules; the
+# rego is the authority and re-checks every path it is handed.
+eligible() {
+  case "$1" in
+    README*.md|*/README*.md) return 0 ;;
+    docs/*.md|*/docs/*.md)   return 0 ;;
+    platform/*|*/platform/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+files=()
+case "$mode" in
+  --sweep)
+    while IFS= read -r f; do files+=("$f"); done < <(
+      find . -path ./.git -prune -o -path ./node_modules -prune -o -type f \
+        \( -name 'README*.md' -o -path './docs/*.md' -o -path './platform/*' \) -print | sed 's|^\./||' | sort
+    )
+    ;;
+  --files)
+    shift
+    files=("$@")
+    ;;
+  *)
+    command -v gh >/dev/null || { echo "BLIND gh missing"; exit 2; }
+    while IFS= read -r f; do eligible "$f" && files+=("$f"); done < <(gh pr view "$mode" --json files -q '.files[].path')
+    body="$work/PR-body.json"
+    gh pr view "$mode" --json body -q .body > "$work/pr-body.txt" || exit 2
+    python3 - "$work/pr-body.txt" "$body" <<'PY'
+import json, sys
+body = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+json.dump({"pr": {"body": body}}, open(sys.argv[2], "w", encoding="utf-8"))
+PY
+    ;;
+esac
+
+inputs=()
+[ -f "${body:-}" ] && inputs+=("$body")
+for f in "${files[@]:-}"; do
+  [ -n "$f" ] && [ -f "$f" ] || continue
+  out="$docs/$f.json"
+  mkdir -p "$(dirname "$out")"
+  python3 - "$f" "$out" <<'PY'
+import json, sys
+src = sys.argv[1]
+lines = open(src, encoding="utf-8", errors="replace").read().split("\n")
+json.dump({"file_path": src, "content": lines}, open(sys.argv[2], "w", encoding="utf-8"))
+PY
+  inputs+=("$out")
+done
+
+if [ "${#inputs[@]}" -eq 0 ]; then
+  echo "PASS    no-toil gate (no README*.md, docs/**/*.md or platform/** file in scope)"
+  exit 0
+fi
+
+out=$(conftest test --parser json -p "$POLICY" "${inputs[@]}" 2>&1); rc=$?
+# Strip the temp prefix so the FAIL line names the real path, and print the offending lines
+# beside it: the message is the founder's sentence verbatim, so the location has to come from
+# here or the author is told what is wrong without being told where.
+printf '%s\n' "$out" | grep -E 'FAIL|Policy Violation' | sed "s|$docs/||; s|\.json - main - | - |; s|$work/PR-body|PR body|"
+if [ "$rc" -ne 0 ]; then
+  echo "--- the lines that tripped it ---"
+  for f in "${files[@]:-}"; do
+    [ -n "$f" ] && [ -f "$f" ] || continue
+    grep -niE 'manually create|paste this|paste it into|click here|log into the web interface|founder must|^[-*> ]*FOUNDER ACTION:' "$f" | sed "s|^|$f:|"
+  done
+  [ -f "${body:-}" ] && grep -niE 'manually create|paste this|paste it into|click here|log into the web interface|founder must|^[-*> ]*FOUNDER ACTION:' "$work/pr-body.txt" | sed 's|^|PR body:|'
+  echo "Automate it: workload identity / OIDC where the provider has it, a GitHub-App-style one"
+  echo "tap otherwise, and the value travels secret store -> vault -> ExternalSecret unseen."
+  echo "backstage/templates/external-integration is the template that renders that shape."
+  echo "FAIL    no-toil gate"
+  exit 1
+fi
+echo "PASS    no-toil gate (${#inputs[@]} document(s))"

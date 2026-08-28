@@ -88,6 +88,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/spec-gate       # R29: code changes carry an executable spec
 
+  # crew#66, founder 2026-08-28: "we must make it mathematically impossible for an agent to
+  # merge one" -- one manual setup step. policy/no-manual-steps.rego reads the README*.md,
+  # docs/**/*.md and platform/** files THIS pull request changes, and its body. Scoped to the
+  # changed files because main still carries two pre-existing prose hits (bin/idp-no-toil
+  # --sweep lists them) and a gate that reds main on day one is an outage, not a guard.
+  # The PR body is judged twice on purpose and it costs nothing: the same rego is in policy/,
+  # so bin/pr-report's conftest run in operating-model-gate above sees it too.
+  no-toil-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pull-requests: read }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: conftest 0.62.0   # same pinned build offline-gate and operating-model-gate install
+        run: curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
+      - name: no-toil gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bin/idp-no-toil "${{ github.event.pull_request.number }}"
+
   bdd:
     runs-on: ubuntu-latest
     steps:
