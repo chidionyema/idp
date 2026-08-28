@@ -556,9 +556,21 @@ if command -v kyverno >/dev/null && command -v helm >/dev/null; then
   # Deployment was never judged and the cluster refused it after merge; crew#539 2026-08-28: the
   # robusta release carried no postRenderers, was never judged, and admission refused it on 15 rules).
   dirs=$(cd "$IDP" && { grep -lE '^kind: HelmRelease' platform/*/*.yaml platform/*/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && echo "$d"; done; grep -lE '^kind: (Deployment|StatefulSet|DaemonSet|Job|CronJob)$' platform/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && echo "$d"; done; } | sort -u)
-  if [ -n "$dirs" ] && (cd "$IDP" && bin/idp-kyverno-render $dirs) && ! (cd "$IDP" && bin/idp-kyverno-render tests/fixtures/kyverno/must-fail >/dev/null 2>&1); then
-    say "ok    kyverno  $(echo "$dirs" | tr '\n' ' ')render clean; the unpatched-chart fixture is refused"
-  else say "FAIL  kyverno  a HelmRelease render fails admission policy, or the must-fail fixture passed"; fail=1; fi
+  # rc 2 is BLIND: the judge ran but not against the whole policy set, and crew#539 is what that
+  # costs -- CI printed "render clean" for a Deployment admission refused, because the two
+  # estate-only policies live in prospector and CI had no copy. Blind and failing are different
+  # facts and the operator needs to be told which one this is.
+  kyv=$( (cd "$IDP" && bin/idp-kyverno-render $dirs) 2>&1 ); kyv_rc=$?
+  if [ -z "$dirs" ]; then say "FAIL  kyverno  no platform dir shipped a HelmRelease or a workload; the judge had nothing"; fail=1
+  elif [ "$kyv_rc" = 2 ]; then
+    say "BLIND kyverno  the judge did not see the whole policy set; no render was judged"
+    printf '%s\n' "$kyv" | grep '^BLIND' | sed 's/^/      /'; fail=1
+  elif [ "$kyv_rc" != 0 ]; then
+    say "FAIL  kyverno  a HelmRelease or workload render fails admission policy"
+    printf '%s\n' "$kyv" | grep -E '^(FAIL|      )' | sed 's/^/      /'; fail=1
+  elif (cd "$IDP" && bin/idp-kyverno-render tests/fixtures/kyverno/must-fail >/dev/null 2>&1); then
+    say "FAIL  kyverno  the must-fail fixture passed; the judge admits an unpatched chart"; fail=1
+  else say "ok    kyverno  $(echo "$dirs" | tr '\n' ' ')render clean; the unpatched-chart fixture is refused"; fi
 else say "BLIND kyverno  helm or kyverno CLI not installed; HelmRelease renders were not judged"; fail=1; fi
 
 # 9b. crew#483: Flux post-build substitution judged with the tool Flux runs. Every Kustomization

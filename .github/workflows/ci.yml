@@ -17,6 +17,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # bin/law32-gate diffs the PR against origin/main
+      # crew#539, 2026-08-28: bin/idp-kyverno-render judges renders against this estate's
+      # ClusterPolicies, and two of them -- no-optional-secret-references and
+      # money-rail-single-writer -- live in prospector, not here. CI had no copy, so it silently
+      # judged 24 of 26 policies and called platform/robusta clean; admission then refused the
+      # same Deployment, the release went Failed, and monitoring stayed down 8h. The repo is
+      # public, so the default token reads it and no secret is involved. The script is BLIND
+      # (never a pass) without this checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { repository: chidionyema/prospector, path: .kyverno-policies }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: "3.12" }
       - name: tools
@@ -37,6 +46,7 @@ jobs:
           "$HOME/.temporalio/bin/temporal" --version
       - run: bin/idp-ci
         env:
+          IDP_KYVERNO_POLICIES: ${{ github.workspace }}/.kyverno-policies/deploy/k8s/policies
           MIGRATE_HEALTH_WAIT: "240"
 
   # crew#286: the Estate-as-Platform operating model as a gate. One job, one script, the
@@ -78,6 +88,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # crew#539, 2026-08-28: bin/idp-kyverno-render judges renders against this estate's
+      # ClusterPolicies, and two of them -- no-optional-secret-references and
+      # money-rail-single-writer -- live in prospector, not here. CI had no copy, so it silently
+      # judged 24 of 26 policies and called platform/robusta clean; admission then refused the
+      # same Deployment, the release went Failed, and monitoring stayed down 8h. The repo is
+      # public, so the default token reads it and no secret is involved. The script is BLIND
+      # (never a pass) without this checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { repository: chidionyema/prospector, path: .kyverno-policies }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: "3.12" }
       - name: tools
@@ -101,4 +120,6 @@ jobs:
       - name: ruff (crew#325 step 3; the rule set is pyproject.toml)
         run: pip install -q ruff==0.15.18 && ruff check .
       - name: pytest tests (crew#325 step 2, every file under tests/ in one run)
+        env:
+          IDP_KYVERNO_POLICIES: ${{ github.workspace }}/.kyverno-policies/deploy/k8s/policies
         run: python -m pytest tests -q -p no:cacheprovider
