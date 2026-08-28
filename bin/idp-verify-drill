@@ -18,7 +18,8 @@
 #   ok      no-toil      no README, doc or platform file asks a person for a hand (N document(s))
 #   ok      root-trust   every entry registered, every MEETS row has its bootstrapper, every miss its ticket
 #   ok      github-tokens 2 token(s) re-minted from the App
-#   ok      verify-drill 8/8 rows green
+#   ok      loop-meter   median PR wall-clock this week 274s (n=27), last week 400s (n=31)
+#   ok      verify-drill 9/9 rows green
 #
 # The receipt row is the cluster's own word, written every 15 minutes from inside by
 # platform/state/cluster-state.yaml on the node's instance principal and graded by
@@ -157,6 +158,16 @@ case "$gt_rc" in
   *) fail github-tokens "$(printf '%s\n' "$gt_out" | tail -1 | cut -c1-160)";;
 esac
 
+# --- loop-meter: the dev loop gets faster, or the row is red (crew#584 CP4, founder 2026-08-28
+# "get faster at getting faster"). Median wall-clock of a green pull_request ci run this week
+# against last week, read from the runs GitHub already keeps; >20% slower is red.
+lm_out=$("$(dirname "$0")/idp-loop-meter" 2>&1); lm_rc=$?
+case "$lm_rc" in
+  0) say ok loop-meter "$(printf '%s\n' "$lm_out" | tail -1 | sed -E 's/^ok +loop-meter: //' | cut -c1-160)";;
+  1) fail loop-meter "$(printf '%s\n' "$lm_out" | tail -1 | sed -E 's/^FAIL +loop-meter: //' | cut -c1-160)";;
+  *) bl loop-meter "$(printf '%s\n' "$lm_out" | tail -1 | cut -c1-160)";;
+esac
+
 if [ "$red" -gt 0 ]; then say FAIL verify-drill "$red row(s) red, $blind blind"; exit 1; fi
 if [ "$blind" -gt 0 ]; then say BLIND verify-drill "$blind row(s) not measured"; exit 2; fi
-say ok verify-drill "8/8 rows green on the machine identity"
+say ok verify-drill "9/9 rows green on the machine identity"
