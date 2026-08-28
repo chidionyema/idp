@@ -17,6 +17,55 @@ step() { local name="$1"; shift; local out rc; out=$("$@" 2>&1); rc=$?
   [ $rc -eq 0 ] || { FAILED="$FAILED $name"; printf '%s\n' "$out" | tail -6 | sed 's/^/      | /'; }; return $rc; }
 show() { local name="$1"; shift; echo "--- $name"; "$@" 2>&1 | head -60; }
 
+# dns_probe <pod-name> <nodeName-or-empty> <fqdn>: one busybox nslookup, pinned to a node when one
+# is named, shaped like every platform workload so kyverno admits it (see the comment above
+# pb_cilium_unchain). Prints the pod's phase and its answer, then removes it.
+dns_probe() {
+  local name="$1" node="$2" fqdn="$3" pin=""
+  [ -n "$node" ] && pin="  nodeName: $node"
+  step "$name-clear" $K delete pod/"$name" -n kube-system --ignore-not-found --wait=true --timeout=60s
+  step "$name-apply" $K apply -f - <<YAML
+apiVersion: v1
+kind: Pod
+metadata: { name: $name, namespace: kube-system, labels: { app: dns-probe, crew: "539" } }
+spec:
+  restartPolicy: Never
+  priorityClassName: system-cluster-critical
+  tolerations: [{ operator: Exists }]
+$pin
+  securityContext: { runAsNonRoot: true, runAsUser: 65534, seccompProfile: { type: RuntimeDefault } }
+  containers:
+    - name: probe
+      image: public.ecr.aws/docker/library/busybox:1.36
+      command: ["nslookup", "$fqdn"]
+      resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { cpu: 100m, memory: 32Mi } }
+      readinessProbe: { exec: { command: ["true"] } }
+      livenessProbe: { exec: { command: ["true"] } }
+      securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+YAML
+  step "$name-answers" $K wait pod/"$name" -n kube-system --for=jsonpath='{.status.phase}'=Succeeded --timeout=120s
+  step "$name-log" $K logs pod/"$name" -n kube-system
+  step "$name-remove" $K delete pod/"$name" -n kube-system --ignore-not-found --wait=false
+}
+
+# dns-per-node: run 33140351385 (diagnose at b4f7bec) showed clickhouse failing on
+# "Cannot use ZooKeeper host signoz-zookeeper-0.signoz-zookeeper-headless:2181 due to DNS error"
+# and langfuse-web on "Can't reach database server at langfuse-postgresql:5432" while every
+# Service had endpoints and no node reported pressure: the pods could not resolve, and both sat
+# on one node. One nslookup of an in-cluster name and one of github.com is run pinned to EVERY
+# node, so a DNS fault is attributed to the node it lives on before anything is restarted.
+pb_dns_per_node() {
+  local node i=0
+  for node in $($K get nodes -o jsonpath='{.items[*].metadata.name}'); do
+    i=$((i+1))
+    echo "--- node $node"
+    dns_probe "dns-probe-svc-$i" "$node" kubernetes.default.svc.cluster.local
+    dns_probe "dns-probe-ext-$i" "$node" github.com
+  done
+  show coredns $K get pods -n kube-system -l k8s-app=kube-dns -o wide
+  show coredns-log sh -c "$K logs -n kube-system -l k8s-app=kube-dns --tail=20 --prefix | grep -vE ' - .* NOERROR ' | tail -30"
+}
+
 # diagnose: read-only. Nodes, the system pods, every Flux source and Kustomization, the failing
 # HelmReleases and the last warnings. This is the first playbook of any incident.
 pb_diagnose() {
@@ -47,7 +96,7 @@ pb_diagnose() {
   local ns name
   printf '%s\n%s\n' "$unready" "$failed" | while read -r ns name; do
     [ -n "$name" ] || continue
-    show "pod $ns/$name" sh -c "$K describe pod $name -n $ns | sed -n '/^Containers:/,\$p' | grep -E 'State|Reason|Exit Code|Ready|Message|Warning|Normal|Liveness|Readiness|Back-off|Failed|Error' | tail -25"
+    show "pod $ns/$name" sh -c "$K describe pod $name -n $ns | sed -n '/^Node:/p;/^Containers:/,\$p' | grep -E '^Node:|State|Reason|Exit Code|Ready|Message|Warning|Normal|Liveness|Readiness|Back-off|Failed|Error' | tail -25"
     show "log $ns/$name" $K logs "$name" -n "$ns" --all-containers --tail=30 --prefix
   done
   # langfuse-web could not reach langfuse-postgresql:5432 while the postgres pod was Running: a
@@ -110,27 +159,7 @@ YAML
   # require-ro-rootfs, restrict-seccomp-strict, disallow-default-namespace, require-pod-probes and
   # require-requests-limits, so the probe is a full Pod manifest in kube-system shaped like every
   # platform workload. nslookup needs no root, no writable fs and no privilege.
-  step dns-probe-clear $K delete pod/dns-probe -n kube-system --ignore-not-found --wait=true --timeout=60s
-  step dns-probe-apply $K apply -f - <<'YAML'
-apiVersion: v1
-kind: Pod
-metadata: { name: dns-probe, namespace: kube-system, labels: { app: dns-probe, crew: "539" } }
-spec:
-  restartPolicy: Never
-  priorityClassName: system-cluster-critical
-  securityContext: { runAsNonRoot: true, runAsUser: 65534, seccompProfile: { type: RuntimeDefault } }
-  containers:
-    - name: probe
-      image: public.ecr.aws/docker/library/busybox:1.36
-      command: ["nslookup", "github.com"]
-      resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { cpu: 100m, memory: 32Mi } }
-      readinessProbe: { exec: { command: ["true"] } }
-      livenessProbe: { exec: { command: ["true"] } }
-      securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
-YAML
-  step dns-answers $K wait pod/dns-probe -n kube-system --for=jsonpath='{.status.phase}'=Succeeded --timeout=120s
-  step dns-probe-log $K logs pod/dns-probe -n kube-system
-  step dns-probe-remove $K delete pod/dns-probe -n kube-system --ignore-not-found --wait=false
+  dns_probe dns-probe '' github.com
   step flux-source flux reconcile source git flux-system -n flux-system --timeout=3m
   step flux-tree flux reconcile kustomization flux-system -n flux-system --timeout=5m
   # run 33134611331: reconciling flux-system does not cascade to its children, so secret-store kept
@@ -160,8 +189,9 @@ pb_helm_retry() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose cilium-unchain helm-retry"; exit 0 ;;
+  --list) echo "diagnose cilium-unchain helm-retry dns-per-node"; exit 0 ;;
   diagnose) pb_diagnose ;;
+  dns-per-node) pb_dns_per_node ;;
   cilium-unchain) pb_cilium_unchain ;;
   helm-retry) pb_helm_retry ;;
   *) echo "usage: $0 <diagnose|cilium-unchain|helm-retry>"; exit 64 ;;
