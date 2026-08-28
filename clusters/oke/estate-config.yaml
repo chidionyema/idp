@@ -14,3 +14,6 @@ data:
   ESTATE_OIDC_DOMAIN_URL: https://idcs-e664824341af437895312af8a61882b1.identity.oraclecloud.com
   # The iss claim that domain writes into every id_token; not the same host as the URL above.
   ESTATE_OIDC_ISSUER_URL: https://identity.oraclecloud.com/
+  # The repository the estate's GitHub App acts on (crew#554): platform/drills/drill-dispatcher.yaml
+  # dispatches the hourly drills here. Same repo as clusters/oke/flux-system/gotk-sync.yaml; one value.
+  ESTATE_GITHUB_REPO: chidionyema/idp
