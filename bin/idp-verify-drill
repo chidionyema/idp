@@ -138,7 +138,7 @@ esac
 # --- root-trust: every vault entry an ExternalSecret reads is born by a bootstrapper or ticketed
 # (crew#66 ruling 5453747447, crew#580, docs/policy/root-trust.md). Hourly so an entry that
 # lands by hand through any door is red within the hour, like every other row.
-rt_out=$(python3 "$(dirname "$0")/idp-root-trust" 2>&1); rt_rc=$?
+rt_out=$("$(dirname "$0")/idp-root-trust" 2>&1); rt_rc=$?
 case "$rt_rc" in
   0) say ok root-trust "$(printf '%s\n' "$rt_out" | tail -1 | sed -E 's/^PASS +root-trust: //' | cut -c1-160)";;
   1) printf '%s\n' "$rt_out" | grep -v '^FAIL    root-trust:' | sed 's/^/        /'

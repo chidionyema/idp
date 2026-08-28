@@ -69,6 +69,7 @@ def test_a_one_cluster_two_active_pools_is_an_ok_row(tmp_path: Path) -> None:
     _fake(b, "idp-cluster-state", "echo 'ok      cluster-state nodes=1 ready=1 (3 min ago)'")
     _fake(b, "idp-drills-row", "echo 'ok        drills    login-drill  login-drill.yml last green 1.0h ago (max 26h)'")
     _fake(b, "idp-no-toil", "echo 'PASS    no-toil gate (2 document(s))'")  # crew#66 hourly row
+    _fake(b, "idp-root-trust", "echo 'PASS    root-trust: every entry registered, every MEETS row has its bootstrapper'")  # crew#66 root-trust row (crew#580)
     # the layer: one cluster, two ACTIVE pools, kubeconfig write
     _fake(b, "idp-cloud", '''
         case "$1 $2" in
@@ -82,7 +83,7 @@ def test_a_one_cluster_two_active_pools_is_an_ok_row(tmp_path: Path) -> None:
     _token(tmp_path)
     r = _run(tmp_path, b)
     assert "ok      cluster      1 cluster ACTIVE, 2/2 node pool(s) ACTIVE" in r.stdout, r.stdout + r.stderr
-    assert r.returncode == 0 and "6/6 rows green" in r.stdout
+    assert r.returncode == 0 and "7/7 rows green" in r.stdout
 
 
 def test_a_updating_pool_keeps_the_cluster_row_ok_and_names_it(tmp_path: Path) -> None:
@@ -100,6 +101,7 @@ def test_a_updating_pool_keeps_the_cluster_row_ok_and_names_it(tmp_path: Path) -
     _fake(b, "idp-cluster-state", "echo 'ok      cluster-state nodes=0 ready=0 (3 min ago)'")
     _fake(b, "idp-drills-row", "echo 'ok        drills    login-drill  login-drill.yml last green 1.0h ago (max 26h)'")
     _fake(b, "idp-no-toil", "echo 'PASS    no-toil gate (2 document(s))'")  # crew#66 hourly row
+    _fake(b, "idp-root-trust", "echo 'PASS    root-trust: every entry registered, every MEETS row has its bootstrapper'")  # crew#66 root-trust row (crew#580)
     _fake(b, "idp-cloud", '''
         case "$1 $2" in
           "cluster list") echo "oke ocid1.cluster.fake.abc";;
@@ -128,6 +130,7 @@ def test_a_layer_exit_2_on_cluster_list_makes_the_row_blind(tmp_path: Path) -> N
     _fake(b, "idp-cluster-state", "echo 'ok      cluster-state nodes=0 ready=0 (3 min ago)'")
     _fake(b, "idp-drills-row", "echo 'ok        drills    login-drill  login-drill.yml last green 1.0h ago (max 26h)'")
     _fake(b, "idp-no-toil", "echo 'PASS    no-toil gate (2 document(s))'")  # crew#66 hourly row
+    _fake(b, "idp-root-trust", "echo 'PASS    root-trust: every entry registered, every MEETS row has its bootstrapper'")  # crew#66 root-trust row (crew#580)
     _fake(b, "idp-cloud", '''
         case "$1 $2" in
           "cluster list") echo "compartment unreadable" >&2; exit 2;;
