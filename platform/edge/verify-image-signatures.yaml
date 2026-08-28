@@ -1,0 +1,139 @@
+# crew#570 CP4. The estate signs every image it builds and the cluster never looked.
+#
+# Measured 2026-08-28: build-multiarch.yml `merge` signs each pushed digest with keyless cosign
+# and verifies it in the same run (run 33166323423, "Verification for
+# ghcr.io/chidionyema/sovereign-worker@sha256:3464466869..." at 11:14:37Z); hermes-v2's
+# build-agent-image.yml does the same for ghcr.io/chidionyema/hermes-agent. Then the cluster
+# admitted whatever the tag happened to point at. A signature nobody checks is a receipt in a
+# drawer -- the attacker's move is not to forge it, it is to push an unsigned image under the
+# same name, which admission accepted without a word.
+#
+# SCOPE IS NARROW ON PURPOSE (LAW 38: a guard that refuses correct work is an outage).
+# The enforced set is exactly what CI signs, and nothing else:
+#
+#   ghcr.io/chidionyema/backstage         built by idp   bin/dockerfiles --json
+#   ghcr.io/chidionyema/estate-mcp        built by idp   bin/dockerfiles --json
+#   ghcr.io/chidionyema/sovereign-worker  built by idp   bin/dockerfiles --json
+#   ghcr.io/chidionyema/hermes-agent      built by hermes-v2 build-agent-image.yml
+#
+# Three images sit under the same ghcr.io/chidionyema/ prefix and are signed by NOBODY. A
+# blanket `ghcr.io/chidionyema/*` Enforce rule -- the obvious way to write this file -- refuses
+# all three and takes DNS and the catalogue down at the next pod restart:
+#
+#   ghcr.io/chidionyema/mirror/external-dns   a mirror of a third-party image
+#   ghcr.io/chidionyema/idp/estate-catalog    not produced by any workflow in idp
+#   ghcr.io/chidionyema/idp/estate-db         not produced by any workflow in idp
+#
+# They are not silently excluded. `unsigned-estate-images-are-a-report-row` below matches them
+# in Audit, so each one is a PolicyReport row somebody can count, and the rule flips to Enforce
+# the day they are signed -- the same way crew#341's secrets policy was flipped: after a pass
+# with zero violations, never before.
+#
+# verifyDigest is false, deliberately. Every manifest in this repo pins images by TAG
+# (backstage main-1450, hermes-agent by tag). verifyDigest: true demands a digest reference and
+# would refuse all four signed images on the spot. The digest question belongs to image
+# automation, not to this policy.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signatures
+  annotations:
+    policies.kyverno.io/title: The cluster checks the signature it already pays to produce
+    policies.kyverno.io/category: crew#570 supply chain
+    policies.kyverno.io/severity: critical
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Images this estate builds must carry a keyless cosign signature whose certificate names
+      the workflow that built them. Everything else under the same registry prefix is a
+      PolicyReport row, not a refusal.
+spec:
+  # verifyImages reaches a registry and a transparency log; a background scan has no admission
+  # request to attach that to, and Kyverno will not run these rules in one.
+  background: false
+  failurePolicy: Fail
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: images-idp-builds-carry-an-idp-signature
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/chidionyema/backstage:*"
+            - "ghcr.io/chidionyema/backstage@*"
+            - "ghcr.io/chidionyema/estate-mcp:*"
+            - "ghcr.io/chidionyema/estate-mcp@*"
+            - "ghcr.io/chidionyema/sovereign-worker:*"
+            - "ghcr.io/chidionyema/sovereign-worker@*"
+          failureAction: Enforce
+          required: true
+          verifyDigest: false
+          mutateDigest: false
+          attestors:
+            - count: 1
+              entries:
+                # The identity is the whole check. Without it any certificate in the public
+                # Fulcio root verifies -- which is every GitHub repository there is, so an
+                # image signed by a stranger would pass. This is the same pair of flags
+                # build-multiarch.yml already verifies with in the build run.
+                - keyless:
+                    subject: "https://github.com/chidionyema/idp/*"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: https://rekor.sigstore.dev
+
+    - name: hermes-agent-carries-a-hermes-v2-signature
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/chidionyema/hermes-agent:*"
+            - "ghcr.io/chidionyema/hermes-agent@*"
+          failureAction: Enforce
+          required: true
+          verifyDigest: false
+          mutateDigest: false
+          attestors:
+            - count: 1
+              entries:
+                # A DIFFERENT repository signs this one. Folding it into the idp identity above
+                # would accept an idp-signed image under the hermes-agent name, and refuse the
+                # real hermes-agent build.
+                - keyless:
+                    subject: "https://github.com/chidionyema/hermes-v2/*"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: https://rekor.sigstore.dev
+
+    - name: unsigned-estate-images-are-a-report-row
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/chidionyema/*"
+          skipImageReferences:
+            - "ghcr.io/chidionyema/backstage:*"
+            - "ghcr.io/chidionyema/backstage@*"
+            - "ghcr.io/chidionyema/estate-mcp:*"
+            - "ghcr.io/chidionyema/estate-mcp@*"
+            - "ghcr.io/chidionyema/sovereign-worker:*"
+            - "ghcr.io/chidionyema/sovereign-worker@*"
+            - "ghcr.io/chidionyema/hermes-agent:*"
+            - "ghcr.io/chidionyema/hermes-agent@*"
+          failureAction: Audit
+          required: true
+          verifyDigest: false
+          mutateDigest: false
+          attestors:
+            - count: 1
+              entries:
+                - keyless:
+                    subject: "https://github.com/chidionyema/*"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: https://rekor.sigstore.dev
