@@ -149,20 +149,36 @@ spec:
                   spec:
                     initContainers:
                       - name: setup-venv
-                        # crew#539, 2026-08-28 (diagnose 33172481714): the chart's init runs
-                        # `cp -a "${SRC}/." /venv-writable/` and died on
-                        # `cp: preserving times for '/venv-writable/.': Operation not permitted`,
-                        # Init:CrashLoopBackOff for 5h. The copy itself succeeded; -a then sets
-                        # the times of the emptyDir root, which uid 1000 does not own (the kubelet
-                        # creates it root-owned with fsGroup 1000; utimes needs the owner or
-                        # CAP_FOWNER, and every capability is dropped). site-packages needs its
-                        # bytes, not its timestamps or ownership: same source, -R instead of -a.
+                        # crew#570 CP1, proved 2026-08-28T12:46Z (oke-check 33172282641; the
+                        # earlier sighting is diagnose 33172481714). This command is the chart's
+                        # own (0.48.0 templates/runner.yaml:79-84) with a single flag changed, and
+                        # the flag is the whole incident. `cp -a` is `-dR --preserve=all`, so it
+                        # utimensat()s the destination directory. `fsGroup: 1000` above makes the
+                        # kubelet chown the venv-lib-volume emptyDir to root:1000 0775 --
+                        # group-writable, but owner still uid 0. utimensat with explicit times
+                        # needs the owner or CAP_FOWNER; this container is uid 1000 with
+                        # `drop: [ALL]`, so it is neither. The kubelet logged exactly one line,
+                        # and only ever under `--previous`:
+                        #   cp: preserving times for '/venv-writable/.': Operation not permitted
+                        # cp exited non-zero, the init container crash-looped across four pods,
+                        # the runner never started, HelmRelease/robusta never went Ready, and
+                        # monitoring -> monitoring-rules -> chaos sat behind it.
+                        #
+                        # `-dR`, not `-R`: `-d` is what keeps a symlink a symlink. Plain `-R`
+                        # dereferences, so every symlink in site-packages would be copied as a
+                        # full second copy of its target. The timestamps and ownership `-dR`
+                        # drops are the two attributes nothing downstream reads (Python recompiles
+                        # a .pyc whose source mtime moved, into this same writable volume).
+                        # FOWNER is deliberately NOT added back: restoring a capability to satisfy
+                        # a flag would trade this estate's restricted-PSS posture for a copy
+                        # attribute, and the flag is the thing that is wrong.
+                        # `-dR` is spelled without `--preserve=` so it holds on busybox cp too.
                         command:
                           - sh
                           - -c
                           - >
                             SRC="/venv/lib/python$(python -V | cut -d' ' -f2 | cut -d. -f1,2)/site-packages" &&
-                            cp -R "${SRC}/." /venv-writable/
+                            cp -dR "${SRC}/." /venv-writable/
                         resources:
                           requests: { cpu: 50m, memory: 128Mi }
                           limits: { cpu: 200m, memory: 256Mi }
