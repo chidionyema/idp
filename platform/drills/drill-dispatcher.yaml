@@ -1,0 +1,149 @@
+# The hourly drills run on the estate's clock, not GitHub's (crew#554 CP3).
+#
+# Measured 2026-08-28 02:38Z over 24h: every hourly cron on the account fired 1-3 times
+# (verify-drill 1/24, trace-drill 2/24, login-drill 2/24, stale 1/24; crew merge-when-green
+# 3/144; claude-guards estate 3/24). GitHub drops schedules under load and promises nothing;
+# a heartbeat that depends on its cron queue is a heartbeat that stops on GitHub's bad day.
+# platform/identity/front-door-heartbeat.yaml made the same call for the five-minute pulse.
+#
+# Every hour at :03 this Job authenticates as the estate's GitHub App (the same Secret Flux's
+# githubdispatch Provider reads, platform/alerts-github/github-app.yaml), narrowed to
+# actions:write + metadata:read, and for each hourly workflow in the catalogue: if a run already
+# started in this UTC hour (GitHub's own schedule got through, or a push), it does nothing; else
+# it POSTs workflow_dispatch on the default branch. No receipt object: the reading is the drills
+# row itself (bin/idp-drills-row, hourly in verify-drill) -- if this Job stops, the drills go
+# stale and that row is red within max_age_hours. WORKFLOWS must equal the catalogue's hourly
+# rows; tests/test_incident_crew554_drills_run_on_the_estates_clock.py refuses drift.
+# The repo slug is one value in clusters/oke/estate-config.yaml (LAW 46), never named here.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: drill-dispatcher
+  namespace: flux-system
+spec:
+  schedule: "3 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 120
+      ttlSecondsAfterFinished: 3600
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: dispatcher
+              image: ghcr.io/oracle/oci-cli:20260826   # the one pinned image every estate CronJob runs; ships python3 + cryptography (the OCI SDK signs with it)
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -u
+                  exec python3 - <<'PY'
+                  import base64, json, os, sys, time, urllib.error, urllib.request
+                  from datetime import datetime, timezone
+
+                  API = "https://api.github.com"
+                  PERMISSIONS = {"actions": "write", "metadata": "read"}   # a subset of platform/github-app/lanes.json platform-engineer
+
+
+                  def b64(b):
+                      return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+
+                  def app_jwt(app_id, pem):
+                      from cryptography.hazmat.primitives import hashes, serialization
+                      from cryptography.hazmat.primitives.asymmetric import padding
+                      now = int(time.time())
+                      head = b64(json.dumps({"alg": "RS256", "typ": "JWT"}).encode())
+                      body = b64(json.dumps({"iat": now - 60, "exp": now + 540, "iss": app_id}).encode())
+                      key = serialization.load_pem_private_key(pem, password=None)
+                      sig = key.sign(f"{head}.{body}".encode(), padding.PKCS1v15(), hashes.SHA256())
+                      return f"{head}.{body}.{b64(sig)}"
+
+
+                  def call(method, path, token, body=None):
+                      data = json.dumps(body).encode() if body is not None else None
+                      req = urllib.request.Request(API + path, method=method, data=data, headers={
+                          "Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
+                          "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "estate-drill-dispatcher"})
+                      try:
+                          with urllib.request.urlopen(req, timeout=30) as r:
+                              raw = r.read()
+                              return r.status, (json.loads(raw) if raw else None)
+                      except urllib.error.HTTPError as e:
+                          return e.code, e.read()[:200].decode(errors="replace")
+
+
+                  def plan(runs, now):
+                      """'dispatch' unless a run of this workflow already started in the current UTC hour."""
+                      hour = now.replace(minute=0, second=0, microsecond=0)
+                      for r in runs:
+                          at = datetime.strptime(r["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                          if at >= hour:
+                              return "skipped: %s run %s started %s" % (r.get("event"), r.get("id"), r["created_at"])
+                      return "dispatch"
+
+
+                  def main():
+                      repo, workflows = os.environ["GITHUB_REPO"], os.environ["WORKFLOWS"].split()
+                      app_id, inst = os.environ["GITHUB_APP_ID"], os.environ["GITHUB_APP_INSTALLATION_ID"]
+                      pem = open(os.environ["GITHUB_APP_KEY_FILE"], "rb").read()
+                      at = datetime.now(timezone.utc)
+                      stamp = at.strftime("%Y-%m-%dT%H:%M:%SZ")
+                      code, tok = call("POST", f"/app/installations/{inst}/access_tokens", app_jwt(app_id, pem), {"permissions": PERMISSIONS})
+                      if code != 201:
+                          print(f"FAIL drill-dispatcher installation token -> {code} {tok!s:.120} at {stamp}"); sys.exit(1)
+                      token = tok["token"]
+                      code, meta = call("GET", f"/repos/{repo}", token)
+                      if code != 200:
+                          print(f"FAIL drill-dispatcher GET /repos/{repo} -> {code} at {stamp}"); sys.exit(1)
+                      ref, failed = meta["default_branch"], 0
+                      for wf in workflows:
+                          code, page = call("GET", f"/repos/{repo}/actions/workflows/{wf}/runs?per_page=5", token)
+                          runs = page.get("workflow_runs", []) if code == 200 and isinstance(page, dict) else []
+                          verdict = plan(runs, at)
+                          if verdict != "dispatch":
+                              print(f"ok   drill-dispatcher {wf} {verdict} at {stamp}"); continue
+                          code, err = call("POST", f"/repos/{repo}/actions/workflows/{wf}/dispatches", token, {"ref": ref})
+                          if code == 204:
+                              print(f"ok   drill-dispatcher {wf} dispatched on {ref} at {stamp}")
+                          else:
+                              failed += 1; print(f"FAIL drill-dispatcher {wf} dispatch -> {code} {err!s:.120} at {stamp}")
+                      sys.exit(1 if failed else 0)
+
+
+                  if __name__ == "__main__":
+                      main()
+                  PY
+              env:
+                - { name: HOME, value: /tmp }
+                - { name: GITHUB_REPO, value: "${ESTATE_GITHUB_REPO}" }
+                - { name: WORKFLOWS, value: "login-drill.yml trace-drill.yml verify-drill.yml stale.yml" }
+                - { name: GITHUB_APP_KEY_FILE, value: /var/run/github-app/githubAppPrivateKey }
+                - name: GITHUB_APP_ID
+                  valueFrom: { secretKeyRef: { name: github-app, key: githubAppID } }
+                - name: GITHUB_APP_INSTALLATION_ID
+                  valueFrom: { secretKeyRef: { name: github-app, key: githubAppInstallationID } }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { cpu: 200m, memory: 256Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+                - { name: github-app, mountPath: /var/run/github-app, readOnly: true }
+          volumes:
+            - { name: tmp, emptyDir: {} }
+            - name: github-app
+              secret: { secretName: github-app, items: [{ key: githubAppPrivateKey, path: githubAppPrivateKey }] }
