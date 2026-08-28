@@ -115,8 +115,13 @@ fi
 
 # --- boot: the fresh idp clone proves the platform with its own drill, on this session ---------
 if [ -x "$WORK/idp/bin/idp-verify-drill" ]; then
-  line=$("$WORK/idp/bin/idp-verify-drill" 2>&1 | tee "$OUT/verify-drill.txt" | tail -1)
+  # the clones above used the App lane (no actions scope); the boot's drills row asks GitHub for run
+  # history, which the job's own token may read. Scoped to this one call, never exported to the clones.
+  line=$(GH_TOKEN="${RECOVER_BOOT_GH_TOKEN:-}" "$WORK/idp/bin/idp-verify-drill" 2>&1 | tee "$OUT/verify-drill.txt" | tail -1)
   case "$line" in ok*) ok boot "verify-drill from the fresh clone: $line";; FAIL*) fail boot "verify-drill from the fresh clone: $line";; *) bl boot "verify-drill from the fresh clone: $line";; esac
+  # a red boot names its rows in the log, not only in the artifact (run 33133083820 attempt 2 said
+  # "1 row(s) red, 3 blind" and nobody could tell which row without downloading verify-drill.txt)
+  case "$line" in ok*) ;; *) grep -E '^(FAIL|BLIND) ' "$OUT/verify-drill.txt" | sed 's/^/        boot > /';; esac
 else bl boot "no fresh idp clone to boot from"; fi
 
 total=$((okn+red+blind))

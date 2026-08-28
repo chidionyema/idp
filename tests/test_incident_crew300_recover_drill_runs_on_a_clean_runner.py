@@ -31,6 +31,13 @@ def test_recover_drill_is_weekly_on_the_exchanged_oidc_session_with_no_static_cr
     drill = next(s for s in steps if "bin/idp-recover-drill" in s.get("run", ""))
     assert drill["env"]["OCI_CLI_AUTH"] == "security_token"
     assert "GH_TOKEN" not in drill["env"], "the clones must use the App lane, not the job's own token"
+    # run 33133083820 attempt 2: the boot's drills row was BLIND "gh is not authenticated" and the red row was
+    # invisible in the log. The job token reaches only the boot call, and a red boot names its rows.
+    assert drill["env"]["RECOVER_BOOT_GH_TOKEN"] == "${{ github.token }}"
+    script = SCRIPT.read_text()
+    assert 'GH_TOKEN="${RECOVER_BOOT_GH_TOKEN:-}" "$WORK/idp/bin/idp-verify-drill"' in script
+    assert script.count("RECOVER_BOOT_GH_TOKEN") == 1, "the boot token must reach exactly one call"
+    assert "grep -E '^(FAIL|BLIND) ' \"$OUT/verify-drill.txt\"" in script, "a red boot must name its rows in the log"
     text = WF.read_text()
     assert not re.search(r"OCI_(API|PRIVATE)_KEY|FINGERPRINT|PASSWORD|R2_|RCLONE_", text), "a static credential on the recovery path"
     assert any(s.get("name") == "recover-receipt" for s in (st.get("with", {}) for st in steps)), "no receipt artifact"
