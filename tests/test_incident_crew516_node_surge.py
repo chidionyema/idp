@@ -18,6 +18,7 @@ import stat
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -110,16 +111,55 @@ FRESH = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
 TWO = [{"id": "ocid1.node.old", "ip": "10.0.0.1", "t": "2026-08-01T00:00:00Z"}, {"id": "ocid1.node.new", "ip": "10.0.0.9", "t": "2026-08-27T18:20:00Z"}]
 
 
-def _finish(tmp_path, body, nodes=TWO):
+# crew#583 CP4: `--finish` deletes a live node, and it used to decide the receipt was fresh by
+# subtracting the body's own "at" string from this runner's datetime.now(). Both halves of that were
+# wrong. The body is written by whichever machine ran the drill, so "at" is that machine's claim
+# about itself; and a runner whose clock sits behind the receipt gets a NEGATIVE age, which passes
+# `age > max` and lands in the OK branch that runs `delete-node`. The age now comes from the object
+# head alone -- the store's stamp ("last-modified") subtracted from the store's own clock as it
+# answered the read ("date") -- so no clock on this machine, and no string in the body, can move it.
+CLOUD_SHIM = r'''#!/bin/sh
+echo "idp-cloud $*" >> "$SHIM_LOG"
+case "$*" in
+  *"object head"*) printf '%s\n' "$SHIM_HEAD";;
+  *) echo "fake idp-cloud: unexpected: $*" >&2; exit 9;;
+esac
+'''
+
+
+def _head(stamped: str, served: str) -> str:
+    """An object head as bin/idp-cloud renders it: when the store stamped the object, and what the
+    store's clock said as it answered the read. `stamped`/`served` are ISO strings."""
+    from datetime import datetime
+    from email.utils import format_datetime
+
+    def rfc(v):
+        return format_datetime(datetime.fromisoformat(v), usegmt=True)
+
+    return json.dumps({"last-modified": rfc(stamped), "date": rfc(served), "content-length": 42})
+
+
+# Far from any plausible local clock, in both directions: if either of these verdicts moves when
+# this machine's clock moves, the local clock is back in the subtraction.
+LONG_AGO_FRESH = _head("2004-01-01T00:00:00+00:00", "2004-01-01T00:00:05+00:00")   # 5 s old
+LONG_AGO_STALE = _head("2004-01-01T00:00:00+00:00", "2004-01-01T01:00:00+00:00")   # 3600 s old
+FAR_AHEAD_FRESH = _head("2199-01-01T00:00:00+00:00", "2199-01-01T00:00:05+00:00")  # 5 s old
+FAR_AHEAD_STALE = _head("2199-01-01T00:00:00+00:00", "2199-01-01T01:00:00+00:00")  # 3600 s old
+
+
+def _finish(tmp_path, body, nodes=TWO, head=LONG_AGO_FRESH):
     if body: body = "ok cluster-state at x nodes=2 ready=2\n" + body + "\n"   # the real receipt shape: grade line, then JSON
-    idp = tmp_path / "idp"; (idp / "bin").mkdir(parents=True); (idp / "platform/oci").mkdir(parents=True)
+    idp = tmp_path / "idp"; (idp / "bin/lib").mkdir(parents=True); (idp / "platform/oci").mkdir(parents=True)
     shutil.copy(ROOT / "bin/idp-oke-surge-node", idp / "bin/idp-oke-surge-node")
+    shutil.copy(ROOT / "bin/lib/receipt_age.py", idp / "bin/lib/receipt_age.py")   # the real rule, not a stand-in
+    c = idp / "bin/idp-cloud"; c.write_text(CLOUD_SHIM); c.chmod(c.stat().st_mode | stat.S_IEXEC)
     (idp / "platform/oci/terraform.tfvars").write_text('compartment_ocid = "ocid1.compartment.c"\n')
     shim = tmp_path / "shim"; shim.mkdir()
     for name, text in (("oci", FINISH_SHIM), ("tofu", TOFU_SHIM)):
         f = shim / name; f.write_text(text); f.chmod(f.stat().st_mode | stat.S_IEXEC)
     (tmp_path / "nodes.json").write_text(json.dumps(nodes))
-    env = {**os.environ, "PATH": f"{shim}:{os.environ['PATH']}", "SHIM_LOG": str(tmp_path / "log"), "SHIM_NODES": str(tmp_path / "nodes.json"), "KUBE_BODY": body}
+    env = {**os.environ, "PATH": f"{shim}:{os.environ['PATH']}", "SHIM_LOG": str(tmp_path / "log"),
+           "SHIM_NODES": str(tmp_path / "nodes.json"), "KUBE_BODY": body, "SHIM_HEAD": head}
     r = subprocess.run([str(idp / "bin/idp-oke-surge-node"), "--finish"], env=env, text=True, capture_output=True)
     log = (tmp_path / "log").read_text().splitlines() if (tmp_path / "log").exists() else []
     return r, log
@@ -162,12 +202,13 @@ def test_finish_keeps_the_old_node_while_the_newest_is_not_ready(tmp_path):
 
 def test_finish_is_blind_not_not_ready_when_the_receipt_cannot_be_read(tmp_path):
     r, log = _finish(tmp_path, "")
-    assert r.returncode == 5 and "BLIND, receipt state/cluster unreadable: ServiceError: NotAuthenticated" in r.stdout, r.stdout + r.stderr
+    assert r.returncode == 5 and "BLIND receipt state/cluster unreadable: ServiceError: NotAuthenticated" in r.stdout, r.stdout + r.stderr
     assert not [l for l in log if "delete-node" in l]
 
 
 def test_finish_refuses_a_stale_receipt_and_a_pool_without_two_nodes(tmp_path):
-    r, log = _finish(tmp_path, json.dumps({"at": "2026-08-01T00:00:00Z", "nodes": [{"name": "10.0.0.9", "ready": True}]}))
+    r, log = _finish(tmp_path, json.dumps({"at": FRESH, "nodes": [{"name": "10.0.0.9", "ready": True}]}),
+                     head=LONG_AGO_STALE)
     assert r.returncode == 3 and "STALE receipt" in r.stdout and not [l for l in log if "delete-node" in l], r.stdout + r.stderr
     r, log = _finish(tmp_path / "one", json.dumps({"at": FRESH, "nodes": [{"name": "10.0.0.9", "ready": True}]}), nodes=TWO[1:])
     assert r.returncode == 3 and "expected 2 ACTIVE nodes in the pool, found 1" in r.stdout and not [l for l in log if "delete-node" in l], r.stdout + r.stderr
@@ -188,4 +229,74 @@ def test_a_receipt_is_a_grade_line_then_json_and_bare_json_or_prose_is_blind(tmp
     r2, log2 = _finish(idp, "\n" + body)      # grade line empty, JSON intact: still parses
     assert r2.returncode == 0 and [l for l in log2 if "delete-node" in l], r2.stdout + r2.stderr
     r3, log3 = _finish(tmp_path / "prose", "FAIL cluster-state at x\nno json here")
-    assert r3.returncode == 5 and "BLIND, receipt state/cluster unreadable: ok cluster-state at x" in r3.stdout and not [l for l in log3 if "delete-node" in l], r3.stdout + r3.stderr
+    assert r3.returncode == 5 and "BLIND receipt state/cluster unreadable: ok cluster-state at x" in r3.stdout and not [l for l in log3 if "delete-node" in l], r3.stdout + r3.stderr
+
+
+# --------------------------------------------------------------------------
+# crew#583 CP4: the clock that decides whether a live node is deleted
+# --------------------------------------------------------------------------
+
+READY_BODY = json.dumps({"at": FRESH, "nodes": [{"name": "10.0.0.1", "ready": True},
+                                                {"name": "10.0.0.9", "ready": True}]})
+
+
+@pytest.mark.parametrize("head", [LONG_AGO_FRESH, FAR_AHEAD_FRESH], ids=["stamps_22y_behind", "stamps_173y_ahead"])
+def test_a_fresh_receipt_finishes_the_surge_wherever_the_two_stamps_sit(tmp_path, head):
+    """Both stamps are decades away from this machine's clock, in both directions, and the verdict
+    is the same: the age is `date` minus `last-modified`, and nothing else is consulted."""
+    r, log = _finish(tmp_path, READY_BODY, head=head)
+    assert r.returncode == 0, r.stdout + r.stderr
+    d = [l for l in log if "delete-node" in l]
+    assert len(d) == 1 and "--node-id ocid1.node.old" in d[0], d
+
+
+@pytest.mark.parametrize("head", [LONG_AGO_STALE, FAR_AHEAD_STALE], ids=["stamps_22y_behind", "stamps_173y_ahead"])
+def test_a_stale_receipt_never_deletes_a_node_wherever_the_two_stamps_sit(tmp_path, head):
+    r, log = _finish(tmp_path, READY_BODY, head=head)
+    assert r.returncode == 3 and "STALE receipt" in r.stdout, r.stdout + r.stderr
+    assert not [l for l in log if "delete-node" in l]
+
+
+def test_the_age_comes_from_the_head_not_from_the_body_a_drill_wrote_about_itself(tmp_path):
+    """The body's "at" is one machine's claim about its own clock, and it used to be the age. A
+    receipt the store stamped an hour ago is stale however new "at" looks, and one the store stamped
+    seconds ago is fresh however old "at" looks."""
+    r, _ = _finish(tmp_path / "new-at-old-object",
+                   json.dumps({"at": FRESH, "nodes": [{"name": "10.0.0.9", "ready": True},
+                                                      {"name": "10.0.0.1", "ready": True}]}),
+                   head=LONG_AGO_STALE)
+    assert r.returncode == 3 and "STALE receipt" in r.stdout, r.stdout + r.stderr
+    r, log = _finish(tmp_path / "old-at-new-object",
+                     json.dumps({"at": "2004-01-01T00:00:00Z", "nodes": [{"name": "10.0.0.1", "ready": True},
+                                                                         {"name": "10.0.0.9", "ready": True}]}),
+                     head=LONG_AGO_FRESH)
+    assert r.returncode == 0 and [l for l in log if "delete-node" in l], r.stdout + r.stderr
+
+
+def test_a_head_with_no_clock_is_blind_and_deletes_nothing(tmp_path):
+    """The read that found the receipt did not say when it happened. There is then no clock in the
+    estate that can age this receipt, and substituting this machine's is exactly the defect. BLIND."""
+    r, log = _finish(tmp_path, READY_BODY,
+                     head=json.dumps({"last-modified": "Sat, 01 Jan 2005 00:00:00 GMT", "content-length": 42}))
+    assert r.returncode == 5 and "BLIND" in r.stdout and "date header" in r.stdout, r.stdout + r.stderr
+    assert not [l for l in log if "delete-node" in l]
+
+
+def test_a_head_that_is_not_json_is_blind_and_deletes_nothing(tmp_path):
+    r, log = _finish(tmp_path, READY_BODY, head="ServiceError: NotAuthenticated")
+    assert r.returncode == 5 and "BLIND" in r.stdout, r.stdout + r.stderr
+    assert not [l for l in log if "delete-node" in l]
+
+
+def test_the_finish_reads_the_head_before_it_deletes_anything(tmp_path):
+    r, log = _finish(tmp_path, READY_BODY)
+    assert r.returncode == 0, r.stdout + r.stderr
+    heads = [i for i, l in enumerate(log) if "object head" in l]
+    deletes = [i for i, l in enumerate(log) if "delete-node" in l]
+    assert heads and deletes and heads[0] < deletes[0], log
+
+
+# There is deliberately no "this file names no local clock" assertion here. That claim belongs to
+# tests/test_guard_freshness_is_never_measured_against_this_machines_clock.py, which makes it over
+# every file in bin/ and makes it on code with the comments stripped -- a local copy of it read the
+# `datetime.now()` in the comment above as if it were the defect it describes.
