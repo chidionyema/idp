@@ -22,6 +22,7 @@ on:
         type: boolean
         default: false
 permissions:
+  id-token: write        # crew#586: traded for the OCI session that reads the ingest password by name
   contents: write        # crew#586 CP5: the daily page lands through a PR, never a direct push
   pull-requests: write
   issues: write
@@ -59,6 +60,34 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with: { name: conscience-receipt, path: idp/reports/conscience.json, retention-days: 30 }
+      # crew#586 / LAW 50: the receipt lands in the central collector as one log record carrying
+      # `science.source=conscience`, so science-facts counts it from ClickHouse. The ingest password
+      # is read from the vault by name over the same OIDC -> OCI exchange oke-check uses; never printed.
+      - name: oci cli
+        if: steps.grade.outputs.rc != '2'
+        run: pip install -q oci-cli
+      - name: OCI session token from the GitHub OIDC token
+        if: steps.grade.outputs.rc != '2'
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: receipt to the collector
+        if: steps.grade.outputs.rc != '2'
+        working-directory: idp
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          OTLP_INGEST_USER: science
+        run: |
+          set -uo pipefail
+          zone=$(awk '$1=="ESTATE_ZONE:"{print $2}' clusters/oke/estate-config.yaml); test -n "$zone"
+          OTLP_INGEST_PASSWORD=$(bin/idp-cloud secret get otlp-ingest-password) || { echo "BLIND otlp-ingest-password not readable (exit $?)"; exit 2; }
+          export OTLP_INGEST_PASSWORD OTEL_EXPORTER_OTLP_ENDPOINT="https://signoz.$zone"
+          python3 bin/lib/conscience_emit.py reports/conscience.json | tee -a conscience.out
       - name: one issue per red tenet
         if: steps.grade.outputs.rc != '2'
         working-directory: idp

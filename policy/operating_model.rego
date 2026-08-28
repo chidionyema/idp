@@ -192,6 +192,10 @@ deny contains msg if {
 # grades the shape of the line (a `/`, a backtick, an `->`, or `n/a: <reason>`); whether the
 # command proves the law is the reviewer's job, and the per-law mechanical gates land as the
 # layers do (LAW 1 bin/cloud-agnostic-gate is live).
+#
+# crew#586 (founder 2026-08-28: "happy to compromise on some of the other guards"): with the
+# seven tenet rows live in conscience/tenets.yaml and policy/conscience.rego, this prose-shape
+# rule is advice, not a block. It warns; the conscience rules are what deny.
 
 laws := {"1": "zero-gravity", "2": "fractal", "3": "nervous system", "4": "calibration"}
 
@@ -203,13 +207,13 @@ law_line_ok(n) if {
 
 # Only a PR input is graded: the other fixtures in policy/fixtures (node pools, placement,
 # commands) carry no pr at all and are not pull requests.
-deny contains msg if {
+warn contains msg if {
 	is_string(input.pr.body)
 	not has_laws_heading
 	msg := "rule=architecture_laws | the PR body has no `## Architecture laws` section | fix: copy the four-line checklist from crew/docs/ARCHITECTURE_LAWS.md into the body; each line a command, a path or `n/a: <reason>`"
 }
 
-deny contains msg if {
+warn contains msg if {
 	is_string(input.pr.body)
 	has_laws_heading
 	some n, slug in laws
