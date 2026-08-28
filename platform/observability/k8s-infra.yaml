@@ -50,10 +50,6 @@ spec:
       kubernetesAttributes: { enabled: true }
       clusterMetrics: { enabled: true }
       k8sEvents: { enabled: true }
-      # crew#539 CP12: a pod annotated signoz.io/scrape=true (+ signoz.io/port, signoz.io/path) is
-      # scraped by the agent and lands in signoz_metrics; opt-in only, nothing scraped by default.
-      # First user: the cilium-agent DaemonSet's Hubble metrics on 9965 (platform/cilium).
-      prometheus: { enabled: true, annotationsPrefix: signoz.io, scrapeInterval: 60s }
     otelAgent:
       # No node-level listeners: workloads send OTLP to the signoz-otel-collector Service, so the
       # agent's hostPorts (chart default on) stay off and disallow-host-ports passes.
