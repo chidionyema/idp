@@ -93,3 +93,18 @@ def test_workflow_offers_break_glass_with_a_named_playbook():
     assert "surge-finish, break-glass]" in wf
     assert "options: [diagnose, cilium-unchain]" in wf
     assert "BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}" in wf
+
+
+def test_dns_probe_pod_passes_the_cluster_pod_security_policies():
+    """run 33133317589: the unchain landed but `dns-answers` failed because kyverno refused a bare
+    `kubectl run` pod (require-run-as-nonroot, require-ro-rootfs, restrict-seccomp-strict). The probe
+    carries the same hardened securityContext every platform workload does."""
+    import json
+    src = PLAYBOOK.read_text()
+    line = src[src.index("step dns-answers"):src.index("--command -- nslookup", src.index("step dns-answers"))]
+    spec = json.loads(line[line.index("--overrides='") + len("--overrides='"):line.index("' \\")])["spec"]
+    assert spec["securityContext"]["runAsNonRoot"] is True
+    assert spec["securityContext"]["seccompProfile"]["type"] == "RuntimeDefault"
+    c = spec["containers"][0]["securityContext"]
+    assert c["readOnlyRootFilesystem"] is True and c["allowPrivilegeEscalation"] is False
+    assert c["capabilities"]["drop"] == ["ALL"]

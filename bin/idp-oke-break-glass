@@ -71,7 +71,12 @@ YAML
   step cni-config-remove $K delete ds cni-unchain -n kube-system --ignore-not-found --wait=false
   step coredns-restart $K rollout restart deploy/coredns -n kube-system
   step coredns-ready $K rollout status deploy/coredns -n kube-system --timeout=180s
-  step dns-answers $K run dns-probe-$$ --rm -i --restart=Never --image=public.ecr.aws/docker/library/busybox:1.36 --command -- nslookup github.com
+  # kyverno (run 33133317589): a bare `kubectl run` pod is refused by require-run-as-nonroot,
+  # require-ro-rootfs and restrict-seccomp-strict, so the probe carries the same hardened
+  # securityContext every platform workload does. nslookup needs no root and no writable fs.
+  step dns-answers $K run dns-probe-$$ --rm -i --restart=Never --image=public.ecr.aws/docker/library/busybox:1.36 \
+    --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"probe","image":"public.ecr.aws/docker/library/busybox:1.36","command":["nslookup","github.com"],"securityContext":{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]}}}]}}' \
+    --command -- nslookup github.com
   step flux-source flux reconcile source git flux-system -n flux-system --timeout=3m
   step flux-tree flux reconcile kustomization flux-system -n flux-system --timeout=5m
   show kustomizations $K get kustomizations -A
