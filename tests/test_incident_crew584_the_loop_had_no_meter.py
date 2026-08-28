@@ -2,7 +2,7 @@
 faster". The answer was dug out of three job logs by hand; nothing on the estate said, on its
 own, whether a pull request goes green faster this week than last. bin/idp-loop-meter reads the
 ledger GitHub already keeps (ci runs on pull_request events) and prints one line: the median
-wall-clock this week against last week, red when the loop got slower. No network: gh is a stub."""
+wall-clock this week against last week, red when the loop got slower. No network: gh is a stub. "Now" is the newest run's own timestamp, never the local clock (crew#583)."""
 from __future__ import annotations
 
 import json
@@ -30,7 +30,7 @@ def _run(tmp: Path, runs: list[dict] | None) -> subprocess.CompletedProcess:
     gh = fake / "gh"
     gh.write_text("#!/bin/sh\nexit 1\n" if runs is None else "#!/bin/sh\ncat <<'EOF'\n" + json.dumps(runs) + "\nEOF\n")
     gh.chmod(0o755)
-    env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}", "IDP_LOOP_METER_NOW": str(int(NOW.timestamp()))}
+    env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}"}
     return subprocess.run([str(SCRIPT), "o/r"], env=env, capture_output=True, text=True)
 
 
@@ -47,8 +47,14 @@ def test_a_slower_week_is_red(tmp_path):
 
 def test_no_gh_or_no_runs_is_blind_never_a_pass(tmp_path):
     assert _run(tmp_path, None).returncode == 2
-    out = _run(tmp_path / "b", _runs([], [400]))
+    out = _run(tmp_path / "b", [])
     assert out.returncode == 2 and "BLIND" in out.stdout, out.stdout
+
+
+def test_now_is_the_ledgers_clock_never_this_machines():
+    src = SCRIPT.read_text()
+    assert "date +%s" not in src and "date -u" not in src
+    assert 'now = max((c for c, _ in runs), default=0)' in src
 
 
 def test_the_drill_renders_the_row():

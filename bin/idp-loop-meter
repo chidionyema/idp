@@ -11,27 +11,28 @@
 #     1  this week is more than 20% slower than last week: the loop got slower, say so loudly
 #     2  BLIND: gh cannot list runs
 #
-#   IDP_LOOP_METER_NOW=<epoch>   the clock, for tests
+# "Now" is the newest run's createdAt: the clock that stamped the ledger, never this machine's
+# (crew#583, tests/test_guard_freshness_is_never_measured_against_this_machines_clock.py).
 set -uo pipefail
 repo="${1:-${IDP_REPO:-chidionyema/idp}}"
-now="${IDP_LOOP_METER_NOW:-$(date +%s)}"
 week=$((7 * 86400))
 runs=$(gh run list --repo "$repo" --workflow ci --event pull_request --status success \
-         --json createdAt,updatedAt --limit 200 2>/dev/null) || { echo "BLIND loop-meter: gh cannot list ci runs for $repo"; exit 2; }
+         --json createdAt,updatedAt --limit 500 2>/dev/null) || { echo "BLIND loop-meter: gh cannot list ci runs for $repo"; exit 2; }
 [ -n "$runs" ] && [ "$runs" != "null" ] || { echo "BLIND loop-meter: gh returned no runs for $repo"; exit 2; }
 read -r this_n this_med last_n last_med < <(printf '%s' "$runs" | python3 -c '
 import json, sys, statistics
 from datetime import datetime, timezone
-now, week = int(sys.argv[1]), int(sys.argv[2])
+week = int(sys.argv[1])
 def ts(s): return int(datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp())
+runs = [(ts(r["createdAt"]), ts(r["updatedAt"])) for r in json.load(sys.stdin)]
+now = max((c for c, _ in runs), default=0)
 this, last = [], []
-for r in json.load(sys.stdin):
-    c, u = ts(r["createdAt"]), ts(r["updatedAt"])
+for c, u in runs:
     if now - week <= c <= now: this.append(u - c)
     elif now - 2 * week <= c < now - week: last.append(u - c)
 med = lambda xs: int(statistics.median(xs)) if xs else 0
 print(len(this), med(this), len(last), med(last))
-' "$now" "$week")
+' "$week")
 line="median PR wall-clock this week ${this_med}s (n=$this_n), last week ${last_med}s (n=$last_n)"
 if [ "$this_n" -eq 0 ]; then echo "BLIND loop-meter: no green PR run in the last 7 days on $repo"; exit 2; fi
 if [ "$last_n" -gt 0 ] && [ "$((this_med * 100))" -gt "$((last_med * 120))" ]; then
