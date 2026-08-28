@@ -46,9 +46,18 @@ sys.exit(1)
     mac_user=$(read_cfg FOUNDER_MAC_USER) || { echo "BLIND   tailscale-policy  FOUNDER_MAC_USER not readable from $ESTATE_CONFIG"; exit 2; }
     [ -n "$mac_user" ] || { echo "BLIND   tailscale-policy  FOUNDER_MAC_USER is empty in $ESTATE_CONFIG (crew#516 CP5, founder hand: fill it in)"; exit 2; }
     ts_user=$(read_cfg FOUNDER_TAILNET_USER) || { echo "BLIND   tailscale-policy  FOUNDER_TAILNET_USER not readable from $ESTATE_CONFIG"; exit 2; }
-    [ -n "$ts_user" ] || { echo "BLIND   tailscale-policy  FOUNDER_TAILNET_USER is empty in $ESTATE_CONFIG (crew#562, founder hand: his tailnet login, the one group:founder names)"; exit 2; }
     token=$(curl -sS -u "$client_id:$client_secret" "https://api.tailscale.com/api/v2/oauth/token" -d "grant_type=client_credentials" | jq -r .access_token) || { echo "BLIND   tailscale-policy  oauth token exchange failed"; exit 2; }
     [ -n "$token" ] && [ "$token" != null ] || { echo "BLIND   tailscale-policy  oauth token exchange answered no token"; exit 2; }
+    # crew#562, founder 2026-08-28 "seamless security, no founder friction": the tailnet login that
+    # group:founder names is not typed by anyone. FOUNDER_TAILNET_USER in estate-config is an
+    # override, empty by default (LAW 46); when it is empty the tailnet's own owner record answers
+    # (GET /api/v2/tailnet/-/users, role "owner"; the client carries users:read for exactly this).
+    # A tailnet with no single owner, or an API that will not say, is BLIND, never a guess.
+    if [ -z "$ts_user" ]; then
+      ts_user=$(curl -sS -H "Authorization: Bearer $token" "https://api.tailscale.com/api/v2/tailnet/-/users" \
+                | jq -r '[.users[]? | select(.role == "owner")] | if length == 1 then .[0].loginName else "" end') || ts_user=""
+      [ -n "$ts_user" ] && [ "$ts_user" != null ] || { echo "BLIND   tailscale-policy  FOUNDER_TAILNET_USER is empty in $ESTATE_CONFIG and the tailnet did not name exactly one owner (GET /tailnet/-/users; does the client carry users:read?); set FOUNDER_TAILNET_USER in $ESTATE_CONFIG to override"; exit 2; }
+    fi
     rendered=$(FOUNDER_MAC_USER="$mac_user" FOUNDER_TAILNET_USER="$ts_user" \
                  envsubst '${FOUNDER_MAC_USER},${FOUNDER_TAILNET_USER}' < "$FILE")
     case "$rendered" in

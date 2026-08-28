@@ -28,11 +28,11 @@ def _estate(tmp_path, operator=None, seed=("kSEED123456", "tskey-client-seed-1")
         "tailscale-seed": seed and {"client_id": seed[0], "client_secret": seed[1]},
         "tailscale-operator": operator and {"client_id": operator[0], "client_secret": operator[1]},
     }.items() if v}))
-    mint = '{"id":"kNEW987654","key":"tskey-client-new-1","keyType":"client","scopes":["auth_keys","devices:core","policy_file"]}' if mint_ok else '{"message":"scope oauth_keys required"}'
+    mint = '{"id":"kNEW987654","key":"tskey-client-new-1","keyType":"client","scopes":["auth_keys","devices:core","policy_file","users:read"]}' if mint_ok else '{"message":"scope oauth_keys required"}'
     (sh / "curl").write_text(f'''#!/bin/bash
 echo "$@" >> "{log}"
 case "$*" in
-  *oauth/token*) pair=$(cat); echo "$pair" >> "{log}"; case "$pair" in *dead*) echo '{{"message":"invalid_client"}}';; *SEED*) echo '{{"access_token":"at-seed","scope":"{seed_scope}"}}';; *) echo '{{"access_token":"at-1","scope":"auth_keys devices:core policy_file"}}';; esac;;
+  *oauth/token*) pair=$(cat); echo "$pair" >> "{log}"; case "$pair" in *dead*) echo '{{"message":"invalid_client"}}';; *SEED*) echo '{{"access_token":"at-seed","scope":"{seed_scope}"}}';; *) echo '{{"access_token":"at-1","scope":"auth_keys devices:core policy_file users:read"}}';; esac;;
   *DELETE*) printf '{delete_code}'; exit 0;;
   *tailnet/-/keys*) echo '{mint}';;
   *) echo '{{}}';;
@@ -63,7 +63,7 @@ def _run(env, *args):
     return subprocess.run([str(SCRIPT), *args], env=env, capture_output=True, text=True, timeout=60)
 
 
-def test_incident_crew66_the_operator_client_is_minted_by_post_keys_with_the_three_scopes_and_vaulted(tmp_path):
+def test_incident_crew66_the_operator_client_is_minted_by_post_keys_with_the_four_scopes_and_vaulted(tmp_path):
     env, log, vault = _estate(tmp_path)
     p = _run(env)
     assert p.returncode == 0, p.stdout + p.stderr
@@ -71,7 +71,7 @@ def test_incident_crew66_the_operator_client_is_minted_by_post_keys_with_the_thr
     assert "https://api.test/api/v2/tailnet/-/keys" in calls
     body = json.loads([l for l in calls.splitlines() if "tailnet/-/keys" in l][0].split(" -d ", 1)[1].split(" https://")[0])
     assert body["keyType"] == "client"
-    assert body["scopes"] == ["auth_keys", "devices:core", "policy_file"] and body["tags"] == ["tag:k8s"]
+    assert body["scopes"] == ["auth_keys", "devices:core", "policy_file", "users:read"] and body["tags"] == ["tag:k8s"]
     v = json.load(open(vault))["tailscale-operator"]
     assert v == {"client_id": "kNEW987654", "client_secret": "tskey-client-new-1"}
     assert "tskey-client" not in p.stdout, "a secret reached stdout"

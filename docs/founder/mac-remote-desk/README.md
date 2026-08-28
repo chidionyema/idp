@@ -51,11 +51,11 @@ Phase 2 — Network & virtual display:
       next person added to the tailnet does not inherit your desktop. It is noted here because
       before crew#562 the file had only the cluster's rule, and applying it would have stopped
       your stream with nothing turning red.
-- [ ] Tell any session your Tailscale login and your Mac's short username; they go into
-      `clusters/oke/estate-config.yaml` as `FOUNDER_TAILNET_USER` and `FOUNDER_MAC_USER`, which
-      are empty today. Until they are filled the policy is not applied at all
-      (`bin/idp-tailscale-policy` prints BLIND and exits 2 rather than publish a rule naming
-      nobody), so this is the one value the remote desk waits on besides the pairing PIN.
+- [x] Nothing to tell anyone: your Mac's short username and tailnet IP were measured on the Mac
+      and sit in `clusters/oke/estate-config.yaml` (`FOUNDER_MAC_USER`, `FOUNDER_MAC_TS_IP`); your
+      Tailscale login is read from the tailnet's owner record by `bin/idp-tailscale-policy`
+      (`FOUNDER_TAILNET_USER` stays empty in git and only overrides). The remote desk waits on the
+      pairing PIN and nothing else.
 - [ ] DeskPad: create a virtual display at 1170x2532, scaled/HiDPI, mode Extended (not Mirrored)
 - [ ] Sunshine Web UI (`https://localhost:47990`): set admin username/password
       (`<SUNSHINE_ADMIN_USER>` / `<SUNSHINE_ADMIN_PASSWORD>`, kept by the founder)

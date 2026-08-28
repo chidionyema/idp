@@ -188,11 +188,16 @@ def test_every_placeholder_the_policy_uses_is_one_the_applier_substitutes():
     assert "*'${'*)" in applier, "the applier no longer refuses a body with a surviving placeholder"
 
 
-def test_estate_config_declares_both_founder_keys_and_neither_is_a_literal():
-    """LAW 46 and LAW 21: the values are the founder's hand, empty in git until he fills them."""
+def test_estate_config_declares_both_founder_keys_and_the_login_is_never_a_literal():
+    """LAW 46: estate-config is the one place the Mac's account and tailnet IP may be named (crew#516
+    CP5, the file's own contract), and they are, measured on the Mac rather than typed by a hand.
+    The tailnet LOGIN is different: it is a person's identity, the API knows it, so git never
+    carries it -- empty here, and bin/idp-tailscale-policy asks the tailnet's owner record."""
     cfg = (ROOT / "clusters/oke/estate-config.yaml").read_text()
-    for name in ("FOUNDER_MAC_USER", "FOUNDER_TAILNET_USER"):
-        assert f'{name}: ""' in cfg, f"{name} is missing or carries a literal value in git"
+    assert re.search(r'^\s*FOUNDER_MAC_USER: "[^"]+"', cfg, re.M), "FOUNDER_MAC_USER is missing or empty: mac-run has nothing to ssh to"
+    assert 'FOUNDER_TAILNET_USER: ""' in cfg, "FOUNDER_TAILNET_USER carries a literal login in git; the API answers it"
+    applier = (ROOT / "bin/idp-tailscale-policy").read_text()
+    assert "/api/v2/tailnet/-/users" in applier and 'select(.role == "owner")' in applier
 
 
 def test_the_founder_is_not_given_the_whole_mac(policy):
