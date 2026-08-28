@@ -129,3 +129,26 @@ def test_an_app_jwt_is_sent_as_bearer_never_through_gh_token() -> None:
     assert re.search(r'-H "Authorization: Bearer \$jwt"', app)
     for path in ("/app/installations", "/app/installations/$inst/access_tokens"):
         assert f'app_api "$jwt" {path}' in app or f'app_api "$jwt" "{path}"' in app, path
+
+
+def test_a_prefix_with_no_latest_bundle_is_named_withdrawn_never_graded_by_rclone_exit_code(tmp_path: Path) -> None:
+    """Run 33131027676: `rclone copyto` of a key that does not exist exits 0 and writes nothing (rclone v1.75.0,
+    measured 2026-08-28: rc=0 exists=no), so `|| no-latest` never fired, `git bundle verify` printed
+    `could not open` and two prefixes were counted broken with no word about why. Presence is asked with
+    `lsf` before any copy, and a prefix without latest.bundle is named withdrawn in the row."""
+    script = SCRIPT.read_text()
+    m = re.search(r"^  latest_present\(\) \{ (.*) \}$", script, re.M)
+    assert m, "bin/idp-recover-drill has no latest_present helper"
+    assert 'rclone lsf ":s3:$B/bundles/$1/latest.bundle"' in m.group(1)
+    assert 'if ! latest_present "$d"; then withdrawn=' in script
+    assert re.search(r'rclone copyto ":s3:\$B/bundles/\$d/latest\.bundle" "\$f" 2>"\$OUT/copy-bundle-\$d\.err" && \[ -s "\$f" \]', script), "a copy is graded by the file it left, not by rclone's exit code"
+    assert "(no-latest)" not in script
+    # the helper, run against an rclone that behaves like v1.75.0 on a missing key: exit 0, nothing printed
+    stubs = tmp_path / "stubs"; stubs.mkdir()
+    (stubs / "rclone").write_text('#!/bin/sh\ncase "$*" in *present/latest.bundle) echo latest.bundle ;; esac\nexit 0\n')
+    (stubs / "rclone").chmod(0o755)
+    for d, want in (("present", 0), ("gone", 1)):
+        r = subprocess.run(["bash", "-c", f"B=b; {m.group(0).strip()}; latest_present {d}"],
+                           env={"PATH": f"{stubs}:{os.environ['PATH']}"}, capture_output=True, text=True)
+        assert r.returncode == want, (d, r.returncode, r.stderr)
+    assert "withdrawn (no latest.bundle, dated copies only)" in script

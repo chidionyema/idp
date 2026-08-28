@@ -7,7 +7,7 @@
 #
 #   ok      github-app   installation token minted for lane recovery (read-only)
 #   ok      repo         chidionyema/idp tip 1a2b3c4 (2026-08-27T16:58:07Z)        one per load-bearing repo
-#   ok      bundles      24 bundle(s) in R2, 24 verified, 8 complete histories cloned, 16 incremental (need their remote)
+#   ok      bundles      24 prefix(es) in R2, 23 verified, 8 complete histories cloned, 15 incremental (need their remote), 1 withdrawn (no latest.bundle, dated copies only): <repo>
 #   ok      boot         verify-drill from the fresh clone: ok verify-drill 3/3 rows green
 #   ok      recover-drill 6/6 rows green
 #
@@ -81,13 +81,21 @@ else
   RCLONE_S3_SECRET_ACCESS_KEY=$(jq -r .R2_SECRET_ACCESS_KEY <<<"$env_json"); export RCLONE_S3_SECRET_ACCESS_KEY
   B=$(jq -r '.R2_BUCKET // "prospector-packs"' <<<"$env_json")
   dirs=$(rclone lsf ":s3:$B/bundles/" --dirs-only 2>"$OUT/rclone.err" | tr -d / || true)
-  n=0; verified=0; full=0; incr=0; broken=""
+  n=0; verified=0; full=0; incr=0; broken=""; withdrawn=""; wn=0
+  # Run 33131027676: `rclone copyto` of a key that does not exist exits 0 and writes nothing (rclone v1.75.0,
+  # measured 2026-08-28), so `|| no-latest` never fired and `git bundle verify` reported `could not open` — the
+  # prefix was counted broken with no word about why. Presence is asked as a question of its own.
+  latest_present() { rclone lsf ":s3:$B/bundles/$1/latest.bundle" 2>/dev/null | grep -q .; }
   if [ -z "$dirs" ]; then bl bundles "no bundles listed under $B/bundles/: $(tail -1 "$OUT/rclone.err")"
   else
     mkdir -p "$WORK/bundles"
     for d in $dirs; do
       n=$((n+1)); f="$WORK/bundles/$d.bundle"
-      rclone copyto ":s3:$B/bundles/$d/latest.bundle" "$f" 2>/dev/null || { broken="$broken $d(no-latest)"; continue; }
+      # The writer withdraws latest.bundle on purpose when a repo turns out to be a shallow clone (claude-guards#168)
+      # and leaves the dated copies; a prefix with no latest is named here, every time, and is not an escrow.
+      if ! latest_present "$d"; then withdrawn="$withdrawn $d"; wn=$((wn+1)); continue; fi
+      rclone copyto ":s3:$B/bundles/$d/latest.bundle" "$f" 2>"$OUT/copy-bundle-$d.err" && [ -s "$f" ] \
+        || { broken="$broken $d(copy: $(tail -1 "$OUT/copy-bundle-$d.err" 2>/dev/null | cut -c1-80))"; continue; }
       if ! git bundle verify "$f" >"$OUT/bundle-$d.txt" 2>&1; then
         # an incremental bundle verifies only against a repo holding its prerequisites; record it as such
         # git 2.4x: "error: Repository lacks these prerequisite commits:" (run 33097094260 grepped the wrong words and counted 19 good bundles broken)
@@ -99,8 +107,9 @@ else
       if git clone -q --bare "$f" "$WORK/bundles/$d.git" 2>"$OUT/clone-bundle-$d.err"; then full=$((full+1)); printf '%s complete tip %s\n' "$d" "$(git -C "$WORK/bundles/$d.git" log -1 --format=%h 2>/dev/null || echo ?)" >> "$OUT/bundles.txt"
       else broken="$broken $d(clone: $(tail -1 "$OUT/clone-bundle-$d.err" | cut -c1-80))"; fi
     done
-    if [ -n "$broken" ]; then fail bundles "$n bundle(s) in R2, $verified verified, broken:$broken"
-    else ok bundles "$n bundle(s) in R2, $verified verified, $full complete histories cloned, $incr incremental (need their remote)"; fi
+    wtxt=""; [ "$wn" -gt 0 ] && wtxt=", $wn withdrawn (no latest.bundle, dated copies only):$withdrawn"
+    if [ -n "$broken" ]; then fail bundles "$n prefix(es) in R2, $verified verified, broken:$broken$wtxt"
+    else ok bundles "$n prefix(es) in R2, $verified verified, $full complete histories cloned, $incr incremental (need their remote)$wtxt"; fi
   fi
 fi
 
