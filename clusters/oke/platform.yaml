@@ -518,9 +518,10 @@ spec:
   wait: true
   timeout: 2m
 ---
-# crew#539: scheduling immunity. The two PriorityClasses, the balloon and the Kyverno policy that
-# keeps the radio-room set honest. After edge (Kyverno CRDs); the rows that name
-# infrastructure-critical depend on this one so the class exists before a pod asks for it.
+# crew#539: scheduling immunity. The balloon and the Kyverno policies that keep the radio-room set
+# honest. After edge (Kyverno CRDs) and after priority-classes, which is where the two classes now
+# live: the rows that name infrastructure-critical still depend on this one, and reach
+# priority-classes through its dependsOn below.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:

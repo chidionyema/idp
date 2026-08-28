@@ -18,6 +18,7 @@ transitive `dependsOn` closure, and a group is not "already there" -- it is prov
 row (`PROVIDED_BY`). Adding a group to that map does not widen the check; it points at a row, and
 the row still has to be in the closure.
 """
+import functools
 import glob
 import pathlib
 import subprocess
@@ -92,12 +93,13 @@ def _closure(name, rows, seen=None):
     return seen
 
 
+@functools.lru_cache(maxsize=None)
 def _docs(path):
     out = subprocess.run(["kubectl", "kustomize", "--load-restrictor", "LoadRestrictionsNone", str(path)],
                          capture_output=True, text=True)
     if out.returncode != 0:
         return None
-    return [d for d in yaml.safe_load_all(out.stdout) if d]
+    return tuple(d for d in yaml.safe_load_all(out.stdout) if d)
 
 
 def offenders(docs, available, row=None):
@@ -198,3 +200,164 @@ def test_the_four_groups_the_old_set_called_pre_installed_are_no_longer_free(gro
     docs = [{"apiVersion": f"{group}/v1", "kind": cr, "metadata": {"name": "x"}}]
     assert offenders(docs, set(), row="somewhere") != []
     assert offenders(docs, {PROVIDED_BY[group]}, row="somewhere") == []
+
+
+#: The only two PriorityClasses a cluster has before this tree applies: Kubernetes creates them
+#: itself (`system-cluster-critical`, `system-node-critical`; kube-apiserver bootstraps both).
+#: Every other name a pod asks for is created by a row, and this map is measured from the tree --
+#: `_priority_class_providers()` renders the rows and reads the PriorityClass objects out of them
+#: -- so it cannot be widened by hand the way `PRE_INSTALLED` was.
+BUILTIN_PRIORITY_CLASSES = {"system-cluster-critical", "system-node-critical"}
+
+
+def _named(doc, key, out=None):
+    """Every value of `key` anywhere in a rendered document.
+
+    `priorityClassName` sits at a different depth in each shape it appears in: directly under a
+    Deployment's pod template, under `spec.values...` in a HelmRelease, inside a CronJob's job
+    template. A recursive walk asks the question once instead of once per shape.
+    """
+    out = [] if out is None else out
+    if isinstance(doc, dict):
+        for k, v in doc.items():
+            if k == key and isinstance(v, str):
+                out.append(v)
+            else:
+                _named(v, key, out)
+    elif isinstance(doc, list):
+        for v in doc:
+            _named(v, key, out)
+    return out
+
+
+def _priority_class_providers(rows):
+    """PriorityClass name -> the row that creates it, read from the rendered tree."""
+    out = {}
+    for name, (path, _) in rows.items():
+        for d in _docs(path) or ():
+            if d.get("kind") == "PriorityClass":
+                out[d["metadata"]["name"]] = name
+    return out
+
+
+def priority_class_offenders(docs, providers, available, row=None):
+    """Pods that name a PriorityClass the ordering has not created yet.
+
+    The same rule as `offenders()`, one layer over. A CRD is not the only cluster-scoped object a
+    row can reference before it exists: the API server refuses a pod naming an absent
+    PriorityClass with `no PriorityClass with name <x> was found`, the Deployment never rolls, the
+    HelmRelease times out, and the row is ROOT-RED. Unlike a missing CRD this is invisible in a
+    dry-run -- it is an admission failure at pod creation -- so nothing but ordering catches it.
+
+    An unknown name is an offender, not a pass: a class no row creates cannot be waited for.
+
+    Kyverno policies are the one shape read past. `platform/scheduling/require-priority-class.yaml`
+    carries `priorityClassName: "?*"` and `priorityClassName: infrastructure-critical` inside
+    `validate.pattern` -- those are the strings the policy matches *other* people's pods against,
+    not a pod this row schedules, and reading them as references made this sweep report `no row
+    creates PriorityClass/?*`. A kyverno.io document schedules nothing itself; whatever it
+    generates is admitted later, in a cluster where the ordering has already run.
+    """
+    bad = []
+    for d in docs:
+        if _group(d["apiVersion"]) == "kyverno.io":
+            continue
+        for pc in sorted(set(_named(d, "priorityClassName"))):
+            if pc in BUILTIN_PRIORITY_CLASSES:
+                continue
+            provider = providers.get(pc)
+            if provider is not None and (provider in available or provider == row):
+                continue
+            where = f"needs row '{provider}'" if provider else f"no row creates PriorityClass/{pc}"
+            bad.append(f"{d['kind']}/{d['metadata']['name']} asks for {pc} ({where})")
+    return sorted(bad)
+
+
+def test_no_flux_row_names_a_priority_class_its_ordering_has_not_created_yet():
+    """crew#488, run 33213889505. The drill's receipt, verbatim:
+
+        edge  2m44s  Warning  FailedCreate  replicaset/traefik-75cd5dd6b9
+          Error creating: pods "traefik-75cd5dd6b9-" is forbidden:
+          no PriorityClass with name infrastructure-critical was found
+
+    `platform/edge/traefik.yaml` names `infrastructure-critical`; the class was created by the
+    `scheduling` row, and `scheduling` dependsOn `edge`. A practical cycle: edge waits for a class
+    that waits for edge. On OKE the class predated the dependsOn and nothing was ever wrong there,
+    which is exactly why only a cluster with no history could find it -- `ready 3/39, cascaded 33`,
+    one cause and thirty-three honest consequences.
+    """
+    rows = _rows()
+    providers = _priority_class_providers(rows)
+    assert len(providers) >= 2, f"the tree renders {providers} -- the sweep found no PriorityClass to check against"
+    seen, asked = 0, 0
+    for name, (path, _) in sorted(rows.items()):
+        docs = _docs(path)
+        if docs is None:
+            continue
+        seen += 1
+        asked += sum(len(_named(d, "priorityClassName")) for d in docs)
+        bad = priority_class_offenders(docs, providers, _closure(name, rows), row=name)
+        assert bad == [], (
+            f"row {name} ({path.relative_to(ROOT)}) creates pods the API server will refuse; its "
+            f"closure is {sorted(_closure(name, rows))}: " + ", ".join(bad))
+    assert seen > 25 and asked >= 10, (
+        f"{seen} rows rendered and {asked} priorityClassName reference(s) read -- a sweep that "
+        f"reads nothing passes for the wrong reason")
+
+
+def test_the_traefik_incident_shape_is_refused():
+    """The incident as a fixture, both directions. `edge` before the fix reached `scheduling`
+    through nothing; after it, `priority-classes` is a row with no dependencies of its own."""
+    docs = [{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "traefik"},
+             "spec": {"template": {"spec": {"priorityClassName": "infrastructure-critical"}}}}]
+    before = {"infrastructure-critical": "scheduling"}
+    after = {"infrastructure-critical": "priority-classes"}
+    assert priority_class_offenders(docs, before, {"gateway-api-crds", "kyverno"}, row="edge") == [
+        "Deployment/traefik asks for infrastructure-critical (needs row 'scheduling')"]
+    assert priority_class_offenders(docs, after, {"gateway-api-crds", "kyverno", "priority-classes"},
+                                    row="edge") == []
+
+
+def test_a_priority_class_reference_nested_in_a_helm_release_is_read_too():
+    """`platform/observability/langfuse.yaml` names the class inside `spec.values`, not under a
+    pod template this file would recognise by shape. A guard that only understood one depth would
+    have read the tree as clean while the langfuse pods were unschedulable."""
+    docs = [{"apiVersion": "helm.toolkit.fluxcd.io/v2", "kind": "HelmRelease", "metadata": {"name": "langfuse"},
+             "spec": {"values": {"langfuse": {"web": {"deployment": {"priorityClassName": "infrastructure-critical"}}}}}}]
+    assert priority_class_offenders(docs, {"infrastructure-critical": "priority-classes"}, set(), row="observability") == [
+        "HelmRelease/langfuse asks for infrastructure-critical (needs row 'priority-classes')"]
+
+
+def test_a_priority_class_no_row_creates_is_an_offender_and_never_waved_through():
+    """The default-deny branch, the one a mutation of the CRD check slipped past in the first
+    version of this file. Depending on every row in the estate cannot excuse a name nothing
+    creates -- there is no row to wait for."""
+    docs = [{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "d"},
+             "spec": {"template": {"spec": {"priorityClassName": "invented-critical"}}}}]
+    providers = {"infrastructure-critical": "priority-classes"}
+    assert priority_class_offenders(docs, providers, set(), row="x") == [
+        "Deployment/d asks for invented-critical (no row creates PriorityClass/invented-critical)"]
+    assert priority_class_offenders(docs, providers, set(providers.values()) | {"x"}, row="x") != []
+
+
+def test_only_the_classes_kubernetes_creates_itself_are_free():
+    """`BUILTIN_PRIORITY_CLASSES` is the one place with no row behind it, and it holds exactly the
+    two names kube-apiserver bootstraps. A class the tree creates appearing in it would be the
+    flat-allow-list habit starting again in a new file."""
+    assert _priority_class_providers(_rows()).keys() & BUILTIN_PRIORITY_CLASSES == set()
+    docs = [{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "d"},
+             "spec": {"template": {"spec": {"priorityClassName": "system-cluster-critical"}}}}]
+    assert priority_class_offenders(docs, {}, set(), row="metrics-server") == []
+
+
+def test_a_kyverno_pattern_is_not_read_as_a_pod_asking_for_a_class():
+    """The over-fix guard on that exclusion, both halves. The policy's own strings are skipped;
+    a Deployment in the same row is still read, so the exclusion cannot be widened into "the
+    scheduling row is exempt"."""
+    policy = {"apiVersion": "kyverno.io/v1", "kind": "ClusterPolicy", "metadata": {"name": "require-priority-class"},
+              "spec": {"rules": [{"validate": {"pattern": {"spec": {"priorityClassName": "?*"}}}}]}}
+    balloon = {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "balloon"},
+               "spec": {"template": {"spec": {"priorityClassName": "balloon"}}}}
+    assert priority_class_offenders([policy], {}, set(), row="scheduling") == []
+    assert priority_class_offenders([balloon], {"balloon": "priority-classes"}, set(), row="scheduling") == [
+        "Deployment/balloon asks for balloon (needs row 'priority-classes')"]
