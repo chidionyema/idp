@@ -6,8 +6,8 @@ Measured 2026-08-28 from the admin console's New credential wizard (console.tail
 
 | Kind | What it is | Status |
 |---|---|---|
-| OAuth client | long-lived client id + secret, scoped, born only in the console (no API creates one — measured) | USED: `tailscale-operator` vault entry, minted by `bin/idp-bootstrap-tailscale` |
-| Federated identity | trust an OIDC issuer; a short-lived token is exchanged for a Tailscale access token, no stored secret | CANDIDATE crew#589 (GitHub Actions and the cluster both issue OIDC) |
+| OAuth client | long-lived client id + secret, scoped; created in the console OR by `POST /api/v2/tailnet/-/keys` with `keyType: client` (vendor SDK `KeysResource.CreateOAuthClient`, measured 2026-08-28 — an earlier line here said console-only; that was measured from the console, not the API) | USED: `tailscale-operator`, minted through the API by `bin/idp-bootstrap-tailscale` from the one-scope seed `tailscale-seed` |
+| Federated identity | trust an OIDC issuer; a short-lived token is exchanged for a Tailscale access token, no stored secret; created by the same endpoint with `keyType: federated` | CANDIDATE crew#589 (GitHub Actions and the cluster both issue OIDC) |
 | API access token | personal, 90-day max | NOT USED: a person's credential, never a machine's |
 
 ## Scopes, as the console lists them
@@ -26,13 +26,13 @@ Measured 2026-08-28 from the admin console's New credential wizard (console.tail
 | Devices | device_invites | invite external devices | NOT USED |
 | Keys | auth_keys | mint tagged auth keys | USED write, tag:k8s: the operator joins pods |
 | Keys | api_access_tokens | mint API tokens | NOT USED |
-| Keys | oauth_keys | read/delete OAuth credentials | NOT USED |
+| Keys | oauth_keys | create, read, modify, delete OAuth credentials | USED write, by the seed only: `tailscale-seed` carries this scope and nothing else, and mints `tailscale-operator` |
 | Keys | federated_keys | federated identities | CANDIDATE crew#589 |
 | Keys | webhooks | event webhooks | CANDIDATE: device events into the collector (LAW 50) |
 | Logging | log_streaming | configuration + network flow logs to a SIEM | CANDIDATE: stream to SigNoz (LAW 50) |
 | Settings | feature settings | tailnet feature toggles | NOT USED |
 
-Rule: a scope with no consumer is attack surface; three writes and one tag is the whole client.
+Rule: a scope with no consumer is attack surface; three writes and one tag is the whole operator client, and one scope is the whole seed.
 
 ## Product capabilities not scoped above
 
