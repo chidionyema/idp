@@ -29,6 +29,10 @@ on:
       - bin/idp-hydrate
       - drills/portability-floor.txt
       - platform/k3d/estate.yaml
+      # R43 (crew#66): every change to the tree Flux applies is proved to hydrate on a second
+      # provider before it merges; the k3s job is a required status check on main.
+      - platform/**
+      - clusters/**
 permissions:
   contents: read
 concurrency:

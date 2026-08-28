@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 IDP = Path(__file__).resolve().parents[1]
 PLAYBOOK = IDP / "bin" / "idp-oke-break-glass"
@@ -103,7 +104,14 @@ def test_unknown_playbook_is_refused_and_list_names_both(tmp_path):
     p, _ = _run("rm-rf-everything", tmp_path)
     assert p.returncode == 64
     listed = subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
-    assert listed == ["diagnose", "cilium-unchain", "cilium-replace", "helm-retry", "dns-per-node", "dns-per-namespace", "tcp-per-node", "node-drain", "node-uncordon", "chi-resize"]
+    # The invariant is that the two lists agree, not what today's list happens to hold: a copy of
+    # the names in a test fails on every new playbook and says nothing about the one property that
+    # matters -- a playbook the workflow offers but the script cannot run is a dispatch that dies
+    # after the runner's /32 is already admitted to the API endpoint.
+    assert "diagnose" in listed, "the read-only playbook is gone"
+    assert "cilium-replace" in listed, "crew#539 CP12: the CNI-swap playbook is gone"
+    offered = yaml.safe_load(WORKFLOW.read_text())[True]["workflow_dispatch"]["inputs"]["playbook"]["options"]
+    assert listed == offered, f"script --list {listed} != workflow options {offered}"
 
 
 def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
@@ -119,7 +127,7 @@ def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
 def test_workflow_offers_break_glass_with_a_named_playbook():
     wf = WORKFLOW.read_text()
     assert "surge-finish, break-glass]" in wf
-    assert "options: [diagnose, cilium-unchain, cilium-replace, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize]" in wf
+    assert "options: [diagnose, " in wf, "the read-only playbook is no longer the default offer"
     assert "BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}" in wf
 
 
@@ -185,6 +193,24 @@ def test_diagnose_prints_why_a_deployment_stalled_not_only_that_it_did(tmp_path)
     assert p.returncode == 0
     assert any("get deploy -A" in c and "Progressing" in c and ".reason" in c for c in calls)
     assert any("get pods -A --field-selector=status.phase!=Running" in c for c in calls)
+
+
+def test_diagnose_prints_the_whole_helmrelease_ready_message_not_the_printer_column(tmp_path):
+    """run 33149570222 printed, for robusta:
+
+        admission webhook "validate.kyverno.svc-fail" denied the request: ...
+
+    The policy name was past the `...`. `kubectl get helmreleases` truncates the message to the
+    printer column width, so the row that exists to say why a release is not Ready could never
+    say why -- the same defect the stalled-deployments row below it already fixed for Deployments.
+    """
+    p, calls = _run("diagnose", tmp_path)
+    assert p.returncode == 0
+    hr = [c for c in calls if "get helmreleases -A" in c]
+    assert hr, "diagnose never read the HelmReleases"
+    assert all("--no-headers" not in c for c in hr), "the printer column truncates the message"
+    assert any('conditions[?(@.type=="Ready")]' in c and ".message" in c for c in hr), \
+        "the Ready condition is read, not the printer column"
 
 
 def test_helm_retry_resets_only_failed_releases_then_refreshes_observability(tmp_path):

@@ -17,6 +17,9 @@ step() { local name="$1"; shift; local out rc; out=$("$@" 2>&1); rc=$?
   printf '%-5s %-22s rc=%-3s %s\n' "$([ $rc -eq 0 ] && echo ok || echo FAIL)" "$name" "$rc" "$(printf %s "$out" | tail -1 | cut -c1-110)"
   [ $rc -eq 0 ] || { FAILED="$FAILED $name"; printf '%s\n' "$out" | tail -6 | sed 's/^/      | /'; }; return $rc; }
 show() { local name="$1"; shift; echo "--- $name"; "$@" 2>&1 | head -60; }
+# show_redacted is show for anything that prints a workload's own output: same shape, every line
+# through redact() first, so reading a log is never the thing that leaks a token (LAW 21).
+show_redacted() { local name="$1"; shift; echo "--- $name"; "$@" 2>&1 | redact | head -60; }
 
 # dns_probe <pod-name> <nodeName-or-empty> <fqdn> [namespace]: one busybox nslookup, pinned to a
 # node when one is named, run in kube-system unless a namespace is given (dns-per-namespace asks
@@ -99,7 +102,11 @@ pb_diagnose() {
   show cni-chain $K get ds,deploy -n kube-system -l app.kubernetes.io/part-of=cilium
   show gitrepositories $K get gitrepositories -A
   show kustomizations $K get kustomizations -A
-  show helmreleases-not-ready $K get helmreleases -A --no-headers
+  # The printer column truncates the Ready message to `...`, and the reason is always past the cut:
+  # run 33149570222 printed `admission webhook "validate.kyverno.svc-fail" denied the request: ...`
+  # for robusta and never the policy name, so the diagnose named the wall and not the door. Reading
+  # the condition directly is what the stalled-deployments row below already does.
+  show helmreleases-not-ready $K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{"\t"}{end}{.metadata.namespace}/{.metadata.name}{"\t"}{.metadata.creationTimestamp}{"\t"}{range .status.conditions[?(@.type=="Ready")]}{.reason}: {.message}{end}{"\n"}{end}'
   # A HelmRelease says "Deployment X status: Failed" and nothing else; the reason lives on the
   # Deployment's Progressing condition and on the pods it could not roll (run 33136391785 printed
   # the HelmRelease line for langfuse-web three times and never why).
@@ -287,6 +294,45 @@ pb_tcp_per_node() {
 # `flux reconcile --reset` zeroes the failure counters and runs the upgrade again on the healthy
 # cluster; a release that is Ready is left alone. Then the Kustomizations that depend on those
 # releases are reconciled so their status is fresh (reconcile does not cascade, idp#525).
+# crew#516 CP4 / crew#524 CP5, 2026-08-28: The Architect's gateway was 1/1 Ready and Applied for
+# 15h while Telegram answered nobody, and the estate had no way to find out why. `diagnose` tails a
+# pod's log only when the pod is NOT ready, the estate MCP that exposes get_workload_logs answers
+# 401, and the founder's Mac gateway -- the fallback -- had been booted out as step one of the
+# cutover. A deployment reporting healthy is not the product working, and there was no route to the
+# difference (LAW 28). This playbook is that route: read-only, and it never prints a secret VALUE.
+#
+# What it answers, in the order the failure happens: does the pod exist and has it been restarting;
+# did ESO actually produce the env Secret and which KEY NAMES landed in it (a missing
+# TELEGRAM_BOT_TOKEN is silent -- the gateway starts fine and simply serves no chat); and what the
+# container itself says. Every log line goes through redact(), so a token pasted into a log by the
+# app does not become a CI artefact.
+redact() {
+  # Telegram bot tokens are <8-10 digits>:<~35 chars>; the length is not contractual, so the rule
+  # is {30,} rather than the 35 the current ones happen to be. The second pattern catches anything
+  # after a key/token/secret/password word, and its value class includes ':' so a two-part value is
+  # taken whole -- without that, `TOKEN=1234567890:AAA...` redacts to nothing, because the digits
+  # before the colon are only 10 characters. Neither rule is a substitute for not logging secrets:
+  # this is the floor, so that reading a log can never be the thing that leaks one.
+  sed -E -e 's/[0-9]{8,10}:[A-Za-z0-9_-]{30,}/<REDACTED-BOT-TOKEN>/g' \
+         -e 's/(([Tt][Oo][Kk][Ee][Nn]|[Kk][Ee][Yy]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd])["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?)[A-Za-z0-9_.:\-]{12,}/\1<REDACTED>/g'
+}
+
+pb_architect_doctor() {
+  local ns=hermes-agent
+  show pods $K get pods -n "$ns" -o wide
+  show restarts $K get pods -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[*].restartCount}{"\t"}{.status.containerStatuses[*].lastState.terminated.reason}{"\n"}{end}'
+  show externalsecrets $K get externalsecrets -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.conditions[*]}{.type}={.status} {.reason}: {.message}{end}{"\n"}{end}'
+  # KEY NAMES only. `-o jsonpath={.data}` would print the values; keys() prints what the pod can
+  # read, which is the whole question -- an env Secret missing TELEGRAM_BOT_TOKEN is the silent way
+  # for a green pod to serve nobody.
+  # go-template, not jsonpath: `{range $.data}{@}{end}` iterates the map and prints the VALUES.
+  # This prints the keys and nothing else -- what the pod can read, never what it reads.
+  show env-key-names $K get secret hermes-agent-env -n "$ns" -o go-template='{{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}'
+  show_redacted telegram-lifecycle sh -c "$K logs deploy/hermes-agent-gateway -n $ns --all-containers --tail=2000 2>&1 | grep -iE 'telegram|getupdates|conflict|409|unauthoriz|401|polling|sink|allowed_user' | tail -40"
+  show_redacted gateway-log sh -c "$K logs deploy/hermes-agent-gateway -n $ns --all-containers --tail=80 --prefix 2>&1"
+  show_redacted gateway-log-previous sh -c "$K logs deploy/hermes-agent-gateway -n $ns --all-containers --tail=40 --previous 2>&1 || echo 'no previous container (it has not restarted)'"
+}
+
 pb_helm_retry() {
   local failed
   failed=$($K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{" "}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null | awk '$1=="False"{print $2" "$3}')
@@ -510,8 +556,9 @@ pb_chi_resize() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose cilium-unchain cilium-replace helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize"; exit 0 ;;
+  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize"; exit 0 ;;
   diagnose) pb_diagnose ;;
+  architect-doctor) pb_architect_doctor ;;
   dns-per-node) pb_dns_per_node ;;
   dns-per-namespace) pb_dns_per_namespace ;;
   tcp-per-node) pb_tcp_per_node ;;
