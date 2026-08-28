@@ -40,3 +40,19 @@ grades green through `bin/idp-cluster-state` (fresh, every node Ready). That rec
 from inside every 15 minutes by the CronJob `cluster-state` (`platform/state/`, idp#267) on the
 worker node's instance principal. The proof of the ticket is 24 consecutive green scheduled
 runs, counted by crew's estate snapshot.
+
+## Break-glass: a hand into the cluster from the same machine identity (crew#539)
+
+When the cluster cannot heal itself (2026-08-28: coredns dead behind the Cilium chain, so Flux
+could not fetch the merged revert idp#514) no session has a kube path: runners are outside
+`control_plane_allowed_cidrs` and the laptop session token is retired (crew#345). The door is:
+
+    gh workflow run oke-check.yml -f mode=break-glass -f playbook=diagnose
+
+`bin/idp-oke-rebuild --break-glass` appends the runner's egress `/32` to the applied list, applies it
+through tofu (one NSG rule), mints a kubeconfig on the same one-hour session token, runs ONE named
+playbook from `bin/idp-oke-break-glass` (`diagnose` is read-only; `cilium-unchain` executes
+idp#514 by hand), and applies the original list again from an `EXIT` trap, so a failed playbook
+never leaves the door open. The job log is the receipt: `admit-apply`, the playbook's step lines,
+`revoke-apply`. Nothing is typed ad hoc: a new playbook is a reviewed function in the script and a
+name in the workflow's `playbook` choice.
