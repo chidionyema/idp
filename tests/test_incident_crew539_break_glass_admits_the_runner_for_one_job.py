@@ -320,5 +320,15 @@ def test_diagnose_prints_the_clickhouse_limit_at_every_link_and_the_cronjobs(tmp
     assert "get chi -A -o jsonpath" in joined
     assert "get sts -A -l clickhouse.altinity.com/chi" in joined
     assert "get pods -A -l clickhouse.altinity.com/chi" in joined
-    assert "logs -A -l app=clickhouse-operator" in joined
+    assert "get pods -A -l app=clickhouse-operator -o jsonpath" in joined
+    assert "logs -n" in joined and "-l app=clickhouse-operator --tail=40" in joined
     assert "get cronjobs,jobs -A" in joined
+
+
+def test_no_logs_call_carries_all_namespaces():
+    # idp#538 review: `kubectl logs -A` is not a flag (v1.36.4: unknown shorthand flag 'A'); the
+    # row printed the error and PASSed
+    import re
+    src = PLAYBOOK.read_text()
+    offenders = [a for a in re.findall(r"\$K logs ([^|;\n]*)", src) if re.search(r"(^|\s)-A(\s|$)", a)]
+    assert offenders == [], offenders
