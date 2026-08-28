@@ -13,5 +13,8 @@ resources:
   - robusta-exception.yaml
   - kyverno.yaml
   - provider-independence.yaml
+  # crew#570 CP4: the cluster checks the cosign signature CI already produces. Beside the other
+  # admission policies, not under scheduling -- this one is about supply chain, not placement.
+  - verify-image-signatures.yaml
   - provider-edge-exception.yaml
   - provider-storage-exception.yaml

@@ -1,0 +1,12 @@
+# A real image this estate built and signed. build-multiarch.yml run for main-814 pushed it and
+# verified its own signature in the same job; this fixture asks the policy to reach the same
+# verdict from the cluster's side.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sovereign-worker
+  namespace: temporal
+spec:
+  containers:
+    - name: worker
+      image: ghcr.io/chidionyema/sovereign-worker:main-814-7ef381ae5f637b66550ea1ca484af38bf11b47db

@@ -1,0 +1,11 @@
+# The attack the policy exists to stop, in its cheapest form: a pod under one of the enforced
+# names carrying an image nobody in this estate signed.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: impostor
+  namespace: temporal
+spec:
+  containers:
+    - name: worker
+      image: ghcr.io/chidionyema/sovereign-worker:main-789-76fb81a88b8773aa5550bc67ff1d866292bd5a12
