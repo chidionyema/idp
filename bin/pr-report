@@ -76,7 +76,7 @@ tenet_rules=$(python3 -c "import yaml,sys; print(' '.join(r['pr_rule'] for r in 
 tenets=0; fired=0
 for r in $tenet_rules; do
   [ "$r" = "no_static_secret_in_diff" ] && r=no_secret_added
-  tenets=$((tenets+1)); printf '%s\n' "$out" | grep -q "rule=$r " && fired=$((fired+1))
+  tenets=$((tenets+1)); printf '%s\n' "$out" | grep "rule=$r " >/dev/null && fired=$((fired+1))
 done
 score=$((tenets-fired))
 if [ "$tenets" -gt 0 ]; then
