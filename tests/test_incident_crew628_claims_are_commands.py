@@ -6,6 +6,7 @@ it parses `Verify:` lines, refuses world-changing verbs, writes generated output
 grades red on a red command or on a world change with no claim, and is wired on pull_request.
 """
 
+import importlib.machinery
 import importlib.util
 import pathlib
 
