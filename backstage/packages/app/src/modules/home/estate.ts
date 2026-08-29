@@ -188,10 +188,10 @@ export const count = (states: State[]): Counts => {
   return c;
 };
 
-/** The first sentence on the page. Worst word first; "thing" because a layer and a door both count. */
+/** The first sentence on the page. Worst word first; "layer" is the word for both a Flux layer and a door (crew#626 CP1). */
 export const verdict = (c: Counts, total: number): string => {
   const say = (n: number, what: string) =>
-    `${n} ${n === 1 ? 'thing' : 'things'} ${what}.`;
+    `${n} ${n === 1 ? 'layer' : 'layers'} ${what}.`;
   if (total === 0) return 'Nothing is registered yet.';
   if (c.red > 0) return say(c.red, c.red === 1 ? 'is red' : 'are red');
   if (c.needs > 0)
@@ -204,7 +204,7 @@ export const verdict = (c: Counts, total: number): string => {
       c.running,
       c.running === 1 ? 'is still starting' : 'are still starting',
     );
-  return `Everything we run is good. ${total} things checked.`;
+  return `Everything we run is good. ${total} layers checked.`;
 };
 
 export const templatePath = (t: Entity): string =>
