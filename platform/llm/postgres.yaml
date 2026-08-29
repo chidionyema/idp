@@ -8,7 +8,7 @@ kind: Service
 metadata:
   name: litellm-db
   namespace: llm
-  labels: { app.kubernetes.io/name: litellm-db, app.kubernetes.io/part-of: idp }
+  labels: { app.kubernetes.io/name: litellm-db, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: founder-model-router }
 spec:
   type: ClusterIP
   clusterIP: None

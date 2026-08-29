@@ -6,7 +6,7 @@ kind: Service
 metadata:
   name: guacamole-db
   namespace: guacamole
-  labels: { app.kubernetes.io/name: guacamole-db, app.kubernetes.io/part-of: idp }
+  labels: { app.kubernetes.io/name: guacamole-db, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: founder-screen }
 spec:
   type: ClusterIP
   clusterIP: None

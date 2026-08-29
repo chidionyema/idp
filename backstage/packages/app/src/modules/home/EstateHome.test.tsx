@@ -143,3 +143,33 @@ describe('crew612 CP3: the front page says what is down first, on a phone', () =
     expect(screen.getByTestId('total-Needs you')).toHaveTextContent('0');
   });
 });
+
+// crew#307 (founder, 2026-08-29: "do you really think the founder has time to be scrolling
+// down looking for stuff"). Every door is one line, grouped Watch / Run / Build / Companies in
+// that order from the entity's estate/group annotation; a door with no group lands in Other, last.
+describe('crew307: every door is one line in its group, in triage order', () => {
+  const fixture = [
+    surface('founder-z-repo', 'Z repo', 'https://github.com/x/y', { 'estate/group': 'Build' }),
+    surface('founder-a-store', 'A store', 'https://shop.example', { 'estate/group': 'Companies' }),
+    surface('founder-m-router', 'M router', 'https://llm.example', { 'estate/group': 'Run' }),
+    surface('founder-g-view', 'G view', 'https://gods.example', { 'estate/group': 'Watch' }),
+    surface('founder-lost', 'Lost door', 'https://lost.example'),
+    plainComponent,
+  ];
+
+  it('orders the groups Watch, Run, Build, Companies, Other and puts each door in its own', async () => {
+    await render(fixture);
+    const doors = await screen.findByTestId('band-doors');
+    expect(doors).toHaveTextContent('Every door (5)');
+    const order = ['Watch', 'Run', 'Build', 'Companies', 'Other'].map(g => screen.getByTestId(`group-${g}`));
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(screen.getByTestId('group-Watch')).toHaveTextContent('G view');
+    expect(screen.getByTestId('group-Run')).toHaveTextContent('M router');
+    expect(screen.getByTestId('group-Build')).toHaveTextContent('Z repo');
+    expect(screen.getByTestId('group-Companies')).toHaveTextContent('A store');
+    expect(screen.getByTestId('group-Other')).toHaveTextContent('Lost door');
+    expect(screen.getByTestId('surface-founder-g-view')).toHaveTextContent('Open');
+  });
+});

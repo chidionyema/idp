@@ -21,6 +21,26 @@ metadata:
   name: traefik
   namespace: edge
 spec:
+  # docs/policy/every-interface-is-a-door.md: the chart's Services name their door.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target: { kind: Service }
+            patch: |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: founder-status-page
+          - target: { kind: HTTPRoute }
+            patch: |
+              apiVersion: v1
+              kind: HTTPRoute
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: founder-status-page
   interval: 1h
   chart:
     spec:

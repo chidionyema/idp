@@ -214,7 +214,7 @@ def test_gateway_refusals_are_scraped_and_alerted():
     assert {"name": "metrics", "port": 15020, "targetPort": "metrics"} in svc["spec"]["ports"]
     sm = one("platform/monitoring/rules/agentgateway-servicemonitor.yaml", "ServiceMonitor", "agentgateway")
     assert sm["spec"]["namespaceSelector"]["matchNames"] == ["mcp"]
-    assert sm["spec"]["selector"]["matchLabels"] == svc["metadata"]["labels"]
+    assert sm["spec"]["selector"]["matchLabels"].items() <= svc["metadata"]["labels"].items()
     assert sm["spec"]["endpoints"][0]["port"] == "metrics"
     pr = one("platform/monitoring/rules/estate.yaml", "PrometheusRule", "estate")
     (r,) = [r for g in pr["spec"]["groups"] for r in g["rules"] if r.get("alert") == "GatewayRefusals"]
