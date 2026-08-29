@@ -18,6 +18,22 @@ app:
         config:
           path: /
 
+    # crew#612 CP5: no empty tab on an entity page. The TechDocs content ships with no filter,
+    # so every one of the 338 entities grew a "TechDocs" tab and 334 of them opened on an
+    # error; the api-docs "APIs" content shows on every Component and none provides an API.
+    # Each tab now appears only where it has something to show, and the Docs tab says "Docs".
+    - entity-content:techdocs:
+        config:
+          title: Docs
+          filter:
+            metadata.annotations.backstage.io/techdocs-ref: { $exists: true }
+    - entity-content:api-docs/apis:
+        config:
+          filter:
+            $any:
+              - relations: { $contains: { type: providesApi } }
+              - relations: { $contains: { type: consumesApi } }
+
 organization:
   name: Mumchimp
 
