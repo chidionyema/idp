@@ -5,6 +5,7 @@ and an Alert that named GitRepository but no image kind. The rule: every Flux ob
 condition is in the state/cluster receipt, the grader fails on any that is not Ready, and the
 image kinds page. Rung 4, incident test."""
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -31,9 +32,9 @@ def _grader_py():
 def _grade(receipt: str, age_min: float = 1.0, max_min: float = 60.0):
     from datetime import datetime, timedelta, timezone
     from email.utils import format_datetime
-    head = json.dumps({"last-modified": format_datetime(datetime.now(timezone.utc) - timedelta(minutes=age_min))})
+    head = json.dumps({"last-modified": format_datetime(datetime.now(timezone.utc) - timedelta(minutes=age_min)), "date": format_datetime(datetime.now(timezone.utc))})
     r = subprocess.run([sys.executable, "-c", _grader_py(), head, receipt, str(max_min), "--json"],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, env={**os.environ, "IDP_LIB": str(ROOT / "bin" / "lib")})
     return r.returncode, r.stdout
 
 

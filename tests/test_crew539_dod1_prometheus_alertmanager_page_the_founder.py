@@ -17,6 +17,7 @@ Proved offline, no sockets:
 """
 import pathlib
 import re
+import os
 import subprocess
 import sys
 
@@ -172,8 +173,8 @@ def grade(line1, body="{}"):
     # run only the python half of bin/idp-cluster-state, with a fresh head, the way the script does
     src = (IDP / "bin/idp-cluster-state").read_text()
     py = src.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
-    head = '{"last-modified": "%s"}' % __import__("email.utils").utils.formatdate(usegmt=True)
-    r = subprocess.run([sys.executable, "-c", py, head, line1 + "\n" + body, "60", ""], capture_output=True, text=True)
+    head = '{"last-modified": "%s", "date": "%s"}' % ((__import__("email.utils").utils.formatdate(usegmt=True),) * 2)
+    r = subprocess.run([sys.executable, "-c", py, head, line1 + "\n" + body, "60", ""], capture_output=True, text=True, env={**os.environ, "IDP_LIB": str(IDP / "bin" / "lib")})
     return r.returncode, r.stdout.strip()
 
 

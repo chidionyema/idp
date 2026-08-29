@@ -4,6 +4,7 @@ to a pods list (its pods do not exist) and to the Flux rows (the HelmRelease is 
 receipt carries every DaemonSet's desired vs ready and the Warning events of the last hour; the
 grader fails on any short DaemonSet and prints the events that name it. Rung 4, incident test."""
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -27,9 +28,9 @@ def _grader_py():
 def _grade(receipt: str):
     from datetime import datetime, timedelta, timezone
     from email.utils import format_datetime
-    head = json.dumps({"last-modified": format_datetime(datetime.now(timezone.utc) - timedelta(minutes=1))})
+    head = json.dumps({"last-modified": format_datetime(datetime.now(timezone.utc) - timedelta(minutes=1)), "date": format_datetime(datetime.now(timezone.utc))})
     r = subprocess.run([sys.executable, "-c", _grader_py(), head, receipt, "60", "--json"],
-                       capture_output=True, text=True, check=False)
+                       capture_output=True, text=True, check=False, env={**os.environ, "IDP_LIB": str(ROOT / "bin" / "lib")})
     return r.returncode, r.stdout
 
 
