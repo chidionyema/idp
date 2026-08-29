@@ -96,6 +96,28 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       timeout: 300
 
+  # crew#568 phase 1 (ADR 0011): Claude is a lane on the router, not a key on the Mac. Every
+  # caller that wants Claude asks the router by name; the key lives in litellm-upstream and is
+  # born by bin/idp-bootstrap-vendors from SEED_ANTHROPIC_API_KEY (R52), never pasted anywhere.
+  # Model ids from https://docs.anthropic.com/en/docs/about-claude/models (read 2026-08-29).
+  - model_name: claude
+    litellm_params:
+      model: anthropic/claude-sonnet-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      timeout: 300
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 200000
+
+  - model_name: claude-fast
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: os.environ/ANTHROPIC_API_KEY
+      timeout: 300
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 200000
+
   # Local, free, and the only tier that survives every credential expiring at once.
   - model_name: ollama
     litellm_params:
@@ -149,6 +171,10 @@ router_settings:
     # another free lane first; the chain still ends in the cheap model (cp30).
     - groq: [minimax, deepseek]
     - groq-fast: [groq, deepseek]
+    # crew#568 phase 1: a Claude turn that 4xx/5xxs falls to the funded direct lanes and ends
+    # in the cheap model (cp30), like every other chain; claude-fast tries claude first.
+    - claude: [minimax, deepseek]
+    - claude-fast: [claude, deepseek]
   num_retries: 2
   # A tier that keeps failing is taken out of the chain rather than retried into the
   # ground. This is the circuit breaker prospector/breaker.py hand-rolls.

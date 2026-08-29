@@ -126,6 +126,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bin/idp-no-toil "${{ github.event.pull_request.number }}"
 
+  # crew#631 CP6: a change to a proven surface cannot merge on an old or missing verdict. The job
+  # always runs on a pull request so the required context is never absent; when the change is
+  # not on the surface it says so and passes. Required by platform/github/ruleset.idp.required-checks.json.
+  verdict-fresh:
+    name: verify/verdict-fresh
+    needs: fast-gate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions: { contents: read, actions: read }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - name: verdict-fresh gate (langfuse)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -t changed < <(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          bin/idp-verdict-fresh langfuse --changed "${changed[@]}"
+
   bdd-suites:
     needs: fast-gate
     runs-on: ubuntu-latest

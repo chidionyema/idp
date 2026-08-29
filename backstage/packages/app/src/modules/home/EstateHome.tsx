@@ -617,6 +617,10 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
       <h1 className={classes.verdict} data-testid="verdict">
         {verdict(counts, all.length)}
       </h1>
+      <p className={classes.note}>
+        A layer is one piece the cluster runs, or one door you sign in through;
+        its word comes from the cluster, never from a file.
+      </p>
       <div
         className={classes.counters}
         role="group"

@@ -11,7 +11,9 @@
 # Why per repo: the account is a User (gh api /users/<owner> -q .type), and
 # org-wide rulesets ("~ALL") exist only on organizations. On the free plan a
 # private repo answers 403 to the rulesets API; those are printed as BLOCKED,
-# never skipped silently. Idempotent: an existing ruleset of the same name is
+# never skipped silently. The comparison includes each rule's parameters (crew#631 CP6):
+# a required-check list edited by hand is DRIFT, not ok; do_not_enforce_on_create is a default
+# GitHub adds to every answer and is dropped from both sides. Idempotent: an existing ruleset of the same name is
 # updated (PUT), a missing one created (POST).
 set -uo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
@@ -24,8 +26,8 @@ apply_spec() {
   list="$(gh api "/repos/$OWNER/$repo/rulesets" 2>/dev/null)" || { echo "BLOCKED $repo: private on the free plan (403); make it public or upgrade"; blocked=$((blocked+1)); return; }
   id="$(printf '%s' "$list" | jq -r --arg n "$NAME" '.[] | select(.name==$n) | .id' | head -1)"
   if [ -n "$id" ]; then
-    live="$(gh api "/repos/$OWNER/$repo/rulesets/$id" | jq -S '{target,enforcement,conditions,rules:[.rules[]|{type}]}')"
-    want="$(jq -S '{target,enforcement,conditions,rules:[.rules[]|{type}]}' "$SPEC")"
+    live="$(gh api "/repos/$OWNER/$repo/rulesets/$id" | jq -S '{target,enforcement,conditions,rules:[.rules[]|{type,parameters:(.parameters|del(.do_not_enforce_on_create))}]}')"
+    want="$(jq -S '{target,enforcement,conditions,rules:[.rules[]|{type,parameters:(.parameters|del(.do_not_enforce_on_create))}]}' "$SPEC")"
     if [ "$live" = "$want" ]; then echo "ok      $repo: $NAME #$id"; ok=$((ok+1)); return; fi
     if [ $apply = 1 ]; then gh api -X PUT "/repos/$OWNER/$repo/rulesets/$id" --input "$SPEC" >/dev/null && echo "FIXED   $repo: updated #$id" && ok=$((ok+1)) && return; fi
     echo "DRIFT   $repo: $NAME #$id differs from $SPEC"; drift=$((drift+1))
@@ -36,7 +38,7 @@ apply_spec() {
 }
 jobs_on_main() {  # true when the caller workflow, or a ci.yml carrying both jobs, is on the default branch
   gh api "/repos/$OWNER/$1/contents/.github/workflows/security-scan.yml" -q .sha >/dev/null 2>&1 && return 0
-  gh api "/repos/$OWNER/$1/contents/.github/workflows/ci.yml" -q .content 2>/dev/null | base64 -d 2>/dev/null | grep -q '^  spec-gate:'
+  gh api "/repos/$OWNER/$1/contents/.github/workflows/ci.yml" -q .content 2>/dev/null | base64 -d 2>/dev/null | grep '^  spec-gate:' >/dev/null
 }
 # crew#586 CP5: under GitHub's "first_time_contributors" policy every pull request opened by
 # github-actions (bot/conscience-page, state/live-diagram, flux/image-updates) sits in

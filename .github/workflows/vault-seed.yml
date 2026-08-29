@@ -13,7 +13,7 @@ on:
       entry:
         description: "which vault entry to write"
         type: choice
-        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, tailscale-operator, laptop]
+        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, tailscale-operator, laptop, hermes]
         default: all
       delete:
         description: "schedule deletion of one vault secret by name (crew#503: a mis-named entry); entry is ignored when set"
@@ -103,12 +103,46 @@ jobs:
             # and holds no vendor key (crew#568, LAW 34). Minted here; delivered through the estate's
             # sops vault: sops encrypts to the age recipient estate-secrets/.sops.yaml names (the public
             # half), so this runner decrypts nothing, and the Mac reads it with scripts/secret-load.
-            bin/idp-router-key laptop minimax,minimax_m27,deepseek,openrouter,minimax-or,deepseek-or,gemini-or,groq,groq-fast,gemini,vision
+            bin/idp-router-key laptop minimax,minimax_m27,deepseek,openrouter,minimax-or,deepseek-or,gemini-or,groq,groq-fast,gemini,claude,claude-fast,vision
             tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
             git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
             bin/idp-cloud secret get laptop | jq -r .key | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LITELLM_LAPTOP_KEY LITELLM_API_KEY
-            git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
-              commit -q -am "laptop router key (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null && git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || echo "info    laptop key unchanged in estate-secrets"
+            # `commit -am` never stages a NEW file: the first delivery of LITELLM_LAPTOP_KEY.yaml printed
+            # "unchanged" and pushed nothing (run 33257838162). Add the file by name, then commit.
+            git -C "$RUNNER_TEMP/estate-secrets" add secrets/dev/LITELLM_LAPTOP_KEY.yaml
+            # Run 33258762617: the commit was made, estate-secrets' pre-push hook asked gh whether the repo is
+            # still private, gh had no token, the hook refused, and `|| echo unchanged` turned that into a green
+            # run. The hook gets the token so it can answer; a refused push is an error, never "unchanged".
+            if git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
+                 commit -q -m "laptop router key (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null; then
+              GH_TOKEN="$tok" git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || { echo "error   laptop key written but the push to estate-secrets was refused"; exit 1; }
+              echo "ok      laptop key delivered to estate-secrets as LITELLM_LAPTOP_KEY"
+            else
+              echo "info    laptop key unchanged in estate-secrets"
+            fi
+            rm -rf "$RUNNER_TEMP/estate-secrets"
+          fi
+          if [ "$ENTRY" = all ] || [ "$ENTRY" = hermes ]; then
+            # Hermes (the founder's Telegram agent, hermes-v2/config.yaml) calls the router on its own
+            # virtual key, lane claude first, never a vendor key (crew#568 Phase 5, LAW 34). Same road as
+            # the laptop: minted here, delivered through the sops vault, read by scripts/secret-load.
+            bin/idp-router-key hermes claude,claude-fast,minimax,deepseek
+            tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
+            git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
+            bin/idp-cloud secret get hermes | jq -r .key | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LITELLM_HERMES_KEY LITELLM_API_KEY
+            # `commit -am` never stages a NEW file: the first delivery of LITELLM_HERMES_KEY.yaml printed
+            # "unchanged" and pushed nothing (run 33257838162). Add the file by name, then commit.
+            git -C "$RUNNER_TEMP/estate-secrets" add secrets/dev/LITELLM_HERMES_KEY.yaml
+            # Run 33258762617: the commit was made, estate-secrets' pre-push hook asked gh whether the repo is
+            # still private, gh had no token, the hook refused, and `|| echo unchanged` turned that into a green
+            # run. The hook gets the token so it can answer; a refused push is an error, never "unchanged".
+            if git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
+                 commit -q -m "hermes router key (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null; then
+              GH_TOKEN="$tok" git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || { echo "error   hermes key written but the push to estate-secrets was refused"; exit 1; }
+              echo "ok      hermes key delivered to estate-secrets as LITELLM_HERMES_KEY"
+            else
+              echo "info    hermes key unchanged in estate-secrets"
+            fi
             rm -rf "$RUNNER_TEMP/estate-secrets"
           fi
           rm -f "$ESTATE_ENV_FILE"

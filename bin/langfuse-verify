@@ -156,7 +156,7 @@ else
     fail=1
   else
     after=$(printf '%s\n' "$dump" | wc -l | tr -d ' \r')
-    if printf '%s\n' "$dump" | grep -q "$trace_id"; then
+    if printf '%s\n' "$dump" | grep "$trace_id" >/dev/null ; then
       say "fallback  PASS -- the same trace id is on disk (${before:-0} -> ${after:-0} lines)"
     else
       say "FAIL      fallback accepted the span but the trace id is not in"

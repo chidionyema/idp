@@ -30,6 +30,7 @@ nav:
       - 0008 Every founder action is a portal button: decisions/0008-every-founder-action-is-a-portal-button.md
       - 0009 Every requirement is scored on the reference matrix: decisions/0009-every-requirement-is-scored-on-the-founders-reference-matrix.md
       - 0010 Tailscale trust is federated, the operator key is machine-made: decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md
+      - 0011 Claude is a lane on the router, not a key on the Mac: decisions/0011-claude-is-a-lane-on-the-router-not-a-key-on-the-mac.md
   - Specs:
       - KINI.AI master spec: reference/specs/kini-master-spec.md
       - Phone idea flow: reference/specs/phone-idea-flow.md
