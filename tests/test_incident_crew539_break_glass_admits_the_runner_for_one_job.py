@@ -120,7 +120,7 @@ def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
     assert "trap bg_revoke EXIT" in branch and 'export OKE_ALLOWED_CIDRS="$ORIG_CIDRS"' in branch
     assert branch.index("trap bg_revoke EXIT") < branch.index('export OKE_ALLOWED_CIDRS="$ORIG_CIDRS, \\"$EGRESS/32\\""')
     assert '[ -n "${OCI_CI:-}" ] ||' in branch, "a laptop must be refused (crew#345)"
-    assert "--list | tr ' ' '\\n' | grep -qx \"$PLAYBOOK\"" in branch, "only a named playbook runs"
+    assert "--list | tr ' ' '\\n' | grep -x \"$PLAYBOOK\" >/dev/null" in branch, "only a named playbook runs"
 
 
 def test_workflow_offers_break_glass_with_a_named_playbook():

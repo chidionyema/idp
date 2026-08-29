@@ -136,7 +136,7 @@ clickhouse_counts_15m() {
   # chain. Compute the base64-shape check into a plain variable first, outside any
   # if/elif/while condition, so no grep -q pipe's exit status ever sits inside one.
   pw_b64_shaped=0
-  printf '%s' "$pw" | grep -qE '^[A-Za-z0-9+/]*={0,2}$' && pw_b64_shaped=1
+  printf '%s' "$pw" | grep -E '^[A-Za-z0-9+/]*={0,2}$' >/dev/null && pw_b64_shaped=1
   if [ -z "$pw" ] || [ $(( ${#pw} % 4 )) -ne 0 ] || [ "$pw_b64_shaped" -eq 0 ]; then
     echo "clickhouse-auth secret in observability did not decode to a usable password"
     return 0

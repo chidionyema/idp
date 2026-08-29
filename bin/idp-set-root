@@ -28,7 +28,7 @@ if [ "$P" = all ]; then
       stripe) need=SEED_STRIPE_SECRET_KEY ;;
       *) need=SEED_$(printf %s "$p" | tr a-z A-Z)_API_KEY ;;
     esac
-    missing=0; for k in $need; do printf '%s\n' "$have" | grep -qx "$k" || missing=1; done
+    missing=0; for k in $need; do printf '%s\n' "$have" | grep -x "$k" >/dev/null || missing=1; done
     if [ $missing = 0 ]; then echo "ok      $p already set; skipped"; continue; fi
     n=$((n+1)); echo; echo "=== $p ($n) ==="
     IDP_NO_DISPATCH=1 "$0" "$p"
