@@ -3,9 +3,10 @@
 ## What it is for
 
 A buyer's engineer asks "show me your security policy" on day one. The answer is one
-page, `docs/reference/security-policy.md`: fourteen controls, each mapped to an
+page, `docs/reference/security-policy.md`: nineteen controls, each mapped to an
 ISO 27001 clause, each with the command that proves it and the state it was in on
-the day it was measured. The gate makes sure the page cannot drift from the repo:
+the day it was measured, and under it the table of every admission policy the cluster
+enforces, generated from the tree so it cannot list a policy that is not installed. The gate makes sure the page cannot drift from the repo:
 a proof that names a missing file fails the build.
 
 ## What it costs
@@ -26,6 +27,7 @@ CRITICAL, fixable CVE, and it signs the manifest list by digest.
 ```
 docs/reference/security-policy.md     the page
 bin/security-policy-gate              the proof-exists check
+bin/idp-admission-policies            the cluster admission-policy table the page carries (generated, tested)
 bin/actions-pinned                    every uses: is a 40-hex SHA
 .github/workflows/build-multiarch.yml Trivy scan and cosign sign/verify
 .github/dependabot.yml                weekly PR that moves the pinned SHAs

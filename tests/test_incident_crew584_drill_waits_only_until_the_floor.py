@@ -44,18 +44,28 @@ def _floor() -> int:
 
 
 def test_wait_script_returns_the_moment_the_floor_is_met(tmp_path):
-    """A fake kubectl reporting exactly floor-many Ready layers must end the wait on the first poll."""
+    """A fake kubectl reporting exactly floor-many Ready layers must end the wait on the first poll.
+
+    Counted, not timed. The assertion used to be `floor met after [0-2] s`, which graded how long
+    bin/idp-portability-drill takes to run rather than how many times the wait script polls: on the
+    crew#488 CP5 drill, which names a cause and a cascade for every red row, one poll takes ~5 s and
+    the timing assertion went red on a script that behaved perfectly. The fake counts its own calls,
+    so what is graded is the poll count -- one -- on any machine at any speed.
+    """
     n = _floor()
     items = ",".join(
         '{"metadata":{"namespace":"a","name":"k%d"},"status":{"conditions":[{"type":"Ready","status":"True"}]}}' % i
         for i in range(n))
+    calls = tmp_path / "calls"
     fake = tmp_path / "kubectl"
-    fake.write_text("#!/usr/bin/env bash\ncat <<'JSON'\n{\"items\":[%s]}\nJSON\n" % items)
+    fake.write_text(
+        "#!/usr/bin/env bash\necho call >> %s\ncat <<'JSON'\n{\"items\":[%s]}\nJSON\n" % (calls, items))
     fake.chmod(0o755)
-    env = dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}", DRILL_WAIT_STEP="1", DRILL_WAIT_MAX="5")
-    out = subprocess.run([WAIT], env=env, capture_output=True, text=True, timeout=30)
+    env = dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}", DRILL_WAIT_STEP="1", DRILL_WAIT_MAX="120")
+    out = subprocess.run([WAIT], env=env, capture_output=True, text=True, timeout=180)
     assert out.returncode == 0, out.stderr
-    assert re.search(r"floor met after [0-2] s", out.stdout), out.stdout
+    assert re.search(r"floor met after \d+ s", out.stdout), out.stdout
+    assert calls.read_text().count("call") == 1, "the wait polled more than once on a cluster already at the floor"
 
 
 def test_wait_script_gives_up_at_the_ceiling_without_failing_the_job(tmp_path):
