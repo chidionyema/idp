@@ -11,9 +11,22 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 ROW = ROOT / "bin" / "idp-catalogue-drift"
 ZONE = re.search(r"^\s*ESTATE_ZONE:\s*(\S+)", (ROOT / "clusters/oke/estate-config.yaml").read_text(), re.M).group(1)
+
+
+@pytest.fixture(autouse=True)
+def _no_live_locations(tmp_path: Path, monkeypatch):
+    """Incident, flux/image-updates ci 2026-08-29: with the inherited env the row fetched the real
+    `type: url` locations from raw.githubusercontent.com and answered BLIND ... HTTP Error 429,
+    so bdd-suites was red on every image bump and idp#719 never merged. A test reads no network:
+    the default config here names no url location; a test that wants one sets IDP_APP_CONFIG itself."""
+    cfg = tmp_path / "app-config.none.yaml"
+    cfg.write_text("catalog:\n  locations: []\n")
+    monkeypatch.setenv("IDP_APP_CONFIG", str(cfg))
 
 
 def _grade(body: dict, tmp_path: Path) -> subprocess.CompletedProcess:
