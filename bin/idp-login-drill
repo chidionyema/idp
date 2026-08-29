@@ -430,6 +430,12 @@ with sync_playwright() as p:
         fail("second-hop", f"langfuse stopped on the identity domain at {page.url.split('?')[0]}; the drill user is not granted the Langfuse app")
     if lf_pw:
         fail("second-hop", f"langfuse showed its own password form at {page.url.split('?')[0]}: the one login is two")
+    # crew#626: a sign-in page with no password box is still a second login. The drill user
+    # landed on /auth/sign-in and the drill said green (run 33254022447) while the founder was
+    # asked to log in again. Any path under /auth/ is red; only the project page is signed in.
+    lf_path = urlparse(page.url).path
+    if lf_path.startswith("/auth/"):
+        fail("second-hop", f"langfuse asked for a second login at {lf_path}: the one login is two")
     if lf_host != f"langfuse.{ZONE}":
         fail("second-hop", f"langfuse landed on {lf_host}, expected langfuse.{ZONE}")
 
