@@ -537,3 +537,60 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: company-mumchimp
+  title: "Mumchimp: the store"
+  description: "Everything that takes a customer's money: the storefront, its API, the cluster it runs on and the jobs that keep it up. Open it to see every product and asset the store owns, and what is red."
+  annotations:
+    idp/updated-by: "bin/catalog-gen builds the company tree under this card from the inventory, four times a day"
+  tags: [founder, company]
+  links:
+    - title: "Open (everything this company owns)"
+      url: "https://catalogue.${ESTATE_ZONE}/catalog/default/domain/mumchimp"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: company-prospector
+  title: "Prospector: finds and qualifies prospects"
+  description: "The product you sell, whatever the platform under it does. Open it to see its repositories, its jobs and its data, and what is red."
+  annotations:
+    idp/updated-by: "bin/catalog-gen builds the company tree under this card from the inventory, four times a day"
+  tags: [founder, company]
+  links:
+    - title: "Open (everything this company owns)"
+      url: "https://catalogue.${ESTATE_ZONE}/catalog/default/domain/prospector"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: company-hermes
+  title: "Hermes: acts for you from anywhere"
+  description: "Telegram in, a pull request or a run out. Open it to see the gateway, its schedules and its receipts, and what is red."
+  annotations:
+    idp/updated-by: "bin/catalog-gen builds the company tree under this card from the inventory, four times a day"
+  tags: [founder, company]
+  links:
+    - title: "Open (everything this company owns)"
+      url: "https://catalogue.${ESTATE_ZONE}/catalog/default/domain/hermes-v2"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
