@@ -22,7 +22,22 @@ meta=$(gh pr view --json number,headRefOid,statusCheckRollup,state,mergeStateSta
 [ "$(printf '%s' "$meta" | jq -r .state)" = OPEN ] || { echo "ok    push-on-green: PR is not open"; exit 0; }
 # A green PR that cannot merge (DIRTY = conflicts with main) is not one to protect: the only way to
 # merge it is a push. idp#629 at 68e2e6b was refused here while `gh pr merge` refused it for conflicts.
-[ "$(printf '%s' "$meta" | jq -r .mergeStateStatus)" != DIRTY ] || { echo "ok    push-on-green: PR conflicts with main, this push is the rebase"; exit 0; }
+#
+# UNKNOWN is that same case wearing a word instead of an answer. GitHub computes mergeability lazily,
+# so the first query after main moves returns UNKNOWN and the query itself is what starts the sum;
+# the next one carries the result. Measured 2026-08-29 on idp#800: two pre-push runs, about thirteen
+# minutes of suite between them, both refused with "GREEN" while `gh pr view 800` was already
+# answering DIRTY. Treating "not computed yet" as "mergeable" is refusing by an instrument that
+# cannot see, which the header above already forbids -- so ask a second time, and if GitHub still
+# will not say, stand down. A push that restarts one CI run is cheaper than a suite thrown away, and
+# the window this reopens is the second or so before GitHub answers, not the minutes between the
+# three pushes of crew#584.
+state=$(printf '%s' "$meta" | jq -r '.mergeStateStatus // "UNKNOWN"')
+[ "$state" = UNKNOWN ] && state=$(gh pr view --json mergeStateStatus 2>/dev/null | jq -r '.mergeStateStatus // "UNKNOWN"')
+case "$state" in
+DIRTY) echo "ok    push-on-green: PR conflicts with main, this push is the rebase"; exit 0 ;;
+UNKNOWN) echo "ok    push-on-green: BLIND, GitHub has not computed whether this PR can merge"; exit 0 ;;
+esac
 n=$(printf '%s' "$meta" | jq -r .number)
 head=$(printf '%s' "$meta" | jq -r .headRefOid)
 local_head=$(git rev-parse HEAD 2>/dev/null || true)
