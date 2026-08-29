@@ -130,6 +130,13 @@ spec:
     name: flux-system
   path: ./platform/observability-collector
   prune: true
+  postBuild:
+    substituteFrom:
+      # OTLP_ENDPOINT (crew#584 traces/lean): the node agent's destination is one value in
+      # clusters/oke/estate-config.yaml; a missing ConfigMap fails the row rather than
+      # shipping telemetry to the literal '${OTLP_ENDPOINT}'.
+      - kind: ConfigMap
+        name: estate-config
   wait: true
   timeout: 10m
   healthChecks:

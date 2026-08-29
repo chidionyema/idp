@@ -352,7 +352,9 @@ def test_executor_keeps_the_existing_allowed_tools():
     cfg = yaml.safe_load(ESTATE.read_text())
     doc = yaml.safe_load(cfg["data"]["estate.yaml"])
     claude_cmd = doc["dispatch"]["runtimes"]["claude"]
-    assert "Bash(git *) Bash(gh *)" in claude_cmd
+    # the allow-list may grow (K8sGPT findings reader, 2026-08-29); git and gh must stay
+    allowed = claude_cmd[claude_cmd.index("--allowedTools") + 1]
+    assert "Bash(git *)" in allowed and "Bash(gh *)" in allowed
 
 
 def test_no_ssh_flag_or_key_in_the_executor_line():
