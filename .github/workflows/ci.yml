@@ -12,7 +12,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  # crew#584 CP-C: the 60 s gate every heavy job below waits for (fast-gate.yml).
+  fast-gate:
+    uses: ./.github/workflows/fast-gate.yml
   offline-gate:
+    needs: fast-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,6 +74,7 @@ jobs:
   # copy of the gate, and idp is not a special case of it. The push-to-main skip
   # lives in the reusable workflow now.
   operating-model-gate:
+    needs: fast-gate
     uses: ./.github/workflows/operating-model-gate.yml
     permissions: { contents: read, pull-requests: write }
 
@@ -87,12 +92,14 @@ jobs:
   # founder machine; this job only installs its tools. Pinned by checksum, the
   # way conftest above is pinned by version (bin/actions-pinned covers uses:).
   security-scan:
+    needs: fast-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/security-scan   # the steps every active estate repo runs
 
   spec-gate:
+    needs: fast-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -106,6 +113,7 @@ jobs:
   # The PR body is judged twice on purpose and it costs nothing: the same rego is in policy/,
   # so bin/pr-report's conftest run in operating-model-gate above sees it too.
   no-toil-gate:
+    needs: fast-gate
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions: { contents: read, pull-requests: read }
@@ -119,6 +127,7 @@ jobs:
         run: bin/idp-no-toil "${{ github.event.pull_request.number }}"
 
   bdd:
+    needs: fast-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
