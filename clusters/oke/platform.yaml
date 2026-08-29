@@ -1,3 +1,27 @@
+# crew#488 / crew#539: the portal's namespace, on its own, before anything that lands in it.
+#
+# cluster-state, spire and image-automation all apply objects into namespace backstage, and on a
+# cluster with no history they ran before it existed (`namespaces "backstage" not found`, drill run
+# 33214748124). The edge they wanted -- dependsOn: [backstage] -- is the one crew#539 forbids: the
+# portal row waits on Deployment/catalogue being healthy, so that edge makes a stalled catalogue
+# rollout hold the platform, which is the incident crew#539 exists for.
+#
+# One object, no workload, nothing that can be unhealthy. It is what those rows wait for.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: backstage-namespace
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/backstage/namespace/overlays/oke
+  prune: true
+  wait: true
+  timeout: 2m
+---
 # ADR 0004 step 3. `flux bootstrap github --path clusters/oke` writes flux-system/ beside this
 # file; everything below is what Flux then reconciles. Secrets reach the
 # cluster from OCI Vault through External Secrets (platform/secret-store); no sops key in cluster.
@@ -17,8 +41,14 @@ spec:
   # Flux dry-ran it before the CRD existed and the portal read as a root portability break;
   # platform rows still never wait on the portal (crew#539), the portal waits on its secrets.
   dependsOn:
+    - name: backstage-namespace
     - name: external-secrets
     - name: secret-store
+    # The overlay also carries HTTPRoute/catalogue and Middleware/login-forward-auth, whose CRDs
+    # come from gateway-api-crds and the Traefik chart in `edge` -- so on an empty cluster the row
+    # dry-ran those two before either existed. Found by the closure-aware CRD-before-CR guard,
+    # which the flat PRE_INSTALLED set had been widened past (crew#488).
+    - name: edge
   postBuild:
     substituteFrom:
       # ESTATE_ZONE (idp#140): the zone is one value in clusters/oke/estate-config.yaml; not
@@ -69,6 +99,8 @@ spec:
   interval: 10m
   dependsOn:
     - name: chaos-mesh
+    # crew#488: the langfuse alert drill's Schedule and Workflow land in the observability namespace.
+    - name: observability
     - name: monitoring   # crew#539 DoD 2: langfuse-alert-drill asks kps-alertmanager and kps-prometheus
     - name: backstage   # the experiments kill portal pods; they are the one row that waits for it
   sourceRef:
@@ -97,6 +129,9 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
+    # Four ExternalSecrets (clickhouse-auth, langfuse-init, otlp-ingest-users, signoz-root) are in
+    # this row; external-secrets.io only exists once the ESO chart has landed (crew#488).
+    - name: external-secrets
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -338,9 +373,9 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
-    # crew#488 CP5: this row applies objects into namespace backstage; on a fresh cluster it ran
-    # before the backstage row created it and graded as a root portability break.
-    - name: backstage
+    # crew#539: the namespace, not the portal. This row lands objects in namespace backstage and
+    # needs it to exist; it must never wait on Deployment/catalogue being healthy.
+    - name: backstage-namespace
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -386,9 +421,9 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
-    # crew#488 CP5: this row applies objects into namespace backstage; on a fresh cluster it ran
-    # before the backstage row created it and graded as a root portability break.
-    - name: backstage
+    # crew#539: the namespace, not the portal. This row lands objects in namespace backstage and
+    # needs it to exist; it must never wait on Deployment/catalogue being healthy.
+    - name: backstage-namespace
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -516,9 +551,10 @@ spec:
   wait: true
   timeout: 2m
 ---
-# crew#539: scheduling immunity. The two PriorityClasses, the balloon and the Kyverno policy that
-# keeps the radio-room set honest. After edge (Kyverno CRDs); the rows that name
-# infrastructure-critical depend on this one so the class exists before a pod asks for it.
+# crew#539: scheduling immunity. The balloon and the Kyverno policies that keep the radio-room set
+# honest. After edge (Kyverno CRDs) and after priority-classes, which is where the two classes now
+# live: the rows that name infrastructure-critical still depend on this one, and reach
+# priority-classes through its dependsOn below.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:

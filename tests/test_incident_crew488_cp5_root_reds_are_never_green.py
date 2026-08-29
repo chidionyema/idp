@@ -191,11 +191,22 @@ def test_a_row_flux_has_not_judged_yet_is_pending_not_a_root():
     assert not any("ROOT-RED" in line for line in lines)
 
 
-def test_the_rows_that_write_into_backstage_wait_for_backstage():
+def test_the_rows_that_write_into_backstage_wait_for_the_namespace_and_never_for_the_portal():
     """Run 33214748124: cluster-state and spire applied ServiceAccount/CronJob into namespace
-    backstage before the backstage row created it -> 'namespaces "backstage" not found'."""
-    for row in ("cluster-state", "spire"):
-        assert "backstage" in _depends_on(row), row
+    backstage before the backstage row created it -> 'namespaces "backstage" not found'.
+
+    They wait for `backstage-namespace`, not for `backstage`. The portal row carries `wait: true`
+    with a healthCheck on Deployment/catalogue, so waiting on it is crew#539 verbatim -- a stalled
+    catalogue rollout holding fifteen Kustomizations Not Ready -- and
+    tests/test_incident_crew539_platform_rows_never_wait_on_the_portal.py refuses that edge. The
+    namespace is its own row precisely so both rules hold at once.
+    """
+    for row in ("cluster-state", "spire", "image-automation"):
+        deps = _depends_on(row)
+        assert "backstage-namespace" in deps, (row, deps)
+        assert "backstage" not in deps, (row, deps)
+    assert _depends_on("backstage-namespace") == set(), "the namespace layer waits for nothing"
+    assert "backstage-namespace" in _depends_on("backstage"), "the portal waits for its namespace"
 
 
 def test_the_singleton_dns_controller_is_excepted_from_runs_two_by_name():
