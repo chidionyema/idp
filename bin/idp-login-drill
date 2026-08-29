@@ -206,9 +206,13 @@ with sync_playwright() as p:
     if resp is None or resp.status != 200:
         fail("catalogue", f"{HOME} answered {getattr(resp, 'status', 'no response')} to the signed-in session")
     try:
-        page.locator("text=Catalog").first.wait_for(state="visible", timeout=TIMEOUT)
+        # The shell is the estate's own nav (crew#459, data-testid estate-nav); the word
+        # "Catalog" is the vendor sidebar the build before it rendered.
+        page.locator("[data-testid='estate-nav']").or_(page.locator("text=Catalog")).first.wait_for(
+            state="visible", timeout=TIMEOUT
+        )
     except PWError:
-        fail("catalogue", f"{HOME} answered 200 but no Backstage shell rendered (no 'Catalog' in the page)")
+        fail("catalogue", f"{HOME} answered 200 but no Backstage shell rendered (no nav in the page)")
 
     # 5. the whole path, not just the door: the door's headers must reach Backstage's own
     # auth provider and come back as a signed-in identity. On 2026-08-26 the door was green

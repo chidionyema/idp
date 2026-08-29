@@ -18,6 +18,7 @@ resources:
   # crew#503 CP6: backstage/founder is a kustomization of its own (a directory base may live anywhere;
   # a file outside the overlay may not, and plain `kustomize build` in the tests refuses it).
   - ../../../../backstage/founder
+  - ../../../../backstage/platform
 images:
   # build-multiarch pushes ghcr.io/chidionyema/<image name from bin/dockerfiles>:<commit sha>
   # and nothing else (its header: a moving tag leaves a rollback nothing to roll back to).
@@ -141,3 +142,7 @@ patches:
                   name: founder-catalog
                   items:
                     - {key: catalog-info.yaml, path: founder/catalog-info.yaml}
+              - configMap:
+                  name: platform-catalog
+                  items:
+                    - {key: catalog-info.yaml, path: platform/catalog-info.yaml}
