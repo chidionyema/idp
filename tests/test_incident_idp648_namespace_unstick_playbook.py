@@ -46,3 +46,15 @@ def test_unstick_never_forces_the_namespace_finalizer_itself():
     assert "finalize" not in body.replace("finalizers", ""), "no `kubectl replace --raw .../finalize`"
     assert '"finalizers":null' in body
     assert "flux reconcile kustomization backstage-namespace" in body
+
+
+def test_provider_independence_never_judges_a_delete():
+    """Run 33227815539: no-provider-storage-class denied the DELETE of the old PVC, so the namespace
+    could never finish terminating. A portability rule has nothing to say about a DELETE."""
+    for doc in yaml.safe_load_all((ROOT / "platform/edge/provider-independence.yaml").read_text()):
+        if not doc or doc.get("kind") not in ("ClusterPolicy", "ValidatingPolicy"):
+            continue
+        for rule in doc["spec"].get("rules", []):
+            for m in (rule.get("match") or {}).get("any", []):
+                ops = (m.get("resources") or {}).get("operations")
+                assert ops and "DELETE" not in ops, f"{rule['name']} matches DELETE"
