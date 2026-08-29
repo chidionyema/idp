@@ -12,6 +12,7 @@ import {
   genPageTheme,
   palettes,
   shapes,
+  BackstageTypography,
 } from '@backstage/theme';
 import LightIcon from '@material-ui/icons/WbSunny';
 import DarkIcon from '@material-ui/icons/Brightness2';
@@ -56,29 +57,26 @@ const sidebar = {
 
 // One type scale for the whole portal. The vendor default survived the rebrand
 // until 2026-08-29 (crew#459 audit): headings were Helvetica at the stock sizes.
-const typography = {
+const typography: BackstageTypography = {
   fontFamily,
   htmlFontSize: 16,
   h1: {
     fontSize: 40,
+    marginBottom: 10,
     fontWeight: 700,
-    letterSpacing: '-0.02em',
-    lineHeight: 1.15,
   },
   h2: {
     fontSize: 30,
+    marginBottom: 7,
     fontWeight: 700,
-    letterSpacing: '-0.015em',
-    lineHeight: 1.2,
   },
-  h3: { fontSize: 24, fontWeight: 600, lineHeight: 1.25 },
-  h4: { fontSize: 20, fontWeight: 600, lineHeight: 1.3 },
-  h5: { fontSize: 17, fontWeight: 600, lineHeight: 1.35 },
+  h3: { fontSize: 24, marginBottom: 6, fontWeight: 600 },
+  h4: { fontSize: 20, marginBottom: 5, fontWeight: 600 },
+  h5: { fontSize: 17, marginBottom: 4, fontWeight: 600 },
   h6: {
     fontSize: 15,
+    marginBottom: 4,
     fontWeight: 600,
-    lineHeight: 1.4,
-    letterSpacing: '0.01em',
   },
 };
 
