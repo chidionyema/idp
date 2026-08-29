@@ -169,6 +169,30 @@ export const doorState = (e: Entity, now: number = Date.now()): LayerState => {
 
 export const rank = (s: State) => STATE_ORDER.indexOf(s);
 
+// crew#612 CP10/CP11 (founder, 2026-08-29: "there should be around 6 to 8 UI surfaces", "I
+// shouldn't have to look for them"). A door tagged `screen` in backstage/founder/catalog-info.yaml
+// is a thing with a screen you open; one also tagged `no-address` runs but has no public address
+// yet, and is shown grey so the gap is visible, never hidden.
+export const SCREEN_TAG = 'screen';
+export const NO_ADDRESS_TAG = 'no-address';
+export const NO_SCREEN_TAG = 'no-screen';
+export const KUBERNETES_TAG = 'kubernetes';
+/** A tool that runs the cluster underneath everything (Flux, Cilium, Kyverno ...). */
+export const isKubernetes = (e: Entity) =>
+  (e.metadata.tags ?? []).includes(KUBERNETES_TAG);
+/** Runs in the background with no screen at all, so there is nothing to open. */
+export const hasNoScreen = (e: Entity) =>
+  (e.metadata.tags ?? []).includes(NO_SCREEN_TAG);
+export const isScreen = (e: Entity) =>
+  (e.metadata.tags ?? []).includes(SCREEN_TAG);
+export const hasNoAddress = (e: Entity) =>
+  (e.metadata.tags ?? []).includes(NO_ADDRESS_TAG);
+/** The link a screen opens: the first https link that is not a code page. */
+export const screenUrl = (e: Entity): string | undefined =>
+  hasNoAddress(e) || hasNoScreen(e)
+    ? undefined
+    : (e.metadata.links ?? []).find(l => /^https:\/\//.test(l.url))?.url;
+
 export const byTitle = (a: Entity, b: Entity) =>
   (a.metadata.title ?? a.metadata.name).localeCompare(
     b.metadata.title ?? b.metadata.name,

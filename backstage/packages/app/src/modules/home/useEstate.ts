@@ -16,8 +16,13 @@ import {
   byTitle,
 } from './estate';
 
+/** One row of "everything we hold": how many entities of one kind and type the catalogue has. */
+export type InventoryRow = { kind: string; type?: string; count: number };
+
 export type Estate = {
   layers: Entity[];
+  /** Every entity in the catalogue counted by kind and type (crew#612 CP10: "not just services"). */
+  inventory: InventoryRow[];
   systems: Entity[];
   doors: Entity[];
   templates: Entity[];
@@ -82,7 +87,7 @@ export const useEstate = () => {
     let timer: ReturnType<typeof setInterval> | undefined;
     (async () => {
       try {
-        const [catalogue, cluster] = await Promise.all([
+        const [catalogue, everything, cluster] = await Promise.all([
           catalogApi.getEntities({
             filter: [
               { kind: 'Component', 'spec.type': PLATFORM_LAYER_TYPE },
@@ -91,6 +96,16 @@ export const useEstate = () => {
               { kind: 'Template' },
             ],
             fields: ['kind', 'metadata', 'spec.type', 'spec.system'],
+          }),
+          // The whole catalogue, two fields per entity, so the page can count everything it
+          // holds, not only the services. Runs beside the other two reads, so it costs no time.
+          catalogApi.getEntities({
+            fields: [
+              'kind',
+              'metadata.name',
+              'metadata.namespace',
+              'spec.type',
+            ],
           }),
           readCluster(),
         ]);
@@ -103,6 +118,7 @@ export const useEstate = () => {
         setLoaded({
           state: 'ready',
           layers: ofType(PLATFORM_LAYER_TYPE),
+          inventory: countInventory(everything.items),
           doors: ofType(FOUNDER_SURFACE_TYPE),
           systems: items.filter(e => e.kind === 'System').sort(byTitle),
           templates: items.filter(e => e.kind === 'Template').sort(byTitle),
@@ -126,4 +142,20 @@ export const useEstate = () => {
   }, [catalogApi, kubernetesApi, attempt]);
 
   return { loaded, retry };
+};
+
+/** Count entities by kind and spec.type, biggest group first. */
+export const countInventory = (items: Entity[]): InventoryRow[] => {
+  const m = new Map<string, InventoryRow>();
+  for (const e of items) {
+    const type = (e.spec as { type?: unknown } | undefined)?.type;
+    const t = typeof type === 'string' ? type : undefined;
+    const key = `${e.kind}/${t ?? ''}`;
+    const row = m.get(key) ?? { kind: e.kind, type: t, count: 0 };
+    row.count += 1;
+    m.set(key, row);
+  }
+  return [...m.values()].sort(
+    (a, b) => b.count - a.count || a.kind.localeCompare(b.kind),
+  );
 };
