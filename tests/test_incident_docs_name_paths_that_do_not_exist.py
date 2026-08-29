@@ -42,6 +42,9 @@ PLACEHOLDER = re.compile(r"NNNN|issue-N\.|<[a-z]+>|\.\.\.")
 
 #: path -> why it is legitimately absent. Read this as a list of things the estate has NOT got.
 ALLOWED = {
+    "claude-guards/laws/AGENTS.md":
+        "the laws file in the claude-guards repository, which is checked out under the home "
+        "directory (not as a sibling of this one); named by the Langfuse incident report",
     ".github/workflows/security-scan.yml":
         "the copy bin/estate-security-rollout installs in every OTHER repository; idp's own copy "
         "is platform/github/workflows/security-scan.yml, named in the same sentence",
