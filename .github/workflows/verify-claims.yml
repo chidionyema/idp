@@ -1,0 +1,44 @@
+name: verify-claims
+# crew#628 CP1 (founder 2026-08-29: "NO ONE IS PROVING OR VERIFYING ANYTHING"): every `Verify:`
+# line in the pull request body is a command this job runs; its real output is written back into
+# the body between the verify-claims markers, and a red command is a red check. A change under
+# platform/, clusters/ or bin/idp-* with no Verify: line is red. The job only observes: the tool
+# refuses any world-changing verb before it runs (no crew path to production, founder 2026-08-29).
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+permissions:
+  contents: read
+  pull-requests: write   # writes the generated evidence section into the body
+  id-token: write        # traded for a read-only OCI session so bin/idp-cluster-state can answer
+concurrency:
+  group: verify-claims-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    if: github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
+      - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
+      - name: OCI session token from the GitHub OIDC token (read-only observer)
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: bin/idp-verify-claims --pr ${{ github.event.pull_request.number }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+        run: bin/idp-verify-claims --pr "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}"
