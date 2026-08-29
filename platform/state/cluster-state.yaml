@@ -511,6 +511,7 @@ data:
         alert_watchdog = int("Watchdog" in alert_names)
     except Exception as e:
         monitoring_error = (monitoring_error + "; " if monitoring_error else "") + f"alertmanager: {str(e)[:200]}"
+    at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     # crew#584: capacity. What we pay for (allocatable), what pods ask for (requests) and what is
     # actually used (metrics.k8s.io) per node, so "do we need 6 cores" is answered by the hourly
     # check instead of a guess. A metrics read that fails is recorded in the row, never dropped.
@@ -558,7 +559,6 @@ data:
         return -1 if not vals or not tot else round(100 * sum(vals) / tot)
     cpu_used_pct, mem_used_pct = pct("cpu_used", tot_cpu), pct("memory_used_gb", tot_mem)
     cpu_req_pct, mem_req_pct = pct("cpu_requested", tot_cpu), pct("memory_requested_gb", tot_mem)
-    at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     head = (f"ok cluster-state at {at} nodes={len(node_rows)} ready={ready} pods={len(pods)} pods_not_ready={len(not_ready)}"
             f" flux={len(flux)} flux_not_ready={len(flux_not_ready)} ds={len(ds)} ds_short={len(ds_short)} events_warning={len(events)}"
             f" hostnames={len(hostnames or [])} spiffe_ids={len(spiffe['clusterspiffeids'] or [])} spiffe_workloads={len(spiffe['csi_workloads'])}"

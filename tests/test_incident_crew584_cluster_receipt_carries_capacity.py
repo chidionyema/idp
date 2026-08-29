@@ -62,7 +62,7 @@ def test_collector_computes_used_requested_and_allocatable_per_node():
              "status": {"phase": "Succeeded"}}]},
         "/apis/metrics.k8s.io/v1beta1/nodes": {"items": [{"metadata": {"name": "n1"}, "usage": {"cpu": "1200m", "memory": "6291456Ki"}}]},
     }
-    start = src.index("def qty(v):"); end = src.index("at = datetime.now")
+    start = src.index("def qty(v):"); end = src.index("head = (f\"ok cluster-state")
     block = src[start:end]
     ns = {"get": lambda p: fake[p], "nodes": fake["/api/v1/nodes"]["items"], "pods": fake["/api/v1/pods"]["items"]}
     exec(block, ns)
@@ -78,7 +78,7 @@ def test_collector_records_a_metrics_read_failure_instead_of_dropping_it():
     def get(p):
         if "metrics" in p: raise RuntimeError("403 forbidden")
         return {"items": []}
-    start = src.index("def qty(v):"); end = src.index("at = datetime.now")
+    start = src.index("def qty(v):"); end = src.index("head = (f\"ok cluster-state")
     ns = {"get": get, "nodes": [{"metadata": {"name": "n1"}, "status": {"allocatable": {"cpu": "2", "memory": "1Gi"}}}], "pods": []}
     exec(src[start:end], ns)
     assert ns["cap_error"].startswith("metrics.k8s.io nodes: 403 forbidden")
