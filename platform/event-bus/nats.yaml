@@ -1,0 +1,133 @@
+# The mature tool, not a script (headline rule 1; LAW 43): NATS with JetStream, the official
+# nats-io chart. Chart version 2.14.6 / nats-server appVersion 2.14.6, both read from
+# https://nats-io.github.io/k8s/helm/charts/index.yaml on 2026-08-29, not from memory.
+#
+# Rejected, with the reason each was rejected:
+#   - Kafka / Redpanda: a broker whose smallest sane footprint is a multi-GB JVM or a
+#     dedicated node, for an estate whose whole cluster is 4-6 OCPU (crew#289). Right answer
+#     at a hundred times this volume, wrong answer today (LAW 23, take the smaller road).
+#   - RabbitMQ: an Erlang broker plus its operator, and no story for replay. JetStream gives
+#     the same at-least-once delivery with a file store and one StatefulSet.
+#   - Flux's own notification-controller: it carries Flux events, not business events. Using
+#     it for order_paid would couple revenue to the GitOps controller. That is the stitching.
+#
+# LAW 19 (portability outranks detection): NATS is a plain OSS binary with no managed-service
+# dependency. Moving provider moves a StatefulSet and a PVC, nothing else.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: nats
+  namespace: event-bus
+spec:
+  interval: 24h
+  url: https://nats-io.github.io/k8s/helm/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: nats
+  namespace: event-bus
+spec:
+  interval: 1h
+  timeout: 10m
+  chart:
+    spec:
+      chart: nats
+      version: 2.14.6
+      sourceRef:
+        kind: HelmRepository
+        name: nats
+  install: { remediation: { retries: 3 } }
+  upgrade: { remediation: { retries: 3 } }
+  values:
+    config:
+      # JetStream is what makes this a bus and not a fire-and-forget socket: a consumer that
+      # is down when order_paid fires still gets it. A payment event that is only delivered
+      # to whoever happened to be connected is lost revenue nobody can reconcile.
+      jetstream:
+        enabled: true
+        fileStore:
+          enabled: true
+          pvc:
+            enabled: true
+            size: 2Gi
+      cluster:
+        # One replica on a one-node estate. Three when the estate has three nodes; the
+        # availability gate (bin/idp-availability-gate) is what will force that, not a comment.
+        enabled: false
+    container:
+      merge:
+        # Guaranteed QoS: requests == limits. The kubelet evicts BestEffort, then Burstable,
+        # then Guaranteed (crew#539 CP9). The bus holding the money events is not evicted first.
+        resources:
+          requests: { cpu: 100m, memory: 256Mi }
+          limits: { cpu: 100m, memory: 256Mi }
+        # The cluster's restricted profile, asked for in the chart's own words rather than
+        # patched in afterwards: this chart takes a merge into every object it ships, which is
+        # why it needs no postRenderers. nats-server writes only to the JetStream volume below,
+        # so a read-only root filesystem costs it nothing. The image carries no USER (read from
+        # the registry config blob for nats:2.14.6-alpine on 2026-08-29, not assumed), so the
+        # uid is named here; the layer boots for the first time at crew#623 CP2 on the drill
+        # cluster, and that boot is what proves it, not this comment.
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: { drop: [ALL] }
+    podTemplate:
+      merge:
+        spec:
+          # crew#539: a platform workload names a class so the scheduler can rank it.
+          # platform-batch, not infrastructure-critical: the radio room is the six named
+          # workloads in platform/priority-classes, and borrowing that class is refused.
+          priorityClassName: platform-batch
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            # The JetStream file store is a PVC. Without fsGroup the volume belongs to root and
+            # a non-root server cannot write the stream it was given to keep.
+            fsGroup: 1000
+            seccompProfile: { type: RuntimeDefault }
+    service:
+      merge:
+        # docs/policy/every-interface-is-a-door.md: the cluster refuses a Service that names no
+        # catalogue entity, and it is Enforce, so this is the difference between a bus that
+        # starts and one the API server rejects.
+        metadata:
+          labels:
+            backstage.io/kubernetes-id: founder-commerce
+    headlessService:
+      merge:
+        metadata:
+          labels:
+            backstage.io/kubernetes-id: founder-commerce
+    reloader:
+      # Off, and this removes a container rather than excusing one. The reloader exists to signal
+      # nats-server when its ConfigMap changes under a running pod; the chart already stamps the
+      # config checksum on the pod template (podTemplate.configChecksumAnnotation, default true),
+      # so a config change rolls the StatefulSet and the new pod reads the new file. Keeping it
+      # would mean a sidecar with no health endpoint, which the probe policy refuses, and an
+      # exception written for a container nothing needs.
+      enabled: false
+    promExporter:
+      # LAW 50: the bus emits, or it is not admitted. Scraped into the estate collector.
+      enabled: true
+      merge:
+        # A sidecar is a container: the same requests, limits, probes and profile the policies
+        # ask of every other one. Its own /metrics is the health endpoint.
+        resources:
+          requests: { cpu: 10m, memory: 32Mi }
+          limits: { cpu: 10m, memory: 32Mi }
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: { drop: [ALL] }
+        readinessProbe:
+          httpGet: { path: /metrics, port: 7777 }
+          periodSeconds: 10
+        livenessProbe:
+          httpGet: { path: /metrics, port: 7777 }
+          periodSeconds: 30
+    natsBox:
+      # A shell-in-a-pod for hand debugging. Not a platform capability; nothing depends on it.
+      enabled: false

@@ -625,7 +625,9 @@ if command -v kyverno >/dev/null && command -v helm >/dev/null; then
   # Every HelmRelease dir, plus any dir shipping a plain workload (crew#284: the litellm
   # Deployment was never judged and the cluster refused it after merge; crew#539 2026-08-28: the
   # robusta release carried no postRenderers, was never judged, and admission refused it on 15 rules).
-  dirs=$(cd "$IDP" && { grep -lE '^kind: HelmRelease' platform/*/*.yaml platform/*/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && echo "$d"; done; grep -lE '^kind: (Deployment|StatefulSet|DaemonSet|Job|CronJob)$' platform/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && echo "$d"; done; } | sort -u)
+  # bin/idp-kyverno-dirs owns this list (crew#623: two globs here disagreed and three dirs,
+  # platform/commerce/data among them, were judged by nothing at all).
+  dirs=$(cd "$IDP" && bin/idp-kyverno-dirs)
   # rc 2 is BLIND: the judge ran but not against the whole policy set, and crew#539 is what that
   # costs -- CI printed "render clean" for a Deployment admission refused, because the two
   # estate-only policies live in prospector and CI had no copy. Blind and failing are different

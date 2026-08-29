@@ -420,6 +420,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: urls with the zone substituted
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           zone=$(awk '$1=="ESTATE_ZONE:"{print $2}' clusters/oke/estate-config.yaml)
@@ -427,6 +429,19 @@ jobs:
           grep -oE 'url: "https?://[^"]+"' backstage/founder/catalog-info.yaml \
             | sed -E 's/^url: "(.*)"$/\1/' | sed "s/\${ESTATE_ZONE}/$zone/g" | sort -u > founder-links.txt
           if grep -q '\${' founder-links.txt; then echo "unsubstituted placeholder"; cat founder-links.txt; exit 1; fi
+          # A catalogue entry for a file this pull request ADDS points at blob/main, which is where
+          # the founder will read it and where it does not exist yet -- so every such pull request
+          # went red on a link that is correct. Grade the proposed tree, not the old one: on a
+          # pull_request the blob ref becomes this branch's head sha, everywhere else it stays main.
+          # Found 2026-08-29 by platform/commerce/app/lago.yaml, run 33260499807.
+          if [ "${GITHUB_EVENT_NAME:-}" = pull_request ] && [ -n "${HEAD_SHA:-}" ]; then
+            # Only THIS repository's links. The first version of this rewrote every `/blob/main/`
+            # it saw, so five catalogue links into chidionyema/crew were asked for an idp commit
+            # sha and came back 404 -- the fix graded the string instead of the repository it
+            # belongs to (oke-check 33262262675). The repo is named, never assumed.
+            sed -i "s#github.com/${GITHUB_REPOSITORY}/blob/main/#github.com/${GITHUB_REPOSITORY}/blob/${HEAD_SHA}/#g" founder-links.txt
+            echo "pull request: blob links graded at ${HEAD_SHA}"
+          fi
           echo "$(wc -l < founder-links.txt) links"
       - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:

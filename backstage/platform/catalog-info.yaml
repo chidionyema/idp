@@ -91,6 +91,17 @@ spec:
   domain: platform
 ---
 apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: commerce
+  title: 'Money'
+  description: 'How a customer pays and what they are owed: subscriptions, credit packs, invoices and the ledger. The products never see a card.'
+  tags: [platform]
+spec:
+  owner: group:default/platform
+  domain: platform
+---
+apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: layer-alerts
@@ -278,6 +289,49 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-commerce
+  title: 'Money'
+  description: 'Subscriptions, credit packs and invoices. Not switched on yet: it is built and waiting for the founder''s word to take over from the store''s own payment code.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=commerce'
+    estate/flux-kustomization: 'commerce'
+    estate/path: './platform/commerce/app'
+    estate/cluster: 'oke'
+  tags: [platform, commerce]
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: commerce
+  dependsOn:
+    - component:default/layer-commerce-data
+    - component:default/layer-event-bus
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-commerce-data
+  title: 'Money ledger'
+  description: 'The separate database and queue that hold every payment taken and what each customer is owed. Not switched on yet.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=commerce-data'
+    estate/flux-kustomization: 'commerce-data'
+    estate/path: './platform/commerce/data'
+    estate/cluster: 'oke'
+  tags: [platform, commerce]
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: commerce
+  dependsOn:
+    - component:default/layer-external-secrets
+    - component:default/layer-secret-store
+    - component:default/layer-priority-classes
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-dns
   title: 'DNS'
   description: 'Every hostname the estate answers to, managed from git.'
@@ -355,6 +409,26 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: delivery
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-event-bus
+  title: 'Event bus'
+  description: 'Carries ''this customer paid'' to whatever needs to know, so nothing waits on the payment provider to answer. Not switched on yet.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=event-bus'
+    estate/flux-kustomization: 'event-bus'
+    estate/path: './platform/event-bus'
+    estate/cluster: 'oke'
+  tags: [platform, commerce]
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: commerce
+  dependsOn:
+    - component:default/layer-priority-classes
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component

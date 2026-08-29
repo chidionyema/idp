@@ -166,6 +166,62 @@ decisions:
     receipt: "https://github.com/chidionyema/crew/issues/66#issuecomment-5461672647"   # founder, 2026-08-29, on the no-cost road: "ok thats fine, we need to document all this"
     next_review: 2026-09-05
     reviews: []
+  - slug: money-layer
+    requirement: "the estate takes a payment and runs a subscription, and the application never sees a card, a checkout session or a webhook (crew#623; founder: 'we ban money from the application logic entirely', 'also we want user subscriptions also')"
+    date: 2026-08-29
+    status: proposed
+    candidates:
+      lago-self-hosted:
+        note: "Lago in the cluster: subscriptions, usage metering and invoices in its own database, webhooks out to the estate's event bus; the payment provider's SDK stays behind it (chosen)"
+        scores:
+          first_time_user:     {score: 4, evidence: "docs/how-to/onboarding/commerce.md"}                       # one Helm row and four locks; nobody installs anything by hand
+          founder_experience:  {score: 4, evidence: "https://getlago.com/"}                                     # a UI that shows subscriptions, invoices and wallets without reading the database
+          feature_parity:      {score: 5, evidence: "https://docs.getlago.com/"}                                # subscriptions, usage metering, invoices, wallets, coupons -- the whole job asked for
+          ecosystem_fit:       {score: 4, evidence: "https://github.com/getlago/lago-helm-charts"}              # first-party chart, Postgres and Redis the estate already runs, webhooks out
+          maturity:            {score: 4, evidence: "cmd: gh api repos/getlago/lago -q .pushed_at   # 2026-08-28, 10,441 stars"}
+          security_by_default: {score: 4, evidence: "platform/commerce/data/external-secret.yaml"}              # every credential from the estate vault; the ledger encrypted at rest with vault-born keys
+          portability:         {score: 5, evidence: "https://github.com/getlago/lago/blob/main/LICENSE"}        # AGPL-3.0, self-hosted, any conformant cluster; the ledger is ours
+          operability:         {score: 3, evidence: "platform/commerce/app/lago.yaml"}                          # eight deployments; measured 1.03 CPU and 3.38 Gi of requests when switched on
+          cost:                {score: 3, evidence: "docs/how-to/onboarding/commerce.md"}                       # no licence fee, but it does not fit the current 6 OCPU / 24 Gi node
+      stripe-billing-only:
+        note: "no billing layer of our own: the primitive calls the payment provider's hosted billing and keeps no ledger"
+        scores:
+          first_time_user:     {score: 5, evidence: "https://stripe.com/billing"}                               # nothing to install or run at all
+          founder_experience:  {score: 4, evidence: "https://stripe.com/billing"}                               # a good hosted dashboard, on someone else's domain
+          feature_parity:      {score: 4, evidence: "https://docs.stripe.com/billing"}                          # subscriptions and invoices yes; the estate holds no revenue record of its own
+          ecosystem_fit:       {score: 2, evidence: "platform/event-bus/contract/estate.commerce.order_paid.json"}  # nothing in the cluster to emit from; the record lives at the vendor
+          maturity:            {score: 5, evidence: "https://stripe.com/billing"}                               # best in class
+          security_by_default: {score: 4, evidence: "platform/commerce/data/external-secret.yaml"}              # card data never reaches us; the API key still comes from the vault
+          portability:         {score: 0, evidence: "https://stripe.com/pricing"}                               # leaving takes the ledger with it -- fails LAW 19 outright
+          operability:         {score: 3, evidence: "bin/idp-portability-drill"}                                # nothing to run, and nothing to drill or trace either
+          cost:                {score: 2, evidence: "https://stripe.com/pricing"}                               # a billing fee on top of the payment fee, forever, per transaction
+      killbill:
+        note: "Kill Bill in the cluster: the older, heavier open-source billing platform, with the Kaui admin UI"
+        scores:
+          first_time_user:     {score: 2, evidence: "https://killbill.io/"}                                     # JVM stack plus plugins; the docs assume an operator
+          founder_experience:  {score: 3, evidence: "https://killbill.io/"}                                     # Kaui is an admin console, not a product surface
+          feature_parity:      {score: 5, evidence: "https://killbill.io/"}                                     # subscriptions, invoicing, payments, entitlements
+          ecosystem_fit:       {score: 2, evidence: "https://github.com/killbill/killbill"}                     # no first-party chart maintained the way Lago's is
+          maturity:            {score: 5, evidence: "cmd: gh api repos/killbill/killbill -q .pushed_at   # 2026-08-22, since 2010"}
+          security_by_default: {score: 3, evidence: "platform/commerce/data/external-secret.yaml"}              # same vault path, more moving parts to hold it
+          portability:         {score: 5, evidence: "https://github.com/killbill/killbill/blob/master/LICENSE"} # Apache-2.0, self-hosted
+          operability:         {score: 2, evidence: "platform/commerce/app/lago.yaml"}                          # a JVM and a plugin runtime to size, patch and drill on a 6 OCPU node
+          cost:                {score: 3, evidence: "https://killbill.io/"}                                     # no licence fee; a heavier footprint than Lago for the same job
+      medusa:
+        note: "Medusa: a commerce engine with carts, products and orders, extended into subscriptions"
+        scores:
+          first_time_user:     {score: 3, evidence: "https://docs.medusajs.com/"}                               # a storefront framework to learn before the first payment
+          founder_experience:  {score: 3, evidence: "https://docs.medusajs.com/"}                               # an admin for a shop, not for revenue
+          feature_parity:      {score: 2, evidence: "https://docs.medusajs.com/"}                               # subscriptions are a plugin on a cart engine, not the product
+          ecosystem_fit:       {score: 2, evidence: "platform/event-bus/contract/estate.commerce.order_paid.json"}  # it wants to own the product catalogue, which the application already owns
+          maturity:            {score: 4, evidence: "cmd: gh api repos/medusajs/medusa -q .pushed_at   # 2026-08-28, 36,052 stars"}
+          security_by_default: {score: 3, evidence: "platform/commerce/data/external-secret.yaml"}
+          portability:         {score: 4, evidence: "https://github.com/medusajs/medusa"}                       # self-hosted, but the licence is not a plain OSI row
+          operability:         {score: 2, evidence: "platform/commerce/app/lago.yaml"}                          # a Node service plus workers plus a storefront to keep alive
+          cost:                {score: 3, evidence: "https://docs.medusajs.com/"}
+    decision: lago-self-hosted   # 410 vs stripe-billing-only 355 vs killbill 340 vs medusa 300; the gap is outside tie_band 25, so the matrix builds the top score
+    next_review: 2026-09-05
+    reviews: []
 
   - slug: claude-on-the-router
     requirement: "a workload on the estate uses Claude through one platform layer, with the key born once by code and never on the Mac (crew#568 phase 1, crew#617)"

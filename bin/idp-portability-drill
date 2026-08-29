@@ -100,13 +100,23 @@ def grade(items: list[dict], floor: int, reds: list[tuple[str, str]] = ()) -> tu
         return ("FAIL    portability  floor is 0: a drill that cannot fail grades nothing (LAW 44)", [])
     if not items:
         return ("FAIL    portability  no Kustomization was applied; the drill itself is broken", [])
-    ready, lines, cascaded, oci, roots, pending = 0, [], 0, 0, [], 0
+    ready, lines, cascaded, oci, roots, pending, off = 0, [], 0, 0, [], 0, 0
     blocked_by: dict[str, str] = {}   # cascaded row -> the row its Ready message names
     cascade_rows: list[tuple[int, str]] = []   # (index into `lines`, short name), patched below
     for it in items:
         meta = it.get("metadata", {})
         short = meta.get("name", "?")
         name = f"{meta.get('namespace', '?')}/{short}"
+        if it.get("spec", {}).get("suspend") is True:
+            # A switched-off feature (platform/features/features.yaml: "`suspend:` is the
+            # switch -- nothing is ever deleted"). Flux writes no Ready condition on a suspended
+            # row, so before this branch every dark row fell through to ROOT-RED and failed the
+            # drill: adding a feature the estate had deliberately not enabled broke the
+            # portability grade. It is not ready and it is not broken. It is not graded, and it
+            # leaves the denominator -- a floor that counts rows nobody asked to run is a proxy.
+            off += 1
+            lines.append(f"  suspended  {name}: switched off in git; not graded")
+            continue
         conds = {c.get("type"): c for c in it.get("status", {}).get("conditions", [])}
         rc = conds.get("Ready", {})
         if rc.get("status") == "True":
@@ -140,14 +150,14 @@ def grade(items: list[dict], floor: int, reds: list[tuple[str, str]] = ()) -> tu
         lines[idx] = f"{lines[idx]}  -> root {root}"
     tally = ", ".join(f"{n} on {r}" for r, n in sorted(behind.items(), key=lambda kv: (-kv[1], kv[0])))
 
-    total = len(items)
+    total = len(items) - off
     if roots:
         return (f"FAIL    portability  root-red not on drills/portability-oci-reds.txt: {' '.join(roots)} "
                 f"(ready {ready}/{total}, cascaded {cascaded}, pending {pending})", lines)
     if ready < floor:
         return (f"FAIL    portability  ready {ready}/{total} is below the floor {floor}", lines)
     return (f"ok      portability  ready {ready}/{total} (root-red {oci} all named, cascaded {cascaded}, pending {pending}) "
-            f"on a cluster with no OCI (floor {floor})"
+            f"on a cluster with no OCI (floor {floor}{f', {off} suspended' if off else ''})"
             + (f"; the cascade waits {tally}" if tally else ""), lines)
 
 
