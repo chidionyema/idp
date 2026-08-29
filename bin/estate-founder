@@ -17,6 +17,9 @@ memory, on the same schedule and through the same PR as docs/NEXT.md.
                         nothing the founder touches, and says so
     What is stuck       open pull requests with no `REVIEW:` verdict after REVIEW_H hours, and
                         every open checkpoint that waits on the founder himself
+    The goal            every open crew issue labelled `goal` with its checkboxes ticked or not
+                        (crew#596); --telegram edits the pinned GOAL message in the home channel
+                        so Otto and the founder see the same ticks
 
     estate-founder                       write docs/FOUNDER.md from gh
     estate-founder --merged f.json --open f.json --issues f.json --out p.md   from files (tests)
@@ -83,7 +86,8 @@ def fetch_open(run=subprocess.run) -> list[dict]:
 
 def fetch_issues(run=subprocess.run) -> list[dict]:
     rows = gh_json([f"repos/{CREW}/issues?state=open&per_page=100",
-                    "--jq", '.[] | {number, title, body, url: .html_url, pr: (.pull_request != null)}'], run)
+                    "--jq", '.[] | {number, title, body, url: .html_url, pr: (.pull_request != null), '
+                            'labels: [.labels[].name]}'], run)
     return [r for r in rows if not r.get("pr")]
 
 
@@ -157,6 +161,65 @@ def founder_checkpoints(issues: list[dict]) -> list[dict]:
     return rows
 
 
+BOX_RE = re.compile(r"^\s*- \[([ xX])\]\s*(.*)$")
+
+
+def goals(issues: list[dict]) -> list[dict]:
+    """Every open crew issue labelled `goal`, with its checkboxes: the founder's one goal and the ticks toward it
+    (crew#596, founder 2026-08-28: "on Otto and founder surface set goal and tick to it")."""
+    rows = []
+    for issue in issues:
+        if "goal" not in (issue.get("labels") or []):
+            continue
+        boxes = [{"done": m.group(1) != " ", "what": m.group(2).strip()}
+                 for m in map(BOX_RE.match, (issue.get("body") or "").splitlines()) if m]
+        rows.append({"issue": issue["number"], "url": issue.get("url", ""), "title": issue.get("title") or "",
+                     "boxes": boxes, "done": sum(b["done"] for b in boxes)})
+    return rows
+
+
+def goal_lines(goal_rows: list[dict], markdown: bool = True) -> list[str]:
+    """The goal block, one line per tick. markdown=False is the Telegram text (no link syntax)."""
+    if not goal_rows:
+        return ["No open crew issue carries the `goal` label: the goal is unset, and that is the defect."]
+    out = []
+    for g in goal_rows:
+        head = f"{g['title']} — {g['done']}/{len(g['boxes'])} ticked"
+        out.append(f"**[crew#{g['issue']}]({g['url']})** {head}" if markdown else f"crew#{g['issue']} {head}\n{g['url']}")
+        for b in g["boxes"]:
+            what = b["what"] if markdown else re.sub(r"`", "", b["what"])
+            out.append(f"- {'☑' if b['done'] else '☐'} {what[:220]}")
+    return out
+
+
+def telegram_pin(text: str, urlopen=None) -> str:
+    """Edit the pinned GOAL message in the home channel, or send and pin one. Returns the message id.
+    Otto lives in this channel: the pin is the goal he and the founder tick toward."""
+    import urllib.parse
+    import urllib.request
+    urlopen = urlopen or urllib.request.urlopen
+    token, chat = os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_HOME_CHANNEL")
+    if not token or not chat:
+        raise SystemExit("estate-founder --telegram: TELEGRAM_BOT_TOKEN and TELEGRAM_HOME_CHANNEL are not set")
+
+    def call(method: str, **kw) -> dict:
+        data = urllib.parse.urlencode({"chat_id": chat, **kw}).encode()
+        return json.loads(urlopen(f"https://api.telegram.org/bot{token}/{method}", data=data, timeout=30).read())["result"]
+
+    pinned = call("getChat").get("pinned_message") or {}
+    if (pinned.get("text") or "").startswith("GOAL"):
+        try:
+            call("editMessageText", message_id=pinned["message_id"], text=text)
+            return str(pinned["message_id"])
+        except Exception as e:  # Telegram refuses an edit to identical text; that is the up-to-date case
+            if "not modified" in str(getattr(e, "read", lambda: b"")() or str(e)):
+                return str(pinned["message_id"])
+            raise
+    sent = call("sendMessage", text=text, disable_web_page_preview="true")
+    call("pinChatMessage", message_id=sent["message_id"], disable_notification="true")
+    return str(sent["message_id"])
+
+
 def hours_since(ts: str, now: "datetime | None") -> "float | None":
     """Hours between `now` and a stamp GitHub wrote, or None when that cannot be measured.
 
@@ -195,6 +258,7 @@ def render(merged: list[dict], open_prs: list[dict], issues: list[dict], by_repo
                   if pr["repo"] in live_repos and not pr.get("verdict")]
     stuck = [(pr, h) for pr, h in unreviewed if h is None or h >= REVIEW_H]
     waiting = founder_checkpoints(issues)
+    goal_rows = goals(issues)
     out = [
         "# Founder: what shipped, what changed for you, what is stuck",
         "",
@@ -207,6 +271,10 @@ def render(merged: list[dict], open_prs: list[dict], issues: list[dict], by_repo
         f"- Shipped: **{len(merged)} pull requests merged** in {WINDOW_H}h across {len(by_repo)} repositories",
         f"- Changed for you: **{len(changed)}** of them carry a `Use:` line (something you touch); the rest changed nothing you touch",
         f"- Stuck: **{len(stuck)} pull requests** with no `REVIEW:` verdict after {REVIEW_H}h; **{len(waiting)} checkpoints wait on you**",
+        "",
+        "## The goal",
+        "",
+        *goal_lines(goal_rows),
         "",
         "## What changed for you",
         "",
@@ -258,6 +326,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--taken", help="timestamp to print; default now UTC")
     ap.add_argument("--now", help="clock, YYYY-MM-DDTHH:MMZ (tests); default now UTC")
     ap.add_argument("--check", action="store_true", help="exit 1 when the page on disk differs from the inputs")
+    ap.add_argument("--telegram", action="store_true", help="also edit (or send and pin) the GOAL message in TELEGRAM_HOME_CHANNEL")
     a = ap.parse_args(argv)
     #: crew#583 CP5: GitHub's clock, or the one a test names, and no third option. There is no
     #: `datetime.now` in this file on purpose -- the guard in
@@ -294,6 +363,9 @@ def main(argv: list[str]) -> int:
         return 1
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(page, encoding="utf-8")
+    if a.telegram:
+        text = "GOAL " + taken + "\n" + "\n".join(goal_lines(goals(issues), markdown=False))
+        print(f"estate-founder: telegram GOAL pin message_id={telegram_pin(text)}")
     print(f"estate-founder: {len(merged)} merged, {sum(1 for p in open_prs if not p.get('verdict'))} unreviewed, "
           f"{len(founder_checkpoints(issues))} on the founder -> {os.path.relpath(out)}")
     return 0

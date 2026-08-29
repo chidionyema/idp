@@ -55,11 +55,6 @@ NOT_YET_MIGRATED = {
     # here would have collided with work in flight. crew#583 CP2.
     "bin/idp-cluster-state",
     "bin/idp-telemetry-coverage",
-    # Also found by the guard. lanes() ages each feed entry against the local clock to decide
-    # whether a lane is still live (bin/estate-next:89-92), and the feed is written by other
-    # sessions on other machines -- so this is two clocks even when it looks like one. crew#583
-    # CP6, unowned.
-    "bin/estate-next",
 }
 
 # Not offenders, and not a migration backlog: the writer of the stamps. A file here has to be the
