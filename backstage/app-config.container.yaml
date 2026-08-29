@@ -59,6 +59,17 @@ proxy:
 
 backend:
   baseUrl: ${APP_BASE_URL}
+  auth:
+    # crew#631 CP9: the prover's machine door. A static token from the Secret volume (never the
+    # environment: secrets-not-from-env-vars), minted by bin/idp-estate-seed as
+    # backstage-env.PROVER_TOKEN. Backstage refuses every catalogue read without it (no guest
+    # provider in production), which is the NEGATIVE control probes/backstage.py grades.
+    externalAccess:
+      - type: static
+        options:
+          token:
+            $file: /run/secrets/backstage/PROVER_TOKEN
+          subject: idp-prover
   listen:
     port: 3100
     # 0.0.0.0 INSIDE the container, 127.0.0.1 on the host. These are not in
