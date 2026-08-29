@@ -117,5 +117,8 @@ def test_store_reports_a_landed_row_and_blind_when_the_pod_answers_no(
 
 def test_the_prover_stores_the_verdict_after_the_artifact():
     wf = open(os.path.join(IDP, ".github/workflows/verdict-langfuse.yml")).read()
-    assert "bin/idp-verdict schema" in wf and "bin/idp-verdict store verdict.json" in wf
+    assert (
+        "bin/idp-verdict schema" in wf
+        and 'bin/idp-verdict store "$RUNNER_TEMP/verdict.json"' in wf
+    )
     assert wf.index("upload-artifact") < wf.index("bin/idp-verdict store")
