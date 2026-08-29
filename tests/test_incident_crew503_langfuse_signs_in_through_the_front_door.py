@@ -66,7 +66,7 @@ def test_langfuse_reads_the_client_from_the_vault_and_turns_the_password_form_of
     # false makes the token exchange fail whenever an id_token is returned, and drill run
     # 33256502843 measured exactly that (error=OAuthCallback on every click).
     assert data["AUTH_CUSTOM_ID_TOKEN"] == "true", (
-        "ID_TOKEN=false fails the callback when IDCS returns an id_token (vendor page, crew#626)"
+        "ID_TOKEN=false fails the callback when the identity domain returns an id_token (vendor page, crew#626)"
     )
     assert data["AUTH_DISABLE_USERNAME_PASSWORD"] == "true", (
         "a password form behind the front door is the second hop"

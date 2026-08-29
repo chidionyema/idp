@@ -51,7 +51,7 @@ spec:
 # crew#626 CP15: ID_TOKEN was set to false here to dodge that issuer string; the vendor page
 # (langfuse.com/self-hosting/security/authentication-and-sso, read 2026-08-29) says that
 # "switches the token exchange to the plain OAuth2 callback, which fails whenever the token
-# response contains an id_token", and IDCS always returns one for scope openid. The drill
+# response contains an id_token", and the identity domain always returns one for scope openid. The drill
 # reproduced it: every SSO click came back with error=OAuthCallback (run 33256502843). ID_TOKEN
 # stays at the vendor default (true); the profile comes from the id_token claims.
 # Username+password is disabled: the front door is the only way in, and the LANGFUSE_INIT_*
