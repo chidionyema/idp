@@ -7,6 +7,7 @@
 import { createFrontendModule } from '@backstage/frontend-plugin-api';
 import { SignInPageBlueprint } from '@backstage/plugin-app-react';
 import { ProxiedSignInPage } from '@backstage/core-components';
+import type { SignInPageProps } from '@backstage/core-plugin-api';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import { Button, Typography, makeStyles } from '@material-ui/core';
 import {
@@ -78,14 +79,23 @@ export const SignInUnavailable = ({ error }: { error?: Error }) => {
 
 const frontDoorSignInPage = SignInPageBlueprint.make({
   params: {
-    loader: async () => props =>
-      (
-        <ProxiedSignInPage
-          {...props}
-          provider="oauth2Proxy"
-          ErrorComponent={SignInUnavailable}
-        />
-      ),
+    loader: async () => {
+      // app.signIn.provider is set only by the gitignored app-config.local.yaml, for
+      // viewing the portal on a laptop with no front door (crew#627 CP8).
+      const Page = (props: SignInPageProps) => {
+        const provider =
+          useApi(configApiRef).getOptionalString('app.signIn.provider') ??
+          'oauth2Proxy';
+        return (
+          <ProxiedSignInPage
+            {...props}
+            provider={provider}
+            ErrorComponent={SignInUnavailable}
+          />
+        );
+      };
+      return Page;
+    },
   },
 });
 

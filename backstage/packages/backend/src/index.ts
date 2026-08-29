@@ -27,6 +27,10 @@ backend.add(import('@backstage/plugin-techdocs-backend'));
 backend.add(import('@backstage/plugin-auth-backend'));
 // The estate front door signs people in; Backstage trusts its headers (src/auth).
 backend.add(import('./auth'));
+// Local viewing only: app-config.local.yaml turns the guest provider on so the founder
+// sees the portal on his machine with no front door (crew#627 CP8). Production config
+// never lists it, so the module registers a provider nobody can reach there.
+backend.add(import('@backstage/plugin-auth-backend-module-guest-provider'));
 
 // catalog plugin
 backend.add(import('@backstage/plugin-catalog-backend'));
