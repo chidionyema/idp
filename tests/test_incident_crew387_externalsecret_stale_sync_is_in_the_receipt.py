@@ -5,6 +5,7 @@ Ready stays True and the Secret drifts from the vault. Rule: the ExternalSecret 
 last_sync (status.refreshTime) and is not-ready once that is older than twice its refreshInterval
 (floor 2h); the grader prints the row like any other not-ready Flux object. Rung 4, incident test."""
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -25,8 +26,8 @@ def _grade(receipt: str):
     from datetime import datetime, timedelta, timezone
     from email.utils import format_datetime
     py = GRADER.read_text().split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
-    head = json.dumps({"last-modified": format_datetime(datetime.now(timezone.utc) - timedelta(minutes=1))})
-    r = subprocess.run([sys.executable, "-c", py, head, receipt, "60", "--json"], capture_output=True, text=True, check=False)
+    head = json.dumps({"last-modified": format_datetime(datetime.now(timezone.utc) - timedelta(minutes=1)), "date": format_datetime(datetime.now(timezone.utc))})
+    r = subprocess.run([sys.executable, "-c", py, head, receipt, "60", "--json"], capture_output=True, text=True, check=False, env={**os.environ, "IDP_LIB": str(ROOT / "bin" / "lib")})
     return r.returncode, r.stdout
 
 
