@@ -26,6 +26,7 @@ on:
     paths:
       - .github/workflows/portability-drill.yml
       - bin/idp-portability-drill
+      - bin/idp-drill-wait
       - bin/idp-hydrate
       - drills/portability-floor.txt
       - platform/k3d/estate.yaml
@@ -58,8 +59,8 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REF: ${{ github.head_ref || github.ref_name }}
         run: bin/idp-hydrate
-      - name: wait for what can come up
-        run: kubectl wait kustomization --all -A --for=condition=Ready --timeout=600s || true
+      - name: wait only until the floor is met (crew#584 CP-A)
+        run: bin/idp-drill-wait
       - name: grade against the floor
         run: |
           set -euo pipefail
@@ -123,8 +124,8 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REF: ${{ github.head_ref || github.ref_name }}
         run: bin/idp-hydrate
-      - name: wait for what can come up
-        run: kubectl wait kustomization --all -A --for=condition=Ready --timeout=600s || true
+      - name: wait only until the floor is met (crew#584 CP-A)
+        run: bin/idp-drill-wait
       - name: grade against the floor, then the wall-clock and the cost of the run
         env:
           PRIVATE: ${{ github.event.repository.private }}

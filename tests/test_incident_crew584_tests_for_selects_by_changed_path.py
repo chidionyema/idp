@@ -7,6 +7,7 @@ The runs below are against a throwaway git repo with a fake python that records 
 """
 import os
 import pathlib
+import re
 import subprocess
 
 IDP = pathlib.Path(__file__).resolve().parents[1]
@@ -67,7 +68,10 @@ def test_sovereign_files_run_from_sovereign_and_root_files_from_root(tmp_path):
     out = subprocess.run([str(repo / "bin/idp-tests-for"), "--base", "HEAD"], text=True, capture_output=True,
                          env={**os.environ, "IDP_PY": str(fake)})
     assert out.returncode == 0, out.stderr
-    assert log.read_text().splitlines() == [
+    # crew#562: outside CI the script appends "-n <TESTS_FOR_WORKERS>" to cap pytest workers; strip it
+    # here since this test asserts selection (which files, which cwd), not worker count.
+    calls = [re.sub(r" -n \d+", "", l) for l in log.read_text().splitlines()]
+    assert calls == [
         f"{repo} -m pytest -q tests/test_router.py",
         f"{repo}/sovereign -m pytest -q tests/bdd/test_policy.py",
     ]
