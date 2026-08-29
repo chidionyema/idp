@@ -159,6 +159,10 @@ otlp_endpoints_by_workload() {
 # diagnose: read-only. Nodes, the system pods, every Flux source and Kustomization, the failing
 # HelmReleases and the last warnings. This is the first playbook of any incident.
 pb_diagnose() {
+  # K8sGPT already runs in the cluster (platform/healing/analyzer, backend = the estate LiteLLM):
+  # its findings are Result objects and until 2026-08-29 nothing read them (founder: "why are we
+  # not using it"). Printed first so the plain-English cause is above the raw state.
+  show k8sgpt-results sh -c "$K get results.core.k8sgpt.ai -A -o jsonpath='{range .items[*]}{.spec.kind}/{.metadata.namespace}/{.spec.name}{\"\n\"}{range .spec.error[*]}{\"  error: \"}{.text}{\"\n\"}{end}{\"  \"}{.spec.details}{\"\n\n\"}{end}'"
   show nodes $K get nodes -o wide
   # Run 33139372173: every red pod sat on one node and every failure was "the process is not
   # answering on its port" (clickhouse startup probe refused x202, signoz 500, langfuse P1001,
@@ -521,6 +525,14 @@ pb_namespace_unstick() {
   show kustomizations $K get kustomizations -A
 }
 
+# k8sgpt-analyze: print every K8sGPT finding (cause + fix in plain English) and force a fresh
+# scan by restarting the analyzer so the results are minutes old, not hours.
+pb_k8sgpt_analyze() {
+  step rescan $K rollout restart deployment -n healing -l app.kubernetes.io/name=k8sgpt
+  step rescan-ready $K rollout status deployment -n healing -l app.kubernetes.io/name=k8sgpt --timeout=3m
+  show k8sgpt-results sh -c "$K get results.core.k8sgpt.ai -A -o jsonpath='{range .items[*]}{.spec.kind}/{.metadata.namespace}/{.spec.name}{\"\n\"}{range .spec.error[*]}{\"  error: \"}{.text}{\"\n\"}{end}{\"  \"}{.spec.details}{\"\n\n\"}{end}'"
+}
+
 # node-drain: run 33144789785 + diagnose 33144117286 (crew#539 5448912676): every crashing
 # observability pod (clickhouse, langfuse-web, langfuse-worker) sat on the 6h-old spot replacement
 # 10.0.148.221, each timing out to a Service whose backend was on that same node, while the
@@ -730,7 +742,7 @@ pb_chi_resize() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry namespace-unstick dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll"; exit 0 ;;
+  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry namespace-unstick k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   dns-per-node) pb_dns_per_node ;;
@@ -740,6 +752,7 @@ case "${1:-}" in
   cilium-replace) pb_cilium_replace ;;
   helm-retry) pb_helm_retry ;;
   namespace-unstick) pb_namespace_unstick ;;
+  k8sgpt-analyze) pb_k8sgpt_analyze ;;
   catalogue-roll) pb_catalogue_roll ;;
   node-drain) pb_node_drain ;;
   node-uncordon) pb_node_uncordon ;;
