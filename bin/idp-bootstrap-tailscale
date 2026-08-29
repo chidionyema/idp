@@ -3,7 +3,7 @@
 #   bin/idp-bootstrap-tailscale              mint the operator OAuth client through the API and write vault entry `tailscale-operator`
 #   bin/idp-bootstrap-tailscale --check      exit 0 when the vault entry still exchanges for a token, 1 when it does not
 #   bin/idp-bootstrap-tailscale --rotate     mint a new client even though the vault entry already works, and delete the old one
-#   bin/idp-bootstrap-tailscale --seed       the one human step, once: read the seed client from a hidden prompt into vault `tailscale-seed`
+#   bin/idp-bootstrap-tailscale --seed       the one human step, once: Chrome opens, you click the console wizard, the script reads the seed off the page into vault `tailscale-seed`
 #   bin/idp-bootstrap-tailscale --federated-check   in GitHub Actions: exchange the runner OIDC token only, print ok or the full refusal, touch nothing
 # In GitHub Actions with TAILSCALE_FEDERATED_CLIENT_ID set (estate-config), no seed is needed: the
 # runner's OIDC token is exchanged for a Tailscale token (kb/1581) and the operator client is minted
@@ -96,15 +96,59 @@ vault_write() { # <entry> <client_id> <client_secret>, through a file the vault 
   ESTATE_ENV_FILE="$P/env" "$VAULT_PUT" "$1" client_id=V_client_id client_secret=V_client_secret
 }
 
-# --seed: the one human step. The seed client is made in the console with exactly one scope,
-# `oauth_keys` (write), and pasted here into a hidden prompt; it is never printed and never used
-# for anything but minting. FOUNDER ACTION wording per LAW 47.
+# --seed: the one human step, and the hand never touches the secret (root-trust standard, crew#66, 2026-08-28:
+# "the founder will never copy-paste a secret"). Real Chrome opens on the estate's own profile (Google SSO refuses
+# Playwright's Chromium, idp#619), the founder completes SSO if asked and makes the console's own wizard clicks
+# (a vendor console is not an API: the driver drives nothing, so nothing but two regexes can drift, 30bd2bf0),
+# and this process reads the generated pair off the page, proves it against the API and writes the vault. Restored
+# 2026-08-29 after 00cc57d9 replaced it with a paste prompt, which the founder refused five times.
 if [ "$MODE" = --seed ]; then
-  say "" seed "FOUNDER ACTION: at $CONSOLE/add choose OAuth, description estateseed, tab Keys: tick OAuth keys WRITE, nothing else, Generate credential; then paste below"
-  read -r -p 'seed client id: ' cid; read -r -s -p 'seed client secret (hidden): ' csec; echo
-  token_for "$cid" "$csec" | jq -e '.access_token' >/dev/null || fail seed "the pasted seed does not exchange for a token"
+  HOME_DIR=${ESTATE_HOME:-$HOME/.estate}; PROFILE="$HOME_DIR/tailscale-browser"; VENV="$HOME_DIR/bootstrap-venv"
+  mkdir -p "$HOME_DIR"; chmod 700 "$HOME_DIR"
+  if ! "$VENV/bin/python" -c 'import playwright' >/dev/null 2>&1; then
+    say "" driver "installing playwright into $VENV (once)"
+    python3 -m venv "$VENV" >/dev/null && "$VENV/bin/pip" install -q playwright >/dev/null
+  fi
+  say "" console "Chrome opens on $CONSOLE; if Tailscale asks you to sign in, complete SSO. Then: OAuth, a description of letters and digits, Continue, tab Keys: tick OAuth keys WRITE only, Generate credential. This script reads the result itself."
+  "$VENV/bin/python" - "$CONSOLE" "$PROFILE" "$P/cred" <<'PY'
+import re, sys, time
+from playwright.sync_api import sync_playwright
+console, profile, out = sys.argv[1:4]
+def step(name): print(f"        step    {name}", flush=True)
+with sync_playwright() as p:
+    ctx = p.chromium.launch_persistent_context(profile, headless=False, viewport={"width": 1280, "height": 900},
+                                               channel="chrome", ignore_default_args=["--enable-automation"],
+                                               args=["--disable-blink-features=AutomationControlled"])
+    page = ctx.pages[0] if ctx.pages else ctx.new_page()
+    page.goto(console, wait_until="domcontentloaded"); step("console opened")
+    heading = page.get_by_role("heading", name=re.compile(r"trust credentials|oauth clients", re.I))
+    deadline = time.time() + 300
+    while time.time() < deadline:
+        if heading.count() and heading.first.is_visible(): break
+        time.sleep(2)
+    else:
+        sys.exit("FAIL    console   no Trust credentials page after 5 minutes; SSO not completed")
+    step("signed in")
+    page.goto(console.rstrip("/") + "/add", wait_until="domcontentloaded")
+    deadline = time.time() + 600; cid = sec = None
+    while time.time() < deadline:
+        try: text = page.inner_text("body")
+        except Exception: text = ""
+        cid = re.search(r"\b(k[A-Za-z0-9]{10,})\b", text); sec = re.search(r"\b(tskey-client-[A-Za-z0-9-]+)\b", text)
+        if cid and sec: break
+        time.sleep(2)
+    else:
+        sys.exit("FAIL    console   no generated client on the page after 10 minutes; nothing written")
+    step("generated (read from the page, never shown)")
+    with open(out, "w") as f: f.write(cid.group(1) + "\n" + sec.group(1) + "\n")
+    done = page.get_by_role("button", name=re.compile(r"^(done|close)$", re.I))
+    if done.count(): done.first.click()
+    ctx.close()
+PY
+  cid=$(sed -n 1p "$P/cred"); csec=$(sed -n 2p "$P/cred"); [ -n "$cid" ] && [ -n "$csec" ] || fail console "driver produced no credential"
+  token_for "$cid" "$csec" | jq -e '.access_token' >/dev/null || fail seed "the generated seed does not exchange for a token"
   vault_write "$SEED" "$cid" "$csec"; unset cid csec
-  say ok "$SEED" "written; run $0 to mint the operator client"
+  say ok "$SEED" "written from the page; run $0 to mint the operator client and register the federated identity"
   exit 0
 fi
 
