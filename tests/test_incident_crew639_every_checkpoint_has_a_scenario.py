@@ -32,9 +32,13 @@ def test_every_feature_file_has_at_least_one_scenario_with_a_then():
 
 
 def test_the_eight_acceptance_tests_of_section_11_are_scenarios():
-    text = "\n".join((PROSE / f"messaging-cp{n}.feature").read_text() for n in CHECKPOINTS)
+    text = "\n".join(
+        (PROSE / f"messaging-cp{n}.feature").read_text() for n in CHECKPOINTS
+    )
     found = {int(m) for m in re.findall(r"§11 test (\d)", text)}
-    assert found == set(range(1, 9)), f"§11 tests without a scenario: {sorted(set(range(1, 9)) - found)}"
+    assert found == set(range(1, 9)), (
+        f"§11 tests without a scenario: {sorted(set(range(1, 9)) - found)}"
+    )
 
 
 def test_the_adr_records_the_eight_decisions_and_the_r1_ruling():
