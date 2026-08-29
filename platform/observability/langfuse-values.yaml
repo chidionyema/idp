@@ -54,6 +54,23 @@ langfuse:
       limits: { cpu: 1000m, memory: 2Gi }
     pod:
       labels: { idp.platform/capacity-approved: "true" }   # 1000m Guaranteed, measured (crew#626 CP15, run 33262424618)
+    # crew#626 CP16 (diagnose run 33265823704): at one full core the web pod still never answered
+    # /api/public/ready inside the chart's 50 s window (delay 20 s + 3 x 10 s); the log ends at
+    # "Applying ClickHouse compatibility settings" and the kubelet killed it with exit 143, 35 times
+    # in 109 min, so every drill met the sign-in page with error=OAuthCallback. Boot is I/O bound on
+    # ClickHouse, not CPU: give it 240 s (delay 60 s + 18 x 10 s) before liveness may kill it.
+    livenessProbe:
+      path: /api/public/health
+      initialDelaySeconds: 60
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 18
+    readinessProbe:
+      path: /api/public/ready
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 21
   worker:
     replicas: 1
     resources:
