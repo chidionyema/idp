@@ -40,7 +40,10 @@ concurrency:
   group: portability-drill-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  fast-gate:   # crew#584 CP-C: lint red never boots this workflow's heavy jobs
+    uses: ./.github/workflows/fast-gate.yml
   hydrate:
+    needs: fast-gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -76,6 +79,7 @@ jobs:
           path: receipt/
 
   k3s:
+    needs: fast-gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
