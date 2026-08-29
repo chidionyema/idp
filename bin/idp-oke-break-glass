@@ -252,6 +252,16 @@ pb_diagnose() {
   # the rule off, and bin/idp-kyverno-render passes the same manifest locally, so the row that names
   # the policy the cluster holds is the only way to see the drift. Full messages, admission only.
   show admission-denials sh -c "$K get events -A --field-selector reason=FailedCreate -o jsonpath='{range .items[*]}{.lastTimestamp} {.involvedObject.namespace}/{.involvedObject.name}: {.message}{\"\\n\"}{end}' 2>/dev/null | grep -i 'admission webhook' | tail -12; true"
+  # 2026-08-29 (run 33229461240): a claim that names no class gets the cluster default injected
+  # before Kyverno sees it; a provider-named default made every new claim fail. Both facts are
+  # read here so the next such outage is one diagnose run, not ninety minutes.
+  show storage-classes $K get storageclasses
+  show claims-not-bound sh -c "$K get pvc -A --field-selector=status.phase!=Bound 2>/dev/null; true"
+  # The audit of the rules by the cluster: Kyverno scans every existing object in the background and
+  # records which rule would refuse it. A rule with fails here is a rule that judges reality, not
+  # what we wrote (founder, 2026-08-29: "get all the regexes and audit").
+  show policy-report-fails sh -c "$K get policyreports,clusterpolicyreports -A -o json 2>/dev/null | jq -r '[.items[].results[]? | select(.result==\"fail\") | \"\\(.policy)/\\(.rule)\"] | group_by(.) | map(\"\\(length)\\t\\(.[0])\") | .[]' | sort -rn | head -40; true"
+  show admission-denials-live sh -c "$K get admissionreports -A -o json 2>/dev/null | jq -r '[.items[].spec.results[]? | select(.result==\"fail\") | \"\\(.policy)/\\(.rule)\"] | group_by(.) | map(\"\\(length)\\t\\(.[0])\") | .[]' | sort -rn | head -20; true"
   # --- telemetry (crew#483): run 33156980292 (08:45Z) printed pods_running=80 pods_seen=1
   # missing=80 backend_errors={} and nothing above ever looks at the collector's own words -- the
   # pod-not-ready branch above only tails a pod when it is unready, and both telemetry components
