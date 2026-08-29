@@ -13,6 +13,10 @@ import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP_CONFIG = ROOT / "backstage" / "app-config.yaml"
+PREDICATES_PKG = ROOT / "backstage" / "node_modules" / "@backstage" / "filter-predicates" / "package.json"
+# The port below was diffed against this version's evaluate.esm.js and getJsonValueAtPath.esm.js.
+# A Backstage bump turns this red on purpose: re-diff the port, then move the pin.
+PORTED_FROM = "0.1.4"
 FOUNDER = ROOT / "backstage" / "founder" / "catalog-info.yaml"
 
 
@@ -30,21 +34,28 @@ def _at(value, path):
     return None
 
 
+def _eq(a, b):
+    """valuesAreEqual: strings compare case-insensitively (kind: component matches Component)."""
+    if isinstance(a, str) and isinstance(b, str):
+        return a.upper() == b.upper()
+    return a == b
+
+
 def _value(flt, value):
     if not isinstance(flt, dict):
-        return value == flt
+        return _eq(value, flt)
     if "$contains" in flt:
         return isinstance(value, list) and any(_pred(flt["$contains"], v) for v in value)
     if "$exists" in flt:
         return (value is not None) if flt["$exists"] else (value is None)
     if "$in" in flt:
-        return value in flt["$in"]
+        return any(_eq(value, v) for v in flt["$in"])
     return False
 
 
 def _pred(pred, value):
     if not isinstance(pred, dict):
-        return value == pred
+        return _eq(value, pred)
     if "$all" in pred:
         return all(_pred(f, value) for f in pred["$all"])
     if "$any" in pred:
@@ -85,6 +96,16 @@ def test_apis_tab_shows_only_where_an_api_relation_exists():
     assert not [d["metadata"]["name"] for d in surfaces if _pred(cfg["filter"], d)]
     with_api = dict(surfaces[0], relations=[{"type": "providesApi", "targetRef": "api:default/x"}])
     assert _pred(cfg["filter"], with_api)
+    # The plugin's own kind guard is kept: config.filter replaces, it does not AND (14ed6c8b review).
+    assert not _pred(cfg["filter"], dict(with_api, kind="Resource"))
+
+
+def test_the_port_is_pinned_to_the_installed_filter_predicates_version():
+    import json
+    if not PREDICATES_PKG.exists():
+        import pytest
+        pytest.skip("backstage/node_modules not installed here; CI's backstage job has it")
+    assert json.loads(PREDICATES_PKG.read_text())["version"] == PORTED_FROM
 
 
 def test_the_port_matches_the_library_on_dotted_annotation_keys():

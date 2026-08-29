@@ -30,9 +30,12 @@ app:
     - entity-content:api-docs/apis:
         config:
           filter:
-            $any:
-              - relations: { $contains: { type: providesApi } }
-              - relations: { $contains: { type: consumesApi } }
+            # config.filter replaces the plugin's own filter (kind: component), so it is kept here.
+            $all:
+              - kind: component
+              - $any:
+                  - relations: { $contains: { type: providesApi } }
+                  - relations: { $contains: { type: consumesApi } }
 
 organization:
   name: Mumchimp
