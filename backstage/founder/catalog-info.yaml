@@ -1012,18 +1012,15 @@ kind: Component
 metadata:
   name: founder-private-network
   title: "Private network (Tailscale)"
-  description: "Tailscale joins the cluster, the estate Mac and your phone into one private network. Its admin screen is the vendor console."
+  description: "Tailscale joins the cluster, the estate Mac and your phone into one private network. Its admin screen is the vendor's console, not a door of ours yet; the operator manifest is the truth of what runs."
   annotations:
     github.com/project-slug: chidionyema/idp
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Kubernetes tooling"
     idp/updated-by: "Flux from platform/tailscale"
-  tags: [founder, kubernetes, screen]
+  tags: [founder, kubernetes, screen, no-address]
   links:
-    - title: "Tailscale admin console"
-      url: "https://login.tailscale.com/admin/machines"
-      icon: dashboard
-    - title: "Operator manifest"
+    - title: "Operator manifest (no door of ours yet)"
       url: "https://github.com/chidionyema/idp/blob/main/platform/tailscale/operator.yaml"
       icon: github
 spec:

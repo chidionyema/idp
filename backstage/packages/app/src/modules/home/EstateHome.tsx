@@ -225,7 +225,6 @@ const useStyles = makeStyles(theme => ({
     fontSize: 13,
     color: theme.palette.text.secondary,
     margin: 0,
-    flex: 1,
     display: '-webkit-box',
     WebkitLineClamp: 4,
     WebkitBoxOrient: 'vertical',
