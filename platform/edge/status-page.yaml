@@ -58,7 +58,6 @@ spec:
       labels:
         app.kubernetes.io/name: status-page
     spec:
-      priorityClassName: infrastructure-critical
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:

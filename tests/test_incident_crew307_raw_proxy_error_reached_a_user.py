@@ -69,7 +69,11 @@ def test_the_status_page_serves_every_status_the_middleware_rewrites():
         assert "starting up" in cm["data"][f"{code}.html"]
     dep = next(d for d in docs if d["kind"] == "Deployment")
     assert dep["spec"]["replicas"] >= 2
-    assert dep["spec"]["template"]["spec"]["priorityClassName"] == "infrastructure-critical"
+    # crew#539 CP9 (founder, "applied strictly"): infrastructure-critical is the radio-room set
+    # only -- traefik, langfuse-web/worker, agentgateway, hermes-agent-gateway, telemetry-coverage,
+    # cluster-state (test_incident_crew539_radio_room_survives_node_swap.py). The status page is
+    # not the radio room; its availability here comes from replicas >= 2 and pod anti-affinity.
+    assert dep["spec"]["template"]["spec"].get("priorityClassName") != "infrastructure-critical"
     assert "status-page.yaml" in (ROOT / "platform/edge/kustomization.yaml").read_text()
 
 
