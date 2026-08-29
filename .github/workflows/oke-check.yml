@@ -154,7 +154,8 @@ jobs:
       # master key, the Postgres passwords, the store's JWT signing key and internal keys, the MCP
       # gateway key, the cookie secret, Backstage's env, and the router keys hindsight and hermes
       # hold -- is minted here by the machine identity and kept when the vault already holds a
-      # well-formed value. Vendor keys are bin/idp-bootstrap-vendors', never a SEED_* secret (crew#579).
+      # well-formed value. Vendor keys are bin/idp-bootstrap-vendors' (crew#579): one SEED_<VENDOR>_API_KEY
+      # root each, set once by the founder (R52), read by that step below and never by this one.
       - name: bin/idp-estate-seed (crew#66 root trust)
         if: ${{ always() && inputs.mode == 'apply' }}
         env:
@@ -242,6 +243,28 @@ jobs:
           OCI_CLUSTER_NAME: ${{ vars.OCI_CLUSTER_NAME || 'estate' }}
         run: |
           bin/idp-autoscaler-seed || { rc=$?; [ "$rc" = 2 ] && echo "BLIND   oke-autoscaler   no ACTIVE pool yet; the vault keeps what it holds" || exit "$rc"; }
+
+      # R52 (founder 2026-08-29): every vendor key is one root made once and set as a named repository
+      # secret; this step proves each against the vendor's API and writes the vault. A vendor with no
+      # secret whose vault key does not verify is BLIND, never a paste and never a browser.
+      - name: bin/idp-bootstrap-vendors (crew#579, R52)
+        if: ${{ always() && inputs.mode == 'apply' }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          SEED_ANTHROPIC_API_KEY: ${{ secrets.SEED_ANTHROPIC_API_KEY }}
+          SEED_OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
+          SEED_DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
+          SEED_MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
+          SEED_GROQ_API_KEY: ${{ secrets.SEED_GROQ_API_KEY }}
+          SEED_GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
+          SEED_EXA_API_KEY: ${{ secrets.SEED_EXA_API_KEY }}
+          SEED_TELEGRAM_HERMES_BOT_TOKEN: ${{ secrets.SEED_TELEGRAM_HERMES_BOT_TOKEN }}
+          SEED_TELEGRAM_ALERTS_BOT_TOKEN: ${{ secrets.SEED_TELEGRAM_ALERTS_BOT_TOKEN }}
+          SEED_STRIPE_SECRET_KEY: ${{ secrets.SEED_STRIPE_SECRET_KEY }}
+        run: |
+          bin/idp-bootstrap-vendors || { rc=$?; [ "$rc" = 2 ] || exit "$rc"; }
 
   # crew#292 CP4: the in-cluster chaos experiment leaves a receipt in Object Storage; this reads
   # it with the same machine identity and grades its age. A runner has no kube path, so the
