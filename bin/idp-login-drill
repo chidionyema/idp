@@ -208,7 +208,10 @@ with sync_playwright() as p:
     try:
         # The shell is the estate's own nav (crew#459, data-testid estate-nav); the word
         # "Catalog" is the vendor sidebar the build before it rendered.
-        page.locator("[data-testid='estate-nav']").or_(page.locator("text=Catalog")).first.wait_for(
+        # Run 33251956360: the page drew every word and the drill still said "no nav". The
+        # wrapper div holds only a fixed-position sidebar, so its own box is empty and Playwright
+        # grades it invisible. Wait on a link inside it: a thing with a box a person can click.
+        page.locator("[data-testid='estate-nav'] a").or_(page.locator("text=Catalog")).first.wait_for(
             state="visible", timeout=TIMEOUT
         )
     except PWError:

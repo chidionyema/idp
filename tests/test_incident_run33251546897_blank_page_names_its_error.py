@@ -37,6 +37,15 @@ def test_the_blank_page_verdict_carries_the_pages_own_words():
     assert "(empty body)" in branch
 
 
+def test_the_shell_wait_lands_on_an_element_with_a_box():
+    """Run 33251956360: the wrapper div around a fixed sidebar has an empty box, so
+    `[data-testid='estate-nav']` alone is never "visible" to Playwright even when every
+    word of the page is drawn. The wait must target a link inside it."""
+    text = DRILL.read_text()
+    assert "[data-testid='estate-nav'] a" in text
+    assert "locator(\"[data-testid='estate-nav']\")" not in text
+
+
 def test_the_blank_page_is_photographed_before_the_fail():
     branch = _blank_page_branch()
     assert "page.screenshot" in branch and "DRILL_SHOT" in branch
