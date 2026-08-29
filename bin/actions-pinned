@@ -2,15 +2,29 @@
 # actions-pinned [DIR]: every `uses:` in .github/workflows is pinned to a 40-hex
 # commit SHA. A tag can be moved by the action's owner after review (tj-actions,
 # 2025-03); a SHA cannot. Local actions (./path) and docker:// refs are exempt.
+set -euo pipefail
 set -u
+trap 'echo "$0: exit $?" >&2' EXIT
 DIR="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
-total=0; bad=0
+total=0
+bad=0
 while IFS= read -r line; do
-  ref="${line#*uses:}"; ref="${ref//[[:space:]]/}"; ref="${ref%%#*}"
-  [[ "$ref" == ./* || "$ref" == docker://* ]] && continue
-  total=$((total+1))
-  [[ "$ref" =~ @[0-9a-f]{40}$ ]] || { bad=$((bad+1)); printf '      %s\n' "$ref"; }
+	ref="${line#*uses:}"
+	ref="${ref//[[:space:]]/}"
+	ref="${ref%%#*}"
+	[[ "$ref" == ./* || "$ref" == docker://* ]] && continue
+	total=$((total + 1))
+	[[ "$ref" =~ @[0-9a-f]{40}$ ]] || {
+		bad=$((bad + 1))
+		printf '      %s\n' "$ref"
+	}
 done < <(grep -rhE '^\s*-?\s*uses:' "$DIR/.github/workflows" 2>/dev/null)
-if (( total == 0 )); then echo "BLIND actions-pinned no uses: found under $DIR/.github/workflows; nothing graded"; exit 2; fi
-if (( bad > 0 )); then echo "FAIL  actions-pinned $bad of $total uses: not pinned to a commit SHA"; exit 1; fi
+if ((total == 0)); then
+	echo "BLIND actions-pinned no uses: found under $DIR/.github/workflows; nothing graded"
+	exit 2
+fi
+if ((bad > 0)); then
+	echo "FAIL  actions-pinned $bad of $total uses: not pinned to a commit SHA"
+	exit 1
+fi
 echo "ok    actions-pinned $total of $total pinned"

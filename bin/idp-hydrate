@@ -9,6 +9,7 @@
 # Env: SHA (commit to pin), REF (branch that holds it); GITHUB_REPOSITORY (owner/repo) as GitHub
 # sets it. Nothing here names a cloud, a host or a home directory (LAW 46).
 set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 : "${SHA:?commit to pin}" "${REF:?branch holding SHA}" "${GITHUB_REPOSITORY:?owner/repo}"
 here=$(cd "$(dirname "$0")/.." && pwd)
 flux install --components-extra=image-reflector-controller,image-automation-controller

@@ -15,27 +15,38 @@
 # reached; the why names bin/idp-oci-login when the session is the gap. kubectl's own exit code
 # otherwise. rule-guard (claude-guards policy/command.rego, bare_kubectl) refuses bare kubectl and
 # names this file.
-set -uo pipefail
+# No diagnostic EXIT trap here (crew#620): this script's own grading line is the last line of its
+# output; a trap-appended line would out-rank it for a caller that takes tail -1.
+set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
-blind() { printf 'BLIND   kube  %s\n' "$1" >&2; exit 2; }
+blind() {
+	printf 'BLIND   kube  %s\n' "$1" >&2
+	exit 2
+}
 STATE="${IDP_KUBE_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/idp}"
 KC="$STATE/kubeconfig"
 MAX_MIN="${IDP_KUBE_MAX_AGE_MIN:-30}"
 refresh=0
-if [ "${1:-}" = "--refresh" ]; then refresh=1; shift; fi
+if [ "${1:-}" = "--refresh" ]; then
+	refresh=1
+	shift
+fi
 command -v kubectl >/dev/null || blind "kubectl is not installed"
 fresh=0
 if [ "$refresh" -eq 0 ] && [ -f "$KC" ] && [ -n "$(find "$KC" -mmin "-$MAX_MIN" 2>/dev/null)" ]; then fresh=1; fi
 if [ "$fresh" -eq 0 ]; then
-  cl=$("$IDP/bin/idp-cloud" cluster list 2>&1) || blind "cluster list failed: $(printf '%s' "$cl" | tail -1 | cut -c1-160) -- refresh the session with bin/idp-oci-login"
-  # crew#345: the cluster is picked by name (OCI_CLUSTER_NAME, default estate), never by position;
-  # a compartment with several ACTIVE clusters made NR==1 mint a kubeconfig for the wrong one.
-  want="${OCI_CLUSTER_NAME:-estate}"
-  cid=$(printf '%s\n' "$cl" | awk -v n="$want" '$1==n{print $2; exit}')
-  [ -n "$cid" ] || blind "no ACTIVE cluster named $want; ACTIVE: $(printf '%s\n' "$cl" | awk '{print $1}' | paste -sd, -) -- set OCI_CLUSTER_NAME"
-  mkdir -p "$STATE" && chmod 700 "$STATE"
-  out=$("$IDP/bin/idp-cloud" cluster kubeconfig "$cid" --file "$KC" 2>&1) || blind "create-kubeconfig failed ($want): $(printf '%s' "$out" | tail -1 | sed -E 's/.*"code": "([^"]+)".*"message": "([^"]+)".*/\1: \2/' | cut -c1-240)"
-  chmod 600 "$KC"
+	cl=$("$IDP/bin/idp-cloud" cluster list 2>&1) || blind "cluster list failed: $(printf '%s' "$cl" | tail -1 | cut -c1-160) -- refresh the session with bin/idp-oci-login"
+	# crew#345: the cluster is picked by name (OCI_CLUSTER_NAME, default estate), never by position;
+	# a compartment with several ACTIVE clusters made NR==1 mint a kubeconfig for the wrong one.
+	want="${OCI_CLUSTER_NAME:-estate}"
+	cid=$(printf '%s\n' "$cl" | awk -v n="$want" '$1==n{print $2; exit}')
+	[ -n "$cid" ] || blind "no ACTIVE cluster named $want; ACTIVE: $(printf '%s\n' "$cl" | awk '{print $1}' | paste -sd, -) -- set OCI_CLUSTER_NAME"
+	mkdir -p "$STATE" && chmod 700 "$STATE"
+	out=$("$IDP/bin/idp-cloud" cluster kubeconfig "$cid" --file "$KC" 2>&1) || blind "create-kubeconfig failed ($want): $(printf '%s' "$out" | tail -1 | sed -E 's/.*"code": "([^"]+)".*"message": "([^"]+)".*/\1: \2/' | cut -c1-240)"
+	chmod 600 "$KC"
 fi
-if [ $# -eq 0 ]; then printf 'ok      kube  kubeconfig %s\n' "$KC"; exit 0; fi
+if [ $# -eq 0 ]; then
+	printf 'ok      kube  kubeconfig %s\n' "$KC"
+	exit 0
+fi
 KUBECONFIG="$KC" exec kubectl "$@"

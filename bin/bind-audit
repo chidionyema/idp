@@ -33,9 +33,9 @@
 #
 # Exit codes: 0 clean, 1 an unknown non-loopback listener, 2 the audit could not
 # see (LAW: a guard that loses its evidence reports BLIND, never a verdict).
+trap 'echo "$0: exit $?" >&2' EXIT
 
-set -uo pipefail
-
+set -euo pipefail
 # ---------------------------------------------------------------------------
 # The allow-list. One row per thing that is allowed to face the network, with
 # the reason it is allowed. A listener that matches no row FAILS -- there is no
@@ -47,25 +47,25 @@ set -uo pipefail
 # to nine characters, so "ControlCe" and not "ControlCenter".
 # ---------------------------------------------------------------------------
 ALLOW=(
-  "rapportd|49248|macOS Continuity/Handoff. Apple-owned, not ours to move; turning it off costs the founder Handoff between his own devices."
-  "ControlCe|7000|macOS AirPlay Receiver. Apple-owned. Disabled under System Settings > General > AirDrop & Handoff if it is ever unwanted."
-  "ControlCe|5000|macOS AirPlay Receiver, second port. Same owner as 7000."
-  "limactl|53|colima's lima hostagent DNS resolver for the Docker VM. Removing it breaks name resolution inside every container on this machine."
-  "ssh|8080|prospector-edge, the gateway. R20 names the gateway as the one process allowed a non-loopback address. Published through colima's ssh mux, which is why the COMMAND column says ssh and not docker."
-  "ssh|8443|prospector-edge TLS, same gateway as 8080."
+	"rapportd|49248|macOS Continuity/Handoff. Apple-owned, not ours to move; turning it off costs the founder Handoff between his own devices."
+	"ControlCe|7000|macOS AirPlay Receiver. Apple-owned. Disabled under System Settings > General > AirDrop & Handoff if it is ever unwanted."
+	"ControlCe|5000|macOS AirPlay Receiver, second port. Same owner as 7000."
+	"limactl|53|colima's lima hostagent DNS resolver for the Docker VM. Removing it breaks name resolution inside every container on this machine."
+	"ssh|8080|prospector-edge, the gateway. R20 names the gateway as the one process allowed a non-loopback address. Published through colima's ssh mux, which is why the COMMAND column says ssh and not docker."
+	"ssh|8443|prospector-edge TLS, same gateway as 8080."
 )
 
 selftest_table() {
-  # A synthetic lsof table: one row that must pass, one that must fail.
-  # Format matches the columns this script reads: COMMAND PID USER FD TYPE DEV SIZE NODE NAME
-  cat <<'EOF'
+	# A synthetic lsof table: one row that must pass, one that must fail.
+	# Format matches the columns this script reads: COMMAND PID USER FD TYPE DEV SIZE NODE NAME
+	cat <<'EOF'
 rapportd    447 chidionyema    8u  IPv4 0x0 0t0 TCP *:49248 (LISTEN)
 k3d-proxy 99999 chidionyema    9u  IPv4 0x0 0t0 TCP *:53145 (LISTEN)
 EOF
 }
 
 real_table() {
-  lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null
+	lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null
 }
 
 # Reads an lsof table on stdin and prints one line per non-loopback listener,
@@ -74,32 +74,35 @@ real_table() {
 # which puts it in a subshell where an assignment is lost -- that bug made the
 # first version of this script exit 1 on a clean machine.
 audit() {
-  local line cmd addr port hit row acmd aport why
-  while read -r line; do
-    # lsof's own header, blank lines, and the '#' comments the recorded fixture
-    # tables carry. Without the '#' arm a fixture's explanatory prose parsed as
-    # five listeners called "#", and the good fixture failed its own check.
-    case "$line" in COMMAND*|'#'*|"") continue ;; esac
-    cmd=$(printf '%s\n' "$line" | awk '{print $1}')
-    addr=$(printf '%s\n' "$line" | awk '{print $9}')
-    # Loopback is the compliant case and is not reported.
-    case "$addr" in
-      127.0.0.1:*|'[::1]:'*) continue ;;
-    esac
-    port=${addr##*:}
-    hit=""
-    for row in "${ALLOW[@]}"; do
-      acmd=${row%%|*}
-      aport=$(printf '%s\n' "$row" | cut -d'|' -f2)
-      why=${row#*|*|}
-      if [ "$cmd" = "$acmd" ] && [ "$port" = "$aport" ]; then hit="$why"; break; fi
-    done
-    if [ -n "$hit" ]; then
-      printf 'OK       %-12s %-22s %s\n' "$cmd" "$addr" "$hit"
-    else
-      printf 'UNKNOWN  %-12s %-22s not on the allow-list. Bind it to 127.0.0.1, or add a row to bin/bind-audit saying why it may face the network.\n' "$cmd" "$addr"
-    fi
-  done
+	local line cmd addr port hit row acmd aport why
+	while read -r line; do
+		# lsof's own header, blank lines, and the '#' comments the recorded fixture
+		# tables carry. Without the '#' arm a fixture's explanatory prose parsed as
+		# five listeners called "#", and the good fixture failed its own check.
+		case "$line" in COMMAND* | '#'* | "") continue ;; esac
+		cmd=$(printf '%s\n' "$line" | awk '{print $1}')
+		addr=$(printf '%s\n' "$line" | awk '{print $9}')
+		# Loopback is the compliant case and is not reported.
+		case "$addr" in
+		127.0.0.1:* | '[::1]:'*) continue ;;
+		esac
+		port=${addr##*:}
+		hit=""
+		for row in "${ALLOW[@]}"; do
+			acmd=${row%%|*}
+			aport=$(printf '%s\n' "$row" | cut -d'|' -f2)
+			why=${row#*|*|}
+			if [ "$cmd" = "$acmd" ] && [ "$port" = "$aport" ]; then
+				hit="$why"
+				break
+			fi
+		done
+		if [ -n "$hit" ]; then
+			printf 'OK       %-12s %-22s %s\n' "$cmd" "$addr" "$hit"
+		else
+			printf 'UNKNOWN  %-12s %-22s not on the allow-list. Bind it to 127.0.0.1, or add a row to bin/bind-audit saying why it may face the network.\n' "$cmd" "$addr"
+		fi
+	done
 }
 
 # lsof prints one row per file descriptor, so a process listening on both IPv4
@@ -107,38 +110,43 @@ audit() {
 dedupe() { awk '!seen[$1 FS $2 FS $3]++'; }
 
 if [ "${1:-}" = "--selftest" ]; then
-  echo "== selftest: the check must REFUSE an unknown bind =="
-  out=$(selftest_table | audit | dedupe)
-  printf '%s\n' "$out"
-  n=$(printf '%s\n' "$out" | grep -c '^UNKNOWN')
-  if [ "$((n + 0))" -ne 1 ]; then
-    echo "SELFTEST FAILED: expected exactly 1 unknown, got $n"; exit 1
-  fi
-  echo "refused 1 of 2 rows, as required"
-  echo
-  echo "== selftest: the check must PERMIT a known bind =="
-  # A guard only ever seen refusing has never been shown to permit (LAW 38).
-  out=$(selftest_table | grep rapportd | audit | dedupe)
-  printf '%s\n' "$out"
-  n=$(printf '%s\n' "$out" | grep -c '^UNKNOWN')
-  if [ "$((n + 0))" -ne 0 ]; then
-    echo "SELFTEST FAILED: allow-listed row was refused"; exit 1
-  fi
-  echo "permitted 1 of 1 rows, as required"
-  echo
-  echo "SELFTEST PASS -- the check refuses and permits"
-  exit 0
+	echo "== selftest: the check must REFUSE an unknown bind =="
+	out=$(selftest_table | audit | dedupe)
+	printf '%s\n' "$out"
+	n=$(printf '%s\n' "$out" | grep -c '^UNKNOWN')
+	if [ "$((n + 0))" -ne 1 ]; then
+		echo "SELFTEST FAILED: expected exactly 1 unknown, got $n"
+		exit 1
+	fi
+	echo "refused 1 of 2 rows, as required"
+	echo
+	echo "== selftest: the check must PERMIT a known bind =="
+	# A guard only ever seen refusing has never been shown to permit (LAW 38).
+	out=$(selftest_table | grep rapportd | audit | dedupe)
+	printf '%s\n' "$out"
+	n=$(printf '%s\n' "$out" | grep -c '^UNKNOWN')
+	if [ "$((n + 0))" -ne 0 ]; then
+		echo "SELFTEST FAILED: allow-listed row was refused"
+		exit 1
+	fi
+	echo "permitted 1 of 1 rows, as required"
+	echo
+	echo "SELFTEST PASS -- the check refuses and permits"
+	exit 0
 fi
 
 if [ "${1:-}" = "--table" ]; then
-  [ -f "${2:-}" ] || { echo "BLIND: no such table file: ${2:-}" >&2; exit 2; }
-  TABLE=$(cat "$2")
+	[ -f "${2:-}" ] || {
+		echo "BLIND: no such table file: ${2:-}" >&2
+		exit 2
+	}
+	TABLE=$(cat "$2")
 else
-  TABLE=$(real_table)
+	TABLE=$(real_table)
 fi
 if [ -z "$TABLE" ]; then
-  echo "BLIND: lsof returned nothing. This is not a pass; the audit could not see." >&2
-  exit 2
+	echo "BLIND: lsof returned nothing. This is not a pass; the audit could not see." >&2
+	exit 2
 fi
 
 echo "== non-loopback listeners on ${2:-$(hostname -s)} =="
@@ -148,7 +156,7 @@ SEEN=$(printf '%s\n' "$OUT" | grep -c '^\(OK\|UNKNOWN\)')
 BAD=$(printf '%s\n' "$OUT" | grep -c '^UNKNOWN')
 echo
 if [ "$((BAD + 0))" -gt 0 ]; then
-  echo "FAIL: $BAD of $SEEN non-loopback listeners are not allow-listed."
-  exit 1
+	echo "FAIL: $BAD of $SEEN non-loopback listeners are not allow-listed."
+	exit 1
 fi
 echo "PASS: all $SEEN non-loopback listeners are allow-listed."

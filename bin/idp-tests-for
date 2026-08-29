@@ -13,49 +13,78 @@
 #
 # Exit 0 when nothing changed (the message says so); CI on a fresh checkout still runs everything.
 set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-base=origin/main; list=0
+base=origin/main
+list=0
 while [ $# -gt 0 ]; do
-  case "$1" in
-    --list) list=1 ;;
-    --base) base="$2"; shift ;;
-    *) echo "usage: bin/idp-tests-for [--list] [--base REF]" >&2; exit 64 ;;
-  esac; shift
+	case "$1" in
+	--list) list=1 ;;
+	--base)
+		base="$2"
+		shift
+		;;
+	*)
+		echo "usage: bin/idp-tests-for [--list] [--base REF]" >&2
+		exit 64
+		;;
+	esac
+	shift
 done
-changed=$( { git -C "$IDP" diff --name-only "$base"...HEAD; git -C "$IDP" diff --name-only HEAD; git -C "$IDP" ls-files --others --exclude-standard; } | sort -u )
-if [ -z "$changed" ]; then echo "ok    tests-for: nothing changed against $base, nothing to run"; exit 0; fi
+changed=$({
+	git -C "$IDP" diff --name-only "$base"...HEAD
+	git -C "$IDP" diff --name-only HEAD
+	git -C "$IDP" ls-files --others --exclude-standard
+} | sort -u)
+if [ -z "$changed" ]; then
+	echo "ok    tests-for: nothing changed against $base, nothing to run"
+	exit 0
+fi
 # SKIP_TESTS_ON_TRIVIAL (founder 2026-08-28, crew#584: "if you change only docs, comments, or trivial
 # files, the hook skips tests entirely"). A file is trivial when it is prose (.md/.txt/.rst, docs/,
 # reports/, LICENSE) or when every changed line in it is blank or a comment (#, //, --). Trivial files
 # are dropped from the selection; a diff that is only trivial files runs nothing. Set
 # SKIP_TESTS_ON_TRIVIAL=0 to keep them.
 trivial() {
-  case "$1" in *.md|*.txt|*.rst|docs/*|reports/*|LICENSE*|CODEOWNERS|.gitignore) return 0 ;; esac
-  [ -f "$IDP/$1" ] || return 1
-  git -C "$IDP" ls-files --error-unmatch "$1" >/dev/null 2>&1 || return 1
-  ! { git -C "$IDP" diff -U0 "$base"...HEAD -- "$1"; git -C "$IDP" diff -U0 HEAD -- "$1"; } \
-      | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -qvE '^[+-][[:space:]]*(#|//|--|$)'
+	case "$1" in *.md | *.txt | *.rst | docs/* | reports/* | LICENSE* | CODEOWNERS | .gitignore) return 0 ;; esac
+	[ -f "$IDP/$1" ] || return 1
+	git -C "$IDP" ls-files --error-unmatch "$1" >/dev/null 2>&1 || return 1
+	! {
+		git -C "$IDP" diff -U0 "$base"...HEAD -- "$1"
+		git -C "$IDP" diff -U0 HEAD -- "$1"
+	} |
+		grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -qvE '^[+-][[:space:]]*(#|//|--|$)'
 }
 if [ "${SKIP_TESTS_ON_TRIVIAL:-1}" = 1 ]; then
-  kept=""; dropped=0
-  for f in $changed; do
-    if trivial "$f"; then dropped=$((dropped + 1)); else kept="$kept$f"$'\n'; fi
-  done
-  changed=$(printf '%s' "$kept" | sort -u)
-  if [ -z "$changed" ]; then echo "ok    tests-for: $dropped changed file(s), all docs or comment-only (SKIP_TESTS_ON_TRIVIAL), nothing to run"; exit 0; fi
-  [ "$dropped" -gt 0 ] && echo "tests-for: $dropped docs/comment-only file(s) skipped (SKIP_TESTS_ON_TRIVIAL)"
+	kept=""
+	dropped=0
+	for f in $changed; do
+		if trivial "$f"; then dropped=$((dropped + 1)); else kept="$kept$f"$'\n'; fi
+	done
+	changed=$(printf '%s' "$kept" | sort -u)
+	if [ -z "$changed" ]; then
+		echo "ok    tests-for: $dropped changed file(s), all docs or comment-only (SKIP_TESTS_ON_TRIVIAL), nothing to run"
+		exit 0
+	fi
+	[ "$dropped" -gt 0 ] && echo "tests-for: $dropped docs/comment-only file(s) skipped (SKIP_TESTS_ON_TRIVIAL)"
 fi
 sel=$(
-  for f in $changed; do
-    case "$f" in tests/test_*.py|sovereign/tests/*/*.py) [ -f "$IDP/$f" ] && echo "$f" ;; esac   # a deleted test file made pytest collect nothing: "no tests ran" and the push refused (2026-08-29)
-    b=$(basename "$f")
-    grep -rlF --include='*.py' -e "$f" -e "$b" "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null | sed "s#^$IDP/##" | grep -v '/fixtures/' || true   # a fixture under tests/fixtures is proof material, not a test (test_unbound.py fails by design)
-  done | sort -u
+	for f in $changed; do
+		case "$f" in tests/test_*.py | sovereign/tests/*/*.py) [ -f "$IDP/$f" ] && echo "$f" ;; esac # a deleted test file made pytest collect nothing: "no tests ran" and the push refused (2026-08-29)
+		b=$(basename "$f")
+		grep -rlF --include='*.py' -e "$f" -e "$b" "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null | sed "s#^$IDP/##" | grep -v '/fixtures/' || true # a fixture under tests/fixtures is proof material, not a test (test_unbound.py fails by design)
+	done | sort -u
 )
-if [ -z "$sel" ]; then echo "ok    tests-for: $(printf '%s\n' "$changed" | wc -l | tr -d ' ') changed file(s), no test names them (CI runs the suite)"; exit 0; fi
+if [ -z "$sel" ]; then
+	echo "ok    tests-for: $(printf '%s\n' "$changed" | wc -l | tr -d ' ') changed file(s), no test names them (CI runs the suite)"
+	exit 0
+fi
 n=$(printf '%s\n' "$sel" | wc -l | tr -d ' ')
 echo "tests-for: $n test file(s) read the changed files"
-if [ "$list" = 1 ]; then printf '%s\n' "$sel"; exit 0; fi
+if [ "$list" = 1 ]; then
+	printf '%s\n' "$sel"
+	exit 0
+fi
 # The venv lives beside the main checkout; a worktree has none of its own (LAW 46: resolved, never typed).
 main="$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)/.."
 py="${IDP_PY:-}"

@@ -118,7 +118,7 @@ def test_a_judge_that_floods_cannot_flood_the_receipt():
 def test_the_rung_that_calls_this_arm_is_the_one_that_captured_the_judge():
     """The arm is reached from the real capture, not from a branch nothing runs."""
     src = CI.read_text()
-    assert 'kyv=$( (cd "$IDP" && bin/idp-kyverno-render $dirs) 2>&1 ); kyv_rc=$?' in src
+    assert 'kyv=$( (cd "$IDP" && bin/idp-kyverno-render $dirs) 2>&1)\n\tkyv_rc=$?' in src
 
 
 # ---------------------------------------------------------------------------

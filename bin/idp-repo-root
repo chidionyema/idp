@@ -15,10 +15,11 @@
 #
 # Usage: bin/idp-repo-root <dir>   ->   /path/to/primary-checkout
 set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 dir="${1:?usage: idp-repo-root <dir>}"
-if gcd="$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
-   && [ -n "$gcd" ]; then
-  dirname "$gcd"
+if gcd="$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" &&
+	[ -n "$gcd" ]; then
+	dirname "$gcd"
 else
-  cd "$dir" && pwd
+	cd "$dir" && pwd
 fi

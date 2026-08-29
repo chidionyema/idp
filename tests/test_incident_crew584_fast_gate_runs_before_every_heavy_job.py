@@ -49,9 +49,16 @@ def test_every_heavy_job_needs_the_fast_gate():
 def test_fast_mode_exits_before_the_docker_rungs():
     text = open(os.path.join(ROOT, "bin", "idp-ci"), encoding="utf-8").read()
     assert 'FAST="${IDP_CI_FAST:-0}"' in text
-    assert text.index('exit "$fail"\nfi\n\n# 2. Compose files') > text.index("# 1d. ruff")
-    # fast mode must not demand docker/conftest: those needs are behind the FAST guard
-    assert '[ "$FAST" = 1 ] || { need docker;' in text
+    # tab-indented (shfmt, crew#620): `exit "$fail"` sits inside the `if [ "$FAST" = 1 ]` block.
+    assert text.index('\texit "$fail"\nfi\n\n# 2. Compose files') > text.index("# 1d. ruff")
+    # fast mode must not demand docker/conftest: those needs are behind the FAST guard.
+    # shfmt (crew#620) breaks a `[ cond ] || { a; b; }` one-liner onto separate lines, so the
+    # guard is graded as a block (starts the FAST test, contains need docker, closes) rather
+    # than one exact string.
+    guard_start = text.index('[ "$FAST" = 1 ] || {')
+    guard_end = text.index("\n}", guard_start)
+    guard_block = text[guard_start:guard_end]
+    assert "need docker" in guard_block
 
 
 def test_fast_gate_is_green_on_this_tree_in_under_60s():

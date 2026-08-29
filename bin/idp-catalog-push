@@ -6,15 +6,26 @@
 # copy any more (crew#227 CP3: the sops GITHUB_TOKEN answered UNAUTHORIZED on 2026-08-27 and a
 # static token in a file is the thing the gate counts). Idempotent: same content pushes the same digest.
 set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-for t in flux kubectl git; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
+for t in flux kubectl git; do command -v "$t" >/dev/null || {
+	echo "BLIND $t missing"
+	exit 2
+}; done
 # run 33102084969 demanded sops before asking gh; crew#227 CP3 removed the vault copy altogether
-gh auth token >/dev/null 2>&1 || { echo "BLIND gh holds no token; the push runs on Actions (catalog-render.yml, packages: write)"; exit 2; }
+gh auth token >/dev/null 2>&1 || {
+	echo "BLIND gh holds no token; the push runs on Actions (catalog-render.yml, packages: write)"
+	exit 2
+}
 SRC="$IDP/catalog/catalog-info.yaml"
-[ -s "$SRC" ] || { echo "BLIND $SRC missing; run bin/catalog-gen"; exit 2; }
-T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
-kubectl create configmap estate-catalog --from-file=catalog-info.yaml="$SRC" --dry-run=client -o yaml > "$T/estate-catalog.yaml"
+[ -s "$SRC" ] || {
+	echo "BLIND $SRC missing; run bin/catalog-gen"
+	exit 2
+}
+T=$(mktemp -d)
+trap 'rm -rf "$T"' EXIT
+kubectl create configmap estate-catalog --from-file=catalog-info.yaml="$SRC" --dry-run=client -o yaml >"$T/estate-catalog.yaml"
 REV="$(git -C "$IDP" rev-parse --short HEAD)@$(date -u +%Y%m%dT%H%M%SZ)"
 gh auth token | flux push artifact "oci://ghcr.io/chidionyema/idp/estate-catalog:latest" \
-  --path="$T" --source="https://github.com/chidionyema/idp" --revision="$REV" --creds "chidionyema:$(cat)" >/dev/null
+	--path="$T" --source="https://github.com/chidionyema/idp" --revision="$REV" --creds "chidionyema:$(cat)" >/dev/null
 echo "ok      estate-catalog pushed, revision $REV"

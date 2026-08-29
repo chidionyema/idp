@@ -13,31 +13,54 @@
 #   BLIND   hc-enroll  <what could not be read>
 # Usage: idp-hc-enroll [<zone>]   env: OCI_COMPARTMENT_OCID, ESTATE_ZONE (or the argument),
 #        HC_RECEIPTS_BUCKET (default estate-drill-receipts), SOPS_AGE_KEY_FILE
-set -u
+# No diagnostic EXIT trap here (crew#620): "ok"/"BLIND" is already the one grading line this
+# script prints, and a later `trap 'rm -rf "$T"' EXIT` (below) would clobber it anyway.
+set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 ZONE=${1:-${ESTATE_ZONE:-}}
 [ -n "$ZONE" ] || ZONE=$(sed -n 's/^  ESTATE_ZONE: *//p' "$(dirname "$0")/../clusters/oke/estate-config.yaml" 2>/dev/null)
-[ -n "$ZONE" ] || { echo "BLIND   hc-enroll  no zone: pass it or set ESTATE_ZONE"; exit 2; }
+[ -n "$ZONE" ] || {
+	echo "BLIND   hc-enroll  no zone: pass it or set ESTATE_ZONE"
+	exit 2
+}
 BUCKET=${HC_RECEIPTS_BUCKET:-estate-drill-receipts}
 NAME=healthchecks/ping_key.age
 ERR="${TMPDIR:-/tmp}/hc-enroll.err"
 export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}
 
 via=vault
-key=$("$IDP/bin/idp-cloud" secret get healthchecks-ping-key 2>"$ERR")
+key=$("$IDP/bin/idp-cloud" secret get healthchecks-ping-key 2>"$ERR") || key=""
 if [ -z "$key" ]; then
-  via=bucket
-  command -v age >/dev/null || { echo "BLIND   hc-enroll  age missing"; exit 2; }
-  [ -r "$SOPS_AGE_KEY_FILE" ] || { echo "BLIND   hc-enroll  no age identity at $SOPS_AGE_KEY_FILE"; exit 2; }
-  T=$(mktemp -d "${TMPDIR:-/tmp}/hc-enroll.XXXXXX"); trap 'rm -rf "$T"' EXIT
-  # the blob goes to a file, never a variable: $(...) drops NUL bytes and age then refuses the payload
-  "$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name "$NAME" >"$T/blob" 2>"$ERR" && [ -s "$T/blob" ] \
-    || { echo "BLIND   hc-enroll  vault and bucket both unreadable: $(head -1 "$ERR" | cut -c1-100)"; exit 2; }
-  key=$(age -d -i "$SOPS_AGE_KEY_FILE" "$T/blob" 2>"$ERR") || { echo "BLIND   hc-enroll  age decrypt failed: $(head -1 "$ERR" | cut -c1-100)"; exit 2; }
+	via=bucket
+	command -v age >/dev/null || {
+		echo "BLIND   hc-enroll  age missing"
+		exit 2
+	}
+	[ -r "$SOPS_AGE_KEY_FILE" ] || {
+		echo "BLIND   hc-enroll  no age identity at $SOPS_AGE_KEY_FILE"
+		exit 2
+	}
+	T=$(mktemp -d "${TMPDIR:-/tmp}/hc-enroll.XXXXXX")
+	trap 'rm -rf "$T"' EXIT
+	# the blob goes to a file, never a variable: $(...) drops NUL bytes and age then refuses the payload
+	"$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name "$NAME" >"$T/blob" 2>"$ERR" && [ -s "$T/blob" ] ||
+		{
+			echo "BLIND   hc-enroll  vault and bucket both unreadable: $(head -1 "$ERR" | cut -c1-100)"
+			exit 2
+		}
+	key=$(age -d -i "$SOPS_AGE_KEY_FILE" "$T/blob" 2>"$ERR") || {
+		echo "BLIND   hc-enroll  age decrypt failed: $(head -1 "$ERR" | cut -c1-100)"
+		exit 2
+	}
 fi
-[ -n "$key" ] || { echo "BLIND   hc-enroll  empty ping key"; exit 2; }
-D="$HOME/.estate/healthchecks"; mkdir -p "$D"; chmod 700 "$D"
+[ -n "$key" ] || {
+	echo "BLIND   hc-enroll  empty ping key"
+	exit 2
+}
+D="$HOME/.estate/healthchecks"
+mkdir -p "$D"
+chmod 700 "$D"
 umask 077
-printf '%s\n' "$key" > "$D/ping_key"
-printf 'https://hc.%s/ping\n' "$ZONE" > "$D/base"
-echo "ok      hc-enroll  base=https://hc.$ZONE/ping ping_key=${key:0:8}... ($(wc -c < "$D/ping_key" | tr -d ' ') bytes) via=$via"
+printf '%s\n' "$key" >"$D/ping_key"
+printf 'https://hc.%s/ping\n' "$ZONE" >"$D/base"
+echo "ok      hc-enroll  base=https://hc.$ZONE/ping ping_key=${key:0:8}... ($(wc -c <"$D/ping_key" | tr -d ' ') bytes) via=$via"

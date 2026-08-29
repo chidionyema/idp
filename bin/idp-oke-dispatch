@@ -12,21 +12,29 @@
 # Use: bin/idp-oke-dispatch <playbook>        (mode=break-glass on main)
 #      bin/idp-oke-dispatch --check           (mode=check on main)
 set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 WORKFLOW="${OKE_WORKFLOW:-oke-check.yml}"
-REPO_ARGS=(); [ -n "${IDP_REPO:-}" ] && REPO_ARGS=(--repo "$IDP_REPO")
-[ $# -eq 1 ] || { echo "usage: idp-oke-dispatch <playbook> | --check"; exit 64; }
+REPO_ARGS=()
+[ -n "${IDP_REPO:-}" ] && REPO_ARGS=(--repo "$IDP_REPO")
+[ $# -eq 1 ] || {
+	echo "usage: idp-oke-dispatch <playbook> | --check"
+	exit 64
+}
 if [ "$1" = --check ]; then
-  INPUTS=(-f mode=check)
+	INPUTS=(-f mode=check)
 else
-  "$IDP/bin/idp-oke-break-glass" --list | tr ' ' '\n' | grep -qx "$1" \
-    || { echo "exit 64: unknown playbook '$1'; known: $("$IDP/bin/idp-oke-break-glass" --list)"; exit 64; }
-  INPUTS=(-f mode=break-glass -f "playbook=$1")
+	"$IDP/bin/idp-oke-break-glass" --list | tr ' ' '\n' | grep -qx "$1" ||
+		{
+			echo "exit 64: unknown playbook '$1'; known: $("$IDP/bin/idp-oke-break-glass" --list)"
+			exit 64
+		}
+	INPUTS=(-f mode=break-glass -f "playbook=$1")
 fi
 pending=$(gh run list "${REPO_ARGS[@]}" --workflow "$WORKFLOW" --event workflow_dispatch --status queued --limit 5 --json databaseId --jq '.[].databaseId')
 pending="$pending$(gh run list "${REPO_ARGS[@]}" --workflow "$WORKFLOW" --event workflow_dispatch --status pending --limit 5 --json databaseId --jq '.[].databaseId')"
 if [ -n "$pending" ]; then
-  echo "exit 75: $WORKFLOW already has a pending workflow_dispatch run ($(echo "$pending" | tr '\n' ' ')); a second dispatch would cancel it (GitHub keeps one pending run per concurrency group). Wait for it to start, then dispatch."
-  exit 75
+	echo "exit 75: $WORKFLOW already has a pending workflow_dispatch run ($(echo "$pending" | tr '\n' ' ')); a second dispatch would cancel it (GitHub keeps one pending run per concurrency group). Wait for it to start, then dispatch."
+	exit 75
 fi
 gh workflow run "$WORKFLOW" "${REPO_ARGS[@]}" --ref main "${INPUTS[@]}"

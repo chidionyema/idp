@@ -26,94 +26,130 @@
 # bin/idp-cluster-state (idp#267). The kube row (crew#484) is the runner's own kube path: a kubeconfig
 # minted from the exchanged session; the receipt row stays because it is the cluster's word, not ours.
 # FAIL when any row is red, BLIND (exit 2) when a row cannot be measured. Never asks anything.
-set -uo pipefail
+set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 EXPECT_USER="${ESTATE_CI_USER:-estate-ci}"
-red=0; blind=0
-say()  { printf '%-7s %-12s %s\n' "$1" "$2" "$3"; }
-fail() { say FAIL "$1" "$2"; red=$((red+1)); }
-bl()   { say BLIND "$1" "$2"; blind=$((blind+1)); }
-command -v oci >/dev/null || { say BLIND verify-drill "oci CLI is not installed"; exit 2; }
-command -v python3 >/dev/null || { say BLIND verify-drill "python3 is not installed"; exit 2; }
-[ "${OCI_CLI_AUTH:-}" = security_token ] || { say BLIND verify-drill "OCI_CLI_AUTH is '${OCI_CLI_AUTH:-}', not security_token: no exchanged session in this environment"; exit 2; }
+red=0
+blind=0
+say() { printf '%-7s %-12s %s\n' "$1" "$2" "$3"; }
+fail() {
+	say FAIL "$1" "$2"
+	red=$((red + 1))
+}
+bl() {
+	say BLIND "$1" "$2"
+	blind=$((blind + 1))
+}
+command -v oci >/dev/null || {
+	say BLIND verify-drill "oci CLI is not installed"
+	exit 2
+}
+command -v python3 >/dev/null || {
+	say BLIND verify-drill "python3 is not installed"
+	exit 2
+}
+[ "${OCI_CLI_AUTH:-}" = security_token ] || {
+	say BLIND verify-drill "OCI_CLI_AUTH is '${OCI_CLI_AUTH:-}', not security_token: no exchanged session in this environment"
+	exit 2
+}
 
 # --- identity: whose session is this? A person's OCID here is the incident, not a pass. ------
-tok=$(awk -F'[ =]+' '/^security_token_file/{print $2; exit}' "${OCI_CLI_CONFIG_FILE:-$HOME/.oci/config}" 2>/dev/null)
-if [ -z "$tok" ] || [ ! -r "$tok" ]; then bl identity "no security_token_file in the oci config: the token exchange step did not run"
+tok=$(awk -F'[ =]+' '/^security_token_file/{print $2; exit}' "${OCI_CLI_CONFIG_FILE:-$HOME/.oci/config}" 2>/dev/null) || true
+if [ -z "$tok" ] || [ ! -r "$tok" ]; then
+	bl identity "no security_token_file in the oci config: the token exchange step did not run"
 else
-  claims=$(python3 - "$tok" <<'PY'
+	claims=$(
+		python3 - "$tok" <<'PY'
 import base64, json, sys
 seg = open(sys.argv[1]).read().strip().split(".")[1]
 c = json.loads(base64.urlsafe_b64decode(seg + "=" * (-len(seg) % 4)))
 print(c.get("sub", ""), c.get("ttype", ""), (c.get("exp", 0) - c.get("iat", 0)) // 60)
 PY
-  )
-  sub=${claims%% *}; rest=${claims#* }; ttype=${rest%% *}; ttl=${rest#* }
-  name=$(oci iam user get --user-id "$sub" --query 'data.name' --raw-output 2>/dev/null || true)
-  if [ -z "$name" ]; then bl identity "session subject ${sub:0:24}... (ttype=$ttype, ${ttl} min): iam user get refused, cannot name it"
-  elif [ "$name" != "$EXPECT_USER" ]; then fail identity "session subject is $name, expected service user $EXPECT_USER: a person's login is running the platform check"
-  elif [ "$ttype" != te ]; then fail identity "session subject is $name but ttype=$ttype is not a token exchange (te): a browser login, not the machine identity"
-  else say ok identity "session subject is service user $name (token exchange, ${ttl} min, no login)"; fi
+	)
+	sub=${claims%% *}
+	rest=${claims#* }
+	ttype=${rest%% *}
+	ttl=${rest#* }
+	name=$(oci iam user get --user-id "$sub" --query 'data.name' --raw-output 2>/dev/null || true)
+	if [ -z "$name" ]; then
+		bl identity "session subject ${sub:0:24}... (ttype=$ttype, ${ttl} min): iam user get refused, cannot name it"
+	elif [ "$name" != "$EXPECT_USER" ]; then
+		fail identity "session subject is $name, expected service user $EXPECT_USER: a person's login is running the platform check"
+	elif [ "$ttype" != te ]; then
+		fail identity "session subject is $name but ttype=$ttype is not a token exchange (te): a browser login, not the machine identity"
+	else say ok identity "session subject is service user $name (token exchange, ${ttl} min, no login)"; fi
 fi
 
 # --- cluster: the control plane and node pools answer through the OCI API ------------------
-cl=$("$IDP/bin/idp-cloud" cluster list 2>&1); rc=$?
-if [ $rc -ne 0 ]; then bl cluster "cluster list failed: $(printf '%s' "$cl" | tail -1 | cut -c1-160)"
+cl=$("$IDP/bin/idp-cloud" cluster list 2>&1) || rc=$?
+rc=${rc:-0}
+if [ $rc -ne 0 ]; then
+	bl cluster "cluster list failed: $(printf '%s' "$cl" | tail -1 | cut -c1-160)"
 else
-  n_cl=$(printf '%s\n' "$cl" | grep -c .)
-  if [ "$n_cl" -lt 1 ]; then fail cluster "no ACTIVE cluster in the compartment"
-  else
-    np=$("$IDP/bin/idp-cloud" cluster nodepools 2>/dev/null) || np=""
-    n_all=$(printf '%s\n' "$np" | grep -c .)
-    n_ok=$(printf '%s\n' "$np" | awk '$2=="ACTIVE"' | grep -c .)
-    # A pool the autoscaler is resizing is UPDATING for minutes; that is the platform working,
-    # not a red row. bin/idp-oke-rebuild grades it the same way since idp#507 (crew#539 CP4);
-    # this row kept failing "1/2 node pool(s) ACTIVE" on the a1-spot resize for every run of
-    # verify-drill.yml on 2026-08-28 (crew#516 CP1). Every non-ACTIVE pool is printed as
-    # name(STATE); only UPDATING passes.
-    np_bad=$(printf '%s\n' "$np" | awk '$2!="ACTIVE" && $2!="UPDATING"{print $1"("$2")"}' | tr '\n' ' '); np_bad=${np_bad%% }
-    np_busy=$(printf '%s\n' "$np" | awk '$2=="UPDATING"{print $1}' | tr '\n' ' '); np_busy=${np_busy%% }
-    if [ "$n_all" -lt 1 ]; then fail cluster "$n_cl cluster ACTIVE, no node pools"
-    elif [ -n "$np_bad" ]; then fail cluster "$n_cl cluster ACTIVE, $n_ok/$n_all node pool(s) ACTIVE; not ACTIVE: $np_bad${np_busy:+; UPDATING: $np_busy}"
-    elif [ -n "$np_busy" ]; then say ok cluster "$n_cl cluster ACTIVE, $n_ok/$n_all node pool(s) ACTIVE, UPDATING (resize in flight): $np_busy"
-    else say ok cluster "$n_cl cluster ACTIVE, $n_ok/$n_all node pool(s) ACTIVE"; fi
-    # --- kube: the same exchanged session, spoken to the API server (crew#484). The kubeconfig's
-    # exec plugin runs `oci ce cluster generate-token` under OCI_CLI_AUTH=security_token, so no
-    # second credential exists. A 403 is the IAM gap named on the row, never a silent skip.
-    # crew#345, 2026-08-28: three clusters are ACTIVE in the compartment and `awk NR==1` took the
-    # first by name -- not the estate -- so create-kubeconfig failed on every hourly run (12 red in
-    # a row, 14:03-19:50Z) while oke-check, which names its cluster, stayed green. The cluster is
-    # named, the same way oke-check names it; a missing name is BLIND with the list on the row.
-    want="${OCI_CLUSTER_NAME:-estate}"
-    cid=$(printf '%s\n' "$cl" | awk -v n="$want" '$1==n{print $2; exit}')
-    kc="${KUBECONFIG_OUT:-${TMPDIR:-/tmp}/idp-verify-drill-kubeconfig}"
-    if ! command -v kubectl >/dev/null; then bl kube "kubectl is not installed on this runner"
-    elif [ -z "$cid" ]; then bl kube "no ACTIVE cluster named $want; ACTIVE: $(printf '%s\n' "$cl" | awk '{print $1}' | paste -sd, -) -- set OCI_CLUSTER_NAME"
-    elif ! out=$("$IDP/bin/idp-cloud" cluster kubeconfig "$cid" --file "$kc" 2>&1); then
-      bl kube "create-kubeconfig failed ($want): $(printf '%s' "$out" | tail -1 | sed -E 's/.*"code": "([^"]+)".*"message": "([^"]+)".*/\1: \2/' | cut -c1-240)"
-    else
-      # The exit code is the verdict; the body is only read on failure (idp#447 review: a healthy
-      # node's resourceVersion 12403 must never read as a 403).
-      if ! nodes=$(KUBECONFIG="$kc" kubectl get nodes -o json 2>&1); then
-        if printf '%s' "$nodes" | grep -qiE 'forbidden|unauthorized|\b(HTTP|status) 40[13]\b'; then
-          bl kube "API server refused $EXPECT_USER: $(printf '%s' "$nodes" | tail -1 | cut -c1-120) -- IAM 'use clusters' on the compartment plus a ClusterRoleBinding for the user is the gap"
-        else bl kube "kubectl get nodes failed: $(printf '%s' "$nodes" | tail -1 | cut -c1-160)"; fi
-      elif ! read -r k_all k_ready < <(printf '%s' "$nodes" | python3 -c 'import json,sys; d=json.load(sys.stdin)["items"]; print(len(d), sum(1 for n in d for c in n["status"]["conditions"] if c["type"]=="Ready" and c["status"]=="True"))' 2>/dev/null); then
-        bl kube "kubectl get nodes returned 0 but no node list: $(printf '%s' "$nodes" | tail -1 | cut -c1-160)"
-      elif [ "$k_all" -lt 1 ] || [ "$k_ready" != "$k_all" ]; then fail kube "$k_ready/$k_all node(s) Ready through the API server"
-      else say ok kube "$k_ready/$k_all node(s) Ready through the API server, kubeconfig from the exchanged session"; fi
-    fi
-    rm -f "$kc"
-  fi
+	n_cl=$(printf '%s\n' "$cl" | grep -c .) || true
+	if [ "$n_cl" -lt 1 ]; then
+		fail cluster "no ACTIVE cluster in the compartment"
+	else
+		np=$("$IDP/bin/idp-cloud" cluster nodepools 2>/dev/null) || np=""
+		n_all=$(printf '%s\n' "$np" | grep -c .) || true
+		n_ok=$(printf '%s\n' "$np" | awk '$2=="ACTIVE"' | grep -c .) || true
+		# A pool the autoscaler is resizing is UPDATING for minutes; that is the platform working,
+		# not a red row. bin/idp-oke-rebuild grades it the same way since idp#507 (crew#539 CP4);
+		# this row kept failing "1/2 node pool(s) ACTIVE" on the a1-spot resize for every run of
+		# verify-drill.yml on 2026-08-28 (crew#516 CP1). Every non-ACTIVE pool is printed as
+		# name(STATE); only UPDATING passes.
+		np_bad=$(printf '%s\n' "$np" | awk '$2!="ACTIVE" && $2!="UPDATING"{print $1"("$2")"}' | tr '\n' ' ')
+		np_bad=${np_bad%% }
+		np_busy=$(printf '%s\n' "$np" | awk '$2=="UPDATING"{print $1}' | tr '\n' ' ')
+		np_busy=${np_busy%% }
+		if [ "$n_all" -lt 1 ]; then
+			fail cluster "$n_cl cluster ACTIVE, no node pools"
+		elif [ -n "$np_bad" ]; then
+			fail cluster "$n_cl cluster ACTIVE, $n_ok/$n_all node pool(s) ACTIVE; not ACTIVE: $np_bad${np_busy:+; UPDATING: $np_busy}"
+		elif [ -n "$np_busy" ]; then
+			say ok cluster "$n_cl cluster ACTIVE, $n_ok/$n_all node pool(s) ACTIVE, UPDATING (resize in flight): $np_busy"
+		else say ok cluster "$n_cl cluster ACTIVE, $n_ok/$n_all node pool(s) ACTIVE"; fi
+		# --- kube: the same exchanged session, spoken to the API server (crew#484). The kubeconfig's
+		# exec plugin runs `oci ce cluster generate-token` under OCI_CLI_AUTH=security_token, so no
+		# second credential exists. A 403 is the IAM gap named on the row, never a silent skip.
+		# crew#345, 2026-08-28: three clusters are ACTIVE in the compartment and `awk NR==1` took the
+		# first by name -- not the estate -- so create-kubeconfig failed on every hourly run (12 red in
+		# a row, 14:03-19:50Z) while oke-check, which names its cluster, stayed green. The cluster is
+		# named, the same way oke-check names it; a missing name is BLIND with the list on the row.
+		want="${OCI_CLUSTER_NAME:-estate}"
+		cid=$(printf '%s\n' "$cl" | awk -v n="$want" '$1==n{print $2; exit}')
+		kc="${KUBECONFIG_OUT:-${TMPDIR:-/tmp}/idp-verify-drill-kubeconfig}"
+		if ! command -v kubectl >/dev/null; then
+			bl kube "kubectl is not installed on this runner"
+		elif [ -z "$cid" ]; then
+			bl kube "no ACTIVE cluster named $want; ACTIVE: $(printf '%s\n' "$cl" | awk '{print $1}' | paste -sd, -) -- set OCI_CLUSTER_NAME"
+		elif ! out=$("$IDP/bin/idp-cloud" cluster kubeconfig "$cid" --file "$kc" 2>&1); then
+			bl kube "create-kubeconfig failed ($want): $(printf '%s' "$out" | tail -1 | sed -E 's/.*"code": "([^"]+)".*"message": "([^"]+)".*/\1: \2/' | cut -c1-240)"
+		else
+			# The exit code is the verdict; the body is only read on failure (idp#447 review: a healthy
+			# node's resourceVersion 12403 must never read as a 403).
+			if ! nodes=$(KUBECONFIG="$kc" kubectl get nodes -o json 2>&1); then
+				if printf '%s' "$nodes" | grep -qiE 'forbidden|unauthorized|\b(HTTP|status) 40[13]\b'; then
+					bl kube "API server refused $EXPECT_USER: $(printf '%s' "$nodes" | tail -1 | cut -c1-120) -- IAM 'use clusters' on the compartment plus a ClusterRoleBinding for the user is the gap"
+				else bl kube "kubectl get nodes failed: $(printf '%s' "$nodes" | tail -1 | cut -c1-160)"; fi
+			elif ! read -r k_all k_ready < <(printf '%s' "$nodes" | python3 -c 'import json,sys; d=json.load(sys.stdin)["items"]; print(len(d), sum(1 for n in d for c in n["status"]["conditions"] if c["type"]=="Ready" and c["status"]=="True"))' 2>/dev/null); then
+				bl kube "kubectl get nodes returned 0 but no node list: $(printf '%s' "$nodes" | tail -1 | cut -c1-160)"
+			elif [ "$k_all" -lt 1 ] || [ "$k_ready" != "$k_all" ]; then
+				fail kube "$k_ready/$k_all node(s) Ready through the API server"
+			else say ok kube "$k_ready/$k_all node(s) Ready through the API server, kubeconfig from the exchanged session"; fi
+		fi
+		rm -f "$kc"
+	fi
 fi
 
 # --- receipt: the cluster's own verdict, written every 15 min by platform/state (idp#267) and
 # graded by bin/idp-cluster-state for freshness and Ready. One writer, one reader, reused here.
 line=$("$(dirname "$0")/idp-cluster-state" 2>&1 | tail -1)
 case "$line" in
-  ok*)    say ok receipt "$(printf '%s' "$line" | sed -E 's/^ok +cluster-state +//')";;
-  FAIL*)  fail receipt "$(printf '%s' "$line" | sed -E 's/^FAIL +cluster-state +//')";;
-  *)      bl receipt "$(printf '%s' "$line" | sed -E 's/^BLIND +cluster-state +//')";;
+ok*) say ok receipt "$(printf '%s' "$line" | sed -E 's/^ok +cluster-state +//')" ;;
+FAIL*) fail receipt "$(printf '%s' "$line" | sed -E 's/^FAIL +cluster-state +//')" ;;
+*) bl receipt "$(printf '%s' "$line" | sed -E 's/^BLIND +cluster-state +//')" ;;
 esac
 
 # --- drills: the scheduled drills actually fired (crew#292 CP2). bin/idp-drills-row grades the
@@ -121,12 +157,13 @@ esac
 # used to live only inside bin/idp-verify, which no workflow runs and which exits before the row
 # whenever Backstage is not on 7107 - so nothing scheduled had ever printed it. Here it runs
 # hourly on the machine identity; exit 1 = a drill is stale or never ran, 2 = cannot ask GitHub.
-drills_out=$("$(dirname "$0")/idp-drills-row" "$IDP/drills/catalogue.yaml" "$IDP" 2>&1); drills_rc=$?
+drills_out=$("$(dirname "$0")/idp-drills-row" "$IDP/drills/catalogue.yaml" "$IDP" 2>&1) || drills_rc=$?
+drills_rc=${drills_rc:-0}
 printf '%s\n' "$drills_out"
 case "$drills_rc" in
-  0) say ok drills "every catalogued drill ran inside its window";;
-  1) fail drills "a catalogued drill is stale or never ran (rows above)";;
-  *) bl drills "cannot ask GitHub for drill runs (rows above)";;
+0) say ok drills "every catalogued drill ran inside its window" ;;
+1) fail drills "a catalogued drill is stale or never ran (rows above)" ;;
+*) bl drills "cannot ask GitHub for drill runs (rows above)" ;;
 esac
 
 # --- no-toil: nothing in README*.md, docs/**/*.md or platform/** asks a person for a hand
@@ -135,45 +172,59 @@ esac
 # sentence that lands through any other door - a merged base, a vendored doc, a pre-gate file -
 # is invisible until something reads the whole tree. This row is that reader, hourly, and red
 # alerts like every other row. bin/idp-no-toil --sweep prints the file and line of every hit.
-toil_out=$("$(dirname "$0")/idp-no-toil" --sweep 2>&1); toil_rc=$?
+toil_out=$("$(dirname "$0")/idp-no-toil" --sweep 2>&1) || toil_rc=$?
+toil_rc=${toil_rc:-0}
 case "$toil_rc" in
-  0) say ok no-toil "$(printf '%s\n' "$toil_out" | tail -1 | sed -E 's/^PASS +no-toil gate +//')";;
-  1) printf '%s\n' "$toil_out" | grep -vE '^(PASS|FAIL) +no-toil gate' | sed 's/^/        /'
-     fail no-toil "$(printf '%s\n' "$toil_out" | grep -c 'Policy Violation') file(s) ask a person for a hand (lines above)";;
-  *) bl no-toil "$(printf '%s\n' "$toil_out" | tail -1 | cut -c1-160)";;
+0) say ok no-toil "$(printf '%s\n' "$toil_out" | tail -1 | sed -E 's/^PASS +no-toil gate +//')" ;;
+1)
+	printf '%s\n' "$toil_out" | grep -vE '^(PASS|FAIL) +no-toil gate' | sed 's/^/        /'
+	fail no-toil "$(printf '%s\n' "$toil_out" | grep -c 'Policy Violation') file(s) ask a person for a hand (lines above)"
+	;;
+*) bl no-toil "$(printf '%s\n' "$toil_out" | tail -1 | cut -c1-160)" ;;
 esac
 
 # --- root-trust: every vault entry an ExternalSecret reads is born by a bootstrapper or ticketed
 # (crew#66 ruling 5453747447, crew#580, docs/reference/policy/root-trust.md). Hourly so an entry that
 # lands by hand through any door is red within the hour, like every other row.
-rt_out=$("$(dirname "$0")/idp-root-trust" 2>&1); rt_rc=$?
+rt_out=$("$(dirname "$0")/idp-root-trust" 2>&1) || rt_rc=$?
+rt_rc=${rt_rc:-0}
 case "$rt_rc" in
-  0) say ok root-trust "$(printf '%s\n' "$rt_out" | tail -1 | sed -E 's/^PASS +root-trust: //' | cut -c1-160)";;
-  1) printf '%s\n' "$rt_out" | grep -v '^FAIL    root-trust:' | sed 's/^/        /'
-     fail root-trust "$(printf '%s\n' "$rt_out" | tail -1 | sed -E 's/^FAIL +root-trust: //' | cut -c1-160)";;
-  *) bl root-trust "$(printf '%s\n' "$rt_out" | tail -1 | cut -c1-160)";;
+0) say ok root-trust "$(printf '%s\n' "$rt_out" | tail -1 | sed -E 's/^PASS +root-trust: //' | cut -c1-160)" ;;
+1)
+	printf '%s\n' "$rt_out" | grep -v '^FAIL    root-trust:' | sed 's/^/        /'
+	fail root-trust "$(printf '%s\n' "$rt_out" | tail -1 | sed -E 's/^FAIL +root-trust: //' | cut -c1-160)"
+	;;
+*) bl root-trust "$(printf '%s\n' "$rt_out" | tail -1 | cut -c1-160)" ;;
 esac
 
 # --- github-tokens: the tokens workloads read (platform/github-app/token-consumers.json) are one-hour
 # installation tokens of the App; each is re-minted here every hour and the ExternalSecrets that render
 # them refresh every 15 minutes (crew#66 root trust, crew#577). No PAT anywhere.
-gt_out=$("$(dirname "$0")/idp-github-app" refresh 2>&1); gt_rc=$?
+gt_out=$("$(dirname "$0")/idp-github-app" refresh 2>&1) || gt_rc=$?
+gt_rc=${gt_rc:-0}
 case "$gt_rc" in
-  0) say ok github-tokens "$(printf '%s\n' "$gt_out" | tail -1 | cut -c1-160)";;
-  2) bl github-tokens "$(printf '%s\n' "$gt_out" | tail -1 | cut -c1-160)";;
-  *) fail github-tokens "$(printf '%s\n' "$gt_out" | tail -1 | cut -c1-160)";;
+0) say ok github-tokens "$(printf '%s\n' "$gt_out" | tail -1 | cut -c1-160)" ;;
+2) bl github-tokens "$(printf '%s\n' "$gt_out" | tail -1 | cut -c1-160)" ;;
+*) fail github-tokens "$(printf '%s\n' "$gt_out" | tail -1 | cut -c1-160)" ;;
 esac
 
 # --- loop-meter: the dev loop gets faster, or the row is red (crew#584 CP4, founder 2026-08-28
 # "get faster at getting faster"). Median wall-clock of a green pull_request ci run this week
 # against last week, read from the runs GitHub already keeps; >20% slower is red.
-lm_out=$("$(dirname "$0")/idp-loop-meter" 2>&1); lm_rc=$?
+lm_out=$("$(dirname "$0")/idp-loop-meter" 2>&1) || lm_rc=$?
+lm_rc=${lm_rc:-0}
 case "$lm_rc" in
-  0) say ok loop-meter "$(printf '%s\n' "$lm_out" | tail -1 | sed -E 's/^ok +loop-meter: //' | cut -c1-160)";;
-  1) fail loop-meter "$(printf '%s\n' "$lm_out" | tail -1 | sed -E 's/^FAIL +loop-meter: //' | cut -c1-160)";;
-  *) bl loop-meter "$(printf '%s\n' "$lm_out" | tail -1 | cut -c1-160)";;
+0) say ok loop-meter "$(printf '%s\n' "$lm_out" | tail -1 | sed -E 's/^ok +loop-meter: //' | cut -c1-160)" ;;
+1) fail loop-meter "$(printf '%s\n' "$lm_out" | tail -1 | sed -E 's/^FAIL +loop-meter: //' | cut -c1-160)" ;;
+*) bl loop-meter "$(printf '%s\n' "$lm_out" | tail -1 | cut -c1-160)" ;;
 esac
 
-if [ "$red" -gt 0 ]; then say FAIL verify-drill "$red row(s) red, $blind blind"; exit 1; fi
-if [ "$blind" -gt 0 ]; then say BLIND verify-drill "$blind row(s) not measured"; exit 2; fi
+if [ "$red" -gt 0 ]; then
+	say FAIL verify-drill "$red row(s) red, $blind blind"
+	exit 1
+fi
+if [ "$blind" -gt 0 ]; then
+	say BLIND verify-drill "$blind row(s) not measured"
+	exit 2
+fi
 say ok verify-drill "9/9 rows green on the machine identity"

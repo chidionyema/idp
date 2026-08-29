@@ -7,14 +7,22 @@
 # Usage: bin/idp-state-guard <module dir>. Exit 0 always; a non-empty local state is moved to
 # <name>.quarantine-<utc> (gitignored by *.tfstate*) and the move is printed.
 set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 M="${1:?module dir}"
-[ -d "$M" ] || { echo "BLIND   state   $M is not a directory"; exit 0; }
+[ -d "$M" ] || {
+	echo "BLIND   state   $M is not a directory"
+	exit 0
+}
 n=0
 for f in "$M"/terraform.tfstate "$M"/terraform.tfstate.backup; do
-  [ -s "$f" ] || { rm -f "$f"; continue; }
-  q="$M/$(basename "$f").quarantine-$(date -u +%Y%m%dT%H%M%SZ)"
-  mv "$f" "$q"; n=$((n+1))
-  echo "GUARD   state   $(basename "$f") ($(wc -c <"$q" | tr -d ' ') bytes) moved to $(basename "$q"): a local state is never migrated over the remote (incident 2026-08-26 02:26Z)"
+	[ -s "$f" ] || {
+		rm -f "$f"
+		continue
+	}
+	q="$M/$(basename "$f").quarantine-$(date -u +%Y%m%dT%H%M%SZ)"
+	mv "$f" "$q"
+	n=$((n + 1))
+	echo "GUARD   state   $(basename "$f") ($(wc -c <"$q" | tr -d ' ') bytes) moved to $(basename "$q"): a local state is never migrated over the remote (incident 2026-08-26 02:26Z)"
 done
 [ "$n" = 0 ] && echo "ok      state   no local state in $M"
 exit 0

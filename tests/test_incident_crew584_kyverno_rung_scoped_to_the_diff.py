@@ -20,8 +20,8 @@ CI = ROOT / "bin" / "idp-ci"
 
 def _scope_block() -> str:
     src = CI.read_text()
-    start = src.index('  kyv_scope="every dir"')
-    end = src.index('  [ "$dirs" = skip ] ||', start)
+    start = src.index('\tkyv_scope="every dir"')
+    end = src.index('\t[ "$dirs" = skip ] ||', start)
     return src[start:end]
 
 

@@ -10,35 +10,51 @@
 # --json prints the body. --sources <crew science/sources.json> diffs the closed world: every
 # source declaring `receiver: otlp` must appear in the receipt. Max age 120 min; override
 # SCIENCE_FACTS_MAX_AGE_MIN.
-set -uo pipefail
+set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 BUCKET="${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}"
 MAX_MIN="${SCIENCE_FACTS_MAX_AGE_MIN:-120}"
-SOURCES=""; JSON=""
+SOURCES=""
+JSON=""
 while [ $# -gt 0 ]; do
-  case "$1" in
-    --json) JSON=1 ;;
-    --sources) SOURCES="$2"; shift ;;
-    *) printf 'usage: %s [--json] [--sources sources.json]\n' "$0" >&2; exit 64 ;;
-  esac
-  shift
+	case "$1" in
+	--json) JSON=1 ;;
+	--sources)
+		SOURCES="$2"
+		shift
+		;;
+	*)
+		printf 'usage: %s [--json] [--sources sources.json]\n' "$0" >&2
+		exit 64
+		;;
+	esac
+	shift
 done
-blind() { printf 'BLIND   science-facts  %s\n' "$1"; exit 2; }
-fail()  { printf 'FAIL    science-facts  %s\n' "$1"; exit 1; }
+blind() {
+	printf 'BLIND   science-facts  %s\n' "$1"
+	exit 2
+}
+fail() {
+	printf 'FAIL    science-facts  %s\n' "$1"
+	exit 1
+}
 command -v python3 >/dev/null || blind "python3 is not installed"
 head=$("$IDP/bin/idp-cloud" object head --bucket "$BUCKET" --name science/facts 2>&1)
 rc=$?
 if [ $rc -ne 0 ]; then
-  case "$head" in
-    *"404"*|*NotFound*|*"not found"*) fail "no receipt science/facts in bucket $BUCKET: the CronJob has never completed (Flux row science not reconciled, or the bucket is not applied yet)" ;;
-    *) blind "object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
-  esac
+	case "$head" in
+	*"404"* | *NotFound* | *"not found"*) fail "no receipt science/facts in bucket $BUCKET: the CronJob has never completed (Flux row science not reconciled, or the bucket is not applied yet)" ;;
+	*) blind "object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
+	esac
 fi
 body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name science/facts 2>/dev/null)
 # crew#539 (2026-08-28 00:28Z, run 33129788480): the outage receipt (36 Flux rows, 40 pods with
 # their last log) outgrew ARG_MAX and `python3: Argument list too long` graded the estate BLIND
 # at the moment it needed reading. The body travels by file, never by argv.
-bodyf=$(mktemp); trap 'rm -f "$bodyf"' EXIT; printf '%s' "$body" > "$bodyf"
+bodyf=$(mktemp)
+trap 'rm -f "$bodyf"' EXIT
+printf '%s' "$body" >"$bodyf"
 IDP_LIB="$IDP/bin/lib" python3 - "$head" "$bodyf" "$MAX_MIN" "$JSON" "$SOURCES" <<'PY'
 import os as _os
 def _body_arg(a):

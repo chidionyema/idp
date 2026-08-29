@@ -17,10 +17,10 @@
 #   langfuse-verify --migrations-only   just the background-migrations row (crew#340)
 #
 # Exit 0 only when a span sent in comes back out.
-set -uo pipefail
-
+set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-ENVF="${LANGFUSE_ENV_FILE:-$IDP/observability/.env}"  # overridable for tests (crew#340)
+ENVF="${LANGFUSE_ENV_FILE:-$IDP/observability/.env}" # overridable for tests (crew#340)
 JQ=/usr/local/bin/jq
 PRIMARY=http://127.0.0.1:3200
 FALLBACK=http://127.0.0.1:4318
@@ -28,17 +28,21 @@ FALLBACK=http://127.0.0.1:4318
 fail=0
 say() { printf '%s\n' "$*"; }
 
-[ -f "$ENVF" ] || { say "FAIL  no $ENVF -- run bin/langfuse-up"; exit 1; }
+[ -f "$ENVF" ] || {
+	say "FAIL  no $ENVF -- run bin/langfuse-up"
+	exit 1
+}
 pk=$(grep -m1 '^LANGFUSE_INIT_PROJECT_PUBLIC_KEY=' "$ENVF" | cut -d= -f2-)
 sk=$(grep -m1 '^LANGFUSE_INIT_PROJECT_SECRET_KEY=' "$ENVF" | cut -d= -f2-)
 
 # A fresh trace id each run, so a pass can never be last run's data.
 trace_id=$(openssl rand -hex 16)
 span_id=$(openssl rand -hex 8)
-now_ns=$(( $(date +%s) * 1000000000 ))
-end_ns=$(( now_ns + 1000000 ))
+now_ns=$(($(date +%s) * 1000000000))
+end_ns=$((now_ns + 1000000))
 
-payload=$(cat <<JSON
+payload=$(
+	cat <<JSON
 {"resourceSpans":[{
   "resource":{"attributes":[
     {"key":"service.name","value":{"stringValue":"langfuse-verify"}}]},
@@ -66,61 +70,72 @@ JSON
 # public API read the empty traces table, so this probe reported "accepted but never
 # appeared" with no cause. A failed row is the cause, and it is named here before the
 # span is sent. Retry from the Langfuse UI at /background-migrations, or reset the row.
-failed_bm=$(docker exec langfuse-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select name || chr(32) || coalesce(left(failed_reason,80), chr(39)||chr(39)) from background_migrations where failed_at is not null order by name"' 2>/dev/null); bm_rc=$?
+failed_bm=$(docker exec langfuse-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select name || chr(32) || coalesce(left(failed_reason,80), chr(39)||chr(39)) from background_migrations where failed_at is not null order by name"' 2>/dev/null)
+bm_rc=$?
 if [ "$bm_rc" -ne 0 ]; then
-  say "BLIND     background migrations: cannot read langfuse-postgres (docker exec rc=$bm_rc)"
+	say "BLIND     background migrations: cannot read langfuse-postgres (docker exec rc=$bm_rc)"
 elif [ -n "$failed_bm" ]; then
-  say "FAIL      background migrations failed, the API reads tables the worker no longer writes:"
-  printf '%s\n' "$failed_bm" | sed 's/^/            /'
-  fail=1
+	say "FAIL      background migrations failed, the API reads tables the worker no longer writes:"
+	printf '%s\n' "$failed_bm" | sed 's/^/            /'
+	fail=1
 else
-  say "migrate   ok -- no failed background migration"
+	say "migrate   ok -- no failed background migration"
 fi
-[ "${1:-}" = "--migrations-only" ] && { [ "$fail" -eq 0 ] && say "PASS" || say "FAIL"; exit "$fail"; }
+[ "${1:-}" = "--migrations-only" ] && {
+	[ "$fail" -eq 0 ] && say "PASS" || say "FAIL"
+	exit "$fail"
+}
 
 # --- primary: send a span, then read it back ---------------------------------
 say "trace     $trace_id"
 code=$(curl -sS -o /tmp/lf-verify-post.$$ -w '%{http_code}' --max-time 15 \
-  -X POST "$PRIMARY/api/public/otel/v1/traces" \
-  -u "$pk:$sk" -H 'Content-Type: application/json' \
-  -d "$payload" 2>/dev/null)
+	-X POST "$PRIMARY/api/public/otel/v1/traces" \
+	-u "$pk:$sk" -H 'Content-Type: application/json' \
+	-d "$payload" 2>/dev/null)
 # curl writes 000 via -w AND exits non-zero when it cannot connect, so a
 # `|| echo 000` here appended a second 000 and the script reported "HTTP 000000".
 code=${code:-000}
 
 if [ "$code" != "200" ] && [ "$code" != "202" ] && [ "$code" != "204" ]; then
-  say "FAIL      primary rejected the span: HTTP $code"
-  sed 's/^/            /' /tmp/lf-verify-post.$$ 2>/dev/null | head -5
-  fail=1
+	say "FAIL      primary rejected the span: HTTP $code"
+	sed 's/^/            /' /tmp/lf-verify-post.$$ 2>/dev/null | head -5
+	fail=1
 else
-  say "primary   span accepted (HTTP $code) -- waiting for the worker to flush"
-  found=""
-  for i in $(seq 1 24); do
-    sleep 5
-    # Read back through /api/public/v2/observations, never /api/public/traces.
-    # Langfuse 4.x runs in LANGFUSE_MIGRATION_V4_WRITE_MODE=events_only by
-    # default; in that mode the v1 traces endpoints answer 404 with "This
-    # endpoint is not available on deployments running in Langfuse v4
-    # events_only mode". For two days (crew#340) this probe polled that 404 and
-    # reported "accepted but never appeared" while the span sat in events_full.
-    got=$(curl -sS --max-time 10 -u "$pk:$sk" \
-      "$PRIMARY/api/public/v2/observations?traceId=$trace_id&limit=1" 2>/dev/null \
-      | $JQ -r '.data[0].traceId // empty' 2>/dev/null)
-    if [ -n "$got" ]; then found="$got"; break; fi
-    [ $(( i % 4 )) -eq 0 ] && say "          still flushing ($(( i * 5 ))s)"
-  done
-  if [ -n "$found" ]; then
-    say "primary   PASS -- the span came back out of the API after $(( i * 5 ))s"
-  else
-    say "FAIL      primary accepted the span but it never appeared in the API."
-    say "          That is the silent-drop case. Check the worker:"
-    say "            docker logs --tail 40 langfuse-worker"
-    fail=1
-  fi
+	say "primary   span accepted (HTTP $code) -- waiting for the worker to flush"
+	found=""
+	for i in $(seq 1 24); do
+		sleep 5
+		# Read back through /api/public/v2/observations, never /api/public/traces.
+		# Langfuse 4.x runs in LANGFUSE_MIGRATION_V4_WRITE_MODE=events_only by
+		# default; in that mode the v1 traces endpoints answer 404 with "This
+		# endpoint is not available on deployments running in Langfuse v4
+		# events_only mode". For two days (crew#340) this probe polled that 404 and
+		# reported "accepted but never appeared" while the span sat in events_full.
+		got=$(curl -sS --max-time 10 -u "$pk:$sk" \
+			"$PRIMARY/api/public/v2/observations?traceId=$trace_id&limit=1" 2>/dev/null |
+			$JQ -r '.data[0].traceId // empty' 2>/dev/null)
+		if [ -n "$got" ]; then
+			found="$got"
+			break
+		fi
+		[ $((i % 4)) -eq 0 ] && say "          still flushing ($((i * 5))s)"
+	done
+	if [ -n "$found" ]; then
+		say "primary   PASS -- the span came back out of the API after $((i * 5))s"
+	else
+		say "FAIL      primary accepted the span but it never appeared in the API."
+		say "          That is the silent-drop case. Check the worker:"
+		say "            docker logs --tail 40 langfuse-worker"
+		fail=1
+	fi
 fi
 rm -f /tmp/lf-verify-post.$$
 
-[ "${1:-}" = "--primary-only" ] && { say; [ "$fail" -eq 0 ] && say "PASS" || say "FAIL"; exit "$fail"; }
+[ "${1:-}" = "--primary-only" ] && {
+	say
+	[ "$fail" -eq 0 ] && say "PASS" || say "FAIL"
+	exit "$fail"
+}
 
 # --- fallback: same span, different receiver ---------------------------------
 #
@@ -132,45 +147,45 @@ rm -f /tmp/lf-verify-post.$$
 # Found 2026-08-24, and it is the same defect as the rego one: a guard that
 # loses its evidence must say so, not return a verdict.
 read_traces() {
-  docker cp langfuse-otel-fallback:/data/traces.jsonl - 2>/dev/null | tar -xO 2>/dev/null
+	docker cp langfuse-otel-fallback:/data/traces.jsonl - 2>/dev/null | tar -xO 2>/dev/null
 }
 
 before=$(read_traces | wc -l | tr -d ' \r')
 code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
-  -X POST "$FALLBACK/v1/traces" \
-  -H 'Content-Type: application/json' -d "$payload" 2>/dev/null)
+	-X POST "$FALLBACK/v1/traces" \
+	-H 'Content-Type: application/json' -d "$payload" 2>/dev/null)
 code=${code:-000}
 
 if [ "$code" != "200" ]; then
-  say "FAIL      fallback rejected the span: HTTP $code"
-  fail=1
+	say "FAIL      fallback rejected the span: HTTP $code"
+	fail=1
 else
-  # The batch processor holds spans for up to 5s before writing.
-  sleep 8
-  dump=$(read_traces)
-  if [ -z "$dump" ]; then
-    # No file, or the container would not give it up. That is not a pass and it
-    # is not a proven failure -- it is a blind spot, and it is reported as one.
-    say "BLIND     fallback took the span (HTTP 200) but /data/traces.jsonl"
-    say "          could not be read back, so nothing here is proven either way"
-    fail=1
-  else
-    after=$(printf '%s\n' "$dump" | wc -l | tr -d ' \r')
-    if printf '%s\n' "$dump" | grep -q "$trace_id"; then
-      say "fallback  PASS -- the same trace id is on disk (${before:-0} -> ${after:-0} lines)"
-    else
-      say "FAIL      fallback accepted the span but the trace id is not in"
-      say "          /data/traces.jsonl (read back ${after:-0} lines)"
-      fail=1
-    fi
-  fi
+	# The batch processor holds spans for up to 5s before writing.
+	sleep 8
+	dump=$(read_traces)
+	if [ -z "$dump" ]; then
+		# No file, or the container would not give it up. That is not a pass and it
+		# is not a proven failure -- it is a blind spot, and it is reported as one.
+		say "BLIND     fallback took the span (HTTP 200) but /data/traces.jsonl"
+		say "          could not be read back, so nothing here is proven either way"
+		fail=1
+	else
+		after=$(printf '%s\n' "$dump" | wc -l | tr -d ' \r')
+		if printf '%s\n' "$dump" | grep -q "$trace_id"; then
+			say "fallback  PASS -- the same trace id is on disk (${before:-0} -> ${after:-0} lines)"
+		else
+			say "FAIL      fallback accepted the span but the trace id is not in"
+			say "          /data/traces.jsonl (read back ${after:-0} lines)"
+			fail=1
+		fi
+	fi
 fi
 
 say
 if [ "$fail" -eq 0 ]; then
-  say "PASS      both receivers took a span and gave it back. Switching between"
-  say "          them is one environment variable, and both are already running."
+	say "PASS      both receivers took a span and gave it back. Switching between"
+	say "          them is one environment variable, and both are already running."
 else
-  say "FAIL      observability is not proven working"
+	say "FAIL      observability is not proven working"
 fi
 exit "$fail"

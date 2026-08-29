@@ -2,7 +2,9 @@
 # conformity-report: Annex VI internal-control assessment, rendered from the gates
 # rather than written by hand. Prints markdown to stdout; nothing is committed
 # because a stored copy is a stale copy (LAW 24 excludes generated output).
+set -euo pipefail
 set -u
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 d="${TODAY:-$(date +%F)}"
 echo "# Conformity assessment by internal control (Annex VI), $d"

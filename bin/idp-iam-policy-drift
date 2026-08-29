@@ -17,24 +17,50 @@
 # Usage: idp-iam-policy-drift [<statements.json>]
 #   env: OCI_TENANCY_OCID (required), OCI_COMPARTMENT_OCID (optional: also read the compartment policy),
 #        POLICY_NAME (default below), COMPARTMENT_POLICY_NAME (default estate-operators-compartment)
+set -euo pipefail
 set -u
+trap 'echo "$0: exit $?" >&2' EXIT
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 FILE="${1:-$HERE/platform/oci/policy/estate-operators.statements.json}"
 NAME="${POLICY_NAME:-estate-operators-manage-estate}"
 CNAME="${COMPARTMENT_POLICY_NAME:-estate-operators-compartment}"
-[ -f "$FILE" ] || { echo "BLIND   iam-policy  no statements file at $FILE"; exit 2; }
-[ -n "${OCI_TENANCY_OCID:-}" ] || { echo "BLIND   iam-policy  OCI_TENANCY_OCID unset; the policy lives in the tenancy root"; exit 2; }
-live=$(oci iam policy list --compartment-id "$OCI_TENANCY_OCID" --name "$NAME" --all --query 'data[0].statements' 2>&1) || { echo "BLIND   iam-policy  oci iam policy list failed: $(printf %s "$live" | grep -iE 'code|message' | head -1 | cut -c1-120)"; exit 2; }
-case "$live" in null|"") echo "FAIL    iam-policy  no policy named $NAME in the tenancy root | fix: founder runs bin/idp-oci-bootstrap"; exit 1;; esac
-have=$(printf %s "$live" | jq -c 'map(ascii_downcase)' 2>/dev/null) || { echo "BLIND   iam-policy  policy list answered no JSON: $(printf %s "$live" | head -1 | cut -c1-120)"; exit 2; }
+[ -f "$FILE" ] || {
+	echo "BLIND   iam-policy  no statements file at $FILE"
+	exit 2
+}
+[ -n "${OCI_TENANCY_OCID:-}" ] || {
+	echo "BLIND   iam-policy  OCI_TENANCY_OCID unset; the policy lives in the tenancy root"
+	exit 2
+}
+live=$(oci iam policy list --compartment-id "$OCI_TENANCY_OCID" --name "$NAME" --all --query 'data[0].statements' 2>&1) || {
+	echo "BLIND   iam-policy  oci iam policy list failed: $(printf %s "$live" | grep -iE 'code|message' | head -1 | cut -c1-120)"
+	exit 2
+}
+case "$live" in null | "")
+	echo "FAIL    iam-policy  no policy named $NAME in the tenancy root | fix: founder runs bin/idp-oci-bootstrap"
+	exit 1
+	;;
+esac
+have=$(printf %s "$live" | jq -c 'map(ascii_downcase)' 2>/dev/null) || {
+	echo "BLIND   iam-policy  policy list answered no JSON: $(printf %s "$live" | head -1 | cut -c1-120)"
+	exit 2
+}
 note=""
 if [ -n "${OCI_COMPARTMENT_OCID:-}" ]; then
-  clive=$(oci iam policy list --compartment-id "$OCI_COMPARTMENT_OCID" --name "$CNAME" --all --query 'data[0].statements' 2>&1) || { echo "BLIND   iam-policy  oci iam policy list ($CNAME) failed: $(printf %s "$clive" | grep -iE 'code|message' | head -1 | cut -c1-120)"; exit 2; }
-  case "$clive" in
-    null|"") note="; $CNAME not applied yet (oke-check apply creates it)";;
-    *) chave=$(printf %s "$clive" | jq -c --arg c "$OCI_COMPARTMENT_OCID" 'map(ascii_downcase|sub(" in compartment id " + ($c|ascii_downcase) + "$"; " in compartment estate"))' 2>/dev/null) || { echo "BLIND   iam-policy  policy list ($CNAME) answered no JSON: $(printf %s "$clive" | head -1 | cut -c1-120)"; exit 2; }
-       have=$(jq -nc --argjson a "$have" --argjson b "$chave" '$a+$b|unique');;
-  esac
+	clive=$(oci iam policy list --compartment-id "$OCI_COMPARTMENT_OCID" --name "$CNAME" --all --query 'data[0].statements' 2>&1) || {
+		echo "BLIND   iam-policy  oci iam policy list ($CNAME) failed: $(printf %s "$clive" | grep -iE 'code|message' | head -1 | cut -c1-120)"
+		exit 2
+	}
+	case "$clive" in
+	null | "") note="; $CNAME not applied yet (oke-check apply creates it)" ;;
+	*)
+		chave=$(printf %s "$clive" | jq -c --arg c "$OCI_COMPARTMENT_OCID" 'map(ascii_downcase|sub(" in compartment id " + ($c|ascii_downcase) + "$"; " in compartment estate"))' 2>/dev/null) || {
+			echo "BLIND   iam-policy  policy list ($CNAME) answered no JSON: $(printf %s "$clive" | head -1 | cut -c1-120)"
+			exit 2
+		}
+		have=$(jq -nc --argjson a "$have" --argjson b "$chave" '$a+$b|unique')
+		;;
+	esac
 fi
 want=$(jq -c 'map(ascii_downcase)|sort' "$FILE")
 have=$(jq -c 'sort' <<<"$have")
@@ -46,10 +72,13 @@ JQ_STALE='def key: sub("^(?<a>allow group .* to )(inspect|read|use|manage)(?<b> 
 graded=$(jq -nc --argjson w "$want" --argjson h "$have" "$JQ_STALE")
 extra=$(jq -c 'map(select(.stale|not)|.s)' <<<"$graded")
 stale=$(jq -c 'map(select(.stale)|.s)' <<<"$graded")
-nm=$(jq length <<<"$missing"); ne=$(jq length <<<"$extra"); ns=$(jq length <<<"$stale")
+nm=$(jq length <<<"$missing")
+ne=$(jq length <<<"$extra")
+ns=$(jq length <<<"$stale")
 if [ "$nm" -eq 0 ] && [ "$ne" -eq 0 ]; then
-  [ "$ns" -eq 0 ] || note="$note; $ns stale tenancy line(s) superseded, cleared by the next bin/idp-oci-bootstrap: $(jq -r 'join("; ")' <<<"$stale")"
-  echo "ok      iam-policy  $(jq length "$FILE") statements, live matches ${FILE#$HERE/}$note"; exit 0
+	[ "$ns" -eq 0 ] || note="$note; $ns stale tenancy line(s) superseded, cleared by the next bin/idp-oci-bootstrap: $(jq -r 'join("; ")' <<<"$stale")"
+	echo "ok      iam-policy  $(jq length "$FILE") statements, live matches ${FILE#$HERE/}$note"
+	exit 0
 fi
 [ "$nm" -eq 0 ] || echo "FAIL    iam-policy  $nm missing from the live policy: $(jq -r 'join("; ")' <<<"$missing") | fix: compartment lines land with oke-check apply (platform/oci/iam.tf); tenancy lines need the founder to run bin/idp-oci-bootstrap$note"
 [ "$ne" -eq 0 ] || echo "FAIL    iam-policy  $ne live statement(s) not in ${FILE#$HERE/}: $(jq -r 'join("; ")' <<<"$extra") | fix: add to the file or remove with bin/idp-oci-bootstrap"

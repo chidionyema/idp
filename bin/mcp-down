@@ -3,6 +3,7 @@
 # mounted read-only from catalog/ and the board lives on GitHub, so there is nothing to
 # wipe and no --wipe flag (bin/litellm-down has one because it owns a ledger).
 set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 
 MCP="$(cd "$(dirname "$0")/.." && pwd)/mcp"
 COMPOSE=(docker compose --env-file "$MCP/.env" -f "$MCP/agentgateway.yml")

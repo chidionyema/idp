@@ -11,11 +11,13 @@
 repos:
   - repo: local
     hooks:
-      - id: shellcheck
-        name: shellcheck -S warning (bin/idp-ci step 1)
-        entry: shellcheck -S warning
+      - id: shell-strict
+        # crew#620 CP2: shellcheck -S warning, shfmt -d, `set -euo pipefail`, a trap -- the same
+        # four rules CI's shell-strict job runs, on staged files only, bin/idp-shell-strict --files
+        name: shell-strict (shellcheck, shfmt, strict mode, trap -- crew#620)
+        entry: bin/idp-shell-strict --files
         language: system
-        files: ^bin/
+        files: ^(bin|\.githooks|scripts)/
         types: [shell]
       - id: bash-n
         name: bash -n

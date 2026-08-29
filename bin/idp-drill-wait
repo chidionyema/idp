@@ -28,18 +28,18 @@ tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 t0=$(date +%s)
 while :; do
-  kubectl get kustomizations -A -o json > "$tmp" 2>/dev/null || echo '{"items":[]}' > "$tmp"
-  if verdict="$("$ROOT/bin/idp-portability-drill" "$tmp" 2>/dev/null | tail -1)" && [[ "$verdict" == ok* ]]; then
-    echo "floor met after $(( $(date +%s) - t0 )) s: $verdict"
-    if (( grace > 0 )); then
-      echo "settling ${grace} s more so this run can still beat the floor (crew#488)"
-      sleep "$grace"
-    fi
-    exit 0
-  fi
-  if (( $(date +%s) - t0 >= max )); then
-    echo "floor not met after ${max} s; grading what came up: ${verdict:-no verdict}"
-    exit 0
-  fi
-  sleep "$step"
+	kubectl get kustomizations -A -o json >"$tmp" 2>/dev/null || echo '{"items":[]}' >"$tmp"
+	if verdict="$("$ROOT/bin/idp-portability-drill" "$tmp" 2>/dev/null | tail -1)" && [[ "$verdict" == ok* ]]; then
+		echo "floor met after $(($(date +%s) - t0)) s: $verdict"
+		if ((grace > 0)); then
+			echo "settling ${grace} s more so this run can still beat the floor (crew#488)"
+			sleep "$grace"
+		fi
+		exit 0
+	fi
+	if (($(date +%s) - t0 >= max)); then
+		echo "floor not met after ${max} s; grading what came up: ${verdict:-no verdict}"
+		exit 0
+	fi
+	sleep "$step"
 done

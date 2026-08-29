@@ -13,12 +13,19 @@
 #
 # "Now" is the newest run's createdAt: the clock that stamped the ledger, never this machine's
 # (crew#583, tests/test_guard_freshness_is_never_measured_against_this_machines_clock.py).
-set -uo pipefail
+set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 repo="${1:-${IDP_REPO:-chidionyema/idp}}"
 week=$((7 * 86400))
 runs=$(gh run list --repo "$repo" --workflow ci --event pull_request --status success \
-         --json createdAt,updatedAt --limit 1000 2>/dev/null) || { echo "BLIND loop-meter: gh cannot list ci runs for $repo"; exit 2; }
-[ -n "$runs" ] && [ "$runs" != "null" ] || { echo "BLIND loop-meter: gh returned no runs for $repo"; exit 2; }
+	--json createdAt,updatedAt --limit 1000 2>/dev/null) || {
+	echo "BLIND loop-meter: gh cannot list ci runs for $repo"
+	exit 2
+}
+[ -n "$runs" ] && [ "$runs" != "null" ] || {
+	echo "BLIND loop-meter: gh returned no runs for $repo"
+	exit 2
+}
 read -r this_n this_med last_n last_med < <(printf '%s' "$runs" | python3 -c '
 import json, sys, statistics
 from datetime import datetime, timezone
@@ -34,8 +41,12 @@ med = lambda xs: int(statistics.median(xs)) if xs else 0
 print(len(this), med(this), len(last), med(last))
 ' "$week")
 line="median PR wall-clock this week ${this_med}s (n=$this_n), last week ${last_med}s (n=$last_n)"
-if [ "$this_n" -eq 0 ]; then echo "BLIND loop-meter: no green PR run in the last 7 days on $repo"; exit 2; fi
+if [ "$this_n" -eq 0 ]; then
+	echo "BLIND loop-meter: no green PR run in the last 7 days on $repo"
+	exit 2
+fi
 if [ "$last_n" -gt 0 ] && [ "$((this_med * 100))" -gt "$((last_med * 120))" ]; then
-  echo "FAIL  loop-meter: the loop got slower -- $line"; exit 1
+	echo "FAIL  loop-meter: the loop got slower -- $line"
+	exit 1
 fi
 echo "ok    loop-meter: $line"

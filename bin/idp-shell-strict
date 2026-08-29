@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""bin/idp-shell-strict -- founder ruling crew#620, 2026-08-29: "strict shell practice
+estate-wide with immediate effect". One checker, four rules, on every shell file under
+bin/, .githooks/ and scripts/ (if it exists):
+
+  1. shellcheck -S warning is clean
+  2. shfmt -d reports no diff (the file is already formatted)
+  3. set -euo pipefail is present (or set -eu plus a separate set -o pipefail)
+  4. a trap line is present
+
+Discovery, unless --files names an explicit list: every file under bin/, .githooks/ and
+scripts/ whose name ends .sh or .bash, or whose first line is a sh/bash shebang. One line
+per failure, `shell-strict: <file>: <reason>`, and exit 1 on any failure -- so CI, the
+pre-commit hook and a human running it by hand all read the same verdict.
+"""
+import argparse
+import pathlib
+import re
+import shutil
+import subprocess
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+DISCOVER_DIRS = ["bin", ".githooks", "scripts"]
+SHEBANG_RE = re.compile(rb"^#!.*\b(ba)?sh\b")
+SET_EUO_RE = re.compile(r"^\s*set\s+(-\w*e\w*u\w*o\s+pipefail|-\w*u\w*e\w*o\s+pipefail)\s*$", re.M)
+SET_EU_RE = re.compile(r"^\s*set\s+-\w*e\w*u\w*\s*$", re.M)
+SET_PIPEFAIL_RE = re.compile(r"^\s*set\s+-o\s+pipefail\s*$", re.M)
+TRAP_RE = re.compile(r"^\s*trap\s+\S", re.M)
+
+
+def is_shell_file(path: pathlib.Path) -> bool:
+    if not path.is_file():
+        return False
+    if path.suffix in (".sh", ".bash"):
+        return True
+    try:
+        with open(path, "rb") as fh:
+            first = fh.readline()
+    except OSError:
+        return False
+    return bool(SHEBANG_RE.match(first))
+
+
+def discover(root: pathlib.Path) -> list[pathlib.Path]:
+    found: list[pathlib.Path] = []
+    for d in DISCOVER_DIRS:
+        base = root / d
+        if not base.exists():
+            continue
+        for p in sorted(base.rglob("*")):
+            if p.is_file() and is_shell_file(p):
+                found.append(p)
+    return found
+
+
+def has_strict_mode(text: str) -> bool:
+    if SET_EUO_RE.search(text):
+        return True
+    return bool(SET_EU_RE.search(text) and SET_PIPEFAIL_RE.search(text))
+
+
+def has_trap(text: str) -> bool:
+    return bool(TRAP_RE.search(text))
+
+
+def check_file(path: pathlib.Path, have_shellcheck: bool, have_shfmt: bool) -> list[str]:
+    reasons = []
+    text = path.read_text(errors="replace")
+
+    if have_shellcheck:
+        r = subprocess.run(
+            ["shellcheck", "-S", "warning", str(path)],
+            capture_output=True, text=True,
+        )
+        if r.returncode != 0:
+            first = next((l for l in r.stdout.splitlines() if l.strip()), r.stdout[:120])
+            reasons.append(f"shellcheck -S warning found issues ({first.strip()})")
+    else:
+        # Fails open on a missing tool (LAW 38: a gate that refuses correct work is an
+        # outage), same convention as .githooks/pre-commit's `command -v shellcheck`.
+        print(f"shell-strict: shellcheck not installed, {path} not checked against it", file=sys.stderr)
+
+    if have_shfmt:
+        r = subprocess.run(["shfmt", "-d", str(path)], capture_output=True, text=True)
+        if r.returncode != 0 or r.stdout.strip():
+            reasons.append("not shfmt-formatted, run: shfmt -w " + str(path))
+    else:
+        print(f"shell-strict: shfmt not installed, {path} not checked against it", file=sys.stderr)
+
+    if not has_strict_mode(text):
+        reasons.append("missing 'set -euo pipefail' (or set -eu plus set -o pipefail)")
+
+    if not has_trap(text):
+        reasons.append("missing a trap")
+
+    return reasons
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="crew#620: strict shell practice gate")
+    ap.add_argument("--files", nargs="*", default=None,
+                     help="explicit files to check; default is discovery under bin/, .githooks/, scripts/")
+    args = ap.parse_args()
+
+    if args.files:
+        # --files is how pre-commit and a caller hand us an explicit list (staged files, a
+        # changed-file diff): still filter to actual shell files, so a non-shell path in the
+        # list (pre-commit's own `types: [shell]` already does this, a manual caller may not)
+        # never gets shellcheck'd as if it were shell.
+        files = [pathlib.Path(f) for f in args.files if is_shell_file(pathlib.Path(f))]
+    else:
+        files = discover(ROOT)
+
+    have_shellcheck = shutil.which("shellcheck") is not None
+    have_shfmt = shutil.which("shfmt") is not None
+
+    fail = False
+    for f in files:
+        for reason in check_file(f, have_shellcheck, have_shfmt):
+            print(f"shell-strict: {f}: {reason}")
+            fail = True
+
+    if not files:
+        print("shell-strict: no shell files found")
+
+    if fail:
+        return 1
+    print(f"ok    shell-strict: {len(files)} file(s) clean (shellcheck, shfmt, strict mode, trap)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

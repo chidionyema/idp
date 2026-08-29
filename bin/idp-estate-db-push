@@ -19,26 +19,40 @@
 #   ESTATE_DB_ARTIFACT  where it goes (default oci://ghcr.io/chidionyema/idp/estate-db:latest)
 #   --dry-run    build the artifact directory and list it; push nothing (LAW 17: measure first)
 set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 INV="${INV:-$HOME/.estate/state/inventory.json}"
 CATALOG="${CATALOG:-$IDP/catalog/catalog-info.yaml}"
 STATE_MD="${STATE_MD:-${ESTATE_CODE:-$(dirname "$IDP")}/crew/STATE.md}"
 ARTIFACT="${ESTATE_DB_ARTIFACT:-oci://ghcr.io/chidionyema/idp/estate-db:latest}"
-dry=0; [ "${1:-}" = --dry-run ] && dry=1
+dry=0
+[ "${1:-}" = --dry-run ] && dry=1
 
-for t in flux git jq; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
-for f in "$INV" "$CATALOG" "$STATE_MD"; do [ -s "$f" ] || { echo "BLIND $f missing or empty"; exit 2; }; done
+for t in flux git jq; do command -v "$t" >/dev/null || {
+	echo "BLIND $t missing"
+	exit 2
+}; done
+for f in "$INV" "$CATALOG" "$STATE_MD"; do [ -s "$f" ] || {
+	echo "BLIND $f missing or empty"
+	exit 2
+}; done
 
-T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
+T=$(mktemp -d)
+trap 'rm -rf "$T"' EXIT
 INV="$INV" DB="$T/estate.db" "$IDP/bin/db-gen" >/dev/null
 cp "$CATALOG" "$T/catalog-info.yaml"
 cp "$STATE_MD" "$T/STATE.md"
 rows=$(jq '.rows | length' "$INV")
 REV="$(git -C "$IDP" rev-parse --short HEAD)@$(date -u +%Y%m%dT%H%M%SZ)"
 if [ "$dry" = 1 ]; then
-  echo "dry-run estate-db: $rows assets, would push $ARTIFACT revision $REV"; ls -l "$T"; exit 0
+	echo "dry-run estate-db: $rows assets, would push $ARTIFACT revision $REV"
+	ls -l "$T"
+	exit 0
 fi
-gh auth token >/dev/null 2>&1 || { echo "BLIND gh holds no token"; exit 2; }
+gh auth token >/dev/null 2>&1 || {
+	echo "BLIND gh holds no token"
+	exit 2
+}
 gh auth token | flux push artifact "$ARTIFACT" --path="$T" \
-  --source="https://github.com/chidionyema/idp" --revision="$REV" --creds "chidionyema:$(cat)" >/dev/null
+	--source="https://github.com/chidionyema/idp" --revision="$REV" --creds "chidionyema:$(cat)" >/dev/null
 echo "ok      estate-db pushed ($rows assets), revision $REV"

@@ -11,21 +11,32 @@
 # estate browser profile has not seen, one Create tap for the GitHub App if it does not exist yet.
 # Never a paste, never a settings page. The run ends with bin/idp-root-trust --check, which is the
 # register saying every row MEETS, and with a red row when one does not.
-set -uo pipefail
+set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 MODE=${1:-run}
-case "$MODE" in run|--preflight) ;; *) sed -n 2,4p "$0"; exit 2;; esac
-ARG=""; [ "$MODE" = --preflight ] && ARG=--preflight
+case "$MODE" in run | --preflight) ;; *)
+	sed -n 2,4p "$0"
+	exit 2
+	;;
+esac
+ARG=""
+[ "$MODE" = --preflight ] && ARG=--preflight
 STEPS="idp-estate-seed idp-bootstrap-tailscale idp-bootstrap-cloudflare idp-bootstrap-vendors"
 rc=0
 for s in $STEPS; do
-  printf '\n== %s %s\n' "$s" "$ARG"
-  "$IDP/bin/$s" $ARG || { rc=$?; printf 'FAIL    %-20s exited %s; the steps after it were not run\n' "$s" "$rc"; break; }
+	printf '\n== %s %s\n' "$s" "$ARG"
+	"$IDP/bin/$s" $ARG || {
+		rc=$?
+		printf 'FAIL    %-20s exited %s; the steps after it were not run\n' "$s" "$rc"
+		break
+	}
 done
 if [ "$rc" = 0 ]; then
-  printf '\n== idp-github-app installation + refresh\n'
-  if [ "$MODE" = --preflight ]; then "$IDP/bin/idp-github-app" status || true
-  else "$IDP/bin/idp-github-app" installation && "$IDP/bin/idp-github-app" refresh || rc=$?; fi
+	printf '\n== idp-github-app installation + refresh\n'
+	if [ "$MODE" = --preflight ]; then
+		"$IDP/bin/idp-github-app" status || true
+	else "$IDP/bin/idp-github-app" installation && "$IDP/bin/idp-github-app" refresh || rc=$?; fi
 fi
 printf '\n== idp-root-trust --check\n'
 "$IDP/bin/idp-root-trust" --check || rc=$?

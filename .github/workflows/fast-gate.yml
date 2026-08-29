@@ -16,3 +16,29 @@ jobs:
         with: { python-version: "3.12", cache: pip, cache-dependency-path: sovereign/requirements*.txt }
       - run: pip install -q ruff==0.15.18   # the pin ci.yml's bdd job uses; shellcheck ships on ubuntu-latest
       - run: IDP_CI_FAST=1 bin/idp-ci
+
+  # crew#620 (founder ruling, 2026-08-29): "strict shell practice estate-wide with immediate
+  # effect". A sibling job, not a rung inside bin/idp-ci: shellcheck -S warning already runs
+  # there (rung 1), but shfmt formatting, a `set -euo pipefail` and a `trap` are new rules and
+  # get their own job so a red here reads as "shell-strict", not a cryptic rung number. Both
+  # jobs are inside fast-gate.yml, so ci.yml/build-multiarch.yml/portability-drill.yml's single
+  # `needs: fast-gate` already waits on this one too -- no caller edited.
+  shell-strict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # shellcheck ships on ubuntu-latest; shfmt does not, so it is fetched as a pinned,
+      # checksum-verified release binary -- no go toolchain dependency, no extra pinned action.
+      - name: install shfmt v3.10.0
+        run: |
+          set -euo pipefail
+          trap 'echo "install shfmt: exit $?" >&2' EXIT
+          curl -fsSL --retry 5 -o /tmp/shfmt \
+            https://github.com/mvdan/sh/releases/download/v3.10.0/shfmt_v3.10.0_linux_amd64
+          echo "1f57a384d59542f8fac5f503da1f3ea44242f46dff969569e80b524d64b71dbc  /tmp/shfmt" | sha256sum -c -
+          install -m 0755 /tmp/shfmt /usr/local/bin/shfmt
+      # Rule 5 (crew#620 CP2): the lint step itself runs under `bash -x` so a red prints its
+      # trace inline -- installer and checkout steps above stay untraced, this is the lint step.
+      - name: shell-strict lint
+        run: bash -x bin/idp-shell-strict

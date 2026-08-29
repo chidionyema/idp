@@ -23,6 +23,7 @@
 # Reports are gitignored: they are generated, and a committed copy is a stale
 # copy that reads as a record (LAW 24 excludes generated output).
 set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$IDP/reports"
@@ -33,9 +34,15 @@ quiet=0
 log() { [ "$quiet" -eq 1 ] || printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 
 for t in syft grype conftest cyclonedx sbomqs; do
-  command -v "$t" >/dev/null || { echo "$t is not installed -- brew install $t"; exit 2; }
+	command -v "$t" >/dev/null || {
+		echo "$t is not installed -- brew install $t"
+		exit 2
+	}
 done
-[ -d "$TARGET" ] || { echo "no $TARGET -- the parts list needs an installed tree"; exit 2; }
+[ -d "$TARGET" ] || {
+	echo "no $TARGET -- the parts list needs an installed tree"
+	exit 2
+}
 
 mkdir -p "$OUT"
 
@@ -67,10 +74,10 @@ mkdir -p "$OUT"
 # still reads it, and 3.0.1 is not a replacement, it is the regulator's ask.
 log "sbom      scanning $TARGET"
 syft scan "dir:$TARGET" --select-catalogers "+javascript-package-cataloger" \
-                        -o json="$OUT/sbom.syft.json" \
-                        -o spdx-json="$OUT/sbom.spdx.json" \
-                        -o spdx-json@3="$OUT/sbom.spdx3.json" \
-                        -o cyclonedx-json="$OUT/sbom.cyclonedx.json" -q
+	-o json="$OUT/sbom.syft.json" \
+	-o spdx-json="$OUT/sbom.spdx.json" \
+	-o spdx-json@3="$OUT/sbom.spdx3.json" \
+	-o cyclonedx-json="$OUT/sbom.cyclonedx.json" -q
 n=$(/usr/local/bin/jq '.artifacts|length' "$OUT/sbom.syft.json")
 lic=$(/usr/local/bin/jq '[.artifacts[]|select((.licenses|length)>0)]|length' "$OUT/sbom.syft.json")
 log "sbom      $n packages, $lic with a declared licence -> reports/sbom.{syft,spdx,spdx3,cyclonedx}.json"
@@ -104,7 +111,7 @@ log "licence   reshaping the SBOM for the policy"
 /usr/local/bin/jq '{packages: [.artifacts[] | {
     name, version,
     licences: [ .licenses[]? | (.value // .spdxExpression // empty) ]
-  }]}' "$OUT/sbom.syft.json" > "$OUT/licences.json"
+  }]}' "$OUT/sbom.syft.json" >"$OUT/licences.json"
 
 log "licence   conftest against policy/licences.rego"
 set +e
@@ -114,8 +121,8 @@ set -e
 
 echo
 if [ "$rc" -eq 0 ]; then
-  echo "PASS      $n packages ($lic licensed), $tot vulnerabilities ($crit critical), nothing sell-blocking"
+	echo "PASS      $n packages ($lic licensed), $tot vulnerabilities ($crit critical), nothing sell-blocking"
 else
-  echo "FAIL      the licence policy refused -- see reports/licence-policy.txt"
+	echo "FAIL      the licence policy refused -- see reports/licence-policy.txt"
 fi
 exit "$rc"

@@ -13,24 +13,28 @@
 # generated once with openssl and never regenerated -- LITELLM_SALT_KEY rotates the
 # encryption of every stored virtual key, so overwriting it makes them unreadable.
 set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 # A bind-mount source the container VM cannot see mounts as an empty directory (2026-08-25).
 "$IDP/bin/vm-shared-path" "$IDP" || exit 2
 LLM="$IDP/llm"
 ENVF="$LLM/.env"
-AGE_BLOB="${AGE_BLOB:-$(dirname "$IDP")/prospector-main/deploy/secrets.env.age}"   # sibling checkout; migration source until the sops vault lands
+AGE_BLOB="${AGE_BLOB:-$(dirname "$IDP")/prospector-main/deploy/secrets.env.age}" # sibling checkout; migration source until the sops vault lands
 AGE_ID="$HOME/.config/prospector/age-key.txt"
 COMPOSE=(docker compose --env-file "$ENVF" -f "$LLM/litellm.yml")
 
 log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 
-command -v docker >/dev/null || { echo "docker is not installed"; exit 2; }
+command -v docker >/dev/null || {
+	echo "docker is not installed"
+	exit 2
+}
 docker info >/dev/null 2>&1 || {
-  echo "FAIL  the docker daemon is not reachable, so nothing can start."
-  echo "      context: $(docker context show 2>/dev/null)"
-  echo "      This is an outage to route, not a thing to restart blindly (crew#85)."
-  exit 2
+	echo "FAIL  the docker daemon is not reachable, so nothing can start."
+	echo "      context: $(docker context show 2>/dev/null)"
+	echo "      This is an outage to route, not a thing to restart blindly (crew#85)."
+	exit 2
 }
 
 # The class, not the instance: a daemon with less memory than the stack it hosts. On
@@ -42,10 +46,10 @@ docker info >/dev/null 2>&1 || {
 MEM_MIN_BYTES=$((4 * 1024 * 1024 * 1024))
 MEM_BYTES="${LITELLM_DOCKER_MEM_BYTES:-$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)}"
 if [ "${MEM_BYTES:-0}" -lt "$MEM_MIN_BYTES" ]; then
-  echo "FAIL  the docker daemon has $((MEM_BYTES / 1048576)) MiB; this stack needs 4096 MiB beside the other containers the daemon restarts."
-  echo "      colima: colima stop && colima start --cpu 2 --memory 5"
-  echo "      Then re-run this command. Starting anyway starves every container (2026-08-26, VM load 252)."
-  exit 2
+	echo "FAIL  the docker daemon has $((MEM_BYTES / 1048576)) MiB; this stack needs 4096 MiB beside the other containers the daemon restarts."
+	echo "      colima: colima stop && colima start --cpu 2 --memory 5"
+	echo "      Then re-run this command. Starting anyway starves every container (2026-08-26, VM load 252)."
+	exit 2
 fi
 OTHERS=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -vc '^litellm-' || true)
 [ "${OTHERS:-0}" -gt 0 ] && log "note: $OTHERS other containers are running on this daemon and share its ${MEM_BYTES} bytes"
@@ -59,46 +63,55 @@ OTHERS=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -vc '^litellm-' || t
 # container before it binds, and compose reports it as restarting.
 CFG="$LLM/config.yaml"
 if python3 -c 'import yaml' >/dev/null 2>&1; then
-  if ! python3 -c "import sys,yaml; yaml.safe_load(open(sys.argv[1]))" "$CFG" 2>/tmp/litellm-yaml.$$; then
-    echo "FAIL  $CFG is not valid YAML, so LiteLLM would refuse it and exit:"
-    sed 's/^/        /' /tmp/litellm-yaml.$$
-    rm -f /tmp/litellm-yaml.$$
-    exit 2
-  fi
-  rm -f /tmp/litellm-yaml.$$
-  log "config.yaml is valid YAML"
+	if ! python3 -c "import sys,yaml; yaml.safe_load(open(sys.argv[1]))" "$CFG" 2>/tmp/litellm-yaml.$$; then
+		echo "FAIL  $CFG is not valid YAML, so LiteLLM would refuse it and exit:"
+		sed 's/^/        /' /tmp/litellm-yaml.$$
+		rm -f /tmp/litellm-yaml.$$
+		exit 2
+	fi
+	rm -f /tmp/litellm-yaml.$$
+	log "config.yaml is valid YAML"
 else
-  # A guard that cannot reach its evidence says so rather than returning a verdict.
-  log "BLIND  pyyaml is not importable, so $CFG was NOT validated"
+	# A guard that cannot reach its evidence says so rather than returning a verdict.
+	log "BLIND  pyyaml is not importable, so $CFG was NOT validated"
 fi
 
 # --- secrets ------------------------------------------------------------------
 umask 077
 if [ ! -f "$ENVF" ]; then
-  [ -r "$AGE_BLOB" ] || { echo "FAIL  no age vault at $AGE_BLOB"; exit 2; }
-  [ -r "$AGE_ID" ]   || { echo "FAIL  no age identity at $AGE_ID"; exit 2; }
-  command -v age >/dev/null || { echo "FAIL  age is not installed"; exit 2; }
-  # Only the upstream keys this proxy needs. Decrypting 22 secrets into a file that only
-  # needs 5 is a blast radius nobody chose.
-  age -d -i "$AGE_ID" "$AGE_BLOB" \
-    | grep -E '^(MINIMAX_API_KEY|DEEPSEEK_API_KEY|OPENROUTER_API_KEY|GEMINI_API_KEY|ANTHROPIC_API_KEY)=' \
-    > "$ENVF"
-  {
-    echo "LITELLM_MASTER_KEY=sk-$(openssl rand -hex 24)"
-    echo "LITELLM_SALT_KEY=sk-$(openssl rand -hex 24)"
-    echo "LITELLM_DB_PASSWORD=$(openssl rand -hex 24)"
-  } >> "$ENVF"
-  chmod 600 "$ENVF"
-  log "wrote $ENVF (mode 600, gitignored, never printed)"
+	[ -r "$AGE_BLOB" ] || {
+		echo "FAIL  no age vault at $AGE_BLOB"
+		exit 2
+	}
+	[ -r "$AGE_ID" ] || {
+		echo "FAIL  no age identity at $AGE_ID"
+		exit 2
+	}
+	command -v age >/dev/null || {
+		echo "FAIL  age is not installed"
+		exit 2
+	}
+	# Only the upstream keys this proxy needs. Decrypting 22 secrets into a file that only
+	# needs 5 is a blast radius nobody chose.
+	age -d -i "$AGE_ID" "$AGE_BLOB" |
+		grep -E '^(MINIMAX_API_KEY|DEEPSEEK_API_KEY|OPENROUTER_API_KEY|GEMINI_API_KEY|ANTHROPIC_API_KEY)=' \
+			>"$ENVF"
+	{
+		echo "LITELLM_MASTER_KEY=sk-$(openssl rand -hex 24)"
+		echo "LITELLM_SALT_KEY=sk-$(openssl rand -hex 24)"
+		echo "LITELLM_DB_PASSWORD=$(openssl rand -hex 24)"
+	} >>"$ENVF"
+	chmod 600 "$ENVF"
+	log "wrote $ENVF (mode 600, gitignored, never printed)"
 else
-  log "$ENVF exists, reusing it"
+	log "$ENVF exists, reusing it"
 fi
 
 # Which upstreams actually have a credential. NAMES only -- a missing key is a routing
 # fact the operator needs, and the value is never the way to report it.
 log "upstream credentials present:"
 for k in MINIMAX_API_KEY DEEPSEEK_API_KEY OPENROUTER_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY; do
-  if grep -q "^$k=." "$ENVF"; then echo "    $k    present"; else echo "    $k    MISSING - that tier will fail over"; fi
+	if grep -q "^$k=." "$ENVF"; then echo "    $k    present"; else echo "    $k    MISSING - that tier will fail over"; fi
 done
 
 log "starting"
@@ -110,27 +123,30 @@ log "starting"
 # Pillow path, ollama-llama absent). If the file is newer than the container, restart it.
 started=$(docker inspect -f '{{.State.StartedAt}}' litellm-proxy 2>/dev/null || true)
 if [ -n "$started" ]; then
-  started_epoch=$(python3 -c "import sys,datetime; print(int(datetime.datetime.fromisoformat(sys.argv[1][:26]).replace(tzinfo=datetime.timezone.utc).timestamp()))" "$started" 2>/dev/null || echo 0)
-  cfg_epoch=$(stat -f %m "$CFG" 2>/dev/null || stat -c %Y "$CFG")
-  if [ "$cfg_epoch" -gt "$started_epoch" ]; then
-    log "config.yaml is newer than the running proxy; restarting it so the change is read"
-    # The compose service is `litellm`; `litellm-proxy` is only the container_name.
-    # A silent `restart` against the wrong name logged the restart and did nothing
-    # (first proof run, 2026-08-26), so the failure is loud.
-    "${COMPOSE[@]}" restart litellm || { echo "FAIL  compose restart litellm failed; the proxy still runs the old config"; exit 2; }
-  else
-    log "proxy started after the last config.yaml change; no restart"
-  fi
+	started_epoch=$(python3 -c "import sys,datetime; print(int(datetime.datetime.fromisoformat(sys.argv[1][:26]).replace(tzinfo=datetime.timezone.utc).timestamp()))" "$started" 2>/dev/null || echo 0)
+	cfg_epoch=$(stat -f %m "$CFG" 2>/dev/null || stat -c %Y "$CFG")
+	if [ "$cfg_epoch" -gt "$started_epoch" ]; then
+		log "config.yaml is newer than the running proxy; restarting it so the change is read"
+		# The compose service is `litellm`; `litellm-proxy` is only the container_name.
+		# A silent `restart` against the wrong name logged the restart and did nothing
+		# (first proof run, 2026-08-26), so the failure is loud.
+		"${COMPOSE[@]}" restart litellm || {
+			echo "FAIL  compose restart litellm failed; the proxy still runs the old config"
+			exit 2
+		}
+	else
+		log "proxy started after the last config.yaml change; no restart"
+	fi
 fi
 
 log "waiting for the proxy to answer"
 for _ in $(seq 1 40); do
-  code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:4000/health/liveliness 2>/dev/null || true)
-  if [ "$code" = "200" ]; then
-    log "up: http://127.0.0.1:4000  (bin/litellm-status for what it is routing)"
-    exit 0
-  fi
-  sleep 3
+	code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:4000/health/liveliness 2>/dev/null || true)
+	if [ "$code" = "200" ]; then
+		log "up: http://127.0.0.1:4000  (bin/litellm-status for what it is routing)"
+		exit 0
+	fi
+	sleep 3
 done
 
 echo "FAIL  the proxy did not answer on 127.0.0.1:4000 within 120s."

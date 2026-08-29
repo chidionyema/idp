@@ -16,22 +16,23 @@
 # catalogue. There is one catalogue: Backstage. Founder ruling 2026-08-24,
 # "backstge is for catalog" and "ive seen 5 ui faces today" -- the Datasette
 # fallback this script used to check as a second renderer is gone.
-set -uo pipefail
-
+set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 YAML="$IDP/catalog/catalog-info.yaml"
 BACKEND="http://127.0.0.1:7107"
 JQ=/usr/local/bin/jq
 
 deadline=0
-[ "${1:-}" = "--wait" ] && deadline=$(( $(date +%s) + 180 ))
+[ "${1:-}" = "--wait" ] && deadline=$(($(date +%s) + 180))
 
 fail=0
 say() { printf '%s\n' "$*"; }
 
 # --- source of truth: what the generator wrote --------------------------------
 if [ ! -f "$YAML" ]; then
-  say "FAIL  no $YAML -- run bin/catalog-gen"; exit 1
+	say "FAIL  no $YAML -- run bin/catalog-gen"
+	exit 1
 fi
 # Only asset documents are counted: Domain, System and Group are structure that
 # catalog-gen adds itself and the inventory (and therefore estate.db) never holds.
@@ -40,8 +41,13 @@ want=$(grep -c '^kind: \(Component\|Resource\)$' "$YAML")
 say "source    $want entities in catalog-info.yaml"
 # crew#269 row 3: every Component carries a URL a person can open. Offenders are named;
 # a repo with no github remote is the usual cause (LAW 24).
-if lk=$(python3 "$IDP/bin/catalog-links-check" "$YAML" 2>&1); then say "ok        links     $lk"
-else say "FAIL      links     $(printf '%s' "$lk" | head -1)"; printf '%s\n' "$lk" | tail -n +2 | sed 's/^/          /'; fail=1; fi
+if lk=$(python3 "$IDP/bin/catalog-links-check" "$YAML" 2>&1); then
+	say "ok        links     $lk"
+else
+	say "FAIL      links     $(printf '%s' "$lk" | head -1)"
+	printf '%s\n' "$lk" | tail -n +2 | sed 's/^/          /'
+	fail=1
+fi
 
 # --- schema: catalog-info.yaml validates against Backstage's published schema -
 # Backstage's own schema lives at github.com/backstage/backstage under
@@ -65,11 +71,12 @@ else say "FAIL      links     $(printf '%s' "$lk" | head -1)"; printf '%s\n' "$l
 CJS="$IDP/.venv/bin/check-jsonschema"
 SCHEMA_URL="https://json.schemastore.org/catalog-info.json"
 if [ ! -x "$CJS" ]; then
-  say "FAIL      schema  check-jsonschema missing -- $IDP/.venv/bin/pip install check-jsonschema"
-  fail=1
+	say "FAIL      schema  check-jsonschema missing -- $IDP/.venv/bin/pip install check-jsonschema"
+	fail=1
 else
-  split_dir=$(mktemp -d)
-  n_docs=$("$IDP/.venv/bin/python3" - "$YAML" "$split_dir" <<'PY'
+	split_dir=$(mktemp -d)
+	n_docs=$(
+		"$IDP/.venv/bin/python3" - "$YAML" "$split_dir" <<'PY'
 import sys, os, yaml
 src, out = sys.argv[1], sys.argv[2]
 n = 0
@@ -83,35 +90,35 @@ for doc in yaml.safe_load_all(open(src)):
         yaml.safe_dump(doc, fh)
 print(n)
 PY
-)
-  schema_out=$(mktemp)
-  if [ "$n_docs" -eq 0 ]; then
-    say "FAIL      schema  no entity documents parsed out of $YAML"
-    fail=1
-  elif "$CJS" --schemafile "$SCHEMA_URL" "$split_dir"/*.yaml > "$schema_out" 2>&1; then
-    say "schema    $n_docs/$n_docs entity documents valid against $SCHEMA_URL"
-  else
-    say "FAIL      schema validation failed against $SCHEMA_URL:"
-    sed 's/^/            /' "$schema_out"
-    fail=1
-  fi
-  rm -f "$schema_out"
-  rm -rf "$split_dir"
+	)
+	schema_out=$(mktemp)
+	if [ "$n_docs" -eq 0 ]; then
+		say "FAIL      schema  no entity documents parsed out of $YAML"
+		fail=1
+	elif "$CJS" --schemafile "$SCHEMA_URL" "$split_dir"/*.yaml >"$schema_out" 2>&1; then
+		say "schema    $n_docs/$n_docs entity documents valid against $SCHEMA_URL"
+	else
+		say "FAIL      schema validation failed against $SCHEMA_URL:"
+		sed 's/^/            /' "$schema_out"
+		fail=1
+	fi
+	rm -f "$schema_out"
+	rm -rf "$split_dir"
 fi
 
 # --- the catalogue ------------------------------------------------------------
 ingested_names() {
-  local tok
-  tok=$(curl -sS --max-time 8 -X POST "$BACKEND/api/auth/guest/refresh" 2>/dev/null \
-        | $JQ -r '.backstageIdentity.token // empty' 2>/dev/null)
-  [ -z "$tok" ] && return 1
-  curl -sS --max-time 25 -H "Authorization: Bearer $tok" \
-    "$BACKEND/api/catalog/entities?limit=5000&fields=kind,metadata.name" 2>/dev/null \
-    | $JQ -r '.[] | "\(.kind)/\(.metadata.name)"' 2>/dev/null
+	local tok
+	tok=$(curl -sS --max-time 8 -X POST "$BACKEND/api/auth/guest/refresh" 2>/dev/null |
+		$JQ -r '.backstageIdentity.token // empty' 2>/dev/null)
+	[ -z "$tok" ] && return 1
+	curl -sS --max-time 25 -H "Authorization: Bearer $tok" \
+		"$BACKEND/api/catalog/entities?limit=5000&fields=kind,metadata.name" 2>/dev/null |
+		$JQ -r '.[] | "\(.kind)/\(.metadata.name)"' 2>/dev/null
 }
 
 wanted_names() {
-  awk '
+	awk '
     /^kind: /            { k=$2 }
     /^  name: / && k != "" { n=$2; gsub(/^'"'"'|'"'"'$/,"",n); print k "/" n; k="" }
   ' "$YAML"
@@ -121,90 +128,122 @@ wanted_names() {
 # answering is a failing verification, not a partial one. This used to exit 0
 # on the strength of Datasette serving the same rows.
 if ! curl -sS -o /dev/null --max-time 4 "$BACKEND/api/catalog/entities" 2>/dev/null; then
-  say "FAIL      the Backstage backend on 7107 is not answering -- nothing is serving the catalogue"
-  exit 1
+	say "FAIL      the Backstage backend on 7107 is not answering -- nothing is serving the catalogue"
+	exit 1
 fi
 
-tmp_w=$(mktemp); tmp_i=$(mktemp)
-wanted_names | sort -u > "$tmp_w"
+tmp_w=$(mktemp)
+tmp_i=$(mktemp)
+wanted_names | sort -u >"$tmp_w"
 while :; do
-  ingested_names | sort -u > "$tmp_i" 2>/dev/null
-  missing=$(comm -23 "$tmp_w" "$tmp_i" | wc -l | tr -d ' ')
-  [ "$missing" -eq 0 ] && break
-  [ "$(date +%s)" -ge "$deadline" ] && break
-  say "          waiting: $missing of $want not ingested yet"
-  sleep 15
+	ingested_names | sort -u >"$tmp_i" 2>/dev/null
+	missing=$(comm -23 "$tmp_w" "$tmp_i" | wc -l | tr -d ' ')
+	[ "$missing" -eq 0 ] && break
+	[ "$(date +%s)" -ge "$deadline" ] && break
+	say "          waiting: $missing of $want not ingested yet"
+	sleep 15
 done
 
 if [ "$missing" -eq 0 ]; then
-  say "primary   all $want entities ingested by Backstage -- matches"
+	say "primary   all $want entities ingested by Backstage -- matches"
 else
-  say "FAIL      primary is missing $missing of $want entities:"
-  comm -23 "$tmp_w" "$tmp_i" | head -10 | sed 's/^/            /'
-  [ "$missing" -gt 10 ] && say "            ... and $((missing - 10)) more"
-  say "          look for 'Policy check failed' in logs/backstage.log"
-  fail=1
+	say "FAIL      primary is missing $missing of $want entities:"
+	comm -23 "$tmp_w" "$tmp_i" | head -10 | sed 's/^/            /'
+	[ "$missing" -gt 10 ] && say "            ... and $((missing - 10)) more"
+	say "          look for 'Policy check failed' in logs/backstage.log"
+	fail=1
 fi
 rm -f "$tmp_w" "$tmp_i"
 
 say
 if [ "$fail" -eq 0 ]; then
-  say "PASS      the catalogue matches the inventory: $want entities"
+	say "PASS      the catalogue matches the inventory: $want entities"
 else
-  say "FAIL      the portal does not match the inventory"
+	say "FAIL      the portal does not match the inventory"
 fi
 # Port lock, live half (crew#186 CP4): every listener the inventory saw is declared
 # in catalog/ports.yaml, and nothing but the gateway is off loopback (R20).
-if out=$(python3 "$IDP/bin/port-gate" --live 2>&1); then say "ok        portlock  $(printf '%s' "$out" | tail -1 | sed 's/^ok *ports *//')"
-else say "FAIL      portlock"; printf '%s\n' "$out" | sed 's/^/          /'; fail=1; fi
+if out=$(python3 "$IDP/bin/port-gate" --live 2>&1); then
+	say "ok        portlock  $(printf '%s' "$out" | tail -1 | sed 's/^ok *ports *//')"
+else
+	say "FAIL      portlock"
+	printf '%s\n' "$out" | sed 's/^/          /'
+	fail=1
+fi
 # Oracle identity drill (ADR 0004 step 1, founder 2026-08-25 "added to drill"): the vaulted key
 # must still open the tenancy. BLIND until bin/idp-oci-bootstrap has run once.
-if out=$("$IDP/bin/idp-oci-login" --check 2>&1); then say "$(printf '%s' "$out" | tail -1)"
-elif [ $? = 2 ]; then say "$(printf '%s' "$out" | tail -1)"
-else say "FAIL      oci     $(printf '%s' "$out" | tail -1)"; fail=1; fi
+if out=$("$IDP/bin/idp-oci-login" --check 2>&1); then
+	say "$(printf '%s' "$out" | tail -1)"
+elif [ $? = 2 ]; then
+	say "$(printf '%s' "$out" | tail -1)"
+else
+	say "FAIL      oci     $(printf '%s' "$out" | tail -1)"
+	fail=1
+fi
 # The VM's config is a repo file (crew#212): drift here means the machine runs a VM nobody reviewed.
-if out=$("$IDP/bin/idp-install-colima" --check 2>&1); then say "ok        colima    live profile matches substrate/colima.yaml"
-else say "FAIL      colima    $(printf '%s' "$out" | head -1)"; fail=1; fi
+if out=$("$IDP/bin/idp-install-colima" --check 2>&1); then
+	say "ok        colima    live profile matches substrate/colima.yaml"
+else
+	say "FAIL      colima    $(printf '%s' "$out" | head -1)"
+	fail=1
+fi
 # Every scheduled job carries a description in the Dagster UI. This is the live half:
 # it needs the scripts the jobs actually run, which a CI runner does not have.
-if out=$( ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe ) 2>&1); then
-  say "ok        describe  $(printf '%s' "$out" | tail -1)"
-else say "FAIL      describe  a scheduled job would reach the UI with no description"
-  printf '%s\n' "$out" | grep '^FAIL' | sed 's/^/          /'; fail=1; fi
+if out=$( (cd "$IDP/scheduler" && python3 -m estate_scheduler.describe) 2>&1); then
+	say "ok        describe  $(printf '%s' "$out" | tail -1)"
+else
+	say "FAIL      describe  a scheduled job would reach the UI with no description"
+	printf '%s\n' "$out" | grep '^FAIL' | sed 's/^/          /'
+	fail=1
+fi
 # Front door login (crew#269, ADR 0007): no password exists to try, so the proof is the redirect
 # a browser would follow. Unauthenticated -> 302 to GitHub's authorize page, either directly
 # (skip-provider-button, measured live 2026-08-26 after idp#147) or via /oauth2/start on the
 # catalogue host. A 401, a 200, a 500 or any other Location is a FAIL, never a wait.
 zone=$(sed -n 's/^  ESTATE_ZONE: *//p' "$IDP/clusters/oke/estate-config.yaml" | head -1)
-if [ -z "$zone" ]; then say "BLIND     login     no ESTATE_ZONE in clusters/oke/estate-config.yaml"
+if [ -z "$zone" ]; then
+	say "BLIND     login     no ESTATE_ZONE in clusters/oke/estate-config.yaml"
 else
-  hop=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 10 "https://catalogue.$zone/" 2>/dev/null || echo "000")
-  case "$hop" in
-    "302 https://catalogue.$zone/oauth2/start"*) hop=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 10 "${hop#302 }" 2>/dev/null || echo "000") ;;
-  esac
-  # The front door is generic OIDC against the estate's identity domain (platform/oci/identity);
-  # the authorize URL is the one value in estate-config, never a provider name here (R36).
-  idp_url=$(sed -n 's/^  ESTATE_OIDC_DOMAIN_URL: *//p' "$IDP/clusters/oke/estate-config.yaml" | head -1)
-  case "$hop" in
-    "302 ${idp_url%/}/oauth2/v1/authorize"*)
-      # The client id in the redirect is what the vault holds (idp#149 review): empty or the
-      # placeholder is a FAIL with the command that refreshes the pod after bin/idp-identity-apply.
-      cid=$(printf '%s' "${hop#* }" | tr '?&' '\n\n' | sed -n 's/^client_id=//p' | head -1)
-      case "$cid" in
-        ""|replace-in-console) say "FAIL      login     https://catalogue.$zone -> identity domain with client_id '${cid:-<empty>}' (run bin/idp-identity-apply apply, then kubectl -n identity annotate externalsecret oauth2-proxy force-sync=\$(date +%s) --overwrite && kubectl -n identity rollout restart deploy/oauth2-proxy)"; fail=1 ;;
-        *) say "ok        login     https://catalogue.$zone -> identity domain sign-in (no password anywhere, ADR 0007)" ;;
-      esac
-      # Incident 2026-08-26 02:31Z: the redirect was right and the first sign-in still returned 500,
-      # because oauth2-proxy could not read the domain's JWKS (401) to verify the id_token. The row
-      # above only proves the way in; this one proves the way back.
-      jwks=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "${idp_url%/}/admin/v1/SigningCert/jwk" 2>/dev/null || echo 000)
-      case "$jwks" in
-        200) say "ok        jwks      identity domain signing keys readable without a credential (callback can verify id_tokens)" ;;
-        *) say "FAIL      jwks      ${idp_url%/}/admin/v1/SigningCert/jwk answers $jwks; the sign-in callback returns 500 (run bin/idp-identity-apply apply: it PATCHes signingCertPublicAccess)"; fail=1 ;;
-      esac ;;
-    "302 https://github.com/login/oauth/authorize"*) say "FAIL      login     https://catalogue.$zone -> GitHub: the pod still runs provider github; reconcile platform/identity (flux reconcile ks platform --with-source)"; fail=1 ;;
-    *) say "FAIL      login     https://catalogue.$zone -> ${hop%% *} $(printf '%s' "${hop#* }" | cut -d'?' -f1) (want 302 to the identity domain; kubectl -n backstage get middleware login-forward-auth; kubectl -n identity get pods)"; fail=1 ;;
-  esac
+	hop=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 10 "https://catalogue.$zone/" 2>/dev/null || echo "000")
+	case "$hop" in
+	"302 https://catalogue.$zone/oauth2/start"*) hop=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 10 "${hop#302 }" 2>/dev/null || echo "000") ;;
+	esac
+	# The front door is generic OIDC against the estate's identity domain (platform/oci/identity);
+	# the authorize URL is the one value in estate-config, never a provider name here (R36).
+	idp_url=$(sed -n 's/^  ESTATE_OIDC_DOMAIN_URL: *//p' "$IDP/clusters/oke/estate-config.yaml" | head -1)
+	case "$hop" in
+	"302 ${idp_url%/}/oauth2/v1/authorize"*)
+		# The client id in the redirect is what the vault holds (idp#149 review): empty or the
+		# placeholder is a FAIL with the command that refreshes the pod after bin/idp-identity-apply.
+		cid=$(printf '%s' "${hop#* }" | tr '?&' '\n\n' | sed -n 's/^client_id=//p' | head -1)
+		case "$cid" in
+		"" | replace-in-console)
+			say "FAIL      login     https://catalogue.$zone -> identity domain with client_id '${cid:-<empty>}' (run bin/idp-identity-apply apply, then kubectl -n identity annotate externalsecret oauth2-proxy force-sync=\$(date +%s) --overwrite && kubectl -n identity rollout restart deploy/oauth2-proxy)"
+			fail=1
+			;;
+		*) say "ok        login     https://catalogue.$zone -> identity domain sign-in (no password anywhere, ADR 0007)" ;;
+		esac
+		# Incident 2026-08-26 02:31Z: the redirect was right and the first sign-in still returned 500,
+		# because oauth2-proxy could not read the domain's JWKS (401) to verify the id_token. The row
+		# above only proves the way in; this one proves the way back.
+		jwks=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "${idp_url%/}/admin/v1/SigningCert/jwk" 2>/dev/null || echo 000)
+		case "$jwks" in
+		200) say "ok        jwks      identity domain signing keys readable without a credential (callback can verify id_tokens)" ;;
+		*)
+			say "FAIL      jwks      ${idp_url%/}/admin/v1/SigningCert/jwk answers $jwks; the sign-in callback returns 500 (run bin/idp-identity-apply apply: it PATCHes signingCertPublicAccess)"
+			fail=1
+			;;
+		esac
+		;;
+	"302 https://github.com/login/oauth/authorize"*)
+		say "FAIL      login     https://catalogue.$zone -> GitHub: the pod still runs provider github; reconcile platform/identity (flux reconcile ks platform --with-source)"
+		fail=1
+		;;
+	*)
+		say "FAIL      login     https://catalogue.$zone -> ${hop%% *} $(printf '%s' "${hop#* }" | cut -d'?' -f1) (want 302 to the identity domain; kubectl -n backstage get middleware login-forward-auth; kubectl -n identity get pods)"
+		fail=1
+		;;
+	esac
 fi
 # --- drills: the scheduled drills actually ran (crew#292 CP2) -----------------
 # Founder 2026-08-26: "we have drills? ... when we get it working we need to drill". Every row

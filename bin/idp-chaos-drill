@@ -13,28 +13,37 @@
 # max age 194h = 7 days + 2h scheduling slack. Override with CHAOS_MAX_AGE_HOURS.
 # crew#539 DoD 2: the same grader reads any experiment's receipt: `idp-chaos-drill <name> <row>`
 # (default backstage-pod-kill chaos-drill; `langfuse-alert-drill alert-drill` grades the page drill).
-set -uo pipefail
+set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 NAME="${1:-backstage-pod-kill}"
 ROW="${2:-chaos-drill}"
 BUCKET="${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}"
 MAX_H="${CHAOS_MAX_AGE_HOURS:-194}"
-blind() { printf 'BLIND   %s  %s\n' "$ROW" "$1"; exit 2; }
-fail()  { printf 'FAIL    %s  %s\n' "$ROW" "$1"; exit 1; }
+blind() {
+	printf 'BLIND   %s  %s\n' "$ROW" "$1"
+	exit 2
+}
+fail() {
+	printf 'FAIL    %s  %s\n' "$ROW" "$1"
+	exit 1
+}
 command -v python3 >/dev/null || blind "python3 is not installed"
 head=$("$IDP/bin/idp-cloud" object head --bucket "$BUCKET" --name "chaos/$NAME" 2>&1)
 rc=$?
 if [ $rc -ne 0 ]; then
-  case "$head" in
-    *"404"*|*NotFound*|*"not found"*) fail "no receipt chaos/$NAME in bucket $BUCKET: the Schedule has never accomplished a run (or the bucket is not applied yet)" ;;
-    *) blind "object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
-  esac
+	case "$head" in
+	*"404"* | *NotFound* | *"not found"*) fail "no receipt chaos/$NAME in bucket $BUCKET: the Schedule has never accomplished a run (or the bucket is not applied yet)" ;;
+	*) blind "object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
+	esac
 fi
 body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name "chaos/$NAME" 2>/dev/null | head -1)
 # crew#539 (2026-08-28 00:28Z, run 33129788480): the outage receipt (36 Flux rows, 40 pods with
 # their last log) outgrew ARG_MAX and `python3: Argument list too long` graded the estate BLIND
 # at the moment it needed reading. The body travels by file, never by argv.
-bodyf=$(mktemp); trap 'rm -f "$bodyf"' EXIT; printf '%s' "$body" > "$bodyf"
+bodyf=$(mktemp)
+trap 'rm -f "$bodyf"' EXIT
+printf '%s' "$body" >"$bodyf"
 IDP_LIB="$IDP/bin/lib" python3 - "$head" "$bodyf" "$MAX_H" "$ROW" <<'PY'
 import os as _os
 def _body_arg(a):

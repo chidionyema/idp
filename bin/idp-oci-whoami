@@ -17,37 +17,44 @@
 #
 # Usage: source bin/idp-oci-whoami   (exports OCI_CLI_PROFILE/OCI_CLI_AUTH on success)
 #        bin/idp-oci-whoami          (prints the live profile name, or BLIND with exit 2)
-set -uo pipefail
-
+set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 SESSIONS_DIR="$HOME/.oci/sessions"
-[ -d "$SESSIONS_DIR" ] || { echo "BLIND   oci-whoami: no $SESSIONS_DIR on this machine; sessions read state through bin/idp-cluster-state or gh workflow run oke-check.yml -f mode=check (crew#345), no login"; exit 2; }
+[ -d "$SESSIONS_DIR" ] || {
+	echo "BLIND   oci-whoami: no $SESSIONS_DIR on this machine; sessions read state through bin/idp-cluster-state or gh workflow run oke-check.yml -f mode=check (crew#345), no login"
+	exit 2
+}
 
 # crew#503: `stat -f %m` is BSD/macOS; GNU stat -f prints filesystem status, so on
 # the Linux runner every mtime was garbage, `-gt` errored and no live session was
 # ever detected (vault-seed 33089277235). Try BSD, then GNU, else 0.
 token_mtime() {
-  # GNU `stat -f` exits 0 with filesystem text, so an exit-code fallback is not
-  # enough: take the first candidate that is purely digits.
-  local m
-  for m in "$(stat -f "%m" "$1" 2>/dev/null)" "$(stat -c "%Y" "$1" 2>/dev/null)"; do
-    case "$m" in ''|*[!0-9]*) continue;; *) echo "$m"; return;; esac
-  done
-  echo 0
+	# GNU `stat -f` exits 0 with filesystem text, so an exit-code fallback is not
+	# enough: take the first candidate that is purely digits.
+	local m
+	for m in "$(stat -f "%m" "$1" 2>/dev/null)" "$(stat -c "%Y" "$1" 2>/dev/null)"; do
+		case "$m" in '' | *[!0-9]*) continue ;; *)
+			echo "$m"
+			return
+			;;
+		esac
+	done
+	echo 0
 }
 
 # _ow_* prefix: this file is sourced by bin/idp-vault-put; a bare `name` clobbered its secret name (crew#503).
 live=""
 _ow_newest=0
 for d in "$SESSIONS_DIR"/*/; do
-  _ow_name="$(basename "$d")"
-  [ -f "$d/token" ] || continue
-  if oci session validate --profile "$_ow_name" --local >/dev/null 2>&1; then
-    _ow_mtime=$(token_mtime "$d/token")
-    if [ "$_ow_mtime" -gt "$_ow_newest" ]; then
-      live="$_ow_name"
-      _ow_newest="$_ow_mtime"
-    fi
-  fi
+	_ow_name="$(basename "$d")"
+	[ -f "$d/token" ] || continue
+	if oci session validate --profile "$_ow_name" --local >/dev/null 2>&1; then
+		_ow_mtime=$(token_mtime "$d/token")
+		if [ "$_ow_mtime" -gt "$_ow_newest" ]; then
+			live="$_ow_name"
+			_ow_newest="$_ow_mtime"
+		fi
+	fi
 done
 
 # crew#345: the session is only "expired" from the CLI's own 1h clock -- OCI's
@@ -57,22 +64,22 @@ done
 # profile with a token file, even ones validate() just rejected as expired,
 # before concluding a fresh browser login is genuinely required.
 if [ -z "$live" ]; then
-  for d in "$SESSIONS_DIR"/*/; do
-    _ow_name="$(basename "$d")"
-    [ -f "$d/token" ] || continue
-    if oci session refresh --profile "$_ow_name" --auth security_token >/dev/null 2>&1; then
-      if oci session validate --profile "$_ow_name" --local >/dev/null 2>&1; then
-        live="$_ow_name"
-        echo "ok      oci-whoami: refreshed expired session for '$_ow_name' (no browser, no founder action)" >&2
-        break
-      fi
-    fi
-  done
+	for d in "$SESSIONS_DIR"/*/; do
+		_ow_name="$(basename "$d")"
+		[ -f "$d/token" ] || continue
+		if oci session refresh --profile "$_ow_name" --auth security_token >/dev/null 2>&1; then
+			if oci session validate --profile "$_ow_name" --local >/dev/null 2>&1; then
+				live="$_ow_name"
+				echo "ok      oci-whoami: refreshed expired session for '$_ow_name' (no browser, no founder action)" >&2
+				break
+			fi
+		fi
+	done
 fi
 
 if [ -z "$live" ]; then
-  echo "BLIND   oci-whoami: no valid session under any profile in $SESSIONS_DIR; sessions read state through bin/idp-cluster-state or gh workflow run oke-check.yml -f mode=check (crew#345), no login"
-  exit 2
+	echo "BLIND   oci-whoami: no valid session under any profile in $SESSIONS_DIR; sessions read state through bin/idp-cluster-state or gh workflow run oke-check.yml -f mode=check (crew#345), no login"
+	exit 2
 fi
 
 # idp#619: the ok line goes to stderr and the bare name to stdout, as line 19 promises; the three

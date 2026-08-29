@@ -7,31 +7,40 @@
 #   FAIL    cluster-state  <why>                     -- receipt missing, stale, a node not Ready, a Flux object not Ready (crew#406), no PrometheusRule or no Watchdog alert (crew#539)
 #   BLIND   cluster-state  <why>                     -- no oci CLI or no session; nothing was graded
 # Print the JSON body with --json. Max age 60 min = 4 schedule slots. Override CLUSTER_STATE_MAX_AGE_MIN.
-set -uo pipefail
+set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 BUCKET="${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}"
 MAX_MIN="${CLUSTER_STATE_MAX_AGE_MIN:-60}"
-blind() { printf 'BLIND   cluster-state  %s\n' "$1"; exit 2; }
-fail()  { printf 'FAIL    cluster-state  %s\n' "$1"; exit 1; }
+blind() {
+	printf 'BLIND   cluster-state  %s\n' "$1"
+	exit 2
+}
+fail() {
+	printf 'FAIL    cluster-state  %s\n' "$1"
+	exit 1
+}
 command -v python3 >/dev/null || blind "python3 is not installed"
 head=$("$IDP/bin/idp-cloud" object head --bucket "$BUCKET" --name state/cluster 2>&1)
 rc=$?
 if [ $rc -ne 0 ]; then
-  case "$head" in
-    *"404"*|*NotFound*|*"not found"*) fail "no receipt state/cluster in bucket $BUCKET: the CronJob has never completed (Flux row cluster-state not reconciled, or the bucket is not applied yet)" ;;
-    *) blind "object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
-  esac
+	case "$head" in
+	*"404"* | *NotFound* | *"not found"*) fail "no receipt state/cluster in bucket $BUCKET: the CronJob has never completed (Flux row cluster-state not reconciled, or the bucket is not applied yet)" ;;
+	*) blind "object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
+	esac
 fi
 # stderr kept: with 2>/dev/null a failed read was an empty body and graded FAIL "does not start
 # with ok: ''" — a FAIL that the cluster did nothing to earn (crew#66 row from idp#465, the class
 # that hid the surge's reads). A read that fails is BLIND and names the error.
-body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name state/cluster 2>&1) \
-  || blind "object get failed: $(printf '%s' "$body" | tail -1 | cut -c1-160)"
+body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name state/cluster 2>&1) ||
+	blind "object get failed: $(printf '%s' "$body" | tail -1 | cut -c1-160)"
 [ -n "$body" ] || blind "object get returned an empty body"
 # crew#539 (2026-08-28 00:28Z, run 33129788480): the outage receipt (36 Flux rows, 40 pods with
 # their last log) outgrew ARG_MAX and `python3: Argument list too long` graded the estate BLIND
 # at the moment it needed reading. The body travels by file, never by argv.
-bodyf=$(mktemp); trap 'rm -f "$bodyf"' EXIT; printf '%s' "$body" > "$bodyf"
+bodyf=$(mktemp)
+trap 'rm -f "$bodyf"' EXIT
+printf '%s' "$body" >"$bodyf"
 IDP_LIB="$IDP/bin/lib" python3 - "$head" "$bodyf" "$MAX_MIN" "${1:-}" <<'PY'
 import os as _os
 def _body_arg(a):

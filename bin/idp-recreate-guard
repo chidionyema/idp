@@ -10,40 +10,65 @@
 # when the live side cannot be read (a guard that loses its evidence reports BLIND, never a verdict).
 # crew#66 CP5c: the live side is read through the one cloud layer, bin/idp-cloud, which resolves the
 # compartment and the object-storage namespace itself; this guard never names a provider CLI.
-set -uo pipefail
+set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP=$(cd "$(dirname "$0")/.." && pwd)
-M="${1:?module dir}"; shift
-cd "$M" || { echo "BLIND   recreate  $M is not a directory"; exit 0; }
-P="$M/recreate-guard.tfplan"; trap 'rm -f "$P"' EXIT
+M="${1:?module dir}"
+shift
+cd "$M" || {
+	echo "BLIND   recreate  $M is not a directory"
+	exit 0
+}
+P="$M/recreate-guard.tfplan"
+trap 'rm -f "$P"' EXIT
 tofu plan -input=false -no-color -lock=false -out="$P" "$@" >/dev/null 2>&1 || true
-[ -f "$P" ] || { echo "BLIND   recreate  tofu plan produced no plan file"; exit 0; }
+[ -f "$P" ] || {
+	echo "BLIND   recreate  tofu plan produced no plan file"
+	exit 0
+}
 CREATES=$(tofu show -no-color "$P" 2>/dev/null | grep -oE '^\s*# [a-z_.]+\[?[^ ]* will be created' | sed -E 's/^\s*# //; s/ will be created$//')
 REFUSED=0
 for addr in $CREATES; do
-  case "$addr" in
-    oci_kms_vault.estate)
-      name=$(tofu show -no-color "$P" | awk -v a="$addr" '$0 ~ "# "a" will be created"{f=1} f && /display_name/{match($0,/"[^"]*"/); print substr($0,RSTART+1,RLENGTH-2); exit}')
-      [ -n "$name" ] || { echo "BLIND   recreate  $addr: no display_name to check"; continue; }
-      # the layer prints one "<display-name> <id>" line per ACTIVE vault: an empty answer is "no such
-      # ACTIVE vault", a non-zero exit is BLIND (pipefail carries it through the awk), never absent.
-      live=$("$IDP/bin/idp-cloud" vault list 2>/dev/null | awk -v n="$name" '$1==n{print $2}') || { echo "BLIND   recreate  $addr: bin/idp-cloud vault list failed"; continue; }
-      if [ -n "$live" ]; then
-        echo "REFUSE  recreate  $addr would be created but ACTIVE vault '$name' already exists ($live): the state lost it; run 'tofu import $addr $live' (incident 2026-08-26 02:26Z)"; REFUSED=1
-      else echo "ok      recreate  $addr: no ACTIVE vault named '$name', a create is a real create"; fi ;;
-    oci_objectstorage_bucket.*)
-      # same class, second instance (crew#292, run 32965258786): bucket names are unique per
-      # namespace, so a create whose name already exists fails with 409 and the answer is import.
-      name=$(tofu show -no-color "$P" | awk -v a="$addr" '$0 ~ "# "a" will be created"{f=1} f && /^[[:space:]]*\+ name /{match($0,/"[^"]*"/); print substr($0,RSTART+1,RLENGTH-2); exit}')
-      [ -n "$name" ] || { echo "BLIND   recreate  $addr: no name to check"; continue; }
-      # `bucket head` exits 0 present, 1 absent, 2 BLIND; the namespace is the layer's business, so
-      # the import command names it as the placeholder the operator fills from its own tenancy.
-      "$IDP/bin/idp-cloud" bucket head "$name" >/dev/null 2>&1; rc=$?
-      case "$rc" in
-        0) echo "REFUSE  recreate  $addr would be created but bucket '$name' already exists: the state lost it; run 'tofu import $addr n/<namespace>/b/$name' (incident 2026-08-26 12:35Z, 409-BucketAlreadyExists)"; REFUSED=1 ;;
-        1) echo "ok      recreate  $addr: no bucket named '$name', a create is a real create" ;;
-        *) echo "BLIND   recreate  $addr: bin/idp-cloud bucket head failed" ;;
-      esac ;;
-  esac
+	case "$addr" in
+	oci_kms_vault.estate)
+		name=$(tofu show -no-color "$P" | awk -v a="$addr" '$0 ~ "# "a" will be created"{f=1} f && /display_name/{match($0,/"[^"]*"/); print substr($0,RSTART+1,RLENGTH-2); exit}')
+		[ -n "$name" ] || {
+			echo "BLIND   recreate  $addr: no display_name to check"
+			continue
+		}
+		# the layer prints one "<display-name> <id>" line per ACTIVE vault: an empty answer is "no such
+		# ACTIVE vault", a non-zero exit is BLIND (pipefail carries it through the awk), never absent.
+		live=$("$IDP/bin/idp-cloud" vault list 2>/dev/null | awk -v n="$name" '$1==n{print $2}') || {
+			echo "BLIND   recreate  $addr: bin/idp-cloud vault list failed"
+			continue
+		}
+		if [ -n "$live" ]; then
+			echo "REFUSE  recreate  $addr would be created but ACTIVE vault '$name' already exists ($live): the state lost it; run 'tofu import $addr $live' (incident 2026-08-26 02:26Z)"
+			REFUSED=1
+		else echo "ok      recreate  $addr: no ACTIVE vault named '$name', a create is a real create"; fi
+		;;
+	oci_objectstorage_bucket.*)
+		# same class, second instance (crew#292, run 32965258786): bucket names are unique per
+		# namespace, so a create whose name already exists fails with 409 and the answer is import.
+		name=$(tofu show -no-color "$P" | awk -v a="$addr" '$0 ~ "# "a" will be created"{f=1} f && /^[[:space:]]*\+ name /{match($0,/"[^"]*"/); print substr($0,RSTART+1,RLENGTH-2); exit}')
+		[ -n "$name" ] || {
+			echo "BLIND   recreate  $addr: no name to check"
+			continue
+		}
+		# `bucket head` exits 0 present, 1 absent, 2 BLIND; the namespace is the layer's business, so
+		# the import command names it as the placeholder the operator fills from its own tenancy.
+		"$IDP/bin/idp-cloud" bucket head "$name" >/dev/null 2>&1
+		rc=$?
+		case "$rc" in
+		0)
+			echo "REFUSE  recreate  $addr would be created but bucket '$name' already exists: the state lost it; run 'tofu import $addr n/<namespace>/b/$name' (incident 2026-08-26 12:35Z, 409-BucketAlreadyExists)"
+			REFUSED=1
+			;;
+		1) echo "ok      recreate  $addr: no bucket named '$name', a create is a real create" ;;
+		*) echo "BLIND   recreate  $addr: bin/idp-cloud bucket head failed" ;;
+		esac
+		;;
+	esac
 done
 [ -n "$CREATES" ] || echo "ok      recreate  plan creates nothing"
 exit $REFUSED

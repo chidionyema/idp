@@ -14,26 +14,35 @@
 # "put this JSON array in a table", which is the one thing sqlite-utils exists
 # to do, and a script here would be a worse copy of it.
 set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 
 INV="${INV:-$HOME/.estate/state/inventory.json}"
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 DB="${DB:-$IDP/catalog/estate.db}"
-SU="${SU:-$IDP/.venv/bin/sqlite-utils}"   # CI has no venv; bin/idp-ci sets SU
+SU="${SU:-$IDP/.venv/bin/sqlite-utils}" # CI has no venv; bin/idp-ci sets SU
 
-[ -f "$INV" ] || { echo "db-gen: no inventory at $INV" >&2; exit 2; }
-[ -x "$SU" ]  || { echo "db-gen: sqlite-utils missing at $SU" >&2; exit 2; }
+[ -f "$INV" ] || {
+	echo "db-gen: no inventory at $INV" >&2
+	exit 2
+}
+[ -x "$SU" ] || {
+	echo "db-gen: sqlite-utils missing at $SU" >&2
+	exit 2
+}
 
 rows=$(jq '.rows | length' "$INV")
 if [ "$rows" -eq 0 ]; then
-  # An empty database renders as a healthy portal with nothing in it. Refuse.
-  echo "db-gen: inventory has 0 rows -- refusing to write an empty database" >&2
-  exit 1
+	# An empty database renders as a healthy portal with nothing in it. Refuse.
+	echo "db-gen: inventory has 0 rows -- refusing to write an empty database" >&2
+	exit 1
 fi
 
 mkdir -p "$(dirname "$DB")"
 # Per-process scratch file. Two db-gens ran concurrently on 2026-08-24 (idp-up and a
 # hand run) sharing one "$DB.tmp" and both inserted into it: 478 rows for 239 assets.
-tmp="$DB.tmp.$$"; rm -f "$tmp"; trap 'rm -f "$tmp"' EXIT
+tmp="$DB.tmp.$$"
+rm -f "$tmp"
+trap 'rm -f "$tmp"' EXIT
 
 jq -c '.rows[]' "$INV" | "$SU" insert "$tmp" assets - --nl --alter
 
@@ -49,10 +58,10 @@ jq -c '.rows[]' "$INV" | "$SU" insert "$tmp" assets - --nl --alter
 inv_sha256=$(shasum -a 256 "$INV" | awk '{print $1}')
 generated_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 jq -c --arg sha "$inv_sha256" --arg gen_at "$generated_at" --arg inv_path "$INV" \
-  '{schema_version: 1, taken_at: .at, rows: (.rows|length),
+	'{schema_version: 1, taken_at: .at, rows: (.rows|length),
     generated_by: "idp/bin/db-gen", generated_at: $gen_at,
-    inventory_path: $inv_path, inventory_sha256: $sha}' "$INV" \
-  | "$SU" insert "$tmp" meta - --nl --alter
+    inventory_path: $inv_path, inventory_sha256: $sha}' "$INV" |
+	"$SU" insert "$tmp" meta - --nl --alter
 
 # Licence presence is a buyer question and the inventory does not record it yet,
 # so it is computed here. bin/catalog-gen computes the same thing for the YAML,
@@ -60,27 +69,30 @@ jq -c --arg sha "$inv_sha256" --arg gen_at "$generated_at" --arg inv_path "$INV"
 # column in the inventory itself; until that lands both readers agree because
 # both check the same five filenames.
 "$SU" add-column "$tmp" assets licence_file text 2>/dev/null || true
-"$SU" rows "$tmp" assets --column id --column path --column kind --json-cols 2>/dev/null \
-  | jq -r '.[] | select(.kind=="repo") | [.id, .path] | @tsv' \
-  | while IFS=$'\t' read -r rid rpath; do
-      have=ABSENT
-      for n in LICENSE LICENSE.md LICENSE.txt COPYING LICENCE; do
-        [ -f "$rpath/$n" ] && { have=present; break; }
-      done
-      "$SU" "$tmp" "update assets set licence_file = :v where id = :i and kind='repo'" \
-        -p v "$have" -p i "$rid" >/dev/null
-    done
+"$SU" rows "$tmp" assets --column id --column path --column kind --json-cols 2>/dev/null |
+	jq -r '.[] | select(.kind=="repo") | [.id, .path] | @tsv' |
+	while IFS=$'\t' read -r rid rpath; do
+		have=ABSENT
+		for n in LICENSE LICENSE.md LICENSE.txt COPYING LICENCE; do
+			[ -f "$rpath/$n" ] && {
+				have=present
+				break
+			}
+		done
+		"$SU" "$tmp" "update assets set licence_file = :v where id = :i and kind='repo'" \
+			-p v "$have" -p i "$rid" >/dev/null
+	done
 
 # Views are the fallback's whole interface: a stranger lands on a list of
 # tables, so the questions a buyer asks are named as tables of their own.
 "$SU" create-view "$tmp" repos_without_licence \
-  "select id, path, remote, dirty from assets where kind='repo' and licence_file='ABSENT'" --ignore 2>/dev/null || true
+	"select id, path, remote, dirty from assets where kind='repo' and licence_file='ABSENT'" --ignore 2>/dev/null || true
 "$SU" create-view "$tmp" drills_never_run \
-  "select id, last_status, max_age_days from assets where kind='drill' and (last_status is null or last_status='NEVER RUN')" --ignore 2>/dev/null || true
+	"select id, last_status, max_age_days from assets where kind='drill' and (last_status is null or last_status='NEVER RUN')" --ignore 2>/dev/null || true
 "$SU" create-view "$tmp" jobs_not_clean \
-  "select id, root, loaded, last_status from assets where kind='scheduled_job' and last_status is not 'clean'" --ignore 2>/dev/null || true
+	"select id, root, loaded, last_status from assets where kind='scheduled_job' and last_status is not 'clean'" --ignore 2>/dev/null || true
 "$SU" create-view "$tmp" provider_coupling \
-  "select coalesce(coupling,'none') as coupling, count(*) as n from assets group by 1 order by n desc" --ignore 2>/dev/null || true
+	"select coalesce(coupling,'none') as coupling, count(*) as n from assets group by 1 order by n desc" --ignore 2>/dev/null || true
 
 # Publishing by `mv` was a silent-staleness bug, found 2026-08-24. Datasette
 # holds the database open for the life of the process. `mv` puts a NEW inode at
@@ -96,11 +108,14 @@ jq -c --arg sha "$inv_sha256" --arg gen_at "$generated_at" --arg inv_path "$INV"
 # what a plain `cat tmp > db` would have given them.
 S=$(command -v sqlite3 || echo /usr/bin/sqlite3)
 if [ -f "$DB" ] && [ -x "$S" ]; then
-  "$S" "$DB" ".restore '$tmp'" || { echo "db-gen: restore into $DB failed" >&2; exit 1; }
-  rm -f "$tmp"
+	"$S" "$DB" ".restore '$tmp'" || {
+		echo "db-gen: restore into $DB failed" >&2
+		exit 1
+	}
+	rm -f "$tmp"
 else
-  # First run, or no sqlite3: nothing has the file open, so a move is safe.
-  mv "$tmp" "$DB"
+	# First run, or no sqlite3: nothing has the file open, so a move is safe.
+	mv "$tmp" "$DB"
 fi
 
 echo "db-gen: $rows rows -> $DB"

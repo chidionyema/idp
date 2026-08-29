@@ -8,13 +8,17 @@
 #   FAIL    vault-reads  0 GetSecretBundle calls in 90 min: external-secrets is not reading the vault
 #   BLIND   vault-reads  audit event list failed ...
 # Usage: idp-vault-reads [<minutes>]   env: OCI_COMPARTMENT_OCID
+set -euo pipefail
 set -u
+trap 'echo "$0: exit $?" >&2' EXIT
 C=${OCI_COMPARTMENT_OCID:?OCI_COMPARTMENT_OCID}
 M=${1:-90}
 start=$(date -u -v-"${M}"M +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "$M minutes ago" +%Y-%m-%dT%H:%M:%SZ)
 end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 out=$(oci audit event list --compartment-id "$C" --start-time "$start" --end-time "$end" --all --output json 2>&1) || {
-  echo "BLIND   vault-reads  audit event list failed: $(printf '%s' "$out" | grep -iE 'error|message|NotAuthorized' | head -1 | cut -c1-120)"; exit 2; }
+	echo "BLIND   vault-reads  audit event list failed: $(printf '%s' "$out" | grep -iE 'error|message|NotAuthorized' | head -1 | cut -c1-120)"
+	exit 2
+}
 summary=$(printf '%s' "$out" | python3 -c '
 import sys, json
 d = json.load(sys.stdin)
@@ -23,11 +27,17 @@ hits = [e for e in rows if "GetSecretBundle" in str((e.get("data") or {}).get("e
 who = sorted({str(((e.get("data") or {}).get("identity") or {}).get("principal-name") or "?") for e in hits})
 last = max((e.get("event-time", "") for e in hits), default="")
 print(len(hits), ",".join(who) or "-", (last[11:16] + "Z") if last else "-")
-') || { echo "BLIND   vault-reads  audit output unreadable"; exit 2; }
+') || {
+	echo "BLIND   vault-reads  audit output unreadable"
+	exit 2
+}
 set -- $summary
-n=$1; who=$2; last=$3
+n=$1
+who=$2
+last=$3
 if [ "$n" -gt 0 ]; then
-  echo "ok      vault-reads  $n GetSecretBundle call(s) in $M min by $(printf '%s' "$who" | tr ',' '\n' | grep -c .) principal(s): $who; last $last"
+	echo "ok      vault-reads  $n GetSecretBundle call(s) in $M min by $(printf '%s' "$who" | tr ',' '\n' | grep -c .) principal(s): $who; last $last"
 else
-  echo "FAIL    vault-reads  0 GetSecretBundle calls in $M min: external-secrets is not reading the vault (ClusterSecretStore estate-vault auth or OCI_VAULT_ID in estate-vars)"; exit 1
+	echo "FAIL    vault-reads  0 GetSecretBundle calls in $M min: external-secrets is not reading the vault (ClusterSecretStore estate-vault auth or OCI_VAULT_ID in estate-vars)"
+	exit 1
 fi

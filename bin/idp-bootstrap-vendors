@@ -16,28 +16,46 @@
 # The browser console driver, the Google SSO road and the laptop OCI sign-in this replaced were the
 # wrong roots (crew#66 comment 5461144560); none of them may come back.
 set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 REG="$IDP/platform/vendors/consoles.yaml"
-MODE=mint; ONLY=""; ROTATE=""
+MODE=mint
+ONLY=""
+ROTATE=""
 while [ $# -gt 0 ]; do
-  case "$1" in
-    --preflight) MODE=preflight; shift ;;
-    --rotate) ROTATE=1; shift ;;
-    --only) ONLY=${2:?vendor}; shift 2 ;;
-    *) sed -n 2,6p "$0"; exit 2 ;;
-  esac
+	case "$1" in
+	--preflight)
+		MODE=preflight
+		shift
+		;;
+	--rotate)
+		ROTATE=1
+		shift
+		;;
+	--only)
+		ONLY=${2:?vendor}
+		shift 2
+		;;
+	*)
+		sed -n 2,6p "$0"
+		exit 2
+		;;
+	esac
 done
-say()  { printf '%-7s %-20s %s\n' "$1" "$2" "$3"; }
-bl()   { say BLIND "$1" "$2"; exit 2; }
+say() { printf '%-7s %-20s %s\n' "$1" "$2" "$3"; }
+bl() {
+	say BLIND "$1" "$2"
+	exit 2
+}
 for t in python3 curl jq; do command -v "$t" >/dev/null || bl deps "$t missing"; done
 python3 -c 'import yaml' 2>/dev/null || bl deps "python3 has no yaml module (pip install pyyaml)"
 [ -f "$REG" ] || bl registry "no $REG"
 
 if [ "$MODE" = mint ]; then
-  # The vault is written with whatever OCI identity is live: OIDC in the apply run, a session on a
-  # laptop. This never signs anyone in (the laptop SSO was a wrong root).
-  OCI_CLI_PROFILE=$("$IDP/bin/idp-oci-whoami" 2>/dev/null) || bl oci "no live OCI identity; run this from the apply workflow (oke-check.yml mode=apply)"
-  export OCI_CLI_PROFILE OCI_CLI_AUTH=security_token
+	# The vault is written with whatever OCI identity is live: OIDC in the apply run, a session on a
+	# laptop. This never signs anyone in (the laptop SSO was a wrong root).
+	OCI_CLI_PROFILE=$("$IDP/bin/idp-oci-whoami" 2>/dev/null) || bl oci "no live OCI identity; run this from the apply workflow (oke-check.yml mode=apply)"
+	export OCI_CLI_PROFILE OCI_CLI_AUTH=security_token
 fi
 VAULT_PUT_PREFLIGHT=1 "$IDP/bin/idp-vault-put" vendors --preflight | sed 's/^/        /' || bl vault "not reachable"
 

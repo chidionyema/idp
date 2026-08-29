@@ -7,26 +7,35 @@
 #   FAIL    kini-finish  <why>                     -- receipt missing or stale, or the last run is red
 #   BLIND   kini-finish  <why>                     -- no oci CLI or no session; nothing was graded
 # Print the JSON body with --json. Max age 60 min = 4 schedule slots. Override KINI_STATE_MAX_AGE_MIN.
-set -uo pipefail
+set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 BUCKET="${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}"
 MAX_MIN="${KINI_STATE_MAX_AGE_MIN:-60}"
-blind() { printf 'BLIND   kini-finish  %s\n' "$1"; exit 2; }
-fail()  { printf 'FAIL    kini-finish  %s\n' "$1"; exit 1; }
+blind() {
+	printf 'BLIND   kini-finish  %s\n' "$1"
+	exit 2
+}
+fail() {
+	printf 'FAIL    kini-finish  %s\n' "$1"
+	exit 1
+}
 command -v python3 >/dev/null || blind "python3 is not installed"
 head=$("$IDP/bin/idp-cloud" object head --bucket "$BUCKET" --name state/kini 2>&1)
 rc=$?
 if [ $rc -ne 0 ]; then
-  case "$head" in
-    *"404"*|*NotFound*|*"not found"*) fail "no receipt state/kini in bucket $BUCKET: the kini-state CronJob has never completed (Flux row temporal not reconciled, or the worker image not built yet)" ;;
-    *) blind "object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
-  esac
+	case "$head" in
+	*"404"* | *NotFound* | *"not found"*) fail "no receipt state/kini in bucket $BUCKET: the kini-state CronJob has never completed (Flux row temporal not reconciled, or the worker image not built yet)" ;;
+	*) blind "object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
+	esac
 fi
 body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name state/kini 2>/dev/null)
 # crew#539 (2026-08-28 00:28Z, run 33129788480): the outage receipt (36 Flux rows, 40 pods with
 # their last log) outgrew ARG_MAX and `python3: Argument list too long` graded the estate BLIND
 # at the moment it needed reading. The body travels by file, never by argv.
-bodyf=$(mktemp); trap 'rm -f "$bodyf"' EXIT; printf '%s' "$body" > "$bodyf"
+bodyf=$(mktemp)
+trap 'rm -f "$bodyf"' EXIT
+printf '%s' "$body" >"$bodyf"
 IDP_LIB="$IDP/bin/lib" python3 - "$head" "$bodyf" "$MAX_MIN" "${1:-}" <<'PY'
 import os as _os
 def _body_arg(a):

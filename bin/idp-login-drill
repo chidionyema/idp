@@ -24,12 +24,16 @@
 # portal and could not see his own UI surfaces while every other row in this drill was green.
 #
 # Python with Playwright: $DRILL_PYTHON if set, else python3. CI installs it in the job.
-set -uo pipefail
+set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 # estate-secrets sits beside the main checkout, even when this runs from a worktree under .claude/worktrees (crew#408)
 MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
 export SUPPRESS_LABEL_WARNING=True
-fail() { printf 'FAIL    login-drill  %s %s\n' "$1" "$2"; exit 1; }
+fail() {
+	printf 'FAIL    login-drill  %s %s\n' "$1" "$2"
+	exit 1
+}
 
 CFG="$IDP/clusters/oke/estate-config.yaml"
 [ -f "$CFG" ] || fail config "no $CFG"
@@ -46,14 +50,14 @@ command -v "$PY" >/dev/null 2>&1 || fail python "no interpreter at '$PY'; set DR
 export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}
 C="${OCI_COMPARTMENT_OCID:-}"
 if [ -z "$C" ]; then
-  SEC="${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml"
-  [ -f "$SEC" ] || fail config "no OCI_COMPARTMENT_OCID in the environment and no $SEC"
-  C=$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "$SEC" 2>/dev/null) || fail config "cannot decrypt $SEC"
+	SEC="${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml"
+	[ -f "$SEC" ] || fail config "no OCI_COMPARTMENT_OCID in the environment and no $SEC"
+	C=$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "$SEC" 2>/dev/null) || fail config "cannot decrypt $SEC"
 fi
 DRILL_PASSWORD=$("$IDP/bin/idp-cloud" secret get front-door-drill-password 2>"${TMPDIR:-/tmp}/login-drill.err") || case $? in
-  1) fail vault "no secret front-door-drill-password in the compartment; run bin/idp-identity-apply apply -auto-approve";;
-  3) fail vault "$(head -1 "${TMPDIR:-/tmp}/login-drill.err")";;
-  *) fail vault "secret-bundle for front-door-drill-password is empty or unreadable by this identity";;
+1) fail vault "no secret front-door-drill-password in the compartment; run bin/idp-identity-apply apply -auto-approve" ;;
+3) fail vault "$(head -1 "${TMPDIR:-/tmp}/login-drill.err")" ;;
+*) fail vault "secret-bundle for front-door-drill-password is empty or unreadable by this identity" ;;
 esac
 [ -n "$DRILL_PASSWORD" ] || fail vault "front-door-drill-password decodes to nothing"
 export DRILL_PASSWORD

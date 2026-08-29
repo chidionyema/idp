@@ -12,27 +12,36 @@
 # Usage: vm-shared-path PATH...   exit 0 when every PATH is under a shared tree,
 #                                 exit 2 naming the first that is not.
 # Env:   VM_SHARED_ROOTS  colon-separated override of the shared roots (tests).
+set -euo pipefail
 set -u
-IFS=':' read -r -a roots <<< "${VM_SHARED_ROOTS:-$HOME}"
+trap 'echo "$0: exit $?" >&2' EXIT
+IFS=':' read -r -a roots <<<"${VM_SHARED_ROOTS:-$HOME}"
 if [ -z "${VM_SHARED_ROOTS:-}" ]; then
-  cfg="$HOME/.colima/default/colima.yaml"
-  if [ -r "$cfg" ]; then
-    while IFS= read -r loc; do
-      loc="${loc/#\~/$HOME}"; roots+=("$loc")
-    done < <(sed -nE 's/^[[:space:]]*-[[:space:]]*location:[[:space:]]*"?([^"#]+)"?.*/\1/p' "$cfg")
-  fi
+	cfg="$HOME/.colima/default/colima.yaml"
+	if [ -r "$cfg" ]; then
+		while IFS= read -r loc; do
+			loc="${loc/#\~/$HOME}"
+			roots+=("$loc")
+		done < <(sed -nE 's/^[[:space:]]*-[[:space:]]*location:[[:space:]]*"?([^"#]+)"?.*/\1/p' "$cfg")
+	fi
 fi
 rc=0
 for p in "$@"; do
-  real=$(cd "$(dirname "$p")" 2>/dev/null && pwd -P)/$(basename "$p")
-  ok=0
-  for r in "${roots[@]}"; do
-    r="${r%/}"; rr=$(cd "$r" 2>/dev/null && pwd -P || echo "$r")
-    case "$real/" in "$rr"/*) ok=1; break;; esac
-  done
-  if [ "$ok" = 0 ]; then
-    echo "FAIL  $p resolves to $real, outside the VM-shared tree (${roots[*]}); the container would see an empty directory"
-    rc=2; break
-  fi
+	real=$(cd "$(dirname "$p")" 2>/dev/null && pwd -P)/$(basename "$p")
+	ok=0
+	for r in "${roots[@]}"; do
+		r="${r%/}"
+		rr=$(cd "$r" 2>/dev/null && pwd -P || echo "$r")
+		case "$real/" in "$rr"/*)
+			ok=1
+			break
+			;;
+		esac
+	done
+	if [ "$ok" = 0 ]; then
+		echo "FAIL  $p resolves to $real, outside the VM-shared tree (${roots[*]}); the container would see an empty directory"
+		rc=2
+		break
+	fi
 done
 exit $rc

@@ -6,5 +6,6 @@
 #
 # Paths under $HOME are written as ~ so the file carries no machine name (LAW 46).
 set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 exec "$IDP/.venv/bin/python" "$IDP/scheduler/estate_scheduler/import_launchd.py" "$@"

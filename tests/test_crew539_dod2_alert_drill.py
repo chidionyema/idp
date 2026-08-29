@@ -66,7 +66,7 @@ def test_namespace_admits_chaos_and_the_flux_row_waits_for_monitoring():
 def test_grader_is_parametrised_and_run_by_oke_check_under_the_catalogue_row():
     grader = (ROOT / "bin/idp-chaos-drill").read_text()
     assert 'NAME="${1:-backstage-pod-kill}"' in grader and 'ROW="${2:-chaos-drill}"' in grader
-    body = grader.split("set -uo pipefail", 1)[1]
+    body = grader.split("set -euo pipefail", 1)[1]
     assert "chaos-drill  " not in body, "a literal row label would mislabel the alert-drill receipt"
     wf = yaml.safe_load((ROOT / ".github/workflows/oke-check.yml").read_text())
     job = wf["jobs"]["alert-drill"]

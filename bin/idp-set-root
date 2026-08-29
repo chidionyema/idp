@@ -10,83 +10,119 @@
 # Founder, 2026-08-29: "its already gone cos we're printing, it's living in console ... should
 # come with working instructions or fully automated, either way zero friction."
 set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 REPO=${IDP_REPO:-chidionyema/idp}
 IDP=$(cd "$(dirname "$0")/.." && pwd)
-P=${1:-}; [ -n "$P" ] || { sed -n 3,4p "$0"; exit 2; }
+P=${1:-}
+[ -n "$P" ] || {
+	sed -n 3,4p "$0"
+	exit 2
+}
 ALL="tailscale cloudflare anthropic openrouter deepseek minimax groq gemini exa stripe telegram-hermes telegram-alerts"
 if [ "$P" = all ]; then
-  # Founder, 2026-08-29: "a single command for the master key for all". Each provider is one turn;
-  # one already set (its secret names exist on the repository) is skipped, so this is safe to re-run.
-  have=$(gh secret list -R "${IDP_REPO:-chidionyema/idp}" --json name --jq '.[].name')
-  n=0
-  for p in $ALL; do
-    case "$p" in
-      tailscale) need="SEED_TAILSCALE_CLIENT_ID SEED_TAILSCALE_CLIENT_SECRET" ;;
-      cloudflare) need=SEED_CLOUDFLARE_ROOT_TOKEN ;;
-      telegram-hermes) need=SEED_TELEGRAM_HERMES_BOT_TOKEN ;;
-      telegram-alerts) need=SEED_TELEGRAM_ALERTS_BOT_TOKEN ;;
-      stripe) need=SEED_STRIPE_SECRET_KEY ;;
-      *) need=SEED_$(printf %s "$p" | tr a-z A-Z)_API_KEY ;;
-    esac
-    missing=0; for k in $need; do printf '%s\n' "$have" | grep -qx "$k" || missing=1; done
-    if [ $missing = 0 ]; then echo "ok      $p already set; skipped"; continue; fi
-    n=$((n+1)); echo; echo "=== $p ($n) ==="
-    IDP_NO_DISPATCH=1 "$0" "$p"
-  done
-  echo; gh workflow run oke-check.yml -R "${IDP_REPO:-chidionyema/idp}" -f mode=apply >/dev/null && echo "ok      apply run dispatched; the pipeline mints the rest. Every provider is set."
-  exit 0
+	# Founder, 2026-08-29: "a single command for the master key for all". Each provider is one turn;
+	# one already set (its secret names exist on the repository) is skipped, so this is safe to re-run.
+	have=$(gh secret list -R "${IDP_REPO:-chidionyema/idp}" --json name --jq '.[].name')
+	n=0
+	for p in $ALL; do
+		case "$p" in
+		tailscale) need="SEED_TAILSCALE_CLIENT_ID SEED_TAILSCALE_CLIENT_SECRET" ;;
+		cloudflare) need=SEED_CLOUDFLARE_ROOT_TOKEN ;;
+		telegram-hermes) need=SEED_TELEGRAM_HERMES_BOT_TOKEN ;;
+		telegram-alerts) need=SEED_TELEGRAM_ALERTS_BOT_TOKEN ;;
+		stripe) need=SEED_STRIPE_SECRET_KEY ;;
+		*) need=SEED_$(printf %s "$p" | tr a-z A-Z)_API_KEY ;;
+		esac
+		missing=0
+		for k in $need; do printf '%s\n' "$have" | grep -qx "$k" || missing=1; done
+		if [ $missing = 0 ]; then
+			echo "ok      $p already set; skipped"
+			continue
+		fi
+		n=$((n + 1))
+		echo
+		echo "=== $p ($n) ==="
+		IDP_NO_DISPATCH=1 "$0" "$p"
+	done
+	echo
+	gh workflow run oke-check.yml -R "${IDP_REPO:-chidionyema/idp}" -f mode=apply >/dev/null && echo "ok      apply run dispatched; the pipeline mints the rest. Every provider is set."
+	exit 0
 fi
-command -v gh >/dev/null || { echo "FAIL    gh is not installed: brew install gh, then gh auth login"; exit 1; }
-gh auth status >/dev/null 2>&1 || { echo "FAIL    gh is not signed in: run gh auth login once"; exit 1; }
+command -v gh >/dev/null || {
+	echo "FAIL    gh is not installed: brew install gh, then gh auth login"
+	exit 1
+}
+gh auth status >/dev/null 2>&1 || {
+	echo "FAIL    gh is not signed in: run gh auth login once"
+	exit 1
+}
 open_page() { if command -v open >/dev/null; then open "$1"; elif command -v xdg-open >/dev/null; then xdg-open "$1"; else echo "        open $1"; fi; }
 # a field of one vendor in platform/vendors/consoles.yaml, with no yaml module (the founder's Mac python has none)
 field() { awk -v v="  $1:" -v k="$2:" '$0==v{on=1;next} on&&/^  [a-z]/{exit} on&&$1==k{print $2;exit}' "$IDP/platform/vendors/consoles.yaml"; }
 ask() { # ask NAME "what it is"; hidden input, straight into gh, never echoed
-  local name=$1 what=$2 v
-  printf '        %s (%s): ' "$name" "$what"; IFS= read -rs v; echo
-  [ -n "$v" ] || { echo "FAIL    empty value for $name; nothing set"; exit 1; }
-  printf %s "$v" | gh secret set "$name" -R "$REPO" >/dev/null; unset v
-  echo "ok      $name set on $REPO"
+	local name=$1 what=$2 v
+	printf '        %s (%s): ' "$name" "$what"
+	IFS= read -rs v
+	echo
+	[ -n "$v" ] || {
+		echo "FAIL    empty value for $name; nothing set"
+		exit 1
+	}
+	printf %s "$v" | gh secret set "$name" -R "$REPO" >/dev/null
+	unset v
+	echo "ok      $name set on $REPO"
 }
 case "$P" in
-  tailscale)
-    echo "Tailscale: one OAuth client, once. The page is opening."
-    open_page "https://console.tailscale.com/admin/settings/trust-credentials"
-    cat <<'T'
+tailscale)
+	echo "Tailscale: one OAuth client, once. The page is opening."
+	open_page "https://console.tailscale.com/admin/settings/trust-credentials"
+	cat <<'T'
         1. This is the "Trust credentials" page. Press "Credential", then "OAuth".
         2. Description: estateseed
         3. Under "OAuth keys" choose Write. Leave every other row empty.
         4. Tags, if the form asks: tag:k8s
         5. Press "Generate credential". Keep that window open; copy each value when asked below.
 T
-    ask SEED_TAILSCALE_CLIENT_ID "the Client ID shown"
-    ask SEED_TAILSCALE_CLIENT_SECRET "the Client secret shown" ;;
-  cloudflare)
-    echo "Cloudflare: one root token, once. The page is opening."
-    open_page "https://dash.cloudflare.com/profile/api-tokens"
-    cat <<'T'
+	ask SEED_TAILSCALE_CLIENT_ID "the Client ID shown"
+	ask SEED_TAILSCALE_CLIENT_SECRET "the Client secret shown"
+	;;
+cloudflare)
+	echo "Cloudflare: one root token, once. The page is opening."
+	open_page "https://dash.cloudflare.com/profile/api-tokens"
+	cat <<'T'
         1. Press "Create Token", then "Custom token", "Get started".
         2. Name: estate-root
         3. Permissions: one row: User / User API Tokens / Edit. Nothing else.
         4. TTL: one year from today.
         5. "Continue to summary", "Create Token". Copy the token when asked below.
 T
-    ask SEED_CLOUDFLARE_ROOT_TOKEN "the token shown" ;;
-  anthropic|openrouter|deepseek|minimax|groq|gemini|exa|stripe)
-    page=$(field "$P" page); name=$(field "$P" secret)
-    [ -n "$page" ] && [ -n "$name" ] || { echo "FAIL    no page/secret for $P in platform/vendors/consoles.yaml"; exit 1; }
-    echo "$P: one API key, once. The key page is opening."
-    open_page "$page"
-    echo "        1. Create a key. Name it: estate"
-    echo "        2. Copy it when asked below."
-    ask "$name" "the key shown" ;;
-  telegram-hermes|telegram-alerts)
-    [ "$P" = telegram-hermes ] && name=SEED_TELEGRAM_HERMES_BOT_TOKEN || name=SEED_TELEGRAM_ALERTS_BOT_TOKEN
-    echo "Telegram: the bot token, once. BotFather is opening."
-    open_page "https://t.me/BotFather"
-    echo "        1. Send /token and pick the bot (${P#telegram-})."
-    echo "        2. Copy the token BotFather answers with, when asked below."
-    ask "$name" "the token shown" ;;
-  *) echo "FAIL    unknown provider $P"; sed -n 3p "$0"; exit 2 ;;
+	ask SEED_CLOUDFLARE_ROOT_TOKEN "the token shown"
+	;;
+anthropic | openrouter | deepseek | minimax | groq | gemini | exa | stripe)
+	page=$(field "$P" page)
+	name=$(field "$P" secret)
+	[ -n "$page" ] && [ -n "$name" ] || {
+		echo "FAIL    no page/secret for $P in platform/vendors/consoles.yaml"
+		exit 1
+	}
+	echo "$P: one API key, once. The key page is opening."
+	open_page "$page"
+	echo "        1. Create a key. Name it: estate"
+	echo "        2. Copy it when asked below."
+	ask "$name" "the key shown"
+	;;
+telegram-hermes | telegram-alerts)
+	[ "$P" = telegram-hermes ] && name=SEED_TELEGRAM_HERMES_BOT_TOKEN || name=SEED_TELEGRAM_ALERTS_BOT_TOKEN
+	echo "Telegram: the bot token, once. BotFather is opening."
+	open_page "https://t.me/BotFather"
+	echo "        1. Send /token and pick the bot (${P#telegram-})."
+	echo "        2. Copy the token BotFather answers with, when asked below."
+	ask "$name" "the token shown"
+	;;
+*)
+	echo "FAIL    unknown provider $P"
+	sed -n 3p "$0"
+	exit 2
+	;;
 esac
 [ -n "${IDP_NO_DISPATCH:-}" ] || { gh workflow run oke-check.yml -R "$REPO" -f mode=apply >/dev/null && echo "ok      apply run dispatched; the pipeline mints the rest. You are done with $P."; }

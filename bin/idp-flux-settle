@@ -9,10 +9,13 @@
 # in seconds, so the wall-clock is the real hydration time, not the timeout.
 # Env: SETTLE_TIMEOUT (s, default 600), SETTLE_GRACE (s, default 30). Exit 0 when settled, 1 on timeout.
 set -euo pipefail
-timeout=${SETTLE_TIMEOUT:-600}; grace=${SETTLE_GRACE:-30}
-t0=$(date +%s); stable_since=""
+trap 'echo "$0: exit $?" >&2' EXIT
+timeout=${SETTLE_TIMEOUT:-600}
+grace=${SETTLE_GRACE:-30}
+t0=$(date +%s)
+stable_since=""
 while :; do
-  unsettled=$(kubectl get kustomizations -A -o json | python3 -c '
+	unsettled=$(kubectl get kustomizations -A -o json | python3 -c '
 import json, sys
 n = 0
 for it in json.load(sys.stdin)["items"]:
@@ -20,13 +23,19 @@ for it in json.load(sys.stdin)["items"]:
     if rc is None or rc.get("status") == "Unknown" or rc.get("reason") in ("Progressing", "Reconciling", "ReconciliationInProgress"):
         n += 1
 print(n)')
-  now=$(date +%s)
-  if [ "$unsettled" = 0 ]; then
-    [ -n "$stable_since" ] || stable_since=$now
-    if [ $((now - stable_since)) -ge "$grace" ]; then echo "settled after $((now - t0))s"; exit 0; fi
-  else
-    stable_since=""
-  fi
-  if [ $((now - t0)) -ge "$timeout" ]; then echo "not settled after ${timeout}s: $unsettled Kustomizations still reconciling"; exit 1; fi
-  sleep 5
+	now=$(date +%s)
+	if [ "$unsettled" = 0 ]; then
+		[ -n "$stable_since" ] || stable_since=$now
+		if [ $((now - stable_since)) -ge "$grace" ]; then
+			echo "settled after $((now - t0))s"
+			exit 0
+		fi
+	else
+		stable_since=""
+	fi
+	if [ $((now - t0)) -ge "$timeout" ]; then
+		echo "not settled after ${timeout}s: $unsettled Kustomizations still reconciling"
+		exit 1
+	fi
+	sleep 5
 done

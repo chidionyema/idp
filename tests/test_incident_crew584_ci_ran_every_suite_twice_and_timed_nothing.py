@@ -35,14 +35,14 @@ def _lines() -> list[str]:
 def _say_block() -> str:
     lines = _lines()
     a = next(i for i, l in enumerate(lines) if l.startswith("_T_LAST=$SECONDS"))
-    b = next(i for i in range(a, len(lines)) if lines[i] == "}" and lines[i - 1].startswith("  if [ -n \"${GITHUB_STEP_SUMMARY"))
+    b = next(i for i in range(a, len(lines)) if lines[i] == "}" and lines[i - 1].startswith("\tif [ -n \"${GITHUB_STEP_SUMMARY"))
     return "\n".join(lines[a:b + 1]) + "\n"
 
 
 def _pytest_rung() -> str:
     lines = _lines()
     a = next(i for i, l in enumerate(lines) if l.startswith('if [ "${IDP_CI_SKIP_PYTEST:-0}" = 1 ]'))
-    b = next(i for i in range(a, len(lines)) if lines[i].startswith("fi  # IDP_CI_SKIP_PYTEST"))
+    b = next(i for i in range(a, len(lines)) if lines[i].startswith("fi # IDP_CI_SKIP_PYTEST"))
     return "\n".join(lines[a:b + 1]) + "\n"
 
 

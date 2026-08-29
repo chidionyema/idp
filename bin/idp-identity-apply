@@ -5,6 +5,7 @@
 # CI), vault/key/compartment from the existing vault secrets. Nothing typed, nothing pasted
 # (crew#281, crew#269, LAW 46).  Usage: bin/idp-identity-apply [plan|apply -auto-approve]
 set -euo pipefail
+trap 'echo "$0: exit $?" >&2' EXIT
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 export SUPPRESS_LABEL_WARNING=True
 zone=$(awk '/ESTATE_ZONE:/{print $2}' "$IDP/clusters/oke/estate-config.yaml")
@@ -14,29 +15,53 @@ MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-di
 repo() { gh repo view "$(git -C "$IDP" remote get-url origin)" --json nameWithOwner -q .nameWithOwner; }
 DOMAIN_BASE_URL="${DOMAIN_BASE_URL:-$(gh variable get DOMAIN_BASE_URL -R "$(repo)")}"
 ESTATE_FOUNDER_EMAIL="${ESTATE_FOUNDER_EMAIL:-$(gh variable get ESTATE_FOUNDER_EMAIL -R "$(repo)")}"
-: "${DOMAIN_BASE_URL:?DOMAIN_BASE_URL: run bin/idp-oci-bootstrap}"; : "${ESTATE_FOUNDER_EMAIL:?ESTATE_FOUNDER_EMAIL: the email the front door admits}"
+: "${DOMAIN_BASE_URL:?DOMAIN_BASE_URL: run bin/idp-oci-bootstrap}"
+: "${ESTATE_FOUNDER_EMAIL:?ESTATE_FOUNDER_EMAIL: the email the front door admits}"
 cfg=$(awk '/ESTATE_OIDC_DOMAIN_URL:/{print $2}' "$IDP/clusters/oke/estate-config.yaml")
-[ "${cfg%/}" = "${DOMAIN_BASE_URL%/}" ] || { echo "FAIL    identity estate-config ESTATE_OIDC_DOMAIN_URL ($cfg) differs from DOMAIN_BASE_URL; the pod would sign in against a different domain than the client lives in"; exit 2; }
+[ "${cfg%/}" = "${DOMAIN_BASE_URL%/}" ] || {
+	echo "FAIL    identity estate-config ESTATE_OIDC_DOMAIN_URL ($cfg) differs from DOMAIN_BASE_URL; the pod would sign in against a different domain than the client lives in"
+	exit 2
+}
 # compartment: the CI variable when the job sets it, else the vault, as bin/idp-vault-put
 C="${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}"
 # vault and key: the ones the existing estate secrets already live in; placeholders are imported, never re-created
 # crew#66 CP5b: vault reads go through bin/idp-cloud (one primitive layer). A layer exit 1 (NotFound) is FAIL;
 # a layer exit 3 (Split) or any other non-zero is BLIND (exit 2), never treated as a silent empty value.
 # one stderr file per describe: a BLIND on client-id must print client-id's line, never client-secret's
-err_id="${TMPDIR:-/tmp}/identity-id.err"; : > "$err_id"
-err_sec="${TMPDIR:-/tmp}/identity-secret.err"; : > "$err_sec"
-desc_id=$("$IDP/bin/idp-cloud" secret describe oauth2-proxy-client-id 2>"$err_id"); rc_id=$?
-desc_sec=$("$IDP/bin/idp-cloud" secret describe oauth2-proxy-client-secret 2>"$err_sec"); rc_sec=$?
+err_id="${TMPDIR:-/tmp}/identity-id.err"
+: >"$err_id"
+err_sec="${TMPDIR:-/tmp}/identity-secret.err"
+: >"$err_sec"
+desc_id=$("$IDP/bin/idp-cloud" secret describe oauth2-proxy-client-id 2>"$err_id")
+rc_id=$?
+desc_sec=$("$IDP/bin/idp-cloud" secret describe oauth2-proxy-client-secret 2>"$err_sec")
+rc_sec=$?
 case "$rc_id" in
-  0) CID=$(printf '%s' "$desc_id" | jq -r .id); V=$(printf '%s' "$desc_id" | jq -r '."vault-id"'); K=$(printf '%s' "$desc_id" | jq -r '."key-id"');;
-  1) echo "FAIL    identity vault secret oauth2-proxy-client-id not found in compartment; platform/identity has never been bootstrapped"; exit 2;;
-  *) echo "BLIND   identity $(head -1 "$err_id")"; exit 2;;
+0)
+	CID=$(printf '%s' "$desc_id" | jq -r .id)
+	V=$(printf '%s' "$desc_id" | jq -r '."vault-id"')
+	K=$(printf '%s' "$desc_id" | jq -r '."key-id"')
+	;;
+1)
+	echo "FAIL    identity vault secret oauth2-proxy-client-id not found in compartment; platform/identity has never been bootstrapped"
+	exit 2
+	;;
+*)
+	echo "BLIND   identity $(head -1 "$err_id")"
+	exit 2
+	;;
 esac
-[ -n "$CID" ] && [ "$CID" != null ] || { echo "FAIL    identity vault secret oauth2-proxy-client-id not found in compartment; platform/identity has never been bootstrapped"; exit 2; }
+[ -n "$CID" ] && [ "$CID" != null ] || {
+	echo "FAIL    identity vault secret oauth2-proxy-client-id not found in compartment; platform/identity has never been bootstrapped"
+	exit 2
+}
 case "$rc_sec" in
-  0) CSEC=$(printf '%s' "$desc_sec" | jq -r .id);;
-  1) CSEC="";;
-  *) echo "BLIND   identity $(head -1 "$err_sec")"; exit 2;;
+0) CSEC=$(printf '%s' "$desc_sec" | jq -r .id) ;;
+1) CSEC="" ;;
+*)
+	echo "BLIND   identity $(head -1 "$err_sec")"
+	exit 2
+	;;
 esac
 # Incident 2026-08-26 02:31Z (crew#269): the first sign-in returned 500. oauth2-proxy read
 # /admin/v1/SigningCert/jwk to verify the id_token and the domain answered 401: a new domain keeps its
@@ -45,44 +70,59 @@ esac
 # idempotent, and part of provisioning the client rather than a console toggle.
 sc=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Settings/Settings?attributes=signingCertPublicAccess" 2>/dev/null | jq -r '.data.signingCertPublicAccess // false')
 if [ "$sc" != "true" ]; then
-  T=$(mktemp -d); chmod 700 "$T"; trap 'rm -rf "$T"' EXIT
-  printf '%s' '{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"replace","path":"signingCertPublicAccess","value":true}]}' > "$T/s.json"
-  pr=$(oci raw-request --http-method PATCH --target-uri "$DOMAIN_BASE_URL/admin/v1/Settings/Settings" --request-body "file://$T/s.json" 2>&1)
-  if printf '%s' "$pr" | jq -e '.data.signingCertPublicAccess == true' >/dev/null 2>&1; then echo "ok      identity domain signing certificate is public (JWKS readable by oauth2-proxy)"
-  else echo "FAIL    identity domain Settings PATCH refused: $(printf '%s' "$pr" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; fi
+	T=$(mktemp -d)
+	chmod 700 "$T"
+	trap 'rm -rf "$T"' EXIT
+	printf '%s' '{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"replace","path":"signingCertPublicAccess","value":true}]}' >"$T/s.json"
+	pr=$(oci raw-request --http-method PATCH --target-uri "$DOMAIN_BASE_URL/admin/v1/Settings/Settings" --request-body "file://$T/s.json" 2>&1)
+	if printf '%s' "$pr" | jq -e '.data.signingCertPublicAccess == true' >/dev/null 2>&1; then
+		echo "ok      identity domain signing certificate is public (JWKS readable by oauth2-proxy)"
+	else
+		echo "FAIL    identity domain Settings PATCH refused: $(printf '%s' "$pr" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"
+		exit 1
+	fi
 else echo "ok      identity domain signing certificate is public"; fi
 M="$IDP/platform/oci/identity"
 # the provider signs in the way the oci CLI in this run does: SecurityToken under GitHub OIDC
 # (oke-check sets OCI_CLI_AUTH=security_token), APIKey on a laptop (crew#408)
-PAUTH=APIKey; [ "${OCI_CLI_AUTH:-}" = security_token ] && PAUTH=SecurityToken
+PAUTH=APIKey
+[ "${OCI_CLI_AUTH:-}" = security_token ] && PAUTH=SecurityToken
 # region: the CI variable when the job sets it, else the vault; a SecurityToken provider cannot read it from the profile (run 33030450105)
 REGION="${OCI_REGION:-$(sops -d --extract '["OCI_REGION"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_REGION.yaml")}"
-if [ -f "$M/backend_override.tf" ]; then "$IDP/bin/idp-state-guard" "$M"; tofu -chdir="$M" init -input=false -reconfigure >/dev/null
-else echo "BLIND   state   platform/oci/identity/backend_override.tf missing: local state; run bin/idp-oci-login"; tofu -chdir="$M" init -input=false >/dev/null; fi
+if [ -f "$M/backend_override.tf" ]; then
+	"$IDP/bin/idp-state-guard" "$M"
+	tofu -chdir="$M" init -input=false -reconfigure >/dev/null
+else
+	echo "BLIND   state   platform/oci/identity/backend_override.tf missing: local state; run bin/idp-oci-login"
+	tofu -chdir="$M" init -input=false >/dev/null
+fi
 tofu -chdir="$M" "${1:-plan}" -input=false "${@:2}" \
-  -var "idcs_endpoint=$DOMAIN_BASE_URL" -var "zone=$zone" -var "founder_emails=[\"$ESTATE_FOUNDER_EMAIL\"]" \
-  -var "compartment_ocid=$C" -var "vault_ocid=$V" -var "key_ocid=$K" \
-  -var "client_id_secret_ocid=${CID:-}" -var "client_secret_secret_ocid=${CSEC:-}" \
-  -var "oci_auth=$PAUTH" -var "oci_profile=${OCI_CLI_PROFILE:-DEFAULT}" -var "region=$REGION"
+	-var "idcs_endpoint=$DOMAIN_BASE_URL" -var "zone=$zone" -var "founder_emails=[\"$ESTATE_FOUNDER_EMAIL\"]" \
+	-var "compartment_ocid=$C" -var "vault_ocid=$V" -var "key_ocid=$K" \
+	-var "client_id_secret_ocid=${CID:-}" -var "client_secret_secret_ocid=${CSEC:-}" \
+	-var "oci_auth=$PAUTH" -var "oci_profile=${OCI_CLI_PROFILE:-DEFAULT}" -var "region=$REGION"
 
 # The domain sets mustChange=true on the password Terraform supplies at create (the flag is read-only on
 # the user and no password policy switches it off), so the drill user's live password is set here once
 # through the admin UserPasswordChanger, which clears the flag. Idempotent: nothing happens while
 # mustChange is false. The vault copy (front-door-drill-password) is the one the drill signs in with.
 if [ "${1:-plan}" = apply ]; then
-  uid=$(tofu -chdir="$M" output -raw drill_user_id 2>/dev/null || true)
-  if [ -n "$uid" ]; then
-    mc=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Users/$uid?attributes=urn:ietf:params:scim:schemas:oracle:idcs:extension:passwordState:User:mustChange" 2>/dev/null \
-         | jq -r '.data["urn:ietf:params:scim:schemas:oracle:idcs:extension:passwordState:User"].mustChange // false')
-    if [ "$mc" = true ]; then
-      T=${T:-$(mktemp -d)}
-      jq -n --arg n "$(tofu -chdir="$M" output -raw drill_live_password)" \
-        '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:UserPasswordChanger"],password:$n,bypassNotification:true}' > "$T/pw.json"
-      cr=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/UserPasswordChanger/$uid" --request-body "file://$T/pw.json" 2>&1)
-      rm -f "$T/pw.json"
-      if printf '%s' "$cr" | jq -e '.status == "200 OK"' >/dev/null 2>&1; then
-        echo "ok      drill user password settled (mustChange cleared; the vault copy is the live one)"
-      else echo "FAIL    drill user password change refused: $(printf '%s' "$cr" | jq -r '.data.detail // .data // .' 2>/dev/null | head -c 200)"; exit 1; fi
-    else echo "ok      drill user password already settled (mustChange=false)"; fi
-  fi
+	uid=$(tofu -chdir="$M" output -raw drill_user_id 2>/dev/null || true)
+	if [ -n "$uid" ]; then
+		mc=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Users/$uid?attributes=urn:ietf:params:scim:schemas:oracle:idcs:extension:passwordState:User:mustChange" 2>/dev/null |
+			jq -r '.data["urn:ietf:params:scim:schemas:oracle:idcs:extension:passwordState:User"].mustChange // false')
+		if [ "$mc" = true ]; then
+			T=${T:-$(mktemp -d)}
+			jq -n --arg n "$(tofu -chdir="$M" output -raw drill_live_password)" \
+				'{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:UserPasswordChanger"],password:$n,bypassNotification:true}' >"$T/pw.json"
+			cr=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/UserPasswordChanger/$uid" --request-body "file://$T/pw.json" 2>&1)
+			rm -f "$T/pw.json"
+			if printf '%s' "$cr" | jq -e '.status == "200 OK"' >/dev/null 2>&1; then
+				echo "ok      drill user password settled (mustChange cleared; the vault copy is the live one)"
+			else
+				echo "FAIL    drill user password change refused: $(printf '%s' "$cr" | jq -r '.data.detail // .data // .' 2>/dev/null | head -c 200)"
+				exit 1
+			fi
+		else echo "ok      drill user password already settled (mustChange=false)"; fi
+	fi
 fi
