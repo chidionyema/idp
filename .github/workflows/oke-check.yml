@@ -209,9 +209,13 @@ jobs:
           OCI_CLI_AUTH: security_token
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
           OCI_REGION: ${{ vars.OCI_REGION }}
+          # crew#66: the other one-time root: an OAuth client with the single scope oauth_keys write,
+          # set once as two repository secrets; the bootstrapper vaults it as tailscale-seed and they may go.
+          TAILSCALE_SEED_CLIENT_ID: ${{ secrets.SEED_TAILSCALE_CLIENT_ID }}
+          TAILSCALE_SEED_CLIENT_SECRET: ${{ secrets.SEED_TAILSCALE_CLIENT_SECRET }}
         run: |
           fed=$(awk '$1=="TAILSCALE_FEDERATED_CLIENT_ID:"{gsub(/"/,"",$2);print $2}' clusters/oke/estate-config.yaml)
-          [ -n "$fed" ] || { echo "BLIND   tailscale-operator   no federated identity in estate-config (TAILSCALE_FEDERATED_CLIENT_ID); register one, kb/1581"; exit 0; }
+          [ -n "$fed" ] || [ -n "$TAILSCALE_SEED_CLIENT_ID" ] || { echo "BLIND   tailscale-operator   no federated identity in estate-config (TAILSCALE_FEDERATED_CLIENT_ID) and no SEED_TAILSCALE_CLIENT_ID repository secret; one of them is the one manual step, kb/1581 or kb/1215"; exit 0; }
           bin/idp-bootstrap-tailscale
 
       # crew#539 CP4: the Cluster Autoscaler's node pool id, found by name after the apply, so the
