@@ -234,7 +234,7 @@ def prove_backstage(out_path):
         assertions = BS.l1_liveness(host) + BS.negative_no_token(host)
         blocked = (
             blocked
-            or "backstage-env.PROVER_TOKEN unreadable from the vault (oke-check.yml -f mode=check runs bin/idp-estate-seed, which mints it)"
+            or "backstage-env.PROVER_TOKEN unreadable from the vault (oke-check.yml -f mode=apply runs bin/idp-estate-seed, which mints it)"
         )
     v = V.build(
         "catalogue.l1-l2.machine_token",
