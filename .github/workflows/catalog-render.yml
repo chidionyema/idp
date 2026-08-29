@@ -6,8 +6,9 @@
 # workflow is the reader: it takes the object, checks out crew beside idp (estate-showcase reads
 # crew/docs/STANDARDS.md through ESTATE_CODE), and runs the same bin/catalog-render.
 #
-# It starts in --dry-run: the diff it would commit is the receipt, in the job summary, so the
-# cloud render is measured against the Mac render before the Mac row is retired (LAW 17). The
+# It started in --dry-run (the diff as the receipt, measured against the Mac render, LAW 17).
+# On 2026-08-29 the Mac row was gone, the schedule still dry-ran, and the portal served a
+# catalogue from the last hand dispatch (crew#624: Hubble not there). The schedule now commits. The
 # inputs the Mac still owns are reported BLIND by the tools themselves, never faked: the estate
 # feed (estate-next), ~/.estate/env (catalog-gen falls back to dev). Flip: `mode: commit` on
 # dispatch runs the real render, which opens the auto-merge PR the Mac row opens today.
@@ -83,16 +84,27 @@ jobs:
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           oci_region: ${{ vars.OCI_REGION }}
           oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
+      - name: registry credential for the catalogue artifact (crew#624)
+        # GITHUB_TOKEN carries packages: write; the render step's own GH_TOKEN is the App token
+        # (idp#769, arms auto-merge) and must not be the bot token, so the registry token travels
+        # as a 600 file, never as that step's env.
+        env:
+          T: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$T" > "$RUNNER_TEMP/ghcr.token"
       - name: render
         working-directory: idp
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          GHCR_TOKEN_FILE: ${{ runner.temp }}/ghcr.token   # bin/idp-catalog-push; the App token above has no packages scope (crew#624)
           INV: ${{ runner.temp }}/inventory.json
           ESTATE_FEED: ${{ runner.temp }}/feed.md
           IDP_STATE_WORKTREE: ${{ runner.temp }}/idp-state
           ESTATE_CODE: ${{ github.workspace }}
           ESTATE_ENV: dev
-          MODE: ${{ inputs.mode || 'dry-run' }}
+          MODE: ${{ inputs.mode || 'commit' }}   # crew#624: the schedule publishes; the Mac row is retired, dry-run is a dispatch choice
           TELEGRAM_BOT_TOKEN: ${{ secrets.SEED_HERMES_TELEGRAM_BOT_TOKEN }}
           TELEGRAM_HOME_CHANNEL: ${{ secrets.SEED_HERMES_TELEGRAM_HOME_CHANNEL }}
         run: |
