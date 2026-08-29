@@ -13,7 +13,7 @@ on:
       entry:
         description: "which vault entry to write"
         type: choice
-        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, tailscale-operator]
+        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, tailscale-operator, laptop]
         default: all
       delete:
         description: "schedule deletion of one vault secret by name (crew#503: a mis-named entry); entry is ignored when set"
@@ -36,6 +36,8 @@ jobs:
           cache-dependency-path: .github/requirements/oci-cli.txt
       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with: { tofu_version: "1.12.6", tofu_wrapper: false }
+      - uses: nhedger/setup-sops@e44d508fe5b00d5fd95e57ae935b4f05b675535b # v3.0.0
+        with: { version: "3.10.2" }
       - name: oci cli
         run: pip install -q -r .github/requirements/oci-cli.txt
       - name: OCI session token from the GitHub OIDC token
@@ -95,5 +97,18 @@ jobs:
             # K8sGPT's LiteLLM virtual key, a router key never a vendor key (platform/healing/external-secret.yaml, crew#539 CP7).
             # Minted here from the vault's master key, never seeded by a person (LAW 27, R5).
             bin/idp-router-key k8sgpt minimax
+          fi
+          if [ "$ENTRY" = all ] || [ "$ENTRY" = laptop ]; then
+            # The founder's Mac (pi, every CLI, the consult path) calls the router with ONE virtual key
+            # and holds no vendor key (crew#568, LAW 34). Minted here; delivered through the estate's
+            # sops vault: sops encrypts to the age recipient estate-secrets/.sops.yaml names (the public
+            # half), so this runner decrypts nothing, and the Mac reads it with scripts/secret-load.
+            bin/idp-router-key laptop minimax,minimax_m27,deepseek,openrouter,minimax-or,deepseek-or,gemini-or,groq,groq-fast,gemini,vision
+            tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
+            git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
+            bin/idp-cloud secret get laptop | jq -r .key | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LITELLM_LAPTOP_KEY LITELLM_API_KEY
+            git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
+              commit -q -am "laptop router key (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null && git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || echo "info    laptop key unchanged in estate-secrets"
+            rm -rf "$RUNNER_TEMP/estate-secrets"
           fi
           rm -f "$ESTATE_ENV_FILE"
