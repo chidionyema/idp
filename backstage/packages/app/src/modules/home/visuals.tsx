@@ -9,6 +9,7 @@ import React from 'react';
 import { makeStyles, useTheme } from '@material-ui/core/styles';
 import type { SvgIconProps } from '@material-ui/core/SvgIcon';
 import ErrorOutline from '@material-ui/icons/ErrorOutline';
+import SettingsApplicationsOutlined from '@material-ui/icons/SettingsApplicationsOutlined';
 import PersonOutline from '@material-ui/icons/PersonOutline';
 import HistoryOutlined from '@material-ui/icons/HistoryOutlined';
 import VisibilityOffOutlined from '@material-ui/icons/VisibilityOffOutlined';
@@ -26,6 +27,11 @@ import Dashboard from '@material-ui/icons/Dashboard';
 import Public from '@material-ui/icons/Public';
 import Schedule from '@material-ui/icons/Schedule';
 import Extension from '@material-ui/icons/Extension';
+import DesktopWindowsOutlined from '@material-ui/icons/DesktopWindowsOutlined';
+import AppsOutlined from '@material-ui/icons/AppsOutlined';
+import NotificationsNoneOutlined from '@material-ui/icons/NotificationsNoneOutlined';
+import Whatshot from '@material-ui/icons/Whatshot';
+import AccountTreeOutlined from '@material-ui/icons/AccountTreeOutlined';
 import {
   State,
   STATE_ORDER,
@@ -63,7 +69,10 @@ export const STATE_PHRASE: Record<State, string> = {
 };
 
 /** The tint set for the current theme mode. */
-export function useTints(): Record<State, { ink: string; bg: string; edge: string }> {
+export function useTints(): Record<
+  State,
+  { ink: string; bg: string; edge: string }
+> {
   const theme = useTheme();
   return theme.palette.type === 'dark' ? stateDark : stateLight;
 }
@@ -89,9 +98,18 @@ export function StateIcon(props: {
 
 // -------------------------------------------------------------- section icons
 
-export type Section = 'layers' | 'doors' | 'actions';
+export type Section =
+  | 'screens'
+  | 'kubernetes'
+  | 'everything'
+  | 'layers'
+  | 'doors'
+  | 'actions';
 
 export const SECTION_ICON: Record<Section, IconComponent> = {
+  screens: DesktopWindowsOutlined,
+  kubernetes: SettingsApplicationsOutlined,
+  everything: AppsOutlined,
   layers: LayersOutlined,
   doors: MeetingRoomOutlined,
   actions: PlayCircleOutline,
@@ -118,7 +136,10 @@ export function SectionIcon(props: {
 // --------------------------------------------------------------- system icons
 
 /** Keyword -> icon, first match wins, read in order. Exported so a test can pin it. */
-export const SYSTEM_ICON_KEYWORDS: { keywords: string[]; icon: IconComponent }[] = [
+export const SYSTEM_ICON_KEYWORDS: {
+  keywords: string[];
+  icon: IconComponent;
+}[] = [
   { keywords: ['observ', 'trace', 'log', 'metric'], icon: Timeline },
   { keywords: ['secret', 'vault', 'identity', 'auth', 'login'], icon: VpnKey },
   { keywords: ['delivery', 'flux', 'deploy', 'ci'], icon: LocalShipping },
@@ -126,7 +147,11 @@ export const SYSTEM_ICON_KEYWORDS: { keywords: string[]; icon: IconComponent }[]
   { keywords: ['ai', 'llm', 'model', 'router'], icon: Memory },
   { keywords: ['portal', 'backstage', 'catalog'], icon: Dashboard },
   { keywords: ['network', 'ingress', 'dns', 'edge'], icon: Public },
-  { keywords: ['schedule', 'dagster', 'job'], icon: Schedule },
+  { keywords: ['schedule', 'dagster', 'job', 'healthcheck'], icon: Schedule },
+  { keywords: ['alert', 'alertmanager'], icon: NotificationsNoneOutlined },
+  { keywords: ['chaos', 'drill'], icon: Whatshot },
+  { keywords: ['workflow', 'temporal'], icon: AccountTreeOutlined },
+  { keywords: ['screen', 'mac', 'status'], icon: DesktopWindowsOutlined },
 ];
 
 export const SYSTEM_ICON_FALLBACK: IconComponent = Extension;
@@ -159,7 +184,11 @@ const useStyles = makeStyles(theme => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing(4),
-    [phone]: { flexDirection: 'column', alignItems: 'flex-start', gap: theme.spacing(2) },
+    [phone]: {
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+      gap: theme.spacing(2),
+    },
   },
   donutFigure: { position: 'relative', flex: '0 0 auto' },
   centreNumber: {
@@ -210,7 +239,11 @@ const useStyles = makeStyles(theme => ({
     display: 'flex',
     alignItems: 'center',
     gap: theme.spacing(2),
-    [phone]: { flexDirection: 'column', alignItems: 'stretch', gap: theme.spacing(0.5) },
+    [phone]: {
+      flexDirection: 'column',
+      alignItems: 'stretch',
+      gap: theme.spacing(0.5),
+    },
   },
   barTitle: {
     display: 'flex',
@@ -252,7 +285,10 @@ const useStyles = makeStyles(theme => ({
 const R = 45;
 const C = 2 * Math.PI * R;
 
-export function donutSentence(counts: Record<State, number>, total: number): string {
+export function donutSentence(
+  counts: Record<State, number>,
+  total: number,
+): string {
   const parts = STATE_ORDER.filter(s => (counts[s] || 0) > 0).map(
     s => `${counts[s]} ${STATE_PHRASE[s]}`,
   );
@@ -322,7 +358,12 @@ export function StateDonut(props: {
           >
             {total}
           </text>
-          <text className={classes.centreWord} x={60} y={80} textAnchor="middle">
+          <text
+            className={classes.centreWord}
+            x={60}
+            y={80}
+            textAnchor="middle"
+          >
             {total === 1 ? 'service' : 'services'}
           </text>
         </svg>

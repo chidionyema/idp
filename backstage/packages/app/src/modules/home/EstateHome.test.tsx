@@ -11,7 +11,8 @@ import { kubernetesApiRef } from '@backstage/plugin-kubernetes';
 import { Entity } from '@backstage/catalog-model';
 import { EstateHome } from './EstateHome';
 import { ago, count, fluxState, layerState, podsOf, verdict } from './estate';
-import { REFRESH_MS } from './useEstate';
+import { REFRESH_MS, countInventory } from './useEstate';
+import { screenUrl } from './estate';
 
 const layer = (name: string, system = 'delivery'): Entity => ({
   apiVersion: 'backstage.io/v1alpha1',
@@ -285,6 +286,109 @@ describe('EstateHome', () => {
     // no crew codes on the founder's surface
     expect(document.body.textContent).not.toMatch(/crew#|CP\d/);
   }, 15_000);
+
+  it('puts the screens first, opens the ones with an address, greys the ones without', async () => {
+    const now = new Date().toISOString();
+    const screenDoor = (name: string, tags: string[], health?: string) => ({
+      ...door(name, health, now),
+      metadata: { ...door(name, health, now).metadata, tags },
+    });
+    await render(
+      [
+        layer('backstage'),
+        screenDoor('traces', ['founder', 'screen'], 'ok 200'),
+        screenDoor('dagster', ['founder', 'screen', 'no-address']),
+        screenDoor('flux', ['founder', 'kubernetes', 'no-screen']),
+        screenDoor('metrics', [
+          'founder',
+          'kubernetes',
+          'screen',
+          'no-address',
+        ]),
+        screenDoor('tailnet', ['founder', 'kubernetes', 'screen'], 'ok 200'),
+        door('github', 'ok 200', now),
+      ],
+      kubernetes({ kustomizations: [flux('backstage', 'True')] }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('verdict')).toBeInTheDocument(),
+    );
+    const band = screen.getByTestId('band-screens');
+    expect(band).toBeInTheDocument();
+    // screens come before the picture and the layers on the page
+    expect(
+      band.compareDocumentPosition(screen.getByTestId('band-layers')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByTestId('open-traces')).toHaveAttribute(
+      'href',
+      'https://traces.example',
+    );
+    expect(screen.getByTestId('open-traces')).toHaveTextContent('Open');
+    expect(screen.getByTestId('screen-dagster')).toHaveAttribute(
+      'data-state',
+      'no-address',
+    );
+    expect(screen.queryByTestId('open-dagster')).toBeNull();
+    expect(screen.getByTestId('health-dagster')).toHaveTextContent(
+      'No address yet',
+    );
+    // the cluster tools sit in their own band, never in the screens strip
+    const kube = screen.getByTestId('band-kubernetes');
+    expect(kube).toHaveTextContent('Kubernetes tooling');
+    expect(kube).toHaveTextContent('3');
+    expect(kube).toContainElement(screen.getByTestId('screen-flux'));
+    expect(band).not.toContainElement(screen.getByTestId('screen-flux'));
+    expect(screen.getByTestId('screen-flux')).toHaveAttribute(
+      'data-state',
+      'no-screen',
+    );
+    expect(screen.getByTestId('health-flux')).toHaveTextContent('No screen');
+    expect(screen.queryByTestId('open-flux')).toBeNull();
+    expect(screen.getByTestId('screen-metrics')).toHaveAttribute(
+      'data-state',
+      'no-address',
+    );
+    expect(screen.getByTestId('open-tailnet')).toHaveAttribute(
+      'href',
+      'https://tailnet.example',
+    );
+    // a plain door is still a door, not a screen
+    expect(screen.queryByTestId('screen-github')).toBeNull();
+    expect(screen.getByTestId('surface-github')).toBeInTheDocument();
+    // the count of everything we hold, by what it is, and each chip lists them
+    expect(screen.getByTestId('band-everything')).toHaveTextContent(
+      'We hold 7 things.',
+    );
+    expect(
+      screen.getByTestId('held-component-founder-surface'),
+    ).toHaveTextContent('6');
+    expect(
+      screen.getByTestId('held-component-founder-surface'),
+    ).toHaveTextContent('doors');
+    expect(screen.getByTestId('held-component-platform-layer')).toHaveAttribute(
+      'href',
+      '/catalog?filters%5Bkind%5D=component&filters%5Btype%5D=platform-layer&filters%5Buser%5D=all',
+    );
+  }, 15_000);
+
+  it('counts everything by kind and type, biggest first, and knows a screen address', () => {
+    const rows = countInventory([
+      layer('a'),
+      layer('b'),
+      door('x'),
+      system('s', 'S'),
+    ]);
+    expect(rows.map(r => `${r.kind}/${r.type ?? ''}:${r.count}`)).toEqual([
+      'Component/platform-layer:2',
+      'Component/founder-surface:1',
+      'System/:1',
+    ]);
+    expect(screenUrl(door('x'))).toBe('https://x.example');
+    const dark = door('y');
+    dark.metadata.tags = ['screen', 'no-address'];
+    expect(screenUrl(dark)).toBeUndefined();
+  });
 
   it('is blind, not green, when the cluster does not answer', async () => {
     await render(

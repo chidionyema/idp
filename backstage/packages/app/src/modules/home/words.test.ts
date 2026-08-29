@@ -5,6 +5,9 @@ import {
   SECTIONS,
   STATE_MEANING,
   verdictSentence,
+  everythingSentence,
+  inventoryWord,
+  NO_ADDRESS_WORDS,
 } from './words';
 
 const zero: Record<State, number> = {
@@ -15,8 +18,9 @@ const zero: Record<State, number> = {
   running: 0,
   good: 0,
 };
-const counts = (over: Partial<Record<State, number>>): Record<State, number> =>
-  ({ ...zero, ...over });
+const counts = (
+  over: Partial<Record<State, number>>,
+): Record<State, number> => ({ ...zero, ...over });
 
 describe('PAGE', () => {
   it('says what the page is in one sentence a stranger can read', () => {
@@ -68,7 +72,9 @@ describe('verdictSentence', () => {
     expect(verdictSentence(counts({ needs: 1, good: 30 }), 31)).toBe(
       '1 of 31 services needs a person to act.',
     );
-    expect(verdictSentence(counts({ blind: 4, running: 1, good: 26 }), 31)).toBe(
+    expect(
+      verdictSentence(counts({ blind: 4, running: 1, good: 26 }), 31),
+    ).toBe(
       '4 of 31 services cannot be read at all, so we do not know if they work.',
     );
   });
@@ -154,5 +160,21 @@ describe('no insider words anywhere on the page', () => {
   it.each(banned)('never says "%s"', word => {
     const offenders = strings.filter(s => s.toLowerCase().includes(word));
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('inventory words', () => {
+  it('names each kind of thing in plain words, one or many', () => {
+    expect(inventoryWord('Component', 'platform-layer', 1)).toBe('service');
+    expect(inventoryWord('Component', 'founder-surface', 29)).toBe('doors');
+    expect(inventoryWord('Resource', 'ledger', 187)).toBe('ledgers');
+    expect(inventoryWord('Domain', undefined, 4)).toBe('companies');
+    expect(inventoryWord('Resource', 'odd-thing', 2)).toBe('odd things');
+  });
+
+  it('says how many things we hold, in a sentence', () => {
+    expect(everythingSentence(521)).toBe('We hold 521 things.');
+    expect(everythingSentence(1)).toBe('We hold 1 thing.');
+    expect(NO_ADDRESS_WORDS).toBe('No address yet');
   });
 });

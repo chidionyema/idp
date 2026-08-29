@@ -36,7 +36,12 @@ import {
   count,
   doorState,
   entityPath,
+  hasNoAddress,
+  isScreen,
+  isKubernetes,
+  hasNoScreen,
   layerState,
+  screenUrl,
   matches,
   rank,
   systemOf,
@@ -44,7 +49,17 @@ import {
   verdict,
 } from './estate';
 import { Estate, useEstate } from './useEstate';
-import { PAGE, SECTIONS, STATE_MEANING, verdictSentence } from './words';
+import {
+  NO_ADDRESS_WORDS,
+  NO_SCREEN_WORDS,
+  OPEN_WORD,
+  PAGE,
+  SECTIONS,
+  STATE_MEANING,
+  everythingSentence,
+  inventoryWord,
+  verdictSentence,
+} from './words';
 import {
   SectionIcon,
   StateDonut,
@@ -181,6 +196,64 @@ const useStyles = makeStyles(theme => ({
   find: {
     '& .MuiOutlinedInput-input': { fontSize: 16, padding: '12px 14px' },
   },
+  // Screens: the six-to-eight things with a screen, in front of the reader, never below the fold.
+  screens: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+    gap: theme.spacing(1.5),
+  },
+  screen: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(1),
+    padding: theme.spacing(2),
+    borderRadius: 12,
+    border: `1px solid ${theme.palette.divider}`,
+    background: theme.palette.background.paper,
+    minHeight: 120,
+  },
+  screenOff: { opacity: 0.6, borderStyle: 'dashed' },
+  screenHead: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+    fontSize: 15,
+    fontWeight: 600,
+  },
+  screenIcon: { color: theme.palette.primary.main, display: 'flex' },
+  screenWhy: {
+    fontSize: 13,
+    color: theme.palette.text.secondary,
+    margin: 0,
+    display: '-webkit-box',
+    WebkitLineClamp: 4,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
+    maxHeight: '5.8em',
+    flex: 'none',
+  },
+  screenFoot: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+    flexWrap: 'wrap',
+  },
+  // Everything we hold: one chip per kind of thing, count and plain word, each a link to the list.
+  inventory: { display: 'flex', flexWrap: 'wrap', gap: theme.spacing(1) },
+  chip: {
+    display: 'inline-flex',
+    alignItems: 'baseline',
+    gap: 6,
+    padding: '6px 12px',
+    borderRadius: 999,
+    border: `1px solid ${theme.palette.divider}`,
+    background: theme.palette.background.paper,
+    fontSize: 14,
+    color: theme.palette.text.primary,
+    textDecoration: 'none',
+    '&:hover': { borderColor: theme.palette.primary.main },
+  },
+  chipN: { fontWeight: 700, fontVariantNumeric: 'tabular-nums' },
   section: {
     display: 'flex',
     flexDirection: 'column',
@@ -500,6 +573,83 @@ const LayerTile = ({
 };
 
 /** One line per door: state, name, and its links. Test ids are the login drill's contract. */
+/** One screen: icon, name, one line, and Open or "No address yet" (crew#612 CP10/CP11). */
+export const ScreenCard = ({
+  entity,
+  now,
+}: {
+  entity: Entity;
+  now?: number;
+}) => {
+  const classes = useStyles();
+  const tint = useTint().blind;
+  const s = doorState(entity, now);
+  const url = screenUrl(entity);
+  const noScreen = hasNoScreen(entity);
+  const off = noScreen || hasNoAddress(entity) || !url;
+  const title = entity.metadata.title ?? entity.metadata.name;
+  const Icon = systemIcon(`${entity.metadata.name} ${title}`);
+  return (
+    <div
+      className={`${classes.screen} ${off ? classes.screenOff : ''}`}
+      data-testid={`screen-${entity.metadata.name}`}
+      data-state={noScreen ? 'no-screen' : off ? 'no-address' : s.state}
+    >
+      <div className={classes.screenHead}>
+        <span className={classes.screenIcon}>
+          <Icon aria-hidden="true" fontSize="small" />
+        </span>
+        <Link to={entityPath(entity)} title={entity.metadata.description}>
+          {title}
+        </Link>
+      </div>
+      <p className={classes.screenWhy} title={entity.metadata.description}>
+        {entity.metadata.description}
+      </p>
+      <div className={classes.screenFoot}>
+        {off ? (
+          <span
+            className={classes.pill}
+            style={{
+              color: tint.ink,
+              background: tint.bg,
+              borderColor: tint.edge,
+            }}
+            title={
+              noScreen
+                ? 'This tool runs in the background with no screen of its own; its manifest and its alerts are its word.'
+                : 'This runs, but nothing on the network has an address for it yet.'
+            }
+            data-testid={`health-${entity.metadata.name}`}
+            data-state="blind"
+          >
+            <Dot state="blind" />
+            {noScreen ? NO_SCREEN_WORDS : NO_ADDRESS_WORDS}
+          </span>
+        ) : (
+          <>
+            <Pill
+              state={s.state}
+              why={s.why}
+              testId={`health-${entity.metadata.name}`}
+            />
+            <LinkButton
+              to={url!}
+              color="primary"
+              variant="contained"
+              size="small"
+              className={classes.door}
+              data-testid={`open-${entity.metadata.name}`}
+            >
+              {OPEN_WORD}
+            </LinkButton>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export const DoorRow = ({ entity, now }: { entity: Entity; now?: number }) => {
   const classes = useStyles();
   const s = doorState(entity, now);
@@ -555,7 +705,11 @@ const LiveChip = ({ estate }: { estate: Estate }) => {
       className={classes.live}
       style={{ color: tint.ink, background: tint.bg, borderColor: tint.edge }}
       data-testid="read-at"
-      title={estate.live ? undefined : PAGE.notLiveDetail(estate.liveError ?? 'unknown')}
+      title={
+        estate.live
+          ? undefined
+          : PAGE.notLiveDetail(estate.liveError ?? 'unknown')
+      }
     >
       <Dot state={estate.live ? 'good' : 'red'} />
       {estate.live
@@ -616,7 +770,6 @@ const CatalogueUnavailable = ({
   );
 };
 
-
 type View = 'board' | 'list';
 const VIEW_KEY = 'estate.view';
 const readView = (): View => {
@@ -675,9 +828,37 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
 
   const keep = (e: Entity) => !only || stateOf(e).state === only;
   const layers = matches(query, estate.layers).filter(keep);
-  const doors = matches(query, estate.doors)
+  const byOpenable = (a: Entity, b: Entity) =>
+    Number(hasNoAddress(a) || hasNoScreen(a)) -
+      Number(hasNoAddress(b) || hasNoScreen(b)) ||
+    rank(stateOf(a).state) - rank(stateOf(b).state) ||
+    (a.metadata.title ?? a.metadata.name).localeCompare(
+      b.metadata.title ?? b.metadata.name,
+    );
+  const allScreens = estate.doors.filter(e => isScreen(e) && !isKubernetes(e));
+  const allKube = estate.doors.filter(isKubernetes);
+  const kube = matches(query, allKube).filter(keep).sort(byOpenable);
+  const screens = matches(query, allScreens)
+    .filter(keep)
+    .sort(
+      (a, b) =>
+        Number(hasNoAddress(a)) - Number(hasNoAddress(b)) ||
+        rank(stateOf(a).state) - rank(stateOf(b).state) ||
+        (a.metadata.title ?? a.metadata.name).localeCompare(
+          b.metadata.title ?? b.metadata.name,
+        ),
+    );
+  const doors = matches(
+    query,
+    estate.doors.filter(e => !isScreen(e) && !isKubernetes(e)),
+  )
     .filter(keep)
     .sort((a, b) => rank(stateOf(a).state) - rank(stateOf(b).state));
+  const held = estate.inventory.reduce((n, r) => n + r.count, 0);
+  const listPath = (kind: string, type?: string) =>
+    `/catalog?filters%5Bkind%5D=${encodeURIComponent(kind.toLowerCase())}` +
+    (type ? `&filters%5Btype%5D=${encodeURIComponent(type)}` : '') +
+    '&filters%5Buser%5D=all';
   const templates = matches(query, estate.templates);
   const systemTitle = (id: string) => {
     const s = estate.systems.find(x => x.metadata.name === id);
@@ -699,7 +880,7 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
   });
 
   const open = () => {
-    const first = [...layers, ...doors][0];
+    const first = [...screens, ...layers, ...kube, ...doors][0];
     if (templates[0] && !first) navigate(templatePath(templates[0]));
     else if (first?.metadata.links?.[0])
       window.location.assign(first.metadata.links[0].url);
@@ -709,41 +890,24 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
   return (
     <div className={classes.wrap}>
       <div className={classes.top}>
-        <span className={classes.when}>{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+        <span className={classes.when}>
+          {new Date().toLocaleDateString(undefined, {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+          })}
+        </span>
       </div>
       <h1 className={classes.title}>{brand}</h1>
       <p className={classes.tagline}>{PAGE.tagline}</p>
-      <p className={classes.verdict} data-testid="verdict" title={verdict(counts, all.length)}>
+      <p
+        className={classes.verdict}
+        data-testid="verdict"
+        title={verdict(counts, all.length)}
+      >
         <span>{verdictSentence(counts, all.length)}</span>
         <LiveChip estate={estate} />
       </p>
-      {all.length > 0 && (
-      <div className={classes.picture} data-testid="picture">
-        <StateDonut counts={counts} total={all.length} />
-        <SystemBars
-          rows={systemsShown.map(([id, xs]) => ({
-            id,
-            title: systemTitle(id).title,
-            counts: count(xs.map(e => stateOf(e).state)),
-          }))}
-        />
-      </div>
-      )}
-      <div
-        className={classes.counters}
-        role="group"
-        aria-label="Filter by state"
-      >
-        {STATE_ORDER.map(s => (
-          <Counter
-            key={s}
-            state={s}
-            n={counts[s]}
-            on={only === s}
-            onClick={() => setOnly(only === s ? undefined : s)}
-          />
-        ))}
-      </div>
       <TextField
         className={classes.find}
         fullWidth
@@ -775,6 +939,109 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
         </span>
       </div>
 
+      <section
+        className={classes.section}
+        id="screens"
+        data-testid="band-screens"
+      >
+        <h2 className={classes.h}>
+          <SectionIcon section="screens" />
+          {SECTIONS.screens.title}
+          <span className={classes.hCount}>
+            {screens.length === allScreens.length
+              ? `${screens.length}`
+              : `${screens.length} of ${allScreens.length}`}
+          </span>
+        </h2>
+        <p className={classes.hDesc}>{SECTIONS.screens.blurb}</p>
+        {allScreens.length === 0 ? (
+          <p className={classes.note} data-testid="no-screens">
+            No screens are registered yet, so there is nothing to open from
+            here.
+          </p>
+        ) : (
+          <div className={classes.screens}>
+            {screens.map(e => (
+              <ScreenCard key={e.metadata.name} entity={e} now={now} />
+            ))}
+          </div>
+        )}
+      </section>
+      <section
+        className={classes.section}
+        id="kubernetes"
+        data-testid="band-kubernetes"
+      >
+        <h2 className={classes.h}>
+          <SectionIcon section="kubernetes" />
+          {SECTIONS.kubernetes.title}
+          <span className={classes.hCount}>
+            {kube.length === allKube.length
+              ? `${kube.length}`
+              : `${kube.length} of ${allKube.length}`}
+          </span>
+        </h2>
+        <p className={classes.hDesc}>{SECTIONS.kubernetes.blurb}</p>
+        {allKube.length === 0 ? (
+          <p className={classes.note} data-testid="no-kubernetes">
+            No cluster tools are registered yet.
+          </p>
+        ) : (
+          <div className={classes.screens}>
+            {kube.map(e => (
+              <ScreenCard key={e.metadata.name} entity={e} now={now} />
+            ))}
+          </div>
+        )}
+      </section>
+      {all.length > 0 && (
+        <div className={classes.picture} data-testid="picture">
+          <StateDonut counts={counts} total={all.length} />
+          <SystemBars
+            rows={systemsShown.map(([id, xs]) => ({
+              id,
+              title: systemTitle(id).title,
+              counts: count(xs.map(e => stateOf(e).state)),
+            }))}
+          />
+        </div>
+      )}
+      <div
+        className={classes.counters}
+        role="group"
+        aria-label="Filter by state"
+      >
+        {STATE_ORDER.map(s => (
+          <Counter
+            key={s}
+            state={s}
+            n={counts[s]}
+            on={only === s}
+            onClick={() => setOnly(only === s ? undefined : s)}
+          />
+        ))}
+      </div>
+      <section className={classes.section} data-testid="band-everything">
+        <h2 className={classes.h}>
+          <SectionIcon section="everything" />
+          {SECTIONS.everything.title}
+          <span className={classes.hCount}>{everythingSentence(held)}</span>
+        </h2>
+        <p className={classes.hDesc}>{SECTIONS.everything.blurb}</p>
+        <div className={classes.inventory} data-testid="inventory">
+          {estate.inventory.map(r => (
+            <Link
+              key={`${r.kind}/${r.type ?? ''}`}
+              to={listPath(r.kind, r.type)}
+              className={classes.chip}
+              data-testid={`held-${r.kind.toLowerCase()}-${r.type ?? 'all'}`}
+            >
+              <span className={classes.chipN}>{r.count}</span>
+              <span>{inventoryWord(r.kind, r.type, r.count)}</span>
+            </Link>
+          ))}
+        </div>
+      </section>
       <section className={classes.section} data-testid="band-layers">
         <h2 className={classes.h}>
           <SectionIcon section="layers" />
@@ -848,7 +1115,8 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
         <p className={classes.hDesc}>{SECTIONS.doors.blurb}</p>
         {estate.doors.length === 0 ? (
           <p className={classes.note} data-testid="no-surfaces">
-            No doors yet. Doors appear here on their own once they are registered.
+            No doors yet. Doors appear here on their own once they are
+            registered.
           </p>
         ) : (
           doors.map(e => <DoorRow key={e.metadata.name} entity={e} now={now} />)
