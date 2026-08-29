@@ -92,6 +92,11 @@ def test_a_class_the_release_patches_in_is_read_as_the_class_the_pod_runs_under(
     guard charged eight continuously running pods to standing capacity while the scheduler ranked
     them as batch. Grading the shape of the file instead of the pod, again, one branch along from
     the sibling-branch defect above.
+
+    The target here reaches every kind in the namespace. It used to read `{kind: Deployment}`, and
+    that was the same defect wearing the fence's own uniform: a bare kind names no single object,
+    so it counted as covering the document while reaching no StatefulSet or CronJob the chart also
+    ships. Closed 2026-08-29 in _patched_classes, and the case below now holds it shut.
     """
     release = {
         "kind": "HelmRelease",
@@ -102,7 +107,7 @@ def test_a_class_the_release_patches_in_is_read_as_the_class_the_pod_runs_under(
                     "kustomize": {
                         "patches": [
                             {
-                                "target": {"kind": "Deployment"},
+                                "target": {"namespace": "lago"},
                                 "patch": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: any\nspec:\n  template:\n    spec:\n      priorityClassName: platform-batch\n",
                             }
                         ]
@@ -120,6 +125,9 @@ def test_a_class_the_release_patches_in_is_read_as_the_class_the_pod_runs_under(
         {"kind": "Deployment", "name": "lago-api"},
         {"kind": "Deployment", "labelSelector": "app=lago-api"},
         {"kind": "Deployment", "annotationSelector": "batch=yes"},
+        # A bare kind is the same hole one step less obvious: it names no single object, but it
+        # reaches no StatefulSet, DaemonSet or CronJob the chart ships alongside its Deployments.
+        {"kind": "Deployment"},
     ],
 )
 def test_a_patch_that_reaches_only_some_pods_does_not_make_the_document_batch(target):
@@ -158,7 +166,7 @@ def test_a_patch_naming_another_class_is_not_batch():
                     "kustomize": {
                         "patches": [
                             {
-                                "target": {"kind": "Deployment"},
+                                "target": {"namespace": "lago"},
                                 "patch": "spec:\n  template:\n    spec:\n      priorityClassName: infrastructure-critical\n",
                             }
                         ]

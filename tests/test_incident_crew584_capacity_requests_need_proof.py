@@ -121,8 +121,19 @@ def _patched_classes(doc):
     and the pod was charged to standing capacity while the scheduler treated it as batch. That is
     grading the shape of the file instead of the pod (crew#623, the Lago release).
 
-    Only a patch that names no single object counts: a target with a `name` or a `labelSelector`
-    reaches some of the chart's pods and not others, and "some" cannot make a whole document batch.
+    Only a patch that reaches every pod in the chart counts. A target with a `name`, a
+    `labelSelector` or an `annotationSelector` reaches some of the chart's pods and not others, and
+    "some" cannot make a whole document batch.
+
+    A bare `kind` is the same hole one step less obvious, and it was open here until it was looked
+    for: `target: {kind: Deployment}` names no single object, so it used to count as covering the
+    document -- while reaching no StatefulSet, DaemonSet or CronJob the same chart ships. Offline
+    there is no way to know which kinds a chart renders, so the honest answer is that a kind-scoped
+    patch does not excuse the document, and a release that wants the batch bucket says so in its
+    values where a walk can read it (the NATS shape) rather than in a patch string. Measured on
+    2026-08-29 when this was tightened: the batch bucket held exactly one row before and after --
+    signoz-retention, which carries the class in its own manifest -- so nothing in the tree was
+    resting on the hole.
     """
     found = set()
     for renderer in doc.get("spec", {}).get("postRenderers", []) or []:
@@ -130,6 +141,7 @@ def _patched_classes(doc):
             target = patch.get("target") or {}
             if (
                 target.get("name")
+                or target.get("kind")
                 or target.get("labelSelector")
                 or target.get("annotationSelector")
             ):
