@@ -32,21 +32,21 @@ body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name state/cluster 2
 # their last log) outgrew ARG_MAX and `python3: Argument list too long` graded the estate BLIND
 # at the moment it needed reading. The body travels by file, never by argv.
 bodyf=$(mktemp); trap 'rm -f "$bodyf"' EXIT; printf '%s' "$body" > "$bodyf"
-python3 - "$head" "$bodyf" "$MAX_MIN" "${1:-}" <<'PY'
+IDP_LIB="$IDP/bin/lib" python3 - "$head" "$bodyf" "$MAX_MIN" "${1:-}" <<'PY'
 import os as _os
 def _body_arg(a):
     # crew#539: the receipt is a file path when the caller wrote it out (ARG_MAX, run 33129788480); a literal body is still accepted for the test harnesses.
     return (open(a, encoding='utf-8', errors='replace').read() if _os.path.isfile(a) else a).strip()
 import json, re, sys
-from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
+sys.path.insert(0, _os.environ.get("IDP_LIB", ""))
+from receipt_age import receipt_age  # crew#583 CP2: the store's clock, never this machine's
 head, body, max_min, flag = sys.argv[1], _body_arg(sys.argv[2]), float(sys.argv[3]), sys.argv[4]
 line1, _, rest = body.partition("\n")
 try:
-    lm = json.loads(head)["last-modified"]
+    head = json.loads(head)
 except Exception as e:
-    print(f"BLIND   cluster-state  object head carried no last-modified: {e}"); sys.exit(2)
-age = (datetime.now(timezone.utc) - parsedate_to_datetime(lm)).total_seconds() / 60
+    print(f"BLIND   cluster-state  object head was not readable JSON: {e}"); sys.exit(2)
+age = receipt_age(head, 60.0, "cluster-state")
 if not line1.startswith("ok "):
     print(f"FAIL    cluster-state  receipt does not start with ok: {line1[:120]!r}"); sys.exit(1)
 if age > max_min:

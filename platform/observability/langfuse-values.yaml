@@ -39,13 +39,30 @@ langfuse:
       - name: NODE_OPTIONS
         value: --max-old-space-size=1536
     resources:
-      requests: { cpu: 50m, memory: 2Gi }   # crew#584: radio-room set, Guaranteed QoS required (require-priority-class)
-      limits: { cpu: 50m, memory: 2Gi }
+      # crew#626 CP15 (run 33259031857): at 50m the Next.js server never listened inside the 50 s
+      # liveness window (delay 20 s + 3 x 10 s) and was killed with exit 143, 164 times in 9 h, so
+      # the SSO change in idp#810 never reached a serving pod. 250m is the admission fence's own
+      # line (capacity-policy: above it needs a label) and equal to the limit for Guaranteed QoS.
+      # 250m was not enough either (idp#820; diagnose run 33262424618): the new web pod hit 10
+      # restarts with liveness /api/public/health "context deadline exceeded" and the worker
+      # CrashLooped, while the only serving pod was the 15 h old one from the 1000m-limit era
+      # (helm-retry run 33260661133: "failed early due to stalled rollout"). One core, Guaranteed
+      # (crew#539 CP9: radio-room set is request == limit), admitted above the fence line by the
+      # capacity-approved label the way clickhouse is (values.yaml). The chart's pod label key is
+      # `pod.labels`, not `podLabels`.
+      requests: { cpu: 1000m, memory: 2Gi }
+      limits: { cpu: 1000m, memory: 2Gi }
+    pod:
+      labels: { idp.platform/capacity-approved: "true" }   # 1000m Guaranteed, measured (crew#626 CP15, run 33262424618)
   worker:
     replicas: 1
     resources:
-      requests: { cpu: 50m, memory: 1Gi }   # crew#584: radio-room set, Guaranteed QoS required (require-priority-class)
-      limits: { cpu: 50m, memory: 1Gi }
+      # crew#626 CP15: same boot failure as web at 50m (163 restarts in 9 h, run 33259031857) and
+      # CrashLoop at 250m (run 33262424618, pod sqrq9); one core, Guaranteed, like web.
+      requests: { cpu: 1000m, memory: 1Gi }
+      limits: { cpu: 1000m, memory: 1Gi }
+    pod:
+      labels: { idp.platform/capacity-approved: "true" }   # 1000m Guaranteed, measured (crew#626 CP15, run 33262424618)
 postgresql:
   deploy: true
   storage:

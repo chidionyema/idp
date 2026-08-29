@@ -121,3 +121,126 @@ decisions:
     receipt: "https://github.com/chidionyema/crew/issues/562#issuecomment-5458014415"
     next_review: 2026-09-04
     reviews: []
+  - slug: tailscale-operator-trust
+    requirement: "the tailscale operator in OKE gets its OAuth client with no console step and no long-lived secret in GitHub (crew#66, R52)"
+    date: 2026-08-29
+    status: decided
+    candidates:
+      console-seed:
+        note: "two SEED_TAILSCALE_* secrets pasted from the admin console into GitHub; deleted in idp#763"
+        scores:
+          first_time_user: {score: 1, evidence: "https://github.com/chidionyema/crew/issues/66"}
+          founder_experience: {score: 1, evidence: "https://github.com/chidionyema/crew/issues/66"}
+          feature_parity: {score: 4, evidence: "docs/reference/policy/credential-lifecycle.md"}
+          ecosystem_fit: {score: 2, evidence: "docs/reference/policy/credential-lifecycle.md"}
+          maturity: {score: 4, evidence: "https://tailscale.com/kb/1215/oauth-clients"}
+          security_by_default: {score: 1, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+          portability: {score: 3, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+          operability: {score: 2, evidence: "bin/idp-bootstrap-tailscale"}
+          cost: {score: 5, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+      github-oidc-federation:
+        note: "GitHub Actions OIDC token exchanged for a Tailscale token on the runner; the runner mints the operator client into the vault (chosen)"
+        scores:
+          first_time_user: {score: 4, evidence: "https://tailscale.com/kb/1581/workload-identity-federation"}
+          founder_experience: {score: 5, evidence: "clusters/oke/estate-config.yaml"}
+          feature_parity: {score: 4, evidence: "https://tailscale.com/kb/1581/workload-identity-federation"}
+          ecosystem_fit: {score: 4, evidence: ".github/workflows/oke-check.yml"}
+          maturity: {score: 4, evidence: "https://tailscale.com/kb/1581/workload-identity-federation"}
+          security_by_default: {score: 5, evidence: "https://tailscale.com/kb/1581/workload-identity-federation"}
+          portability: {score: 4, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+          operability: {score: 4, evidence: "bin/idp-bootstrap-tailscale"}
+          cost: {score: 5, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+      oke-oidc-operator:
+        note: "the operator itself presents a projected OKE service-account token (chart oauth.audience); needs an enhanced cluster"
+        scores:
+          first_time_user: {score: 4, evidence: "https://docs.oracle.com/en-us/iaas/Content/ContEng/Tasks/contengconfiguringclusterexternaloidc.htm"}
+          founder_experience: {score: 5, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+          feature_parity: {score: 5, evidence: "https://github.com/tailscale/tailscale/tree/main/cmd/k8s-operator/deploy/chart"}
+          ecosystem_fit: {score: 4, evidence: "platform/oci/main.tf"}
+          maturity: {score: 3, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+          security_by_default: {score: 5, evidence: "https://tailscale.com/kb/1581/workload-identity-federation"}
+          portability: {score: 2, evidence: "platform/oci/main.tf"}
+          operability: {score: 4, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+          cost: {score: 1, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+    decision: github-oidc-federation   # 435 vs oke-oidc-operator 390 (enhanced cluster is a one-way upgrade at GBP 57.51/month) vs console-seed 230
+    receipt: "https://github.com/chidionyema/crew/issues/66#issuecomment-5461672647"   # founder, 2026-08-29, on the no-cost road: "ok thats fine, we need to document all this"
+    next_review: 2026-09-05
+    reviews: []
+
+  - slug: claude-on-the-router
+    requirement: "a workload on the estate uses Claude through one platform layer, with the key born once by code and never on the Mac (crew#568 phase 1, crew#617)"
+    date: 2026-08-29
+    status: proposed
+    candidates:
+      router-lane-direct:
+        note: "claude / claude-fast lanes on the one LiteLLM router, ANTHROPIC_API_KEY in litellm-upstream from SEED_ANTHROPIC_API_KEY"
+        scores:
+          first_time_user:     {score: 4, evidence: "platform/llm/config.yaml"}                                          # name a lane; no key, no install
+          founder_experience:  {score: 4, evidence: "docs/how-to/onboarding/litellm.md"}                                 # one router UI, one spend row per lane
+          feature_parity:      {score: 5, evidence: "https://docs.anthropic.com/en/docs/about-claude/models"}            # the vendor's own models and limits
+          ecosystem_fit:       {score: 4, evidence: "platform/llm/external-secret.yaml"}                                 # same vault entry, same trace path as every lane
+          maturity:            {score: 4, evidence: "https://docs.litellm.ai/docs/providers/anthropic"}                  # first-class provider in LiteLLM
+          security_by_default: {score: 5, evidence: "platform/vendors/consoles.yaml"}                                    # R52: key born by bin/idp-bootstrap-vendors, never pasted
+          portability:         {score: 4, evidence: "docs/decisions/0011-claude-is-a-lane-on-the-router-not-a-key-on-the-mac.md"}  # vendor named on one line
+          operability:         {score: 4, evidence: "platform/llm/config.yaml"}                                          # fallback chain like every other lane
+          cost:                {score: 3, evidence: "https://www.anthropic.com/pricing"}                                 # list price, no middleman fee
+      claude-code-subscription:
+        note: "the founder's Claude Code subscription on the Mac as the estate's Claude"
+        scores:
+          first_time_user:     {score: 1, evidence: "https://docs.anthropic.com/en/docs/claude-code/overview"}           # a person signs in on a machine; a pod cannot
+          founder_experience:  {score: 3, evidence: "https://docs.anthropic.com/en/docs/claude-code/overview"}           # good for him at the keyboard, nothing else
+          feature_parity:      {score: 2, evidence: "https://docs.anthropic.com/en/docs/claude-code/overview"}           # no API surface for a workload
+          ecosystem_fit:       {score: 1, evidence: "docs/reference/requirements/founder-requirements-2026-08-24.md"}    # Mac-bound; infra is never Mac-bound (2026-08-25)
+          maturity:            {score: 4, evidence: "https://docs.anthropic.com/en/docs/claude-code/overview"}           # mature as a tool, not as a platform layer
+          security_by_default: {score: 2, evidence: "docs/reference/policy/credential-lifecycle.md"}                     # a personal login, not a rotatable estate credential
+          portability:         {score: 1, evidence: "docs/decisions/0011-claude-is-a-lane-on-the-router-not-a-key-on-the-mac.md"}  # one vendor, one machine
+          operability:         {score: 1, evidence: "platform/llm/config.yaml"}                                          # no lane, no trace, no fallback
+          cost:                {score: 4, evidence: "https://www.anthropic.com/pricing"}                                 # flat subscription already paid
+      openrouter-lane:
+        note: "Claude via the existing openrouter lane and OPENROUTER_API_KEY"
+        scores:
+          first_time_user:     {score: 4, evidence: "platform/llm/config.yaml"}                                          # a lane name, like the direct road
+          founder_experience:  {score: 2, evidence: "platform/llm/config.yaml"}                                          # crew#506 CP1: account dry since 2026-08-27, lanes in no chain
+          feature_parity:      {score: 3, evidence: "https://openrouter.ai/docs"}                                        # the models, behind a middleman's limits
+          ecosystem_fit:       {score: 3, evidence: "platform/llm/external-secret.yaml"}                                 # key already in litellm-upstream
+          maturity:            {score: 3, evidence: "https://openrouter.ai/docs"}                                        # a broker, one more surface to be down
+          security_by_default: {score: 4, evidence: "platform/vendors/consoles.yaml"}                                    # same R52 birth
+          portability:         {score: 4, evidence: "https://openrouter.ai/docs"}                                        # many vendors behind one key
+          operability:         {score: 2, evidence: "platform/llm/config.yaml"}                                          # 402 on every turn while unfunded
+          cost:                {score: 2, evidence: "https://openrouter.ai/docs/pricing"}                                # list price plus the broker's fee and a prepaid balance
+    decision: router-lane-direct   # 420 vs openrouter-lane 315 vs claude-code-subscription 215 (cmd: bin/matrix-gate); outside tie_band
+    next_review: 2026-09-05
+    reviews: []
+  - slug: staging-is-a-namespace
+    requirement: "a staging surface the founder can push to before prod, without a second cluster's bill (founder 2026-08-29 00:44-01:55Z, crew#584 CP-H, ADR 0012)"
+    date: 2026-08-29
+    status: decided
+    next_review: 2026-11-29
+    decision: staging-namespace   # namespace 4.3 vs second cluster 3.1 on the weights; the founder's word 2026-08-29 00:44-01:55Z
+    receipt: "https://github.com/chidionyema/crew/issues/584#issuecomment-5459064035"
+    reviews: []
+    candidates:
+      staging-namespace:
+        note: "a `staging` namespace on the one cluster; Flux row per namespace; namespaces never pruned"
+        scores:
+          first_time_user:     {score: 4, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # one cluster, one kubeconfig, one login
+          founder_experience:  {score: 4, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # same portal, same drill
+          feature_parity:      {score: 4, evidence: "platform/features/features.yaml"}                                                     # feature register gates per namespace
+          ecosystem_fit:       {score: 5, evidence: "platform/oci"}                                                                   # Flux Kustomization per row already
+          maturity:            {score: 5, evidence: "https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/"}        # namespaces are the platform primitive
+          security_by_default: {score: 3, evidence: "platform/kyverno"}                                                           # policy-scoped, but shared node pool
+          portability:         {score: 4, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # any cluster, any cloud
+          operability:         {score: 4, evidence: "tests/test_incident_a_namespace_moved_between_flux_rows_was_pruned.py"}              # prune guard proven
+          cost:                {score: 5, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # prod 6 cores, $42/month, no second bill
+      second-cluster:
+        note: "a second OKE cluster for staging"
+        scores:
+          first_time_user:     {score: 2, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # two kubeconfigs, two logins
+          founder_experience:  {score: 2, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # a second portal to keep green
+          feature_parity:      {score: 5, evidence: "platform/oci"}                                                                   # identical by construction
+          ecosystem_fit:       {score: 3, evidence: "platform/oci"}                                                                   # a second Flux root, a second collector
+          maturity:            {score: 5, evidence: "https://docs.oracle.com/en-us/iaas/Content/ContEng/home.htm"}                          # the vendor's own product
+          security_by_default: {score: 5, evidence: "platform/kyverno"}                                                           # hard isolation
+          portability:         {score: 3, evidence: "platform/oci"}                                                                        # a second provider footprint
+          operability:         {score: 2, evidence: "bin/idp-availability-gate"}                                                           # two estates to keep available
+          cost:                {score: 1, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # doubles the bill the founder capped

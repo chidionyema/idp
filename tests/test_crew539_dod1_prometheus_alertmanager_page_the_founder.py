@@ -17,6 +17,7 @@ Proved offline, no sockets:
 """
 import pathlib
 import re
+import os
 import subprocess
 import sys
 
@@ -141,7 +142,7 @@ def test_probe_targets_are_exactly_the_founder_surfaces_and_the_module_accepts_4
 def test_estate_rules_carry_founder_surface_down_and_the_cp14_pvc_alert():
     pr = one("platform/monitoring/rules/estate.yaml", "PrometheusRule", "estate")
     rules = {r["alert"]: r for g in pr["spec"]["groups"] for r in g["rules"]}
-    assert set(rules) == {"FounderSurfaceDown", "MacScreenSharingOff", "PersistentVolumeAlmostFull", "GatewayRefusals", "GatewayMetricsAbsent"}
+    assert set(rules) == {"FounderSurfaceDown", "MacScreenSharingOff", "PersistentVolumeAlmostFull", "GatewayRefusals", "GatewayMetricsAbsent", "OttoDown"}
     assert rules["FounderSurfaceDown"]["expr"] == 'probe_success{job="founder-surfaces"} == 0'
     assert rules["FounderSurfaceDown"]["labels"]["severity"] == "critical"
     pvc = rules["PersistentVolumeAlmostFull"]
@@ -172,8 +173,8 @@ def grade(line1, body="{}"):
     # run only the python half of bin/idp-cluster-state, with a fresh head, the way the script does
     src = (IDP / "bin/idp-cluster-state").read_text()
     py = src.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
-    head = '{"last-modified": "%s"}' % __import__("email.utils").utils.formatdate(usegmt=True)
-    r = subprocess.run([sys.executable, "-c", py, head, line1 + "\n" + body, "60", ""], capture_output=True, text=True)
+    head = '{"last-modified": "%s", "date": "%s"}' % ((__import__("email.utils").utils.formatdate(usegmt=True),) * 2)
+    r = subprocess.run([sys.executable, "-c", py, head, line1 + "\n" + body, "60", ""], capture_output=True, text=True, env={**os.environ, "IDP_LIB": str(IDP / "bin" / "lib")})
     return r.returncode, r.stdout.strip()
 
 
@@ -214,7 +215,7 @@ def test_gateway_refusals_are_scraped_and_alerted():
     assert {"name": "metrics", "port": 15020, "targetPort": "metrics"} in svc["spec"]["ports"]
     sm = one("platform/monitoring/rules/agentgateway-servicemonitor.yaml", "ServiceMonitor", "agentgateway")
     assert sm["spec"]["namespaceSelector"]["matchNames"] == ["mcp"]
-    assert sm["spec"]["selector"]["matchLabels"] == svc["metadata"]["labels"]
+    assert sm["spec"]["selector"]["matchLabels"].items() <= svc["metadata"]["labels"].items()
     assert sm["spec"]["endpoints"][0]["port"] == "metrics"
     pr = one("platform/monitoring/rules/estate.yaml", "PrometheusRule", "estate")
     (r,) = [r for g in pr["spec"]["groups"] for r in g["rules"] if r.get("alert") == "GatewayRefusals"]

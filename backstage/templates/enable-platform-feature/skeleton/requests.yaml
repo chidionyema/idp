@@ -1,9 +1,7 @@
 # Feature-tier requests opened through the "Enable platform feature" Backstage template
-# (crew#584). A row here is a request, not a switch: platform/features/features.yaml and
-# bin/idp-features are what `enable` reads and writes, and enabling still runs as its own
-# reviewed action against a real checkout -- this file only carries what was asked for and
-# why, so the pull request's CI run (.github/workflows/ci.yml) can price it with
-# `bin/idp-features plan` before a reviewer merges.
+# (crew#584). A row here is a request. The feature-request-enable workflow runs
+# `bin/idp-features enable` on the pull request that adds the row and commits the Flux switch
+# changes onto the same branch, so merging the pull request is the flip (crew#584 CP-K).
 - feature: ${{ values.feature }}
   tier: ${{ values.tier }}
   reason: ${{ values.reason }}

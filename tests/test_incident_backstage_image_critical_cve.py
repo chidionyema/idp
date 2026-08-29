@@ -11,6 +11,8 @@ import re
 import subprocess
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 FIXED = (7, 5, 19)
 
@@ -58,8 +60,15 @@ def test_guest_outside_development_only_while_no_public_route_exists():
     cfg = (ROOT / "backstage" / "app-config.container.yaml").read_text()
     if "dangerouslyAllowOutsideDevelopment: true" not in cfg:
         return
-    edge = "".join(p.read_text() for p in (ROOT / "platform" / "edge").glob("*.yaml"))
-    assert "catalogue" not in edge and "backstage" not in edge, "a route exists: put OIDC in front or turn the flag off"
+    routes = [
+        ref.get("name")
+        for p in (ROOT / "platform" / "edge").glob("*.yaml")
+        for d in yaml.safe_load_all(p.read_text())
+        if isinstance(d, dict) and d.get("kind") in ("HTTPRoute", "Ingress")
+        for rule in d.get("spec", {}).get("rules", [])
+        for ref in rule.get("backendRefs", [])
+    ]
+    assert not {"catalogue", "backstage"} & set(routes), "a route exists: put OIDC in front or turn the flag off"
     base = (ROOT / "platform" / "backstage" / "base" / "catalogue.yaml").read_text()
     assert "type: ClusterIP" in base
 

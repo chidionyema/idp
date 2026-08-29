@@ -56,6 +56,21 @@ def _surfaces(root):
     return docs
 
 
+# crew#307 (founder, 2026-08-29: "how was even a surface allowed into the estate without being
+# on Backstage", "you cannot be trusted to write your own guards"). The inventory is not a list
+# this file types: the cluster refuses any Service or HTTPRoute without Backstage's own label
+# backstage.io/kubernetes-id (platform/edge/require-catalogue-entity.yaml, Enforce) and the live
+# receipt (platform/state/cluster-state.yaml services_unlisted -> bin/idp-catalogue-drift) proves
+# it. This file checks the one thing only git can: every label value names a catalogue entity.
+def _labelled(root) -> dict[str, str]:
+    """backstage.io/kubernetes-id -> where it is declared, over platform/ manifests and HelmRelease postRenderers."""
+    out = {}
+    for f in (root / "platform").rglob("*.yaml"):
+        for m in re.finditer(r"backstage\.io/kubernetes-id: *([A-Za-z0-9._-]+)", f.read_text()):
+            out.setdefault(m.group(1), str(f.relative_to(root)))
+    return out
+
+
 def missing(root) -> list[str]:
     """Every rule, as a list of violations; empty means the founder can find everything."""
     zone = _zone(root)
@@ -96,6 +111,12 @@ def missing(root) -> list[str]:
     for wf in _buttons(root):
         if not any(u.endswith(f"/actions/workflows/{wf}") for u in urls):
             out.append(f"workflow button {wf} has no founder surface link")
+    for value, where in sorted(_labelled(root).items()):
+        if value not in names:
+            out.append(f"{where}: backstage.io/kubernetes-id {value} names no founder surface (the door a person opens for it)")
+    for d in surfaces:
+        if not (d["metadata"].get("annotations") or {}).get("estate/group", "").strip():
+            out.append(f"{d['metadata']['name']}: no estate/group annotation (which group on the home page?)")
     # Rule 4 (CP5, 2026-08-27): the portal must NOT load the file directly. Backstage does not
     # expand ${ESTATE_ZONE} in an entity file; the generated catalogue (bin/catalog-gen) is the
     # only path, and it substitutes the zone and stamps health.

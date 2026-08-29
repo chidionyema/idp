@@ -122,6 +122,41 @@ MAP = {
     "listener":      ("Resource",  "port"),
 }
 
+
+# Founder, 2026-08-29 ("assume an investor and buyer is coming to view our backstage"): the
+# served catalogue read like one laptop. 527 lines carried a home directory, 8 titles were
+# launchd reverse-DNS labels, and Adobe's own background job was listed as an estate asset.
+# Three rules, applied where every entity is written so no row can miss them:
+#   1. a path under a user's home is written as ~/..., never the account name (LAW 46);
+#   2. a scheduled job whose program lives under the OS's own trees is vendor software on
+#      the machine, not an estate asset, and is not written;
+#   3. a reverse-DNS id (ai.aiden.watch) is a label, not a title: the title is the words,
+#      the label stays on the entity as estate/label.
+HOME_RE = re.compile(r"^/(?:Users|home)/[^/\s]+(?=/|$)")
+VENDOR_TREES = ("/Applications/", "/System/", "/Library/", "/usr/libexec/")
+LABEL_RE = re.compile(r"^[a-z][a-z0-9-]*(\.[a-z0-9-]+){2,}$")
+
+
+def unhomed(s):
+    """Every absolute path under a home directory, anywhere in the string, becomes ~/..."""
+    return re.sub(r"/(?:Users|home)/[^/\s]+(?=/|\b)", "~", str(s)) if s is not None else s
+
+
+def vendor_software(r) -> bool:
+    return r.get("kind") == "scheduled_job" and str(r.get("path") or "").startswith(VENDOR_TREES)
+
+
+def human_title(r, fallback):
+    rid = str(r.get("id") or fallback)
+    if not LABEL_RE.match(rid):
+        return rid
+    parts = rid.split(".")
+    if parts[0] in ("ai", "com", "org", "io", "net"):
+        parts = parts[1:]
+    words = " ".join(w.replace("-", " ") for w in parts)
+    return words[:1].upper() + words[1:]
+
+
 def y(v):
     """YAML scalar, quoted when it could be misread.
 
@@ -168,7 +203,7 @@ def entity(kind, name, title, etype, annotations, tags, links=(), depends_on=(),
         "metadata:",
         f"  name: {y(name)}",
         f"  title: {y(title)}",
-        f"  description: {y(str(description).strip())}",
+        f"  description: {y(unhomed(str(description).strip()))}",
     ]
     if annotations:
         out.append("  annotations:")
@@ -178,7 +213,7 @@ def entity(kind, name, title, etype, annotations, tags, links=(), depends_on=(),
         for k, v in sorted(annotations.items()):
             if v in (None, ""):
                 continue
-            out.append(f"    {k if '/' in k else 'estate/' + k}: {y(v)}")
+            out.append(f"    {k if '/' in k else 'estate/' + k}: {y(unhomed(v))}")
     if tags:
         out.append("  tags:")
         out += [f"    - {y(slug(t).lower())}" for t in tags if t]
@@ -355,12 +390,119 @@ def yaml_links(doc):
             for l in (d or {}).get("metadata", {}).get("links", [])]
 
 
+# crew#624 (founder, 2026-08-29: "WHY IS HUBBLE NOT THERE ... IF WE CANT TRUST BACKSTAGE THEN WE
+# MAY AS WELL NOT HAVE A COMPANY"). Until this function existed the catalogue was built from the
+# Mac inventory alone: 30 Flux rows, 24 Helm charts and the CNI (Cilium + Hubble, a cluster
+# choice and never a Flux row) ran on the cluster and not one had an entity. Measured 13:3xZ:
+# `grep -c hubble catalog/catalog-info.yaml` = 0. The cluster is read from the checkout that
+# Flux reconciles (clusters/*/*.yaml and platform/**), so the catalogue and the cluster cannot
+# name different sets; tests/test_incident_crew624_every_cluster_row_is_in_the_catalogue.py
+# refuses a checkout where they do.
+CLUSTER_KINDS = ("Kustomization", "HelmRelease")
+
+
+def _first_comment(path):
+    """First sentence of the file's leading comment block; the asset describes itself."""
+    return _docline(path)
+
+
+def _idp_source_link(rel):
+    """Source link for a file in this checkout, from the remote git already knows (LAW 46)."""
+    try:
+        remote = subprocess.run(["git", "-C", IDP_ROOT, "remote", "get-url", "origin"],
+                                check=False, capture_output=True, text=True).stdout.strip()
+    except OSError:
+        remote = ""
+    gh = github_slug(remote)
+    if not gh:
+        return []
+    return [("Source", f"https://github.com/{gh}/blob/main/{rel}"),
+            ("Cluster state", f"https://github.com/{gh}/actions/workflows/oke-check.yml")]
+
+
+def cluster_entities():
+    import glob as _glob
+    import yaml
+    docs, seen_dirs = [], set()
+    rows = []  # (kind, name, namespace, relpath, path-in-repo, chart)
+    files = sorted(_glob.glob(os.path.join(IDP_ROOT, "clusters", "*", "*.yaml"))) + \
+        sorted(_glob.glob(os.path.join(IDP_ROOT, "platform", "**", "*.yaml"), recursive=True))
+    for f in files:
+        rel = os.path.relpath(f, IDP_ROOT)
+        try:
+            loaded = list(yaml.safe_load_all(open(f)))
+        except yaml.YAMLError:
+            continue
+        for d in loaded:
+            if not isinstance(d, dict) or d.get("kind") not in CLUSTER_KINDS:
+                continue
+            md, spec = d.get("metadata") or {}, d.get("spec") or {}
+            chart = ((spec.get("chart") or {}).get("spec") or {}).get("chart") or \
+                (spec.get("chartRef") or {}).get("name") or ""
+            rows.append((d["kind"], md.get("name", ""), md.get("namespace", ""), rel,
+                         spec.get("path", ""), chart, bool(spec.get("suspend"))))
+    for kind, name, ns, rel, path, chart, suspended in sorted(rows):
+        if not name:
+            continue
+        src = os.path.join(IDP_ROOT, path.lstrip("./")) if path else os.path.dirname(os.path.join(IDP_ROOT, rel))
+        seen_dirs.add(os.path.relpath(src, IDP_ROOT).split("/")[1] if "/" in os.path.relpath(src, IDP_ROOT) else "")
+        desc = _first_comment(os.path.join(IDP_ROOT, rel))
+        if not desc:
+            for cand in sorted(_glob.glob(os.path.join(src, "*.yaml")) + _glob.glob(os.path.join(src, "README.md"))):
+                desc = _first_comment(cand)
+                if desc:
+                    break
+        if not desc:
+            desc = (f"{kind} {name}: Flux reconciles {path or rel} into namespace {ns or 'flux-system'}"
+                    + (f", chart {chart}" if chart else "") + ".")
+        etype = "flux-row" if kind == "Kustomization" else "helm-chart"
+        ann = {"source": "cluster", "flux-kind": kind, "flux-name": name, "namespace": ns,
+               "file": rel, "path": path, "chart": chart, "suspended": "true" if suspended else ""}
+        tags = ["cluster", etype] + (["suspended"] if suspended else [])
+        docs.append(entity("Component", f"cluster-{slug(kind).lower()}-{slug(name)}",
+                           f"{name} ({kind})", etype, ann, tags, _idp_source_link(rel),
+                           description=desc))
+    # The CNI is two tools the founder asked for by name (crew#539: "are we getting hubble or not";
+    # crew#624: "WHY IS HUBBLE NOT THERE"). Read from the values file so the catalogue says what
+    # the cluster runs, never a name typed here.
+    vals = os.path.join(IDP_ROOT, "platform", "cni", "cilium-values.yaml")
+    if os.path.exists(vals):
+        cv = yaml.safe_load(open(vals)) or {}
+        hub = (cv.get("hubble") or {})
+        for tool, on, what in (("cilium", True, "Cilium replaces flannel as the CNI: pod networking, network policy and eBPF datapath (platform/cni/cilium-values.yaml, applied by playbook cilium-replace, never a Flux row)."),
+                               ("hubble", bool(hub.get("enabled")), f"Hubble is Cilium's flow observability: relay {'on' if (hub.get('relay') or {}).get('enabled') else 'off'}, UI {'on' if (hub.get('ui') or {}).get('enabled') else 'off'}; flows and metrics per pod, counted by bin/idp-telemetry-coverage.")):
+            docs.append(entity("Component", f"cluster-cni-{tool}", tool.capitalize(), "cluster-choice",
+                               {"source": "cluster", "file": "platform/cni/cilium-values.yaml", "enabled": "true" if on else "false"},
+                               ["cluster", "cluster-choice", "cni"] + ([] if on else ["disabled"]),
+                               _idp_source_link("platform/cni/cilium-values.yaml"), description=what))
+        seen_dirs.add("cni")
+    # Directories under platform/ that no Flux row reaches are still on the cluster or the
+    # estate (the CNI is applied by the cluster's own bootstrap; oci/ is Terraform). One entity
+    # each, so nothing that lives in the checkout is dark in the catalogue.
+    plat = os.path.join(IDP_ROOT, "platform")
+    for d in sorted(os.listdir(plat)) if os.path.isdir(plat) else []:
+        full = os.path.join(plat, d)
+        if not os.path.isdir(full) or d in seen_dirs:
+            continue
+        desc = ""
+        for cand in sorted(_glob.glob(os.path.join(full, "README.md")) + _glob.glob(os.path.join(full, "*.yaml")) + _glob.glob(os.path.join(full, "*.tf"))):
+            desc = _first_comment(cand)
+            if desc:
+                break
+        if not desc:
+            desc = f"platform/{d}: applied outside Flux (cluster bootstrap, Terraform or a workflow); see the files in the directory."
+        docs.append(entity("Component", f"cluster-dir-{slug(d)}", f"platform/{d}", "cluster-choice",
+                           {"source": "cluster", "file": f"platform/{d}"}, ["cluster", "cluster-choice"],
+                           _idp_source_link(f"platform/{d}"), description=desc))
+    return docs
+
+
 def main() -> int:
     if not os.path.exists(INV):
         print(f"catalog-gen: no inventory at {INV} -- run the inventory first", file=sys.stderr)
         return 2
     inv = json.load(open(INV))
-    rows = inv.get("rows") or []
+    rows = [r for r in (inv.get("rows") or []) if not vendor_software(r)]
     if not rows:
         # A catalogue that renders empty looks identical to a portal with nothing
         # wrong. Refuse instead, so the failure is loud where it happens.
@@ -773,7 +915,9 @@ def main() -> int:
             # crew#612 CP2: company -> product -> asset. An asset in no tracked repository
             # stays on the estate System, tagged outside-any-repo above.
             sysref = product_ref(owner_repo)
-        docs.append(entity(bkind, name, r.get("id") or name, btype, ann, tags, links,
+        if r.get("id") and human_title(r, name) != r.get("id"):
+            ann["label"] = r.get("id")
+        docs.append(entity(bkind, name, human_title(r, name), btype, ann, tags, links,
                            deps, system=sysref, description=describe(r)))
         all_links += [(f"{r.get('id') or name}: {t}", u) for t, u in links]
         counts[k] = counts.get(k, 0) + 1
@@ -782,6 +926,9 @@ def main() -> int:
     front = front_door_entities()
     docs += front
     counts["front-door"] = len(front)
+    cluster = cluster_entities()
+    docs += cluster
+    counts["cluster"] = len(cluster)
     # crew#503 CP6: the founder entities reach the portal from the founder-catalog ConfigMap
     # (platform/backstage/overlays/oke, zone substituted by Flux), so they are not emitted here
     # a second time; they are still read so the `interfaces` card carries their links.
@@ -790,7 +937,7 @@ def main() -> int:
     # Founder, 2026-08-27: "i thought i could see all my interface urls in one spot". One
     # entity carries every link the catalogue publishes, so the answer is one card in the
     # portal (Component `interfaces`), never a grep over 362 entities.
-    for d in front + founder:
+    for d in front + founder + cluster:
         m = yaml_links(d)
         all_links += m
     all_links = sorted(set(all_links) | set(HIER_LINKS))

@@ -180,9 +180,14 @@ judge() {  # judge <label-kind> <label> <resource-file>: one verdict block; exit
   mapfile -t exc < <(_exc)
   out=$(kyverno apply "$S/policies.yaml" --resource "$res" "${exc[@]}" 2>&1 || true)
   summary=$(printf '%s\n' "$out" | grep -E '^pass:' | tail -1)
-  if printf '%s\n' "$out" | grep -qE '^policy .* failed'; then
+  # Read the verdict from a here-string, never `printf | grep -q`: under pipefail grep -q quits at
+  # the first match, printf dies of SIGPIPE on a big render, the pipeline reports failure and the
+  # judge said "ok" over 52 failed policies (run 33248103977, 2026-08-29: the must-fail fixture
+  # passed on main). The CLI also glues "Mutation has been applied successfully." onto the first
+  # failed line, so the pattern is anchored on the arrow, not the line start.
+  if grep -qE 'policy .* -> resource .* failed' <<<"$out"; then
     echo "FAIL  $kind $label: $summary"
-    printf '%s\n' "$out" | grep -E '^policy .* failed' | sed 's/^/      /'; return 1
+    grep -E 'policy .* -> resource .* failed' <<<"$out" | sed 's/^/      /'; return 1
   else echo "ok    $kind $label: $summary"; fi
 }
 

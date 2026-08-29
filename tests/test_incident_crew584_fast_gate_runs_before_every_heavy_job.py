@@ -17,7 +17,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WF = os.path.join(ROOT, ".github", "workflows")
 
 HEAVY = {
-    "ci.yml": ["offline-gate", "bdd", "security-scan", "spec-gate", "no-toil-gate", "operating-model-gate"],
+    "ci.yml": ["offline-gate", "bdd-suites", "security-scan", "spec-gate", "no-toil-gate", "operating-model-gate"],
     "build-multiarch.yml": ["discover"],
     "portability-drill.yml": ["hydrate", "k3s"],
 }

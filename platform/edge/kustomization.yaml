@@ -4,6 +4,8 @@ resources:
   - namespace.yaml
   - traefik.yaml
   - status-page.yaml
+  - require-catalogue-entity.yaml
+  - catalogue-entity-exception.yaml
   - cert-manager.yaml
   - langfuse-exception.yaml
   - k8s-infra-namespace.yaml

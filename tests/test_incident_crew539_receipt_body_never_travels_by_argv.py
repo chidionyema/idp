@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pathlib
 import re
+import os
 import subprocess
 import sys
 
@@ -40,8 +41,8 @@ def test_extracted_grader_reads_a_body_larger_than_arg_max(tmp_path):
     body = 'ok cluster-state\n{"at": "2026-08-28T00:00:00Z", "nodes": [], "pods_not_ready": [], "flux_not_ready": [], "pad": "' + "x" * (1 << 20) + '"}'
     f = tmp_path / "receipt"
     f.write_text(body)
-    r = subprocess.run([sys.executable, "-c", py, '{"last-modified": "Thu, 28 Aug 2026 00:00:00 GMT"}', str(f), "1000000", ""],
-                       capture_output=True, text=True, check=False)
+    r = subprocess.run([sys.executable, "-c", py, '{"last-modified": "Thu, 28 Aug 2026 00:00:00 GMT", "date": "Thu, 28 Aug 2026 00:00:01 GMT"}', str(f), "1000000", ""],
+                       capture_output=True, text=True, check=False, env={**os.environ, "IDP_LIB": str(ROOT / "bin" / "lib")})
     assert r.returncode != 126, r.stderr
     assert "Argument list too long" not in r.stderr
     # The grader reached the body (it may FAIL on the toy receipt); it never went BLIND on transport.

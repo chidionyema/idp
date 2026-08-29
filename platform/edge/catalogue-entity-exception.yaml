@@ -1,0 +1,28 @@
+# Services an operator creates for its own workload, never a door a person opens: the operator's
+# Deployment carries the label (its HelmRelease postRenderer), its children are named here so
+# require-catalogue-entity (Enforce) cannot refuse the operator's own reconcile. Kyverno honours
+# exceptions from namespace kyverno only (crew#325). Adding a name here is adding an interface
+# nobody can find from the portal: docs/policy/every-interface-is-a-door.md.
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: catalogue-entity-operator-children
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: require-catalogue-entity
+      ruleNames: [service-names-its-entity]
+  match:
+    any:
+      - resources:
+          kinds: [Service]
+          namespaces: [monitoring]
+          names: [prometheus-operated, alertmanager-operated]
+      - resources:
+          kinds: [Service]
+          namespaces: [tailscale]
+          names: [ts-*]
+      - resources:
+          kinds: [Service]
+          namespaces: [healing]
+          names: [k8sgpt-*]

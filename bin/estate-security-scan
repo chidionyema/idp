@@ -80,7 +80,7 @@ else
     say "ok    deps      pip-audit over $(( ${#args[@]} / 2 )) requirements files: no known vulnerabilities"
   elif [ $rc = 124 ]; then
     say "BLIND deps      pip-audit exceeded 240s (network); rerun"; blind=1
-  elif printf '%s' "$out" | grep -q 'Failed to install packages'; then
+  elif printf '%s' "$out" | grep 'Failed to install packages' >/dev/null ; then
     # pip-audit could not build the environment (a package with no wheel and no build
     # deps, or a pin that is not on the index). That is not an advisory, so it is not a
     # FAIL: audit the pins as written, without resolving or installing anything.
@@ -90,7 +90,7 @@ else
       say "ok    deps      pip-audit over $(( ${#args[@]} / 2 )) requirements files: no known vulnerabilities (pins audited without resolution; install failed: $why)"
     elif [ $rc2 = 124 ]; then
       say "BLIND deps      pip-audit exceeded 240s (network); rerun"; blind=1
-    elif printf '%s' "$out2" | grep -qiE 'not pinned|must be pinned|pinned to an exact'; then
+    elif printf '%s' "$out2" | grep -iE 'not pinned|must be pinned|pinned to an exact' >/dev/null ; then
       say "BLIND deps      pip-audit could not install ($why) and a requirements file is not fully pinned, so nothing was measured"
       [ $quiet = 1 ] || printf '%s\n' "$out2" | tail -5 | sed 's/^/      /'; blind=1
     else

@@ -34,7 +34,7 @@ trivial() {
   [ -f "$IDP/$1" ] || return 1
   git -C "$IDP" ls-files --error-unmatch "$1" >/dev/null 2>&1 || return 1
   ! { git -C "$IDP" diff -U0 "$base"...HEAD -- "$1"; git -C "$IDP" diff -U0 HEAD -- "$1"; } \
-      | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -qvE '^[+-][[:space:]]*(#|//|--|$)'
+      | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*(#|//|--|$)' >/dev/null
 }
 if [ "${SKIP_TESTS_ON_TRIVIAL:-1}" = 1 ]; then
   kept=""; dropped=0

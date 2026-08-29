@@ -13,7 +13,7 @@ import subprocess
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-HEAD = json.dumps({"last-modified": "Thu, 27 Aug 2026 19:00:03 GMT", "content-length": "10"})
+HEAD = json.dumps({"last-modified": "Thu, 27 Aug 2026 19:00:03 GMT", "date": "Thu, 27 Aug 2026 19:00:05 GMT", "content-length": "10"})
 MANIFEST = ROOT / "platform" / "state" / "cluster-state.yaml"
 GREEN = ("nodes=1 ready=1 pods=3 pods_not_ready=0 flux=1 flux_not_ready=0 ds=1 ds_short=0 events_warning=0"
          " monitoring_rules=3 alert_watchdog=1")
@@ -22,6 +22,7 @@ GREEN = ("nodes=1 ready=1 pods=3 pods_not_ready=0 flux=1 flux_not_ready=0 ds=1 d
 def _tree(tmp_path, body, name="idp"):
     idp = tmp_path / name; (idp / "bin").mkdir(parents=True)
     shutil.copy(ROOT / "bin" / "idp-cluster-state", idp / "bin" / "idp-cluster-state")
+    shutil.copytree(ROOT / "bin" / "lib", idp / "bin" / "lib")
     (idp / "receipt").write_text(body)
     shim = idp / "bin" / "idp-cloud"
     shim.write_text("#!/bin/sh\ncase \"$*\" in\n  *\"object head\"*) printf '%s' '" + HEAD + "';;\n  *\"object get\"*) cat \"$(dirname \"$0\")/../receipt\";;\nesac\n")

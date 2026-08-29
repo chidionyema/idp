@@ -11,6 +11,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write   # traded for the OCI session that reads the App key (.github/actions/github-app-token)
 # A newer run on the same ref supersedes the older one: on 2026-08-27 20:23Z idp had 9 running and
 # 20 queued runs, 12 of them stale duplicates, and a one-line oke-check waited 19 min (crew#516).
 concurrency:
@@ -23,9 +24,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }  # crew#439: the refresh merges origin/main
+      # idp#769: auto-merge armed under GITHUB_TOKEN merges as github-actions[bot] and starts no
+      # workflow on main; the App's token arms it as an App push. The action checks out main's
+      # copy of the tool itself (this branch is an old fork of main).
+      - id: app
+        uses: ./.github/actions/github-app-token
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+          oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
       - name: open or refresh the pull request, auto-merge on green
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           WRITER_KEY_B64: ${{ secrets.SEED_FLUX_WRITER_IDENTITY_B64 }}
         run: |
           set -euo pipefail
@@ -36,4 +48,8 @@ jobs:
           ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/flux-writer -o IdentitiesOnly=yes"
           export PUSH_URL="git@github.com:${GITHUB_REPOSITORY}.git"
-          bin/idp-image-update-pr
+          # crew#584 / idp#750: this job checks out flux/image-updates, a branch the controller forked
+          # from an old main, so `bin/idp-image-update-pr` here was the crew#439 copy and #750 was
+          # opened without the LAW 51 line idp#744 added. The script that opens the pull request is
+          # always main's copy; the branch carries only the controller's newTag lines.
+          bash <(git show origin/main:bin/idp-image-update-pr)

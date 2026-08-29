@@ -3,8 +3,6 @@ garbage-collected it, and it sat Terminating for 16+ min with the catalogue 404 
 33226089358). Three fences, one incident: the namespace can never be pruned again; diagnose
 prints why a namespace is Terminating; a named playbook clears what holds it."""
 
-import re
-import subprocess
 from pathlib import Path
 
 import yaml
@@ -39,3 +37,13 @@ def test_provider_independence_never_judges_a_delete():
             for m in (rule.get("match") or {}).get("any", []):
                 ops = (m.get("resources") or {}).get("operations")
                 assert ops and "DELETE" not in ops, f"{rule['name']} matches DELETE"
+
+
+def test_diagnose_prints_every_admission_denial_whole():
+    """Run 33239797940: `kubectl get events` cut the Kyverno denial to `denied the request: ...`, so
+    the run could not name the rule. The playbook now prints each FailedCreate message in full."""
+    src = (ROOT / "bin/idp-oke-break-glass").read_text()
+    assert "healing-denials" in src
+    row = src[src.index("healing-denials") : src.index("\n", src.index("healing-denials"))]
+    assert "reason=FailedCreate" in row and "{.message}" in row
+    assert "tail -c" in row, "the message is bounded, not cut per line"

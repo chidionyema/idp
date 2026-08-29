@@ -18,17 +18,22 @@ R45-root-trust in claude-guards `rulings.json`.
 4. proves the credential works before storing it (a token exchange, a read with it);
 5. exits. Re-running is safe; `--rotate` mints anew.
 
-A person typing a value into a `SEED_*` repository secret, pasting into a prompt, or
-creating a key in a web console is a **MISS**, and a MISS is ticketed, never documented as
-a procedure. The no-toil gate (`policy/no-manual-steps.rego`) refuses the sentence; this page
-refuses the path.
+**R52 (founder 2026-08-29): one root per provider, set once, then code.** A provider has
+exactly one root credential. The founder makes it once on his own machine and sets it as a named
+repository secret (`gh secret set SEED_<PROVIDER>_...`); that is his whole part, ever. The
+bootstrapper reads that secret in the apply run, mints every second credential through the
+provider's API where one exists, proves it, writes the vault and rotates. Asking him for a console
+click, a form field, a copied value, or a second credential on a provider that has its root is
+the incident. Driving a web console with a browser (Playwright over the founder's session) is a
+wrong root too: it needs his login every time the session lapses, and it is deleted wherever it is
+found (crew#66 comment 5461144560). Pasting a value into a prompt stays a **MISS**; the no-toil
+gate (`policy/no-manual-steps.rego`) refuses the sentence.
 
-**The provider floor.** Some providers cannot mint their own root (measured per row below).
-Their floor is one console session, and the bootstrapper drives that session itself through
-the estate's browser profile (`~/.estate/tailscale-browser`, Playwright): the founder signs
-in if the session lapsed and does nothing else; the driver creates the credential, reads it
-from the page, verifies it against the API and writes the vault. That is
-`bin/idp-bootstrap-tailscale`; crew#579 applies the same driver to every vendor console key.
+**The provider floor.** A provider with no create-key API (every vendor in
+`platform/vendors/consoles.yaml`) has the key itself as its root: made once, set once, proved and
+vaulted by `bin/idp-bootstrap-vendors`, kept while it verifies. A provider with a key API
+(Tailscale, Cloudflare) has a root that only mints: `bin/idp-bootstrap-tailscale`,
+`bin/idp-bootstrap-cloudflare`.
 
 ## Register
 
@@ -59,15 +64,15 @@ absent here is red. Audit of 2026-08-28 (crew#66, session a0d64ea4): re-graded b
 | `prospector-store-api-env` (`Jwt__SigningKeyPem`, `Store__*`) | platform/prospector/store-api-external-secret.yaml | estate | RSA PKCS#8 key pair + `openssl rand` in-process → vault (`--merge`) | MEETS | `bin/idp-estate-seed` |
 | `flux-writer` | platform/image-automation/flux-writer.yaml | GitHub App | rendered from `github-app` (Flux `provider: github`); the deploy key is retired | MEETS | `bin/idp-github-app` |
 | `litellm-upstream` (`LITELLM_MASTER_KEY`) | platform/llm/external-secret.yaml | estate router | `sk-` + `openssl rand` in-process → vault | MEETS | `bin/idp-estate-seed` |
-| `litellm-upstream` (vendor keys) | platform/llm/external-secret.yaml | Minimax, DeepSeek, OpenRouter, Google, Groq | driver over each vendor's key page (Google: `gcloud services api-keys create`), verified against the vendor API, `--merge` → vault; the founder's hand is the vendor login (platform/vendors/consoles.yaml) | MEETS | `bin/idp-bootstrap-vendors` |
-| `prospector-engine-env` (vendor keys) | platform/prospector/engine-external-secret.yaml | Minimax, DeepSeek, Exa, OpenRouter, Anthropic | same driver, same registry | MEETS | `bin/idp-bootstrap-vendors` |
+| `litellm-upstream` (vendor keys) | platform/llm/external-secret.yaml | Minimax, DeepSeek, OpenRouter, Google, Groq | one `SEED_<VENDOR>_API_KEY` repository secret per vendor, set once (R52), verified against the vendor API in the apply run, `--merge` → vault (platform/vendors/consoles.yaml) | MEETS | `bin/idp-bootstrap-vendors` |
+| `prospector-engine-env` (vendor keys) | platform/prospector/engine-external-secret.yaml | Minimax, DeepSeek, Exa, OpenRouter, Anthropic | same registry, same secrets | MEETS | `bin/idp-bootstrap-vendors` |
 | `prospector-engine-env` (`R2_*`) | platform/prospector/engine-external-secret.yaml | Cloudflare R2 | R2 token via `POST /user/tokens`, S3 credential derived in-process, bucket created if absent | MEETS | `bin/idp-bootstrap-cloudflare` |
 | `prospector-engine-env` (`STORE_*`) | platform/prospector/engine-external-secret.yaml | estate | store URL is a constant of the cluster; `STORE_INTERNAL_API_KEY` copied from the store's own entry | MEETS | `bin/idp-estate-seed` |
 | `cloudflare-api-token` | platform/prospector/cloudflare-external-secret.yaml, platform/dns/external-dns.yaml | Cloudflare | one root token minted by a driver over the dashboard, then DNS token via `POST /user/tokens`, root token deleted | MEETS | `bin/idp-bootstrap-cloudflare` |
-| `hermes-agent-env` (vendor keys, Telegram) | platform/hermes-agent/gateway.yaml | Anthropic, OpenRouter, Exa, Telegram | same driver; the bot token from BotFather on web.telegram.org | MEETS | `bin/idp-bootstrap-vendors` |
+| `hermes-agent-env` (vendor keys, Telegram) | platform/hermes-agent/gateway.yaml | Anthropic, OpenRouter, Exa, Telegram | same registry; the bot token is `SEED_TELEGRAM_HERMES_BOT_TOKEN`, made once with BotFather | MEETS | `bin/idp-bootstrap-vendors` |
 | `hermes-agent-env` (`GITHUB_TOKEN`) | platform/hermes-agent/gateway.yaml | GitHub | App installation token, re-minted hourly (token-consumers.json) | MEETS | `bin/idp-github-app` |
 | `hermes-agent-env` (`LITELLM_API_KEY`) | platform/hermes-agent/gateway.yaml | estate router | `POST /key/generate` via `bin/idp-router-key --entry hermes-agent-env` | MEETS | `bin/idp-estate-seed` |
-| `flux-telegram` | platform/alerts-secret/flux-telegram.yaml, platform/robusta/external-secret.yaml | Telegram | bot token from BotFather on web.telegram.org, verified with `getMe` | MEETS | `bin/idp-bootstrap-vendors` |
+| `flux-telegram` | platform/alerts-secret/flux-telegram.yaml, platform/robusta/external-secret.yaml | Telegram | `SEED_TELEGRAM_ALERTS_BOT_TOKEN`, made once with BotFather, verified with `getMe` | MEETS | `bin/idp-bootstrap-vendors` |
 | `healthchecks-db-password`, `healthchecks-ping-key`, `healthchecks-secret-key` | platform/healthchecks/external-secret.yaml | estate (Terraform random) | `random_password` + `oci_vault_secret` (platform/oci/healthchecks.tf), applied by oke-check | MEETS | Terraform · `bin/idp-oke-rebuild` |
 | `signoz-root-email`, `signoz-root-password` | platform/observability/signoz.yaml | estate (Terraform random) | `oci_vault_secret` (platform/oci/signoz.tf) | MEETS | Terraform · `bin/idp-oke-rebuild` |
 | `otlp-ingest-users` | platform/observability/httproute.yaml | estate (Terraform random) | `oci_vault_secret` (platform/oci/otlp-ingest.tf) | MEETS | Terraform · `bin/idp-oke-rebuild` |

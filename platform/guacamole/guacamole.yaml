@@ -13,7 +13,7 @@ kind: Service
 metadata:
   name: guacamole
   namespace: guacamole
-  labels: { app.kubernetes.io/name: guacamole, app.kubernetes.io/part-of: idp }
+  labels: { app.kubernetes.io/name: guacamole, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: founder-screen }
 spec:
   selector: { app.kubernetes.io/name: guacamole }
   ports:

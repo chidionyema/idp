@@ -17,6 +17,7 @@ change to that file is graded by these tests and not by a paraphrase of it."""
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -74,7 +75,7 @@ def test_offline_gate_sets_the_skip_and_the_bdd_job_prints_durations():
     wf = yaml.safe_load(WF.read_text())
     step = next(s for s in wf["jobs"]["offline-gate"]["steps"] if s.get("run") == "bin/idp-ci")
     assert step["env"]["IDP_CI_SKIP_PYTEST"] == "1", step["env"]
-    runs = [s["run"] for s in wf["jobs"]["bdd"]["steps"] if "pytest" in s.get("run", "")]
+    runs = [s["run"] for s in wf["jobs"]["bdd-suites"]["steps"] if "pytest" in s.get("run", "")]
     assert len(runs) >= 2 and all("--durations=10" in r for r in runs), runs
 
 
@@ -88,7 +89,9 @@ timing_summary
 '''
     out = _bash(script, {"GITHUB_STEP_SUMMARY": str(summary)})
     assert out.returncode == 0, out.stderr
-    assert "ok    slow     three seconds of work  (3s)" in out.stdout, out.stdout
+    # a loaded runner measures 3s of sleep as 4s (main run 33243604531); the claim is "timed, at least 3s"
+    m = re.search(r"ok    slow     three seconds of work  \((\d+)s\)", out.stdout)
+    assert m and int(m.group(1)) >= 3, out.stdout
     assert "ok    fast     nothing\n" in out.stdout and "nothing  (" not in out.stdout, out.stdout
     assert "timing" in out.stdout and "slowest rungs" in out.stdout, out.stdout
-    assert "3s  ok    slow" in summary.read_text(), summary.read_text()
+    assert re.search(r"[3-9]s  ok    slow", summary.read_text()), summary.read_text()

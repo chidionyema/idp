@@ -153,7 +153,7 @@ case "$MODE" in
     # (trap): a failed playbook never leaves the door open. Never from a laptop (crew#345).
     [ -n "${OCI_CI:-}" ] || { echo "exit 3: --break-glass runs from Actions only (gh workflow run oke-check.yml -f mode=break-glass -f playbook=diagnose)"; exit 3; }
     PLAYBOOK="${BREAK_GLASS_PLAYBOOK:-diagnose}"
-    "$IDP/bin/idp-oke-break-glass" --list | tr ' ' '\n' | grep -qx "$PLAYBOOK" || { echo "exit 64: unknown playbook '$PLAYBOOK'; known: $("$IDP/bin/idp-oke-break-glass" --list)"; exit 64; }
+    "$IDP/bin/idp-oke-break-glass" --list | tr ' ' '\n' | grep -x "$PLAYBOOK" >/dev/null || { echo "exit 64: unknown playbook '$PLAYBOOK'; known: $("$IDP/bin/idp-oke-break-glass" --list)"; exit 64; }
     ORIG_CIDRS="$OKE_ALLOWED_CIDRS"
     EGRESS="$(curl -fsS --max-time 10 https://api.ipify.org)"
     [[ "$EGRESS" =~ ^[0-9.]+$ ]] || { echo "exit 2: could not measure the runner's egress IP"; exit 2; }
@@ -214,8 +214,9 @@ if [ -f "$KUBECONFIG" ]; then
 else
   step nodes nodes_oci
   printf 'n/a   %-18s %s\n' flux "no kube path from this host (outside control_plane_allowed_cidrs); site and catalog rows stand in"
-  # the vault's own door: OCI Audit shows whether external-secrets reads it (crew#325)
-  OCI_COMPARTMENT_OCID="$(awk -F'"' '/^compartment_ocid/{print $2}' terraform.tfvars)" step vault-reads "$IDP/bin/idp-vault-reads"
+  # crew#584, founder 2026-08-29: the vault audit (bin/idp-vault-reads, crew#325) is out of this check.
+  # It paged 90 min of OCI Audit for 352-433s on every run, 7 of the job's 9 minutes, and grades
+  # nothing about the code. Monitoring never blocks a pull request.
 fi
 if [ -n "$HOST" ] && [ -n "$API" ] && [ -n "$WANT_PACKS" ]; then step site site_200; step catalog packs
 else blind site "no OKE_HOST/OKE_API_HOST/WANT_PACKS for cluster $OCI_CLUSTER_NAME: add $TF/clusters/$OCI_CLUSTER_NAME.env"; blind catalog "same"; fi

@@ -1,145 +1,363 @@
-// Incident test (rung 4), crew#459: the portal's front page was the Backstage
-// tutorial card ("Welcome to Backstage! 👋 ... How to Edit This Card") while the
-// founder surfaces sat in the catalogue unseen. The rule: every founder-surface
-// entity the catalogue returns is a card on the front page with its links, and
-// nothing on the page names a surface the catalogue does not hold.
-import { screen } from '@testing-library/react';
-import { Entity } from '@backstage/catalog-model';
-import { configApiRef } from '@backstage/frontend-plugin-api';
-import { catalogApiRef } from '@backstage/plugin-catalog-react';
-import { catalogApiMock } from '@backstage/plugin-catalog-react/testUtils';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import {
-  mockApis,
   renderInTestApp,
   TestApiProvider,
+  mockApis,
 } from '@backstage/frontend-test-utils';
-import { EstateHome, FOUNDER_SURFACE_TYPE } from './EstateHome';
+import { catalogApiRef } from '@backstage/plugin-catalog-react';
+import { catalogApiMock } from '@backstage/plugin-catalog-react/testUtils';
+import { configApiRef } from '@backstage/frontend-plugin-api';
+import { kubernetesApiRef } from '@backstage/plugin-kubernetes';
+import { Entity } from '@backstage/catalog-model';
+import { EstateHome } from './EstateHome';
+import { ago, count, fluxState, layerState, podsOf, verdict } from './estate';
+import { REFRESH_MS } from './useEstate';
 
-const surface = (
-  name: string,
-  title: string,
-  url: string,
-  annotations?: Record<string, string>,
-): Entity => ({
+const layer = (name: string, system = 'delivery'): Entity => ({
+  apiVersion: 'backstage.io/v1alpha1',
+  kind: 'Component',
+  metadata: {
+    name: `layer-${name}`,
+    title: name,
+    description: `The ${name} layer`,
+    annotations: { 'estate/flux-kustomization': name },
+  },
+  spec: { type: 'platform-layer', system },
+});
+const door = (name: string, health?: string, at?: string): Entity => ({
   apiVersion: 'backstage.io/v1alpha1',
   kind: 'Component',
   metadata: {
     name,
-    title,
-    description: `${title} description`,
-    links: [{ title: 'Open', url }],
-    ...(annotations ? { annotations } : {}),
+    title: name,
+    annotations: {
+      ...(health ? { 'estate/health': health } : {}),
+      ...(at ? { 'estate/health-checked-at': at } : {}),
+    },
+    links: [{ url: `https://${name}.example`, title: 'Open' }],
   },
-  spec: { type: FOUNDER_SURFACE_TYPE, lifecycle: 'production', owner: 'platform' },
+  spec: { type: 'founder-surface' },
+});
+const system = (name: string, title: string): Entity => ({
+  apiVersion: 'backstage.io/v1alpha1',
+  kind: 'System',
+  metadata: { name, title, description: `${title} in one sentence.` },
+  spec: { owner: 'platform' },
+});
+const flux = (
+  name: string,
+  ready: 'True' | 'False' | 'Unknown',
+  extra: any = {},
+) => ({
+  metadata: { name, namespace: 'flux-system' },
+  ...extra,
+  status: {
+    conditions: [
+      {
+        type: 'Ready',
+        status: ready,
+        reason: ready === 'False' ? 'BuildFailed' : 'ReconciliationSucceeded',
+      },
+    ],
+  },
+});
+const deployment = (layerName: string, ready: number, wanted: number) => ({
+  metadata: {
+    name: `${layerName}-d`,
+    labels: { 'kustomize.toolkit.fluxcd.io/name': layerName },
+  },
+  spec: { replicas: wanted },
+  status: { readyReplicas: ready },
 });
 
-const plainComponent: Entity = {
-  apiVersion: 'backstage.io/v1alpha1',
-  kind: 'Component',
-  metadata: { name: 'not-a-surface', title: 'Some service' },
-  spec: { type: 'service', lifecycle: 'production', owner: 'platform' },
-};
+const kubernetes = (
+  items: { kustomizations?: any[]; deployments?: any[] } | Error,
+) => ({
+  getClusters: jest.fn(async () => [
+    { name: 'estate', authProvider: 'serviceAccount' },
+  ]),
+  proxy: jest.fn(async ({ path }: { path: string }) => {
+    if (items instanceof Error) throw items;
+    const body = path.includes('kustomizations')
+      ? items.kustomizations ?? []
+      : items.deployments ?? [];
+    return new Response(JSON.stringify({ items: body }), { status: 200 });
+  }),
+});
 
-const render = (entities: Entity[]) =>
+const render = (entities: Entity[], k8s: ReturnType<typeof kubernetes>) =>
   renderInTestApp(
     <TestApiProvider
       apis={[
         [catalogApiRef, catalogApiMock({ entities })],
-        [configApiRef, mockApis.config({ data: { app: { title: 'Test estate' } } })],
+        [
+          configApiRef,
+          mockApis.config({ data: { app: { title: 'Mumchimp estate' } } }),
+        ],
+        [kubernetesApiRef, k8s as any],
       ]}
     >
       <EstateHome />
     </TestApiProvider>,
   );
 
-describe('incident crew459: the front page is the catalogue, not a tutorial', () => {
-  it('renders one card per founder-surface entity, with its links, and none for the rest', async () => {
-    await render([
-      surface('founder-traces', 'Traces', 'https://traces.example.test/'),
-      surface('founder-catalogue', 'The catalogue', 'https://catalogue.example.test/'),
-      plainComponent,
-    ]);
-
-    expect(await screen.findByText('Traces')).toBeInTheDocument();
-    expect(screen.getByText('The catalogue')).toBeInTheDocument();
-    expect(screen.queryByText('Some service')).not.toBeInTheDocument();
-
-    // LinkButton renders an <a role="button">, so match the door by its label.
-    const doors = screen.getAllByText('Open').map(el => el.closest('a'));
-    expect(doors.map(a => a?.getAttribute('href')).sort()).toEqual([
-      'https://catalogue.example.test/',
-      'https://traces.example.test/',
-    ]);
-    expect(screen.queryByText(/Welcome to Backstage/)).not.toBeInTheDocument();
-    expect(screen.getByText('Test estate')).toBeInTheDocument();
+describe('estate logic', () => {
+  it('turns Flux conditions into the six words, and never green for what it cannot see', () => {
+    expect(fluxState(undefined).state).toBe('blind');
+    expect(fluxState({ metadata: { name: 'x' } }).state).toBe('blind');
+    expect(fluxState(flux('x', 'True')).state).toBe('good');
+    expect(fluxState(flux('x', 'False')).state).toBe('red');
+    expect(fluxState(flux('x', 'False')).why).toBe('BuildFailed');
+    expect(fluxState(flux('x', 'Unknown')).state).toBe('running');
+    expect(
+      fluxState(flux('x', 'True', { spec: { suspend: true } })).state,
+    ).toBe('needs');
   });
-
-  it('says so when the catalogue holds no surface instead of inventing one', async () => {
-    await render([plainComponent]);
-    expect(await screen.findByTestId('no-surfaces')).toBeInTheDocument();
-    expect(screen.queryAllByText('Open')).toHaveLength(0);
+  it('reads pods through the label Flux stamps and reddens a ready layer with pods missing', () => {
+    const d = [
+      deployment('edge', 1, 3),
+      deployment('edge', 2, 2),
+      deployment('llm', 1, 1),
+    ];
+    expect(podsOf(d, 'edge')).toEqual({ ready: 3, wanted: 5 });
+    expect(podsOf(d, 'nope')).toBeUndefined();
+    const live = {
+      kustomizations: { edge: flux('edge', 'True') },
+      deployments: d,
+      readAt: 0,
+    };
+    expect(layerState(layer('edge'), live)).toMatchObject({
+      state: 'red',
+      why: '3 of 5 pods ready',
+    });
+    expect(layerState(layer('edge'), undefined)).toMatchObject({
+      state: 'blind',
+    });
+  });
+  it('says the worst word first', () => {
+    expect(verdict(count(['good', 'good']), 2)).toBe(
+      'Everything we run is good. 2 services checked.',
+    );
+    expect(verdict(count(['good', 'red', 'red', 'needs']), 4)).toBe(
+      '2 services are red.',
+    );
+    expect(verdict(count(['good', 'needs']), 2)).toBe('1 service needs you.');
+    expect(verdict(count(['blind', 'good']), 2)).toBe(
+      "1 service can't be checked.",
+    );
+    expect(verdict(count([]), 0)).toBe('Nothing is registered yet.');
   });
 });
 
-// crew#612 CP3 (founder, 2026-08-29: "exponentially improve the backstage portal"; the
-// UX baseline measured 18 cards in one alphabetical grid with no health state). The rule:
-// on a phone the first thing on the page is what is down; every card says its state in
-// plain words; nothing unprobed is ever shown as up.
-describe('crew612 CP3: the front page says what is down first, on a phone', () => {
-  const fresh = new Date().toISOString();
-  const old = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
-  const fixture = [
-    surface('founder-a-store', 'A store', 'https://store.example.test/', {
-      'estate/health': 'ok 200',
-      'estate/health-checked-at': fresh,
-    }),
-    surface('founder-b-traces', 'B traces', 'https://traces.example.test/', {
-      'estate/health': 'FAIL 503',
-      'estate/health-checked-at': fresh,
-    }),
-    surface('founder-c-jobs', 'C jobs', 'https://jobs.example.test/', {
-      'estate/health': 'ok 200',
-      'estate/health-checked-at': old,
-    }),
-    surface('founder-d-login', 'D login', 'https://login.example.test/'),
-  ];
+describe('age', () => {
+  it('says how long a state has held, in the shortest true unit', () => {
+    const now = Date.parse('2026-08-29T12:00:00Z');
+    expect(ago('2026-08-29T11:59:40Z', now)).toBe('just now');
+    expect(ago('2026-08-29T11:56:00Z', now)).toBe('4m ago');
+    expect(ago('2026-08-29T09:00:00Z', now)).toBe('3h ago');
+    expect(ago('2026-08-27T12:00:00Z', now)).toBe('2d ago');
+    expect(ago('not a time', now)).toBeUndefined();
+    expect(ago(undefined, now)).toBeUndefined();
+  });
+});
 
-  beforeEach(() => {
-    // The founder's phone: 390px wide. jsdom lays nothing out, so the assertion is on
-    // document order, which is what a single column shows top to bottom.
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+describe('EstateHome', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+    window.localStorage.clear();
   });
 
-  it('puts the down and stale surfaces in a band above every other door', async () => {
-    await render(fixture);
-    const needs = await screen.findByTestId('band-needs-you');
-    const doors = screen.getByTestId('band-doors');
-    expect(needs.compareDocumentPosition(doors) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(needs).toHaveTextContent('Needs you (2)');
-    expect(needs).toHaveTextContent('B traces');
-    expect(needs).toHaveTextContent('C jobs');
-    expect(needs).not.toHaveTextContent('A store');
-    expect(doors).toHaveTextContent('A store');
-    expect(doors).toHaveTextContent('D login');
-    // Down before stale inside the band; the reader meets the worst first.
-    const b = screen.getByTestId('health-founder-b-traces');
-    const c = screen.getByTestId('health-founder-c-jobs');
-    expect(b.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  it('shows how long each layer has held its state, from what Flux said', async () => {
+    const k = flux('backstage', 'True');
+    k.status.conditions[0].lastTransitionTime = new Date(
+      Date.now() - 5 * 60_000,
+    ).toISOString();
+    await render(
+      [system('delivery', 'Delivery'), layer('backstage')],
+      kubernetes({ kustomizations: [k] }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('age-layer-backstage')).toHaveTextContent(
+        '5m ago',
+      ),
+    );
   });
 
-  it('says the state of every card in plain words and never calls an unprobed door up', async () => {
-    await render(fixture);
-    expect(await screen.findByTestId('health-founder-b-traces')).toHaveTextContent('Down');
-    expect(screen.getByTestId('health-founder-c-jobs')).toHaveTextContent('Not checked lately');
-    expect(screen.getByTestId('health-founder-d-login')).toHaveTextContent('Not checked');
-    expect(screen.getByTestId('health-founder-a-store')).toHaveTextContent('Up');
-    expect(screen.getByTestId('total-Needs you')).toHaveTextContent('2');
-    expect(screen.queryByText(/crew#|CP[0-9]/)).not.toBeInTheDocument();
+  it('lands in the find box on / or Cmd+K from anywhere on the page', async () => {
+    await render([layer('backstage')], kubernetes({}));
+    const find = await screen.findByTestId('quick-find');
+    (find as HTMLInputElement).blur();
+    expect(find).not.toHaveFocus();
+    fireEvent.keyDown(window, { key: '/' });
+    expect(find).toHaveFocus();
+    find.blur();
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    expect(find).toHaveFocus();
+    // typing a slash inside a field is text, not a shortcut
+    find.blur();
+    fireEvent.keyDown(find, { key: '/' });
+    expect(find).not.toHaveFocus();
   });
 
-  it('says nothing needs you when every door is up', async () => {
-    await render([fixture[0]]);
-    expect(await screen.findByText('Nothing needs you')).toBeInTheDocument();
-    expect(screen.getByTestId('total-Needs you')).toHaveTextContent('0');
+  it('keeps the board-or-list choice in the browser', async () => {
+    await render(
+      [system('delivery', 'Delivery'), layer('backstage')],
+      kubernetes({ kustomizations: [flux('backstage', 'True')] }),
+    );
+    const list = await screen.findByTestId('view-list');
+    expect(screen.getByTestId('view-board')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    fireEvent.click(list);
+    expect(list).toHaveAttribute('aria-pressed', 'true');
+    expect(window.localStorage.getItem('estate.view')).toBe('list');
+    expect(
+      screen.getByTestId('system-delivery').querySelector('[data-view]'),
+    ).toHaveAttribute('data-view', 'list');
+  });
+
+  it('re-reads the cluster every minute without asking the catalogue again', async () => {
+    jest.useFakeTimers();
+    const k8s = kubernetes({ kustomizations: [flux('backstage', 'True')] });
+    await render([layer('backstage')], k8s);
+    await screen.findByTestId('verdict');
+    const before = k8s.proxy.mock.calls.length;
+    expect(before).toBe(2);
+    await act(async () => {
+      jest.advanceTimersByTime(REFRESH_MS);
+    });
+    await waitFor(() => expect(k8s.proxy.mock.calls.length).toBe(before + 2));
+  });
+
+  it('shows every layer the cluster runs, grouped by system, with live state and pods', async () => {
+    const now = new Date().toISOString();
+    await render(
+      [
+        system('delivery', 'Delivery'),
+        system('edge', 'Edge'),
+        layer('backstage'),
+        layer('kyverno', 'edge'),
+        layer('dns', 'edge'),
+        door('store', 'ok 200', now),
+        door('grafana', 'FAIL 502', now),
+      ],
+      kubernetes({
+        kustomizations: [flux('backstage', 'True'), flux('kyverno', 'False')],
+        deployments: [deployment('backstage', 2, 2)],
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('verdict')).toBeInTheDocument(),
+    );
+    // kyverno red, grafana down -> 2 red; dns missing from the cluster -> blind
+    expect(screen.getByTestId('verdict')).toHaveTextContent(
+      '2 services are red.',
+    );
+    expect(screen.getByTestId('count-red')).toHaveTextContent('2');
+    expect(screen.getByTestId('count-blind')).toHaveTextContent('1');
+    expect(screen.getByTestId('count-good')).toHaveTextContent('2');
+    expect(screen.getByTestId('system-delivery')).toHaveTextContent('Delivery');
+    expect(screen.getByTestId('system-edge')).toHaveTextContent('Edge');
+    expect(screen.getByTestId('layer-layer-kyverno')).toHaveAttribute(
+      'data-state',
+      'red',
+    );
+    expect(screen.getByTestId('layer-layer-dns')).toHaveAttribute(
+      'data-state',
+      'blind',
+    );
+    expect(screen.getByTestId('layer-layer-backstage')).toHaveTextContent(
+      '2/2 pods',
+    );
+    expect(screen.getByTestId('surface-grafana')).toHaveAttribute(
+      'data-state',
+      'red',
+    );
+    expect(screen.getByTestId('health-store')).toHaveTextContent('Good');
+    expect(screen.getByTestId('read-at')).toHaveTextContent('Cluster read at');
+    // the red counter is a filter
+    fireEvent.click(screen.getByTestId('count-red'));
+    expect(screen.queryByTestId('layer-layer-backstage')).toBeNull();
+    expect(screen.getByTestId('layer-layer-kyverno')).toBeInTheDocument();
+    expect(screen.queryByTestId('surface-store')).toBeNull();
+    expect(screen.getByTestId('surface-grafana')).toBeInTheDocument();
+    // no crew codes on the founder's surface
+    expect(document.body.textContent).not.toMatch(/crew#|CP\d/);
+  });
+
+  it('is blind, not green, when the cluster does not answer', async () => {
+    await render(
+      [layer('backstage'), door('store', 'ok 200', new Date().toISOString())],
+      kubernetes(new Error('proxy 502')),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('verdict')).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId('verdict')).toHaveTextContent(
+      "1 service can't be checked.",
+    );
+    expect(screen.getByTestId('read-at')).toHaveTextContent(
+      'Cluster not read: proxy 502',
+    );
+    expect(screen.getByTestId('layer-layer-backstage')).toHaveAttribute(
+      'data-state',
+      'blind',
+    );
+  });
+
+  it('keeps the login drill contract when nothing is registered', async () => {
+    await render([], kubernetes({}));
+    await waitFor(() =>
+      expect(screen.getByTestId('no-surfaces')).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId('no-layers')).toBeInTheDocument();
+    expect(screen.getByTestId('verdict')).toHaveTextContent(
+      'Nothing is registered yet.',
+    );
+  });
+
+  it('narrows by typing and stays honest about the catalogue failing', async () => {
+    const now = new Date().toISOString();
+    await render(
+      [
+        layer('backstage'),
+        layer('kyverno', 'edge'),
+        door('store', 'ok 200', now),
+      ],
+      kubernetes({
+        kustomizations: [flux('backstage', 'True'), flux('kyverno', 'True')],
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('quick-find')).toBeInTheDocument(),
+    );
+    fireEvent.change(screen.getByTestId('quick-find'), {
+      target: { value: 'kyv' },
+    });
+    expect(screen.queryByTestId('layer-layer-backstage')).toBeNull();
+    expect(screen.getByTestId('layer-layer-kyverno')).toBeInTheDocument();
+    expect(screen.queryByTestId('surface-store')).toBeNull();
+  });
+
+  it('says the catalogue did not answer, and offers a retry', async () => {
+    const failing = {
+      getEntities: jest.fn().mockRejectedValue(new Error('catalog 503')),
+    };
+    await renderInTestApp(
+      <TestApiProvider
+        apis={[
+          [catalogApiRef, failing as any],
+          [configApiRef, mockApis.config()],
+          [kubernetesApiRef, kubernetes({}) as any],
+        ]}
+      >
+        <EstateHome />
+      </TestApiProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('catalogue-error')).toBeInTheDocument(),
+    );
+    expect(screen.getByText('Try again')).toBeInTheDocument();
   });
 });

@@ -56,7 +56,7 @@ MASTER=$(printf '%s' "$UP" | jq -r '.LITELLM_MASTER_KEY // empty' 2>/dev/null)
 # On a miss, name the keys the secret does hold (names only, never values; LAW 46)
 shape() {  # value-free description of a secret payload that did not parse as JSON
   local b64 dd
-  b64=$(printf '%s' "$1" | tr -d '\n' | grep -qE '^[A-Za-z0-9+/=]+$' && echo yes || echo no)
+  b64=$(printf '%s' "$1" | tr -d '\n' | grep -E '^[A-Za-z0-9+/=]+$' >/dev/null && echo yes || echo no)
   dd=$(printf '%s' "$1" | base64 -d 2>/dev/null | jq -e 'type' 2>/dev/null || echo no)
   printf 'len=%s base64-shaped=%s json-after-second-decode=%s' "${#1}" "$b64" "$dd"
 }

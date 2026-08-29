@@ -26,17 +26,17 @@ CNAME="${COMPARTMENT_POLICY_NAME:-estate-operators-compartment}"
 [ -n "${OCI_TENANCY_OCID:-}" ] || { echo "BLIND   iam-policy  OCI_TENANCY_OCID unset; the policy lives in the tenancy root"; exit 2; }
 live=$(oci iam policy list --compartment-id "$OCI_TENANCY_OCID" --name "$NAME" --all --query 'data[0].statements' 2>&1) || { echo "BLIND   iam-policy  oci iam policy list failed: $(printf %s "$live" | grep -iE 'code|message' | head -1 | cut -c1-120)"; exit 2; }
 case "$live" in null|"") echo "FAIL    iam-policy  no policy named $NAME in the tenancy root | fix: founder runs bin/idp-oci-bootstrap"; exit 1;; esac
-have=$(printf %s "$live" | jq -c 'map(ascii_downcase)' 2>/dev/null) || { echo "BLIND   iam-policy  policy list answered no JSON: $(printf %s "$live" | head -1 | cut -c1-120)"; exit 2; }
+have=$(printf %s "$live" | jq -c 'map(ascii_downcase|gsub("\u0027"; ""))' 2>/dev/null) || { echo "BLIND   iam-policy  policy list answered no JSON: $(printf %s "$live" | head -1 | cut -c1-120)"; exit 2; }
 note=""
 if [ -n "${OCI_COMPARTMENT_OCID:-}" ]; then
   clive=$(oci iam policy list --compartment-id "$OCI_COMPARTMENT_OCID" --name "$CNAME" --all --query 'data[0].statements' 2>&1) || { echo "BLIND   iam-policy  oci iam policy list ($CNAME) failed: $(printf %s "$clive" | grep -iE 'code|message' | head -1 | cut -c1-120)"; exit 2; }
   case "$clive" in
     null|"") note="; $CNAME not applied yet (oke-check apply creates it)";;
-    *) chave=$(printf %s "$clive" | jq -c --arg c "$OCI_COMPARTMENT_OCID" 'map(ascii_downcase|sub(" in compartment id " + ($c|ascii_downcase) + "$"; " in compartment estate"))' 2>/dev/null) || { echo "BLIND   iam-policy  policy list ($CNAME) answered no JSON: $(printf %s "$clive" | head -1 | cut -c1-120)"; exit 2; }
+    *) chave=$(printf %s "$clive" | jq -c --arg c "$OCI_COMPARTMENT_OCID" 'map(ascii_downcase|gsub("\u0027"; "")|sub(" in compartment id " + ($c|ascii_downcase) + "(?<w>( where .*)?)$"; " in compartment estate\(.w)"))' 2>/dev/null) || { echo "BLIND   iam-policy  policy list ($CNAME) answered no JSON: $(printf %s "$clive" | head -1 | cut -c1-120)"; exit 2; }
        have=$(jq -nc --argjson a "$have" --argjson b "$chave" '$a+$b|unique');;
   esac
 fi
-want=$(jq -c 'map(ascii_downcase)|sort' "$FILE")
+want=$(jq -c 'map(ascii_downcase|gsub("\u0027"; ""))|sort' "$FILE")   # quotes dropped both sides: OCI stores a where value unquoted (2026-08-25)
 have=$(jq -c 'sort' <<<"$have")
 missing=$(jq -nc --argjson w "$want" --argjson h "$have" '$w-$h')
 # an extra live line whose verb is weaker than a wanted line on the same resource and scope is stale, not drift
