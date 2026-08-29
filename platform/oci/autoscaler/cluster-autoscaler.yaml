@@ -149,6 +149,23 @@ spec:
     spec:
       serviceAccountName: cluster-autoscaler
       priorityClassName: system-cluster-critical
+      # Oracle's copy of this manifest ships no securityContext at all, and the image declares no
+      # USER (config blob of iad.ocir.io/oracle/oci-cluster-autoscaler:1.34.3-323, both arches:
+      # "User": null, Cmd ["/cluster-autoscaler"]), so without this block the pod runs as uid 0.
+      # runAsNonRoot alone would then make the kubelet refuse to start it, which is why the uid is
+      # explicit. The values are upstream's own recommendation, verbatim from the commented block
+      # in kubernetes/autoscaler charts/cluster-autoscaler/values.yaml at tag
+      # cluster-autoscaler-1.34.0 (lines 409-415 pod, 162-168 container).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        # readOnlyRootFilesystem below leaves the Go runtime nowhere to put a temp file.
+        - name: tmp
+          emptyDir: {}
       containers:
         - name: cluster-autoscaler
           # the tag Oracle lists for Kubernetes 1.34-1.36 (the same doc, "Supported versions"); the
@@ -166,6 +183,33 @@ spec:
               valueFrom: { secretKeyRef: { name: oke-autoscaler, key: NODEPOOL_ID } }
             - name: SPOT_NODEPOOL_ID
               valueFrom: { secretKeyRef: { name: oke-autoscaler, key: SPOT_NODEPOOL_ID } }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          # /health-check on 8085 is the binary's own, not a guess: main.go:381 registers the
+          # handler and config/flags/flags.go:64 defaults --address to :8085, both at tag
+          # cluster-autoscaler-1.34.0, and upstream's chart probes exactly this path and port
+          # (charts/cluster-autoscaler/templates/deployment.yaml:284-289). It is the same port
+          # the prometheus.io/port annotation above already names.
+          ports:
+            - name: metrics
+              containerPort: 8085
+          readinessProbe:
+            httpGet: { path: /health-check, port: 8085 }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health-check, port: 8085 }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
           resources:
             requests: { cpu: 50m, memory: 300Mi }
             limits: { cpu: 200m, memory: 300Mi }

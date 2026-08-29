@@ -69,9 +69,17 @@ spec:
         enabled: false
       googleAuth:
         enabled: false
+      pdf:
+        # Invoice PDF rendering. Off: the workers that would call the renderer are told so by
+        # this flag (it becomes LAGO_DISABLE_PDF_GENERATION in each of them). The renderer's own
+        # Deployment has no `enabled` guard in the chart at all, so it is held at replicas 0
+        # below -- an object that exists and schedules nothing, not an object that is absent.
+        enabled: false
       clickhouse:
         # The event-streaming path (Kafka + ClickHouse) is for usage metering at volume. Off:
         # subscriptions and credit packs do not need it, and it would double the footprint.
+        # This one flag is a real guard: events-consumer, events-processor and the topic-creation
+        # Job are each wrapped in `{{- if .Values.global.clickhouse.enabled }}` and do not render.
         enabled: false
     encryption:
       existingSecret: lago-encryption
@@ -79,56 +87,93 @@ spec:
       # PDF invoice storage. Off while dark; the cutover PR points it at the estate's object
       # store rather than adding a fourth stateful workload to this node.
       enabled: false
-    pdf:
-      enabled: false
-    # The lean worker set, and the size of each one. The chart ships thirteen deployments;
-    # eventsConsumer, eventsProcessor and eventsWorker exist only for the ClickHouse path,
-    # which is off above.
+    # WHAT ACTUALLY RUNS, and how the chart is told. Read out of lago-1.28.0/templates on
+    # 2026-08-29 by rendering it, not by reading its values file: three of the components take
+    # `enabled`, and three more render whatever you say because their template carries no guard.
+    #   guarded by `enabled`   clockWorker, billingWorker, webhookWorker, paymentWorker, pdfWorker
+    #   guarded by clickhouse  eventsConsumer, eventsProcessor, the create-topic Job
+    #   no guard at all        front, api, worker, clock, events-worker, pdf, the migrate Job
+    # The chart's key for count is `replicas`. An earlier version of this file wrote
+    # `replicaCount: 0` on four of them, which is not a key this chart has: helm ignored it and
+    # rendered three worker pods this file claimed were switched off. The render is the proof
+    # (docs/how-to/onboarding/commerce.md carries the command), never this comment.
     #
-    # SIZING, and why it is written here rather than left to the chart. Summed from
-    # lago-1.28.0.tgz values.yaml on 2026-08-29, the chart's own defaults for the eight
-    # deployments that stay enabled ask for 6.80 CPU and 6.75 Gi of REQUESTS:
-    #   front 200m  api 1000m  worker 1100m  clockWorker 1100m  clock 100m
-    #   billingWorker 1100m  webhookWorker 1100m  paymentWorker 1100m
-    # The node this estate runs is 6 OCPU / 24 Gi (bin/idp-features plan: "smallest A1-6-24").
-    # Those defaults are written for a cluster that meters usage for many tenants; here they
-    # are a layer that would never schedule the day it is switched on -- and the capacity guard
-    # could not have caught it, because a chart default is not a number in this repository.
-    # So every enabled component names its own request, sized for one estate's subscriptions
-    # and credit packs, and the numbers are in git where a guard can read them.
-    front:         { resources: { requests: { cpu: 50m,  memory: 128Mi } } }
-    api:           { resources: { requests: { cpu: 200m, memory: 512Mi } } }
-    worker:        { resources: { requests: { cpu: 100m, memory: 512Mi } } }
-    clock:         { resources: { requests: { cpu: 25m,  memory: 128Mi } } }
-    clockWorker:   { resources: { requests: { cpu: 100m, memory: 384Mi } } }
-    billingWorker: { resources: { requests: { cpu: 100m, memory: 384Mi } } }
-    webhookWorker: { resources: { requests: { cpu: 100m, memory: 384Mi } } }
-    paymentWorker: { resources: { requests: { cpu: 100m, memory: 384Mi } } }
-    eventsConsumer: { replicaCount: 0 }
-    eventsProcessor: { replicaCount: 0 }
-    eventsWorker: { replicaCount: 0 }
-    pdfWorker: { replicaCount: 0 }
-  # The chart's own templates carry no `priorityClassName` field -- grep of lago-1.28.0.tgz finds
-  # it only in the bundled minio subchart, which is disabled above. Every Deployment it ships
-  # would therefore land in the `commerce` namespace (labelled `app.kubernetes.io/part-of: idp`)
-  # with no class and become a PolicyReport row under platform/scheduling/require-priority-class
-  # `platform-workload-names-a-class`. That rule is Audit today only because charts like this one
-  # exist; its own comment says it flips to Enforce "after a pass with zero violations". Adding
-  # thirteen violations would push that flip further away, so the class is patched in at render
-  # time. postRenderers is already how this estate bends a chart it does not own (temporal,
-  # hindsight, langfuse, traefik, signoz and five more), so this is the existing pattern, not a
-  # new mechanism.
+    # Every enabled component names its own requests AND limits. Requests, because the chart's
+    # defaults are written for a cluster metering usage for many tenants -- 6.80 CPU and 6.75 Gi
+    # across the eight that stay on, on a node that is 6 OCPU / 24 Gi, so it would never
+    # schedule the day it was switched on. Limits, because the cluster's own admission policy
+    # (require-pod-requests-limits) refuses a container that names one without the other, and
+    # requests == limits is Guaranteed QoS: the layer holding the money is not the first evicted.
+    front:         { replicas: 1, resources: { requests: { cpu: 50m,  memory: 128Mi }, limits: { cpu: 50m,  memory: 128Mi } } }
+    api:           { replicas: 1, resources: { requests: { cpu: 200m, memory: 512Mi }, limits: { cpu: 200m, memory: 512Mi } } }
+    worker:        { replicas: 1, resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: 100m, memory: 512Mi } } }
+    clock:         { replicas: 1, resources: { requests: { cpu: 25m,  memory: 128Mi }, limits: { cpu: 25m,  memory: 128Mi } } }
+    clockWorker:   { enabled: true, replicas: 1, resources: { requests: { cpu: 100m, memory: 384Mi }, limits: { cpu: 100m, memory: 384Mi } } }
+    billingWorker: { enabled: true, replicas: 1, resources: { requests: { cpu: 100m, memory: 384Mi }, limits: { cpu: 100m, memory: 384Mi } } }
+    webhookWorker: { enabled: true, replicas: 1, resources: { requests: { cpu: 100m, memory: 384Mi }, limits: { cpu: 100m, memory: 384Mi } } }
+    paymentWorker: { enabled: true, replicas: 1, resources: { requests: { cpu: 100m, memory: 384Mi }, limits: { cpu: 100m, memory: 384Mi } } }
+    # Off. pdfWorker has a guard and takes it. events-worker and pdf have no guard, so the
+    # chart renders them whatever you say: they are removed from the manifest below instead of
+    # being shipped as husks at zero replicas -- an object a buyer's engineer would open and
+    # ask why a disabled component still needs a probe, a priority class and a security context.
+    # `replicas: 0` stays as the second line of defence: if a chart bump ever renames those
+    # Deployments and the removal stops matching, what appears is a pod with no requests, which
+    # the cluster's own require-pod-requests-limits refuses loudly, not a 1.1-core default pod.
+    pdfWorker:     { enabled: false }
+    eventsWorker:  { replicas: 0 }
+    pdf:           { replicas: 0 }
+    job:
+      migrate:
+        # Runs once per install and upgrade as a Helm hook, and it is a pod like any other:
+        # without this block it asks for nothing, and require-pod-requests-limits refuses it.
+        resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: 200m, memory: 512Mi } }
+  # WHAT THIS CHART CANNOT BE TOLD IN VALUES, and is therefore patched at render time.
+  # lago 1.28.0 exposes no securityContext, no priorityClassName and no Service labels: grep of
+  # lago-1.28.0.tgz finds `securityContext` in no template and `priorityClassName` only in the
+  # bundled minio subchart, which is disabled above. postRenderers is already how this estate
+  # bends a chart it does not own (temporal, hindsight, langfuse, traefik, signoz and five more),
+  # so this is the existing pattern, not a new mechanism. Every patch below closes a rule the
+  # cluster's own admission policies refuse, measured by bin/idp-kyverno-render, never guessed.
   #
-  # ONE HONEST CAVEAT about that class. `platform-batch` was written for a nightly job that is
-  # seated by preempting one balloon pod, and the capacity guard therefore keeps batch requests
-  # out of the standing total. This layer is not a nightly job: switched on, eight pods run
-  # continuously. So the paper budget reading 5.00 of 5.0 cores today is 5.00 WITHOUT the
-  # 1.03 cores this layer would add. That is fine while it is suspended and it is exactly what
-  # the cutover pull request has to answer -- a bigger node, or a different class, decided by a
-  # person looking at the number rather than by this comment.
+  # ONE HONEST CAVEAT about the priority class. `platform-batch` was written for a nightly job
+  # that is seated by preempting one balloon pod, and the capacity guard therefore keeps batch
+  # requests out of the standing total. This layer is not a nightly job: switched on, eight pods
+  # run continuously. That is exactly what the cutover pull request has to answer -- a bigger
+  # node, or a different class, decided by a person looking at the number rather than by a
+  # comment here.
   postRenderers:
     - kustomize:
         patches:
+          # SWITCHED OFF MEANS ABSENT. Neither of these two templates carries an `enabled`
+          # guard, so helm renders them however they are configured. Removing them here is the
+          # difference between a manifest that says what runs and a manifest that ships two
+          # disabled husks for a reader to trip over. Kustomize's `$patch: delete` is how a
+          # post-renderer drops a resource; the render is the proof it matched (the workload
+          # list is pinned by tests/test_crew623_money_never_enters_the_application.py).
+          - target: { kind: Deployment, name: lago-pdf }
+            patch: |
+              $patch: delete
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: { name: lago-pdf }
+          - target: { kind: Deployment, name: lago-events-worker }
+            patch: |
+              $patch: delete
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: { name: lago-events-worker }
+          # docs/policy/every-interface-is-a-door.md: the chart's Services name their door.
+          - target: { kind: Service }
+            patch: |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: founder-commerce
+          # The pod-level half: a class the scheduler can rank, and the seccomp profile the
+          # restricted profile asks for. Both kinds, because the migrate Job is a pod too and a
+          # patch targeting Deployment alone never reaches it.
           - target: { kind: Deployment }
             patch: |
               apiVersion: apps/v1
@@ -139,3 +184,67 @@ spec:
                 template:
                   spec:
                     priorityClassName: platform-batch
+                    securityContext:
+                      seccompProfile: { type: RuntimeDefault }
+          - target: { kind: Job }
+            patch: |
+              apiVersion: batch/v1
+              kind: Job
+              metadata:
+                name: not-used-kustomize-matches-on-target
+              spec:
+                template:
+                  spec:
+                    priorityClassName: platform-batch
+                    securityContext:
+                      seccompProfile: { type: RuntimeDefault }
+          # The container-level half, by position rather than by name: every pod this chart
+          # ships holds exactly one container, and a strategic-merge patch would have to name
+          # each of the eleven separately to reach them.
+          - target: { kind: Deployment }
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/securityContext
+                value:
+                  allowPrivilegeEscalation: false
+                  capabilities: { drop: [ALL] }
+          - target: { kind: Job }
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/securityContext
+                value:
+                  allowPrivilegeEscalation: false
+                  capabilities: { drop: [ALL] }
+          # The one exception to dropping everything, and it is narrow. lago-front is nginx
+          # binding port 80 (lago-1.28.0/templates/front-deployment.yaml, containerPort 80), and
+          # a process that has dropped ALL cannot bind a port below 1024 even as root. The
+          # restricted profile allows exactly this capability back and no other.
+          - target: { kind: Deployment, name: lago-front }
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/securityContext/capabilities/add
+                value: [NET_BIND_SERVICE]
+          # A DOOR THAT ANSWERS. The chart ships livenessProbe values for its eight Rails and
+          # Sidekiq components and none for the front, so the cluster's require-pod-probes
+          # refuses it. nginx serves the built single-page app at / on the containerPort the
+          # chart declares (front-deployment.yaml, containerPort: 80), so this is the real
+          # surface answering, not a probe written to satisfy a policy: readiness keeps the
+          # Service from routing at a pod that has not finished starting, and liveness restarts
+          # one whose nginx has wedged. Both are the same URL because there is only one.
+          - target: { kind: Deployment, name: lago-front }
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/readinessProbe
+                value:
+                  httpGet: { path: /, port: 80 }
+                  periodSeconds: 10
+                  timeoutSeconds: 2
+                  failureThreshold: 3
+              - op: add
+                path: /spec/template/spec/containers/0/livenessProbe
+                value:
+                  httpGet: { path: /, port: 80 }
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+                  timeoutSeconds: 2
+                  failureThreshold: 3

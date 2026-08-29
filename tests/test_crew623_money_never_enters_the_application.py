@@ -12,7 +12,11 @@ the last test here is the one that matters: it refuses a HALF flip at cutover.
 """
 
 import json
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -283,34 +287,219 @@ def _mem_gi(v):
     return float(v) / 1073741824
 
 
-# The eight Deployments the values leave running once ClickHouse, PDF and minio are off.
-LAGO_RUNNING = (
-    "front",
-    "api",
-    "worker",
-    "clock",
-    "clockWorker",
-    "billingWorker",
-    "webhookWorker",
-    "paymentWorker",
-)
+# WHAT ACTUALLY RUNS, and the only honest way to know it: the pods helm produces, not the keys
+# the values file happens to carry. This file used to read the values dict and call the answer a
+# size. It was wrong twice on 2026-08-29, both times because a values key is a request to a chart
+# and not a description of a pod:
+#
+#   1. `replicaCount: 0` on four components. lago's key is `replicas`; helm ignored the line and
+#      rendered three worker pods this repository claimed were switched off, and the published
+#      figure was short by their whole cost.
+#   2. Every `resources.requests` at any depth was summed, so the one-shot database migration Job
+#      -- a Helm hook that runs once and exits -- was counted as standing capacity.
+#
+# So the size is measured from `helm template` here, with the same chart, version and values
+# helm-controller will use, and with the post-renderer's `$patch: delete` removals applied, which
+# is what the cluster ends up holding. When helm is not installed the render cannot happen and
+# this says so and skips: the same judgement runs in CI and in .githooks/pre-push through
+# bin/idp-kyverno-render, which renders this chart and puts the cluster's admission policies over
+# it. A machine without helm is not a licence to publish an unmeasured number (LAW 38, LAW 28).
+LAGO_RUNNING_PODS = {
+    "lago-front": ("50m", "128Mi"),
+    "lago-api": ("200m", "512Mi"),
+    "lago-worker": ("100m", "512Mi"),
+    "lago-clock": ("25m", "128Mi"),
+    "lago-clock-worker": ("100m", "384Mi"),
+    "lago-billing-worker": ("100m", "384Mi"),
+    "lago-webhook-worker": ("100m", "384Mi"),
+    "lago-payment-worker": ("100m", "384Mi"),
+}
 
-# The node is 6 OCPU / 24 Gi (`bin/idp-features plan`: "smallest A1-6-24"), and the rest of the
-# platform already asks for most of it. One ceiling for the whole money layer, chosen so that
-# switching it on is a scheduling decision somebody made rather than one nobody noticed.
+# Measured 2026-08-29 from the render below, on the branch that carries it:
+#   lago            0.775 cores  2.75 Gi  across the eight Deployments above
+#   commerce-db     0.100        0.25     platform/commerce/data/postgres.yaml
+#   commerce-redis  0.050        0.13     platform/commerce/data/redis.yaml
+#   nats            0.110        0.28     jetstream 100m/256Mi plus the exporter 10m/32Mi
+#   -------------------------------------
+#   total           1.035 cores  3.41 Gi  standing, on a node that is 6 OCPU / 24 Gi
+#
+# Plus lago-migrate-db, a Helm hook asking 100m / 512Mi that runs once per install and upgrade
+# and then exits. It has to fit, it is not standing cost, and it is why the two are separate.
+#
+# The ceilings are above the measurement with room for one component to grow, and low enough that
+# a chart bump doubling a request fails here rather than at 3 a.m. on the node.
 COMMERCE_CPU_CEILING = 1.5
 COMMERCE_MEMORY_CEILING_GI = 4.0
+
+
+def _lago_hr():
+    hrs = [
+        d
+        for d in _all_docs(COMMERCE)
+        if d.get("kind") == "HelmRelease" and d["metadata"]["name"] == "lago"
+    ]
+    assert len(hrs) == 1, "expected exactly one lago HelmRelease"
+    return hrs[0]
+
+
+def _deleted_by_post_render(hr):
+    """The names the post-renderer drops, read out of the HelmRelease rather than hardcoded."""
+    gone = set()
+    for r in hr["spec"].get("postRenderers") or []:
+        for patch in (r.get("kustomize") or {}).get("patches") or []:
+            body = patch.get("patch") or ""
+            if "$patch: delete" in body:
+                gone.add(patch["target"]["name"])
+    return gone
+
+
+def _render_lago():
+    """`helm template` with the chart, version and values helm-controller will use."""
+    helm = shutil.which("helm")
+    if not helm:
+        pytest.skip(
+            "helm is not installed, so the chart cannot be rendered and the size cannot be "
+            "measured here; bin/idp-kyverno-render does it in CI and in the pre-push hook"
+        )
+    hr = _lago_hr()
+    chart = hr["spec"]["chart"]["spec"]
+    src = [
+        d
+        for d in _all_docs(COMMERCE)
+        if d.get("kind") == "HelmRepository"
+        and d["metadata"]["name"] == chart["sourceRef"]["name"]
+    ][0]
+    with tempfile.TemporaryDirectory() as tmp:
+        vals = Path(tmp) / "values.yaml"
+        vals.write_text(yaml.safe_dump(hr["spec"]["values"]))
+        env = {
+            **os.environ,
+            "HELM_REPOSITORY_CACHE": tmp,
+            "HELM_CACHE_HOME": tmp,
+            "HELM_REPOSITORY_CONFIG": str(Path(tmp) / "repositories.yaml"),
+        }
+        r = subprocess.run(
+            [
+                helm,
+                "template",
+                "lago",
+                chart["chart"],
+                "--repo",
+                src["spec"]["url"],
+                "--version",
+                str(chart["version"]),
+                "-f",
+                str(vals),
+                "--namespace",
+                "commerce",
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+    if r.returncode != 0:
+        pytest.skip(f"the chart could not be pulled here: {r.stderr.strip()[:200]}")
+    gone = _deleted_by_post_render(hr)
+    return [
+        d
+        for d in yaml.safe_load_all(r.stdout)
+        if d and d["metadata"]["name"] not in gone
+    ]
+
+
+def test_every_running_pod_is_one_this_repository_sized():
+    """No pod appears that this file did not expect, and none is left at the chart's default.
+
+    The chart's own defaults for these eight ask for 6.80 CPU and 6.75 Gi -- written for a
+    cluster metering usage for many tenants. On a 6-OCPU node that is a layer which never
+    schedules the day it is switched on, and nothing in this repository would have said so.
+    """
+    deployments = {
+        d["metadata"]["name"]: d
+        for d in _render_lago()
+        if d["kind"] == "Deployment" and int(d["spec"].get("replicas", 1)) > 0
+    }
+    assert set(deployments) == set(LAGO_RUNNING_PODS), (
+        f"the render holds {sorted(deployments)}; this file expects "
+        f"{sorted(LAGO_RUNNING_PODS)}. A component switched on or off in values, or a chart "
+        f"bump renaming one, changes what the node is asked for and is not a silent edit."
+    )
+    for name, (cpu, mem) in LAGO_RUNNING_PODS.items():
+        containers = deployments[name]["spec"]["template"]["spec"]["containers"]
+        assert len(containers) == 1, f"{name} is no longer a single-container pod"
+        requests = (containers[0].get("resources") or {}).get("requests") or {}
+        assert (requests.get("cpu"), requests.get("memory")) == (cpu, mem), (
+            f"{name} asks for {requests}, this repository sized it at {cpu}/{mem}"
+        )
+
+
+def test_a_switched_off_component_is_absent_from_the_manifest_not_a_husk():
+    """pdf and events-worker have no `enabled` guard in this chart, so they are removed.
+
+    A Deployment at zero replicas still has to carry a probe, a priority class, a security
+    context and a request, and a reader has to work out that it never runs. The post-renderer
+    drops them; this proves the drop matched, which a comment cannot.
+    """
+    rendered = {
+        d["metadata"]["name"] for d in _render_lago() if d["kind"] == "Deployment"
+    }
+    gone = _deleted_by_post_render(_lago_hr())
+    assert gone == {"lago-pdf", "lago-events-worker"}, (
+        f"the post-renderer removes {sorted(gone)}; expected the two guardless disabled ones"
+    )
+    assert not (rendered & gone), (
+        f"still in the manifest after the removal: {rendered & gone}"
+    )
+
+
+def test_the_whole_money_layer_fits_on_the_node_it_would_run_on():
+    """Every standing pod of the three suspended rows, against one ceiling.
+
+    The Helm hook that migrates the database is excluded on purpose: it runs once per install
+    and exits, so counting it as standing capacity overstates the layer for as long as it is on.
+    """
+    total_cpu = total_mem = 0.0
+    for d in _render_lago():
+        if d["kind"] != "Deployment":
+            continue
+        replicas = int(d["spec"].get("replicas", 1))
+        for c in d["spec"]["template"]["spec"]["containers"]:
+            requests = (c.get("resources") or {}).get("requests") or {}
+            total_cpu += _cpu(requests.get("cpu", "0")) * replicas
+            total_mem += _mem_gi(requests.get("memory", "0")) * replicas
+    for directory in (COMMERCE, BUS):
+        for doc in _all_docs(directory):
+            if doc.get("kind") in ("StatefulSet", "Deployment"):
+                for c in doc["spec"]["template"]["spec"]["containers"]:
+                    requests = (c.get("resources") or {}).get("requests") or {}
+                    total_cpu += _cpu(requests.get("cpu", "0"))
+                    total_mem += _mem_gi(requests.get("memory", "0"))
+            elif doc.get("kind") == "HelmRelease" and doc["metadata"]["name"] == "nats":
+                # The NATS chart puts its requests under `config.jetstream.container.merge`,
+                # three levels below the values root; reading only the top level counted it as
+                # zero, the same silent miss the capacity guard had (crew#623).
+                cpu, mem = _requests_anywhere(doc["spec"].get("values") or {})
+                total_cpu += cpu
+                total_mem += mem
+    assert 0 < total_cpu <= COMMERCE_CPU_CEILING, (
+        f"the money layer asks for {total_cpu:.2f} cores, ceiling {COMMERCE_CPU_CEILING}"
+    )
+    assert 0 < total_mem <= COMMERCE_MEMORY_CEILING_GI, (
+        f"the money layer asks for {total_mem:.2f} Gi, ceiling {COMMERCE_MEMORY_CEILING_GI}"
+    )
 
 
 def _requests_anywhere(node):
     """Every `resources.requests` at any depth, skipping any branch switched off.
 
-    A component with `replicaCount: 0` ships no pod, so neither it nor anything under it is
-    capacity. Everything else counts, wherever the chart's author chose to nest it.
+    Only used for a chart this repository does not render here (NATS): `enabled: false` and
+    `replicas: 0` both mean no pod. `replicaCount` is deliberately NOT read -- it is the key
+    that was believed and was not the chart's, and honouring it here would keep that belief
+    alive somewhere in this estate.
     """
     cpu = mem = 0.0
     if isinstance(node, dict):
-        if node.get("replicaCount") == 0 or node.get("enabled") is False:
+        if node.get("replicas") == 0 or node.get("enabled") is False:
             return 0.0, 0.0
         requests = (node.get("resources") or {}).get("requests") or {}
         if isinstance(requests, dict):
@@ -328,59 +517,3 @@ def _requests_anywhere(node):
             cpu += c
             mem += m
     return cpu, mem
-
-
-def test_every_running_chart_component_names_its_own_size():
-    """A chart default is not a number in this repository, so no guard here can read it.
-
-    Measured 2026-08-29 from lago-1.28.0.tgz values.yaml: the chart's own defaults for these
-    eight Deployments ask for 6.80 CPU and 6.75 Gi of requests -- written for a cluster metering
-    usage for many tenants. On a 6-OCPU node that is a layer which never schedules the day it is
-    switched on, and nothing in this repository would have said so. Every component that runs
-    names its request here, in git, where the capacity guard and this test can both read it.
-    """
-    hrs = [
-        d
-        for d in _all_docs(COMMERCE)
-        if d.get("kind") == "HelmRelease" and d["metadata"]["name"] == "lago"
-    ]
-    assert len(hrs) == 1, "expected exactly one lago HelmRelease"
-    values = hrs[0]["spec"]["values"]
-    for name in LAGO_RUNNING:
-        block = values.get(name)
-        assert isinstance(block, dict), (
-            f"{name} is left at the chart's own default size"
-        )
-        requests = (block.get("resources") or {}).get("requests") or {}
-        assert requests.get("cpu") and requests.get("memory"), (
-            f"lago {name} names no cpu and memory request; the chart default for it is "
-            f"sized for a metering cluster, not this node"
-        )
-
-
-def test_the_whole_money_layer_fits_on_the_node_it_would_run_on():
-    """The three suspended rows together, against one ceiling."""
-    total_cpu = total_mem = 0.0
-    for directory in (COMMERCE, BUS):
-        for doc in _all_docs(directory):
-            if doc.get("kind") == "HelmRelease":
-                # Recursive, not one level. The NATS chart puts its requests under
-                # `config.jetstream.container.merge.resources`, three levels below the values
-                # root, and reading only the top level counted it as zero -- the same silent
-                # miss the capacity guard had, measured the same day (crew#623).
-                cpu, mem = _requests_anywhere(doc["spec"].get("values") or {})
-                total_cpu += cpu
-                total_mem += mem
-            elif doc.get("kind") in ("StatefulSet", "Deployment"):
-                for c in doc["spec"]["template"]["spec"]["containers"]:
-                    requests = (c.get("resources") or {}).get("requests") or {}
-                    if requests.get("cpu"):
-                        total_cpu += _cpu(requests["cpu"])
-                    if requests.get("memory"):
-                        total_mem += _mem_gi(requests["memory"])
-    assert 0 < total_cpu <= COMMERCE_CPU_CEILING, (
-        f"the money layer asks for {total_cpu:.2f} cores, ceiling {COMMERCE_CPU_CEILING}"
-    )
-    assert 0 < total_mem <= COMMERCE_MEMORY_CEILING_GI, (
-        f"the money layer asks for {total_mem:.2f} Gi, ceiling {COMMERCE_MEMORY_CEILING_GI}"
-    )

@@ -10,7 +10,7 @@ kind: Service
 metadata:
   name: commerce-redis
   namespace: commerce
-  labels: { app.kubernetes.io/name: commerce-redis, app.kubernetes.io/part-of: idp }
+  labels: { app.kubernetes.io/name: commerce-redis, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: founder-commerce }
 spec:
   type: ClusterIP
   clusterIP: None
@@ -59,6 +59,13 @@ spec:
             limits: { cpu: 50m, memory: 128Mi }
           volumeMounts:
             - { name: data, mountPath: /data }
+            # crew#458: readOnlyRootFilesystem with nowhere to write is a pod that starts and
+            # then fails the first time anything reaches for a temp file. An emptyDir, not a
+            # volume off the claim: nothing here is worth keeping across a restart.
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 16Mi }
   volumeClaimTemplates:
     - metadata:
         name: data

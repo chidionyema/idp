@@ -12,7 +12,7 @@ kind: Service
 metadata:
   name: commerce-db
   namespace: commerce
-  labels: { app.kubernetes.io/name: commerce-db, app.kubernetes.io/part-of: idp }
+  labels: { app.kubernetes.io/name: commerce-db, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: founder-commerce }
 spec:
   type: ClusterIP
   clusterIP: None

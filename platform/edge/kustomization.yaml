@@ -25,3 +25,11 @@ resources:
   - provider-edge-exception.yaml
   - provider-storage-exception.yaml
   - capacity-policy.yaml
+  # crew#623: the money layer. Three rules the Lago images cannot satisfy, scoped to lago-* in
+  # the commerce namespace; the file itself says what was measured and when each is retested.
+  - commerce-exception.yaml
+  # crew#623: the widened admission judge reached platform/oci/autoscaler for the first time and
+  # found nine failures on a workload nothing had ever graded. Seven were fixed in the manifest
+  # (securityContext, seccomp, dropped capabilities, a read-only root, probes); this excuses the
+  # last two, which the autoscaler's argv-only node-pool interface makes impossible to satisfy.
+  - autoscaler-exception.yaml

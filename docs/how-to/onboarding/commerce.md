@@ -25,10 +25,24 @@ which is the kind of half-stitched piece a buyer takes apart in one sitting.
 
 Nothing at all today. The feature register defaults it to `off` and all three delivery rows
 are suspended, so `bin/idp-features plan` counts zero CPU, zero memory and zero storage for
-it. Switched on, the whole layer asks for **1.03 CPU and 3.38 Gi**, plus 5 Gi of disk for the
-ledger database and its cache. Those numbers are written into the manifests in this
-repository rather than left to the chart, because the chart's own defaults ask for 6.80 CPU —
-more than the entire node — and a default is not something any guard here can read.
+it. Switched on, the eleven standing pods ask for **1.035 CPU and 3.41 Gi**, plus 5 Gi of disk
+for the ledger database and its cache, and one more 100m / 512Mi pod that runs the database
+migration once at install and exits. Those numbers are not a reading of a values file: they
+come from rendering the chart the way Flux will and adding up the pods, which is the only
+place a size exists. `tests/test_crew623_money_never_enters_the_application.py` renders it the
+same way on every run, so the figure above cannot drift from the manifests without a red test:
+
+| what | CPU | memory |
+|---|---|---|
+| Lago, eight Deployments | 0.775 | 2.75 Gi |
+| Ledger database | 0.100 | 0.25 Gi |
+| Ledger cache | 0.050 | 0.13 Gi |
+| Event bus, with its metrics exporter | 0.110 | 0.28 Gi |
+| **standing total** | **1.035** | **3.41 Gi** |
+
+Every one of those is written into the manifests in this repository rather than left to the
+chart, because the chart's own defaults ask for 6.80 CPU — more than the entire node — and a
+default is not something any guard here can read.
 
 Adding roughly one core and three gigabytes to what already runs will not fit the current
 6 OCPU / 24 Gi node beside everything else. Turning this on is therefore a node decision as

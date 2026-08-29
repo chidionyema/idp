@@ -671,6 +671,27 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: founder-commerce
+  title: "Money (billing)"
+  description: "Subscriptions, credit packs, invoices and the ledger of every payment taken. Built and suspended: it takes over from the store's own payment code on your word. Its admin console runs on the cluster with no public address yet; the manifest is the truth of what runs."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
+    estate/group: "Run"
+    idp/updated-by: "Flux from platform/commerce"
+  tags: [founder]
+  links:
+    - title: "Manifest (suspended, no public address yet)"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/commerce/app/lago.yaml"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: founder-temporal
   title: "Workflows (Temporal)"
   description: "Long-running workflows such as the KINI finish. Its web console runs on the cluster with no public address yet; the manifest is the truth of what runs."

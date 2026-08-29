@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mumchimp.com/schemas/estate.commerce.order_paid.json",
+  "$id": "urn:estate:schema:estate.commerce.order_paid",
   "title": "estate.commerce.order_paid",
   "description": "Emitted by the commerce primitive once, after it has verified the payment-provider signature and written the money to its own ledger. The payload is the founder's, verbatim, from 2026-08-29. No consumer of this event ever talks to a payment provider: that is the whole point of the firewall.",
   "type": "object",

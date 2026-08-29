@@ -62,6 +62,17 @@ spec:
         resources:
           requests: { cpu: 100m, memory: 256Mi }
           limits: { cpu: 100m, memory: 256Mi }
+        # The cluster's restricted profile, asked for in the chart's own words rather than
+        # patched in afterwards: this chart takes a merge into every object it ships, which is
+        # why it needs no postRenderers. nats-server writes only to the JetStream volume below,
+        # so a read-only root filesystem costs it nothing. The image carries no USER (read from
+        # the registry config blob for nats:2.14.6-alpine on 2026-08-29, not assumed), so the
+        # uid is named here; the layer boots for the first time at crew#623 CP2 on the drill
+        # cluster, and that boot is what proves it, not this comment.
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: { drop: [ALL] }
     podTemplate:
       merge:
         spec:
@@ -69,9 +80,54 @@ spec:
           # platform-batch, not infrastructure-critical: the radio room is the six named
           # workloads in platform/priority-classes, and borrowing that class is refused.
           priorityClassName: platform-batch
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            # The JetStream file store is a PVC. Without fsGroup the volume belongs to root and
+            # a non-root server cannot write the stream it was given to keep.
+            fsGroup: 1000
+            seccompProfile: { type: RuntimeDefault }
+    service:
+      merge:
+        # docs/policy/every-interface-is-a-door.md: the cluster refuses a Service that names no
+        # catalogue entity, and it is Enforce, so this is the difference between a bus that
+        # starts and one the API server rejects.
+        metadata:
+          labels:
+            backstage.io/kubernetes-id: founder-commerce
+    headlessService:
+      merge:
+        metadata:
+          labels:
+            backstage.io/kubernetes-id: founder-commerce
+    reloader:
+      # Off, and this removes a container rather than excusing one. The reloader exists to signal
+      # nats-server when its ConfigMap changes under a running pod; the chart already stamps the
+      # config checksum on the pod template (podTemplate.configChecksumAnnotation, default true),
+      # so a config change rolls the StatefulSet and the new pod reads the new file. Keeping it
+      # would mean a sidecar with no health endpoint, which the probe policy refuses, and an
+      # exception written for a container nothing needs.
+      enabled: false
     promExporter:
       # LAW 50: the bus emits, or it is not admitted. Scraped into the estate collector.
       enabled: true
+      merge:
+        # A sidecar is a container: the same requests, limits, probes and profile the policies
+        # ask of every other one. Its own /metrics is the health endpoint.
+        resources:
+          requests: { cpu: 10m, memory: 32Mi }
+          limits: { cpu: 10m, memory: 32Mi }
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: { drop: [ALL] }
+        readinessProbe:
+          httpGet: { path: /metrics, port: 7777 }
+          periodSeconds: 10
+        livenessProbe:
+          httpGet: { path: /metrics, port: 7777 }
+          periodSeconds: 30
     natsBox:
       # A shell-in-a-pod for hand debugging. Not a platform capability; nothing depends on it.
       enabled: false
