@@ -100,6 +100,33 @@ def _sole_class(o, found=None):
     return found
 
 
+def _patched_classes(doc):
+    """The classes a HelmRelease patches onto the chart's pods at render time.
+
+    A chart this estate does not own often has no `priorityClassName` field at all, so the class
+    is added by a `postRenderers` kustomize patch -- the estate's existing way to bend such a
+    chart (temporal, hindsight, langfuse, traefik, signoz and five more do it). The class the pod
+    actually runs under is then in a YAML string, invisible to a walk over the release's values,
+    and the pod was charged to standing capacity while the scheduler treated it as batch. That is
+    grading the shape of the file instead of the pod (crew#623, the Lago release).
+
+    Only a patch that names no single object counts: a target with a `name` or a `labelSelector`
+    reaches some of the chart's pods and not others, and "some" cannot make a whole document batch.
+    """
+    found = set()
+    for renderer in doc.get("spec", {}).get("postRenderers", []) or []:
+        for patch in (renderer.get("kustomize") or {}).get("patches", []) or []:
+            target = patch.get("target") or {}
+            if target.get("name") or target.get("labelSelector") or target.get("annotationSelector"):
+                continue
+            try:
+                parsed = yaml.safe_load(patch.get("patch") or "")
+            except yaml.YAMLError:
+                continue
+            found |= _sole_class(parsed)
+    return found
+
+
 def _requests(batch=False):
     """Every CPU request declared under platform/: raw workloads and HelmRelease values alike.
 
@@ -141,9 +168,12 @@ def _requests(batch=False):
             docs = yaml.safe_load_all(f.read_text())
             for d in docs:
                 if isinstance(d, dict):
-                    # A HelmRelease is one chart: if the only class its values name is
-                    # platform-batch, every pod it ships is batch, wherever the field sits.
-                    doc_batch = d.get("kind") == "HelmRelease" and _sole_class(d) == {"platform-batch"}
+                    # A HelmRelease is one chart: if the only class it names is platform-batch,
+                    # every pod it ships is batch -- wherever the field sits in the values, and
+                    # whether the chart carries the field itself or the release patches one in.
+                    doc_batch = d.get("kind") == "HelmRelease" and (_sole_class(d) | _patched_classes(d)) == {
+                        "platform-batch"
+                    }
                     walk(d, f"{f.relative_to(ROOT)}:{d.get('kind', '')}/{(d.get('metadata') or {}).get('name', '')}", {}, doc_batch)
         except yaml.YAMLError:
             continue

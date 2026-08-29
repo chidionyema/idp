@@ -101,6 +101,7 @@ nav:
       - Telemetry coverage: tutorials/demo/telemetry-coverage.md
       - Wake blocked: tutorials/demo/wake-blocked.md
       - Founder god's view: tutorials/demo/estate-founder.md
+      - Money: tutorials/demo/commerce.md
   - Onboarding:
       - Trace matrix: how-to/onboarding/trace-matrix.md
       - Namespace fences: how-to/onboarding/ns-fence-gate.md
@@ -115,6 +116,7 @@ nav:
       - Flux on OKE: how-to/onboarding/oke.md
       - Cloud-agnostic: how-to/onboarding/cloud-agnostic.md
       - Cluster autoscaler: how-to/onboarding/autoscaler.md
+      - Money: how-to/onboarding/commerce.md
       - Estate zone: how-to/onboarding/estate-zone.md
       - k8s-infra: how-to/onboarding/k8s-infra.md
       - Langfuse: how-to/onboarding/langfuse.md

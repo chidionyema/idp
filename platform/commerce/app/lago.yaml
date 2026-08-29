@@ -81,8 +81,29 @@ spec:
       enabled: false
     pdf:
       enabled: false
-    # The lean worker set. The chart ships thirteen deployments; eventsConsumer,
-    # eventsProcessor and eventsWorker exist only for the ClickHouse path, which is off.
+    # The lean worker set, and the size of each one. The chart ships thirteen deployments;
+    # eventsConsumer, eventsProcessor and eventsWorker exist only for the ClickHouse path,
+    # which is off above.
+    #
+    # SIZING, and why it is written here rather than left to the chart. Summed from
+    # lago-1.28.0.tgz values.yaml on 2026-08-29, the chart's own defaults for the eight
+    # deployments that stay enabled ask for 6.80 CPU and 6.75 Gi of REQUESTS:
+    #   front 200m  api 1000m  worker 1100m  clockWorker 1100m  clock 100m
+    #   billingWorker 1100m  webhookWorker 1100m  paymentWorker 1100m
+    # The node this estate runs is 6 OCPU / 24 Gi (bin/idp-features plan: "smallest A1-6-24").
+    # Those defaults are written for a cluster that meters usage for many tenants; here they
+    # are a layer that would never schedule the day it is switched on -- and the capacity guard
+    # could not have caught it, because a chart default is not a number in this repository.
+    # So every enabled component names its own request, sized for one estate's subscriptions
+    # and credit packs, and the numbers are in git where a guard can read them.
+    front:         { resources: { requests: { cpu: 50m,  memory: 128Mi } } }
+    api:           { resources: { requests: { cpu: 200m, memory: 512Mi } } }
+    worker:        { resources: { requests: { cpu: 100m, memory: 512Mi } } }
+    clock:         { resources: { requests: { cpu: 25m,  memory: 128Mi } } }
+    clockWorker:   { resources: { requests: { cpu: 100m, memory: 384Mi } } }
+    billingWorker: { resources: { requests: { cpu: 100m, memory: 384Mi } } }
+    webhookWorker: { resources: { requests: { cpu: 100m, memory: 384Mi } } }
+    paymentWorker: { resources: { requests: { cpu: 100m, memory: 384Mi } } }
     eventsConsumer: { replicaCount: 0 }
     eventsProcessor: { replicaCount: 0 }
     eventsWorker: { replicaCount: 0 }
@@ -97,6 +118,14 @@ spec:
   # time. postRenderers is already how this estate bends a chart it does not own (temporal,
   # hindsight, langfuse, traefik, signoz and five more), so this is the existing pattern, not a
   # new mechanism.
+  #
+  # ONE HONEST CAVEAT about that class. `platform-batch` was written for a nightly job that is
+  # seated by preempting one balloon pod, and the capacity guard therefore keeps batch requests
+  # out of the standing total. This layer is not a nightly job: switched on, eight pods run
+  # continuously. So the paper budget reading 5.00 of 5.0 cores today is 5.00 WITHOUT the
+  # 1.03 cores this layer would add. That is fine while it is suspended and it is exactly what
+  # the cutover pull request has to answer -- a bigger node, or a different class, decided by a
+  # person looking at the number rather than by this comment.
   postRenderers:
     - kustomize:
         patches:

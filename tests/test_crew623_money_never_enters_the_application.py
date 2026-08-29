@@ -263,3 +263,124 @@ def test_the_chart_that_cannot_name_a_class_has_one_patched_in():
             f"{hr['metadata']['name']} post-renders something, but no patch gives its "
             f"Deployments a priorityClassName"
         )
+
+
+def _cpu(v):
+    v = str(v)
+    return float(v[:-1]) / 1000 if v.endswith("m") else float(v)
+
+
+def _mem_gi(v):
+    v = str(v)
+    for suffix, gi in (
+        ("Gi", 1.0),
+        ("Mi", 1 / 1024),
+        ("G", 1 / 1.073741824),
+        ("M", 1 / 1073.741824),
+    ):
+        if v.endswith(suffix):
+            return float(v[: -len(suffix)]) * gi
+    return float(v) / 1073741824
+
+
+# The eight Deployments the values leave running once ClickHouse, PDF and minio are off.
+LAGO_RUNNING = (
+    "front",
+    "api",
+    "worker",
+    "clock",
+    "clockWorker",
+    "billingWorker",
+    "webhookWorker",
+    "paymentWorker",
+)
+
+# The node is 6 OCPU / 24 Gi (`bin/idp-features plan`: "smallest A1-6-24"), and the rest of the
+# platform already asks for most of it. One ceiling for the whole money layer, chosen so that
+# switching it on is a scheduling decision somebody made rather than one nobody noticed.
+COMMERCE_CPU_CEILING = 1.5
+COMMERCE_MEMORY_CEILING_GI = 4.0
+
+
+def _requests_anywhere(node):
+    """Every `resources.requests` at any depth, skipping any branch switched off.
+
+    A component with `replicaCount: 0` ships no pod, so neither it nor anything under it is
+    capacity. Everything else counts, wherever the chart's author chose to nest it.
+    """
+    cpu = mem = 0.0
+    if isinstance(node, dict):
+        if node.get("replicaCount") == 0 or node.get("enabled") is False:
+            return 0.0, 0.0
+        requests = (node.get("resources") or {}).get("requests") or {}
+        if isinstance(requests, dict):
+            if requests.get("cpu"):
+                cpu += _cpu(requests["cpu"])
+            if requests.get("memory"):
+                mem += _mem_gi(requests["memory"])
+        for value in node.values():
+            c, m = _requests_anywhere(value)
+            cpu += c
+            mem += m
+    elif isinstance(node, list):
+        for value in node:
+            c, m = _requests_anywhere(value)
+            cpu += c
+            mem += m
+    return cpu, mem
+
+
+def test_every_running_chart_component_names_its_own_size():
+    """A chart default is not a number in this repository, so no guard here can read it.
+
+    Measured 2026-08-29 from lago-1.28.0.tgz values.yaml: the chart's own defaults for these
+    eight Deployments ask for 6.80 CPU and 6.75 Gi of requests -- written for a cluster metering
+    usage for many tenants. On a 6-OCPU node that is a layer which never schedules the day it is
+    switched on, and nothing in this repository would have said so. Every component that runs
+    names its request here, in git, where the capacity guard and this test can both read it.
+    """
+    hrs = [
+        d
+        for d in _all_docs(COMMERCE)
+        if d.get("kind") == "HelmRelease" and d["metadata"]["name"] == "lago"
+    ]
+    assert len(hrs) == 1, "expected exactly one lago HelmRelease"
+    values = hrs[0]["spec"]["values"]
+    for name in LAGO_RUNNING:
+        block = values.get(name)
+        assert isinstance(block, dict), (
+            f"{name} is left at the chart's own default size"
+        )
+        requests = (block.get("resources") or {}).get("requests") or {}
+        assert requests.get("cpu") and requests.get("memory"), (
+            f"lago {name} names no cpu and memory request; the chart default for it is "
+            f"sized for a metering cluster, not this node"
+        )
+
+
+def test_the_whole_money_layer_fits_on_the_node_it_would_run_on():
+    """The three suspended rows together, against one ceiling."""
+    total_cpu = total_mem = 0.0
+    for directory in (COMMERCE, BUS):
+        for doc in _all_docs(directory):
+            if doc.get("kind") == "HelmRelease":
+                # Recursive, not one level. The NATS chart puts its requests under
+                # `config.jetstream.container.merge.resources`, three levels below the values
+                # root, and reading only the top level counted it as zero -- the same silent
+                # miss the capacity guard had, measured the same day (crew#623).
+                cpu, mem = _requests_anywhere(doc["spec"].get("values") or {})
+                total_cpu += cpu
+                total_mem += mem
+            elif doc.get("kind") in ("StatefulSet", "Deployment"):
+                for c in doc["spec"]["template"]["spec"]["containers"]:
+                    requests = (c.get("resources") or {}).get("requests") or {}
+                    if requests.get("cpu"):
+                        total_cpu += _cpu(requests["cpu"])
+                    if requests.get("memory"):
+                        total_mem += _mem_gi(requests["memory"])
+    assert 0 < total_cpu <= COMMERCE_CPU_CEILING, (
+        f"the money layer asks for {total_cpu:.2f} cores, ceiling {COMMERCE_CPU_CEILING}"
+    )
+    assert 0 < total_mem <= COMMERCE_MEMORY_CEILING_GI, (
+        f"the money layer asks for {total_mem:.2f} Gi, ceiling {COMMERCE_MEMORY_CEILING_GI}"
+    )

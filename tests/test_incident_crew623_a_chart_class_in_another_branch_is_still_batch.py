@@ -95,3 +95,105 @@ def test_the_budget_still_holds_with_the_money_layer_in_the_tree():
     assert total <= m.CPU_BUDGET_CORES, (
         f"{total:.2f} cores on paper, budget {m.CPU_BUDGET_CORES}"
     )
+
+
+def test_a_class_the_release_patches_in_is_read_as_the_class_the_pod_runs_under():
+    """The Lago chart carries no `priorityClassName` field, so the class arrives by postRenderers.
+
+    A walk over the release's values finds nothing -- the class is inside a YAML string -- and the
+    guard charged eight continuously running pods to standing capacity while the scheduler ranked
+    them as batch. Grading the shape of the file instead of the pod, again, one branch along from
+    the sibling-branch defect above.
+    """
+    release = {
+        "kind": "HelmRelease",
+        "spec": {
+            "values": {"api": {"resources": {"requests": {"cpu": "200m"}}}},
+            "postRenderers": [
+                {
+                    "kustomize": {
+                        "patches": [
+                            {
+                                "target": {"kind": "Deployment"},
+                                "patch": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: any\nspec:\n  template:\n    spec:\n      priorityClassName: platform-batch\n",
+                            }
+                        ]
+                    }
+                }
+            ],
+        },
+    }
+    assert _mod()._patched_classes(release) == {"platform-batch"}
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        {"kind": "Deployment", "name": "lago-api"},
+        {"kind": "Deployment", "labelSelector": "app=lago-api"},
+        {"kind": "Deployment", "annotationSelector": "batch=yes"},
+    ],
+)
+def test_a_patch_that_reaches_only_some_pods_does_not_make_the_document_batch(target):
+    """ "Some of the chart's pods" cannot make a whole document batch: the rest still stand.
+
+    Without this the fence becomes the hole -- one narrowly targeted patch would excuse every
+    request the chart declares.
+    """
+    release = {
+        "kind": "HelmRelease",
+        "spec": {
+            "postRenderers": [
+                {
+                    "kustomize": {
+                        "patches": [
+                            {
+                                "target": target,
+                                "patch": "spec:\n  template:\n    spec:\n      priorityClassName: platform-batch\n",
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+    }
+    assert _mod()._patched_classes(release) == set()
+
+
+def test_a_patch_naming_another_class_is_not_batch():
+    """The union with the values' own classes must still be exactly {platform-batch} to count."""
+    release = {
+        "kind": "HelmRelease",
+        "spec": {
+            "postRenderers": [
+                {
+                    "kustomize": {
+                        "patches": [
+                            {
+                                "target": {"kind": "Deployment"},
+                                "patch": "spec:\n  template:\n    spec:\n      priorityClassName: infrastructure-critical\n",
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+    }
+    assert _mod()._patched_classes(release) == {"infrastructure-critical"}
+
+
+def test_a_release_with_no_post_renderers_is_unchanged():
+    """Every other release in the tree must read exactly as it did before."""
+    assert (
+        _mod()._patched_classes({"kind": "HelmRelease", "spec": {"values": {}}})
+        == set()
+    )
+
+
+def test_the_money_application_is_counted_as_batch_and_not_as_standing_capacity():
+    """Against the live tree, not a fixture."""
+    m = _mod()
+    batch = [r for r in m._requests(batch=True) if "commerce/app/lago.yaml" in r[0]]
+    standing = [r for r in m._requests() if "commerce/app/lago.yaml" in r[0]]
+    assert batch, "the money application declares no CPU request the guard can see"
+    assert standing == [], f"lago is charged to standing capacity: {standing}"
