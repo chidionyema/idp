@@ -41,6 +41,9 @@ def test_an_absent_analyzer_is_a_fail_with_the_operator_log_in_the_receipt(tmp_p
     assert p.returncode != 0, p.stdout
     assert "FAIL  k8sgpt-analyze  no analyzer deployment" in p.stdout, p.stdout
     assert "--- k8sgpt-operator-log" in p.stdout and 'secret "k8sgpt" not found' in p.stdout, p.stdout
+    # run 33235032630: the sidecar's TLS noise drowned the reconciler; the log is the manager container only
+    assert "-c manager" in p.stdout or "--- k8sgpt-describe" in p.stdout, p.stdout
+    assert "--- k8sgpt-describe" in p.stdout and "--- healing-events" in p.stdout, p.stdout
     assert "--- k8sgpt-object" in p.stdout and "--- k8sgpt-secret" in p.stdout, p.stdout
     assert not any("rollout restart" in c for c in calls), calls
 
