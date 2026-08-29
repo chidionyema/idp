@@ -480,6 +480,22 @@ redact() {
 # what it cost. The router's own ledger (LiteLLM_SpendLogs in litellm-db) is the only honest answer;
 # a file scan says who is CONFIGURED to call it, never who did (LAW 50). Read-only: psql over the
 # pod's unix socket (trust auth, no password handled), aliases and totals only, never a key value.
+# login-doctor (crew#626 CP15, founder 2026-08-29: "SSO is broke on it, asking me to login again").
+# Read-only. The drill proved the Langfuse SSO click comes back with error=OAuthCallback (run
+# 33256502843); the route, the registered callback and the grant are correct, so the fault is in
+# Langfuse's token exchange. This prints the three things that decide it: the langfuse-web log
+# lines around the callback, whether the langfuse-sso secret is synced from the vault (state only,
+# never a value), and whether the identity domain's token endpoint answers from the cluster.
+pb_login_doctor() {
+  local ns=observability
+  show langfuse-pods $K get pods -n "$ns" -l app.kubernetes.io/name=langfuse -o wide
+  show_redacted langfuse-web-log-callback sh -c "$K logs -n $ns deploy/langfuse-web --all-containers --tail=400 2>&1 | grep -i -E 'oauth|callback|token|issuer|nextauth|error' | tail -40"
+  show langfuse-sso-secret-sync $K get externalsecret -n "$ns" langfuse-sso -o jsonpath='{.status.conditions[*].type}={.status.conditions[*].status} synced={.status.syncedResourceVersion} refresh={.status.refreshTime}{"\n"}'
+  show langfuse-sso-secret-keys sh -c "$K get secret -n $ns langfuse-sso -o jsonpath='{.data}' | tr ',' '\n' | sed -E 's/:.*//' | tr -d '{}\"'"
+  show langfuse-auth-env sh -c "$K get deploy -n $ns langfuse-web -o jsonpath='{.spec.template.spec.containers[0].env[*].name}' | tr ' ' '\n' | grep -E '^AUTH_|^NEXTAUTH' "
+  show identity-openid-config-from-cluster sh -c "$K run login-doctor-probe --rm -i --restart=Never -n $ns --image=curlimages/curl:8.10.1 -- -s -m 20 -o /dev/null -w 'well-known %{http_code} in %{time_total}s\n' \"\$(${K} get deploy -n $ns langfuse-web -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name==\"AUTH_CUSTOM_ISSUER\")].value}')/.well-known/openid-configuration\" 2>&1 | tail -3"
+}
+
 pb_router_spend() {
   local ns=llm pod=litellm-db-0
   local q='psql -U litellm -d litellm -At -F "|" -c'
@@ -863,10 +879,11 @@ pb_chi_resize() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend"; exit 0 ;;
+  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend login-doctor"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   router-spend) pb_router_spend ;;
+  login-doctor) pb_login_doctor ;;
   dns-per-node) pb_dns_per_node ;;
   dns-per-namespace) pb_dns_per_namespace ;;
   tcp-per-node) pb_tcp_per_node ;;
