@@ -42,21 +42,25 @@ def test_kustomization_carries_the_policy_marker():
     assert "platform/backstage/overlays/oke".startswith(update["path"].removeprefix("./")), update
 
 
-def test_controllers_are_installed_and_the_writer_is_a_deploy_key():
+def test_controllers_are_installed_and_the_writer_authenticates_as_the_app():
     """crew#325: the writer was the estate-agents GitHub App, which needed a person to tap Create; a day
-    went by with every session calling that a founder action. A deploy key needs no person."""
+    went by with every session calling that a founder action, so a deploy key replaced it. crew#66 root
+    trust (5453747447, crew#575): that key was ssh-keygen + `gh api` by hand, pasted as SEED_FLUX_WRITER_*
+    -- the MISS the register refuses. The App exists now (installed by oke-check from CI, crew#267), so
+    Flux authenticates as the App: `provider: github`, three keys templated from the vault entry
+    `github-app`, and no person, no key pair, no deploy key anywhere."""
     gotk = (ROOT / "clusters/oke/flux-system/gotk-components.yaml").read_text()
     deployments = {d["metadata"]["name"] for d in yaml.safe_load_all(gotk) if d and d["kind"] == "Deployment"}
     assert {"image-reflector-controller", "image-automation-controller"} <= deployments, deployments
     writer = BY_KIND["GitRepository"]
-    assert writer["spec"]["url"].startswith("ssh://git@github.com/") and "provider" not in writer["spec"]
+    assert writer["spec"]["url"] == "https://github.com/chidionyema/idp" and writer["spec"]["provider"] == "github"
     assert writer["spec"]["secretRef"] == {"name": "flux-writer"}
     es = yaml.safe_load((ROOT / "platform/image-automation/flux-writer.yaml").read_text())
-    assert set(es["spec"]["target"]["template"]["data"]) == {"identity", "identity.pub", "known_hosts"}
-    assert es["spec"]["dataFrom"] == [{"extract": {"key": "flux-writer"}}]
+    assert set(es["spec"]["target"]["template"]["data"]) == {"githubAppID", "githubAppInstallationID", "githubAppPrivateKey"}
+    assert es["spec"]["dataFrom"] == [{"extract": {"key": "github-app"}}]
     seed = (ROOT / ".github/workflows/vault-seed.yml").read_text()
-    assert "put flux-writer identity_b64=FLUX_WRITER_IDENTITY_B64 pub=FLUX_WRITER_PUB" in seed
-    assert not (ROOT / "platform/image-automation/github-app.yaml").exists(), "the App is off the writer path"
+    assert "put flux-writer" not in seed and "SEED_FLUX_WRITER" not in seed, "the pasted deploy key path is gone"
+    assert not (ROOT / "platform/image-automation/github-app.yaml").exists(), "one App entry, github-app, not a second"
     assert BY_KIND["ImageUpdateAutomation"]["spec"]["sourceRef"]["name"] == writer["metadata"]["name"]
 
 

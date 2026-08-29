@@ -1,9 +1,10 @@
-# crew#284 CP1/CP2, crew#248: the estate vault is seeded from GitHub secrets by the machine identity.
-# The laptop path is closed (crew#227 deleted the OCI API key; crew#247: infra is never Mac-bound),
-# so the two vault entries the platform waits on (litellm-upstream, prospector-engine-env) are
-# written here from repository secrets named SEED_<KEY>. litellm-upstream is written by the oke-check apply
-# step (idp#241); this workflow carries the entries oke-check does not: prospector-engine-env and github-app. Values travel from the secret store to
-# the runner's process to the vault and are never printed; bin/idp-vault-put reads them in-process.
+# crew#284 CP1/CP2, crew#248: the estate vault is written by the machine identity, never a laptop
+# (crew#227 deleted the OCI API key; crew#247: infra is never Mac-bound). crew#66 root trust
+# (5453747447, docs/reference/policy/root-trust.md): an entry a bootstrapper births is never seeded from a
+# pasted GitHub secret; this workflow now carries only github-app (the four keys bin/idp-github-app
+# convert produces when no OCI session is live) and k8sgpt (a router key minted here, never pasted).
+# Every other entry chosen by name is refused with the command that owns it. Values travel from the
+# secret store to the runner's process to the vault and are never printed.
 # Runs from the phone: gh workflow run vault-seed.yml -f entry=all
 name: vault-seed
 on:
@@ -29,11 +30,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with: { tofu_version: "1.12.6", tofu_wrapper: false }
       - name: oci cli
-        run: pip install -q oci-cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -55,31 +59,10 @@ jobs:
           OKE_SSH_PUBKEY_TEXT: ${{ vars.OKE_SSH_PUBKEY }}
           OKE_ALLOWED_CIDRS: ${{ vars.OKE_ALLOWED_CIDRS }}
           ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}
-          SEED_MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
-          SEED_DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
-          SEED_OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
-          SEED_ANTHROPIC_API_KEY: ${{ secrets.SEED_ANTHROPIC_API_KEY }}
-          SEED_EXA_API_KEY: ${{ secrets.SEED_EXA_API_KEY }}
-          SEED_STORE_API_URL: ${{ secrets.SEED_STORE_API_URL }}
-          SEED_STORE_INTERNAL_API_KEY: ${{ secrets.SEED_STORE_INTERNAL_API_KEY }}
-          SEED_R2_ACCESS_KEY_ID: ${{ secrets.SEED_R2_ACCESS_KEY_ID }}
-          SEED_R2_ACCOUNT_ID: ${{ secrets.SEED_R2_ACCOUNT_ID }}
-          SEED_R2_BUCKET: ${{ secrets.SEED_R2_BUCKET }}
-          SEED_R2_SECRET_ACCESS_KEY: ${{ secrets.SEED_R2_SECRET_ACCESS_KEY }}
           SEED_GITHUB_APP_ID: ${{ secrets.SEED_GITHUB_APP_ID }}
           SEED_GITHUB_APP_SLUG: ${{ secrets.SEED_GITHUB_APP_SLUG }}
           SEED_GITHUB_APP_CLIENT_ID: ${{ secrets.SEED_GITHUB_APP_CLIENT_ID }}
           SEED_GITHUB_APP_PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
-          SEED_FLUX_WRITER_IDENTITY_B64: ${{ secrets.SEED_FLUX_WRITER_IDENTITY_B64 }}
-          SEED_FLUX_WRITER_PUB: ${{ secrets.SEED_FLUX_WRITER_PUB }}
-          SEED_TEMPORAL_DB_PASSWORD: ${{ secrets.SEED_TEMPORAL_DB_PASSWORD }}
-          SEED_HINDSIGHT_DB_PASSWORD: ${{ secrets.SEED_HINDSIGHT_DB_PASSWORD }}
-          SEED_HINDSIGHT_LLM_API_KEY: ${{ secrets.SEED_HINDSIGHT_LLM_API_KEY }}
-          SEED_HINDSIGHT_LLM_BASE_URL: ${{ secrets.SEED_HINDSIGHT_LLM_BASE_URL }}
-          SEED_MCP_GATEWAY_KEY: ${{ secrets.SEED_MCP_GATEWAY_KEY }}
-          SEED_GITHUB_MCP_TOKEN: ${{ secrets.SEED_GITHUB_MCP_TOKEN }}
-          SEED_TAILSCALE_OAUTH_CLIENT_ID: ${{ secrets.SEED_TAILSCALE_OAUTH_CLIENT_ID }}
-          SEED_TAILSCALE_OAUTH_CLIENT_SECRET: ${{ secrets.SEED_TAILSCALE_OAUTH_CLIENT_SECRET }}
         run: |
           set -euo pipefail
           bin/idp-oci-login --check
@@ -89,46 +72,28 @@ jobs:
           env | sed -n 's/^SEED_//p' > "$ESTATE_ENV_FILE"
           put() { bin/idp-vault-put "$@"; }
           if [ -n "${{ inputs.delete }}" ]; then bin/idp-vault-put --delete "${{ inputs.delete }}"; exit; fi
-          if [ "$ENTRY" = all ] || [ "$ENTRY" = prospector-engine-env ]; then
-            put prospector-engine-env MINIMAX_API_KEY=MINIMAX_API_KEY DEEPSEEK_API_KEY=DEEPSEEK_API_KEY EXA_API_KEY=EXA_API_KEY \
-              OPENROUTER_API_KEY=OPENROUTER_API_KEY ANTHROPIC_API_KEY=ANTHROPIC_API_KEY \
-              STORE_API_URL=STORE_API_URL STORE_INTERNAL_API_KEY=STORE_INTERNAL_API_KEY \
-              R2_ACCESS_KEY_ID=R2_ACCESS_KEY_ID R2_ACCOUNT_ID=R2_ACCOUNT_ID R2_BUCKET=R2_BUCKET R2_SECRET_ACCESS_KEY=R2_SECRET_ACCESS_KEY
-          fi
+          # crew#66 root trust (5453747447, docs/reference/policy/root-trust.md): an entry a bootstrapper births is
+          # never seeded from a pasted secret. Chosen by name it is refused with the command that owns it;
+          # under `all` those entries are skipped, so `all` still writes what this workflow owns.
+          #   tailscale-operator: born by bin/idp-bootstrap-tailscale, never seeded by hand (crew#576)
+          #   flux-writer: retired; Flux authenticates as the App (bin/idp-github-app), no deploy key (crew#575)
+          retired() {
+            case "$1" in
+              prospector-engine-env|temporal-db|hindsight|mcp-gateway|backstage-env|oauth2-proxy-cookie-secret|prospector-store-api-env)
+                echo "bin/idp-estate-seed (estate keys), bin/idp-bootstrap-vendors (vendor keys), bin/idp-bootstrap-cloudflare (R2), bin/idp-github-app refresh (GitHub tokens)";;
+              flux-writer) echo "bin/idp-github-app (Flux authenticates as the App; the deploy key is retired)";;
+              tailscale-operator) echo "bin/idp-bootstrap-tailscale";;
+              *) return 1;;
+            esac
+          }
+          if owner=$(retired "$ENTRY"); then echo "FAIL    $ENTRY is born by $owner, never seeded by hand (crew#66 root trust)"; exit 1; fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = github-app ]; then
             # the four keys bin/idp-github-app convert writes; installation_id is added by the oke-check installation step
             put github-app app_id=GITHUB_APP_ID slug=GITHUB_APP_SLUG client_id=GITHUB_APP_CLIENT_ID pem_b64=GITHUB_APP_PEM_B64
-          fi
-          if [ "$ENTRY" = all ] || [ "$ENTRY" = flux-writer ]; then
-            # the read-write deploy key Flux's idp-writer GitRepository uses (platform/image-automation/flux-writer.yaml, crew#325)
-            put flux-writer identity_b64=FLUX_WRITER_IDENTITY_B64 pub=FLUX_WRITER_PUB
-          fi
-          if [ "$ENTRY" = all ] || [ "$ENTRY" = temporal-db ]; then
-            # Temporal's Postgres password (platform/temporal/external-secret.yaml, crew#396)
-            put temporal-db password=TEMPORAL_DB_PASSWORD
-          fi
-          if [ "$ENTRY" = all ] || [ "$ENTRY" = hindsight ]; then
-            # Hindsight's Postgres password and its router key (platform/hindsight/external-secret.yaml, crew#524)
-            put hindsight postgres-password=HINDSIGHT_DB_PASSWORD HINDSIGHT_API_LLM_API_KEY=HINDSIGHT_LLM_API_KEY HINDSIGHT_API_LLM_BASE_URL=HINDSIGHT_LLM_BASE_URL
           fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = k8sgpt ]; then
             # K8sGPT's LiteLLM virtual key, a router key never a vendor key (platform/healing/external-secret.yaml, crew#539 CP7).
             # Minted here from the vault's master key, never seeded by a person (LAW 27, R5).
             bin/idp-router-key k8sgpt minimax
-          fi
-          if [ "$ENTRY" = all ] || [ "$ENTRY" = mcp-gateway ]; then
-            # the MCP gateway's API key and the GitHub token its github route forwards (platform/mcp, crew#458)
-            put mcp-gateway MCP_GATEWAY_KEY=MCP_GATEWAY_KEY GITHUB_MCP_TOKEN=GITHUB_MCP_TOKEN
-          fi
-          if [ "$ENTRY" = all ] || [ "$ENTRY" = tailscale-operator ]; then
-            # crew#516 CP5, founder's locked spec (crew#66 5451926212 — "so we solve the problem
-            # once"): one Tailscale OAuth client (scope auth_keys + policy_file, tag tag:k8s),
-            # minted once in the Tailscale console exactly like every other SEED_ key (the founder's
-            # own risk note on the issue: Tailscale has no API that creates an OAuth client). It
-            # authenticates the in-cluster operator (platform/tailscale/operator.yaml) AND — because
-            # an OAuth client secret is itself a valid TS_AUTHKEY (containerboot, tailscale.com/kb)
-            # — mints the hermes-agent sidecar's own ephemeral, tag:k8s key at pod start
-            # (platform/hermes-agent/tailscale.yaml). One client, two consumers, one seeding path.
-            put tailscale-operator client_id=TAILSCALE_OAUTH_CLIENT_ID client_secret=TAILSCALE_OAUTH_CLIENT_SECRET
           fi
           rm -f "$ESTATE_ENV_FILE"

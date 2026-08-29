@@ -30,6 +30,9 @@ def _bin(tmp: Path, drills_body: str) -> Path:
     _fake(b, "kubectl", "echo '{\"items\": [{\"metadata\": {\"name\": \"n\"}, \"status\": {\"conditions\": [{\"type\": \"Ready\", \"status\": \"True\"}]}}]}'")
     _fake(b, "idp-cluster-state", "echo 'ok      cluster-state nodes=1 ready=1 (3 min ago)'")
     _fake(b, "idp-drills-row", drills_body)
+    # crew#66 root trust: verify-drill grades two more rows; both green here so only the drills row decides.
+    _fake(b, "idp-root-trust", "echo 'ok      root-trust MEETS 32 PARTIAL 0 MISS 0'")
+    _fake(b, "idp-github-app", "echo 'ok      github-tokens 2 token(s) re-minted from the App'")
     (b / "idp-verify-drill").write_text(SCRIPT.read_text())
     (b / "idp-verify-drill").chmod(0o755)
     return b

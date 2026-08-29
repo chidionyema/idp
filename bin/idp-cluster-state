@@ -97,6 +97,15 @@ if int(kv["monitoring_rules"]) == 0 or int(kv["alert_watchdog"]) == 0:
         why = f"body unreadable: {e}"
     print(f"FAIL    cluster-state  monitoring_rules={kv['monitoring_rules']} alert_watchdog={kv['alert_watchdog']}: {why[:300]}"); sys.exit(1)
 print(f"ok      cluster-state  {line1} ({age:.0f} min ago)")
+# K8sGPT findings (2026-08-29, founder: nothing is done until operational). Printed, never
+# graded here: K8sGPTFinding (platform/monitoring/rules/k8sgpt.yaml) is the pager; this is the read.
+try:
+    for f in (json.loads(rest).get("k8sgpt") or [])[:12]:
+        print(f"  k8sgpt     {f.get('kind')} {f.get('name')}: {(f.get('error') or '')[:160]}")
+        if f.get("details"):
+            print(f"             {f['details'][:300]}")
+except Exception as e:
+    print(f"  k8sgpt     body unreadable: {e}")
 if flag == "--json":
     print(rest)
 PY

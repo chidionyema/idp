@@ -17,6 +17,19 @@ set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 CONSUMER=${1:?consumer (the vault entry name, e.g. k8sgpt)}
 MODELS=${2:?model names the key may call, comma separated (rows of platform/llm/config.yaml)}
+shift 2
+# --entry E --field F: write the key as field F of vault entry E (--merge, the other keys kept) instead
+# of entry <consumer> field key; the consumers whose ExternalSecret extracts one JSON object of many
+# keys (hindsight, hermes-agent-env) live here (crew#576, bin/idp-estate-seed). ROUTER_ROTATE=1 mints
+# anew even when the vault key is still accepted.
+ENTRY=$CONSUMER; FIELD=key
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --entry) ENTRY=${2:?entry}; shift 2 ;;
+    --field) FIELD=${2:?field}; shift 2 ;;
+    *) echo "BLIND   router-key   unknown option $1"; exit 2 ;;
+  esac
+done
 CLOUD=${IDP_CLOUD:-$IDP/bin/idp-cloud}            # overridable so a test needs no vault
 VAULT_PUT=${IDP_VAULT_PUT:-$IDP/bin/idp-vault-put}
 for t in curl jq python3; do command -v "$t" >/dev/null || { echo "BLIND   router-key   $t missing"; exit 2; }; done
@@ -28,14 +41,14 @@ BUDGET=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['l
   || { echo "BLIND   router-key   estate-defaults.yaml has no llm.virtual_key_daily_usd"; exit 2; }
 
 # --- an existing key the router still accepts is kept ------------------------------------------
-rc=0; cur=$("$CLOUD" secret get "$CONSUMER" 2>/dev/null) || rc=$?
-[ "$rc" -le 1 ] || { echo "FAIL    router-key   vault read of $CONSUMER exited $rc (split or unreadable)"; exit 1; }
-if [ "$rc" -eq 0 ]; then
-  k=$(printf '%s' "$cur" | jq -r '.key // empty' 2>/dev/null || true)
+rc=0; cur=$("$CLOUD" secret get "$ENTRY" 2>/dev/null) || rc=$?
+[ "$rc" -le 1 ] || { echo "FAIL    router-key   vault read of $ENTRY exited $rc (split or unreadable)"; exit 1; }
+if [ "$rc" -eq 0 ] && [ "${ROUTER_ROTATE:-}" != 1 ]; then
+  k=$(printf '%s' "$cur" | jq -r --arg f "$FIELD" '.[$f] // empty' 2>/dev/null || true)
   if [ -n "$k" ]; then
     code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $k" "$LLM/key/info" || echo 000)
     unset k
-    if [ "$code" = 200 ]; then echo "ok      router-key   $CONSUMER: the vault key is accepted by $LLM (kept)"; exit 0; fi
+    if [ "$code" = 200 ]; then echo "ok      router-key   $CONSUMER: the vault key ($ENTRY.$FIELD) is accepted by $LLM (kept)"; exit 0; fi
     echo "info    router-key   $CONSUMER: the vault key answered $code at $LLM/key/info; minting a new one"
   fi
 fi
@@ -54,6 +67,10 @@ unset MASTER
 KEY=$(printf '%s' "$resp" | jq -r '.key // empty'); unset resp
 [ -n "$KEY" ] || { echo "FAIL    router-key   /key/generate answered without a key"; exit 1; }
 f=$(mktemp); umask 077; printf 'ROUTER_KEY=%s\n' "$KEY" > "$f"; unset KEY
-ESTATE_ENV_FILE="$f" "$VAULT_PUT" "$CONSUMER" key=ROUTER_KEY >/dev/null
+if [ "$ENTRY" = "$CONSUMER" ] && [ "$FIELD" = key ]; then
+  ESTATE_ENV_FILE="$f" "$VAULT_PUT" "$CONSUMER" key=ROUTER_KEY >/dev/null
+else
+  ESTATE_ENV_FILE="$f" "$VAULT_PUT" --merge "$ENTRY" "$FIELD=ROUTER_KEY" >/dev/null
+fi
 rm -f "$f"
-echo "ok      router-key   $CONSUMER: minted alias $alias (models $MODELS, $BUDGET USD/day), written to vault entry $CONSUMER field key"
+echo "ok      router-key   $CONSUMER: minted alias $alias (models $MODELS, $BUDGET USD/day), written to vault entry $ENTRY field $FIELD"

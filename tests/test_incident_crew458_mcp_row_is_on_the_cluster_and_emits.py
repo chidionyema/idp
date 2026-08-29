@@ -74,9 +74,11 @@ def test_incident_crew458_the_vault_entry_the_row_reads_can_be_seeded():
     es = [d for d in row_docs() if d["kind"] == "ExternalSecret"][0]
     key = es["spec"]["dataFrom"][0]["extract"]["key"]
     seed = (ROOT / ".github" / "workflows" / "vault-seed.yml").read_text()
-    assert f'"$ENTRY" = {key} ' in seed and f"put {key} " in seed
-    for var in ("MCP_GATEWAY_KEY", "GITHUB_MCP_TOKEN"):
-        assert f"SEED_{var}: ${{{{ secrets.SEED_{var} }}}}" in seed, var
+    # crew#66 root trust (crew#575, #577): the entry is born by bin/idp-estate-seed (MCP_GATEWAY_KEY) and
+    # bin/idp-github-app refresh (GITHUB_MCP_TOKEN, an hourly App token); vault-seed refuses it by name.
+    assert f"{key}|" in seed and f"put {key} " not in seed and "SEED_MCP_GATEWAY_KEY" not in seed
+    assert "MCP_GATEWAY_KEY" in (ROOT / "bin/idp-estate-seed").read_text()
+    assert "GITHUB_MCP_TOKEN" in (ROOT / "platform/github-app/token-consumers.json").read_text()
 
 
 def test_incident_crew458_api_key_marker_needs_a_strict_hashed_policy_both_ways():

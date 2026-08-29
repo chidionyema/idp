@@ -30,6 +30,10 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    # Never garbage-collected by Flux: a namespace moved between Kustomization rows or
+    # dropped from git stays, with everything in it (portal 404, 2026-08-29 01:05Z, idp#648).
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: hermes-agent
   labels:
     app.kubernetes.io/part-of: idp
@@ -41,7 +45,7 @@ metadata:
   name: hermes-agent-env
   namespace: hermes-agent
 spec:
-  refreshInterval: 1h
+  refreshInterval: 15m   # holds a 1h GitHub App installation token re-minted hourly (crew#577)
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
   target: { name: hermes-agent-env, creationPolicy: Owner }
   dataFrom:

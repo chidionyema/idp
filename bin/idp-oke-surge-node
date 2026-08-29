@@ -28,28 +28,38 @@ if [ "${1:-}" = --finish ]; then
   # only once a receipt no older than SURGE_RECEIPT_MAX_AGE_SECONDS shows the NEWEST node Ready.
   rows=$(oci ce node-pool get --node-pool-id "$POOL" --query 'data.nodes[?"lifecycle-state"==`ACTIVE`].{id:id,ip:"private-ip",t:"time-created"}' --raw-output)
   body=$(oci os object get "${ns[@]}" --bucket-name "$BUCKET" --name state/cluster --file - 2>&1) || true
+  # The age of this receipt decides whether a live node is deleted, so it is measured the way
+  # crew#583 requires: the object head carries both the store's stamp ("last-modified") and the
+  # store's own clock as it answered ("date"), and bin/lib/receipt_age.py subtracts one from the
+  # other. This runner's clock never enters it. Before this, `at` from the body was subtracted from
+  # datetime.now(): a runner behind the receipt produced a NEGATIVE age, which passes `age > max`,
+  # so a receipt of any age read as fresh and the OK branch below deleted a node on it.
+  head=$("$IDP/bin/idp-cloud" object head --bucket "$BUCKET" --name state/cluster 2>&1) || true
   # The CLI pretty-prints its JSON over many lines; run 33110054128 split stdin at the first
   # newline and parsed "[" (JSONDecodeError char 1). The rows travel in the environment, whole.
-  verdict=$(printf '%s' "$body" | SURGE_ROWS="$rows" python3 -c '
-import sys, os, json, datetime as dt
+  verdict=$(printf '%s' "$body" | SURGE_ROWS="$rows" IDP_LIB="$IDP/bin/lib" python3 -c '
+import sys, os, json
+sys.path.insert(0, os.environ.get("IDP_LIB", ""))
+from receipt_age import receipt_age                          # prints "BLIND ..." and exits 2 itself
 body = sys.stdin.read(); rows = json.loads(os.environ.get("SURGE_ROWS") or "[]") or []
 _, _, rest = body.strip().partition("\n")                   # grade line, then JSON (bin/idp-cluster-state:32)
 try: r = json.loads(rest)
-except ValueError: print("BLIND, receipt state/cluster unreadable: %s" % (body.strip().splitlines()[0] if body.strip() else "empty read")); sys.exit(0)
+except ValueError: print("BLIND receipt state/cluster unreadable: %s" % (body.strip().splitlines()[0] if body.strip() else "empty read")); sys.exit(0)
+try: head = json.loads(sys.argv[1])
+except ValueError: print("BLIND object head for state/cluster was not readable JSON: %s" % sys.argv[1].strip().splitlines()[:1]); sys.exit(0)
 if len(rows) != 2: print("REFUSE expected 2 ACTIVE nodes in the pool, found %d" % len(rows)); sys.exit(0)
 rows.sort(key=lambda r: r["t"]); old, new = rows
-at = dt.datetime.fromisoformat(str(r.get("at", "")).replace("Z", "+00:00"))
-age = (dt.datetime.now(dt.timezone.utc) - at).total_seconds()
-if age > int(sys.argv[1]): print("STALE receipt written %ds ago (%s)" % (age, r.get("at"))); sys.exit(0)
+age = receipt_age(head, 1.0, "surge-finish")                 # seconds, on the store clock alone  
+if age > int(sys.argv[2]): print("STALE receipt written %ds ago (%s)" % (age, r.get("at"))); sys.exit(0)
 ready = any(n.get("name") == new["ip"] and n.get("ready") is True for n in r.get("nodes", []))
 print(("OK %s %s %s" if ready else "NOTREADY %s %s %s") % (old["id"], new["id"], new["ip"]))
-' "${SURGE_RECEIPT_MAX_AGE_SECONDS:-1800}")
+' "$head" "${SURGE_RECEIPT_MAX_AGE_SECONDS:-1800}") || true
   set -- $verdict
-  case "$1" in
+  case "${1:-}" in
     OK) oci ce node-pool delete-node --node-pool-id "$POOL" --node-id "$2" --is-decrement-size true --force >/dev/null
         echo "surge-finish: new node $3 Ready as $4 in receipt state/cluster; old node $2 deleted, pool back to size 1"; exit 0 ;;
     NOTREADY) echo "surge-finish: newest node $3 ($4) not Ready in the receipt yet; old node $2 kept"; exit 4 ;;
-    BLIND,) echo "surge-finish: $verdict; nothing deleted"; exit 5 ;;
+    BLIND) echo "surge-finish: $verdict; nothing deleted"; exit 5 ;;
     *) echo "surge-finish: $verdict; nothing deleted"; exit 3 ;;
   esac
 fi
@@ -57,7 +67,7 @@ OLD=$(active); n_old=$(printf '%s\n' "$OLD" | grep -c . || true)
 [ "$n_old" -eq 1 ] || { echo "surge: expected 1 ACTIVE node in pool $POOL, found $n_old; refusing"; exit 3; }
 echo "surge: pool $POOL, old node $OLD, growing to 2"
 # crew#539 CP4: the pool is autoscaler-managed; a surge by hand needs the autoscaler scaled to 0 first
-# (docs/onboarding/autoscaler.md, "Do not"), or the two fight over `size`.
+# (docs/how-to/onboarding/autoscaler.md, "Do not"), or the two fight over `size`.
 oci ce node-pool update --node-pool-id "$POOL" --size 2 --force >/dev/null
 NEW=""
 for _ in $(seq 1 "${SURGE_WAIT_ROUNDS:-60}"); do

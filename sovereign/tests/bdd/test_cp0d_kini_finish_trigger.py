@@ -50,9 +50,17 @@ def _grade(receipt: str, age_min: int = 5, max_age_min: int = 60) -> tuple[int, 
 
     src = (IDP / "bin/idp-kini-state").read_text()
     code = src.split("<<'PY'", 1)[1].split("\nPY", 1)[0]
-    lm = format_datetime(datetime.now(timezone.utc) - timedelta(minutes=age_min), usegmt=True)
-    head = json.dumps({"last-modified": lm})
-    p = subprocess.run([sys.executable, "-c", code, head, receipt, str(max_age_min), ""], capture_output=True, text=True)
+    # Both timestamps hang off one anchor, because that is what an object head is: the store says
+    # when it answered ("date") and when it stamped the object ("last-modified"), and the reader
+    # subtracts the two so this machine's clock never enters the age (crew#583). The anchor is
+    # datetime.now only so the receipt body's own "at" string matches; move it anywhere and the
+    # verdicts below are unchanged.
+    served = datetime.now(timezone.utc)
+    head = json.dumps({"last-modified": format_datetime(served - timedelta(minutes=age_min), usegmt=True),
+                       "date": format_datetime(served, usegmt=True)})
+    env = {**os.environ, "IDP_LIB": str(IDP / "bin/lib")}
+    p = subprocess.run([sys.executable, "-c", code, head, receipt, str(max_age_min), ""],
+                       capture_output=True, text=True, env=env)
     return p.returncode, (p.stdout + p.stderr).strip()
 
 

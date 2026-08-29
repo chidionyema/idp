@@ -140,7 +140,11 @@ def test_vault_seed_carries_the_one_oauth_client_entry_never_a_reusable_key():
     assert "tailscale-operator" in options
     assert "hermes-agent-tailscale" not in options, "the design that entry belonged to (5451614620) was rejected"
     raw = VAULT_SEED.read_text()
-    assert "put tailscale-operator client_id=TAILSCALE_OAUTH_CLIENT_ID client_secret=TAILSCALE_OAUTH_CLIENT_SECRET" in raw
+    # crew#66 root trust (5453747447, crew#576): the OAuth client is born by bin/idp-bootstrap-tailscale,
+    # which writes the vault itself; vault-seed REFUSES the entry instead of pasting it from a GitHub secret.
+    assert "put tailscale-operator client_id=" not in raw, "the pasted-secret path is gone (crew#66 root trust)"
+    assert "born by bin/idp-bootstrap-tailscale, never seeded by hand" in raw
+    assert "TAILSCALE_OAUTH_CLIENT_SECRET" not in raw, "no GitHub secret holds the client secret"
     assert "SEED_TS_AUTHKEY" not in raw, "the reusable-key seeding path (5451614620) is gone, not just renamed"
 
 
@@ -156,19 +160,34 @@ def _policy_hujson():
     return json.loads(no_trailing_commas)
 
 
-def test_policy_carries_exactly_one_ssh_rule_tag_k8s_to_tag_founder_mac():
+def test_policy_carries_one_ssh_rule_per_named_source_and_no_open_one():
+    """crew#516 locked one rule (tag:k8s -> tag:founder-mac, check). crew#562 measured that the same
+    file locks the founder's own iPhone out of his tagged Mac (tagging removes user identity,
+    kb/1068), so the spec now names TWO sources and nothing else: the cluster, and group:founder,
+    whose only member is his tailnet login. LAW 45 still holds: no rule takes an open source
+    (autogroup:member, *, autogroup:members) and no destination is repeated across rules."""
     pol = _policy_hujson()
-    assert len(pol["ssh"]) == 1, "LAW 45: the paste/by-hand-ACL mistake does not come back as a second rule"
-    rule = pol["ssh"][0]
-    assert rule["action"] == "check"
-    assert rule["src"] == ["tag:k8s"] and rule["dst"] == ["tag:founder-mac"]
-    assert rule["users"] == ["${FOUNDER_MAC_USER}"], "LAW 46: no literal founder username in git"
+    rules = pol["ssh"]
+    assert [r["src"] for r in rules] == [["tag:k8s"], ["group:founder"]], "exactly the two named sources, in that order"
+    assert [r["action"] for r in rules] == ["check", "accept"]
+    for r in rules:
+        assert r["dst"] == ["tag:founder-mac"]
+        assert r["users"] == ["${FOUNDER_MAC_USER}"], "LAW 46: no literal founder username in git"
+    assert pol["groups"] == {"group:founder": ["${FOUNDER_TAILNET_USER}"]}, "LAW 46: the login is substituted, never typed"
 
 
 def test_policy_acl_and_tag_owners_match_the_locked_spec():
     pol = _policy_hujson()
     assert {"tag:k8s", "tag:founder-mac"} <= set(pol["tagOwners"])
-    assert pol["acls"] == [{"action": "accept", "src": ["tag:k8s"], "dst": ["tag:founder-mac:22"]}]
+    assert pol["acls"] == [
+        {"action": "accept", "src": ["tag:k8s"], "dst": ["tag:founder-mac:22"]},
+        {"action": "accept", "src": ["group:founder"], "dst": ["tag:founder-mac:22", "tag:founder-mac:47984-48010"]},
+    ]
+    open_sources = {"*", "autogroup:member", "autogroup:members", "autogroup:tagged"}
+    for section in ("acls", "ssh"):
+        for r in pol[section]:
+            assert not open_sources & set(r["src"]), f"{section}: an open source is the lockout the spec forbids"
+
 
 
 def test_tailscale_policy_script_exists_executable_and_reads_the_estate_config():
@@ -333,7 +352,9 @@ def test_executor_keeps_the_existing_allowed_tools():
     cfg = yaml.safe_load(ESTATE.read_text())
     doc = yaml.safe_load(cfg["data"]["estate.yaml"])
     claude_cmd = doc["dispatch"]["runtimes"]["claude"]
-    assert "Bash(git *) Bash(gh *)" in claude_cmd
+    # the allow-list may grow (K8sGPT findings reader, 2026-08-29); git and gh must stay
+    allowed = claude_cmd[claude_cmd.index("--allowedTools") + 1]
+    assert "Bash(git *)" in allowed and "Bash(gh *)" in allowed
 
 
 def test_no_ssh_flag_or_key_in_the_executor_line():

@@ -1,3 +1,27 @@
+# crew#488 / crew#539: the portal's namespace, on its own, before anything that lands in it.
+#
+# cluster-state, spire and image-automation all apply objects into namespace backstage, and on a
+# cluster with no history they ran before it existed (`namespaces "backstage" not found`, drill run
+# 33214748124). The edge they wanted -- dependsOn: [backstage] -- is the one crew#539 forbids: the
+# portal row waits on Deployment/catalogue being healthy, so that edge makes a stalled catalogue
+# rollout hold the platform, which is the incident crew#539 exists for.
+#
+# One object, no workload, nothing that can be unhealthy. It is what those rows wait for.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: backstage-namespace
+  namespace: flux-system
+spec:
+  interval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/backstage/namespace/overlays/oke
+  prune: true
+  wait: true
+  timeout: 2m
+---
 # ADR 0004 step 3. `flux bootstrap github --path clusters/oke` writes flux-system/ beside this
 # file; everything below is what Flux then reconciles. Secrets reach the
 # cluster from OCI Vault through External Secrets (platform/secret-store); no sops key in cluster.
@@ -7,12 +31,24 @@ metadata:
   name: backstage
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/backstage/overlays/oke
   prune: true
+  # crew#488 CP5: the overlay carries an ExternalSecret (backstage-env). Without these two rows
+  # Flux dry-ran it before the CRD existed and the portal read as a root portability break;
+  # platform rows still never wait on the portal (crew#539), the portal waits on its secrets.
+  dependsOn:
+    - name: backstage-namespace
+    - name: external-secrets
+    - name: secret-store
+    # The overlay also carries HTTPRoute/catalogue and Middleware/login-forward-auth, whose CRDs
+    # come from gateway-api-crds and the Traefik chart in `edge` -- so on an empty cluster the row
+    # dry-ran those two before either existed. Found by the closure-aware CRD-before-CR guard,
+    # which the flat PRE_INSTALLED set had been widened past (crew#488).
+    - name: edge
   postBuild:
     substituteFrom:
       # ESTATE_ZONE (idp#140): the zone is one value in clusters/oke/estate-config.yaml; not
@@ -33,7 +69,7 @@ metadata:
   name: chaos-mesh
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   # Platform rows never wait on the portal (crew#539, 2026-08-28: one stalled catalogue rollout held
   # 15 rows — observability, spire, temporal, keda, monitoring, science — behind Deployment/backstage/catalogue).
   # Only `chaos` (the experiments that target the portal) depends on backstage.
@@ -60,9 +96,11 @@ metadata:
   name: chaos
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: chaos-mesh
+    # crew#488: the langfuse alert drill's Schedule and Workflow land in the observability namespace.
+    - name: observability
     - name: monitoring   # crew#539 DoD 2: langfuse-alert-drill asks kps-alertmanager and kps-prometheus
     - name: backstage   # the experiments kill portal pods; they are the one row that waits for it
   sourceRef:
@@ -78,6 +116,38 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: observability-collector
+  namespace: flux-system
+spec:
+  # crew#584 traces/lean: the node agent alone. Enterprise adds the `observability` row (SigNoz
+  # store + Langfuse) on top; lean points otelCollectorEndpoint at an external OTLP endpoint.
+  interval: 1m
+  dependsOn:
+    - name: scheduling
+    - name: edge   # platform/edge/k8s-infra-namespace.yaml and the hostPath waiver live there
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/observability-collector
+  prune: true
+  postBuild:
+    substituteFrom:
+      # OTLP_ENDPOINT (crew#584 traces/lean): the node agent's destination is one value in
+      # clusters/oke/estate-config.yaml; a missing ConfigMap fails the row rather than
+      # shipping telemetry to the literal '${OTLP_ENDPOINT}'.
+      - kind: ConfigMap
+        name: estate-config
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: k8s-infra
+      namespace: observability-agent
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: observability
   namespace: flux-system
 spec:
@@ -88,9 +158,15 @@ spec:
   # 10m so a broken workload is reported within ten minutes (tests/test_incident_backstage_17h_unreported.py).
   # After unsuspend the HelmRelease has a 15m timeout, so a cold ClickHouse shows "not ready" for the
   # first two ticks; that is the install, not an incident (code-37, 2026-08-25).
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: scheduling
+    # crew#584: the collector row owns k8s-infra now; ordering it first means the objects are
+    # relabelled to the new owner before this row's prune sees them as strays.
+    - name: observability-collector
+    # Four ExternalSecrets (clickhouse-auth, langfuse-init, otlp-ingest-users, signoz-root) are in
+    # this row; external-secrets.io only exists once the ESO chart has landed (crew#488).
+    - name: external-secrets
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -121,7 +197,7 @@ metadata:
   name: identity
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -153,7 +229,7 @@ metadata:
   name: healthchecks
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -183,7 +259,7 @@ metadata:
   name: metrics-server
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -208,7 +284,7 @@ metadata:
   name: reloader
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -230,7 +306,7 @@ metadata:
   name: llm
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -260,7 +336,7 @@ metadata:
   name: hermes-agent
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -291,7 +367,7 @@ metadata:
   name: mcp
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -329,9 +405,12 @@ metadata:
   name: cluster-state
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: scheduling
+    # crew#539: the namespace, not the portal. This row lands objects in namespace backstage and
+    # needs it to exist; it must never wait on Deployment/catalogue being healthy.
+    - name: backstage-namespace
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -347,7 +426,7 @@ metadata:
   name: temporal
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: edge
     - name: secret-store
@@ -374,9 +453,12 @@ metadata:
   name: spire
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: scheduling
+    # crew#539: the namespace, not the portal. This row lands objects in namespace backstage and
+    # needs it to exist; it must never wait on Deployment/catalogue being healthy.
+    - name: backstage-namespace
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -399,7 +481,7 @@ metadata:
   name: keda
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: observability
   sourceRef:
@@ -427,7 +509,7 @@ metadata:
   name: science
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: observability   # the clickhouse-auth Secret and the SigNoz backend
   sourceRef:
@@ -447,7 +529,7 @@ metadata:
   name: hindsight
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: secret-store
     - name: llm
@@ -464,6 +546,38 @@ spec:
       name: hindsight
       namespace: hindsight
 ---
+# Founder screen access, path 2 (crew#562, ADR 0009 decision founder-screen-access): Apache
+# Guacamole at catalogue.<zone>/screen/, VNC to the estate Mac over the Tailscale operator's
+# egress. After identity (the front door answers its ForwardAuth), secret-store (the vault entry
+# bin/idp-estate-seed mints) and tailscale (the operator that rewrites the egress Service).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: guacamole
+  namespace: flux-system
+spec:
+  interval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/guacamole
+  prune: true
+  dependsOn:
+    - name: identity
+    - name: secret-store
+    - name: tailscale
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: guacamole
+      namespace: guacamole
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+---
 # crew#539 CP4: the node pool grows and shrinks by itself (platform/oci/autoscaler).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -471,7 +585,7 @@ metadata:
   name: autoscaler
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -487,18 +601,37 @@ spec:
       name: cluster-autoscaler
       namespace: kube-system
 ---
-# crew#539: scheduling immunity. The two PriorityClasses, the balloon and the Kyverno policy that
-# keeps the radio-room set honest. After edge (Kyverno CRDs); the rows that name
-# infrastructure-critical depend on this one so the class exists before a pod asks for it.
+# crew#488 CP5: the PriorityClasses, before anything that names one. See
+# platform/priority-classes/kustomization.yaml for the deadlock this ends.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: priority-classes
+  namespace: flux-system
+spec:
+  interval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/priority-classes
+  prune: true
+  wait: true
+  timeout: 2m
+---
+# crew#539: scheduling immunity. The balloon and the Kyverno policies that keep the radio-room set
+# honest. After edge (Kyverno CRDs) and after priority-classes, which is where the two classes now
+# live: the rows that name infrastructure-critical still depend on this one, and reach
+# priority-classes through its dependsOn below.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: scheduling
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: edge
+    - name: priority-classes
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -516,7 +649,7 @@ metadata:
   name: healing
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: scheduling
     - name: llm
@@ -546,7 +679,7 @@ metadata:
   name: healing-analyzer
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: healing
   sourceRef:
@@ -555,6 +688,14 @@ spec:
   path: ./platform/healing/analyzer
   prune: true
   wait: true
+  timeout: 5m  # test_incident_backstage_17h_unreported: a row with healthChecks must stall, never wait forever
+  # the object alone counts as Current; the analyzer the operator builds from it is the health
+  # (run 33233870612: 29h green with no analyzer). Name = the K8sGPT object's name.
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: estate
+      namespace: healing
 ---
 # crew#539 row 7: crash logs reach Telegram before the pod is gone (platform/robusta).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -563,7 +704,7 @@ metadata:
   name: robusta
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: secret-store
   sourceRef:
@@ -588,11 +729,26 @@ metadata:
   name: monitoring
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: edge
     - name: secret-store
-    - name: robusta
+    # crew#573, measured 2026-08-28T12:44Z (oke-check 33172282641). `- name: robusta` was here and
+    # it cost the estate every alert it has. robusta's HelmRelease went `Failed`, so this row never
+    # became Ready, so `monitoring-rules` and `chaos` never did either — 4 of the 6 not-Ready Flux
+    # objects — and `grep -c kps- ` over that run's full pod dump is 0: no Prometheus, no
+    # Alertmanager, no kube-state-metrics in the cluster at all. `KubePodCrashLooping` and
+    # `KubePodNotReady` are declared here (`defaultRules.create: true`, `kubernetesApps` not
+    # disabled) and have never once fired, which is why hindsight-api crash-looped 13h at 0/1 ready
+    # with nothing red anywhere (crew#573).
+    #
+    # The dependency bought nothing even when robusta was healthy. alertmanager-config.yaml routes
+    # `receiver: telegram` by default and sends warnings to robusta on a second route carrying
+    # `continue: true` — a copy, not the delivery path. A webhook receiver whose service is absent
+    # makes Alertmanager retry that one notification; it does not stop Alertmanager starting and it
+    # does not stop the telegram receiver. So robusta is a consumer of this row, never a
+    # prerequisite for it, and the reverse edge is not added here either: robusta watches the API
+    # server directly and needs nothing from Prometheus to do it.
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -623,7 +779,7 @@ metadata:
   name: monitoring-rules
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: monitoring
   sourceRef:
@@ -646,14 +802,15 @@ metadata:
   name: drills
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/drills
   prune: true
+  # crew#488 CP5: alerts-github owns the App Secret and itself waits on secret-store; naming
+  # secret-store here twice over made this row read as a vault casualty on a cluster with none.
   dependsOn:
-    - name: secret-store
     - name: alerts-github
   wait: true
   timeout: 5m
@@ -672,7 +829,7 @@ metadata:
   name: tailscale
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
