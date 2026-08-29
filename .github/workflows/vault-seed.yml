@@ -13,7 +13,7 @@ on:
       entry:
         description: "which vault entry to write"
         type: choice
-        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, tailscale-operator, laptop]
+        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, tailscale-operator, laptop, hermes]
         default: all
       delete:
         description: "schedule deletion of one vault secret by name (crew#503: a mis-named entry); entry is ignored when set"
@@ -109,6 +109,18 @@ jobs:
             bin/idp-cloud secret get laptop | jq -r .key | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LITELLM_LAPTOP_KEY LITELLM_API_KEY
             git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
               commit -q -am "laptop router key (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null && git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || echo "info    laptop key unchanged in estate-secrets"
+            rm -rf "$RUNNER_TEMP/estate-secrets"
+          fi
+          if [ "$ENTRY" = all ] || [ "$ENTRY" = hermes ]; then
+            # Hermes (the founder's Telegram agent, hermes-v2/config.yaml) calls the router on its own
+            # virtual key, lane claude first, never a vendor key (crew#568 Phase 5, LAW 34). Same road as
+            # the laptop: minted here, delivered through the sops vault, read by scripts/secret-load.
+            bin/idp-router-key hermes claude,claude-fast,minimax,deepseek
+            tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
+            git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
+            bin/idp-cloud secret get hermes | jq -r .key | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LITELLM_HERMES_KEY LITELLM_API_KEY
+            git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
+              commit -q -am "hermes router key (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null && git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || echo "info    hermes key unchanged"
             rm -rf "$RUNNER_TEMP/estate-secrets"
           fi
           rm -f "$ESTATE_ENV_FILE"

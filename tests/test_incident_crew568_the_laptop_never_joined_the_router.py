@@ -64,3 +64,28 @@ def test_litellm_status_fails_on_a_vendor_key_left_on_the_mac(tmp_path):
     (home / ".pi" / "models.json").write_text(json.dumps({"providers": {"estate": {"baseUrl": "https://llm.example/v1"}}}))
     out = subprocess.run(["bash", str(STATUS)], capture_output=True, text=True, env={"HOME": str(home), "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"})
     assert "ok     none" in out.stdout
+
+
+# crew#568 Phase 5: the first product joins the same road. Hermes (hermes-v2/config.yaml) ran its
+# primary model on a vendor key; it now calls the router on its own virtual key, minted and
+# delivered exactly the way the laptop's is, so a buyer's engineer reads one road, not two.
+def test_hermes_is_a_seedable_entry_and_all_covers_it():
+    doc, run, _ = _seed_step()
+    assert "hermes" in doc[True]["workflow_dispatch"]["inputs"]["entry"]["options"]
+    assert '[ "$ENTRY" = all ] || [ "$ENTRY" = hermes ]' in run
+
+
+def test_the_hermes_key_is_a_router_key_with_claude_first():
+    _, run, _ = _seed_step()
+    line = next(l for l in run.splitlines() if "idp-router-key hermes" in l)
+    lanes = line.split()[-1].split(",")
+    cfg = yaml.safe_load((ROOT / "platform" / "llm" / "config.yaml").read_text())
+    assert lanes[0] == "claude"
+    assert set(lanes) <= {m["model_name"] for m in cfg["model_list"]}
+
+
+def test_hermes_delivery_is_the_laptop_road():
+    _, run, _ = _seed_step()
+    assert 'secret-add" dev LITELLM_HERMES_KEY LITELLM_API_KEY' in run
+    line = next(l for l in run.splitlines() if "secret get hermes" in l)
+    assert "| jq -r .key |" in line and ">" not in line.split("secret-add")[0]
