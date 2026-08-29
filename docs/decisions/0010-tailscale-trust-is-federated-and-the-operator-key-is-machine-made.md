@@ -48,8 +48,8 @@ non-zero exit, no fall-through to any secret road, mock tests for 200, 403 and a
 ### Road 3, parked: the operator itself is trusted, no key exists anywhere. Cost £58 a month
 
 Found late, by reading the operator's own Helm chart instead of writing a script
-(`cmd/k8s-operator/deploy/chart/values.yaml` lines 32-42, `templates/deployment.yaml` lines
-44-52): the chart takes `oauth.clientId` + `oauth.audience` and mounts a projected service-account
+(tailscale/tailscale cmd/k8s-operator/deploy/chart: values.yaml lines 32-42, templates/deployment.yaml
+lines 44-52): the chart takes `oauth.clientId` + `oauth.audience` and mounts a projected service-account
 token; the operator exchanges that token with Tailscale itself. No vault entry, no rotation, no
 `bin/idp-bootstrap-tailscale` at all. It needs:
 
