@@ -91,7 +91,7 @@ def test_an_unreadable_receipt_is_a_dark_row_not_a_crash(tmp_path):
 
 def test_text_mode_reads_as_one_screen():
     t = run()
-    assert t.startswith("estate 2026-08-29T13:00:00Z")
+    assert t.startswith("estate receipt 2026-08-29T13:00:00Z")
     assert (
         "flux red 4/6" in t
         and "dark: 2 pods no telemetry, 5 services unlisted, 5 catalogue drift" in t

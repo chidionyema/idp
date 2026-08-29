@@ -19,7 +19,6 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
 
 IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -151,7 +150,6 @@ def build(cluster: dict, coverage: dict, drift: dict, dark: list[str]) -> dict:
     )
     return {
         "at": at,
-        "age_min": age,
         "totals": {
             "nodes": len(cluster.get("nodes") or []),
             "nodes_ready": sum(1 for n in cluster.get("nodes") or [] if n.get("ready")),
@@ -180,7 +178,7 @@ def build(cluster: dict, coverage: dict, drift: dict, dark: list[str]) -> dict:
 def text(view: dict) -> str:
     t = view["totals"]
     lines = [
-        f"estate {view['at'] or '?'} ({view['age_min'] if view['age_min'] is not None else '?'} min old): "
+        f"estate receipt {view['at'] or '?'}: "
         f"nodes {t['nodes_ready']}/{t['nodes']}, flux red {t['flux_red']}/{t['flux']}, "
         f"pods red {t['pods_red']}/{t['pods']}, alerts firing {t['alerts_firing']}",
         "red by reason: "
