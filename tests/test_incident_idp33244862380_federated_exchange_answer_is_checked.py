@@ -24,7 +24,7 @@ def test_the_exchange_answer_is_checked_before_ok():
 def test_the_refusal_prints_the_full_answer_and_the_expected_subject():
     text = SCRIPT.read_text()
     assert 'Full answer:" >&2' in text, "the full refusal body is printed, to stderr so a $(...) capture cannot swallow it"
-    assert "repo:${GITHUB_REPOSITORY:-?}:ref:${GITHUB_REF:-?}" in text
+    assert "The runner presented: $claims" in text, "the claims come from the token itself, never guessed (run 33248046751)"
 
 
 def test_the_token_is_never_printed():
@@ -56,7 +56,7 @@ class _FakeApi(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):  # the GitHub OIDC endpoint
-        self._send(200, {"value": "header.payload.signature"})
+        self._send(200, {"value": "header.eyJpc3MiOiAiaHR0cHM6Ly90b2tlbi5hY3Rpb25zLmdpdGh1YnVzZXJjb250ZW50LmNvbSIsICJzdWIiOiAicmVwbzpjaGlkaW9ueWVtYUAzNzczOTYvaWRwQDEzNDQzNjA2NTQ6cmVmOnJlZnMvaGVhZHMvbWFpbiIsICJhdWQiOiAiYXBpLnRhaWxzY2FsZS5jb20vZmVkaWQtdGVzdCJ9.signature"})
 
     def do_POST(self):  # /api/v2/oauth/token-exchange
         n = int(self.headers.get("Content-Length", 0))
@@ -101,7 +101,8 @@ def test_a_refusal_prints_the_full_body_and_exits_non_zero():
     out = r.stdout + r.stderr
     assert "FAIL    federated" in out and "HTTP 403" in out
     assert "subject claim does not match" in out, "the full refusal body is what the operator reads"
-    assert "repo:chidionyema/idp:ref:refs/heads/main" in out
+    assert "sub=repo:chidionyema@377396/idp@1344360654:ref:refs/heads/main" in out, "the exact sub the runner sent is printed, decoded from the token"
+    assert "iss=https://token.actions.githubusercontent.com" in out
 
 
 def test_a_200_without_a_token_is_a_failure_not_a_green():

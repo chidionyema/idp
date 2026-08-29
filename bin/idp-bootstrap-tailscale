@@ -50,9 +50,12 @@ federated_exchange() { # <federated client id> -> access-token JSON on stdout (k
   jwt=$(curl -sS -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$aud" | jq -r '.value // empty')
   [ -n "$jwt" ] || fail federated "GitHub gave no OIDC token for audience $aud (does the job have id-token: write?)" >&2
   code=$(curl -sS -o "$P/xchg" -w '%{http_code}' -d "client_id=$1" --data-urlencode "jwt=$jwt" "$API/api/v2/oauth/token-exchange") || code=curl-failed
+  # The claims are read from the token itself, never guessed: a repo created after 2026-07-15 sends GitHub's
+  # immutable subject repo:OWNER@ID/REPO@ID:ref:... (run 33248046751 was refused on the guessed form).
+  claims=$(printf '%s' "$jwt" | cut -d. -f2 | python3 -c 'import sys,base64,json; p=sys.stdin.read().strip(); d=json.loads(base64.urlsafe_b64decode(p+"="*(-len(p)%4))); print("iss=%s sub=%s aud=%s"%(d.get("iss"),d.get("sub"),d.get("aud")))' 2>/dev/null || echo "claims unreadable")
   unset jwt
   if [ "$code" != 200 ]; then
-    say FAIL federated "token-exchange answered HTTP $code for identity $1; the identity's subject must equal the runner's claim repo:${GITHUB_REPOSITORY:-?}:ref:${GITHUB_REF:-?} (kb/1581). Full answer:" >&2
+    say FAIL federated "token-exchange answered HTTP $code for identity $1. The runner presented: $claims. On the identity (kb/1581) set Issuer to that iss and Subject to that sub, or a wildcard of it. Full answer:" >&2
     cat "$P/xchg" >&2 2>/dev/null; echo >&2
     exit 1
   fi
