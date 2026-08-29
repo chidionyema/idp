@@ -166,3 +166,48 @@ decisions:
     receipt: "https://github.com/chidionyema/crew/issues/66#issuecomment-5461672647"   # founder, 2026-08-29, on the no-cost road: "ok thats fine, we need to document all this"
     next_review: 2026-09-05
     reviews: []
+
+  - slug: claude-on-the-router
+    requirement: "a workload on the estate uses Claude through one platform layer, with the key born once by code and never on the Mac (crew#568 phase 1, crew#617)"
+    date: 2026-08-29
+    status: proposed
+    candidates:
+      router-lane-direct:
+        note: "claude / claude-fast lanes on the one LiteLLM router, ANTHROPIC_API_KEY in litellm-upstream from SEED_ANTHROPIC_API_KEY"
+        scores:
+          first_time_user:     {score: 4, evidence: "platform/llm/config.yaml"}                                          # name a lane; no key, no install
+          founder_experience:  {score: 4, evidence: "docs/how-to/onboarding/litellm.md"}                                 # one router UI, one spend row per lane
+          feature_parity:      {score: 5, evidence: "https://docs.anthropic.com/en/docs/about-claude/models"}            # the vendor's own models and limits
+          ecosystem_fit:       {score: 4, evidence: "platform/llm/external-secret.yaml"}                                 # same vault entry, same trace path as every lane
+          maturity:            {score: 4, evidence: "https://docs.litellm.ai/docs/providers/anthropic"}                  # first-class provider in LiteLLM
+          security_by_default: {score: 5, evidence: "platform/vendors/consoles.yaml"}                                    # R52: key born by bin/idp-bootstrap-vendors, never pasted
+          portability:         {score: 4, evidence: "docs/decisions/0011-claude-is-a-lane-on-the-router-not-a-key-on-the-mac.md"}  # vendor named on one line
+          operability:         {score: 4, evidence: "platform/llm/config.yaml"}                                          # fallback chain like every other lane
+          cost:                {score: 3, evidence: "https://www.anthropic.com/pricing"}                                 # list price, no middleman fee
+      claude-code-subscription:
+        note: "the founder's Claude Code subscription on the Mac as the estate's Claude"
+        scores:
+          first_time_user:     {score: 1, evidence: "https://docs.anthropic.com/en/docs/claude-code/overview"}           # a person signs in on a machine; a pod cannot
+          founder_experience:  {score: 3, evidence: "https://docs.anthropic.com/en/docs/claude-code/overview"}           # good for him at the keyboard, nothing else
+          feature_parity:      {score: 2, evidence: "https://docs.anthropic.com/en/docs/claude-code/overview"}           # no API surface for a workload
+          ecosystem_fit:       {score: 1, evidence: "docs/reference/requirements/founder-requirements-2026-08-24.md"}    # Mac-bound; infra is never Mac-bound (2026-08-25)
+          maturity:            {score: 4, evidence: "https://docs.anthropic.com/en/docs/claude-code/overview"}           # mature as a tool, not as a platform layer
+          security_by_default: {score: 2, evidence: "docs/reference/policy/credential-lifecycle.md"}                     # a personal login, not a rotatable estate credential
+          portability:         {score: 1, evidence: "docs/decisions/0011-claude-is-a-lane-on-the-router-not-a-key-on-the-mac.md"}  # one vendor, one machine
+          operability:         {score: 1, evidence: "platform/llm/config.yaml"}                                          # no lane, no trace, no fallback
+          cost:                {score: 4, evidence: "https://www.anthropic.com/pricing"}                                 # flat subscription already paid
+      openrouter-lane:
+        note: "Claude via the existing openrouter lane and OPENROUTER_API_KEY"
+        scores:
+          first_time_user:     {score: 4, evidence: "platform/llm/config.yaml"}                                          # a lane name, like the direct road
+          founder_experience:  {score: 2, evidence: "platform/llm/config.yaml"}                                          # crew#506 CP1: account dry since 2026-08-27, lanes in no chain
+          feature_parity:      {score: 3, evidence: "https://openrouter.ai/docs"}                                        # the models, behind a middleman's limits
+          ecosystem_fit:       {score: 3, evidence: "platform/llm/external-secret.yaml"}                                 # key already in litellm-upstream
+          maturity:            {score: 3, evidence: "https://openrouter.ai/docs"}                                        # a broker, one more surface to be down
+          security_by_default: {score: 4, evidence: "platform/vendors/consoles.yaml"}                                    # same R52 birth
+          portability:         {score: 4, evidence: "https://openrouter.ai/docs"}                                        # many vendors behind one key
+          operability:         {score: 2, evidence: "platform/llm/config.yaml"}                                          # 402 on every turn while unfunded
+          cost:                {score: 2, evidence: "https://openrouter.ai/docs/pricing"}                                # list price plus the broker's fee and a prepaid balance
+    decision: router-lane-direct   # 420 vs openrouter-lane 315 vs claude-code-subscription 215 (cmd: bin/matrix-gate); outside tie_band
+    next_review: 2026-09-05
+    reviews: []

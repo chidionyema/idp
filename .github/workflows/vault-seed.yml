@@ -103,7 +103,7 @@ jobs:
             # and holds no vendor key (crew#568, LAW 34). Minted here; delivered through the estate's
             # sops vault: sops encrypts to the age recipient estate-secrets/.sops.yaml names (the public
             # half), so this runner decrypts nothing, and the Mac reads it with scripts/secret-load.
-            bin/idp-router-key laptop minimax,minimax_m27,deepseek,openrouter,minimax-or,deepseek-or,gemini-or,groq,groq-fast,gemini,vision
+            bin/idp-router-key laptop minimax,minimax_m27,deepseek,openrouter,minimax-or,deepseek-or,gemini-or,groq,groq-fast,gemini,claude,claude-fast,vision
             tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
             git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
             bin/idp-cloud secret get laptop | jq -r .key | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LITELLM_LAPTOP_KEY LITELLM_API_KEY
