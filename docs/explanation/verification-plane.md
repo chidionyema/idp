@@ -40,6 +40,18 @@ control. No screen layout is graded.
 - The signing key is `verdict-hmac-key` in the vault, minted by `platform/oci/identity/main.tf`
   on the next `oke-check` apply. Until it exists the prover prints UNSIGNED and exits 2.
 
+## CP6: the freshness gate
+
+`verify/verdict-fresh` is a required check on main. On a pull request it runs
+`bin/idp-verdict-fresh langfuse --changed <files>`: when no changed file is on
+`platform/observability/langfuse*` it passes and says so; otherwise it reads the newest completed
+`verdict-langfuse.yml` run on main, downloads its `verdict-langfuse` artifact and grades the
+record with `probes.verdict.grade` (no key on this runner: the signature is not recomputed, but an
+unsigned, expired, FAIL or digest-less record is refused). Trust rests on GitHub's attestation of
+the run: only that workflow holds the key and only it can create the `verify/langfuse` check-run.
+The gate cannot be satisfied by an agent: there is no path to a fresh PASS but a Langfuse that
+answers L1, L2 and L3 now. How-to: `docs/how-to/merge-a-langfuse-change.md`.
+
 ## Not done yet
 
 CP2 scopes the key to the runner identity only. CP3 stores verdicts in Postgres, append-only.
