@@ -457,7 +457,8 @@ with sync_playwright() as p:
         if lf_host == DOMAIN_HOST or lf_pw:
             fail("second-hop", f"langfuse asked for credentials again at {lf_host}{lf_path}: the one login is two")
         if lf_path.startswith("/auth/"):
-            fail("second-hop", f"langfuse is still on its sign-in page at {lf_path} after the SSO click")
+            q = urlparse(page.url).query
+            fail("second-hop", f"langfuse is still on its sign-in page at {lf_path}?{q} after the SSO click; page says: {page.locator('body').inner_text()[:400]!r}")
     if lf_host != f"langfuse.{ZONE}":
         fail("second-hop", f"langfuse landed on {lf_host}, expected langfuse.{ZONE}")
 
