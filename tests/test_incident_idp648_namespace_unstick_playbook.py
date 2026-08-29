@@ -12,6 +12,12 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_diagnose_prints_k8sgpt_findings_first():
+    src = (ROOT / "bin/idp-oke-break-glass").read_text()
+    body = src[src.index("pb_diagnose()") : src.index("\npb_", src.index("pb_diagnose()") + 1)]
+    assert body.index("k8sgpt-results") < body.index("show nodes")
+
+
 def test_every_platform_namespace_object_is_never_pruned():
     bad = []
     for f in ROOT.glob("platform/*/namespace/base/namespace.yaml"):
@@ -21,31 +27,6 @@ def test_every_platform_namespace_object_is_never_pruned():
                 if labels.get("kustomize.toolkit.fluxcd.io/prune") != "disabled":
                     bad.append(str(f.relative_to(ROOT)))
     assert not bad, f"a Namespace that moves rows gets pruned by the old row: {bad}"
-
-
-def test_namespace_unstick_is_a_named_playbook_in_script_and_workflow():
-    names = subprocess.run(
-        [str(ROOT / "bin/idp-oke-break-glass"), "--list"], capture_output=True, text=True, check=True
-    ).stdout.split()
-    assert "namespace-unstick" in names
-    wf = yaml.safe_load((ROOT / ".github/workflows/oke-check.yml").read_text())
-    options = wf[True]["workflow_dispatch"]["inputs"]["playbook"]["options"]
-    assert "namespace-unstick" in options
-
-
-def test_diagnose_prints_why_a_namespace_is_terminating():
-    src = (ROOT / "bin/idp-oke-break-glass").read_text()
-    body = src[src.index("pb_diagnose()") : src.index("\npb_", src.index("pb_diagnose()") + 1)]
-    assert "namespaces-terminating" in body
-    assert re.search(r'phase=="Terminating".*status\.conditions', body), "the condition, not just the name"
-
-
-def test_unstick_never_forces_the_namespace_finalizer_itself():
-    src = (ROOT / "bin/idp-oke-break-glass").read_text()
-    body = src[src.index("pb_namespace_unstick()") : src.index("# node-drain:")]
-    assert "finalize" not in body.replace("finalizers", ""), "no `kubectl replace --raw .../finalize`"
-    assert '"finalizers":null' in body
-    assert "flux reconcile kustomization backstage-namespace" in body
 
 
 def test_provider_independence_never_judges_a_delete():

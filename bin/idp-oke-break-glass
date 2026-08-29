@@ -174,7 +174,6 @@ pb_diagnose() {
   show cni-chain $K get ds,deploy -n kube-system -l app.kubernetes.io/part-of=cilium
   show gitrepositories $K get gitrepositories -A
   show kustomizations $K get kustomizations -A
-  show namespaces-terminating $K get ns -o jsonpath='{range .items[?(@.status.phase=="Terminating")]}{.metadata.name}{"\n"}{range .status.conditions[?(@.status=="True")]}{"  "}{.type}: {.message}{"\n"}{end}{end}'
   # Run 33226089358 (idp#648, 2026-08-29): backstage-namespace said "timeout waiting for
   # Namespace/backstage status: Terminating" for 16 min and nothing said why. A Terminating
   # namespace carries the reason on its own conditions (NamespaceContentRemaining names the
@@ -533,33 +532,6 @@ pb_helm_retry() {
   show kustomizations $K get kustomizations -A
 }
 
-# namespace-unstick: idp#648 moved Namespace/backstage from the prune:true `backstage` row to its
-# own `backstage-namespace` row; Flux garbage-collected the object it no longer rendered and the
-# namespace sat Terminating (catalogue 404 from 01:05Z, run 33226089358). A namespace stays
-# Terminating for one of two reasons and both are on its conditions: an object in it holds a
-# finalizer whose controller is gone, or an aggregated APIService is down so discovery cannot
-# finish. This playbook prints the conditions, then clears the finalizers on every remaining
-# namespaced object (the standard operator repair; the object is being deleted with its
-# namespace either way) and lets the namespace row re-create it. It never touches the
-# namespace's own spec.finalizers: that is the API server's, and forcing it orphans objects.
-pb_namespace_unstick() {
-  local stuck
-  stuck=$($K get ns -o jsonpath='{range .items[?(@.status.phase=="Terminating")]}{.metadata.name}{"\n"}{end}' 2>/dev/null)
-  echo "--- namespaces-terminating"; printf '%s\n' "${stuck:-none}"
-  local ns kind name
-  while read -r ns; do
-    [ -n "$ns" ] || continue
-    show "conditions-$ns" $K get ns "$ns" -o jsonpath='{range .status.conditions[?(@.status=="True")]}{.type}: {.message}{"\n"}{end}'
-    while read -r kind name; do
-      [ -n "$name" ] || continue
-      step "clear-finalizers-$ns-$kind-$name" $K patch "$kind" "$name" -n "$ns" --type=merge -p '{"metadata":{"finalizers":null}}'
-    done <<<"$($K api-resources --verbs=list --namespaced -o name 2>/dev/null | xargs -n1 -I{} sh -c "$K get {} -n $ns -o jsonpath='{range .items[?(@.metadata.finalizers)]}{} {.metadata.name}{\"\\n\"}{end}' 2>/dev/null")"
-  done <<<"$stuck"
-  show namespaces $K get ns -o custom-columns=NAME:.metadata.name,STATUS:.status.phase --no-headers
-  step backstage-namespace flux reconcile kustomization backstage-namespace -n flux-system --timeout=5m
-  show kustomizations $K get kustomizations -A
-}
-
 # k8sgpt-analyze: print every K8sGPT finding (cause + fix in plain English) and force a fresh
 # scan by restarting the analyzer so the results are minutes old, not hours.
 pb_k8sgpt_analyze() {
@@ -786,7 +758,6 @@ case "${1:-}" in
   cilium-unchain) pb_cilium_unchain ;;
   cilium-replace) pb_cilium_replace ;;
   helm-retry) pb_helm_retry ;;
-  namespace-unstick) pb_namespace_unstick ;;
   k8sgpt-analyze) pb_k8sgpt_analyze ;;
   catalogue-roll) pb_catalogue_roll ;;
   node-drain) pb_node_drain ;;
