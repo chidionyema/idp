@@ -16,11 +16,12 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 def tool():
-    spec = importlib.util.spec_from_file_location(
-        "verify_claims", ROOT / "bin/idp-verify-claims"
+    loader = importlib.machinery.SourceFileLoader(
+        "verify_claims", str(ROOT / "bin/idp-verify-claims")
     )
+    spec = importlib.util.spec_from_loader("verify_claims", loader)
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    loader.exec_module(mod)
     return mod
 
 

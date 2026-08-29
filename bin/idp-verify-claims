@@ -58,7 +58,7 @@ ALLOWED_HEADS = (
     "ls ",
 )
 FORBIDDEN = re.compile(
-    r"\b(apply|delete|patch|push|merge|dispatch|create|edit|rollout|scale|exec|cp|rm|mv|sed -i|tee)\b"
+    r"\b(apply|delete|patch|push|merge|dispatch|create|edit|rollout|scale|exec|cp|rm|mv|sed -i|tee|workflow run|reconcile|suspend|resume)\b"
 )
 TAIL_LINES = 40
 TIMEOUT = 300
