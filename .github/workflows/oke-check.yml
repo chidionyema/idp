@@ -218,6 +218,19 @@ jobs:
           [ -n "$fed" ] || [ -n "$TAILSCALE_SEED_CLIENT_ID" ] || { echo "BLIND   tailscale-operator   no federated identity in estate-config (TAILSCALE_FEDERATED_CLIENT_ID) and no SEED_TAILSCALE_CLIENT_ID repository secret; one of them is the one manual step, kb/1581 or kb/1215"; exit 0; }
           bin/idp-bootstrap-tailscale
 
+      # R52 (founder 2026-08-29): the Cloudflare root is one token set once as a repository secret; the
+      # DNS token and the R2 credential are minted from it here, never in a browser. No root = BLIND.
+      - name: bin/idp-bootstrap-cloudflare (crew#66, R52)
+        if: ${{ always() && inputs.mode == 'apply' }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          CLOUDFLARE_ROOT_TOKEN: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+        run: |
+          [ -n "$CLOUDFLARE_ROOT_TOKEN" ] || { echo "BLIND   cloudflare-api-token   no SEED_CLOUDFLARE_ROOT_TOKEN repository secret; one token with 'User API Tokens: Edit', set once, is the root (R52)"; exit 0; }
+          bin/idp-bootstrap-cloudflare
+
       # crew#539 CP4: the Cluster Autoscaler's node pool id, found by name after the apply, so the
       # row platform/oci/autoscaler never carries an OCID. Exit 2 is BLIND (no ACTIVE pool yet).
       - name: bin/idp-autoscaler-seed (crew#539 CP4)
