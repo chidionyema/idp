@@ -40,7 +40,7 @@ for p in 8443 10000; do
   # Captured, not piped: this script runs under `set -o pipefail`, so a failing
   # `tailscale serve status` would decide the branch instead of the match.
   serve_status=$(tailscale serve status 2>/dev/null || true)
-  if printf '%s' "$serve_status" | grep -q ":$p"; then
+  if printf '%s' "$serve_status" | grep ":$p" >/dev/null; then
     tailscale serve --http="$p" off >/dev/null 2>&1 \
       && echo "  $p: unpublished" \
       || echo "  $p: could not unpublish -- check 'tailscale serve status'"

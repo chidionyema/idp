@@ -180,7 +180,7 @@ judge() {  # judge <label-kind> <label> <resource-file>: one verdict block; exit
   mapfile -t exc < <(_exc)
   out=$(kyverno apply "$S/policies.yaml" --resource "$res" "${exc[@]}" 2>&1 || true)
   summary=$(printf '%s\n' "$out" | grep -E '^pass:' | tail -1)
-  if printf '%s\n' "$out" | grep -qE '^policy .* failed'; then
+  if printf '%s\n' "$out" | grep -E '^policy .* failed' >/dev/null; then
     echo "FAIL  $kind $label: $summary"
     printf '%s\n' "$out" | grep -E '^policy .* failed' | sed 's/^/      /'; return 1
   else echo "ok    $kind $label: $summary"; fi

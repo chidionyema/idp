@@ -34,7 +34,7 @@ MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
 
 # 1. Every script parses and passes shellcheck at warning level.
 for f in "$IDP"/bin/*; do
-  head -1 "$f" | grep -q bash || continue
+  head -1 "$f" | grep bash >/dev/null || continue
   bash -n "$f" && shellcheck -S warning "$f" >/dev/null \
     && say "ok    shell    $(basename "$f")" || { say "FAIL  shell    $(basename "$f")"; fail=1; }
 done
@@ -313,7 +313,7 @@ printf '\n# historical: 127.0.0.1:%s was the old thing, deleted 2026-08-25\n' 99
 # runs under `set -o pipefail`, so `port-gate | grep -q` reports port-gate's
 # deliberate exit 1 and the leg fails even when the message is exactly right.
 probe_out=$(REG="$probe_reg" COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" 2>&1)
-if printf '%s' "$probe_out" | grep -q 'placement-audit.*probes 127.0.0.1:8000' \
+if printf '%s' "$probe_out" | grep 'placement-audit.*probes 127.0.0.1:8000' >/dev/null \
    && ! REG="$probe_reg" COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
    && COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
    && BIN_DIR="$probe_cmt" COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" >/dev/null 2>&1; then
@@ -373,7 +373,7 @@ poison="$tmp/poisonhome"; mkdir -p "$poison/.estate/state"
 printf '{"rows":[{"kind":"listener","port":7107,"bind":"*","process":"node","owner":"poison"}]}\n' \
   > "$poison/.estate/state/inventory.json"
 poison_out=$(HOME="$poison" python3 "$IDP/bin/port-gate" --live 2>&1)   # captured: pipefail would report port-gate's status, not grep's
-if printf '%s' "$poison_out" | grep -q 'poison'; then
+if printf '%s' "$poison_out" | grep 'poison' >/dev/null; then
   say "FAIL  portlive port-gate --live is reading ~/.estate/state/inventory.json, not the machine"; fail=1
 else say "ok    portlive port-gate --live reads the machine, not a saved inventory"; fi
 # Reconcile (crew#186 CP3): a rogue container is a finding, the clean fixture is not.
@@ -577,7 +577,7 @@ else
   # non-zero on purpose here, which is the incident guard 1c is about.
   bdd_bad=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/fixtures/bdd/unbound" -q 2>&1)
   bdd_good=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/bdd" -q $XD 2>&1); bdd_good_rc=$?
-  if printf '%s' "$bdd_bad" | grep -q 'StepDefinitionNotFoundError' && [ "$bdd_good_rc" -eq 0 ]; then
+  if printf '%s' "$bdd_bad" | grep 'StepDefinitionNotFoundError' >/dev/null && [ "$bdd_good_rc" -eq 0 ]; then
     say "ok    bdd      $(printf '%s' "$bdd_good" | grep -oE '[0-9]+ passed' | head -1), $(printf '%s' "$bdd_good" | grep -c '^  pending ') feature(s) pending; an unbound step is refused"
     printf '%s' "$bdd_good" | grep '^  pending ' | sed 's/^/      /'
   else
@@ -637,10 +637,10 @@ if command -v kyverno >/dev/null && command -v helm >/dev/null; then
   # dir with no changed file cannot render differently from main, where it was judged.
   kyv_scope="every dir"
   if [ -n "${IDP_CI_BASE:-}" ] && changed=$(cd "$IDP" && git diff --name-only "$IDP_CI_BASE...HEAD" 2>/dev/null); then
-    if printf '%s\n' "$changed" | grep -qE '^(bin/idp-kyverno-render|bin/idp-ci|tests/fixtures/kyverno/|platform/kyverno/|platform/policies/|clusters/)'; then
+    if printf '%s\n' "$changed" | grep -E '^(bin/idp-kyverno-render|bin/idp-ci|tests/fixtures/kyverno/|platform/kyverno/|platform/policies/|clusters/)' >/dev/null; then
       kyv_scope="every dir: the judge, a policy or the cluster wiring changed"
     else
-      scoped=$(for d in $dirs; do printf '%s\n' "$changed" | grep -q "^$d/" && echo "$d"; done)
+      scoped=$(for d in $dirs; do printf '%s\n' "$changed" | grep "^$d/" >/dev/null && echo "$d"; done)
       kyv_scope="$(printf '%s\n' "$scoped" | grep -c .) of $(printf '%s\n' "$dirs" | grep -c .) dirs changed against $IDP_CI_BASE"
       dirs="$scoped"
     fi

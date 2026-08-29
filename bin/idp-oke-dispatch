@@ -19,7 +19,7 @@ REPO_ARGS=(); [ -n "${IDP_REPO:-}" ] && REPO_ARGS=(--repo "$IDP_REPO")
 if [ "$1" = --check ]; then
   INPUTS=(-f mode=check)
 else
-  "$IDP/bin/idp-oke-break-glass" --list | tr ' ' '\n' | grep -qx "$1" \
+  "$IDP/bin/idp-oke-break-glass" --list | tr ' ' '\n' | grep -x "$1" >/dev/null \
     || { echo "exit 64: unknown playbook '$1'; known: $("$IDP/bin/idp-oke-break-glass" --list)"; exit 64; }
   INPUTS=(-f mode=break-glass -f "playbook=$1")
 fi

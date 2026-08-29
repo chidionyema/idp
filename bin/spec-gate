@@ -34,7 +34,7 @@ specs="$(printf '%s\n' "$changed" | grep -E "$spec_re" || true)"
 # the file is prose, not execution: tests/test_cp1_estate_inventory.py named
 # cp1_inventory_tool.feature for a week while no scenario in it ever ran (crew#297).
 tests_list="$(git ls-files | grep -E "$spec_re" | grep -v '\.feature$' || true)"
-bound() { [ -n "$tests_list" ] && printf '%s\n' "$tests_list" | xargs grep -lE -e "scenarios?\(\s*[\"'][^\"']*$(basename "$1")[\"']" -- 2>/dev/null | grep -q .; }
+bound() { [ -n "$tests_list" ] && printf '%s\n' "$tests_list" | xargs grep -lE -e "scenarios?\(\s*[\"'][^\"']*$(basename "$1")[\"']" -- 2>/dev/null | grep . >/dev/null; }
 unbound_changed=""; new_unbound=""
 for f in $(printf '%s\n' "$specs" | grep -E '(^|/)features/.*\.feature$' || true); do
   git cat-file -e "HEAD:$f" 2>/dev/null || continue   # deleted
