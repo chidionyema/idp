@@ -1,0 +1,46 @@
+# Capacity numbers for every workload, one recording rule each, so the portal's Prometheus tab
+# (catalog-gen writes `prometheus.io/rule` from these names) and the capacity gate read the same
+# series and never a hand-typed PromQL expression. Founder, 2026-08-29: "i need all metrics
+# exposed ... numbers for everything we collect" (crew#645 CP5), after 2b250895 cut 19 workloads
+# to 50m with no measurement and Langfuse could not boot for 16 hours
+# (docs/reference/incidents/2026-08-29-langfuse-stalled-rollout.md).
+#   estate:pod_cpu_cores:rate5m       cores a pod is using now (cAdvisor, 5-minute rate)
+#   estate:pod_cpu_peak_cores:30m     the most it used in the last 30 minutes: the floor a request
+#                                     must clear; the boot floor proper comes from the VPA
+#                                     recommender (crew#645 CP2) and lands beside this row
+#   estate:pod_cpu_request_cores      what git asked for (kube-state-metrics)
+#   estate:pod_memory_bytes           working set now
+#   estate:pod_memory_request_bytes   what git asked for
+#   estate:pod_restarts_total         container restarts since the pod was created
+#   RequestBelowMeasuredPeak          the request is under what the pod measurably needed for
+#                                     30 minutes: the class of 2b250895, as an alert, not a comment
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: capacity
+  namespace: monitoring
+spec:
+  groups:
+    - name: estate.capacity
+      interval: 1m
+      rules:
+        - record: estate:pod_cpu_cores:rate5m
+          expr: sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{container!="", container!="POD"}[5m]))
+        - record: estate:pod_cpu_peak_cores:30m
+          expr: max_over_time(estate:pod_cpu_cores:rate5m[30m])
+        - record: estate:pod_cpu_request_cores
+          expr: sum by (namespace, pod) (kube_pod_container_resource_requests{resource="cpu"})
+        - record: estate:pod_memory_bytes
+          expr: sum by (namespace, pod) (container_memory_working_set_bytes{container!="", container!="POD"})
+        - record: estate:pod_memory_request_bytes
+          expr: sum by (namespace, pod) (kube_pod_container_resource_requests{resource="memory"})
+        - record: estate:pod_restarts_total
+          expr: sum by (namespace, pod) (kube_pod_container_status_restarts_total)
+        - alert: RequestBelowMeasuredPeak
+          expr: estate:pod_cpu_peak_cores:30m > estate:pod_cpu_request_cores
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.pod }} needs more CPU than git requests"
+            description: "The pod's peak CPU over the last 30 minutes ({{ $value | printf \"%.2f\" }} cores) is above its request. A request set below the measured need is how Langfuse could not boot for 16 hours on 2026-08-29. Raise the request from the number on the entity's Metrics tab in Backstage, with the capacity-approved label (platform/edge/capacity-policy.yaml)."

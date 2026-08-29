@@ -62,7 +62,7 @@ def test_flux_row_substitutes_the_zone_and_waits_on_both_releases():
     assert rules["spec"]["path"] == "./platform/monitoring/rules" and rules["spec"]["dependsOn"] == [{"name": "monitoring"}]
     assert {"kind": "ConfigMap", "name": "estate-config"} in rules["spec"]["postBuild"]["substituteFrom"]
     kz2 = yaml.safe_load((MON / "rules/kustomization.yaml").read_text())
-    assert set(kz2["resources"]) == {"estate.yaml", "founder-surfaces-probe.yaml", "founder-mac-screen-sharing-probe.yaml", "agentgateway-servicemonitor.yaml", "k8sgpt.yaml"}  # K8sGPT findings PrometheusRule, idp#696
+    assert set(kz2["resources"]) == {"estate.yaml", "founder-surfaces-probe.yaml", "founder-mac-screen-sharing-probe.yaml", "agentgateway-servicemonitor.yaml", "k8sgpt.yaml", "capacity.yaml"}  # capacity.yaml: crew#645 CP5; K8sGPT findings PrometheusRule, idp#696
     ns = one("platform/monitoring/namespace.yaml", "Namespace")
     assert ns["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "restricted"
 
