@@ -27,6 +27,9 @@ spec:
     # against a missing kind and reads as a root portability break (crew#488 CP5).
     - name: external-secrets
     - name: secret-store
+    # Both StatefulSets name platform-batch. A pod that names a PriorityClass the cluster has
+    # not created yet is refused by the API server and never schedules (crew#488 rung 4).
+    - name: priority-classes
   wait: true
   timeout: 5m
   healthChecks:
@@ -68,5 +71,8 @@ spec:
     name: flux-system
   path: ./platform/event-bus
   prune: true
+  dependsOn:
+    # The NATS pod names platform-batch; that class is created by this row.
+    - name: priority-classes
   wait: true
   timeout: 10m
