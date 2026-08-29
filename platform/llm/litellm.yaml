@@ -92,7 +92,7 @@ spec:
           resources:
             # OOMKilled at 1Gi within 19s of start on the -database image (Prisma engine plus the
             # proxy), 10 restarts on 2026-08-26 23:2xZ; node has 20Gi allocatable.
-            requests: { cpu: 100m, memory: 512Mi }
+            requests: { cpu: 50m, memory: 512Mi }
             limits: { cpu: 1000m, memory: 2Gi }
           securityContext:
             allowPrivilegeEscalation: false

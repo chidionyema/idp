@@ -39,25 +39,25 @@ langfuse:
       - name: NODE_OPTIONS
         value: --max-old-space-size=1536
     resources:
-      requests: { cpu: 500m, memory: 2Gi }   # crew#539 CP9: == limits, Guaranteed QoS
-      limits: { cpu: 500m, memory: 2Gi }
+      requests: { cpu: 50m, memory: 2Gi }   # crew#584: radio-room set, Guaranteed QoS required (require-priority-class)
+      limits: { cpu: 50m, memory: 2Gi }
   worker:
     replicas: 1
     resources:
-      requests: { cpu: 500m, memory: 1Gi }   # crew#539 CP9: == limits, Guaranteed QoS
-      limits: { cpu: 500m, memory: 1Gi }
+      requests: { cpu: 50m, memory: 1Gi }   # crew#584: radio-room set, Guaranteed QoS required (require-priority-class)
+      limits: { cpu: 50m, memory: 1Gi }
 postgresql:
   deploy: true
   storage:
     requestedSize: 5Gi
     className: oci-bv
   resources:
-    requests: { cpu: 250m, memory: 512Mi }   # crew#539 CP9: == limits, Guaranteed QoS
-    limits: { cpu: 250m, memory: 512Mi }
+    requests: { cpu: 50m, memory: 512Mi }   # crew#584 zealot rule 1: micro CPU request, burst limit; the memory floor stays (incident-set)
+    limits: { cpu: 1000m, memory: 512Mi }
 redis:
   deploy: true
   resources:
-    requests: { cpu: 100m, memory: 256Mi }   # crew#539 CP9: == limits, Guaranteed QoS
+    requests: { cpu: 50m, memory: 256Mi }   # crew#539 CP9: == limits, Guaranteed QoS
     limits: { cpu: 100m, memory: 256Mi }
 clickhouse:
   # SigNoz already runs the estate's ClickHouse (values.yaml, Altinity operator). Langfuse 2.x would

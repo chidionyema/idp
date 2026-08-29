@@ -103,9 +103,11 @@ spec:
     # both numbers together if that ever stops being true -- raising only the limit silently
     # demotes it back to Burstable, and require-priority-class refuses that at admission.
     resources:
+      # crew#584: radio-room set, Guaranteed QoS required (require-priority-class) -- request cut
+      # to 50m, limit held equal, never widened alone (see note above).
       requests:
-        cpu: 300m
+        cpu: 50m
         memory: 256Mi
       limits:
-        cpu: 300m
+        cpu: 50m
         memory: 256Mi
