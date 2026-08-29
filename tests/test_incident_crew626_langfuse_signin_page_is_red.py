@@ -12,4 +12,6 @@ DRILL = Path(__file__).resolve().parents[1] / "bin" / "idp-login-drill"
 def test_a_langfuse_auth_page_fails_the_second_hop():
     src = DRILL.read_text()
     assert 'lf_path.startswith("/auth/")' in src
-    assert "second login" in src
+    assert "second login" in src or "credentials again" in src
+    # CP15: the drill takes the one SSO click and grades the landing, never the page layout
+    assert 'get_by_role("button"' in src
