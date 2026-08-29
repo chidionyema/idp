@@ -337,3 +337,22 @@ resource "oci_identity_domains_grant" "langfuse_drill" {
 output "langfuse_client_id" {
   value = oci_identity_domains_app.langfuse.name
 }
+
+# crew#631 CP1: the Verification Plane's signing key. Minted here by the machine identity, read
+# by bin/idp-prove on the runner to sign each verdict and by the control plane to check it. No
+# agent session holds it; a verdict that does not carry its HMAC is treated as absent.
+resource "random_password" "verdict_hmac_key" {
+  length  = 48
+  special = false
+}
+
+resource "oci_vault_secret" "verdict_hmac_key" {
+  compartment_id = var.compartment_ocid
+  vault_id       = var.vault_ocid
+  key_id         = var.key_ocid
+  secret_name    = "verdict-hmac-key"
+  secret_content {
+    content_type = "BASE64"
+    content      = base64encode(random_password.verdict_hmac_key.result)
+  }
+}
