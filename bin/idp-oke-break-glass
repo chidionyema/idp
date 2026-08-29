@@ -279,7 +279,7 @@ pb_diagnose() {
   show_redacted k8s-infra-deployment-log telemetry_log observability-agent otel-deployment
   show collector-config collector_config_dump
   show_redacted clickhouse-counts-15m clickhouse_counts_15m
-  show otlp-endpoint-declared $K get helmrelease k8s-infra -n observability -o jsonpath='{"k8s-infra otelCollectorEndpoint: "}{.spec.values.otelCollectorEndpoint}{"\n"}'
+  show otlp-endpoint-declared $K get helmrelease k8s-infra -n observability-agent -o jsonpath='{"k8s-infra otelCollectorEndpoint: "}{.spec.values.otelCollectorEndpoint}{"\n"}'
   show otlp-endpoint-workloads otlp_endpoints_by_workload
   $K get nodes >/dev/null || FAILED="$FAILED nodes"
 }
