@@ -126,9 +126,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bin/idp-no-toil "${{ github.event.pull_request.number }}"
 
-  bdd:
+  bdd-suites:
     needs: fast-gate
     runs-on: ubuntu-latest
+    # crew#584, 2026-08-28: run 33203670180 measured this job at 2m13s, of which the acceptance
+    # suite was 54 s and the root pytest suite 57 s -- back to back on one runner. GitHub's own
+    # matrix runs them as two jobs side by side, so the job's wall-clock is the slower suite plus
+    # setup, not the sum. No script: the split is the platform's matrix, the steps are unchanged.
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [acceptance, tests]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # crew#539, 2026-08-28: bin/idp-kyverno-render judges renders against this estate's
@@ -162,6 +170,7 @@ jobs:
           echo "$HOME/.temporalio/bin" >> "$GITHUB_PATH"
           "$HOME/.temporalio/bin/temporal" --version
       - name: acceptance suite (strict on PRs to main)
+        if: matrix.suite == 'acceptance'
         env:
           SB_BDD_STRICT: ${{ github.base_ref == 'main' && '1' || '0' }}
           # test_gate_langfuse_render and test_gate_llm_admission run bin/idp-kyverno-render for
@@ -173,11 +182,32 @@ jobs:
           echo "base_ref=${{ github.base_ref }} SB_BDD_STRICT=$SB_BDD_STRICT"
           cd sovereign && python -m pytest tests/bdd -q -p no:cacheprovider -n auto --durations=10   # crew#584: four cores; the ten slowest are printed
       - name: ruff (crew#325 step 3; the rule set is pyproject.toml)
+        if: matrix.suite == 'tests'
         run: pip install -q ruff==0.15.18 && ruff check .
       - name: pytest tests (crew#325 step 2, every file under tests/ in one run)
+        if: matrix.suite == 'tests'
         env:
           IDP_KYVERNO_POLICIES: ${{ runner.temp }}/kyverno-policies/deploy/k8s/policies
         run: python -m pytest tests -q -p no:cacheprovider -n auto --durations=10   # crew#584: four cores; the ten slowest are printed
+
+  # The merge rule on main (repository ruleset, required_status_checks) waits for a check named
+  # exactly `bdd`. GitHub publishes a matrix job's checks as `bdd (acceptance)` and `bdd (tests)`,
+  # so splitting the suites renamed the one check the rule waits for out of existence: idp#641 sat
+  # MERGEABLE / BLOCKED for 12 hours with both legs green and nothing failing, because the rule was
+  # waiting on a name no run would ever report again.
+  #
+  # This job keeps that name stable. It checks out nothing and installs nothing, so it costs one
+  # runner-second; the matrix underneath can change shape -- a third suite, a rename -- without
+  # anyone touching the repository ruleset, which is the coupling that caused the stall.
+  bdd:
+    needs: bdd-suites
+    if: always()   # a red leg must report a red `bdd`, not a skipped one the rule would wait on forever
+    runs-on: ubuntu-latest
+    steps:
+      - name: every bdd suite passed
+        run: |
+          echo "bdd-suites: ${{ needs.bdd-suites.result }}"
+          test "${{ needs.bdd-suites.result }}" = success
 
   # crew#584 PR B: the "Enable platform feature" Backstage template opens a pull request that
   # adds one row to platform/features/requests.yaml; it never runs `bin/idp-features enable`

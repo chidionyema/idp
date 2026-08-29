@@ -74,7 +74,7 @@ def test_offline_gate_sets_the_skip_and_the_bdd_job_prints_durations():
     wf = yaml.safe_load(WF.read_text())
     step = next(s for s in wf["jobs"]["offline-gate"]["steps"] if s.get("run") == "bin/idp-ci")
     assert step["env"]["IDP_CI_SKIP_PYTEST"] == "1", step["env"]
-    runs = [s["run"] for s in wf["jobs"]["bdd"]["steps"] if "pytest" in s.get("run", "")]
+    runs = [s["run"] for s in wf["jobs"]["bdd-suites"]["steps"] if "pytest" in s.get("run", "")]
     assert len(runs) >= 2 and all("--durations=10" in r for r in runs), runs
 
 
