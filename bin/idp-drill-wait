@@ -1,44 +1,70 @@
 #!/usr/bin/env bash
-# crew#584 CP-A: wait for the portability drill only as long as it takes to reach the floor.
+# crew#584 CP-A: do not burn a fixed 600 s waiting for layers that are designed to stay red.
 #
-# Before this, .github/workflows/portability-drill.yml ran
+# Before CP-A, .github/workflows/portability-drill.yml ran
 #   kubectl wait kustomization --all -A --for=condition=Ready --timeout=600s || true
-# which burns the full 600 s on every run, because the OCI-only layers (vault, DNS, receipts
-# bucket) are designed to stay red on a cluster with no OCI identity. Measured 2026-08-29:
-# 11 min x9 of the last 10 drill runs, 16 min x1. Every PR that touches platform/ paid it.
+# which always spent the whole timeout, because the OCI-only layers (vault, DNS, receipts bucket)
+# never come Ready on a cluster with no OCI identity. Measured 2026-08-29: 11 min x9 of the last
+# 10 drill runs, 16 min x1. Every PR that touches platform/ paid it.
 #
-# This polls bin/idp-portability-drill against drills/portability-floor.txt every
-# DRILL_WAIT_STEP seconds and exits 0 the moment the floor is met. It exits 0 on the
-# DRILL_WAIT_MAX ceiling too: the grade step after it is the verdict, this is only the wait.
+# crew#488, 2026-08-29: what CP-A exited ON was wrong, and it took two attempts to see it. The
+# first version returned the moment `bin/idp-portability-drill` said ok -- that is, the moment
+# `ready` reached drills/portability-floor.txt -- so the grade step a fraction of a second later
+# read a cluster that had been stopped AT the floor. The count was no longer measuring the cluster;
+# it was echoing the file it was about to be graded against, and the floor's own ratchet ("only
+# goes up: raise it in the PR carrying the run URL that beat it") could never fire. #682 added a
+# 60 s DRILL_WAIT_GRACE on top. That narrowed the coupling without cutting it. Measured across the
+# per-job lines of five runs (33241407747, 33240990075, 33240774821, 33239862769, 33235017912):
 #
-# crew#488, 2026-08-29: it then settles DRILL_WAIT_GRACE seconds more. Exiting on the first poll
-# at the floor broke the floor's own ratchet -- drills/portability-floor.txt says "Only goes up:
-# raise it in the PR that carries the green run URL that beat it", and a run that stops the
-# instant it reaches the floor can never beat it. Measured on one tree: 11/41 with the old 600 s
-# settle (run 33220112386), then exactly 9/42 twice with the floor at 9 (run 33225061822, jobs
-# 99026942901 and 99026943071). The count had stopped measuring the cluster and started echoing
-# the floor file. 60 s on a wait that costs ~200 s, against the 600 s this replaced.
-# DRILL_WAIT_GRACE=0 switches it off for a run that only needs to know the floor held.
+#   floor 9  -> graded 10, 11, 11, 10, 9   floor 10 -> graded 11, 11, 10
+#
+# The graded number tracked the floor, and the two jobs of one run disagreed by one because each
+# stopped at a different point on the same curve -- in 33241407747 the hydrate job's count even
+# went 11 at the wait and 10 at the grade. A number that moves when you change the file it is
+# compared against is not a measurement, and raising the floor off it (idp#736, 9 -> 10) was
+# reading that noise as a cluster improvement.
+#
+# So the floor is out of the wait entirely: this script never reads it and never branches on it.
+# It polls the grader and leaves when the verdict has stopped changing -- DRILL_WAIT_STABLE polls
+# with identical output means Flux has finished moving, whatever number it finished on. The whole
+# verdict line is the key, not just `ready`: it carries cascaded, pending and the per-root cascade
+# tally, so a tree still reconciling underneath a flat ready count is still seen to be moving.
+# A verdict with no `ready N/M` in it (an empty cluster, a receipt that cannot be read) never
+# counts as settled, so a slow start polls on rather than settling at zero.
+#
+# What this costs and what it buys: the ceiling is unchanged at DRILL_WAIT_MAX, a settled run pays
+# DRILL_WAIT_STABLE x DRILL_WAIT_STEP beyond the settle point (40 s at the defaults), and a run
+# whose cluster is stably BELOW the floor now leaves as soon as it is stably below it instead of
+# sitting out the full ceiling -- CP-A's saving applies to red runs too, which it did not before.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 max="${DRILL_WAIT_MAX:-600}"
 step="${DRILL_WAIT_STEP:-10}"
-grace="${DRILL_WAIT_GRACE:-60}"
+stable_for="${DRILL_WAIT_STABLE:-4}"
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 t0=$(date +%s)
+last=""
+same=0
 while :; do
   kubectl get kustomizations -A -o json > "$tmp" 2>/dev/null || echo '{"items":[]}' > "$tmp"
-  if verdict="$("$ROOT/bin/idp-portability-drill" "$tmp" 2>/dev/null | tail -1)" && [[ "$verdict" == ok* ]]; then
-    echo "floor met after $(( $(date +%s) - t0 )) s: $verdict"
-    if (( grace > 0 )); then
-      echo "settling ${grace} s more so this run can still beat the floor (crew#488)"
-      sleep "$grace"
+  verdict="$("$ROOT/bin/idp-portability-drill" "$tmp" 2>/dev/null | tail -1)" || true
+  # Only a verdict that actually counted layers can be stable. "no Kustomization was applied" and
+  # BLIND carry no `ready N/M`, and a cluster Flux has not reached yet must not settle at zero.
+  if [[ "$verdict" == *"ready "*"/"* ]]; then
+    if [[ "$verdict" == "$last" ]]; then
+      same=$(( same + 1 ))
+    else
+      same=1
+      last="$verdict"
     fi
-    exit 0
+    if (( same >= stable_for )); then
+      echo "settled after $(( $(date +%s) - t0 )) s, ${same} polls unchanged: $verdict"
+      exit 0
+    fi
   fi
   if (( $(date +%s) - t0 >= max )); then
-    echo "floor not met after ${max} s; grading what came up: ${verdict:-no verdict}"
+    echo "not settled after ${max} s; grading what came up: ${verdict:-no verdict}"
     exit 0
   fi
   sleep "$step"

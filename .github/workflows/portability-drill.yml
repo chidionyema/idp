@@ -76,7 +76,7 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REF: ${{ github.head_ref || github.ref_name }}
         run: bin/idp-hydrate
-      - name: wait only until the floor is met (crew#584 CP-A)
+      - name: wait until the cluster stops changing (crew#584 CP-A, crew#488)
         run: bin/idp-drill-wait
       - name: grade against the floor
         run: |
@@ -189,7 +189,7 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REF: ${{ github.head_ref || github.ref_name }}
         run: bin/idp-hydrate
-      - name: wait only until the floor is met (crew#584 CP-A)
+      - name: wait until the cluster stops changing (crew#584 CP-A, crew#488)
         run: bin/idp-drill-wait
       - name: grade against the floor, then the wall-clock and the cost of the run
         env:
