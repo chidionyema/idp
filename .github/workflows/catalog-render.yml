@@ -22,8 +22,8 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "dry-run (diff in the summary) or commit (push the branch, open the PR)"
-        default: dry-run
+        description: "commit (push the artifact and the page, open the PR) or dry-run (diff in the summary only)"
+        default: commit   # crew#624: a bare dispatch at 13:5xZ still dry-ran after idp#798; the input default is the dispatch default
         type: choice
         options: [dry-run, commit]
   schedule:

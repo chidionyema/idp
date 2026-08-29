@@ -26,6 +26,9 @@ def test_the_schedule_publishes_not_dry_runs():
     wf = yaml.safe_load(WF.read_text())
     assert "schedule" in wf.get(True, wf.get("on", {})), "no schedule"
     assert _render_step()["env"]["MODE"].startswith("${{ inputs.mode || 'commit' }}")
+    # run 33255007991: a bare `gh workflow run` fills inputs.mode with the input's own default,
+    # so the schedule fallback never applies to a dispatch; the input default must be commit too
+    assert wf[True]["workflow_dispatch"]["inputs"]["mode"]["default"] == "commit"
 
 
 def test_the_registry_credential_is_the_actions_token_not_the_app_token():
