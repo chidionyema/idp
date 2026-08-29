@@ -1,7 +1,7 @@
 import { createFrontendModule } from '@backstage/frontend-plugin-api';
-import { SidebarContent } from './Sidebar';
+import { EstateNav } from './EstateNav';
 
 export const navModule = createFrontendModule({
   pluginId: 'app',
-  extensions: [SidebarContent],
+  extensions: [EstateNav],
 });

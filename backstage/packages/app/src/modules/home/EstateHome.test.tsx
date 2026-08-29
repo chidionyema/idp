@@ -1,381 +1,282 @@
-// Incident test (rung 4), crew#459: the portal's front page was the Backstage
-// tutorial card ("Welcome to Backstage! 👋 ... How to Edit This Card") while the
-// founder surfaces sat in the catalogue unseen. The rule: every founder-surface
-// entity the catalogue returns is a card on the front page with its links, and
-// nothing on the page names a surface the catalogue does not hold.
-import { screen } from '@testing-library/react';
-import { Entity } from '@backstage/catalog-model';
-import { configApiRef } from '@backstage/frontend-plugin-api';
-import { CatalogApi, catalogApiRef } from '@backstage/plugin-catalog-react';
-import { catalogApiMock } from '@backstage/plugin-catalog-react/testUtils';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
 import {
-  mockApis,
   renderInTestApp,
   TestApiProvider,
+  mockApis,
 } from '@backstage/frontend-test-utils';
-import { fireEvent } from '@testing-library/react';
-import {
-  EstateHome,
-  FOUNDER_SURFACE_TYPE,
-  findMatches,
-  templatePath,
-} from './EstateHome';
+import { catalogApiRef } from '@backstage/plugin-catalog-react';
+import { catalogApiMock } from '@backstage/plugin-catalog-react/testUtils';
+import { configApiRef } from '@backstage/frontend-plugin-api';
+import { kubernetesApiRef } from '@backstage/plugin-kubernetes';
+import { Entity } from '@backstage/catalog-model';
+import { EstateHome } from './EstateHome';
+import { count, fluxState, layerState, podsOf, verdict } from './estate';
 
-const surface = (
-  name: string,
-  title: string,
-  url: string,
-  annotations?: Record<string, string>,
-): Entity => ({
+const layer = (name: string, system = 'delivery'): Entity => ({
+  apiVersion: 'backstage.io/v1alpha1',
+  kind: 'Component',
+  metadata: {
+    name: `layer-${name}`,
+    title: name,
+    description: `The ${name} layer`,
+    annotations: { 'estate/flux-kustomization': name },
+  },
+  spec: { type: 'platform-layer', system },
+});
+const door = (name: string, health?: string, at?: string): Entity => ({
   apiVersion: 'backstage.io/v1alpha1',
   kind: 'Component',
   metadata: {
     name,
-    title,
-    description: `${title} description`,
-    links: [{ title: 'Open', url }],
-    ...(annotations ? { annotations } : {}),
+    title: name,
+    annotations: {
+      ...(health ? { 'estate/health': health } : {}),
+      ...(at ? { 'estate/health-checked-at': at } : {}),
+    },
+    links: [{ url: `https://${name}.example`, title: 'Open' }],
   },
-  spec: {
-    type: FOUNDER_SURFACE_TYPE,
-    lifecycle: 'production',
-    owner: 'platform',
+  spec: { type: 'founder-surface' },
+});
+const system = (name: string, title: string): Entity => ({
+  apiVersion: 'backstage.io/v1alpha1',
+  kind: 'System',
+  metadata: { name, title, description: `${title} in one sentence.` },
+  spec: { owner: 'platform' },
+});
+const flux = (
+  name: string,
+  ready: 'True' | 'False' | 'Unknown',
+  extra: any = {},
+) => ({
+  metadata: { name, namespace: 'flux-system' },
+  ...extra,
+  status: {
+    conditions: [
+      {
+        type: 'Ready',
+        status: ready,
+        reason: ready === 'False' ? 'BuildFailed' : 'ReconciliationSucceeded',
+      },
+    ],
   },
 });
+const deployment = (layerName: string, ready: number, wanted: number) => ({
+  metadata: {
+    name: `${layerName}-d`,
+    labels: { 'kustomize.toolkit.fluxcd.io/name': layerName },
+  },
+  spec: { replicas: wanted },
+  status: { readyReplicas: ready },
+});
 
-const plainComponent: Entity = {
-  apiVersion: 'backstage.io/v1alpha1',
-  kind: 'Component',
-  metadata: { name: 'not-a-surface', title: 'Some service' },
-  spec: { type: 'service', lifecycle: 'production', owner: 'platform' },
-};
+const kubernetes = (
+  items: { kustomizations?: any[]; deployments?: any[] } | Error,
+) => ({
+  getClusters: jest.fn(async () => [
+    { name: 'estate', authProvider: 'serviceAccount' },
+  ]),
+  proxy: jest.fn(async ({ path }: { path: string }) => {
+    if (items instanceof Error) throw items;
+    const body = path.includes('kustomizations')
+      ? items.kustomizations ?? []
+      : items.deployments ?? [];
+    return new Response(JSON.stringify({ items: body }), { status: 200 });
+  }),
+});
 
-const render = (entities: Entity[]) =>
+const render = (entities: Entity[], k8s: ReturnType<typeof kubernetes>) =>
   renderInTestApp(
     <TestApiProvider
       apis={[
         [catalogApiRef, catalogApiMock({ entities })],
         [
           configApiRef,
-          mockApis.config({ data: { app: { title: 'Test estate' } } }),
+          mockApis.config({ data: { app: { title: 'Mumchimp estate' } } }),
         ],
+        [kubernetesApiRef, k8s as any],
       ]}
     >
       <EstateHome />
     </TestApiProvider>,
   );
 
-describe('incident crew459: the front page is the catalogue, not a tutorial', () => {
-  it('renders one card per founder-surface entity, with its links, and none for the rest', async () => {
-    await render([
-      surface('founder-traces', 'Traces', 'https://traces.example.test/'),
-      surface(
-        'founder-catalogue',
-        'The catalogue',
-        'https://catalogue.example.test/',
-      ),
-      plainComponent,
-    ]);
-
-    expect(await screen.findByText('Traces')).toBeInTheDocument();
-    expect(screen.getByText('The catalogue')).toBeInTheDocument();
-    expect(screen.queryByText('Some service')).not.toBeInTheDocument();
-
-    // LinkButton renders an <a role="button">, so match the door by its label.
-    const doors = screen.getAllByText('Open').map(el => el.closest('a'));
-    expect(doors.map(a => a?.getAttribute('href')).sort()).toEqual([
-      'https://catalogue.example.test/',
-      'https://traces.example.test/',
-    ]);
-    expect(screen.queryByText(/Welcome to Backstage/)).not.toBeInTheDocument();
-    expect(screen.getByText('Test estate')).toBeInTheDocument();
+describe('estate logic', () => {
+  it('turns Flux conditions into the six words, and never green for what it cannot see', () => {
+    expect(fluxState(undefined).state).toBe('blind');
+    expect(fluxState({ metadata: { name: 'x' } }).state).toBe('blind');
+    expect(fluxState(flux('x', 'True')).state).toBe('good');
+    expect(fluxState(flux('x', 'False')).state).toBe('red');
+    expect(fluxState(flux('x', 'False')).why).toBe('BuildFailed');
+    expect(fluxState(flux('x', 'Unknown')).state).toBe('running');
+    expect(
+      fluxState(flux('x', 'True', { spec: { suspend: true } })).state,
+    ).toBe('needs');
   });
-
-  it('says so when the catalogue holds no surface instead of inventing one', async () => {
-    await render([plainComponent]);
-    expect(await screen.findByTestId('no-surfaces')).toBeInTheDocument();
-    expect(screen.queryAllByText('Open')).toHaveLength(0);
-  });
-});
-
-// crew#612 CP3 (founder, 2026-08-29: "exponentially improve the backstage portal"; the
-// UX baseline measured 18 cards in one alphabetical grid with no health state). The rule:
-// on a phone the first thing on the page is what is down; every card says its state in
-// plain words; nothing unprobed is ever shown as up.
-describe('crew612 CP3: the front page says what is down first, on a phone', () => {
-  const fresh = new Date().toISOString();
-  const old = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
-  const fixture = [
-    surface('founder-a-store', 'A store', 'https://store.example.test/', {
-      'estate/health': 'ok 200',
-      'estate/health-checked-at': fresh,
-    }),
-    surface('founder-b-traces', 'B traces', 'https://traces.example.test/', {
-      'estate/health': 'FAIL 503',
-      'estate/health-checked-at': fresh,
-    }),
-    surface('founder-c-jobs', 'C jobs', 'https://jobs.example.test/', {
-      'estate/health': 'ok 200',
-      'estate/health-checked-at': old,
-    }),
-    surface('founder-d-login', 'D login', 'https://login.example.test/'),
-  ];
-
-  beforeEach(() => {
-    // The founder's phone: 390px wide. jsdom lays nothing out, so the assertion is on
-    // document order, which is what a single column shows top to bottom.
-    Object.defineProperty(window, 'innerWidth', {
-      configurable: true,
-      value: 390,
+  it('reads pods through the label Flux stamps and reddens a ready layer with pods missing', () => {
+    const d = [
+      deployment('edge', 1, 3),
+      deployment('edge', 2, 2),
+      deployment('llm', 1, 1),
+    ];
+    expect(podsOf(d, 'edge')).toEqual({ ready: 3, wanted: 5 });
+    expect(podsOf(d, 'nope')).toBeUndefined();
+    const live = {
+      kustomizations: { edge: flux('edge', 'True') },
+      deployments: d,
+      readAt: 0,
+    };
+    expect(layerState(layer('edge'), live)).toMatchObject({
+      state: 'red',
+      why: '3 of 5 pods ready',
+    });
+    expect(layerState(layer('edge'), undefined)).toMatchObject({
+      state: 'blind',
     });
   });
-
-  it('puts the down and stale surfaces in a band above every other door', async () => {
-    await render(fixture);
-    const needs = await screen.findByTestId('band-needs-you');
-    const doors = screen.getByTestId('band-doors');
-    expect(
-      needs.compareDocumentPosition(doors) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(needs).toHaveTextContent('Needs you (2)');
-    expect(needs).toHaveTextContent('B traces');
-    expect(needs).toHaveTextContent('C jobs');
-    expect(needs).not.toHaveTextContent('A store');
-    expect(doors).toHaveTextContent('A store');
-    expect(doors).toHaveTextContent('D login');
-    // Down before stale inside the band; the reader meets the worst first.
-    const b = screen.getByTestId('health-founder-b-traces');
-    const c = screen.getByTestId('health-founder-c-jobs');
-    expect(
-      b.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  });
-
-  it('says the state of every card in plain words and never calls an unprobed door up', async () => {
-    await render(fixture);
-    expect(
-      await screen.findByTestId('health-founder-b-traces'),
-    ).toHaveTextContent('Down');
-    expect(screen.getByTestId('health-founder-c-jobs')).toHaveTextContent(
-      'Not checked lately',
+  it('says the worst word first', () => {
+    expect(verdict(count(['good', 'good']), 2)).toBe(
+      'Everything we run is good. 2 things checked.',
     );
-    expect(screen.getByTestId('health-founder-d-login')).toHaveTextContent(
-      'Not checked',
+    expect(verdict(count(['good', 'red', 'red', 'needs']), 4)).toBe(
+      '2 things are red.',
     );
-    expect(screen.getByTestId('health-founder-a-store')).toHaveTextContent(
-      'Up',
+    expect(verdict(count(['good', 'needs']), 2)).toBe('1 thing needs you.');
+    expect(verdict(count(['blind', 'good']), 2)).toBe(
+      "1 thing can't be checked.",
     );
-    expect(screen.getByTestId('total-Needs you')).toHaveTextContent('2');
-    expect(screen.queryByText(/crew#|CP[0-9]/)).not.toBeInTheDocument();
-  });
-
-  it('says nothing needs you when every door is up', async () => {
-    await render([fixture[0]]);
-    expect(await screen.findByText('Nothing needs you')).toBeInTheDocument();
-    expect(screen.getByTestId('total-Needs you')).toHaveTextContent('0');
+    expect(verdict(count([]), 0)).toBe('Nothing is registered yet.');
   });
 });
 
-// crew#307 (founder, 2026-08-29: "do you really think the founder has time to be scrolling
-// down looking for stuff"). Every door is one line, grouped Watch / Run / Build / Companies in
-// that order from the entity's estate/group annotation; a door with no group lands in Other, last.
-describe('crew307: every door is one line in its group, in triage order', () => {
-  const fixture = [
-    surface('founder-z-repo', 'Z repo', 'https://github.com/x/y', {
-      'estate/group': 'Build',
-    }),
-    surface('founder-a-store', 'A store', 'https://shop.example', {
-      'estate/group': 'Companies',
-    }),
-    surface('founder-m-router', 'M router', 'https://llm.example', {
-      'estate/group': 'Run',
-    }),
-    surface('founder-g-view', 'G view', 'https://gods.example', {
-      'estate/group': 'Watch',
-    }),
-    surface('founder-lost', 'Lost door', 'https://lost.example'),
-    plainComponent,
-  ];
-
-  it('orders the groups Watch, Run, Build, Companies, Other and puts each door in its own', async () => {
-    await render(fixture);
-    const doors = await screen.findByTestId('band-doors');
-    expect(doors).toHaveTextContent('Every door (5)');
-    const order = ['Watch', 'Run', 'Build', 'Companies', 'Other'].map(g =>
-      screen.getByTestId(`group-${g}`),
+describe('EstateHome', () => {
+  it('shows every layer the cluster runs, grouped by system, with live state and pods', async () => {
+    const now = new Date().toISOString();
+    await render(
+      [
+        system('delivery', 'Delivery'),
+        system('edge', 'Edge'),
+        layer('backstage'),
+        layer('kyverno', 'edge'),
+        layer('dns', 'edge'),
+        door('store', 'ok 200', now),
+        door('grafana', 'FAIL 502', now),
+      ],
+      kubernetes({
+        kustomizations: [flux('backstage', 'True'), flux('kyverno', 'False')],
+        deployments: [deployment('backstage', 2, 2)],
+      }),
     );
-    for (let i = 1; i < order.length; i++) {
-      expect(
-        order[i - 1].compareDocumentPosition(order[i]) &
-          Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
-    }
-    expect(screen.getByTestId('group-Watch')).toHaveTextContent('G view');
-    expect(screen.getByTestId('group-Run')).toHaveTextContent('M router');
-    expect(screen.getByTestId('group-Build')).toHaveTextContent('Z repo');
-    expect(screen.getByTestId('group-Companies')).toHaveTextContent('A store');
-    expect(screen.getByTestId('group-Other')).toHaveTextContent('Lost door');
-    expect(screen.getByTestId('surface-founder-g-view')).toHaveTextContent(
-      'Open',
+    await waitFor(() =>
+      expect(screen.getByTestId('verdict')).toBeInTheDocument(),
     );
+    // kyverno red, grafana down -> 2 red; dns missing from the cluster -> blind
+    expect(screen.getByTestId('verdict')).toHaveTextContent(
+      '2 things are red.',
+    );
+    expect(screen.getByTestId('count-red')).toHaveTextContent('2');
+    expect(screen.getByTestId('count-blind')).toHaveTextContent('1');
+    expect(screen.getByTestId('count-good')).toHaveTextContent('2');
+    expect(screen.getByTestId('system-delivery')).toHaveTextContent('Delivery');
+    expect(screen.getByTestId('system-edge')).toHaveTextContent('Edge');
+    expect(screen.getByTestId('layer-layer-kyverno')).toHaveAttribute(
+      'data-state',
+      'red',
+    );
+    expect(screen.getByTestId('layer-layer-dns')).toHaveAttribute(
+      'data-state',
+      'blind',
+    );
+    expect(screen.getByTestId('layer-layer-backstage')).toHaveTextContent(
+      '2/2 pods',
+    );
+    expect(screen.getByTestId('surface-grafana')).toHaveAttribute(
+      'data-state',
+      'red',
+    );
+    expect(screen.getByTestId('health-store')).toHaveTextContent('Good');
+    expect(screen.getByTestId('read-at')).toHaveTextContent('Cluster read at');
+    // the red counter is a filter
+    fireEvent.click(screen.getByTestId('count-red'));
+    expect(screen.queryByTestId('layer-layer-backstage')).toBeNull();
+    expect(screen.getByTestId('layer-layer-kyverno')).toBeInTheDocument();
+    expect(screen.queryByTestId('surface-store')).toBeNull();
+    expect(screen.getByTestId('surface-grafana')).toBeInTheDocument();
+    // no crew codes on the founder's surface
+    expect(document.body.textContent).not.toMatch(/crew#|CP\d/);
   });
-});
 
-// Founder, 2026-08-29: "i actually dont see the lean vs enterprise", "i need to find things
-// super fast not scroll". The rule: every scaffolder template the catalogue holds is a button
-// in a "Do" band at the top of the front page, the first thing on the page is a box, typing in
-// it narrows doors and actions to the matches, and Enter opens the first match.
-describe('the front page finds a door or an action from one word, no scrolling', () => {
-  const template = (
-    name: string,
-    title: string,
-    description: string,
-  ): Entity => ({
-    apiVersion: 'scaffolder.backstage.io/v1beta3',
-    kind: 'Template',
-    metadata: { name, title, description },
-    spec: { type: 'estate', owner: 'platform' },
-  });
-  const fixture = [
-    surface('founder-traces', 'Traces', 'https://traces.example.test/', {
-      'estate/group': 'Watch',
-    }),
-    surface('founder-store', 'The store', 'https://store.example.test/', {
-      'estate/group': 'Companies',
-    }),
-    template('estate-component', 'Estate component', 'Register a service'),
-    template(
-      'enable-platform-feature',
-      'Enable platform feature',
-      'Turn a feature to enterprise or lean',
-    ),
-    plainComponent,
-  ];
-
-  it('shows every template as an action button at the top, before any door', async () => {
-    await render(fixture);
-    const actions = await screen.findByTestId('band-actions');
-    const doors = screen.getByTestId('band-doors');
-    expect(
-      actions.compareDocumentPosition(doors) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      screen.getByTestId('action-enable-platform-feature').closest('a'),
-    ).toHaveAttribute(
-      'href',
-      '/create/templates/default/enable-platform-feature',
+  it('is blind, not green, when the cluster does not answer', async () => {
+    await render(
+      [layer('backstage'), door('store', 'ok 200', new Date().toISOString())],
+      kubernetes(new Error('proxy 502')),
     );
-    expect(screen.getByTestId('action-estate-component')).toHaveTextContent(
-      'Estate component',
+    await waitFor(() =>
+      expect(screen.getByTestId('verdict')).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId('verdict')).toHaveTextContent(
+      "1 thing can't be checked.",
+    );
+    expect(screen.getByTestId('read-at')).toHaveTextContent(
+      'Cluster not read: proxy 502',
+    );
+    expect(screen.getByTestId('layer-layer-backstage')).toHaveAttribute(
+      'data-state',
+      'blind',
     );
   });
 
-  it('narrows doors and actions as the founder types, and the box is the first thing on the page', async () => {
-    await render(fixture);
-    const box = await screen.findByTestId('quick-find');
-    expect(
-      box.compareDocumentPosition(screen.getByTestId('band-actions')) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    fireEvent.change(box, { target: { value: 'lean' } });
-    expect(
-      screen.getByTestId('action-enable-platform-feature'),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByTestId('action-estate-component'),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId('surface-founder-traces'),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByTestId('band-needs-you')).not.toBeInTheDocument();
-    fireEvent.change(box, { target: { value: 'store' } });
-    expect(screen.getByTestId('surface-founder-store')).toBeInTheDocument();
-    expect(
-      screen.queryByTestId('surface-founder-traces'),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByTestId('band-actions')).not.toBeInTheDocument();
+  it('keeps the login drill contract when nothing is registered', async () => {
+    await render([], kubernetes({}));
+    await waitFor(() =>
+      expect(screen.getByTestId('no-surfaces')).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId('no-layers')).toBeInTheDocument();
+    expect(screen.getByTestId('verdict')).toHaveTextContent(
+      'Nothing is registered yet.',
+    );
   });
 
-  it('Enter opens the first match: an action goes to its template, a door to its first link', () => {
-    const doors = fixture.filter(e => e.kind === 'Component');
-    const templates = fixture.filter(e => e.kind === 'Template');
-    expect(
-      findMatches('enterprise', doors, templates).templates.map(t =>
-        templatePath(t),
-      ),
-    ).toEqual(['/create/templates/default/enable-platform-feature']);
-    expect(findMatches('enterprise', doors, templates).doors).toEqual([]);
-    expect(
-      findMatches('watch', doors, templates).doors.map(d => d.metadata.name),
-    ).toEqual(['founder-traces']);
-    expect(findMatches('', doors, templates)).toEqual({ doors, templates });
-    expect(findMatches('no such thing', doors, templates)).toEqual({
-      doors: [],
-      templates: [],
+  it('narrows by typing and stays honest about the catalogue failing', async () => {
+    const now = new Date().toISOString();
+    await render(
+      [
+        layer('backstage'),
+        layer('kyverno', 'edge'),
+        door('store', 'ok 200', now),
+      ],
+      kubernetes({
+        kustomizations: [flux('backstage', 'True'), flux('kyverno', 'True')],
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('quick-find')).toBeInTheDocument(),
+    );
+    fireEvent.change(screen.getByTestId('quick-find'), {
+      target: { value: 'kyv' },
     });
-  });
-});
-
-// crew#459 (founder, 2026-08-29: "assume an investor and buyer is coming to view our backstage
-// ... every single detail needs to be 100x better"). The first two minutes and the worst minute:
-// while the catalogue answers the page has its shape, not a bare progress bar; when it does not
-// answer the visitor reads a sentence and a Try again button, never a stack trace; and the
-// header's count is on the page before the data is, so nothing jumps.
-describe('crew459: loading, failure and empty states read like a product', () => {
-  it('shows the page shape and a plain sentence while the catalogue is read', async () => {
-    const never = new Promise<never>(() => {});
-    const api = { getEntities: () => never } as unknown as CatalogApi;
-    renderInTestApp(
-      <TestApiProvider
-        apis={[
-          [catalogApiRef, api],
-          [
-            configApiRef,
-            mockApis.config({ data: { app: { title: 'Test estate' } } }),
-          ],
-        ]}
-      >
-        <EstateHome />
-      </TestApiProvider>,
-    );
-    expect(await screen.findByTestId('loading')).toBeInTheDocument();
-    expect(screen.getByText('Reading the catalogue…')).toBeInTheDocument();
-    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(screen.queryByTestId('layer-layer-backstage')).toBeNull();
+    expect(screen.getByTestId('layer-layer-kyverno')).toBeInTheDocument();
+    expect(screen.queryByTestId('surface-store')).toBeNull();
   });
 
-  it('says the catalogue did not answer, in words, and offers Try again', async () => {
-    const api = {
-      getEntities: () =>
-        Promise.reject(new Error('Request failed with status 502')),
-    } as unknown as CatalogApi;
+  it('says the catalogue did not answer, and offers a retry', async () => {
+    const failing = {
+      getEntities: jest.fn().mockRejectedValue(new Error('catalog 503')),
+    };
     await renderInTestApp(
       <TestApiProvider
         apis={[
-          [catalogApiRef, api],
-          [
-            configApiRef,
-            mockApis.config({ data: { app: { title: 'Test estate' } } }),
-          ],
+          [catalogApiRef, failing as any],
+          [configApiRef, mockApis.config()],
+          [kubernetesApiRef, kubernetes({}) as any],
         ]}
       >
         <EstateHome />
       </TestApiProvider>,
     );
-    expect(await screen.findByTestId('catalogue-error')).toBeInTheDocument();
-    expect(
-      screen.getByText('The catalogue did not answer'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Try again' }),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/status 502/)).not.toBeVisible();
-  });
-
-  it('names no machine type when nothing is registered', async () => {
-    await render([]);
-    expect(await screen.findByTestId('no-surfaces')).toHaveTextContent(
-      'No doors are registered yet',
+    await waitFor(() =>
+      expect(screen.getByTestId('catalogue-error')).toBeInTheDocument(),
     );
-    expect(screen.queryByText(/founder-surface/)).not.toBeInTheDocument();
+    expect(screen.getByText('Try again')).toBeInTheDocument();
   });
 });
