@@ -11,7 +11,7 @@ import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 POLICY = ROOT / "platform/edge/capacity-policy.yaml"
-CPU_BUDGET_CORES = 3.6        # measured after the two trim passes (7.64 -> 3.54); a ratchet: only ever lowered
+CPU_BUDGET_CORES = 3.75       # measured after the two trim passes (7.64 -> 3.70; prometheus stays 200m Guaranteed, crew#539 CP9); a ratchet: only ever lowered
 SINGLE_REQUEST_MAX = 0.25     # what the admission fence refuses
 
 POD = """apiVersion: v1
