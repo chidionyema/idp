@@ -930,6 +930,24 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-staging
+  title: 'Staging'
+  description: 'A rehearsal space on the one cluster: a service runs here first, and the dev loop points at it.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=staging'
+    estate/flux-kustomization: 'staging'
+    estate/path: './platform/staging'
+    estate/cluster: 'oke'
+  tags: [platform, scheduling]
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: scheduling
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-tailscale
   title: 'Private network'
   description: 'The mesh that joins the cluster, the Mac and the phone without a public port.'
