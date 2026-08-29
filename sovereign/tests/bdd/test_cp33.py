@@ -9,7 +9,6 @@ rewind reports each as not-running -- the stop path is the same code
 from __future__ import annotations
 
 import importlib
-import json
 from pathlib import Path
 from typing import Any
 

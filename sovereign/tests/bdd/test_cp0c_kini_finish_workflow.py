@@ -13,7 +13,6 @@ import pytest
 import yaml
 from pytest_bdd import given, scenarios, then, when
 from temporalio import activity
-from temporalio.client import Client
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
