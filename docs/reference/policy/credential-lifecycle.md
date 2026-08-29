@@ -29,7 +29,7 @@ list, a slug) are listed at the end so the gate knows them; they have no life cy
 
 | Secret | Provider | Made where, once | Power | Expiry | Rotation | Revocation | Audit |
 |---|---|---|---|---|---|---|---|
-| `SEED_TAILSCALE_CLIENT_ID`, `SEED_TAILSCALE_CLIENT_SECRET` | Tailscale | admin console, Settings, OAuth clients; scope OAuth keys write only | mints OAuth clients tagged `tag:k8s`; cannot join the tailnet | none (kb/1215); OAuth clients do not expire | new client, same two secret names, `oke-check` apply; children re-minted by `bin/idp-bootstrap-tailscale`; then delete the old client | delete the client in the console; every child dies with it | Tailscale audit log (client creations); apply log names keys, never values |
+| `SEED_TAILSCALE_CLIENT_ID`, `SEED_TAILSCALE_CLIENT_SECRET` | Tailscale | admin console, Trust credentials page, Credential, OAuth; scope OAuth keys write only | mints OAuth clients tagged `tag:k8s`; cannot join the tailnet | none (kb/1215); OAuth clients do not expire | new client, same two secret names, `oke-check` apply; children re-minted by `bin/idp-bootstrap-tailscale`; then delete the old client | delete the client in the console; every child dies with it | Tailscale audit log (client creations); apply log names keys, never values |
 | `SEED_CLOUDFLARE_ROOT_TOKEN` | Cloudflare | dash, My Profile, API Tokens; permission User API Tokens: Edit only | mints the DNS token and the R2 credential; cannot edit DNS itself | set a TTL at creation; the row's floor is 1 year | new token, same name, apply; `bin/idp-bootstrap-cloudflare` re-mints the children; roll the old token | roll or delete the token in the dash; children keep working until re-minted, so re-mint at once | Cloudflare audit log; apply log |
 | `SEED_ANTHROPIC_API_KEY` | Anthropic | console, API keys | model calls on the estate account | none | new key, same name, apply (`bin/idp-bootstrap-vendors` proves and vaults it); delete the old key | delete the key in the console | Anthropic usage page per key |
 | `SEED_OPENROUTER_API_KEY` | OpenRouter | settings, keys; set a credit limit | model calls | none | as Anthropic | delete the key | OpenRouter activity per key |
@@ -57,7 +57,7 @@ value with hidden input, sets the secret and dispatches the apply run (R53: inst
 action in one place, zero friction). After the secret is set, say "set" in
 Telegram; the next `oke-check` apply run does the rest.
 
-**Tailscale.** Admin console, Settings, OAuth clients, Generate OAuth client. Description:
+**Tailscale.** Admin console, Trust credentials page (kb/1215), Credential, OAuth, Generate credential. Description:
 `estateseed`. Scopes: tick only "OAuth keys", choose Write. Tags, if asked: `tag:k8s`. Generate.
 Then, on the laptop, paste each value when asked:
 `gh secret set SEED_TAILSCALE_CLIENT_ID -R chidionyema/idp` and
