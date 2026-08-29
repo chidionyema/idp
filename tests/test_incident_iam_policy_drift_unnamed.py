@@ -18,10 +18,11 @@ COMP = "ocid1.compartment.oc1..test"
 def _run(tmp: Path, live, rc_list: int = 0, comp=None) -> subprocess.CompletedProcess:
     b = tmp / "bin"; b.mkdir(exist_ok=True)
     fake = b / "oci"
+    (b / "comp.json").write_text(json.dumps(comp)); (b / "live.json").write_text(json.dumps(live))
     fake.write_text(
         "#!/usr/bin/env bash\ncase \"$*\" in "
-        f"*\"--name estate-operators-compartment\"*) printf '%s' '{json.dumps(comp)}'; exit 0;; "
-        f"*\"iam policy list\"*) printf '%s' '{json.dumps(live)}'; exit {rc_list};; "
+        f"*\"--name estate-operators-compartment\"*) cat '{b / "comp.json"}'; exit 0;; "
+        f"*\"iam policy list\"*) cat '{b / "live.json"}'; exit {rc_list};; "
         "*) echo unexpected >&2; exit 9;; esac\n")
     fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
     env = {**os.environ, "PATH": f"{b}:{os.environ['PATH']}", "OCI_TENANCY_OCID": "ocid1.tenancy.oc1..test",
