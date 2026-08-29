@@ -24,6 +24,26 @@ metadata:
     reconcile.fluxcd.io/requestedAt: "2026-08-27T12:41:00Z"
     reconcile.fluxcd.io/resetAt: "2026-08-27T12:41:00Z"
 spec:
+  # docs/policy/every-interface-is-a-door.md: the chart's Services name their door.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target: { kind: Service }
+            patch: |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: founder-telemetry
+          - target: { kind: HTTPRoute }
+            patch: |
+              apiVersion: v1
+              kind: HTTPRoute
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: founder-telemetry
   # crew#584 (oke-check 33234280926, 2026-08-29T04:40Z): the old observability/k8s-infra object was
   # pruned after idp#702 and helm-controller's uninstall of it hit the SAME Helm release name this
   # object had just upgraded to v7 ("release mismatch", 03:47Z). The uninstall stripped the v7

@@ -41,7 +41,7 @@ def test_runner_and_forwarder_carry_the_restricted_profile() -> None:
 
 def test_probes_and_init_container_profile_come_from_the_post_renderer() -> None:
     patches = _robusta()["spec"]["postRenderers"][0]["kustomize"]["patches"]
-    by = {p["target"]["name"]: yaml.safe_load(p["patch"])["spec"]["template"]["spec"] for p in patches}
+    by = {p["target"]["name"]: yaml.safe_load(p["patch"])["spec"]["template"]["spec"] for p in patches if "name" in p["target"]}
     kw = by["robusta-forwarder"]["containers"][0]
     assert kw["name"] == "kubewatch" and kw["readinessProbe"]["httpGet"] == {"path": "/metrics", "port": 2112}
     runner = by["robusta-runner"]

@@ -1,0 +1,26 @@
+# The K8sGPT operator builds Deployment healing/estate from the K8sGPT object and its CRD has no
+# probe fields (config/crd/bases/core.k8sgpt.ai_k8sgpts.yaml v0.2.29: containerSecurityContext,
+# securityContext, resources; nothing for probes). Kyverno require-pod-probes therefore refused it
+# (run 33236900434). This waives that one policy for that one Deployment, the same shape as
+# platform/edge/tailscale-operator-exception.yaml; every other policy the analyzer passes through
+# the security context set on the object. Lives in namespace kyverno (platform/kyverno/kyverno.yaml).
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: k8sgpt-analyzer-no-probes
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: require-pod-probes
+      ruleNames: [require-pod-probes, autogen-validate-probes]
+    # run 33238265861: with the security context in place the operator's Deployment was still denied by
+    # secrets-not-from-env-vars: the operator builds `env[].valueFrom.secretKeyRef` for the AI backend
+    # key (k8sgpt-operator 0.2.29 pkg/resources/k8sgpt.go) and the CRD has no volume field for it.
+    - policyName: secrets-not-from-env-vars
+      ruleNames: [secrets-not-from-env-vars, autogen-secrets-not-from-env-vars]
+  match:
+    any:
+      - resources:
+          kinds: [Deployment, Pod, ReplicaSet]
+          namespaces: [healing]
+          names: [estate*]

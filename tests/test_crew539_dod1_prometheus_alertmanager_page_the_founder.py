@@ -17,6 +17,7 @@ Proved offline, no sockets:
 """
 import pathlib
 import re
+import os
 import subprocess
 import sys
 
@@ -172,14 +173,14 @@ def grade(line1, body="{}"):
     # run only the python half of bin/idp-cluster-state, with a fresh head, the way the script does
     src = (IDP / "bin/idp-cluster-state").read_text()
     py = src.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
-    head = '{"last-modified": "%s"}' % __import__("email.utils").utils.formatdate(usegmt=True)
-    r = subprocess.run([sys.executable, "-c", py, head, line1 + "\n" + body, "60", ""], capture_output=True, text=True)
+    head = '{"last-modified": "%s", "date": "%s"}' % ((__import__("email.utils").utils.formatdate(usegmt=True),) * 2)
+    r = subprocess.run([sys.executable, "-c", py, head, line1 + "\n" + body, "60", ""], capture_output=True, text=True, env={**os.environ, "IDP_LIB": str(IDP / "bin" / "lib")})
     return r.returncode, r.stdout.strip()
 
 
 BASE = ("ok cluster-state at 2026-08-27T23:00:00Z nodes=2 ready=2 pods=60 pods_not_ready=0 flux=40 flux_not_ready=0"
         " ds=6 ds_short=0 events_warning=0 hostnames=9 spiffe_ids=3 spiffe_workloads=3 svids=3 spire_agents=2"
-        " oci_pods=2 oci_static_key_pods=0 policy_exceptions=9")
+        " oci_pods=2 oci_static_key_pods=0 policy_exceptions=9 cpu_used_pct=12 cpu_req_pct=45 mem_used_pct=30 mem_req_pct=50")
 
 
 def test_grader_passes_with_rules_and_watchdog_and_fails_without():
@@ -214,7 +215,7 @@ def test_gateway_refusals_are_scraped_and_alerted():
     assert {"name": "metrics", "port": 15020, "targetPort": "metrics"} in svc["spec"]["ports"]
     sm = one("platform/monitoring/rules/agentgateway-servicemonitor.yaml", "ServiceMonitor", "agentgateway")
     assert sm["spec"]["namespaceSelector"]["matchNames"] == ["mcp"]
-    assert sm["spec"]["selector"]["matchLabels"] == svc["metadata"]["labels"]
+    assert sm["spec"]["selector"]["matchLabels"].items() <= svc["metadata"]["labels"].items()
     assert sm["spec"]["endpoints"][0]["port"] == "metrics"
     pr = one("platform/monitoring/rules/estate.yaml", "PrometheusRule", "estate")
     (r,) = [r for g in pr["spec"]["groups"] for r in g["rules"] if r.get("alert") == "GatewayRefusals"]

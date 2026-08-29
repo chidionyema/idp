@@ -10,8 +10,9 @@ import { NavContentBlueprint } from '@backstage/plugin-app-react';
 import { SidebarLogo } from './SidebarLogo';
 import MenuIcon from '@material-ui/icons/Menu';
 import SearchIcon from '@material-ui/icons/Search';
+import NotificationsIcon from '@material-ui/icons/Notifications';
+import SettingsIcon from '@material-ui/icons/Settings';
 import { SidebarSearchModal } from '@backstage/plugin-search';
-import { UserSettingsSignInAvatar } from '@backstage/plugin-user-settings';
 import { NotificationsSidebarItem } from '@backstage/plugin-notifications';
 
 export const SidebarContent = NavContentBlueprint.make({
@@ -43,13 +44,16 @@ export const SidebarContent = NavContentBlueprint.make({
           </SidebarGroup>
           <SidebarSpace />
           <SidebarDivider />
-          <NotificationsSidebarItem />
-          <SidebarDivider />
+          {/* On a phone the bar keeps SidebarGroups only; a bare item vanished below 600px (audit 2026-08-29). */}
           <SidebarGroup
-            label="Settings"
-            icon={<UserSettingsSignInAvatar />}
-            to="/settings"
+            label="Notifications"
+            icon={<NotificationsIcon />}
+            to="/notifications"
           >
+            <NotificationsSidebarItem />
+          </SidebarGroup>
+          <SidebarDivider />
+          <SidebarGroup label="Settings" icon={<SettingsIcon />} to="/settings">
             {nav.take('page:app-visualizer')}
             {nav.take('page:user-settings')}
           </SidebarGroup>

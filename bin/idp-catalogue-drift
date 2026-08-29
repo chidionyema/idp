@@ -105,7 +105,18 @@ def main() -> int:
     if unregistered:
         print(f"FAIL    catalogue-drift  {len(unregistered)} unregistered of {len(live)} live hostnames: {', '.join(unregistered)}")
         return 1
-    print(f"ok      catalogue-drift  0 unregistered of {len(live)} live hostnames ({len(known)} in the catalogue)")
+    # crew#307: the live Services that name no catalogue entity (label backstage.io/kubernetes-id),
+    # collected by platform/state/cluster-state.yaml. A hostname-only check let every UI without a
+    # public address through; this is the rest of the inventory, read from the cluster.
+    unlisted = body.get("services_unlisted")
+    if unlisted is None:
+        print("BLIND   catalogue-drift  receipt carries no services_unlisted list (collector predates crew#307, or the Service list failed: "
+              f"{str(body.get('services_unlisted_error', ''))[:120]})")
+        return 1
+    if unlisted:
+        print(f"FAIL    catalogue-drift  {len(unlisted)} live Services name no catalogue entity (label backstage.io/kubernetes-id): {', '.join(unlisted)}")
+        return 1
+    print(f"ok      catalogue-drift  0 unregistered of {len(live)} live hostnames ({len(known)} in the catalogue); 0 live Services without a catalogue entity")
     return 0
 
 

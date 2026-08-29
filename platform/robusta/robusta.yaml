@@ -77,7 +77,7 @@ spec:
           valueFrom: { secretKeyRef: { name: robusta-telegram, key: channel } }
       # The chart asks 250m / 1 Gi; the pool this lands on was CPU-starved (2026-08-27).
       resources:
-        requests: { cpu: 100m, memory: 512Mi }
+        requests: { cpu: 50m, memory: 512Mi }
         limits: { cpu: 100m, memory: 512Mi }
     kubewatch:
       securityContext:
@@ -127,6 +127,22 @@ spec:
   postRenderers:
     - kustomize:
         patches:
+          - target: { kind: Service }
+            patch: |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: founder-alerts
+          - target: { kind: HTTPRoute }
+            patch: |
+              apiVersion: v1
+              kind: HTTPRoute
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: founder-alerts
           - target: { kind: Deployment, name: robusta-forwarder }
             patch: |
               apiVersion: apps/v1

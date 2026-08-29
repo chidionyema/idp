@@ -4,6 +4,9 @@
 #   bin/idp-bootstrap-tailscale --check      exit 0 when the vault entry still exchanges for a token, 1 when it does not
 #   bin/idp-bootstrap-tailscale --rotate     mint a new client even though the vault entry already works, and delete the old one
 #   bin/idp-bootstrap-tailscale --seed       the one human step, once: read the seed client from a hidden prompt into vault `tailscale-seed`
+# In GitHub Actions with TAILSCALE_FEDERATED_CLIENT_ID set (estate-config), no seed is needed: the
+# runner's OIDC token is exchanged for a Tailscale token (kb/1581) and the operator client is minted
+# from that. .github/workflows/connect-tailscale.yml is the button; the seed road stays for a laptop.
 #
 # What the provider allows, measured 2026-08-28 from the vendor's own SDK
 # (github.com/tailscale/tailscale-client-go-v2 keys.go, KeysResource.CreateOAuthClient):
@@ -91,9 +94,37 @@ else
   [ "$MODE" = --check ] && fail "$SECRET" "no vault entry; run $0 to mint"
 fi
 
-# 3. the seed, and an access token from it
-vault_pair "$SEED" || fail seed "no vault entry $SEED; the one human step is: $0 --seed"
-seed_json=$(token_for "$cid" "$csec"); unset cid csec
+# 3. an access token that may mint. Two roads, federated first (tailscale.com/kb/1581):
+#    a) in GitHub Actions with a federated identity registered for this repo: trade the runner's OIDC
+#       JWT for a Tailscale token at /api/v2/oauth/token-exchange. No secret exists anywhere.
+#       The identity's client id is not a secret; it lives in clusters/oke/estate-config.yaml as
+#       TAILSCALE_FEDERATED_CLIENT_ID (issuer https://token.actions.githubusercontent.com,
+#       subject repo:<owner>/<repo>:ref:refs/heads/main, scope oauth_keys, tag tag:k8s).
+#    b) otherwise the seed client from the vault (--seed, the older one-human-step road), or
+#       the pair the environment hands in (road c below); either way one scope, one person, once.
+fed_id=${TAILSCALE_FEDERATED_CLIENT_ID:-$(awk '$1=="TAILSCALE_FEDERATED_CLIENT_ID:"{gsub(/"/,"",$2);print $2}' "${ESTATE_CONFIG:-$IDP/clusters/oke/estate-config.yaml}" 2>/dev/null || true)}
+if [ -n "$fed_id" ] && [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+  aud="api.tailscale.com/$fed_id"
+  jwt=$(curl -sS -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$aud" | jq -r '.value // empty')
+  [ -n "$jwt" ] || fail federated "GitHub gave no OIDC token for audience $aud (does the job have id-token: write?)"
+  seed_json=$(curl -sS -d "client_id=$fed_id" --data-urlencode "jwt=$jwt" "$API/api/v2/oauth/token-exchange"); unset jwt
+  say ok federated "OIDC token exchanged at /api/v2/oauth/token-exchange for identity $fed_id (no secret held)"
+else
+  [ -n "$fed_id" ] && say "" federated "identity $fed_id set but not in GitHub Actions; using the seed"
+  #    c) the seed pair handed in by the environment (oke-check apply reads repository secrets
+  #       SEED_TAILSCALE_CLIENT_ID / SEED_TAILSCALE_CLIENT_SECRET). The founder's one manual step is
+  #       then a console OAuth client with the single scope oauth_keys write, typed into two repository
+  #       secrets once; it is vaulted as `tailscale-seed` here so the repository secrets can be deleted.
+  if [ -n "${TAILSCALE_SEED_CLIENT_ID:-}" ] && [ -n "${TAILSCALE_SEED_CLIENT_SECRET:-}" ]; then
+    cid=$TAILSCALE_SEED_CLIENT_ID; csec=$TAILSCALE_SEED_CLIENT_SECRET
+    token_for "$cid" "$csec" | jq -e '.access_token' >/dev/null 2>&1 || fail seed "the seed pair in the environment does not exchange for a token"
+    vault_pair "$SEED" || { vault_write "$SEED" "$cid" "$csec"; say ok "$SEED" "written from the environment; the repository secrets SEED_TAILSCALE_* may be deleted"; }
+    cid=$TAILSCALE_SEED_CLIENT_ID; csec=$TAILSCALE_SEED_CLIENT_SECRET
+  else
+    vault_pair "$SEED" || fail seed "no vault entry $SEED and no federated identity; register one (kb/1581) and set TAILSCALE_FEDERATED_CLIENT_ID in clusters/oke/estate-config.yaml, or run $0 --seed"
+  fi
+  seed_json=$(token_for "$cid" "$csec"); unset cid csec TAILSCALE_SEED_CLIENT_SECRET
+fi
 seed_tok=$(jq -r '.access_token // empty' <<<"$seed_json")
 [ -n "$seed_tok" ] || fail seed "vault entry $SEED does not exchange for a token; make a new seed with $0 --seed"
 seed_scopes=$(jq -r '.scope // ""' <<<"$seed_json")

@@ -1,6 +1,8 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-mcp-gateway
   name: mcp
   namespace: mcp
   annotations:

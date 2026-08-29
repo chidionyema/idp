@@ -266,6 +266,13 @@ pb_diagnose() {
   # before Kyverno sees it; a provider-named default made every new claim fail. Both facts are
   # read here so the next such outage is one diagnose run, not ninety minutes.
   show storage-classes $K get storageclasses
+  # crew#307 (2026-08-29, founder: "gods view isn't there", "everything that has an interface"): the
+  # founder's surfaces come from /estate/founder/catalog-info.yaml in the catalogue pod. Three rows
+  # say whether the file is there, whether the catalogue read it, and what it holds.
+  show catalogue-founder-file sh -c "$K exec -n backstage deploy/catalogue -- ls -la /estate /estate/founder 2>&1"
+  show catalogue-founder-configmap sh -c "$K get configmap founder-catalog estate-catalog -n backstage -o jsonpath='{range .items[*]}{.metadata.name}{\"\t\"}{.metadata.creationTimestamp}{\"\n\"}{end}' 2>&1"
+  show catalogue-log-locations sh -c "$K logs -n backstage deploy/catalogue --all-containers --tail=2000 2>&1 | grep -iE 'founder|location|catalog.*(error|fail|refus|invalid)' | tail -40"
+  show catalogue-entities sh -c "$K exec -n backstage deploy/catalogue -- sh -c 'wget -qO- http://catalogue.backstage.svc:3100/api/catalog/entities?filter=spec.type=founder-surface | head -c 600' 2>&1"
   show claims-not-bound sh -c "$K get pvc -A --field-selector=status.phase!=Bound 2>/dev/null; true"
   # The audit of the rules by the cluster: Kyverno scans every existing object in the background and
   # records which rule would refuse it. A rule with fails here is a rule that judges reality, not
@@ -468,6 +475,20 @@ redact() {
          -e 's/(([Tt][Oo][Kk][Ee][Nn]|[Kk][Ee][Yy]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd])["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?)[A-Za-z0-9_.:\-]{12,}/\1<REDACTED>/g'
 }
 
+# router-spend (crew#568, founder 2026-08-29: "claude code has monopolised the scene ... we are not
+# utilising our agents"): who actually calls the model router, through which key, on which lane, and
+# what it cost. The router's own ledger (LiteLLM_SpendLogs in litellm-db) is the only honest answer;
+# a file scan says who is CONFIGURED to call it, never who did (LAW 50). Read-only: psql over the
+# pod's unix socket (trust auth, no password handled), aliases and totals only, never a key value.
+pb_router_spend() {
+  local ns=llm pod=litellm-db-0
+  local q='psql -U litellm -d litellm -At -F "|" -c'
+  show router-pods $K get pods -n "$ns" -o wide
+  show_redacted spend-by-consumer-and-lane sh -c "$K exec -n $ns $pod -c postgres -- $q \"select coalesce(v.key_alias, 'no-alias:' || left(s.api_key, 8)) as consumer, s.model, count(*) as calls, round(sum(s.spend)::numeric, 4) as usd, sum(s.total_tokens) as tokens, min(s.\\\"startTime\\\")::date as first, max(s.\\\"startTime\\\")::date as last from \\\"LiteLLM_SpendLogs\\\" s left join \\\"LiteLLM_VerificationToken\\\" v on v.token = s.api_key group by 1, 2 order by 3 desc limit 40\" 2>&1"
+  show_redacted spend-per-day-14d sh -c "$K exec -n $ns $pod -c postgres -- $q \"select \\\"startTime\\\"::date as day, count(*) as calls, round(sum(spend)::numeric, 4) as usd from \\\"LiteLLM_SpendLogs\\\" where \\\"startTime\\\" > now() - interval '14 days' group by 1 order by 1\" 2>&1"
+  show_redacted virtual-keys sh -c "$K exec -n $ns $pod -c postgres -- $q \"select coalesce(key_alias, '(none)') as alias, round(spend::numeric, 4) as usd, max_budget, budget_duration, created_at::date, expires::date from \\\"LiteLLM_VerificationToken\\\" order by spend desc limit 40\" 2>&1"
+}
+
 pb_architect_doctor() {
   local ns=hermes-agent
   show pods $K get pods -n "$ns" -o wide
@@ -563,10 +584,31 @@ pb_k8sgpt_analyze() {
   show k8sgpt-object sh -c "$K get k8sgpt.core.k8sgpt.ai -n healing -o wide; $K get k8sgpt.core.k8sgpt.ai -n healing -o jsonpath='{range .items[*]}{.metadata.name}{\" status=\"}{.status}{\"\n\"}{end}'"
   show k8sgpt-secret sh -c "$K get externalsecret,secret -n healing 2>&1 | grep -iE 'NAME|k8sgpt'; $K get externalsecret -n healing -o jsonpath='{range .items[*]}{.metadata.name}{\" \"}{range .status.conditions[*]}{.type}={.status} {.message}{end}{\"\n\"}{end}'"
   show k8sgpt-deployments $K get deploy,pods -n healing -o wide
-  show k8sgpt-operator-log sh -c "$K logs -n healing deploy/k8sgpt-operator-controller-manager --all-containers --tail=60 2>&1 | grep -iE 'error|fail|secret|k8sgpt|reconcil' | tail -30"
+  # Manager container only: the kube-rbac-proxy sidecar logs a 'TLS handshake error' every 10s and the
+  # old 'error' grep drowned the reconciler in it (run 33235032630: 30 lines of proxy noise, status empty).
+  show k8sgpt-operator-log sh -c "$K logs -n healing deploy/k8sgpt-operator-controller-manager -c manager --tail=200 2>&1 | grep -viE 'TLS handshake' | tail -40"
+  show k8sgpt-describe sh -c "$K describe k8sgpt estate -n healing 2>&1 | tail -40"
+  show healing-events sh -c "$K get events -n healing --sort-by=.lastTimestamp 2>&1 | tail -20"
+  # Run 33239797940: the table view cut Kyverno's denial to "denied the request: ..." and the policy
+  # name lived in the lines kubectl dropped. Print every FailedCreate message whole.
+  show healing-denials sh -c "$K get events -n healing --field-selector reason=FailedCreate -o jsonpath='{range .items[*]}{.lastTimestamp} {.involvedObject.kind}/{.involvedObject.name}: {.message}{\"\\n\"}{end}' 2>/dev/null | tail -c 4000; true"
   # The operator names the analyzer Deployment after the K8sGPT object and labels it app=<name>
   # (k8sgpt-operator pkg/resources/k8sgpt.go: Name: config.Name, MatchLabels app: config.Name).
   # The old selector app.kubernetes.io/name=k8sgpt matched nothing by construction.
+  # run 33237896443 (dispatched 18s after idp#725 merged) and 33238265861 both graded the object Flux had
+  # not applied yet (`No Cache: false` on the cluster, true on main). Name that instead of a false FAIL.
+  applied=$($K get kustomization healing-analyzer -n flux-system -o jsonpath='{.status.lastAppliedRevision}' 2>/dev/null || true)
+  if [ -n "${GITHUB_SHA:-}" ] && [ -n "$applied" ] && [ "${applied##*:}" != "$GITHUB_SHA" ]; then
+    echo "BLIND k8sgpt-analyze  Flux has not applied this commit yet: healing-analyzer is at ${applied##*:}, this run is $GITHUB_SHA; re-run after the next reconcile"
+    return 0
+  fi
+  # runs 33237896443 and 33238265861 graded the object Flux had not applied yet (`No Cache: false` on
+  # the cluster, true on main) and printed a false FAIL. Name the stale revision instead.
+  applied=$($K get kustomization healing-analyzer -n flux-system -o jsonpath='{.status.lastAppliedRevision}' 2>/dev/null || true)
+  if [ -n "${GITHUB_SHA:-}" ] && [ -n "$applied" ] && [ "${applied##*:}" != "$GITHUB_SHA" ]; then
+    echo "BLIND k8sgpt-analyze  Flux has not applied this commit yet: healing-analyzer is at ${applied##*:}, this run is $GITHUB_SHA; re-run after the next reconcile"
+    return 0
+  fi
   if [ -z "$($K get deployment -n healing -l app=estate -o name 2>/dev/null)" ]; then
     echo "FAIL  k8sgpt-analyze  no analyzer deployment in healing: the operator has not reconciled the K8sGPT object (see k8sgpt-operator-log above)"
     FAILED="$FAILED k8sgpt-analyzer-absent"
@@ -786,9 +828,10 @@ pb_chi_resize() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry namespace-unstick k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll"; exit 0 ;;
+  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry namespace-unstick k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
+  router-spend) pb_router_spend ;;
   dns-per-node) pb_dns_per_node ;;
   dns-per-namespace) pb_dns_per_namespace ;;
   tcp-per-node) pb_tcp_per_node ;;

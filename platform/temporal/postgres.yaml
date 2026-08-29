@@ -15,7 +15,7 @@ kind: Service
 metadata:
   name: temporal-db
   namespace: temporal
-  labels: { app.kubernetes.io/name: temporal-db, app.kubernetes.io/part-of: idp }
+  labels: { app.kubernetes.io/name: temporal-db, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: founder-temporal }
 spec:
   type: ClusterIP
   clusterIP: None
