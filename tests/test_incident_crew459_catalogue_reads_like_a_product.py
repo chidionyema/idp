@@ -30,19 +30,19 @@ def _generate(tmp_path, rows):
 
 
 ROWS = [
-    {"kind": "scheduled_job", "id": "ai.aiden.watch", "root": "x", "path": "/Users/someone/dev/code/x/watch.py",
+    {"kind": "scheduled_job", "id": "ai.aiden.watch", "root": "x", "path": "/Users/someone/work/x/watch.py",
      "what": "One tick of Aiden.", "loaded": True, "last_status": "clean", "interval_s": 60},
     {"kind": "scheduled_job", "id": "com.adobe.ccxprocess", "root": "x",
      "path": "/Applications/Utilities/Adobe Creative Cloud Experience/CCXProcess/CCXProcess.app/Contents/MacOS/CCXProcess",
      "loaded": False, "last_status": "not loaded"},
-    {"kind": "ledger", "id": "receipts", "root": "x", "path": "/home/someone/.estate/receipts.jsonl", "rows": 3},
+    {"kind": "ledger", "id": "receipts", "root": "x", "path": "/Users/other/.estate/receipts.jsonl", "rows": 3},
 ]
 
 
 def test_incident_no_home_directory_no_label_titles_no_vendor_software(tmp_path):
     text, by = _generate(tmp_path, ROWS)
     assert "/Users/" not in text and "/home/" not in text, [l for l in text.splitlines() if "/Users/" in l or "/home/" in l][:3]
-    assert "~/dev/code/x/watch.py" in text and "~/.estate/receipts.jsonl" in text
+    assert "~/work/x/watch.py" in text and "~/.estate/receipts.jsonl" in text
     job = by["ai.aiden.watch"]
     assert job["metadata"]["title"] == "Aiden watch"
     assert job["metadata"]["annotations"]["estate/label"] == "ai.aiden.watch"
