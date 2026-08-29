@@ -216,6 +216,11 @@ def telegram_pin(text: str, urlopen=None) -> str:
                 return str(pinned["message_id"])
             raise
     sent = call("sendMessage", text=text, disable_web_page_preview="true")
+    # 2026-08-29 06:07Z: this pin replaced founder-blocker's pinned FOUNDER ACTION (message 18778, the
+    # Tailscale form) and the founder never saw it ("not seeing the message"). A founder action or a
+    # STAGED timer owns the pin until he acts; the goal is posted, not pinned, while one is up.
+    if (pinned.get("text") or "").startswith(("FOUNDER ACTION", "STAGED")):
+        return str(sent["message_id"])
     call("pinChatMessage", message_id=sent["message_id"], disable_notification="true")
     return str(sent["message_id"])
 

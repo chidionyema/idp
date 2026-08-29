@@ -73,3 +73,24 @@ def test_telegram_pin_sends_and_pins_when_no_goal_pin(monkeypatch):
     monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "c")
     assert ef.telegram_pin("GOAL", urlopen=urlopen) == "9"
     assert calls == ["getChat", "sendMessage", "pinChatMessage"]
+
+
+def test_incident_20260829_goal_post_never_takes_the_pin_from_a_founder_action(monkeypatch):
+    """06:07Z: the GOAL pin replaced founder-blocker's pinned FOUNDER ACTION (Telegram 18778) and the
+    founder said "not seeing the message". While a FOUNDER ACTION or STAGED message holds the pin,
+    the goal is sent but not pinned."""
+    for holder in ("FOUNDER ACTION: open the form", "STAGED: rotate is ready"):
+        calls = []
+
+        class R:
+            def __init__(self, body): self.body = body
+            def read(self): return json.dumps({"result": self.body}).encode()
+
+        def urlopen(url, data=None, timeout=0):
+            calls.append(url.rsplit("/", 1)[1])
+            return R({"pinned_message": {"message_id": 5, "text": holder}} if url.endswith("getChat") else {"message_id": 9})
+
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+        monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "c")
+        assert ef.telegram_pin("GOAL", urlopen=urlopen) == "9"
+        assert calls == ["getChat", "sendMessage"], holder
