@@ -271,6 +271,12 @@ pb_diagnose() {
   # say whether the file is there, whether the catalogue read it, and what it holds.
   show catalogue-founder-file sh -c "$K exec -n backstage deploy/catalogue -- ls -la /estate /estate/founder 2>&1"
   show catalogue-founder-configmap sh -c "$K get configmap founder-catalog estate-catalog -n backstage -o jsonpath='{range .items[*]}{.metadata.name}{\"\t\"}{.metadata.creationTimestamp}{\"\n\"}{end}' 2>&1"
+  # crew#626 CP15: the drill on idp#808 lands on /auth/sign-in?error=OAuthCallback after the SSO
+  # click, with and without AUTH_CUSTOM_ID_TOKEN. The laptop has no cluster key by design, so the
+  # only place the callback error is readable is here: the auth lines of langfuse-web, and the
+  # three non-secret AUTH_CUSTOM_* values the pod actually runs with (never the client secret).
+  show langfuse-auth-env sh -c "$K exec -n observability deploy/langfuse-web -- sh -c 'env | grep -E \"^AUTH_CUSTOM_(ISSUER|ID_TOKEN|SCOPE|NAME|ALLOW_ACCOUNT_LINKING)=|^NEXTAUTH_URL=\"' 2>&1 | sort"
+  show langfuse-auth-log sh -c "$K logs -n observability deploy/langfuse-web --all-containers --tail=3000 2>&1 | grep -iE 'oauth|callback|issuer|id_token|jwt|openid|next-auth|\[next-auth\]' | tail -60"
   show catalogue-log-locations sh -c "$K logs -n backstage deploy/catalogue --all-containers --tail=2000 2>&1 | grep -iE 'founder|location|catalog.*(error|fail|refus|invalid)' | tail -40"
   show catalogue-entities sh -c "$K exec -n backstage deploy/catalogue -- sh -c 'wget -qO- http://catalogue.backstage.svc:3100/api/catalog/entities?filter=spec.type=founder-surface | head -c 600' 2>&1"
   show claims-not-bound sh -c "$K get pvc -A --field-selector=status.phase!=Bound 2>/dev/null; true"
@@ -598,6 +604,19 @@ pb_helm_retry() {
   local failed
   failed=$($K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{" "}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null | awk '$1=="False"{print $2" "$3}')
   echo "--- helmreleases-failed"; printf '%s\n' "${failed:-none}"
+  # run 33259031857 (crew#626 CP15): langfuse-redis-d5f84c9dc-kxdth sat Init:0/1 for 8 h with no pod
+  # IP and PodReadyToStartContainers=False; the kubelet never retried the sandbox and every
+  # reconcile --reset stalled on the same Deployment. A pod whose sandbox has not started after
+  # 30 min is recreated by its owner: delete it, and the retry below has something new to watch.
+  local stuck
+  stuck=$($K get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{" "}{.metadata.creationTimestamp}{" "}{range .status.conditions[?(@.type=="PodReadyToStartContainers")]}{.status}{end}{"\n"}{end}' 2>/dev/null \
+    | awk -v cutoff="$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-30M +%Y-%m-%dT%H:%M:%SZ)" '$4=="False" && $3<cutoff {print $1" "$2}')
+  echo "--- pods-sandbox-never-started"; printf '%s\n' "${stuck:-none}"
+  local pns pname
+  while read -r pns pname; do
+    [ -n "$pname" ] || continue
+    step "recreate-$pname" $K delete pod "$pname" -n "$pns" --wait=false
+  done <<<"$stuck"
   local ns name
   while read -r ns name; do
     [ -n "$name" ] || continue

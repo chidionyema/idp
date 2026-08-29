@@ -39,13 +39,18 @@ langfuse:
       - name: NODE_OPTIONS
         value: --max-old-space-size=1536
     resources:
-      requests: { cpu: 50m, memory: 2Gi }   # crew#584: radio-room set, Guaranteed QoS required (require-priority-class)
-      limits: { cpu: 50m, memory: 2Gi }
+      # crew#626 CP15 (run 33259031857): at 50m the Next.js server never listened inside the 50 s
+      # liveness window (delay 20 s + 3 x 10 s) and was killed with exit 143, 164 times in 9 h, so
+      # the SSO change in idp#810 never reached a serving pod. 250m is the admission fence's own
+      # line (capacity-policy: above it needs a label) and equal to the limit for Guaranteed QoS.
+      requests: { cpu: 250m, memory: 2Gi }
+      limits: { cpu: 250m, memory: 2Gi }
   worker:
     replicas: 1
     resources:
-      requests: { cpu: 50m, memory: 1Gi }   # crew#584: radio-room set, Guaranteed QoS required (require-priority-class)
-      limits: { cpu: 50m, memory: 1Gi }
+      # crew#626 CP15: same boot failure as web at 50m (163 restarts in 9 h, run 33259031857).
+      requests: { cpu: 250m, memory: 1Gi }
+      limits: { cpu: 250m, memory: 1Gi }
 postgresql:
   deploy: true
   storage:

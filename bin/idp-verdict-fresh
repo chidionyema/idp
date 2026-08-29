@@ -114,6 +114,16 @@ def main(argv):
             f"ok      verdict-fresh  {surface} PASS {where}, completed {v['completed_at']}, ttl {v['ttl_seconds']}s"
         )
         return 0
+    if state == "FAIL":
+        # crew#626 CP15 (2026-08-29): a fresh, signed FAIL is knowledge that the surface is broken,
+        # and the only road to a PASS is a change to that surface. Refusing it deadlocked the
+        # Langfuse repair (idp#820) behind the verdict it exists to turn green: a guard that
+        # refuses correct work is an outage (LAW 38). The repair merges, and the next
+        # verdict-<surface>.yml run on main grades it; stale, unsigned and missing stay refused.
+        print(
+            f"ok      verdict-fresh  {surface} FAIL {where} ({why}); this change touches the surface, so it is the repair: the next verdict-{surface}.yml run on main grades it"
+        )
+        return 0
     print(
         f"FAIL    verdict-fresh  {surface} {state} {where}: {why}; a new verdict is one command: gh workflow run verdict-{surface}.yml"
     )
