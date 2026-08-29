@@ -14,6 +14,10 @@ on:
         description: "nonce issued by the control plane for this request (blank: the run mints one)"
         required: false
         default: ""
+      lookup_trace:
+        description: "attribution: a trace id from an earlier run, read again now (info line, not graded)"
+        required: false
+        default: ""
   push:
     branches: [main]
     paths:
@@ -64,6 +68,7 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           DRILL_SHOT: ${{ runner.temp }}/verdict-langfuse-home.png
           VERDICT_NONCE: ${{ inputs.nonce }}
+          IDP_PROVE_LOOKUP_TRACE: ${{ inputs.lookup_trace }}
           VERDICT_EVIDENCE_REF: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -o pipefail
@@ -91,7 +96,7 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
         run: |
           bin/idp-verdict schema || true
-          bin/idp-verdict store verdict.json || true
+          bin/idp-verdict store "$RUNNER_TEMP/verdict.json" || true
           bin/idp-verdict list -n 3 || true
       - name: check-run verify/langfuse on the commit, conclusion = outcome
         if: always()

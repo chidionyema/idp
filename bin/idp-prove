@@ -106,6 +106,14 @@ def prove_langfuse(out_path):
             host, pk, sk, trace_id, trace_id[:16],
             f"idp-prove.l4.{os.environ.get('GITHUB_RUN_ID', 'local')}",
         )
+        # Attribution of an L4 FAIL (crew#631, runs 33261263465 and 33261848900: 404 after 60s
+        # twice): a trace id from an earlier run is read again now. Readable = the ingest is
+        # slower than the deadline; still 404 = accepted and dropped. An info line, never an
+        # assertion: it grades a past run, not this digest.
+        prior = os.environ.get("IDP_PROVE_LOOKUP_TRACE", "").strip()
+        if prior:
+            st, body = LF.http(f"{host}/api/public/traces/{prior}", auth=(pk, sk))
+            print(f"info    prove  l4.attribution.prior_trace_{prior[:8]}      {st} {body[:80]}")
     else:
         blocked = blocked or "langfuse-init-public-key / secret-key unreadable from the vault"
     assertions += l3_via_drill()
