@@ -23,7 +23,7 @@ Memory `summary-over-source-is-the-mistake-class`; the removal is tracked on cre
 ### Road 2, chosen: GitHub proves itself, then a machine makes the key. Cost £0
 
 1. The founder registered one federated identity in Tailscale (Trust credentials, OIDC):
-   description `estate`, issuer GitHub Actions, subject `repo:chidionyema/idp:ref:refs/heads/main`,
+   description `estate`, issuer GitHub Actions, subject `repo:chidionyema@377396/idp@1344360654:*` (GitHub immutable subject: idp was created 2026-08-24, after the 2026-07-15 cutoff; the classic `repo:chidionyema/idp:...` form was refused, run 33248046751; source: GitHub OIDC reference, "Immutable subject claims", https://docs.github.com/en/actions/reference/security/oidc; the id comes from `gh api repos/chidionyema/idp/actions/oidc/customization/sub` -> `sub_claim_prefix`; Tailscale's matching rules, https://tailscale.com/kb/1581/workload-identity-federation),
    scope `oauth_keys` write, client id `T8XvMsM4vA11CNTRL-kmgFbQMnqn11CNTRL` (a public id, not a
    secret; `clusters/oke/estate-config.yaml`, idp#754). This is the one human step, done once.
 2. On `oke-check apply` the runner asks GitHub for an OIDC token with audience
