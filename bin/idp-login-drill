@@ -212,7 +212,25 @@ with sync_playwright() as p:
             state="visible", timeout=TIMEOUT
         )
     except PWError:
-        fail("catalogue", f"{HOME} answered 200 but no Backstage shell rendered (no nav in the page)")
+        # run 33251546897 (crew#459, 2026-08-29): the new front page answered 200 and drew nothing, and this
+        # line was all the estate had. The page errors collected above were never printed and the
+        # screenshot step sits after the fail. Name the crash: every uncaught error, the page's own words,
+        # and the picture, so the next blank page is a stack trace and not a guess.
+        words = ""
+        try:
+            words = " ".join(page.locator("body").inner_text(timeout=3000).split())[:300]
+        except PWError:
+            pass
+        try:
+            page.screenshot(path=os.environ.get("DRILL_SHOT", "/tmp/login-drill-home.png"), full_page=True)
+        except PWError:
+            pass
+        errs = " | ".join(e.splitlines()[0][:300] for e in page_errors) or "no uncaught page error"
+        fail(
+            "catalogue",
+            f"{HOME} answered 200 but no Backstage shell rendered (no nav in the page); "
+            f"page errors: {errs}; page says: {words or '(empty body)'}",
+        )
 
     # 5. the whole path, not just the door: the door's headers must reach Backstage's own
     # auth provider and come back as a signed-in identity. On 2026-08-26 the door was green
