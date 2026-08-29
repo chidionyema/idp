@@ -28,7 +28,7 @@ args=("$@"); for i in "${{!args[@]}}"; do [ "${{args[$i]}}" = -o ] && out="${{ar
 body() {{ if [ "$out" = /dev/stdout ]; then cat; else cat > "$out"; printf '%s' "$code"; fi; }}
 case "$*" in
   *oidc.test*) echo '{{"value":"{"eyJhbGciOi.jwt.sig" if oidc_ok else ""}"}}';;
-  *token-exchange*) echo '{{"access_token":"at-fed","scope":"oauth_keys"}}' | body;;
+  *token-exchange*) echo '{{"access_token":"at-fed","scope":"devices:core devices:core:read policy_file auth_keys oauth_keys users:read"}}' | body;;
   *oauth/token*) echo '{{"access_token":"at-new","scope":"auth_keys devices:core policy_file users:read"}}';;
   *tailnet/-/keys*) echo '{mint}';;
   *) echo '{{}}';;
