@@ -59,5 +59,5 @@ read. Plumbing inside the boundary (`bin/idp-oci-*`, `bin/idp-iam-*`) stays behi
 ## Related
 
 `docs/reference/policy/governance-kernel.md` (how a control is written), `docs/reference/policy/definition-of-done.md`,
-`platform/edge/kyverno.yaml` (the admission controller), `drills/portability-floor.txt` (the floor
+`platform/kyverno/kyverno.yaml` (the admission controller), `drills/portability-floor.txt` (the floor
 the k3s drill grades).
