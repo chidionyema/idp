@@ -4,7 +4,7 @@
 // time. Nothing here names a hostname or a surface: the list is the catalogue,
 // so the gate that refuses an unregistered surface (crew#401 CP3) keeps this
 // page complete, and the catalogue-drift row (crew#401 CP4) keeps it honest.
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Entity } from '@backstage/catalog-model';
 import {
@@ -13,16 +13,14 @@ import {
   Header,
   HeaderLabel,
   InfoCard,
-  ItemCardGrid,
   Link,
   LinkButton,
   Page,
-  Progress,
-  ResponseErrorPanel,
 } from '@backstage/core-components';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import {
+  Button,
   Chip,
   Grid,
   TextField,
@@ -141,6 +139,13 @@ const useStyles = makeStyles(theme => ({
     flexDirection: 'column',
     height: '100%',
   },
+  // The vendor grid track is 22em (352px): wider than a phone minus padding, so the
+  // page scrolled sideways (audit 2026-08-29). min(100%, 22em) never exceeds the column.
+  grid: {
+    display: 'grid',
+    gridGap: theme.spacing(2),
+    gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 22em), 1fr))',
+  },
   description: {
     flex: 1,
     marginBottom: theme.spacing(2),
@@ -154,24 +159,58 @@ const useStyles = makeStyles(theme => ({
     flexWrap: 'wrap',
     gap: theme.spacing(1),
   },
+  // A door whose link has no title shows its URL; a nowrap button then widens the page.
+  door: {
+    maxWidth: '100%',
+    '& .MuiButton-label': { whiteSpace: 'normal', overflowWrap: 'anywhere' },
+  },
   count: {
-    fontSize: 40,
+    fontSize: 'clamp(28px, 9vw, 40px)',
     fontWeight: 700,
     lineHeight: 1,
+    letterSpacing: '-0.02em',
   },
   countRed: {
     color: theme.palette.status.error,
+  },
+  totalCard: {
+    display: 'block',
+    padding: theme.spacing(2),
+    minHeight: 96,
+    borderRadius: 12,
+    background: theme.palette.background.paper,
+    boxShadow: theme.shadows[1],
+    color: 'inherit',
+    '&:hover': { boxShadow: theme.shadows[4] },
+  },
+  totalLabel: {
+    display: 'block',
+    marginTop: theme.spacing(0.5),
+    lineHeight: 1.3,
+    color: theme.palette.text.secondary,
   },
   pill: {
     alignSelf: 'flex-start',
     marginBottom: theme.spacing(1),
     fontWeight: 600,
-    color: '#ffffff',
+    color: theme.palette.getContrastText(theme.palette.status.ok),
   },
-  pillDown: { backgroundColor: theme.palette.status.error },
-  pillStale: { backgroundColor: theme.palette.status.warning },
-  pillUnchecked: { backgroundColor: theme.palette.status.pending },
-  pillUp: { backgroundColor: theme.palette.status.ok },
+  pillDown: {
+    backgroundColor: theme.palette.status.error,
+    color: theme.palette.getContrastText(theme.palette.status.error),
+  },
+  pillStale: {
+    backgroundColor: theme.palette.status.warning,
+    color: theme.palette.getContrastText(theme.palette.status.warning),
+  },
+  pillUnchecked: {
+    backgroundColor: theme.palette.status.pending,
+    color: theme.palette.getContrastText(theme.palette.status.pending),
+  },
+  pillUp: {
+    backgroundColor: theme.palette.status.ok,
+    color: theme.palette.getContrastText(theme.palette.status.ok),
+  },
   band: {
     marginBottom: theme.spacing(3),
   },
@@ -179,13 +218,15 @@ const useStyles = makeStyles(theme => ({
     display: 'flex',
     alignItems: 'center',
     gap: theme.spacing(1),
-    padding: theme.spacing(0.5, 0),
+    padding: theme.spacing(1, 0),
     borderBottom: `1px solid ${theme.palette.divider}`,
     flexWrap: 'wrap',
   },
   rowTitle: {
     flex: '1 1 12em',
     fontWeight: 500,
+    minWidth: 0,
+    overflowWrap: 'anywhere',
   },
   rowLinks: {
     display: 'flex',
@@ -194,14 +235,57 @@ const useStyles = makeStyles(theme => ({
   },
   groupTitle: {
     marginTop: theme.spacing(2),
+    marginBottom: theme.spacing(0.5),
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+    fontSize: 12,
+    color: theme.palette.text.secondary,
   },
   find: {
-    marginBottom: theme.spacing(2),
+    marginBottom: theme.spacing(1),
+    '& .MuiOutlinedInput-input': {
+      fontSize: 18,
+      padding: '14px 16px',
+    },
+  },
+  hint: {
+    marginBottom: theme.spacing(3),
+    color: theme.palette.text.secondary,
   },
   actions: {
     display: 'flex',
     flexWrap: 'wrap',
     gap: theme.spacing(1),
+  },
+  errorCard: {
+    padding: theme.spacing(3),
+    borderRadius: 12,
+    background: theme.palette.background.paper,
+    boxShadow: theme.shadows[1],
+    maxWidth: 560,
+  },
+  errorDetail: {
+    marginTop: theme.spacing(2),
+    fontFamily: 'monospace',
+    fontSize: 12,
+    color: theme.palette.text.secondary,
+    overflowWrap: 'anywhere',
+  },
+  bone: {
+    borderRadius: 12,
+    background: theme.palette.action.hover,
+    animation: '$pulse 1.4s ease-in-out infinite',
+  },
+  '@keyframes pulse': {
+    '0%': { opacity: 1 },
+    '50%': { opacity: 0.45 },
+    '100%': { opacity: 1 },
+  },
+  skeletonRow: {
+    display: 'grid',
+    gridGap: theme.spacing(2),
+    gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 22em), 1fr))',
+    marginTop: theme.spacing(2),
   },
 }));
 
@@ -218,6 +302,32 @@ const pillClass = (classes: ReturnType<typeof useStyles>, h: Health) =>
     up: classes.pillUp,
   }[h]);
 
+const entityPathOf = (entity: Entity) =>
+  `/catalog/${
+    entity.metadata.namespace ?? 'default'
+  }/${entity.kind.toLowerCase()}/${entity.metadata.name}`;
+
+const DoorLinks = ({ entity }: { entity: Entity }) => {
+  const classes = useStyles();
+  const links = entity.metadata.links ?? [];
+  return (
+    <div className={classes.links}>
+      {links.map(link => (
+        <LinkButton
+          key={link.url}
+          to={link.url}
+          color="primary"
+          variant={link === links[0] ? 'contained' : 'outlined'}
+          size="small"
+          className={classes.door}
+        >
+          {link.title ?? link.url}
+        </LinkButton>
+      ))}
+    </div>
+  );
+};
+
 /** One card per founder surface: its state in one word, title, what it is, and its doors. */
 export const SurfaceCard = ({
   entity,
@@ -228,42 +338,29 @@ export const SurfaceCard = ({
 }) => {
   const classes = useStyles();
   const title = entity.metadata.title ?? entity.metadata.name;
-  const links = entity.metadata.links ?? [];
   const health = healthOf(entity, now);
-  const entityPath = `/catalog/${
-    entity.metadata.namespace ?? 'default'
-  }/${entity.kind.toLowerCase()}/${entity.metadata.name}`;
+  // InfoCard drops unknown props, so the test id lives on a wrapper (audit 2026-08-29).
   return (
-    <InfoCard
-      title={title}
-      className={classes.card}
-      deepLink={{ title: 'Catalogue entry', link: entityPath }}
-      data-testid={`surface-${entity.metadata.name}`}
-    >
-      <Chip
-        size="small"
-        label={HEALTH_LABEL[health]}
-        className={`${classes.pill} ${pillClass(classes, health)}`}
-        data-testid={`health-${entity.metadata.name}`}
-        data-health={health}
-      />
-      <Typography variant="body2" className={classes.description}>
-        {entity.metadata.description}
-      </Typography>
-      <div className={classes.links}>
-        {links.map(link => (
-          <LinkButton
-            key={link.url}
-            to={link.url}
-            color="primary"
-            variant={link === links[0] ? 'contained' : 'outlined'}
-            size="small"
-          >
-            {link.title ?? link.url}
-          </LinkButton>
-        ))}
-      </div>
-    </InfoCard>
+    <div data-testid={`surface-${entity.metadata.name}`}>
+      <InfoCard
+        title={title}
+        variant="gridItem"
+        className={classes.card}
+        deepLink={{ title: 'Catalogue entry', link: entityPathOf(entity) }}
+      >
+        <Chip
+          size="small"
+          label={HEALTH_LABEL[health]}
+          className={`${classes.pill} ${pillClass(classes, health)}`}
+          data-testid={`health-${entity.metadata.name}`}
+          data-health={health}
+        />
+        <Typography variant="body2" className={classes.description}>
+          {entity.metadata.description}
+        </Typography>
+        <DoorLinks entity={entity} />
+      </InfoCard>
+    </div>
   );
 };
 
@@ -271,11 +368,7 @@ export const SurfaceCard = ({
 export const DoorRow = ({ entity, now }: { entity: Entity; now?: number }) => {
   const classes = useStyles();
   const title = entity.metadata.title ?? entity.metadata.name;
-  const links = entity.metadata.links ?? [];
   const health = healthOf(entity, now);
-  const entityPath = `/catalog/${
-    entity.metadata.namespace ?? 'default'
-  }/${entity.kind.toLowerCase()}/${entity.metadata.name}`;
   return (
     <div
       className={classes.row}
@@ -289,29 +382,20 @@ export const DoorRow = ({ entity, now }: { entity: Entity; now?: number }) => {
         data-health={health}
       />
       <Link
-        to={entityPath}
+        to={entityPathOf(entity)}
         className={classes.rowTitle}
         title={entity.metadata.description}
       >
         {title}
       </Link>
       <div className={classes.rowLinks}>
-        {links.map(link => (
-          <LinkButton
-            key={link.url}
-            to={link.url}
-            color="primary"
-            variant={link === links[0] ? 'contained' : 'outlined'}
-            size="small"
-          >
-            {link.title ?? link.url}
-          </LinkButton>
-        ))}
+        <DoorLinks entity={entity} />
       </div>
     </div>
   );
 };
 
+/** A headline number. The whole tile is the tap target, not the digits (WCAG 2.5.8). */
 const Total = ({
   label,
   value,
@@ -325,21 +409,87 @@ const Total = ({
 }) => {
   const classes = useStyles();
   return (
-    <Grid item xs={6} sm={6}>
-      <InfoCard>
-        <Link to={to} underline="none" color="inherit">
-          <Typography
-            className={`${classes.count} ${
-              red && value > 0 ? classes.countRed : ''
-            }`}
-            data-testid={`total-${label}`}
-          >
-            {value}
-          </Typography>
-          <Typography variant="overline">{label}</Typography>
-        </Link>
-      </InfoCard>
+    <Grid item xs={6} sm={6} md={3}>
+      <Link
+        to={to}
+        underline="none"
+        className={classes.totalCard}
+        aria-label={`${value} ${label}`}
+      >
+        <Typography
+          className={`${classes.count} ${
+            red && value > 0 ? classes.countRed : ''
+          }`}
+          data-testid={`total-${label}`}
+        >
+          {value}
+        </Typography>
+        <Typography variant="body2" className={classes.totalLabel}>
+          {label}
+        </Typography>
+      </Link>
     </Grid>
+  );
+};
+
+/** The page's shape while the catalogue answers: same grid, no jump when it lands. */
+const Loading = () => {
+  const classes = useStyles();
+  const Bone = ({ height }: { height: number }) => (
+    <div className={classes.bone} style={{ height }} aria-hidden="true" />
+  );
+  return (
+    <div data-testid="loading" aria-busy="true">
+      <Bone height={52} />
+      <Typography variant="body2" className={classes.hint}>
+        Reading the catalogue…
+      </Typography>
+      <Grid container spacing={2}>
+        {[0, 1].map(i => (
+          <Grid item xs={6} key={i}>
+            <Bone height={96} />
+          </Grid>
+        ))}
+      </Grid>
+      <div className={classes.skeletonRow}>
+        {[0, 1, 2].map(i => (
+          <Bone key={i} height={132} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+/** A human sentence, a way to try again, and the detail folded away for an engineer. */
+const CatalogueUnavailable = ({
+  error,
+  retry,
+}: {
+  error: Error;
+  retry: () => void;
+}) => {
+  const classes = useStyles();
+  return (
+    <div
+      className={classes.errorCard}
+      role="alert"
+      data-testid="catalogue-error"
+    >
+      <Typography variant="h5" gutterBottom>
+        The catalogue did not answer
+      </Typography>
+      <Typography variant="body1" gutterBottom>
+        The portal is up; the catalogue service behind it did not reply. Nothing
+        on this page is proof that anything else is down.
+      </Typography>
+      <Button variant="contained" color="primary" onClick={retry}>
+        Try again
+      </Button>
+      <details className={classes.errorDetail}>
+        <summary>What the service said</summary>
+        {String(error?.message ?? error)}
+      </details>
+    </div>
   );
 };
 
@@ -349,6 +499,7 @@ export const EstateHome = () => {
   const config = useApi(configApiRef);
   const title = config.getOptionalString('app.title') ?? 'Estate';
   const [loaded, setLoaded] = useState<Loaded>({ state: 'loading' });
+  const [attempt, setAttempt] = useState(0);
   const [query, setQuery] = useState('');
   const navigate = useNavigate();
   // The box takes the keyboard as soon as the page has something to find; the founder
@@ -357,6 +508,10 @@ export const EstateHome = () => {
   useEffect(() => {
     if (loaded.state === 'ready') findRef.current?.focus();
   }, [loaded.state]);
+  const retry = useCallback(() => {
+    setLoaded({ state: 'loading' });
+    setAttempt(a => a + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -386,27 +541,28 @@ export const EstateHome = () => {
     return () => {
       cancelled = true;
     };
-  }, [catalogApi]);
+  }, [catalogApi, attempt]);
+
+  const needsYouCount =
+    loaded.state === 'ready'
+      ? loaded.surfaces.filter(e => needsYou(healthOf(e))).length
+      : undefined;
 
   return (
     <Page themeId="home">
       <Header
         title={title}
-        subtitle="What is up, what is down, and what needs you"
+        subtitle="Every service, every door, and what needs you, on one screen"
       >
-        {loaded.state === 'ready' && (
-          <HeaderLabel
-            label="Needs you"
-            value={String(
-              loaded.surfaces.filter(e => needsYou(healthOf(e))).length,
-            )}
-          />
-        )}
+        <HeaderLabel
+          label="Needs you"
+          value={needsYouCount === undefined ? '—' : String(needsYouCount)}
+        />
       </Header>
       <Content>
-        {loaded.state === 'loading' && <Progress />}
+        {loaded.state === 'loading' && <Loading />}
         {loaded.state === 'error' && (
-          <ResponseErrorPanel error={loaded.error} />
+          <CatalogueUnavailable error={loaded.error} retry={retry} />
         )}
         {loaded.state === 'ready' && (
           <>
@@ -415,8 +571,7 @@ export const EstateHome = () => {
               fullWidth
               inputRef={findRef}
               variant="outlined"
-              size="small"
-              placeholder="Type to find a door or an action; Enter opens the first match"
+              placeholder="Find a door or an action"
               value={query}
               onChange={e => setQuery(e.target.value)}
               onKeyDown={e => {
@@ -428,6 +583,9 @@ export const EstateHome = () => {
               }}
               inputProps={{ 'data-testid': 'quick-find', 'aria-label': 'Find' }}
             />
+            <Typography variant="body2" className={classes.hint}>
+              Type a word; Enter opens the first match.
+            </Typography>
             {(() => {
               const m = findMatches(query, loaded.surfaces, loaded.templates);
               return m.templates.length > 0 ? (
@@ -451,13 +609,11 @@ export const EstateHome = () => {
                 </section>
               ) : null;
             })()}
-            <Grid container spacing={2} style={{ marginBottom: 16 }}>
+            <Grid container spacing={2} className={classes.band}>
               <Total
                 label="Needs you"
-                value={
-                  loaded.surfaces.filter(e => needsYou(healthOf(e))).length
-                }
-                to="/catalog?filters[kind]=component&filters[type]=founder-surface&filters[tags]=unhealthy"
+                value={needsYouCount ?? 0}
+                to="/catalog?filters[kind]=component&filters[type]=founder-surface"
                 red
               />
               <Total
@@ -468,7 +624,8 @@ export const EstateHome = () => {
             </Grid>
             {loaded.surfaces.length === 0 ? (
               <Typography data-testid="no-surfaces">
-                The catalogue holds no {FOUNDER_SURFACE_TYPE} entity yet.
+                No doors are registered yet. A door is added to the catalogue,
+                never typed here.
               </Typography>
             ) : (
               <>
@@ -495,14 +652,14 @@ export const EstateHome = () => {
                             }
                           />
                           {attention.length > 0 && (
-                            <ItemCardGrid>
+                            <div className={classes.grid}>
                               {attention.map(entity => (
                                 <SurfaceCard
                                   key={entity.metadata.name}
                                   entity={entity}
                                 />
                               ))}
-                            </ItemCardGrid>
+                            </div>
                           )}
                         </section>
                       )}

@@ -6,7 +6,7 @@
 import { screen } from '@testing-library/react';
 import { Entity } from '@backstage/catalog-model';
 import { configApiRef } from '@backstage/frontend-plugin-api';
-import { catalogApiRef } from '@backstage/plugin-catalog-react';
+import { CatalogApi, catalogApiRef } from '@backstage/plugin-catalog-react';
 import { catalogApiMock } from '@backstage/plugin-catalog-react/testUtils';
 import {
   mockApis,
@@ -313,5 +313,69 @@ describe('the front page finds a door or an action from one word, no scrolling',
       doors: [],
       templates: [],
     });
+  });
+});
+
+// crew#459 (founder, 2026-08-29: "assume an investor and buyer is coming to view our backstage
+// ... every single detail needs to be 100x better"). The first two minutes and the worst minute:
+// while the catalogue answers the page has its shape, not a bare progress bar; when it does not
+// answer the visitor reads a sentence and a Try again button, never a stack trace; and the
+// header's count is on the page before the data is, so nothing jumps.
+describe('crew459: loading, failure and empty states read like a product', () => {
+  it('shows the page shape and a plain sentence while the catalogue is read', async () => {
+    const never = new Promise<never>(() => {});
+    const api = { getEntities: () => never } as unknown as CatalogApi;
+    renderInTestApp(
+      <TestApiProvider
+        apis={[
+          [catalogApiRef, api],
+          [
+            configApiRef,
+            mockApis.config({ data: { app: { title: 'Test estate' } } }),
+          ],
+        ]}
+      >
+        <EstateHome />
+      </TestApiProvider>,
+    );
+    expect(await screen.findByTestId('loading')).toBeInTheDocument();
+    expect(screen.getByText('Reading the catalogue…')).toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
+  });
+
+  it('says the catalogue did not answer, in words, and offers Try again', async () => {
+    const api = {
+      getEntities: () =>
+        Promise.reject(new Error('Request failed with status 502')),
+    } as unknown as CatalogApi;
+    await renderInTestApp(
+      <TestApiProvider
+        apis={[
+          [catalogApiRef, api],
+          [
+            configApiRef,
+            mockApis.config({ data: { app: { title: 'Test estate' } } }),
+          ],
+        ]}
+      >
+        <EstateHome />
+      </TestApiProvider>,
+    );
+    expect(await screen.findByTestId('catalogue-error')).toBeInTheDocument();
+    expect(
+      screen.getByText('The catalogue did not answer'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Try again' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/status 502/)).not.toBeVisible();
+  });
+
+  it('names no machine type when nothing is registered', async () => {
+    await render([]);
+    expect(await screen.findByTestId('no-surfaces')).toHaveTextContent(
+      'No doors are registered yet',
+    );
+    expect(screen.queryByText(/founder-surface/)).not.toBeInTheDocument();
   });
 });

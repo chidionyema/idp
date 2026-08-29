@@ -122,6 +122,41 @@ MAP = {
     "listener":      ("Resource",  "port"),
 }
 
+
+# Founder, 2026-08-29 ("assume an investor and buyer is coming to view our backstage"): the
+# served catalogue read like one laptop. 527 lines carried a home directory, 8 titles were
+# launchd reverse-DNS labels, and Adobe's own background job was listed as an estate asset.
+# Three rules, applied where every entity is written so no row can miss them:
+#   1. a path under a user's home is written as ~/..., never the account name (LAW 46);
+#   2. a scheduled job whose program lives under the OS's own trees is vendor software on
+#      the machine, not an estate asset, and is not written;
+#   3. a reverse-DNS id (ai.aiden.watch) is a label, not a title: the title is the words,
+#      the label stays on the entity as estate/label.
+HOME_RE = re.compile(r"^/(?:Users|home)/[^/\s]+(?=/|$)")
+VENDOR_TREES = ("/Applications/", "/System/", "/Library/", "/usr/libexec/")
+LABEL_RE = re.compile(r"^[a-z][a-z0-9-]*(\.[a-z0-9-]+){2,}$")
+
+
+def unhomed(s):
+    """Every absolute path under a home directory, anywhere in the string, becomes ~/..."""
+    return re.sub(r"/(?:Users|home)/[^/\s]+(?=/|\b)", "~", str(s)) if s is not None else s
+
+
+def vendor_software(r) -> bool:
+    return r.get("kind") == "scheduled_job" and str(r.get("path") or "").startswith(VENDOR_TREES)
+
+
+def human_title(r, fallback):
+    rid = str(r.get("id") or fallback)
+    if not LABEL_RE.match(rid):
+        return rid
+    parts = rid.split(".")
+    if parts[0] in ("ai", "com", "org", "io", "net"):
+        parts = parts[1:]
+    words = " ".join(w.replace("-", " ") for w in parts)
+    return words[:1].upper() + words[1:]
+
+
 def y(v):
     """YAML scalar, quoted when it could be misread.
 
@@ -168,7 +203,7 @@ def entity(kind, name, title, etype, annotations, tags, links=(), depends_on=(),
         "metadata:",
         f"  name: {y(name)}",
         f"  title: {y(title)}",
-        f"  description: {y(str(description).strip())}",
+        f"  description: {y(unhomed(str(description).strip()))}",
     ]
     if annotations:
         out.append("  annotations:")
@@ -178,7 +213,7 @@ def entity(kind, name, title, etype, annotations, tags, links=(), depends_on=(),
         for k, v in sorted(annotations.items()):
             if v in (None, ""):
                 continue
-            out.append(f"    {k if '/' in k else 'estate/' + k}: {y(v)}")
+            out.append(f"    {k if '/' in k else 'estate/' + k}: {y(unhomed(v))}")
     if tags:
         out.append("  tags:")
         out += [f"    - {y(slug(t).lower())}" for t in tags if t]
@@ -360,7 +395,7 @@ def main() -> int:
         print(f"catalog-gen: no inventory at {INV} -- run the inventory first", file=sys.stderr)
         return 2
     inv = json.load(open(INV))
-    rows = inv.get("rows") or []
+    rows = [r for r in (inv.get("rows") or []) if not vendor_software(r)]
     if not rows:
         # A catalogue that renders empty looks identical to a portal with nothing
         # wrong. Refuse instead, so the failure is loud where it happens.
@@ -773,7 +808,9 @@ def main() -> int:
             # crew#612 CP2: company -> product -> asset. An asset in no tracked repository
             # stays on the estate System, tagged outside-any-repo above.
             sysref = product_ref(owner_repo)
-        docs.append(entity(bkind, name, r.get("id") or name, btype, ann, tags, links,
+        if r.get("id") and human_title(r, name) != r.get("id"):
+            ann["label"] = r.get("id")
+        docs.append(entity(bkind, name, human_title(r, name), btype, ann, tags, links,
                            deps, system=sysref, description=describe(r)))
         all_links += [(f"{r.get('id') or name}: {t}", u) for t, u in links]
         counts[k] = counts.get(k, 0) + 1

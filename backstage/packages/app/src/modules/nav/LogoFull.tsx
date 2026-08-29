@@ -4,6 +4,7 @@
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import { makeStyles } from '@material-ui/core';
 import { LogoIcon } from './LogoIcon';
+import { inkOnNavy } from '../theme/tokens';
 
 const useStyles = makeStyles({
   root: {
@@ -13,7 +14,7 @@ const useStyles = makeStyles({
     whiteSpace: 'nowrap',
   },
   word: {
-    color: '#f5f1e8',
+    color: inkOnNavy,
     fontSize: 17,
     fontWeight: 600,
     letterSpacing: '0.02em',

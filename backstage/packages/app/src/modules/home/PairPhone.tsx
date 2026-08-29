@@ -18,14 +18,20 @@ import {
   InfoCard,
   Page,
 } from '@backstage/core-components';
-import { discoveryApiRef, fetchApiRef, useApi } from '@backstage/frontend-plugin-api';
+import {
+  discoveryApiRef,
+  fetchApiRef,
+  useApi,
+} from '@backstage/frontend-plugin-api';
 import { Button, TextField, Typography } from '@material-ui/core';
 
 export const PairPhone = () => {
   const fetchApi = useApi(fetchApiRef);
   const discovery = useApi(discoveryApiRef);
   const [pin, setPin] = useState('');
-  const [state, setState] = useState<'idle' | 'sending' | 'paired' | 'failed'>('idle');
+  const [state, setState] = useState<'idle' | 'sending' | 'paired' | 'failed'>(
+    'idle',
+  );
   const [detail, setDetail] = useState('');
 
   const submit = async () => {
@@ -56,19 +62,30 @@ export const PairPhone = () => {
 
   return (
     <Page themeId="home">
-      <Header title="Pair my phone" subtitle="Sunshine on the estate Mac · Moonlight on your phone" />
+      <Header
+        title="Pair my phone"
+        subtitle="Sunshine on the estate Mac · Moonlight on your phone"
+      />
       <Content>
         <ContentHeader title="Type the PIN Moonlight shows you" />
         <InfoCard>
           <Typography paragraph>
-            Open Moonlight on the phone, tap the Mac, and it shows a 4-digit PIN. Type it here. The
-            PIN reaches the Mac directly; no chat, no waiting on anyone.
+            Open Moonlight on the phone, tap the Mac, and it shows a 4-digit
+            PIN. Type it here. The PIN reaches the Mac directly; no chat, no
+            waiting on anyone.
           </Typography>
           <TextField
             label="PIN"
             value={pin}
-            inputProps={{ inputMode: 'numeric', pattern: '[0-9]*', maxLength: 4, 'data-testid': 'pin' }}
-            onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            inputProps={{
+              inputMode: 'numeric',
+              pattern: '[0-9]*',
+              maxLength: 4,
+              'data-testid': 'pin',
+            }}
+            onChange={e =>
+              setPin(e.target.value.replace(/\D/g, '').slice(0, 4))
+            }
             disabled={state === 'sending'}
           />
           <div style={{ marginTop: 16 }}>
@@ -83,7 +100,10 @@ export const PairPhone = () => {
             </Button>
           </div>
           {detail && (
-            <Typography style={{ marginTop: 16 }} color={state === 'failed' ? 'error' : 'textPrimary'}>
+            <Typography
+              style={{ marginTop: 16 }}
+              color={state === 'failed' ? 'error' : 'textPrimary'}
+            >
               {detail}
             </Typography>
           )}
