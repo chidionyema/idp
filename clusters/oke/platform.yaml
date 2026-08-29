@@ -69,6 +69,7 @@ metadata:
   name: chaos-mesh
   namespace: flux-system
 spec:
+  suspend: true
   interval: 1m
   # Platform rows never wait on the portal (crew#539, 2026-08-28: one stalled catalogue rollout held
   # 15 rows — observability, spire, temporal, keda, monitoring, science — behind Deployment/backstage/catalogue).
@@ -96,6 +97,7 @@ metadata:
   name: chaos
   namespace: flux-system
 spec:
+  suspend: true
   interval: 1m
   dependsOn:
     - name: chaos-mesh
@@ -119,6 +121,7 @@ metadata:
   name: observability-collector
   namespace: flux-system
 spec:
+  suspend: false
   # crew#584 traces/lean: the node agent alone. Enterprise adds the `observability` row (SigNoz
   # store + Langfuse) on top; lean points otelCollectorEndpoint at an external OTLP endpoint.
   interval: 1m
@@ -229,6 +232,7 @@ metadata:
   name: healthchecks
   namespace: flux-system
 spec:
+  suspend: true
   interval: 1m
   sourceRef:
     kind: GitRepository
@@ -426,6 +430,7 @@ metadata:
   name: temporal
   namespace: flux-system
 spec:
+  suspend: true
   interval: 1m
   dependsOn:
     - name: edge
@@ -649,6 +654,7 @@ metadata:
   name: healing
   namespace: flux-system
 spec:
+  suspend: true
   interval: 1m
   dependsOn:
     - name: scheduling
@@ -679,6 +685,7 @@ metadata:
   name: healing-analyzer
   namespace: flux-system
 spec:
+  suspend: true
   interval: 1m
   dependsOn:
     - name: healing
@@ -704,6 +711,7 @@ metadata:
   name: robusta
   namespace: flux-system
 spec:
+  suspend: true
   interval: 1m
   dependsOn:
     - name: secret-store
@@ -729,6 +737,7 @@ metadata:
   name: monitoring
   namespace: flux-system
 spec:
+  suspend: false
   interval: 1m
   dependsOn:
     - name: edge
@@ -779,6 +788,7 @@ metadata:
   name: monitoring-rules
   namespace: flux-system
 spec:
+  suspend: false
   interval: 1m
   dependsOn:
     - name: monitoring
@@ -802,6 +812,7 @@ metadata:
   name: drills
   namespace: flux-system
 spec:
+  suspend: false
   interval: 1m
   sourceRef:
     kind: GitRepository

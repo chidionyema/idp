@@ -6,6 +6,7 @@ metadata:
   name: alerts
   namespace: flux-system
 spec:
+  suspend: true
   interval: 10m
   dependsOn:
     - name: alerts-secret
@@ -28,6 +29,7 @@ metadata:
   name: alerts-secret
   namespace: flux-system
 spec:
+  suspend: true
   interval: 10m
   dependsOn:
     - name: secret-store
@@ -49,6 +51,7 @@ metadata:
   name: alerts-github
   namespace: flux-system
 spec:
+  suspend: false
   interval: 10m
   dependsOn:
     - name: secret-store
