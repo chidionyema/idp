@@ -1,4 +1,4 @@
-import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import {
   renderInTestApp,
   TestApiProvider,
@@ -10,7 +10,8 @@ import { configApiRef } from '@backstage/frontend-plugin-api';
 import { kubernetesApiRef } from '@backstage/plugin-kubernetes';
 import { Entity } from '@backstage/catalog-model';
 import { EstateHome } from './EstateHome';
-import { count, fluxState, layerState, podsOf, verdict } from './estate';
+import { ago, count, fluxState, layerState, podsOf, verdict } from './estate';
+import { REFRESH_MS } from './useEstate';
 
 const layer = (name: string, system = 'delivery'): Entity => ({
   apiVersion: 'backstage.io/v1alpha1',
@@ -148,7 +149,87 @@ describe('estate logic', () => {
   });
 });
 
+describe('age', () => {
+  it('says how long a state has held, in the shortest true unit', () => {
+    const now = Date.parse('2026-08-29T12:00:00Z');
+    expect(ago('2026-08-29T11:59:40Z', now)).toBe('just now');
+    expect(ago('2026-08-29T11:56:00Z', now)).toBe('4m ago');
+    expect(ago('2026-08-29T09:00:00Z', now)).toBe('3h ago');
+    expect(ago('2026-08-27T12:00:00Z', now)).toBe('2d ago');
+    expect(ago('not a time', now)).toBeUndefined();
+    expect(ago(undefined, now)).toBeUndefined();
+  });
+});
+
 describe('EstateHome', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+    window.localStorage.clear();
+  });
+
+  it('shows how long each layer has held its state, from what Flux said', async () => {
+    const k = flux('backstage', 'True');
+    k.status.conditions[0].lastTransitionTime = new Date(
+      Date.now() - 5 * 60_000,
+    ).toISOString();
+    await render(
+      [system('delivery', 'Delivery'), layer('backstage')],
+      kubernetes({ kustomizations: [k] }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('age-layer-backstage')).toHaveTextContent(
+        '5m ago',
+      ),
+    );
+  });
+
+  it('lands in the find box on / or Cmd+K from anywhere on the page', async () => {
+    await render([layer('backstage')], kubernetes({}));
+    const find = await screen.findByTestId('quick-find');
+    (find as HTMLInputElement).blur();
+    expect(find).not.toHaveFocus();
+    fireEvent.keyDown(window, { key: '/' });
+    expect(find).toHaveFocus();
+    find.blur();
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    expect(find).toHaveFocus();
+    // typing a slash inside a field is text, not a shortcut
+    find.blur();
+    fireEvent.keyDown(find, { key: '/' });
+    expect(find).not.toHaveFocus();
+  });
+
+  it('keeps the board-or-list choice in the browser', async () => {
+    await render(
+      [system('delivery', 'Delivery'), layer('backstage')],
+      kubernetes({ kustomizations: [flux('backstage', 'True')] }),
+    );
+    const list = await screen.findByTestId('view-list');
+    expect(screen.getByTestId('view-board')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    fireEvent.click(list);
+    expect(list).toHaveAttribute('aria-pressed', 'true');
+    expect(window.localStorage.getItem('estate.view')).toBe('list');
+    expect(
+      screen.getByTestId('system-delivery').querySelector('[data-view]'),
+    ).toHaveAttribute('data-view', 'list');
+  });
+
+  it('re-reads the cluster every minute without asking the catalogue again', async () => {
+    jest.useFakeTimers();
+    const k8s = kubernetes({ kustomizations: [flux('backstage', 'True')] });
+    await render([layer('backstage')], k8s);
+    await screen.findByTestId('verdict');
+    const before = k8s.proxy.mock.calls.length;
+    expect(before).toBe(2);
+    await act(async () => {
+      jest.advanceTimersByTime(REFRESH_MS);
+    });
+    await waitFor(() => expect(k8s.proxy.mock.calls.length).toBe(before + 2));
+  });
+
   it('shows every layer the cluster runs, grouped by system, with live state and pods', async () => {
     const now = new Date().toISOString();
     await render(

@@ -80,6 +80,23 @@ export type LayerState = {
   /** One plain clause: "Ready", "Suspended", the Flux reason, or why it could not be read. */
   why: string;
   pods?: { ready: number; wanted: number };
+  /** ISO time the Ready condition last changed, when Flux said. */
+  since?: string;
+};
+
+/** "just now", "4m ago", "3h ago", "2d ago": how long a state has held. */
+export const ago = (
+  iso: string | undefined,
+  now: number,
+): string | undefined => {
+  if (!iso) return undefined;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return undefined;
+  const s = Math.max(0, Math.round((now - t) / 1000));
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
 };
 
 const cond = (o: FluxObject, type: string) =>
@@ -95,17 +112,19 @@ export const fluxState = (o: FluxObject | undefined): LayerState => {
   if (o.spec?.suspend) return { state: 'needs', why: 'Suspended by hand' };
   const ready = cond(o, 'Ready');
   if (!ready) return { state: 'blind', why: 'No status yet' };
+  const since = ready.lastTransitionTime;
   if (ready.status === 'False')
     return {
       state: 'red',
       why: ready.reason ? `${ready.reason}` : 'Not ready',
+      since,
     };
   if (ready.status !== 'True' || cond(o, 'Reconciling'))
-    return { state: 'running', why: ready.reason ?? 'Reconciling' };
+    return { state: 'running', why: ready.reason ?? 'Reconciling', since };
   const healthy = cond(o, 'Healthy');
   if (healthy && healthy.status === 'False')
-    return { state: 'red', why: healthy.reason ?? 'Not healthy' };
-  return { state: 'good', why: 'Ready' };
+    return { state: 'red', why: healthy.reason ?? 'Not healthy', since };
+  return { state: 'good', why: 'Ready', since };
 };
 
 export const podsOf = (

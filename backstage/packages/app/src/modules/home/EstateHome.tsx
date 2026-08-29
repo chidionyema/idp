@@ -32,6 +32,7 @@ import {
 } from '../theme/tokens';
 import {
   LayerState,
+  ago,
   count,
   doorState,
   entityPath,
@@ -151,6 +152,53 @@ const useStyles = makeStyles(theme => ({
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))',
     gap: theme.spacing(1),
+  },
+  list: {
+    display: 'grid',
+    gridTemplateColumns: '1fr',
+    gap: 4,
+    '& $tile': {
+      minHeight: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: theme.spacing(1.5),
+    },
+    '& $tileTitle': { minWidth: 180 },
+  },
+  toolbar: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing(1),
+    flexWrap: 'wrap',
+  },
+  hint: {
+    fontSize: 12,
+    color: theme.palette.text.secondary,
+    '& kbd': {
+      fontFamily: monoFamily,
+      fontSize: 11,
+      padding: '1px 5px',
+      border: `1px solid ${theme.palette.divider}`,
+      borderRadius: 4,
+    },
+  },
+  views: { display: 'inline-flex', gap: 4 },
+  view: {
+    font: 'inherit',
+    fontSize: 12,
+    fontWeight: 600,
+    padding: '4px 10px',
+    borderRadius: 999,
+    border: `1px solid ${theme.palette.divider}`,
+    background: 'transparent',
+    color: theme.palette.text.secondary,
+    cursor: 'pointer',
+    '&[aria-pressed="true"]': {
+      color: theme.palette.text.primary,
+      borderColor: theme.palette.text.primary,
+    },
   },
   tile: {
     display: 'flex',
@@ -332,7 +380,16 @@ const Counter = ({
   );
 };
 
-const LayerTile = ({ entity, s }: { entity: Entity; s: LayerState }) => {
+const LayerTile = ({
+  entity,
+  s,
+  now,
+}: {
+  entity: Entity;
+  s: LayerState;
+  now: number;
+}) => {
+  const age = ago(s.since, now);
   const classes = useStyles();
   return (
     <Link
@@ -354,6 +411,7 @@ const LayerTile = ({ entity, s }: { entity: Entity; s: LayerState }) => {
             {s.pods.ready}/{s.pods.wanted} pods
           </span>
         )}
+        {age && <span data-testid={`age-${entity.metadata.name}`}>{age}</span>}
       </span>
     </Link>
   );
@@ -457,15 +515,49 @@ const clock = (t: number) =>
     minute: '2-digit',
   });
 
+type View = 'board' | 'list';
+const VIEW_KEY = 'estate.view';
+const readView = (): View => {
+  try {
+    return window.localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'board';
+  } catch {
+    return 'board';
+  }
+};
+
 const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
   const classes = useStyles();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [only, setOnly] = useState<State | undefined>(undefined);
+  const [view, setView] = useState<View>(readView);
   const findRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     findRef.current?.focus();
   }, []);
+  // `/` or Cmd/Ctrl+K from anywhere on the page lands in the find box.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = (e.target as HTMLElement | null)?.tagName;
+      const inField = typing === 'INPUT' || typing === 'TEXTAREA';
+      const cmdK = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k';
+      if (cmdK || (e.key === '/' && !inField)) {
+        e.preventDefault();
+        findRef.current?.focus();
+        findRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const pickView = (v: View) => {
+    setView(v);
+    try {
+      window.localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      /* a private window forgets; the page still works */
+    }
+  };
 
   const now = Date.now();
   const states = useMemo(() => {
@@ -551,6 +643,25 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
         onKeyDown={e => e.key === 'Enter' && open()}
         inputProps={{ 'data-testid': 'quick-find', 'aria-label': 'Find' }}
       />
+      <div className={classes.toolbar}>
+        <span className={classes.hint}>
+          <kbd>/</kbd> or <kbd>⌘K</kbd> to find · Enter opens the first
+        </span>
+        <span className={classes.views} role="group" aria-label="Layout">
+          {(['board', 'list'] as View[]).map(v => (
+            <button
+              key={v}
+              type="button"
+              className={classes.view}
+              data-testid={`view-${v}`}
+              aria-pressed={view === v}
+              onClick={() => pickView(v)}
+            >
+              {v === 'board' ? 'Board' : 'List'}
+            </button>
+          ))}
+        </span>
+      </div>
 
       <section className={classes.section} data-testid="band-layers">
         <h2 className={classes.h}>
@@ -582,7 +693,10 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
               {s.description && (
                 <p className={classes.hDesc}>{s.description}</p>
               )}
-              <div className={classes.board}>
+              <div
+                className={view === 'list' ? classes.list : classes.board}
+                data-view={view}
+              >
                 {[...xs]
                   .sort(
                     (a, b) =>
@@ -596,6 +710,7 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
                       key={e.metadata.name}
                       entity={e}
                       s={stateOf(e)}
+                      now={now}
                     />
                   ))}
               </div>

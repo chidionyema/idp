@@ -33,6 +33,8 @@ export type Loaded =
 
 const FLUX = '/apis/kustomize.toolkit.fluxcd.io/v1/kustomizations';
 const DEPLOYMENTS = '/apis/apps/v1/deployments';
+/** The cluster is re-read this often while the page is open; the catalogue is not. */
+export const REFRESH_MS = 60_000;
 
 export const useEstate = () => {
   const catalogApi = useApi(catalogApiRef);
@@ -77,6 +79,7 @@ export const useEstate = () => {
         };
       }
     };
+    let timer: ReturnType<typeof setInterval> | undefined;
     (async () => {
       try {
         const [catalogue, cluster] = await Promise.all([
@@ -105,12 +108,20 @@ export const useEstate = () => {
           templates: items.filter(e => e.kind === 'Template').sort(byTitle),
           ...cluster,
         });
+        timer = setInterval(async () => {
+          const again = await readCluster();
+          if (cancelled) return;
+          setLoaded(prev =>
+            prev.state === 'ready' ? { ...prev, ...again } : prev,
+          );
+        }, REFRESH_MS);
       } catch (error) {
         if (!cancelled) setLoaded({ state: 'error', error: error as Error });
       }
     })();
     return () => {
       cancelled = true;
+      if (timer) clearInterval(timer);
     };
   }, [catalogApi, kubernetesApi, attempt]);
 
