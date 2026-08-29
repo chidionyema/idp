@@ -6,6 +6,8 @@ import { navModule } from './modules/nav';
 import { homeModule } from './modules/home';
 import { signInModule } from './modules/signin';
 import { themeModule } from './modules/theme';
+// Live numbers on every cluster entity: the Prometheus tab (founder 2026-08-29, crew#645 CP5).
+import { metricsPlugin } from './modules/metrics';
 
 export default createApp({
   features: [
@@ -15,5 +17,6 @@ export default createApp({
     homeModule,
     signInModule,
     themeModule,
+    metricsPlugin,
   ],
 });

@@ -400,6 +400,69 @@ def yaml_links(doc):
 # refuses a checkout where they do.
 CLUSTER_KINDS = ("Kustomization", "HelmRelease")
 
+# Founder, 2026-08-29 19:0xZ: "i need all metrics exposed ... on backstage ... always ... numbers
+# for everything we collect". Measured before this: 440 entities, 0 with a kubernetes annotation,
+# so the Kubernetes tab the portal already shipped (crew#412) rendered nothing, and Prometheus had
+# no tab at all. Every cluster entity now carries the well-known annotations the two plugins read
+# (https://backstage.io/docs/features/kubernetes/configuration#common-backstageio-kubernetes-id-label
+# and https://github.com/RoadieHQ/roadie-backstage-plugins/tree/main/plugins/frontend/backstage-plugin-prometheus),
+# and the numbers come from platform/monitoring/rules/capacity.yaml recording rules, so a query
+# here is a name, never a PromQL expression a comma could break. The generator refuses a cluster
+# entity that lost them (tests/test_incident_crew645_every_cluster_entity_shows_its_numbers.py).
+CAPACITY_RULES = (
+    ("estate:pod_cpu_cores:rate5m", "pod"),
+    ("estate:pod_cpu_peak_cores:30m", "pod"),
+    ("estate:pod_cpu_request_cores", "pod"),
+    ("estate:pod_memory_bytes", "pod"),
+    ("estate:pod_memory_request_bytes", "pod"),
+    ("estate:pod_restarts_total", "pod"),
+)
+
+
+def _row_namespace(kind, ns, src):
+    """The namespace a Flux row's workloads run in: the object names it, or its directory's
+    kustomization sets it, or a namespace.yaml sits in the path it reconciles."""
+    if ns:
+        return ns
+    import glob as _glob
+    import yaml
+    # A HelmRelease with no namespace of its own takes the one its directory's kustomization sets.
+    kz = os.path.join(src, "kustomization.yaml")
+    if os.path.exists(kz):
+        try:
+            k = yaml.safe_load(open(kz)) or {}
+            if isinstance(k, dict) and k.get("namespace"):
+                return k["namespace"]
+        except yaml.YAMLError:
+            pass
+    for f in sorted(_glob.glob(os.path.join(src, "namespace*.yaml")) + _glob.glob(os.path.join(src, "namespace", "**", "*.yaml"), recursive=True)):
+        try:
+            for d in yaml.safe_load_all(open(f)):
+                if isinstance(d, dict) and d.get("kind") == "Namespace":
+                    return (d.get("metadata") or {}).get("name", "")
+        except yaml.YAMLError:
+            continue
+    return ""
+
+
+def metrics_annotations(kind, name, ns, src):
+    """The annotations that put live numbers on a cluster entity's page: which pods the
+    Kubernetes tab reads (namespace + the label Helm and Flux stamp on what they render) and
+    which recording rules and alerts the Prometheus tab graphs, scoped to the namespace."""
+    wns = _row_namespace(kind, ns, src)
+    if not wns:
+        return {}
+    selector = (f"app.kubernetes.io/instance={name}" if kind == "HelmRelease"
+                else f"kustomize.toolkit.fluxcd.io/name={name}")
+    rule = ",".join(f'{r}{{namespace="{wns}"}}|{dim}' for r, dim in CAPACITY_RULES)
+    return {
+        "backstage.io/kubernetes-namespace": wns,
+        "backstage.io/kubernetes-label-selector": selector,
+        "prometheus.io/rule": rule,
+        "prometheus.io/alert": "all",
+        "prometheus.io/labels": f"namespace={wns}",
+    }
+
 
 def _first_comment(path):
     """First sentence of the file's leading comment block; the asset describes itself."""
@@ -458,6 +521,9 @@ def cluster_entities():
         etype = "flux-row" if kind == "Kustomization" else "helm-chart"
         ann = {"source": "cluster", "flux-kind": kind, "flux-name": name, "namespace": ns,
                "file": rel, "path": path, "chart": chart, "suspended": "true" if suspended else ""}
+        ann.update(metrics_annotations(kind, name, ns, src))
+        if kind == "HelmRelease" and not ns:
+            ann["namespace"] = ann.get("backstage.io/kubernetes-namespace", "")
         tags = ["cluster", etype] + (["suspended"] if suspended else [])
         docs.append(entity("Component", f"cluster-{slug(kind).lower()}-{slug(name)}",
                            f"{name} ({kind})", etype, ann, tags, _idp_source_link(rel),

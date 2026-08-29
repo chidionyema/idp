@@ -47,6 +47,13 @@ auth:
 # Authorization header is a mounted secret file, never an env var (secrets-not-from-env-vars).
 proxy:
   endpoints:
+    # The Prometheus the estate already runs (platform/monitoring/kube-prometheus-stack.yaml,
+    # fullnameOverride kps). The Metrics tab on every cluster entity reads it through here with
+    # the signed-in user's Backstage token (default credentials: require). Read only: the plugin
+    # issues GET query and rules calls, and Prometheus's own API has no write on this path.
+    '/prometheus/api':
+      target: http://kps-prometheus.monitoring.svc:9090/api/v1/
+      allowedMethods: [GET]
     '/sunshine':
       target: https://sunshine-mac.backstage.svc.cluster.local:47990
       changeOrigin: true
@@ -184,4 +191,7 @@ kubernetes:
           authProvider: serviceAccount
           skipTLSVerify: false
           caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-          skipMetricsLookup: true
+          # metrics-server runs (platform/metrics-server) and the role reads metrics.k8s.io, so the
+          # Kubernetes tab shows CPU and memory used against requested (founder 2026-08-29:
+          # "i need all metrics exposed ... on backstage").
+          skipMetricsLookup: false
