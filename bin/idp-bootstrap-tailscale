@@ -108,6 +108,10 @@ if [ -n "$fed_id" ] && [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
   jwt=$(curl -sS -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$aud" | jq -r '.value // empty')
   [ -n "$jwt" ] || fail federated "GitHub gave no OIDC token for audience $aud (does the job have id-token: write?)"
   seed_json=$(curl -sS -d "client_id=$fed_id" --data-urlencode "jwt=$jwt" "$API/api/v2/oauth/token-exchange"); unset jwt
+  # the answer is read before anything is called ok (silent green, idp run 33244862380): Tailscale's
+  # message names the claim that did not match (subject, audience, issuer); the token itself is never printed.
+  jq -e '.access_token' <<<"$seed_json" >/dev/null 2>&1 \
+    || fail federated "token-exchange refused identity $fed_id: $(jq -r '.message // .error // "no message"' <<<"$seed_json" | cut -c1-200); registered subject must equal the runner's sub claim repo:$GITHUB_REPOSITORY:ref:$GITHUB_REF (kb/1581)"
   say ok federated "OIDC token exchanged at /api/v2/oauth/token-exchange for identity $fed_id (no secret held)"
 else
   [ -n "$fed_id" ] && say "" federated "identity $fed_id set but not in GitHub Actions; using the seed"
@@ -126,7 +130,7 @@ else
   seed_json=$(token_for "$cid" "$csec"); unset cid csec TAILSCALE_SEED_CLIENT_SECRET
 fi
 seed_tok=$(jq -r '.access_token // empty' <<<"$seed_json")
-[ -n "$seed_tok" ] || fail seed "vault entry $SEED does not exchange for a token; make a new seed with $0 --seed"
+[ -n "$seed_tok" ] || fail seed "the seed does not exchange for a token: $(jq -r '.message // .error // "no message"' <<<"$seed_json" | cut -c1-200); make a new seed with $0 --seed"
 seed_scopes=$(jq -r '.scope // ""' <<<"$seed_json")
 case "$seed_scopes" in ""|oauth_keys|oauth_keys:*) ;; *) fail seed "the seed carries more than oauth_keys ($seed_scopes); a seed is one scope, make a new one with $0 --seed";; esac
 say ok seed "exchanges for an access token; scopes: ${seed_scopes:-not reported by the token endpoint}"
