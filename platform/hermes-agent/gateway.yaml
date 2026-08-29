@@ -255,7 +255,7 @@ spec:
         # github.com/tailscale/tailscale/blob/main/cmd/containerboot/main.go: "If the value begins
         # with file:, it is treated as a path to a file containing the key").
         - name: tailscale
-          image: ghcr.io/tailscale/tailscale:v1.80.2
+          image: ghcr.io/tailscale/tailscale:v1.102.3  # tailscale/tailscale releases/latest 2026-08-29; v1.80.2 was never on ghcr (404), the sidecar sat in ImagePullBackOff
           env:
             - name: TS_AUTHKEY
               value: file:/run/secrets/hermes-agent-tailscale/TS_AUTHKEY
