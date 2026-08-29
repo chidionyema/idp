@@ -59,9 +59,9 @@ R7's sense — watches a column, creates a worktree and branch, starts a
 session — describes work this repo does not have a component for yet.
 
 **`hermes-v2` already has its own kanban system, separate from `idp/board`.**
-`hermes-agent/AGENTS.md` documents a durable SQLite-backed board
-(`hermes kanban <verb>` CLI, `tools/kanban_tools.py` for worker profiles, a
-dispatcher loop that reclaims stale claims and spawns profiles, running
+`hermes-v2/hermes-agent/AGENTS.md` documents a durable SQLite-backed board
+(`hermes kanban <verb>` CLI, `hermes-v2/hermes-agent/tools/kanban_tools.py` for worker
+profiles, a dispatcher loop that reclaims stale claims and spawns profiles, running
 inside the gateway by default via `kanban.dispatch_in_gateway: true`). This
 is a second, independent board and dispatcher living inside the messaging
 agent, not the same store as `idp/board`. R3's "reads the board" and R11's
@@ -75,7 +75,7 @@ specify MCP as the read/write surface hermes-v2 uses; today that surface does
 not exist and is being built under `chidionyema/crew#180` CP5. This spec's
 checkpoints for R3 and R7 are blocked on that landing, not duplicating it.
 
-**hermes-v2's gateway supports Telegram already** (`hermes-agent/AGENTS.md`,
+**hermes-v2's gateway supports Telegram already** (`hermes-v2/hermes-agent/AGENTS.md`,
 `gateway/platforms/` has a `telegram` adapter among ~20). The gateway itself
 is provider-agnostic per that same directory structure — R12 is a property
 this component already has, not new work.
