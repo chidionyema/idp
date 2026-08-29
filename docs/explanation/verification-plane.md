@@ -72,6 +72,16 @@ because an accepted span that never lands is silent green. Negative control: the
 no key must be refused. `probes/langfuse.py` `l4_journey`, graded in
 `tests/test_incident_crew631_cp7_l4_trace_journey.py` against a door that accepts-and-drops.
 
+## CP3: the verdict table
+
+No estate-wide Postgres exists (each app carries its own), so the table lives in the Backstage
+Postgres: the portal is where CP4's number is shown, and the target under test (Langfuse) must
+not hold the verdicts about itself. `probes/store.py` builds every statement: `verdicts` is
+append-only (a trigger refuses UPDATE, DELETE and TRUNCATE; the grants never include them), role
+`prover` may INSERT, role `agent_role` may only SELECT. The prover workflow runs
+`bin/idp-verdict schema` and `store verdict.json` after the artifact upload; `bin/idp-verdict
+list` reads as `agent_role`; `bin/idp-verdict refuse-test` proves both refusals from the cluster.
+
 ## Not done yet
 
 CP2 scopes the key to the runner identity only. CP3 stores verdicts in Postgres, append-only.
