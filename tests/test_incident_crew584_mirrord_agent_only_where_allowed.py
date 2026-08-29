@@ -35,7 +35,9 @@ metadata:
 
 
 def _apply(tmp_path: Path, ns: str, labelled: bool) -> str:
-    assert shutil.which("kyverno"), "BLIND: the kyverno CLI is not installed; ci.yml installs it"
+    assert shutil.which("kyverno"), (
+        "BLIND: the kyverno CLI is not installed; ci.yml installs it"
+    )
     pod = tmp_path / f"{ns}-pod.yaml"
     pod.write_text(AGENT_POD.format(ns=ns))
     labels = "idp.platform/dev-loop: allowed" if labelled else "team: platform"
@@ -46,7 +48,15 @@ def _apply(tmp_path: Path, ns: str, labelled: bool) -> str:
         "apiVersion: cli.kyverno.io/v1alpha1\nkind: Values\nmetadata:\n  name: values\n"
         "namespaceSelector:\n  - name: %s\n    labels:\n      %s\n" % (ns, labels)
     )
-    cmd = ["kyverno", "apply", str(POLICY), "--resource", str(pod), "--values-file", str(values)]
+    cmd = [
+        "kyverno",
+        "apply",
+        str(POLICY),
+        "--resource",
+        str(pod),
+        "--values-file",
+        str(values),
+    ]
     r = subprocess.run(cmd, capture_output=True, text=True)
     return r.stdout + r.stderr
 
@@ -68,16 +78,25 @@ def test_the_checked_in_config_cannot_break_the_live_pod():
     assert cfg["target"]["path"] == "deployment/hermes-agent-gateway"
 
 
-@pytest.mark.skipif(not shutil.which("mirrord"), reason="mirrord CLI not installed here; the how-to installs it")
+@pytest.mark.skipif(
+    not shutil.which("mirrord"),
+    reason="mirrord CLI not installed here; the how-to installs it",
+)
 def test_the_config_parses_with_the_real_cli():
-    r = subprocess.run(["mirrord", "verify-config", str(CONFIG)], capture_output=True, text=True)
+    r = subprocess.run(
+        ["mirrord", "verify-config", str(CONFIG)], capture_output=True, text=True
+    )
     assert r.returncode == 0, r.stdout + r.stderr
 
 
 def test_no_production_namespace_carries_the_dev_loop_label():
     hits = [
-        p for p in (ROOT / "platform").rglob("*.yaml")
-        if "idp.platform/dev-loop" in p.read_text() and p != POLICY
-        and p != ROOT / "platform/staging/namespace.yaml"  # crew#584 CP-H: the one namespace that may
+        p
+        for p in (ROOT / "platform").rglob("*.yaml")
+        if "idp.platform/dev-loop" in p.read_text()
+        and p != POLICY
+        and p
+        != ROOT
+        / "platform/staging/namespace.yaml"  # crew#584 CP-H: the one namespace that may
     ]
     assert hits == [], hits
