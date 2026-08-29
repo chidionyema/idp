@@ -688,6 +688,7 @@ spec:
   path: ./platform/healing/analyzer
   prune: true
   wait: true
+  timeout: 5m  # test_incident_backstage_17h_unreported: a row with healthChecks must stall, never wait forever
   # the object alone counts as Current; the analyzer the operator builds from it is the health
   # (run 33233870612: 29h green with no analyzer). Name = the K8sGPT object's name.
   healthChecks:
