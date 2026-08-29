@@ -56,7 +56,7 @@ Three more things had to be true for this to last 16 hours, and all three were:
    "Flux said so every ten minutes and nothing read it" — the same sentence, one day earlier,
    for the catalogue. The guard written then was a surge setting, not a page.
 3. **The laws' own self-checks are not in front of any session.** The file every session loads
-   (`~/.claude/AGENTS.md` → `scripts/laws/AGENTS.md`) is 2,802 words and contains **0** of the
+   (`claude-guards/laws/AGENTS.md`, symlinked to the home directory) is 2,802 words and contains **0** of the
    50 "You are breaking it when" checks. Those live in `AGENTS-FULL.md` (26,216 words), which
    is read by three scripts and loaded into no session. The check for this exact mistake is one
    of the 50: *"a number in your plan came from what sounded tidy instead of from the
