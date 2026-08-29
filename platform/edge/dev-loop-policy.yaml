@@ -2,8 +2,8 @@
 # through mirrord, and the fence is admission, not a doc. A mirrord agent pod (image
 # ghcr.io/metalbear-co/mirrord) is admitted only into a namespace labelled
 # idp.platform/dev-loop=allowed. Production namespaces never carry the label, so a laptop cannot
-# attach to a production pod at all; the staging cluster's hermes-agent namespace carries it
-# (platform/hermes-agent is the same manifest on both clusters; the label is a cluster overlay).
+# attach to a production pod at all; the staging namespace (platform/staging, crew#584 CP-H) is
+# the one that carries it, and bin/idp-dev <service> is the way in.
 # Proof it refuses and passes: tests/test_incident_crew584_mirrord_agent_only_where_allowed.py.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
@@ -36,8 +36,8 @@ spec:
         failureAction: Enforce
         message: >-
           crew#584: a mirrord agent (ghcr.io/metalbear-co/mirrord) is admitted only in a namespace
-          labelled idp.platform/dev-loop=allowed; this one is not. Point your kubeconfig at the
-          staging cluster.
+          labelled idp.platform/dev-loop=allowed; this one is not. Use bin/idp-dev <service>, which
+          runs in the staging namespace.
         foreach:
           - list: request.object.spec.containers
             deny:

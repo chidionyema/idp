@@ -78,5 +78,6 @@ def test_no_production_namespace_carries_the_dev_loop_label():
     hits = [
         p for p in (ROOT / "platform").rglob("*.yaml")
         if "idp.platform/dev-loop" in p.read_text() and p != POLICY
+        and p != ROOT / "platform/staging/namespace.yaml"  # crew#584 CP-H: the one namespace that may
     ]
     assert hits == [], hits

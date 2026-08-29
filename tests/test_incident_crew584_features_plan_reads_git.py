@@ -84,8 +84,9 @@ def test_enable_flips_the_switch_in_a_copy_of_the_cluster_files(tmp_path, monkey
     assert feat.kustomizations("oke")["temporal"][2] is False
     # the same doc count: the edit changed one line, not the file's shape
     assert before.count("\n---\n") == (work / "clusters/oke/platform.yaml").read_text().count("\n---\n")
-    with pytest.raises(SystemExit, match="not selectable"):
-        feat.main(["enable", "staging", "namespace"])
+    # crew#584 CP-H: the staging switch exists (platform/staging), so enabling it is an edit, not a refusal
+    assert feat.main(["enable", "staging", "namespace"]) == 0
+    assert feat.kustomizations("oke")["staging"][2] is False
     with pytest.raises(SystemExit, match="has no tier"):
         feat.main(["enable", "workflows", "huge"])
 

@@ -200,8 +200,8 @@ features:
     tiers:
       - name: namespace
         switches: [staging]
-        floor: { cpu: 0.2, memory_gb: 1.0, storage_gb: 2 }
-        status: planned        # platform/staging/ is the next item after this register
+        # no floor: the namespace holds no workload; platform/staging/namespace.yaml caps it by
+        # ResourceQuota at 0.2 cpu / 1 GiB / 2 GiB (the floor this row carried while planned)
       - name: "off"
         switches: []
     default: namespace

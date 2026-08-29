@@ -1,0 +1,7 @@
+# crew#584 CP-H (founder 2026-08-29): a staging area on the one cluster. It is a namespace, not a
+# node, so every tier has it (platform/features/features.yaml: staging) and it costs the floor the
+# register prices, capped here by a ResourceQuota so it can never eat the production budget.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml

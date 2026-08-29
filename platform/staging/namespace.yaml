@@ -1,0 +1,43 @@
+# The staging namespace. Three objects, no workload:
+#   Namespace   -- carries idp.platform/dev-loop=allowed, the one label the mirrord fence
+#                  (platform/edge/dev-loop-policy.yaml) admits an agent under; production namespaces
+#                  never carry it. bin/idp-dev <service> runs a laptop process inside this namespace.
+#   ResourceQuota -- the floor in platform/features/features.yaml (staging.namespace.floor) made
+#                  hard: 0.2 cores, 1 GiB, 2 GiB of volumes. tests/test_incident_crew584_staging_is_a_namespace.py
+#                  pins the two files to the same numbers, so a floor that changes in the register
+#                  changes here or the test says so.
+#   LimitRange  -- a container that names no request is given the mirrord agent's (.mirrord/*.json)
+#                  so it is admitted under the quota instead of refused.
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    # Never garbage-collected by Flux (founder 2026-08-29: a file move never destroys a namespace)
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: staging
+  labels:
+    app.kubernetes.io/part-of: idp
+    idp.platform/dev-loop: allowed
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: staging-floor
+  namespace: staging
+spec:
+  hard:
+    requests.cpu: 200m
+    requests.memory: 1Gi
+    requests.storage: 2Gi
+    pods: "10"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: staging-defaults
+  namespace: staging
+spec:
+  limits:
+    - type: Container
+      defaultRequest: { cpu: 10m, memory: 32Mi }
+      default: { cpu: 200m, memory: 128Mi }

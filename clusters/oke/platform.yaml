@@ -848,3 +848,20 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
+---
+# crew#584 CP-H: the staging namespace, quota and defaults (platform/staging). No workload, nothing
+# that can be unhealthy; the switch platform/features/features.yaml names for feature `staging`.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: staging
+  namespace: flux-system
+spec:
+  interval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/staging
+  prune: true
+  wait: true
+  timeout: 2m
