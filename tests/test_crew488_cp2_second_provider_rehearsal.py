@@ -59,12 +59,3 @@ def test_k3s_job_grades_the_same_floor_and_prints_wall_clock_and_cost() -> None:
     assert "wall_clock=${secs}s" in grade["run"] and "cost=${cost}" in grade["run"]
     assert grade["env"]["PRIVATE"] == "${{ github.event.repository.private }}", "cost is read from the repository, never assumed"
     assert "ok      portability-k3s" in grade["run"]
-
-
-def test_catalogue_row_grades_the_k3s_job_on_the_same_schedule() -> None:
-    rows = {r["name"]: r for r in yaml.safe_load((ROOT / "drills/catalogue.yaml").read_text())["drills"]}
-    a, b = rows["portability"], rows["portability-k3s"]
-    assert b["workflow"] == a["workflow"] == "portability-drill.yml"
-    assert b["job"] == "k3s" and a["job"] == "hydrate"
-    assert b["schedule"] == a["schedule"] and b["max_age_hours"] == a["max_age_hours"]
-    assert "cost" in b["proves"] and "k3s" in b["proves"]

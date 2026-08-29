@@ -46,7 +46,9 @@ def test_llm_prints_all_six_sections_non_empty():
         assert "BLIND" not in body, f"{head} is blind:\n{body}"
     assert "capacity-requests-need-proof" in r.stdout
     assert "Deployment/litellm spec.replicas" in r.stdout
-    assert "trace-drill" in r.stdout
+    assert (
+        "login-drill" in r.stdout
+    )  # founder 2026-08-29: trace-drill removed; the login drill grades llm.<zone>/ui/
 
 
 def test_an_unknown_row_is_blind_and_red():

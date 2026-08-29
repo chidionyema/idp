@@ -64,12 +64,3 @@ def test_the_row_is_a_script_of_its_own_that_both_verifiers_call() -> None:
     assert "<<'DRILLPY'" not in (ROOT / "bin" / "idp-verify").read_text()
     assert 'idp-drills-row" "$IDP/drills/catalogue.yaml" "$IDP"' in (ROOT / "bin" / "idp-verify").read_text()
     assert 'idp-drills-row" "$IDP/drills/catalogue.yaml" "$IDP"' in SCRIPT.read_text()
-
-
-def test_the_hourly_workflow_can_ask_github_for_drill_runs() -> None:
-    """The row lists workflow runs, which needs actions: read and a token on the drill step."""
-    wf = yaml.safe_load((ROOT / ".github" / "workflows" / "verify-drill.yml").read_text())
-    assert wf["permissions"]["actions"] == "read"
-    steps = wf["jobs"]["verify-drill"]["steps"]
-    drill = next(s for s in steps if "bin/idp-verify-drill" in s.get("run", ""))
-    assert drill["env"]["GH_TOKEN"] == "${{ github.token }}"

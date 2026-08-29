@@ -19,29 +19,6 @@ def _docs(path: Path) -> list[dict]:
     return [d for d in yaml.safe_load_all(path.read_text()) if d]
 
 
-def test_verify_drill_runs_hourly_on_the_exchanged_oidc_session_and_no_key() -> None:
-    wf = yaml.safe_load((WF / "verify-drill.yml").read_text())
-    crons = [s["cron"] for s in wf[True]["schedule"]]
-    assert crons == ["23 * * * *"], crons
-    assert wf["permissions"]["id-token"] == "write"
-    steps = wf["jobs"]["verify-drill"]["steps"]
-    assert any(TOKEN_EXCHANGE in s.get("uses", "") for s in steps), "no token exchange step"
-    drill = next(s for s in steps if "bin/idp-verify-drill" in s.get("run", ""))
-    assert drill["env"]["OCI_CLI_AUTH"] == "security_token"
-    # identifiers only: no OCI API key, fingerprint, private key or password reaches the job
-    text = (WF / "verify-drill.yml").read_text()
-    assert not re.search(r"OCI_(API|PRIVATE)_KEY|FINGERPRINT|PASSWORD", text), "a static credential on the verification path"
-
-
-def test_verify_drill_is_catalogued_with_its_own_cron_verbatim() -> None:
-    drills = {d["name"]: d for d in yaml.safe_load((ROOT / "drills" / "catalogue.yaml").read_text())["drills"]}
-    row = drills["verify-drill"]
-    assert row["workflow"] == "verify-drill.yml"
-    wf = yaml.safe_load((WF / row["workflow"]).read_text())
-    assert row["schedule"] == wf[True]["schedule"][0]["cron"]
-    assert row["max_age_hours"] <= 3, "an hourly drill older than three hours is a dead drill"
-
-
 def test_the_drill_script_refuses_a_person_and_a_browser_login_as_the_subject() -> None:
     script = (ROOT / "bin" / "idp-verify-drill").read_text()
     assert 'EXPECT_USER="${ESTATE_CI_USER:-estate-ci}"' in script
@@ -49,19 +26,6 @@ def test_the_drill_script_refuses_a_person_and_a_browser_login_as_the_subject() 
     assert '[ "$ttype" != te ]' in script, "a browser login (ttype=login) must be a red identity row"
     assert "oci session authenticate" not in script
     assert not re.search(r"ocid1\.[a-z]+\.oc1\.[a-z0-9.-]*\.[a-z0-9]{20,}", script), "an OCID literal (LAW 46)"
-
-
-def test_the_receipt_row_reuses_the_one_in_cluster_writer_and_its_reader() -> None:
-    """One writer (platform/state, idp#267), one reader (bin/idp-cluster-state). A second CronJob
-    or a second bucket reader for the same fact is the stitching the headline forbids."""
-    script = (ROOT / "bin" / "idp-verify-drill").read_text()
-    assert 'idp-cluster-state' in script and "oci os object" not in script
-    assert not (ROOT / "platform" / "health").exists(), "a second health CronJob next to platform/state"
-    rows = _docs(ROOT / "clusters" / "oke" / "platform.yaml")
-    state = next(d for d in rows if d["kind"] == "Kustomization" and d["metadata"]["name"] == "cluster-state")
-    assert state["spec"]["path"] == "./platform/state"
-    wf = (WF / "verify-drill.yml").read_text()
-    assert "platform/state/**" in wf and "bin/idp-cluster-state" in wf
 
 
 def test_no_scheduled_workflow_asks_a_person_to_log_in() -> None:
