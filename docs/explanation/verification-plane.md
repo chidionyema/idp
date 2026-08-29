@@ -71,6 +71,14 @@ is `l4.journey.returned_id_equals_emitted_id`; the ingest 2xx is recorded but ne
 because an accepted span that never lands is silent green. Negative control: the same span with
 no key must be refused. `probes/langfuse.py` `l4_journey`, graded in
 `tests/test_incident_crew631_cp7_l4_trace_journey.py` against a door that accepts-and-drops.
+## CP8: the mutation harness
+
+A probe is trusted only if it can fail. `probes/mutations.py` holds one broken door per failure
+class (database down, proxy error page, auth off, an ingest that accepts and drops, nobody in the
+session, a digest that is not the running one) and `bin/idp-probe-mutations` runs every probe
+against every door: a probe that returns green against a broken door is quarantined and the weekly
+`probe-mutations.yml` run is red. The same run reads the last 30 real verdicts and grades each
+assertion's graduation: UNPROVEN until it has one real FAIL and one real PASS in the world.
 
 ## Not done yet
 
