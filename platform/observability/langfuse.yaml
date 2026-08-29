@@ -48,7 +48,12 @@ spec:
 # secret are written to the vault by tofu). AUTH_CUSTOM_ISSUER is the domain URL because that is
 # where IDCS serves /.well-known/openid-configuration (the `issuer` claim inside it is
 # identity.oraclecloud.com, which serves nothing -- measured 2026-08-29, HTTP 000). ID_TOKEN is
-# off so next-auth reads the profile from userinfo and never compares the two issuer strings.
+# on (crew#626 CP15): it was set to false here to dodge that issuer string; the vendor page
+# (langfuse.com/self-hosting/security/authentication-and-sso, read 2026-08-29) says that
+# "switches the token exchange to the plain OAuth2 callback, which fails whenever the token
+# response contains an id_token", and the identity domain always returns one for scope openid. The drill
+# reproduced it: every SSO click came back with error=OAuthCallback (run 33256502843). ID_TOKEN
+# stays at the vendor default (true); the profile comes from the id_token claims.
 # Username+password is disabled: the front door is the only way in, and the LANGFUSE_INIT_*
 # user above is linked to the SSO identity by email (ALLOW_ACCOUNT_LINKING). The callback
 # /api/auth/callback/custom stays behind the ForwardAuth on purpose: the browser only reaches
@@ -69,7 +74,7 @@ spec:
         AUTH_CUSTOM_ISSUER: "${ESTATE_OIDC_DOMAIN_URL}"
         AUTH_CUSTOM_NAME: "Bytesync estate"
         AUTH_CUSTOM_SCOPE: "openid email profile"
-        AUTH_CUSTOM_ID_TOKEN: "false"
+        AUTH_CUSTOM_ID_TOKEN: "true"
         AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING: "true"
         AUTH_DISABLE_USERNAME_PASSWORD: "true"
   data:
