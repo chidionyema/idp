@@ -214,7 +214,11 @@ decisions:
   - slug: staging-is-a-namespace
     requirement: "a staging surface the founder can push to before prod, without a second cluster's bill (founder 2026-08-29 00:44-01:55Z, crew#584 CP-H, ADR 0012)"
     date: 2026-08-29
-    status: accepted
+    status: decided
+    next_review: 2026-11-29
+    decision: staging-namespace   # namespace 4.3 vs second cluster 3.1 on the weights; the founder's word 2026-08-29 00:44-01:55Z
+    receipt: "https://github.com/chidionyema/crew/issues/584#issuecomment-5459064035"
+    reviews: []
     candidates:
       staging-namespace:
         note: "a `staging` namespace on the one cluster; Flux row per namespace; namespaces never pruned"
