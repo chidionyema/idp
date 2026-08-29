@@ -12,7 +12,6 @@ import json
 import os
 import plistlib
 from pathlib import Path
-from typing import Optional
 
 from sovereign.otto import card
 from sovereign.otto import config_keys as ck

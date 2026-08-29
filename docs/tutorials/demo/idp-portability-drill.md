@@ -15,9 +15,13 @@ Open the latest run of the `portability-drill` workflow in GitHub Actions. The l
 one line per layer that did not come up, with Flux's own reason, and then the verdict:
 
 ```
-  not-ready  flux-system/secret-store: OCI vault unreachable
-ok      portability  ready 17/22 layers on a cluster with no OCI (floor 17)
+  oci-red    flux-system/secret-store: failed to substitute from ConfigMap/estate-vars ...
+  cascaded   flux-system/observability: dependency 'flux-system/secret-store' is not ready
+ok      portability  ready 17/22 (root-red 1 all named, cascaded 4) on a cluster with no OCI (floor 17)
 ```
+
+A `ROOT-RED` line is a layer broken for a reason of its own that nobody has named, and it FAILs
+the run whatever the floor says (crew#488 CP5).
 
 The receipt artifact carries `flux get kustomizations -A`, the HelmRelease table and the JSON
 the grade was computed from, so the number can be re-derived without trusting the line.
