@@ -279,7 +279,7 @@ pb_diagnose() {
   show_redacted k8s-infra-deployment-log telemetry_log observability-agent otel-deployment
   show collector-config collector_config_dump
   show_redacted clickhouse-counts-15m clickhouse_counts_15m
-  show otlp-endpoint-declared $K get helmrelease k8s-infra -n observability -o jsonpath='{"k8s-infra otelCollectorEndpoint: "}{.spec.values.otelCollectorEndpoint}{"\n"}'
+  show otlp-endpoint-declared $K get helmrelease k8s-infra -n observability-agent -o jsonpath='{"k8s-infra otelCollectorEndpoint: "}{.spec.values.otelCollectorEndpoint}{"\n"}'
   show otlp-endpoint-workloads otlp_endpoints_by_workload
   $K get nodes >/dev/null || FAILED="$FAILED nodes"
 }
@@ -545,8 +545,25 @@ pb_helm_retry() {
 # k8sgpt-analyze: print every K8sGPT finding (cause + fix in plain English) and force a fresh
 # scan by restarting the analyzer so the results are minutes old, not hours.
 pb_k8sgpt_analyze() {
-  step rescan $K rollout restart deployment -n healing -l app.kubernetes.io/name=k8sgpt
-  step rescan-ready $K rollout status deployment -n healing -l app.kubernetes.io/name=k8sgpt --timeout=3m
+  # run 33233870612 (crew#503): rescan printed "No resources found in healing namespace" and the
+  # playbook still PASSED. The operator (k8sgpt-operator-controller-manager 1/1) had never turned
+  # the K8sGPT object into an analyzer deployment, and nothing here said why. Eyes first: the
+  # object's status, the secret it names, and the operator's own log; then the restart is refused
+  # when there is nothing to restart, so an absent analyzer is a FAIL, not a silent green.
+  show k8sgpt-object sh -c "$K get k8sgpt.core.k8sgpt.ai -n healing -o wide; $K get k8sgpt.core.k8sgpt.ai -n healing -o jsonpath='{range .items[*]}{.metadata.name}{\" status=\"}{.status}{\"\n\"}{end}'"
+  show k8sgpt-secret sh -c "$K get externalsecret,secret -n healing 2>&1 | grep -iE 'NAME|k8sgpt'; $K get externalsecret -n healing -o jsonpath='{range .items[*]}{.metadata.name}{\" \"}{range .status.conditions[*]}{.type}={.status} {.message}{end}{\"\n\"}{end}'"
+  show k8sgpt-deployments $K get deploy,pods -n healing -o wide
+  show k8sgpt-operator-log sh -c "$K logs -n healing deploy/k8sgpt-operator-controller-manager --all-containers --tail=60 2>&1 | grep -iE 'error|fail|secret|k8sgpt|reconcil' | tail -30"
+  # The operator names the analyzer Deployment after the K8sGPT object and labels it app=<name>
+  # (k8sgpt-operator pkg/resources/k8sgpt.go: Name: config.Name, MatchLabels app: config.Name).
+  # The old selector app.kubernetes.io/name=k8sgpt matched nothing by construction.
+  if [ -z "$($K get deployment -n healing -l app=estate -o name 2>/dev/null)" ]; then
+    echo "FAIL  k8sgpt-analyze  no analyzer deployment in healing: the operator has not reconciled the K8sGPT object (see k8sgpt-operator-log above)"
+    FAILED="$FAILED k8sgpt-analyzer-absent"
+    return 0
+  fi
+  step rescan $K rollout restart deployment -n healing -l app=estate
+  step rescan-ready $K rollout status deployment -n healing -l app=estate --timeout=3m
   show k8sgpt-results sh -c "$K get results.core.k8sgpt.ai -A -o jsonpath='{range .items[*]}{.spec.kind}/{.metadata.namespace}/{.spec.name}{\"\n\"}{range .spec.error[*]}{\"  error: \"}{.text}{\"\n\"}{end}{\"  \"}{.spec.details}{\"\n\n\"}{end}'"
 }
 

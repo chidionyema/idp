@@ -13,7 +13,7 @@ metadata:
   name: backstage-namespace
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -31,7 +31,7 @@ metadata:
   name: backstage
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -69,7 +69,7 @@ metadata:
   name: chaos-mesh
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   # Platform rows never wait on the portal (crew#539, 2026-08-28: one stalled catalogue rollout held
   # 15 rows — observability, spire, temporal, keda, monitoring, science — behind Deployment/backstage/catalogue).
   # Only `chaos` (the experiments that target the portal) depends on backstage.
@@ -96,7 +96,7 @@ metadata:
   name: chaos
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: chaos-mesh
     # crew#488: the langfuse alert drill's Schedule and Workflow land in the observability namespace.
@@ -121,7 +121,7 @@ metadata:
 spec:
   # crew#584 traces/lean: the node agent alone. Enterprise adds the `observability` row (SigNoz
   # store + Langfuse) on top; lean points otelCollectorEndpoint at an external OTLP endpoint.
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: scheduling
     - name: edge   # platform/edge/k8s-infra-namespace.yaml and the hostPath waiver live there
@@ -158,7 +158,7 @@ spec:
   # 10m so a broken workload is reported within ten minutes (tests/test_incident_backstage_17h_unreported.py).
   # After unsuspend the HelmRelease has a 15m timeout, so a cold ClickHouse shows "not ready" for the
   # first two ticks; that is the install, not an incident (code-37, 2026-08-25).
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: scheduling
     # crew#584: the collector row owns k8s-infra now; ordering it first means the objects are
@@ -197,7 +197,7 @@ metadata:
   name: identity
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -229,7 +229,7 @@ metadata:
   name: healthchecks
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -259,7 +259,7 @@ metadata:
   name: metrics-server
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -284,7 +284,7 @@ metadata:
   name: reloader
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -306,7 +306,7 @@ metadata:
   name: llm
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -336,7 +336,7 @@ metadata:
   name: hermes-agent
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -367,7 +367,7 @@ metadata:
   name: mcp
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -405,7 +405,7 @@ metadata:
   name: cluster-state
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: scheduling
     # crew#539: the namespace, not the portal. This row lands objects in namespace backstage and
@@ -426,7 +426,7 @@ metadata:
   name: temporal
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: edge
     - name: secret-store
@@ -453,7 +453,7 @@ metadata:
   name: spire
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: scheduling
     # crew#539: the namespace, not the portal. This row lands objects in namespace backstage and
@@ -481,7 +481,7 @@ metadata:
   name: keda
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: observability
   sourceRef:
@@ -509,7 +509,7 @@ metadata:
   name: science
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: observability   # the clickhouse-auth Secret and the SigNoz backend
   sourceRef:
@@ -529,7 +529,7 @@ metadata:
   name: hindsight
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: secret-store
     - name: llm
@@ -556,7 +556,7 @@ metadata:
   name: guacamole
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -585,7 +585,7 @@ metadata:
   name: autoscaler
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -609,7 +609,7 @@ metadata:
   name: priority-classes
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -628,7 +628,7 @@ metadata:
   name: scheduling
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: edge
     - name: priority-classes
@@ -649,7 +649,7 @@ metadata:
   name: healing
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: scheduling
     - name: llm
@@ -679,7 +679,7 @@ metadata:
   name: healing-analyzer
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: healing
   sourceRef:
@@ -688,6 +688,14 @@ spec:
   path: ./platform/healing/analyzer
   prune: true
   wait: true
+  timeout: 5m  # test_incident_backstage_17h_unreported: a row with healthChecks must stall, never wait forever
+  # the object alone counts as Current; the analyzer the operator builds from it is the health
+  # (run 33233870612: 29h green with no analyzer). Name = the K8sGPT object's name.
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: estate
+      namespace: healing
 ---
 # crew#539 row 7: crash logs reach Telegram before the pod is gone (platform/robusta).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -696,7 +704,7 @@ metadata:
   name: robusta
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: secret-store
   sourceRef:
@@ -721,7 +729,7 @@ metadata:
   name: monitoring
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: edge
     - name: secret-store
@@ -771,7 +779,7 @@ metadata:
   name: monitoring-rules
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   dependsOn:
     - name: monitoring
   sourceRef:
@@ -794,7 +802,7 @@ metadata:
   name: drills
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -821,7 +829,7 @@ metadata:
   name: tailscale
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1m
   sourceRef:
     kind: GitRepository
     name: flux-system

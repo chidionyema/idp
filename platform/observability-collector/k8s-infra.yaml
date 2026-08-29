@@ -24,8 +24,16 @@ metadata:
     reconcile.fluxcd.io/requestedAt: "2026-08-27T12:41:00Z"
     reconcile.fluxcd.io/resetAt: "2026-08-27T12:41:00Z"
 spec:
-  interval: 1h
+  # crew#584 (oke-check 33234280926, 2026-08-29T04:40Z): the old observability/k8s-infra object was
+  # pruned after idp#702 and helm-controller's uninstall of it hit the SAME Helm release name this
+  # object had just upgraded to v7 ("release mismatch", 03:47Z). The uninstall stripped the v7
+  # DaemonSet and Deployment; this HelmRelease still read Ready with an empty namespace and
+  # telemetry-coverage fell to seen=2/97. driftDetection re-applies whatever is missing on every
+  # reconcile, and 10m bounds how long the estate is blind, instead of an hour.
+  interval: 10m
   timeout: 10m
+  driftDetection:
+    mode: enabled
   targetNamespace: observability-agent
   storageNamespace: observability-agent
   chart:
