@@ -97,6 +97,22 @@ if int(kv["monitoring_rules"]) == 0 or int(kv["alert_watchdog"]) == 0:
         why = f"body unreadable: {e}"
     print(f"FAIL    cluster-state  monitoring_rules={kv['monitoring_rules']} alert_watchdog={kv['alert_watchdog']}: {why[:300]}"); sys.exit(1)
 print(f"ok      cluster-state  {line1} ({age:.0f} min ago)")
+# crew#584 (founder 2026-08-29 "why 4 cores ... do we have utilisation metrics?"): the capacity
+# row is the answer, printed on every read. -1 means the metrics API could not be read, and the
+# row says so; a receipt with no capacity numbers predates this and is graded FAIL, never clean.
+kv2 = dict(m.groups() for m in re.finditer(r"(\w+)=(-?\d+)", line1))
+if "cpu_used_pct" not in kv2:
+    print(f"FAIL    capacity       receipt carries no cpu_used_pct (collector predates crew#584 capacity row): {line1[:120]}"); sys.exit(1)
+try:
+    b = json.loads(rest); rows = b.get("capacity") or []; cap_err = b.get("capacity_error") or ""
+except Exception as e:
+    rows, cap_err = [], f"body unreadable: {e}"
+if int(kv2["cpu_used_pct"]) < 0:
+    print(f"FAIL    capacity       usage unreadable: {cap_err[:200] or 'no error recorded'}"); sys.exit(1)
+print(f"ok      capacity       cpu used {kv2['cpu_used_pct']}% requested {kv2['cpu_req_pct']}%, memory used {kv2['mem_used_pct']}% requested {kv2['mem_req_pct']}% of what is paid for")
+for r in rows:
+    print(f"  node {r['name']}: cpu {r['cpu_used']}/{r['cpu_allocatable']} cores used ({r['cpu_used_pct']}%), requests {r['cpu_requested']} ({r['cpu_requested_pct']}%);"
+          f" memory {r['memory_used_gb']}/{r['memory_allocatable_gb']} GB used ({r['memory_used_pct']}%), requests {r['memory_requested_gb']} GB ({r['memory_requested_pct']}%)")
 if flag == "--json":
     print(rest)
 PY

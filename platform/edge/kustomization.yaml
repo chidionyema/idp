@@ -16,3 +16,4 @@ resources:
   - provider-independence.yaml
   - provider-edge-exception.yaml
   - provider-storage-exception.yaml
+  - capacity-policy.yaml

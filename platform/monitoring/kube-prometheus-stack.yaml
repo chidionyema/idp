@@ -109,7 +109,7 @@ spec:
         probeSelectorNilUsesHelmValues: false
         scrapeConfigSelectorNilUsesHelmValues: false
         resources:
-          requests: { cpu: 200m, memory: 768Mi }
+          requests: { cpu: 50m, memory: 768Mi }
           limits: { cpu: 200m, memory: 768Mi }
         storageSpec:
           volumeClaimTemplate:

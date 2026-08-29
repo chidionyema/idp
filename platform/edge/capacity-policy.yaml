@@ -1,0 +1,64 @@
+# crew#584 (founder 2026-08-29): "why 4 cores, do we need all that capacity? who made the call?"
+# The audit found 7.6 cores requested on paper by workloads that idle at a fraction of it, and
+# that paper number is what forced a 6-core node. Zealot rule 1 -- no paid capacity without proof --
+# is an admission fence here, not a sentence in a doc: a container asking for more than 250m of CPU
+# is refused unless the pod carries idp.platform/capacity-approved=true, which a reviewer sets only
+# beside a measured number (bin/idp-cluster-state prints usage vs allocatable every 15 minutes).
+# Memory is not fenced: memory floors are set by incidents (ClickHouse 4Gi, crew#483/#536) and a
+# memory request below real use is an OOM, not a saving. Zealot rule 4 rides in the second rule:
+# a Job with no ttlSecondsAfterFinished gets one hour, long enough for the 15-minute cluster
+# receipt to read a failed pod's log (a 60 s TTL would blind that receipt), then it is gone.
+# Proof: tests/test_incident_crew584_capacity_requests_need_proof.py; bin/idp-kyverno-render
+# judges these rules against every rendered platform PR before merge.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: capacity-requests-need-proof
+  annotations:
+    policies.kyverno.io/title: No paid capacity without proof (crew#584)
+    policies.kyverno.io/category: crew#584 cost
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod, Job
+    policies.kyverno.io/description: >-
+      A container may not request more than 250m CPU unless its pod is labelled
+      idp.platform/capacity-approved=true beside a measured number. Jobs without a TTL get one hour.
+spec:
+  background: true
+  rules:
+    - name: cpu-request-over-250m-needs-approval
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system]
+      preconditions:
+        all:
+          - key: "{{ request.object.metadata.labels.\"idp.platform/capacity-approved\" || '' }}"
+            operator: NotEquals
+            value: "true"
+      validate:
+        failureAction: Enforce
+        message: >-
+          crew#584 zealot rule 1: a CPU request over 250m reserves paid capacity around the clock;
+          set a micro request with a burst limit, or label the pod idp.platform/capacity-approved=true
+          beside the bin/idp-cluster-state capacity number that proves it is used
+        foreach:
+          - list: "request.object.spec.containers[] | [?resources.requests.cpu]"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.resources.requests.cpu }}"
+                    operator: GreaterThan
+                    value: 250m
+    - name: job-without-ttl-gets-one-hour
+      match:
+        any:
+          - resources:
+              kinds: [Job]
+      mutate:
+        patchStrategicMerge:
+          spec:
+            +(ttlSecondsAfterFinished): 3600

@@ -91,9 +91,10 @@ spec:
     # both numbers together if that ever stops being true -- raising only the limit silently
     # demotes it back to Burstable, and require-priority-class refuses that at admission.
     resources:
+      # crew#584 zealot rule 1: micro CPU request, burst limit; the memory floor stays (incident-set)
       requests:
-        cpu: 300m
+        cpu: 50m
         memory: 256Mi
       limits:
-        cpu: 300m
+        cpu: 1000m
         memory: 256Mi

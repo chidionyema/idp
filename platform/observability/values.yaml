@@ -13,10 +13,12 @@ clickhouse:
   # process failing getaddrinfo — dns-per-namespace run 33142680663 resolved every name from
   # inside the namespace. 4Gi is the smallest limit above the measured 1.80 + 1.39 GiB; 1 CPU
   # is what it had before abdcced halved it, so loading finishes inside the probe window.
-  # requests == limits stays (Guaranteed QoS, CP9).
+  # crew#584 (founder 2026-08-29, request inflation): the 1000m CPU *request* was 13 % of the
+  # node reserved for an idle database; the request is now micro and the limit doubled, so loading
+  # still finishes inside the probe window and the memory floor above stays as measured.
   resources:
-    requests: { cpu: 1000m, memory: 4Gi }
-    limits: { cpu: 1000m, memory: 4Gi }
+    requests: { cpu: 50m, memory: 4Gi }
+    limits: { cpu: 2000m, memory: 4Gi }
   # crew#483 (2026-08-28, diagnose run 33172481714): once the node agents reached the collector
   # (c03fb77), signoz-otel-collector logged `code: 241 ... (total) memory limit exceeded: would use
   # 3.61 GiB ... current RSS: 1.87 GiB, maximum: 3.60 GiB` on every batch of spans, logs and
@@ -53,7 +55,7 @@ signoz:
     SIGNOZ_USER_ROOT_ENABLED: "true"
     SIGNOZ_USER_ROOT_ORG_NAME: "Bytesync estate"
   resources:
-    requests: { cpu: 100m, memory: 256Mi }
+    requests: { cpu: 50m, memory: 256Mi }
     limits: { cpu: 500m, memory: 1Gi }
   persistence:
     size: 1Gi
@@ -82,7 +84,7 @@ otelCollector:
         logs: { processors: [k8sattributes, batch] }
   replicaCount: 1
   resources:
-    requests: { cpu: 100m, memory: 200Mi }
+    requests: { cpu: 50m, memory: 200Mi }
     limits: { cpu: 500m, memory: 512Mi }
 telemetryStoreMigrator:
   resources:

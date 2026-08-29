@@ -207,12 +207,12 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           resources:
-            # crew#539 CP9: requests == limits -> Guaranteed QoS, evicted last under node pressure
+            # crew#584 zealot rule 1: micro CPU request, burst limit; the memory floor stays (incident-set)
             requests:
-              cpu: 250m
+              cpu: 50m
               memory: 1Gi
             limits:
-              cpu: 250m
+              cpu: 1000m
               memory: 1Gi
           securityContext:
             allowPrivilegeEscalation: false
