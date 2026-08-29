@@ -136,14 +136,14 @@ describe('estate logic', () => {
   });
   it('says the worst word first', () => {
     expect(verdict(count(['good', 'good']), 2)).toBe(
-      'Everything we run is good. 2 layers checked.',
+      'Everything we run is good. 2 services checked.',
     );
     expect(verdict(count(['good', 'red', 'red', 'needs']), 4)).toBe(
-      '2 layers are red.',
+      '2 services are red.',
     );
-    expect(verdict(count(['good', 'needs']), 2)).toBe('1 layer needs you.');
+    expect(verdict(count(['good', 'needs']), 2)).toBe('1 service needs you.');
     expect(verdict(count(['blind', 'good']), 2)).toBe(
-      "1 layer can't be checked.",
+      "1 service can't be checked.",
     );
     expect(verdict(count([]), 0)).toBe('Nothing is registered yet.');
   });
@@ -252,7 +252,7 @@ describe('EstateHome', () => {
     );
     // kyverno red, grafana down -> 2 red; dns missing from the cluster -> blind
     expect(screen.getByTestId('verdict')).toHaveTextContent(
-      '2 layers are red.',
+      '2 services are red.',
     );
     expect(screen.getByTestId('count-red')).toHaveTextContent('2');
     expect(screen.getByTestId('count-blind')).toHaveTextContent('1');
@@ -295,7 +295,7 @@ describe('EstateHome', () => {
       expect(screen.getByTestId('verdict')).toBeInTheDocument(),
     );
     expect(screen.getByTestId('verdict')).toHaveTextContent(
-      "1 layer can't be checked.",
+      "1 service can't be checked.",
     );
     expect(screen.getByTestId('read-at')).toHaveTextContent(
       'Cluster not read: proxy 502',
