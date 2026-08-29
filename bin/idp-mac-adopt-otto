@@ -34,11 +34,20 @@ if [ "$MODE" = shortcut ]; then
 	run=shortcut
 else
 	command -v gh >/dev/null || fail "gh is not installed on this Mac"
-	run=$(gh run list --repo "$REPO" --workflow "$WORKFLOW" --status success --limit 30 --json databaseId,displayTitle \
-		--jq '[.[] | select(.displayTitle | test("apply"))][0].databaseId' 2>/dev/null || true)
-	[ -n "$run" ] && [ "$run" != null ] || fail "no successful $WORKFLOW apply run to read the key from; dispatch one (mode=apply)"
-	key=$(gh run view "$run" --repo "$REPO" --log 2>/dev/null | grep -oE 'public key: ssh-ed25519 [A-Za-z0-9+/=]+ [^[:space:]]*( [^[:space:]]*)?' | tail -1 | sed 's/^public key: //' || true)
-	[ -n "$key" ] || fail "run $run printed no public key (has bin/idp-bootstrap-macrun run in it?)"
+	# The key line lives in the log of any dispatched run that reached bin/idp-bootstrap-macrun, whether
+	# or not a later step of that run failed (2026-08-29: run 33280019151 minted the key and then failed
+	# on unrelated steps; dispatched runs are titled "oke-check", so a title test matched nothing).
+	# IDP_APPLY_RUN names one run outright.
+	key=""
+	run=""
+	for cand in ${IDP_APPLY_RUN:-} $(gh run list --repo "$REPO" --workflow "$WORKFLOW" --event workflow_dispatch --limit 10 --json databaseId --jq '.[].databaseId' 2>/dev/null); do
+		key=$(gh run view "$cand" --repo "$REPO" --log 2>/dev/null | grep -oE 'public key: ssh-ed25519 [A-Za-z0-9+/=]+ [^[:space:]]*( [^[:space:]]*)?' | tail -1 | sed 's/^public key: //' || true)
+		if [ -n "$key" ]; then
+			run=$cand
+			break
+		fi
+	done
+	[ -n "$run" ] || fail "no dispatched $WORKFLOW run in the last 10 printed a public key; dispatch one (mode=apply)"
 fi
 pub=$(printf '%s' "$key" | awk '{print $1" "$2}')
 listening() { nc -z -w 2 127.0.0.1 22 >/dev/null 2>&1; }
