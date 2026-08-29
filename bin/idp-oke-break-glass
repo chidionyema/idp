@@ -570,7 +570,11 @@ pb_k8sgpt_analyze() {
   show k8sgpt-object sh -c "$K get k8sgpt.core.k8sgpt.ai -n healing -o wide; $K get k8sgpt.core.k8sgpt.ai -n healing -o jsonpath='{range .items[*]}{.metadata.name}{\" status=\"}{.status}{\"\n\"}{end}'"
   show k8sgpt-secret sh -c "$K get externalsecret,secret -n healing 2>&1 | grep -iE 'NAME|k8sgpt'; $K get externalsecret -n healing -o jsonpath='{range .items[*]}{.metadata.name}{\" \"}{range .status.conditions[*]}{.type}={.status} {.message}{end}{\"\n\"}{end}'"
   show k8sgpt-deployments $K get deploy,pods -n healing -o wide
-  show k8sgpt-operator-log sh -c "$K logs -n healing deploy/k8sgpt-operator-controller-manager --all-containers --tail=60 2>&1 | grep -iE 'error|fail|secret|k8sgpt|reconcil' | tail -30"
+  # Manager container only: the kube-rbac-proxy sidecar logs a 'TLS handshake error' every 10s and the
+  # old 'error' grep drowned the reconciler in it (run 33235032630: 30 lines of proxy noise, status empty).
+  show k8sgpt-operator-log sh -c "$K logs -n healing deploy/k8sgpt-operator-controller-manager -c manager --tail=200 2>&1 | grep -viE 'TLS handshake' | tail -40"
+  show k8sgpt-describe sh -c "$K describe k8sgpt estate -n healing 2>&1 | tail -40"
+  show healing-events sh -c "$K get events -n healing --sort-by=.lastTimestamp 2>&1 | tail -20"
   # The operator names the analyzer Deployment after the K8sGPT object and labels it app=<name>
   # (k8sgpt-operator pkg/resources/k8sgpt.go: Name: config.Name, MatchLabels app: config.Name).
   # The old selector app.kubernetes.io/name=k8sgpt matched nothing by construction.
