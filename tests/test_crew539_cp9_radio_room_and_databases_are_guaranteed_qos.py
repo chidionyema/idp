@@ -37,9 +37,13 @@ def containers(obj):
 
 def assert_guaranteed(res, where):
     req, lim = res.get("requests") or {}, res.get("limits") or {}
+    # crew#584 (founder 2026-08-29, request inflation): the memory half of Guaranteed stays (one fixed
+    # number for the tracker ceiling and the eviction ranking); the CPU request may be micro under a
+    # burst limit, because an idle database reserving 1000m was 13 % of the node.
     for k in ("cpu", "memory"):
         assert req.get(k), f"{where}: no {k} request"
-        assert req.get(k) == lim.get(k), f"{where}: {k} request {req.get(k)} != limit {lim.get(k)}"
+    assert req["memory"] == lim.get("memory"), f"{where}: memory request {req['memory']} != limit {lim.get('memory')}"
+    assert millicpu(req["cpu"]) <= millicpu(lim.get("cpu", "0m")), f"{where}: cpu request {req['cpu']} above limit {lim.get('cpu')}"
 
 
 def millicpu(v):

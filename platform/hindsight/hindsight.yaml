@@ -54,7 +54,7 @@ spec:
       extraVolumes: [{ name: tmp, emptyDir: {} }]  # the only writable path besides the model cache
       extraVolumeMounts: [{ name: tmp, mountPath: /tmp }]
       resources:
-        requests: { cpu: 250m, memory: 1Gi }
+        requests: { cpu: 50m, memory: 1Gi }   # crew#584 zealot rule 1: micro CPU request, burst limit; the memory floor stays (incident-set)
         limits: { cpu: "1", memory: 2Gi }
     worker:
       enabled: false                # one api pod runs its internal worker; a second is a second copy

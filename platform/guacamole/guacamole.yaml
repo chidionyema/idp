@@ -154,7 +154,7 @@ spec:
             failureThreshold: 3
             initialDelaySeconds: 60
           resources:
-            requests: { cpu: 100m, memory: 512Mi }
+            requests: { cpu: 50m, memory: 512Mi }
             limits: { memory: 1Gi }
           volumeMounts:
             - { name: secrets, mountPath: /run/secrets/guacamole, readOnly: true }

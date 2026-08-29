@@ -24,6 +24,10 @@ def _bytes(quantity: str) -> int:
     return int(m.group(1)) * _UNITS[m.group(2)]
 
 
+def _milli(q: str) -> int:
+    return int(q[:-1]) if q.endswith("m") else int(float(q) * 1000)
+
+
 def _clickhouse():
     return yaml.safe_load(VALUES.read_text())["clickhouse"]
 
@@ -43,7 +47,11 @@ def test_clickhouse_caches_and_merges_leave_inserts_more_than_half_the_ceiling()
     )
 
 
-def test_clickhouse_requests_equal_limits_still() -> None:
-    # crew#539 CP9: Guaranteed QoS; the cache bound is not a licence to loosen it.
+def test_clickhouse_memory_request_equals_limit_still() -> None:
+    # crew#539 CP9 set requests == limits (Guaranteed QoS). crew#584 (founder 2026-08-29, request
+    # inflation) keeps the half that the incident needs: the memory ceiling is the memory request,
+    # so the tracker's 90 % ratio and the eviction ranking both see one fixed number. The CPU
+    # request is micro with a burst limit; a 1000m CPU request was 13 % of the node reserved idle.
     r = _clickhouse()["resources"]
-    assert r["requests"] == r["limits"]
+    assert r["requests"]["memory"] == r["limits"]["memory"]
+    assert _milli(r["requests"]["cpu"]) <= _milli(r["limits"]["cpu"])
