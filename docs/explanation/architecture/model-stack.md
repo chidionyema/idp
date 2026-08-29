@@ -10,7 +10,7 @@ Measured 2026-08-29 (crew#568). This page is the one place that says, for every 
 - **Hermes / the Architect / Otto.** One agent, three names. *Otto* is the Telegram bot account, the doorway. *The Architect* is the persona that answers. *Hermes* is the runtime it runs on, a pod in the cluster. Its main brain goes to Anthropic directly on its own key (`hermes-v2/config.yaml:2,50`); only its fallback goes through the router (`config.yaml:12`). Half on the stack.
 - **Claude Code.** The coding harness on the founder's Mac. It runs on a Claude subscription (`~/.claude.json` billingType `stripe_subscription`), straight to Anthropic. A subscription is not an API key, so it cannot go through the router. Off the stack, by design.
 - **Aiden.** A watcher on the Mac that reads Claude Code session logs and scores them (`~/.claude/scripts/aiden/aiden.py:5`: "nothing in this program asks a model anything"). No relationship to the router.
-- **Maestro.** A rules loop on the Mac under launchd (`com.chidionyema.maestro`, `maestro/maestro.py`) that watches the estate, restarts what it can and pages the founder in the Otto chat. It asks no model: its only contact with AI is a port check that the two bridges and Ollama are up (`maestro.py:1313`). No relationship to the router.
+- **Maestro** (the Deputy, spec `maestro/docs/MAESTRO-DEPUTY-v1.0.md`, built pairing with the founder, 16 of 17 acceptance rows pass). An estate deputy on the Mac with three rings: sense (read the estate), think (a state machine under seven laws), act (run a scoped skill). Its point is systematic immunity: every failure is extracted as a shape, generalised, turned into a skill and an invariant, so the same shape does not recur; the shapes live in an experience graph (`graph.db`). Today, by design of v1.0, shape extraction is rule-based and it asks no model; the spec's v1.1 adds model-powered shape extraction. When that lands, Maestro becomes a router caller with its own login (`maestro`) and budget, never a vendor key. The one failing row, MAE-040: nothing reads the founder's Approve tap yet.
 - **The two "bridges" (kimi-bridge, deepseek-bridge).** Not APIs. `~/.claude/scripts/kimi_bridge.py` drives a signed-in chat website through a browser (Playwright) and serves it on a local port for `consultd` and `bin/consult`. A buyer's engineer would take this apart in one sitting: it is a scraped consumer chat, not a vendor contract, with no key, no budget and no receipt. Both are retired in phase 2 in favour of the router's `openrouter` and `deepseek` lanes.
 
 ## Today
@@ -21,7 +21,7 @@ flowchart LR
     CC["Claude Code sessions"]
     AGENTS["13 agent files · consultd · pi"]
     AIDEN["Aiden (watcher, no model calls)"]
-    MAESTRO["Maestro (rules loop, no model calls)"]
+    MAESTRO["Maestro · the Deputy<br/>(v1.0 rule-based, no model calls)"]
     BRIDGES["kimi-bridge · deepseek-bridge<br/>(browser scrapes of chat sites)"]
     AIDEN -. reads logs .-> CC
     MAESTRO -. port check .-> BRIDGES
@@ -57,11 +57,12 @@ flowchart LR
     AIDEN["Aiden (watcher)"]
     EST -.-> CC
     EST -.-> OC
-    MAESTRO["Maestro (rules loop)"]
+    MAESTRO["Maestro · the Deputy (v1.1: login maestro)"]
     AIDEN -. reads logs .-> CC
     AIDEN -. reads logs .-> OC
     MAESTRO -. watches .-> OC
   end
+  MAESTRO -- "maestro (v1.1)" --> ROUTER
   subgraph CLUSTER["OKE cluster"]
     KINI["KINI"]
     K8S["k8sgpt"]
@@ -95,7 +96,7 @@ Every caller except Claude Code goes through the one door. Claude Code is the de
 | 13 agent files, consultd, pi | Mac | off, own keys | on via `laptop` | `laptop` (phases 2, 4) |
 | Claude Code | Mac | off (subscription) | off, by design | none |
 | Aiden | Mac | no model | no model | none |
-| Maestro | Mac | no model | no model | none |
+| Maestro (the Deputy) | Mac | no model (v1.0 rule-based) | `maestro` when v1.1 adds model-powered shape extraction | `maestro` (v1.1) |
 | kimi-bridge, deepseek-bridge (browser scrapes) | Mac | off, no key at all | retired (phase 2) | none |
 
 ## The unified, vendor-agnostic model in plain terms
