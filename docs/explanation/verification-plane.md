@@ -52,6 +52,17 @@ the run: only that workflow holds the key and only it can create the `verify/lan
 The gate cannot be satisfied by an agent: there is no path to a fresh PASS but a Langfuse that
 answers L1, L2 and L3 now. How-to: `docs/how-to/merge-a-langfuse-change.md`.
 
+## CP5: the ticket state machine
+
+Three labels on the board: `RESOLVED_PENDING_VERIFICATION`, `VERIFIED`, `REJECTED`. An agent may
+set only the first. `ticket-verification.yml` runs after every prover run and hourly, as the
+estate's GitHub App (lane `ticket-verifier`), and is the only thing that sets the other two: a
+fresh PASS verdict completed after the label verifies, a FAIL rejects. A `VERIFIED` set by anyone
+else, or one with no PASS younger than 24 hours behind it, goes back to pending with a comment.
+The decision is one pure function, `decide`, in `bin/idp-ticket-verify`, graded in
+`tests/test_incident_crew631_cp5_ticket_state_machine.py`. How-to:
+`docs/how-to/get-a-ticket-verified.md`.
+
 ## Not done yet
 
 CP2 scopes the key to the runner identity only. CP3 stores verdicts in Postgres, append-only.

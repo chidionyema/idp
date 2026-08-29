@@ -27,5 +27,10 @@
   "vault-writer": {
     "metadata": "read",
     "contents": "write"
+  },
+  "ticket-verifier": {
+    "metadata": "read",
+    "issues": "write",
+    "actions": "read"
   }
 }
