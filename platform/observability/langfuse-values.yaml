@@ -39,13 +39,13 @@ langfuse:
       - name: NODE_OPTIONS
         value: --max-old-space-size=1536
     resources:
-      requests: { cpu: 50m, memory: 2Gi }   # crew#584 zealot rule 1: micro CPU request, burst limit; the memory floor stays (incident-set)
-      limits: { cpu: 1000m, memory: 2Gi }
+      requests: { cpu: 50m, memory: 2Gi }   # crew#584: radio-room set, Guaranteed QoS required (require-priority-class)
+      limits: { cpu: 50m, memory: 2Gi }
   worker:
     replicas: 1
     resources:
-      requests: { cpu: 50m, memory: 1Gi }   # crew#584 zealot rule 1: micro CPU request, burst limit; the memory floor stays (incident-set)
-      limits: { cpu: 1000m, memory: 1Gi }
+      requests: { cpu: 50m, memory: 1Gi }   # crew#584: radio-room set, Guaranteed QoS required (require-priority-class)
+      limits: { cpu: 50m, memory: 1Gi }
 postgresql:
   deploy: true
   storage:

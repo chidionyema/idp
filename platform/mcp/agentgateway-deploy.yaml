@@ -46,9 +46,10 @@ spec:
             - { name: secrets, mountPath: /run/secrets/mcp, readOnly: true }
             - { name: tmp, mountPath: /tmp }   # crew#458: writable /tmp under readOnlyRootFilesystem
           resources:
-            # crew#584 zealot rule 1: micro CPU request, burst limit; the memory floor stays (incident-set)
+            # crew#584: radio-room set, Guaranteed QoS required (require-priority-class) -- request
+            # cut to 50m, limit held equal.
             requests: { cpu: 50m, memory: 256Mi }
-            limits: { cpu: 500m, memory: 256Mi }
+            limits: { cpu: 50m, memory: 256Mi }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
