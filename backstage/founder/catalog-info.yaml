@@ -65,7 +65,7 @@ kind: Component
 metadata:
   name: founder-model-router
   title: "Model router (llm)"
-  description: "Every model call in the estate goes through here. Pick and add models, keys, teams and budgets in the admin console (/ui); sign in with your estate login (the same as this catalogue); there is no console password."
+  description: "The estate's one front door for AI. KINI and the cluster doctor go through it today; Hermes, Prospector and the Mac tools move onto it under the migration plan; Claude Code stays on your subscription. Pick models, logins and budgets in the admin console (/ui) with your estate login. The page 'Who asks which model' shows every caller and its door."
   annotations:
     estate/group: "Run"
     backstage.io/kubernetes-namespace: llm
@@ -81,6 +81,9 @@ metadata:
     - title: "Admin console"
       url: "https://llm.${ESTATE_ZONE}/ui"
       icon: dashboard
+    - title: "Who asks which model, through which door (architecture page)"
+      url: "https://catalogue.${ESTATE_ZONE}/docs/default/component/founder-gods-view/explanation/architecture/model-stack/"
+      icon: docs
     - title: "Model list (source)"
       url: "https://github.com/chidionyema/idp/blob/main/platform/llm/config.yaml"
       icon: dashboard

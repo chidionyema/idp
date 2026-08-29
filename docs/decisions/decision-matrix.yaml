@@ -121,3 +121,48 @@ decisions:
     receipt: "https://github.com/chidionyema/crew/issues/562#issuecomment-5458014415"
     next_review: 2026-09-04
     reviews: []
+  - slug: tailscale-operator-trust
+    requirement: "the tailscale operator in OKE gets its OAuth client with no console step and no long-lived secret in GitHub (crew#66, R52)"
+    date: 2026-08-29
+    status: decided
+    candidates:
+      console-seed:
+        note: "two SEED_TAILSCALE_* secrets pasted from the admin console into GitHub; deleted in idp#763"
+        scores:
+          first_time_user: {score: 1, evidence: "https://github.com/chidionyema/crew/issues/66"}
+          founder_experience: {score: 1, evidence: "https://github.com/chidionyema/crew/issues/66"}
+          feature_parity: {score: 4, evidence: "docs/reference/policy/credential-lifecycle.md"}
+          ecosystem_fit: {score: 2, evidence: "docs/reference/policy/credential-lifecycle.md"}
+          maturity: {score: 4, evidence: "https://tailscale.com/kb/1215/oauth-clients"}
+          security_by_default: {score: 1, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+          portability: {score: 3, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+          operability: {score: 2, evidence: "bin/idp-bootstrap-tailscale"}
+          cost: {score: 5, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+      github-oidc-federation:
+        note: "GitHub Actions OIDC token exchanged for a Tailscale token on the runner; the runner mints the operator client into the vault (chosen)"
+        scores:
+          first_time_user: {score: 4, evidence: "https://tailscale.com/kb/1581/workload-identity-federation"}
+          founder_experience: {score: 5, evidence: "clusters/oke/estate-config.yaml"}
+          feature_parity: {score: 4, evidence: "https://tailscale.com/kb/1581/workload-identity-federation"}
+          ecosystem_fit: {score: 4, evidence: ".github/workflows/oke-check.yml"}
+          maturity: {score: 4, evidence: "https://tailscale.com/kb/1581/workload-identity-federation"}
+          security_by_default: {score: 5, evidence: "https://tailscale.com/kb/1581/workload-identity-federation"}
+          portability: {score: 4, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+          operability: {score: 4, evidence: "bin/idp-bootstrap-tailscale"}
+          cost: {score: 5, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+      oke-oidc-operator:
+        note: "the operator itself presents a projected OKE service-account token (chart oauth.audience); needs an enhanced cluster"
+        scores:
+          first_time_user: {score: 4, evidence: "https://docs.oracle.com/en-us/iaas/Content/ContEng/Tasks/contengconfiguringclusterexternaloidc.htm"}
+          founder_experience: {score: 5, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+          feature_parity: {score: 5, evidence: "https://github.com/tailscale/tailscale/tree/main/cmd/k8s-operator/deploy/chart"}
+          ecosystem_fit: {score: 4, evidence: "platform/oci/main.tf"}
+          maturity: {score: 3, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+          security_by_default: {score: 5, evidence: "https://tailscale.com/kb/1581/workload-identity-federation"}
+          portability: {score: 2, evidence: "platform/oci/main.tf"}
+          operability: {score: 4, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+          cost: {score: 1, evidence: "docs/decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md"}
+    decision: github-oidc-federation   # 435 vs oke-oidc-operator 390 (enhanced cluster is a one-way upgrade at GBP 57.51/month) vs console-seed 230
+    receipt: "https://github.com/chidionyema/crew/issues/66#issuecomment-5461672647"   # founder, 2026-08-29, on the no-cost road: "ok thats fine, we need to document all this"
+    next_review: 2026-09-05
+    reviews: []
