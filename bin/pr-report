@@ -27,7 +27,10 @@ fi
 for t in gh jq conftest python3; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
 mkdir -p "$REPORTS"
 budget=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['infrastructure']['monthly_cap_usd'])" "$IDP/estate-defaults.yaml")
-gh pr view "$n" --json number,body,labels,files -q '{number: .number, body: .body, labels: [.labels[].name], files: [.files[].path]}' > "$REPORTS/pr-meta.json" || exit 2
+# createdAt: a rule that lands today may not red a PR that was planned yesterday. `rule=optimised_plan`
+# (LAW 51) did exactly that on the morning it landed and reddened nine already-reviewed PRs across
+# two repos, so the policy compares this field against the commit that introduced the rule.
+gh pr view "$n" --json number,createdAt,body,labels,files -q '{number: .number, createdAt: .createdAt, body: .body, labels: [.labels[].name], files: [.files[].path]}' > "$REPORTS/pr-meta.json" || exit 2
 gh pr diff "$n" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true
 # LAW 45 (crew#539, idp#485): the same gitleaks CI's security-scan runs, over the lines this PR
 # adds, so a flagged line is refused here and never reaches a job log. BLIND (no gitleaks) is
