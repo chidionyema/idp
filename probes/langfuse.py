@@ -27,7 +27,7 @@ from probes.verdict import assertion
 TIMEOUT_S = 20
 
 
-def http(url, auth=None, timeout=TIMEOUT_S, data=None):
+def http(url, auth=None, timeout=TIMEOUT_S, data=None, bearer=None):
     """(status, body_text). Redirects are followed; a redirect to the identity domain shows up
     as a 200 HTML sign-in page, which is why nothing below asserts on 200 alone. data (bytes)
     makes it a JSON POST."""
@@ -37,6 +37,8 @@ def http(url, auth=None, timeout=TIMEOUT_S, data=None):
     if data is not None:
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, headers=headers, data=data)  # noqa: S310
+    if bearer:
+        req.add_header("Authorization", f"Bearer {bearer}")
     if auth:
         req.add_header(
             "Authorization",
