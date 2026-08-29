@@ -21,7 +21,7 @@ COLUMNS = (
     "evidence_ref",
 )
 
-SCHEMA_SQL = f"""  # noqa: S608 -- TABLE is this module's own constant, never an input
+SCHEMA_SQL = f"""
 CREATE TABLE IF NOT EXISTS {TABLE} (
   verdict_id text PRIMARY KEY,
   check_id text NOT NULL,
@@ -52,7 +52,7 @@ BEGIN RAISE EXCEPTION 'verdicts is append-only: % refused', TG_OP; END $$;
 DROP TRIGGER IF EXISTS verdicts_append_only ON {TABLE};
 CREATE TRIGGER verdicts_append_only BEFORE UPDATE OR DELETE OR TRUNCATE ON {TABLE}
   FOR EACH STATEMENT EXECUTE FUNCTION verdicts_append_only();
-"""
+"""  # noqa: S608 -- TABLE is this module's own constant, never an input
 
 
 def _lit(v):
