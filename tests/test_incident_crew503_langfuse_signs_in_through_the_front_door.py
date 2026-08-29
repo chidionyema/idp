@@ -81,3 +81,23 @@ def test_every_surface_behind_the_front_door_consumes_the_identity_or_is_named()
     assert hosts, "no ForwardAuth route found: the probe is blind"
     open_hops = {h for h in hosts if not consumes.get(h) and h not in cannot_close}
     assert not open_hops, f"second login hop with no reader and no named reason: {sorted(open_hops)}"
+
+
+def test_next_auths_endpoints_reach_langfuse_without_the_front_door() -> None:
+    """A fresh browser lands on /api/auth/callback/custom straight from IDCS; bounced to the front
+    door first it loops, and `curl /api/auth/providers` is the proof the founder is shown."""
+    api = next(d for d in _docs(ROUTES) if d.get("kind") == "HTTPRoute" and d["metadata"]["name"] == "langfuse-api")
+    rule = api["spec"]["rules"][0]
+    assert not any(f.get("type") == "ExtensionRef" for f in rule.get("filters", []))
+    prefixes = {m["path"]["value"] for m in rule["matches"]}
+    assert "/api/auth/" in prefixes, prefixes
+
+
+def test_the_login_drill_walks_the_second_hop_and_the_drill_user_may() -> None:
+    """The hourly drill graded the catalogue only, so the second form was silent green."""
+    drill = (ROOT / "bin/idp-login-drill").read_text()
+    assert 'fail("second-hop"' in drill, "the login drill never opens Langfuse: the second hop is ungraded"
+    assert "input[type='password']" in drill
+    tf = TF.read_text()
+    block = re.search(r'resource "oci_identity_domains_grant" "langfuse_drill" \{(.*?)\n\}', tf, re.S)
+    assert block and "oci_identity_domains_user.drill.id" in block.group(1), "drill user not granted the Langfuse app: IDCS stops it"

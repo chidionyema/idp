@@ -14,6 +14,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WF = os.path.join(ROOT, ".github", "workflows", "portability-drill.yml")
 WAIT = os.path.join(ROOT, "bin", "idp-drill-wait")
+FLOOR = os.path.join(ROOT, "drills", "portability-floor.txt")
 
 
 def test_no_job_sleeps_the_full_600s_on_kubectl_wait():
@@ -30,15 +31,26 @@ def test_wait_script_polls_the_grader_and_exits_at_the_floor():
     subprocess.run(["bash", "-n", WAIT], check=True)
 
 
+def _floor() -> int:
+    """The floor the wait script will actually read. Taken from the file rather than written into
+    this test: the fake cluster below has to clear whatever the estate's floor is today, and a
+    literal here would red the drill's own test every time crew#488 raises the number (it did, at
+    2 -> 9, run 33223579672)."""
+    for line in open(FLOOR, encoding="utf-8"):
+        line = line.split("#", 1)[0].strip()
+        if line:
+            return int(line)
+    raise AssertionError("no integer in %s" % FLOOR)
+
+
 def test_wait_script_returns_the_moment_the_floor_is_met(tmp_path):
-    """A fake kubectl that reports two Ready layers (floor 2) must end the wait on the first poll."""
+    """A fake kubectl reporting exactly floor-many Ready layers must end the wait on the first poll."""
+    n = _floor()
+    items = ",".join(
+        '{"metadata":{"namespace":"a","name":"k%d"},"status":{"conditions":[{"type":"Ready","status":"True"}]}}' % i
+        for i in range(n))
     fake = tmp_path / "kubectl"
-    fake.write_text(
-        "#!/usr/bin/env bash\n"
-        'printf \'{"items":[%s,%s]}\' '
-        "'{\"metadata\":{\"namespace\":\"a\",\"name\":\"x\"},\"status\":{\"conditions\":[{\"type\":\"Ready\",\"status\":\"True\"}]}}' "
-        "'{\"metadata\":{\"namespace\":\"a\",\"name\":\"y\"},\"status\":{\"conditions\":[{\"type\":\"Ready\",\"status\":\"True\"}]}}'\n"
-    )
+    fake.write_text("#!/usr/bin/env bash\ncat <<'JSON'\n{\"items\":[%s]}\nJSON\n" % items)
     fake.chmod(0o755)
     env = dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}", DRILL_WAIT_STEP="1", DRILL_WAIT_MAX="5")
     out = subprocess.run([WAIT], env=env, capture_output=True, text=True, timeout=30)

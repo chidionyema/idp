@@ -319,6 +319,21 @@ resource "oci_vault_secret" "langfuse_sso_client_secret" {
   }
 }
 
+# The login drill walks the second hop too (bin/idp-login-drill, crew#503): its user needs the
+# same grant the founder has or IDCS stops it at "not assigned", which reads like a second form.
+resource "oci_identity_domains_grant" "langfuse_drill" {
+  idcs_endpoint   = var.idcs_endpoint
+  schemas         = ["urn:ietf:params:scim:schemas:oracle:idcs:Grant"]
+  grant_mechanism = "ADMINISTRATOR_TO_USER"
+  grantee {
+    type  = "User"
+    value = oci_identity_domains_user.drill.id
+  }
+  app {
+    value = oci_identity_domains_app.langfuse.id
+  }
+}
+
 output "langfuse_client_id" {
   value = oci_identity_domains_app.langfuse.name
 }

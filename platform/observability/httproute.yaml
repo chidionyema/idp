@@ -65,6 +65,11 @@ spec:
   rules:
     - matches:
         - path: { type: PathPrefix, value: /api/public/ }
+        # crew#503: next-auth's own endpoints (signin, callback, session, providers) reach Langfuse
+        # directly. Password sign-in is off (langfuse-sso), so these only start or finish the OIDC
+        # round-trip with the identity domain; a fresh browser's callback must not be bounced to
+        # the front door first, and `curl /api/auth/providers` is the operational proof.
+        - path: { type: PathPrefix, value: /api/auth/ }
       backendRefs:
         - name: langfuse-web
           port: 3000

@@ -99,8 +99,11 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
     # pulls the two project keys Langfuse enforces on that path (langfuse.yaml, from the vault).
     if (route["metadata"].get("annotations") or {}).get("idp.estate/auth") == "langfuse-project-keys":
         paths = [m.get("path", {}) for rule in route["spec"]["rules"] for m in rule.get("matches", [])]
-        assert paths and all(p == {"type": "PathPrefix", "value": "/api/public/"} for p in paths), \
-            f"{f}: annotated langfuse-project-keys but exposes a path other than /api/public/: {paths}"
+        # crew#503: /api/auth/ is next-auth (OIDC signin/callback/session); password sign-in is
+        # off in langfuse-sso, so those endpoints only round-trip with the identity domain.
+        open_paths = ({"type": "PathPrefix", "value": "/api/public/"}, {"type": "PathPrefix", "value": "/api/auth/"})
+        assert paths and all(p in open_paths for p in paths), \
+            f"{f}: annotated langfuse-project-keys but exposes a path other than /api/public/ or /api/auth/: {paths}"
         keys = (pathlib.Path(f).parent / "langfuse.yaml").read_text()
         assert "langfuse-init-public-key" in keys and "langfuse-init-secret-key" in keys, \
             f"{f}: annotated langfuse-project-keys but langfuse.yaml pulls no project keys"
