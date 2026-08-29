@@ -51,7 +51,10 @@ list, a slug) are listed at the end so the gate knows them; they have no life cy
 
 ## What the founder puts in, per provider (once)
 
-Each block is the whole of his part for that provider. After the secret is set, say "set" in
+Each block is the whole of his part for that provider. He does not read this page to do it:
+`bin/idp-set-root <provider>` opens the page, says the same steps in the terminal, takes each
+value with hidden input, sets the secret and dispatches the apply run (R53: instructions and
+action in one place, zero friction). After the secret is set, say "set" in
 Telegram; the next `oke-check` apply run does the rest.
 
 **Tailscale.** Admin console, Settings, OAuth clients, Generate OAuth client. Description:
@@ -77,5 +80,5 @@ vendor: Anthropic, OpenRouter, DeepSeek, Minimax, Groq, Gemini, Exa, Stripe.
 
 ## Configuration that is not a credential
 
-`SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS`, `SEED_HERMES_TELEGRAM_HOME_CHANNEL`. A chat id and a user
-id list. They ride the hermes-agent-env step as configuration and have no life cycle.
+`SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS`, `SEED_HERMES_TELEGRAM_HOME_CHANNEL`, `SEED_R2_BUCKET`. A chat id, a user
+id list and a bucket name. They ride the hermes-agent-env step as configuration and have no life cycle.
