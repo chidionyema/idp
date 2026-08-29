@@ -26,6 +26,14 @@ Memory `summary-over-source-is-the-mistake-class`; the removal is tracked on cre
    description `estate`, issuer GitHub Actions, subject `repo:chidionyema@377396/idp@1344360654:*` (GitHub immutable subject: idp was created 2026-08-24, after the 2026-07-15 cutoff; the classic `repo:chidionyema/idp:...` form was refused, run 33248046751; source: GitHub OIDC reference, "Immutable subject claims", https://docs.github.com/en/actions/reference/security/oidc; the id comes from `gh api repos/chidionyema/idp/actions/oidc/customization/sub` -> `sub_claim_prefix`; Tailscale's matching rules, https://tailscale.com/kb/1581/workload-identity-federation),
    scope `oauth_keys` write, client id `T8XvMsM4vA11CNTRL-kmgFbQMnqn11CNTRL` (a public id, not a
    secret; `clusters/oke/estate-config.yaml`, idp#754). This is the one human step, done once.
+   Scope rule learned on 2026-08-29 (run 33264994104, `actor cannot set scopes`): a Tailscale
+   identity can only grant scopes it itself holds, so the identity carries every scope the
+   operator client will get: auth_keys write and devices:core write (both bound to `tag:k8s`),
+   policy_file write, users read, oauth_keys write. A write scope bound to a tag is refused
+   until the tailnet policy defines that tag in `tagOwners`, so `tag:k8s` (and `tag:founder-mac`)
+   were put into the tailnet policy first (source: tailscale.com/kb/1581, "scopes and tags").
+   Both were set in the console by the agent session, not the founder, and the identity page
+   shows `auth_keys +6`, tag `tag:k8s`.
 2. On `oke-check apply` the runner asks GitHub for an OIDC token with audience
    `api.tailscale.com/<client id>` and posts it to `POST /api/v2/oauth/token-exchange` with
    `client_id` and `jwt` (the exact request on tailscale.com/kb/1581). Tailscale answers a

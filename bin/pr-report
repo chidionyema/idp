@@ -31,7 +31,12 @@ budget=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['i
 # (LAW 51) did exactly that on the morning it landed and reddened nine already-reviewed PRs across
 # two repos, so the policy compares this field against the commit that introduced the rule.
 gh pr view "$n" --json number,createdAt,body,labels,files -q '{number: .number, createdAt: .createdAt, body: .body, labels: [.labels[].name], files: [.files[].path]}' > "$REPORTS/pr-meta.json" || exit 2
-gh pr diff "$n" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true
+# The added lines come from the local range when origin/main is here (pre-push: the remote branch
+# is exactly one push stale, so `gh pr diff` graded the lines this push removes; idp#860), and
+# from the PR on GitHub otherwise (CI's shallow checkout).
+base=$(git merge-base origin/main HEAD 2>/dev/null || true)
+if [ -n "$base" ]; then git diff "$base...HEAD" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true
+else gh pr diff "$n" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true; fi
 # LAW 45 (crew#539, idp#485): the same gitleaks CI's security-scan runs, over the lines this PR
 # adds, so a flagged line is refused here and never reaches a job log. BLIND (no gitleaks) is
 # exit 2 like any missing tool; a laptop is told what to install, CI installs it.

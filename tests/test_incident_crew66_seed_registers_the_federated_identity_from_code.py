@@ -29,7 +29,7 @@ args=("$@"); for i in "${{!args[@]}}"; do [ "${{args[$i]}}" = -o ] && out="${{ar
 body() {{ if [ "$out" = /dev/stdout ]; then cat; else cat > "$out"; printf '%s' "$1"; fi; }}
 case "$*" in
   *oidc.test*) echo '{{"value":"{JWT}"}}';;
-  *client_id=kFEDNEW222*) echo '{{"access_token":"at-fed","scope":"oauth_keys"}}' | body 200;;
+  *client_id=kFEDNEW222*) echo '{{"access_token":"at-fed","scope":"auth_keys devices:core policy_file users:read oauth_keys"}}' | body 200;;
   *token-exchange*) echo '{{"message":"forbidden"}}' | body 403;;
   *oauth/token*) pair=$(cat); case "$pair" in *SEED*) echo '{{"access_token":"at-seed","scope":"oauth_keys"}}';; *) echo '{{"access_token":"at-1","scope":"auth_keys devices:core policy_file users:read"}}';; esac;;
   *DELETE*) printf '204';;
@@ -70,7 +70,13 @@ def test_a_refused_identity_is_re_registered_from_the_runners_claims_and_the_ope
     assert '"subject":"repo:chidionyema@377396/idp@1344360654:*"' in reg[0], (
         "the subject is the runner's own sub with the ref widened, never typed"
     )
-    assert '"scopes":["oauth_keys"]' in reg[0] and "at-seed" in reg[0]
+    assert (
+        '"scopes":["auth_keys","devices:core","policy_file","users:read","oauth_keys"]'
+        in reg[0]
+        and "at-seed" in reg[0]
+    ), (
+        "the identity holds every scope it grants the operator (Tailscale grants only what the actor holds)"
+    )
     assert json.load(open(vault))["tailscale-federated"]["client_id"] == "kFEDNEW222"
     assert "keys/kFEDOLD111" in calls and "DELETE" in calls, (
         "the refused identity is retired"

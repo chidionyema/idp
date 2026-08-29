@@ -135,7 +135,9 @@ fi
 #       on the runner; off the runner (no OIDC) it mints directly, the older one-human-step road.
 vf=$("$CLOUD" secret get tailscale-federated 2>/dev/null | jq -r '.client_id // empty' 2>/dev/null || true)
 [ -z "$vf" ] || fed_id=$vf
+token_road=seed
 if [ -n "$fed_id" ] && seed_json=$(federated_exchange "$fed_id"); then
+  token_road=federated
   say ok federated "OIDC token exchanged at /api/v2/oauth/token-exchange for identity $fed_id (no secret held)"
 else
   # outside the runner a refused identity cannot be repaired (the claims live on the runner); the refusal is printed above
@@ -161,12 +163,13 @@ else
     read -r iss sub < <(printf '%s' "$jwt" | cut -d. -f2 | python3 -c 'import sys,base64,json; p=sys.stdin.read().strip(); d=json.loads(base64.urlsafe_b64decode(p+"="*(-len(p)%4))); print(d["iss"], d["sub"])')
     unset jwt
     subj="${sub%%:ref:*}:*"   # every ref of this repository (ids are immutable; the name is not), nothing else
-    body=$(jq -cn --arg i "$iss" --arg s "$subj" --arg d "estate-github-${GITHUB_REPOSITORY:-idp}" '{keyType:"federated",description:$d,scopes:["oauth_keys"],issuer:$i,subject:$s}')
+    # the identity must hold every scope it will grant the operator (Tailscale: an actor grants only what it holds)
+    body=$(jq -cn --arg i "$iss" --arg s "$subj" --arg d "estate-github-${GITHUB_REPOSITORY:-idp}" --argjson sc "$SCOPES" '{keyType:"federated",description:$d,scopes:($sc+["oauth_keys"]),issuer:$i,subject:$s}')
     resp=$(curl -sS -H "Authorization: Bearer $stok" -H 'Content-Type: application/json' -d "$body" "$API/api/v2/tailnet/-/keys")
     new_fid=$(jq -r '.id // empty' <<<"$resp")
     [ -n "$new_fid" ] || fail federated "POST /keys keyType=federated answered no id: $(jq -r '.message // .error // "no message"' <<<"$resp" | cut -c1-160)"
     vault_write tailscale-federated "$new_fid" none
-    say ok federated "identity $new_fid registered from code: issuer $iss subject $subj scope oauth_keys; vaulted as tailscale-federated"
+    say ok federated "identity $new_fid registered from code: issuer $iss subject $subj scopes $(jq -r "join(\" \")" <<<"$SCOPES") oauth_keys; vaulted as tailscale-federated"
     if [ -n "$fed_id" ] && [ "$fed_id" != "$new_fid" ]; then
       code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE -H "Authorization: Bearer $stok" "$API/api/v2/tailnet/-/keys/$fed_id" || echo curl-failed)
       case "$code" in 200|204) say ok federated "refused identity $fed_id deleted";; *) say "" federated "refused identity $fed_id not deleted (DELETE answered $code); harmless, delete it later";; esac
@@ -174,13 +177,25 @@ else
     unset stok
     seed_json=$(federated_exchange "$new_fid") || fail federated "the identity registered from the runner's own claims is still refused (answer above)"
     say ok federated "OIDC token exchanged for identity $new_fid (no secret held from here on)"
+    token_road=federated
   fi
 fi
 seed_tok=$(jq -r '.access_token // empty' <<<"$seed_json")
 [ -n "$seed_tok" ] || fail seed "the seed does not exchange for a token: $(jq -r '.message // .error // "no message"' <<<"$seed_json" | cut -c1-200); make a new seed with $0 --seed"
 seed_scopes=$(jq -r '.scope // ""' <<<"$seed_json")
-case "$seed_scopes" in ""|oauth_keys|oauth_keys:*) ;; *) fail seed "the seed carries more than oauth_keys ($seed_scopes); a seed is one scope, make a new one with $0 --seed";; esac
-say ok seed "exchanges for an access token; scopes: ${seed_scopes:-not reported by the token endpoint}"
+if [ "$token_road" = federated ]; then
+  # A Tailscale identity can only grant scopes it itself holds (run 33266374431: "actor cannot set scopes"),
+  # so the federated identity carries the operator's four scopes plus oauth_keys; the one-scope rule is the
+  # seed road's rule only (ADR 0010, 2026-08-29).
+  [ -n "$seed_scopes" ] || fail federated "the token-exchange answer carried no scope field for identity $fed_id; on the federated road that is unmeasured, not a pass (run 33266374431 shows the field is reported)"
+  for s in $(jq -r '.[]' <<<"$SCOPES") oauth_keys; do
+    case " $seed_scopes " in *" $s "*|*" $s:"*) ;; *) fail federated "identity $fed_id lacks scope $s (has: $seed_scopes); an identity grants only what it holds: give it auth_keys write and devices:core write on $TAG, policy_file write, users read, oauth_keys write, and define $TAG in the tailnet policy tagOwners";; esac
+  done
+  say ok federated "identity scopes cover the operator's: ${seed_scopes:-not reported by the token endpoint}"
+else
+  case "$seed_scopes" in ""|oauth_keys|oauth_keys:*) ;; *) fail seed "the seed carries more than oauth_keys ($seed_scopes); a seed is one scope, make a new one with $0 --seed";; esac
+  say ok seed "exchanges for an access token; scopes: ${seed_scopes:-not reported by the token endpoint}"
+fi
 
 # 4. mint the operator client through the API (the SDK's CreateOAuthClient, verbatim body)
 desc="estate-operator-$(date -u +%Y%m%dT%H%MZ)"

@@ -140,6 +140,44 @@ def test_incident_crew66_a_seed_with_more_than_oauth_keys_is_refused_before_mint
     assert "tailnet/-/keys" not in log.read_text()
 
 
+def _federated(tmp_path, scope):
+    """Road 2 (ADR 0010): the runner's OIDC token is exchanged for a Tailscale token; no seed in the vault."""
+    env, log, vault = _estate(tmp_path, seed=None)
+    sh = pathlib.Path(env["IDP_CLOUD"]).parent
+    (sh / "curl").write_text(f'''#!/bin/bash
+echo "$@" >> "{log}"
+case "$*" in
+  *github.test/token*) h=$(printf '{{"alg":"none"}}' | base64 | tr -d '=\n'); c=$(printf '{{"iss":"gh","sub":"repo:x"}}' | base64 | tr -d '=\n'); printf '{{"value":"%s.%s."}}' "$h" "$c";;
+  *oauth/token-exchange*) for a in "$@"; do case "$prev" in -o) printf '{{"access_token":"at-fed","scope":"{scope}"}}' > "$a";; esac; prev=$a; done; printf 200;;
+  *tailnet/-/keys*) echo '{{"id":"kNEW987654","key":"tskey-client-new-1","keyType":"client"}}';;
+  *oauth/token*) echo '{{"access_token":"at-1","scope":"auth_keys devices:core policy_file users:read"}}';;
+  *) echo '{{}}';;
+esac
+''')
+    env.update({"TAILSCALE_FEDERATED_CLIENT_ID": "tFED111CNTRL", "ACTIONS_ID_TOKEN_REQUEST_URL": "https://github.test/token?x=1",
+                "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "gh-req"})
+    return env, log, vault
+
+
+def test_incident_crew66_run_33266374431_a_federated_identity_holding_the_operator_scopes_mints(tmp_path):
+    """2026-08-29 run 33266374431: the identity held every operator scope (Tailscale: an actor grants only what
+    it holds) and the script refused it with the seed road's one-scope rule. On the federated road the rule
+    is the opposite: the token must cover the four operator scopes."""
+    env, log, vault = _federated(tmp_path, "devices:core devices:core:read policy_file auth_keys oauth_keys users:read")
+    p = _run(env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "identity scopes cover the operator's" in p.stdout and "more than oauth_keys" not in p.stdout
+    assert "tailnet/-/keys" in log.read_text()
+    assert json.load(open(vault))["tailscale-operator"]["client_id"] == "kNEW987654"
+
+
+def test_incident_crew66_a_federated_identity_missing_an_operator_scope_is_refused_before_minting(tmp_path):
+    env, log, vault = _federated(tmp_path, "oauth_keys")
+    p = _run(env)
+    assert p.returncode == 1 and "lacks scope auth_keys" in p.stdout, p.stdout + p.stderr
+    assert "tailnet/-/keys" not in log.read_text()
+
+
 def test_incident_crew66_a_seed_pair_from_the_environment_mints_and_is_vaulted_so_the_repo_secret_can_go(tmp_path):
     """Founder 2026-08-29: one master credential, made once, then code. Road c: the pair arrives as
     TAILSCALE_SEED_CLIENT_ID / _SECRET (oke-check apply reads repository secrets), never a prompt."""
