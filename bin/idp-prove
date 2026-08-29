@@ -2,7 +2,7 @@
 """The prover (crew#631 CP1). Runs the probes for one target against the live estate, binds the
 result to the artifact that was running, signs it, and writes one verdict file.
 
-  bin/idp-prove langfuse --out FILE      L1 + L2 + L3 (with negative controls) -> signed verdict
+  bin/idp-prove langfuse --out FILE      L1 + L2 + L3 + L4 (with negative controls) -> signed verdict
 
 The agent cannot run this to any effect: the API key, the drill password, the cluster read and the
 signing key all come from the vault through the runner's machine identity. On a laptop with no
@@ -101,6 +101,11 @@ def prove_langfuse(out_path):
     pk, sk = vault("langfuse-init-public-key"), vault("langfuse-init-secret-key")
     if pk and sk:
         assertions += LF.l2_machine(host, pk, sk)
+        trace_id = uuid.uuid4().hex
+        assertions += LF.l4_journey(
+            host, pk, sk, trace_id, trace_id[:16],
+            f"idp-prove.l4.{os.environ.get('GITHUB_RUN_ID', 'local')}",
+        )
     else:
         blocked = blocked or "langfuse-init-public-key / secret-key unreadable from the vault"
     assertions += l3_via_drill()
