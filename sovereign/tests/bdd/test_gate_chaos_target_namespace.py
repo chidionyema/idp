@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from pytest_bdd import given, scenarios, then, when
+from pytest_bdd import given, scenarios, then
 
 scenarios("features/chaos/chaos-target-namespace-labelled.feature")
 

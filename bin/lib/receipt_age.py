@@ -39,7 +39,7 @@ instrument that cannot measure says so (LAW 45 step 5).
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from email.utils import parsedate_to_datetime
 
 # How far the receipt may be stamped ahead of the clock that served it. Both come from the same
