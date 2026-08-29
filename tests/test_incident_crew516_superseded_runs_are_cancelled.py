@@ -9,7 +9,9 @@ import yaml
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WORKFLOWS = os.path.join(os.path.dirname(HERE), ".github", "workflows")
-PER_REF = ("ci.yml", "build-multiarch.yml", "image-update-pr.yml")
+PER_REF = ("ci.yml", "image-update-pr.yml")
+# build-multiarch.yml supersedes pull-request runs only; a push to main builds every sha
+# (tests/test_incident_crew301_main_image_builds_are_never_cancelled.py).
 
 
 def supersedes_on_the_same_ref(text):
