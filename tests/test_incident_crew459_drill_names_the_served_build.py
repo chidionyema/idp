@@ -60,4 +60,7 @@ def test_incident_run_33244316874_the_drill_counts_the_rows_the_home_page_draws(
     assert "page.locator(\"[data-testid^='surface-']\").count()" in src
     assert "a:has-text('Catalogue entry')" not in src, "the deep-link count is the selector that read 0 of 29"
     home = HOME.read_text()
-    assert home.count("data-testid={`surface-${entity.metadata.name}`}") >= 2, "card and row both carry the test id"
+    # crew#459 redesign: one renderer (DoorRow) draws every door; it must carry the id, and the
+    # empty state must carry no-surfaces, the drill's other selector.
+    assert home.count("data-testid={`surface-${entity.metadata.name}`}") >= 1, "the door renderer carries the test id"
+    assert 'data-testid="no-surfaces"' in home, "the empty state carries no-surfaces"
