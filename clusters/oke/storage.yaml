@@ -1,0 +1,23 @@
+# The cluster's default StorageClass, under a provider-neutral name.
+#
+# Why this file exists (2026-08-29, portal outage, run 33229461240): a PersistentVolumeClaim that
+# names no class has the cluster default injected by the API server's DefaultStorageClass
+# admission plugin BEFORE Kyverno sees it. On OKE that default is `oci-bv`, which the
+# provider-independence policy rightly refuses, so every NEW claim on this cluster was denied
+# ("failed to create PVC pgdata-postgres-0 ... denied") and the portal's database could never
+# come back once its namespace was recreated. The claims that worked predated the policy.
+#
+# The fix is not an exception in the policy: the default class gets an estate name. A second
+# default is legal and the API server picks the newest default (Kubernetes >= 1.24), so the
+# OKE-managed `oci-bv` object is left untouched. Each cluster layer defines `estate-block` with
+# its own provisioner; the platform layer names no class and gets this one.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: estate-block
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: blockvolume.csi.oraclecloud.com
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

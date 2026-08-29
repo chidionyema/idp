@@ -47,6 +47,9 @@ spec:
                   {{ keys(request.object.metadata.annotations || `{}`) | [?regex_match('^(service\.beta\.kubernetes\.io/(oci|aws|azure)-|oci\.oraclecloud\.com/|alb\.ingress\.kubernetes\.io/|cloud\.google\.com/|networking\.gke\.io/)', @)] | length(@) }}
                 operator: GreaterThan
                 value: 0
+    # The API server injects the cluster default class before this rule runs, so the default
+    # itself must carry an estate name: clusters/<cluster>/storage.yaml defines `estate-block`
+    # as the default (2026-08-29: `oci-bv` as default made every new claim on OKE fail this rule).
     - name: no-provider-storage-class
       match:
         any:
