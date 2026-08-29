@@ -43,14 +43,17 @@ def test_brewfile_every_line_is_tap_brew_or_cask():
         assert LINE_RE.match(ln), f"Brewfile line is not tap/brew/cask: {ln!r}"
 
 
-def test_brewfile_has_exactly_the_four_expected_entries():
+def test_brewfile_has_exactly_the_three_expected_entries():
+    """crew#561: the Mac runs the App Store Tailscale build (measured 2026-08-29, kb/1193 applies
+    to it). `cask "tailscale"` is the standalone build; installing it beside the App Store one is
+    two clients fighting for one tunnel, so the Brewfile never names it."""
     lines = _brewfile_lines(BREWFILE.read_text())
     assert lines == [
         'tap "LizardByte/homebrew"',
         'brew "sunshine"',
         'cask "deskpad"',
-        'cask "tailscale"',
     ]
+    assert 'cask "tailscale"' not in BREWFILE.read_text()
 
 
 def test_brewfile_fixture_with_bad_line_fails_the_line_check():

@@ -7,15 +7,13 @@ asks of you beyond the one below.
 
 ## Turn it on
 
-1. Fill in your Mac's tailnet name and login user in the estate config, and run
-   `tailscale up --ssh --advertise-tags=tag:founder-mac` on the Mac once
-   (`docs/founder/mac-remote-desk/README.md` — the same one-sitting checklist covers this).
-2. Set two GitHub repository secrets from a Tailscale OAuth client scoped `auth_keys` and
-   `policy_file`, tag `tag:k8s`, then dispatch the vault-seed workflow — the same one step every
-   other integration in this estate uses (`platform/hermes-agent/README.md`).
-
-That's it. Everything else — the sidecar joining the tailnet, the network policy, Otto's own
-identity — is CI, not you.
+1. Nothing to fill in: your Mac's short username and tailnet IP are measured into
+   `clusters/oke/estate-config.yaml`, and your tailnet login is read from the tailnet's owner
+   record. Keep "Remote Login" on (`docs/founder/mac-remote-desk/README.md`).
+2. The apply run (`oke-check`, mode apply) mints Otto's key into the vault; then one command in a
+   session on the Mac, `bin/idp-mac-adopt-otto`, authorises it — no value shown, nothing pasted
+   (`platform/hermes-agent/README.md`). The proof is `oke-check` break-glass playbook
+   `otto-parity`: it runs `mac-run hostname` from inside the pod and prints your Mac's name.
 
 ## What you'll see
 

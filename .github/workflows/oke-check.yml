@@ -17,9 +17,9 @@ on:
         options: [check, apply, surge-node, surge-finish, break-glass]
         default: check
       playbook:
-        description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose and architect-doctor are read-only; so is router-spend."
+        description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose, otto-parity and architect-doctor are read-only; so is router-spend."
         type: choice
-        options: [diagnose, architect-doctor, cilium-unchain, cilium-replace, helm-retry, namespace-unstick, ghcr-pull-restore, k8sgpt-analyze, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll, router-spend]
+        options: [diagnose, architect-doctor, otto-parity, cilium-unchain, cilium-replace, helm-retry, namespace-unstick, ghcr-pull-restore, k8sgpt-analyze, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll, router-spend]
         default: diagnose
   pull_request:
     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
@@ -218,6 +218,17 @@ jobs:
           fed=$(awk '$1=="TAILSCALE_FEDERATED_CLIENT_ID:"{gsub(/"/,"",$2);print $2}' clusters/oke/estate-config.yaml)
           [ -n "$fed" ] || [ -n "$TAILSCALE_SEED_CLIENT_ID" ] || { echo "BLIND   tailscale-operator   no federated identity in estate-config (TAILSCALE_FEDERATED_CLIENT_ID) and no SEED_TAILSCALE_CLIENT_ID repository secret; one of them is the one manual step, kb/1581 or kb/1215"; exit 0; }
           bin/idp-bootstrap-tailscale
+
+      # crew#561: Otto's key to the founder's Mac sshd, minted here (Tailscale SSH cannot run on his
+      # GUI Tailscale build, platform/tailscale/policy.hujson header). Kept once minted; the public
+      # half is printed for bin/idp-mac-adopt-otto to read from this log. Never a paste.
+      - name: bin/idp-bootstrap-macrun (crew#561)
+        if: ${{ always() && inputs.mode == 'apply' }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+        run: bin/idp-bootstrap-macrun
 
       # R52 (founder 2026-08-29): the Cloudflare root is one token set once as a repository secret; the
       # DNS token and the R2 credential are minted from it here, never in a browser. No root = BLIND.

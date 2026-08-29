@@ -245,6 +245,11 @@ spec:
               mountPath: /usr/local/bin/mac-run
               subPath: mac-run
               readOnly: true
+            # crew#561: mac-run's key to the Mac's sshd (mac-run-key.yaml); optional so the gateway
+            # still starts before the first apply has minted it, and mac-run says so (exit 2).
+            - name: mac-run-key
+              mountPath: /run/secrets/hermes-agent-mac-run
+              readOnly: true
         # crew#516 CP5 (founder order, crew#66 5451614620 + addendum): the tailnet identity for
         # this pod, so the gateway container's mac-run reaches the Mac through the SOCKS5 proxy
         # below instead of a sidecar-free "figure out the network" ask nobody made of Otto.
@@ -329,6 +334,8 @@ spec:
           configMap: { name: hermes-agent-estate }
         - name: mac-run
           configMap: { name: hermes-agent-mac-run, defaultMode: 0755 }
+        - name: mac-run-key
+          secret: { secretName: hermes-agent-mac-run, optional: true, defaultMode: 0440 }
         - name: tailscale-authkey
           # optional: the sidecar's key is born by bin/idp-bootstrap-tailscale (idp#763). Until it exists
           # the gateway must still start; a missing sidecar secret kept Otto at ContainerCreating for
