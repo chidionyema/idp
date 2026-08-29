@@ -71,6 +71,7 @@ export DRILL_SURFACES_EXPECTED
 # The founder cannot read a log. The drill photographs the page it graded so a red row comes with
 # the picture of what he would have seen (LAW 28: an instrument nobody reads is not an instrument).
 export DRILL_SHOT="${DRILL_SHOT:-${TMPDIR:-/tmp}/login-drill-home.png}"
+export IDP_ROOT="$IDP"   # crew#631: the L3 assertions are probes/langfuse.py, imported below
 
 # The password crosses into python as an environment variable only. It is never an argument, so
 # it never appears in ps, and the driver never prints it.
@@ -438,6 +439,38 @@ with sync_playwright() as p:
         fail("second-hop", f"langfuse asked for a second login at {lf_path}: the one login is two")
     if lf_host != f"langfuse.{ZONE}":
         fail("second-hop", f"langfuse landed on {lf_host}, expected langfuse.{ZONE}")
+
+    # 9. crew#631 L3, the human plane graded on identity, not on a page. /api/auth/session with
+    # this browser's jar must name the drill user; a context holding nothing must get no user.
+    # Both come from probes/langfuse.py so the prover and this drill grade one definition.
+    # The identity row is advisory here until the prover has graded it once for real
+    # (crew#631 §6.3: a probe that has never failed is not a probe); set DRILL_STRICT_IDENTITY=1
+    # to make it red for this drill too. The negative control is always red when it fails: an
+    # open gate is a P0 whatever the positive probe says.
+    sys.path.insert(0, os.environ["IDP_ROOT"])
+    from probes.langfuse import l3_from_sessions
+    def session_doc(rq):
+        try:
+            r = rq.get(f"{LANGFUSE}api/auth/session", timeout=TIMEOUT)
+            return r.json() if r.ok and "json" in (r.headers.get("content-type") or "") else None
+        except Exception:
+            return None
+    authed = session_doc(page.request)
+    cold_ctx = browser.new_context(ignore_https_errors=False)
+    cold = session_doc(cold_ctx.request)
+    cold_ctx.close()
+    l3 = l3_from_sessions(authed, cold, f"{USER}@{ZONE}")
+    for a in l3:
+        print(f"{'ok' if a['ok'] else 'FAIL'}      login-drill  {a['name']} expected {a['expected']} actual {a['actual'][:120]}")
+    out = os.environ.get("DRILL_ASSERTIONS_OUT")
+    if out:
+        import json as _json
+        with open(out, "w") as f:
+            _json.dump(l3, f)
+    if not l3[1]["ok"]:
+        fail("identity", f"the gate is open: a context with no credentials got a Langfuse session: {l3[1]['actual']}")
+    if not l3[0]["ok"] and os.environ.get("DRILL_STRICT_IDENTITY") == "1":
+        fail("identity", f"langfuse session is not {USER}@{ZONE}: {l3[0]['actual']}")
 
     ctx.close()
     browser.close()

@@ -42,6 +42,16 @@ drills:
       A sign-in to the front door completes end to end from a runner that holds no password,
       so the federated login is exercised daily rather than only when the founder tries it.
 
+  - name: verdict-langfuse
+    workflow: verdict-langfuse.yml
+    job: prove
+    schedule: "37 * * * *"
+    max_age_hours: 3
+    proves: >-
+      A signed verdict about the Langfuse image that is running: it answers, its API answers a key
+      and refuses none, and a cold browser handshake through the front door yields a session that
+      is the drill user while a context holding nothing gets no user (crew#631).
+
   - name: chaos-pod-kill
     workflow: oke-check.yml
     job: chaos-drill

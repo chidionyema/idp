@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""The verdict tool (crew#631 CP1). A gate's view of a verdict file, and the prover's signer.
+
+  bin/idp-verdict sign   FILE                 sign in place; the key is VERDICT_HMAC_KEY or the
+                                              vault entry verdict-hmac-key via bin/idp-cloud
+  bin/idp-verdict verify FILE [--digest D]    ok / FAIL / BLIND line, exit 0 / 1 / 2
+  bin/idp-verdict show   FILE                 the assertion table
+
+verify without a key grades TTL and digest only and says so: an unsigned check is not a check.
+Grading, like every bin/idp-*: one line, `ok|FAIL|BLIND  verdict  <why>`.
+"""
+import json
+import os
+import subprocess
+import sys
+
+IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, IDP)
+from probes import verdict as V  # noqa: E402
+
+
+def key_from_env_or_vault():
+    k = os.environ.get("VERDICT_HMAC_KEY")
+    if k:
+        return k.strip()
+    try:
+        out = subprocess.run([os.path.join(IDP, "bin", "idp-cloud"), "secret", "get", "verdict-hmac-key"],
+                             capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else None
+
+
+def main(argv):
+    if len(argv) < 2 or argv[0] not in ("sign", "verify", "show"):
+        print(__doc__)
+        return 2
+    cmd, path = argv[0], argv[1]
+    with open(path) as f:
+        v = json.load(f)
+    if cmd == "show":
+        for a in v.get("assertions", []):
+            print(f"{'ok  ' if a['ok'] else 'FAIL'}  {a['name']:44} expected {a['expected'][:40]!s:42} actual {a['actual'][:60]}")
+        print(f"{v.get('outcome')}  {v.get('check_id')} {v.get('target')} digest={str(v.get('artifact_digest'))[:24]} nonce={v.get('nonce')} ttl={v.get('ttl_seconds')}s sig={'yes' if v.get('sig') else 'NONE'}")
+        return 0
+    key = key_from_env_or_vault()
+    if cmd == "sign":
+        if not key:
+            print("BLIND   verdict  no signing key: set VERDICT_HMAC_KEY or put verdict-hmac-key in the vault (oke-check apply)")
+            return 2
+        with open(path, "w") as f:
+            json.dump(V.sign(v, key), f, indent=1, sort_keys=True)
+        print(f"ok      verdict  signed {v.get('check_id')} {v.get('outcome')}")
+        return 0
+    digest = None
+    if "--digest" in argv:
+        digest = argv[argv.index("--digest") + 1]
+    state, why = V.grade(v, key, artifact_digest=digest)
+    note = "" if key else " (no key here: signature NOT checked; only the control plane can)"
+    if state == "PASS":
+        print(f"ok      verdict  {v['check_id']} PASS on {v['artifact_digest'][:24]} nonce {v['nonce']}{note}")
+        return 0 if key else 2
+    print(f"FAIL    verdict  {v.get('check_id')} {state}: {why}{note}")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
