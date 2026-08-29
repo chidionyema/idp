@@ -17,6 +17,29 @@ spec:
       key: key
     anonymized: true
     language: english
-  noCache: false
+  # Run 33236900434 (break-glass k8sgpt-analyze, 2026-08-29): the operator's Deployment for this
+  # object was refused by Kyverno on seven policies (disallow-capabilities-strict,
+  # disallow-privilege-escalation, drop-all-capabilities, require-ro-rootfs, require-run-as-nonroot,
+  # restrict-seccomp-strict, require-pod-probes) and the CR had sat unreconciled for 29h, green.
+  # The CRD (v0.2.29) carries the security context and resources; probes it does not, so
+  # platform/healing/analyzer/exception.yaml waives exactly that one policy for exactly this Deployment.
+  # noCache true because the root filesystem is read-only; the cache was a repeat-run speed-up only.
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 65532
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  # resources: left to the operator's defaults; run 33236900434 did not list require-requests-limits
+  # among the refusals, and a request here tips the paper CPU budget (test_incident_crew584_capacity).
+  noCache: true
   repository: ghcr.io/k8sgpt-ai/k8sgpt
   version: v0.4.37

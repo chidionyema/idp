@@ -25,10 +25,22 @@ rules:
   - apiGroups: ["apps"]
     resources: ["daemonsets"]
     verbs: ["get", "list"]
+  # crew#584 (founder 2026-08-29 "why 4 cores, do we have utilisation metrics?"): nobody had a
+  # number when the node went 4 -> 6 OCPU (#456). Live CPU/memory use per node comes from the
+  # metrics API the kube-prometheus stack already serves; the receipt grades it every 15 minutes.
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list"]
   # crew#406: every Flux object's Ready condition lands in the receipt, so a dead image automation
   # or a source that cannot fetch is graded by oke-check instead of sitting frozen unseen.
   - apiGroups: ["source.toolkit.fluxcd.io", "kustomize.toolkit.fluxcd.io", "helm.toolkit.fluxcd.io", "image.toolkit.fluxcd.io"]
     resources: ["gitrepositories", "ocirepositories", "helmrepositories", "kustomizations", "helmreleases", "imagerepositories", "imagepolicies", "imageupdateautomations"]
+    verbs: ["get", "list"]
+  # 2026-08-29, founder: "can Otto use it?" K8sGPT's findings are Result objects in ns healing;
+  # they ride the receipt so every reader -- a session, Otto's dispatch, oke-check -- sees the
+  # cluster's own diagnosis without a kube login (idp#696 pages on them; this is the read).
+  - apiGroups: ["core.k8sgpt.ai"]
+    resources: ["results"]
     verbs: ["get", "list"]
   - apiGroups: ["external-secrets.io"]
     resources: ["externalsecrets", "clustersecretstores"]
@@ -322,6 +334,16 @@ data:
                              for o in get("/apis/kyverno.io/v2/policyexceptions")["items"]]
     except Exception as e:
         policy_exceptions = [{"ns": "", "name": "*", "policies": [], "matches": [], "error": f"list failed: {e}"[:300]}]
+    # K8sGPT (platform/healing): one Result per broken object, with the model's plain-English
+    # explanation. The receipt carries kind, namespace/name, the first error line and the
+    # details, so "what is broken and why" is one read; a list that fails is a row, not a zero.
+    try:
+        k8sgpt = [{"kind": (o.get("spec") or {}).get("kind", ""), "name": (o.get("spec") or {}).get("name", ""),
+                   "error": ((((o.get("spec") or {}).get("error") or [{}])[0]).get("text") or "")[:300],
+                   "details": ((o.get("spec") or {}).get("details") or "")[:600]}
+                  for o in get("/apis/core.k8sgpt.ai/v1alpha1/results")["items"]]
+    except Exception as e:
+        k8sgpt = [{"kind": "*", "name": "*", "error": f"list failed: {e}"[:300], "details": ""}]
     # crew#320: a DaemonSet with fewer ready pods than desired is invisible to every row above
     # (its pods do not exist, so they are neither Running nor not-ready). k8s-infra-otel-agent
     # ran at 0/1 for a day while telemetry-coverage said seen=0 and nothing said why. The
@@ -506,14 +528,62 @@ data:
     except Exception as e:
         monitoring_error = (monitoring_error + "; " if monitoring_error else "") + f"alertmanager: {str(e)[:200]}"
     at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # crew#584: capacity. What we pay for (allocatable), what pods ask for (requests) and what is
+    # actually used (metrics.k8s.io) per node, so "do we need 6 cores" is answered by the hourly
+    # check instead of a guess. A metrics read that fails is recorded in the row, never dropped.
+    def qty(v):
+        v = str(v or "0")
+        if v.endswith("m"): return float(v[:-1]) / 1000
+        if v.endswith("n"): return float(v[:-1]) / 1e9
+        if v.endswith("u"): return float(v[:-1]) / 1e6
+        for suf, mult in (("Ki", 1024), ("Mi", 1024**2), ("Gi", 1024**3), ("Ti", 1024**4), ("k", 1000), ("M", 1000**2), ("G", 1000**3)):
+            if v.endswith(suf): return float(v[:-len(suf)]) * mult
+        return float(v)
+    cap_error = ""
+    usage = {}
+    try:
+        for m in get("/apis/metrics.k8s.io/v1beta1/nodes")["items"]:
+            usage[m["metadata"]["name"]] = {"cpu": qty(m["usage"].get("cpu")), "memory": qty(m["usage"].get("memory"))}
+    except Exception as e:
+        cap_error = f"metrics.k8s.io nodes: {str(e)[:200]}"
+    req = {}
+    for p in pods:
+        if p["status"].get("phase") in ("Succeeded", "Failed"): continue
+        node = p["spec"].get("nodeName")
+        if not node: continue
+        r = req.setdefault(node, {"cpu": 0.0, "memory": 0.0})
+        for c in p["spec"].get("containers", []):
+            rq = (c.get("resources") or {}).get("requests") or {}
+            r["cpu"] += qty(rq.get("cpu")); r["memory"] += qty(rq.get("memory"))
+    GB = 1024**3
+    capacity = []
+    for n in nodes:
+        name = n["metadata"]["name"]; al = n["status"].get("allocatable", {})
+        cpu_al, mem_al = qty(al.get("cpu")), qty(al.get("memory"))
+        u = usage.get(name) or {}; r = req.get(name) or {"cpu": 0.0, "memory": 0.0}
+        capacity.append({"name": name, "cpu_allocatable": round(cpu_al, 2), "memory_allocatable_gb": round(mem_al / GB, 2),
+                         "cpu_requested": round(r["cpu"], 2), "memory_requested_gb": round(r["memory"] / GB, 2),
+                         "cpu_used": None if not u else round(u["cpu"], 2), "memory_used_gb": None if not u else round(u["memory"] / GB, 2),
+                         "cpu_used_pct": None if not u or not cpu_al else round(100 * u["cpu"] / cpu_al),
+                         "memory_used_pct": None if not u or not mem_al else round(100 * u["memory"] / mem_al),
+                         "cpu_requested_pct": None if not cpu_al else round(100 * r["cpu"] / cpu_al),
+                         "memory_requested_pct": None if not mem_al else round(100 * r["memory"] / mem_al)})
+    tot_cpu = sum(c["cpu_allocatable"] for c in capacity) or 0
+    tot_mem = sum(c["memory_allocatable_gb"] for c in capacity) or 0
+    def pct(key, tot):
+        vals = [c[key] for c in capacity if c[key] is not None]
+        return -1 if not vals or not tot else round(100 * sum(vals) / tot)
+    cpu_used_pct, mem_used_pct = pct("cpu_used", tot_cpu), pct("memory_used_gb", tot_mem)
+    cpu_req_pct, mem_req_pct = pct("cpu_requested", tot_cpu), pct("memory_requested_gb", tot_mem)
     head = (f"ok cluster-state at {at} nodes={len(node_rows)} ready={ready} pods={len(pods)} pods_not_ready={len(not_ready)}"
             f" flux={len(flux)} flux_not_ready={len(flux_not_ready)} ds={len(ds)} ds_short={len(ds_short)} events_warning={len(events)}"
             f" hostnames={len(hostnames or [])} spiffe_ids={len(spiffe['clusterspiffeids'] or [])} spiffe_workloads={len(spiffe['csi_workloads'])}"
             f" svids={sum(len(r['spiffe_ids']) for r in spiffe['svids'])} spire_agents={len(spiffe['agents'])}"
-            f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)} policy_exceptions={len(policy_exceptions)}"
-            f" monitoring_rules={monitoring_rules} alert_watchdog={alert_watchdog}")
-    body = {"at": at, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
-            "flux": flux, "flux_not_ready": flux_not_ready, "policy_exceptions": policy_exceptions, "daemonsets": ds, "ds_short": ds_short, "events_warning": events,
+            f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)} policy_exceptions={len(policy_exceptions)} k8sgpt_findings={len(k8sgpt)}"
+            f" monitoring_rules={monitoring_rules} alert_watchdog={alert_watchdog}"
+            f" cpu_used_pct={cpu_used_pct} mem_used_pct={mem_used_pct} cpu_req_pct={cpu_req_pct} mem_req_pct={mem_req_pct}")
+    body = {"at": at, "capacity": capacity, "capacity_error": cap_error, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
+            "flux": flux, "flux_not_ready": flux_not_ready, "policy_exceptions": policy_exceptions, "k8sgpt": k8sgpt, "daemonsets": ds, "ds_short": ds_short, "events_warning": events,
             "hostnames": hostnames, "hostnames_error": hostnames_error, "spiffe": spiffe,
             "oci_identity": {"pods": oci_pods, "static_key_pods": oci_static_key_pods,
                               "unknown_identity_pods": oci_unknown_identity_pods},
@@ -561,9 +631,9 @@ spec:
                 - { name: collect, mountPath: /collect, readOnly: true }
                 - { name: tmp, mountPath: /tmp }
               resources:
-                # crew#539 CP9: requests == limits -> Guaranteed QoS
-                requests: { cpu: 100m, memory: 256Mi }
-                limits: { cpu: 100m, memory: 256Mi }
+                # crew#539 CP9 / crew#584: requests == limits -> Guaranteed QoS (radio-room set)
+                requests: { cpu: 50m, memory: 256Mi }
+                limits: { cpu: 50m, memory: 256Mi }
               securityContext:
                 runAsNonRoot: true
                 runAsUser: 1000

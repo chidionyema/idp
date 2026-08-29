@@ -32,10 +32,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
+          cache: pip
+          # Both files, because login-drill.txt starts with `-r oci-cli.txt`: a key that hashed only
+          # the referring file would keep restoring a stale cache after oci-cli.txt changed,
+          # while reading exactly like a key that tracked the install (crew#488 CP6).
+          cache-dependency-path: |
+            .github/requirements/login-drill.txt
+            .github/requirements/oci-cli.txt
       - name: oci cli and a headless browser
         run: |
-          pip install -q oci-cli playwright
+          pip install -q -r .github/requirements/login-drill.txt
           playwright install --with-deps chromium
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
@@ -80,3 +88,13 @@ jobs:
           body=$(printf '%s\nrun: %s/%s/actions/runs/%s\nboard: https://github.com/chidionyema/crew/issues/307\n' "$line" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
           n=$(gh issue list --state open --search 'in:title "P0: login drill failed"' --json number -q '.[0].number')
           if [ -n "$n" ]; then gh issue comment "$n" --body "$body"; else gh label create P0 --color B60205 --description "service down for the founder" --force >/dev/null; gh issue create --title "P0: login drill failed" --label P0 --body "$body"; fi
+      # crew#301: a green run closes the P0 it opened. idp#379 stood open with 37 red comments while
+      # the drill had been green for hours; an issue that never closes is an instrument nobody reads.
+      - name: a green drill closes the open P0, with the run as the receipt
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n=$(gh issue list --state open --search 'in:title "P0: login drill failed"' --json number -q '.[0].number')
+          [ -z "$n" ] && exit 0
+          gh issue close "$n" --reason completed --comment "$(printf 'green: the founder path signed in and rendered the catalogue.\nrun: %s/%s/actions/runs/%s' "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")"

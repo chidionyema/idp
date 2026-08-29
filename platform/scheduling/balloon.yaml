@@ -9,14 +9,14 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: balloon
-  labels: { app.kubernetes.io/name: balloon, app.kubernetes.io/part-of: idp }
+  labels: { app.kubernetes.io/name: balloon, app.kubernetes.io/part-of: idp, idp.platform/capacity-approved: "true" }  # the reserve is the point (crew#539); measured, not fat
 spec:
   replicas: 2
   selector:
     matchLabels: { app.kubernetes.io/name: balloon }
   template:
     metadata:
-      labels: { app.kubernetes.io/name: balloon, app.kubernetes.io/part-of: idp }
+      labels: { app.kubernetes.io/name: balloon, app.kubernetes.io/part-of: idp, idp.platform/capacity-approved: "true" }   # the reserve is the point (crew#539), not a fat pod
     spec:
       priorityClassName: balloon
       terminationGracePeriodSeconds: 0

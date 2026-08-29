@@ -18,9 +18,9 @@ import os
 import socket
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 try:
     import tomllib  # py311+

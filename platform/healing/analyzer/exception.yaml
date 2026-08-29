@@ -1,0 +1,21 @@
+# The K8sGPT operator builds Deployment healing/estate from the K8sGPT object and its CRD has no
+# probe fields (config/crd/bases/core.k8sgpt.ai_k8sgpts.yaml v0.2.29: containerSecurityContext,
+# securityContext, resources; nothing for probes). Kyverno require-pod-probes therefore refused it
+# (run 33236900434). This waives that one policy for that one Deployment, the same shape as
+# platform/edge/tailscale-operator-exception.yaml; every other policy the analyzer passes through
+# the security context set on the object. Lives in namespace kyverno (platform/kyverno/kyverno.yaml).
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: k8sgpt-analyzer-no-probes
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: require-pod-probes
+      ruleNames: [require-pod-probes, autogen-validate-probes]
+  match:
+    any:
+      - resources:
+          kinds: [Deployment, Pod, ReplicaSet]
+          namespaces: [healing]
+          names: [estate*]

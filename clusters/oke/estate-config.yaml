@@ -30,6 +30,14 @@ data:
   # hand (founder: "seamless security, no founder friction"). This file is the one place they may be.
   FOUNDER_MAC_USER: "chidionyema"
   FOUNDER_MAC_TS_IP: "100.93.240.113"
+  # crew#66 phase 1: the Tailscale federated identity (tailscale.com/kb/1581) that lets a GitHub
+  # Actions run on this repo's main mint the operator OAuth client with no secret held anywhere.
+  # A client id is public. Empty = not registered yet; bin/idp-bootstrap-tailscale then reads the
+  # seed from the vault and the oke-check apply step reports BLIND.
+  # Registering it: console Trust credentials -> Add -> Federated identity, issuer
+  # https://token.actions.githubusercontent.com, subject repo:chidionyema/idp:ref:refs/heads/main,
+  # scope OAuth keys (write), tag tag:k8s. Paste the client id here, nothing else exists to paste.
+  TAILSCALE_FEDERATED_CLIENT_ID: ""
   # crew#562: the founder's tailnet LOGIN, which is not the same thing as FOUNDER_MAC_USER above --
   # that one is the Unix account on the Mac. platform/tailscale/policy.hujson names this one as the
   # only member of group:founder, the rule that lets his iPhone reach his own tagged Mac (Moonlight
@@ -39,3 +47,11 @@ data:
   # (GET /tailnet/-/users, the single "owner"); no owner answer is BLIND, never a PUT naming nobody.
   # A value here overrides the API answer. Nobody's hand is needed.
   FOUNDER_TAILNET_USER: ""
+  # crew#584 traces/lean (idp#702): where the node agent (platform/observability-collector,
+  # SigNoz k8s-infra) ships every log, metric and trace. Enterprise leaves it at the in-cluster
+  # store; the lean tier, which installs no store, points it at a remote OTLP receiver (a hosted
+  # SigNoz, Langfuse's OTLP endpoint, or another estate). Substituted by Flux postBuild on the
+  # observability-collector row; the http(s):// scheme and the 4318 HTTP port are load-bearing
+  # (crew#483: the otlphttp exporter takes this value verbatim and a bare host:4317 exports
+  # nothing). tests/test_incident_crew483_k8s_infra_endpoint_scheme.py judges the value here.
+  OTLP_ENDPOINT: "http://signoz-otel-collector.observability.svc:4318"

@@ -40,11 +40,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { repository: chidionyema/crew, path: crew }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
+          cache: pip
+          # Both files, because conscience.txt starts with `-r oci-cli.txt`: a key that hashed only
+          # the referring file would keep restoring a stale cache after oci-cli.txt changed,
+          # while reading exactly like a key that tracked the install (crew#488 CP6).
+          cache-dependency-path: |
+            idp/.github/requirements/conscience.txt
+            idp/.github/requirements/oci-cli.txt
       - name: tools the tenet rows call
-        run: pip install -q pyyaml ruff==0.15.18
-      - name: oci cli
-        run: pip install -q oci-cli
+        run: pip install -q -r idp/.github/requirements/conscience.txt
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
