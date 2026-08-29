@@ -126,6 +126,7 @@ spec:
               kinds:
                 - external-secrets.io/v1/ClusterSecretStore
                 - external-secrets.io/v1/SecretStore
+              operations: [CREATE, UPDATE]   # idp#688: a DELETE is never a portability defect
       validate:
         failureAction: Enforce
         message: >-
