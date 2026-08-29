@@ -3,6 +3,10 @@ kind: Namespace
 metadata:
   name: backstage
   labels:
+    # idp#648 moved this object between Flux rows and the old row pruned it: the namespace sat
+    # Terminating and the catalogue was 404 (run 33226089358, 2026-08-29). A namespace is never
+    # garbage-collected by any row that once rendered it.
+    kustomize.toolkit.fluxcd.io/prune: disabled
     # Pod Security Admission, enforced at the namespace so no manifest here can
     # run privileged, as root, or with a host namespace. Same class of fence as
     # the caps allow-list in bin/idp-apply.
