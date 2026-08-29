@@ -330,4 +330,7 @@ spec:
         - name: mac-run
           configMap: { name: hermes-agent-mac-run, defaultMode: 0755 }
         - name: tailscale-authkey
-          secret: { secretName: hermes-agent-tailscale }
+          # optional: the sidecar's key is born by bin/idp-bootstrap-tailscale (idp#763). Until it exists
+          # the gateway must still start; a missing sidecar secret kept Otto at ContainerCreating for
+          # 4h on 2026-08-29 (oke-check run 33247274077). The sidecar alone restarts, the gateway runs.
+          secret: { secretName: hermes-agent-tailscale, optional: true }
