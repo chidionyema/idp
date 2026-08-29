@@ -27,7 +27,7 @@ def _src() -> str:
 
 def test_the_drill_prints_a_build_row_from_the_served_manifest_and_icon():
     src = _src()
-    assert 'page.request.get(f"{HOME}/manifest.json")' in src
+    assert 'page.request.get(f"{HOME}/manifest.json?drill={int(time.time())}"' in src, "the manifest is read past the edge cache (run 33245245766)"
     assert 'page.request.get(f"{HOME}/icon.svg")' in src
     assert re.search(r'print\(f"build   login-drill  the portal serves manifest name', src)
 
@@ -64,3 +64,12 @@ def test_incident_run_33244316874_the_drill_counts_the_rows_the_home_page_draws(
     # empty state must carry no-surfaces, the drill's other selector.
     assert home.count("data-testid={`surface-${entity.metadata.name}`}") >= 1, "the door renderer carries the test id"
     assert 'data-testid="no-surfaces"' in home, "the empty state carries no-surfaces"
+
+
+def test_incident_run_33245245766_the_manifest_is_read_past_the_edge_cache():
+    """/icon.svg answered from the new build while /manifest.json came back cached as the vendor
+    one. The drill must bust the cache and print the edge's cache verdict on the row."""
+    src = _src()
+    assert '"Cache-Control": "no-cache"' in src
+    assert 'cf-cache-status' in src
+    assert "(edge cache: {mf_cache})" in src

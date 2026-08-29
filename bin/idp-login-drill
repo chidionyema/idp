@@ -392,16 +392,23 @@ with sync_playwright() as p:
     # neither (manifest name 'Backstage', no /icon.svg). Read both with the signed-in session and
     # print what is served; a vendor manifest means the rollout never landed, which is the
     # crew#301 incident, so it is red, not a note.
+    # Run 33245245766 (2026-08-29 09:1xZ): /icon.svg answered 200 from the new build while
+    # /manifest.json still said 'Backstage' -- the edge had cached the vendor manifest. Read it
+    # past every cache (a fresh query string plus no-cache) and print the edge's own verdict, so
+    # the row grades the build the origin serves, and a cache that lies to a phone is visible.
+    mf_cache = "-"
     try:
-        mf = page.request.get(f"{HOME}/manifest.json")
+        mf = page.request.get(f"{HOME}/manifest.json?drill={int(time.time())}",
+                              headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
         mf_name = (mf.json().get("name") if mf.ok else "") or "-"
+        mf_cache = mf.headers.get("cf-cache-status") or mf.headers.get("x-cache") or "no cache header"
     except Exception as e:  # noqa: BLE001 - the row must print whatever broke
         mf, mf_name = None, f"unreadable: {str(e)[:80]}"
     try:
         ic_status = page.request.get(f"{HOME}/icon.svg").status
     except Exception:  # noqa: BLE001
         ic_status = 0
-    print(f"build   login-drill  the portal serves manifest name '{mf_name}', /icon.svg answered {ic_status}")
+    print(f"build   login-drill  the portal serves manifest name '{mf_name}' (edge cache: {mf_cache}), /icon.svg answered {ic_status}")
     if mf is None or not mf.ok:
         fail("build", f"{HOME}/manifest.json did not answer 200: the served portal has no web manifest")
     if mf_name == "Backstage":

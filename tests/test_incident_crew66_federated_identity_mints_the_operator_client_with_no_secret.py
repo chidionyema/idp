@@ -22,9 +22,13 @@ def _federated(tmp_path, cid="kFED111111", oidc_ok=True):
     mint = '{"id":"kNEW987654","key":"tskey-client-new-1","keyType":"client"}'
     (sh / "curl").write_text(f'''#!/bin/bash
 echo "$@" >> "{log}"
+# honour -o <file> and -w '%{{http_code}}' the way the federated exchange calls curl
+out=/dev/stdout; code=""
+args=("$@"); for i in "${{!args[@]}}"; do [ "${{args[$i]}}" = -o ] && out="${{args[$((i+1))]}}"; [ "${{args[$i]}}" = -w ] && code=200; done
+body() {{ if [ "$out" = /dev/stdout ]; then cat; else cat > "$out"; printf '%s' "$code"; fi; }}
 case "$*" in
   *oidc.test*) echo '{{"value":"{"eyJhbGciOi.jwt.sig" if oidc_ok else ""}"}}';;
-  *token-exchange*) echo '{{"access_token":"at-fed","scope":"oauth_keys"}}';;
+  *token-exchange*) echo '{{"access_token":"at-fed","scope":"oauth_keys"}}' | body;;
   *oauth/token*) echo '{{"access_token":"at-new","scope":"auth_keys devices:core policy_file users:read"}}';;
   *tailnet/-/keys*) echo '{mint}';;
   *) echo '{{}}';;
@@ -53,17 +57,20 @@ def test_crew66_in_actions_the_oidc_token_is_exchanged_and_the_client_minted_wit
 def test_crew66_no_oidc_token_fails_before_any_mint_and_writes_nothing(tmp_path):
     env, log, vault = _federated(tmp_path, oidc_ok=False)
     p = _run(env)
-    assert p.returncode == 1 and "FAIL    federated" in p.stdout, p.stdout
+    assert p.returncode == 1 and "FAIL    federated" in p.stdout + p.stderr, p.stdout + p.stderr
     assert "tailnet/-/keys" not in log.read_text()
     assert "tailscale-operator" not in json.load(open(vault))
 
 
-def test_crew66_outside_actions_the_identity_is_ignored_and_the_seed_road_is_named(tmp_path):
+def test_crew66_outside_actions_with_an_identity_the_script_stops_and_never_falls_to_a_seed(tmp_path):
+    # founder 2026-08-29: if federated fails the script stops; no secret-based fallback
     env, log, vault = _federated(tmp_path)
     for k in ("ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN"):
         env.pop(k)
     p = _run(env)
-    assert p.returncode == 1 and "--seed" in p.stdout and "token-exchange" not in log.read_text()
+    out = p.stdout + p.stderr
+    assert p.returncode == 1 and "FAIL    federated" in out and "only on the runner" in out, out
+    assert "token-exchange" not in log.read_text() and "oauth/token" not in log.read_text()
 
 
 def test_crew66_the_apply_run_mints_the_operator_client_and_estate_config_names_the_identity():

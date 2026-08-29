@@ -25,11 +25,15 @@ permissions:
   packages: write
 env:
   REGISTRY: ghcr.io
-# A newer run on the same ref supersedes the older one: on 2026-08-27 20:23Z idp had 9 running and
-# 20 queued runs, 12 of them stale duplicates, and a one-line oke-check waited 19 min (crew#516).
+# A newer pull-request push supersedes the older run on the same branch (crew#516: 9 running and
+# 20 queued runs on 2026-08-27, 12 of them stale duplicates). A push to main is never cancelled:
+# on 2026-08-29 08:19Z the merge of #750 cancelled the backstage build of #747 (run 33242788019),
+# the next push only built what changed since its own parent, and the cluster kept serving
+# main-2246 while five portal PRs merged (crew#301, login-drill run 33245839791). Every main sha
+# gets its own group, so every merged image is built and pushed.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   fast-gate:   # crew#584 CP-C: lint red never boots this workflow's heavy jobs
     uses: ./.github/workflows/fast-gate.yml
