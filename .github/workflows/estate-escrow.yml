@@ -29,10 +29,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
       - name: oci cli and rclone (the same reader the Mac's escrow job and the recover drill use)
         run: |
-          pip install -q oci-cli
+          pip install -q -r .github/requirements/oci-cli.txt
           sudo apt-get install -y -qq rclone >/dev/null
           rclone version | head -1
       - name: OCI session token from the GitHub OIDC token

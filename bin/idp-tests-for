@@ -68,7 +68,16 @@ root_sel=$(printf '%s\n' "$sel" | grep -v '^sovereign/' || true)
 sov_sel=$(printf '%s\n' "$sel" | grep '^sovereign/' | sed 's#^sovereign/##' || true)
 rc=0
 # shellcheck disable=SC2086
-if [ -n "$root_sel" ]; then (cd "$IDP" && "$py" -m pytest -q $root_sel) || rc=$?; fi
+# Worker cap (crew#562, 2026-08-29). pyproject addopts says `-n auto`: one worker per core, 12 on the
+# estate Mac. Tests that spawn bin/idp-verify-drill under a 60 s subprocess timeout
+# (test_incident_crew484_the_runner_has_a_kube_path.py, test_incident_crew292_drills_row_is_read_hourly.py,
+# test_incident_crew66_cp5d_cluster_noun.py) then time out on CPU contention: two pushes of idp#659 were
+# refused with 4-6 TimeoutExpired and 0 real failures, and the same files pass alone (17 passed, 126 s).
+# CI runners are clean and few-cored, so this only binds a laptop: outside CI, at most
+# TESTS_FOR_WORKERS (default 4) workers. Overrides pyproject because the last -n wins.
+workers=""
+if [ -z "${CI:-}" ]; then workers="-n ${TESTS_FOR_WORKERS:-4}"; fi
+if [ -n "$root_sel" ]; then (cd "$IDP" && "$py" -m pytest -q $workers $root_sel) || rc=$?; fi
 # shellcheck disable=SC2086
-if [ -n "$sov_sel" ]; then (cd "$IDP/sovereign" && "$py" -m pytest -q $sov_sel) || rc=$?; fi
+if [ -n "$sov_sel" ]; then (cd "$IDP/sovereign" && "$py" -m pytest -q $workers $sov_sel) || rc=$?; fi
 exit $rc

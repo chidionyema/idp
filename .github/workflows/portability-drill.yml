@@ -26,6 +26,7 @@ on:
     paths:
       - .github/workflows/portability-drill.yml
       - bin/idp-portability-drill
+      - bin/idp-drill-wait
       - bin/idp-hydrate
       - bin/idp-flux-settle
       - drills/portability-oci-reds.txt
@@ -65,8 +66,8 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REF: ${{ github.head_ref || github.ref_name }}
         run: bin/idp-hydrate
-      - name: wait until every layer has settled (Ready, or red for a reason), not for a timeout
-        run: bin/idp-flux-settle || true
+      - name: wait only until the floor is met (crew#584 CP-A)
+        run: bin/idp-drill-wait
       - name: grade against the floor
         run: |
           set -euo pipefail
@@ -169,8 +170,8 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REF: ${{ github.head_ref || github.ref_name }}
         run: bin/idp-hydrate
-      - name: wait until every layer has settled (Ready, or red for a reason), not for a timeout
-        run: bin/idp-flux-settle || true
+      - name: wait only until the floor is met (crew#584 CP-A)
+        run: bin/idp-drill-wait
       - name: grade against the floor, then the wall-clock and the cost of the run
         env:
           PRIVATE: ${{ github.event.repository.private }}
