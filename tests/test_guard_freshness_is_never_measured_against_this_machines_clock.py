@@ -55,10 +55,6 @@ NOT_YET_MIGRATED = {
     # here would have collided with work in flight. crew#583 CP2.
     "bin/idp-cluster-state",
     "bin/idp-telemetry-coverage",
-    # Owned by idp#623, which was already open and green when this branch was written: it moves the
-    # served clock into bin/lib/receipt_age.py rather than giving this file its own copy, which is
-    # what CP1 asks for. That PR removes this entry; this one does not touch the file.
-    "bin/estate-founder",
 }
 
 # Not offenders, and not a migration backlog: the writer of the stamps. A file here has to be the
