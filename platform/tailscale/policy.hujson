@@ -33,10 +33,10 @@
 //
 // `group:founder` names the login, never `autogroup:member`: membership is dynamic, and the first
 // person added later — a buyer's engineer in diligence, a contractor — would otherwise silently
-// get the founder's desktop (peer review, session 78caaa17 on idp#606). ${FOUNDER_TAILNET_USER} is
+// get the founder's desktop (peer review, session 78caaa17 on idp#606). The tailnet-user placeholder below is
 // the one placeholder this file carries (LAW 46); bin/idp-tailscale-policy substitutes it from
 // clusters/oke/estate-config.yaml or, when that is empty, from the tailnet's owner record, and
-// refuses to PUT a body with a surviving ${...}. Applied by CI (oke-check's apply job), never by
+// refuses to PUT a body in which any placeholder survived (the applier greps the rendered text, comments included — incident 2026-08-29, oke-check run 33280019151). Applied by CI (oke-check's apply job), never by
 // hand in the admin console. No `ssh` section: with no Tailscale SSH server on the destination,
 // an ssh rule is a promise nothing keeps; sshd decides port 22 (kb/1193, "permitting both" applies
 // only where Tailscale SSH runs).
