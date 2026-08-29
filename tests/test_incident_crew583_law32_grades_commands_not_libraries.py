@@ -10,7 +10,6 @@ cannot widen into a way of shipping a feature with no demo by hiding it under bi
 from __future__ import annotations
 
 import os
-import stat
 import subprocess
 import sys
 from pathlib import Path
