@@ -40,7 +40,10 @@ drills:
     max_age_hours: 26
     proves: >-
       A sign-in to the front door completes end to end from a runner that holds no password,
-      so the federated login is exercised daily rather than only when the founder tries it.
+      so the federated login is exercised hourly rather than only when the founder tries it;
+      the second hop is graded on every door: catalogue.<zone>, signoz.<zone>, hc.<zone>,
+      llm.<zone>/ui/, catalogue.<zone>/screen/ and langfuse.<zone> (founder 2026-08-29: the
+      one drill that stays, Backstage is the portal).
 
   - name: verdict-langfuse
     workflow: verdict-langfuse.yml
