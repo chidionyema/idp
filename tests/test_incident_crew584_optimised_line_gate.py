@@ -5,6 +5,7 @@ without a counted `Optimised:` line is refused by policy/operating_model.rego ru
 Trial receipt: crew#584 5459773413 (go -> three PRs merged in 12 min against a 45-minute estimate).
 Rung 4: conftest on a fixture; opens no socket."""
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -115,6 +116,43 @@ def test_incident_the_image_bump_body_passes_the_rule(tmp_path):
     gate refused every cycle, so the portal stayed on a stale image. The literal line in the script
     is graded by the real rule here; a body without it is still refused (the LAW 38 other way)."""
     script = (ROOT / "bin" / "idp-image-update-pr").read_text()
-    line = next(l.strip().strip('"\\ ') for l in script.splitlines() if l.strip().startswith('"Optimised:'))
+    line = next(l.split("=", 1)[1].strip('"') for l in script.splitlines() if l.startswith('OPTIMISED="Optimised:'))
     assert "rule=optimised_plan" not in _rules(_with_body(tmp_path, "\n" + line + "\n")), line
     assert "rule=optimised_plan" in _rules(_with_body(tmp_path, "\n"))
+
+
+def _fake_gh(tmp_path, body: str):
+    """A `gh` that knows one open pull request (#719) with `body`, records every `pr edit` body to
+    edits.txt, and answers the rest of the script's calls with what a clean run needs."""
+    b = tmp_path / "bin"; b.mkdir(exist_ok=True)
+    (tmp_path / "body.txt").write_text(body)
+    gh = b / "gh"
+    gh.write_text(
+        "#!/usr/bin/env bash\ncase \"$1 $2\" in\n"
+        "  'pr list') echo 719;;\n"
+        "  'pr view') case \"$*\" in *mergeable*) echo MERGEABLE;; *) cat \"$BODY_FILE\";; esac;;\n"
+        "  'pr edit') shift 4; printf '%s' \"$1\" > \"$EDIT_FILE\"; printf '%s' \"$1\" > \"$BODY_FILE\";;\n"
+        "  'pr merge') ;;\n"
+        "  *) echo \"unexpected gh $*\" >&2; exit 9;;\nesac\n")
+    gh.chmod(0o755)
+    env = {**os.environ, "PATH": f"{b}:{os.environ['PATH']}", "BODY_FILE": str(tmp_path / "body.txt"),
+           "EDIT_FILE": str(tmp_path / "edits.txt"), "MERGEABLE_WAIT": "0"}
+    return subprocess.run(["bash", str(ROOT / "bin" / "idp-image-update-pr")], env=env, capture_output=True, text=True)
+
+
+def test_incident_idp719_an_old_body_gains_the_line_on_the_next_push(tmp_path):
+    """Incident, 2026-08-29 08:12Z: idp#744 fixed the create path, but idp#719 was opened before it,
+    kept its old body on every controller push, and operating-model-gate refused it again
+    (run 33242579402, rule=optimised_plan). An existing body without the line is refreshed."""
+    r = _fake_gh(tmp_path, "Written by image-automation-controller.\n\nDrill: login-drill\n")
+    assert r.returncode == 0, r.stdout + r.stderr
+    edited = (tmp_path / "edits.txt").read_text()
+    assert "Written by image-automation-controller." in edited and "\nOptimised: 1 -> 1 steps" in edited
+    assert "rule=optimised_plan" not in _rules(_with_body(tmp_path, edited))
+    assert "body gained the Optimised line" in r.stdout
+
+
+def test_a_body_that_already_carries_the_line_is_left_alone(tmp_path):
+    r = _fake_gh(tmp_path, "Written by image-automation-controller.\n\nOptimised: 1 -> 1 steps, 1 -> 1 round trips; cut: nothing\n")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not (tmp_path / "edits.txt").exists()
