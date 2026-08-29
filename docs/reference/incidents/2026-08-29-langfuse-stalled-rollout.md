@@ -106,3 +106,32 @@ failure. The 19 files are the sweep list.
 - a7b41022 at 18:19Z said flux-events "failed 62 times ... all night". The window was capped at
   300 runs; the real count is 295 failures since 15:25Z, and idp#727 carries the earlier
   evidence from 06:11Z.
+
+## Addendum, 19:4xZ: the blocker is hindsight, not Langfuse
+
+Founder, 18:3xZ: "why are you content waiting for 27 minutes". The answer was in the instrument
+this report already cites and nobody read: every one of the 89 bot comments on idp#727 names
+`HelmRelease/hindsight/hindsight status: 'InProgress'`, from 06:26:38Z. Hindsight has been in
+CrashLoopBackOff since 2026-08-28 12:46Z (crew#573, open P1): `Last State: Terminated Reason:
+Error Exit Code: 137`, `Killing ... Container api failed liveness probe, will be restarted`
+(x133 over 13h). Not out of memory: the chart's default liveness probe (delay 30s, period 10s,
+3 failures) kills the container at about 60 seconds while it loads its embedding model on a 50m
+CPU request (the same 2b250895 cut). No startup probe exists, so a slow start and a hang are the
+same thing to the kubelet.
+
+Consequence: every Flux reconcile of the platform tree, and every helm-retry playbook, spends its
+full 15-minute timeout on hindsight before it reaches Langfuse. That is the 27 minutes, and the
+295 red flux-events runs.
+
+What this session got wrong: it dispatched helm-retry 33266882531 and waited on the run instead of
+reading idp#727, which had the answer at 06:26Z. The correction is procedural and lands in
+crew#645 CP3 (a stalled rollout pages the author once per state change) and in the operating
+rule recorded 18:2xZ: the founder approves every infrastructure change, so the one action
+proposed to him is `suspend: true` on the hindsight HelmRelease (one line, one-line undo), with
+the startup probe and a measured request tracked on crew#573.
+
+helm-retry 33266882531 ended red at 18:2xZ: `Deployment/observability/langfuse-web status:
+'Failed'` even at 1000m. The next login drill (33268386892) then read a different Langfuse
+error: `No email found in user object`. The new pod is serving; the identity provider's token
+carries no email claim. That is a configuration fix, and under the freeze it waits for the
+founder's word.
