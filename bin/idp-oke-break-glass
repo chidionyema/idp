@@ -174,6 +174,16 @@ pb_diagnose() {
   show cni-chain $K get ds,deploy -n kube-system -l app.kubernetes.io/part-of=cilium
   show gitrepositories $K get gitrepositories -A
   show kustomizations $K get kustomizations -A
+  # idp#685 and idp#697, 2026-08-29: Kustomization/mcp and Kustomization/temporal each timed out
+  # after 20 min on `ExternalSecret/<ns>/ghcr-pull status: InProgress`, five identical bot posts
+  # over three hours and not one line saying why, because a diagnose printed kustomizations,
+  # helmreleases, pods and k8sgpt findings and never an ExternalSecret. The Kustomization row can
+  # only ever repeat the object name it is waiting on; the reason is on that object's own Ready
+  # condition, and on the store it reads through. Both are printed here, store first: one unready
+  # ClusterSecretStore is every ExternalSecret behind it, and reading the dependents first invites
+  # the repair to start at the wrong end (LAW 29, attribute before you repair).
+  show clustersecretstores-not-ready sh -c "$K get clustersecretstores.external-secrets.io -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type==\"Ready\")]}{.status}{\"\t\"}{end}{.metadata.name}{\"\t\"}{range .status.conditions[?(@.type==\"Ready\")]}{.reason}: {.message}{end}{\"\n\"}{end}' 2>&1"
+  show externalsecrets-not-ready sh -c "$K get externalsecrets.external-secrets.io -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type==\"Ready\")]}{.status}{\"\t\"}{.reason}{\"\t\"}{end}{.metadata.namespace}/{.metadata.name}{\"\tstore=\"}{.spec.secretStoreRef.kind}/{.spec.secretStoreRef.name}{\"\t\"}{range .status.conditions[?(@.type==\"Ready\")]}{.message}{end}{\"\n\"}{end}' 2>&1"
   # Run 33226089358 (idp#648, 2026-08-29): backstage-namespace said "timeout waiting for
   # Namespace/backstage status: Terminating" for 16 min and nothing said why. A Terminating
   # namespace carries the reason on its own conditions (NamespaceContentRemaining names the
@@ -256,6 +266,13 @@ pb_diagnose() {
   # before Kyverno sees it; a provider-named default made every new claim fail. Both facts are
   # read here so the next such outage is one diagnose run, not ninety minutes.
   show storage-classes $K get storageclasses
+  # crew#307 (2026-08-29, founder: "gods view isn't there", "everything that has an interface"): the
+  # founder's surfaces come from /estate/founder/catalog-info.yaml in the catalogue pod. Three rows
+  # say whether the file is there, whether the catalogue read it, and what it holds.
+  show catalogue-founder-file sh -c "$K exec -n backstage deploy/catalogue -- ls -la /estate /estate/founder 2>&1"
+  show catalogue-founder-configmap sh -c "$K get configmap founder-catalog estate-catalog -n backstage -o jsonpath='{range .items[*]}{.metadata.name}{\"\t\"}{.metadata.creationTimestamp}{\"\n\"}{end}' 2>&1"
+  show catalogue-log-locations sh -c "$K logs -n backstage deploy/catalogue --all-containers --tail=2000 2>&1 | grep -iE 'founder|location|catalog.*(error|fail|refus|invalid)' | tail -40"
+  show catalogue-entities sh -c "$K exec -n backstage deploy/catalogue -- sh -c 'wget -qO- http://catalogue.backstage.svc:3100/api/catalog/entities?filter=spec.type=founder-surface | head -c 600' 2>&1"
   show claims-not-bound sh -c "$K get pvc -A --field-selector=status.phase!=Bound 2>/dev/null; true"
   # The audit of the rules by the cluster: Kyverno scans every existing object in the background and
   # records which rule would refuse it. A rule with fails here is a rule that judges reality, not
