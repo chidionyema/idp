@@ -15,6 +15,7 @@ resources:
   - tailscale-operator-exception.yaml
   - external-dns-exception.yaml
   - protect-namespaces.yaml
+  - require-qualified-image.yaml
   # crew#341, wired 2026-08-28 (crew#488 CP5): the file sat here unreferenced since PR #259, so
   # the cluster never held it. Audit mode until bin/idp-ci's kyverno row reports zero violations.
   - kyverno-secrets-policy.yaml

@@ -57,6 +57,7 @@ PR alongside these.
 | `provider-independence` | Enforce | Provider independence (R43) | `edge` | `platform/edge/provider-independence.yaml` |
 | `require-availability` | Enforce | Founder-facing workloads survive losing one node | `scheduling` | `platform/scheduling/require-availability.yaml` |
 | `require-priority-class` | Audit 1, Enforce 2 | Require a PriorityClass on platform workloads | `scheduling` | `platform/scheduling/require-priority-class.yaml` |
+| `require-qualified-image` | Enforce | Every image names its registry | `edge` | `platform/edge/require-qualified-image.yaml` |
 | `secrets-not-from-env-vars` | Audit | Disallow Secrets from Env Vars in CEL expressions | `edge` | `platform/edge/kyverno-secrets-policy.yaml` |
 <!-- admission-policies:end -->
 

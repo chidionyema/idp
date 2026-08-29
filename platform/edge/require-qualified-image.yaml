@@ -1,0 +1,38 @@
+# crew#307 SRE sweep, conversion 1 of 3. tests/test_incident_crew284_short_image_name_refused_by_runtime.py
+# graded image names in git text; the OKE runtime refuses a short image name at pull time, so an
+# unqualified image reached the cluster and died there (crew#284, crew#325 seaweedfs). The cluster
+# now refuses it at admission, whatever chart or session rendered it.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-qualified-image
+  annotations:
+    policies.kyverno.io/title: Every image names its registry
+    policies.kyverno.io/description: >-
+      A container image must start with a registry host (docker.io/..., ghcr.io/..., a host:port).
+      The node runtime runs in short-name mode and never pulls an unqualified name; refusing it at
+      admission keeps the failure in the pull request instead of the cluster.
+spec:
+  background: true
+  rules:
+    - name: image-names-its-registry
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              operations: [CREATE, UPDATE]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system]
+      validate:
+        failureAction: Enforce
+        message: >-
+          ENTERPRISE POLICY VIOLATION: image {{ request.object.spec.containers[].image | join(', ', @) }}
+          does not name its registry. Write docker.io/<repo> (or ghcr.io/...). Tracked: crew#307.
+        pattern:
+          spec:
+            =(initContainers):
+              - image: "*.*/* | *:*/* | localhost/*"
+            containers:
+              - image: "*.*/* | *:*/* | localhost/*"

@@ -79,3 +79,21 @@ def test_incident_crew396_temporal_chart_images_name_their_registry():
     repos = REPOSITORY.findall(text)
     assert sorted(repos) == ["docker.io/temporalio/admin-tools", "docker.io/temporalio/server",
                              "docker.io/temporalio/ui"], repos
+
+
+def test_incident_crew307_the_cluster_refuses_an_unqualified_image_at_admission() -> None:
+    """crew#307 SRE sweep: the tests above grade git text, and a chart default the HelmRelease does
+    not override is invisible to them (the residual named in the docstring). The cluster now refuses
+    the image itself: platform/edge/require-qualified-image.yaml, Enforce, on every Pod outside
+    kube-system, CREATE and UPDATE only."""
+    doc = yaml.safe_load((ROOT / "platform/edge/require-qualified-image.yaml").read_text())
+    assert doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "require-qualified-image"
+    (rule,) = doc["spec"]["rules"]
+    res = rule["match"]["any"][0]["resources"]
+    assert res["kinds"] == ["Pod"] and res["operations"] == ["CREATE", "UPDATE"]
+    assert rule["validate"]["failureAction"] == "Enforce"
+    for c in ("containers", "=(initContainers)"):
+        (entry,) = rule["validate"]["pattern"]["spec"][c]
+        assert entry["image"] == "*.*/* | *:*/* | localhost/*"
+    edge = (ROOT / "platform/edge/kustomization.yaml").read_text()
+    assert "- require-qualified-image.yaml" in edge
