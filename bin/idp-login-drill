@@ -87,7 +87,8 @@ TIMEOUT = float(os.environ.get("DRILL_TIMEOUT_MS", "30000"))
 
 
 def fail(stage, detail):
-    detail = re.sub(re.escape(PASSWORD), "<redacted>", str(detail)).replace("\n", " ")[:200]
+    # 800, not 200: run 33237150499 cut Playwright's call log at "POST https://ca" and the cause was unreadable (crew#301)
+    detail = " ".join(re.sub(re.escape(PASSWORD), "<redacted>", str(detail)).split())[:800]
     print(f"FAIL    login-drill  {stage} {detail}")
     sys.exit(1)
 
