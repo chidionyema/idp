@@ -379,6 +379,29 @@ with sync_playwright() as p:
         if marker in body_text:
             fail("shell", f"{HOME} rendered an error page: '{marker}'")
 
+    # 7b. Which portal is being served (crew#459, crew#301). The drill graded green for hours
+    # while the cluster ran an image from before the portal polish: nothing in it named the build.
+    # The polished app ships a branded web manifest and an SVG icon; the vendor image ships
+    # neither (manifest name 'Backstage', no /icon.svg). Read both with the signed-in session and
+    # print what is served; a vendor manifest means the rollout never landed, which is the
+    # crew#301 incident, so it is red, not a note.
+    try:
+        mf = page.request.get(f"{HOME}/manifest.json")
+        mf_name = (mf.json().get("name") if mf.ok else "") or "-"
+    except Exception as e:  # noqa: BLE001 - the row must print whatever broke
+        mf, mf_name = None, f"unreadable: {str(e)[:80]}"
+    try:
+        ic_status = page.request.get(f"{HOME}/icon.svg").status
+    except Exception:  # noqa: BLE001
+        ic_status = 0
+    print(f"build   login-drill  the portal serves manifest name '{mf_name}', /icon.svg answered {ic_status}")
+    if mf is None or not mf.ok:
+        fail("build", f"{HOME}/manifest.json did not answer 200: the served portal has no web manifest")
+    if mf_name == "Backstage":
+        fail("build", "the served manifest is the vendor one ('Backstage'): the branded portal on main is not what the cluster runs (crew#459 rollout never landed)")
+    if ic_status != 200:
+        fail("build", f"{HOME}/icon.svg answered {ic_status}: the branded icon is not served")
+
     # 8. The second hop (crew#503, founder 2026-08-28: "a 2nd login hop is fiction"). Every
     # surface behind the ForwardAuth 302s to the identity domain and this drill said green while
     # Langfuse, behind that door, showed its own email+password form. With the front-door cookie
@@ -403,5 +426,5 @@ with sync_playwright() as p:
     ctx.close()
     browser.close()
 
-print(f"ok      login-drill  signed in as {USER}, catalogue rendered as {ref}, {n_entities} entities read, {cards} founder surfaces on the home page, langfuse behind the one login, 0 js errors, in {time.time() - started:.1f}s")
+print(f"ok      login-drill  signed in as {USER}, catalogue rendered as {ref}, {n_entities} entities read, {cards} founder surfaces on the home page, langfuse behind the one login, 0 js errors, portal build '{mf_name}', in {time.time() - started:.1f}s")
 PYDRIVER
