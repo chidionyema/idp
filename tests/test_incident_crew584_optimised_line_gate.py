@@ -107,3 +107,14 @@ def test_the_age_exemption_does_not_excuse_any_other_rule(tmp_path):
     fired = _rules(p)
     assert "rule=optimised_plan" not in fired
     assert fired, "the rest of the gate went quiet: the exemption is too wide"
+
+
+def test_incident_the_image_bump_body_passes_the_rule(tmp_path):
+    """Incident, 2026-08-29: idp#719 (flux/image-updates, 30 commits, auto-merge armed 05:31Z) never
+    merged because the bot body bin/idp-image-update-pr writes carried no `Optimised:` line and the
+    gate refused every cycle, so the portal stayed on a stale image. The literal line in the script
+    is graded by the real rule here; a body without it is still refused (the LAW 38 other way)."""
+    script = (ROOT / "bin" / "idp-image-update-pr").read_text()
+    line = next(l.strip().strip('"\\ ') for l in script.splitlines() if l.strip().startswith('"Optimised:'))
+    assert "rule=optimised_plan" not in _rules(_with_body(tmp_path, "\n" + line + "\n")), line
+    assert "rule=optimised_plan" in _rules(_with_body(tmp_path, "\n"))
