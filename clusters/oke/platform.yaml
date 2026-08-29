@@ -848,3 +848,20 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
+---
+# crew#584 CP-H: the staging area. A namespace with a ceiling, on every profile (lean too); the
+# dev-loop label on it is what lets a laptop's mirrord agent in (platform/edge/dev-loop-policy.yaml).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: staging
+  namespace: flux-system
+spec:
+  interval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/staging
+  prune: true
+  wait: true
+  timeout: 2m
