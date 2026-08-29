@@ -52,10 +52,10 @@ spec:
         name: oauth2-proxy
   install:
     remediation:
-      retries: 3
+      retries: -1
   upgrade:
     remediation:
-      retries: 3
+      retries: -1
   values:
     # crew#539: oauth2-proxy sits in front of catalogue, hc, langfuse and signoz, so its chart
     # default of replicaCount 1 made every one of those surfaces one node event from a 503 no

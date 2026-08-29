@@ -30,6 +30,10 @@ metadata:
   name: spire-crds
   namespace: spire-mgmt
 spec:
+  install:
+    remediation: { retries: -1 }   # idp#731: forever; a spent count strands the release
+  upgrade:
+    remediation: { retries: -1 }
   interval: 1h
   chart:
     spec:
@@ -63,9 +67,9 @@ spec:
   # the last failure is remediated. With this flag the failed install is uninstalled and re-run from
   # the current values; tests/test_spire_row.py holds it.
   install:
-    remediation: { retries: 3, remediateLastFailure: true }
+    remediation: { retries: -1, remediateLastFailure: true }
   upgrade:
-    remediation: { retries: 3, remediateLastFailure: true }
+    remediation: { retries: -1, remediateLastFailure: true }
   valuesFrom:
     - kind: ConfigMap
       name: spire-values

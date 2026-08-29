@@ -20,9 +20,9 @@ spec:
         kind: HelmRepository
         name: signoz
   install:
-    remediation: { retries: 3 }
+    remediation: { retries: -1 }
   upgrade:
-    remediation: { retries: 3 }
+    remediation: { retries: -1 }
   valuesFrom:
     - kind: ConfigMap
       name: signoz-values

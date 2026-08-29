@@ -52,9 +52,9 @@ spec:
         kind: HelmRepository
         name: descheduler
   install:
-    remediation: { retries: 3 }
+    remediation: { retries: -1 }
   upgrade:
-    remediation: { retries: 3 }
+    remediation: { retries: -1 }
   values:
     kind: CronJob
     schedule: "*/10 * * * *"

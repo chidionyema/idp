@@ -21,6 +21,10 @@ metadata:
   name: traefik
   namespace: edge
 spec:
+  install:
+    remediation: { retries: -1 }   # idp#731: forever; a spent count strands the release
+  upgrade:
+    remediation: { retries: -1 }
   # docs/policy/every-interface-is-a-door.md: the chart's Services name their door.
   postRenderers:
     - kustomize:

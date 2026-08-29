@@ -30,10 +30,10 @@ spec:
         kind: HelmRepository
         name: k8sgpt
   install:
-    remediation: { retries: 3 }
+    remediation: { retries: -1 }
     crds: CreateReplace
   upgrade:
-    remediation: { retries: 3 }
+    remediation: { retries: -1 }
     crds: CreateReplace
   # The chart's manager pod passes every estate policy except three (bin/idp-kyverno-render, 2026-08-27):
   # the kube-rbac-proxy sidecar carries no probes, and neither container sets readOnlyRootFilesystem

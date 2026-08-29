@@ -7,6 +7,7 @@ Rung 2 properties over the manifests, rung 4 for the Kyverno refusal the chaos-m
   4. the Kyverno exception lives in namespace kyverno, names only the SPIRE namespaces, waives only
      policies the rendered chart fails, and the same objects are still refused anywhere else.
 """
+
 import pathlib
 import re
 import shutil
@@ -17,7 +18,9 @@ import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SPIRE = ROOT / "platform" / "spire"
-ESTATE_CODE = pathlib.Path(__import__("os").environ.get("ESTATE_CODE", str(ROOT.parent)))
+ESTATE_CODE = pathlib.Path(
+    __import__("os").environ.get("ESTATE_CODE", str(ROOT.parent))
+)
 POLICIES = ESTATE_CODE / "prospector-main" / "deploy" / "k8s" / "policies"
 
 
@@ -35,17 +38,26 @@ def test_spire_row_waits_on_the_helmrelease():
     ks = _one(_docs(ROOT / "clusters/oke/platform.yaml"), "Kustomization", "spire")
     assert ks["spec"]["path"] == "./platform/spire" and ks["spec"]["wait"] is True
     hc = ks["spec"]["healthChecks"]
-    assert {(h["kind"], h["name"], h["namespace"]) for h in hc} == {("HelmRelease", "spire", "spire-mgmt")}
+    assert {(h["kind"], h["name"], h["namespace"]) for h in hc} == {
+        ("HelmRelease", "spire", "spire-mgmt")
+    }
 
 
 def test_helmrelease_is_pinned_and_reads_the_one_values_file():
     docs = _docs(SPIRE / "helmrelease.yaml")
     hr = _one(docs, "HelmRelease", "spire")
     spec = hr["spec"]["chart"]["spec"]
-    assert spec["chart"] == "spire" and re.fullmatch(r"\d+\.\d+\.\d+", str(spec["version"]))
-    assert _one(docs, "HelmRelease", "spire-crds")["spec"]["chart"]["spec"]["chart"] == "spire-crds"
+    assert spec["chart"] == "spire" and re.fullmatch(
+        r"\d+\.\d+\.\d+", str(spec["version"])
+    )
+    assert (
+        _one(docs, "HelmRelease", "spire-crds")["spec"]["chart"]["spec"]["chart"]
+        == "spire-crds"
+    )
     assert "values" not in hr["spec"], "values live in values.yaml, not inline"
-    assert hr["spec"]["valuesFrom"] == [{"kind": "ConfigMap", "name": "spire-values", "valuesKey": "values.yaml"}]
+    assert hr["spec"]["valuesFrom"] == [
+        {"kind": "ConfigMap", "name": "spire-values", "valuesKey": "values.yaml"}
+    ]
     kz = yaml.safe_load((SPIRE / "kustomization.yaml").read_text())
     gen = kz["configMapGenerator"][0]
     assert gen["name"] == "spire-values" and gen["files"] == ["values.yaml"]
@@ -55,7 +67,12 @@ def test_helmrelease_is_pinned_and_reads_the_one_values_file():
 def test_svids_are_short_lived_and_every_pod_is_enrolled():
     v = yaml.safe_load((SPIRE / "values.yaml").read_text())
     assert v["spire-server"]["defaultX509SvidTTL"] == "1h"
-    assert v["spire-server"]["controllerManager"]["identities"]["clusterSPIFFEIDs"]["default"]["enabled"] is True
+    assert (
+        v["spire-server"]["controllerManager"]["identities"]["clusterSPIFFEIDs"][
+            "default"
+        ]["enabled"]
+        is True
+    )
     assert v["global"]["spire"]["trustDomain"] == "estate.internal"
 
 
@@ -79,9 +96,24 @@ def _render(tmp_path):
     hr = _one(docs, "HelmRelease", "spire")
     repo = _one(docs, "HelmRepository", "spiffe")
     spec = hr["spec"]["chart"]["spec"]
-    r = subprocess.run(["helm", "template", "spire", spec["chart"], "--repo", repo["spec"]["url"],
-                        "--version", str(spec["version"]), "-n", "spire-mgmt", "-f", str(SPIRE / "values.yaml")],
-                       capture_output=True, text=True)
+    r = subprocess.run(
+        [
+            "helm",
+            "template",
+            "spire",
+            spec["chart"],
+            "--repo",
+            repo["spec"]["url"],
+            "--version",
+            str(spec["version"]),
+            "-n",
+            "spire-mgmt",
+            "-f",
+            str(SPIRE / "values.yaml"),
+        ],
+        capture_output=True,
+        text=True,
+    )
     if r.returncode:
         pytest.skip(f"BLIND: helm template failed (offline?): {r.stderr[-300:]}")
     out = tmp_path / "spire.yaml"
@@ -91,20 +123,32 @@ def _render(tmp_path):
 
 def _apply(tmp_path, resource, exception=None):
     policies = tmp_path / "policies.yaml"
-    policies.write_text(subprocess.run(["kubectl", "kustomize", str(POLICIES)], check=True,
-                                       capture_output=True, text=True).stdout)
+    policies.write_text(
+        subprocess.run(
+            ["kubectl", "kustomize", str(POLICIES)],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    )
     cmd = ["kyverno", "apply", str(policies), "--resource", str(resource)]
     if exception:
         cmd += ["--exception", str(exception)]
     out = subprocess.run(cmd, capture_output=True, text=True).stdout
     summary = [line for line in out.splitlines() if line.startswith("pass:")]
     assert summary, out
-    counts = {k.strip(): int(v) for k, v in (kv.split(": ") for kv in summary[-1].split(","))}
-    counts["failing_policies"] = set(re.findall(r"policy ([a-z0-9-]+) -> resource \S+ failed", out))
+    counts = {
+        k.strip(): int(v) for k, v in (kv.split(": ") for kv in summary[-1].split(","))
+    }
+    counts["failing_policies"] = set(
+        re.findall(r"policy ([a-z0-9-]+) -> resource \S+ failed", out)
+    )
     return counts
 
 
-def test_incident_chaos_mesh_pattern_spire_admitted_with_its_exception_and_refused_without(tmp_path):
+def test_incident_chaos_mesh_pattern_spire_admitted_with_its_exception_and_refused_without(
+    tmp_path,
+):
     _blind()
     rendered = _render(tmp_path)
     shipped = SPIRE / "exception.yaml"
@@ -115,18 +159,25 @@ def test_incident_chaos_mesh_pattern_spire_admitted_with_its_exception_and_refus
     waived = {e["policyName"] for e in _docs(shipped)[0]["spec"]["exceptions"]}
     assert waived == without["failing_policies"], {
         "waived_but_passing": waived - without["failing_policies"],
-        "failing_but_not_waived": without["failing_policies"] - waived}
+        "failing_but_not_waived": without["failing_policies"] - waived,
+    }
     elsewhere = tmp_path / "elsewhere.yaml"
-    elsewhere.write_text(rendered.read_text().replace("namespace: spire-mgmt", "namespace: backstage")
-                         .replace('namespace: "spire-mgmt"', "namespace: backstage"))
+    elsewhere.write_text(
+        rendered.read_text()
+        .replace("namespace: spire-mgmt", "namespace: backstage")
+        .replace('namespace: "spire-mgmt"', "namespace: backstage")
+    )
     still_refused = _apply(tmp_path, elsewhere, shipped)
     assert still_refused["fail"] == without["fail"], (still_refused, without)
 
 
 def _host_network_pods(rendered):
-    return sorted(f'{d["kind"]}/{d["metadata"]["name"]}' for d in _docs(rendered)
-                  if d.get("kind") in ("DaemonSet", "Deployment", "StatefulSet", "Job")
-                  and d["spec"]["template"]["spec"].get("hostNetwork", False))
+    return sorted(
+        f"{d['kind']}/{d['metadata']['name']}"
+        for d in _docs(rendered)
+        if d.get("kind") in ("DaemonSet", "Deployment", "StatefulSet", "Job")
+        and d["spec"]["template"]["spec"].get("hostNetwork", False)
+    )
 
 
 def test_incident_crew227_cp4_host_network_pod_needs_the_host_ports_waiver(tmp_path):
@@ -138,12 +189,23 @@ def test_incident_crew227_cp4_host_network_pod_needs_the_host_ports_waiver(tmp_p
     chart keeps the agent off the host network."""
     _blind()
     rendered = _render(tmp_path)
-    waived = {e["policyName"] for e in _docs(SPIRE / "exception.yaml")[0]["spec"]["exceptions"]}
-    assert _host_network_pods(rendered) == [], "spire-agent.hostNetwork must stay false in values.yaml"
-    assert "disallow-host-ports" not in waived, "no host network, so no host-ports waiver either"
+    waived = {
+        e["policyName"]
+        for e in _docs(SPIRE / "exception.yaml")[0]["spec"]["exceptions"]
+    }
+    assert _host_network_pods(rendered) == [], (
+        "spire-agent.hostNetwork must stay false in values.yaml"
+    )
+    assert "disallow-host-ports" not in waived, (
+        "no host network, so no host-ports waiver either"
+    )
     # detector, both ways: the chart default (hostNetwork: true) is what the incident shipped
     stripped = tmp_path / "default.yaml"
-    stripped.write_text(rendered.read_text().replace("      hostPID: true\n", "      hostPID: true\n      hostNetwork: true\n"))
+    stripped.write_text(
+        rendered.read_text().replace(
+            "      hostPID: true\n", "      hostPID: true\n      hostNetwork: true\n"
+        )
+    )
     assert _host_network_pods(stripped) == ["DaemonSet/spire-agent"]
 
 
@@ -154,11 +216,15 @@ def test_incident_crew227_cp4_failed_install_is_remediated_not_kept():
     hr = _one(docs, "HelmRelease", "spire")
     for phase in ("install", "upgrade"):
         rem = hr["spec"][phase]["remediation"]
-        assert rem["retries"] >= 1
+        assert rem["retries"] == -1, (
+            "idp#731: a negative count retries forever (HelmRelease v2 spec)"
+        )
         assert rem["remediateLastFailure"] is True, phase
 
 
-def test_incident_crew227_cp4_agent_off_host_network_must_reach_the_kubelet_by_node_address(tmp_path):
+def test_incident_crew227_cp4_agent_off_host_network_must_reach_the_kubelet_by_node_address(
+    tmp_path,
+):
     """crew#227 CP4, cluster-state receipt 2026-08-27T07:00:02Z: eight spiffe-proof pods Failed with
     `rpc error: code = Unavailable desc = workload attestation failed` while csi_workloads listed all
     eight and the ClusterSPIFFEID reported 67 entries, 0 failures. #308 set hostNetwork: false; the
@@ -174,11 +240,13 @@ def test_incident_crew227_cp4_agent_off_host_network_must_reach_the_kubelet_by_n
         pytest.skip("agent is on the host network; localhost reaches the kubelet")
     agent = next(c for c in pod["containers"] if c["name"] == "spire-agent")
     env = {e["name"]: e for e in agent.get("env", [])}
-    assert "KUBELET_ADDR" in env, "kubeletAddress.mode must be hostip or hostname when hostNetwork is false"
+    assert "KUBELET_ADDR" in env, (
+        "kubeletAddress.mode must be hostip or hostname when hostNetwork is false"
+    )
     field = env["KUBELET_ADDR"]["valueFrom"]["fieldRef"]["fieldPath"]
     assert field in ("status.hostIP", "spec.nodeName"), field
     cm = _one(docs, "ConfigMap", "spire-agent")
-    conf = "".join(cm["data"].values())   # chart 0.30.1 writes agent.conf as JSON
+    conf = "".join(cm["data"].values())  # chart 0.30.1 writes agent.conf as JSON
     assert '"node_name_env": "KUBELET_ADDR"' in conf, conf[-600:]
 
 
@@ -193,6 +261,12 @@ def test_incident_crew227_cp4_proof_pod_retries_inside_the_same_pod_uid():
     for name in ("proof-cronjob.yaml", "proof.yaml"):
         docs = _docs(SPIRE / name)
         job = next(d for d in docs if d["kind"] in ("Job", "CronJob"))
-        spec = job["spec"]["jobTemplate"]["spec"] if job["kind"] == "CronJob" else job["spec"]
+        spec = (
+            job["spec"]["jobTemplate"]["spec"]
+            if job["kind"] == "CronJob"
+            else job["spec"]
+        )
         pod = spec["template"]["spec"]
-        assert pod.get("restartPolicy") == "OnFailure", f"{name}: {pod.get('restartPolicy')}"
+        assert pod.get("restartPolicy") == "OnFailure", (
+            f"{name}: {pod.get('restartPolicy')}"
+        )

@@ -48,9 +48,9 @@ spec:
         kind: HelmRepository
         name: temporal
   install:
-    remediation: { retries: 3 }
+    remediation: { retries: -1 }
   upgrade:
-    remediation: { retries: 3 }
+    remediation: { retries: -1 }
   values:
     # Chart 1.x carries no bundled store or metrics stack (the cassandra/mysql/postgresql/
     # elasticsearch/prometheus/grafana sub-charts were removed in 1.0.0; the chart's

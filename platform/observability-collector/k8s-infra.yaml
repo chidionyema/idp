@@ -64,9 +64,9 @@ spec:
         kind: HelmRepository
         name: signoz
   install:
-    remediation: { retries: 3 }
+    remediation: { retries: -1 }
   upgrade:
-    remediation: { retries: 3 }
+    remediation: { retries: -1 }
   values:
     clusterName: oke
     # crew#483: this chart's otlphttp exporter (presets.otlphttpExporter.enabled defaults true,

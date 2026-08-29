@@ -16,6 +16,10 @@ metadata:
   name: cert-manager
   namespace: cert-manager
 spec:
+  install:
+    remediation: { retries: -1 }   # idp#731: forever; a spent count strands the release
+  upgrade:
+    remediation: { retries: -1 }
   interval: 1h
   chart:
     spec:

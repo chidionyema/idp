@@ -148,10 +148,16 @@ spec:
       sourceRef:
         kind: HelmRepository
         name: langfuse
+  # idp#731 / idp#780 (2026-08-29): a finite retry count is a trap. Once helm-controller spends it the
+  # release sits Failed/InProgress until a hand `flux reconcile hr --reset`, and the runner has no kube
+  # path to run one (crew#483 k8s-infra, crew#227 spire, idp#731 langfuse: three times). The vendor
+  # spec, HelmRelease v2 'Install remediation' / 'Upgrade remediation': "a negative integer equals to
+  # an infinite number of retries". Every HelmRelease on the estate carries -1; the test
+  # tests/test_incident_idp731_a_helmrelease_never_runs_out_of_retries.py refuses a finite one.
   install:
-    remediation: { retries: 3 }
+    remediation: { retries: -1 }
   upgrade:
-    remediation: { retries: 3 }
+    remediation: { retries: -1 }
   valuesFrom:
     - kind: ConfigMap
       name: langfuse-values

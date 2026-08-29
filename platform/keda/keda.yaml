@@ -34,9 +34,9 @@ spec:
         kind: HelmRepository
         name: kedacore
   install:
-    remediation: { retries: 3 }
+    remediation: { retries: -1 }
   upgrade:
-    remediation: { retries: 3 }
+    remediation: { retries: -1 }
   values:
     opentelemetry:
       collector:
@@ -76,9 +76,9 @@ spec:
         kind: HelmRepository
         name: kedacore
   install:
-    remediation: { retries: 3 }
+    remediation: { retries: -1 }
   upgrade:
-    remediation: { retries: 3 }
+    remediation: { retries: -1 }
   values:
     # The chart's defaults drop capabilities and mount read-only but say nothing about the user or
     # the seccomp profile, so require-run-as-nonroot and restrict-seccomp-strict refuse all three
