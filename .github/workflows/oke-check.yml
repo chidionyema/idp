@@ -435,7 +435,11 @@ jobs:
           # pull_request the blob ref becomes this branch's head sha, everywhere else it stays main.
           # Found 2026-08-29 by platform/commerce/app/lago.yaml, run 33260499807.
           if [ "${GITHUB_EVENT_NAME:-}" = pull_request ] && [ -n "${HEAD_SHA:-}" ]; then
-            sed -i "s#/blob/main/#/blob/${HEAD_SHA}/#g" founder-links.txt
+            # Only THIS repository's links. The first version of this rewrote every `/blob/main/`
+            # it saw, so five catalogue links into chidionyema/crew were asked for an idp commit
+            # sha and came back 404 -- the fix graded the string instead of the repository it
+            # belongs to (oke-check 33262262675). The repo is named, never assumed.
+            sed -i "s#github.com/${GITHUB_REPOSITORY}/blob/main/#github.com/${GITHUB_REPOSITORY}/blob/${HEAD_SHA}/#g" founder-links.txt
             echo "pull request: blob links graded at ${HEAD_SHA}"
           fi
           echo "$(wc -l < founder-links.txt) links"
