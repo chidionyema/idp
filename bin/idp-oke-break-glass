@@ -494,6 +494,10 @@ pb_architect_doctor() {
   show pods $K get pods -n "$ns" -o wide
   show restarts $K get pods -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[*].restartCount}{"\t"}{.status.containerStatuses[*].lastState.terminated.reason}{"\n"}{end}'
   show externalsecrets $K get externalsecrets -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.conditions[*]}{.type}={.status} {.reason}: {.message}{end}{"\n"}{end}'
+  # alerts-firing: what Alertmanager holds for this namespace right now, so a down pod is read here
+  # as the alert it raised, not only as a pod row (2026-08-29: Otto down 4h, nobody could say whether
+  # KubePodNotReady had fired). amtool runs inside the alertmanager pod; no port-forward, no hand.
+  show alerts-firing sh -c "am=\$($K get pods -n ${AM_NS:-monitoring} -l app.kubernetes.io/name=alertmanager -o jsonpath='{.items[0].metadata.name}' 2>/dev/null); [ -n \"\$am\" ] || { echo no-alertmanager-pod; exit 0; }; $K exec -n ${AM_NS:-monitoring} \"\$am\" -c alertmanager -- amtool --alertmanager.url=http://localhost:${AM_PORT:-9093} alert query namespace=$ns -o simple 2>&1 || echo query-failed"
   # KEY NAMES only. `-o jsonpath={.data}` would print the values; keys() prints what the pod can
   # read, which is the whole question -- an env Secret missing TELEGRAM_BOT_TOKEN is the silent way
   # for a green pod to serve nobody.
