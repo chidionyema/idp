@@ -232,3 +232,34 @@ def test_the_cutover_cannot_be_half_done():
         "a live checkout endpoint is founder-facing; that label is what forces two replicas "
         "and a spread across nodes (crew#555)"
     )
+
+
+def test_the_chart_that_cannot_name_a_class_has_one_patched_in():
+    """The Lago chart ships no `priorityClassName` field of its own -- it appears in
+    lago-1.28.0.tgz only inside the bundled minio subchart, which is disabled. Its Deployments
+    would land in a namespace labelled `app.kubernetes.io/part-of: idp` naming no class, which is
+    exactly what `platform-workload-names-a-class` audits, and that rule stays on Audit until a
+    pass finds zero violations. So the class is patched in at render time.
+    """
+    releases = [d for d in _all_docs(COMMERCE) if d.get("kind") == "HelmRelease"]
+    assert releases, "the money layer installs no chart"
+    for hr in releases:
+        patches = [
+            p
+            for r in hr["spec"].get("postRenderers", [])
+            for p in r.get("kustomize", {}).get("patches", [])
+        ]
+        assert patches, (
+            f"{hr['metadata']['name']} renders a chart with no priorityClassName field and "
+            f"patches nothing in; every pod it ships is a PolicyReport row (crew#539)"
+        )
+        classed = [
+            p
+            for p in patches
+            if p.get("target", {}).get("kind") == "Deployment"
+            and "priorityClassName: platform-batch" in p["patch"]
+        ]
+        assert classed, (
+            f"{hr['metadata']['name']} post-renders something, but no patch gives its "
+            f"Deployments a priorityClassName"
+        )

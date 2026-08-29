@@ -85,13 +85,37 @@ def test_the_policy_is_applied_by_the_edge_kustomization():
     assert "capacity-policy.yaml" in kust["resources"]
 
 
+def _sole_class(o, found=None):
+    """Every distinct priorityClassName anywhere in one document, at any depth."""
+    found = set() if found is None else found
+    if isinstance(o, dict):
+        v = o.get("priorityClassName")
+        if isinstance(v, str) and v:
+            found.add(v)
+        for x in o.values():
+            _sole_class(x, found)
+    elif isinstance(o, list):
+        for x in o:
+            _sole_class(x, found)
+    return found
+
+
 def _requests(batch=False):
     """Every CPU request declared under platform/: raw workloads and HelmRelease values alike.
 
     A pod under PriorityClass platform-batch (crew#584 CP-I: nightly jobs) is not standing capacity:
     it is seated by preempting the balloon (platform/scheduling/balloon.yaml), whose request this
     sum already counts, so its own request is listed by batch=True and kept out of the paper total.
-    test_a_platform_batch_job_fits_inside_one_balloon_pod bounds it."""
+    test_a_platform_batch_job_fits_inside_one_balloon_pod bounds it.
+
+    crew#623: `in_batch` used to be inherited only downwards, from the node that carries
+    `priorityClassName` to the containers beneath it. That is true of a raw Deployment, where one
+    pod spec holds the class and the containers, and false of a HelmRelease, where the chart decides
+    where each field goes -- the NATS chart takes `podTemplate.merge.spec.priorityClassName` and
+    `container.merge.resources`, two sibling branches. Its pod ran as platform-batch and this sum
+    still charged it to standing capacity, which is grading the shape of the YAML instead of the
+    pod. So a release whose values name platform-batch and nothing else is batch for the whole
+    document."""
     out, batch_out = [], []
 
     def walk(o, src, labels, in_batch=False):
@@ -117,7 +141,10 @@ def _requests(batch=False):
             docs = yaml.safe_load_all(f.read_text())
             for d in docs:
                 if isinstance(d, dict):
-                    walk(d, f"{f.relative_to(ROOT)}:{d.get('kind', '')}/{(d.get('metadata') or {}).get('name', '')}", {})
+                    # A HelmRelease is one chart: if the only class its values name is
+                    # platform-batch, every pod it ships is batch, wherever the field sits.
+                    doc_batch = d.get("kind") == "HelmRelease" and _sole_class(d) == {"platform-batch"}
+                    walk(d, f"{f.relative_to(ROOT)}:{d.get('kind', '')}/{(d.get('metadata') or {}).get('name', '')}", {}, doc_batch)
         except yaml.YAMLError:
             continue
     return batch_out if batch else out

@@ -87,3 +87,26 @@ spec:
     eventsProcessor: { replicaCount: 0 }
     eventsWorker: { replicaCount: 0 }
     pdfWorker: { replicaCount: 0 }
+  # The chart's own templates carry no `priorityClassName` field -- grep of lago-1.28.0.tgz finds
+  # it only in the bundled minio subchart, which is disabled above. Every Deployment it ships
+  # would therefore land in the `commerce` namespace (labelled `app.kubernetes.io/part-of: idp`)
+  # with no class and become a PolicyReport row under platform/scheduling/require-priority-class
+  # `platform-workload-names-a-class`. That rule is Audit today only because charts like this one
+  # exist; its own comment says it flips to Enforce "after a pass with zero violations". Adding
+  # thirteen violations would push that flip further away, so the class is patched in at render
+  # time. postRenderers is already how this estate bends a chart it does not own (temporal,
+  # hindsight, langfuse, traefik, signoz and five more), so this is the existing pattern, not a
+  # new mechanism.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target: { kind: Deployment }
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: not-used-kustomize-matches-on-target
+              spec:
+                template:
+                  spec:
+                    priorityClassName: platform-batch
