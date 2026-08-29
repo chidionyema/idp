@@ -30,6 +30,14 @@ data:
   # hand (founder: "seamless security, no founder friction"). This file is the one place they may be.
   FOUNDER_MAC_USER: "chidionyema"
   FOUNDER_MAC_TS_IP: "100.93.240.113"
+  # crew#66 phase 1: the Tailscale federated identity (tailscale.com/kb/1581) that lets a GitHub
+  # Actions run on this repo's main mint the operator OAuth client with no secret held anywhere.
+  # A client id is public. Empty = not registered yet; bin/idp-bootstrap-tailscale then reads the
+  # seed from the vault and the oke-check apply step reports BLIND.
+  # Registering it: console Trust credentials -> Add -> Federated identity, issuer
+  # https://token.actions.githubusercontent.com, subject repo:chidionyema/idp:ref:refs/heads/main,
+  # scope OAuth keys (write), tag tag:k8s. Paste the client id here, nothing else exists to paste.
+  TAILSCALE_FEDERATED_CLIENT_ID: ""
   # crew#562: the founder's tailnet LOGIN, which is not the same thing as FOUNDER_MAC_USER above --
   # that one is the Unix account on the Mac. platform/tailscale/policy.hujson names this one as the
   # only member of group:founder, the rule that lets his iPhone reach his own tagged Mac (Moonlight
