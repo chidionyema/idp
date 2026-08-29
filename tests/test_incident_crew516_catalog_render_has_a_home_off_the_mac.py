@@ -50,10 +50,13 @@ def test_incident_crew516_keys_reach_rclone_as_environment_never_argv():
     assert "secrets." not in fetch["run"]                  # values live in env, not the command
 
 
-def test_incident_crew516_default_is_dry_run_and_commit_is_a_choice():
+def test_incident_crew516_default_is_commit_and_dry_run_is_a_choice():
+    # dry-run was the default while the cloud render was measured against the Mac row (LAW 17);
+    # the Mac row retired 2026-08-27 and crew#624 found the schedule and every bare dispatch
+    # still dry-running with nothing else publishing. commit is the default; dry-run stays a choice.
     wf = _wf()
     inputs = wf[True]["workflow_dispatch"]["inputs"]["mode"]   # yaml reads `on` as True
-    assert inputs["default"] == "dry-run" and inputs["options"] == ["dry-run", "commit"]
+    assert inputs["default"] == "commit" and sorted(inputs["options"]) == ["commit", "dry-run"]
     render = next(s for s in _steps() if s.get("name") == "render")
     assert re.search(r"dry-run.*--dry-run", render["run"])
     assert "58 1,7,13,19 * * *" in [c["cron"] for c in wf[True]["schedule"]]
