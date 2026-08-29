@@ -47,7 +47,7 @@ if [ "${SKIP_TESTS_ON_TRIVIAL:-1}" = 1 ]; then
 fi
 sel=$(
   for f in $changed; do
-    case "$f" in tests/test_*.py|sovereign/tests/*/*.py) echo "$f" ;; esac
+    case "$f" in tests/test_*.py|sovereign/tests/*/*.py) [ -f "$IDP/$f" ] && echo "$f" ;; esac   # a deleted test file made pytest collect nothing: "no tests ran" and the push refused (2026-08-29)
     b=$(basename "$f")
     grep -rlF --include='*.py' -e "$f" -e "$b" "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null | sed "s#^$IDP/##" | grep -v '/fixtures/' || true   # a fixture under tests/fixtures is proof material, not a test (test_unbound.py fails by design)
   done | sort -u
