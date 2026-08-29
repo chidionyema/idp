@@ -1,17 +1,12 @@
-# crew#488 CP1: how many Flux Kustomizations under clusters/oke/ must come Ready on a vanilla
-# k3d cluster with no OCI identity (.github/workflows/portability-drill.yml). Only goes up:
-# raise it in the PR that carries the green run URL that beat it. bin/idp-portability-drill
-# refuses 0.
-#
-# 2 -> 9, on run 33220112386 job 99012178267 (#654, the named-object closure guard):
-#   ok  portability  ready 11/41 (root-red 2 all named, cascaded 26, pending 2) on a cluster
-#   with no OCI (floor 2)
-# The run before it, 33218345931, read `ready 2/38` -- 2 was the count from the day the drill
-# was written and it had not moved since, so the floor was grading nothing.
-#
-# 9 and not 11, and the two-row gap is the point: `pending` means Flux had not judged the row
-# when the drill read the cluster, so a slower runner turns a row that was Ready here into a row
-# that is merely not-red, and a floor set to the exact count of one run grades the runner's
-# speed. 9 is the count this run proves is reachable with both timing-sensitive rows falling the
 # wrong way. A second run that reproduces 11 is the evidence that raises it to 11.
-9
+#
+# 9 -> 10, on four consecutive runs of 2026-08-29, read back to back:
+#   33234248201  ready 11/43      33239483254  ready 11/43
+#   33239862769  ready 11/43      33238955226  ready 10/43
+# Not 11, and the paragraph above is exactly why. The fourth run read one more row as `pending`:
+# Flux had not judged it when the drill looked. A floor of 11 would have turned that run red for
+# the runner being slower, not for the platform porting worse -- the runner's speed graded as
+# portability, which is the thing this file says not to do. 10 is the count the WORST of four
+# consecutive runs reaches, so it grades the platform and not the weather. The gap to 11 closes
+# when `pending` does, and the run that shows four consecutive 11s is the evidence for that PR.
+10
