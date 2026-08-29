@@ -33,7 +33,7 @@ def test_the_push_uses_the_app_token_so_the_checks_run_on_the_new_head():
     assert app["with"]["app-id"] == "${{ secrets.SEED_GITHUB_APP_ID }}"
     checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@"))
     assert checkout["with"]["token"] == "${{ steps.app.outputs.token }}", "GITHUB_TOKEN pushes raise no events; the checks would never run"
-    assert _wf()["jobs"]["enable"]["if"] == "github.event.pull_request.head.repo.full_name == github.repository"
+    assert _wf()["jobs"]["enable"]["if"] == "github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'"
 
 
 def test_the_template_tells_the_founder_that_merging_is_the_switch():
