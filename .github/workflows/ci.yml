@@ -126,7 +126,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bin/idp-no-toil "${{ github.event.pull_request.number }}"
 
-  bdd:
+  bdd-suites:
     needs: fast-gate
     runs-on: ubuntu-latest
     # crew#584, 2026-08-28: run 33203670180 measured this job at 2m13s, of which the acceptance
@@ -189,6 +189,25 @@ jobs:
         env:
           IDP_KYVERNO_POLICIES: ${{ runner.temp }}/kyverno-policies/deploy/k8s/policies
         run: python -m pytest tests -q -p no:cacheprovider -n auto --durations=10   # crew#584: four cores; the ten slowest are printed
+
+  # The merge rule on main (repository ruleset, required_status_checks) waits for a check named
+  # exactly `bdd`. GitHub publishes a matrix job's checks as `bdd (acceptance)` and `bdd (tests)`,
+  # so splitting the suites renamed the one check the rule waits for out of existence: idp#641 sat
+  # MERGEABLE / BLOCKED for 12 hours with both legs green and nothing failing, because the rule was
+  # waiting on a name no run would ever report again.
+  #
+  # This job keeps that name stable. It checks out nothing and installs nothing, so it costs one
+  # runner-second; the matrix underneath can change shape -- a third suite, a rename -- without
+  # anyone touching the repository ruleset, which is the coupling that caused the stall.
+  bdd:
+    needs: bdd-suites
+    if: always()   # a red leg must report a red `bdd`, not a skipped one the rule would wait on forever
+    runs-on: ubuntu-latest
+    steps:
+      - name: every bdd suite passed
+        run: |
+          echo "bdd-suites: ${{ needs.bdd-suites.result }}"
+          test "${{ needs.bdd-suites.result }}" = success
 
   # crew#584 PR B: the "Enable platform feature" Backstage template opens a pull request that
   # adds one row to platform/features/requests.yaml; it never runs `bin/idp-features enable`

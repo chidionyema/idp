@@ -17,7 +17,7 @@ WF = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ci.yml"
 
 
 def _bdd():
-    return yaml.safe_load(WF.read_text())["jobs"]["bdd"]
+    return yaml.safe_load(WF.read_text())["jobs"]["bdd-suites"]
 
 
 def test_the_bdd_job_is_a_matrix_of_both_suites():
@@ -40,3 +40,41 @@ def test_every_pytest_step_runs_on_exactly_one_leg_and_every_leg_has_one():
         owned[gated[0]].append(step["name"])
     for leg, names in owned.items():
         assert names, f"matrix leg {leg!r} runs no suite -- it is a paid-for idle runner"
+
+
+# 2026-08-29, the second half of this incident. Splitting the suites made GitHub publish the
+# checks as `bdd (acceptance)` and `bdd (tests)`, and the merge rule on main waits for a check
+# named exactly `bdd`. The pull request was MERGEABLE with every leg green and BLOCKED for 12
+# hours on a name no run would report again -- a stall with no red anywhere to read.
+#
+# REQUIRED is the merge rule's own list. Re-read it with:
+#   gh api repos/chidionyema/idp/rules/branches/main \
+#     --jq '[.[]|select(.type=="required_status_checks")|.parameters.required_status_checks[].context]|unique'
+REQUIRED = {"bdd", "offline-gate", "operating-model-gate / operating-model-gate",
+            "security-scan", "spec-gate"}
+
+
+def _ci_jobs():
+    return yaml.safe_load(WF.read_text())["jobs"]
+
+
+def test_no_required_check_is_a_matrix_job():
+    """A matrix job publishes `<job> (<leg>)`, never `<job>`; the rule would wait forever."""
+    jobs = _ci_jobs()
+    for context in sorted(REQUIRED):
+        job = jobs.get(context)
+        if job is None:
+            continue   # the context is published by another workflow or a reusable call
+        assert "strategy" not in job or "matrix" not in job["strategy"], (
+            f"required check {context!r} is a matrix job: it will report "
+            f"{context} (<leg>) and the merge rule waits on {context} forever")
+
+
+def test_the_bdd_gate_reports_for_the_whole_matrix():
+    """The stable name still exists, and it is red when a leg is red rather than skipped."""
+    gate = _ci_jobs()["bdd"]
+    needs = gate["needs"]
+    assert "bdd-suites" in ([needs] if isinstance(needs, str) else needs), needs
+    assert gate.get("if") and "always()" in str(gate["if"]), (
+        "without if: always() a failed leg leaves `bdd` skipped, and the rule waits on it")
+    assert any("needs.bdd-suites.result" in (s.get("run") or "") for s in gate["steps"]), gate
