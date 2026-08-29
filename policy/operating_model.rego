@@ -303,3 +303,41 @@ deny contains msg if {
 	not opened_before_law51
 	msg := "rule=optimised_plan | the PR body has no counted `Optimised:` line (LAW 51) | fix: plan first, then add `Optimised: <steps before> -> <after>, <round trips before> -> <after>; cut: <what, why>` — numbers on both sides of the arrow and a cut clause; the procedure is in ~/AGENTS-FULL.md"
 }
+
+# --- lifecycle_row (crew#618, founder 2026-08-29) -------------------------------------------
+# "no PR covering critical infra like this can have setup going to void: reusable? expiration? we
+# need policy." A pull request that touches a root credential's birth (bin/idp-bootstrap-*, the
+# vendor registry, the GitHub App files, or any `secrets.SEED_*` line in a workflow) carries one
+# `Lifecycle:` line naming the row on docs/reference/policy/credential-lifecycle.md. The test
+# tests/test_incident_crew618_every_root_has_a_life_cycle.py grades the page itself; this grades
+# that the author looked at it.
+
+lifecycle_landed := "2026-08-29T09:30:00Z"
+
+touches_a_root if {
+	some f in input.pr.files
+	regex.match(`^(bin/idp-bootstrap-|platform/vendors/|platform/github-app/)`, f)
+}
+
+touches_a_root if {
+	some f in input.pr.files
+	startswith(f, ".github/workflows/")
+	regex.match(`secrets\.SEED_`, input.pr.diff)
+}
+
+lifecycle_line_ok if {
+	regex.match(`(?m)^Lifecycle: \S[^\n]*$`, input.pr.body)
+}
+
+opened_before_lifecycle if {
+	is_string(input.pr.createdAt)
+	input.pr.createdAt < lifecycle_landed
+}
+
+deny contains msg if {
+	is_string(input.pr.body)
+	touches_a_root
+	not lifecycle_line_ok
+	not opened_before_lifecycle
+	msg := "rule=lifecycle_row | the PR touches a root credential's birth and the body has no `Lifecycle:` line (crew#618) | fix: add `Lifecycle: <SEED_NAME> row on docs/reference/policy/credential-lifecycle.md` and make sure the row exists with expiry, rotation and revocation filled"
+}
