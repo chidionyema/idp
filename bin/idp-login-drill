@@ -436,7 +436,28 @@ with sync_playwright() as p:
     # asked to log in again. Any path under /auth/ is red; only the project page is signed in.
     lf_path = urlparse(page.url).path
     if lf_path.startswith("/auth/"):
-        fail("second-hop", f"langfuse asked for a second login at {lf_path}: the one login is two")
+        # crew#626 CP15: the vendor has no automatic redirect to a single SSO provider
+        # (langfuse.com/self-hosting/authentication-and-sso, read 2026-08-29), so the sign-in
+        # page shows one button. The founder path is that one click and no credentials: the
+        # identity domain already holds the front-door session. The drill takes the click and
+        # grades where it lands; a password box or the identity domain's login page is red.
+        sso_btn = page.get_by_role("button", name=re.compile("estate|sso|sign in with", re.I))
+        if sso_btn.count() == 0:
+            fail("second-hop", f"langfuse sign-in page at {lf_path} has no SSO button; page says: {page.locator('body').inner_text()[:200]!r}")
+        try:
+            sso_btn.first.click()
+            page.wait_for_load_state("domcontentloaded")
+            page.wait_for_timeout(4000)
+        except PWError as e:
+            fail("second-hop", f"the SSO button on langfuse did not get through: {e}")
+        lf_host = urlparse(page.url).hostname or ""
+        lf_path = urlparse(page.url).path
+        lf_pw = page.locator("input[type='password']").count()
+        print(f"sso     login-drill  after the SSO click langfuse landed on {lf_host}{lf_path}, {lf_pw} password field(s)")
+        if lf_host == DOMAIN_HOST or lf_pw:
+            fail("second-hop", f"langfuse asked for credentials again at {lf_host}{lf_path}: the one login is two")
+        if lf_path.startswith("/auth/"):
+            fail("second-hop", f"langfuse is still on its sign-in page at {lf_path} after the SSO click")
     if lf_host != f"langfuse.{ZONE}":
         fail("second-hop", f"langfuse landed on {lf_host}, expected langfuse.{ZONE}")
 
