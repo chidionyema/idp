@@ -89,3 +89,12 @@ def test_hermes_delivery_is_the_laptop_road():
     assert 'secret-add" dev LITELLM_HERMES_KEY LITELLM_API_KEY' in run
     line = next(l for l in run.splitlines() if "secret get hermes" in l)
     assert "| jq -r .key |" in line and ">" not in line.split("secret-add")[0]
+
+
+def test_a_new_key_file_is_added_by_name_before_the_commit():
+    """Run 33257838162: `commit -am` skipped the untracked LITELLM_LAPTOP_KEY.yaml and printed
+    "unchanged"; the key was minted and never delivered. Silent green is the defect class."""
+    _, run, _ = _seed_step()
+    for name in ("LAPTOP", "HERMES"):
+        assert f'add secrets/dev/LITELLM_{name}_KEY.yaml' in run
+    assert "commit -q -am" not in run
