@@ -256,6 +256,13 @@ pb_diagnose() {
   # before Kyverno sees it; a provider-named default made every new claim fail. Both facts are
   # read here so the next such outage is one diagnose run, not ninety minutes.
   show storage-classes $K get storageclasses
+  # crew#307 (2026-08-29, founder: "gods view isn't there", "everything that has an interface"): the
+  # founder's surfaces come from /estate/founder/catalog-info.yaml in the catalogue pod. Three rows
+  # say whether the file is there, whether the catalogue read it, and what it holds.
+  show catalogue-founder-file sh -c "$K exec -n backstage deploy/catalogue -- ls -la /estate /estate/founder 2>&1"
+  show catalogue-founder-configmap sh -c "$K get configmap founder-catalog estate-catalog -n backstage -o jsonpath='{range .items[*]}{.metadata.name}{\"\t\"}{.metadata.creationTimestamp}{\"\n\"}{end}' 2>&1"
+  show catalogue-log-locations sh -c "$K logs -n backstage deploy/catalogue --all-containers --tail=2000 2>&1 | grep -iE 'founder|location|catalog.*(error|fail|refus|invalid)' | tail -40"
+  show catalogue-entities sh -c "$K exec -n backstage deploy/catalogue -- sh -c 'wget -qO- http://127.0.0.1:7007/api/catalog/entities?filter=spec.type=founder-surface | head -c 600' 2>&1"
   show claims-not-bound sh -c "$K get pvc -A --field-selector=status.phase!=Bound 2>/dev/null; true"
   # The audit of the rules by the cluster: Kyverno scans every existing object in the background and
   # records which rule would refuse it. A rule with fails here is a rule that judges reality, not
