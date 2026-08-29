@@ -14,6 +14,10 @@ on:
         description: "nonce issued by the control plane for this request (blank: the run mints one)"
         required: false
         default: ""
+      lookup_trace:
+        description: "attribution: a trace id from an earlier run, read again now (info line, not graded)"
+        required: false
+        default: ""
   push:
     branches: [main]
     paths:
@@ -64,6 +68,7 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           DRILL_SHOT: ${{ runner.temp }}/verdict-langfuse-home.png
           VERDICT_NONCE: ${{ inputs.nonce }}
+          IDP_PROVE_LOOKUP_TRACE: ${{ inputs.lookup_trace }}
           VERDICT_EVIDENCE_REF: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -o pipefail
@@ -81,6 +86,19 @@ jobs:
             ${{ runner.temp }}/verdict-langfuse-home.png
           if-no-files-found: warn
           retention-days: 30
+      - name: the verdict row lands in the table as prover (crew#631 CP3; never fatal to the check-run)
+        if: always()
+        env:
+          OCI_CI: "1"
+          OCI_CLI_AUTH: security_token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+        run: |
+          bin/idp-verdict schema || true
+          bin/idp-verdict store "$RUNNER_TEMP/verdict.json" || true
+          bin/idp-verdict list -n 3 || true
+          bin/idp-verdict refuse-test || true
       - name: check-run verify/langfuse on the commit, conclusion = outcome
         if: always()
         env:

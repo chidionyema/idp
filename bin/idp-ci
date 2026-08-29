@@ -34,6 +34,7 @@ MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
 
 # 1. Every script parses and passes shellcheck at warning level.
 for f in "$IDP"/bin/*; do
+  [ -f "$f" ] || continue   # bin/lib is a directory; head on it printed an error every run
   head -1 "$f" | grep bash >/dev/null || continue
   bash -n "$f" && shellcheck -S warning "$f" >/dev/null \
     && say "ok    shell    $(basename "$f")" || { say "FAIL  shell    $(basename "$f")"; fail=1; }

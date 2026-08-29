@@ -202,6 +202,11 @@ LAYERS = {
         "Workload identity",
         "Every pod gets a cryptographic identity; no shared passwords between services.",
     ),
+    "staging": (
+        "scheduling",
+        "Staging namespace",
+        "Where a change runs before production: the same cluster, its own quota ceiling, no public door (ADR 0012).",
+    ),
     "observability-collector": (
         "observability",
         "Collector",

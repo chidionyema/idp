@@ -1,0 +1,7 @@
+# crew#584 CP-H: the staging namespace and its ceiling. A product's staging copy is deployed by
+# the product's own Flux row or by mirrord from a laptop; nothing else lives here by default.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - quota.yaml

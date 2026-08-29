@@ -200,8 +200,7 @@ features:
     tiers:
       - name: namespace
         switches: [staging]
-        floor: { cpu: 0.2, memory_gb: 1.0, storage_gb: 2 }
-        status: planned        # platform/staging/ is the next item after this register
+        what: "platform/staging/: namespace `staging`, dev-loop label, ResourceQuota ceiling (cpu 1, memory 2Gi, storage 2Gi, 0 public LBs)"
       - name: "off"
         switches: []
     default: namespace
