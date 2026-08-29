@@ -20,7 +20,7 @@ metadata:
   name: cluster-state-reader
 rules:
   - apiGroups: [""]
-    resources: ["nodes", "pods", "pods/log", "events"]
+    resources: ["nodes", "pods", "pods/log", "events", "services"]
     verbs: ["get", "list"]
   - apiGroups: ["apps"]
     resources: ["daemonsets"]
@@ -57,7 +57,7 @@ rules:
   # crew#483: a PolicyException on main that the cluster never admitted leaves a workload denied
   # with no way to tell from outside; the receipt lists the exceptions the cluster actually holds.
   - apiGroups: ["kyverno.io"]
-    resources: ["policyexceptions"]
+    resources: ["policyexceptions", "clusterpolicies"]
     verbs: ["get", "list"]
   # crew#539 DoD 1: the receipt counts the PrometheusRules the cluster holds and reads the
   # Watchdog alert from Alertmanager's API through the API-server proxy — proof the rule
@@ -334,6 +334,17 @@ data:
                              for o in get("/apis/kyverno.io/v2/policyexceptions")["items"]]
     except Exception as e:
         policy_exceptions = [{"ns": "", "name": "*", "policies": [], "matches": [], "error": f"list failed: {e}"[:300]}]
+    # crew#307 SRE sweep (2026-08-29): no Enforce was ever proved live; the receipt only read
+    # exceptions. Every installed ClusterPolicy with its failure action per rule and its Ready
+    # condition, so a git policy the cluster does not hold, or one still at Audit, is a row.
+    try:
+        kyverno_policies = [{"name": o["metadata"]["name"],
+                             "ready": any(c.get("type") == "Ready" and c.get("status") == "True" for c in (o.get("status") or {}).get("conditions", [])),
+                             "actions": sorted({(r.get("validate") or {}).get("failureAction") or (o.get("spec") or {}).get("validationFailureAction") or "Audit"
+                                                for r in (o.get("spec") or {}).get("rules", []) if r.get("validate")})}
+                            for o in get("/apis/kyverno.io/v1/clusterpolicies")["items"]]
+    except Exception as e:
+        kyverno_policies = [{"name": "*", "ready": False, "actions": [], "error": f"list failed: {e}"[:300]}]
     # K8sGPT (platform/healing): one Result per broken object, with the model's plain-English
     # explanation. The receipt carries kind, namespace/name, the first error line and the
     # details, so "what is broken and why" is one read; a list that fails is a row, not a zero.
@@ -389,6 +400,19 @@ data:
                             for h in (r.get("spec") or {}).get("hostnames", [])})
     except Exception as e:
         hostnames, hostnames_error = None, f"{e}"[:300]
+    # crew#307: every Service that serves a port and names no catalogue entity (label
+    # backstage.io/kubernetes-id), read live. The hostname list above missed every UI without a
+    # public hostname; this is the inventory the founder asked for. Failed = recorded, never empty.
+    unlisted_error = ""
+    system_ns = {"kube-system", "flux-system", "kyverno", "cert-manager", "spire-mgmt", "metrics-server", "reloader", "keda", "external-secrets"}
+    try:
+        services_unlisted = sorted(f"{s['metadata']['namespace']}/{s['metadata']['name']}"
+                                   for s in get("/api/v1/services")["items"]
+                                   if s["metadata"]["namespace"] not in system_ns
+                                   and not (s["metadata"].get("labels") or {}).get("backstage.io/kubernetes-id")
+                                   and s["metadata"]["name"] != "kubernetes")
+    except Exception as e:
+        services_unlisted, unlisted_error = None, f"{e}"[:300]
     # crew#227 CP4: SVIDs between agents are proven from two API rows, never asserted. (1) every
     # ClusterSPIFFEID with the controller-manager's stats (pods selected, entries rendered); (2) every
     # pod that mounts the csi.spiffe.io driver, which is the workload set that can hold an SVID.
@@ -583,8 +607,9 @@ data:
             f" monitoring_rules={monitoring_rules} alert_watchdog={alert_watchdog}"
             f" cpu_used_pct={cpu_used_pct} mem_used_pct={mem_used_pct} cpu_req_pct={cpu_req_pct} mem_req_pct={mem_req_pct}")
     body = {"at": at, "capacity": capacity, "capacity_error": cap_error, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
-            "flux": flux, "flux_not_ready": flux_not_ready, "policy_exceptions": policy_exceptions, "k8sgpt": k8sgpt, "daemonsets": ds, "ds_short": ds_short, "events_warning": events,
+            "flux": flux, "flux_not_ready": flux_not_ready, "policy_exceptions": policy_exceptions, "kyverno_policies": kyverno_policies, "k8sgpt": k8sgpt, "daemonsets": ds, "ds_short": ds_short, "events_warning": events,
             "hostnames": hostnames, "hostnames_error": hostnames_error, "spiffe": spiffe,
+            "services_unlisted": services_unlisted, "services_unlisted_error": unlisted_error,
             "oci_identity": {"pods": oci_pods, "static_key_pods": oci_static_key_pods,
                               "unknown_identity_pods": oci_unknown_identity_pods},
             "monitoring": {"rules": monitoring_rules, "alerts_firing": alert_names, "error": monitoring_error}}

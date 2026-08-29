@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -23,10 +24,11 @@ def _embedded_python() -> str:
 
 def _run(body: str) -> tuple[int, str]:
     lm = dt.datetime.now(dt.UTC).strftime("%a, %d %b %Y %H:%M:%S GMT")
-    head = json.dumps({"last-modified": lm})
+    head = json.dumps({"last-modified": lm, "date": lm})
     proc = subprocess.run(
         [sys.executable, "-", head, body, "30", ""],
         input=_embedded_python(), capture_output=True, text=True, check=False,
+        env={**os.environ, "IDP_LIB": str(READER.parent / "lib")},
     )
     return proc.returncode, proc.stdout
 

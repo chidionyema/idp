@@ -51,10 +51,6 @@ NOT_YET_MIGRATED = {
     # Sign-guarded in idp#611 (merged fb779d7) so it can no longer read green, but still subtracts
     # this machine's clock from a GitHub timestamp. crew#583 CP3 moves it to the API Date header.
     "bin/idp-drills-row",
-    # Held by session 09cd04a6 in worktrees idp-cs and idp-tc at the time of writing; taking them
-    # here would have collided with work in flight. crew#583 CP2.
-    "bin/idp-cluster-state",
-    "bin/idp-telemetry-coverage",
 }
 
 # Not offenders, and not a migration backlog: the writer of the stamps. A file here has to be the

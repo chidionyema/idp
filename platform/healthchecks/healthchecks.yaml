@@ -11,7 +11,7 @@ kind: Service
 metadata:
   name: healthchecks
   namespace: healthchecks
-  labels: { app.kubernetes.io/name: healthchecks, app.kubernetes.io/part-of: idp }
+  labels: { app.kubernetes.io/name: healthchecks, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: founder-jobs }
 spec:
   selector: { app.kubernetes.io/name: healthchecks }
   ports:

@@ -32,6 +32,11 @@ rules:
   - apiGroups: [metrics.k8s.io]
     resources: [pods]
     verbs: [get, list]
+  # crew#459: the front page reads every Flux layer's Ready condition and revision in one request
+  # through the plugin's proxy, so the founder sees the cluster, not a copy of it. Read only.
+  - apiGroups: [kustomize.toolkit.fluxcd.io, helm.toolkit.fluxcd.io]
+    resources: [kustomizations, helmreleases]
+    verbs: [get, list, watch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

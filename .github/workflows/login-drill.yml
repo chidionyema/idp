@@ -88,3 +88,13 @@ jobs:
           body=$(printf '%s\nrun: %s/%s/actions/runs/%s\nboard: https://github.com/chidionyema/crew/issues/307\n' "$line" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
           n=$(gh issue list --state open --search 'in:title "P0: login drill failed"' --json number -q '.[0].number')
           if [ -n "$n" ]; then gh issue comment "$n" --body "$body"; else gh label create P0 --color B60205 --description "service down for the founder" --force >/dev/null; gh issue create --title "P0: login drill failed" --label P0 --body "$body"; fi
+      # crew#301: a green run closes the P0 it opened. idp#379 stood open with 37 red comments while
+      # the drill had been green for hours; an issue that never closes is an instrument nobody reads.
+      - name: a green drill closes the open P0, with the run as the receipt
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n=$(gh issue list --state open --search 'in:title "P0: login drill failed"' --json number -q '.[0].number')
+          [ -z "$n" ] && exit 0
+          gh issue close "$n" --reason completed --comment "$(printf 'green: the founder path signed in and rendered the catalogue.\nrun: %s/%s/actions/runs/%s' "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")"

@@ -20,16 +20,28 @@ on:
   pull_request:
   push:
     branches: [main]
+  # idp#769: four merges by github-actions[bot] fired no push run, so main's images were never
+  # built. This rebuilds main by hand: `since` is the commit the diff starts from; empty builds every image.
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "build the images changed since this commit (empty: every image)"
+        required: false
+        default: ""
 permissions:
   contents: read
   packages: write
 env:
   REGISTRY: ghcr.io
-# A newer run on the same ref supersedes the older one: on 2026-08-27 20:23Z idp had 9 running and
-# 20 queued runs, 12 of them stale duplicates, and a one-line oke-check waited 19 min (crew#516).
+# A newer pull-request push supersedes the older run on the same branch (crew#516: 9 running and
+# 20 queued runs on 2026-08-27, 12 of them stale duplicates). A push to main is never cancelled:
+# on 2026-08-29 08:19Z the merge of #750 cancelled the backstage build of #747 (run 33242788019),
+# the next push only built what changed since its own parent, and the cluster kept serving
+# main-2246 while five portal PRs merged (crew#301, login-drill run 33245839791). Every main sha
+# gets its own group, so every merged image is built and pushed.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   fast-gate:   # crew#584 CP-C: lint red never boots this workflow's heavy jobs
     uses: ./.github/workflows/fast-gate.yml
@@ -48,7 +60,11 @@ jobs:
       # an unknown ref (first push, force-push) builds everything.
       - id: find
         run: |
-          if [ "${{ github.event_name }}" = pull_request ]; then base="origin/${{ github.base_ref }}"; else base="${{ github.event.before }}"; fi
+          case "${{ github.event_name }}" in
+            pull_request) base="origin/${{ github.base_ref }}" ;;
+            workflow_dispatch) base="${{ inputs.since }}" ;;   # empty: every image
+            *) base="${{ github.event.before }}" ;;
+          esac
           list=$(bin/dockerfiles --json --changed-since "$base")
           echo "list=$list" >> "$GITHUB_OUTPUT"; echo "dockerfiles (changed since $base): $list"
   build:
@@ -69,7 +85,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -100,7 +116,7 @@ jobs:
           # invocation exports both. `type=docker` is single-platform only,
           # which is fine because each matrix leg is one platform.
           outputs: |
-            ${{ github.event_name == 'push' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', steps.name.outputs.image) || 'type=cacheonly' }}
+            ${{ github.event_name != 'pull_request' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', steps.name.outputs.image) || 'type=cacheonly' }}
             type=docker,dest=/tmp/scan.tar
           cache-from: type=gha,scope=${{ steps.name.outputs.slug }}-${{ steps.name.outputs.arch }}
           cache-to: type=gha,mode=max,scope=${{ steps.name.outputs.slug }}-${{ steps.name.outputs.arch }}
@@ -126,13 +142,13 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
           format: table
-      - if: github.event_name == 'push'
+      - if: github.event_name != 'pull_request'
         run: |
           mkdir -p /tmp/digests/${{ steps.name.outputs.slug }}
           # artifact paths may not contain ":" -- store the hex only, re-prefix in merge
           d="${{ steps.build.outputs.digest }}"; touch "/tmp/digests/${{ steps.name.outputs.slug }}/${d#sha256:}"
           echo "${{ steps.name.outputs.image }}" > /tmp/digests/${{ steps.name.outputs.slug }}/IMAGE
-      - if: github.event_name == 'push'
+      - if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-${{ steps.name.outputs.slug }}-${{ steps.name.outputs.arch }}
@@ -140,7 +156,7 @@ jobs:
           if-no-files-found: error
   merge:
     needs: [discover, build]
-    if: github.event_name == 'push' && needs.discover.outputs.dockerfiles != '[]'
+    if: github.event_name != 'pull_request' && needs.discover.outputs.dockerfiles != '[]'
     runs-on: ubuntu-latest
     # id-token is what makes the signature keyless. Cosign exchanges this run's
     # OIDC token for a short-lived Fulcio certificate, so there is no signing

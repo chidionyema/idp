@@ -2,17 +2,38 @@
   "name": "idp-required-checks",
   "target": "branch",
   "enforcement": "active",
-  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "~DEFAULT_BRANCH"
+      ],
+      "exclude": []
+    }
+  },
   "rules": [
     {
       "type": "required_status_checks",
       "parameters": {
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
-          { "context": "offline-gate" },
-          { "context": "bdd" },
-          { "context": "security-scan" },
-          { "context": "spec-gate" }
+          {
+            "context": "offline-gate"
+          },
+          {
+            "context": "bdd"
+          },
+          {
+            "context": "security-scan"
+          },
+          {
+            "context": "spec-gate"
+          },
+          {
+            "context": "operating-model-gate / operating-model-gate"
+          },
+          {
+            "context": "verify/verdict-fresh"
+          }
         ]
       }
     }

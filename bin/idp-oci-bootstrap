@@ -66,6 +66,7 @@ ensure() { # kind name -> ocid   (compartment|group|user)
 }
 COMP=$(ensure compartment estate);   echo "iam     compartment estate"
 GROUP=$(ensure group estate-operators); echo "iam     group estate-operators"
+ensure group estate-provers >/dev/null; echo "iam     group estate-provers (crew#631 CP2: the only readers of verdict-hmac-key)"
 USER_ID=$(ensure user estate-tofu);   echo "iam     user estate-tofu"
 oci iam group add-user "${O[@]}" --group-id "$GROUP" --user-id "$USER_ID" >/dev/null 2>&1 || true
 POLICY_NAME=estate-operators-manage-estate
@@ -162,6 +163,8 @@ else echo "wif     user estate-ci"; fi
 G_ID=$(scim_find groups 'displayName eq "estate-operators"')
 printf '{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"add","path":"members","value":[{"value":"%s","type":"User"}]}]}' "$CI_UID" > "$T2/g.json"
 scim PATCH "Groups/$G_ID" --request-body "file://$T2/g.json" >/dev/null 2>&1 || true   # already a member is not an error
+P_ID=$(scim_find groups 'displayName eq "estate-provers"')
+scim PATCH "Groups/$P_ID" --request-body "file://$T2/g.json" >/dev/null 2>&1 || true   # estate-ci reads the verdict signing key; nobody else (crew#631 CP2)
 APP_ID=$(scim_find apps 'displayName eq "estate-github-oidc"')
 if [ -z "$APP_ID" ]; then
   printf '%s' '{"schemas":["urn:ietf:params:scim:schemas:oracle:idcs:App"],"displayName":"estate-github-oidc","description":"GitHub Actions OIDC to OCI session token exchange (crew#227)","basedOnTemplate":{"value":"CustomWebAppTemplateId"},"isOAuthClient":true,"clientType":"confidential","allowedGrants":["client_credentials","urn:ietf:params:oauth:grant-type:jwt-bearer"],"active":true,"trustScope":"Explicit"}' > "$T2/a.json"

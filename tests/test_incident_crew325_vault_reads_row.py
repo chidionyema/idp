@@ -43,9 +43,10 @@ def test_unreadable_audit_is_blind(tmp_path: Path) -> None:
     assert r.returncode == 2 and r.stdout.startswith("BLIND   vault-reads"), r.stdout + r.stderr
 
 
-def test_the_row_runs_where_flux_is_blind_and_the_policy_allows_it() -> None:
+def test_incident_crew584_the_vault_audit_is_not_in_oke_check() -> None:
+    """founder 2026-08-29: the row paged 90 min of OCI Audit inside oke-check on every pull request
+    (352-433s, 7 of 9 minutes, run 33237964214 and the five before it). Removed from the check."""
     src = (ROOT / "bin" / "idp-oke-rebuild").read_text()
-    blind = src[src.index("no kube path from this host"):]
-    assert 'step vault-reads "$IDP/bin/idp-vault-reads"' in blind.split("\nfi\n", 1)[0], "vault-reads row must sit in the no-kube branch"
+    assert "step vault-reads" not in src and '"$IDP/bin/idp-vault-reads"' not in src
     statements = json.loads((ROOT / "platform" / "oci" / "policy" / "estate-operators.statements.json").read_text())
     assert "Allow group estate-operators to read audit-events in compartment estate" in statements

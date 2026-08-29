@@ -12,7 +12,16 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }   # python-strict grades the range base...HEAD
+      # The estate Python standard (crew#620 CP4, founder 2026-08-29 "platform wide"): the SAME file
+      # every Mac runs as a commit hook, so CI and the hook can never disagree (one copy, LAW 43).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { repository: chidionyema/estate, path: .estate-hooks }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: "3.12", cache: pip, cache-dependency-path: sovereign/requirements*.txt }
       - run: pip install -q ruff==0.15.18   # the pin ci.yml's bdd job uses; shellcheck ships on ubuntu-latest
       - run: IDP_CI_FAST=1 bin/idp-ci
+      - name: python-strict (estate standard, one copy)
+        run: |
+          base=$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse HEAD~1)
+          PYTHON_STRICT_RANGE="${base}...HEAD" .estate-hooks/guards/hooks/python-strict-default

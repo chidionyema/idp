@@ -77,7 +77,7 @@ def test_incident_crew325_emptydir_over_an_image_conf_dir_is_seeded_first() -> N
             body = yaml.safe_load(patch["patch"])
             if not isinstance(body, dict):  # JSON-patch lists (ClickHouseInstallation) carry no pod spec
                 continue
-            spec = body["spec"].get("template", {}).get("spec", {})
+            spec = body.get("spec", {}).get("template", {}).get("spec", {})
             volumes = {v["name"] for v in spec.get("volumes", []) if "emptyDir" in v}
             seeded = {m["name"] for c in spec.get("initContainers", []) for m in c.get("volumeMounts", [])}
             for c in spec.get("containers", []):

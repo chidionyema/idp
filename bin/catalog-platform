@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""Every layer the cluster runs, as catalogue entities (crew#459, founder 2026-08-29: "where are all
+our components, tools, services ... all the tooling we use in our cluster is hidden away").
+
+Reads the Flux Kustomizations under clusters/<cluster>/*.yaml, the one list of what the cluster is
+made of, and writes backstage/platform/catalog-info.yaml: one System per area and one Component
+(type `platform-layer`) per Kustomization, with `backstage.io/kubernetes-label-selector` set to the
+label Flux stamps on every object it applies, so the Kubernetes plugin finds the live pods with
+nothing typed by hand. `spec.dependsOn` mirrors Flux `dependsOn`. Nothing here names a host, a
+provider or a path outside the repository (LAW 46, R36).
+
+    bin/catalog-platform            # rewrite the file
+    bin/catalog-platform --check    # exit 1 when the file is stale (the gate)
+"""
+import glob
+import os
+import sys
+
+import yaml
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CLUSTER = os.environ.get("CLUSTER", "oke")
+OUT = os.path.join(ROOT, "backstage", "platform", "catalog-info.yaml")
+TYPE = "platform-layer"
+
+# area -> (title, one sentence a buyer reads)
+SYSTEMS = {
+    "delivery": ("Delivery", "How code becomes a running thing: secrets, images, the catalogue and the portal."),
+    "edge": ("Edge", "How traffic gets in: the gateway, the policy engine, DNS and the store's front door."),
+    "identity": ("Identity", "Who may open a door: single sign-on in front of every surface and remote hands."),
+    "observability": ("Observability", "What the estate saw: traces, model calls, metrics, alerts and the pages they raise."),
+    "scheduling": ("Scheduling", "Where work runs and how it scales: priorities, autoscaling, workflows and node repair."),
+    "agents": ("Agents", "The AI that acts for the founder: the model router, the agent gateway, memory and tools."),
+    "resilience": ("Resilience", "How the estate breaks on purpose and heals: chaos, drills, self-healing and health checks."),
+    "products": ("Products", "What a customer buys: the store and the prospecting product, on the platform."),
+}
+
+# kustomization name -> (area, plain title, one sentence)
+LAYERS = {
+    "external-secrets": ("delivery", "Secrets bridge", "Pulls every secret from the vault into the cluster; nothing is typed into a console."),
+    "secret-store": ("delivery", "Vault connection", "The cluster's one root credential to the vault; every other secret is minted from it."),
+    "image-automation": ("delivery", "Image roll-out", "Watches the registry and rolls each new build of the portal into the cluster."),
+    "backstage-namespace": ("delivery", "Portal namespace", "The namespace and quota the portal runs in."),
+    "backstage": ("delivery", "The portal", "This site: the catalogue, the front page and every door the founder opens."),
+    "estate-catalog": ("delivery", "Estate inventory", "The generated inventory of every asset, delivered to the portal as a ConfigMap."),
+    "cluster-state": ("delivery", "Cluster state", "Renders what the cluster is right now, for the checks that read it."),
+    "reloader": ("delivery", "Config reloader", "Restarts a workload when its secret or config changes, so nothing runs stale."),
+    "gateway-api-crds": ("edge", "Gateway API", "The standard the gateway speaks; installed before anything routes."),
+    "kyverno": ("edge", "Policy engine", "Refuses a workload that breaks a rule: no unsigned image, no missing quota, no silent door."),
+    "edge": ("edge", "Gateway", "The one front door: TLS, routes to every surface, and the manners on every reply."),
+    "priority-classes": ("scheduling", "Priorities", "Which pods survive when a node is short: platform first, batch last."),
+    "dns": ("edge", "DNS", "Every hostname the estate answers to, managed from git."),
+    "prospector-platform": ("products", "Prospector platform", "What Prospector needs from the platform: its routes, secrets and namespace."),
+    "prospector": ("products", "Prospector", "The product that finds and qualifies prospects."),
+    "identity": ("identity", "Single sign-on", "One login in front of every door; the founder signs in once."),
+    "guacamole": ("identity", "Remote hands", "A browser desktop into the estate over the private network."),
+    "tailscale": ("identity", "Private network", "The mesh that joins the cluster, the Mac and the phone without a public port."),
+    "healthchecks": ("resilience", "Health checks", "Pings every scheduled job and pages when one goes quiet."),
+    "metrics-server": ("scheduling", "Metrics", "Pod and node usage, the numbers autoscaling reads."),
+    "scheduling": ("scheduling", "Scheduling", "Node pools, spread rules and what runs where."),
+    "autoscaler": ("scheduling", "Node autoscaler", "Adds and removes nodes as the estate's load moves."),
+    "keda": ("scheduling", "Workload autoscaler", "Scales a workload on its queue or its traffic, to zero when idle."),
+    "temporal": ("scheduling", "Workflows", "Durable workflows: every long job resumes where it stopped."),
+    "spire": ("identity", "Workload identity", "Every pod gets a cryptographic identity; no shared passwords between services."),
+    "observability-collector": ("observability", "Collector", "Every workload's traces, logs and metrics land here first."),
+    "observability": ("observability", "Traces and model calls", "Where every request and every model call is kept and searched."),
+    "monitoring": ("observability", "Metrics and alerts", "Cluster metrics, uptime probes and the alert rules that page."),
+    "monitoring-rules": ("observability", "Alert rules", "What counts as broken, one rule per promise."),
+    "alerts": ("observability", "Alert routing", "Where a page goes: the founder's phone, the board, never a private chat."),
+    "alerts-secret": ("observability", "Alert credentials", "The credentials alert routing needs, from the vault."),
+    "alerts-github": ("observability", "Alerts to GitHub", "Opens an issue for every page, so nothing fires into the void."),
+    "science": ("observability", "Science", "The experiment record: every run's result, graded."),
+    "llm": ("agents", "Model router", "One door to every model provider; the estate never calls a vendor directly."),
+    "hermes-agent": ("agents", "Hermes", "The agent that acts for the founder from anywhere: a message in, a pull request out."),
+    "mcp": ("agents", "Agent tools", "The tools an agent may use, behind one gateway with one audit log."),
+    "hindsight": ("agents", "Agent memory", "What the agents learned, kept between sessions."),
+    "healing": ("resilience", "Self-healing", "Spots a sick workload, explains it and moves it."),
+    "healing-analyzer": ("resilience", "Healing analyser", "Reads the healer's findings and files the fix."),
+    "robusta": ("resilience", "Incident enrichment", "Adds the why to every alert before a person reads it."),
+    "chaos-mesh": ("resilience", "Chaos engine", "Breaks things on purpose, on a schedule, to prove the estate survives."),
+    "chaos": ("resilience", "Chaos drills", "The scheduled breakages and the proof each one was survived."),
+    "drills": ("resilience", "Drills", "Every rehearsed failure and the run that last passed it."),
+}
+
+
+def kustomizations():
+    rows = []
+    for f in sorted(glob.glob(os.path.join(ROOT, "clusters", CLUSTER, "*.yaml"))):
+        for d in yaml.safe_load_all(open(f)):
+            if d and d.get("kind") == "Kustomization":
+                rows.append(d)
+    return rows
+
+
+def q(s):
+    return "'" + str(s).replace("'", "''") + "'"
+
+
+def render(rows):
+    names = {r["metadata"]["name"] for r in rows}
+    missing = sorted(names - set(LAYERS))
+    if missing:
+        sys.exit(f"catalog-platform: no plain-English row for {missing}; add it to LAYERS in bin/catalog-platform")
+    out = [
+        "# GENERATED by bin/catalog-platform from clusters/%s/*.yaml. Do not edit; edit LAYERS there." % CLUSTER,
+        "# One System per area, one Component per Flux Kustomization. The Kubernetes plugin reads the live",
+        "# pods through the label Flux stamps on every applied object (crew#459).",
+    ]
+    used = {LAYERS[n][0] for n in names}
+    for area in SYSTEMS:
+        if area not in used:
+            continue
+        title, desc = SYSTEMS[area]
+        out += [
+            "---", "apiVersion: backstage.io/v1alpha1", "kind: System", "metadata:",
+            f"  name: {area}", f"  title: {q(title)}", f"  description: {q(desc)}",
+            "  tags: [platform]",
+            "spec:", "  owner: group:default/platform", "  domain: platform",
+        ]
+    for r in sorted(rows, key=lambda r: r["metadata"]["name"]):
+        n = r["metadata"]["name"]
+        area, title, desc = LAYERS[n]
+        spec = r["spec"]
+        out += [
+            "---", "apiVersion: backstage.io/v1alpha1", "kind: Component", "metadata:",
+            f"  name: layer-{n}", f"  title: {q(title)}", f"  description: {q(desc)}",
+            "  annotations:",
+            f"    backstage.io/kubernetes-label-selector: {q('kustomize.toolkit.fluxcd.io/name=' + n)}",
+            f"    estate/flux-kustomization: {q(n)}",
+            f"    estate/path: {q(spec.get('path', './'))}",
+            f"    estate/cluster: {q(CLUSTER)}",
+            f"  tags: [platform, {area}]",
+            "spec:", f"  type: {TYPE}", "  lifecycle: production",
+            "  owner: group:default/platform", f"  system: {area}",
+        ]
+        deps = [d["name"] for d in spec.get("dependsOn", []) if d.get("name") in names]
+        if deps:
+            out.append("  dependsOn:")
+            out += [f"    - component:default/layer-{d}" for d in deps]
+    return "\n".join(out) + "\n"
+
+
+def main(argv):
+    text = render(kustomizations())
+    if "--check" in argv:
+        cur = open(OUT).read() if os.path.exists(OUT) else ""
+        if cur != text:
+            print("FAIL    catalog-platform  backstage/platform/catalog-info.yaml is stale; run bin/catalog-platform")
+            return 1
+        print(f"ok      catalog-platform  {text.count('kind: Component')} layers, {text.count('kind: System')} systems current")
+        return 0
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    open(OUT, "w").write(text)
+    print(f"ok      catalog-platform  wrote {os.path.relpath(OUT, ROOT)}: {text.count('kind: Component')} layers, {text.count('kind: System')} systems")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

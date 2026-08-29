@@ -206,17 +206,42 @@ def telegram_pin(text: str, urlopen=None) -> str:
         data = urllib.parse.urlencode({"chat_id": chat, **kw}).encode()
         return json.loads(urlopen(f"https://api.telegram.org/bot{token}/{method}", data=data, timeout=30).read())["result"]
 
-    pinned = call("getChat").get("pinned_message") or {}
-    if (pinned.get("text") or "").startswith("GOAL"):
+    state = Path(os.environ.get("ESTATE_FOUNDER_GOAL_STATE",
+                                str(Path.home() / ".estate" / "state" / "telegram_goal_message_id")))
+
+    def edit(mid: int) -> bool:
         try:
-            call("editMessageText", message_id=pinned["message_id"], text=text)
-            return str(pinned["message_id"])
+            call("editMessageText", message_id=mid, text=text)
+            return True
         except Exception as e:  # Telegram refuses an edit to identical text; that is the up-to-date case
             if "not modified" in str(getattr(e, "read", lambda: b"")() or str(e)):
-                return str(pinned["message_id"])
-            raise
+                return True
+            return False
+
+    pinned = call("getChat").get("pinned_message") or {}
+    if (pinned.get("text") or "").startswith("GOAL"):
+        if not edit(pinned["message_id"]):
+            raise SystemExit("estate-founder --telegram: the pinned GOAL message refused an edit")
+        return str(pinned["message_id"])
+    # 2026-08-29: while a FOUNDER ACTION or STAGED notice holds the pin (idp#729), every catalog-render
+    # (4x daily) sent a brand-new GOAL message; the founder: "how do i get anything done with
+    # 6vnessages". The goal is ONE message, remembered here and edited in place; a second is sent
+    # only when there is none to edit (deleted, or first run).
+    try:
+        remembered = int(state.read_text().strip())
+    except (OSError, ValueError):
+        remembered = 0
+    if remembered and edit(remembered):
+        return str(remembered)
     sent = call("sendMessage", text=text, disable_web_page_preview="true")
-    call("pinChatMessage", message_id=sent["message_id"], disable_notification="true")
+    try:
+        state.parent.mkdir(parents=True, exist_ok=True)
+        state.write_text(str(sent["message_id"]))
+    except OSError:
+        pass
+    # A founder action or a STAGED timer owns the pin until he acts; the goal is posted, not pinned.
+    if not (pinned.get("text") or "").startswith(("FOUNDER ACTION", "STAGED")):
+        call("pinChatMessage", message_id=sent["message_id"], disable_notification="true")
     return str(sent["message_id"])
 
 

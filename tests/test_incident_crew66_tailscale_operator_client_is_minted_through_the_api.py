@@ -54,7 +54,11 @@ python3 -c 'import json,sys; d=json.load(open("{vault}")); v=d.get(sys.argv[1]);
     (sh / "whoami").write_text("#!/bin/bash\necho estate-test\n")
     for f in sh.iterdir():
         f.chmod(0o755)
+    # the seed road is exercised only where no federated identity is configured (ADR 0010):
+    # point the script at an empty estate-config, never at the real one
+    (tmp_path / "no-federated-config.yaml").write_text("data: {}\n")
     env = {**os.environ, "PATH": f"{sh}:{os.environ['PATH']}", "IDP_VAULT_PUT": str(sh / "vault-put"),
+           "ESTATE_CONFIG": str(tmp_path / "no-federated-config.yaml"), "TAILSCALE_FEDERATED_CLIENT_ID": "",
            "IDP_CLOUD": str(sh / "cloud"), "IDP_OCI_WHOAMI": str(sh / "whoami"), "TAILSCALE_API_URL": "https://api.test"}
     return env, log, vault
 
@@ -134,3 +138,20 @@ def test_incident_crew66_a_seed_with_more_than_oauth_keys_is_refused_before_mint
     p = _run(env)
     assert p.returncode == 1 and "more than oauth_keys" in p.stdout, p.stdout + p.stderr
     assert "tailnet/-/keys" not in log.read_text()
+
+
+def test_incident_crew66_a_seed_pair_from_the_environment_mints_and_is_vaulted_so_the_repo_secret_can_go(tmp_path):
+    """Founder 2026-08-29: one master credential, made once, then code. Road c: the pair arrives as
+    TAILSCALE_SEED_CLIENT_ID / _SECRET (oke-check apply reads repository secrets), never a prompt."""
+    env, log, vault = _estate(tmp_path, seed=None)
+    env = {**env, "TAILSCALE_SEED_CLIENT_ID": "kSEED123456", "TAILSCALE_SEED_CLIENT_SECRET": "tskey-client-seed-1"}
+    p = _run(env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    v = json.load(open(vault))
+    assert v["tailscale-seed"] == {"client_id": "kSEED123456", "client_secret": "tskey-client-seed-1"}
+    assert v["tailscale-operator"] == {"client_id": "kNEW987654", "client_secret": "tskey-client-new-1"}
+    assert "tskey-client" not in p.stdout, "a secret reached stdout"
+    assert "https://api.test/api/v2/tailnet/-/keys" in log.read_text()
+    for l in log.read_text().splitlines():
+        if "oauth/token" in l:
+            assert "tskey-client" not in l, "a client secret reached curl's argv"

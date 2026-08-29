@@ -4,6 +4,7 @@
 #   bin/idp-bootstrap-tailscale --check      exit 0 when the vault entry still exchanges for a token, 1 when it does not
 #   bin/idp-bootstrap-tailscale --rotate     mint a new client even though the vault entry already works, and delete the old one
 #   bin/idp-bootstrap-tailscale --seed       the one human step, once: read the seed client from a hidden prompt into vault `tailscale-seed`
+#   bin/idp-bootstrap-tailscale --federated-check   in GitHub Actions: exchange the runner OIDC token only, print ok or the full refusal, touch nothing
 # In GitHub Actions with TAILSCALE_FEDERATED_CLIENT_ID set (estate-config), no seed is needed: the
 # runner's OIDC token is exchanged for a Tailscale token (kb/1581) and the operator client is minted
 # from that. .github/workflows/connect-tailscale.yml is the button; the seed road stays for a laptop.
@@ -32,13 +33,41 @@ VAULT_PUT=${IDP_VAULT_PUT:-$IDP/bin/idp-vault-put}   # tests point these at shim
 CLOUD=${IDP_CLOUD:-$IDP/bin/idp-cloud}
 WHOAMI=${IDP_OCI_WHOAMI:-$IDP/bin/idp-oci-whoami}
 MODE=${1:-mint}
-case "$MODE" in mint|--check|--rotate|--seed) ;; *) sed -n 2,6p "$0"; exit 2;; esac
+case "$MODE" in mint|--check|--rotate|--seed|--federated-check) ;; *) sed -n 2,6p "$0"; exit 2;; esac
 
 say()  { printf '%-7s %-20s %s\n' "$1" "$2" "$3"; }
 fail() { say FAIL "$1" "$2"; exit 1; }
 bl()   { say BLIND "$1" "$2"; exit 2; }
 for t in curl jq; do command -v "$t" >/dev/null || bl deps "$t missing"; done
 umask 077; P=$(mktemp -d); trap 'rm -rf "$P"' EXIT
+
+federated_exchange() { # <federated client id> -> access-token JSON on stdout (kb/1581). Any answer but HTTP 200 with an
+  # access_token prints the FULL error body and exits 1; there is no fall-through to a secret road (founder 2026-08-29,
+  # run 33244862380 said `ok federated` on an empty answer and then blamed the seed). The token is never printed.
+  local aud jwt code
+  [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || fail federated "identity $1 is configured but this is not GitHub Actions: the federated road runs only on the runner (gh workflow run oke-check.yml -f mode=apply)" >&2
+  aud="api.tailscale.com/$1"
+  jwt=$(curl -sS -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$aud" | jq -r '.value // empty')
+  [ -n "$jwt" ] || fail federated "GitHub gave no OIDC token for audience $aud (does the job have id-token: write?)" >&2
+  code=$(curl -sS -o "$P/xchg" -w '%{http_code}' -d "client_id=$1" --data-urlencode "jwt=$jwt" "$API/api/v2/oauth/token-exchange") || code=curl-failed
+  # The claims are read from the token itself, never guessed: a repo created after 2026-07-15 sends GitHub's
+  # immutable subject repo:OWNER@ID/REPO@ID:ref:... (run 33248046751 was refused on the guessed form).
+  claims=$(printf '%s' "$jwt" | cut -d. -f2 | python3 -c 'import sys,base64,json; p=sys.stdin.read().strip(); d=json.loads(base64.urlsafe_b64decode(p+"="*(-len(p)%4))); print("iss=%s sub=%s aud=%s"%(d.get("iss"),d.get("sub"),d.get("aud")))' 2>/dev/null || echo "claims unreadable")
+  unset jwt
+  if [ "$code" != 200 ]; then
+    say FAIL federated "token-exchange answered HTTP $code for identity $1. The runner presented: $claims. On the identity (kb/1581) set Issuer to that iss and Subject to that sub, or a wildcard of it. Full answer:" >&2
+    cat "$P/xchg" >&2 2>/dev/null; echo >&2
+    exit 1
+  fi
+  jq -e '.access_token' "$P/xchg" >/dev/null 2>&1 || { say FAIL federated "HTTP 200 but no access_token in the answer. Full answer:" >&2; cat "$P/xchg" >&2; echo >&2; exit 1; }
+  cat "$P/xchg"
+}
+fed_id=${TAILSCALE_FEDERATED_CLIENT_ID:-$(awk '$1=="TAILSCALE_FEDERATED_CLIENT_ID:"{gsub(/"/,"",$2);print $2}' "${ESTATE_CONFIG:-$IDP/clusters/oke/estate-config.yaml}" 2>/dev/null || true)}
+if [ "$MODE" = --federated-check ]; then
+  [ -n "$fed_id" ] || fail federated "no TAILSCALE_FEDERATED_CLIENT_ID in clusters/oke/estate-config.yaml; register one (kb/1581)"
+  federated_exchange "$fed_id" >/dev/null
+  say ok federated "OIDC token exchanged at /api/v2/oauth/token-exchange for identity $fed_id (no secret held)"; exit 0
+fi
 
 # 1. the vault must be reachable before any one-time material exists (crew#503 lesson in idp-vault-put).
 if ! OCI_CLI_PROFILE=$("$WHOAMI" 2>/dev/null); then
@@ -94,27 +123,61 @@ else
   [ "$MODE" = --check ] && fail "$SECRET" "no vault entry; run $0 to mint"
 fi
 
-# 3. an access token that may mint. Two roads, federated first (tailscale.com/kb/1581):
+# 3. an access token that may mint. Federated first (tailscale.com/kb/1581); the seed only manages identities.
 #    a) in GitHub Actions with a federated identity registered for this repo: trade the runner's OIDC
 #       JWT for a Tailscale token at /api/v2/oauth/token-exchange. No secret exists anywhere.
-#       The identity's client id is not a secret; it lives in clusters/oke/estate-config.yaml as
-#       TAILSCALE_FEDERATED_CLIENT_ID (issuer https://token.actions.githubusercontent.com,
-#       subject repo:<owner>/<repo>:ref:refs/heads/main, scope oauth_keys, tag tag:k8s).
-#    b) otherwise the seed client from the vault (--seed, the older one-human-step road).
-fed_id=${TAILSCALE_FEDERATED_CLIENT_ID:-$(awk '$1=="TAILSCALE_FEDERATED_CLIENT_ID:"{gsub(/"/,"",$2);print $2}' "${ESTATE_CONFIG:-$IDP/clusters/oke/estate-config.yaml}" 2>/dev/null || true)}
-if [ -n "$fed_id" ] && [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
-  aud="api.tailscale.com/$fed_id"
-  jwt=$(curl -sS -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$aud" | jq -r '.value // empty')
-  [ -n "$jwt" ] || fail federated "GitHub gave no OIDC token for audience $aud (does the job have id-token: write?)"
-  seed_json=$(curl -sS -d "client_id=$fed_id" --data-urlencode "jwt=$jwt" "$API/api/v2/oauth/token-exchange"); unset jwt
+#       The identity's client id lives in the vault as `tailscale-federated` (written by road b) or in
+#       clusters/oke/estate-config.yaml as TAILSCALE_FEDERATED_CLIENT_ID (issuer
+#       https://token.actions.githubusercontent.com, subject repo:<owner>@<id>/<repo>@<id>:*, scope oauth_keys).
+#    b) when the exchange is refused on the runner, the one bootstrap credential (founder 2026-08-29:
+#       "create one credential by hand, then have that one manage the rest") REGISTERS the identity from
+#       the claims the runner really carries, then road a runs again. The seed never mints the operator
+#       on the runner; off the runner (no OIDC) it mints directly, the older one-human-step road.
+vf=$("$CLOUD" secret get tailscale-federated 2>/dev/null | jq -r '.client_id // empty' 2>/dev/null || true)
+[ -z "$vf" ] || fed_id=$vf
+if [ -n "$fed_id" ] && seed_json=$(federated_exchange "$fed_id"); then
   say ok federated "OIDC token exchanged at /api/v2/oauth/token-exchange for identity $fed_id (no secret held)"
 else
-  [ -n "$fed_id" ] && say "" federated "identity $fed_id set but not in GitHub Actions; using the seed"
-  vault_pair "$SEED" || fail seed "no vault entry $SEED and no federated identity; register one (kb/1581) and set TAILSCALE_FEDERATED_CLIENT_ID in clusters/oke/estate-config.yaml, or run $0 --seed"
-  seed_json=$(token_for "$cid" "$csec"); unset cid csec
+  # outside the runner a refused identity cannot be repaired (the claims live on the runner); the refusal is printed above
+  [ -z "$fed_id" ] || [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || exit 1
+  #    c) the seed pair handed in by the environment (oke-check apply reads repository secrets
+  #       SEED_TAILSCALE_CLIENT_ID / SEED_TAILSCALE_CLIENT_SECRET, set once by bin/idp-set-root tailscale:
+  #       one OAuth client with the single scope oauth_keys write); it is vaulted as `tailscale-seed`
+  #       here so the repository secrets can be deleted.
+  if [ -n "${TAILSCALE_SEED_CLIENT_ID:-}" ] && [ -n "${TAILSCALE_SEED_CLIENT_SECRET:-}" ]; then
+    cid=$TAILSCALE_SEED_CLIENT_ID; csec=$TAILSCALE_SEED_CLIENT_SECRET
+    token_for "$cid" "$csec" | jq -e '.access_token' >/dev/null 2>&1 || fail seed "the seed pair in the environment does not exchange for a token"
+    vault_pair "$SEED" || { vault_write "$SEED" "$cid" "$csec"; say ok "$SEED" "written from the environment; the repository secrets SEED_TAILSCALE_* may be deleted"; }
+    cid=$TAILSCALE_SEED_CLIENT_ID; csec=$TAILSCALE_SEED_CLIENT_SECRET
+  else
+    vault_pair "$SEED" || fail seed "${fed_id:+the federated identity $fed_id was refused (answer above) and }no seed exists to register the identity from code: the one hand, once, is bin/idp-set-root tailscale (or $0 --seed on a laptop)"
+  fi
+  seed_json=$(token_for "$cid" "$csec"); unset cid csec TAILSCALE_SEED_CLIENT_SECRET
+  if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+    # road b: register the federated identity from the runner's own claims, vault its id, exchange again
+    stok=$(jq -r '.access_token // empty' <<<"$seed_json"); [ -n "$stok" ] || fail seed "the seed does not exchange for a token: $(jq -r '.message // .error // "no message"' <<<"$seed_json" | cut -c1-200)"
+    jwt=$(curl -sS -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api.tailscale.com" | jq -r '.value // empty')
+    [ -n "$jwt" ] || fail federated "GitHub gave no OIDC token to read the runner's claims from (does the job have id-token: write?)"
+    read -r iss sub < <(printf '%s' "$jwt" | cut -d. -f2 | python3 -c 'import sys,base64,json; p=sys.stdin.read().strip(); d=json.loads(base64.urlsafe_b64decode(p+"="*(-len(p)%4))); print(d["iss"], d["sub"])')
+    unset jwt
+    subj="${sub%%:ref:*}:*"   # every ref of this repository (ids are immutable; the name is not), nothing else
+    body=$(jq -cn --arg i "$iss" --arg s "$subj" --arg d "estate-github-${GITHUB_REPOSITORY:-idp}" '{keyType:"federated",description:$d,scopes:["oauth_keys"],issuer:$i,subject:$s}')
+    resp=$(curl -sS -H "Authorization: Bearer $stok" -H 'Content-Type: application/json' -d "$body" "$API/api/v2/tailnet/-/keys")
+    new_fid=$(jq -r '.id // empty' <<<"$resp")
+    [ -n "$new_fid" ] || fail federated "POST /keys keyType=federated answered no id: $(jq -r '.message // .error // "no message"' <<<"$resp" | cut -c1-160)"
+    vault_write tailscale-federated "$new_fid" none
+    say ok federated "identity $new_fid registered from code: issuer $iss subject $subj scope oauth_keys; vaulted as tailscale-federated"
+    if [ -n "$fed_id" ] && [ "$fed_id" != "$new_fid" ]; then
+      code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE -H "Authorization: Bearer $stok" "$API/api/v2/tailnet/-/keys/$fed_id" || echo curl-failed)
+      case "$code" in 200|204) say ok federated "refused identity $fed_id deleted";; *) say "" federated "refused identity $fed_id not deleted (DELETE answered $code); harmless, delete it later";; esac
+    fi
+    unset stok
+    seed_json=$(federated_exchange "$new_fid") || fail federated "the identity registered from the runner's own claims is still refused (answer above)"
+    say ok federated "OIDC token exchanged for identity $new_fid (no secret held from here on)"
+  fi
 fi
 seed_tok=$(jq -r '.access_token // empty' <<<"$seed_json")
-[ -n "$seed_tok" ] || fail seed "vault entry $SEED does not exchange for a token; make a new seed with $0 --seed"
+[ -n "$seed_tok" ] || fail seed "the seed does not exchange for a token: $(jq -r '.message // .error // "no message"' <<<"$seed_json" | cut -c1-200); make a new seed with $0 --seed"
 seed_scopes=$(jq -r '.scope // ""' <<<"$seed_json")
 case "$seed_scopes" in ""|oauth_keys|oauth_keys:*) ;; *) fail seed "the seed carries more than oauth_keys ($seed_scopes); a seed is one scope, make a new one with $0 --seed";; esac
 say ok seed "exchanges for an access token; scopes: ${seed_scopes:-not reported by the token endpoint}"

@@ -2,7 +2,10 @@
 // extension with the default name yields the id `page:home`, which overrides the
 // plugin's page at "/". The widget grid (and the toolkit whose links pointed at
 // 127.0.0.1) goes with it; the front page is the founder god view (crew#459).
-import { createFrontendModule, PageBlueprint } from '@backstage/frontend-plugin-api';
+import {
+  createFrontendModule,
+  PageBlueprint,
+} from '@backstage/frontend-plugin-api';
 
 const estateHomePage = PageBlueprint.make({
   params: {

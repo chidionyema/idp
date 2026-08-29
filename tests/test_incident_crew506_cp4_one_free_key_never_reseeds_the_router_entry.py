@@ -58,7 +58,9 @@ def test_every_writer_of_the_router_entry_merges_and_no_seed_secret_remains() ->
     bin/idp-estate-seed (master key) and bin/idp-bootstrap-vendors (provider keys). Both must --merge,
     or one new provider would again re-seed every key -- the incident this file closes."""
     wf = (ROOT / ".github" / "workflows" / "oke-check.yml").read_text()
-    assert "SEED_GROQ_API_KEY" not in wf and "bin/idp-vault-put --merge litellm-upstream" not in wf
+    # R52: SEED_GROQ_API_KEY is the vendor's one root and rides the bin/idp-bootstrap-vendors step only;
+    # no step writes litellm-upstream whole from it.
+    assert wf.count("SEED_GROQ_API_KEY") == 2 and "bin/idp-vault-put --merge litellm-upstream" not in wf
     assert re.search(r"^\s+run: bin/idp-estate-seed\s*$", wf, re.M)
     seed = (ROOT / "bin" / "idp-estate-seed").read_text()
     assert "--merge" in seed, "estate-seed writes one key at a time on top of what the vault holds"

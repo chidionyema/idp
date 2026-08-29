@@ -9,12 +9,13 @@ import shutil
 import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-HEAD = json.dumps({"last-modified": "Thu, 27 Aug 2026 19:00:03 GMT", "content-length": "10"})
+HEAD = json.dumps({"last-modified": "Thu, 27 Aug 2026 19:00:03 GMT", "date": "Thu, 27 Aug 2026 19:00:05 GMT", "content-length": "10"})
 
 
 def _tree(tmp_path, get_script):
     idp = tmp_path / "idp"; (idp / "bin").mkdir(parents=True)
     shutil.copy(ROOT / "bin" / "idp-cluster-state", idp / "bin" / "idp-cluster-state")
+    shutil.copytree(ROOT / "bin" / "lib", idp / "bin" / "lib")
     shim = idp / "bin" / "idp-cloud"
     shim.write_text("#!/bin/sh\ncase \"$*\" in\n  *\"object head\"*) printf '%s' '" + HEAD + "';;\n  *\"object get\"*) " + get_script + ";;\nesac\n")
     shim.chmod(0o755)

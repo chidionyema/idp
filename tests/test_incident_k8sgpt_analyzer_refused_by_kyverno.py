@@ -30,8 +30,16 @@ def test_run_33236900434_the_analyzer_container_drops_all_and_cannot_escalate():
 def test_run_33236900434_only_probes_are_waived_and_only_for_the_analyzer():
     ex = yaml.safe_load((ANALYZER / "exception.yaml").read_text())
     assert ex["kind"] == "PolicyException" and ex["metadata"]["namespace"] == "kyverno"
-    assert [e["policyName"] for e in ex["spec"]["exceptions"]] == ["require-pod-probes"]
+    assert [e["policyName"] for e in ex["spec"]["exceptions"]] == ["require-pod-probes", "secrets-not-from-env-vars"]  # 2026-08-29: run 33238265861
     res = ex["spec"]["match"]["any"][0]["resources"]
     assert res["namespaces"] == ["healing"] and res["names"] == ["estate*"]
     kust = yaml.safe_load((ANALYZER / "kustomization.yaml").read_text())
     assert "exception.yaml" in kust["resources"]
+
+
+def test_incident_20260829_secret_env_policy_is_excepted_for_the_analyzer():
+    """Run 33238265861: secrets-not-from-env-vars denied the analyzer after the security context landed."""
+    import yaml
+    doc = yaml.safe_load((ANALYZER / "exception.yaml").read_text())
+    names = {e["policyName"] for e in doc["spec"]["exceptions"]}
+    assert {"require-pod-probes", "secrets-not-from-env-vars"} <= names

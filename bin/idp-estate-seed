@@ -56,6 +56,7 @@ hindsight                 HINDSIGHT_API_LLM_BASE_URL  const:https://llm.$ZONE
 mcp-gateway               MCP_GATEWAY_KEY             hex32
 backstage-env             BACKEND_SECRET              urlsafe32
 backstage-env             POSTGRES_PASSWORD           hex32
+backstage-env             PROVER_TOKEN                urlsafe32
 litellm-upstream          LITELLM_MASTER_KEY          sk
 prospector-store-api-env  Jwt__SigningKeyPem          rsa_pem_b64
 prospector-store-api-env  Store__InternalApiKey       hex32
@@ -100,7 +101,7 @@ wellformed() { # <generator> <value> -> 0 when the value has the shape the gener
     hex32)       [[ "$2" =~ ^[0-9a-f]{64}$ ]] ;;
     urlsafe32)   [[ "$2" =~ ^[A-Za-z0-9_-]{40,}$ ]] ;;
     sk)          [[ "$2" =~ ^sk-[0-9a-f]{48}$ ]] ;;
-    rsa_pem_b64) printf '%s' "$2" | base64 -d 2>/dev/null | grep -q 'BEGIN PRIVATE KEY' ;;
+    rsa_pem_b64) printf '%s' "$2" | base64 -d 2>/dev/null | grep 'BEGIN PRIVATE KEY' >/dev/null ;;
     const:*)     [ "$2" = "${1#const:}" ] ;;
     copy:*)      [ "$2" = "$(gen "$1")" ] ;;
   esac

@@ -1,0 +1,225 @@
+#!/usr/bin/env python3
+"""One estate view, grouped and counted, from the receipts the cluster already writes (crew#624 CP1).
+
+Founder, 2026-08-29: "I NEED THE NUMBERS OF THINGS GROUPED ... A LOT OF SHIT IS IN THE DARK ...
+I SHOULD NEVER NEED TO ASK QUESTIONS WITH BACKSTAGE". This joins three receipts and prints one
+JSON document: every Flux row and pod grouped by platform layer, red first, plus what is dark
+(pods no telemetry backend ever saw, Services no HTTPRoute lists, catalogue entities that drift).
+
+    bin/idp-estate-view --json                      live: reads the receipts through the three readers
+    bin/idp-estate-view --cluster F --coverage F --drift F [--json]   graded from files (tests, CI)
+
+Exit 0 always when the receipts parse; a missing receipt is a `dark` row, never a crash (LAW 28).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Namespace -> layer of crew/docs/STANDARDS.md. A namespace not listed lands in "workloads".
+LAYERS = {
+    "delivery": ("flux-system", "image-automation"),
+    "identity": ("spire", "spire-system", "tailscale", "identity", "dex"),
+    "secrets": ("external-secrets", "secret-store"),
+    "policy": ("kyverno", "gatekeeper-system"),
+    "observability": (
+        "observability",
+        "monitoring",
+        "signoz",
+        "robusta",
+        "k8sgpt",
+        "hubble",
+    ),
+    "edge": ("envoy-gateway-system", "cert-manager", "external-dns", "edge"),
+    "scheduling": ("keda", "temporal", "dagster", "scheduling"),
+    "ai": ("langfuse", "llm", "mcp", "hindsight", "hermes", "ai"),
+    "portal": ("backstage",),
+    "products": ("prospector", "mumchimp", "store", "medusa"),
+}
+
+
+def layer_of(ns: str) -> str:
+    for layer, names in LAYERS.items():
+        if ns in names or any(ns.startswith(n + "-") for n in names):
+            return layer
+    return "workloads"
+
+
+def read_receipt(path_or_cmd: str | None, reader: str) -> tuple[dict, str]:
+    """(body, why-dark). A file path is read as is; None runs the reader with --json."""
+    if path_or_cmd:
+        try:
+            text = open(path_or_cmd, encoding="utf-8", errors="replace").read()
+        except OSError as exc:
+            return {}, f"{reader}: {exc}"
+    else:
+        proc = subprocess.run(
+            [os.path.join(IDP, "bin", reader), "--json"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        text = proc.stdout
+        if proc.returncode == 2 or not text.strip():
+            return (
+                {},
+                f"{reader}: {(proc.stdout or proc.stderr).strip().splitlines()[-1:] or ['no output']}",
+            )
+    for line in text.splitlines():
+        if line.startswith("{"):
+            try:
+                return json.loads(line), ""
+            except json.JSONDecodeError as exc:
+                return {}, f"{reader}: body is not JSON ({exc})"
+    return {}, f"{reader}: receipt carries no JSON body"
+
+
+def flux_reason(row: dict) -> str:
+    msg = (row.get("message") or "").lower()
+    if row.get("suspended"):
+        return "suspended"
+    if "dependency" in msg or "depends on" in msg:
+        return "waiting-on-dependency"
+    if "pull" in msg or "unauthorized" in msg or "manifest unknown" in msg:
+        return "image-or-chart-pull"
+    if "health check" in msg or "timeout" in msg or "stalled" in msg:
+        return "stalled"
+    return "failed"
+
+
+def build(cluster: dict, coverage: dict, drift: dict, dark: list[str]) -> dict:
+    # Freshness is never measured here against this machine's clock (crew#583,
+    # bin/lib/receipt_age.py): each reader grades its own receipt's age on the storage
+    # service's clock and exits FAIL when stale; that verdict travels in
+    # dark.receipts_unreadable. The stamp is shown as the receipt wrote it.
+    at = cluster.get("at") or ""
+    groups: dict[str, dict] = {}
+
+    def g(layer: str) -> dict:
+        return groups.setdefault(
+            layer,
+            {"layer": layer, "flux_total": 0, "flux_red": 0, "pods_red": 0, "red": []},
+        )
+
+    for row in cluster.get("flux") or []:
+        grp = g(layer_of(row.get("ns") or ""))
+        grp["flux_total"] += 1
+        if not row.get("ready"):
+            grp["flux_red"] += 1
+            grp["red"].append(
+                {
+                    "kind": row.get("kind"),
+                    "name": row.get("name"),
+                    "ns": row.get("ns"),
+                    "why": flux_reason(row),
+                    "message": (row.get("message") or "")[:200],
+                }
+            )
+    for pod in cluster.get("pods_not_ready") or []:
+        grp = g(layer_of(pod.get("ns") or ""))
+        grp["pods_red"] += 1
+        grp["red"].append(
+            {
+                "kind": "Pod",
+                "name": pod.get("name"),
+                "ns": pod.get("ns"),
+                "why": pod.get("phase") or "NotReady",
+                "message": (
+                    pod.get("failed") or pod.get("waiting") or pod.get("last_log") or ""
+                ).__str__()[:200],
+            }
+        )
+    missing = coverage.get("missing") or []
+    unlisted = cluster.get("services_unlisted") or []
+    by_reason: dict[str, int] = {}
+    for grp in groups.values():
+        for r in grp["red"]:
+            by_reason[r["why"]] = by_reason.get(r["why"], 0) + 1
+    ordered = sorted(
+        groups.values(), key=lambda x: (-(x["flux_red"] + x["pods_red"]), x["layer"])
+    )
+    return {
+        "at": at,
+        "totals": {
+            "nodes": len(cluster.get("nodes") or []),
+            "nodes_ready": sum(1 for n in cluster.get("nodes") or [] if n.get("ready")),
+            "flux": len(cluster.get("flux") or []),
+            "flux_red": len(cluster.get("flux_not_ready") or []),
+            "pods": cluster.get("pods_total") or 0,
+            "pods_red": len(cluster.get("pods_not_ready") or []),
+            "alerts_firing": len(
+                (cluster.get("monitoring") or {}).get("alerts_firing") or []
+            ),
+        },
+        "red_by_reason": dict(sorted(by_reason.items(), key=lambda kv: -kv[1])),
+        "groups": ordered,
+        "dark": {
+            "pods_no_telemetry": len(missing),
+            "pods_no_telemetry_sample": [
+                f"{m.get('ns')}/{m.get('pod')}" for m in missing[:10]
+            ],
+            "services_unlisted": len(unlisted),
+            "catalogue_drift": len(drift.get("missing") or drift.get("drift") or []),
+            "receipts_unreadable": dark,
+        },
+    }
+
+
+def text(view: dict) -> str:
+    t = view["totals"]
+    lines = [
+        f"estate receipt {view['at'] or '?'}: "
+        f"nodes {t['nodes_ready']}/{t['nodes']}, flux red {t['flux_red']}/{t['flux']}, "
+        f"pods red {t['pods_red']}/{t['pods']}, alerts firing {t['alerts_firing']}",
+        "red by reason: "
+        + (", ".join(f"{k} {v}" for k, v in view["red_by_reason"].items()) or "none"),
+    ]
+    for grp in view["groups"]:
+        if grp["flux_red"] or grp["pods_red"]:
+            lines.append(
+                f"  {grp['layer']:14} flux {grp['flux_red']}/{grp['flux_total']} red, pods {grp['pods_red']} red"
+            )
+            lines += [
+                f"      {r['kind']} {r['ns']}/{r['name']}: {r['why']}"
+                for r in grp["red"][:6]
+            ]
+    d = view["dark"]
+    lines.append(
+        f"dark: {d['pods_no_telemetry']} pods no telemetry, {d['services_unlisted']} services unlisted, "
+        f"{d['catalogue_drift']} catalogue drift, {len(d['receipts_unreadable'])} receipts unreadable"
+    )
+    lines += [f"      {r}" for r in d["receipts_unreadable"]]
+    return "\n".join(lines)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--cluster")
+    ap.add_argument("--coverage")
+    ap.add_argument("--drift")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    dark: list[str] = []
+    bodies = []
+    for path, reader in (
+        (a.cluster, "idp-cluster-state"),
+        (a.coverage, "idp-telemetry-coverage"),
+        (a.drift, "idp-catalogue-drift"),
+    ):
+        body, why = read_receipt(path, reader)
+        if why:
+            dark.append(why)
+        bodies.append(body)
+    view = build(bodies[0], bodies[1], bodies[2], dark)
+    print(json.dumps(view, indent=1, sort_keys=True) if a.json else text(view))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

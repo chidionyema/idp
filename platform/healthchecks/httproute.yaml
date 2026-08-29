@@ -18,6 +18,8 @@ spec:
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-jobs
   name: healthchecks
   namespace: healthchecks
 spec:
@@ -68,6 +70,8 @@ spec:
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-jobs
   name: healthchecks-ping
   namespace: healthchecks
   annotations:
