@@ -242,3 +242,20 @@ def test_the_reason_this_file_changed_is_written_in_it(policy):
     assert "does not run in sandboxed Tailscale GUI builds" in text, (
         "the reason Tailscale SSH is not used (kb/1193) left the header"
     )
+
+
+def test_the_file_carries_exactly_one_placeholder_and_only_in_the_body():
+    """Incident 2026-08-29 (oke-check run 33280019151): bin/idp-tailscale-policy greps the whole
+    rendered file for `${` after envsubst, comments included; a header comment that spelled the
+    placeholder shape out literally made the applier refuse its own policy, so Otto's key was
+    minted but the tailnet never learned the rule. The only `${` allowed is the group:founder
+    member, and it is substituted before PUT."""
+    text = POLICY.read_text()
+    assert text.count("${") == 1, (
+        "policy.hujson must carry exactly one ${...}, the group:founder member"
+    )
+    body = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("//"))
+    assert "${FOUNDER_TAILNET_USER}" in body
+    assert "${" not in "\n".join(
+        ln for ln in text.splitlines() if ln.lstrip().startswith("//")
+    )
