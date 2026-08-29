@@ -1,6 +1,6 @@
 # Demo: k8s-infra
 
-`platform/observability/k8s-infra.yaml` installs the SigNoz k8s-infra chart (0.17.0) next to
+`platform/observability-collector/k8s-infra.yaml` installs the SigNoz k8s-infra chart (0.17.0) next to
 the SigNoz release. One DaemonSet (otel-agent) collects host and kubelet metrics and container
 logs on every node; one Deployment (otel-deployment) collects cluster metrics and Kubernetes
 events. Both send OTLP to `signoz-otel-collector.observability.svc:4317`. It exists because the

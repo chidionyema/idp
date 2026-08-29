@@ -49,4 +49,5 @@ def test_every_validate_rule_names_operations_and_judges_a_delete_only_on_purpos
 
 
 def test_the_sweep_found_the_policies():
-    assert len(RULES) >= 15, [r[1] for r in RULES]
+    # 15 until the PersistentVolumeClaim rule was removed (2026-08-29, it judged the cluster default)
+    assert len(RULES) >= 14, [r[1] for r in RULES]

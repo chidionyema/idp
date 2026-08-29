@@ -29,6 +29,17 @@ spec:
   rules:
     - matches:
         - path: { type: PathPrefix, value: /oauth2/ }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: oauth2-proxy
           namespace: identity
@@ -39,6 +50,16 @@ spec:
             group: traefik.io
             kind: Middleware
             name: login-forward-auth
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: langfuse-web
           port: 3000
@@ -95,6 +116,17 @@ spec:
   rules:
     - matches:
         - path: { type: PathPrefix, value: /oauth2/ }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: oauth2-proxy
           namespace: identity
@@ -105,6 +137,16 @@ spec:
             group: traefik.io
             kind: Middleware
             name: login-forward-auth
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: signoz
           port: 8080
@@ -167,6 +209,16 @@ spec:
             group: traefik.io
             kind: Middleware
             name: otlp-basic-auth
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: signoz-otel-collector
           port: 4318

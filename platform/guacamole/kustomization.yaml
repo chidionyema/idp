@@ -11,3 +11,4 @@ resources:
   - guacamole.yaml
   - availability.yaml
   - httproute.yaml
+  - edge-manners.yaml
