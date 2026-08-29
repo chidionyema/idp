@@ -14,5 +14,6 @@ resources:
   - tailscale-operator-exception.yaml
   - kyverno.yaml
   - provider-independence.yaml
+  - dev-loop-policy.yaml
   - provider-edge-exception.yaml
   - provider-storage-exception.yaml
