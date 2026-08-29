@@ -26,6 +26,6 @@ reads git or OCI; OCI is the one that fits a generated file, so the catalog is p
 
 ## Known gap
 
-The Backstage image is `idp/backstage:local`, built by compose and imported into k3d. OKE
-needs it in ghcr for arm64; that build is idp#29. Until it merges the Flux `backstage`
+The Backstage image is `idp/backstage:local`, built from `backstage/Dockerfile` by
+`make catalogue-deploy` and imported into k3d. OKE needs it in ghcr for arm64; that build is idp#29. Until it merges the Flux `backstage`
 Kustomization health check reports the Deployment as not ready.

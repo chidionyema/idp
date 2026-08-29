@@ -1,5 +1,5 @@
 # The estate catalogue on Kubernetes. Phase 2 of docs/decisions/0004: the SAME
-# image backstage/compose.yml builds (idp/backstage:local), unchanged, with the
+# image backstage/Dockerfile builds (idp/backstage:local), unchanged, with the
 # database moved from a compose sidecar to a StatefulSet. Nothing in the image
 # knows which of the two it is running under.
 #
