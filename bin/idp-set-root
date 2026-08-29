@@ -51,13 +51,13 @@ ask() { # ask NAME "what it is"; hidden input, straight into gh, never echoed
 case "$P" in
   tailscale)
     echo "Tailscale: one OAuth client, once. The page is opening."
-    open_page "https://login.tailscale.com/admin/settings/oauth"
+    open_page "https://console.tailscale.com/admin/settings/trust-credentials"
     cat <<'T'
-        1. Press "Generate OAuth client".
+        1. This is the "Trust credentials" page. Press "Credential", then "OAuth".
         2. Description: estateseed
-        3. Scopes: tick only "OAuth keys" and choose Write. Leave every other box empty.
+        3. Under "OAuth keys" choose Write. Leave every other row empty.
         4. Tags, if the form asks: tag:k8s
-        5. Press "Generate client". Keep that window open; copy each value when asked below.
+        5. Press "Generate credential". Keep that window open; copy each value when asked below.
 T
     ask SEED_TAILSCALE_CLIENT_ID "the Client ID shown"
     ask SEED_TAILSCALE_CLIENT_SECRET "the Client secret shown" ;;
