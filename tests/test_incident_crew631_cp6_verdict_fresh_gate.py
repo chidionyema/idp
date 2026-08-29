@@ -133,4 +133,6 @@ def test_repo_rulesets_compares_the_required_contexts_not_only_rule_types():
     assert "{type}]}" not in s, (
         "a hand-edited required-check list read as ok on 2026-08-29"
     )
-    assert s.count("{type,parameters}]}") == 2
+    assert s.count("del(.do_not_enforce_on_create)") == 2, (
+        "GitHub adds that default; without dropping it every ruleset is DRIFT"
+    )
