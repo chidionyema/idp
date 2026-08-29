@@ -2,35 +2,38 @@
 
 Otto is the one pod holding the single Telegram poller lock (`gateway.yaml`, `replicas: 1`,
 `strategy: Recreate`) and, since crew#516 CP5, the one that runs its shell tools on the founder's
-Mac through `mac-run` (`mac-run.yaml`) over a Tailscale sidecar (`tailscale.yaml`) — never a key
-of its own, never the container's own sandbox.
+Mac through `mac-run` (`mac-run.yaml`) over a Tailscale sidecar (`tailscale.yaml`) — never the
+container's own sandbox.
 
 ## How it reaches the Mac
 
-- `tailscale.yaml`'s sidecar joins the tailnet using the same OAuth client that authenticates the
-  in-cluster operator (`platform/tailscale/`); a Tailscale OAuth client secret is itself a valid
-  device auth key, so no second credential is generated or held.
+- `tailscale.yaml`'s sidecar joins the tailnet with the operator OAuth client CI mints from the
+  federated identity (`bin/idp-bootstrap-tailscale`, vault `tailscale-operator`); a Tailscale OAuth
+  client secret is itself a valid device auth key, so no second tailnet credential exists.
 - `mac-run.yaml` is a ConfigMap mounted executable at `/usr/local/bin/mac-run` in the `gateway`
   container. It runs `ssh` through the sidecar's SOCKS5 proxy to `${FOUNDER_MAC_USER}@${FOUNDER_MAC_TS_IP}`
-  — both Flux `postBuild` substitutions from `clusters/oke/estate-config.yaml` (LAW 46: those two
-  values are never written as literals anywhere else in this repository).
-- Authentication is Tailscale SSH: node identity, no keypair, no `authorized_keys`. The tailnet
-  policy that allows it (`tag:k8s` → `tag:founder-mac`) lives in `platform/tailscale/policy.hujson`
-  and is applied by `bin/idp-tailscale-policy`, run from CI (`oke-check`'s apply job).
+  — both Flux `postBuild` substitutions from `clusters/oke/estate-config.yaml` (LAW 46).
+- Authentication is an ed25519 key to macOS Remote Login (sshd). Tailscale SSH was the first
+  design and was measured impossible on the founder's Mac: the App Store Tailscale build refuses
+  `tailscale up --ssh` ("does not run in sandboxed Tailscale GUI builds", kb/1193), and the Mac is tagged `tag:founder-mac` (measured), so every rule names the tag. The key is minted on a CI
+  runner by `bin/idp-bootstrap-macrun` into vault `hermes-mac-run`, reaches the pod through
+  `mac-run-key.yaml` (ExternalSecret, decoded, mounted at `/run/secrets/hermes-agent-mac-run`), and
+  its public half is authorised on the Mac by `bin/idp-mac-adopt-otto`, which reads it from the
+  apply run's log. No value is shown, pasted or typed anywhere.
+- The tailnet policy (`platform/tailscale/policy.hujson`, applied by `bin/idp-tailscale-policy` from
+  CI) lets `tag:k8s` at the Mac on 22 (mac-run) and 5900 (Guacamole's VNC egress) and nothing
+  else, and the founder's login at the Mac on every port.
 
-## Founder hand, total: one (and none for the config)
+## Founder hand, total: none (one command on the Mac, run by a session)
 
-Two repository secrets, `SEED_TAILSCALE_OAUTH_CLIENT_ID` and `SEED_TAILSCALE_OAUTH_CLIENT_SECRET`,
-carry the one Tailscale OAuth client this estate needs (scope `auth_keys` + `policy_file`, tag
-`tag:k8s`) — the same seeding path every other provider key in this estate uses (Minimax,
-Anthropic, R2, GitHub App: `.github/workflows/vault-seed.yml`, entry `tailscale-operator`). `FOUNDER_MAC_USER` and `FOUNDER_MAC_TS_IP` in `clusters/oke/estate-config.yaml`
-are measured on the Mac and already filled; the tailnet login is read from the API. Run
-`tailscale up --ssh --advertise-tags=tag:founder-mac` on the Mac (`docs/founder/mac-remote-desk/README.md`).
-Nothing else here needs a hand.
+`FOUNDER_MAC_USER` and `FOUNDER_MAC_TS_IP` are measured on the Mac and already filled; the tailnet
+login is read from the API; the key is born in CI. The only step that must run on the Mac itself is
+`bin/idp-mac-adopt-otto`, and a session on the Mac runs it. The image (`ghcr.io/chidionyema/hermes-agent`,
+built from `hermes-v2`) carries `ssh` and `nc`, mac-run's two binaries (hermes-v2 Dockerfile).
 
-## Not done
+## Proof
 
-- The gateway image (`ghcr.io/chidionyema/hermes-agent`, built from the separate `hermes-v2` repo)
-  is not confirmed from this checkout to carry `ssh`/`nc` — `mac-run`'s two binaries.
-- The "sleeping Mac" Telegram sentence (`docs/founder/otto-on-the-mac.md`) is application behaviour
-  in `hermes-v2`, a separate repository; this row wires the transport, not the reply text.
+`oke-check` mode `break-glass`, playbook `otto-parity` (`bin/idp-oke-break-glass`): gateway ready
+and not restarting, key mounted, tailnet up, `mac-run hostname` answers with the Mac's name, the
+memory service answers, the cron lanes are installed, and the model lane is printed. A red step is
+the finding. This is the from-scratch proof; nothing here is claimed from a laptop.

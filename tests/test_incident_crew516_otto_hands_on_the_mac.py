@@ -43,6 +43,7 @@ Rung 2 properties over the checkout (no network, no cluster):
   - (C) Otto is a founder surface: `backstage/founder/catalog-info.yaml` carries a `founder-otto`
     Component whose links all resolve, with no unsubstituted `${...}`.
 """
+
 import json
 import pathlib
 import re
@@ -70,9 +71,18 @@ OKE_CHECK = ROOT / ".github" / "workflows" / "oke-check.yml"
 POLICY_SCRIPT = ROOT / "bin" / "idp-tailscale-policy"
 
 # Tailscale's own CGNAT range for tailnet addresses (kb/1015/100.x-addresses): 100.64.0.0/10.
-TAILNET_IP_RE = re.compile(r"\b100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b")
+TAILNET_IP_RE = re.compile(
+    r"\b100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b"
+)
 # LAW 45: the rejected sentence of 5451623095/5451909915, never again in a README or doc.
-TOIL_PHRASES = ("paste this", "manually create", "founder must", "click here", "log into the web interface", "paste it into")
+TOIL_PHRASES = (
+    "paste this",
+    "manually create",
+    "founder must",
+    "click here",
+    "log into the web interface",
+    "paste it into",
+)
 TOUCHED_DOCS = [
     ROOT / "platform" / "hermes-agent" / "README.md",
     ROOT / "docs" / "founder" / "otto-on-the-mac.md",
@@ -96,6 +106,7 @@ def _gateway_containers():
 # Phase 1: the operator, authenticated by one OAuth client, seeded like every other provider key.
 # ---------------------------------------------------------------------------
 
+
 def test_the_operator_helmrelease_reads_its_oauth_client_from_a_secret_not_a_literal():
     """The chart has no *FromSecret values field (verified live, `helm show values
     tailscale-operator --version 1.102.3`, 2026-08-28): leaving `oauth` unset in values makes it
@@ -112,45 +123,81 @@ def test_the_operator_helmrelease_reads_its_oauth_client_from_a_secret_not_a_lit
 
 def test_the_operator_secret_comes_from_the_one_vault_entry():
     es = next(d for d in _docs(OPERATOR_SECRET) if d["kind"] == "ExternalSecret")
-    assert es["metadata"]["name"] == "tailscale-operator-secret" and es["metadata"]["namespace"] == "tailscale"
+    assert (
+        es["metadata"]["name"] == "tailscale-operator-secret"
+        and es["metadata"]["namespace"] == "tailscale"
+    )
     assert es["spec"]["target"]["name"] == "operator-oauth"
     keys = {e["secretKey"]: e["remoteRef"] for e in es["spec"]["data"]}
     assert keys["client_id"] == {"key": "tailscale-operator", "property": "client_id"}
-    assert keys["client_secret"] == {"key": "tailscale-operator", "property": "client_secret"}
+    assert keys["client_secret"] == {
+        "key": "tailscale-operator",
+        "property": "client_secret",
+    }
 
 
 def test_operator_kustomization_carries_its_resources():
     ks = yaml.safe_load(OPERATOR_KUSTOMIZATION.read_text())
-    assert set(ks["resources"]) >= {"namespace.yaml", "external-secret.yaml", "operator.yaml"}
-    assert "policy.hujson" not in ks["resources"], "not a Kubernetes manifest; applied by bin/idp-tailscale-policy"
+    assert set(ks["resources"]) >= {
+        "namespace.yaml",
+        "external-secret.yaml",
+        "operator.yaml",
+    }
+    assert "policy.hujson" not in ks["resources"], (
+        "not a Kubernetes manifest; applied by bin/idp-tailscale-policy"
+    )
 
 
 def test_flux_row_wires_the_operator_after_secret_store():
-    rows = [d for d in yaml.safe_load_all((ROOT / "clusters/oke/platform.yaml").read_text()) if d and d.get("kind") == "Kustomization" and d["metadata"]["name"] == "tailscale"]
+    rows = [
+        d
+        for d in yaml.safe_load_all((ROOT / "clusters/oke/platform.yaml").read_text())
+        if d
+        and d.get("kind") == "Kustomization"
+        and d["metadata"]["name"] == "tailscale"
+    ]
     (row,) = rows
     assert row["spec"]["path"] == "./platform/tailscale"
     assert {"name": "secret-store"} in row["spec"]["dependsOn"]
-    assert row["spec"]["healthChecks"] == [{"apiVersion": "apps/v1", "kind": "Deployment", "name": "tailscale-operator", "namespace": "tailscale"}]
+    assert row["spec"]["healthChecks"] == [
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "name": "tailscale-operator",
+            "namespace": "tailscale",
+        }
+    ]
 
 
 def test_vault_seed_carries_the_one_oauth_client_entry_never_a_reusable_key():
     wf = yaml.safe_load(VAULT_SEED.read_text())
-    on_key = "on" if "on" in wf else True  # PyYAML 1.1 resolves the bare `on:` scalar to bool True
+    on_key = (
+        "on" if "on" in wf else True
+    )  # PyYAML 1.1 resolves the bare `on:` scalar to bool True
     options = wf[on_key]["workflow_dispatch"]["inputs"]["entry"]["options"]
     assert "tailscale-operator" in options
-    assert "hermes-agent-tailscale" not in options, "the design that entry belonged to (5451614620) was rejected"
+    assert "hermes-agent-tailscale" not in options, (
+        "the design that entry belonged to (5451614620) was rejected"
+    )
     raw = VAULT_SEED.read_text()
     # crew#66 root trust (5453747447, crew#576): the OAuth client is born by bin/idp-bootstrap-tailscale,
     # which writes the vault itself; vault-seed REFUSES the entry instead of pasting it from a GitHub secret.
-    assert "put tailscale-operator client_id=" not in raw, "the pasted-secret path is gone (crew#66 root trust)"
+    assert "put tailscale-operator client_id=" not in raw, (
+        "the pasted-secret path is gone (crew#66 root trust)"
+    )
     assert "born by bin/idp-bootstrap-tailscale, never seeded by hand" in raw
-    assert "TAILSCALE_OAUTH_CLIENT_SECRET" not in raw, "no GitHub secret holds the client secret"
-    assert "SEED_TS_AUTHKEY" not in raw, "the reusable-key seeding path (5451614620) is gone, not just renamed"
+    assert "TAILSCALE_OAUTH_CLIENT_SECRET" not in raw, (
+        "no GitHub secret holds the client secret"
+    )
+    assert "SEED_TS_AUTHKEY" not in raw, (
+        "the reusable-key seeding path (5451614620) is gone, not just renamed"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Phase 2: the tailnet policy, in git, one ssh rule, applied by CI.
 # ---------------------------------------------------------------------------
+
 
 def _policy_hujson():
     # hujson allows comments and trailing commas; strip both for a plain json.loads.
@@ -160,38 +207,46 @@ def _policy_hujson():
     return json.loads(no_trailing_commas)
 
 
-def test_policy_carries_one_ssh_rule_per_named_source_and_no_open_one():
-    """crew#516 locked one rule (tag:k8s -> tag:founder-mac, check). crew#562 measured that the same
-    file locks the founder's own iPhone out of his tagged Mac (tagging removes user identity,
-    kb/1068), so the spec now names TWO sources and nothing else: the cluster, and group:founder,
-    whose only member is his tailnet login. LAW 45 still holds: no rule takes an open source
-    (autogroup:member, *, autogroup:members) and no destination is repeated across rules."""
+def test_policy_has_no_ssh_section_and_no_open_source():
+    """crew#516 locked a Tailscale SSH rule; crew#561 measured that Tailscale SSH cannot run on the
+    founder's GUI Tailscale build (kb/1193); the Mac is tagged (measured), so rules name the tag.
+    sshd on the Mac decides port 22 now, so an `ssh` section is a promise nothing keeps. LAW 45
+    still holds: no rule takes an open source (autogroup:member, *, autogroup:members)."""
     pol = _policy_hujson()
-    rules = pol["ssh"]
-    assert [r["src"] for r in rules] == [["tag:k8s"], ["group:founder"]], "exactly the two named sources, in that order"
-    assert [r["action"] for r in rules] == ["check", "accept"]
-    for r in rules:
-        assert r["dst"] == ["tag:founder-mac"]
-        assert r["users"] == ["${FOUNDER_MAC_USER}"], "LAW 46: no literal founder username in git"
-    assert pol["groups"] == {"group:founder": ["${FOUNDER_TAILNET_USER}"]}, "LAW 46: the login is substituted, never typed"
+    assert "ssh" not in pol
+    assert pol["groups"] == {"group:founder": ["${FOUNDER_TAILNET_USER}"]}, (
+        "LAW 46: the login is substituted, never typed"
+    )
+    open_sources = {"*", "autogroup:member", "autogroup:members", "autogroup:tagged"}
+    for r in pol["acls"]:
+        assert not open_sources & set(r["src"]), (
+            "an open source is the lockout the spec forbids"
+        )
 
 
 def test_policy_acl_and_tag_owners_match_the_locked_spec():
     pol = _policy_hujson()
-    assert {"tag:k8s", "tag:founder-mac"} <= set(pol["tagOwners"])
+    assert set(pol["tagOwners"]) == {"tag:k8s", "tag:founder-mac"}, (
+        "crew#561: the Mac carries tag:founder-mac (measured 2026-08-29); the cluster carries tag:k8s"
+    )
     assert pol["acls"] == [
-        {"action": "accept", "src": ["tag:k8s"], "dst": ["tag:founder-mac:22"]},
-        {"action": "accept", "src": ["group:founder"], "dst": ["tag:founder-mac:22", "tag:founder-mac:47984-48010"]},
+        {
+            "action": "accept",
+            "src": ["tag:k8s"],
+            "dst": ["tag:founder-mac:22", "tag:founder-mac:5900"],
+        },
+        {
+            "action": "accept",
+            "src": ["group:founder"],
+            "dst": ["tag:founder-mac:*", "autogroup:self:*"],
+        },
     ]
-    open_sources = {"*", "autogroup:member", "autogroup:members", "autogroup:tagged"}
-    for section in ("acls", "ssh"):
-        for r in pol[section]:
-            assert not open_sources & set(r["src"]), f"{section}: an open source is the lockout the spec forbids"
-
 
 
 def test_tailscale_policy_script_exists_executable_and_reads_the_estate_config():
-    assert POLICY_SCRIPT.exists() and (POLICY_SCRIPT.stat().st_mode & 0o111), "bin/idp-tailscale-policy must be executable"
+    assert POLICY_SCRIPT.exists() and (POLICY_SCRIPT.stat().st_mode & 0o111), (
+        "bin/idp-tailscale-policy must be executable"
+    )
     raw = POLICY_SCRIPT.read_text()
     assert "FOUNDER_MAC_USER" in raw and "estate-config.yaml" in raw
     assert "api.tailscale.com/api/v2/tailnet" in raw
@@ -205,16 +260,24 @@ def test_oke_check_apply_runs_the_policy_script_never_a_laptop():
     assert "bin/idp-tailscale-policy apply" in step
 
 
-def test_mac_checklist_advertises_the_policy_tag_and_names_no_admin_console_step():
+def test_mac_checklist_names_the_adopt_command_and_no_admin_console_step():
     raw = (ROOT / "docs" / "founder" / "mac-remote-desk" / "README.md").read_text()
-    assert "tailscale up --ssh --advertise-tags=tag:founder-mac" in raw
-    assert "admin console" not in raw.lower() or "no admin-console edit" in raw.lower() or "no ACL step" in raw
+    assert "tailscale up --ssh" not in raw, (
+        "crew#561: Tailscale SSH does not run on the GUI build; the checklist must not ask for it"
+    )
+    assert "bin/idp-mac-adopt-otto" in raw
+    assert (
+        "admin console" not in raw.lower()
+        or "no admin-console edit" in raw.lower()
+        or "no ACL step" in raw
+    )
 
 
 # ---------------------------------------------------------------------------
 # the tailscale sidecar (Phase 3): TS_AUTHKEY is a file, never a literal or secretKeyRef, minted
 # from the SAME OAuth client Phase 1 reads.
 # ---------------------------------------------------------------------------
+
 
 def test_tailscale_sidecar_present_in_the_gateway_pod():
     names = {c["name"] for c in _gateway_containers()}
@@ -226,7 +289,9 @@ def test_ts_authkey_is_a_file_never_a_literal_or_a_secretkeyref():
     ts = next(c for c in _gateway_containers() if c["name"] == "tailscale")
     env = {e["name"]: e for e in ts["env"]}
     authkey = env["TS_AUTHKEY"]
-    assert "valueFrom" not in authkey, "Kyverno secrets-not-from-env-vars (crew#341) refuses secretKeyRef"
+    assert "valueFrom" not in authkey, (
+        "Kyverno secrets-not-from-env-vars (crew#341) refuses secretKeyRef"
+    )
     assert authkey["value"].startswith("file:")
     assert "tskey-" not in authkey["value"], "no literal Tailscale key in this file"
 
@@ -236,7 +301,10 @@ def test_the_authkey_file_is_mounted_from_the_hermes_agent_tailscale_secret():
     mounts = {m["mountPath"]: m for m in ts["volumeMounts"]}
     mount_path = next(p for p in mounts if "hermes-agent-tailscale" in p)
     vol_name = mounts[mount_path]["name"]
-    volumes = {v["name"]: v for v in _gateway_deployment()["spec"]["template"]["spec"]["volumes"]}
+    volumes = {
+        v["name"]: v
+        for v in _gateway_deployment()["spec"]["template"]["spec"]["volumes"]
+    }
     assert volumes[vol_name]["secret"]["secretName"] == "hermes-agent-tailscale"
 
 
@@ -253,39 +321,92 @@ def test_the_sidecars_own_secret_is_composed_from_the_one_oauth_client_not_a_sec
     es = next(d for d in _docs(TAILSCALE) if d["kind"] == "ExternalSecret")
     assert es["metadata"]["name"] == "hermes-agent-tailscale"
     keyed = {e["secretKey"]: e["remoteRef"] for e in es["spec"]["data"]}
-    assert keyed["client_secret"] == {"key": "tailscale-operator", "property": "client_secret"}, "same vault entry Phase 1 reads, not a hand-minted one"
+    assert keyed["client_secret"] == {
+        "key": "tailscale-operator",
+        "property": "client_secret",
+    }, "same vault entry Phase 1 reads, not a hand-minted one"
     template = es["spec"]["target"]["template"]["data"]["TS_AUTHKEY"]
-    assert "{{ .client_secret }}" in template and "ephemeral=false" in template and "preauthorized=true" in template
+    assert (
+        "{{ .client_secret }}" in template
+        and "ephemeral=false" in template
+        and "preauthorized=true" in template
+    )
 
 
 # ---------------------------------------------------------------------------
 # mac-run: no literal Tailscale IP, no ssh key, executable.
 # ---------------------------------------------------------------------------
 
+
 def test_mac_run_script_carries_the_placeholders_not_a_literal_ip():
     docs = _docs(MAC_RUN)
-    cm = next(d for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "hermes-agent-mac-run")
+    cm = next(
+        d
+        for d in docs
+        if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "hermes-agent-mac-run"
+    )
     script = cm["data"]["mac-run"]
     assert "${FOUNDER_MAC_TS_IP}" in script
     assert "${FOUNDER_MAC_USER}" in script
-    assert not TAILNET_IP_RE.search(script), "a literal tailnet (100.64.0.0/10) address in the script"
+    assert not TAILNET_IP_RE.search(script), (
+        "a literal tailnet (100.64.0.0/10) address in the script"
+    )
 
 
-def test_mac_run_has_no_ssh_key_flag_and_no_key_is_mounted():
+def test_mac_run_uses_the_ci_minted_key_and_no_key_is_ever_in_git():
+    """crew#561: the key is born on a CI runner (bin/idp-bootstrap-macrun) into the vault and
+    reaches the pod as a file; mac-run copies it to 0600 because sshd refuses a group-readable one.
+    No key material, no authorized_keys line, in any manifest."""
     docs = _docs(MAC_RUN)
-    cm = next(d for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "hermes-agent-mac-run")
+    cm = next(
+        d
+        for d in docs
+        if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "hermes-agent-mac-run"
+    )
     script = cm["data"]["mac-run"]
-    assert " -i " not in script and not script.strip().endswith("-i"), "Tailscale SSH needs no key flag"
-    assert "id_rsa" not in script and "id_ed25519" not in script and "ssh-keygen" not in script
-    for f in (GATEWAY, MAC_RUN, TAILSCALE, ESTATE, OPERATOR, OPERATOR_SECRET, POLICY, POLICY_SCRIPT):
+    assert (
+        "/run/secrets/hermes-agent-mac-run" in script and "IdentitiesOnly=yes" in script
+    )
+    assert "umask 077" in script and "UserKnownHostsFile" in script
+    for f in (
+        GATEWAY,
+        MAC_RUN,
+        TAILSCALE,
+        ESTATE,
+        OPERATOR,
+        OPERATOR_SECRET,
+        POLICY,
+        POLICY_SCRIPT,
+    ):
         text = f.read_text()
-        assert "ssh-keygen" not in text
-        assert "authorized_keys" not in text
         assert "-----BEGIN" not in text
+        assert "ssh-ed25519 AAAA" not in text
+    key_es = next(
+        d
+        for d in _docs(ROOT / "platform/hermes-agent/mac-run-key.yaml")
+        if d["kind"] == "ExternalSecret"
+    )
+    assert key_es["spec"]["data"][0]["remoteRef"] == {
+        "key": "hermes-mac-run",
+        "property": "private_key_b64",
+    }
+    assert "b64dec" in key_es["spec"]["target"]["template"]["data"]["id_ed25519"]
+    volumes = {
+        v["name"]: v
+        for v in _gateway_deployment()["spec"]["template"]["spec"]["volumes"]
+    }
+    assert volumes["mac-run-key"]["secret"] == {
+        "secretName": "hermes-agent-mac-run",
+        "optional": True,
+        "defaultMode": 0o440,
+    }
 
 
 def test_mac_run_is_mounted_executable_at_usr_local_bin():
-    volumes = {v["name"]: v for v in _gateway_deployment()["spec"]["template"]["spec"]["volumes"]}
+    volumes = {
+        v["name"]: v
+        for v in _gateway_deployment()["spec"]["template"]["spec"]["volumes"]
+    }
     mac_run_vol = volumes["mac-run"]
     assert mac_run_vol["configMap"]["name"] == "hermes-agent-mac-run"
     assert mac_run_vol["configMap"]["defaultMode"] == 0o755
@@ -304,12 +425,18 @@ def test_founder_mac_user_and_ip_are_declared_estate_config_keys():
 
 def test_kustomization_carries_the_new_resources():
     ks = yaml.safe_load(KUSTOMIZATION.read_text())
-    assert set(ks["resources"]) >= {"gateway.yaml", "estate.yaml", "mac-run.yaml", "tailscale.yaml"}
+    assert set(ks["resources"]) >= {
+        "gateway.yaml",
+        "estate.yaml",
+        "mac-run.yaml",
+        "tailscale.yaml",
+    }
 
 
 # ---------------------------------------------------------------------------
 # LAW 45: the paste-habit mistake ends as a guard, not a repeated sentence.
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("directory", [HERMES_AGENT_DIR, OPERATOR_DIR])
 def test_no_authkey_literal_or_ssh_keypair_anywhere_in_the_two_directories(directory):
@@ -318,15 +445,21 @@ def test_no_authkey_literal_or_ssh_keypair_anywhere_in_the_two_directories(direc
     # for the actual banned toil phrases. Manifests, scripts and the policy file may never contain
     # any of these strings at all: there is no legitimate reason for one to appear there.
     for f in directory.rglob("*"):
-        if f.is_file() and (f.suffix in (".yaml", ".yml", ".hujson") or f.name.startswith("idp-")):
+        if f.is_file() and (
+            f.suffix in (".yaml", ".yml", ".hujson") or f.name.startswith("idp-")
+        ):
             text = f.read_text()
-            assert not re.search(r"tskey-(client|auth)-[A-Za-z0-9]", text), f"{f}: a live-shaped Tailscale key"
+            assert not re.search(r"tskey-(client|auth)-[A-Za-z0-9]", text), (
+                f"{f}: a live-shaped Tailscale key"
+            )
             assert "authorized_keys" not in text, f
             assert "ssh-keygen" not in text, f
             assert "-----BEGIN" not in text, f
         elif f.is_file() and f.suffix == ".md":
             text = f.read_text()
-            assert not re.search(r"tskey-(client|auth)-[A-Za-z0-9]", text), f"{f}: a live-shaped Tailscale key"
+            assert not re.search(r"tskey-(client|auth)-[A-Za-z0-9]", text), (
+                f"{f}: a live-shaped Tailscale key"
+            )
             assert "-----BEGIN" not in text, f
 
 
@@ -334,12 +467,15 @@ def test_no_authkey_literal_or_ssh_keypair_anywhere_in_the_two_directories(direc
 def test_no_toil_phrase_in_a_touched_readme_or_doc(doc):
     text = doc.read_text().lower()
     for phrase in TOIL_PHRASES:
-        assert phrase not in text, f"{doc}: {phrase!r} is the mistake 5451623095/5451909915 named"
+        assert phrase not in text, (
+            f"{doc}: {phrase!r} is the mistake 5451623095/5451909915 named"
+        )
 
 
 # ---------------------------------------------------------------------------
 # the executor runs through mac-run.
 # ---------------------------------------------------------------------------
+
 
 def test_executor_runs_through_mac_run():
     cfg = yaml.safe_load(ESTATE.read_text())
@@ -367,6 +503,7 @@ def test_no_ssh_flag_or_key_in_the_executor_line():
 # ---------------------------------------------------------------------------
 # (A) single Telegram poller lock.
 # ---------------------------------------------------------------------------
+
 
 def test_hermes_agent_gateway_is_one_replica_recreate():
     dep = _gateway_deployment()
@@ -398,7 +535,9 @@ def test_the_model_is_a_config_key_not_an_inline_endpoint():
     models = doc["models"]
     assert set(models) == {"watch", "work"}
     for v in models.values():
-        assert not v.startswith("http"), f"a model value must be a name, not an endpoint: {v}"
+        assert not v.startswith("http"), (
+            f"a model value must be a name, not an endpoint: {v}"
+        )
 
 
 def test_the_estate_router_config_exists_and_is_the_only_one():
@@ -412,6 +551,7 @@ def test_the_estate_router_config_exists_and_is_the_only_one():
 # ---------------------------------------------------------------------------
 # (C) founder surface.
 # ---------------------------------------------------------------------------
+
 
 def test_founder_otto_surface_exists_and_carries_no_unresolved_link():
     docs = _docs(FOUNDER)
@@ -432,5 +572,12 @@ def test_founder_otto_link_urls_are_unique_in_the_file():
     """tests/test_incident_crew401_every_founder_surface_is_in_the_catalogue.py refuses a
     duplicate link URL anywhere in the file; check it here too so this test fails on its own."""
     docs = _docs(FOUNDER)
-    all_urls = [l["url"] for d in docs if d.get("kind") == "Component" for l in d["metadata"].get("links", [])]
-    assert len(all_urls) == len(set(all_urls)), "a link URL is reused across two Components"
+    all_urls = [
+        l["url"]
+        for d in docs
+        if d.get("kind") == "Component"
+        for l in d["metadata"].get("links", [])
+    ]
+    assert len(all_urls) == len(set(all_urls)), (
+        "a link URL is reused across two Components"
+    )

@@ -519,6 +519,23 @@ pb_architect_doctor() {
   show_redacted gateway-log-previous sh -c "$K logs deploy/hermes-agent-gateway -n $ns --all-containers --tail=40 --previous 2>&1 || echo 'no previous container (it has not restarted)'"
 }
 
+# otto-parity: crew#561, the from-scratch proof product will demand. Read-only. Each step is a
+# parity item from crew#561, graded from inside the running pod, never from a file on a laptop:
+# the gateway is up and not restarting, mac-run reaches the founder's Mac and runs a command
+# there, the memory service answers, the model lane is the estate router, and the cron lanes
+# are installed. A red step is the finding.
+pb_otto_parity() {
+  local ns=hermes-agent d=deploy/hermes-agent-gateway
+  step gateway-ready $K rollout status "$d" -n "$ns" --timeout=60s
+  step no-restart-loop sh -c "r=\$($K get pods -n $ns -l app=hermes-agent-gateway -o jsonpath='{.items[0].status.containerStatuses[?(@.name==\"gateway\")].restartCount}'); echo restarts=\$r; [ \"\${r:-0}\" -lt 5 ]"
+  step key-mounted $K exec "$d" -n "$ns" -c gateway -- sh -c 'test -s /run/secrets/hermes-agent-mac-run/id_ed25519 && echo key-present'
+  step tailnet-up $K exec "$d" -n "$ns" -c tailscale -- tailscale --socket=/tmp/tailscaled.sock status --json --peers=false
+  step mac-run-hostname $K exec "$d" -n "$ns" -c gateway -- mac-run hostname
+  step hindsight-answers $K exec "$d" -n "$ns" -c gateway -- python3 -c 'import os,urllib.request; u=os.environ["HINDSIGHT_API_URL"]; print(u, urllib.request.urlopen(u+"/health", timeout=5).status)'
+  step cron-lanes-installed sh -c "$K exec $d -n $ns -c gateway -- python3 -c 'import json; j=json.load(open(\"/data/cron/jobs.json\")); n=len(j.get(\"jobs\", j) if isinstance(j, dict) else j); print(\"jobs=%d\" % n); raise SystemExit(0 if n else 1)'"
+  show model-lane sh -c "$K exec $d -n $ns -c gateway -- sh -c 'grep -E \"^(model|provider|base_url|  provider|  base_url)\" /data/config.yaml | head -8'"
+}
+
 # catalogue-roll: crew#412, 2026-08-28: idp#564 (c6e6026) pinned the right portal image at 11:00Z
 # and the serving ReplicaSet was still catalogue-8647bbdc59 seventy minutes later (login-drill
 # 33168523304 red, "0 founder-surface entities"). The estate had a playbook to retry a HelmRelease
@@ -882,9 +899,10 @@ pb_chi_resize() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-parity cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
+  otto-parity) pb_otto_parity ;;
   router-spend) pb_router_spend ;;
   dns-per-node) pb_dns_per_node ;;
   dns-per-namespace) pb_dns_per_namespace ;;

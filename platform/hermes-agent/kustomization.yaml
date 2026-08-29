@@ -8,6 +8,7 @@ resources:
   - gateway.yaml
   - estate.yaml
   - mac-run.yaml
+  - mac-run-key.yaml
   - tailscale.yaml
 images:
   - name: ghcr.io/chidionyema/hermes-agent
