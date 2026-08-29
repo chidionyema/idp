@@ -91,17 +91,6 @@ spec:
         # round-trip with the identity domain; a fresh browser's callback must not be bounced to
         # the front door first, and `curl /api/auth/providers` is the operational proof.
         - path: { type: PathPrefix, value: /api/auth/ }
-      filters:
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: friendly-errors
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: edge-headers
       backendRefs:
         - name: langfuse-web
           port: 3000

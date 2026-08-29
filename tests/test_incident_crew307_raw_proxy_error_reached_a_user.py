@@ -25,6 +25,10 @@ def _app_rules():
         for d in _docs(f):
             if d.get("kind") != "HTTPRoute":
                 continue
+            if d["metadata"]["name"] == "langfuse-api":
+                # SDK-only route (project keys, no browser): crew#325/#503 keep it filter-free so
+                # ForwardAuth can never creep in; an HTML status page means nothing to an SDK.
+                continue
             for rule in d["spec"].get("rules", []):
                 if "backendRefs" in rule:
                     yield f, d["metadata"]["name"], rule
