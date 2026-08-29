@@ -94,15 +94,11 @@ def flux_reason(row: dict) -> str:
 
 
 def build(cluster: dict, coverage: dict, drift: dict, dark: list[str]) -> dict:
-    now = datetime.now(timezone.utc)
+    # Freshness is never measured here against this machine's clock (crew#583,
+    # bin/lib/receipt_age.py): each reader grades its own receipt's age on the storage
+    # service's clock and exits FAIL when stale; that verdict travels in
+    # dark.receipts_unreadable. The stamp is shown as the receipt wrote it.
     at = cluster.get("at") or ""
-    try:
-        age = int(
-            (now - datetime.fromisoformat(at.replace("Z", "+00:00"))).total_seconds()
-            // 60
-        )
-    except ValueError:
-        age = None
     groups: dict[str, dict] = {}
 
     def g(layer: str) -> dict:
