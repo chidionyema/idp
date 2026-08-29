@@ -282,8 +282,24 @@ optimised_line_ok if {
 	regex.match(`(?m)^Optimised: [^\n]*\d[^\n]*->[^\n]*\d[^\n]*; *cut: \S[^\n]*$`, input.pr.body)
 }
 
+# WHEN THE RULE STARTS JUDGING. LAW 51 landed on main in dca2a929 at 2026-08-29T02:28:20Z. Between
+# that commit and the next hour the rule turned nine open pull requests red -- five on prospector,
+# four here -- every one of them written, reviewed and green before the law existed. Their authors
+# could only have cleared it by inventing a counted plan for work nobody counted, which is a
+# fabricated receipt, and LAW 38 says a guard that refuses correct work is an outage. So the rule
+# reads the PR's opening time: from the moment the law existed, the plan is a precondition; before
+# it, there was nothing to precede. A report with no `createdAt` is judged -- the field is absent
+# only on a hand-built fixture or an old report, and the safe default there is to grade, not skip.
+law51_landed := "2026-08-29T02:28:20Z"
+
+opened_before_law51 if {
+	is_string(input.pr.createdAt)
+	input.pr.createdAt < law51_landed
+}
+
 deny contains msg if {
 	is_string(input.pr.body)
 	not optimised_line_ok
+	not opened_before_law51
 	msg := "rule=optimised_plan | the PR body has no counted `Optimised:` line (LAW 51) | fix: plan first, then add `Optimised: <steps before> -> <after>, <round trips before> -> <after>; cut: <what, why>` — numbers on both sides of the arrow and a cut clause; the procedure is in ~/AGENTS-FULL.md"
 }
