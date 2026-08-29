@@ -59,11 +59,7 @@ value with hidden input, sets the secret and dispatches the apply run (R53: inst
 action in one place, zero friction). After the secret is set, say "set" in
 Telegram; the next `oke-check` apply run does the rest.
 
-**Tailscale.** Admin console, Trust credentials page (kb/1215), Credential, OAuth, Generate credential. Description:
-`estateseed`. Scopes: tick only "OAuth keys", choose Write. Tags, if asked: `tag:k8s`. Generate.
-Then, on the laptop, paste each value when asked:
-`gh secret set SEED_TAILSCALE_CLIENT_ID -R chidionyema/idp` and
-`gh secret set SEED_TAILSCALE_CLIENT_SECRET -R chidionyema/idp`.
+**Tailscale.** `bin/idp-bootstrap-tailscale --seed` on the founder's Mac: real Chrome opens on the Trust credentials page in the estate profile; the founder completes SSO if asked and makes the console's own wizard clicks (Credential, OAuth, a description of letters and digits, tab Keys: OAuth keys write only, Generate credential); the script reads the generated pair off the page, proves it by token exchange and writes vault entry `tailscale-seed`. Nothing is typed, copied or pasted (R46, crew#66, restored 2026-08-29 from 30bd2bf0). `bin/idp-bootstrap-tailscale` then mints the operator client and registers the federated identity from code.
 
 **Cloudflare.** Dash, My Profile, API Tokens, Create Token, Custom token. Name: `estate-root`.
 Permissions: one row, "User", "User API Tokens", "Edit". TTL: one year. Create. Then
