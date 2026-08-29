@@ -37,7 +37,9 @@ data:
   # Registering it: console Trust credentials -> Add -> Federated identity, issuer
   # https://token.actions.githubusercontent.com, subject repo:chidionyema/idp:ref:refs/heads/main,
   # scope OAuth keys (write), tag tag:k8s. Paste the client id here, nothing else exists to paste.
-  TAILSCALE_FEDERATED_CLIENT_ID: ""
+  # Registered by the founder 2026-08-29 (description "estate", OIDC, scope oauth_keys, subject
+  # repo:chidionyema/idp:ref:refs/heads/main). A client id, not a secret.
+  TAILSCALE_FEDERATED_CLIENT_ID: "T8XvMsM4vA11CNTRL-kmgFbQMnqn11CNTRL"
   # crew#562: the founder's tailnet LOGIN, which is not the same thing as FOUNDER_MAC_USER above --
   # that one is the Unix account on the Mac. platform/tailscale/policy.hujson names this one as the
   # only member of group:founder, the rule that lets his iPhone reach his own tagged Mac (Moonlight
