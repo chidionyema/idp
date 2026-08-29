@@ -122,3 +122,14 @@ def test_the_prover_stores_the_verdict_after_the_artifact():
         and 'bin/idp-verdict store "$RUNNER_TEMP/verdict.json"' in wf
     )
     assert wf.index("upload-artifact") < wf.index("bin/idp-verdict store")
+
+
+def test_every_prover_runs_the_refuse_test_after_storing():
+    """CP3 accepts when an INSERT as agent_role is refused on a runner: every prover proves it
+    each hour, after its own row lands, never fatal to the check-run."""
+    for name in ("verdict-langfuse.yml", "verdict-backstage.yml"):
+        wf = open(os.path.join(IDP, ".github/workflows", name)).read()
+        assert "bin/idp-verdict refuse-test || true" in wf, name
+        assert wf.index("bin/idp-verdict store") < wf.index(
+            "bin/idp-verdict refuse-test"
+        ), name
