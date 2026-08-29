@@ -182,6 +182,8 @@ def test_policy_acl_and_tag_owners_match_the_locked_spec():
     assert pol["acls"] == [
         {"action": "accept", "src": ["tag:k8s"], "dst": ["tag:founder-mac:22"]},
         {"action": "accept", "src": ["group:founder"], "dst": ["tag:founder-mac:22", "tag:founder-mac:47984-48010"]},
+        # crew#307: the founder reaches the cluster API server through the operator on the tailnet
+        {"action": "accept", "src": ["group:founder"], "dst": ["tag:k8s-operator:443"]},
     ]
     open_sources = {"*", "autogroup:member", "autogroup:members", "autogroup:tagged"}
     for section in ("acls", "ssh"):
