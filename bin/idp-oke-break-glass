@@ -271,6 +271,12 @@ pb_diagnose() {
   # say whether the file is there, whether the catalogue read it, and what it holds.
   show catalogue-founder-file sh -c "$K exec -n backstage deploy/catalogue -- ls -la /estate /estate/founder 2>&1"
   show catalogue-founder-configmap sh -c "$K get configmap founder-catalog estate-catalog -n backstage -o jsonpath='{range .items[*]}{.metadata.name}{\"\t\"}{.metadata.creationTimestamp}{\"\n\"}{end}' 2>&1"
+  # crew#626 CP15: the drill on idp#808 lands on /auth/sign-in?error=OAuthCallback after the SSO
+  # click, with and without AUTH_CUSTOM_ID_TOKEN. The laptop has no cluster key by design, so the
+  # only place the callback error is readable is here: the auth lines of langfuse-web, and the
+  # three non-secret AUTH_CUSTOM_* values the pod actually runs with (never the client secret).
+  show langfuse-auth-env sh -c "$K exec -n observability deploy/langfuse-web -- sh -c 'env | grep -E \"^AUTH_CUSTOM_(ISSUER|ID_TOKEN|SCOPE|NAME|ALLOW_ACCOUNT_LINKING)=|^NEXTAUTH_URL=\"' 2>&1 | sort"
+  show langfuse-auth-log sh -c "$K logs -n observability deploy/langfuse-web --all-containers --tail=3000 2>&1 | grep -iE 'oauth|callback|issuer|id_token|jwt|openid|next-auth|\[next-auth\]' | tail -60"
   show catalogue-log-locations sh -c "$K logs -n backstage deploy/catalogue --all-containers --tail=2000 2>&1 | grep -iE 'founder|location|catalog.*(error|fail|refus|invalid)' | tail -40"
   show catalogue-entities sh -c "$K exec -n backstage deploy/catalogue -- sh -c 'wget -qO- http://catalogue.backstage.svc:3100/api/catalog/entities?filter=spec.type=founder-surface | head -c 600' 2>&1"
   show claims-not-bound sh -c "$K get pvc -A --field-selector=status.phase!=Bound 2>/dev/null; true"
