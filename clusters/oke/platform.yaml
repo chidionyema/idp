@@ -116,6 +116,31 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: observability-collector
+  namespace: flux-system
+spec:
+  # crew#584 traces/lean: the node agent alone. Enterprise adds the `observability` row (SigNoz
+  # store + Langfuse) on top; lean points otelCollectorEndpoint at an external OTLP endpoint.
+  interval: 10m
+  dependsOn:
+    - name: scheduling
+    - name: edge   # platform/edge/k8s-infra-namespace.yaml and the hostPath waiver live there
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/observability-collector
+  prune: true
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: k8s-infra
+      namespace: observability-agent
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: observability
   namespace: flux-system
 spec:
@@ -129,6 +154,9 @@ spec:
   interval: 10m
   dependsOn:
     - name: scheduling
+    # crew#584: the collector row owns k8s-infra now; ordering it first means the objects are
+    # relabelled to the new owner before this row's prune sees them as strays.
+    - name: observability-collector
     # Four ExternalSecrets (clickhouse-auth, langfuse-init, otlp-ingest-users, signoz-root) are in
     # this row; external-secrets.io only exists once the ESO chart has landed (crew#488).
     - name: external-secrets

@@ -48,7 +48,6 @@ features:
       - name: lean
         what: "collector only, traces forwarded to a remote Langfuse/OTLP endpoint; nothing stored on the node"
         switches: [observability-collector]
-        status: needs-split   # platform/observability carries collector + Langfuse + SigNoz in one Kustomization
     default: enterprise
 
   - name: logs-metrics-store
