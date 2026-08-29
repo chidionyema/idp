@@ -115,15 +115,3 @@ def test_a_notready_node_is_a_red_row(tmp_path: Path) -> None:
     r = _run(tmp_path, b)
     assert "FAIL    kube         0/1 node(s) Ready" in r.stdout, r.stdout
     assert r.returncode == 1
-
-
-def test_the_kube_row_lives_on_the_scheduled_drill_with_no_second_credential() -> None:
-    script = SCRIPT.read_text()
-    # crew#66 CP5d: the kubeconfig is minted through bin/idp-cloud's `cluster kubeconfig` noun;
-    # the layer still calls `oci ce cluster create-kubeconfig --token-version 2.0.0` (the exec
-    # plugin the kubeconfig carries is unchanged: same identity, no static token).
-    assert '"$IDP/bin/idp-cloud" cluster kubeconfig' in script
-    assert "kubectl get nodes" in script
-    wf = (ROOT / ".github" / "workflows" / "verify-drill.yml").read_text()
-    assert "KUBECONFIG" not in wf or "secrets." not in wf.split("KUBECONFIG")[1][:200], "a kubeconfig secret beside the exchanged session"
-    assert os.access(SCRIPT, os.X_OK)

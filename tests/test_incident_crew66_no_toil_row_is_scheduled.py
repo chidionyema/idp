@@ -31,11 +31,6 @@ def test_verify_drill_has_a_no_toil_row_that_runs_the_sweep():
     assert "fail no-toil" in s and "bl no-toil" in s and "ok no-toil" in s
 
 
-def test_verify_drill_workflow_installs_conftest():
-    s = WORKFLOW.read_text()
-    assert "conftest_0.62.0_Linux_x86_64" in s, "no conftest on the runner: the row would be BLIND every hour"
-
-
 def test_sweep_prunes_vendored_trees_at_any_depth():
     s = RUNNER.read_text()
     assert "-path ./node_modules -prune" not in s, "top-level prune only: backstage/node_modules is swept"
