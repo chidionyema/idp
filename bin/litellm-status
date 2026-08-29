@@ -59,5 +59,23 @@ echo "WHAT STILL DOES NOT GO THROUGH THIS PROXY, ON PURPOSE"
 echo "  claude_cli   local CLI on a subscription, not an API key -- prospector/claude_cli.py"
 echo "  gemini_cli   same -- prospector/gemini_cli.py"
 
+echo
+echo "LAPTOP CONSUMERS THAT STILL HOLD A VENDOR KEY (crew#568: the Mac holds one router key, LITELLM_API_KEY, and nothing else)"
+# Grades the files, never their values: a vendor host in a config or a vendor key NAME exported in a
+# shell file. Every one of these is a call that bypasses the router's budget, allow-list and trace.
+stray=0
+for f in "$HOME/.pi/models.json" "$HOME/.config/pi/config.json"; do
+  [ -r "$f" ] || continue
+  hosts=$(grep -o -E 'https?://[a-z0-9.-]*(minimax|deepseek|openrouter|groq|anthropic|openai|googleapis|mistral)[a-z0-9./-]*' "$f" | sort -u | tr '\n' ' ')
+  [ -z "$hosts" ] || { echo "  FAIL   $f -> $hosts"; stray=1; }
+done
+for f in "$HOME/.config/llm/secrets.sh" "$HOME/.config/wave/secrets.sh" "$HOME/.zshrc" "$HOME/.zshenv"; do
+  [ -r "$f" ] || continue
+  names=$(grep -o -E '^\s*export [A-Z_]*(MINIMAX|DEEPSEEK|OPENROUTER|GROQ|GEMINI|MISTRAL|CEREBRAS|OPENAI)[A-Z_]*_API_KEY' "$f" | sed 's/.*export //' | sort -u | tr '\n' ' ')
+  [ -z "$names" ] || { echo "  FAIL   $f exports $names"; stray=1; }
+done
+[ "$stray" = 0 ] && echo "  ok     none"
+
 [ "$live" = "200" ] || exit 1
+[ "$stray" = 0 ] || exit 1
 exit 0

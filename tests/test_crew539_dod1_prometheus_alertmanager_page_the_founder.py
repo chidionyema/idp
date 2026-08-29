@@ -142,7 +142,7 @@ def test_probe_targets_are_exactly_the_founder_surfaces_and_the_module_accepts_4
 def test_estate_rules_carry_founder_surface_down_and_the_cp14_pvc_alert():
     pr = one("platform/monitoring/rules/estate.yaml", "PrometheusRule", "estate")
     rules = {r["alert"]: r for g in pr["spec"]["groups"] for r in g["rules"]}
-    assert set(rules) == {"FounderSurfaceDown", "MacScreenSharingOff", "PersistentVolumeAlmostFull", "GatewayRefusals", "GatewayMetricsAbsent"}
+    assert set(rules) == {"FounderSurfaceDown", "MacScreenSharingOff", "PersistentVolumeAlmostFull", "GatewayRefusals", "GatewayMetricsAbsent", "OttoDown"}
     assert rules["FounderSurfaceDown"]["expr"] == 'probe_success{job="founder-surfaces"} == 0'
     assert rules["FounderSurfaceDown"]["labels"]["severity"] == "critical"
     pvc = rules["PersistentVolumeAlmostFull"]
