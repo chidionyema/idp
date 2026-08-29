@@ -180,6 +180,10 @@ pb_diagnose() {
   # the HelmRelease line for langfuse-web three times and never why).
   show stalled-deployments $K get deploy -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Progressing")]}{.status}{"\t"}{end}{.metadata.namespace}/{.metadata.name}{"\t"}{.status.readyReplicas}/{.spec.replicas}{"\t"}{range .status.conditions[?(@.type=="Progressing")]}{.reason}: {.message}{end}{"\n"}{end}'
   show pods-not-running $K get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded -o wide
+  # 2026-08-29 01:05Z: Namespace/backstage sat in Terminating for 46 minutes while every Flux row
+  # behind backstage-namespace cascaded, and diagnose printed nothing about it -- the namespace
+  # phase and what still holds it were the two lines the whole outage needed (LAW 28).
+  show namespaces-terminating sh -c "$K get ns -o jsonpath='{range .items[?(@.status.phase==\"Terminating\")]}{.metadata.name}{\"\\t\"}{.metadata.deletionTimestamp}{\"\\t\"}{range .status.conditions[?(@.status==\"True\")]}{.type}: {.message}{\"; \"}{end}{\"\\n\"}{end}'"
   # Run 33138549588 named the stalled ReplicaSet and stopped: the pod was Running, so the reason
   # (a readiness probe, a crash, a mount) was only in its events and log. Every pod that is
   # Running but not Ready is described and its last log lines printed; for pods that ended in
@@ -474,6 +478,37 @@ pb_catalogue_roll() {
   show_redacted founder-location sh -c "$K logs deploy/catalogue -n backstage --tail=4000 2>&1 | grep -iE 'founder|/estate/|location' | tail -40"
 }
 
+# 2026-08-29 01:05Z (founder ruling the same night, idp#686): idp#648 moved the portal's
+# namespace.yaml between two Flux rows; the old row pruned Namespace/backstage, the delete hung in
+# Terminating on leftover finalizers, the new row waited on it, and the front door answered 404
+# for the hour it took to find out. This playbook is the repair for a namespace stuck in
+# Terminating: print the namespace's own conditions (which name what holds it), list every
+# object still inside it, clear the finalizers on those objects -- never on the namespace itself,
+# never a delete -- and then ask Flux to reconcile the row that recreates it. When the condition
+# is NamespaceDeletionDiscoveryFailure the block is a dead APIService, not an object; that is
+# printed and left, because deleting an APIService is a different decision.
+pb_namespace_unstick() {
+  local stuck ns
+  stuck=$($K get ns -o jsonpath='{range .items[?(@.status.phase=="Terminating")]}{.metadata.name}{"\n"}{end}')
+  echo "--- namespaces-terminating"; printf '%s\n' "${stuck:-none}"
+  for ns in $stuck; do
+    show "conditions $ns" $K get ns "$ns" -o jsonpath='{range .status.conditions[?(@.status=="True")]}{.type}: {.message}{"\n"}{end}'
+    show "remaining $ns" sh -c "$K api-resources --verbs=list --namespaced -o name | xargs -n1 -I{} $K get {} -n $ns --ignore-not-found -o name 2>/dev/null"
+    local objs
+    objs=$($K api-resources --verbs=list --namespaced -o name | xargs -n1 -I{} $K get {} -n "$ns" --ignore-not-found -o jsonpath='{range .items[?(@.metadata.finalizers)]}{.kind}/{.metadata.name}{"\n"}{end}' 2>/dev/null | tr 'A-Z' 'a-z')
+    local o
+    for o in $objs; do
+      step "unfinalize $ns/$o" $K patch "$o" -n "$ns" --type=merge -p '{"metadata":{"finalizers":null}}'
+    done
+    step "gone $ns" $K wait ns "$ns" --for=delete --timeout=3m
+  done
+  step flux-source flux reconcile source git flux-system -n flux-system --timeout=3m
+  step backstage-namespace flux reconcile kustomization backstage-namespace -n flux-system --timeout=5m
+  step backstage flux reconcile kustomization backstage -n flux-system --timeout=5m
+  show namespaces $K get ns
+  show pods $K get pods -n backstage -o wide
+}
+
 pb_helm_retry() {
   local failed
   failed=$($K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{" "}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null | awk '$1=="False"{print $2" "$3}')
@@ -697,7 +732,7 @@ pb_chi_resize() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll"; exit 0 ;;
+  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll namespace-unstick"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   dns-per-node) pb_dns_per_node ;;
@@ -710,6 +745,7 @@ case "${1:-}" in
   node-drain) pb_node_drain ;;
   node-uncordon) pb_node_uncordon ;;
   chi-resize) pb_chi_resize ;;
+  namespace-unstick) pb_namespace_unstick ;;
   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
 esac
 [ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }
