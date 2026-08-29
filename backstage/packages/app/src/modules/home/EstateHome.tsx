@@ -64,6 +64,20 @@ export const triage = (surfaces: Entity[], now: number = Date.now()): Entity[] =
 
 export const needsYou = (h: Health) => h === 'down' || h === 'stale';
 
+// crew#307 (founder, 2026-08-29: "do you really think the founder has time to be scrolling
+// down looking for stuff", "group and categorise properly"): every door is one row under its
+// group, the whole estate on one phone screen. The group is the `estate/group` annotation in
+// backstage/founder/catalog-info.yaml; a door without one lands under "Other" so it is never hidden.
+export const GROUP_ORDER = ['Watch', 'Run', 'Build', 'Companies', 'Other'];
+export const groupOf = (entity: Entity): string =>
+  (entity.metadata.annotations ?? {})['estate/group'] || 'Other';
+export const grouped = (surfaces: Entity[]): [string, Entity[]][] => {
+  const by = new Map<string, Entity[]>();
+  for (const e of surfaces) by.set(groupOf(e), [...(by.get(groupOf(e)) ?? []), e]);
+  const order = (g: string) => (GROUP_ORDER.includes(g) ? GROUP_ORDER.indexOf(g) : GROUP_ORDER.length);
+  return [...by.entries()].sort((a, b) => order(a[0]) - order(b[0]) || a[0].localeCompare(b[0]));
+};
+
 const useStyles = makeStyles(theme => ({
   card: {
     display: 'flex',
@@ -104,12 +118,32 @@ const useStyles = makeStyles(theme => ({
   band: {
     marginBottom: theme.spacing(3),
   },
+  row: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+    padding: theme.spacing(0.5, 0),
+    borderBottom: `1px solid ${theme.palette.divider}`,
+    flexWrap: 'wrap',
+  },
+  rowTitle: {
+    flex: '1 1 12em',
+    fontWeight: 500,
+  },
+  rowLinks: {
+    display: 'flex',
+    gap: theme.spacing(0.5),
+    flexWrap: 'wrap',
+  },
+  groupTitle: {
+    marginTop: theme.spacing(2),
+  },
 }));
 
 type Loaded =
   | { state: 'loading' }
   | { state: 'error'; error: Error }
-  | { state: 'ready'; surfaces: Entity[]; totals: Record<string, number> };
+  | { state: 'ready'; surfaces: Entity[] };
 
 const pillClass = (classes: ReturnType<typeof useStyles>, h: Health) =>
   ({ down: classes.pillDown, stale: classes.pillStale, unchecked: classes.pillUnchecked, up: classes.pillUp })[h];
@@ -155,10 +189,40 @@ export const SurfaceCard = ({ entity, now }: { entity: Entity; now?: number }) =
   );
 };
 
+/** One line per door: state, name, and its links. No description, nothing to scroll past. */
+export const DoorRow = ({ entity, now }: { entity: Entity; now?: number }) => {
+  const classes = useStyles();
+  const title = entity.metadata.title ?? entity.metadata.name;
+  const links = entity.metadata.links ?? [];
+  const health = healthOf(entity, now);
+  const entityPath = `/catalog/${entity.metadata.namespace ?? 'default'}/${entity.kind.toLowerCase()}/${entity.metadata.name}`;
+  return (
+    <div className={classes.row} data-testid={`surface-${entity.metadata.name}`}>
+      <Chip
+        size="small"
+        label={HEALTH_LABEL[health]}
+        className={`${classes.pill} ${pillClass(classes, health)}`}
+        data-testid={`health-${entity.metadata.name}`}
+        data-health={health}
+      />
+      <Link to={entityPath} className={classes.rowTitle} title={entity.metadata.description}>
+        {title}
+      </Link>
+      <div className={classes.rowLinks}>
+        {links.map(link => (
+          <LinkButton key={link.url} to={link.url} color="primary" variant={link === links[0] ? 'contained' : 'outlined'} size="small">
+            {link.title ?? link.url}
+          </LinkButton>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const Total = ({ label, value, to, red }: { label: string; value: number; to: string; red?: boolean }) => {
   const classes = useStyles();
   return (
-    <Grid item xs={6} sm={3}>
+    <Grid item xs={6} sm={6}>
       <InfoCard>
         <Link to={to} underline="none" color="inherit">
           <Typography className={`${classes.count} ${red && value > 0 ? classes.countRed : ''}`} data-testid={`total-${label}`}>
@@ -182,22 +246,14 @@ export const EstateHome = () => {
     let cancelled = false;
     (async () => {
       try {
-        const [surfaces, all] = await Promise.all([
-          catalogApi.getEntities({
-            filter: { 'spec.type': FOUNDER_SURFACE_TYPE },
-            fields: ['kind', 'metadata', 'spec.type'],
-          }),
-          catalogApi.getEntities({ fields: ['kind', 'metadata.name'] }),
-        ]);
-        const totals: Record<string, number> = {};
-        for (const e of all.items) {
-          totals[e.kind] = (totals[e.kind] ?? 0) + 1;
-        }
+        const surfaces = await catalogApi.getEntities({
+          filter: { 'spec.type': FOUNDER_SURFACE_TYPE },
+          fields: ['kind', 'metadata', 'spec.type'],
+        });
         if (!cancelled) {
           setLoaded({
             state: 'ready',
             surfaces: triage(surfaces.items),
-            totals,
           });
         }
       } catch (error) {
@@ -232,8 +288,6 @@ export const EstateHome = () => {
                 red
               />
               <Total label="Doors" value={loaded.surfaces.length} to="/catalog?filters[kind]=component&filters[type]=founder-surface" />
-              <Total label="Services" value={loaded.totals.Component ?? 0} to="/catalog?filters[kind]=component" />
-              <Total label="Things they run on" value={loaded.totals.Resource ?? 0} to="/catalog?filters[kind]=resource" />
             </Grid>
             {loaded.surfaces.length === 0 ? (
               <Typography data-testid="no-surfaces">
@@ -257,12 +311,15 @@ export const EstateHome = () => {
                         )}
                       </section>
                       <section className={classes.band} data-testid="band-doors">
-                        <ContentHeader title="Every door" />
-                        <ItemCardGrid>
-                          {rest.map(entity => (
-                            <SurfaceCard key={entity.metadata.name} entity={entity} />
-                          ))}
-                        </ItemCardGrid>
+                        <ContentHeader title={`Every door (${loaded.surfaces.length})`} />
+                        {grouped(rest).map(([group, doors]) => (
+                          <div key={group} data-testid={`group-${group}`}>
+                            <Typography variant="h6" className={classes.groupTitle}>{group}</Typography>
+                            {doors.map(entity => (
+                              <DoorRow key={entity.metadata.name} entity={entity} />
+                            ))}
+                          </div>
+                        ))}
                       </section>
                     </>
                   );

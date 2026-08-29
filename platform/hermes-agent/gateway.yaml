@@ -104,6 +104,7 @@ metadata:
   name: hermes-agent-gateway
   namespace: hermes-agent
   labels:
+    backstage.io/kubernetes-id: founder-telegram
     app.kubernetes.io/name: hermes-agent-gateway
 spec:
   selector:

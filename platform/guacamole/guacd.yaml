@@ -5,7 +5,7 @@ kind: Service
 metadata:
   name: guacd
   namespace: guacamole
-  labels: { app.kubernetes.io/name: guacd, app.kubernetes.io/part-of: idp }
+  labels: { app.kubernetes.io/name: guacd, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: founder-screen }
 spec:
   selector: { app.kubernetes.io/name: guacd }
   ports:

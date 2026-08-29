@@ -6,7 +6,7 @@ kind: Service
 metadata:
   name: healthchecks-db
   namespace: healthchecks
-  labels: { app.kubernetes.io/name: healthchecks-db, app.kubernetes.io/part-of: idp }
+  labels: { app.kubernetes.io/name: healthchecks-db, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: founder-jobs }
 spec:
   type: ClusterIP
   clusterIP: None

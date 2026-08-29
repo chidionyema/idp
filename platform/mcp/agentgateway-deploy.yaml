@@ -74,7 +74,7 @@ kind: Service
 metadata:
   name: agentgateway
   namespace: mcp
-  labels: { app.kubernetes.io/name: agentgateway }
+  labels: { app.kubernetes.io/name: agentgateway, backstage.io/kubernetes-id: founder-mcp-gateway }
 spec:
   selector: { app.kubernetes.io/name: agentgateway }
   ports:

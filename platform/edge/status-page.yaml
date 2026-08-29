@@ -24,6 +24,8 @@ data:
 apiVersion: v1
 kind: Service
 metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-status-page
   name: status-page
   namespace: edge
 spec:
