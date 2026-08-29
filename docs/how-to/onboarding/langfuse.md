@@ -99,14 +99,25 @@ Safe to run repeatedly. It never regenerates existing secrets.
 
 ## Signing in
 
-```
-bin/langfuse-password
-```
+Open `https://langfuse.<zone>/` and you are in. There is one login, the estate front door
+(`auth.<zone>`, the identity domain), and Langfuse honours it: behind the ForwardAuth it runs its
+own OIDC client (`AUTH_CUSTOM_*`, secret `langfuse-sso`) against the same identity domain, so the
+second hop is a redirect you never see, not a second form. Email+password sign-in is off
+(`AUTH_DISABLE_USERNAME_PASSWORD=true`); the `LANGFUSE_INIT_*` founder user is merged with the
+SSO identity by email (`AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING=true`), so the org, project and API key
+pair it created on first boot are yours.
 
-Puts the password on the clipboard and prints only the email address. The
-password is never displayed, logged or screenshotted (LAW 21). Langfuse creates
-the org, project, user and API key pair on first boot from `LANGFUSE_INIT_*`, so
-there is no sign-up wizard and no key to copy out of a browser.
+The IDCS app is `estate-langfuse` in `platform/oci/identity/main.tf` (redirect
+`https://langfuse.<zone>/api/auth/callback/custom`), granted to every address in `founder_emails`;
+tofu writes `langfuse-sso-client-id` and `langfuse-sso-client-secret` to the vault. It is applied
+by `oke-check.yml` with `mode=apply` (the `bin/idp-identity-apply` step), never from a laptop.
+
+`bin/langfuse-password` still puts the init password on the clipboard for the API (Basic auth on
+`/api/public/`), not for the browser.
+
+Checking it: `curl -s https://langfuse.<zone>/api/auth/providers` names `custom` only; before this
+change it listed `credentials`. Measured 2026-08-29 before the change: every founder surface
+answered 302 to the identity domain and then Langfuse showed its own password form.
 
 ## What goes wrong
 

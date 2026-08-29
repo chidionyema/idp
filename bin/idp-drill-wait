@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# crew#584 CP-A: wait for the portability drill only as long as it takes to reach the floor.
+#
+# Before this, .github/workflows/portability-drill.yml ran
+#   kubectl wait kustomization --all -A --for=condition=Ready --timeout=600s || true
+# which burns the full 600 s on every run, because the OCI-only layers (vault, DNS, receipts
+# bucket) are designed to stay red on a cluster with no OCI identity. Measured 2026-08-29:
+# 11 min x9 of the last 10 drill runs, 16 min x1. Every PR that touches platform/ paid it.
+#
+# This polls bin/idp-portability-drill against drills/portability-floor.txt every
+# DRILL_WAIT_STEP seconds and exits 0 the moment the floor is met. It exits 0 on the
+# DRILL_WAIT_MAX ceiling too: the grade step after it is the verdict, this is only the wait.
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+max="${DRILL_WAIT_MAX:-600}"
+step="${DRILL_WAIT_STEP:-10}"
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+t0=$(date +%s)
+while :; do
+  kubectl get kustomizations -A -o json > "$tmp" 2>/dev/null || echo '{"items":[]}' > "$tmp"
+  if verdict="$("$ROOT/bin/idp-portability-drill" "$tmp" 2>/dev/null | tail -1)" && [[ "$verdict" == ok* ]]; then
+    echo "floor met after $(( $(date +%s) - t0 )) s: $verdict"
+    exit 0
+  fi
+  if (( $(date +%s) - t0 >= max )); then
+    echo "floor not met after ${max} s; grading what came up: ${verdict:-no verdict}"
+    exit 0
+  fi
+  sleep "$step"
+done
