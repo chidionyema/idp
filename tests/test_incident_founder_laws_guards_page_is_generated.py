@@ -28,7 +28,7 @@ def test_page_is_rendered_from_the_tree_and_check_sees_staleness(tmp_path):
     out = ROOT / "docs" / "reference" / "laws-and-guards.md"
     before = out.read_text()
     try:
-        r = subprocess.run([sys.executable, str(GEN)], env=env, capture_output=True, text=True, check=True)
+        subprocess.run([sys.executable, str(GEN)], env=env, capture_output=True, text=True, check=True)
         text = out.read_text()
         assert "| 1 | Put the fire out first |" in text
         assert "| 1 | `a-guard.py` | Refuse a session that starts stale (LAW 7) | 7 | every tool |" in text, text

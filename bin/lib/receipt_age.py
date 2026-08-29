@@ -39,7 +39,10 @@ instrument that cannot measure says so (LAW 45 step 5).
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timedelta, timezone
+# `datetime` is referenced only from the string annotation on served_now, and that is a use
+# ruff resolves: dropping it is F821, not F401 (idp#683, run 33225725402). `timezone` is
+# gone for the reason this module exists — no local clock enters the subtraction (crew#583).
+from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 
 # How far the receipt may be stamped ahead of the clock that served it. Both come from the same
