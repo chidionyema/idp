@@ -18,12 +18,12 @@ def _run(tmp_path: Path, analyzer_present: bool) -> tuple[subprocess.CompletedPr
     log = tmp_path / "calls.log"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    deploy = "deployment.apps/k8sgpt-estate" if analyzer_present else ""
+    deploy = "deployment.apps/estate" if analyzer_present else ""
     (bin_dir / "kubectl").write_text(
         "#!/bin/sh\n"
         f"printf '%s\\n' \"kubectl $*\" >> \"{log}\"\n"
         "case \"$*\" in\n"
-        f"  *'get deployment -n healing -l app.kubernetes.io/name=k8sgpt -o name'*) echo '{deploy}' ;;\n"
+        f"  *'get deployment -n healing -l app=estate -o name'*) echo '{deploy}' ;;\n"
         "  *logs*) echo 'ERROR reconciler: secret \"k8sgpt\" not found' ;;\n"
         "  *) echo ok ;;\n"
         "esac\n"
@@ -50,3 +50,14 @@ def test_a_present_analyzer_is_restarted_and_its_results_shown(tmp_path):
     assert p.returncode == 0, p.stdout
     assert any("rollout restart deployment -n healing" in c for c in calls), calls
     assert "--- k8sgpt-results" in p.stdout, p.stdout
+    assert not any("app.kubernetes.io/name=k8sgpt" in c for c in calls), calls
+
+
+def test_flux_waits_for_the_analyzer_deployment_not_just_the_object():
+    # healing-analyzer had wait: true and no healthChecks; a bare custom object counts as Current,
+    # so the row was green for 29h with no analyzer running (run 33233870612)
+    import yaml
+    rows = [d for d in yaml.safe_load_all((IDP / "clusters/oke/platform.yaml").read_text()) if d]
+    row = next(d for d in rows if d["metadata"]["name"] == "healing-analyzer")
+    checks = row["spec"].get("healthChecks") or []
+    assert any(c.get("kind") == "Deployment" and c.get("name") == "estate" and c.get("namespace") == "healing" for c in checks), checks
