@@ -81,6 +81,18 @@ jobs:
             ${{ runner.temp }}/verdict-langfuse-home.png
           if-no-files-found: warn
           retention-days: 30
+      - name: the verdict row lands in the table as prover (crew#631 CP3; never fatal to the check-run)
+        if: always()
+        env:
+          OCI_CI: "1"
+          OCI_CLI_AUTH: security_token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+        run: |
+          bin/idp-verdict schema || true
+          bin/idp-verdict store verdict.json || true
+          bin/idp-verdict list -n 3 || true
       - name: check-run verify/langfuse on the commit, conclusion = outcome
         if: always()
         env:

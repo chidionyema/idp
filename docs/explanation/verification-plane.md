@@ -80,6 +80,16 @@ against every door: a probe that returns green against a broken door is quaranti
 `probe-mutations.yml` run is red. The same run reads the last 30 real verdicts and grades each
 assertion's graduation: UNPROVEN until it has one real FAIL and one real PASS in the world.
 
+## CP3: the verdict table
+
+No estate-wide Postgres exists (each app carries its own), so the table lives in the Backstage
+Postgres: the portal is where CP4's number is shown, and the target under test (Langfuse) must
+not hold the verdicts about itself. `probes/store.py` builds every statement: `verdicts` is
+append-only (a trigger refuses UPDATE, DELETE and TRUNCATE; the grants never include them), role
+`prover` may INSERT, role `agent_role` may only SELECT. The prover workflow runs
+`bin/idp-verdict schema` and `store verdict.json` after the artifact upload; `bin/idp-verdict
+list` reads as `agent_role`; `bin/idp-verdict refuse-test` proves both refusals from the cluster.
+
 ## Not done yet
 
 CP2 scopes the key to the runner identity only. CP3 stores verdicts in Postgres, append-only.
