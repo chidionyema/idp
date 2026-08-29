@@ -110,8 +110,16 @@ jobs:
             # `commit -am` never stages a NEW file: the first delivery of LITELLM_LAPTOP_KEY.yaml printed
             # "unchanged" and pushed nothing (run 33257838162). Add the file by name, then commit.
             git -C "$RUNNER_TEMP/estate-secrets" add secrets/dev/LITELLM_LAPTOP_KEY.yaml
-            git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
-              commit -q -m "laptop router key (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null && git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || echo "info    laptop key unchanged in estate-secrets"
+            # Run 33258762617: the commit was made, estate-secrets' pre-push hook asked gh whether the repo is
+            # still private, gh had no token, the hook refused, and `|| echo unchanged` turned that into a green
+            # run. The hook gets the token so it can answer; a refused push is an error, never "unchanged".
+            if git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
+                 commit -q -m "laptop router key (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null; then
+              GH_TOKEN="$tok" git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || { echo "error   laptop key written but the push to estate-secrets was refused"; exit 1; }
+              echo "ok      laptop key delivered to estate-secrets as LITELLM_LAPTOP_KEY"
+            else
+              echo "info    laptop key unchanged in estate-secrets"
+            fi
             rm -rf "$RUNNER_TEMP/estate-secrets"
           fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = hermes ]; then
@@ -125,8 +133,16 @@ jobs:
             # `commit -am` never stages a NEW file: the first delivery of LITELLM_HERMES_KEY.yaml printed
             # "unchanged" and pushed nothing (run 33257838162). Add the file by name, then commit.
             git -C "$RUNNER_TEMP/estate-secrets" add secrets/dev/LITELLM_HERMES_KEY.yaml
-            git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
-              commit -q -m "hermes router key (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null && git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || echo "info    hermes key unchanged"
+            # Run 33258762617: the commit was made, estate-secrets' pre-push hook asked gh whether the repo is
+            # still private, gh had no token, the hook refused, and `|| echo unchanged` turned that into a green
+            # run. The hook gets the token so it can answer; a refused push is an error, never "unchanged".
+            if git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
+                 commit -q -m "hermes router key (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null; then
+              GH_TOKEN="$tok" git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || { echo "error   hermes key written but the push to estate-secrets was refused"; exit 1; }
+              echo "ok      hermes key delivered to estate-secrets as LITELLM_HERMES_KEY"
+            else
+              echo "info    hermes key unchanged in estate-secrets"
+            fi
             rm -rf "$RUNNER_TEMP/estate-secrets"
           fi
           rm -f "$ESTATE_ENV_FILE"
