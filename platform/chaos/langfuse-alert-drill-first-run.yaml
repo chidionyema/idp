@@ -27,7 +27,10 @@ spec:
     podChaos:
       action: pod-failure
       mode: all
-      duration: 8m
+      # No duration here: inside a Workflow template Chaos Mesh's vworkflow.kb.io webhook
+      # refuses it ("should not define duration in chaos when using Workflow, use
+      # Template#Deadline instead") and the whole chaos Kustomization stays not Ready.
+      # The template's own deadline above bounds the run.
       selector:
         namespaces:
         - observability
