@@ -91,3 +91,13 @@ def test_next_auths_endpoints_reach_langfuse_without_the_front_door() -> None:
     assert not any(f.get("type") == "ExtensionRef" for f in rule.get("filters", []))
     prefixes = {m["path"]["value"] for m in rule["matches"]}
     assert "/api/auth/" in prefixes, prefixes
+
+
+def test_the_login_drill_walks_the_second_hop_and_the_drill_user_may() -> None:
+    """The hourly drill graded the catalogue only, so the second form was silent green."""
+    drill = (ROOT / "bin/idp-login-drill").read_text()
+    assert 'fail("second-hop"' in drill, "the login drill never opens Langfuse: the second hop is ungraded"
+    assert "input[type='password']" in drill
+    tf = TF.read_text()
+    block = re.search(r'resource "oci_identity_domains_grant" "langfuse_drill" \{(.*?)\n\}', tf, re.S)
+    assert block and "oci_identity_domains_user.drill.id" in block.group(1), "drill user not granted the Langfuse app: IDCS stops it"
