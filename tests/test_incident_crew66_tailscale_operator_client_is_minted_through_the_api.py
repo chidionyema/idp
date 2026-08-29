@@ -54,7 +54,11 @@ python3 -c 'import json,sys; d=json.load(open("{vault}")); v=d.get(sys.argv[1]);
     (sh / "whoami").write_text("#!/bin/bash\necho estate-test\n")
     for f in sh.iterdir():
         f.chmod(0o755)
+    # the seed road is exercised only where no federated identity is configured (ADR 0010):
+    # point the script at an empty estate-config, never at the real one
+    (tmp_path / "no-federated-config.yaml").write_text("data: {}\n")
     env = {**os.environ, "PATH": f"{sh}:{os.environ['PATH']}", "IDP_VAULT_PUT": str(sh / "vault-put"),
+           "ESTATE_CONFIG": str(tmp_path / "no-federated-config.yaml"), "TAILSCALE_FEDERATED_CLIENT_ID": "",
            "IDP_CLOUD": str(sh / "cloud"), "IDP_OCI_WHOAMI": str(sh / "whoami"), "TAILSCALE_API_URL": "https://api.test"}
     return env, log, vault
 
