@@ -462,6 +462,43 @@ with sync_playwright() as p:
     if lf_host != f"langfuse.{ZONE}":
         fail("second-hop", f"langfuse landed on {lf_host}, expected langfuse.{ZONE}")
 
+    # 8b. Every other surface behind the front door (founder 2026-08-29: "ensure all the sso are
+    # proven"). The hosts are the HTTPRoutes carrying the login-forward-auth filter under
+    # platform/: each must land on its own host with the front-door session, answer 200, and show
+    # no password field; stopping on the identity domain or on a vendor login form is red. All
+    # surfaces are graded before the drill stops, so one red never hides the others.
+    OTHER_SURFACES = {
+        "signoz": f"https://signoz.{ZONE}/",
+        "healthchecks": f"https://hc.{ZONE}/",
+        "llm": f"https://llm.{ZONE}/ui/",
+        "screen": f"https://catalogue.{ZONE}/screen/",
+    }
+    sso_red = []
+    for name, url in OTHER_SURFACES.items():
+        want_host = urlparse(url).hostname
+        try:
+            resp = page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_timeout(2500)
+        except PWError as e:
+            sso_red.append(f"{name}: {url} did not load ({str(e)[:80]})")
+            print(f"sso     login-drill  {name} did not load: {str(e)[:80]}")
+            continue
+        host = urlparse(page.url).hostname or ""
+        path = urlparse(page.url).path
+        status = getattr(resp, "status", 0)
+        pw = page.locator("input[type='password']").count()
+        print(f"sso     login-drill  {name} landed on {host}{path} ({status}), {pw} password field(s)")
+        if host == DOMAIN_HOST:
+            sso_red.append(f"{name}: stopped on the identity domain; the drill user is not granted the app")
+        elif host != want_host:
+            sso_red.append(f"{name}: landed on {host}, expected {want_host}")
+        elif status and status >= 400:
+            sso_red.append(f"{name}: answered {status} at {path}")
+        elif pw:
+            sso_red.append(f"{name}: showed its own password form at {path}: the one login is two")
+    if sso_red:
+        fail("second-hop", "; ".join(sso_red))
+
     # 9. crew#631 L3, the human plane graded on identity, not on a page. /api/auth/session with
     # this browser's jar must name the drill user; a context holding nothing must get no user.
     # Both come from probes/langfuse.py so the prover and this drill grade one definition.
