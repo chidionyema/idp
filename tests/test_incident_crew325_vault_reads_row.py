@@ -46,6 +46,26 @@ def test_unreadable_audit_is_blind(tmp_path: Path) -> None:
 def test_the_row_runs_where_flux_is_blind_and_the_policy_allows_it() -> None:
     src = (ROOT / "bin" / "idp-oke-rebuild").read_text()
     blind = src[src.index("no kube path from this host"):]
-    assert 'step vault-reads "$IDP/bin/idp-vault-reads"' in blind.split("\nfi\n", 1)[0], "vault-reads row must sit in the no-kube branch"
+    assert "step vault-reads vault_reads_result" in blind.split("\nfi\n", 1)[0], "vault-reads row must sit in the no-kube branch"
     statements = json.loads((ROOT / "platform" / "oci" / "policy" / "estate-operators.statements.json").read_text())
     assert "Allow group estate-operators to read audit-events in compartment estate" in statements
+
+
+def test_incident_crew584_vault_reads_starts_before_the_plan_not_after_it() -> None:
+    """founder 2026-08-29 "why 25 minutes": vault-reads took 352-433s serially (7 of 9 minutes, runs
+    33237964214 and the five before it). It starts right after login and is collected where its row
+    prints, so its wall clock overlaps the tofu plan instead of adding to it."""
+    src = (ROOT / "bin" / "idp-oke-rebuild").read_text()
+    start = src.index('"$IDP/bin/idp-vault-reads" >"$VR_OUT"')
+    plan = src.index("step tofu-plan")
+    collect = src.index("step vault-reads vault_reads_result")
+    assert start < plan < collect, "the audit paging must run alongside the plan, not after it"
+    assert src.count("bin/idp-vault-reads\"") == 1, "one launch, no second serial call"
+    assert 'VR_PID=$!' in src and 'wait "$VR_PID"' in src
+
+
+def test_incident_crew584_vault_reads_result_carries_the_rc_and_the_text(tmp_path: Path) -> None:
+    out = tmp_path / "vr.out"; out.write_text("FAIL    vault-reads  0 GetSecretBundle calls in 90 min\n"); (tmp_path / "vr.out.rc").write_text("1\n")
+    script = f'VR_OUT="{out}"; VR_PID=""; vault_reads_result() {{ wait "$VR_PID" 2>/dev/null; cat "$VR_OUT"; return "$(cat "$VR_OUT.rc" 2>/dev/null || echo 2)"; }}; vault_reads_result; echo rc=$?'
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    assert "0 GetSecretBundle" in r.stdout and r.stdout.strip().endswith("rc=1"), r.stdout + r.stderr

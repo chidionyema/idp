@@ -72,6 +72,16 @@ step login "$IDP/bin/idp-oci-login" || { echo "exit 2: no OCI identity"; exit 2;
 
 # --- state backend: remote when the bucket exists, else local and said so ---------------------
 cd "$TF" || { echo "FAIL  cd $TF"; exit 2; }
+# crew#584 (founder 2026-08-29, "why 25 minutes"): the vault-reads row pages 90 minutes of OCI Audit
+# and took 352-433s on every run, 7 of the job's 9 minutes, while nothing else ran. It depends on
+# the identity only, so it starts here and is collected where its row prints (a runner has no kube
+# path; on a host with one the row does not run and the job is reaped at exit).
+VR_OUT=$(mktemp); VR_PID=""
+if [ ! -f "$KUBECONFIG" ]; then
+  ( OCI_COMPARTMENT_OCID="$(awk -F'"' '/^compartment_ocid/{print $2}' terraform.tfvars)" "$IDP/bin/idp-vault-reads" >"$VR_OUT" 2>&1; echo $? >"$VR_OUT.rc" ) &
+  VR_PID=$!
+fi
+vault_reads_result() { wait "$VR_PID" 2>/dev/null; cat "$VR_OUT"; return "$(cat "$VR_OUT.rc" 2>/dev/null || echo 2)"; }
 if [ -f backend_override.tf ]; then
   # never -migrate-state/-force-copy: a stale local state would overwrite the shared remote (bin/idp-state-guard)
   "$IDP/bin/idp-state-guard" "$TF"
@@ -215,7 +225,7 @@ else
   step nodes nodes_oci
   printf 'n/a   %-18s %s\n' flux "no kube path from this host (outside control_plane_allowed_cidrs); site and catalog rows stand in"
   # the vault's own door: OCI Audit shows whether external-secrets reads it (crew#325)
-  OCI_COMPARTMENT_OCID="$(awk -F'"' '/^compartment_ocid/{print $2}' terraform.tfvars)" step vault-reads "$IDP/bin/idp-vault-reads"
+  step vault-reads vault_reads_result   # started after login above; the seconds printed are the wait left
 fi
 if [ -n "$HOST" ] && [ -n "$API" ] && [ -n "$WANT_PACKS" ]; then step site site_200; step catalog packs
 else blind site "no OKE_HOST/OKE_API_HOST/WANT_PACKS for cluster $OCI_CLUSTER_NAME: add $TF/clusters/$OCI_CLUSTER_NAME.env"; blind catalog "same"; fi
