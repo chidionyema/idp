@@ -12,7 +12,7 @@ import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 POLICY = ROOT / "platform/edge/capacity-policy.yaml"
-CPU_BUDGET_CORES = 5.4  # 5.0 measured 2026-08-29 after the trim (7.64 -> 5.00); +0.4 on the same day: langfuse web and worker at 50m never booted inside the liveness window (crew#626 CP15, run 33259031857: 164 restarts, exit 143), 250m each is the fence line. clickhouse 1.0 and prometheus 0.2 stay Guaranteed (crew#539 CP9), balloon 0.3 is the reserve; a ratchet: lowered on a measurement, raised only on an incident receipt
+CPU_BUDGET_CORES = 6.9  # 5.4 -> 6.9 on 2026-08-29: langfuse web and worker at 250m still never booted (crew#626 CP15, diagnose run 33262424618: 10 restarts, liveness deadline exceeded; helm-retry 33260661133 stalled rollout); one core each, Guaranteed, labelled capacity-approved. Earlier: 5.0 measured 2026-08-29 after the trim (7.64 -> 5.00); +0.4 on the same day: langfuse web and worker at 50m never booted inside the liveness window (crew#626 CP15, run 33259031857: 164 restarts, exit 143), 250m each is the fence line. clickhouse 1.0 and prometheus 0.2 stay Guaranteed (crew#539 CP9), balloon 0.3 is the reserve; a ratchet: lowered on a measurement, raised only on an incident receipt
 SINGLE_REQUEST_MAX = 0.25  # what the admission fence refuses
 
 POD = """apiVersion: v1
@@ -111,8 +111,11 @@ def _requests(batch=False):
         if isinstance(o, dict):
             md = o.get("metadata") if isinstance(o.get("metadata"), dict) else {}
             pl = o.get("podLabels") if isinstance(o.get("podLabels"), dict) else {}
+            # the langfuse chart spells it pod.labels (crew#626 CP15)
+            pod = o.get("pod") if isinstance(o.get("pod"), dict) else {}
+            pdl = pod.get("labels") if isinstance(pod.get("labels"), dict) else {}
             ml = md.get("labels") if isinstance(md.get("labels"), dict) else {}
-            labels = {**labels, **ml, **pl}
+            labels = {**labels, **ml, **pl, **pdl}
             in_batch = in_batch or o.get("priorityClassName") == "platform-batch"
             r = o.get("resources")
             if (
