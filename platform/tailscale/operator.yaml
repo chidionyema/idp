@@ -35,10 +35,14 @@ spec:
     # No `oauth:` block here on purpose (see the header comment): the chart falls back to reading
     # the pre-created `operator-oauth` Secret (external-secret.yaml) when this is left unset.
     apiServerProxyConfig:
-      # This estate's kube-apiserver access is not routed through Tailscale (bin/idp-oke-rebuild,
-      # bin/idp-oke-break-glass are the existing paths); the operator is deployed for its ACL/policy
-      # management and to authenticate the hermes-agent sidecar's tag:k8s identity, nothing more.
-      mode: "false"
+      # Founder, 2026-08-29 (crew#307): "we need to be able to debug the cluster", "from the Mac
+      # also", "the point is we should be portable". Before this, every look at a pod needed a pull
+      # request into the break-glass playbook. The operator now fronts the API server on the
+      # tailnet: any device on the tailnet reaches it as its tailnet identity, the grant in
+      # policy.hujson maps that identity to the Kubernetes group `estate:founder`, and
+      # rbac.yaml binds that group. No cloud token, no IP allow-list, works the same on any
+      # cloud (LAW 19, LAW 43). From a machine:  tailscale configure kubeconfig tailscale-operator
+      mode: "auth"
     # The chart ships no default securityContext/resources (verified: templates/deployment.yaml
     # only emits them `{{- with .Values.operatorConfig.* }}`, i.e. never, when unset) -- every
     # ClusterPolicy that reads them refuses the operator Pod otherwise (bin/idp-kyverno-render

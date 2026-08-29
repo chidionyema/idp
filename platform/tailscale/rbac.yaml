@@ -1,0 +1,15 @@
+# crew#307 (2026-08-29): the founder's tailnet identity arrives at the API server as the group
+# `estate:founder` (policy.hujson grant, operator apiServerProxyConfig.mode auth). This binds it to
+# cluster-admin: it is the break-glass identity, and every request is logged with the tailnet user.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: estate-founder-over-tailscale
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: estate:founder

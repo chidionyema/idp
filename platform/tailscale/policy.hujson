@@ -54,6 +54,7 @@
   "tagOwners": {
     "tag:k8s":          [],
     "tag:founder-mac":  [],
+    "tag:k8s-operator": [],
   },
   "acls": [
     {"action": "accept", "src": ["tag:k8s"], "dst": ["tag:founder-mac:22"]},
@@ -62,6 +63,19 @@
     // The :22 here is not redundant with the ssh rule below — see the header, kb/1193.
     {"action": "accept", "src": ["group:founder"],
      "dst":    ["tag:founder-mac:22", "tag:founder-mac:47984-48010"]},
+    // crew#307: the cluster API server, fronted by the operator on the tailnet (443).
+    {"action": "accept", "src": ["group:founder"], "dst": ["tag:k8s-operator:443"]},
+  ],
+  // crew#307: the founder reaches the API server as Kubernetes group `estate:founder`;
+  // platform/tailscale/rbac.yaml binds that group. Every request carries the tailnet identity.
+  "grants": [
+    {
+      "src": ["group:founder"],
+      "dst": ["tag:k8s-operator"],
+      "app": {
+        "tailscale.com/cap/kubernetes": [{"impersonate": {"groups": ["estate:founder"]}}],
+      },
+    },
   ],
   "ssh": [
     {
