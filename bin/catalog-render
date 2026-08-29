@@ -117,10 +117,7 @@ def main(argv: list[str]) -> int:
     # crew#412 (R38): the founder's three questions, from GitHub, on the same schedule.
     # crew#596: the same goal block is the pinned GOAL message in the home channel (Otto's), refreshed here;
     # --dry-run and a runner with no token leave the pin alone.
-    # 2026-08-29, founder: "disable that step". The GOAL post into his private chat is OFF: the goal
-    # lives on the founder page in Backstage; the chat carries conversation and founder actions only.
-    # Set ESTATE_GOAL_TELEGRAM=1 to turn it back on.
-    telegram = ["--telegram"] if not dry and os.environ.get("TELEGRAM_BOT_TOKEN") and os.environ.get("ESTATE_GOAL_TELEGRAM") == "1" else []
+    telegram = ["--telegram"] if not dry and os.environ.get("TELEGRAM_BOT_TOKEN") else []
     step("estate-founder", [sys.executable, str(WT / "bin" / "estate-founder"), *telegram], WT, 300)
     step("estate-showcase", [sys.executable, str(WT / "bin" / "estate-showcase")], WT)
     # crew#495 CP1: the trace matrix is rendered from the same worktree, on the same schedule.
