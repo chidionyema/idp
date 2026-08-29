@@ -52,7 +52,7 @@ def fake_gh(tmp_path: Path, mergeable: str) -> tuple[Path, Path]:
 echo "$*" >> {log}
 case "$1 $2" in
   "pr list") echo 5 ;;
-  "pr view") echo {mergeable} ;;
+  "pr view") case "$*" in *body*) echo "Optimised: 1 -> 1 steps, 1 -> 1 round trips; cut: nothing" ;; *) echo {mergeable} ;; esac ;;
 esac
 """)
     gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
