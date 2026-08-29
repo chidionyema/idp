@@ -7,9 +7,8 @@
 #      a script, a `kubectl delete ns`, a chart uninstall. Scope is the mark, not a name list, so a
 #      new platform namespace is covered the moment it exists and the two layers cannot drift.
 #   3. CI refuses a PR that removes or moves a Namespace manifest, or ships one without the mark.
-# Incident: catalogue.<zone> answered 404 from 01:05Z on 2026-08-29 after idp#648 moved
-# platform/backstage's namespace.yaml from the prune:true `backstage` Kustomization to a new
-# `backstage-namespace` row.
+# Incident: the portal's front door answered 404 from 01:05Z on 2026-08-29 after idp#648 moved
+# the portal's namespace.yaml from its prune:true Kustomization to a new namespace-only row.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
