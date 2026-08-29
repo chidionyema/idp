@@ -211,3 +211,32 @@ decisions:
     decision: router-lane-direct   # 420 vs openrouter-lane 315 vs claude-code-subscription 215 (cmd: bin/matrix-gate); outside tie_band
     next_review: 2026-09-05
     reviews: []
+  - slug: staging-is-a-namespace
+    requirement: "a staging surface the founder can push to before prod, without a second cluster's bill (founder 2026-08-29 00:44-01:55Z, crew#584 CP-H, ADR 0012)"
+    date: 2026-08-29
+    status: accepted
+    candidates:
+      staging-namespace:
+        note: "a `staging` namespace on the one cluster; Flux row per namespace; namespaces never pruned"
+        scores:
+          first_time_user:     {score: 4, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # one cluster, one kubeconfig, one login
+          founder_experience:  {score: 4, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # same portal, same drill
+          feature_parity:      {score: 4, evidence: "platform/features/features.yaml"}                                                     # feature register gates per namespace
+          ecosystem_fit:       {score: 5, evidence: "platform/oci"}                                                                   # Flux Kustomization per row already
+          maturity:            {score: 5, evidence: "https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/"}        # namespaces are the platform primitive
+          security_by_default: {score: 3, evidence: "platform/kyverno"}                                                           # policy-scoped, but shared node pool
+          portability:         {score: 4, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # any cluster, any cloud
+          operability:         {score: 4, evidence: "tests/test_incident_a_namespace_moved_between_flux_rows_was_pruned.py"}              # prune guard proven
+          cost:                {score: 5, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # prod 6 cores, $42/month, no second bill
+      second-cluster:
+        note: "a second OKE cluster for staging"
+        scores:
+          first_time_user:     {score: 2, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # two kubeconfigs, two logins
+          founder_experience:  {score: 2, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # a second portal to keep green
+          feature_parity:      {score: 5, evidence: "platform/oci"}                                                                   # identical by construction
+          ecosystem_fit:       {score: 3, evidence: "platform/oci"}                                                                   # a second Flux root, a second collector
+          maturity:            {score: 5, evidence: "https://docs.oracle.com/en-us/iaas/Content/ContEng/home.htm"}                          # the vendor's own product
+          security_by_default: {score: 5, evidence: "platform/kyverno"}                                                           # hard isolation
+          portability:         {score: 3, evidence: "platform/oci"}                                                                        # a second provider footprint
+          operability:         {score: 2, evidence: "bin/idp-availability-gate"}                                                           # two estates to keep available
+          cost:                {score: 1, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # doubles the bill the founder capped
