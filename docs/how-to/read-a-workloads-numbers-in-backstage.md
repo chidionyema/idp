@@ -4,7 +4,7 @@ Every Flux row and Helm chart on the cluster has a catalogue page with two tabs 
 Nothing is copied: the portal reads the cluster's own Prometheus and metrics-server at the moment
 you open the page. Founder, 2026-08-29: "i need all metrics exposed ... on backstage ... always
 ... numbers for everything we collect" (crew#645 CP5; the incident that made it necessary is
-`docs/reference/incidents/2026-08-29-langfuse-stalled-rollout.md`).
+the Langfuse incident report (idp#856)).
 
 ## Use
 
