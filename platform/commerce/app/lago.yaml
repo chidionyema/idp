@@ -1,0 +1,89 @@
+# THE COMMERCE PRIMITIVE. The mature platform, not a stitched one (headline; LAW 43).
+#
+# Lago, chart `lago` 1.28.0 / app 1.32.4, both read from
+# https://getlago.github.io/lago-helm-charts/index.yaml on 2026-08-29, not from memory.
+#
+# Why Lago and not Medusa or Kill Bill. The founder needs two things: one-off packs
+# ("100_ai_credits") AND user subscriptions. Read from Lago's own OpenAPI contract
+# (github.com/getlago/lago-openapi, fetched 2026-08-29), both are first-class endpoints:
+#   /subscriptions, /subscriptions/{id}/entitlements   -> the subscriptions
+#   /wallets, /wallet_transactions                     -> prepaid credits, the AI-credit packs
+#   /wallet_transactions/{id}/payment_url              -> the Checkout URL, for a credit top-up
+#   /invoices/{id}/payment_url                         -> the Checkout URL, for a subscription
+# and its own index describes it as "usage metering, subscriptions, invoicing, payments,
+# entitlements". One tool covers both cases.
+#   - Medusa: a cart-and-order engine. Packs yes, subscriptions only via a community plugin or
+#     a module we would write. That is the half-stitched solution the headline bans.
+#   - Kill Bill: does subscriptions well, but it is a JVM plus Kaui plus its own database, and
+#     it has no prepaid-credit wallet. Two tools again, on a 4-6 OCPU node.
+#
+# DARK, by four independent means, so no single mistake makes it live:
+#   1. clusters/oke/commerce.yaml carries `suspend: true` on both rows -- Flux does not apply it.
+#   2. global.ingress.enabled false, and the namespace has no idp.estate/edge-attach label, so
+#      the Gateway would refuse a route from here even if one appeared.
+#   3. global.signup.enabled false -- no self-service account on a money service.
+#   4. the payment provider is configured in TEST mode until the cutover PR.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: lago
+  namespace: commerce
+spec:
+  interval: 24h
+  url: https://getlago.github.io/lago-helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: lago
+  namespace: commerce
+spec:
+  interval: 1h
+  timeout: 15m
+  chart:
+    spec:
+      chart: lago
+      version: 1.28.0
+      sourceRef:
+        kind: HelmRepository
+        name: lago
+  install: { remediation: { retries: 3 } }
+  upgrade: { remediation: { retries: 3 } }
+  values:
+    # Internal names only. These become public hostnames in the cutover PR, never before.
+    apiUrl: "http://lago-api.commerce.svc:3000"
+    frontUrl: "http://lago-front.commerce.svc:80"
+    global:
+      # databaseUrl and redisUrl come from the vault through this Secret; neither is typed here.
+      existingSecret: lago-credentials
+      ingress:
+        enabled: false
+      signup:
+        enabled: false
+      segment:
+        # No telemetry off this estate to a third party from the layer that holds the money.
+        enabled: false
+      s3:
+        enabled: false
+      smtp:
+        enabled: false
+      googleAuth:
+        enabled: false
+      clickhouse:
+        # The event-streaming path (Kafka + ClickHouse) is for usage metering at volume. Off:
+        # subscriptions and credit packs do not need it, and it would double the footprint.
+        enabled: false
+    encryption:
+      existingSecret: lago-encryption
+    minio:
+      # PDF invoice storage. Off while dark; the cutover PR points it at the estate's object
+      # store rather than adding a fourth stateful workload to this node.
+      enabled: false
+    pdf:
+      enabled: false
+    # The lean worker set. The chart ships thirteen deployments; eventsConsumer,
+    # eventsProcessor and eventsWorker exist only for the ClickHouse path, which is off.
+    eventsConsumer: { replicaCount: 0 }
+    eventsProcessor: { replicaCount: 0 }
+    eventsWorker: { replicaCount: 0 }
+    pdfWorker: { replicaCount: 0 }

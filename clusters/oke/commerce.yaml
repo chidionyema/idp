@@ -1,0 +1,72 @@
+# The money layer (founder 2026-08-29): "we ban money from the application logic entirely ...
+# deploy a Universal Commerce Primitive as a firewall between the internet's money and your
+# application's logic". Two rows, both SUSPENDED. Flux reads them and applies nothing.
+#
+# `suspend: true` is the estate's dark switch (platform/features/features.yaml: "`suspend:` is
+# the switch -- nothing is ever deleted"). The founder's word on the cutover flips it to false
+# in its own PR, together with the prospector PR that removes the Stripe SDK from Store.Api.
+# Until then this branch changes nothing that runs.
+#
+# Two rows and not one: the ledger and the queue are stateful and must be Ready before Lago
+# runs its migrations against them. A single row would race its own database.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: commerce-data
+  namespace: flux-system
+spec:
+  suspend: true
+  interval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/commerce/data
+  prune: true
+  dependsOn:
+    # The ExternalSecrets in this path need the CRD and a working store, or the row dry-runs
+    # against a missing kind and reads as a root portability break (crew#488 CP5).
+    - name: external-secrets
+    - name: secret-store
+  wait: true
+  timeout: 5m
+  healthChecks:
+    - { apiVersion: apps/v1, kind: StatefulSet, name: commerce-db, namespace: commerce }
+    - { apiVersion: apps/v1, kind: StatefulSet, name: commerce-redis, namespace: commerce }
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: commerce
+  namespace: flux-system
+spec:
+  suspend: true
+  interval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/commerce/app
+  prune: true
+  dependsOn:
+    - name: commerce-data
+    # The primitive publishes estate.commerce.order_paid; the bus it publishes to exists first.
+    - name: event-bus
+  wait: true
+  timeout: 15m
+---
+# The internal event bus. Suspended with the layer that publishes to it: a bus with no
+# publisher is a workload nobody reads, which the estate does not admit (LAW 28).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: event-bus
+  namespace: flux-system
+spec:
+  suspend: true
+  interval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/event-bus
+  prune: true
+  wait: true
+  timeout: 10m

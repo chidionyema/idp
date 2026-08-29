@@ -1,0 +1,77 @@
+# The mature tool, not a script (headline rule 1; LAW 43): NATS with JetStream, the official
+# nats-io chart. Chart version 2.14.6 / nats-server appVersion 2.14.6, both read from
+# https://nats-io.github.io/k8s/helm/charts/index.yaml on 2026-08-29, not from memory.
+#
+# Rejected, with the reason each was rejected:
+#   - Kafka / Redpanda: a broker whose smallest sane footprint is a multi-GB JVM or a
+#     dedicated node, for an estate whose whole cluster is 4-6 OCPU (crew#289). Right answer
+#     at a hundred times this volume, wrong answer today (LAW 23, take the smaller road).
+#   - RabbitMQ: an Erlang broker plus its operator, and no story for replay. JetStream gives
+#     the same at-least-once delivery with a file store and one StatefulSet.
+#   - Flux's own notification-controller: it carries Flux events, not business events. Using
+#     it for order_paid would couple revenue to the GitOps controller. That is the stitching.
+#
+# LAW 19 (portability outranks detection): NATS is a plain OSS binary with no managed-service
+# dependency. Moving provider moves a StatefulSet and a PVC, nothing else.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: nats
+  namespace: event-bus
+spec:
+  interval: 24h
+  url: https://nats-io.github.io/k8s/helm/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: nats
+  namespace: event-bus
+spec:
+  interval: 1h
+  timeout: 10m
+  chart:
+    spec:
+      chart: nats
+      version: 2.14.6
+      sourceRef:
+        kind: HelmRepository
+        name: nats
+  install: { remediation: { retries: 3 } }
+  upgrade: { remediation: { retries: 3 } }
+  values:
+    config:
+      # JetStream is what makes this a bus and not a fire-and-forget socket: a consumer that
+      # is down when order_paid fires still gets it. A payment event that is only delivered
+      # to whoever happened to be connected is lost revenue nobody can reconcile.
+      jetstream:
+        enabled: true
+        fileStore:
+          enabled: true
+          pvc:
+            enabled: true
+            size: 2Gi
+      cluster:
+        # One replica on a one-node estate. Three when the estate has three nodes; the
+        # availability gate (bin/idp-availability-gate) is what will force that, not a comment.
+        enabled: false
+    container:
+      merge:
+        # Guaranteed QoS: requests == limits. The kubelet evicts BestEffort, then Burstable,
+        # then Guaranteed (crew#539 CP9). The bus holding the money events is not evicted first.
+        resources:
+          requests: { cpu: 100m, memory: 256Mi }
+          limits: { cpu: 100m, memory: 256Mi }
+    podTemplate:
+      merge:
+        spec:
+          # crew#539: a platform workload names a class so the scheduler can rank it.
+          # platform-batch, not infrastructure-critical: the radio room is the six named
+          # workloads in platform/priority-classes, and borrowing that class is refused.
+          priorityClassName: platform-batch
+    promExporter:
+      # LAW 50: the bus emits, or it is not admitted. Scraped into the estate collector.
+      enabled: true
+    natsBox:
+      # A shell-in-a-pod for hand debugging. Not a platform capability; nothing depends on it.
+      enabled: false
