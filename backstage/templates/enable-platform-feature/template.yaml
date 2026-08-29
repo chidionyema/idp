@@ -4,15 +4,13 @@ metadata:
   name: enable-platform-feature
   title: Enable platform feature
   description: >-
-    Requests a tier of a platform feature from the register in
-    platform/features/features.yaml (crew#584) -- traces, alerting, workflows, autoscaling
-    and the rest. There is no runner in the scaffolder to flip a Flux Kustomization's
-    `suspend:` field directly, so this template does not invent one: it opens a reviewed
-    pull request that adds the request to platform/features/requests.yaml, and the same
-    pull request's CI run tells the reviewer what it costs and whether it fits before
-    anyone merges it. Running `bin/idp-features enable <feature> <tier>` against a real
-    checkout is the step that actually flips the switch, and it stays a separate,
-    reviewed action -- this template's job ends at a fully-informed pull request.
+    Turns a platform feature to a tier from the register in platform/features/features.yaml
+    (crew#584) -- traces, alerting, workflows, autoscaling and the rest, each at enterprise
+    or lean. It opens a pull request that records the request; the feature-request-enable
+    workflow then flips the Flux switches on that same pull request and CI prices the
+    result, so the reviewer sees exactly what changes and what it costs. Merging the pull
+    request is the switch. Nothing is deleted: a tier turned off is a suspended
+    Kustomization, and the other tier is one more request away.
   tags:
     - estate
     - platform
