@@ -187,6 +187,13 @@ catalog:
       rules:
         - allow: [Template]
 
+    # crew#584: requests a tier from platform/features/features.yaml by opening a reviewed
+    # pull request, never by running bin/idp-features enable from the scaffolder itself.
+    - type: file
+      target: ../../templates/enable-platform-feature/template.yaml
+      rules:
+        - allow: [Template]
+
     # The guest identity. Load-bearing, not an example: the guest auth provider
     # resolves user:default/guest through the catalog, so removing this file
     # breaks sign-in.
