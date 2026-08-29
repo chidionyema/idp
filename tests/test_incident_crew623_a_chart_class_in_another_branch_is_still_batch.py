@@ -77,18 +77,6 @@ def test_an_empty_class_name_is_not_a_class():
     assert _mod()._sole_class({"a": {"priorityClassName": ""}}) == set()
 
 
-def test_the_event_bus_is_counted_as_batch_and_not_as_standing_capacity():
-    """The live tree, not a fixture: the thing the incident was about."""
-    m = _mod()
-    src = "platform/event-bus/nats.yaml"
-    assert any(src in row[0] for row in m._requests(batch=True)), (
-        "the NATS request is not in the batch list; the class is no longer being read"
-    )
-    assert not any(src in row[0] for row in m._requests()), (
-        "the NATS request is back in the standing-capacity total, which is what broke the budget"
-    )
-
-
 def test_the_budget_still_holds_with_the_money_layer_in_the_tree():
     m = _mod()
     total = sum(r[2] for r in m._requests())
@@ -190,10 +178,40 @@ def test_a_release_with_no_post_renderers_is_unchanged():
     )
 
 
-def test_the_money_application_is_counted_as_batch_and_not_as_standing_capacity():
-    """Against the live tree, not a fixture."""
+def _not_standing(fragment):
+    """Where the capacity guard puts this file's requests, and the proof it is out of the total.
+
+    Rewritten 2026-08-29, same day, same defect class as the incident above. These two tests used to
+    demand the rows appear in the BATCH bucket, which made the assertion a second copy of the
+    priority-class reading rather than a check on the thing that matters. The thing that matters is
+    that a suspended layer is not charged to standing capacity; how it is kept out is the guard's
+    business, and it has since changed -- the same day -- to read `suspend: true` from
+    clusters/oke/commerce.yaml, which is the fact about the world rather than a scheduling rank.
+    So: never in standing, and in exactly one of the two exclusion buckets.
+    """
     m = _mod()
-    batch = [r for r in m._requests(batch=True) if "commerce/app/lago.yaml" in r[0]]
-    standing = [r for r in m._requests() if "commerce/app/lago.yaml" in r[0]]
-    assert batch, "the money application declares no CPU request the guard can see"
-    assert standing == [], f"lago is charged to standing capacity: {standing}"
+    standing = [r for r in m._requests() if fragment in r[0]]
+    batch = [r for r in m._requests(batch=True) if fragment in r[0]]
+    off = [r for r in m._requests(off=True) if fragment in r[0]]
+    assert standing == [], f"{fragment} is charged to standing capacity: {standing}"
+    assert batch or off, f"{fragment} declares no CPU request the guard can see at all"
+    assert not (batch and off), (
+        f"{fragment} is excluded twice, so one exclusion is unread: {batch} {off}"
+    )
+    return batch, off
+
+
+def test_the_money_application_is_not_charged_to_standing_capacity():
+    """Against the live tree, not a fixture."""
+    batch, off = _not_standing("commerce/app/lago.yaml")
+    assert off and not batch, (
+        "lago is dark today, so the suspension is what excuses it, not its class"
+    )
+
+
+def test_the_event_bus_is_not_charged_to_standing_capacity():
+    """Against the live tree, not a fixture. The incident above is this row."""
+    batch, off = _not_standing("event-bus/nats.yaml")
+    assert off and not batch, (
+        "the event bus is dark today, so suspension is what excuses it"
+    )

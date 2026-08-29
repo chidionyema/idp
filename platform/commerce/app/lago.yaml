@@ -135,12 +135,16 @@ spec:
   # so this is the existing pattern, not a new mechanism. Every patch below closes a rule the
   # cluster's own admission policies refuse, measured by bin/idp-kyverno-render, never guessed.
   #
-  # ONE HONEST CAVEAT about the priority class. `platform-batch` was written for a nightly job
-  # that is seated by preempting one balloon pod, and the capacity guard therefore keeps batch
-  # requests out of the standing total. This layer is not a nightly job: switched on, eight pods
-  # run continuously. That is exactly what the cutover pull request has to answer -- a bigger
-  # node, or a different class, decided by a person looking at the number rather than by a
-  # comment here.
+  # ONE HONEST CAVEAT about the priority class, and it is a scheduling caveat only. `platform-batch`
+  # was written for a nightly job seated by preempting one balloon pod. This layer is not a nightly
+  # job: switched on, eleven pods run continuously, asking 1.035 CPU and 3.41 Gi. The class is here
+  # so that if it is ever switched on before the node grows, it yields to the platform rather than
+  # competing with it -- it is not, and must not become, the reason the capacity sum ignores this
+  # layer. That reason is the `suspend: true` on the three Flux rows in clusters/oke/commerce.yaml,
+  # which is what tests/test_incident_crew584_capacity_requests_need_proof.py reads. Removing the
+  # suspension moves all 1.035 into a standing total already at 5.00 of a 5.0 budget, and that test
+  # goes red in the same commit -- so the cutover buys the node, trims the requests or moves
+  # something off, decided by a person looking at the number rather than by a comment here.
   postRenderers:
     - kustomize:
         patches:

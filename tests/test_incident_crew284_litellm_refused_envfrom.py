@@ -5,7 +5,9 @@ record. The class: a plain workload under platform/ that CI never judged, becaus
 bin/idp-kyverno-render and bin/idp-ci step 9 covered HelmReleases only. Rule (rung 4): every
 platform dir that ships a plain workload is in the idp-ci kyverno dir list, and litellm carries
 no envFrom and no optional secret."""
+
 import re
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -14,18 +16,50 @@ ROOT = Path(__file__).resolve().parents[1]
 KINDS = re.compile(r"^kind: (Deployment|StatefulSet|DaemonSet|Job|CronJob)$", re.M)
 
 
+def _judged_dirs() -> set:
+    """The platform dirs the offline judge actually visits, asked of the thing that decides it.
+
+    Until 2026-08-29 this guard grepped bin/idp-ci for the glob that built the list, and it went red
+    the day the list moved into bin/idp-kyverno-dirs -- a refactor that changed no dir the judge sees.
+    Grading the text of a script instead of its answer is the defect class crew#623 kept finding;
+    running the one owner is both shorter and immune to where the code lives next.
+    """
+    out = subprocess.run(
+        [str(ROOT / "bin/idp-kyverno-dirs")], cwd=ROOT, capture_output=True, text=True
+    )
+    assert out.returncode == 0, out.stdout + out.stderr
+    return {d for d in out.stdout.split() if d}
+
+
 def test_ci_judges_every_plain_workload_dir() -> None:
-    ci = (ROOT / "bin" / "idp-ci").read_text()
-    assert "Deployment|StatefulSet|DaemonSet|Job|CronJob" in ci, "idp-ci step 9 lists HelmRelease dirs only"
+    judged = _judged_dirs()
+    missed = sorted(
+        str(f.parent.relative_to(ROOT))
+        for f in (ROOT / "platform").rglob("*.y*ml")
+        if KINDS.search(f.read_text()) and str(f.parent.relative_to(ROOT)) not in judged
+    )
+    assert missed == [], (
+        f"a plain workload lives here and no offline judge renders it: {missed}"
+    )
     tool = (ROOT / "bin" / "idp-kyverno-render").read_text()
     # crew#66 R43 widened the judged kinds beyond pods: provider-independence refuses a Service,
     # Ingress, PersistentVolumeClaim or secret store too, not only the workloads crew#284 fixed.
-    assert 'kinds = {"Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Pod",' in tool
-    assert '"Service", "Ingress", "PersistentVolumeClaim", "ClusterSecretStore", "SecretStore"}' in tool
+    assert (
+        'kinds = {"Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Pod",'
+        in tool
+    )
+    assert (
+        '"Service", "Ingress", "PersistentVolumeClaim", "ClusterSecretStore", "SecretStore"}'
+        in tool
+    )
 
 
 def test_litellm_takes_no_secret_from_env() -> None:
-    docs = [d for d in yaml.safe_load_all((ROOT / "platform/llm/litellm.yaml").read_text()) if isinstance(d, dict)]
+    docs = [
+        d
+        for d in yaml.safe_load_all((ROOT / "platform/llm/litellm.yaml").read_text())
+        if isinstance(d, dict)
+    ]
     dep = next(d for d in docs if d["kind"] == "Deployment")
     for c in dep["spec"]["template"]["spec"]["containers"]:
         assert "envFrom" not in c
