@@ -26,6 +26,7 @@ vendors:
     targets:
       - { entry: prospector-engine-env, field: ANTHROPIC_API_KEY }
       - { entry: hermes-agent-env, field: ANTHROPIC_API_KEY }
+      - { entry: litellm-upstream, field: ANTHROPIC_API_KEY }   # crew#568 phase 1: the claude lanes on the router
   openrouter:
     kind: secret
     secret: SEED_OPENROUTER_API_KEY
