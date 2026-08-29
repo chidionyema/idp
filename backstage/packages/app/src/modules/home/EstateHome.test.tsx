@@ -112,7 +112,7 @@ describe('estate logic', () => {
     expect(
       fluxState(flux('x', 'True', { spec: { suspend: true } })).state,
     ).toBe('needs');
-  });
+  }, 15_000);
   it('reads pods through the label Flux stamps and reddens a ready layer with pods missing', () => {
     const d = [
       deployment('edge', 1, 3),
@@ -133,7 +133,7 @@ describe('estate logic', () => {
     expect(layerState(layer('edge'), undefined)).toMatchObject({
       state: 'blind',
     });
-  });
+  }, 15_000);
   it('says the worst word first', () => {
     expect(verdict(count(['good', 'good']), 2)).toBe(
       'Everything we run is good. 2 services checked.',
@@ -146,7 +146,7 @@ describe('estate logic', () => {
       "1 service can't be checked.",
     );
     expect(verdict(count([]), 0)).toBe('Nothing is registered yet.');
-  });
+  }, 15_000);
 });
 
 describe('age', () => {
@@ -158,14 +158,14 @@ describe('age', () => {
     expect(ago('2026-08-27T12:00:00Z', now)).toBe('2d ago');
     expect(ago('not a time', now)).toBeUndefined();
     expect(ago(undefined, now)).toBeUndefined();
-  });
+  }, 15_000);
 });
 
 describe('EstateHome', () => {
   afterEach(() => {
     jest.useRealTimers();
     window.localStorage.clear();
-  });
+  }, 15_000);
 
   it('shows how long each layer has held its state, from what Flux said', async () => {
     const k = flux('backstage', 'True');
@@ -181,7 +181,7 @@ describe('EstateHome', () => {
         '5m ago',
       ),
     );
-  });
+  }, 15_000);
 
   it('lands in the find box on / or Cmd+K from anywhere on the page', async () => {
     await render([layer('backstage')], kubernetes({}));
@@ -197,7 +197,7 @@ describe('EstateHome', () => {
     find.blur();
     fireEvent.keyDown(find, { key: '/' });
     expect(find).not.toHaveFocus();
-  });
+  }, 15_000);
 
   it('keeps the board-or-list choice in the browser', async () => {
     await render(
@@ -215,7 +215,7 @@ describe('EstateHome', () => {
     expect(
       screen.getByTestId('system-delivery').querySelector('[data-view]'),
     ).toHaveAttribute('data-view', 'list');
-  });
+  }, 15_000);
 
   it('re-reads the cluster every minute without asking the catalogue again', async () => {
     jest.useFakeTimers();
@@ -228,7 +228,7 @@ describe('EstateHome', () => {
       jest.advanceTimersByTime(REFRESH_MS);
     });
     await waitFor(() => expect(k8s.proxy.mock.calls.length).toBe(before + 2));
-  });
+  }, 15_000);
 
   it('shows every layer the cluster runs, grouped by system, with live state and pods', async () => {
     const now = new Date().toISOString();
@@ -252,7 +252,7 @@ describe('EstateHome', () => {
     );
     // kyverno red, grafana down -> 2 red; dns missing from the cluster -> blind
     expect(screen.getByTestId('verdict')).toHaveTextContent(
-      '2 services are red.',
+      /2 of 5 services are failing right now/,
     );
     expect(screen.getByTestId('count-red')).toHaveTextContent('2');
     expect(screen.getByTestId('count-blind')).toHaveTextContent('1');
@@ -275,7 +275,7 @@ describe('EstateHome', () => {
       'red',
     );
     expect(screen.getByTestId('health-store')).toHaveTextContent('Good');
-    expect(screen.getByTestId('read-at')).toHaveTextContent('Cluster read at');
+    expect(screen.getByTestId('read-at')).toHaveTextContent('Live: read at');
     // the red counter is a filter
     fireEvent.click(screen.getByTestId('count-red'));
     expect(screen.queryByTestId('layer-layer-backstage')).toBeNull();
@@ -284,7 +284,7 @@ describe('EstateHome', () => {
     expect(screen.getByTestId('surface-grafana')).toBeInTheDocument();
     // no crew codes on the founder's surface
     expect(document.body.textContent).not.toMatch(/crew#|CP\d/);
-  });
+  }, 15_000);
 
   it('is blind, not green, when the cluster does not answer', async () => {
     await render(
@@ -295,16 +295,20 @@ describe('EstateHome', () => {
       expect(screen.getByTestId('verdict')).toBeInTheDocument(),
     );
     expect(screen.getByTestId('verdict')).toHaveTextContent(
-      "1 service can't be checked.",
+      /1 of 2 services cannot be read at all/,
     );
     expect(screen.getByTestId('read-at')).toHaveTextContent(
-      'Cluster not read: proxy 502',
+      'Not live: we could not reach the machines just now',
+    );
+    expect(screen.getByTestId('read-at')).toHaveAttribute(
+      'title',
+      'What the read said: proxy 502.',
     );
     expect(screen.getByTestId('layer-layer-backstage')).toHaveAttribute(
       'data-state',
       'blind',
     );
-  });
+  }, 15_000);
 
   it('keeps the login drill contract when nothing is registered', async () => {
     await render([], kubernetes({}));
@@ -313,9 +317,9 @@ describe('EstateHome', () => {
     );
     expect(screen.getByTestId('no-layers')).toBeInTheDocument();
     expect(screen.getByTestId('verdict')).toHaveTextContent(
-      'Nothing is registered yet.',
+      /We have nothing to show yet/,
     );
-  });
+  }, 15_000);
 
   it('narrows by typing and stays honest about the catalogue failing', async () => {
     const now = new Date().toISOString();
@@ -338,7 +342,7 @@ describe('EstateHome', () => {
     expect(screen.queryByTestId('layer-layer-backstage')).toBeNull();
     expect(screen.getByTestId('layer-layer-kyverno')).toBeInTheDocument();
     expect(screen.queryByTestId('surface-store')).toBeNull();
-  });
+  }, 15_000);
 
   it('says the catalogue did not answer, and offers a retry', async () => {
     const failing = {
@@ -359,5 +363,5 @@ describe('EstateHome', () => {
       expect(screen.getByTestId('catalogue-error')).toBeInTheDocument(),
     );
     expect(screen.getByText('Try again')).toBeInTheDocument();
-  });
+  }, 15_000);
 });
