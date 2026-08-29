@@ -29,6 +29,7 @@ spec:
         any:
           - resources:
               kinds: [Service, HTTPRoute]
+              operations: [CREATE, UPDATE]
       exclude:
         any:
           - resources:
