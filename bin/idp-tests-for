@@ -14,15 +14,24 @@
 # Exit 0 when nothing changed (the message says so); CI on a fresh checkout still runs everything.
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-base=origin/main; list=0
+base=origin/main; list=0; forced=''
 while [ $# -gt 0 ]; do
   case "$1" in
     --list) list=1 ;;
     --base) base="$2"; shift ;;
-    *) echo "usage: bin/idp-tests-for [--list] [--base REF]" >&2; exit 64 ;;
+    # --for PATH answers "which tests would a change to PATH select", with no git diff involved.
+    # It is how the selector's own guard proves the rule end to end instead of grading this file's
+    # text, and it is repeatable: bin/idp-tests-for --for bin/foo --for platform/bar/baz.yaml --list
+    --for) forced="$forced$2"$'\n'; shift ;;
+    *) echo "usage: bin/idp-tests-for [--list] [--base REF] [--for PATH]..." >&2; exit 64 ;;
   esac; shift
 done
-changed=$( { git -C "$IDP" diff --name-only "$base"...HEAD; git -C "$IDP" diff --name-only HEAD; git -C "$IDP" ls-files --others --exclude-standard; } | sort -u )
+if [ -n "$forced" ]; then
+  changed=$(printf '%s' "$forced" | sort -u)
+  SKIP_TESTS_ON_TRIVIAL=0   # a hypothetical path has no diff to call trivial
+else
+  changed=$( { git -C "$IDP" diff --name-only "$base"...HEAD; git -C "$IDP" diff --name-only HEAD; git -C "$IDP" ls-files --others --exclude-standard; } | sort -u )
+fi
 if [ -z "$changed" ]; then echo "ok    tests-for: nothing changed against $base, nothing to run"; exit 0; fi
 # SKIP_TESTS_ON_TRIVIAL (founder 2026-08-28, crew#584: "if you change only docs, comments, or trivial
 # files, the hook skips tests entirely"). A file is trivial when it is prose (.md/.txt/.rst, docs/,
@@ -51,6 +60,28 @@ sel=$(
     b=$(basename "$f")
     grep -rlF --include='*.py' -e "$f" -e "$b" "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null | sed "s#^$IDP/##" | grep -v '/fixtures/' || true   # a fixture under tests/fixtures is proof material, not a test (test_unbound.py fails by design)
   done | sort -u
+  # A class fence names a DIRECTORY, never a file: tests/test_incident_a_script_under_bin_pipes_into_grep_q.py
+  # rglobs bin/ and refuses `| grep -q` in any script there. Selecting on the changed path or its
+  # basename can never reach it, so on 2026-08-29 bin/idp-kyverno-dirs was written with that exact
+  # bug, this rung said green twice, and CI found it (run 33260499925) -- the selector graded whether
+  # a test NAMES the file instead of whether it READS it. So a sweeper is selected too: a test that
+  # both quotes an ancestor directory of a changed file and walks a tree (rglob, iterdir, listdir,
+  # os.walk). Measured the same day: 20 sweepers quote "bin", 35 "platform", 16 "clusters" -- tens of
+  # files, not the 248 that quoting the directory alone would have dragged in, and not the suite.
+  # A changed test file is already selected by itself, and its own directory is quoted by almost
+  # every test in the tree -- feeding tests/ into this would select 203 of 420 files, which is the
+  # suite wearing a smaller name. Only the directories of the non-test files a push changes.
+  dirs=$(for f in $changed; do
+    case "$f" in tests/*|sovereign/tests/*) continue ;; esac
+    d=$(dirname "$f"); while [ "$d" != "." ] && [ "$d" != "/" ]; do echo "$d"; d=$(dirname "$d"); done
+  done | sort -u)
+  if [ -n "$dirs" ]; then
+    dirs_re=$(printf '%s\n' "$dirs" | sed 's#[].[^$*\\/]#\\&#g' | paste -sd'|' -)
+    grep -rlE --include='*.py' '\b(rglob|iterdir|listdir|os\.walk)\b' "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null \
+      | grep -v '/fixtures/' \
+      | xargs -r grep -lE "[\"'/](${dirs_re})[\"'/]" 2>/dev/null \
+      | sed "s#^$IDP/##" | sort -u || true
+  fi
 )
 if [ -z "$sel" ]; then echo "ok    tests-for: $(printf '%s\n' "$changed" | wc -l | tr -d ' ') changed file(s), no test names them (CI runs the suite)"; exit 0; fi
 n=$(printf '%s\n' "$sel" | wc -l | tr -d ' ')

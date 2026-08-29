@@ -55,5 +55,9 @@ if [ "$narrow" != "--narrow" ] && [ "${widening:-0}" -gt 0 ]; then
 	printf '%s\n' "$all"
 	exit 0
 fi
-for d in $all; do printf '%s\n' "$changed" | grep -q "^$d/" && echo "$d"; done
+# A here-string, not a pipe: `grep -q` exits on its first match, and a writer on the left of a
+# pipe then takes SIGPIPE, which pipefail hands back as the pipeline's answer (idp#774, and the
+# class fence in tests/test_incident_a_script_under_bin_pipes_into_grep_q.py). A here-string is a
+# file, so grep may stop early and nothing is left holding a broken pipe.
+for d in $all; do grep -q "^$d/" <<<"$changed" && echo "$d"; done
 exit 0
