@@ -62,6 +62,15 @@ else, or one with no PASS younger than 24 hours behind it, goes back to pending 
 The decision is one pure function, `decide`, in `bin/idp-ticket-verify`, graded in
 `tests/test_incident_crew631_cp5_ticket_state_machine.py`. How-to:
 `docs/how-to/get-a-ticket-verified.md`.
+## CP7: the L4 journey
+
+L2 proves the API answers a key; L4 proves data flows. The prover emits one OTLP span through
+`POST /api/public/otel/v1/traces` (vendor: Basic auth public:secret key, HTTP/JSON) with a fresh
+32-hex trace id per run, then polls `GET /api/public/traces/{id}` for up to 60 s. The assertion
+is `l4.journey.returned_id_equals_emitted_id`; the ingest 2xx is recorded but never sufficient,
+because an accepted span that never lands is silent green. Negative control: the same span with
+no key must be refused. `probes/langfuse.py` `l4_journey`, graded in
+`tests/test_incident_crew631_cp7_l4_trace_journey.py` against a door that accepts-and-drops.
 
 ## Not done yet
 
