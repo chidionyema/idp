@@ -134,18 +134,25 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
     guarded = 0
     for rule in route["spec"]["rules"]:
         refs = [flt["extensionRef"] for flt in rule.get("filters", []) if flt.get("type") == "ExtensionRef"]
-        if not refs:
+        forward_auth_mws = []
+        for ref in refs:
+            mw = MIDDLEWARES.get((ns, ref["name"]))
+            assert mw, f"{f}: Middleware {ns}/{ref['name']} not found in the route's namespace"
+            if "forwardAuth" not in mw["spec"]:
+                # Other manners-layer Middlewares (friendly-errors, edge-headers, ...) may ride
+                # along on the same rule; only the ForwardAuth one has to point at oauth2-proxy.
+                continue
+            forward_auth_mws.append(mw)
+        if not forward_auth_mws:
             paths = [m.get("path", {}) for m in rule.get("matches", [])]
             assert paths and all(p == {"type": "PathPrefix", "value": "/oauth2/"} for p in paths), \
-                f"{f}: route {route['metadata']['name']} has a rule with no ExtensionRef that is not the /oauth2/ login path"
+                f"{f}: route {route['metadata']['name']} has a rule with no ForwardAuth Middleware that is not the /oauth2/ login path"
             assert all(b["name"] == "oauth2-proxy" and b.get("namespace") == "identity" for b in rule["backendRefs"]), \
                 f"{f}: the /oauth2/ path must go to identity/oauth2-proxy, nowhere else"
             continue
         guarded += 1
-        for ref in refs:
-            mw = MIDDLEWARES.get((ns, ref["name"]))
-            assert mw, f"{f}: Middleware {ns}/{ref['name']} not found in the route's namespace"
-            assert "oauth2-proxy.identity" in mw["spec"]["forwardAuth"]["address"], mw["spec"]
+        assert any("oauth2-proxy.identity" in mw["spec"]["forwardAuth"]["address"] for mw in forward_auth_mws), \
+            f"{f}: route {route['metadata']['name']} has a ForwardAuth Middleware not pointed at oauth2-proxy.identity"
     assert guarded, f"{f}: route {route['metadata']['name']} has no guarded rule"
 
 

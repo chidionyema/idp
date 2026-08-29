@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - traefik.yaml
+  - status-page.yaml
   - cert-manager.yaml
   - langfuse-exception.yaml
   - k8s-infra-namespace.yaml
