@@ -34,6 +34,7 @@ spec:
         any:
           - resources:
               kinds: [Service, Ingress, PersistentVolumeClaim]
+              operations: [CREATE, UPDATE]   # idp#688: a DELETE is never a portability defect; judging it left the portal namespace Terminating (run 33227815539)
       validate:
         failureAction: Enforce
         message: >-
@@ -51,6 +52,7 @@ spec:
         any:
           - resources:
               kinds: [PersistentVolumeClaim]
+              operations: [CREATE, UPDATE]   # idp#688: a DELETE is never a portability defect; judging it left the portal namespace Terminating (run 33227815539)
       validate:
         failureAction: Enforce
         message: >-
@@ -68,6 +70,7 @@ spec:
         any:
           - resources:
               kinds: [StatefulSet]
+              operations: [CREATE, UPDATE]   # idp#688: a DELETE is never a portability defect; judging it left the portal namespace Terminating (run 33227815539)
       validate:
         failureAction: Enforce
         message: >-
@@ -85,6 +88,7 @@ spec:
         any:
           - resources:
               kinds: [Service]
+              operations: [CREATE, UPDATE]   # idp#688: a DELETE is never a portability defect; judging it left the portal namespace Terminating (run 33227815539)
       validate:
         failureAction: Enforce
         message: >-
@@ -102,6 +106,7 @@ spec:
         any:
           - resources:
               kinds: [Pod]
+              operations: [CREATE, UPDATE]   # idp#688: a DELETE is never a portability defect; judging it left the portal namespace Terminating (run 33227815539)
       validate:
         failureAction: Enforce
         message: >-
@@ -121,6 +126,7 @@ spec:
               kinds:
                 - external-secrets.io/v1/ClusterSecretStore
                 - external-secrets.io/v1/SecretStore
+              operations: [CREATE, UPDATE]   # idp#688: a DELETE is never a portability defect
       validate:
         failureAction: Enforce
         message: >-

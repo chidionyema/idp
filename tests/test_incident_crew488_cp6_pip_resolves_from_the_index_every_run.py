@@ -82,12 +82,23 @@ def test_every_cache_key_hashes_at_least_one_file_that_exists(path):
     if not isinstance(doc, dict):
         pytest.skip("not a workflow")
     for name, job in (doc.get("jobs") or {}).items():
-        for step in (job.get("steps") or []):
-            if not isinstance(step, dict) or (step.get("with") or {}).get("cache") != "pip":
+        steps = [s for s in (job.get("steps") or []) if isinstance(s, dict)]
+        # The key is hashed from the workspace, not the repo: a job that checks this repo out
+        # under `path: idp` writes `idp/.github/...` (catalog-render run 33224632189, 2026-08-29).
+        checkout = [s for s in steps if str(s.get("uses", "")).startswith("actions/checkout")
+                    and "repository" not in (s.get("with") or {})]
+        prefix = ((checkout[0].get("with") or {}).get("path") or "") if checkout else ""
+        for step in steps:
+            if (step.get("with") or {}).get("cache") != "pip":
                 continue
             dep = (step.get("with") or {}).get("cache-dependency-path")
             assert dep, "%s::%s caches pip and names no cache-dependency-path" % (path.name, name)
             for pattern in str(dep).split():
+                if prefix:
+                    assert pattern.startswith(prefix + "/"), (
+                        "%s::%s hashes %r but its checkout lives under %s/: the key would hash "
+                        "nothing" % (path.name, name, pattern, prefix))
+                    pattern = pattern[len(prefix) + 1:]
                 assert glob.glob(os.path.join(str(ROOT), pattern)), (
                     "%s::%s hashes %r, which matches no file in the repository: the key would be "
                     "constant and the cache would never hold what the job installs"

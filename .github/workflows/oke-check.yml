@@ -19,7 +19,7 @@ on:
       playbook:
         description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose and architect-doctor are read-only."
         type: choice
-        options: [diagnose, architect-doctor, cilium-unchain, cilium-replace, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll]
+        options: [diagnose, architect-doctor, cilium-unchain, cilium-replace, helm-retry, namespace-unstick, k8sgpt-analyze, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll]
         default: diagnose
   pull_request:
     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
@@ -108,6 +108,7 @@ jobs:
       # bin/idp-verify-drill; no PAT is ever pasted. Exit 2 is BLIND (App not installed yet).
       - name: bin/idp-github-app refresh (crew#577)
         if: ${{ always() && inputs.mode == 'apply' }}
+        timeout-minutes: 5   # run 33223929243 hung here 20 min and, through the concurrency group, held every break-glass run behind it (2026-08-29)
         env:
           OCI_CLI_AUTH: security_token
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}

@@ -33,17 +33,9 @@ images:
   - name: postgres
     newName: docker.io/library/postgres
 patches:
-  # The label that arms admission. platform/scheduling/require-availability.yaml refuses a
-  # Deployment below the standard in any namespace carrying it, and bin/idp-availability-gate
-  # FAILS a namespace it graded green that does not. It is set here and not in the base because
-  # the base is the k3d shape: one node, one replica, where the policy would refuse correct work.
-  - target:
-      kind: Namespace
-      name: backstage
-    patch: |
-      - op: add
-        path: /metadata/labels/availability.idp~1tier
-        value: founder-facing
+  # The availability.idp/tier label moved with the Namespace to
+  # platform/backstage/namespace/overlays/oke. The object is no longer rendered here, so a patch
+  # targeting it here would have no target (crew#488).
   # ghcr packages under this account are private (anonymous manifest GET: 403, 2026-08-25).
   # idp-flux-bootstrap writes ghcr-pull in every namespace that pulls; catalog.yaml uses it too.
   - target:

@@ -47,10 +47,10 @@ jobs:
           # the referring file would keep restoring a stale cache after oci-cli.txt changed,
           # while reading exactly like a key that tracked the install (crew#488 CP6).
           cache-dependency-path: |
-            .github/requirements/conscience.txt
-            .github/requirements/oci-cli.txt
+            idp/.github/requirements/conscience.txt
+            idp/.github/requirements/oci-cli.txt
       - name: tools the tenet rows call
-        run: pip install -q -r .github/requirements/conscience.txt
+        run: pip install -q -r idp/.github/requirements/conscience.txt
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:

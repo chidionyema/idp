@@ -8,7 +8,6 @@ test_incident_crew516_verify_drill_cluster_row_tolerates_resize.py). The script-
 outside a comment" (the cp5b test uses the same comment-excluding pattern)."""
 import base64
 import json
-import re
 import stat
 import subprocess
 from pathlib import Path
