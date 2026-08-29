@@ -83,6 +83,7 @@ jobs:
           bin/idp-verdict schema || true
           bin/idp-verdict store verdict.json || true
           bin/idp-verdict list -n 3 || true
+          bin/idp-verdict refuse-test || true
       - name: check-run verify/backstage on the commit, conclusion = outcome
         if: always()
         env:
