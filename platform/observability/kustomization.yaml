@@ -6,6 +6,7 @@ resources:
   - helmrepository.yaml
   - signoz.yaml
   - telemetry-coverage.yaml
+  - signoz-retention.yaml
   - langfuse.yaml
   - httproute.yaml
   - edge-manners.yaml

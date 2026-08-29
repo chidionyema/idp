@@ -1,0 +1,138 @@
+# crew#584 CP-I: the registry (platform/features/features.yaml, logs-metrics-store/enterprise)
+# promises `knobs: { retention_days: 7 }` and says "retention is a tier knob, not a hand edit".
+# The SigNoz chart has no retention value (only ClickHouse system-log TTLs) and the docs point at
+# Settings -> Retention Controls, a hand edit; the same setting is the admin API
+# `POST /api/v1/settings/ttl?type=<traces|metrics|logs>&duration=<Go duration>` (SigNoz v0.138.0,
+# pkg/query-service/app/http_handler.go:430). Once a day this Job logs in as the root user the
+# estate already holds (ExternalSecret signoz-root, mounted as files), reads the current TTL of each
+# signal and sets the knob's value where it differs. Same pod shape as telemetry-coverage.yaml.
+#
+# The knob lives in the ConfigMap below; tests/test_incident_crew584_retention_knob_was_never_applied.py
+# pins it to the registry so the two cannot drift.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signoz-retention
+data:
+  retention_days: "7"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signoz-retention-apply
+data:
+  apply.py: |
+    import json, os, sys, urllib.error, urllib.parse, urllib.request
+    SIGNOZ = os.environ.get("SIGNOZ_URL", "http://signoz:8080")
+    SIGNALS = ("traces", "metrics", "logs")
+    def http(method, path, body=None, token=None, params=None):
+        url = SIGNOZ + path + ("?" + urllib.parse.urlencode(params) if params else "")
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = "Bearer " + token
+        req = urllib.request.Request(url, method=method, headers=headers,
+                                     data=json.dumps(body).encode() if body is not None else None)
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return r.status, json.load(r)
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read().decode() or "{}")
+    def login(http, email, password):
+        # v2 sessions (SigNoz >= 0.112): the org id is read from the session context, the token
+        # comes back as data.accessToken (pkg/types/authtypes/token.go GettableToken).
+        status, ctx = http("GET", "/api/v2/sessions/context", params={"email": email, "ref": ""})
+        if status != 200 or not ctx.get("data", {}).get("orgs"):
+            raise SystemExit(f"FAIL signoz-retention session context {status}: {json.dumps(ctx)[:200]}")
+        org = ctx["data"]["orgs"][0]["id"]
+        status, tok = http("POST", "/api/v2/sessions/email_password",
+                           {"email": email, "password": password, "orgId": org})
+        if status != 200 or not tok.get("data", {}).get("accessToken"):
+            raise SystemExit(f"FAIL signoz-retention login {status}: {json.dumps(tok)[:200]}")
+        return tok["data"]["accessToken"]
+    def plan(http, token, days):
+        """Return [(signal, current_hours)] whose TTL is not the knob, reading the API first so a
+        run that finds the knob already applied writes nothing (ALTER TABLE ... MODIFY TTL is not free)."""
+        want = days * 24
+        todo = []
+        for sig in SIGNALS:
+            status, cur = http("GET", "/api/v1/settings/ttl", token=token, params={"type": sig})
+            have = cur.get(f"{sig}_ttl_duration_hrs", -1) if status == 200 else -1
+            if have != want:
+                todo.append((sig, have))
+        return todo
+    def apply(http, token, days, todo):
+        failed = []
+        for sig, have in todo:
+            status, out = http("POST", "/api/v1/settings/ttl", token=token,
+                               params={"type": sig, "duration": f"{days * 24}h"})
+            if status == 409:  # a previous TTL change is still running in ClickHouse; next run finishes it
+                print(f"pending {sig}: {have}h -> {days * 24}h (previous change still in progress)")
+            elif status == 200:
+                print(f"set {sig}: {have}h -> {days * 24}h")
+            else:
+                failed.append(f"{sig} {status} {json.dumps(out)[:120]}")
+        return failed
+    def main(http=http):
+        days = int(open("/config/retention_days").read().strip())
+        email = open("/secrets/email").read().strip()
+        password = open("/secrets/password").read().strip()
+        token = login(http, email, password)
+        todo = plan(http, token, days)
+        failed = apply(http, token, days, todo)
+        if failed:
+            raise SystemExit("FAIL signoz-retention " + "; ".join(failed))
+        print(f"ok signoz-retention retention_days={days} set={len(todo)} unchanged={len(SIGNALS) - len(todo)}")
+    if __name__ == "__main__":
+        main()
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: signoz-retention
+spec:
+  schedule: "17 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 3600
+      backoffLimit: 2
+      activeDeadlineSeconds: 300
+      template:
+        spec:
+          priorityClassName: platform-batch
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          containers:
+            - name: apply
+              # Same image and uid as telemetry-coverage.yaml: python3 for four HTTP calls, nothing else.
+              image: ghcr.io/oracle/oci-cli:20260826
+              command: ["python3", "/apply/apply.py"]
+              env:
+                - { name: HOME, value: /tmp }
+              volumeMounts:
+                - { name: apply, mountPath: /apply, readOnly: true }
+                - { name: knob, mountPath: /config, readOnly: true }
+                - { name: signoz-root, mountPath: /secrets, readOnly: true }   # Kyverno: the password is a file, never an env var
+                - { name: tmp, mountPath: /tmp }
+              resources:
+                requests: { cpu: 100m, memory: 128Mi }
+                limits: { cpu: 100m, memory: 128Mi }
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+                seccompProfile: { type: RuntimeDefault }
+          volumes:
+            - name: apply
+              configMap: { name: signoz-retention-apply }
+            - name: knob
+              configMap: { name: signoz-retention }
+            - name: signoz-root
+              secret: { secretName: signoz-root }
+            - name: tmp
+              emptyDir: {}
