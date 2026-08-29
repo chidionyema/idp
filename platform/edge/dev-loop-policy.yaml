@@ -25,6 +25,7 @@ spec:
         any:
           - resources:
               kinds: [Pod]
+              operations: [CREATE, UPDATE]   # idp#694: a DELETE is never judged; the fence is for admission only
       exclude:
         any:
           - resources:
