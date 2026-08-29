@@ -5,6 +5,10 @@ Each level proves strictly more than the one below, and says nothing about the o
   L2  the public API answers an API key. This is validated against the key table in the app and
       never touches the OIDC path, so a green L2 says nothing about whether a person can sign in.
       That gap is the eight hours of 2026-08-29 (crew#626).
+  L4  a journey: one OTLP trace is emitted through the ingest door and read back through the
+      authenticated API inside 60 s, asserted on `returned id == emitted id`, never on the ingest
+      202 (an accepted span that never lands is the silent-green class). Negative control: the same
+      span with no key is refused.
   L3  a cold browser handshake through the front door yields a session whose identity is the
       drill user. Asserted on the identity claim, never on a cookie or a 200 (next-auth
       GHSA-v64w-49xw-qq89: a session that exists is not a session that is someone). Paired with a
@@ -23,14 +27,16 @@ from probes.verdict import assertion
 TIMEOUT_S = 20
 
 
-def http(url, auth=None, timeout=TIMEOUT_S):
+def http(url, auth=None, timeout=TIMEOUT_S, data=None):
     """(status, body_text). Redirects are followed; a redirect to the identity domain shows up
-    as a 200 HTML sign-in page, which is why nothing below asserts on 200 alone."""
+    as a 200 HTML sign-in page, which is why nothing below asserts on 200 alone. data (bytes)
+    makes it a JSON POST."""
     if not url.startswith("https://"):
         return 0, "refused: only https targets"
-    req = urllib.request.Request(  # noqa: S310
-        url, headers={"Accept": "application/json", "User-Agent": "idp-prove/1"}
-    )
+    headers = {"Accept": "application/json", "User-Agent": "idp-prove/1"}
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, headers=headers, data=data)  # noqa: S310
     if auth:
         req.add_header(
             "Authorization",
@@ -123,5 +129,103 @@ def l3_from_sessions(authed, cold, expected_identity):
             "no user",
             f"user={str(cold_user)[:80]}" if cold_user else "no user",
             not cold_user,
+        ),
+    ]
+
+
+def otlp_span_document(trace_id, span_id, name, start_ns, end_ns):
+    """The smallest OTLP/JSON ExportTraceServiceRequest: one resource, one scope, one span."""
+    return {
+        "resourceSpans": [
+            {
+                "resource": {
+                    "attributes": [
+                        {"key": "service.name", "value": {"stringValue": "idp-prove"}}
+                    ]
+                },
+                "scopeSpans": [
+                    {
+                        "scope": {"name": "idp-prove"},
+                        "spans": [
+                            {
+                                "traceId": trace_id,
+                                "spanId": span_id,
+                                "name": name,
+                                "kind": 1,
+                                "startTimeUnixNano": str(start_ns),
+                                "endTimeUnixNano": str(end_ns),
+                                "attributes": [
+                                    {
+                                        "key": "langfuse.trace.name",
+                                        "value": {"stringValue": name},
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+
+
+def l4_journey(
+    host,
+    public_key,
+    secret_key,
+    trace_id,
+    span_id,
+    name,
+    *,
+    http=http,
+    sleep=None,
+    clock=None,
+    deadline_s=60,
+    every_s=5,
+):
+    """Emit one span through the OTLP door (vendor: POST /api/public/otel/v1/traces, Basic auth
+    pk:sk, HTTP/JSON), then poll the authenticated read API until the trace with the emitted id
+    is returned, inside deadline_s. Three assertions: the ingest answered 2xx; the read-back id
+    equals the emitted id (the journey); NEGATIVE: the same document with no key is refused."""
+    import time as _t
+
+    sleep = sleep or _t.sleep
+    clock = clock or _t.time
+    now_ns = int(clock() * 1e9)
+    doc = json.dumps(
+        otlp_span_document(trace_id, span_id, name, now_ns - 1_000_000, now_ns)
+    ).encode()
+    auth = (public_key, secret_key)
+    istatus, ibody = http(f"{host}/api/public/otel/v1/traces", auth=auth, data=doc)
+    found, last = None, ""
+    t0 = clock()
+    while clock() - t0 < deadline_s:
+        rstatus, rbody = http(f"{host}/api/public/traces/{trace_id}", auth=auth)
+        rdoc = _json(rbody)
+        if rstatus == 200 and isinstance(rdoc, dict) and rdoc.get("id"):
+            found = rdoc
+            break
+        last = f"{rstatus} {rbody[:60]}"
+        sleep(every_s)
+    returned = (found or {}).get("id")
+    nstatus, nbody = http(f"{host}/api/public/otel/v1/traces", data=doc)
+    return [
+        assertion(
+            "l4.otlp.ingest_accepted",
+            "2xx",
+            f"{istatus} {ibody[:60]}",
+            200 <= istatus < 300,
+        ),
+        assertion(
+            "l4.journey.returned_id_equals_emitted_id",
+            trace_id,
+            returned or f"not readable within {deadline_s}s: {last}",
+            returned == trace_id,
+        ),
+        assertion(
+            "l4.NEGATIVE.no_key_ingest_is_refused",
+            "401/403",
+            f"{nstatus} {nbody[:60]}",
+            nstatus in (401, 403),
         ),
     ]

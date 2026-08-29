@@ -97,10 +97,16 @@ def test_an_expired_verdict_refuses_the_change_and_names_the_command(tmp_path):
     assert "expired" in out and "gh workflow run verdict-langfuse.yml" in out
 
 
-def test_a_fail_verdict_and_an_unsigned_one_refuse(tmp_path):
+def test_a_fresh_fail_verdict_lets_the_repair_through_and_says_so(tmp_path):
+    """crew#626 CP15: main's Langfuse verdict was FAIL because of the defect idp#820 repairs, and
+    the gate refused the repair for touching the surface; nothing could ever turn it green."""
     env = fake_gh(tmp_path, RUN, verdict(10, outcome="FAIL"))
     rc, out = run_gate(env, "--changed", LANGFUSE)
-    assert rc == 1 and "FAIL" in out, out
+    assert rc == 0 and out.startswith("ok"), out
+    assert "FAIL" in out and "repair" in out and "run 42" in out, out
+
+
+def test_an_unsigned_verdict_refuses(tmp_path):
     v = verdict(10)
     v.pop("sig")
     (tmp_path / "u").mkdir()

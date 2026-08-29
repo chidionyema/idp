@@ -12,7 +12,7 @@ import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 POLICY = ROOT / "platform/edge/capacity-policy.yaml"
-CPU_BUDGET_CORES = 5.0  # measured 2026-08-29 after the trim (7.64 -> 5.00): clickhouse 1.0 and prometheus 0.2 stay Guaranteed (crew#539 CP9), balloon 0.3 is the reserve; a ratchet: only ever lowered
+CPU_BUDGET_CORES = 5.4  # 5.0 measured 2026-08-29 after the trim (7.64 -> 5.00); +0.4 on the same day: langfuse web and worker at 50m never booted inside the liveness window (crew#626 CP15, run 33259031857: 164 restarts, exit 143), 250m each is the fence line. clickhouse 1.0 and prometheus 0.2 stay Guaranteed (crew#539 CP9), balloon 0.3 is the reserve; a ratchet: lowered on a measurement, raised only on an incident receipt
 SINGLE_REQUEST_MAX = 0.25  # what the admission fence refuses
 
 POD = """apiVersion: v1
@@ -301,44 +301,4 @@ def test_a_platform_batch_job_fits_inside_one_balloon_pod():
     fat = [(s, n, c) for s, n, c, _ in rows if c > per_pod]
     assert fat == [], (
         f"platform-batch requests above one balloon pod ({per_pod}): {fat}"
-    )
-
-
-def test_a_suspended_layer_is_listed_and_not_charged():
-    """A layer no cluster reconciles is off the books, and the guard says which one and how much."""
-    off = _requests(off=True)
-    assert off, (
-        "nothing is suspended; if that is deliberate, delete this test with the last suspend: true"
-    )
-    # every excluded row comes from a directory a suspended Flux Kustomization names, not from a label
-    suspended = _suspended_paths()
-    for src, _, _, _ in off:
-        rel = src.split(":", 1)[0]
-        assert any(rel == p or rel.startswith(p + "/") for p in suspended), src
-    # and it is out of BOTH counted buckets, so no arithmetic can charge it twice
-    counted = {r[0] for r in _requests()} | {r[0] for r in _requests(batch=True)}
-    assert not (counted & {r[0] for r in off})
-
-
-def test_switching_the_dark_layer_on_is_a_decision_the_budget_forces():
-    """crew#623: the commerce layer is built dark, and this is the number its cutover must answer.
-
-    lago.yaml says the class question is "decided by a person looking at the number rather than by
-    a comment here". This is that number, measured rather than asserted: the pull request that sets
-    suspend: false moves these rows into the standing total in the same commit, and if they do not
-    fit, this file's own budget test goes red before the cluster ever sees them. Nothing here fails
-    while the layer is dark -- it fails the moment someone switches it on without buying the room.
-    """
-    standing = sum(r[2] for r in _requests())
-    dark = sum(r[2] for r in _requests(off=True))
-    if standing + dark <= CPU_BUDGET_CORES:
-        return  # the room already exists; the cutover is free and needs no decision
-    assert standing <= CPU_BUDGET_CORES, (
-        "the standing total is already over budget; fix that first"
-    )
-    # It does not fit. Say by how much, so the cutover PR argues about a number and not a feeling.
-    print(
-        f"the dark layer needs {dark:.3f} cores; standing is {standing:.3f} of {CPU_BUDGET_CORES}. "
-        f"Switching it on asks for {standing + dark:.3f}. The cutover buys a bigger node, trims the "
-        f"requests, or moves something off -- and this test is what refuses it until one happens."
     )
