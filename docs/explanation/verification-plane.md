@@ -45,3 +45,10 @@ control. No screen layout is graded.
 CP2 scopes the key to the runner identity only. CP3 stores verdicts in Postgres, append-only.
 CP5 and CP6 make the check required and move tickets on verdicts. CP8 runs each probe against a
 broken target weekly.
+
+## Who can read the signing key (CP2)
+
+Only the prover. `estate-ci` sits in `estate-provers`, whose one grant is a read on
+`verdict-hmac-key`. The operators' and the worker nodes' secret grants exclude that name, so an agent
+on a laptop or in a pod cannot mint a signature. How the grants land and the one founder step:
+`docs/how-to/scope-the-verdict-key-to-the-prover.md`.
