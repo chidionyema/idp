@@ -85,11 +85,16 @@ def test_the_policy_is_applied_by_the_edge_kustomization():
     assert "capacity-policy.yaml" in kust["resources"]
 
 
-def _requests():
-    """Every CPU request declared under platform/: raw workloads and HelmRelease values alike."""
-    out = []
+def _requests(batch=False):
+    """Every CPU request declared under platform/: raw workloads and HelmRelease values alike.
 
-    def walk(o, src, labels):
+    A pod under PriorityClass platform-batch (crew#584 CP-I: nightly jobs) is not standing capacity:
+    it is seated by preempting the balloon (platform/scheduling/balloon.yaml), whose request this
+    sum already counts, so its own request is listed by batch=True and kept out of the paper total.
+    test_a_platform_batch_job_fits_inside_one_balloon_pod bounds it."""
+    out, batch_out = [], []
+
+    def walk(o, src, labels, in_batch=False):
         # labels are what the fence sees on the pod: the enclosing metadata.labels (pod template) or a
         # chart block's podLabels, inherited down to the container that holds the request
         if isinstance(o, dict):
@@ -97,14 +102,15 @@ def _requests():
             pl = o.get("podLabels") if isinstance(o.get("podLabels"), dict) else {}
             ml = md.get("labels") if isinstance(md.get("labels"), dict) else {}
             labels = {**labels, **ml, **pl}
+            in_batch = in_batch or o.get("priorityClassName") == "platform-batch"
             r = o.get("resources")
             if isinstance(r, dict) and isinstance(r.get("requests"), dict) and "cpu" in r["requests"]:
-                out.append((src, o.get("name", ""), _qty(r["requests"]["cpu"]), labels))
+                (batch_out if in_batch else out).append((src, o.get("name", ""), _qty(r["requests"]["cpu"]), labels))
             for v in o.values():
-                walk(v, src, labels)
+                walk(v, src, labels, in_batch)
         elif isinstance(o, list):
             for v in o:
-                walk(v, src, labels)
+                walk(v, src, labels, in_batch)
 
     for f in sorted((ROOT / "platform").rglob("*.y*ml")):
         try:
@@ -114,7 +120,7 @@ def _requests():
                     walk(d, f"{f.relative_to(ROOT)}:{d.get('kind', '')}/{(d.get('metadata') or {}).get('name', '')}", {})
         except yaml.YAMLError:
             continue
-    return out
+    return batch_out if batch else out
 
 
 def test_the_platform_asks_for_less_cpu_than_the_budget():
@@ -129,3 +135,14 @@ def test_no_single_request_exceeds_what_the_fence_refuses():
     # 10-20% node reserve, crew#539; clickhouse: 1.80 GiB ceiling + merges, run 33140351385)
     fat = [(s, n, c) for s, n, c, l in _requests() if c > SINGLE_REQUEST_MAX and l.get("idp.platform/capacity-approved") != "true"]
     assert fat == [], fat
+
+
+def test_a_platform_batch_job_fits_inside_one_balloon_pod():
+    # crew#584 CP-I: a nightly job is seated by preempting one balloon pod, so it may ask for at most
+    # what one balloon pod holds; more than that and it is standing capacity in disguise.
+    balloon = yaml.safe_load((ROOT / "platform/scheduling/balloon.yaml").read_text())
+    per_pod = _qty(balloon["spec"]["template"]["spec"]["containers"][0]["resources"]["requests"]["cpu"])
+    rows = _requests(batch=True)
+    assert rows, "no platform-batch job declares a CPU request (signoz-retention should)"
+    fat = [(s, n, c) for s, n, c, _ in rows if c > per_pod]
+    assert fat == [], f"platform-batch requests above one balloon pod ({per_pod}): {fat}"
