@@ -578,6 +578,20 @@ pb_k8sgpt_analyze() {
   # The operator names the analyzer Deployment after the K8sGPT object and labels it app=<name>
   # (k8sgpt-operator pkg/resources/k8sgpt.go: Name: config.Name, MatchLabels app: config.Name).
   # The old selector app.kubernetes.io/name=k8sgpt matched nothing by construction.
+  # run 33237896443 (dispatched 18s after idp#725 merged) and 33238265861 both graded the object Flux had
+  # not applied yet (`No Cache: false` on the cluster, true on main). Name that instead of a false FAIL.
+  applied=$($K get kustomization healing-analyzer -n flux-system -o jsonpath='{.status.lastAppliedRevision}' 2>/dev/null || true)
+  if [ -n "${GITHUB_SHA:-}" ] && [ -n "$applied" ] && [ "${applied##*:}" != "$GITHUB_SHA" ]; then
+    echo "BLIND k8sgpt-analyze  Flux has not applied this commit yet: healing-analyzer is at ${applied##*:}, this run is $GITHUB_SHA; re-run after the next reconcile"
+    return 0
+  fi
+  # runs 33237896443 and 33238265861 graded the object Flux had not applied yet (`No Cache: false` on
+  # the cluster, true on main) and printed a false FAIL. Name the stale revision instead.
+  applied=$($K get kustomization healing-analyzer -n flux-system -o jsonpath='{.status.lastAppliedRevision}' 2>/dev/null || true)
+  if [ -n "${GITHUB_SHA:-}" ] && [ -n "$applied" ] && [ "${applied##*:}" != "$GITHUB_SHA" ]; then
+    echo "BLIND k8sgpt-analyze  Flux has not applied this commit yet: healing-analyzer is at ${applied##*:}, this run is $GITHUB_SHA; re-run after the next reconcile"
+    return 0
+  fi
   if [ -z "$($K get deployment -n healing -l app=estate -o name 2>/dev/null)" ]; then
     echo "FAIL  k8sgpt-analyze  no analyzer deployment in healing: the operator has not reconciled the K8sGPT object (see k8sgpt-operator-log above)"
     FAILED="$FAILED k8sgpt-analyzer-absent"
