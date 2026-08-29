@@ -16,4 +16,4 @@ def test_the_lookup_is_wired_from_dispatch_input_to_the_prover_and_is_not_graded
     prove = (IDP / "bin/idp-prove").read_text()
     block = prove[prove.index("IDP_PROVE_LOOKUP_TRACE") :]
     assert re.search(r'print\(f"info\s+prove\s+l4\.attribution\.prior_trace_', block)
-    assert "assertions +=" not in block.split("l3_via_drill")[0]
+    assert "assertions +=" not in block.split("    else:")[0]
