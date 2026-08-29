@@ -29,6 +29,17 @@ spec:
   rules:
     - matches:
         - path: { type: PathPrefix, value: /oauth2/ }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: oauth2-proxy
           namespace: identity
@@ -39,6 +50,16 @@ spec:
             group: traefik.io
             kind: Middleware
             name: login-forward-auth
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: langfuse-web
           port: 3000
@@ -70,6 +91,17 @@ spec:
         # round-trip with the identity domain; a fresh browser's callback must not be bounced to
         # the front door first, and `curl /api/auth/providers` is the operational proof.
         - path: { type: PathPrefix, value: /api/auth/ }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: langfuse-web
           port: 3000
@@ -95,6 +127,17 @@ spec:
   rules:
     - matches:
         - path: { type: PathPrefix, value: /oauth2/ }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: oauth2-proxy
           namespace: identity
@@ -105,6 +148,16 @@ spec:
             group: traefik.io
             kind: Middleware
             name: login-forward-auth
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: signoz
           port: 8080
@@ -167,6 +220,16 @@ spec:
             group: traefik.io
             kind: Middleware
             name: otlp-basic-auth
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: signoz-otel-collector
           port: 4318
