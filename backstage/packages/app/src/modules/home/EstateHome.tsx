@@ -618,8 +618,8 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
         {verdict(counts, all.length)}
       </h1>
       <p className={classes.note}>
-        A layer is one piece the cluster runs, or one door you sign in through;
-        its word comes from the cluster, never from a file.
+        A service is one piece the cluster runs, or one door you sign in
+        through; its word comes from the cluster, never from a file.
       </p>
       <div
         className={classes.counters}
@@ -641,7 +641,7 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
         fullWidth
         inputRef={findRef}
         variant="outlined"
-        placeholder="Find a layer, a door or an action — Enter opens the first"
+        placeholder="Find a service, a door or an action — Enter opens the first"
         value={query}
         onChange={e => setQuery(e.target.value)}
         onKeyDown={e => e.key === 'Enter' && open()}
@@ -672,14 +672,14 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
           What we run
           <span className={classes.hCount}>
             {layers.length === estate.layers.length
-              ? `${estate.layers.length} layers`
-              : `${layers.length} of ${estate.layers.length} layers`}
+              ? `${estate.layers.length} services`
+              : `${layers.length} of ${estate.layers.length} services`}
           </span>
         </h2>
         {estate.layers.length === 0 && (
           <p className={classes.note} data-testid="no-layers">
-            No platform layers are registered. bin/catalog-platform writes them
-            from the cluster's Flux list; nothing is typed here.
+            No platform services are registered. bin/catalog-platform writes
+            them from the cluster's Flux list; nothing is typed here.
           </p>
         )}
         {systemsShown.map(([id, xs]) => {
