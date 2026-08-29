@@ -72,8 +72,8 @@ def test_the_status_page_serves_every_status_the_middleware_rewrites():
 def test_traefik_can_reach_the_status_page_across_namespaces_and_writes_an_access_log():
     values = next(d for d in _docs(ROOT / "platform/edge/traefik.yaml") if d["kind"] == "HelmRelease")["spec"]["values"]
     assert values["providers"]["kubernetesCRD"]["allowCrossNamespace"] is True
-    assert values["logs"]["access"]["enabled"] is True
-    assert values["logs"]["access"]["format"] == "json"
+    assert values["accessLog"]["enabled"] is True
+    assert values["accessLog"]["format"] == "json"
 
 
 def test_no_door_advertises_its_web_server():

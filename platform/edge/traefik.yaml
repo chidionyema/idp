@@ -71,14 +71,13 @@ spec:
         enabled: false
     # The front door writes one JSON line per request to stdout, where the estate collector reads
     # it (LAW 50). Without it, "the store was slow at 14:02" has no evidence at the edge.
-    logs:
-      access:
-        enabled: true
-        format: json
-        fields:
-          headers:
-            defaultMode: drop
-            names: { User-Agent: keep, Referer: keep }
+    accessLog:
+      enabled: true
+      format: json
+      fields:
+        headers:
+          defaultMode: drop
+          names: { User-Agent: keep, Referer: keep }
     service:
       # `spec:`, not `type:` at this level. The chart passes this map straight into the Service
       # spec (values.yaml: "Additional entries here will be added to the Service spec"); a bare

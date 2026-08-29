@@ -1,7 +1,7 @@
 # The page a person sees when a door's backend is down (pod restarting, namespace rebuilding, node
 # gone). Traefik's `errors` middleware (friendly-errors, in every route namespace) rewrites a
 # 502/503/504 from the backend to /<status>.html here, so nobody outside ever reads the proxy's
-# raw "no available server" (founder, 2026-08-29, on the catalogue: "thats amateur"). Static
+# raw "no available server" (founder, 2026-08-29, on the portal: "thats amateur"). Static
 # nginx, unprivileged, two replicas on two nodes, Guaranteed QoS, infrastructure-critical: the
 # page that says "we are down" must be the last thing to go down.
 apiVersion: v1
