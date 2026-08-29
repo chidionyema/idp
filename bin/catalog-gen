@@ -456,7 +456,7 @@ def cluster_entities():
             desc = (f"{kind} {name}: Flux reconciles {path or rel} into namespace {ns or 'flux-system'}"
                     + (f", chart {chart}" if chart else "") + ".")
         etype = "flux-row" if kind == "Kustomization" else "helm-chart"
-        ann = {"kind": "cluster", "flux-kind": kind, "flux-name": name, "namespace": ns,
+        ann = {"source": "cluster", "flux-kind": kind, "flux-name": name, "namespace": ns,
                "file": rel, "path": path, "chart": chart, "suspended": "true" if suspended else ""}
         tags = ["cluster", etype] + (["suspended"] if suspended else [])
         docs.append(entity("Component", f"cluster-{slug(kind).lower()}-{slug(name)}",
@@ -472,7 +472,7 @@ def cluster_entities():
         for tool, on, what in (("cilium", True, "Cilium replaces flannel as the CNI: pod networking, network policy and eBPF datapath (platform/cni/cilium-values.yaml, applied by playbook cilium-replace, never a Flux row)."),
                                ("hubble", bool(hub.get("enabled")), f"Hubble is Cilium's flow observability: relay {'on' if (hub.get('relay') or {}).get('enabled') else 'off'}, UI {'on' if (hub.get('ui') or {}).get('enabled') else 'off'}; flows and metrics per pod, counted by bin/idp-telemetry-coverage.")):
             docs.append(entity("Component", f"cluster-cni-{tool}", tool.capitalize(), "cluster-choice",
-                               {"kind": "cluster", "file": "platform/cni/cilium-values.yaml", "enabled": "true" if on else "false"},
+                               {"source": "cluster", "file": "platform/cni/cilium-values.yaml", "enabled": "true" if on else "false"},
                                ["cluster", "cluster-choice", "cni"] + ([] if on else ["disabled"]),
                                _idp_source_link("platform/cni/cilium-values.yaml"), description=what))
         seen_dirs.add("cni")
@@ -492,7 +492,7 @@ def cluster_entities():
         if not desc:
             desc = f"platform/{d}: applied outside Flux (cluster bootstrap, Terraform or a workflow); see the files in the directory."
         docs.append(entity("Component", f"cluster-dir-{slug(d)}", f"platform/{d}", "cluster-choice",
-                           {"kind": "cluster", "file": f"platform/{d}"}, ["cluster", "cluster-choice"],
+                           {"source": "cluster", "file": f"platform/{d}"}, ["cluster", "cluster-choice"],
                            _idp_source_link(f"platform/{d}"), description=desc))
     return docs
 
