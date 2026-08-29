@@ -150,7 +150,17 @@ def test_no_manifest_holds_a_user_database():
     """ADR 0007: the estate holds no password for a person."""
     for f, d in _docs():
         text = yaml.safe_dump(d)
-        assert "users_database" not in text and "password_hash" not in text, f"{f}: a user database"
+        assert "users_database" not in text, f"{f}: a user database"
+        if "password_hash" in text:
+            # crew#562 path 2: Guacamole's schema makes the column NOT NULL, so the seed row that
+            # lets the founder's connection be granted before first sign-in must fill it. The
+            # only value allowed is fresh kernel randomness with no salt -- a hash of nothing a
+            # person knows, matched by no password. Graded on the SQL, not on a comment.
+            sql = "\n".join(v for v in d.get("data", {}).values() if isinstance(v, str)) if d.get("kind") == "ConfigMap" else ""
+            hashes = re.findall(r"INSERT INTO \w+ \([^)]*password_hash[^)]*\)\s*(?:VALUES|SELECT)\s*([^\n]+)", sql)
+            assert hashes, f"{f}: password_hash outside a seed INSERT is a user database"
+            for values in hashes:
+                assert "decode(md5(random()::text), 'hex'), NULL" in values, f"{f}: a password_hash that is not pure randomness with no salt: {values}"
         if d.get("kind") == "Middleware":
             assert "authelia" not in text, f"{f}: Middleware still points at authelia"
 
