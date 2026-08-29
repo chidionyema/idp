@@ -47,8 +47,8 @@ spec:
 # the estate identity domain (the app is platform/oci/identity main.tf `langfuse`, the id and
 # secret are written to the vault by tofu). AUTH_CUSTOM_ISSUER is the domain URL because that is
 # where IDCS serves /.well-known/openid-configuration (the `issuer` claim inside it is
-# identity.oraclecloud.com, which serves nothing -- measured 2026-08-29, HTTP 000).
-# crew#626 CP15: ID_TOKEN was set to false here to dodge that issuer string; the vendor page
+# identity.oraclecloud.com, which serves nothing -- measured 2026-08-29, HTTP 000). ID_TOKEN is
+# on (crew#626 CP15): it was set to false here to dodge that issuer string; the vendor page
 # (langfuse.com/self-hosting/security/authentication-and-sso, read 2026-08-29) says that
 # "switches the token exchange to the plain OAuth2 callback, which fails whenever the token
 # response contains an id_token", and the identity domain always returns one for scope openid. The drill
