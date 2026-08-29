@@ -36,4 +36,8 @@ jobs:
           ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/flux-writer -o IdentitiesOnly=yes"
           export PUSH_URL="git@github.com:${GITHUB_REPOSITORY}.git"
-          bin/idp-image-update-pr
+          # crew#584 / idp#750: this job checks out flux/image-updates, a branch the controller forked
+          # from an old main, so `bin/idp-image-update-pr` here was the crew#439 copy and #750 was
+          # opened without the LAW 51 line idp#744 added. The script that opens the pull request is
+          # always main's copy; the branch carries only the controller's newTag lines.
+          bash <(git show origin/main:bin/idp-image-update-pr)

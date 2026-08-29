@@ -156,3 +156,12 @@ def test_a_body_that_already_carries_the_line_is_left_alone(tmp_path):
     r = _fake_gh(tmp_path, "Written by image-automation-controller.\n\nOptimised: 1 -> 1 steps, 1 -> 1 round trips; cut: nothing\n")
     assert r.returncode == 0, r.stdout + r.stderr
     assert not (tmp_path / "edits.txt").exists()
+
+
+def test_incident_idp750_the_workflow_runs_mains_copy_of_the_script():
+    """Incident, 2026-08-29 08:22Z: idp#750 was opened without the `Optimised:` line although
+    idp#744 had added it, because image-update-pr.yml checks out flux/image-updates and ran that
+    branch's crew#439 copy of bin/idp-image-update-pr. The workflow runs main's copy."""
+    yml = (ROOT / ".github" / "workflows" / "image-update-pr.yml").read_text()
+    assert "git show origin/main:bin/idp-image-update-pr" in yml
+    assert "\n          bin/idp-image-update-pr\n" not in yml
