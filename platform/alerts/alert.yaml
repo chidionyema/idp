@@ -50,6 +50,9 @@ spec:
       namespace: observability
     - kind: HelmRelease
       name: "*"
+      namespace: observability-agent
+    - kind: HelmRelease
+      name: "*"
       namespace: reloader
     - kind: HelmRelease
       name: "*"

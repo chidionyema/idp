@@ -12,6 +12,7 @@ resources:
   - availability.yaml
   - backstage-external-secret.yaml
   - httproute.yaml
+  - edge-manners.yaml
   # crew#562: tailnet egress Service to Sunshine on the founder's Mac + its Basic-auth secret.
   - sunshine-egress.yaml
   # crew#503 CP6: backstage/founder is a kustomization of its own (a directory base may live anywhere;

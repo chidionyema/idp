@@ -38,6 +38,16 @@ spec:
             group: traefik.io
             kind: Middleware
             name: login-forward-auth
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: guacamole
           port: 8080

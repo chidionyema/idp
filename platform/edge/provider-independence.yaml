@@ -33,7 +33,7 @@ spec:
       match:
         any:
           - resources:
-              kinds: [Service, Ingress, PersistentVolumeClaim]
+              kinds: [Service, Ingress]   # never PersistentVolumeClaim: the CSI provisioner and scheduler write annotations on live claims (2026-08-29)
               operations: [CREATE, UPDATE]   # idp#688: a DELETE is never a portability defect; judging it left the portal namespace Terminating (run 33227815539)
       validate:
         failureAction: Enforce
@@ -47,24 +47,12 @@ spec:
                   {{ keys(request.object.metadata.annotations || `{}`) | [?regex_match('^(service\.beta\.kubernetes\.io/(oci|aws|azure)-|oci\.oraclecloud\.com/|alb\.ingress\.kubernetes\.io/|cloud\.google\.com/|networking\.gke\.io/)', @)] | length(@) }}
                 operator: GreaterThan
                 value: 0
-    - name: no-provider-storage-class
-      match:
-        any:
-          - resources:
-              kinds: [PersistentVolumeClaim]
-              operations: [CREATE, UPDATE]   # idp#688: a DELETE is never a portability defect; judging it left the portal namespace Terminating (run 33227815539)
-      validate:
-        failureAction: Enforce
-        message: >-
-          R43: a PersistentVolumeClaim names a provider StorageClass; leave it to the cluster
-          default so the same claim binds on OKE, k3s or any other cluster
-        deny:
-          conditions:
-            any:
-              - key: >-
-                  {{ regex_match('^(oci|gp[23]$|io[12]$|ebs|efs|pd-|standard-rwo|premium-rwo|managed-csi|managed-premium|azure)', request.object.spec.storageClassName || '') }}
-                operator: Equals
-                value: true
+    # There is deliberately NO rule on PersistentVolumeClaim here. The API server injects the
+    # cluster's default StorageClass (oci-bv on OKE) before admission, so a rule judging the
+    # claim's class judges the cluster, not the platform, and refused every new claim on
+    # 2026-08-29 (run 33229461240; the portal's database never came back). What we write is
+    # judged where it is written: bin/cloud-agnostic-gate refuses a provider class in platform/,
+    # and the portability-k3s drill boots the same tree on another provider.
     - name: no-provider-storage-class-in-templates
       match:
         any:

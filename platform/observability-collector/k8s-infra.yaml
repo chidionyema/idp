@@ -13,6 +13,7 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: k8s-infra
+  namespace: observability-agent
   annotations:
     # crew#483: the install failed 3 times on the Kyverno hostPath denial before the waiver
     # (platform/edge/k8s-infra-exception.yaml, merged 2026-08-27T10:26Z) existed, and

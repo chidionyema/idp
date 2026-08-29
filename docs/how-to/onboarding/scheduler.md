@@ -30,7 +30,7 @@ SQLite default under `DAGSTER_HOME`; the documented escalation if lock contentio
 | One automatic retry, then the breaker | `dagster.yaml run_retries` | deployment/execution/run-retries |
 | Tick retention 30/7 days | `dagster.yaml retention` | deployment/oss/dagster-yaml |
 | Telemetry off | `dagster.yaml telemetry` | about/telemetry |
-| Description on every job, op and schedule, derived from the target script's docstring | `estate_scheduler/describe.py`; `make_job`, `make_op`, `make_schedule` | concepts/ops-jobs-graphs |
+| Description on every job, op and schedule, derived from the target script's docstring | `scheduler/estate_scheduler/describe.py`; `make_job`, `make_op`, `make_schedule` | concepts/ops-jobs-graphs |
 | Metadata on every job: command, cron, timeout, cwd, what it skips on, which file described it | `_job_metadata` | concepts/metadata-tags |
 | Owner tag `estate/owner` from the label's second segment, so the UI filters by owner | `make_job` | concepts/metadata-tags |
 
@@ -81,7 +81,7 @@ a machine or a home (LAW 46).
 | location | file | what it declares |
 |---|---|---|
 | `estate-scheduler` | `scheduler/estate_scheduler/definitions.py` | one job and one cron per row of `schedule.yml` |
-| `estate-facts` | `../../crew/science/scheduler/estate_dagster/facts.py` | one asset per source in `crew/science/sources.json`, each with the freshness window that file declares; observed every 15 minutes |
+| `estate-facts` | `crew/science/scheduler/estate_dagster/facts.py` | one asset per source in `crew/science/sources.json`, each with the freshness window that file declares; observed every 15 minutes |
 
 `bin/scheduler-up` imports both before it starts anything and refuses, with the location named,
 if either does not load; on a running webserver it reloads the workspace and

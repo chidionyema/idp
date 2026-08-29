@@ -111,9 +111,9 @@ answering.
 
 ## The catalogue on Kubernetes (Phase 2 of ADR 0004)
 
-`platform/backstage/base` is the same `idp/backstage:local` image that `backstage/compose.yml`
-builds, as a Deployment plus a Postgres StatefulSet, in a namespace that enforces the
-`restricted` Pod Security Standard. `overlays/local` adds the two things that come from this
+`platform/backstage/base` is the same `idp/backstage:local` image that `backstage/Dockerfile`
+builds (`make catalogue-deploy`), as a Deployment plus a Postgres StatefulSet, in a
+namespace that enforces the `restricted` Pod Security Standard. `overlays/local` adds the two things that come from this
 machine: the estate ConfigMap from `catalog/catalog-info.yaml` and the `backstage-env` Secret from
 the gitignored `backstage/.env`. No Ingress, NodePort or LoadBalancer exists; `bin/idp-ci` renders
 the base and fails on any of them.
