@@ -47,3 +47,17 @@ def test_the_branded_build_on_main_is_what_the_fence_expects():
 
 def test_the_verdict_line_carries_the_build_name():
     assert "portal build '{mf_name}'" in _src()
+
+
+HOME = ROOT / "backstage" / "packages" / "app" / "src" / "modules" / "home" / "EstateHome.tsx"
+
+
+def test_incident_run_33244316874_the_drill_counts_the_rows_the_home_page_draws():
+    """08:56Z 2026-08-29: the polished home drew 29 rows, the drill counted 0 'Catalogue entry'
+    links. The drill counts the surface-<name> test id, and every renderer in EstateHome.tsx
+    must carry it."""
+    src = _src()
+    assert "page.locator(\"[data-testid^='surface-']\").count()" in src
+    assert "a:has-text('Catalogue entry')" not in src, "the deep-link count is the selector that read 0 of 29"
+    home = HOME.read_text()
+    assert home.count("data-testid={`surface-${entity.metadata.name}`}") >= 2, "card and row both carry the test id"

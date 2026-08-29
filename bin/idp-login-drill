@@ -277,13 +277,16 @@ with sync_playwright() as p:
     # Either outcome ends the wait -- a card, or the page's own honest empty state -- so a real
     # zero is graded rather than timing out into an ambiguous one.
     try:
-        page.locator("a:has-text('Catalogue entry'), [data-testid='no-surfaces']").first.wait_for(
+        page.locator("[data-testid^='surface-'], [data-testid='no-surfaces']").first.wait_for(
             state="visible", timeout=TIMEOUT)
     except PWError:
         pass
-    # Counted on the deep link every SurfaceCard renders, not on a data-testid: InfoCard is a
-    # Backstage component and does not promise to forward unknown props to the DOM.
-    cards = page.locator("a:has-text('Catalogue entry')").count()
+    # Counted on the data-testid="surface-<name>" wrapper every renderer of a founder surface
+    # carries (the card and the compact row alike, EstateHome.tsx). Run 33244316874 (2026-08-29
+    # 08:56Z) counted the old InfoCard deep link 'Catalogue entry' and read 0 of 29 on a page the
+    # screenshot showed drawing all 29: the polished home draws rows without that link. The test
+    # id is the contract, pinned by tests/test_incident_crew459_drill_names_the_served_build.py.
+    cards = page.locator("[data-testid^='surface-']").count()
     empty = page.locator("[data-testid='no-surfaces']").count() > 0
     shot = os.environ.get("DRILL_SHOT")
     if shot:
