@@ -6,8 +6,6 @@ import importlib.util
 import json
 import os
 import re
-import stat
-import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))

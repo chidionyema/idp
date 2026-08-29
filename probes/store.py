@@ -21,7 +21,7 @@ COLUMNS = (
     "evidence_ref",
 )
 
-SCHEMA_SQL = f"""
+SCHEMA_SQL = f"""  # noqa: S608 -- TABLE is this module's own constant, never an input
 CREATE TABLE IF NOT EXISTS {TABLE} (
   verdict_id text PRIMARY KEY,
   check_id text NOT NULL,
