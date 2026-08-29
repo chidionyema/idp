@@ -545,6 +545,33 @@ pb_catalogue_roll() {
 # never a delete -- and then ask Flux to reconcile the row that recreates it. When the condition
 # is NamespaceDeletionDiscoveryFailure the block is a dead APIService, not an object; that is
 # printed and left, because deleting an APIService is a different decision.
+# crew#625 CP2. The pull secret every ghcr namespace mirrors is the Kubernetes Secret
+# backstage/ghcr-pull (platform/image-automation/pull-secret.yaml: ClusterSecretStore ghcr-pull,
+# kubernetes provider, remoteNamespace backstage). bin/idp-flux-bootstrap:55 writes it from a
+# laptop into flux-system, backstage, prospector and edge; Flux never owns it. On 2026-08-29 the
+# backstage namespace was pruned and recreated (idp#648, run 33226089358) and the Secret went with
+# it: ExternalSecret temporal/ghcr-pull and mcp/ghcr-pull read `could not get secret data from
+# provider` (diagnose 33253645144) and the temporal chart's Job could not pull. The same bytes
+# survived in the other three namespaces, so the repair copies from the first that still holds it
+# and never needs the laptop. The value travels through a file, never argv or stdout (LAW 21).
+pb_ghcr_pull_restore() {
+  local src="" ns tmp
+  for ns in flux-system prospector edge; do
+    if $K get secret ghcr-pull -n "$ns" -o name >/dev/null 2>&1; then src="$ns"; break; fi
+  done
+  echo "--- source"; echo "${src:-none}"
+  [ -n "$src" ] || { FAILED="$FAILED ghcr-pull-source"; echo "FAIL  no namespace still holds ghcr-pull; re-run bin/idp-flux-bootstrap"; return 1; }
+  tmp=$(mktemp); trap 'rm -f "$tmp"' RETURN
+  step "read $src" sh -c "$K get secret ghcr-pull -n $src -o jsonpath='{.data.\\.dockerconfigjson}' | base64 -d > '$tmp' && [ -s '$tmp' ]"
+  step "write backstage" sh -c "$K create secret generic ghcr-pull -n backstage --type=kubernetes.io/dockerconfigjson --from-file=.dockerconfigjson='$tmp' --dry-run=client -o yaml | $K apply -f -"
+  for ns in temporal mcp; do
+    step "resync $ns" $K annotate externalsecret ghcr-pull -n "$ns" force-sync="$(date -u +%Y%m%dT%H%M%SZ)" --overwrite
+  done
+  step temporal-hr flux reconcile helmrelease temporal -n temporal --timeout=5m
+  show externalsecrets sh -c "$K get externalsecret -A | grep ghcr-pull"
+  show pods-temporal $K get pods -n temporal -o wide
+}
+
 pb_namespace_unstick() {
   local stuck ns
   stuck=$($K get ns -o jsonpath='{range .items[?(@.status.phase=="Terminating")]}{.metadata.name}{"\n"}{end}')
@@ -836,7 +863,7 @@ pb_chi_resize() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry namespace-unstick k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend"; exit 0 ;;
+  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   router-spend) pb_router_spend ;;
@@ -852,6 +879,7 @@ case "${1:-}" in
   node-uncordon) pb_node_uncordon ;;
   chi-resize) pb_chi_resize ;;
   namespace-unstick) pb_namespace_unstick ;;
+  ghcr-pull-restore) pb_ghcr_pull_restore ;;
   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
 esac
 [ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }
