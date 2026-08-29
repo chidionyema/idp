@@ -475,6 +475,20 @@ redact() {
          -e 's/(([Tt][Oo][Kk][Ee][Nn]|[Kk][Ee][Yy]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd])["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?)[A-Za-z0-9_.:\-]{12,}/\1<REDACTED>/g'
 }
 
+# router-spend (crew#568, founder 2026-08-29: "claude code has monopolised the scene ... we are not
+# utilising our agents"): who actually calls the model router, through which key, on which lane, and
+# what it cost. The router's own ledger (LiteLLM_SpendLogs in litellm-db) is the only honest answer;
+# a file scan says who is CONFIGURED to call it, never who did (LAW 50). Read-only: psql over the
+# pod's unix socket (trust auth, no password handled), aliases and totals only, never a key value.
+pb_router_spend() {
+  local ns=llm pod=litellm-db-0
+  local q='psql -U litellm -d litellm -At -F "|" -c'
+  show router-pods $K get pods -n "$ns" -o wide
+  show_redacted spend-by-consumer-and-lane sh -c "$K exec -n $ns $pod -c postgres -- $q \"select coalesce(v.key_alias, 'no-alias:' || left(s.api_key, 8)) as consumer, s.model, count(*) as calls, round(sum(s.spend)::numeric, 4) as usd, sum(s.total_tokens) as tokens, min(s.\\\"startTime\\\")::date as first, max(s.\\\"startTime\\\")::date as last from \\\"LiteLLM_SpendLogs\\\" s left join \\\"LiteLLM_VerificationToken\\\" v on v.token = s.api_key group by 1, 2 order by 3 desc limit 40\" 2>&1"
+  show_redacted spend-per-day-14d sh -c "$K exec -n $ns $pod -c postgres -- $q \"select \\\"startTime\\\"::date as day, count(*) as calls, round(sum(spend)::numeric, 4) as usd from \\\"LiteLLM_SpendLogs\\\" where \\\"startTime\\\" > now() - interval '14 days' group by 1 order by 1\" 2>&1"
+  show_redacted virtual-keys sh -c "$K exec -n $ns $pod -c postgres -- $q \"select coalesce(key_alias, '(none)') as alias, round(spend::numeric, 4) as usd, max_budget, budget_duration, created_at::date, expires::date from \\\"LiteLLM_VerificationToken\\\" order by spend desc limit 40\" 2>&1"
+}
+
 pb_architect_doctor() {
   local ns=hermes-agent
   show pods $K get pods -n "$ns" -o wide
@@ -814,9 +828,10 @@ pb_chi_resize() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry namespace-unstick k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll"; exit 0 ;;
+  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry namespace-unstick k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
+  router-spend) pb_router_spend ;;
   dns-per-node) pb_dns_per_node ;;
   dns-per-namespace) pb_dns_per_namespace ;;
   tcp-per-node) pb_tcp_per_node ;;
