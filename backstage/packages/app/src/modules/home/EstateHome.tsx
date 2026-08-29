@@ -44,6 +44,14 @@ import {
   verdict,
 } from './estate';
 import { Estate, useEstate } from './useEstate';
+import { PAGE, SECTIONS, STATE_MEANING, verdictSentence } from './words';
+import {
+  SectionIcon,
+  StateDonut,
+  StateIcon,
+  SystemBars,
+  systemIcon,
+} from './visuals';
 
 export {
   FOUNDER_SURFACE_TYPE,
@@ -76,12 +84,51 @@ const useStyles = makeStyles(theme => ({
     color: theme.palette.text.disabled,
     fontVariantNumeric: 'tabular-nums',
   },
-  verdict: {
-    fontSize: 'clamp(26px, 6vw, 40px)',
-    fontWeight: 600,
+  // Hero: the page title is the biggest thing on the page (40px, 700); the tagline under it is
+  // body-sized and secondary; the verdict is a sentence, never a bare number beside a word.
+  title: {
+    fontSize: 'clamp(30px, 6vw, 40px)',
+    fontWeight: 700,
     letterSpacing: '-0.02em',
     lineHeight: 1.1,
     margin: 0,
+  },
+  tagline: {
+    fontSize: 16,
+    lineHeight: 1.5,
+    color: theme.palette.text.secondary,
+    margin: 0,
+    maxWidth: 680,
+  },
+  verdict: {
+    fontSize: 'clamp(20px, 4vw, 26px)',
+    fontWeight: 600,
+    lineHeight: 1.25,
+    margin: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1.5),
+    flexWrap: 'wrap',
+  },
+  live: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 13,
+    fontWeight: 600,
+    lineHeight: 1.3,
+    padding: '6px 10px',
+    borderRadius: 999,
+    border: '1px solid',
+    maxWidth: '100%',
+    [phone]: { borderRadius: 12, alignItems: 'flex-start' },
+  },
+  picture: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.4fr)',
+    gap: theme.spacing(3),
+    alignItems: 'start',
+    [phone]: { gridTemplateColumns: '1fr' },
   },
   counters: {
     display: 'grid',
@@ -91,6 +138,7 @@ const useStyles = makeStyles(theme => ({
   },
   counter: {
     appearance: 'none',
+    position: 'relative',
     font: 'inherit',
     textAlign: 'left',
     cursor: 'pointer',
@@ -101,8 +149,8 @@ const useStyles = makeStyles(theme => ({
     color: theme.palette.text.primary,
     display: 'flex',
     flexDirection: 'column',
-    gap: 2,
-    minHeight: 64,
+    gap: 4,
+    minHeight: 96,
     transition: `border-color 120ms ${ease}, background-color 120ms ${ease}`,
     '&:hover': { borderColor: theme.palette.text.disabled },
   },
@@ -110,9 +158,15 @@ const useStyles = makeStyles(theme => ({
     borderColor: theme.palette.primary.main,
     boxShadow: `inset 0 0 0 1px ${theme.palette.primary.main}`,
   },
+  counterIcon: { position: 'absolute', top: 10, right: 10, display: 'flex' },
+  meaning: {
+    fontSize: 12,
+    lineHeight: 1.35,
+    color: theme.palette.text.secondary,
+  },
   n: {
-    fontSize: 24,
-    fontWeight: 600,
+    fontSize: 28,
+    fontWeight: 700,
     lineHeight: 1,
     fontVariantNumeric: 'tabular-nums',
     letterSpacing: '-0.02em',
@@ -132,22 +186,45 @@ const useStyles = makeStyles(theme => ({
     flexDirection: 'column',
     gap: theme.spacing(1.5),
   },
+  // Section heading: 24px, 700, primary, with an icon. Group heading: 17px, 600. Their
+  // descriptions: 14px, 400, secondary. Two of size, weight and colour always differ.
   h: {
     display: 'flex',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    gap: theme.spacing(2),
+    alignItems: 'center',
+    gap: theme.spacing(1),
     margin: 0,
-    fontSize: 15,
+    fontSize: 24,
+    fontWeight: 700,
+    letterSpacing: '-0.01em',
+    lineHeight: 1.2,
+    color: theme.palette.text.primary,
+    '& svg': { fontSize: 24, color: theme.palette.text.secondary },
+  },
+  h3: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+    margin: 0,
+    fontSize: 17,
     fontWeight: 600,
+    lineHeight: 1.3,
+    color: theme.palette.text.primary,
+    '& svg': { fontSize: 18, color: theme.palette.text.secondary },
   },
   hCount: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 500,
     color: theme.palette.text.secondary,
     fontVariantNumeric: 'tabular-nums',
+    marginLeft: 'auto',
   },
-  hDesc: { fontSize: 13, color: theme.palette.text.secondary, margin: 0 },
+  hDesc: {
+    fontSize: 14,
+    lineHeight: 1.5,
+    color: theme.palette.text.secondary,
+    margin: 0,
+    maxWidth: 680,
+  },
   board: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))',
@@ -361,9 +438,13 @@ const Counter = ({
       className={`${classes.counter} ${on ? classes.counterOn : ''}`}
       onClick={onClick}
       aria-pressed={on}
-      aria-label={`${n} ${STATE_WORD[state]}`}
+      aria-label={`${n} ${STATE_WORD[state]}. ${STATE_MEANING[state].long} ${STATE_MEANING[state].action}`}
+      title={`${STATE_MEANING[state].long} ${STATE_MEANING[state].action}`}
       data-testid={`count-${state}`}
     >
+      <span className={classes.counterIcon}>
+        <StateIcon state={state} />
+      </span>
       <span
         className={classes.n}
         style={{
@@ -376,6 +457,7 @@ const Counter = ({
         <Dot state={state} />
         {STATE_WORD[state]}
       </span>
+      <span className={classes.meaning}>{STATE_MEANING[state].short}</span>
     </button>
   );
 };
@@ -458,6 +540,31 @@ export const DoorRow = ({ entity, now }: { entity: Entity; now?: number }) => {
   );
 };
 
+const clock = (t: number) =>
+  new Date(t).toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+/** Live or not, as a chip beside the verdict: a tint, an icon-dot and a sentence. */
+const LiveChip = ({ estate }: { estate: Estate }) => {
+  const classes = useStyles();
+  const tint = useTint()[estate.live ? 'good' : 'red'];
+  return (
+    <span
+      className={classes.live}
+      style={{ color: tint.ink, background: tint.bg, borderColor: tint.edge }}
+      data-testid="read-at"
+      title={estate.live ? undefined : PAGE.notLiveDetail(estate.liveError ?? 'unknown')}
+    >
+      <Dot state={estate.live ? 'good' : 'red'} />
+      {estate.live
+        ? PAGE.liveLabel(clock(estate.live.readAt))
+        : PAGE.notLivePlain}
+    </span>
+  );
+};
+
 const Loading = () => {
   const classes = useStyles();
   const Bone = ({ height }: { height: number }) => (
@@ -509,11 +616,6 @@ const CatalogueUnavailable = ({
   );
 };
 
-const clock = (t: number) =>
-  new Date(t).toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 
 type View = 'board' | 'list';
 const VIEW_KEY = 'estate.view';
@@ -607,20 +709,26 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
   return (
     <div className={classes.wrap}>
       <div className={classes.top}>
-        <span className={classes.brand}>{brand}</span>
-        <span className={classes.when} data-testid="read-at">
-          {estate.live
-            ? `Cluster read at ${clock(estate.live.readAt)}`
-            : `Cluster not read: ${estate.liveError ?? 'unknown'}`}
-        </span>
+        <span className={classes.when}>{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</span>
       </div>
-      <h1 className={classes.verdict} data-testid="verdict">
-        {verdict(counts, all.length)}
-      </h1>
-      <p className={classes.note}>
-        A service is one piece the cluster runs, or one door you sign in
-        through; its word comes from the cluster, never from a file.
+      <h1 className={classes.title}>{brand}</h1>
+      <p className={classes.tagline}>{PAGE.tagline}</p>
+      <p className={classes.verdict} data-testid="verdict" title={verdict(counts, all.length)}>
+        <span>{verdictSentence(counts, all.length)}</span>
+        <LiveChip estate={estate} />
       </p>
+      {all.length > 0 && (
+      <div className={classes.picture} data-testid="picture">
+        <StateDonut counts={counts} total={all.length} />
+        <SystemBars
+          rows={systemsShown.map(([id, xs]) => ({
+            id,
+            title: systemTitle(id).title,
+            counts: count(xs.map(e => stateOf(e).state)),
+          }))}
+        />
+      </div>
+      )}
       <div
         className={classes.counters}
         role="group"
@@ -669,28 +777,32 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
 
       <section className={classes.section} data-testid="band-layers">
         <h2 className={classes.h}>
-          What we run
+          <SectionIcon section="layers" />
+          {SECTIONS.layers.title}
           <span className={classes.hCount}>
             {layers.length === estate.layers.length
               ? `${estate.layers.length} services`
               : `${layers.length} of ${estate.layers.length} services`}
           </span>
         </h2>
+        <p className={classes.hDesc}>{SECTIONS.layers.blurb}</p>
         {estate.layers.length === 0 && (
           <p className={classes.note} data-testid="no-layers">
-            No platform services are registered. bin/catalog-platform writes
-            them from the cluster's Flux list; nothing is typed here.
+            Nothing has been read from the machines yet, so there is nothing to
+            list. The list fills itself the moment a read succeeds.
           </p>
         )}
         {systemsShown.map(([id, xs]) => {
           const s = systemTitle(id);
+          const SysIcon = systemIcon(`${id} ${s.title}`);
           return (
             <div
               key={id}
               className={classes.section}
               data-testid={`system-${id}`}
             >
-              <h3 className={classes.h} style={{ fontSize: 13 }}>
+              <h3 className={classes.h3}>
+                <SysIcon aria-hidden="true" />
                 {s.title}
                 <span className={classes.hCount}>{xs.length}</span>
               </h3>
@@ -725,17 +837,18 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
 
       <section className={classes.section} data-testid="band-doors">
         <h2 className={classes.h}>
-          Doors
+          <SectionIcon section="doors" />
+          {SECTIONS.doors.title}
           <span className={classes.hCount}>
             {doors.length === estate.doors.length
               ? `${estate.doors.length}`
               : `${doors.length} of ${estate.doors.length}`}
           </span>
         </h2>
+        <p className={classes.hDesc}>{SECTIONS.doors.blurb}</p>
         {estate.doors.length === 0 ? (
           <p className={classes.note} data-testid="no-surfaces">
-            No doors are registered yet. A door is added to the catalogue, never
-            typed here.
+            No doors yet. Doors appear here on their own once they are registered.
           </p>
         ) : (
           doors.map(e => <DoorRow key={e.metadata.name} entity={e} now={now} />)
@@ -745,9 +858,11 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
       {templates.length > 0 && (
         <section className={classes.section} data-testid="band-actions">
           <h2 className={classes.h}>
-            Do
+            <SectionIcon section="actions" />
+            {SECTIONS.actions.title}
             <span className={classes.hCount}>{templates.length}</span>
           </h2>
+          <p className={classes.hDesc}>{SECTIONS.actions.blurb}</p>
           <div className={classes.actions}>
             {templates.map((t, i) => (
               <LinkButton

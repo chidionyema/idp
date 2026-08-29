@@ -32,14 +32,17 @@ import {
 
 export * from './tokens';
 
+// The type scale (founder 2026-08-29: "why is headers same size colour as subheading? how do
+// you know which is which"). Each step differs from the next in at least two of size, weight
+// and colour; a subheading is body-sized and secondary-coloured, never a smaller heading.
 const typography: BackstageTypography = {
   fontFamily,
   htmlFontSize: 16,
-  h1: { fontSize: 30, marginBottom: 8, fontWeight: 600 },
-  h2: { fontSize: 24, marginBottom: 6, fontWeight: 600 },
-  h3: { fontSize: 20, marginBottom: 6, fontWeight: 600 },
-  h4: { fontSize: 17, marginBottom: 4, fontWeight: 600 },
-  h5: { fontSize: 15, marginBottom: 4, fontWeight: 600 },
+  h1: { fontSize: 40, marginBottom: 12, fontWeight: 700 },
+  h2: { fontSize: 24, marginBottom: 8, fontWeight: 700 },
+  h3: { fontSize: 17, marginBottom: 6, fontWeight: 600 },
+  h4: { fontSize: 15, marginBottom: 4, fontWeight: 600 },
+  h5: { fontSize: 14, marginBottom: 4, fontWeight: 600 },
   h6: { fontSize: 13, marginBottom: 4, fontWeight: 600 },
 };
 
@@ -146,7 +149,8 @@ const componentsFor = (t: Tone) => ({
   BackstageInfoCard: {
     styleOverrides: {
       header: { padding: '16px 20px 8px' },
-      headerTitle: { fontSize: 15, fontWeight: 600 },
+      headerTitle: { fontSize: 16, fontWeight: 600 },
+      headerSubheader: { fontSize: 13, fontWeight: 400, color: t.textSecondary },
     },
   },
   // On a phone the catalogue table keeps its first two columns; the name cell opens the
