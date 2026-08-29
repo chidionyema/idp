@@ -85,7 +85,17 @@ def test_the_policy_is_applied_by_the_edge_kustomization():
     assert "capacity-policy.yaml" in kust["resources"]
 
 
-def _requests():
+RESERVE_PRIORITY_CLASS = "balloon"   # platform/scheduling/balloon.yaml: preemptible headroom, not demand
+
+
+def _is_reserve(o) -> bool:
+    """A pod template that runs at the balloon priority class is the 10-20 % reserve crew#539
+    installed: it is evicted the moment a real pod needs the cores, so its request is the
+    headroom this budget measures against, never platform demand (idp#687)."""
+    return isinstance(o, dict) and o.get("priorityClassName") == RESERVE_PRIORITY_CLASS
+
+
+def _requests(include_reserve: bool = False):
     """Every CPU request declared under platform/: raw workloads and HelmRelease values alike."""
     out = []
 
@@ -93,6 +103,8 @@ def _requests():
         # labels are what the fence sees on the pod: the enclosing metadata.labels (pod template) or a
         # chart block's podLabels, inherited down to the container that holds the request
         if isinstance(o, dict):
+            if _is_reserve(o) and not include_reserve:
+                return
             md = o.get("metadata") if isinstance(o.get("metadata"), dict) else {}
             pl = o.get("podLabels") if isinstance(o.get("podLabels"), dict) else {}
             ml = md.get("labels") if isinstance(md.get("labels"), dict) else {}
@@ -122,6 +134,14 @@ def test_the_platform_asks_for_less_cpu_than_the_budget():
     total = sum(r[2] for r in rows)
     assert total <= CPU_BUDGET_CORES, f"platform/ requests {total:.2f} cores on paper (budget {CPU_BUDGET_CORES}); fattest: " + \
         ", ".join(f"{s} {n} {c:.2f}" for s, n, c, _ in sorted(rows, key=lambda r: -r[2])[:6])
+
+
+def test_only_the_balloon_reserve_is_left_out_of_the_budget():
+    """The skip is exactly the balloon: nothing else may hide behind the reserve priority class."""
+    counted = {(s, n) for s, n, _, _ in _requests()}
+    skipped = [(s, n, c) for s, n, c, _ in _requests(include_reserve=True) if (s, n) not in counted]
+    assert skipped and all(s.startswith("platform/scheduling/balloon.yaml:") for s, _, _ in skipped), skipped
+    assert sum(c for _, _, c in skipped) >= 0.2, skipped   # crew#539 reserve; 0.2 measured on main 2026-08-29 (a ratchet: only ever raised)
 
 
 def test_no_single_request_exceeds_what_the_fence_refuses():
