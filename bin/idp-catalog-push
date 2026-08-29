@@ -15,6 +15,14 @@ SRC="$IDP/catalog/catalog-info.yaml"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 kubectl create configmap estate-catalog --from-file=catalog-info.yaml="$SRC" --dry-run=client -o yaml > "$T/estate-catalog.yaml"
 REV="$(git -C "$IDP" rev-parse --short HEAD)@$(date -u +%Y%m%dT%H%M%SZ)"
-gh auth token | flux push artifact "oci://ghcr.io/chidionyema/idp/estate-catalog:latest" \
+# idp#776 handed the render step a GitHub App token as GH_TOKEN (to arm auto-merge as an App
+# push); that token carries no packages scope, so `gh auth token` answered 403 on every blob from
+# 12:54Z on 2026-08-29 (runs 33253658000, 33254290214) and the portal kept the 06:07Z catalogue
+# (crew#624). The registry credential is its own input: GHCR_TOKEN, or the file GHCR_TOKEN_FILE
+# (the workflow writes GITHUB_TOKEN there, packages: write, so the arming step's env never names
+# the bot token, idp#769); `gh auth token` remains the fallback for a laptop run.
+if [ -z "${GHCR_TOKEN:-}" ] && [ -n "${GHCR_TOKEN_FILE:-}" ] && [ -s "$GHCR_TOKEN_FILE" ]; then GHCR_TOKEN=$(cat "$GHCR_TOKEN_FILE"); fi
+GHCR_TOKEN="${GHCR_TOKEN:-$(gh auth token)}"
+printf '%s' "$GHCR_TOKEN" | flux push artifact "oci://ghcr.io/chidionyema/idp/estate-catalog:latest" \
   --path="$T" --source="https://github.com/chidionyema/idp" --revision="$REV" --creds "chidionyema:$(cat)" >/dev/null
 echo "ok      estate-catalog pushed, revision $REV"
