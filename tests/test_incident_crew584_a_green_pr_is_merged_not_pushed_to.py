@@ -37,8 +37,11 @@ def _run(repo: Path, env: dict) -> subprocess.CompletedProcess:
     return subprocess.run([str(SCRIPT)], cwd=repo, env=env, capture_output=True, text=True)
 
 
-def _pr(head: str, conclusions: list[str], state: str = "OPEN") -> dict:
-    return {"number": 628, "state": state, "headRefOid": head,
+def _pr(head: str, conclusions: list[str], state: str = "OPEN", merge: str = "CLEAN") -> dict:
+    # mergeStateStatus is always in the real answer; the stub carried no such key until 2026-08-29,
+    # so every case here was silently the "GitHub cannot say" one and the guard was never graded on
+    # a PR it could actually see. CLEAN is the shape of the PR the guard exists to protect.
+    return {"number": 628, "state": state, "headRefOid": head, "mergeStateStatus": merge,
             "statusCheckRollup": [{"name": f"c{i}", "conclusion": c} for i, c in enumerate(conclusions)]}
 
 
@@ -78,3 +81,21 @@ def test_the_override_is_an_environment_variable_typed_on_purpose(tmp_path):
 def test_the_pre_push_hook_runs_the_rung_first():
     rungs = [l for l in (ROOT / ".githooks" / "pre-push").read_text().splitlines() if l.startswith('"$IDP/bin/')]
     assert rungs[0] == '"$IDP/bin/idp-push-on-green"', rungs
+
+
+def test_a_pr_that_conflicts_with_main_is_never_refused(tmp_path):
+    """The only way to make a conflicting PR mergeable is to push the merge onto it."""
+    repo, env = _repo(tmp_path, _pr("0" * 40, ["SUCCESS"], merge="DIRTY"))
+    out = _run(repo, env)
+    assert out.returncode == 0 and "conflicts with main" in out.stdout, out.stdout
+
+
+def test_an_uncomputed_merge_state_stands_the_guard_down_rather_than_refusing(tmp_path):
+    """2026-08-29, idp#800: GitHub computes mergeability lazily, so the first query after main moves
+    answers UNKNOWN. The guard read that as "mergeable", refused two pushes and threw away about
+    thirteen minutes of pre-push suite, while `gh pr view 800` was already answering DIRTY. A value
+    that means "not computed yet" is the instrument saying it cannot see, and this script's own
+    header says a blind instrument does not refuse a push."""
+    repo, env = _repo(tmp_path, _pr("0" * 40, ["SUCCESS"], merge="UNKNOWN"))
+    out = _run(repo, env)
+    assert out.returncode == 0 and "BLIND" in out.stdout, out.stdout
