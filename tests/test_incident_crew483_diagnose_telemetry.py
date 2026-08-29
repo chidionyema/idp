@@ -222,7 +222,7 @@ def test_list_and_playbook_case_are_unchanged():
 
 def test_the_declared_endpoint_is_read_where_idp702_put_the_helmrelease():
     """idp#702 moved the k8s-infra HelmRelease to observability-agent; a diagnose that reads it in
-    observability prints an empty otlp-endpoint-declared section and nobody notices (idp#708)."""
+    observability prints an empty otlp-endpoint-declared section and nobody notices (idp#710)."""
     src = (IDP / "bin" / "idp-oke-break-glass").read_text()
     assert "get helmrelease k8s-infra -n observability-agent " in src
     assert "get helmrelease k8s-infra -n observability " not in src
