@@ -31,7 +31,10 @@ jobs:
         # workspace, so this is a clone. The repo is public: no credential, no secret.
         run: git clone --depth 1 https://github.com/chidionyema/prospector "$RUNNER_TEMP/kyverno-policies"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: sovereign/requirements*.txt
       - name: tools
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q shellcheck jq sqlite3 age
@@ -133,7 +136,10 @@ jobs:
         # workspace, so this is a clone. The repo is public: no credential, no secret.
         run: git clone --depth 1 https://github.com/chidionyema/prospector "$RUNNER_TEMP/kyverno-policies"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: sovereign/requirements*.txt
       - name: tools
         run: |
           pip install -q -r sovereign/requirements.txt -r sovereign/requirements-dev.txt

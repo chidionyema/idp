@@ -24,7 +24,9 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install pyyaml
+          cache: pip
+          cache-dependency-path: .github/requirements/matrix-review.txt
+      - run: pip install -r .github/requirements/matrix-review.txt
       - name: bin/matrix-gate --review --verify-receipts
         id: review
         env:
