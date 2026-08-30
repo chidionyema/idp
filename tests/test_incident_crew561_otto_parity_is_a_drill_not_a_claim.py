@@ -94,6 +94,7 @@ def test_every_crew561_capability_is_a_graded_row_of_the_parity_playbook():
         "sa-reads-own-namespace",
         "sa-blind-elsewhere",
         "estate-mcp-answers",
+        "estate-state-read-at-start",
     ):
         assert row in rows, row
     assert "show model-lane " not in body, "the model lane is graded, not listed"

@@ -553,6 +553,9 @@ pb_otto_parity() {
   step sa-blind-elsewhere sh -c "a=\$($K auth can-i list secrets -n kube-system --as=system:serviceaccount:$ns:hermes-agent 2>/dev/null); [ \"\$a\" = no ] && echo 'kube-system secrets: no'"
   # crew#561 CP3: the estate MCP answers the pod with the pod's own key, at the URL the pod's
   # config names (never typed here, LAW 46). Only the status is printed, never the key.
+  # crew#561, founder 2026-08-30 "Otto need to be mandated also else may forget": the entrypoint reads
+  # estate state at boot and logs READ or BLIND; a boot with neither line is a boot that forgot.
+  step estate-state-read-at-start sh -c "$K logs $d -n $ns -c gateway | grep -m1 '^estate-state: READ '"
   step estate-mcp-answers $K exec "$d" -n "$ns" -c gateway -- sh -c 'python3 -c "
 import json, os, sys, urllib.request, yaml
 c = yaml.safe_load(open(\"/data/config.yaml\"))
