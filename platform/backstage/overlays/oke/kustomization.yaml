@@ -68,7 +68,13 @@ patches:
           name: healthchecks-ro
           secret:
             secretName: healthchecks-ro
-            optional: false
+            # Incident 2026-08-30 04:2xZ-04:5xZ (founder: "backstage is down again"): this mount was
+            # `optional: false` while its vault entry waited on the next terraform apply, so the
+            # ExternalSecret sat in SecretSyncedError and the new catalogue pod stayed in
+            # ContainerCreating (oke-check 33292780315). A key the portal cannot read yet is a tile
+            # that says "could not be read" and a red drill row (crew#684 CP6), never a rollout that
+            # cannot start.
+            optional: true
       - op: add
         path: /spec/template/spec/containers/0/volumeMounts/-
         value:
