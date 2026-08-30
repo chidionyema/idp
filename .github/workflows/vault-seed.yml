@@ -13,7 +13,7 @@ on:
       entry:
         description: "which vault entry to write"
         type: choice
-        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, tailscale-operator, laptop, hermes]
+        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, tailscale-operator, laptop, hermes, science]
         default: all
       delete:
         description: "schedule deletion of one vault secret by name (crew#503: a mis-named entry); entry is ignored when set"
@@ -103,7 +103,7 @@ jobs:
             # and holds no vendor key (crew#568, LAW 34). Minted here; delivered through the estate's
             # sops vault: sops encrypts to the age recipient estate-secrets/.sops.yaml names (the public
             # half), so this runner decrypts nothing, and the Mac reads it with scripts/secret-load.
-            bin/idp-router-key laptop minimax,minimax_m27,deepseek,openrouter,minimax-or,deepseek-or,gemini-or,groq,groq-fast,gemini,claude,claude-fast,vision
+            bin/idp-router-key laptop minimax,minimax_m27,deepseek,openrouter,minimax-or,deepseek-or,gemini-or,groq,groq-fast,gemini,claude,claude-fast,vision,embed
             tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
             git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
             bin/idp-cloud secret get laptop | jq -r .key | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LITELLM_LAPTOP_KEY LITELLM_API_KEY
@@ -142,6 +142,29 @@ jobs:
               echo "ok      hermes key delivered to estate-secrets as LITELLM_HERMES_KEY"
             else
               echo "info    hermes key unchanged in estate-secrets"
+            fi
+          if [ "$ENTRY" = all ] || [ "$ENTRY" = science ]; then
+            # The research worker (crew science/research_worker.py, crew#659 CP3) calls the router on its
+            # own virtual key. The lanes ARE the edge the founder asked for on 2026-08-30 ("run them against
+            # a frontier API rather than a local model"): claude and gemini for the worker and the grader,
+            # embed for ranking what it scraped; a local or small lane is not on the key, so no env var can
+            # reach one. Same road as the laptop: minted here, delivered through the sops vault.
+            bin/idp-router-key science claude,claude-fast,gemini,gemini-or,embed
+            tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
+            git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
+            bin/idp-cloud secret get science | jq -r .key | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LITELLM_SCIENCE_KEY LITELLM_API_KEY
+            # `commit -am` never stages a NEW file: the first delivery of LITELLM_SCIENCE_KEY.yaml printed
+            # "unchanged" and pushed nothing (run 33257838162). Add the file by name, then commit.
+            git -C "$RUNNER_TEMP/estate-secrets" add secrets/dev/LITELLM_SCIENCE_KEY.yaml
+            # Run 33258762617: the commit was made, estate-secrets' pre-push hook asked gh whether the repo is
+            # still private, gh had no token, the hook refused, and `|| echo unchanged` turned that into a green
+            # run. The hook gets the token so it can answer; a refused push is an error, never "unchanged".
+            if git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
+                 commit -q -m "science router key (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null; then
+              GH_TOKEN="$tok" git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || { echo "error   science key written but the push to estate-secrets was refused"; exit 1; }
+              echo "ok      science key delivered to estate-secrets as LITELLM_SCIENCE_KEY"
+            else
+              echo "info    science key unchanged in estate-secrets"
             fi
             rm -rf "$RUNNER_TEMP/estate-secrets"
           fi
