@@ -10,6 +10,8 @@ import { FOUNDER_SURFACE_TYPE } from './estate';
 import {
   AlertmanagerAlert,
   DRILL_TYPE,
+  DrillSummary,
+  drillSummary,
   Red,
   redsFromAlerts,
   redsFromEntities,
@@ -31,6 +33,8 @@ export type OpenReds =
       reds: Red[];
       /** A source that could not be read; its reds are unknown, never zero. */
       unread: string[];
+      /** Every drill counted (crew#684 CP5); undefined when the catalogue could not be read. */
+      drills?: DrillSummary;
     };
 
 export const useOpenReds = (): OpenReds => {
@@ -72,13 +76,15 @@ export const useOpenReds = (): OpenReds => {
         unread.push(
           `Alertmanager: ${String(alerts.reason?.message ?? alerts.reason)}`,
         );
-      if (entities.status === 'fulfilled')
+      let drills: DrillSummary | undefined;
+      if (entities.status === 'fulfilled') {
         reds.push(...redsFromEntities(entities.value));
-      else
+        drills = drillSummary(entities.value);
+      } else
         unread.push(
           `Catalogue: ${String(entities.reason?.message ?? entities.reason)}`,
         );
-      setLoaded({ state: 'ready', reds: sortReds(reds), unread });
+      setLoaded({ state: 'ready', reds: sortReds(reds), unread, drills });
     };
     tick();
     const timer = setInterval(tick, REFRESH_MS);

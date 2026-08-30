@@ -12,6 +12,18 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "bin" / "incident-register"
+
+
+def _hook():
+    import importlib.util
+
+    path = ROOT / "bin" / "mkdocs_hooks" / "incident_register.py"
+    spec = importlib.util.spec_from_file_location("incident_register_hook", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 REG = ROOT / "docs" / "reference" / "incident-register.yaml"
 
 
@@ -26,7 +38,10 @@ def test_one_row_per_incident_test_and_every_row_classified() -> None:
     assert body["incidents"] == len(tests) == sum(body["by_class"].values())
 
 
-def test_check_refuses_a_stale_register(tmp_path: Path) -> None:
+def test_check_matches_the_file_the_docs_hook_writes() -> None:
+    write_register = _hook().write_register
+
+    write_register()
     r = subprocess.run([str(TOOL), "--check"], capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "matches" in r.stdout

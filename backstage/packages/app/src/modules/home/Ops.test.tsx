@@ -13,6 +13,7 @@ import { kubernetesApiRef } from '@backstage/plugin-kubernetes';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import { catalogApiMock } from '@backstage/plugin-catalog-react/testUtils';
 import { Entity } from '@backstage/catalog-model';
+import { HC_CHECKS } from './healthchecks';
 import { Ops } from './Ops';
 import { HELMRELEASES, KUSTOMIZATIONS, NODES, PODS } from './useClusterHealth';
 import { ALERTS } from './useOpenReds';
@@ -87,6 +88,13 @@ const founder = {
   ],
 };
 
+const healthchecks = {
+  checks: [
+    { name: 'estate-render', status: 'up' },
+    { name: 'science-collect', status: 'down' },
+  ],
+};
+
 const render = (lists: Record<string, unknown[]>, fail = false) =>
   renderInTestApp(
     <TestApiProvider
@@ -114,10 +122,15 @@ const render = (lists: Record<string, unknown[]>, fail = false) =>
         [
           fetchApiRef,
           {
-            fetch: async () =>
+            fetch: async (url: string) =>
               fail
                 ? { ok: false, status: 502, json: async () => ({}) }
-                : { ok: true, status: 200, json: async () => founder },
+                : {
+                    ok: true,
+                    status: 200,
+                    json: async () =>
+                      url.endsWith(HC_CHECKS) ? healthchecks : founder,
+                  },
           } as any,
         ],
         [
@@ -217,5 +230,26 @@ describe('Ops', () => {
       'answered 502',
     );
     expect(screen.queryByTestId('ops-waiting')).toBeNull();
+  });
+
+  it('draws the drills row and the scheduled-jobs tile (crew#684 CP5)', async () => {
+    await render({});
+    expect(await screen.findByTestId('ops-drills-sentence')).toHaveTextContent(
+      /of \d+ drills green/,
+    );
+    expect(
+      await screen.findByTestId('ops-healthchecks-sentence'),
+    ).toHaveTextContent('1 of 2 up, 1 down.');
+    expect(screen.getByTestId('ops-healthcheck-row')).toHaveTextContent(
+      'science-collect Down',
+    );
+  });
+
+  it('says scheduled jobs are unknown when Healthchecks cannot be read', async () => {
+    await render({}, true);
+    expect(
+      await screen.findByTestId('ops-healthchecks-error'),
+    ).toHaveTextContent('answered 502');
+    expect(screen.queryByTestId('ops-healthchecks')).toBeNull();
   });
 });

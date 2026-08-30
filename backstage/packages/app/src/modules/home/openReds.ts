@@ -86,6 +86,27 @@ const drillWhy = (e: Entity): string | undefined => {
   return undefined;
 };
 
+/** The drills row (crew#684 CP5): every drill Resource in the catalogue, counted. */
+export type DrillSummary = { total: number; green: number; red: number };
+
+export const drillSummary = (entities: Entity[]): DrillSummary => {
+  let total = 0;
+  let red = 0;
+  for (const e of entities) {
+    if (e.kind !== 'Resource' || String(e.spec?.type ?? '') !== DRILL_TYPE)
+      continue;
+    total += 1;
+    if (drillWhy(e)) red += 1;
+  }
+  return { total, green: total - red, red };
+};
+
+/** Numbers with their denominator; no drills is a blind row, never a green one. */
+export const drillsSentence = (d: DrillSummary): string =>
+  d.total === 0
+    ? 'No drills are in the catalogue, so nothing is rehearsed.'
+    : `${d.green} of ${d.total} drills green; ${d.red} red, listed below.`;
+
 export const redsFromEntities = (
   entities: Entity[],
   now: number = Date.now(),
