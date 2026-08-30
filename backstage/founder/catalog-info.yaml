@@ -135,6 +135,9 @@ metadata:
     - title: "Open"
       url: "https://signoz.${ESTATE_ZONE}"
       icon: dashboard
+    - title: "How to sign in (the second credential, and why)"
+      url: "https://github.com/chidionyema/idp/blob/main/docs/how-to/sign-in-to-signoz.md"
+      icon: docs
     - title: "Alert rules, where they are tracked"
       url: "https://github.com/chidionyema/crew/issues/495"
       icon: docs
