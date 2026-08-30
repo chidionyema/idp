@@ -139,6 +139,15 @@ spec:
   prune: true
   wait: true
   timeout: 5m
+  # Which build runs is decided here, not in prospector's overlay (crew#693): the markers below are
+  # written by the image-automation-controller from platform/image-automation/prospector.yaml, and
+  # this override is applied after kustomize renders the overlay, so the hand-pinned tags there are
+  # inert. A merge to prospector main becomes a pull request here and a RollingUpdate on merge.
+  images:
+    - name: ghcr.io/chidionyema/prospector-store-web
+      newTag: 99cdc96a341f3365916df59be4fd8f26ebf96a43 # {"$imagepolicy": "flux-system:prospector-store-web:tag"}
+    - name: ghcr.io/chidionyema/prospector-store-api
+      newTag: 99cdc96a341f3365916df59be4fd8f26ebf96a43 # {"$imagepolicy": "flux-system:prospector-store-api:tag"}
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
