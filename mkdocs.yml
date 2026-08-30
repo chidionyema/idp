@@ -4,6 +4,8 @@ site_name: idp — the platform
 docs_dir: docs
 plugins:
   - techdocs-core
+hooks:
+  - bin/mkdocs_hooks/incident_register.py   # writes reference/incident-register.yaml from the incident tests (crew#679 CP2)
 nav:
   - Home: index.md
   - Definition of Done: reference/policy/definition-of-done.md
