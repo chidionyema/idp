@@ -96,7 +96,10 @@ if [ "$FAST" = 1 ]; then
   if "$MPY" -m ruff --version >/dev/null 2>&1; then RUFF=("$MPY" -m ruff); else RUFF=(ruff); fi
   (cd "$IDP" && "${RUFF[@]}" check --quiet .) && say "ok    ruff     pyproject rule set" || { say "FAIL  ruff"; fail=1; }
   timing_summary
-  [ "$fail" -eq 0 ] && say "ok    fast-gate: shell, hardcode, pipeverdict, ruff" || say "FAIL  fast-gate"
+  # 1e. crew#679 CP5: the incident register is generated from tests/test_incident_*.py; a new
+  # incident test without its committed row is refused here, so the chaos drills never drift.
+  "$MPY" "$IDP/bin/incident-register" --check >/dev/null && say "ok    incident-register  matches the corpus" || { say "FAIL  incident-register  stale: run bin/incident-register and commit"; fail=1; }
+  [ "$fail" -eq 0 ] && say "ok    fast-gate: shell, hardcode, pipeverdict, ruff, incident-register" || say "FAIL  fast-gate"
   exit "$fail"
 fi
 
