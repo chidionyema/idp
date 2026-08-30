@@ -139,6 +139,23 @@ spec:
   prune: true
   wait: true
   timeout: 5m
+  # Which build runs is decided here, not in prospector's overlay (crew#693): the markers below are
+  # written by the image-automation-controller from platform/image-automation/prospector.yaml, and
+  # this override is applied after kustomize renders the overlay, so the hand-pinned tags there are
+  # inert. A merge to prospector main becomes a pull request here and a RollingUpdate on merge.
+  #
+  # THE SEED IS A DEPLOY. This override wins over the overlay the moment it merges, before the
+  # automation has written anything, so whatever is typed here is what production runs for the
+  # next few minutes. The first draft of this file carried 99cdc96a, the 25 August build: merging
+  # it would have rolled the shop BACK off the storefront the founder released by hand at
+  # 2026-08-30T17:01:51Z (prospector#792, merge commit 7489661f). The seed is therefore the newest
+  # tag the policy itself would pick -- measured against ghcr on 2026-08-30, `main-73-...` is the
+  # highest run number carried by both images -- and a test pins that it always is.
+  images:
+    - name: ghcr.io/chidionyema/prospector-store-web
+      newTag: main-73-7489661f4f49c0fcd58b929fb916a42f201db34e # {"$imagepolicy": "flux-system:prospector-store-web:tag"}
+    - name: ghcr.io/chidionyema/prospector-store-api
+      newTag: main-73-7489661f4f49c0fcd58b929fb916a42f201db34e # {"$imagepolicy": "flux-system:prospector-store-api:tag"}
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
