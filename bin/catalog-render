@@ -150,6 +150,12 @@ def main(argv: list[str]) -> int:
                                    f"- LAW 3 nervous system: scheduler/schedule.yml com.estate.catalog-render -> {BRANCH}\n"
                                    "- LAW 4 calibration: n/a: no prediction made\n"], WT)
         rc, existing = sh(["gh", "pr", "list", "--head", BRANCH, "--state", "open", "--json", "number", "--jq", ".[0].number"], WT)
+    # crew#684: bin/idp-pr-age drafts a conflicting PR at 4h; a fresh render clears the conflict
+    # but `gh pr merge --auto` refuses a draft (runs 33278169055, 33294242647). Un-draft first.
+    rc, draft = sh(["gh", "pr", "view", existing, "--json", "isDraft", "--jq", ".isDraft"], WT)
+    if draft == "true":
+        step("ready", ["gh", "pr", "ready", existing], WT)
+
     step("auto-merge", ["gh", "pr", "merge", existing, "--auto", "--squash"], WT)
     print(f"catalog-render: {PAGE} pushed to {BRANCH}, PR #{existing} set to auto-merge")
     return 0
