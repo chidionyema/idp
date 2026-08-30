@@ -90,7 +90,8 @@ def test_secrets_are_files_the_container_exports_never_pod_env():
     # crew#561 CP3: plus the estate MCP key (mcp-key.yaml), optional so a vault miss never blocks the gateway.
     mcp = {
         d["metadata"]["name"]: d
-        for d in yaml.safe_load_all((DIR / "mcp-key.yaml").read_text())
+        for f in ("mcp-key.yaml", "langfuse-key.yaml")
+        for d in yaml.safe_load_all((DIR / f).read_text())
         if d and d.get("kind") == "ExternalSecret"
     }
     ess.update(mcp)
@@ -98,6 +99,7 @@ def test_secrets_are_files_the_container_exports_never_pod_env():
         "hermes-agent-env",
         "hermes-agent-a2a",
         "hermes-agent-mcp",
+        "hermes-agent-langfuse",
     ]
     # idp#852: plus the App-key ExternalSecret that feeds the GithubAccessToken generator; it
     # feeds the generator, never the env dir.
