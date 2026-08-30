@@ -571,6 +571,7 @@ spec:
   dependsOn:
     - component:default/layer-scheduling
     - component:default/layer-secret-store
+    - component:default/layer-alerts-github
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -715,6 +716,7 @@ spec:
     - component:default/layer-scheduling
     - component:default/layer-edge
     - component:default/layer-secret-store
+    - component:default/layer-alerts-github
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
