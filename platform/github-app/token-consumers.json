@@ -1,7 +1,23 @@
 {
   "_comment": "Vault fields that hold a GitHub token a workload reads. bin/idp-github-app refresh re-mints each one as an installation token of the estate-agents App narrowed to the named lane (lanes.json), hourly from bin/idp-verify-drill; the ExternalSecret that renders it refreshes every 15 minutes. No PAT is ever pasted (crew#66 root trust, crew#577).",
   "consumers": [
-    { "entry": "mcp-gateway", "field": "GITHUB_MCP_TOKEN", "lane": "application-engineer", "reads": "platform/mcp/external-secret.yaml" },
-    { "entry": "hermes-agent-env", "field": "GITHUB_TOKEN", "lane": "application-engineer", "reads": "platform/hermes-agent/gateway.yaml" }
+    {
+      "entry": "mcp-gateway",
+      "field": "GITHUB_MCP_TOKEN",
+      "lane": "application-engineer",
+      "reads": "platform/mcp/external-secret.yaml"
+    },
+    {
+      "entry": "hermes-agent-env",
+      "field": "GITHUB_TOKEN",
+      "lane": "application-engineer",
+      "reads": "platform/hermes-agent/gateway.yaml"
+    },
+    {
+      "entry": "backstage-env",
+      "field": "GITHUB_TOKEN",
+      "lane": "platform-engineer",
+      "reads": "platform/backstage/overlays/oke/backstage-external-secret.yaml"
+    }
   ]
 }
