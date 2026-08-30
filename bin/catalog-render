@@ -35,6 +35,7 @@ SHOWCASE = "docs/SHOWCASE.md"
 TRACE = "docs/TRACE-MATRIX.md"          # crew#495 CP1
 NEXT = "docs/NEXT.md"                   # crew#403 CP6
 FOUNDER = "docs/FOUNDER.md"             # crew#412 R38
+FOUNDER_JSON = "docs/founder.json"      # crew#684 CP4: the Ops page's founder tiles read this
 TRACE_JSON = "docs/trace-matrix.json"
 INV = Path(os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json"))
 
@@ -122,7 +123,7 @@ def main(argv: list[str]) -> int:
     step("estate-showcase", [sys.executable, str(WT / "bin" / "estate-showcase")], WT)
     # crew#495 CP1: the trace matrix is rendered from the same worktree, on the same schedule.
     step("trace-matrix", [sys.executable, str(WT / "bin" / "trace-matrix")], WT)
-    rc, diff = sh(["git", "diff", "--stat", "--", PAGE, SHOWCASE, TRACE, TRACE_JSON, NEXT, FOUNDER], WT)
+    rc, diff = sh(["git", "diff", "--stat", "--", PAGE, SHOWCASE, TRACE, TRACE_JSON, NEXT, FOUNDER, FOUNDER_JSON], WT)
     if not diff:
         print("catalog-render: page unchanged since the last render; nothing to commit")
         return 0
@@ -130,7 +131,7 @@ def main(argv: list[str]) -> int:
         print(f"catalog-render --dry-run: would commit\n{diff}")
         return 0
     taken = step("inventory time", ["sed", "-n", "s/^# inventory taken: //p", "catalog/catalog-info.yaml"], WT)
-    step("stage", ["git", "add", PAGE, SHOWCASE, TRACE, TRACE_JSON, NEXT, FOUNDER], WT)
+    step("stage", ["git", "add", PAGE, SHOWCASE, TRACE, TRACE_JSON, NEXT, FOUNDER, FOUNDER_JSON], WT)
     step("commit", ["git", "commit", "-q", "-m", f"docs(architecture): live estate page, inventory taken {taken} (crew#401)\n\nAuthor-session: com.estate.catalog-render"], WT)
     step("push", ["git", "push", "-q", "--force-with-lease", "origin", f"HEAD:refs/heads/{BRANCH}"], WT)
     rc, existing = sh(["gh", "pr", "list", "--head", BRANCH, "--state", "open", "--json", "number", "--jq", ".[0].number"], WT)
@@ -149,6 +150,12 @@ def main(argv: list[str]) -> int:
                                    f"- LAW 3 nervous system: scheduler/schedule.yml com.estate.catalog-render -> {BRANCH}\n"
                                    "- LAW 4 calibration: n/a: no prediction made\n"], WT)
         rc, existing = sh(["gh", "pr", "list", "--head", BRANCH, "--state", "open", "--json", "number", "--jq", ".[0].number"], WT)
+    # crew#684: bin/idp-pr-age drafts a conflicting PR at 4h; a fresh render clears the conflict
+    # but `gh pr merge --auto` refuses a draft (runs 33278169055, 33294242647). Un-draft first.
+    rc, draft = sh(["gh", "pr", "view", existing, "--json", "isDraft", "--jq", ".isDraft"], WT)
+    if draft == "true":
+        step("ready", ["gh", "pr", "ready", existing], WT)
+
     step("auto-merge", ["gh", "pr", "merge", existing, "--auto", "--squash"], WT)
     print(f"catalog-render: {PAGE} pushed to {BRANCH}, PR #{existing} set to auto-merge")
     return 0

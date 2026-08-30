@@ -54,6 +54,21 @@ proxy:
     '/prometheus/api':
       target: http://kps-prometheus.monitoring.svc:9090/api/v1/
       allowedMethods: [GET]
+    # crew#684 CP5: the Healthchecks tile on the Ops page. The read-only API key is a mounted file
+    # from ExternalSecret healthchecks-ro (platform/backstage/overlays/oke), added here so the
+    # browser never holds it. Read only: v3 list checks. The page never names the host.
+    '/healthchecks':
+      target: http://healthchecks.healthchecks.svc:8000/api/v3
+      allowedMethods: [GET]
+      headers:
+        X-Api-Key:
+          $file: /run/secrets/healthchecks-ro/HC_API_KEY_RO
+        # Incident 2026-08-30 06:0xZ (login drill 33296013135, "Healthchecks answered 400"):
+        # Healthchecks is Django with ALLOWED_HOSTS = hc.<zone> (platform/healthchecks/env.yaml,
+        # crew#483), and without this line the proxy forwards the browser's Host, so every
+        # read was refused and the Ops tile said "could not be read". The pod names the one
+        # allowed host (HEALTHCHECKS_HOST, platform/backstage/overlays/oke/kustomization.yaml).
+        Host: ${HEALTHCHECKS_HOST}
     '/sunshine':
       target: https://sunshine-mac.backstage.svc.cluster.local:47990
       changeOrigin: true

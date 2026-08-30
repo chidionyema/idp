@@ -81,10 +81,34 @@ else
   elif [ $rc = 124 ]; then
     say "BLIND deps      pip-audit exceeded 240s (network); rerun"; blind=1
   elif printf '%s' "$out" | grep 'Failed to install packages' >/dev/null ; then
+    # The joint environment could not be built. Before giving up on resolution, try each
+    # file on its own: two files may pin the same package apart ON PURPOSE because they
+    # feed two interpreters (crew#712, 2026-08-30: requirements-research.txt openai<3 for
+    # litellm, requirements-grade.txt openai>=3.1 for Inspect). Each file still resolves
+    # and is fully audited; only their union is impossible.
+    perfile_rc=0; perfile_out=""; perfile_install=0
+    for r in $reqs; do
+      # shellcheck disable=SC2086
+      o=$(timeout 240 $PA -r "$r" --progress-spinner off 2>&1); c=$?
+      if [ $c = 124 ]; then perfile_rc=124; break; fi
+      if [ $c != 0 ]; then
+        if printf '%s' "$o" | grep 'Failed to install packages' >/dev/null; then perfile_install=1; else perfile_rc=1; perfile_out="$perfile_out
+$r:
+$o"; fi
+      fi
+    done
+    if [ $perfile_rc = 124 ]; then
+      say "BLIND deps      pip-audit exceeded 240s (network); rerun"; blind=1
+    elif [ $perfile_install = 0 ] && [ $perfile_rc = 0 ]; then
+      say "ok    deps      pip-audit over $(( ${#args[@]} / 2 )) requirements files, resolved one file at a time (their union does not install): no known vulnerabilities"
+    elif [ $perfile_install = 0 ]; then
+      say "FAIL  deps      pip-audit (resolved one file at a time)"; [ $quiet = 1 ] || printf '%s\n' "$perfile_out" | tail -15 | sed 's/^/      /'; fail=1
+    else
     # pip-audit could not build the environment (a package with no wheel and no build
     # deps, or a pin that is not on the index). That is not an advisory, so it is not a
     # FAIL: audit the pins as written, without resolving or installing anything.
     why=$(printf '%s' "$out" | grep -m1 -oE 'No matching distribution found for [^ ]+|No module named [^ ]+' || echo "see pip-audit output")
+    # shellcheck disable=SC2086
     out2=$(timeout 240 $PA "${args[@]}" --no-deps --disable-pip --progress-spinner off 2>&1); rc2=$?
     if [ $rc2 = 0 ]; then
       say "ok    deps      pip-audit over $(( ${#args[@]} / 2 )) requirements files: no known vulnerabilities (pins audited without resolution; install failed: $why)"
@@ -96,6 +120,7 @@ else
     else
       say "FAIL  deps      pip-audit (pins audited without resolution; install failed: $why)"
       [ $quiet = 1 ] || printf '%s\n' "$out2" | tail -15 | sed 's/^/      /'; fail=1
+    fi
     fi
   else
     say "FAIL  deps      pip-audit"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'; fail=1

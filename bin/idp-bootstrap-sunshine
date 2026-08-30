@@ -15,7 +15,7 @@
 # external-secrets into backstage/sunshine-auth (platform/backstage/overlays/oke/sunshine-egress.yaml)
 # and, for adoption, into the hermes-agent pod, whose tailnet sidecar is the only identity the
 # locked ACL lets at the Mac (platform/tailscale/policy.hujson: tag:k8s -> tag:founder-mac:22). The
-# Mac side is then one line through platform/hermes-agent/mac-run.yaml, run from that pod:
+# Mac side is then one line through platform/hermes-agent/mac-run.tpl, run from that pod:
 #   mac-run bin/idp-bootstrap-sunshine --adopt    (SUNSHINE_CREDS_DIR carried by scp, never argv)
 # Nothing is printed but key NAMES. `authorization` is the ready-made header value the Backstage
 # proxy reads from a file (app-config.container.yaml): Basic base64(username:password).

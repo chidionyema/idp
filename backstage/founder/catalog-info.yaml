@@ -561,6 +561,28 @@ spec:
   owner: group:default/platform
   system: system:default/estate
 ---
+# crew#684 CP1: the Ops dashboard. Nodes ready, pods not ready by namespace, Flux rows not
+# ready, read live through the Kubernetes plugin's proxy (ADR 0009 row ops-dashboard-cluster-health).
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-ops
+  title: "Ops: the cluster right now"
+  description: "Nodes ready, pods not ready by namespace, and every Flux row that is not ready, re-read every minute while the page is open. A cluster that cannot be read says so instead of showing green."
+  annotations:
+    estate/group: "Watch"
+    idp/updated-by: "backstage/packages/app/src/modules/home/Ops.tsx ships with the portal image; the numbers come from the cluster on every render"
+  tags: [founder]
+  links:
+    - title: "Open"
+      url: "https://catalogue.${ESTATE_ZONE}/ops"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
 # crew#562 (ADR 0009 decision founder-screen-access, path 1 of 3): Sunshine on the estate Mac,
 # Moonlight on the phone; the PIN goes from the founder's thumb to the Mac through this page.
 apiVersion: backstage.io/v1alpha1
@@ -571,7 +593,7 @@ metadata:
   description: "Open Moonlight on the phone, tap the Mac, type the 4-digit PIN it shows into this page. The PIN reaches Sunshine on the Mac over the tailnet in one step; no chat, no waiting on a session. After the first pairing it is one tap in Moonlight for ever. Paths 2 and 3 (Guacamole in the browser, Apple Screen Sharing) follow the matrix order in docs/decisions/decision-matrix.yaml."
   annotations:
     estate/group: "Build"
-    idp/updated-by: "backstage/packages/app/src/modules/home/PairPhone.tsx ships with the portal image; the Mac side is the Sunshine service on the estate Mac (platform/hermes-agent/mac-run.yaml row)"
+    idp/updated-by: "backstage/packages/app/src/modules/home/PairPhone.tsx ships with the portal image; the Mac side is the Sunshine service on the estate Mac (platform/hermes-agent/mac-run.tpl row)"
   tags: [founder]
   links:
     - title: "Open"

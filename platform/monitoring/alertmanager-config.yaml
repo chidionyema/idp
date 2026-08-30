@@ -38,6 +38,13 @@ spec:
               - receiver: robusta
                 matchers: ['severity =~ "warning|critical"']
                 continue: true
+              # crew#684 CP3: an alert whose rule names no owner is itself a red. It pages
+              # the founder's channel as a P1 page once it has been unowned for ten minutes.
+              - receiver: telegram-p1-page
+                matchers: ['owner = ""', 'alertname != "Watchdog"']
+                group_wait: 10m
+                repeat_interval: 1h
+                continue: true
           receivers:
             - name: "null"
             - name: telegram
@@ -46,6 +53,13 @@ spec:
                   chat_id: {{ .channel }}
                   parse_mode: ""
                   send_resolved: true
+            - name: telegram-p1-page
+              telegram_configs:
+                - bot_token: "{{ .token }}"
+                  chat_id: {{ .channel }}
+                  parse_mode: ""
+                  send_resolved: true
+                  message: 'P1 page: {{ "{{" }} .CommonLabels.alertname {{ "}}" }} has been red for 10 minutes and no rule names an owner. Add an owner label to the rule in platform/monitoring/rules and a next action.'
             - name: robusta
               webhook_configs:
                 - url: http://robusta-runner.robusta.svc.cluster.local/api/alerts

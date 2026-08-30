@@ -15,10 +15,12 @@ import re
 import shutil
 from pathlib import Path
 from dataclasses import dataclass, field
+from collections.abc import Iterator
 from typing import Any
 
 import httpx
 import pytest
+import yaml
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from sovereign import config as config_mod
@@ -59,10 +61,20 @@ class FakeProxy:
 
 
 @pytest.fixture
-def proxy(estate_home, monkeypatch: pytest.MonkeyPatch) -> FakeProxy:
+def proxy(estate_home, monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeProxy]:
     """The LiteLLM proxy, faked at the wire. Skips, not fails, when the
     policy engine is absent: that is an environment gap and idp-ci names
-    it, not a consensus defect."""
+    it, not a consensus defect.
+
+    It yields rather than returns because of the reload below. monkeypatch puts
+    SB_MODEL_CONSENSUS back at teardown, but a module reloaded while it was set
+    keeps the values it read -- so `sovereign.config` stayed on the placeholder
+    voters alpha/beta/gamma for every later test in the same xdist worker.
+    Measured 2026-08-30: with cp30 and crew#313 on one worker,
+    test_every_default_model_alias_is_served_by_the_estate_router failed with
+    `{'alpha', 'beta', 'gamma'}`, and passed alone. A test that leaves a module
+    rewritten behind it is a red that lands on whoever is scheduled next.
+    """
     if shutil.which(str(ck.get("consensus.policy_binary"))) is None:
         pytest.skip("conftest is not on PATH; bin/idp-ci and ci.yml install it")
     fake = FakeProxy()
@@ -76,7 +88,9 @@ def proxy(estate_home, monkeypatch: pytest.MonkeyPatch) -> FakeProxy:
     monkeypatch.setenv("LITELLM_BASE_URL", "http://litellm.invalid")
     monkeypatch.setenv("SB_MODEL_CONSENSUS", ",".join(THREE_MODELS))
     importlib.reload(config_mod)
-    return fake
+    yield fake
+    monkeypatch.undo()  # the environment first, so the reload below reads the real one
+    importlib.reload(config_mod)
 
 
 def _decide(op: str, destructive: bool) -> dict[str, Any]:
@@ -185,13 +199,32 @@ def _one_cheap_model(proxy: FakeProxy, context: dict[str, Any]) -> None:
     # llm/config.yaml, whose chains end in the local ollama lane; that lane is laptop-only and
     # the default is now the router on the cluster. The chain headed by the cheap model itself
     # cannot end in it, so it is the one chain left out.
-    litellm = (config_mod.POLICY.path.parent / "platform" / "llm" / "config.yaml").read_text()
+    litellm_path = config_mod.POLICY.path.parent / "platform" / "llm" / "config.yaml"
+    litellm = litellm_path.read_text()
     chains = re.findall(r"^\s*-\s*(\w+):\s*\[([^\]]+)\]", litellm, flags=re.MULTILINE)
     assert chains, "platform/llm/config.yaml declares no fallback chains"
-    graded = [members for head, members in chains if head != cheap]
+    # An image lane is exempt from the cheap-model floor, and this is the rule holding, not a
+    # hole in it. "End in the cheapest" is a statement about the cost of answering in TEXT; a
+    # picture request that fell through to a chat model would come back as prose, which reads
+    # like an answer and is worse than a clean failure. So image chains are graded by their own
+    # rule below -- every hop must itself make images -- and a text chain that reaches into an
+    # image lane, or an image chain that reaches out of one, still fails here.
+    image_lanes = {
+        m["model_name"]
+        for m in yaml.safe_load(litellm_path.read_text())["model_list"]
+        if "image" in m["litellm_params"]["model"]
+    }
+    graded = [members for head, members in chains if head != cheap and head not in image_lanes]
     assert graded, "every chain is headed by the cheap model; nothing to grade"
     for chain in graded:
-        assert chain.split(",")[-1].strip() == cheap, chain
+        members = [m.strip() for m in chain.split(",")]
+        assert not (set(members) & image_lanes), f"a text chain falls into an image lane: {chain}"
+        assert members[-1] == cheap, chain
+    for head, chain in chains:
+        if head not in image_lanes:
+            continue
+        for member in (m.strip() for m in chain.split(",")):
+            assert member in image_lanes, f"{head} falls back to the text lane {member}"
     assert config_mod.POLICY.routing["cheap"] == cheap
 
 

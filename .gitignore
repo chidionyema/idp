@@ -62,3 +62,5 @@ platform/oci/identity/*.tfstate*
 # `FAIL ruff` for three F821s in .wt-keyless, .wt-p0 and .wt-stale -- another session's
 # work-in-progress refusing this session's push, and a red that says nothing about either branch.
 /.wt-*/
+# generated at docs build by bin/mkdocs_hooks/incident_register.py (crew#679 CP2); never committed, never stale
+docs/reference/incident-register.yaml

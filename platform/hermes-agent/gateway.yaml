@@ -124,6 +124,13 @@ metadata:
     # the same way litellm picks up litellm-upstream: the swap seeds TELEGRAM_BOT_TOKEN and the pod restarts.
     # crew#516 CP5: hermes-agent-tailscale added so the sidecar re-authenticates on a key rotation.
     secret.reloader.stakater.com/reload: "hermes-agent-env,hermes-agent-a2a,hermes-agent-tailscale"
+    # crew#561: mac-run has NO Reloader annotation, deliberately. It is a subPath mount, and a
+    # subPath never sees a ConfigMap update, so idp#955 named the ConfigMap here. That could not
+    # work: the script had already changed in idp#949 at 05:45Z, Reloader only acts on a change it
+    # observes after it starts watching, and otto-parity 33297784151 at 06:53Z still ran the old
+    # copy with Flux green. mac-run is now rendered by a configMapGenerator (kustomization.yaml),
+    # so its name carries a content hash, the volume reference below changes with the script, and
+    # the Deployment itself rolls. A hashed name can never match a static annotation either.
   labels:
     app: hermes-agent-gateway
     app.kubernetes.io/name: hermes-agent-gateway
@@ -178,7 +185,7 @@ spec:
             # public by design; every POST needs the token.
             - name: A2A_HOST
               value: 0.0.0.0
-            # crew#516 CP5: mac-run.yaml's only variables (LAW 46 — the Mac's tailnet IP and login
+            # crew#516 CP5: mac-run.tpl's only variables (LAW 46 — the Mac's tailnet IP and login
             # user are named nowhere else). ConfigMap, not Secret: neither is a credential, Tailscale
             # SSH authenticates by tailnet node identity, not by these values.
             - name: FOUNDER_MAC_USER

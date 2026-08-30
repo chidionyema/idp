@@ -17,35 +17,16 @@ spec:
   ports:
     - { name: http, port: 8000, targetPort: 8000 }
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: healthchecks-enrol
-  namespace: healthchecks
-data:
-  # Idempotent: one founder user, one project named "estate", its ping key = the vault entry.
-  enrol.py: |
-    import os
-    from django.contrib.auth.models import User
-    from hc.accounts.models import Profile, Project
-    email = os.environ["FOUNDER_EMAIL"]
-    user = User.objects.filter(email=email).first()
-    if user is None:
-        user = User.objects.create(username=email[:150], email=email)
-        Profile.objects.get_or_create(user=user)
-    project = Project.objects.filter(owner=user).order_by("id").first()
-    if project is None:
-        project = Project(owner=user)
-    project.name = "estate"
-    project.ping_key = os.environ["PING_KEY"]
-    project.save()
-    print("enrolled", project.name, "for", email)
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: healthchecks
   namespace: healthchecks
+  # crew#684: enrol.py runs at pod start, so a rotated vault key (the 32-character read-only key,
+  # platform/oci/healthchecks.tf) reaches the database only if the pod rolls. Reloader
+  # (platform/reloader) rolls it when the Secret changes; healthchecks is in its namespace list.
+  annotations:
+    secret.reloader.stakater.com/reload: "healthchecks"
   labels: { app.kubernetes.io/name: healthchecks, app.kubernetes.io/part-of: idp }
 spec:
   replicas: 2   # crew#539: one pod is one node event away from a 503

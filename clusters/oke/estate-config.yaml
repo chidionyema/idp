@@ -18,7 +18,7 @@ data:
   # dispatches the hourly drills here. Same repo as clusters/oke/flux-system/gotk-sync.yaml; one value.
   ESTATE_GITHUB_REPO: chidionyema/idp
   # crew#516 CP5, founder's locked spec (crew#66 5451926212): the founder's Mac, reached by mac-run
-  # (platform/hermes-agent/mac-run.yaml) over the Tailscale sidecar's SOCKS5 proxy, and named in
+  # (platform/hermes-agent/mac-run.tpl) over the Tailscale sidecar's SOCKS5 proxy, and named in
   # platform/tailscale/policy.hujson's ssh rule (bin/idp-tailscale-policy reads FOUNDER_MAC_USER
   # from here, the same source Flux postBuild substitutes into the manifests). Both are LAW 46: the
   # one place this estate is allowed to name the Mac's tailnet IP and login user, never a literal

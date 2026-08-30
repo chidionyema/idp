@@ -207,7 +207,7 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
     # The job monitor's ping path (crew#177) is called by curl from every wrapped launchd job and
     # cannot sit behind a browser login. Healthchecks authenticates it with the project ping key in
     # the URL (/ping/<key>/<slug>). The route may skip oauth2-proxy only when it says so AND exposes
-    # nothing but /ping/, AND the row enrols that key from the vault (healthchecks.yaml reads
+    # nothing but /ping/, AND the row enrols that key from the vault (enrol.py reads
     # healthchecks-ping-key and pins it on the project).
     if (route["metadata"].get("annotations") or {}).get(
         "idp.estate/auth"
@@ -226,7 +226,7 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
         assert "healthchecks-ping-key" in row, (
             f"{f}: annotated healthchecks-ping-key but the row pulls no ping key"
         )
-        enrol = (pathlib.Path(f).parent / "healthchecks.yaml").read_text()
+        enrol = (pathlib.Path(f).parent / "enrol.py").read_text()
         assert 'project.ping_key = os.environ["PING_KEY"]' in enrol, (
             f"{f}: the row never pins the ping key on the project"
         )

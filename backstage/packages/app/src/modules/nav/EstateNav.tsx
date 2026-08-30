@@ -30,6 +30,7 @@ export const NAV = [
   { title: 'Kubernetes', to: '/#kubernetes', icon: SettingsApplicationsIcon },
   { title: 'What we run', to: '/catalog', icon: LayersIcon },
   { title: 'Tools', to: '/tools', icon: BuildIcon },
+  { title: 'Ops', to: '/ops', icon: SettingsApplicationsIcon },
   { title: 'Find', to: '/search', icon: SearchIcon },
   { title: 'How-to', to: '/docs', icon: MenuBookIcon },
   { title: 'You', to: '/settings', icon: AccountCircleIcon },

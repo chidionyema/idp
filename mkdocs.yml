@@ -4,6 +4,8 @@ site_name: idp — the platform
 docs_dir: docs
 plugins:
   - techdocs-core
+hooks:
+  - bin/mkdocs_hooks/incident_register.py   # writes reference/incident-register.yaml from the incident tests (crew#679 CP2)
 nav:
   - Home: index.md
   - Definition of Done: reference/policy/definition-of-done.md
@@ -52,6 +54,7 @@ nav:
   - Explanation:
       - explanation/index.md
       - Founder self-service, the field (crew#66): explanation/founder-self-service-research.md
+      - Otto on the founder's Mac, the setup and the friction (crew#561): explanation/otto-on-the-mac.md
   - Demo:
       - Portal: tutorials/demo/idp.md
       - Conscience: tutorials/demo/conscience.md
@@ -98,6 +101,7 @@ nav:
       - Dockerfiles: tutorials/demo/dockerfiles.md
       - Langfuse: tutorials/demo/langfuse.md
       - LiteLLM: tutorials/demo/litellm.md
+      - Router image lanes: tutorials/demo/llm-images.md
       - KINI: tutorials/demo/kini.md
       - Migration gate: tutorials/demo/migration.md
       - Multiarch gate: tutorials/demo/multiarch.md
@@ -158,7 +162,9 @@ nav:
       - DB gen: how-to/onboarding/db-gen.md
       - Dockerfiles: how-to/onboarding/dockerfiles.md
       - LiteLLM: how-to/onboarding/litellm.md
+      - Router image lanes: how-to/onboarding/llm-images.md
       - KINI: how-to/onboarding/kini.md
+      - Otto (the founder's agent): how-to/onboarding/otto.md
       - Migration gate: how-to/onboarding/migration.md
       - Multiarch gate: how-to/onboarding/multiarch.md
       - Policy test: how-to/onboarding/policy-test.md

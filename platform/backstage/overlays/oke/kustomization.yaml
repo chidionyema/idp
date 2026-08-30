@@ -11,6 +11,7 @@ resources:
   - ../../base
   - availability.yaml
   - backstage-external-secret.yaml
+  - healthchecks-ro-external-secret.yaml
   - httproute.yaml
   - edge-manners.yaml
   # crew#562: tailnet egress Service to Sunshine on the founder's Mac + its Basic-auth secret.
@@ -29,7 +30,7 @@ images:
     newName: ghcr.io/chidionyema/backstage
     # image-automation-controller rewrites this line from ImagePolicy flux-system/backstage
     # (platform/image-automation/backstage.yaml, crew#267); the marker is how it finds the line.
-    newTag: main-2721-74b979a30207dd8723d05ed3ca22aeb0b8331914 # {"$imagepolicy": "flux-system:backstage:tag"}
+    newTag: main-2913-2ca4dd33aa2512856255e8ac02a3afc7f2f139cc # {"$imagepolicy": "flux-system:backstage:tag"}
   # OKE's CRI-O enforces fully qualified names: `postgres:17.6-alpine` failed with
   # "short name mode is enforcing" on 2026-08-25. k3d resolves either form.
   - name: postgres
@@ -60,6 +61,26 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 2
+      # crew#684 CP5: the Healthchecks read-only key as a file for the /healthchecks proxy endpoint.
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: healthchecks-ro
+          secret:
+            secretName: healthchecks-ro
+            # Incident 2026-08-30 04:2xZ-04:5xZ (founder: "backstage is down again"): this mount was
+            # `optional: false` while its vault entry waited on the next terraform apply, so the
+            # ExternalSecret sat in SecretSyncedError and the new catalogue pod stayed in
+            # ContainerCreating (oke-check 33292780315). A key the portal cannot read yet is a tile
+            # that says "could not be read" and a red drill row (crew#684 CP6), never a rollout that
+            # cannot start.
+            optional: true
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: healthchecks-ro
+          mountPath: /run/secrets/healthchecks-ro
+          readOnly: true
       # crew#307, 2026-08-28: maxSurge 1 / maxUnavailable 0 made this Deployment permanently
       # un-rollable, and silently. A surge asks the scheduler for a THIRD catalogue pod before
       # any old one is deleted, and the hard hostname anti-affinity below plus a two-node pool
@@ -102,6 +123,11 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value: {name: APP_BASE_URL, value: "https://catalogue.${ESTATE_ZONE}"}
+      # crew#684 CP6, 2026-08-30: the one Host Healthchecks accepts (its ALLOWED_HOSTS,
+      # platform/healthchecks/env.yaml); app-config.container.yaml sends it on /healthchecks.
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: HEALTHCHECKS_HOST, value: "hc.${ESTATE_ZONE}"}
       # crew#562: Sunshine's Basic-auth header as a mounted file for the /sunshine proxy
       # endpoint (app-config.container.yaml). optional: false, like backstage-env: a pod that
       # cannot pair the founder's phone is not a pod that should report Ready.

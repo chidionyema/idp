@@ -528,12 +528,43 @@ pb_otto_parity() {
   local ns=hermes-agent d=deploy/hermes-agent-gateway
   step gateway-ready $K rollout status "$d" -n "$ns" --timeout=60s
   step no-restart-loop sh -c "r=\$($K get pods -n $ns -l app=hermes-agent-gateway -o jsonpath='{.items[0].status.containerStatuses[?(@.name==\"gateway\")].restartCount}'); echo restarts=\$r; [ \"\${r:-0}\" -lt 5 ]"
-  step key-mounted $K exec "$d" -n "$ns" -c gateway -- sh -c 'test -s /run/secrets/hermes-agent-mac-run/id_ed25519 && echo key-present'
+  # Founder, 2026-08-30 04:34Z: "ok key-mounted went green on a key that could not be used". The row
+  # asserts what mac-run needs: the runtime uid reads the mounted key and makes a private copy of it.
+  step key-usable $K exec "$d" -n "$ns" -c gateway -- sh -c 'k=/run/secrets/hermes-agent-mac-run/id_ed25519; test -r "$k" || { echo "key unreadable by $(id -u)"; exit 1; }; ls -ln "$k"; echo key-usable'
+  # ssh uses the mounted file directly (no copy): decided from run 33294804159, graded here since.
+  # The proxy is read from the pod's own mac-run (the sidecar's SOCKS door), never typed here (LAW 46).
+  step key-direct $K exec "$d" -n "$ns" -c gateway -- sh -c 'k=/run/secrets/hermes-agent-mac-run/id_ed25519; ls -ln "$k"; proxy=$(grep -o "nc -x [^ ]* %h %p" "$(command -v mac-run)" | head -1); ssh -i "$k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="${HERMES_HOME:-/data}/known_hosts" -o ConnectTimeout=5 -o ProxyCommand="$proxy" "$FOUNDER_MAC_USER@$FOUNDER_MAC_TS_IP" hostname 2>&1 | tail -3'
+  # run 33291368505: mac-run died on "cp: cannot create regular file '/tmp/...': Permission denied"
+  # and nothing here said who owned /tmp. Eyes first (LAW 28): the container's id and /tmp's owner.
+  show tmp-owner $K exec "$d" -n "$ns" -c gateway -- sh -c 'id; ls -land /tmp; ls -lan /tmp | head -6'
   step tailnet-up $K exec "$d" -n "$ns" -c tailscale -- tailscale --socket=/tmp/tailscaled.sock status --json --peers=false
   step mac-run-hostname $K exec "$d" -n "$ns" -c gateway -- mac-run hostname
   step hindsight-answers $K exec "$d" -n "$ns" -c gateway -- python3 -c 'import os,urllib.request; u=os.environ["HINDSIGHT_API_URL"]; print(u, urllib.request.urlopen(u+"/health", timeout=5).status)'
   step cron-lanes-installed sh -c "$K exec $d -n $ns -c gateway -- python3 -c 'import json; j=json.load(open(\"/data/cron/jobs.json\")); n=len(j.get(\"jobs\", j) if isinstance(j, dict) else j); print(\"jobs=%d\" % n); raise SystemExit(0 if n else 1)'"
   show model-lane sh -c "$K exec $d -n $ns -c gateway -- sh -c 'grep -E \"^(model|provider|base_url|  provider|  base_url)\" /data/config.yaml | head -8'"
+}
+
+# healthchecks-door: crew#684, 2026-08-30 07:0xZ. Read-only. idp#957 (Host header) and idp#962 (enrol
+# sets the read-only key on pod start) both rolled and the Ops tile still read "Healthchecks
+# answered 401" (login drill 33298467426). Every layer between the portal and Healthchecks is
+# graded here from inside the two pods, never from a manifest: the key each side holds (hashes,
+# never values), that they are the same key, that enrol ran, and that the key opens the door
+# with the exact headers the portal proxy sends. A red row is the finding.
+pb_healthchecks_door() {
+  local hns=healthchecks hd=deploy/healthchecks pns=backstage pd=deploy/catalogue
+  local pk=/run/secrets/healthchecks-ro/HC_API_KEY_RO hk=/run/secrets/healthchecks/RO_KEY
+  step portal-key-mounted $K exec "$pd" -n "$pns" -- sh -c "test -s $pk && printf 'bytes=%s sha=%s\n' \"\$(wc -c < $pk)\" \"\$(sha256sum < $pk | cut -c1-12)\""
+  step hc-key-mounted $K exec "$hd" -n "$hns" -c healthchecks -- sh -c "test -s $hk && printf 'bytes=%s sha=%s\n' \"\$(wc -c < $hk)\" \"\$(sha256sum < $hk | cut -c1-12)\""
+  step keys-agree sh -c "a=\$($K exec $pd -n $pns -- sh -c 'sha256sum < $pk' | cut -c1-12); b=\$($K exec $hd -n $hns -c healthchecks -- sh -c 'sha256sum < $hk' | cut -c1-12); echo portal=\$a healthchecks=\$b; [ \"\$a\" = \"\$b\" ]"
+  show_redacted enrol-log sh -c "$K logs $hd -n $hns -c migrate-and-enrol --tail=5"
+  # The DB row, not the file: the key enrol saved is the one the API authorises against.
+  # The container exports its secret files itself (the policy secrets-not-from-env-vars); so does this row.
+  step key-enrolled $K exec "$hd" -n "$hns" -c healthchecks -- sh -c "for f in /run/secrets/healthchecks/*; do export \"\$(basename \"\$f\")=\$(cat \"\$f\")\"; done; cd /opt/healthchecks && python manage.py shell -c \"from hc.accounts.models import Project; k=open('$hk').read(); ps=list(Project.objects.all()); print('projects', [(p.name, len(p.api_key_readonly or ''), p.api_key_readonly == k) for p in ps]); raise SystemExit(0 if any(p.api_key_readonly == k for p in ps) else 1)\""
+  # Django's own answer to the key, from inside the Healthchecks pod: no proxy, no network in the path.
+  step door-opens-locally $K exec "$hd" -n "$hns" -c healthchecks -- sh -c "python -c \"import os,urllib.request as u; k=open('$hk').read(); r=u.Request('http://127.0.0.1:8000/api/v3/checks/', headers={'X-Api-Key': k, 'Host': os.environ['ALLOWED_HOSTS'].split(',')[0]}); print(u.urlopen(r, timeout=10).status)\""
+  # Exactly the request the portal proxy makes (backstage/app-config.container.yaml: X-Api-Key from
+  # the mounted file, Host = ALLOWED_HOSTS), sent from the portal pod with the portal's own key.
+  step door-opens $K exec "$pd" -n "$pns" -- node -e "const fs=require('fs'),http=require('http');const key=fs.readFileSync('$pk','utf8');const host=process.env.HEALTHCHECKS_HOST;const r=http.request({host:'healthchecks.healthchecks.svc',port:8000,path:'/api/v3/checks/',headers:{'X-Api-Key':key,'Host':host}},res=>{let t='';res.on('data',d=>t+=d);res.on('end',()=>{console.log('status',res.statusCode,'host',host,'key_len',key.length,'key_ends_with_newline',key.endsWith('\\n'));console.log(t.slice(0,120));process.exit(res.statusCode===200?0:1)})});r.on('error',e=>{console.log(String(e));process.exit(1)});r.end()"
 }
 
 # catalogue-roll: crew#412, 2026-08-28: idp#564 (c6e6026) pinned the right portal image at 11:00Z
@@ -547,8 +578,34 @@ pb_catalogue_roll() {
   step flux-source flux reconcile source git flux-system -n flux-system --timeout=3m
   step backstage flux reconcile kustomization backstage -n flux-system --with-source --timeout=5m
   show image $K get deploy catalogue -n backstage -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+  # crew#684, 2026-08-30 04:19Z: the login drill read 502 on /api/catalog/entities during a roll,
+  # and the body was the edge's own "Starting up" page (platform/edge/status-page.yaml), which
+  # Traefik serves when no backend answered. The only record left afterwards was the startup-probe
+  # warnings every catalogue pod prints while it warms up, which is noise on every roll and not a
+  # cause. Whether the Service ever had zero ready endpoints during the roll was never measured, so
+  # the roll measures it: once a second, the ready addresses on the catalogue EndpointSlice, and a
+  # red row naming every second the door had nothing behind it (maxUnavailable 1 / maxSurge 0 in
+  # the overlay promises one replica serves throughout; this is the row that proves the promise).
+  local door_watch door_pid door_empty door_total
+  door_watch=$(mktemp)
+  ( while :; do
+      printf '%s %s\n' "$(date -u +%H:%M:%S)" "$($K get endpointslice -n backstage -l kubernetes.io/service-name=catalogue -o jsonpath='{range .items[*].endpoints[?(@.conditions.ready==true)]}{.addresses[0]} {end}' 2>/dev/null)"
+      sleep 1
+    done ) > "$door_watch" &
+  door_pid=$!
   step rollout $K rollout status deploy/catalogue -n backstage --timeout=10m
+  kill "$door_pid" 2>/dev/null || true
+  wait "$door_pid" 2>/dev/null || true
+  door_empty=$(awk 'NF<2' "$door_watch" | wc -l | tr -d ' ')
+  door_total=$(wc -l < "$door_watch" | tr -d ' ')
+  if [ "$door_empty" -eq 0 ]; then
+    step door-backed echo "door-backed: a ready catalogue endpoint in every one of $door_total samples"
+  else
+    step door-backed sh -c "echo 'door unbacked for $door_empty of $door_total samples:'; awk 'NF<2' '$door_watch'; exit 1"
+  fi
+  rm -f "$door_watch"
   show replicasets $K get rs -n backstage
+  show roll-events $K get events -n backstage --sort-by=.lastTimestamp
   show pods $K get pods -n backstage -o wide
   # login-drill 33170826547 (12:24Z, after the roll to main-1747): five of the six locations that
   # app-config.container.yaml declares are registered and /estate/founder/catalog-info.yaml is not.
@@ -634,11 +691,32 @@ pb_helm_retry() {
     [ -n "$pname" ] || continue
     step "recreate-$pname" $K delete pod "$pname" -n "$pns" --wait=false
   done <<<"$stuck"
-  local ns name
+  # crew#678 CP2 (founder 2026-08-30: self-healing needs a circuit breaker). Each HelmRelease
+  # gets HELM_RETRY_MAX attempts (3) inside one HELM_RETRY_COOLOFF_S window (6 h); the count and
+  # the last attempt live on the object itself (annotations estate.idp/helm-retry-attempts and
+  # estate.idp/helm-retry-last, epoch seconds) so the Mac and the workflow read one record. An
+  # open breaker is printed as BREAKER OPEN with the reset command and fails the playbook, so a
+  # release nobody can retry is loud, never a quiet skip. Reset:
+  #   kubectl annotate helmrelease <name> -n <ns> estate.idp/helm-retry-attempts-
+  local max_attempts="${HELM_RETRY_MAX:-3}" cooloff="${HELM_RETRY_COOLOFF_S:-21600}" now open=0
+  now=$(date -u +%s)
+  local ns name attempts last
   while read -r ns name; do
     [ -n "$name" ] || continue
+    attempts=$($K get helmrelease "$name" -n "$ns" -o jsonpath='{.metadata.annotations.estate\.idp/helm-retry-attempts}' 2>/dev/null); attempts="${attempts:-0}"
+    last=$($K get helmrelease "$name" -n "$ns" -o jsonpath='{.metadata.annotations.estate\.idp/helm-retry-last}' 2>/dev/null); last="${last:-0}"
+    # A hand-edited or missing annotation is a fresh breaker, never an arithmetic crash (set -u).
+    case "$attempts" in '' | *[!0-9]*) attempts=0 ;; esac
+    case "$last" in '' | *[!0-9]*) last=0 ;; esac
+    if [ $((now - last)) -ge "$cooloff" ]; then attempts=0; fi
+    if [ "$attempts" -ge "$max_attempts" ]; then
+      echo "BREAKER OPEN helm-retry $ns/$name: $attempts attempts since $(date -u -d "@$last" +%FT%TZ 2>/dev/null || date -u -r "$last" +%FT%TZ); reset: kubectl annotate helmrelease $name -n $ns estate.idp/helm-retry-attempts-"
+      open=$((open + 1)); continue
+    fi
+    $K annotate helmrelease "$name" -n "$ns" --overwrite "estate.idp/helm-retry-attempts=$((attempts + 1))" "estate.idp/helm-retry-last=$now" >/dev/null 2>&1 || true
     step "retry-$name" flux reconcile helmrelease "$name" -n "$ns" --reset --timeout=15m </dev/null
   done <<<"$failed"
+  [ "$open" -eq 0 ] || step "breaker-open-$open-releases" sh -c "exit 1"
   show helmreleases $K get helmreleases -A --no-headers
   step observability flux reconcile kustomization observability -n flux-system --timeout=5m
   show kustomizations $K get kustomizations -A
@@ -899,10 +977,11 @@ pb_chi_resize() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor otto-parity cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-parity healthchecks-door cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   otto-parity) pb_otto_parity ;;
+  healthchecks-door) pb_healthchecks_door ;;
   router-spend) pb_router_spend ;;
   dns-per-node) pb_dns_per_node ;;
   dns-per-namespace) pb_dns_per_namespace ;;

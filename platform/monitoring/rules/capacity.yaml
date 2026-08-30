@@ -41,6 +41,7 @@ spec:
           for: 30m
           labels:
             severity: warning
+            owner: idp
           annotations:
             summary: "{{ $labels.namespace }}/{{ $labels.pod }} needs more CPU than git requests"
             description: "The pod's peak CPU over the last 30 minutes ({{ $value | printf \"%.2f\" }} cores) is above its request. A request set below the measured need is how Langfuse could not boot for 16 hours on 2026-08-29. Raise the request from the number on the entity's Metrics tab in Backstage, with the capacity-approved label (platform/edge/capacity-policy.yaml)."
