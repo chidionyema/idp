@@ -347,6 +347,8 @@ with sync_playwright() as p:
         # crew#684 CP0: the sentence only the Tools page says once the catalogue answered. Keep the
         # last row comment-free: tests slice this tuple by text and a trailing comment eats the ")".
         ("tools", "text=Every tool we use"),
+        ("ops", "text=The cluster right now"),
+        ("pair", "text=Type the PIN Moonlight shows you"),
     )
     broken = []
     for path, must_see in PUBLISHED:

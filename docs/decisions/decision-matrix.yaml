@@ -346,3 +346,60 @@ decisions:
           portability:         {score: 4, evidence: "https://github.com/redpanda-data/redpanda/blob/dev/licenses/bsl.md"}            # Kafka is Apache-2.0; Redpanda core is BSL
           operability:         {score: 2, evidence: "https://docs.redpanda.com/current/deploy/deployment-option/self-hosted/kubernetes/k-requirements/"}  # dedicated nodes and local disks asked for
           cost:                {score: 1, evidence: "https://docs.redpanda.com/current/deploy/deployment-option/self-hosted/kubernetes/k-requirements/"}  # a multi-GB footprint on a cluster whose whole budget is 4-6 OCPU (crew#289)
+  - slug: ops-dashboard-cluster-health
+    requirement: "the Ops dashboard's cluster tile: nodes ready, pods not ready by namespace, Flux rows not ready, live in the portal, never a script (crew#684 CP1, founder 2026-08-30 'I need to see everything')"
+    date: 2026-08-30
+    status: decided
+    next_review: 2026-11-29
+    decision: kubernetes-plugin-proxy   # 455 vs headlamp 395 vs weaveworks-flux-plugin 345 vs estate-mcp 305 (cmd: bin/matrix-gate); outside tie_band
+    receipt: "https://github.com/chidionyema/crew/issues/684#issuecomment-5466025580"   # RULING "LAST TIME: I NEED TO SEE ..." (2026-08-30 ~03:0xZ)
+    reviews: []
+    candidates:
+      kubernetes-plugin-proxy:
+        note: "four list reads through @backstage/plugin-kubernetes's proxy, the door useEstate.ts already uses; summarised in the page"
+        scores:
+          first_time_user:     {score: 5, evidence: "backstage/packages/app/src/modules/home/useEstate.ts"}                         # same page, same login, nothing to install
+          founder_experience:  {score: 4, evidence: "backstage/packages/app/src/modules/home/Ops.tsx"}                              # one tile, numbers not adjectives, re-read every minute
+          feature_parity:      {score: 4, evidence: "backstage/packages/app/src/modules/home/clusterHealth.ts"}                     # counts and names; no graphs, no pod logs
+          ecosystem_fit:       {score: 5, evidence: "backstage/packages/backend/package.json"}                                      # plugin-kubernetes-backend already in the image
+          maturity:            {score: 5, evidence: "https://backstage.io/docs/features/kubernetes/"}                               # core Backstage feature, maintained by the project
+          security_by_default: {score: 4, evidence: "backstage/app-config.container.yaml"}                                          # service-account read behind the portal's SSO; no token in the browser
+          portability:         {score: 5, evidence: "https://backstage.io/docs/features/kubernetes/configuration"}                 # any cluster the backend can reach
+          operability:         {score: 4, evidence: "bin/idp-login-drill"}                                                          # the login drill grades the page daily; blind reads say so
+          cost:                {score: 5, evidence: "backstage/packages/app/package.json"}                                          # zero new pods, zero new services
+      headlamp:
+        note: "kubernetes-sigs Headlamp in the cluster behind SSO, with its flux and prometheus plugins; linked from the tile"
+        scores:
+          first_time_user:     {score: 3, evidence: "https://headlamp.dev/docs/latest/installation/in-cluster/"}                    # a second app, OIDC to wire, plugins by sidecar
+          founder_experience:  {score: 4, evidence: "https://github.com/headlamp-k8s/plugins"}                                      # a full cluster UI once open
+          feature_parity:      {score: 5, evidence: "https://github.com/headlamp-k8s/plugins"}                                      # flux, prometheus, kyverno, keda plugins
+          ecosystem_fit:       {score: 3, evidence: "https://headlamp.dev/docs/latest/installation/in-cluster/"}                    # a second portal beside Backstage
+          maturity:            {score: 5, evidence: "https://github.com/kubernetes-sigs/headlamp"}                                  # a kubernetes-sigs project
+          security_by_default: {score: 4, evidence: "https://headlamp.dev/docs/latest/installation/in-cluster/"}                    # OIDC supported (Dex, Keycloak tutorials)
+          portability:         {score: 5, evidence: "https://headlamp.dev/docs/latest/installation/in-cluster/"}                    # Helm chart, any cluster
+          operability:         {score: 2, evidence: "bin/idp-availability-gate"}                                                    # one more routed surface to keep available and drill
+          cost:                {score: 3, evidence: "https://headlamp.dev/docs/latest/installation/in-cluster/"}                    # pods and a plugin sidecar on the one cluster
+      weaveworks-flux-plugin:
+        note: "the Weaveworks Flux plugin for Backstage (HelmReleases, Kustomizations, sources in the entity page)"
+        scores:
+          first_time_user:     {score: 4, evidence: "https://github.com/weaveworks/weaveworks-backstage"}                           # in the portal, per entity
+          founder_experience:  {score: 4, evidence: "https://github.com/weaveworks/weaveworks-backstage"}
+          feature_parity:      {score: 4, evidence: "https://github.com/weaveworks/weaveworks-backstage"}                           # Flux only; no nodes, no pods
+          ecosystem_fit:       {score: 4, evidence: "backstage/packages/backend/package.json"}                                      # rides the same kubernetes backend
+          maturity:            {score: 1, evidence: "https://github.com/weaveworks/weaveworks-backstage"}                           # repository archived 2025-10-24 (gh search repos, 2026-08-30)
+          security_by_default: {score: 4, evidence: "backstage/app-config.container.yaml"}
+          portability:         {score: 4, evidence: "https://github.com/weaveworks/weaveworks-backstage"}
+          operability:         {score: 2, evidence: "https://github.com/weaveworks/weaveworks-backstage"}                           # nobody fixes it when Backstage moves
+          cost:                {score: 4, evidence: "https://github.com/weaveworks/weaveworks-backstage"}
+      estate-mcp:
+        note: "read runtime.clusters from the estate MCP's get_estate_state document through a Backstage backend plugin"
+        scores:
+          first_time_user:     {score: 3, evidence: "mcp/plugins/workload_state.py"}                                                # a backend plugin plus a producer to write first
+          founder_experience:  {score: 3, evidence: "mcp/plugins/workload_state.py"}                                                # as fresh as the producer's last write, not the cluster
+          feature_parity:      {score: 2, evidence: "cmd: get_estate_state -> available: false, 'the producer (crew#648 CP2) has not written one' (2026-08-30)"}
+          ecosystem_fit:       {score: 4, evidence: "platform/mcp/agentgateway.yaml"}                                               # the estate's one MCP voice (ADR 0006)
+          maturity:            {score: 3, evidence: "mcp/plugins/estate_inventory.py"}                                              # datasette-mcp plugins, ours
+          security_by_default: {score: 3, evidence: "platform/mcp/agentgateway.yaml"}                                               # bearer token to the gateway
+          portability:         {score: 4, evidence: "platform/mcp/agentgateway.yaml"}
+          operability:         {score: 1, evidence: "cmd: get_estate_state -> available: false (2026-08-30)"}                       # the document does not exist yet
+          cost:                {score: 4, evidence: "mcp/plugins/workload_state.py"}                                                # one more producer job
