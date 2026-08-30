@@ -27,7 +27,7 @@ hermes-v2/                             the image: config.yaml, templates/skills/
 | GitHub | `gh` in the image; `GITHUB_TOKEN` field of `hermes-agent-env`, minted by the github-app lane (`platform/github-app/token-consumers.json`) | `gh auth status` from Telegram; parity step `gh-token-works` (crew#561) |
 | The founder's Mac | `mac-run <cmd>`: ssh over the tailscale sidecar (tag:k8s -> tag:founder-mac port 22, `platform/tailscale/policy.hujson`), key in vault entry `hermes-mac-run`, public half adopted by `bin/idp-mac-adopt-otto` | otto-parity `key-mounted`, `tailnet-up`, `mac-run-hostname` |
 | Agent-to-agent | `A2A_BEARER_TOKEN` in `hermes-agent-a2a` | otto-parity `a2a` |
-| Cron lanes | `/data/cron/jobs.json`, installed at boot by `bin/install-cron.py` | otto-parity `cron-lanes-installed` |
+| Cron lanes | the jobs file under HERMES_HOME, installed at boot by `hermes-v2/bin/install-cron.py` | otto-parity `cron-lanes-installed` |
 | State | PVC `hermes-agent-data` at `/data` (HERMES_HOME): state.db, sessions, known_hosts, the mac-run key copy | `no-restart-loop` |
 
 Secrets are named here, never valued (R49). Every one is a vault entry synced by external-secrets;
