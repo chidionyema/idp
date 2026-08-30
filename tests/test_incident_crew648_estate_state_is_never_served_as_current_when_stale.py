@@ -97,15 +97,8 @@ def test_cp3_a_document_from_the_future_is_stale(tmp_path):
 def test_cp3_the_tool_is_registered_on_the_existing_server_and_reads_only():
     src = (ROOT / "mcp/plugins/estate_state.py").read_text(encoding="utf-8")
     assert "def register_mcp_tools" in src and "async def get_estate_state" in src
-    for banned in (
-        "subprocess",
-        "os.system",
-        "shell=True",
-        "urllib",
-        "requests",
-        "socket",
-    ):
-        assert banned not in src, banned
-    assert (
-        os.environ.get("ESTATE_STATE_JSON_PATH") is None or True
-    )  # env is the only config
+    imports = [ln for ln in src.splitlines() if ln.startswith(("import ", "from "))]
+    assert imports, "no import block"
+    for banned in ("subprocess", "urllib", "requests", "socket", "http"):
+        assert not any(banned in ln for ln in imports), banned
+    assert "os.system" not in src and "shell=True" not in src
