@@ -516,6 +516,16 @@ jobs:
             sed -i "s#github.com/${GITHUB_REPOSITORY}/blob/main/#github.com/${GITHUB_REPOSITORY}/blob/${HEAD_SHA}/#g" founder-links.txt
             echo "pull request: blob links graded at ${HEAD_SHA}"
           fi
+          # crew#684: a door this pull request adds cannot answer before it merges, so on
+          # pull_request a link absent from main's catalogue is printed as NEW and graded by the
+          # next scheduled run, not by this one. On schedule and dispatch every link is probed.
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            git fetch -q --depth=1 origin main
+            git show FETCH_HEAD:backstage/founder/catalog-info.yaml | grep -oE 'url: "https?://[^"]+"' \
+              | sed -E 's/^url: "(.*)"$/\1/' | sed "s/\${ESTATE_ZONE}/$zone/g" | sort -u > main-links.txt
+            comm -23 founder-links.txt main-links.txt | sed 's/^/NEW  (graded after merge) /'
+            comm -12 founder-links.txt main-links.txt > probed-links.txt && mv probed-links.txt founder-links.txt
+          fi
           echo "$(wc -l < founder-links.txt) links"
       - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
