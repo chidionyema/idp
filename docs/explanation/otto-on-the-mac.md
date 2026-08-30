@@ -59,7 +59,7 @@ and in the parity playbook: the proof is the row that runs the shipped command f
 pod (`mac-run-hostname`), and a merge is never the receipt.
 
 Row 4 is the estate's other recurring class: a `DONE:` from a session's own evidence. The
-definition of done (`docs/policy/definition-of-done.md`) says built, merged and green is
+definition of done (`docs/reference/policy/definition-of-done.md`) says built, merged and green is
 inventory; only the founder's use is done.
 
 ## Where it stands
