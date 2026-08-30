@@ -6,6 +6,7 @@
 import os
 from django.contrib.auth.models import User
 from hc.accounts.models import Profile, Project
+
 email = os.environ["FOUNDER_EMAIL"]
 user = User.objects.filter(email=email).first()
 if user is None:
@@ -16,6 +17,7 @@ if project is None:
     project = Project(owner=user)
 project.name = "estate"
 project.ping_key = os.environ["PING_KEY"]
-project.api_key_readonly = os.environ["RO_KEY"]  # crew#684 CP5: the portal's read-only door
+# crew#684 CP5: the portal's read-only door
+project.api_key_readonly = os.environ["RO_KEY"]
 project.save()
 print("enrolled", project.name, "for", email)
