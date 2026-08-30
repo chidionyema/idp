@@ -38,6 +38,7 @@ data:
         project = Project(owner=user)
     project.name = "estate"
     project.ping_key = os.environ["PING_KEY"]
+    project.api_key_readonly = os.environ["RO_KEY"]  # crew#684 CP5: the portal's read-only door
     project.save()
     print("enrolled", project.name, "for", email)
 ---

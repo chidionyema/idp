@@ -126,6 +126,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bin/idp-no-toil "${{ github.event.pull_request.number }}"
 
+  # crew#631 CP6: a change to a proven surface cannot merge on an old or missing verdict. The job
+  # always runs on a pull request so the required context is never absent; when the change is
+  # not on the surface it says so and passes. Required by platform/github/ruleset.idp.required-checks.json.
+  verdict-fresh:
+    name: verify/verdict-fresh
+    needs: fast-gate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions: { contents: read, actions: read }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - name: verdict-fresh gate (langfuse)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -t changed < <(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          bin/idp-verdict-fresh langfuse --changed "${changed[@]}"
+
   bdd-suites:
     needs: fast-gate
     runs-on: ubuntu-latest
@@ -199,6 +218,22 @@ jobs:
   # This job keeps that name stable. It checks out nothing and installs nothing, so it costs one
   # runner-second; the matrix underneath can change shape -- a third suite, a rename -- without
   # anyone touching the repository ruleset, which is the coupling that caused the stall.
+  messaging-demo:
+    needs: fast-gate
+    runs-on: ubuntu-latest
+    # crew#639 CP9, founder 2026-08-30: the messaging demos run on every push, both of them, against
+    # an embedded nats-server (the chart's version) and an embedded Postgres. No cluster, no Docker:
+    # a red here means the outbox, the duplicate window, the idempotent consumer, the DLQ or the
+    # replay broke, and the last line of the log says which.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: platform/messaging/go.mod
+          cache-dependency-path: platform/messaging/go.sum
+      - run: cd platform/messaging && go vet ./... && go test ./...
+      - run: bin/idp-messaging-demo all
+
   bdd:
     needs: bdd-suites
     if: always()   # a red leg must report a red `bdd`, not a skipped one the rule would wait on forever

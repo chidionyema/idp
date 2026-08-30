@@ -25,7 +25,28 @@ const pairPhonePage = PageBlueprint.make({
   },
 });
 
+// /tools: every door on one page, grouped from the catalogue (crew#684 CP0, founder
+// 2026-08-30: "another page in backstage just pure tools"). Listed as a founder surface in
+// backstage/founder/catalog-info.yaml so the crew#401 gate and the login drill carry it.
+const toolsPage = PageBlueprint.make({
+  name: 'tools',
+  params: {
+    path: '/tools',
+    loader: () => import('./Tools').then(m => <m.Tools />),
+  },
+});
+
+// crew#684 CP1: the Ops dashboard, "I need to see everything". The cluster tile first; the
+// open-reds table, founder tiles and the drills row land on the same page in later checkpoints.
+const opsPage = PageBlueprint.make({
+  name: 'ops',
+  params: {
+    path: '/ops',
+    loader: () => import('./Ops').then(m => <m.Ops />),
+  },
+});
+
 export const homeModule = createFrontendModule({
   pluginId: 'home',
-  extensions: [estateHomePage, pairPhonePage],
+  extensions: [estateHomePage, pairPhonePage, toolsPage, opsPage],
 });

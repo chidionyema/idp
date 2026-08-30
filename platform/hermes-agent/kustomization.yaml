@@ -8,7 +8,8 @@ resources:
   - gateway.yaml
   - estate.yaml
   - mac-run.yaml
+  - mac-run-key.yaml
   - tailscale.yaml
 images:
   - name: ghcr.io/chidionyema/hermes-agent
-    newTag: main-32-e466be8015c63f3448cf41b569b5350a8908e922 # {"$imagepolicy": "flux-system:hermes-agent:tag"}
+    newTag: main-47-577cf23f81c14ccf89f6f269057da6293ff23319 # {"$imagepolicy": "flux-system:hermes-agent:tag"}

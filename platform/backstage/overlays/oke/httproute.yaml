@@ -47,6 +47,30 @@ spec:
         - name: oauth2-proxy
           namespace: identity
           port: 80
+    # crew#631 CP9: the prover's machine door. Only a request that already carries a Bearer token
+    # on the catalogue API skips the browser login; Backstage itself grades the token
+    # (backend.auth.externalAccess, backstage/app-config.container.yaml) and answers 401 to any
+    # other. A request with no Authorization header does not match here and falls through to the
+    # forward-auth rule below, so a browser is never let past the login by this rule. The
+    # prover's NEGATIVE control (probes/backstage.py) proves the no-token read is refused, hourly.
+    - matches:
+        - path: { type: PathPrefix, value: /api/catalog/ }
+          headers:
+            - { type: RegularExpression, name: Authorization, value: "^Bearer .+" }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
+        - name: catalogue
+          port: 3100
     - filters:
         - type: ExtensionRef
           extensionRef:

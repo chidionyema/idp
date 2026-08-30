@@ -16,7 +16,7 @@ metadata:
     estate/group: "Watch"
     backstage.io/kubernetes-label-selector: "app.kubernetes.io/part-of=idp"
     idp/updated-by: "Flux image automation on every main build (platform/image-automation/backstage.yaml); inventory entities by bin/idp-catalog-push"
-  tags: [founder]
+  tags: [founder, screen]
   links:
     - title: "Open"
       url: "https://catalogue.${ESTATE_ZONE}"
@@ -73,7 +73,7 @@ metadata:
     github.com/project-slug: "chidionyema/idp"
     backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/"
     idp/updated-by: "Flux from platform/llm on merge to main"
-  tags: [founder]
+  tags: [founder, screen]
   links:
     - title: "API (OpenAPI docs; POST /v1/chat/completions)"
       url: "https://llm.${ESTATE_ZONE}/"
@@ -108,7 +108,7 @@ metadata:
   annotations:
     estate/group: "Watch"
     idp/updated-by: "Flux from platform/observability; traces arrive live from the router"
-  tags: [founder]
+  tags: [founder, screen]
   links:
     - title: "Open"
       url: "https://langfuse.${ESTATE_ZONE}"
@@ -130,7 +130,7 @@ metadata:
   annotations:
     estate/group: "Watch"
     idp/updated-by: "Flux from platform/observability; rows arrive live from the OTel collector"
-  tags: [founder]
+  tags: [founder, screen]
   links:
     - title: "Open"
       url: "https://signoz.${ESTATE_ZONE}"
@@ -153,7 +153,7 @@ metadata:
   annotations:
     estate/group: "Watch"
     idp/updated-by: "Flux from platform/healthchecks; pings arrive live from hc-wrap.sh"
-  tags: [founder]
+  tags: [founder, screen]
   links:
     - title: "Open"
       url: "https://hc.${ESTATE_ZONE}"
@@ -179,7 +179,7 @@ metadata:
   annotations:
     estate/group: "Build"
     idp/updated-by: "Flux from platform/identity"
-  tags: [founder]
+  tags: [founder, screen]
   links:
     - title: "Open"
       url: "https://auth.${ESTATE_ZONE}"
@@ -380,7 +380,7 @@ metadata:
     github.com/project-slug: "chidionyema/idp"
     backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/"
     idp/updated-by: "Terraform/Flux on merge; oke-check reads it daily"
-  tags: [founder]
+  tags: [founder, kubernetes]
   links:
     - title: "Open"
       url: "https://cloud.oracle.com/?region=uk-london-1"
@@ -527,10 +527,55 @@ metadata:
   annotations:
     estate/group: "Build"
     idp/updated-by: "platform/guacamole (Flux row guacamole); the connection is seeded by the pod's init container from platform/guacamole/guacamole.yaml"
-  tags: [founder]
+  tags: [founder, screen]
   links:
     - title: "Open"
       url: "https://catalogue.${ESTATE_ZONE}/screen/"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+# crew#684 CP0 (founder 2026-08-30: "so i need all the tools one place ... another page in
+# backstage just pure tools"): every door on one page, grouped by estate/group, read from the
+# catalogue. A new door listed in this file appears there without touching the page.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-tools
+  title: "Tools: every door on one page"
+  description: "Every place you sign in to, grouped (Watch, Run, Build, Companies), each with its Open link and its last probe. Read from this catalogue every render: add a door here and it is on the page."
+  annotations:
+    estate/group: "Watch"
+    idp/updated-by: "backstage/packages/app/src/modules/home/Tools.tsx ships with the portal image; the list is the founder-surface entities in this file"
+  tags: [founder]
+  links:
+    - title: "Open"
+      url: "https://catalogue.${ESTATE_ZONE}/tools"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
+# crew#684 CP1: the Ops dashboard. Nodes ready, pods not ready by namespace, Flux rows not
+# ready, read live through the Kubernetes plugin's proxy (ADR 0009 row ops-dashboard-cluster-health).
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-ops
+  title: "Ops: the cluster right now"
+  description: "Nodes ready, pods not ready by namespace, and every Flux row that is not ready, re-read every minute while the page is open. A cluster that cannot be read says so instead of showing green."
+  annotations:
+    estate/group: "Watch"
+    idp/updated-by: "backstage/packages/app/src/modules/home/Ops.tsx ships with the portal image; the numbers come from the cluster on every render"
+  tags: [founder]
+  links:
+    - title: "Open"
+      url: "https://catalogue.${ESTATE_ZONE}/ops"
       icon: dashboard
 spec:
   type: founder-surface
@@ -631,7 +676,7 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Run"
     idp/updated-by: "the estate Mac; the router's model list (platform/llm/config.yaml) names each one"
-  tags: [founder]
+  tags: [founder, screen, no-address]
   links:
     - title: "Ollama on the Mac (port 11434, open from the Mac screen)"
       url: "https://catalogue.${ESTATE_ZONE}/screen/#ollama"
@@ -655,13 +700,34 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/crew/tree/main/
     estate/group: "Run"
     idp/updated-by: "the estate Mac scheduler; moving it onto the cluster is tracked on crew#282"
-  tags: [founder]
+  tags: [founder, screen, no-address]
   links:
     - title: "Dagster on the Mac (port 3210, open from the Mac screen)"
       url: "https://catalogue.${ESTATE_ZONE}/screen/#dagster"
       icon: dashboard
     - title: "Where this is tracked"
       url: "https://github.com/chidionyema/crew/issues/282"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-commerce
+  title: "Money (billing)"
+  description: "Subscriptions, credit packs, invoices and the ledger of every payment taken. Built and suspended: it takes over from the store's own payment code on your word. Its admin console runs on the cluster with no public address yet; the manifest is the truth of what runs."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
+    estate/group: "Run"
+    idp/updated-by: "Flux from platform/commerce"
+  tags: [founder]
+  links:
+    - title: "Manifest (suspended, no public address yet)"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/commerce/app/lago.yaml"
       icon: dashboard
 spec:
   type: founder-surface
@@ -679,7 +745,7 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Run"
     idp/updated-by: "Flux from platform/temporal"
-  tags: [founder]
+  tags: [founder, screen, no-address, kubernetes]
   links:
     - title: "Manifest (no public address yet)"
       url: "https://github.com/chidionyema/idp/blob/main/platform/temporal/temporal.yaml"
@@ -700,7 +766,7 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Watch"
     idp/updated-by: "Flux from platform/monitoring; alerts arrive on Telegram"
-  tags: [founder]
+  tags: [founder, screen, no-address, kubernetes]
   links:
     - title: "Alert rules (no public address yet)"
       url: "https://github.com/chidionyema/idp/blob/main/platform/monitoring/rules"
@@ -724,7 +790,7 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Watch"
     idp/updated-by: "Flux from platform/edge"
-  tags: [founder]
+  tags: [founder, screen, no-address]
   links:
     - title: "Manifest (no public address yet)"
       url: "https://github.com/chidionyema/idp/blob/main/platform/edge/status-page.yaml"
@@ -745,7 +811,7 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Watch"
     idp/updated-by: "Flux from platform/hindsight"
-  tags: [founder]
+  tags: [founder, screen, no-address]
   links:
     - title: "Manifest (no public address yet)"
       url: "https://github.com/chidionyema/idp/blob/main/platform/hindsight/hindsight.yaml"
@@ -766,11 +832,305 @@ metadata:
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Build"
     idp/updated-by: "Flux from platform/chaos"
-  tags: [founder]
+  tags: [founder, screen, no-address, kubernetes]
   links:
     - title: "Manifest (no public address yet)"
       url: "https://github.com/chidionyema/idp/blob/main/platform/chaos"
       icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-gitops
+  title: "Deployments (Flux)"
+  description: "Flux is what puts every change on the cluster: it watches this repository and applies what is on main. It has no screen; the Deployment rows on the front page are its word."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
+    estate/group: "Kubernetes tooling"
+    idp/updated-by: "Flux from clusters/oke"
+  tags: [founder, kubernetes, no-screen]
+  links:
+    - title: "Cluster definition (what Flux applies)"
+      url: "https://github.com/chidionyema/idp/blob/main/clusters/oke"
+      icon: github
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-network-map
+  title: "Network map (Cilium Hubble)"
+  description: "Cilium runs the cluster network and Hubble records every connection between pods. The Hubble screen is not switched on; its numbers reach Telemetry (SigNoz)."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
+    estate/group: "Kubernetes tooling"
+    idp/updated-by: "Flux from platform/cni"
+  tags: [founder, kubernetes, screen, no-address]
+  links:
+    - title: "Network settings (no screen switched on yet)"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/cni/cilium-values.yaml"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-metrics
+  title: "Metrics (Prometheus)"
+  description: "Prometheus collects the numbers from every pod and node and raises the alerts. Its own screen and Grafana are switched off; Telemetry (SigNoz) is the screen we use."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
+    estate/group: "Kubernetes tooling"
+    idp/updated-by: "Flux from platform/monitoring"
+  tags: [founder, kubernetes, screen, no-address]
+  links:
+    - title: "Manifest (screen switched off)"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/monitoring/kube-prometheus-stack.yaml"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-edge-router
+  title: "Edge router (Traefik)"
+  description: "Traefik is the front door of the cluster: every public address passes through it. Its dashboard is switched off."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
+    estate/group: "Kubernetes tooling"
+    idp/updated-by: "Flux from platform/edge"
+  tags: [founder, kubernetes, screen, no-address]
+  links:
+    - title: "Manifest (dashboard switched off)"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/edge/traefik.yaml"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-policies
+  title: "Admission policies (Kyverno)"
+  description: "Kyverno refuses a workload that breaks a rule before it runs: no image without a digest, no pod without limits, no workload that does not emit. It has no screen; the policy files are the truth."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
+    estate/group: "Kubernetes tooling"
+    idp/updated-by: "Flux from platform/kyverno"
+  tags: [founder, kubernetes, no-screen]
+  links:
+    - title: "Policies"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/kyverno"
+      icon: github
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-healing
+  title: "Self-healing (k8sgpt, Robusta, descheduler)"
+  description: "k8sgpt explains a failing pod in plain words, Robusta acts on it, and the descheduler moves pods off a crowded node. No screen; their findings arrive as alerts."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
+    estate/group: "Kubernetes tooling"
+    idp/updated-by: "Flux from platform/healing"
+  tags: [founder, kubernetes, no-screen]
+  links:
+    - title: "Manifests"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/healing"
+      icon: github
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-autoscaling
+  title: "Autoscaling (KEDA)"
+  description: "KEDA scales a workload up and down on demand, including to zero when nothing is asking. No screen."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
+    estate/group: "Kubernetes tooling"
+    idp/updated-by: "Flux from platform/keda"
+  tags: [founder, kubernetes, no-screen]
+  links:
+    - title: "Manifest"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/keda/keda.yaml"
+      icon: github
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-secrets-sync
+  title: "Secrets (External Secrets)"
+  description: "External Secrets copies each secret from the cloud vault into the cluster, so no secret is ever typed into a file. No screen."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
+    estate/group: "Kubernetes tooling"
+    idp/updated-by: "Flux from platform/secrets"
+  tags: [founder, kubernetes, no-screen]
+  links:
+    - title: "Manifest"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/secrets/external-secrets.yaml"
+      icon: github
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-certificates
+  title: "Certificates (cert-manager)"
+  description: "cert-manager gets and renews the TLS certificate for every public address. No screen."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
+    estate/group: "Kubernetes tooling"
+    idp/updated-by: "Flux from platform/edge"
+  tags: [founder, kubernetes, no-screen]
+  links:
+    - title: "Manifest"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/edge/cert-manager.yaml"
+      icon: github
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-dns
+  title: "Public names (external-dns)"
+  description: "external-dns writes the DNS record for every public address from what the cluster routes. No screen."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
+    estate/group: "Kubernetes tooling"
+    idp/updated-by: "Flux from platform/dns"
+  tags: [founder, kubernetes, no-screen]
+  links:
+    - title: "Manifest"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/dns/external-dns.yaml"
+      icon: github
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-workload-identity
+  title: "Workload identity (SPIRE)"
+  description: "SPIRE gives every workload its own identity so services prove who they are to each other without a shared password. No screen."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
+    estate/group: "Kubernetes tooling"
+    idp/updated-by: "Flux from platform/spire"
+  tags: [founder, kubernetes, no-screen]
+  links:
+    - title: "Manifest"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/spire/helmrelease.yaml"
+      icon: github
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-private-network
+  title: "Private network (Tailscale)"
+  description: "Tailscale joins the cluster, the estate Mac and your phone into one private network. Its admin screen is the vendor's console, not a door of ours yet; the operator manifest is the truth of what runs."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
+    estate/group: "Kubernetes tooling"
+    idp/updated-by: "Flux from platform/tailscale"
+  tags: [founder, kubernetes, screen, no-address]
+  links:
+    - title: "Operator manifest (no door of ours yet)"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/tailscale/operator.yaml"
+      icon: github
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-collector
+  title: "Telemetry collector (OpenTelemetry k8s-infra)"
+  description: "The one collector every workload emits to; logs, metrics and traces land here before Telemetry (SigNoz) shows them. No screen of its own."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
+    estate/group: "Kubernetes tooling"
+    idp/updated-by: "Flux from platform/observability-collector"
+  tags: [founder, kubernetes, no-screen]
+  links:
+    - title: "Manifest"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/observability-collector/k8s-infra.yaml"
+      icon: github
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-cluster-plumbing
+  title: "Cluster plumbing (metrics-server, reloader, blackbox)"
+  description: "metrics-server feeds pod numbers to the scheduler, reloader restarts a pod when its config changes, blackbox probes every public address from inside. No screen."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
+    estate/group: "Kubernetes tooling"
+    idp/updated-by: "Flux from platform"
+  tags: [founder, kubernetes, no-screen]
+  links:
+    - title: "Manifests"
+      url: "https://github.com/chidionyema/idp/blob/main/platform"
+      icon: github
 spec:
   type: founder-surface
   lifecycle: production

@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""The freshness gate (crew#631 CP6). A pull request that touches a proven surface may not merge
+unless the surface's latest verdict on main is PASS and younger than its TTL.
+
+  bin/idp-verdict-fresh <surface> [--changed FILE ...]
+
+With --changed, the gate first asks whether any changed file is on the surface's paths; when none
+is, it says so and passes: the gate binds Langfuse changes, not the whole repository. The verdict
+comes from the newest completed run of `verdict-<surface>.yml` on main (the prover is the only
+identity holding the signing key, and only that workflow can create the `verify/<surface>`
+check-run), so this runner never needs the key: GitHub's attestation of the run is the trust
+anchor, and probes.verdict.grade still refuses an unsigned, expired or digest-less record.
+Output is one line, `ok|FAIL|BLIND  verdict-fresh  <why>`, exit 0 / 1 / 2.
+"""
+
+import fnmatch
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, IDP)
+from probes import verdict as V  # noqa: E402
+
+# surface -> the paths a change to which needs a fresh verdict before it merges
+SURFACES = {"langfuse": ["platform/observability/langfuse*"]}
+
+
+def gh(*args):
+    r = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=120)
+    if r.returncode:
+        raise RuntimeError(
+            r.stderr.strip() or r.stdout.strip() or f"gh {' '.join(args)} failed"
+        )
+    return r.stdout
+
+
+def touches(surface, changed):
+    pats = SURFACES[surface]
+    return sorted(f for f in changed if any(fnmatch.fnmatch(f, p) for p in pats))
+
+
+def latest_run(repo, surface):
+    out = gh(
+        "api",
+        f"repos/{repo}/actions/workflows/verdict-{surface}.yml/runs?branch=main&status=completed&per_page=1",
+        "--jq",
+        ".workflow_runs[0] | {id, conclusion, head_sha, updated_at}",
+    ).strip()
+    return json.loads(out) if out and out != "null" else None
+
+
+def main(argv):
+    if not argv or argv[0] not in SURFACES:
+        print(__doc__)
+        print("surfaces: " + ", ".join(SURFACES))
+        return 2
+    surface = argv[0]
+    if "--changed" in argv:
+        hit = touches(surface, argv[argv.index("--changed") + 1 :])
+        if not hit:
+            print(
+                f"ok      verdict-fresh  no {surface} file in this change; the gate binds {SURFACES[surface]}"
+            )
+            return 0
+    repo = (
+        os.environ.get("GITHUB_REPOSITORY")
+        or gh(
+            "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"
+        ).strip()
+    )
+    try:
+        run = latest_run(repo, surface)
+    except RuntimeError as e:
+        print(f"BLIND   verdict-fresh  cannot list verdict-{surface}.yml runs: {e}")
+        return 2
+    if not run:
+        print(
+            f"BLIND   verdict-fresh  no completed verdict-{surface}.yml run on main; gh workflow run verdict-{surface}.yml"
+        )
+        return 2
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            gh(
+                "run",
+                "download",
+                str(run["id"]),
+                "-R",
+                repo,
+                "-n",
+                f"verdict-{surface}",
+                "-D",
+                d,
+            )
+        except RuntimeError as e:
+            print(
+                f"FAIL    verdict-fresh  run {run['id']} ({run['conclusion']}) left no verdict-{surface} artifact: {e}"
+            )
+            return 1
+        path = os.path.join(d, "verdict.json")
+        if not os.path.exists(path):
+            print(
+                f"FAIL    verdict-fresh  run {run['id']} ({run['conclusion']}) artifact has no verdict.json"
+            )
+            return 1
+        with open(path) as f:
+            v = json.load(f)
+    state, why = V.grade(v, None)
+    where = f"run {run['id']} on {v.get('artifact_digest', '')[:24] or 'no digest'}"
+    if state == "PASS":
+        print(
+            f"ok      verdict-fresh  {surface} PASS {where}, completed {v['completed_at']}, ttl {v['ttl_seconds']}s"
+        )
+        return 0
+    if state == "FAIL":
+        # crew#626 CP15 (2026-08-29): a fresh, signed FAIL is knowledge that the surface is broken,
+        # and the only road to a PASS is a change to that surface. Refusing it deadlocked the
+        # Langfuse repair (idp#820) behind the verdict it exists to turn green: a guard that
+        # refuses correct work is an outage (LAW 38). The repair merges, and the next
+        # verdict-<surface>.yml run on main grades it; stale, unsigned and missing stay refused.
+        print(
+            f"ok      verdict-fresh  {surface} FAIL {where} ({why}); this change touches the surface, so it is the repair: the next verdict-{surface}.yml run on main grades it"
+        )
+        return 0
+    print(
+        f"FAIL    verdict-fresh  {surface} {state} {where}: {why}; a new verdict is one command: gh workflow run verdict-{surface}.yml"
+    )
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

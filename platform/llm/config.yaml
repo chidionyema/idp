@@ -113,6 +113,21 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       timeout: 300
 
+  # crew#659 CP3 (founder 2026-08-30, "GPT Researcher is the worker"): the research worker ranks
+  # what it scraped with an embedding model, and the router is the only door to a model (LAW 34).
+  # Served through OpenRouter, the one account that answered on 2026-08-30 05:3xZ when Google's
+  # prepaid credit was depleted (embed answered 429 RESOURCE_EXHAUSTED and had no fallback group).
+  # Endpoint and model id from https://openrouter.ai/docs/api-reference/embeddings (read
+  # 2026-08-30): POST /api/v1/embeddings, model openai/text-embedding-3-small. Callers ask for "embed".
+  - model_name: embed
+    litellm_params:
+      model: openai/openai/text-embedding-3-small
+      api_base: https://openrouter.ai/api/v1
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 120
+    model_info:
+      mode: embedding
+
 router_settings:
   fallbacks:
     # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat

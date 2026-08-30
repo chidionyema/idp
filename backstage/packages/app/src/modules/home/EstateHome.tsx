@@ -36,7 +36,12 @@ import {
   count,
   doorState,
   entityPath,
+  hasNoAddress,
+  isScreen,
+  isKubernetes,
+  hasNoScreen,
   layerState,
+  screenUrl,
   matches,
   rank,
   systemOf,
@@ -44,6 +49,24 @@ import {
   verdict,
 } from './estate';
 import { Estate, useEstate } from './useEstate';
+import {
+  NO_ADDRESS_WORDS,
+  NO_SCREEN_WORDS,
+  OPEN_WORD,
+  PAGE,
+  SECTIONS,
+  STATE_MEANING,
+  everythingSentence,
+  inventoryWord,
+  verdictSentence,
+} from './words';
+import {
+  SectionIcon,
+  StateDonut,
+  StateIcon,
+  SystemBars,
+  systemIcon,
+} from './visuals';
 
 export {
   FOUNDER_SURFACE_TYPE,
@@ -76,12 +99,51 @@ const useStyles = makeStyles(theme => ({
     color: theme.palette.text.disabled,
     fontVariantNumeric: 'tabular-nums',
   },
-  verdict: {
-    fontSize: 'clamp(26px, 6vw, 40px)',
-    fontWeight: 600,
+  // Hero: the page title is the biggest thing on the page (40px, 700); the tagline under it is
+  // body-sized and secondary; the verdict is a sentence, never a bare number beside a word.
+  title: {
+    fontSize: 'clamp(30px, 6vw, 40px)',
+    fontWeight: 700,
     letterSpacing: '-0.02em',
     lineHeight: 1.1,
     margin: 0,
+  },
+  tagline: {
+    fontSize: 16,
+    lineHeight: 1.5,
+    color: theme.palette.text.secondary,
+    margin: 0,
+    maxWidth: 680,
+  },
+  verdict: {
+    fontSize: 'clamp(20px, 4vw, 26px)',
+    fontWeight: 600,
+    lineHeight: 1.25,
+    margin: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1.5),
+    flexWrap: 'wrap',
+  },
+  live: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 13,
+    fontWeight: 600,
+    lineHeight: 1.3,
+    padding: '6px 10px',
+    borderRadius: 999,
+    border: '1px solid',
+    maxWidth: '100%',
+    [phone]: { borderRadius: 12, alignItems: 'flex-start' },
+  },
+  picture: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.4fr)',
+    gap: theme.spacing(3),
+    alignItems: 'start',
+    [phone]: { gridTemplateColumns: '1fr' },
   },
   counters: {
     display: 'grid',
@@ -91,6 +153,7 @@ const useStyles = makeStyles(theme => ({
   },
   counter: {
     appearance: 'none',
+    position: 'relative',
     font: 'inherit',
     textAlign: 'left',
     cursor: 'pointer',
@@ -101,8 +164,8 @@ const useStyles = makeStyles(theme => ({
     color: theme.palette.text.primary,
     display: 'flex',
     flexDirection: 'column',
-    gap: 2,
-    minHeight: 64,
+    gap: 4,
+    minHeight: 96,
     transition: `border-color 120ms ${ease}, background-color 120ms ${ease}`,
     '&:hover': { borderColor: theme.palette.text.disabled },
   },
@@ -110,9 +173,15 @@ const useStyles = makeStyles(theme => ({
     borderColor: theme.palette.primary.main,
     boxShadow: `inset 0 0 0 1px ${theme.palette.primary.main}`,
   },
+  counterIcon: { position: 'absolute', top: 10, right: 10, display: 'flex' },
+  meaning: {
+    fontSize: 12,
+    lineHeight: 1.35,
+    color: theme.palette.text.secondary,
+  },
   n: {
-    fontSize: 24,
-    fontWeight: 600,
+    fontSize: 28,
+    fontWeight: 700,
     lineHeight: 1,
     fontVariantNumeric: 'tabular-nums',
     letterSpacing: '-0.02em',
@@ -127,27 +196,108 @@ const useStyles = makeStyles(theme => ({
   find: {
     '& .MuiOutlinedInput-input': { fontSize: 16, padding: '12px 14px' },
   },
+  // Screens: the six-to-eight things with a screen, in front of the reader, never below the fold.
+  screens: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+    gap: theme.spacing(1.5),
+  },
+  screen: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(1),
+    padding: theme.spacing(2),
+    borderRadius: 12,
+    border: `1px solid ${theme.palette.divider}`,
+    background: theme.palette.background.paper,
+    minHeight: 120,
+  },
+  screenOff: { opacity: 0.6, borderStyle: 'dashed' },
+  screenHead: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+    fontSize: 15,
+    fontWeight: 600,
+  },
+  screenIcon: { color: theme.palette.primary.main, display: 'flex' },
+  screenWhy: {
+    fontSize: 13,
+    color: theme.palette.text.secondary,
+    margin: 0,
+    display: '-webkit-box',
+    WebkitLineClamp: 4,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
+    maxHeight: '5.8em',
+    flex: 'none',
+  },
+  screenFoot: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+    flexWrap: 'wrap',
+  },
+  // Everything we hold: one chip per kind of thing, count and plain word, each a link to the list.
+  inventory: { display: 'flex', flexWrap: 'wrap', gap: theme.spacing(1) },
+  chip: {
+    display: 'inline-flex',
+    alignItems: 'baseline',
+    gap: 6,
+    padding: '6px 12px',
+    borderRadius: 999,
+    border: `1px solid ${theme.palette.divider}`,
+    background: theme.palette.background.paper,
+    fontSize: 14,
+    color: theme.palette.text.primary,
+    textDecoration: 'none',
+    '&:hover': { borderColor: theme.palette.primary.main },
+  },
+  chipN: { fontWeight: 700, fontVariantNumeric: 'tabular-nums' },
   section: {
     display: 'flex',
     flexDirection: 'column',
     gap: theme.spacing(1.5),
   },
+  // Section heading: 24px, 700, primary, with an icon. Group heading: 17px, 600. Their
+  // descriptions: 14px, 400, secondary. Two of size, weight and colour always differ.
   h: {
     display: 'flex',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    gap: theme.spacing(2),
+    alignItems: 'center',
+    gap: theme.spacing(1),
     margin: 0,
-    fontSize: 15,
+    fontSize: 24,
+    fontWeight: 700,
+    letterSpacing: '-0.01em',
+    lineHeight: 1.2,
+    color: theme.palette.text.primary,
+    '& svg': { fontSize: 24, color: theme.palette.text.secondary },
+  },
+  h3: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+    margin: 0,
+    fontSize: 17,
     fontWeight: 600,
+    lineHeight: 1.3,
+    color: theme.palette.text.primary,
+    '& svg': { fontSize: 18, color: theme.palette.text.secondary },
   },
   hCount: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 500,
     color: theme.palette.text.secondary,
     fontVariantNumeric: 'tabular-nums',
+    marginLeft: 'auto',
   },
-  hDesc: { fontSize: 13, color: theme.palette.text.secondary, margin: 0 },
+  hDesc: {
+    fontSize: 14,
+    lineHeight: 1.5,
+    color: theme.palette.text.secondary,
+    margin: 0,
+    maxWidth: 680,
+  },
   board: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))',
@@ -317,7 +467,7 @@ const Dot = ({ state }: { state: State }) => {
 };
 
 /** A dot and a word, never a colour alone. `blind` is a hollow ring. */
-const Pill = ({
+export const Pill = ({
   state,
   why,
   testId,
@@ -361,9 +511,13 @@ const Counter = ({
       className={`${classes.counter} ${on ? classes.counterOn : ''}`}
       onClick={onClick}
       aria-pressed={on}
-      aria-label={`${n} ${STATE_WORD[state]}`}
+      aria-label={`${n} ${STATE_WORD[state]}. ${STATE_MEANING[state].long} ${STATE_MEANING[state].action}`}
+      title={`${STATE_MEANING[state].long} ${STATE_MEANING[state].action}`}
       data-testid={`count-${state}`}
     >
+      <span className={classes.counterIcon}>
+        <StateIcon state={state} />
+      </span>
       <span
         className={classes.n}
         style={{
@@ -376,6 +530,7 @@ const Counter = ({
         <Dot state={state} />
         {STATE_WORD[state]}
       </span>
+      <span className={classes.meaning}>{STATE_MEANING[state].short}</span>
     </button>
   );
 };
@@ -418,6 +573,83 @@ const LayerTile = ({
 };
 
 /** One line per door: state, name, and its links. Test ids are the login drill's contract. */
+/** One screen: icon, name, one line, and Open or "No address yet" (crew#612 CP10/CP11). */
+export const ScreenCard = ({
+  entity,
+  now,
+}: {
+  entity: Entity;
+  now?: number;
+}) => {
+  const classes = useStyles();
+  const tint = useTint().blind;
+  const s = doorState(entity, now);
+  const url = screenUrl(entity);
+  const noScreen = hasNoScreen(entity);
+  const off = noScreen || hasNoAddress(entity) || !url;
+  const title = entity.metadata.title ?? entity.metadata.name;
+  const Icon = systemIcon(`${entity.metadata.name} ${title}`);
+  return (
+    <div
+      className={`${classes.screen} ${off ? classes.screenOff : ''}`}
+      data-testid={`screen-${entity.metadata.name}`}
+      data-state={noScreen ? 'no-screen' : off ? 'no-address' : s.state}
+    >
+      <div className={classes.screenHead}>
+        <span className={classes.screenIcon}>
+          <Icon aria-hidden="true" fontSize="small" />
+        </span>
+        <Link to={entityPath(entity)} title={entity.metadata.description}>
+          {title}
+        </Link>
+      </div>
+      <p className={classes.screenWhy} title={entity.metadata.description}>
+        {entity.metadata.description}
+      </p>
+      <div className={classes.screenFoot}>
+        {off ? (
+          <span
+            className={classes.pill}
+            style={{
+              color: tint.ink,
+              background: tint.bg,
+              borderColor: tint.edge,
+            }}
+            title={
+              noScreen
+                ? 'This tool runs in the background with no screen of its own; its manifest and its alerts are its word.'
+                : 'This runs, but nothing on the network has an address for it yet.'
+            }
+            data-testid={`health-${entity.metadata.name}`}
+            data-state="blind"
+          >
+            <Dot state="blind" />
+            {noScreen ? NO_SCREEN_WORDS : NO_ADDRESS_WORDS}
+          </span>
+        ) : (
+          <>
+            <Pill
+              state={s.state}
+              why={s.why}
+              testId={`health-${entity.metadata.name}`}
+            />
+            <LinkButton
+              to={url!}
+              color="primary"
+              variant="contained"
+              size="small"
+              className={classes.door}
+              data-testid={`open-${entity.metadata.name}`}
+            >
+              {OPEN_WORD}
+            </LinkButton>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export const DoorRow = ({ entity, now }: { entity: Entity; now?: number }) => {
   const classes = useStyles();
   const s = doorState(entity, now);
@@ -455,6 +687,35 @@ export const DoorRow = ({ entity, now }: { entity: Entity; now?: number }) => {
         ))}
       </div>
     </div>
+  );
+};
+
+const clock = (t: number) =>
+  new Date(t).toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+/** Live or not, as a chip beside the verdict: a tint, an icon-dot and a sentence. */
+const LiveChip = ({ estate }: { estate: Estate }) => {
+  const classes = useStyles();
+  const tint = useTint()[estate.live ? 'good' : 'red'];
+  return (
+    <span
+      className={classes.live}
+      style={{ color: tint.ink, background: tint.bg, borderColor: tint.edge }}
+      data-testid="read-at"
+      title={
+        estate.live
+          ? undefined
+          : PAGE.notLiveDetail(estate.liveError ?? 'unknown')
+      }
+    >
+      <Dot state={estate.live ? 'good' : 'red'} />
+      {estate.live
+        ? PAGE.liveLabel(clock(estate.live.readAt))
+        : PAGE.notLivePlain}
+    </span>
   );
 };
 
@@ -508,12 +769,6 @@ const CatalogueUnavailable = ({
     </div>
   );
 };
-
-const clock = (t: number) =>
-  new Date(t).toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 
 type View = 'board' | 'list';
 const VIEW_KEY = 'estate.view';
@@ -573,9 +828,37 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
 
   const keep = (e: Entity) => !only || stateOf(e).state === only;
   const layers = matches(query, estate.layers).filter(keep);
-  const doors = matches(query, estate.doors)
+  const byOpenable = (a: Entity, b: Entity) =>
+    Number(hasNoAddress(a) || hasNoScreen(a)) -
+      Number(hasNoAddress(b) || hasNoScreen(b)) ||
+    rank(stateOf(a).state) - rank(stateOf(b).state) ||
+    (a.metadata.title ?? a.metadata.name).localeCompare(
+      b.metadata.title ?? b.metadata.name,
+    );
+  const allScreens = estate.doors.filter(e => isScreen(e) && !isKubernetes(e));
+  const allKube = estate.doors.filter(isKubernetes);
+  const kube = matches(query, allKube).filter(keep).sort(byOpenable);
+  const screens = matches(query, allScreens)
+    .filter(keep)
+    .sort(
+      (a, b) =>
+        Number(hasNoAddress(a)) - Number(hasNoAddress(b)) ||
+        rank(stateOf(a).state) - rank(stateOf(b).state) ||
+        (a.metadata.title ?? a.metadata.name).localeCompare(
+          b.metadata.title ?? b.metadata.name,
+        ),
+    );
+  const doors = matches(
+    query,
+    estate.doors.filter(e => !isScreen(e) && !isKubernetes(e)),
+  )
     .filter(keep)
     .sort((a, b) => rank(stateOf(a).state) - rank(stateOf(b).state));
+  const held = estate.inventory.reduce((n, r) => n + r.count, 0);
+  const listPath = (kind: string, type?: string) =>
+    `/catalog?filters%5Bkind%5D=${encodeURIComponent(kind.toLowerCase())}` +
+    (type ? `&filters%5Btype%5D=${encodeURIComponent(type)}` : '') +
+    '&filters%5Buser%5D=all';
   const templates = matches(query, estate.templates);
   const systemTitle = (id: string) => {
     const s = estate.systems.find(x => x.metadata.name === id);
@@ -597,7 +880,7 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
   });
 
   const open = () => {
-    const first = [...layers, ...doors][0];
+    const first = [...screens, ...layers, ...kube, ...doors][0];
     if (templates[0] && !first) navigate(templatePath(templates[0]));
     else if (first?.metadata.links?.[0])
       window.location.assign(first.metadata.links[0].url);
@@ -607,37 +890,30 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
   return (
     <div className={classes.wrap}>
       <div className={classes.top}>
-        <span className={classes.brand}>{brand}</span>
-        <span className={classes.when} data-testid="read-at">
-          {estate.live
-            ? `Cluster read at ${clock(estate.live.readAt)}`
-            : `Cluster not read: ${estate.liveError ?? 'unknown'}`}
+        <span className={classes.when}>
+          {new Date().toLocaleDateString(undefined, {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+          })}
         </span>
       </div>
-      <h1 className={classes.verdict} data-testid="verdict">
-        {verdict(counts, all.length)}
-      </h1>
-      <div
-        className={classes.counters}
-        role="group"
-        aria-label="Filter by state"
+      <h1 className={classes.title}>{brand}</h1>
+      <p className={classes.tagline}>{PAGE.tagline}</p>
+      <p
+        className={classes.verdict}
+        data-testid="verdict"
+        title={verdict(counts, all.length)}
       >
-        {STATE_ORDER.map(s => (
-          <Counter
-            key={s}
-            state={s}
-            n={counts[s]}
-            on={only === s}
-            onClick={() => setOnly(only === s ? undefined : s)}
-          />
-        ))}
-      </div>
+        <span>{verdictSentence(counts, all.length)}</span>
+        <LiveChip estate={estate} />
+      </p>
       <TextField
         className={classes.find}
         fullWidth
         inputRef={findRef}
         variant="outlined"
-        placeholder="Find a layer, a door or an action — Enter opens the first"
+        placeholder="Find a service, a door or an action — Enter opens the first"
         value={query}
         onChange={e => setQuery(e.target.value)}
         onKeyDown={e => e.key === 'Enter' && open()}
@@ -663,30 +939,137 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
         </span>
       </div>
 
-      <section className={classes.section} data-testid="band-layers">
+      <section
+        className={classes.section}
+        id="screens"
+        data-testid="band-screens"
+      >
         <h2 className={classes.h}>
-          What we run
+          <SectionIcon section="screens" />
+          {SECTIONS.screens.title}
           <span className={classes.hCount}>
-            {layers.length === estate.layers.length
-              ? `${estate.layers.length} layers`
-              : `${layers.length} of ${estate.layers.length} layers`}
+            {screens.length === allScreens.length
+              ? `${screens.length}`
+              : `${screens.length} of ${allScreens.length}`}
           </span>
         </h2>
+        <p className={classes.hDesc}>{SECTIONS.screens.blurb}</p>
+        {allScreens.length === 0 ? (
+          <p className={classes.note} data-testid="no-screens">
+            No screens are registered yet, so there is nothing to open from
+            here.
+          </p>
+        ) : (
+          <div className={classes.screens}>
+            {screens.map(e => (
+              <ScreenCard key={e.metadata.name} entity={e} now={now} />
+            ))}
+          </div>
+        )}
+      </section>
+      <section
+        className={classes.section}
+        id="kubernetes"
+        data-testid="band-kubernetes"
+      >
+        <h2 className={classes.h}>
+          <SectionIcon section="kubernetes" />
+          {SECTIONS.kubernetes.title}
+          <span className={classes.hCount}>
+            {kube.length === allKube.length
+              ? `${kube.length}`
+              : `${kube.length} of ${allKube.length}`}
+          </span>
+        </h2>
+        <p className={classes.hDesc}>{SECTIONS.kubernetes.blurb}</p>
+        {allKube.length === 0 ? (
+          <p className={classes.note} data-testid="no-kubernetes">
+            No cluster tools are registered yet.
+          </p>
+        ) : (
+          <div className={classes.screens}>
+            {kube.map(e => (
+              <ScreenCard key={e.metadata.name} entity={e} now={now} />
+            ))}
+          </div>
+        )}
+      </section>
+      {all.length > 0 && (
+        <div className={classes.picture} data-testid="picture">
+          <StateDonut counts={counts} total={all.length} />
+          <SystemBars
+            rows={systemsShown.map(([id, xs]) => ({
+              id,
+              title: systemTitle(id).title,
+              counts: count(xs.map(e => stateOf(e).state)),
+            }))}
+          />
+        </div>
+      )}
+      <div
+        className={classes.counters}
+        role="group"
+        aria-label="Filter by state"
+      >
+        {STATE_ORDER.map(s => (
+          <Counter
+            key={s}
+            state={s}
+            n={counts[s]}
+            on={only === s}
+            onClick={() => setOnly(only === s ? undefined : s)}
+          />
+        ))}
+      </div>
+      <section className={classes.section} data-testid="band-everything">
+        <h2 className={classes.h}>
+          <SectionIcon section="everything" />
+          {SECTIONS.everything.title}
+          <span className={classes.hCount}>{everythingSentence(held)}</span>
+        </h2>
+        <p className={classes.hDesc}>{SECTIONS.everything.blurb}</p>
+        <div className={classes.inventory} data-testid="inventory">
+          {estate.inventory.map(r => (
+            <Link
+              key={`${r.kind}/${r.type ?? ''}`}
+              to={listPath(r.kind, r.type)}
+              className={classes.chip}
+              data-testid={`held-${r.kind.toLowerCase()}-${r.type ?? 'all'}`}
+            >
+              <span className={classes.chipN}>{r.count}</span>
+              <span>{inventoryWord(r.kind, r.type, r.count)}</span>
+            </Link>
+          ))}
+        </div>
+      </section>
+      <section className={classes.section} data-testid="band-layers">
+        <h2 className={classes.h}>
+          <SectionIcon section="layers" />
+          {SECTIONS.layers.title}
+          <span className={classes.hCount}>
+            {layers.length === estate.layers.length
+              ? `${estate.layers.length} services`
+              : `${layers.length} of ${estate.layers.length} services`}
+          </span>
+        </h2>
+        <p className={classes.hDesc}>{SECTIONS.layers.blurb}</p>
         {estate.layers.length === 0 && (
           <p className={classes.note} data-testid="no-layers">
-            No platform layers are registered. bin/catalog-platform writes them
-            from the cluster's Flux list; nothing is typed here.
+            Nothing has been read from the machines yet, so there is nothing to
+            list. The list fills itself the moment a read succeeds.
           </p>
         )}
         {systemsShown.map(([id, xs]) => {
           const s = systemTitle(id);
+          const SysIcon = systemIcon(`${id} ${s.title}`);
           return (
             <div
               key={id}
               className={classes.section}
               data-testid={`system-${id}`}
             >
-              <h3 className={classes.h} style={{ fontSize: 13 }}>
+              <h3 className={classes.h3}>
+                <SysIcon aria-hidden="true" />
                 {s.title}
                 <span className={classes.hCount}>{xs.length}</span>
               </h3>
@@ -721,17 +1104,19 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
 
       <section className={classes.section} data-testid="band-doors">
         <h2 className={classes.h}>
-          Doors
+          <SectionIcon section="doors" />
+          {SECTIONS.doors.title}
           <span className={classes.hCount}>
             {doors.length === estate.doors.length
               ? `${estate.doors.length}`
               : `${doors.length} of ${estate.doors.length}`}
           </span>
         </h2>
+        <p className={classes.hDesc}>{SECTIONS.doors.blurb}</p>
         {estate.doors.length === 0 ? (
           <p className={classes.note} data-testid="no-surfaces">
-            No doors are registered yet. A door is added to the catalogue, never
-            typed here.
+            No doors yet. Doors appear here on their own once they are
+            registered.
           </p>
         ) : (
           doors.map(e => <DoorRow key={e.metadata.name} entity={e} now={now} />)
@@ -741,9 +1126,11 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
       {templates.length > 0 && (
         <section className={classes.section} data-testid="band-actions">
           <h2 className={classes.h}>
-            Do
+            <SectionIcon section="actions" />
+            {SECTIONS.actions.title}
             <span className={classes.hCount}>{templates.length}</span>
           </h2>
+          <p className={classes.hDesc}>{SECTIONS.actions.blurb}</p>
           <div className={classes.actions}>
             {templates.map((t, i) => (
               <LinkButton

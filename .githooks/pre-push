@@ -9,7 +9,8 @@
 # Mean 8 commits per merged PR, 7.2 min per CI run. This hook runs, in order:
 #   1. bin/idp-tests-for   the tests whose source names a changed file, on every core
 #   2. bin/pr-report       the PR-body gates CI's operating-model-gate/spec-gate would refuse
-#   3. the shared LAW 32 gate the router would have run
+#   3. bin/idp-kyverno-render  the cluster's own admission policies over the changed platform dirs
+#   4. the shared LAW 32 gate the router would have run
 # A red refuses the push. Not the full suite (founder ruling 2026-08-28); CI stays the proof.
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
@@ -22,6 +23,32 @@ for v in $(compgen -e | grep '^GIT_' || true); do unset "$v"; done
 "$IDP/bin/idp-push-on-green"
 "$IDP/bin/idp-tests-for"
 "$IDP/bin/pr-report"
+# crew#623 (founder 2026-08-29, "why did you not investigate cluster before starting"): the money
+# layer was written from a chart's values file and reasoned about, and its render failed 128 of the
+# cluster's own admission rules -- found by CI, 7 minutes and a red pull request later. The judge
+# that finds it in seconds was already here (bin/idp-kyverno-render, offline, no cluster, no
+# secrets); nothing local ran it. Scoped to the dirs this push changes, so it stays seconds.
+# BLIND (helm, kyverno or kubectl absent) does not refuse a push: a fence a correct machine cannot
+# satisfy is an outage (LAW 38), and CI still judges. A failing render does refuse.
+kyv_base="$(git rev-parse --verify --quiet origin/main || true)"
+if [ -n "$kyv_base" ]; then
+	kyv_dirs="$("$IDP/bin/idp-kyverno-dirs" "$kyv_base" --narrow | tr '\n' ' ')"
+	if [ -n "${kyv_dirs// /}" ]; then
+		set +e
+		kyv_out="$("$IDP/bin/idp-kyverno-render" $kyv_dirs 2>&1)"
+		kyv_rc=$?
+		set -e
+		case "$kyv_rc" in
+		0) echo "ok    kyverno  $kyv_dirs render clean against the cluster's admission policies" ;;
+		2) echo "BLIND kyverno  the judge did not run here; CI judges $kyv_dirs" ;;
+		*)
+			echo "FAIL  kyverno  a render in $kyv_dirs is refused by admission policy"
+			printf '%s\n' "$kyv_out" | grep -vE '^ok ' | tail -40
+			exit 1
+			;;
+		esac
+	fi
+fi
 shared="$(git config --get core.hooksPath 2>/dev/null || true)/law32-default"
 if [ -x "$shared" ]; then exec "$shared" "$@"; fi
 exit 0

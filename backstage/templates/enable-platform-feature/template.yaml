@@ -49,6 +49,7 @@ spec:
             - staging
             - config-reload
             - dev-loop
+            - commerce
           enumNames:
             - "traces -- LLM traces and observability"
             - "logs-metrics-store -- Logs and metrics history"
@@ -66,6 +67,7 @@ spec:
             - "staging -- Staging namespace"
             - "config-reload -- Live config reload"
             - "dev-loop -- Developer loop (mirrord into staging, sub-minute gates)"
+            - "commerce -- Money (subscriptions and prepaid credit packs)"
           ui:autofocus: true
         tier:
           title: Tier

@@ -17,9 +17,9 @@ on:
         options: [check, apply, surge-node, surge-finish, break-glass]
         default: check
       playbook:
-        description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose and architect-doctor are read-only; so is router-spend."
+        description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose, otto-parity and architect-doctor are read-only; so is router-spend."
         type: choice
-        options: [diagnose, architect-doctor, cilium-unchain, cilium-replace, helm-retry, namespace-unstick, ghcr-pull-restore, k8sgpt-analyze, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll, router-spend]
+        options: [diagnose, architect-doctor, otto-parity, cilium-unchain, cilium-replace, helm-retry, namespace-unstick, ghcr-pull-restore, k8sgpt-analyze, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll, router-spend]
         default: diagnose
   pull_request:
     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
@@ -218,6 +218,17 @@ jobs:
           fed=$(awk '$1=="TAILSCALE_FEDERATED_CLIENT_ID:"{gsub(/"/,"",$2);print $2}' clusters/oke/estate-config.yaml)
           [ -n "$fed" ] || [ -n "$TAILSCALE_SEED_CLIENT_ID" ] || { echo "BLIND   tailscale-operator   no federated identity in estate-config (TAILSCALE_FEDERATED_CLIENT_ID) and no SEED_TAILSCALE_CLIENT_ID repository secret; one of them is the one manual step, kb/1581 or kb/1215"; exit 0; }
           bin/idp-bootstrap-tailscale
+
+      # crew#561: Otto's key to the founder's Mac sshd, minted here (Tailscale SSH cannot run on his
+      # GUI Tailscale build, platform/tailscale/policy.hujson header). Kept once minted; the public
+      # half is printed for bin/idp-mac-adopt-otto to read from this log. Never a paste.
+      - name: bin/idp-bootstrap-macrun (crew#561)
+        if: ${{ always() && inputs.mode == 'apply' }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+        run: bin/idp-bootstrap-macrun
 
       # R52 (founder 2026-08-29): the Cloudflare root is one token set once as a repository secret; the
       # DNS token and the R2 credential are minted from it here, never in a browser. No root = BLIND.
@@ -420,6 +431,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: urls with the zone substituted
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           zone=$(awk '$1=="ESTATE_ZONE:"{print $2}' clusters/oke/estate-config.yaml)
@@ -427,6 +440,19 @@ jobs:
           grep -oE 'url: "https?://[^"]+"' backstage/founder/catalog-info.yaml \
             | sed -E 's/^url: "(.*)"$/\1/' | sed "s/\${ESTATE_ZONE}/$zone/g" | sort -u > founder-links.txt
           if grep -q '\${' founder-links.txt; then echo "unsubstituted placeholder"; cat founder-links.txt; exit 1; fi
+          # A catalogue entry for a file this pull request ADDS points at blob/main, which is where
+          # the founder will read it and where it does not exist yet -- so every such pull request
+          # went red on a link that is correct. Grade the proposed tree, not the old one: on a
+          # pull_request the blob ref becomes this branch's head sha, everywhere else it stays main.
+          # Found 2026-08-29 by platform/commerce/app/lago.yaml, run 33260499807.
+          if [ "${GITHUB_EVENT_NAME:-}" = pull_request ] && [ -n "${HEAD_SHA:-}" ]; then
+            # Only THIS repository's links. The first version of this rewrote every `/blob/main/`
+            # it saw, so five catalogue links into chidionyema/crew were asked for an idp commit
+            # sha and came back 404 -- the fix graded the string instead of the repository it
+            # belongs to (oke-check 33262262675). The repo is named, never assumed.
+            sed -i "s#github.com/${GITHUB_REPOSITORY}/blob/main/#github.com/${GITHUB_REPOSITORY}/blob/${HEAD_SHA}/#g" founder-links.txt
+            echo "pull request: blob links graded at ${HEAD_SHA}"
+          fi
           echo "$(wc -l < founder-links.txt) links"
       - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:

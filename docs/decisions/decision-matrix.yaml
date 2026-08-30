@@ -166,6 +166,62 @@ decisions:
     receipt: "https://github.com/chidionyema/crew/issues/66#issuecomment-5461672647"   # founder, 2026-08-29, on the no-cost road: "ok thats fine, we need to document all this"
     next_review: 2026-09-05
     reviews: []
+  - slug: money-layer
+    requirement: "the estate takes a payment and runs a subscription, and the application never sees a card, a checkout session or a webhook (crew#623; founder: 'we ban money from the application logic entirely', 'also we want user subscriptions also')"
+    date: 2026-08-29
+    status: proposed
+    candidates:
+      lago-self-hosted:
+        note: "Lago in the cluster: subscriptions, usage metering and invoices in its own database, webhooks out to the estate's event bus; the payment provider's SDK stays behind it (chosen)"
+        scores:
+          first_time_user:     {score: 4, evidence: "docs/how-to/onboarding/commerce.md"}                       # one Helm row and four locks; nobody installs anything by hand
+          founder_experience:  {score: 4, evidence: "https://getlago.com/"}                                     # a UI that shows subscriptions, invoices and wallets without reading the database
+          feature_parity:      {score: 5, evidence: "https://docs.getlago.com/"}                                # subscriptions, usage metering, invoices, wallets, coupons -- the whole job asked for
+          ecosystem_fit:       {score: 4, evidence: "https://github.com/getlago/lago-helm-charts"}              # first-party chart, Postgres and Redis the estate already runs, webhooks out
+          maturity:            {score: 4, evidence: "cmd: gh api repos/getlago/lago -q .pushed_at   # 2026-08-28, 10,441 stars"}
+          security_by_default: {score: 4, evidence: "platform/commerce/data/external-secret.yaml"}              # every credential from the estate vault; the ledger encrypted at rest with vault-born keys
+          portability:         {score: 5, evidence: "https://github.com/getlago/lago/blob/main/LICENSE"}        # AGPL-3.0, self-hosted, any conformant cluster; the ledger is ours
+          operability:         {score: 3, evidence: "platform/commerce/app/lago.yaml"}                          # eight deployments; measured 1.03 CPU and 3.38 Gi of requests when switched on
+          cost:                {score: 3, evidence: "docs/how-to/onboarding/commerce.md"}                       # no licence fee, but it does not fit the current 6 OCPU / 24 Gi node
+      stripe-billing-only:
+        note: "no billing layer of our own: the primitive calls the payment provider's hosted billing and keeps no ledger"
+        scores:
+          first_time_user:     {score: 5, evidence: "https://stripe.com/billing"}                               # nothing to install or run at all
+          founder_experience:  {score: 4, evidence: "https://stripe.com/billing"}                               # a good hosted dashboard, on someone else's domain
+          feature_parity:      {score: 4, evidence: "https://docs.stripe.com/billing"}                          # subscriptions and invoices yes; the estate holds no revenue record of its own
+          ecosystem_fit:       {score: 2, evidence: "platform/event-bus/contract/estate.commerce.order_paid.json"}  # nothing in the cluster to emit from; the record lives at the vendor
+          maturity:            {score: 5, evidence: "https://stripe.com/billing"}                               # best in class
+          security_by_default: {score: 4, evidence: "platform/commerce/data/external-secret.yaml"}              # card data never reaches us; the API key still comes from the vault
+          portability:         {score: 0, evidence: "https://stripe.com/pricing"}                               # leaving takes the ledger with it -- fails LAW 19 outright
+          operability:         {score: 3, evidence: "bin/idp-portability-drill"}                                # nothing to run, and nothing to drill or trace either
+          cost:                {score: 2, evidence: "https://stripe.com/pricing"}                               # a billing fee on top of the payment fee, forever, per transaction
+      killbill:
+        note: "Kill Bill in the cluster: the older, heavier open-source billing platform, with the Kaui admin UI"
+        scores:
+          first_time_user:     {score: 2, evidence: "https://killbill.io/"}                                     # JVM stack plus plugins; the docs assume an operator
+          founder_experience:  {score: 3, evidence: "https://killbill.io/"}                                     # Kaui is an admin console, not a product surface
+          feature_parity:      {score: 5, evidence: "https://killbill.io/"}                                     # subscriptions, invoicing, payments, entitlements
+          ecosystem_fit:       {score: 2, evidence: "https://github.com/killbill/killbill"}                     # no first-party chart maintained the way Lago's is
+          maturity:            {score: 5, evidence: "cmd: gh api repos/killbill/killbill -q .pushed_at   # 2026-08-22, since 2010"}
+          security_by_default: {score: 3, evidence: "platform/commerce/data/external-secret.yaml"}              # same vault path, more moving parts to hold it
+          portability:         {score: 5, evidence: "https://github.com/killbill/killbill/blob/master/LICENSE"} # Apache-2.0, self-hosted
+          operability:         {score: 2, evidence: "platform/commerce/app/lago.yaml"}                          # a JVM and a plugin runtime to size, patch and drill on a 6 OCPU node
+          cost:                {score: 3, evidence: "https://killbill.io/"}                                     # no licence fee; a heavier footprint than Lago for the same job
+      medusa:
+        note: "Medusa: a commerce engine with carts, products and orders, extended into subscriptions"
+        scores:
+          first_time_user:     {score: 3, evidence: "https://docs.medusajs.com/"}                               # a storefront framework to learn before the first payment
+          founder_experience:  {score: 3, evidence: "https://docs.medusajs.com/"}                               # an admin for a shop, not for revenue
+          feature_parity:      {score: 2, evidence: "https://docs.medusajs.com/"}                               # subscriptions are a plugin on a cart engine, not the product
+          ecosystem_fit:       {score: 2, evidence: "platform/event-bus/contract/estate.commerce.order_paid.json"}  # it wants to own the product catalogue, which the application already owns
+          maturity:            {score: 4, evidence: "cmd: gh api repos/medusajs/medusa -q .pushed_at   # 2026-08-28, 36,052 stars"}
+          security_by_default: {score: 3, evidence: "platform/commerce/data/external-secret.yaml"}
+          portability:         {score: 4, evidence: "https://github.com/medusajs/medusa"}                       # self-hosted, but the licence is not a plain OSI row
+          operability:         {score: 2, evidence: "platform/commerce/app/lago.yaml"}                          # a Node service plus workers plus a storefront to keep alive
+          cost:                {score: 3, evidence: "https://docs.medusajs.com/"}
+    decision: lago-self-hosted   # 410 vs stripe-billing-only 355 vs killbill 340 vs medusa 300; the gap is outside tie_band 25, so the matrix builds the top score
+    next_review: 2026-09-05
+    reviews: []
 
   - slug: claude-on-the-router
     requirement: "a workload on the estate uses Claude through one platform layer, with the key born once by code and never on the Mac (crew#568 phase 1, crew#617)"
@@ -211,3 +267,139 @@ decisions:
     decision: router-lane-direct   # 420 vs openrouter-lane 315 vs claude-code-subscription 215 (cmd: bin/matrix-gate); outside tie_band
     next_review: 2026-09-05
     reviews: []
+  - slug: staging-is-a-namespace
+    requirement: "a staging surface the founder can push to before prod, without a second cluster's bill (founder 2026-08-29 00:44-01:55Z, crew#584 CP-H, ADR 0012)"
+    date: 2026-08-29
+    status: decided
+    next_review: 2026-11-29
+    decision: staging-namespace   # namespace 4.3 vs second cluster 3.1 on the weights; the founder's word 2026-08-29 00:44-01:55Z
+    receipt: "https://github.com/chidionyema/crew/issues/584#issuecomment-5459064035"
+    reviews: []
+    candidates:
+      staging-namespace:
+        note: "a `staging` namespace on the one cluster; Flux row per namespace; namespaces never pruned"
+        scores:
+          first_time_user:     {score: 4, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # one cluster, one kubeconfig, one login
+          founder_experience:  {score: 4, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # same portal, same drill
+          feature_parity:      {score: 4, evidence: "platform/features/features.yaml"}                                                     # feature register gates per namespace
+          ecosystem_fit:       {score: 5, evidence: "platform/oci"}                                                                   # Flux Kustomization per row already
+          maturity:            {score: 5, evidence: "https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/"}        # namespaces are the platform primitive
+          security_by_default: {score: 3, evidence: "platform/kyverno"}                                                           # policy-scoped, but shared node pool
+          portability:         {score: 4, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # any cluster, any cloud
+          operability:         {score: 4, evidence: "tests/test_incident_a_namespace_moved_between_flux_rows_was_pruned.py"}              # prune guard proven
+          cost:                {score: 5, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # prod 6 cores, $42/month, no second bill
+      second-cluster:
+        note: "a second OKE cluster for staging"
+        scores:
+          first_time_user:     {score: 2, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # two kubeconfigs, two logins
+          founder_experience:  {score: 2, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # a second portal to keep green
+          feature_parity:      {score: 5, evidence: "platform/oci"}                                                                   # identical by construction
+          ecosystem_fit:       {score: 3, evidence: "platform/oci"}                                                                   # a second Flux root, a second collector
+          maturity:            {score: 5, evidence: "https://docs.oracle.com/en-us/iaas/Content/ContEng/home.htm"}                          # the vendor's own product
+          security_by_default: {score: 5, evidence: "platform/kyverno"}                                                           # hard isolation
+          portability:         {score: 3, evidence: "platform/oci"}                                                                        # a second provider footprint
+          operability:         {score: 2, evidence: "bin/idp-availability-gate"}                                                           # two estates to keep available
+          cost:                {score: 1, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # doubles the bill the founder capped
+
+  - slug: messaging-broker
+    requirement: "the broker under the estate's business events: at-least-once, replayable, one StatefulSet on a 4-6 OCPU cluster, swappable behind the outbox (founder specification v0.1 on crew#639, ADR 0012 messaging day 0)"
+    date: 2026-08-29
+    status: decided
+    next_review: 2026-11-29
+    decision: nats-jetstream   # 425 vs rabbitmq 340 vs kafka-redpanda 320; the gap is outside tie_band 25, so the matrix builds the top score; the founder's own specification names it (D5)
+    receipt: "https://github.com/chidionyema/crew/issues/639#issuecomment-5465231652"
+    reviews: []
+    candidates:
+      nats-jetstream:
+        note: "NATS with JetStream, the official nats-io chart already on platform/event-bus (idp#800); file store, pull consumers, dedupe window, nsc accounts"
+        scores:
+          first_time_user:     {score: 4, evidence: "docs/prose/messaging-cp9.feature"}                                           # one command, bin/idp-messaging-demo, no install (CP9)
+          founder_experience:  {score: 4, evidence: "docs/prose/messaging-cp10.feature"}                                          # one button on the portal (CP10), one receipt
+          feature_parity:      {score: 4, evidence: "https://docs.nats.io/nats-concepts/jetstream"}                                # streams, durable consumers, replay, dedupe; no exactly-once transactions across topics
+          ecosystem_fit:       {score: 5, evidence: "platform/event-bus/nats.yaml"}                                                # the chart is on the platform layer; same collector, same vault
+          maturity:            {score: 4, evidence: "https://github.com/nats-io/nats-server"}                                      # CNCF incubating, single Go binary, releases monthly
+          security_by_default: {score: 4, evidence: "https://docs.nats.io/running-a-nats-service/configuration/securing_nats/auth_intro/jwt"}  # operator mode, per-subject permissions, TLS on every port
+          portability:         {score: 5, evidence: "docs/decisions/0012-messaging-day-0.md"}                                      # one OSS binary, a StatefulSet and a PVC; D1 to D4 keep it swappable
+          operability:         {score: 4, evidence: "platform/event-bus/nats.yaml"}                                                # 256Mi guaranteed QoS; R1 on two nodes, R3 is one value
+          cost:                {score: 5, evidence: "platform/event-bus/nats.yaml"}                                                # 100m CPU, 2Gi PVC, no licence
+      rabbitmq:
+        note: "RabbitMQ with its cluster operator; quorum queues and streams"
+        scores:
+          first_time_user:     {score: 3, evidence: "https://www.rabbitmq.com/docs/download"}                                       # an Erlang broker plus an operator before the first message
+          founder_experience:  {score: 3, evidence: "https://www.rabbitmq.com/docs/management"}                                     # a management UI that is an admin console, not a portal action
+          feature_parity:      {score: 3, evidence: "https://www.rabbitmq.com/docs/streams"}                                        # replay only through the newer streams feature; dedupe is a plugin
+          ecosystem_fit:       {score: 2, evidence: "platform/event-bus/nats.yaml"}                                                 # a second broker beside the one already on the layer
+          maturity:            {score: 5, evidence: "https://github.com/rabbitmq/rabbitmq-server"}                                   # the oldest of the three, everywhere
+          security_by_default: {score: 3, evidence: "https://www.rabbitmq.com/docs/access-control"}                                  # vhost and user permissions; TLS is configuration, not default
+          portability:         {score: 5, evidence: "https://github.com/rabbitmq/rabbitmq-server/blob/main/LICENSE-MPL-RabbitMQ"}    # MPL-2.0, self-hosted anywhere
+          operability:         {score: 3, evidence: "https://www.rabbitmq.com/docs/kubernetes/operator/operator-overview"}           # an operator and an Erlang VM to size and patch
+          cost:                {score: 3, evidence: "https://www.rabbitmq.com/docs/production-checklist"}                            # no licence; 1-2Gi footprint on a 6 OCPU node
+      kafka-redpanda:
+        note: "Kafka (or Redpanda, the C++ rewrite) with a topic per subject"
+        scores:
+          first_time_user:     {score: 2, evidence: "https://docs.redpanda.com/current/get-started/quick-start/"}                    # a console, a schema registry and a connect layer to learn first
+          founder_experience:  {score: 3, evidence: "https://docs.redpanda.com/current/console/"}                                    # the console is good and is a second portal
+          feature_parity:      {score: 5, evidence: "https://kafka.apache.org/documentation/"}                                       # the reference: partitions, compaction, exactly-once, connect
+          ecosystem_fit:       {score: 2, evidence: "platform/event-bus/nats.yaml"}                                                 # a second broker beside the one already on the layer
+          maturity:            {score: 5, evidence: "https://github.com/apache/kafka"}                                                # the industry default at scale
+          security_by_default: {score: 3, evidence: "https://kafka.apache.org/documentation/#security"}                              # SASL and ACLs are configuration; plaintext by default
+          portability:         {score: 4, evidence: "https://github.com/redpanda-data/redpanda/blob/dev/licenses/bsl.md"}            # Kafka is Apache-2.0; Redpanda core is BSL
+          operability:         {score: 2, evidence: "https://docs.redpanda.com/current/deploy/deployment-option/self-hosted/kubernetes/k-requirements/"}  # dedicated nodes and local disks asked for
+          cost:                {score: 1, evidence: "https://docs.redpanda.com/current/deploy/deployment-option/self-hosted/kubernetes/k-requirements/"}  # a multi-GB footprint on a cluster whose whole budget is 4-6 OCPU (crew#289)
+  - slug: ops-dashboard-cluster-health
+    requirement: "the Ops dashboard's cluster tile: nodes ready, pods not ready by namespace, Flux rows not ready, live in the portal, never a script (crew#684 CP1, founder 2026-08-30 'I need to see everything')"
+    date: 2026-08-30
+    status: decided
+    next_review: 2026-11-29
+    decision: kubernetes-plugin-proxy   # 455 vs headlamp 395 vs weaveworks-flux-plugin 345 vs estate-mcp 305 (cmd: bin/matrix-gate); outside tie_band
+    receipt: "https://github.com/chidionyema/crew/issues/684#issuecomment-5466025580"   # RULING "LAST TIME: I NEED TO SEE ..." (2026-08-30 ~03:0xZ)
+    reviews: []
+    candidates:
+      kubernetes-plugin-proxy:
+        note: "four list reads through @backstage/plugin-kubernetes's proxy, the door useEstate.ts already uses; summarised in the page"
+        scores:
+          first_time_user:     {score: 5, evidence: "backstage/packages/app/src/modules/home/useEstate.ts"}                         # same page, same login, nothing to install
+          founder_experience:  {score: 4, evidence: "backstage/packages/app/src/modules/home/Ops.tsx"}                              # one tile, numbers not adjectives, re-read every minute
+          feature_parity:      {score: 4, evidence: "backstage/packages/app/src/modules/home/clusterHealth.ts"}                     # counts and names; no graphs, no pod logs
+          ecosystem_fit:       {score: 5, evidence: "backstage/packages/backend/package.json"}                                      # plugin-kubernetes-backend already in the image
+          maturity:            {score: 5, evidence: "https://backstage.io/docs/features/kubernetes/"}                               # core Backstage feature, maintained by the project
+          security_by_default: {score: 4, evidence: "backstage/app-config.container.yaml"}                                          # service-account read behind the portal's SSO; no token in the browser
+          portability:         {score: 5, evidence: "https://backstage.io/docs/features/kubernetes/configuration"}                 # any cluster the backend can reach
+          operability:         {score: 4, evidence: "bin/idp-login-drill"}                                                          # the login drill grades the page daily; blind reads say so
+          cost:                {score: 5, evidence: "backstage/packages/app/package.json"}                                          # zero new pods, zero new services
+      headlamp:
+        note: "kubernetes-sigs Headlamp in the cluster behind SSO, with its flux and prometheus plugins; linked from the tile"
+        scores:
+          first_time_user:     {score: 3, evidence: "https://headlamp.dev/docs/latest/installation/in-cluster/"}                    # a second app, OIDC to wire, plugins by sidecar
+          founder_experience:  {score: 4, evidence: "https://github.com/headlamp-k8s/plugins"}                                      # a full cluster UI once open
+          feature_parity:      {score: 5, evidence: "https://github.com/headlamp-k8s/plugins"}                                      # flux, prometheus, kyverno, keda plugins
+          ecosystem_fit:       {score: 3, evidence: "https://headlamp.dev/docs/latest/installation/in-cluster/"}                    # a second portal beside Backstage
+          maturity:            {score: 5, evidence: "https://github.com/kubernetes-sigs/headlamp"}                                  # a kubernetes-sigs project
+          security_by_default: {score: 4, evidence: "https://headlamp.dev/docs/latest/installation/in-cluster/"}                    # OIDC supported (Dex, Keycloak tutorials)
+          portability:         {score: 5, evidence: "https://headlamp.dev/docs/latest/installation/in-cluster/"}                    # Helm chart, any cluster
+          operability:         {score: 2, evidence: "bin/idp-availability-gate"}                                                    # one more routed surface to keep available and drill
+          cost:                {score: 3, evidence: "https://headlamp.dev/docs/latest/installation/in-cluster/"}                    # pods and a plugin sidecar on the one cluster
+      weaveworks-flux-plugin:
+        note: "the Weaveworks Flux plugin for Backstage (HelmReleases, Kustomizations, sources in the entity page)"
+        scores:
+          first_time_user:     {score: 4, evidence: "https://github.com/weaveworks/weaveworks-backstage"}                           # in the portal, per entity
+          founder_experience:  {score: 4, evidence: "https://github.com/weaveworks/weaveworks-backstage"}
+          feature_parity:      {score: 4, evidence: "https://github.com/weaveworks/weaveworks-backstage"}                           # Flux only; no nodes, no pods
+          ecosystem_fit:       {score: 4, evidence: "backstage/packages/backend/package.json"}                                      # rides the same kubernetes backend
+          maturity:            {score: 1, evidence: "https://github.com/weaveworks/weaveworks-backstage"}                           # repository archived 2025-10-24 (gh search repos, 2026-08-30)
+          security_by_default: {score: 4, evidence: "backstage/app-config.container.yaml"}
+          portability:         {score: 4, evidence: "https://github.com/weaveworks/weaveworks-backstage"}
+          operability:         {score: 2, evidence: "https://github.com/weaveworks/weaveworks-backstage"}                           # nobody fixes it when Backstage moves
+          cost:                {score: 4, evidence: "https://github.com/weaveworks/weaveworks-backstage"}
+      estate-mcp:
+        note: "read runtime.clusters from the estate MCP's get_estate_state document through a Backstage backend plugin"
+        scores:
+          first_time_user:     {score: 3, evidence: "mcp/plugins/workload_state.py"}                                                # a backend plugin plus a producer to write first
+          founder_experience:  {score: 3, evidence: "mcp/plugins/workload_state.py"}                                                # as fresh as the producer's last write, not the cluster
+          feature_parity:      {score: 2, evidence: "cmd: get_estate_state -> available: false, 'the producer (crew#648 CP2) has not written one' (2026-08-30)"}
+          ecosystem_fit:       {score: 4, evidence: "platform/mcp/agentgateway.yaml"}                                               # the estate's one MCP voice (ADR 0006)
+          maturity:            {score: 3, evidence: "mcp/plugins/estate_inventory.py"}                                              # datasette-mcp plugins, ours
+          security_by_default: {score: 3, evidence: "platform/mcp/agentgateway.yaml"}                                               # bearer token to the gateway
+          portability:         {score: 4, evidence: "platform/mcp/agentgateway.yaml"}
+          operability:         {score: 1, evidence: "cmd: get_estate_state -> available: false (2026-08-30)"}                       # the document does not exist yet
+          cost:                {score: 4, evidence: "mcp/plugins/workload_state.py"}                                                # one more producer job

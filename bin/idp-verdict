@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""The verdict tool (crew#631 CP1). A gate's view of a verdict file, and the prover's signer.
+
+  bin/idp-verdict sign   FILE                 sign in place; the key is VERDICT_HMAC_KEY or the
+                                              vault entry verdict-hmac-key via bin/idp-cloud
+  bin/idp-verdict verify FILE [--digest D]    ok / FAIL / BLIND line, exit 0 / 1 / 2
+  bin/idp-verdict show   FILE                 the assertion table
+  bin/idp-verdict schema                      create the append-only table and roles (idempotent)
+  bin/idp-verdict store  FILE                 INSERT the verdict as role prover; ok when the row landed
+  bin/idp-verdict list   [-n N] [--check ID]  newest rows, read as agent_role
+  bin/idp-verdict refuse-test                 INSERT as agent_role and UPDATE as prover must both be refused
+
+verify without a key grades TTL and digest only and says so: an unsigned check is not a check.
+Grading, like every bin/idp-*: one line, `ok|FAIL|BLIND  verdict  <why>`.
+"""
+
+import json
+import os
+import subprocess
+import sys
+
+IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, IDP)
+from probes import store as S  # noqa: E402
+from probes import verdict as V  # noqa: E402
+
+
+def key_from_env_or_vault():
+    k = os.environ.get("VERDICT_HMAC_KEY")
+    if k:
+        return k.strip()
+    try:
+        out = subprocess.run(
+            [
+                os.path.join(IDP, "bin", "idp-cloud"),
+                "secret",
+                "get",
+                "verdict-hmac-key",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else None
+
+
+def psql(sql, timeout=120):
+    """Run SQL through psql inside the Backstage postgres pod (local socket, the image trusts it).
+    (rc, stdout, stderr). Cluster reach is bin/idp-kube, the same door the prover uses."""
+    cmd = [
+        os.path.join(IDP, "bin", "idp-kube"),
+        "exec",
+        "-i",
+        "-n",
+        "backstage",
+        "postgres-0",
+        "-c",
+        "postgres",
+        "--",
+        "psql",
+        "-U",
+        "backstage",
+        "-d",
+        "backstage",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-At",
+        "-f",
+        "-",
+    ]
+    try:
+        r = subprocess.run(
+            cmd, input=sql, capture_output=True, text=True, timeout=timeout
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return 2, "", f"{type(e).__name__}: {e}"
+    return r.returncode, r.stdout, r.stderr
+
+
+def store_cmds(cmd, argv):
+    if cmd == "schema":
+        rc, out, err = psql(S.SCHEMA_SQL)
+        print(
+            f"{'ok  ' if rc == 0 else 'BLIND'}   verdict  schema {'applied' if rc == 0 else err.strip()[:160]}"
+        )
+        return 0 if rc == 0 else 2
+    if cmd == "store":
+        with open(argv[1]) as f:
+            v = json.load(f)
+        rc, out, err = psql(S.insert_sql(v))
+        landed = out.strip().splitlines()[-1:] == ["1"]
+        print(
+            f"{'ok  ' if landed else 'BLIND'}   verdict  store {v.get('verdict_id')} {v.get('outcome')} {'row landed as prover' if landed else err.strip()[:160]}"
+        )
+        return 0 if landed else 2
+    if cmd == "list":
+        n = int(argv[argv.index("-n") + 1]) if "-n" in argv else 20
+        check = argv[argv.index("--check") + 1] if "--check" in argv else None
+        rc, out, err = psql(S.list_sql(n, check))
+        if rc != 0:
+            print(f"BLIND   verdict  list {err.strip()[:160]}")
+            return 2
+        rows = [line for line in out.strip().splitlines() if "|" in line]
+        for line in rows:
+            print(f"        verdict  {line.replace('|', '  ')}")
+        print(f"ok      verdict  list {len(rows)} rows as agent_role")
+        return 0
+    if cmd == "refuse-test":
+        rc1, _, err1 = psql(S.refuse_sql())
+        rc2, _, err2 = psql(S.refuse_update_sql())
+        ok1, ok2 = (
+            rc1 != 0 and "permission denied" in err1,
+            rc2 != 0 and "append-only" in err2,
+        )
+        print(
+            f"{'ok  ' if ok1 else 'FAIL'}    verdict  INSERT as agent_role {'refused' if ok1 else 'ACCEPTED: ' + (err1 or 'no error')[:100]}"
+        )
+        print(
+            f"{'ok  ' if ok2 else 'FAIL'}    verdict  UPDATE as prover {'refused' if ok2 else 'ACCEPTED: ' + (err2 or 'no error')[:100]}"
+        )
+        return 0 if ok1 and ok2 else 1
+    return 2
+
+
+def main(argv):
+    if argv and argv[0] in ("schema", "store", "list", "refuse-test"):
+        if argv[0] == "store" and len(argv) < 2:
+            print(__doc__)
+            return 2
+        return store_cmds(argv[0], argv)
+    if len(argv) < 2 or argv[0] not in ("sign", "verify", "show"):
+        print(__doc__)
+        return 2
+    cmd, path = argv[0], argv[1]
+    with open(path) as f:
+        v = json.load(f)
+    if cmd == "show":
+        for a in v.get("assertions", []):
+            print(
+                f"{'ok  ' if a['ok'] else 'FAIL'}  {a['name']:44} expected {a['expected'][:40]!s:42} actual {a['actual'][:60]}"
+            )
+        print(
+            f"{v.get('outcome')}  {v.get('check_id')} {v.get('target')} digest={str(v.get('artifact_digest'))[:24]} nonce={v.get('nonce')} ttl={v.get('ttl_seconds')}s sig={'yes' if v.get('sig') else 'NONE'}"
+        )
+        return 0
+    key = key_from_env_or_vault()
+    if cmd == "sign":
+        if not key:
+            print(
+                "BLIND   verdict  no signing key: set VERDICT_HMAC_KEY or put verdict-hmac-key in the vault (oke-check apply)"
+            )
+            return 2
+        with open(path, "w") as f:
+            json.dump(V.sign(v, key), f, indent=1, sort_keys=True)
+        print(f"ok      verdict  signed {v.get('check_id')} {v.get('outcome')}")
+        return 0
+    digest = None
+    if "--digest" in argv:
+        digest = argv[argv.index("--digest") + 1]
+    state, why = V.grade(v, key, artifact_digest=digest)
+    note = (
+        ""
+        if key
+        else " (no key here: signature NOT checked; only the control plane can)"
+    )
+    if state == "PASS":
+        print(
+            f"ok      verdict  {v['check_id']} PASS on {v['artifact_digest'][:24]} nonce {v['nonce']}{note}"
+        )
+        return 0 if key else 2
+    print(f"FAIL    verdict  {v.get('check_id')} {state}: {why}{note}")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

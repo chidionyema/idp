@@ -1,0 +1,289 @@
+#!/usr/bin/env python3
+"""The prover (crew#631 CP1). Runs the probes for one target against the live estate, binds the
+result to the artifact that was running, signs it, and writes one verdict file.
+
+  bin/idp-prove langfuse --out FILE      L1 + L2 + L3 + L4 (with negative controls) -> signed verdict
+  bin/idp-prove backstage --out FILE     catalogue L1 + L2 (prover token) + NEGATIVE -> signed verdict (crew#631 CP9)
+
+The agent cannot run this to any effect: the API key, the drill password, the cluster read and the
+signing key all come from the vault through the runner's machine identity. On a laptop with no
+session every one of those is BLIND and the verdict is BLOCKED, unsigned, and worth nothing.
+Output, like every bin/idp-*: one grading line, `PASS|FAIL|BLOCKED|ERROR  prove  <why>`,
+exit 0 on PASS, 1 on FAIL, 2 on BLOCKED or ERROR.
+"""
+
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+
+IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, IDP)
+from probes import backstage as BS  # noqa: E402
+from probes import langfuse as LF  # noqa: E402
+from probes import verdict as V  # noqa: E402
+
+TTL = int(
+    os.environ.get("VERDICT_TTL_SECONDS", "3600")
+)  # hourly prover: a verdict lives one cycle
+
+
+def run(cmd, env=None, timeout=600):
+    p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
+    return p.returncode, p.stdout, p.stderr
+
+
+def zone():
+    cfg = os.path.join(IDP, "clusters", "oke", "estate-config.yaml")
+    m = re.search(r"^\s*ESTATE_ZONE:\s*(\S+)", open(cfg).read(), re.M)
+    return m.group(1) if m else None
+
+
+def vault(name):
+    rc, out, _ = run(
+        [os.path.join(IDP, "bin", "idp-cloud"), "secret", "get", name], timeout=120
+    )
+    return out.strip() if rc == 0 and out.strip() else None
+
+
+def kube(*args):
+    rc, out, err = run([os.path.join(IDP, "bin", "idp-kube"), *args], timeout=180)
+    return out.strip() if rc == 0 else None
+
+
+def running_artifact():
+    """(image digest, release revision) of the Langfuse web deployment, from the cluster, now.
+    observedGeneration must equal generation or the controller has not seen the spec and every
+    other field is about the past (kstatus rule; kubectl wait does not check it)."""
+    doc = kube("get", "deploy", "-n", "observability", "-o", "json")
+    if not doc:
+        return None, None, "cluster unreadable (bin/idp-kube BLIND)"
+    deps = [
+        d
+        for d in json.loads(doc).get("items", [])
+        if d["metadata"]["name"].startswith("langfuse-web")
+    ]
+    if not deps:
+        return None, None, "no langfuse-web deployment in observability"
+    d = deps[0]
+    if d["status"].get("observedGeneration") != d["metadata"].get("generation"):
+        return (
+            None,
+            None,
+            "controller has not observed the current spec (observedGeneration != generation)",
+        )
+    sel = ",".join(f"{k}={v}" for k, v in d["spec"]["selector"]["matchLabels"].items())
+    pods = kube("get", "pod", "-n", "observability", "-l", sel, "-o", "json")
+    digest = None
+    for p in json.loads(pods or "{}").get("items", []):
+        for c in p.get("status", {}).get("containerStatuses", []):
+            if c.get("imageID") and c.get("ready"):
+                digest = c["imageID"]
+    if not digest:
+        return None, None, "no ready langfuse-web pod reports an imageID"
+    hr = kube(
+        "get",
+        "helmrelease",
+        "langfuse",
+        "-n",
+        "observability",
+        "-o",
+        "jsonpath={.status.lastAppliedRevision}",
+    )
+    return digest, hr or "", None
+
+
+def l3_via_drill():
+    """The cold handshake is bin/idp-login-drill's, on the same run: it signs in through the front
+    door with a browser holding nothing, walks into Langfuse, and writes the two L3 assertions
+    (probes/langfuse.l3_from_sessions) to DRILL_ASSERTIONS_OUT. A second Playwright sign-in here
+    would be the same code twice."""
+    out = os.path.join(tempfile.mkdtemp(prefix="prove-"), "l3.json")
+    env = dict(os.environ, DRILL_ASSERTIONS_OUT=out)
+    rc, so, se = run(
+        [os.path.join(IDP, "bin", "idp-login-drill")], env=env, timeout=900
+    )
+    for line in so.splitlines():
+        if re.match(r"^(ok|FAIL|sso|BLIND) ", line):
+            print(f"drill   prove  {line[:200]}")
+    if os.path.exists(out):
+        with open(out) as f:
+            return json.load(f)
+    last = [ln for ln in so.splitlines() if ln.startswith("FAIL")] or [
+        se.strip()[-200:] or f"drill exit {rc}"
+    ]
+    return [
+        V.assertion(
+            "l3.drill.reached_langfuse",
+            "drill walked into Langfuse",
+            last[-1][:300],
+            False,
+        )
+    ]
+
+
+def prove_langfuse(out_path):
+    started = time.time()
+    z = zone()
+    host = f"https://langfuse.{z}"
+    digest, revision, blocked = running_artifact()
+    assertions = LF.l1_liveness(host)
+    pk, sk = vault("langfuse-init-public-key"), vault("langfuse-init-secret-key")
+    if pk and sk:
+        assertions += LF.l2_machine(host, pk, sk)
+        trace_id = uuid.uuid4().hex
+        assertions += LF.l4_journey(
+            host,
+            pk,
+            sk,
+            trace_id,
+            trace_id[:16],
+            f"idp-prove.l4.{os.environ.get('GITHUB_RUN_ID', 'local')}",
+        )
+        # Attribution of an L4 FAIL (crew#631, runs 33261263465 and 33261848900: 404 after 60s
+        # twice): a trace id from an earlier run is read again now. Readable = the ingest is
+        # slower than the deadline; still 404 = accepted and dropped. An info line, never an
+        # assertion: it grades a past run, not this digest.
+        prior = os.environ.get("IDP_PROVE_LOOKUP_TRACE", "").strip()
+        if prior:
+            st, body = LF.http(f"{host}/api/public/traces/{prior}", auth=(pk, sk))
+            print(f"info    prove  l4.attribution.prior_trace_{prior[:8]}      {st} {body[:80]}")
+    else:
+        blocked = (
+            blocked or "langfuse-init-public-key / secret-key unreadable from the vault"
+        )
+    assertions += l3_via_drill()
+    v = V.build(
+        "langfuse.l1-l3.cold_sso",
+        f"langfuse@{z}",
+        os.environ.get("GITHUB_SHA")
+        or run(["git", "-C", IDP, "rev-parse", "HEAD"])[1].strip(),
+        digest,
+        revision,
+        assertions,
+        nonce=os.environ.get("VERDICT_NONCE")
+        or f"{os.environ.get('GITHUB_RUN_ID', 'local')}-{uuid.uuid4().hex[:12]}",
+        started_at=started,
+        ttl_seconds=TTL,
+        prover_id=os.environ.get(
+            "VERDICT_PROVER_ID", "github-actions/verdict-langfuse"
+        ),
+        prover_run_id=os.environ.get("GITHUB_RUN_ID", "local"),
+        evidence_ref=os.environ.get("VERDICT_EVIDENCE_REF"),
+        blocked=blocked,
+    )
+    key = os.environ.get("VERDICT_HMAC_KEY") or vault("verdict-hmac-key")
+    if key:
+        v = V.sign(v, key)
+    return emit(v, out_path, key, digest, revision)
+
+
+def emit(v, out_path, key, digest, revision):
+    with open(out_path, "w") as f:
+        json.dump(v, f, indent=1, sort_keys=True)
+    for a in v["assertions"]:
+        print(
+            f"{'ok  ' if a['ok'] else 'FAIL'}    prove  {a['name']:44} {a['actual'][:100]}"
+        )
+    bad = [a["name"] for a in v["assertions"] if not a["ok"]]
+    why = f"{len(v['assertions']) - len(bad)}/{len(v['assertions'])} assertions on {str(digest)[:24] or 'no digest'} rev {revision or '?'} nonce {v['nonce']}"
+    if not key:
+        why += "; UNSIGNED: no verdict-hmac-key (oke-check apply mints it)"
+    print(
+        f"{v['outcome']:7} prove  {why}{'; failed: ' + ', '.join(bad) if bad else ''}"
+    )
+    return 0 if v["outcome"] == "PASS" and key else (1 if v["outcome"] == "FAIL" else 2)
+
+
+def catalogue_artifact():
+    """(image digest, generation-observed) of the catalogue deployment in backstage, from the cluster."""
+    doc = kube("get", "deploy", "catalogue", "-n", "backstage", "-o", "json")
+    if not doc:
+        return None, None, "no catalogue deployment readable in backstage"
+    d = json.loads(doc)
+    if d["status"].get("observedGeneration") != d["metadata"].get("generation"):
+        return None, None, "catalogue deployment not yet observed by its controller"
+    pods = kube(
+        "get",
+        "pods",
+        "-n",
+        "backstage",
+        "-l",
+        "app.kubernetes.io/name=catalogue",
+        "-o",
+        "json",
+    )
+    for pod in json.loads(pods).get("items", []) if pods else []:
+        for c in pod.get("status", {}).get("containerStatuses", []):
+            if c.get("ready") and c.get("imageID"):
+                return c["imageID"], str(d["metadata"]["generation"]), None
+    return None, None, "no ready catalogue pod reports an imageID"
+
+
+def prove_backstage(out_path):
+    started = time.time()
+    z = zone()
+    host = f"https://catalogue.{z}"
+    digest, revision, blocked = catalogue_artifact()
+    env_json = vault("backstage-env")
+    token = None
+    if env_json:
+        try:
+            token = json.loads(env_json).get("PROVER_TOKEN")
+        except ValueError:
+            token = None
+    if token:
+        assertions = BS.probe(host, token)
+    else:
+        assertions = BS.l1_liveness(host) + BS.negative_no_token(host)
+        blocked = (
+            blocked
+            or "backstage-env.PROVER_TOKEN unreadable from the vault (oke-check.yml -f mode=apply runs bin/idp-estate-seed, which mints it)"
+        )
+    v = V.build(
+        "catalogue.l1-l2.machine_token",
+        f"catalogue@{z}",
+        os.environ.get("GITHUB_SHA")
+        or run(["git", "-C", IDP, "rev-parse", "HEAD"])[1].strip(),
+        digest,
+        revision,
+        assertions,
+        nonce=os.environ.get("VERDICT_NONCE")
+        or f"{os.environ.get('GITHUB_RUN_ID', 'local')}-{uuid.uuid4().hex[:12]}",
+        started_at=started,
+        ttl_seconds=TTL,
+        prover_id=os.environ.get(
+            "VERDICT_PROVER_ID", "github-actions/verdict-backstage"
+        ),
+        prover_run_id=os.environ.get("GITHUB_RUN_ID", "local"),
+        evidence_ref=os.environ.get("VERDICT_EVIDENCE_REF"),
+        blocked=blocked,
+    )
+    key = os.environ.get("VERDICT_HMAC_KEY") or vault("verdict-hmac-key")
+    if key:
+        v = V.sign(v, key)
+    return emit(v, out_path, key, digest, revision)
+
+
+TARGETS = {"langfuse": prove_langfuse, "backstage": prove_backstage}
+
+
+def main(argv):
+    if not argv or argv[0] not in TARGETS or "--out" not in argv:
+        print(__doc__)
+        return 2
+    try:
+        return TARGETS[argv[0]](argv[argv.index("--out") + 1])
+    except (
+        Exception
+    ) as e:  # an exception is an ERROR verdict line, never a traceback as the receipt
+        print(f"ERROR   prove  {type(e).__name__}: {str(e)[:300]}")
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

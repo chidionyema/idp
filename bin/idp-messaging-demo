@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# idp-messaging-demo [basic|advanced|all]: the messaging platform, shown (crew#639 CP9, LAW 32).
+#
+#   basic     one CloudEvents message on the locked ORDERS_EVENTS stream, one durable pull
+#             consumer, explicit ack, the trace id printed.
+#   advanced  the transactional outbox end to end: the service user is refused when it publishes
+#             around the outbox, the relay crashes after publishing and the duplicate window
+#             stores one copy, the consumer applies each effect once, a poison message lands in
+#             the DLQ stream, a full replay changes nothing.
+#   all       both (default).
+#
+# Nothing to install beyond Go: the broker is nats-server embedded in the process (the version
+# platform/event-bus/nats.yaml runs) and the database is an embedded Postgres, fetched once into
+# the user's cache directory. Set NATS_URL and DATABASE_URL to run the same demo against the
+# cluster bus and a real database instead. Every printed line is a measurement from the broker or
+# the database; the last line is `ok demo <mode> trace=<id>` or `RED demo <mode>: <why>`.
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+MODULE="$IDP/platform/messaging"
+mode="${1:-all}"
+case "$mode" in basic | advanced | all) ;; *)
+	echo "usage: $(basename "$0") [basic|advanced|all]" >&2
+	exit 2
+	;;
+esac
+command -v go >/dev/null || {
+	echo "BLIND go missing: install Go 1.24+ (https://go.dev/dl/)"
+	exit 2
+}
+bin="$(mktemp -d)"
+trap 'rm -rf "$bin"' EXIT
+(cd "$MODULE" && go build -o "$bin/demo" ./cmd/demo)
+rc=0
+for m in $([ "$mode" = all ] && echo "basic advanced" || echo "$mode"); do
+	echo "== demo $m"
+	"$bin/demo" "$m" || rc=$?
+done
+exit "$rc"

@@ -19,8 +19,7 @@
 # The node is destroyed with the runner when the job ends.
 name: portability-drill
 on:
-  schedule:
-    - cron: "23 5 * * 1"
+  # founder 2026-08-29: no schedule; runs as a pull-request gate on platform changes and by hand.
   workflow_dispatch: {}
   pull_request:
     paths:

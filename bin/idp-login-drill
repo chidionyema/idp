@@ -71,6 +71,7 @@ export DRILL_SURFACES_EXPECTED
 # The founder cannot read a log. The drill photographs the page it graded so a red row comes with
 # the picture of what he would have seen (LAW 28: an instrument nobody reads is not an instrument).
 export DRILL_SHOT="${DRILL_SHOT:-${TMPDIR:-/tmp}/login-drill-home.png}"
+export IDP_ROOT="$IDP"   # crew#631: the L3 assertions are probes/langfuse.py, imported below
 
 # The password crosses into python as an environment variable only. It is never an argument, so
 # it never appears in ps, and the driver never prints it.
@@ -333,6 +334,7 @@ with sync_playwright() as p:
     # Every published path is visited and graded on its own content, not on the shell.
     # Every path the sidebar publishes, graded on a string only that page renders. A path that
     # is not in this table is not published; adding a plugin means adding its row here.
+    UNREAD = "could not be read"  # crew#684 CP6: the Ops page's error tiles all say this
     PUBLISHED = (
         ("catalog", "text=Owner"),
         ("catalog-graph", "text=Catalog Graph"),
@@ -343,6 +345,11 @@ with sync_playwright() as p:
         ("search", "text=Search"),
         ("settings", "text=Settings"),
         ("visualizer", "text=Visualizer"),
+        # crew#684 CP0: the sentence only the Tools page says once the catalogue answered. Keep the
+        # last row comment-free: tests slice this tuple by text and a trailing comment eats the ")".
+        ("tools", "text=Every tool we use"),
+        ("ops", "text=The cluster right now"),
+        ("pair", "text=Type the PIN Moonlight shows you"),
     )
     broken = []
     for path, must_see in PUBLISHED:
@@ -370,6 +377,19 @@ with sync_playwright() as p:
             errs = "; ".join(e[:300] for e in page_errors[before:]) or "none"
             broken.append(f"{path}: rendered but not its own content ({must_see} never appeared); "
                           f"page says: {seen}; js errors: {errs}")
+            continue
+        # crew#684 CP6: a page whose tile says its source could not be read is not doing its
+        # job, and it read green here for as long as the heading alone was graded. The phrase
+        # is the one the page prints to a person (R53: the sentence, never a selector); the
+        # test pins it to every error tile in the Ops module.
+        try:
+            shown = " ".join(page.locator("body").inner_text(timeout=3000).split())
+        except PWError:
+            shown = ""
+        if UNREAD in shown.lower():
+            at = shown.lower().find(UNREAD)
+            broken.append(f"{path}: a tile could not read its source: "
+                          f"...{shown[max(0, at - 80):at + 120]}...")
     print(f"paths   login-drill  {len(PUBLISHED) - len(broken)}/{len(PUBLISHED)} published paths render their own content")
     if broken:
         # One line per path: fail() caps its detail at 200 chars, which hid the third
@@ -412,6 +432,43 @@ with sync_playwright() as p:
     if ic_status != 200:
         fail("build", f"{HOME}/icon.svg answered {ic_status}: the branded icon is not served")
 
+    # 8a. Every other surface behind the front door (founder 2026-08-29: "ensure all the sso are
+    # proven"). The hosts are the HTTPRoutes carrying the login-forward-auth filter under
+    # platform/: each must land on its own host with the front-door session, answer 200, and show
+    # no password field; stopping on the identity domain or on a vendor login form is red. They run
+    # before the Langfuse hop so a Langfuse red never hides them.
+    OTHER_SURFACES = {
+        "signoz": f"https://signoz.{ZONE}/",
+        "healthchecks": f"https://hc.{ZONE}/",
+        "llm": f"https://llm.{ZONE}/ui/",
+        "screen": f"https://catalogue.{ZONE}/screen/",
+    }
+    sso_red = []
+    for name, url in OTHER_SURFACES.items():
+        want_host = urlparse(url).hostname
+        try:
+            resp = page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_timeout(2500)
+        except PWError as e:
+            sso_red.append(f"{name}: {url} did not load ({str(e)[:80]})")
+            print(f"sso     login-drill  {name} did not load: {str(e)[:80]}")
+            continue
+        host = urlparse(page.url).hostname or ""
+        path = urlparse(page.url).path
+        status = getattr(resp, "status", 0)
+        pw = page.locator("input[type='password']").count()
+        print(f"sso     login-drill  {name} landed on {host}{path} ({status}), {pw} password field(s)")
+        if host == DOMAIN_HOST:
+            sso_red.append(f"{name}: stopped on the identity domain; the drill user is not granted the app")
+        elif host != want_host:
+            sso_red.append(f"{name}: landed on {host}, expected {want_host}")
+        elif status and status >= 400:
+            sso_red.append(f"{name}: answered {status} at {path}")
+        elif pw:
+            sso_red.append(f"{name}: showed its own password form at {path}: the one login is two")
+    if sso_red:
+        fail("second-hop", "; ".join(sso_red))
+
     # 8. The second hop (crew#503, founder 2026-08-28: "a 2nd login hop is fiction"). Every
     # surface behind the ForwardAuth 302s to the identity domain and this drill said green while
     # Langfuse, behind that door, showed its own email+password form. With the front-door cookie
@@ -430,8 +487,68 @@ with sync_playwright() as p:
         fail("second-hop", f"langfuse stopped on the identity domain at {page.url.split('?')[0]}; the drill user is not granted the Langfuse app")
     if lf_pw:
         fail("second-hop", f"langfuse showed its own password form at {page.url.split('?')[0]}: the one login is two")
+    # crew#626: a sign-in page with no password box is still a second login. The drill user
+    # landed on /auth/sign-in and the drill said green (run 33254022447) while the founder was
+    # asked to log in again. Any path under /auth/ is red; only the project page is signed in.
+    lf_path = urlparse(page.url).path
+    if lf_path.startswith("/auth/"):
+        # crew#626 CP15: the vendor has no automatic redirect to a single SSO provider
+        # (langfuse.com/self-hosting/authentication-and-sso, read 2026-08-29), so the sign-in
+        # page shows one button. The founder path is that one click and no credentials: the
+        # identity domain already holds the front-door session. The drill takes the click and
+        # grades where it lands; a password box or the identity domain's login page is red.
+        sso_btn = page.get_by_role("button", name=re.compile("estate|sso|sign in with", re.I))
+        if sso_btn.count() == 0:
+            fail("second-hop", f"langfuse sign-in page at {lf_path} has no SSO button; page says: {page.locator('body').inner_text()[:200]!r}")
+        try:
+            sso_btn.first.click()
+            page.wait_for_load_state("domcontentloaded")
+            page.wait_for_timeout(4000)
+        except PWError as e:
+            fail("second-hop", f"the SSO button on langfuse did not get through: {e}")
+        lf_host = urlparse(page.url).hostname or ""
+        lf_path = urlparse(page.url).path
+        lf_pw = page.locator("input[type='password']").count()
+        print(f"sso     login-drill  after the SSO click langfuse landed on {lf_host}{lf_path}, {lf_pw} password field(s)")
+        if lf_host == DOMAIN_HOST or lf_pw:
+            fail("second-hop", f"langfuse asked for credentials again at {lf_host}{lf_path}: the one login is two")
+        if lf_path.startswith("/auth/"):
+            q = urlparse(page.url).query
+            fail("second-hop", f"langfuse is still on its sign-in page at {lf_path}?{q} after the SSO click; page says: {page.locator('body').inner_text()[:400]!r}")
     if lf_host != f"langfuse.{ZONE}":
         fail("second-hop", f"langfuse landed on {lf_host}, expected langfuse.{ZONE}")
+
+    # 9. crew#631 L3, the human plane graded on identity, not on a page. /api/auth/session with
+    # this browser's jar must name the drill user; a context holding nothing must get no user.
+    # Both come from probes/langfuse.py so the prover and this drill grade one definition.
+    # The identity row is advisory here until the prover has graded it once for real
+    # (crew#631 §6.3: a probe that has never failed is not a probe); set DRILL_STRICT_IDENTITY=1
+    # to make it red for this drill too. The negative control is always red when it fails: an
+    # open gate is a P0 whatever the positive probe says.
+    sys.path.insert(0, os.environ["IDP_ROOT"])
+    from probes.langfuse import l3_from_sessions
+    def session_doc(rq):
+        try:
+            r = rq.get(f"{LANGFUSE}api/auth/session", timeout=TIMEOUT)
+            return r.json() if r.ok and "json" in (r.headers.get("content-type") or "") else None
+        except Exception:
+            return None
+    authed = session_doc(page.request)
+    cold_ctx = browser.new_context(ignore_https_errors=False)
+    cold = session_doc(cold_ctx.request)
+    cold_ctx.close()
+    l3 = l3_from_sessions(authed, cold, f"{USER}@{ZONE}")
+    for a in l3:
+        print(f"{'ok' if a['ok'] else 'FAIL'}      login-drill  {a['name']} expected {a['expected']} actual {a['actual'][:120]}")
+    out = os.environ.get("DRILL_ASSERTIONS_OUT")
+    if out:
+        import json as _json
+        with open(out, "w") as f:
+            _json.dump(l3, f)
+    if not l3[1]["ok"]:
+        fail("identity", f"the gate is open: a context with no credentials got a Langfuse session: {l3[1]['actual']}")
+    if not l3[0]["ok"] and os.environ.get("DRILL_STRICT_IDENTITY") == "1":
+        fail("identity", f"langfuse session is not {USER}@{ZONE}: {l3[0]['actual']}")
 
     ctx.close()
     browser.close()

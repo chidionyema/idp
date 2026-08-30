@@ -322,7 +322,7 @@ touches_a_root if {
 touches_a_root if {
 	some f in input.pr.files
 	startswith(f, ".github/workflows/")
-	regex.match(`secrets\.SEED_`, input.pr.diff)
+	regex.match(`(?m)^\+.*secrets\.SEED_`, input.pr.added)
 }
 
 lifecycle_line_ok if {
@@ -340,4 +340,49 @@ deny contains msg if {
 	not lifecycle_line_ok
 	not opened_before_lifecycle
 	msg := "rule=lifecycle_row | the PR touches a root credential's birth and the body has no `Lifecycle:` line (crew#618) | fix: add `Lifecycle: <SEED_NAME> row on docs/reference/policy/credential-lifecycle.md` and make sure the row exists with expiry, rotation and revocation filled"
+}
+
+# --- self_heal_has_breaker (crew#678 CP2, founder 2026-08-30) --------------------------------
+# Founder, 2026-08-30 (crew#678): self-healing needs a circuit breaker -- bounded attempts, a
+# cool-off, a visible open state, and loud when open. The CP1 inventory on crew#678 found four
+# repair loops with none (a browser bridge restarted every 60 s forever; a kickstart with no
+# attempt count; `helm-retry` with no record of prior tries). A pull request that adds a
+# self-healing verb (`flux reconcile ... --reset`, `delete pod`, `launchctl kickstart`,
+# `rollout restart`, `systemctl restart`) in a script, a workflow or the healing layer carries
+# one `Breaker:` line saying how many attempts, how long the cool-off is and where the open
+# state can be seen, or `Breaker: n/a — <why this is an alarm, not a repair loop>`.
+
+self_heal_prefixes := {"bin/", "scripts/", ".github/workflows/", "platform/healing/", "scheduler/"}
+
+self_heal_verb := `(?m)^\+[^\n]*(flux reconcile [^\n]*--reset|delete pod\b|launchctl kickstart|rollout restart|systemctl restart)`
+
+adds_self_heal if {
+	some f in input.pr.files
+	some p in self_heal_prefixes
+	startswith(f, p)
+	regex.match(self_heal_verb, input.pr.added)
+}
+
+breaker_line_ok if {
+	regex.match(`(?m)^Breaker: \d+ attempts?, \d+ ?(s|m|h|min|minutes?|hours?) cool-off, open (state )?(at|in) \S[^\n]*$`, input.pr.body)
+}
+
+breaker_line_ok if {
+	regex.match(`(?m)^Breaker: n/a [-—] \S[^\n]*$`, input.pr.body)
+}
+
+# Same shape as optimised_plan: a pull request opened before the rule existed is not refused
+# for a line nobody could have known to write (LAW 38).
+breaker_landed := "2026-08-30T04:40:00Z"
+
+opened_before_breaker if {
+	is_string(input.pr.createdAt)
+	input.pr.createdAt < breaker_landed
+}
+
+deny contains msg if {
+	adds_self_heal
+	not breaker_line_ok
+	not opened_before_breaker
+	msg := "rule=self_heal_has_breaker | the PR adds a self-healing action (reconcile --reset, delete pod, kickstart, restart) and names no circuit breaker (crew#678) | fix: add `Breaker: <N> attempts, <M>h cool-off, open state at <where a person sees it>` to the body, or `Breaker: n/a — <why this is an alarm, not a repair loop>`"
 }

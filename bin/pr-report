@@ -31,11 +31,23 @@ budget=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['i
 # (LAW 51) did exactly that on the morning it landed and reddened nine already-reviewed PRs across
 # two repos, so the policy compares this field against the commit that introduced the rule.
 gh pr view "$n" --json number,createdAt,body,labels,files -q '{number: .number, createdAt: .createdAt, body: .body, labels: [.labels[].name], files: [.files[].path]}' > "$REPORTS/pr-meta.json" || exit 2
-gh pr diff "$n" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true
+# The added lines come from the local range when origin/main is here (pre-push: the remote branch
+# is exactly one push stale, so `gh pr diff` graded the lines this push removes; idp#860), and
+# from the PR on GitHub otherwise (CI's shallow checkout).
+base=$(git merge-base origin/main HEAD 2>/dev/null || true)
+if [ -n "$base" ]; then git diff "$base...HEAD" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true
+else gh pr diff "$n" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true; fi
+# Checksum manifests (go.sum, package-lock.json, yarn.lock, Cargo.lock, poetry.lock, pnpm-lock.yaml)
+# hold base64 hashes that gitleaks reads as generic-api-keys once the path is gone (stdin mode);
+# gitleaks' own default config skips these paths in git mode. They are dropped from the SECRET scan
+# only (idp#901: a go.sum h1: line reddened the gate); rego still sees every line in pr-added.txt.
+skip_sums='/^\+\+\+ /{skip=($0 ~ /(go\.sum|package-lock\.json|yarn\.lock|Cargo\.lock|poetry\.lock|pnpm-lock\.yaml)$/); next} /^\+/ && !skip'
+if [ -n "$base" ]; then git diff "$base...HEAD" | awk "$skip_sums" > "$REPORTS/pr-added-scan.txt" || true
+else gh pr diff "$n" | awk "$skip_sums" > "$REPORTS/pr-added-scan.txt" || true; fi
 # LAW 45 (crew#539, idp#485): the same gitleaks CI's security-scan runs, over the lines this PR
 # adds, so a flagged line is refused here and never reaches a job log. BLIND (no gitleaks) is
 # exit 2 like any missing tool; a laptop is told what to install, CI installs it.
-secrets=$("$IDP/bin/idp-pr-secrets" "$REPORTS/pr-added.txt"); src=$?
+secrets=$("$IDP/bin/idp-pr-secrets" "$REPORTS/pr-added-scan.txt"); src=$?
 printf '%s\n' "$secrets"
 [ "$src" -eq 2 ] && exit 2
 # crew#227 CP5: the founder's approval is a comment from the repository owner's GitHub login

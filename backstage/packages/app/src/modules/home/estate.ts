@@ -169,6 +169,30 @@ export const doorState = (e: Entity, now: number = Date.now()): LayerState => {
 
 export const rank = (s: State) => STATE_ORDER.indexOf(s);
 
+// crew#612 CP10/CP11 (founder, 2026-08-29: "there should be around 6 to 8 UI surfaces", "I
+// shouldn't have to look for them"). A door tagged `screen` in backstage/founder/catalog-info.yaml
+// is a thing with a screen you open; one also tagged `no-address` runs but has no public address
+// yet, and is shown grey so the gap is visible, never hidden.
+export const SCREEN_TAG = 'screen';
+export const NO_ADDRESS_TAG = 'no-address';
+export const NO_SCREEN_TAG = 'no-screen';
+export const KUBERNETES_TAG = 'kubernetes';
+/** A tool that runs the cluster underneath everything (Flux, Cilium, Kyverno ...). */
+export const isKubernetes = (e: Entity) =>
+  (e.metadata.tags ?? []).includes(KUBERNETES_TAG);
+/** Runs in the background with no screen at all, so there is nothing to open. */
+export const hasNoScreen = (e: Entity) =>
+  (e.metadata.tags ?? []).includes(NO_SCREEN_TAG);
+export const isScreen = (e: Entity) =>
+  (e.metadata.tags ?? []).includes(SCREEN_TAG);
+export const hasNoAddress = (e: Entity) =>
+  (e.metadata.tags ?? []).includes(NO_ADDRESS_TAG);
+/** The link a screen opens: the first https link that is not a code page. */
+export const screenUrl = (e: Entity): string | undefined =>
+  hasNoAddress(e) || hasNoScreen(e)
+    ? undefined
+    : (e.metadata.links ?? []).find(l => /^https:\/\//.test(l.url))?.url;
+
 export const byTitle = (a: Entity, b: Entity) =>
   (a.metadata.title ?? a.metadata.name).localeCompare(
     b.metadata.title ?? b.metadata.name,
@@ -188,10 +212,10 @@ export const count = (states: State[]): Counts => {
   return c;
 };
 
-/** The first sentence on the page. Worst word first; "thing" because a layer and a door both count. */
+/** The first sentence on the page. Worst word first; "service" is the word for both a Flux layer and a door (founder 2026-08-29: "wtf is layers?") (crew#626 CP1). */
 export const verdict = (c: Counts, total: number): string => {
   const say = (n: number, what: string) =>
-    `${n} ${n === 1 ? 'thing' : 'things'} ${what}.`;
+    `${n} ${n === 1 ? 'service' : 'services'} ${what}.`;
   if (total === 0) return 'Nothing is registered yet.';
   if (c.red > 0) return say(c.red, c.red === 1 ? 'is red' : 'are red');
   if (c.needs > 0)
@@ -204,7 +228,7 @@ export const verdict = (c: Counts, total: number): string => {
       c.running,
       c.running === 1 ? 'is still starting' : 'are still starting',
     );
-  return `Everything we run is good. ${total} things checked.`;
+  return `Everything we run is good. ${total} services checked.`;
 };
 
 export const templatePath = (t: Entity): string =>

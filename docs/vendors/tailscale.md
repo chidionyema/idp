@@ -26,8 +26,8 @@ Measured 2026-08-28 from the admin console's New credential wizard (console.tail
 | Devices | device_invites | invite external devices | NOT USED |
 | Keys | auth_keys | mint tagged auth keys | USED write, tag:k8s: the operator joins pods |
 | Keys | api_access_tokens | mint API tokens | NOT USED |
-| Keys | oauth_keys | create, read, modify, delete OAuth credentials | USED write, by the seed only: `tailscale-seed` carries this scope and nothing else, and mints `tailscale-operator` |
-| Keys | federated_keys | federated identities | CANDIDATE crew#589 |
+| Keys | oauth_keys | create, read, modify, delete OAuth credentials | USED write, by the federated identity (ADR 0010): the GitHub runner exchanges its OIDC token and mints `tailscale-operator`; the identity also holds auth_keys, devices:core (tag:k8s), policy_file, users:read because an actor grants only what it holds |
+| Keys | federated_keys | federated identities | USED: one identity `T8XvMsM4vA11CNTRL-kmgFbQMnqn11CNTRL`, issuer GitHub Actions, subject `repo:chidionyema@377396/idp@1344360654:*` (ADR 0010, crew#66) |
 | Keys | webhooks | event webhooks | CANDIDATE: device events into the collector (LAW 50) |
 | Logging | log_streaming | configuration + network flow logs to a SIEM | CANDIDATE: stream to SigNoz (LAW 50) |
 | Settings | feature settings | tailnet feature toggles | NOT USED |

@@ -200,8 +200,7 @@ features:
     tiers:
       - name: namespace
         switches: [staging]
-        floor: { cpu: 0.2, memory_gb: 1.0, storage_gb: 2 }
-        status: planned        # platform/staging/ is the next item after this register
+        what: "platform/staging/: namespace `staging`, dev-loop label, ResourceQuota ceiling (cpu 1, memory 2Gi, storage 2Gi, 0 public LBs)"
       - name: "off"
         switches: []
     default: namespace
@@ -226,6 +225,18 @@ features:
       - name: "off"
         switches: []
     default: "on"
+
+  - name: commerce
+    title: Money (subscriptions and prepaid credit packs)
+    why: "the application never touches a card, a checkout session or a payment webhook; one primitive holds the money and emits estate.commerce.order_paid"
+    tiers:
+      - name: "on"
+        what: "Lago (subscriptions, prepaid credit wallets, invoicing, Stripe as the payment rail) + NATS JetStream as the internal bus + an isolated ledger database"
+        switches: [commerce-data, commerce, event-bus]
+      - name: "off"
+        what: "no commerce layer; whichever product needs money holds its own payment code, which is what this feature exists to end"
+        switches: []
+    default: "off"
 
 products:
   # Products run ON the platform; they are rows so the plan sums them, never platform layers.

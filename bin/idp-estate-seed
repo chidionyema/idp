@@ -56,6 +56,7 @@ hindsight                 HINDSIGHT_API_LLM_BASE_URL  const:https://llm.$ZONE
 mcp-gateway               MCP_GATEWAY_KEY             hex32
 backstage-env             BACKEND_SECRET              urlsafe32
 backstage-env             POSTGRES_PASSWORD           hex32
+backstage-env             PROVER_TOKEN                urlsafe32
 litellm-upstream          LITELLM_MASTER_KEY          sk
 prospector-store-api-env  Jwt__SigningKeyPem          rsa_pem_b64
 prospector-store-api-env  Store__InternalApiKey       hex32

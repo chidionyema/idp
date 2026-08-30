@@ -271,6 +271,12 @@ pb_diagnose() {
   # say whether the file is there, whether the catalogue read it, and what it holds.
   show catalogue-founder-file sh -c "$K exec -n backstage deploy/catalogue -- ls -la /estate /estate/founder 2>&1"
   show catalogue-founder-configmap sh -c "$K get configmap founder-catalog estate-catalog -n backstage -o jsonpath='{range .items[*]}{.metadata.name}{\"\t\"}{.metadata.creationTimestamp}{\"\n\"}{end}' 2>&1"
+  # crew#626 CP15: the drill on idp#808 lands on /auth/sign-in?error=OAuthCallback after the SSO
+  # click, with and without AUTH_CUSTOM_ID_TOKEN. The laptop has no cluster key by design, so the
+  # only place the callback error is readable is here: the auth lines of langfuse-web, and the
+  # three non-secret AUTH_CUSTOM_* values the pod actually runs with (never the client secret).
+  show langfuse-auth-env sh -c "$K exec -n observability deploy/langfuse-web -- sh -c 'env | grep -E \"^AUTH_CUSTOM_(ISSUER|ID_TOKEN|SCOPE|NAME|ALLOW_ACCOUNT_LINKING)=|^NEXTAUTH_URL=\"' 2>&1 | sort"
+  show langfuse-auth-log sh -c "$K logs -n observability deploy/langfuse-web --all-containers --tail=3000 2>&1 | grep -iE 'oauth|callback|issuer|id_token|jwt|openid|next-auth|\[next-auth\]' | tail -60"
   show catalogue-log-locations sh -c "$K logs -n backstage deploy/catalogue --all-containers --tail=2000 2>&1 | grep -iE 'founder|location|catalog.*(error|fail|refus|invalid)' | tail -40"
   show catalogue-entities sh -c "$K exec -n backstage deploy/catalogue -- sh -c 'wget -qO- http://catalogue.backstage.svc:3100/api/catalog/entities?filter=spec.type=founder-surface | head -c 600' 2>&1"
   show claims-not-bound sh -c "$K get pvc -A --field-selector=status.phase!=Bound 2>/dev/null; true"
@@ -513,6 +519,31 @@ pb_architect_doctor() {
   show_redacted gateway-log-previous sh -c "$K logs deploy/hermes-agent-gateway -n $ns --all-containers --tail=40 --previous 2>&1 || echo 'no previous container (it has not restarted)'"
 }
 
+# otto-parity: crew#561, the from-scratch proof product will demand. Read-only. Each step is a
+# parity item from crew#561, graded from inside the running pod, never from a file on a laptop:
+# the gateway is up and not restarting, mac-run reaches the founder's Mac and runs a command
+# there, the memory service answers, the model lane is the estate router, and the cron lanes
+# are installed. A red step is the finding.
+pb_otto_parity() {
+  local ns=hermes-agent d=deploy/hermes-agent-gateway
+  step gateway-ready $K rollout status "$d" -n "$ns" --timeout=60s
+  step no-restart-loop sh -c "r=\$($K get pods -n $ns -l app=hermes-agent-gateway -o jsonpath='{.items[0].status.containerStatuses[?(@.name==\"gateway\")].restartCount}'); echo restarts=\$r; [ \"\${r:-0}\" -lt 5 ]"
+  # Founder, 2026-08-30 04:34Z: "ok key-mounted went green on a key that could not be used". The row
+  # asserts what mac-run needs: the runtime uid reads the mounted key and makes a private copy of it.
+  step key-usable $K exec "$d" -n "$ns" -c gateway -- sh -c 'k=/run/secrets/hermes-agent-mac-run/id_ed25519; test -r "$k" || { echo "key unreadable by $(id -u)"; exit 1; }; ls -ln "$k"; echo key-usable'
+  # ssh uses the mounted file directly (no copy): decided from run 33294804159, graded here since.
+  # The proxy is read from the pod's own mac-run (the sidecar's SOCKS door), never typed here (LAW 46).
+  step key-direct $K exec "$d" -n "$ns" -c gateway -- sh -c 'k=/run/secrets/hermes-agent-mac-run/id_ed25519; ls -ln "$k"; proxy=$(grep -o "nc -x [^ ]* %h %p" "$(command -v mac-run)" | head -1); ssh -i "$k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="${HERMES_HOME:-/data}/known_hosts" -o ConnectTimeout=5 -o ProxyCommand="$proxy" "$FOUNDER_MAC_USER@$FOUNDER_MAC_TS_IP" hostname 2>&1 | tail -3'
+  # run 33291368505: mac-run died on "cp: cannot create regular file '/tmp/...': Permission denied"
+  # and nothing here said who owned /tmp. Eyes first (LAW 28): the container's id and /tmp's owner.
+  show tmp-owner $K exec "$d" -n "$ns" -c gateway -- sh -c 'id; ls -land /tmp; ls -lan /tmp | head -6'
+  step tailnet-up $K exec "$d" -n "$ns" -c tailscale -- tailscale --socket=/tmp/tailscaled.sock status --json --peers=false
+  step mac-run-hostname $K exec "$d" -n "$ns" -c gateway -- mac-run hostname
+  step hindsight-answers $K exec "$d" -n "$ns" -c gateway -- python3 -c 'import os,urllib.request; u=os.environ["HINDSIGHT_API_URL"]; print(u, urllib.request.urlopen(u+"/health", timeout=5).status)'
+  step cron-lanes-installed sh -c "$K exec $d -n $ns -c gateway -- python3 -c 'import json; j=json.load(open(\"/data/cron/jobs.json\")); n=len(j.get(\"jobs\", j) if isinstance(j, dict) else j); print(\"jobs=%d\" % n); raise SystemExit(0 if n else 1)'"
+  show model-lane sh -c "$K exec $d -n $ns -c gateway -- sh -c 'grep -E \"^(model|provider|base_url|  provider|  base_url)\" /data/config.yaml | head -8'"
+}
+
 # catalogue-roll: crew#412, 2026-08-28: idp#564 (c6e6026) pinned the right portal image at 11:00Z
 # and the serving ReplicaSet was still catalogue-8647bbdc59 seventy minutes later (login-drill
 # 33168523304 red, "0 founder-surface entities"). The estate had a playbook to retry a HelmRelease
@@ -598,11 +629,45 @@ pb_helm_retry() {
   local failed
   failed=$($K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{" "}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null | awk '$1=="False"{print $2" "$3}')
   echo "--- helmreleases-failed"; printf '%s\n' "${failed:-none}"
-  local ns name
+  # run 33259031857 (crew#626 CP15): langfuse-redis-d5f84c9dc-kxdth sat Init:0/1 for 8 h with no pod
+  # IP and PodReadyToStartContainers=False; the kubelet never retried the sandbox and every
+  # reconcile --reset stalled on the same Deployment. A pod whose sandbox has not started after
+  # 30 min is recreated by its owner: delete it, and the retry below has something new to watch.
+  local stuck
+  stuck=$($K get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{" "}{.metadata.creationTimestamp}{" "}{range .status.conditions[?(@.type=="PodReadyToStartContainers")]}{.status}{end}{"\n"}{end}' 2>/dev/null \
+    | awk -v cutoff="$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-30M +%Y-%m-%dT%H:%M:%SZ)" '$4=="False" && $3<cutoff {print $1" "$2}')
+  echo "--- pods-sandbox-never-started"; printf '%s\n' "${stuck:-none}"
+  local pns pname
+  while read -r pns pname; do
+    [ -n "$pname" ] || continue
+    step "recreate-$pname" $K delete pod "$pname" -n "$pns" --wait=false
+  done <<<"$stuck"
+  # crew#678 CP2 (founder 2026-08-30: self-healing needs a circuit breaker). Each HelmRelease
+  # gets HELM_RETRY_MAX attempts (3) inside one HELM_RETRY_COOLOFF_S window (6 h); the count and
+  # the last attempt live on the object itself (annotations estate.idp/helm-retry-attempts and
+  # estate.idp/helm-retry-last, epoch seconds) so the Mac and the workflow read one record. An
+  # open breaker is printed as BREAKER OPEN with the reset command and fails the playbook, so a
+  # release nobody can retry is loud, never a quiet skip. Reset:
+  #   kubectl annotate helmrelease <name> -n <ns> estate.idp/helm-retry-attempts-
+  local max_attempts="${HELM_RETRY_MAX:-3}" cooloff="${HELM_RETRY_COOLOFF_S:-21600}" now open=0
+  now=$(date -u +%s)
+  local ns name attempts last
   while read -r ns name; do
     [ -n "$name" ] || continue
+    attempts=$($K get helmrelease "$name" -n "$ns" -o jsonpath='{.metadata.annotations.estate\.idp/helm-retry-attempts}' 2>/dev/null); attempts="${attempts:-0}"
+    last=$($K get helmrelease "$name" -n "$ns" -o jsonpath='{.metadata.annotations.estate\.idp/helm-retry-last}' 2>/dev/null); last="${last:-0}"
+    # A hand-edited or missing annotation is a fresh breaker, never an arithmetic crash (set -u).
+    case "$attempts" in '' | *[!0-9]*) attempts=0 ;; esac
+    case "$last" in '' | *[!0-9]*) last=0 ;; esac
+    if [ $((now - last)) -ge "$cooloff" ]; then attempts=0; fi
+    if [ "$attempts" -ge "$max_attempts" ]; then
+      echo "BREAKER OPEN helm-retry $ns/$name: $attempts attempts since $(date -u -d "@$last" +%FT%TZ 2>/dev/null || date -u -r "$last" +%FT%TZ); reset: kubectl annotate helmrelease $name -n $ns estate.idp/helm-retry-attempts-"
+      open=$((open + 1)); continue
+    fi
+    $K annotate helmrelease "$name" -n "$ns" --overwrite "estate.idp/helm-retry-attempts=$((attempts + 1))" "estate.idp/helm-retry-last=$now" >/dev/null 2>&1 || true
     step "retry-$name" flux reconcile helmrelease "$name" -n "$ns" --reset --timeout=15m </dev/null
   done <<<"$failed"
+  [ "$open" -eq 0 ] || step "breaker-open-$open-releases" sh -c "exit 1"
   show helmreleases $K get helmreleases -A --no-headers
   step observability flux reconcile kustomization observability -n flux-system --timeout=5m
   show kustomizations $K get kustomizations -A
@@ -863,9 +928,10 @@ pb_chi_resize() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-parity cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
+  otto-parity) pb_otto_parity ;;
   router-spend) pb_router_spend ;;
   dns-per-node) pb_dns_per_node ;;
   dns-per-namespace) pb_dns_per_namespace ;;

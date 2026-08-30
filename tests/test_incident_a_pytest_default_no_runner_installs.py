@@ -117,11 +117,11 @@ def test_the_guard_still_sees_the_job_the_incident_happened_in():
     incident happened in; it is the canary for the detector itself.
     """
     seen = {(wf, job) for wf, job, _i, _r in jobs_that_run_pytest()}
-    assert ("kyverno-secrets-drill.yml", "kyverno-secrets-drill") in seen, (
+    assert ("ci.yml", "bdd-suites") in seen, (
         "the job this test was written for no longer looks like a pytest job to this detector; "
         f"it currently sees {sorted(seen)}"
     )
-    assert len(seen) >= 2, f"only {sorted(seen)} detected; ci.yml runs pytest too"
+    assert len(seen) >= 1  # founder 2026-08-29 abolished the drill workflows; ci.yml is the one pytest job, f"only {sorted(seen)} detected; ci.yml runs pytest too"
 
 
 def test_an_environment_missing_the_plugin_is_caught_rather_than_assumed():

@@ -84,8 +84,15 @@ def test_enable_flips_the_switch_in_a_copy_of_the_cluster_files(tmp_path, monkey
     assert feat.kustomizations("oke")["temporal"][2] is False
     # the same doc count: the edit changed one line, not the file's shape
     assert before.count("\n---\n") == (work / "clusters/oke/platform.yaml").read_text().count("\n---\n")
+    # staging shipped in crew#584 CP-H, so a still-planned tier is staged in the register copy
+    reg = work / "platform/features/features.yaml"
+    reg.write_text(reg.read_text().replace(
+        "      - name: namespace\n        switches: [staging]\n",
+        "      - name: namespace\n        switches: [staging]\n      - name: node\n        switches: []\n"
+        "        floor: { cpu: 1.0, memory_gb: 2.0, storage_gb: 10 }\n        status: planned\n", 1))
+    assert feat.main(["enable", "staging", "namespace"]) == 0
     with pytest.raises(SystemExit, match="not selectable"):
-        feat.main(["enable", "staging", "namespace"])
+        feat.main(["enable", "staging", "node"])
     with pytest.raises(SystemExit, match="has no tier"):
         feat.main(["enable", "workflows", "huge"])
 

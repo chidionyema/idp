@@ -28,7 +28,13 @@ spec:
       namespace: chaos-mesh
     - kind: HelmRelease
       name: "*"
+      namespace: commerce
+    - kind: HelmRelease
+      name: "*"
       namespace: edge
+    - kind: HelmRelease
+      name: "*"
+      namespace: event-bus
     - kind: HelmRelease
       name: "*"
       namespace: external-secrets
