@@ -45,6 +45,12 @@ cases=(
   "notoil-doc-founder-action.json:0:allows a FOUNDER ACTION line that names a URL or a single word, the LAW 47 register's one tap (crew#66)"
 )
 
+# crew#638: the policy/*_test.rego unit tests (silent-green pins on operating_model and node_pool)
+# ran nowhere in CI before this line; a test no job runs is decoration (LAW 3).
+if out=$(conftest verify -p "$IDP/policy" 2>&1); then echo "ok    rego unit tests: $(printf "%s" "$out" | tail -1 | sed "s/\x1b\[[0-9;]*m//g")"
+else echo "FAIL  rego unit tests"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+echo
+
 printf '%-20s %-8s %-8s %s\n' FIXTURE EXPECT GOT PROVES
 printf '%-20s %-8s %-8s %s\n' -------------------- -------- -------- ------
 
