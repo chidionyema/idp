@@ -648,6 +648,9 @@ pb_helm_retry() {
     [ -n "$name" ] || continue
     attempts=$($K get helmrelease "$name" -n "$ns" -o jsonpath='{.metadata.annotations.estate\.idp/helm-retry-attempts}' 2>/dev/null); attempts="${attempts:-0}"
     last=$($K get helmrelease "$name" -n "$ns" -o jsonpath='{.metadata.annotations.estate\.idp/helm-retry-last}' 2>/dev/null); last="${last:-0}"
+    # A hand-edited or missing annotation is a fresh breaker, never an arithmetic crash (set -u).
+    case "$attempts" in '' | *[!0-9]*) attempts=0 ;; esac
+    case "$last" in '' | *[!0-9]*) last=0 ;; esac
     if [ $((now - last)) -ge "$cooloff" ]; then attempts=0; fi
     if [ "$attempts" -ge "$max_attempts" ]; then
       echo "BREAKER OPEN helm-retry $ns/$name: $attempts attempts since $(date -u -d "@$last" +%FT%TZ 2>/dev/null || date -u -r "$last" +%FT%TZ); reset: kubectl annotate helmrelease $name -n $ns estate.idp/helm-retry-attempts-"
