@@ -2,7 +2,7 @@
 
 Otto is the one pod holding the single Telegram poller lock (`gateway.yaml`, `replicas: 1`,
 `strategy: Recreate`) and, since crew#516 CP5, the one that runs its shell tools on the founder's
-Mac through `mac-run` (`mac-run.yaml`) over a Tailscale sidecar (`tailscale.yaml`) — never the
+Mac through `mac-run` (`mac-run.tpl`) over a Tailscale sidecar (`tailscale.yaml`) — never the
 container's own sandbox.
 
 ## How it reaches the Mac
@@ -10,7 +10,7 @@ container's own sandbox.
 - `tailscale.yaml`'s sidecar joins the tailnet with the operator OAuth client CI mints from the
   federated identity (`bin/idp-bootstrap-tailscale`, vault `tailscale-operator`); a Tailscale OAuth
   client secret is itself a valid device auth key, so no second tailnet credential exists.
-- `mac-run.yaml` is a ConfigMap mounted executable at `/usr/local/bin/mac-run` in the `gateway`
+- `mac-run.tpl` is a ConfigMap mounted executable at `/usr/local/bin/mac-run` in the `gateway`
   container. It runs `ssh` through the sidecar's SOCKS5 proxy to `${FOUNDER_MAC_USER}@${FOUNDER_MAC_TS_IP}`
   — both Flux `postBuild` substitutions from `clusters/oke/estate-config.yaml` (LAW 46).
 - Authentication is an ed25519 key to macOS Remote Login (sshd). Tailscale SSH was the first

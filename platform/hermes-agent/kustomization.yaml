@@ -7,9 +7,20 @@ namespace: hermes-agent
 resources:
   - gateway.yaml
   - estate.yaml
-  - mac-run.yaml
   - mac-run-key.yaml
   - tailscale.yaml
+# crew#561: mac-run is mounted with `subPath`, and Kubernetes never updates a subPath mount in
+# place, so editing a hand-written ConfigMap changed nothing in the running pod. idp#955 hung a
+# Reloader annotation off the Deployment, which cannot work either: the script had already changed
+# in idp#949 at 05:45Z, Reloader only acts on a change it sees AFTER it is watching, and otto-parity
+# 33297784151 at 06:53Z still ran the old copy (`cp ... Permission denied`) with Flux green.
+# The generator puts a content hash in the ConfigMap's name, so any edit to mac-run.tpl renames it,
+# the Deployment's volume reference changes with it, and the pod rolls. Same fix as
+# platform/healthchecks (idp#962). The generated key stays `mac-run`, which is the subPath.
+configMapGenerator:
+  - name: hermes-agent-mac-run
+    files:
+      - mac-run=mac-run.tpl
 images:
   - name: ghcr.io/chidionyema/hermes-agent
     newTag: main-47-577cf23f81c14ccf89f6f269057da6293ff23319 # {"$imagepolicy": "flux-system:hermes-agent:tag"}
