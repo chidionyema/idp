@@ -22,8 +22,12 @@ import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 # `image:` followed by a value on the same line; a bare `image:` heading a Helm-values mapping
-# (`image:\n  repository: ...`) has no value and is not an image reference.
-IMAGE = re.compile(r"^\s*(?:-\s*)?image:[ \t]+['\"]?([^'\"\s#]+)[ \t]*(?:#.*)?$", re.M)
+# (`image:\n  repository: ...`) has no value and is not an image reference. A value opening `[`
+# or `{` is a YAML flow collection, never an image name: the router's fallback chain
+# `- image: [image-or]` in platform/llm/config.yaml (2026-08-30) is a lane called "image" and
+# was read here as a container image called "[image-or]". A container image reference is always
+# a scalar, so excluding the two flow openers costs no coverage.
+IMAGE = re.compile(r"^\s*(?:-\s*)?image:[ \t]+['\"]?(?![\[{])([^'\"\s#]+)[ \t]*(?:#.*)?$", re.M)
 # Helm values name an image as `image: { repository: x }` or `repository: x` under `image:`; the
 # repository alone is the name the runtime resolves, so it is graded exactly like `image:`.
 REPOSITORY = re.compile(r"repository:[ \t]+['\"]?([^'\"\s#}]+)", re.M)
@@ -68,6 +72,15 @@ def test_guard_refuses_the_incident_and_permits_qualified_names():
     assert fully_qualified("docker.io/library/postgres:17.6-alpine")
     assert fully_qualified("ghcr.io/berriai/litellm-database:v1.98.0")
     assert fully_qualified("localhost:5000/idp/backstage:local")
+
+
+def test_a_yaml_flow_value_is_not_an_image_name(tmp_path):
+    """A router fallback chain is `image: [image-or]`; a container image is always a scalar."""
+    p = tmp_path / "config.yaml"
+    p.write_text("fallbacks:\n  - image: [image-or]\n  - other: [a, b]\n")
+    assert IMAGE.findall(p.read_text()) == []
+    p.write_text("containers:\n  - image: docker.io/library/postgres:17.6-alpine\n")
+    assert IMAGE.findall(p.read_text()) == ["docker.io/library/postgres:17.6-alpine"]
     # crew#396: the second instance, a chart image named by `repository:` in HelmRelease values
     assert REPOSITORY.findall("    image: { repository: temporalio/server }\n") == ["temporalio/server"]
     assert not fully_qualified("temporalio/server")
