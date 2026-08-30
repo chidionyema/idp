@@ -13,6 +13,7 @@ The class (LAW 6, crew#623): an else-branch that treats "I have no information a
 of them invents the fourth."""
 
 import re
+import runpy
 import textwrap
 from pathlib import Path
 
@@ -47,20 +48,27 @@ def test_the_suspend_branch_exists_after_grading_and_before_append():
     )
 
 
-def test_a_suspended_row_is_ready_even_with_a_frozen_stale_condition():
+def _run_branch(snippet, o, row, tmp_path):
+    """Run the shipped branch verbatim as a throwaway module: the estate Python standard
+    (crew#620, ruff S102) bans exec, and runpy gives the same globals-in, mutation-out."""
+    mod = tmp_path / "suspend_branch.py"
+    mod.write_text(textwrap.dedent(snippet))
+    runpy.run_path(str(mod), init_globals={"o": o, "row": row})
+
+
+def test_a_suspended_row_is_ready_even_with_a_frozen_stale_condition(tmp_path):
     """Run the shipped branch verbatim against the temporal shape: suspended, stale False."""
     m = _suspend_branch(_collect())
     o = {"spec": {"suspend": True}}
     row = {"ready": False, "message": "dependency 'flux-system/edge' is not ready"}
-    ns = {"o": o, "row": row}
-    exec(textwrap.dedent(m.group(0)), ns)
+    _run_branch(m.group(0), o, row, tmp_path)
     assert row["ready"] is True
     assert "suspended" in row["message"]
 
 
-def test_a_not_suspended_red_row_still_grades_red():
+def test_a_not_suspended_red_row_still_grades_red(tmp_path):
     m = _suspend_branch(_collect())
     o = {"spec": {}}
     row = {"ready": False, "message": "health check failed"}
-    exec(textwrap.dedent(m.group(0)), {"o": o, "row": row})
+    _run_branch(m.group(0), o, row, tmp_path)
     assert row["ready"] is False and row["message"] == "health check failed"
