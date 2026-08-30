@@ -46,9 +46,29 @@ rc=0; cur=$("$CLOUD" secret get "$ENTRY" 2>/dev/null) || rc=$?
 if [ "$rc" -eq 0 ] && [ "${ROUTER_ROTATE:-}" != 1 ]; then
   k=$(printf '%s' "$cur" | jq -r --arg f "$FIELD" '.[$f] // empty' 2>/dev/null || true)
   if [ -n "$k" ]; then
-    code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $k" "$LLM/key/info" || echo 000)
+    info=$(curl -s -w '\n%{http_code}' -H "Authorization: Bearer $k" "$LLM/key/info" || echo 000)
+    code=${info##*$'\n'}; body=${info%$'\n'*}
+    if [ "$code" = 200 ]; then
+      # A kept key keeps its lane list too, so widening MODELS in the seed changed nothing for a
+      # consumer whose key already existed (crew#701, 2026-08-30: five research runs refused on
+      # `minimax` while the seed row had carried it for hours). The router's own /key/update sets
+      # the models on the same key value, so every copy of the key gains the lanes at once.
+      have=$(printf '%s' "$body" | jq -r '(.info.models // []) | sort | join(",")' 2>/dev/null || true)
+      want=$(jq -rn --arg m "$MODELS" '$m | split(",") | sort | join(",")')
+      if [ -n "$have" ] && [ "$have" != "$want" ]; then
+        MASTER=$("$CLOUD" secret get litellm-upstream 2>/dev/null | jq -r '.LITELLM_MASTER_KEY // empty' 2>/dev/null || true)
+        [ -n "$MASTER" ] || { unset k; echo "FAIL    router-key   litellm-upstream holds no LITELLM_MASTER_KEY"; exit 1; }
+        ubody=$(jq -n --arg k "$k" --arg m "$MODELS" '{key: $k, models: ($m | split(","))}')
+        err="${TMPDIR:-/tmp}/router-key.err"
+        curl -sS -f -o /dev/null -X POST -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' -d "$ubody" "$LLM/key/update" 2>"$err" \
+          || { unset MASTER k ubody; echo "FAIL    router-key   $LLM/key/update refused: $(head -c 160 "$err")"; exit 1; }
+        unset MASTER k ubody
+        echo "ok      router-key   $CONSUMER: the vault key ($ENTRY.$FIELD) is accepted by $LLM (kept); lanes set to $MODELS (were $have)"; exit 0
+      fi
+      unset k
+      echo "ok      router-key   $CONSUMER: the vault key ($ENTRY.$FIELD) is accepted by $LLM (kept)"; exit 0
+    fi
     unset k
-    if [ "$code" = 200 ]; then echo "ok      router-key   $CONSUMER: the vault key ($ENTRY.$FIELD) is accepted by $LLM (kept)"; exit 0; fi
     echo "info    router-key   $CONSUMER: the vault key answered $code at $LLM/key/info; minting a new one"
   fi
 fi
