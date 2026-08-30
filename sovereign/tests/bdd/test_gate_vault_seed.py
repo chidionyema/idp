@@ -61,6 +61,7 @@ def _dispatch(state: dict) -> None:
         "tailscale-operator",
         "laptop",
         "hermes",
+        "science",
     ]
 
 
