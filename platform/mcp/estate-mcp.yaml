@@ -95,7 +95,15 @@ spec:
           args:
             - |
               while true; do
-                flux pull artifact oci://ghcr.io/chidionyema/idp/estate-state:latest --output /data || echo "estate-state pull failed"
+                # flux pull extracts the file with the archive's own mtime (flux push zeroes it for a
+                # reproducible tar), so the probes below would never see a fresh file: run 33303322556
+                # sat on ProgressDeadlineExceeded with the pull green. The touch is the receipt of a
+                # successful refresh, which is the thing the probes grade.
+                if flux pull artifact oci://ghcr.io/chidionyema/idp/estate-state:latest --output /data; then
+                  touch /data/estate-state.json
+                else
+                  echo "estate-state pull failed"
+                fi
                 sleep 600
               done
           env:
