@@ -40,11 +40,13 @@ spec:
         type: string
         description: 'break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs
           while the runner''s /32 is admitted to the API endpoint through tofu; the list is restored on
-          every exit path. diagnose, otto-parity and architect-doctor are read-only; so is router-spend.'
+          every exit path. diagnose, otto-parity, healthchecks-door and architect-doctor are read-only;
+          so is router-spend.'
         enum:
         - diagnose
         - architect-doctor
         - otto-parity
+        - healthchecks-door
         - cilium-unchain
         - cilium-replace
         - helm-retry

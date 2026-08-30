@@ -544,6 +544,26 @@ pb_otto_parity() {
   show model-lane sh -c "$K exec $d -n $ns -c gateway -- sh -c 'grep -E \"^(model|provider|base_url|  provider|  base_url)\" /data/config.yaml | head -8'"
 }
 
+# healthchecks-door: crew#684, 2026-08-30 07:0xZ. Read-only. idp#957 (Host header) and idp#962 (enrol
+# sets the read-only key on pod start) both rolled and the Ops tile still read "Healthchecks
+# answered 401" (login drill 33298467426). Every layer between the portal and Healthchecks is
+# graded here from inside the two pods, never from a manifest: the key each side holds (hashes,
+# never values), that they are the same key, that enrol ran, and that the key opens the door
+# with the exact headers the portal proxy sends. A red row is the finding.
+pb_healthchecks_door() {
+  local hns=healthchecks hd=deploy/healthchecks pns=backstage pd=deploy/catalogue
+  local pk=/run/secrets/healthchecks-ro/HC_API_KEY_RO hk=/run/secrets/healthchecks/RO_KEY
+  step portal-key-mounted $K exec "$pd" -n "$pns" -- sh -c "test -s $pk && printf 'bytes=%s sha=%s\n' \"\$(wc -c < $pk)\" \"\$(sha256sum < $pk | cut -c1-12)\""
+  step hc-key-mounted $K exec "$hd" -n "$hns" -c healthchecks -- sh -c "test -s $hk && printf 'bytes=%s sha=%s\n' \"\$(wc -c < $hk)\" \"\$(sha256sum < $hk | cut -c1-12)\""
+  step keys-agree sh -c "a=\$($K exec $pd -n $pns -- sh -c 'sha256sum < $pk'); b=\$($K exec $hd -n $hns -c healthchecks -- sh -c 'sha256sum < $hk'); echo portal=\${a:0:12} healthchecks=\${b:0:12}; [ \"\$a\" = \"\$b\" ]"
+  show_redacted enrol-log sh -c "$K logs $hd -n $hns -c migrate-and-enrol --tail=5"
+  # The DB row, not the file: the key enrol saved is the one the API authorises against.
+  step key-enrolled $K exec "$hd" -n "$hns" -c healthchecks -- sh -c "cd /opt/healthchecks && python manage.py shell -c \"from hc.accounts.models import Project; k=open('$hk').read(); p=Project.objects.filter(api_key_readonly=k).first(); print('project', p.name if p else None); raise SystemExit(0 if p else 1)\""
+  # Exactly the request the portal proxy makes (backstage/app-config.container.yaml: X-Api-Key from
+  # the mounted file, Host = ALLOWED_HOSTS), sent from the portal pod with the portal's own key.
+  step door-opens $K exec "$pd" -n "$pns" -- node -e "const fs=require('fs');const key=fs.readFileSync('$pk','utf8');const host=process.env.HEALTHCHECKS_HOST;fetch('http://healthchecks.healthchecks.svc:8000/api/v3/checks/',{headers:{'X-Api-Key':key,'Host':host}}).then(async r=>{const t=await r.text();console.log('status',r.status,'host',host,'key_len',key.length,'key_ends_with_newline',key.endsWith('\\n'));console.log(t.slice(0,120));process.exit(r.status===200?0:1)}).catch(e=>{console.log(String(e));process.exit(1)})"
+}
+
 # catalogue-roll: crew#412, 2026-08-28: idp#564 (c6e6026) pinned the right portal image at 11:00Z
 # and the serving ReplicaSet was still catalogue-8647bbdc59 seventy minutes later (login-drill
 # 33168523304 red, "0 founder-surface entities"). The estate had a playbook to retry a HelmRelease
@@ -954,10 +974,11 @@ pb_chi_resize() {
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor otto-parity cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-parity healthchecks-door cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   otto-parity) pb_otto_parity ;;
+  healthchecks-door) pb_healthchecks_door ;;
   router-spend) pb_router_spend ;;
   dns-per-node) pb_dns_per_node ;;
   dns-per-namespace) pb_dns_per_namespace ;;
