@@ -88,17 +88,25 @@ spec:
     # a separate knob from the endpoint's own scheme above; already correct for a plain-http
     # collector Service and left unchanged.
     otelInsecure: true
+    # crew#278 / founder 2026-08-30 04:3xZ ("I'd like to see real time [logs]"; diagnose run
+    # 33292780315): SigNoz had heard from 8 of 102 running pods since 2026-08-27 because ClickHouse
+    # refused every metrics batch at its 3.60 GiB ceiling (`code: 241 ... OvercommitTracker`, from
+    # signozclickhousemetrics writeBatch) and the retries starved the log inserts (630 log rows in
+    # 15 min, 0 metric samples). Logs are what the founder reads; the node, kubelet, cluster and
+    # Prometheus metric presets are off until ClickHouse has the memory for them (the trigger is the
+    # crew#584 capacity fence reporting spare memory, not a wish). Rejected: raising the ClickHouse
+    # limit past 4Gi on a 9.2 GiB node, which starves every other workload; the smaller road first.
     presets:
       logsCollection: { enabled: true }
-      hostMetrics: { enabled: true }
-      kubeletMetrics: { enabled: true }
+      hostMetrics: { enabled: false }
+      kubeletMetrics: { enabled: false }
       kubernetesAttributes: { enabled: true }
-      clusterMetrics: { enabled: true }
+      clusterMetrics: { enabled: false }
       k8sEvents: { enabled: true }
       # crew#539 CP12: a pod annotated signoz.io/scrape=true (+ signoz.io/port, signoz.io/path) is
       # scraped by the agent and lands in signoz_metrics; opt-in only, nothing scraped by default.
       # First user: the cilium-agent DaemonSet's Hubble metrics on 9965 (platform/cni/cilium-values.yaml).
-      prometheus: { enabled: true, annotationsPrefix: signoz.io, scrapeInterval: 60s }
+      prometheus: { enabled: false, annotationsPrefix: signoz.io, scrapeInterval: 60s }
     otelAgent:
       # No node-level listeners: workloads send OTLP to the signoz-otel-collector Service, so the
       # agent's hostPorts (chart default on) stay off and disallow-host-ports passes.
