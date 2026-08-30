@@ -69,6 +69,7 @@ def test_flux_row_substitutes_the_zone_and_waits_on_both_releases():
         "alertmanager-config.yaml",
         "kube-prometheus-stack.yaml",
         "blackbox.yaml",
+        "httproute.yaml",  # crew#684: the alertmanager and prometheus doors
     }
     # the CRs apply from their own row after the chart's CRDs exist (incident 2026-08-25)
     rules = one("clusters/oke/platform.yaml", "Kustomization", "monitoring-rules")
