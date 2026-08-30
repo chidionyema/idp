@@ -36,7 +36,17 @@ const toolsPage = PageBlueprint.make({
   },
 });
 
+// crew#684 CP1: the Ops dashboard, "I need to see everything". The cluster tile first; the
+// open-reds table, founder tiles and the drills row land on the same page in later checkpoints.
+const opsPage = PageBlueprint.make({
+  name: 'ops',
+  params: {
+    path: '/ops',
+    loader: () => import('./Ops').then(m => <m.Ops />),
+  },
+});
+
 export const homeModule = createFrontendModule({
   pluginId: 'home',
-  extensions: [estateHomePage, pairPhonePage, toolsPage],
+  extensions: [estateHomePage, pairPhonePage, toolsPage, opsPage],
 });
