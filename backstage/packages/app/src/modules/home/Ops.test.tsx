@@ -4,7 +4,11 @@ import {
   TestApiProvider,
   mockApis,
 } from '@backstage/frontend-test-utils';
-import { configApiRef } from '@backstage/frontend-plugin-api';
+import {
+  configApiRef,
+  discoveryApiRef,
+  fetchApiRef,
+} from '@backstage/frontend-plugin-api';
 import { kubernetesApiRef } from '@backstage/plugin-kubernetes';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import { catalogApiMock } from '@backstage/plugin-catalog-react/testUtils';
@@ -61,6 +65,28 @@ const ready = (name: string, namespace: string, status = 'True') => ({
   },
 });
 
+const founder = {
+  taken: '2026-08-30T03:00Z',
+  waiting: [
+    {
+      issue: 693,
+      url: 'https://github.com/chidionyema/crew/issues/693',
+      cp: 'CP1',
+      what: 'Founder replies APPROVE: crew#693',
+    },
+  ],
+  receipts: [
+    {
+      repo: 'chidionyema/idp',
+      number: 918,
+      title: 'Ops page',
+      url: 'https://github.com/chidionyema/idp/pull/918',
+      merged_at: new Date(Date.now() - 20 * 60_000).toISOString(),
+      use: 'open the portal, sidebar Ops',
+    },
+  ],
+};
+
 const render = (lists: Record<string, unknown[]>, fail = false) =>
   renderInTestApp(
     <TestApiProvider
@@ -81,6 +107,19 @@ const render = (lists: Record<string, unknown[]>, fail = false) =>
           } as any,
         ],
         [catalogApiRef, catalogApiMock({ entities })],
+        [
+          discoveryApiRef,
+          { getBaseUrl: async () => 'http://backend/api/proxy' },
+        ],
+        [
+          fetchApiRef,
+          {
+            fetch: async () =>
+              fail
+                ? { ok: false, status: 502, json: async () => ({}) }
+                : { ok: true, status: 200, json: async () => founder },
+          } as any,
+        ],
         [
           configApiRef,
           mockApis.config({ data: { app: { title: 'Mumchimp estate' } } }),
@@ -150,5 +189,33 @@ describe('Ops', () => {
       'answered 503',
     );
     expect(screen.queryByTestId('ops-cluster')).toBeNull();
+  });
+
+  it('draws the founder tiles from founder.json through the proxy', async () => {
+    await render({});
+    expect(await screen.findByTestId('ops-waiting-sentence')).toHaveTextContent(
+      '1 checkpoint waits on you.',
+    );
+    expect(
+      screen
+        .getByTestId('ops-waiting-row')
+        .textContent?.replace('Opens in a new window', ''),
+    ).toMatch(/crew#693 CP1,?\s+Founder replies APPROVE: crew#693/);
+    expect(screen.getByTestId('ops-receipts-sentence')).toHaveTextContent(
+      '1 receipt, newest first.',
+    );
+    expect(
+      screen
+        .getByTestId('ops-receipt-row')
+        .textContent?.replace('Opens in a new window', ''),
+    ).toMatch(/idp#918,?\s+open the portal, sidebar Ops 20m ago/);
+  });
+
+  it('says what waits on the founder is unknown when founder.json cannot be read', async () => {
+    await render({}, true);
+    expect(await screen.findByTestId('ops-founder-error')).toHaveTextContent(
+      'answered 502',
+    );
+    expect(screen.queryByTestId('ops-waiting')).toBeNull();
   });
 });

@@ -9,6 +9,8 @@ import { ClusterHealth, healthSentence } from './clusterHealth';
 import { useClusterHealth } from './useClusterHealth';
 import { Red, redsSentence } from './openReds';
 import { useOpenReds } from './useOpenReds';
+import { FounderData, receiptsSentence, waitingSentence } from './founder';
+import { useFounder } from './useFounder';
 import { ago } from './estate';
 import { monoFamily } from '../theme/tokens';
 
@@ -194,10 +196,56 @@ const RedsTable = ({ reds, now }: { reds: Red[]; now: number }) => {
   );
 };
 
+const FounderTiles = ({ data, now }: { data: FounderData; now: number }) => {
+  const classes = useStyles();
+  return (
+    <>
+      <div className={classes.tile} data-testid="ops-waiting">
+        <div className={classes.tileTop}>
+          <span className={classes.tileTitle}>Waiting on you</span>
+        </div>
+        <p data-testid="ops-waiting-sentence">{waitingSentence(data)}</p>
+        {data.waiting.length > 0 && (
+          <ul className={classes.list}>
+            {data.waiting.map(w => (
+              <li key={`${w.issue}/${w.cp}`} data-testid="ops-waiting-row">
+                <Link to={w.url}>
+                  crew#{w.issue} {w.cp}
+                </Link>{' '}
+                {w.what}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className={classes.tile} data-testid="ops-receipts">
+        <div className={classes.tileTop}>
+          <span className={classes.tileTitle}>Last receipts</span>
+        </div>
+        <p data-testid="ops-receipts-sentence">{receiptsSentence(data)}</p>
+        {data.receipts.length > 0 && (
+          <ul className={classes.list}>
+            {data.receipts.map(r => (
+              <li key={`${r.repo}#${r.number}`} data-testid="ops-receipt-row">
+                <Link to={r.url}>
+                  {r.repo.split('/')[1]}#{r.number}
+                </Link>{' '}
+                {r.use}{' '}
+                <span className={classes.mono}>{ago(r.merged_at, now)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
+  );
+};
+
 export const Ops = () => {
   const classes = useStyles();
   const loaded = useClusterHealth();
   const reds = useOpenReds();
+  const founder = useFounder();
   const now = Date.now();
   return (
     <Page themeId="home">
@@ -228,6 +276,15 @@ export const Ops = () => {
         </header>
         <div className={classes.grid}>
           {loaded.state === 'ready' && <ClusterTile health={loaded.health} />}
+          {founder.state === 'ready' && (
+            <FounderTiles data={founder.data} now={now} />
+          )}
+          {founder.state === 'error' && (
+            <div className={classes.tile} data-testid="ops-founder-error">
+              What waits on you could not be read, so it is unknown.{' '}
+              <span className={classes.mono}>{founder.error}</span>
+            </div>
+          )}
         </div>
         <section className={classes.reds} data-testid="ops-reds-section">
           <h2 className={classes.redsTitle}>Open reds</h2>

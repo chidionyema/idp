@@ -150,6 +150,23 @@ def use_line(pr: dict) -> str:
     return "" if re.match(r"^[`*]*nothing\b", use, re.I) else use
 
 
+FOUNDER_JSON_NAME = "founder.json"   # crew#684 CP4: written beside FOUNDER.md, read by the Ops page
+RECEIPTS = 10
+
+
+def founder_data(merged: list[dict], issues: list[dict], taken: str) -> dict:
+    """The founder tiles' data (crew#684 CP4): every checkpoint that waits on him, and the last
+    RECEIPTS merged pull requests that carry a `Use:` line, newest first."""
+    changed = [(pr, use_line(pr)) for pr in merged if use_line(pr)]
+    changed.sort(key=lambda c: c[0]["merged_at"], reverse=True)
+    return {
+        "taken": taken,
+        "waiting": founder_checkpoints(issues),
+        "receipts": [{"repo": pr["repo"], "number": pr["number"], "title": pr["title"], "url": pr["url"],
+                      "merged_at": pr["merged_at"], "use": use} for pr, use in changed[:RECEIPTS]],
+    }
+
+
 def founder_checkpoints(issues: list[dict]) -> list[dict]:
     rows = []
     for issue in issues:
@@ -388,6 +405,10 @@ def main(argv: list[str]) -> int:
         return 1
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(page, encoding="utf-8")
+    #: crew#684 CP4: the same answers as data, beside the page, for the portal's Ops founder tiles
+    #: (what waits on the founder, the last RECEIPTS merged pull requests that carry a `Use:` line).
+    sidecar = out.parent / FOUNDER_JSON_NAME
+    sidecar.write_text(json.dumps(founder_data(merged, issues, taken), indent=1, sort_keys=True) + "\n", encoding="utf-8")
     if a.telegram:
         text = "GOAL " + taken + "\n" + "\n".join(goal_lines(goals(issues), markdown=False))
         print(f"estate-founder: telegram GOAL pin message_id={telegram_pin(text)}")
