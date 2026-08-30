@@ -10,6 +10,7 @@ entry the pod reads is the one oke-check seeds. Proved both ways with a mutated 
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from pathlib import Path
@@ -97,11 +98,14 @@ def test_secrets_are_files_the_container_exports_never_pod_env():
         "hermes-agent-env",
         "hermes-agent-a2a",
         "hermes-agent-mcp",
-    ] and set(secrets) == set(ess)
-    assert ess["hermes-agent-env"]["spec"]["target"]["name"] == "hermes-agent-env"
-    assert ess["hermes-agent-env"]["spec"]["dataFrom"] == [
-        {"extract": {"key": "hermes-agent-env"}}
     ]
+    # idp#852: plus the App-key ExternalSecret that feeds the GithubAccessToken generator; it
+    # feeds the generator, never the env dir.
+    assert set(ess) == set(secrets) | {"hermes-agent-github-app-pem"}
+    assert ess["hermes-agent-env"]["spec"]["target"]["name"] == "hermes-agent-env"
+    assert ess["hermes-agent-env"]["spec"]["dataFrom"][0] == {
+        "extract": {"key": "hermes-agent-env"}
+    }
 
 
 def test_the_build_is_the_image_not_a_configmap_copy():
@@ -203,10 +207,13 @@ def test_oke_check_seeds_the_entry_the_pod_reads():
     assert "hermes-agent-env" in (ROOT / "bin/idp-estate-seed").read_text(), (
         "LITELLM_API_KEY has an estate-seed row"
     )
-    assert (
-        "hermes-agent-env"
-        in (ROOT / "platform/github-app/token-consumers.json").read_text()
-    ), "GITHUB_TOKEN has a consumer row"
+    consumers = json.loads(
+        (ROOT / "platform/github-app/token-consumers.json").read_text()
+    )["consumers"]
+    assert not [c for c in consumers if c.get("entry") == "hermes-agent-env"], (
+        "GITHUB_TOKEN is minted in-cluster by the GithubAccessToken generator (idp#852 "
+        "deleted the hourly refresh lane and the token died with it), never by a workflow"
+    )
 
 
 @pytest.mark.skipif(
@@ -253,3 +260,88 @@ def test_the_pod_rolls_when_the_vault_entry_changes():
         )
         == targets
     )
+
+
+def github_token_is_minted_in_cluster(docs) -> bool:
+    """idp#852: the hourly off-cluster re-mint rode verify-drill.yml and died when the drill was
+    deleted (founder 2026-08-30: "otto is infra ... not afterthought"). Rung 2: Otto's
+    GITHUB_TOKEN is a property of the row itself -- an in-cluster GithubAccessToken generator
+    feeding the env ExternalSecret inside the token's 60m life -- never a workflow side effect."""
+    gens = [d for d in docs if d and d.get("kind") == "GithubAccessToken"]
+    if len(gens) != 1:
+        return False
+    es = [
+        d
+        for d in docs
+        if d
+        and d.get("kind") == "ExternalSecret"
+        and d["metadata"]["name"] == "hermes-agent-env"
+    ][0]
+    m = re.fullmatch(r"(\d+)m", es["spec"]["refreshInterval"])
+    if not m or int(m.group(1)) >= 60:
+        return False
+    last = es["spec"]["dataFrom"][-1]
+    # the mint is the LAST dataFrom entry: entries merge in the order listed, so the fresh token
+    # wins over any stale GITHUB_TOKEN field the vault entry still carries
+    return (
+        last.get("sourceRef", {}).get("generatorRef", {}).get("kind")
+        == "GithubAccessToken"
+        and last["sourceRef"]["generatorRef"]["name"] == gens[0]["metadata"]["name"]
+        and last["rewrite"] == [{"transform": {"template": "GITHUB_TOKEN"}}]
+    )
+
+
+def test_github_token_is_minted_in_cluster_day0():
+    docs = _docs()
+    assert github_token_is_minted_in_cluster(docs)
+    gen = [d for d in docs if d and d.get("kind") == "GithubAccessToken"][0]
+    lanes = json.loads((ROOT / "platform/github-app/lanes.json").read_text())
+    assert gen["spec"]["permissions"] == lanes["application-engineer"], (
+        "the generator holds exactly the application-engineer lane, no widening"
+    )
+    # LAW 46: the identifiers ride strict envsubst from the flux-system/github-app Secret
+    assert gen["spec"]["appID"] == "${githubAppIDQuoted}"
+    assert gen["spec"]["installID"] == "${githubAppInstallationIDQuoted}"
+    pem = [
+        d
+        for d in docs
+        if d
+        and d.get("kind") == "ExternalSecret"
+        and d["metadata"]["name"] == "hermes-agent-github-app-pem"
+    ][0]
+    assert pem["spec"]["target"]["template"]["data"]["key"] == "{{ .pem_b64 | b64dec }}"
+    assert gen["spec"]["auth"]["privateKey"]["secretRef"] == {
+        "name": pem["spec"]["target"]["name"],
+        "key": "key",
+    }
+
+
+def test_a_mint_slower_than_the_tokens_life_is_refused():
+    docs = _docs()
+    es = [
+        d
+        for d in docs
+        if d
+        and d.get("kind") == "ExternalSecret"
+        and d["metadata"]["name"] == "hermes-agent-env"
+    ][0]
+    es["spec"]["refreshInterval"] = "2h"
+    assert not github_token_is_minted_in_cluster(docs)
+
+
+def test_the_flux_rows_define_the_generators_substitution_vars():
+    rows = [
+        d
+        for d in yaml.safe_load_all((ROOT / "clusters/oke/platform.yaml").read_text())
+        if d
+        and d.get("kind") == "Kustomization"
+        and d["metadata"]["name"] in ("hermes-agent", "mcp")
+    ]
+    assert len(rows) == 2
+    for row in rows:
+        name = row["metadata"]["name"]
+        assert {"kind": "Secret", "name": "github-app"} in row["spec"]["postBuild"][
+            "substituteFrom"
+        ], name
+        # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
+        assert {"name": "alerts-github"} in row["spec"]["dependsOn"], name

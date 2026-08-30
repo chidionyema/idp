@@ -16,6 +16,14 @@ metadata:
   name: kyverno
   namespace: kyverno
 spec:
+  # Founder blueprint 2026-08-30 (~/.claude/docs/founder/2026-08-30T2252Z-also-o-eliminate-this
+  # -exact-class-of-failures-501c10b6.md): a wedged upgrade is uninstalled and rebuilt from git,
+  # never left Failed for a person to untangle (tailscale-operator sat Failed blocking guacamole;
+  # helm-controller spends its retries once, then waits forever for a spec change).
+  install:
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3, strategy: uninstall, remediateLastFailure: true }
   interval: 1h
   chart:
     spec:
