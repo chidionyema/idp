@@ -30,7 +30,10 @@ data:
     set -euo pipefail
     src=$${MAC_RUN_KEY_DIR:-/run/secrets/hermes-agent-mac-run}/id_ed25519
     [ -s "$src" ] || { echo "mac-run: no key at $src (vault hermes-mac-run not synced yet; oke-check apply mints it)" >&2; exit 2; }
-    key=$${TMPDIR:-/tmp}/mac-run.id_ed25519
+    # crew#561, otto-parity run 33291368505: `cp: cannot create regular file /tmp/mac-run.id_ed25519:
+    # Permission denied` from inside the pod. The key copy lives under HERMES_HOME (the data volume
+    # hermes already writes state.db to), never under /tmp.
+    key=$${HERMES_HOME:-/data}/.mac-run.id_ed25519
     (umask 077; cp "$src" "$key")
     exec ssh -i "$key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
       -o UserKnownHostsFile="$${HERMES_HOME:-/data}/known_hosts" -o ConnectTimeout=5 \
