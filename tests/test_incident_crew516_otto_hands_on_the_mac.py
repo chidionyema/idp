@@ -581,3 +581,15 @@ def test_founder_otto_link_urls_are_unique_in_the_file():
     assert len(all_urls) == len(set(all_urls)), (
         "a link URL is reused across two Components"
     )
+
+
+def test_mac_adopt_reads_the_key_from_any_dispatched_run_not_only_a_green_one():
+    """2026-08-29: apply run 33280019151 minted the key, then failed on steps owned by other lanes,
+    and dispatched runs are titled "oke-check" -- so a selector that wanted `--status success`
+    and a title containing "apply" could never find the key. The adopter now walks the last
+    dispatched runs for the key line, and IDP_APPLY_RUN names one run outright."""
+    raw = (ROOT / "bin" / "idp-mac-adopt-otto").read_text()
+    assert "--status success" not in raw
+    assert 'test("apply")' not in raw
+    assert "--event workflow_dispatch" in raw
+    assert "IDP_APPLY_RUN" in raw
