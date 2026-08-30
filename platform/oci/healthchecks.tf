@@ -14,13 +14,17 @@ resource "random_uuid" "healthchecks_ping_key" {}
 # sends it as X-Api-Key from a mounted file (app-config.container.yaml proxy /healthchecks). One value,
 # two ExternalSecrets, no person ever sees it.
 resource "random_uuid" "healthchecks_ro_key" {}
+# Incident crew#684, 2026-08-30 07:31Z (oke-check 33299061377, playbook healthchecks-door): both pods held
+# the same 36-character UUID, enrol had saved it, and Healthchecks still answered `missing api key`.
+# The vendor refuses any key whose length is not 32 before it looks at the database
+# (healthchecks/healthchecks v4.3, hc/api/decorators.py:79 `if len(api_key) != 32`). The dashes go.
 
 locals {
   healthchecks_secrets = {
     "healthchecks-secret-key"  = random_password.healthchecks_secret_key.result
     "healthchecks-db-password" = random_password.healthchecks_db.result
     "healthchecks-ping-key"    = random_uuid.healthchecks_ping_key.result
-    "healthchecks-ro-key"      = random_uuid.healthchecks_ro_key.result
+    "healthchecks-ro-key"      = replace(random_uuid.healthchecks_ro_key.result, "-", "")
   }
 }
 

@@ -59,6 +59,11 @@ spec:
       watchGlobally: false
       namespaces:
         - llm
+        # crew#684 (2026-08-30): the annotations on hermes-agent (idp#955), healthchecks and the
+        # portal did nothing while this list held one namespace. A row that opts in is watched.
+        - hermes-agent
+        - healthchecks
+        - backstage
       readOnlyRootFileSystem: true
       deployment:
         # the estate policy set (prospector-main/deploy/k8s/policies) refused the chart defaults on
