@@ -530,10 +530,10 @@ pb_otto_parity() {
   step no-restart-loop sh -c "r=\$($K get pods -n $ns -l app=hermes-agent-gateway -o jsonpath='{.items[0].status.containerStatuses[?(@.name==\"gateway\")].restartCount}'); echo restarts=\$r; [ \"\${r:-0}\" -lt 5 ]"
   # Founder, 2026-08-30 04:34Z: "ok key-mounted went green on a key that could not be used". The row
   # asserts what mac-run needs: the runtime uid reads the mounted key and makes a private copy of it.
-  step key-usable $K exec "$d" -n "$ns" -c gateway -- sh -c 'k=/run/secrets/hermes-agent-mac-run/id_ed25519; test -r "$k" || { echo "key unreadable by $(id -u)"; exit 1; }; t=$(mktemp -d "${TMPDIR:-/tmp}/parity.XXXXXX" 2>/dev/null || mktemp -d "${HERMES_HOME:-/data}/.parity.XXXXXX") && (umask 077; cp "$k" "$t/k") && ls -ln "$t/k" && rm -rf "$t" && echo key-usable'
-  # Can ssh use the mounted file directly (no copy)? Measured here, decided from the answer.
+  step key-usable $K exec "$d" -n "$ns" -c gateway -- sh -c 'k=/run/secrets/hermes-agent-mac-run/id_ed25519; test -r "$k" || { echo "key unreadable by $(id -u)"; exit 1; }; ls -ln "$k"; echo key-usable'
+  # ssh uses the mounted file directly (no copy): decided from run 33294804159, graded here since.
   # The proxy is read from the pod's own mac-run (the sidecar's SOCKS door), never typed here (LAW 46).
-  show key-direct $K exec "$d" -n "$ns" -c gateway -- sh -c 'k=/run/secrets/hermes-agent-mac-run/id_ed25519; ls -ln "$k"; proxy=$(grep -o "nc -x [^ ]* %h %p" "$(command -v mac-run)" | head -1); ssh -i "$k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="${HERMES_HOME:-/data}/known_hosts" -o ConnectTimeout=5 -o ProxyCommand="$proxy" "$FOUNDER_MAC_USER@$FOUNDER_MAC_TS_IP" hostname 2>&1 | tail -3'
+  step key-direct $K exec "$d" -n "$ns" -c gateway -- sh -c 'k=/run/secrets/hermes-agent-mac-run/id_ed25519; ls -ln "$k"; proxy=$(grep -o "nc -x [^ ]* %h %p" "$(command -v mac-run)" | head -1); ssh -i "$k" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="${HERMES_HOME:-/data}/known_hosts" -o ConnectTimeout=5 -o ProxyCommand="$proxy" "$FOUNDER_MAC_USER@$FOUNDER_MAC_TS_IP" hostname 2>&1 | tail -3'
   # run 33291368505: mac-run died on "cp: cannot create regular file '/tmp/...': Permission denied"
   # and nothing here said who owned /tmp. Eyes first (LAW 28): the container's id and /tmp's owner.
   show tmp-owner $K exec "$d" -n "$ns" -c gateway -- sh -c 'id; ls -land /tmp; ls -lan /tmp | head -6'

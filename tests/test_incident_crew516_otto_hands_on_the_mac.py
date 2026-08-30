@@ -367,7 +367,7 @@ def test_mac_run_uses_the_ci_minted_key_and_no_key_is_ever_in_git():
     assert (
         "/run/secrets/hermes-agent-mac-run" in script and "IdentitiesOnly=yes" in script
     )
-    assert "umask 077" in script and "UserKnownHostsFile" in script
+    assert "UserKnownHostsFile" in script
     for f in (
         GATEWAY,
         MAC_RUN,
@@ -595,35 +595,25 @@ def test_mac_adopt_reads_the_key_from_any_dispatched_run_not_only_a_green_one():
     assert "IDP_APPLY_RUN" in raw
 
 
-def test_mac_run_keeps_its_key_in_a_private_directory_it_makes_and_otto_parity_shows_tmp_owner():
-    """crew#561, otto-parity runs 33291368505 and 33292378273 (2026-08-30): tunnel up, key mounted,
-    and `cp` to the fixed name /tmp/mac-run.id_ed25519 died with "Permission denied", so Otto could
-    not reach the Mac. The key now lives in a directory mac-run makes for this one call (mktemp -d,
-    falling back to the gateway's own volume), removed after ssh; the playbook prints /tmp's owner
-    before it tries, so the next such failure names its cause on the first run."""
-    cm = next(
-        d
-        for d in _docs(MAC_RUN)
-        if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "hermes-agent-mac-run"
-    )
-    # Flux postBuild writes `$${x}` for a shell `${x}`; grade the shell the pod runs.
+def test_mac_run_reads_the_mounted_key_and_never_copies_it_and_otto_parity_grades_key_direct():
+    """Otto outage 2026-08-30 (crew#561): mac-run copied the key to a fixed /tmp name; a stale 0400
+    copy from an earlier run made every later `cp` die with "Permission denied" (otto-parity run
+    33294804159, row tmp-owner). The same run's key-direct row reached the Mac with `ssh -i` on the
+    mounted file, so the copy had no reason to exist. mac-run now points ssh at the mount and copies
+    nothing; the playbook grades key-direct as a step, not a look."""
+    cm = yaml.safe_load(MAC_RUN.read_text())
     script = cm["data"]["mac-run"].replace("$$", "$")
     code = "\n".join(
         ln for ln in script.splitlines() if not ln.lstrip().startswith("#")
     )
-    assert "/tmp/mac-run.id_ed25519" not in code, (
-        "a fixed name in /tmp is the refused path"
+    assert "cp " not in code and "mktemp" not in code and "/tmp/mac-run" not in code, (
+        "a copy of the key is the thing that went stale; ssh reads the mount"
     )
-    assert 'mktemp -d "${TMPDIR:-/tmp}/mac-run.XXXXXX"' in script
-    assert 'mktemp -d "${HERMES_HOME:-/data}/.mac-run.XXXXXX"' in script, (
-        "no fallback = same outage"
+    assert 'ssh -i "$src"' in code, "ssh must read the mounted key"
+    body = (ROOT / "bin" / "idp-oke-break-glass").read_text()
+    pb = body[body.index("pb_otto_parity()") :]
+    assert "step key-direct" in pb and "show key-direct" not in pb, (
+        "key-direct is graded now"
     )
-    assert 'rm -rf "$dir"' in script and "exit $rc" in script, (
-        "the copy must be removed after ssh"
-    )
-    assert "exec ssh" not in script, "exec would skip the cleanup"
-    playbook = (ROOT / "bin" / "idp-oke-break-glass").read_text()
-    body = playbook.split("pb_otto_parity()", 1)[1]
-    assert body.index("tmp-owner") < body.index("mac-run-hostname"), (
-        "eyes come before the try"
-    )
+    assert "step key-usable" in pb and 'cp "$k"' not in pb.split("step tailnet-up")[0]
+    assert pb.index("show tmp-owner") < pb.index("step mac-run-hostname")
