@@ -14,6 +14,7 @@ ExternalSecret whose remote key is minted by Terraform must be optional.
 from __future__ import annotations
 
 import pathlib
+import re
 
 import yaml
 
@@ -23,12 +24,12 @@ TERRAFORM = ROOT / "platform" / "oci"
 
 
 def _terraform_minted_keys() -> set[str]:
+    """Every quoted map key in platform/oci/*.tf: the vault entries Terraform mints
+    (`"healthchecks-ro-key" = random_uuid...` with `secret_name = each.key`)."""
     keys: set[str] = set()
     for tf in TERRAFORM.glob("*.tf"):
-        for line in tf.read_text().splitlines():
-            line = line.strip()
-            if line.startswith("secret_name") and "=" in line:
-                keys.add(line.split("=", 1)[1].strip().strip('"'))
+        for m in re.finditer(r'^\s*"([a-z0-9-]+)"\s*=', tf.read_text(), re.M):
+            keys.add(m.group(1))
     return keys
 
 
@@ -51,9 +52,10 @@ def test_a_terraform_minted_secret_mount_is_optional_on_the_catalogue_pod():
     assert "healthchecks-ro" in targets, "the incident's own secret is the first case"
     seen = set()
     for patch in ks.get("patches", []):
-        for op in (
-            patch.get("patch", []) if isinstance(patch.get("patch"), list) else []
-        ):
+        ops = patch.get("patch")
+        if isinstance(ops, str):  # `patch: |` carries the JSON-patch list as text
+            ops = yaml.safe_load(ops)
+        for op in ops if isinstance(ops, list) else []:
             value = op.get("value") or {}
             secret = value.get("secret") if isinstance(value, dict) else None
             if secret and secret.get("secretName") in targets:
