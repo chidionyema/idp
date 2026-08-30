@@ -354,7 +354,7 @@ spec:
   dependsOn:
     - name: scheduling
     - name: secret-store
-    # strict envsubst: an undefined ${githubAppID} fails the row, so it waits on the Secret
+    # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
     - name: alerts-github
   wait: true
   timeout: 10m
@@ -383,7 +383,7 @@ spec:
     - name: scheduling
     - name: edge
     - name: secret-store
-    # strict envsubst: an undefined ${githubAppID} fails the row, so it waits on the Secret
+    # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
     - name: alerts-github
   wait: true
   timeout: 10m
