@@ -41,6 +41,8 @@ def test_every_entry_block_closes_before_the_next_opens():
     depth = 0
     for ln, line in enumerate(body.splitlines(), 1):
         s = line.strip()
+        if s.startswith("if ") and s.endswith("fi"):
+            continue  # a one-line `if ...; then ...; fi`
         if s.startswith("if "):
             if s.startswith('if [ "$ENTRY"'):
                 assert depth == 0, (
