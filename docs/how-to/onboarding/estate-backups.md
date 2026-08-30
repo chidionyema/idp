@@ -9,6 +9,7 @@ timestamp in the back office).
 | Input | Where | What it gives |
 |---|---|---|
 | `--listing f.json` | `rclone lsjson :s3:<bucket> --recursive`, made by the `catalog-render` workflow step "backups from the backup bucket" | every object: path, size, modification time |
+| `--taken` / `BACKUPS_TAKEN` | the inventory stamp `bin/catalog-render` already reads | the `listed` time on the tile, never this machine's clock |
 | `--bucket` / `BACKUPS_BUCKET` | workflow secret `SEED_R2_BACKUP_BUCKET`, default `prospector-backup` | the name printed on the tile |
 | `RCLONE_S3_*` | workflow env from the `SEED_R2_*` secrets (names only; never a value in a file) | only when run without `--listing` |
 
@@ -17,7 +18,9 @@ timestamp in the back office).
 An object under `offsite/<source>/…` belongs to `<source>` (the names in the offsite backup
 declaration in the product's `ops/config/offsite_backup.yaml`). A top-level folder such as `db/`,
 `ledger/`, `logs/`, `repo/` is `engine-<folder>`. One row per source: newest object, its stamp,
-age in hours, number of copies, bytes. Rows sort stalest first so the page leads with the risk.
+number of copies, bytes. Rows sort oldest newest-copy first so the page leads with the risk.
+The age and the `stale` mark are computed on the page against the viewer's clock: the script
+never measures a bucket stamp against the machine it runs on (crew#583).
 
 ## States
 
@@ -36,4 +39,4 @@ committed to the `state/live-diagram` branch → Backstage's `/estate-state` pro
 ## Offline and tests
 
     python3 -m pytest tests/test_estate_backups.py -q
-    bin/estate-backups --listing tests/fixtures/x.json --out /tmp/b.json --now 2026-08-30T10:30:00Z
+    bin/estate-backups --listing tests/fixtures/x.json --out /tmp/b.json --taken 2026-08-30T10:30Z

@@ -1,9 +1,12 @@
 import {
+  ageHours,
   backupsSentence,
   isStale,
   parseBackups,
   size,
 } from './backups';
+
+const NOW = Date.parse('2026-08-30T10:30:00Z');
 
 const doc = {
   taken: '2026-08-30T10:30Z',
@@ -14,7 +17,6 @@ const doc = {
       name: 'engine-db',
       newest: 'db/prospector-2026-08-23.db.gz',
       newest_at: '2026-08-23T00:00:00Z',
-      age_hours: 178.5,
       copies: 12,
       bytes: 5,
     },
@@ -22,7 +24,6 @@ const doc = {
       name: 'money-db',
       newest: 'offsite/money-db/store-20260829T025019Z.db',
       newest_at: '2026-08-29T02:50:19Z',
-      age_hours: 31.7,
       copies: 30,
       bytes: 4702208,
     },
@@ -30,7 +31,6 @@ const doc = {
       name: 'engine-repo',
       newest: 'repo/2026-08-30T024107Z.bundle',
       newest_at: '2026-08-30T02:41:07Z',
-      age_hours: 7.8,
       copies: 14,
       bytes: 1024 * 1024 * 40,
     },
@@ -44,18 +44,25 @@ describe('backups.json', () => {
   });
 
   it('counts the stale sources in the sentence', () => {
-    expect(backupsSentence(doc)).toBe('3 sources backed up, 2 older than 30h.');
-    expect(isStale(doc.sources[2])).toBe(false);
+    expect(backupsSentence(doc, NOW)).toBe(
+      '3 sources backed up, 2 older than 30h.',
+    );
+    expect(ageHours(doc.sources[1], NOW)).toBe(31.7);
+    expect(isStale(doc.sources[2], NOW)).toBe(false);
+    expect(isStale({ ...doc.sources[2], newest_at: 'never' }, NOW)).toBe(true);
   });
 
   it('says nothing is known when the bucket could not be listed', () => {
     expect(
-      backupsSentence({
-        ...doc,
-        state: 'BLIND',
-        reason: 'rclone lsjson exit 3',
-        sources: [],
-      }),
+      backupsSentence(
+        {
+          ...doc,
+          state: 'BLIND',
+          reason: 'rclone lsjson exit 3',
+          sources: [],
+        },
+        NOW,
+      ),
     ).toBe(
       'The backup bucket could not be listed, so no backup is known to exist. rclone lsjson exit 3',
     );

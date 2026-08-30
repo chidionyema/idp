@@ -55,23 +55,22 @@ LISTING = [
         "IsDir": False,
     },
 ]
-NOW = "2026-08-30T10:30:00Z"
+TAKEN = "2026-08-30T10:30Z"
 
 
 def test_sources_group_by_the_offsite_layout_and_the_newest_object_wins():
-    doc = eb.document(LISTING, "prospector-backup", eb.parse_stamp(NOW))
+    doc = eb.document(LISTING, "prospector-backup", TAKEN)
     assert doc["state"] == "ok"
     by = {r["name"]: r for r in doc["sources"]}
     assert set(by) == {"money-db", "agent-estate", "engine-db", "engine-repo"}
     assert by["money-db"]["copies"] == 2
     assert by["money-db"]["newest"].endswith("store-20260829T025019Z.db")
     assert by["money-db"]["newest_at"] == "2026-08-29T02:50:19Z"
-    assert by["money-db"]["age_hours"] == 31.7
     assert by["money-db"]["bytes"] == 4700000 + 4702208
 
 
-def test_stalest_source_sorts_first_so_the_page_leads_with_the_risk():
-    doc = eb.document(LISTING, "prospector-backup", eb.parse_stamp(NOW))
+def test_oldest_newest_copy_sorts_first_so_the_page_leads_with_the_risk():
+    doc = eb.document(LISTING, "prospector-backup", TAKEN)
     assert [r["name"] for r in doc["sources"]] == [
         "engine-db",
         "money-db",
@@ -84,7 +83,7 @@ def test_no_listing_is_blind_with_a_reason_never_an_empty_table():
     doc = eb.document(
         None,
         "prospector-backup",
-        eb.parse_stamp(NOW),
+        TAKEN,
         "rclone lsjson exit 3: AccessDenied",
     )
     assert doc["state"] == "BLIND"
@@ -104,8 +103,8 @@ def test_cli_writes_the_sidecar_from_a_listing_file(tmp_path):
             str(listing),
             "--out",
             str(out),
-            "--now",
-            NOW,
+            "--taken",
+            TAKEN,
         ],
         capture_output=True,
         text=True,
@@ -114,6 +113,8 @@ def test_cli_writes_the_sidecar_from_a_listing_file(tmp_path):
     assert p.returncode == 0, p.stderr
     assert "ok    estate-backups: 4 source(s)" in p.stdout
     doc = json.loads(out.read_text())
+    # no age anywhere: the page measures it against the viewer's clock (crew#583)
+    assert all("age_hours" not in r for r in doc["sources"])
     assert doc["taken"] == "2026-08-30T10:30Z"
     assert doc["bucket"] == "prospector-backup"
 
@@ -124,7 +125,7 @@ def test_cli_with_no_listing_and_no_credentials_is_blind_and_exit_0(
     monkeypatch.delenv("RCLONE_S3_ACCESS_KEY_ID", raising=False)
     out = tmp_path / "backups.json"
     p = subprocess.run(
-        [sys.executable, str(BIN), "--out", str(out), "--now", NOW],
+        [sys.executable, str(BIN), "--out", str(out), "--taken", TAKEN],
         capture_output=True,
         text=True,
         check=False,
@@ -133,6 +134,10 @@ def test_cli_with_no_listing_and_no_credentials_is_blind_and_exit_0(
     assert p.returncode == 0
     assert p.stdout.startswith("BLIND")
     assert json.loads(out.read_text())["state"] == "BLIND"
+
+
+def test_the_script_never_reads_this_machines_clock():
+    assert "datetime.now" not in BIN.read_text()
 
 
 def test_rclone_nanosecond_stamps_parse():

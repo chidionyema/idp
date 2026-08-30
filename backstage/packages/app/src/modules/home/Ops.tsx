@@ -12,7 +12,13 @@ import { useOpenReds } from './useOpenReds';
 import { FounderData, receiptsSentence, waitingSentence } from './founder';
 import { useFounder } from './useFounder';
 import { useBackups } from './useBackups';
-import { BackupsData, backupsSentence, isStale, size } from './backups';
+import {
+  BackupsData,
+  ageHours,
+  backupsSentence,
+  isStale,
+  size,
+} from './backups';
 import { useHealthchecks } from './useHealthchecks';
 import { Checks, STATUS_WORD, checksSentence, notUp } from './healthchecks';
 import { ago } from './estate';
@@ -293,7 +299,7 @@ const BackupsTile = ({ data, now }: { data: BackupsData; now: number }) => {
           {data.bucket}, listed {ago(data.taken, now)}
         </span>
       </div>
-      <p data-testid="ops-backups-sentence">{backupsSentence(data)}</p>
+      <p data-testid="ops-backups-sentence">{backupsSentence(data, now)}</p>
       {data.sources.length > 0 && (
         <div className={classes.scroll}>
           <table className={classes.table}>
@@ -311,11 +317,17 @@ const BackupsTile = ({ data, now }: { data: BackupsData; now: number }) => {
                 <tr
                   key={s.name}
                   data-testid="ops-backup-row"
-                  data-stale={isStale(s) ? 'true' : 'false'}
+                  data-stale={isStale(s, now) ? 'true' : 'false'}
                 >
                   <td className={classes.mono}>{s.name}</td>
                   <td className={classes.mono}>{s.newest_at}</td>
-                  <td>{isStale(s) ? `${s.age_hours}h, stale` : `${s.age_hours}h`}</td>
+                  <td>
+                    {ageHours(s, now) === undefined
+                      ? 'unknown, stale'
+                      : isStale(s, now)
+                        ? `${ageHours(s, now)}h, stale`
+                        : `${ageHours(s, now)}h`}
+                  </td>
                   <td>{s.copies}</td>
                   <td>{size(s.bytes)}</td>
                 </tr>

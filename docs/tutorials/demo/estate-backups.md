@@ -19,11 +19,11 @@ where `listing.json` is `rclone lsjson :s3:<bucket> --recursive`. On the render 
 ## What it prints
 
 ```
-ok    estate-backups: 4 source(s) in prospector-backup, 2 older than 30h -> docs/backups.json
-      engine-db              newest 2026-08-23T00:00:00Z    178.5h  copies 1
-      money-db               newest 2026-08-29T02:50:19Z     31.7h  copies 2
-      agent-estate           newest 2026-08-29T02:53:26Z     31.6h  copies 1
-      engine-repo            newest 2026-08-30T02:41:07Z      7.8h  copies 1
+ok    estate-backups: 4 source(s) in prospector-backup, oldest first -> docs/backups.json
+      engine-db              newest 2026-08-23T00:00:00Z  copies 1
+      money-db               newest 2026-08-29T02:50:19Z  copies 2
+      agent-estate           newest 2026-08-29T02:53:26Z  copies 1
+      engine-repo            newest 2026-08-30T02:41:07Z  copies 1
 ```
 
 That is the fixture in `tests/test_estate_backups.py`; the live run's numbers are in the

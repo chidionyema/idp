@@ -5,7 +5,6 @@ export type BackupSource = {
   name: string;
   newest: string;
   newest_at: string;
-  age_hours: number;
   copies: number;
   bytes: number;
 };
@@ -36,13 +35,23 @@ export const parseBackups = (raw: unknown): BackupsData => {
   };
 };
 
-export const isStale = (s: BackupSource) => s.age_hours > STALE_AFTER_HOURS;
+/** Hours since the newest copy, on the viewer's clock; undefined when the stamp does not parse. */
+export const ageHours = (s: BackupSource, now: number): number | undefined => {
+  const t = Date.parse(s.newest_at);
+  return Number.isNaN(t) ? undefined : Math.round(((now - t) / 3600000) * 10) / 10;
+};
 
-export const backupsSentence = (d: BackupsData) => {
+/** A stamp that does not parse is stale: nothing proves the copy is fresh. */
+export const isStale = (s: BackupSource, now: number) => {
+  const h = ageHours(s, now);
+  return h === undefined || h > STALE_AFTER_HOURS;
+};
+
+export const backupsSentence = (d: BackupsData, now: number) => {
   if (d.state === 'BLIND')
     return `The backup bucket could not be listed, so no backup is known to exist. ${d.reason ?? ''}`.trim();
   if (d.sources.length === 0) return `Nothing is backed up in ${d.bucket}.`;
-  const stale = d.sources.filter(isStale).length;
+  const stale = d.sources.filter(s => isStale(s, now)).length;
   const n = d.sources.length;
   return stale === 0
     ? `${n} source${n === 1 ? '' : 's'} backed up, every one fresh.`

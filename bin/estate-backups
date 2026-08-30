@@ -15,7 +15,8 @@ The listing is `rclone lsjson --recursive` (Path, Size, ModTime, IsDir) — a ma
 render job already runs; nothing here talks to the bucket in its own words. Objects group into
 sources by the layout the offsite declaration uses: `offsite/<source>/…` is `<source>`; a
 top-level folder (`ledger/`, `db/`, `logs/`, `repo/`) is `engine-<folder>`. One row per source:
-newest object, its stamp, age, copies, bytes. Stalest first.
+newest object, its stamp, copies, bytes. Oldest newest-copy first. Age is the page's to
+measure against its own clock; this script never asks this machine what time it is (crew#583).
 
 No listing, or a listing that is not JSON, is `state: BLIND` with the reason, never an empty
 table that reads green (silent-green is the defect class). Exit 0 always: the render job
@@ -73,7 +74,7 @@ def parse_stamp(text: str) -> dt.datetime | None:
     return d.astimezone(dt.timezone.utc)
 
 
-def group(listing: list[dict], now: dt.datetime) -> list[dict]:
+def group(listing: list[dict]) -> list[dict]:
     rows: dict[str, dict] = {}
     for o in listing:
         if not isinstance(o, dict) or o.get("IsDir"):
@@ -94,18 +95,15 @@ def group(listing: list[dict], now: dt.datetime) -> list[dict]:
     out = []
     for r in rows.values():
         when = r.pop("_when")
-        age = (now - when).total_seconds() / 3600
         r["newest_at"] = when.strftime("%Y-%m-%dT%H:%M:%SZ")
-        r["age_hours"] = round(age, 1)
         out.append(r)
-    out.sort(key=lambda r: (-r["age_hours"], r["name"]))
+    out.sort(key=lambda r: (r["newest_at"], r["name"]))
     return out
 
 
 def document(
-    listing: list[dict] | None, bucket: str, now: dt.datetime, reason: str = ""
+    listing: list[dict] | None, bucket: str, taken: str, reason: str = ""
 ) -> dict:
-    taken = now.strftime("%Y-%m-%dT%H:%MZ")
     if listing is None:
         return {
             "taken": taken,
@@ -118,7 +116,7 @@ def document(
         "taken": taken,
         "bucket": bucket,
         "state": "ok",
-        "sources": group(listing, now),
+        "sources": group(listing),
     }
 
 
@@ -172,28 +170,25 @@ def main(argv: list[str]) -> int:
         "--bucket", default=os.environ.get("BACKUPS_BUCKET", DEFAULT_BUCKET)
     )
     ap.add_argument("--out", default=str(OUT))
-    ap.add_argument("--now", help="clock, RFC 3339 (tests); default now UTC")
+    ap.add_argument(
+        "--taken",
+        default=os.environ.get("BACKUPS_TAKEN", ""),
+        help="the render's own stamp (the inventory's `at`); never this machine's clock",
+    )
     a = ap.parse_args(argv)
-    now = parse_stamp(a.now) if a.now else dt.datetime.now(dt.timezone.utc)
-    if now is None:
-        print(f"FAIL  --now is not a stamp: {a.now}", file=sys.stderr)
-        return 2
     listing, reason = read_listing(a.listing, a.bucket)
-    doc = document(listing, a.bucket, now, reason)
+    doc = document(listing, a.bucket, a.taken, reason)
     out = pathlib.Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     if doc["state"] == "BLIND":
         print(f"BLIND estate-backups: {doc['reason']}; {out} says so")
     else:
-        stale = [r for r in doc["sources"] if r["age_hours"] > 30]
         print(
-            f"ok    estate-backups: {len(doc['sources'])} source(s) in {a.bucket}, {len(stale)} older than 30h -> {out}"
+            f"ok    estate-backups: {len(doc['sources'])} source(s) in {a.bucket}, oldest first -> {out}"
         )
         for r in doc["sources"]:
-            print(
-                f"      {r['name']:22} newest {r['newest_at']}  {r['age_hours']:7.1f}h  copies {r['copies']}"
-            )
+            print(f"      {r['name']:22} newest {r['newest_at']}  copies {r['copies']}")
     return 0
 
 

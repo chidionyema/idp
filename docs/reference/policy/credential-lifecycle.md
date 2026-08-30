@@ -80,5 +80,5 @@ vendor: Anthropic, OpenRouter, DeepSeek, Minimax, Groq, Gemini, Exa, Stripe.
 
 ## Configuration that is not a credential
 
-`SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS`, `SEED_HERMES_TELEGRAM_HOME_CHANNEL`, `SEED_R2_BUCKET`. A chat id, a user
-id list and a bucket name. They ride the hermes-agent-env step as configuration and have no life cycle.
+`SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS`, `SEED_HERMES_TELEGRAM_HOME_CHANNEL`, `SEED_R2_BUCKET`, `SEED_R2_BACKUP_BUCKET`. A chat id, a user
+id list and two bucket names. They ride the hermes-agent-env step as configuration and have no life cycle.
