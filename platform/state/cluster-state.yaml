@@ -22,8 +22,13 @@ rules:
   - apiGroups: [""]
     resources: ["nodes", "pods", "pods/log", "events", "services"]
     verbs: ["get", "list"]
+  # run 33332263130 (2026-08-30, founder: "did I not say everything must be transparent"):
+  # healing/estate ran ZERO pods for a day while every page read green, because a Deployment
+  # whose pods are denied at admission is invisible to the pods list, the Flux rows and the
+  # DaemonSet row alike. Deployments and StatefulSets are graded like DaemonSets: short of
+  # desired is a red row, never a silent zero.
   - apiGroups: ["apps"]
-    resources: ["daemonsets"]
+    resources: ["daemonsets", "deployments", "statefulsets"]
     verbs: ["get", "list"]
   # crew#584 (founder 2026-08-29 "why 4 cores, do we have utilisation metrics?"): nobody had a
   # number when the node went 4 -> 6 OCPU (#456). Live CPU/memory use per node comes from the
@@ -295,6 +300,17 @@ data:
                 # refuses correct work (LAW 38). Ready by construction, and the row says why.
                 row["ready"] = True
                 row["message"] = "oci source: static, carries no Ready condition"
+            if (o.get("spec") or {}).get("suspend") is True:
+                # crew#623 class, second instance (2026-08-30, receipt: break-glass diagnose run
+                # 33331157383): a suspended row is a dark switch, not a defect. Flux writes no
+                # Ready condition on a fresh suspended row (commerce, commerce-data, event-bus
+                # graded "no Ready condition yet") and FREEZES the last stale condition on one
+                # suspended after a red (temporal graded "dependency 'flux-system/edge' is not
+                # ready" while edge was True). bin/idp-portability-drill learnt this on crew#623;
+                # this collector was the missed instance of the same else-branch class: it turned
+                # every dark row into a cluster FAIL on the estate-state page.
+                row["ready"] = True
+                row["message"] = "suspended (dark switch)"
             if kind == "HelmRelease":
                 row.update(helm_last_attempt(st))
             if kind == "ImagePolicy":
@@ -368,6 +384,21 @@ data:
     except Exception as e:
         ds = [{"ns": "", "name": "*", "desired": 1, "ready": 0, "message": f"list failed: {e}"[:300]}]
     ds_short = [d for d in ds if d["ready"] < d["desired"]]
+    # run 33332263130 (2026-08-30): Deployment healing/estate held zero pods for a day -- every
+    # ReplicaSet pod was denied by Kyverno at admission -- and nothing graded it: the pods list
+    # cannot see pods that were never created, the Flux rows were Ready (the Deployment object
+    # applied fine), and only DaemonSets had a short row (crew#320). Same rule as crew#320,
+    # extended: every Deployment and StatefulSet short of its desired replicas is a red row.
+    # spec.replicas 0 is a deliberate scale-down, not short.
+    try:
+        deploy_items = get("/apis/apps/v1/deployments")["items"] + get("/apis/apps/v1/statefulsets")["items"]
+        workloads = [{"ns": d["metadata"]["namespace"], "name": d["metadata"]["name"],
+                      "desired": (d.get("spec") or {}).get("replicas", 0) or 0,
+                      "available": (d.get("status") or {}).get("availableReplicas", 0) or 0}
+                     for d in deploy_items]
+    except Exception as e:
+        workloads = [{"ns": "", "name": "*", "desired": 1, "available": 0, "message": f"list failed: {e}"[:300]}]
+    deploy_short = [w for w in workloads if w["desired"] > 0 and w["available"] < w["desired"]]
     try:
         ev_items = get("/api/v1/events?fieldSelector=type%3DWarning&limit=500")["items"]
     except Exception as e:
@@ -600,14 +631,14 @@ data:
     cpu_used_pct, mem_used_pct = pct("cpu_used", tot_cpu), pct("memory_used_gb", tot_mem)
     cpu_req_pct, mem_req_pct = pct("cpu_requested", tot_cpu), pct("memory_requested_gb", tot_mem)
     head = (f"ok cluster-state at {at} nodes={len(node_rows)} ready={ready} pods={len(pods)} pods_not_ready={len(not_ready)}"
-            f" flux={len(flux)} flux_not_ready={len(flux_not_ready)} ds={len(ds)} ds_short={len(ds_short)} events_warning={len(events)}"
+            f" flux={len(flux)} flux_not_ready={len(flux_not_ready)} ds={len(ds)} ds_short={len(ds_short)} deploy_short={len(deploy_short)} events_warning={len(events)}"
             f" hostnames={len(hostnames or [])} spiffe_ids={len(spiffe['clusterspiffeids'] or [])} spiffe_workloads={len(spiffe['csi_workloads'])}"
             f" svids={sum(len(r['spiffe_ids']) for r in spiffe['svids'])} spire_agents={len(spiffe['agents'])}"
             f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)} policy_exceptions={len(policy_exceptions)} k8sgpt_findings={len(k8sgpt)}"
             f" monitoring_rules={monitoring_rules} alert_watchdog={alert_watchdog}"
             f" cpu_used_pct={cpu_used_pct} mem_used_pct={mem_used_pct} cpu_req_pct={cpu_req_pct} mem_req_pct={mem_req_pct}")
     body = {"at": at, "capacity": capacity, "capacity_error": cap_error, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
-            "flux": flux, "flux_not_ready": flux_not_ready, "policy_exceptions": policy_exceptions, "kyverno_policies": kyverno_policies, "k8sgpt": k8sgpt, "daemonsets": ds, "ds_short": ds_short, "events_warning": events,
+            "flux": flux, "flux_not_ready": flux_not_ready, "policy_exceptions": policy_exceptions, "kyverno_policies": kyverno_policies, "k8sgpt": k8sgpt, "daemonsets": ds, "ds_short": ds_short, "deploy_short": deploy_short, "events_warning": events,
             "hostnames": hostnames, "hostnames_error": hostnames_error, "spiffe": spiffe,
             "services_unlisted": services_unlisted, "services_unlisted_error": unlisted_error,
             "oci_identity": {"pods": oci_pods, "static_key_pods": oci_static_key_pods,

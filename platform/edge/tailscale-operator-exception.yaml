@@ -14,7 +14,7 @@ metadata:
 spec:
   exceptions:
     - policyName: require-pod-probes
-      ruleNames: [require-pod-probes, autogen-validate-probes]
+      ruleNames: [validate-probes, autogen-validate-probes]
   match:
     any:
       - resources:
