@@ -94,12 +94,15 @@ integrations:
     #   token: ${GHE_TOKEN}
 
 proxy:
-  ### Example for how to add a proxy endpoint for the frontend.
-  ### A typical reason to do this is to handle HTTPS and CORS for internal services.
-  # endpoints:
-  #   '/test':
-  #     target: 'https://example.com'
-  #     changeOrigin: true
+  endpoints:
+    # crew#684 CP4: the Ops page's founder tiles read docs/founder.json from the rendered state
+    # branch (bin/catalog-render writes it on the estate-founder schedule). The repository is
+    # public, so no credential; GET only. The mature door is the proxy plugin the backend already
+    # runs, never a fetch to a host typed in the page.
+    '/estate-state':
+      target: 'https://raw.githubusercontent.com/chidionyema/idp/state/live-diagram'
+      changeOrigin: true
+      allowedMethods: ['GET']
 
 # Reference documentation http://backstage.io/docs/features/techdocs/configuration
 # Note: After experimenting with basic setup, use CI/CD to generate docs

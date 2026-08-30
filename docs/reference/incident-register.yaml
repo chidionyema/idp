@@ -3,7 +3,7 @@ generated_by: bin/incident-register
 source: tests/test_incident_*.py module docstrings
 incidents: 356
 by_class:
-  capacity: 14
+  capacity: 15
   ci-pipeline: 75
   clock: 13
   network: 25
@@ -3177,6 +3177,17 @@ rows:
   summary: 'crew#684 CP3: every alert rule and every drill names an owner, and an unowned red pages. Founder, 2026-08-30:
     "A red with no owner is itself a red." Before this, none of the nine alert rules and none of the fourteen drills said
     who was on t'
+- id: crew684_cp4_the_founder_tiles_read_the_generated_state_never_a_session
+  test: tests/test_incident_crew684_cp4_the_founder_tiles_read_the_generated_state_never_a_session.py
+  date: '2026-08-30'
+  refs:
+  - crew#412
+  - crew#684
+  fault_class: capacity
+  injectable: true
+  summary: 'crew#684 CP4, founder 2026-08-30: "I need to see everything": open FOUNDER ACTION items and the last receipts
+    as tiles on the Ops page. Incident class (crew#412, R38): the founder asked for his view three times in 24 hours and got
+    a typed a'
 - id: crew684_the_tools_page_is_every_door_on_one_page
   test: tests/test_incident_crew684_the_tools_page_is_every_door_on_one_page.py
   date: '2026-08-30'
