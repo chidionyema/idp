@@ -156,3 +156,14 @@ drills:
       Cloudflare R2 (mirrors/<owner>/<repo>/latest.bundle), and reads each one back -- the store's
       MD5 equals the file's and `git bundle verify` passes on the download. A repository whose refs
       have not moved is skipped. No laptop and no founder account in the loop (crew#290 layer 4).
+
+  - name: messaging-demo
+    workflow: messaging-drill.yml
+    job: demo
+    schedule: "47 5 * * *"
+    max_age_hours: 26
+    proves: >-
+      The basic and advanced messaging demos (crew#639 CP9) still run end to end against the
+      chart's nats-server version and an embedded Postgres: outbox relay, duplicate window,
+      idempotent consumer, dead-letter copy and replay, so the messaging layer a service is
+      onboarded onto is exercised daily, not only when a PR touches it.
