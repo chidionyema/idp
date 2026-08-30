@@ -344,6 +344,9 @@ with sync_playwright() as p:
         ("search", "text=Search"),
         ("settings", "text=Settings"),
         ("visualizer", "text=Visualizer"),
+        # crew#684 CP0: the sentence only the Tools page says once the catalogue answered. Keep the
+        # last row comment-free: tests slice this tuple by text and a trailing comment eats the ")".
+        ("tools", "text=Every tool we use"),
     )
     broken = []
     for path, must_see in PUBLISHED:

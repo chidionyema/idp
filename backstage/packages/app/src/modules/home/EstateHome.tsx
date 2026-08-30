@@ -467,7 +467,7 @@ const Dot = ({ state }: { state: State }) => {
 };
 
 /** A dot and a word, never a colour alone. `blind` is a hollow ring. */
-const Pill = ({
+export const Pill = ({
   state,
   why,
   testId,
