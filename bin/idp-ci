@@ -98,7 +98,7 @@ if [ "$FAST" = 1 ]; then
   timing_summary
   # 1e. crew#679 CP5: the incident register is generated from tests/test_incident_*.py; a new
   # incident test without its committed row is refused here, so the chaos drills never drift.
-  "$IDP/bin/incident-register" --check >/dev/null && say "ok    incident-register  matches the corpus" || { say "FAIL  incident-register  stale: run bin/incident-register and commit"; fail=1; }
+  "$MPY" "$IDP/bin/incident-register" --check >/dev/null && say "ok    incident-register  matches the corpus" || { say "FAIL  incident-register  stale: run bin/incident-register and commit"; fail=1; }
   [ "$fail" -eq 0 ] && say "ok    fast-gate: shell, hardcode, pipeverdict, ruff, incident-register" || say "FAIL  fast-gate"
   exit "$fail"
 fi
