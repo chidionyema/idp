@@ -53,6 +53,7 @@ def test_a2a_token_is_generated_in_cluster_and_projected_into_the_env_dir():
         "hermes-agent-env",
         "hermes-agent-a2a",
         "hermes-agent-mcp",
+        "hermes-agent-langfuse",
     ]  # crew#561 CP3
     # crew#516 CP5 added a `tailscale` sidecar (platform/hermes-agent/tailscale.yaml,
     # tests/test_incident_crew516_otto_hands_on_the_mac.py); this test is about the `gateway`

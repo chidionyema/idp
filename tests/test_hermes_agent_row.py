@@ -90,7 +90,8 @@ def test_secrets_are_files_the_container_exports_never_pod_env():
     # crew#561 CP3: plus the estate MCP key (mcp-key.yaml), optional so a vault miss never blocks the gateway.
     mcp = {
         d["metadata"]["name"]: d
-        for d in yaml.safe_load_all((DIR / "mcp-key.yaml").read_text())
+        for f in ("mcp-key.yaml", "langfuse-key.yaml")
+        for d in yaml.safe_load_all((DIR / f).read_text())
         if d and d.get("kind") == "ExternalSecret"
     }
     ess.update(mcp)
@@ -98,6 +99,7 @@ def test_secrets_are_files_the_container_exports_never_pod_env():
         "hermes-agent-env",
         "hermes-agent-a2a",
         "hermes-agent-mcp",
+        "hermes-agent-langfuse",
     ]
     # idp#852: plus the App-key ExternalSecret that feeds the GithubAccessToken generator; it
     # feeds the generator, never the env dir.
@@ -240,26 +242,15 @@ def test_incident_apply_dispatch_is_not_displaced_by_pull_request_pushes():
 
 def test_the_pod_rolls_when_the_vault_entry_changes():
     dep = _one(_docs(), "Deployment")
-    # crew#516 CP5: hermes-agent-tailscale's ExternalSecret lives in tailscale.yaml, a sibling
-    # manifest in the same Kustomization -- still a Secret this Deployment mounts and should roll on.
-    all_docs = _docs() + [
-        d
-        for f in ("tailscale.yaml", "mcp-key.yaml")
-        for d in yaml.safe_load_all((DIR / f).read_text())
-    ]
-    targets = sorted(
-        d["spec"]["target"]["name"]
-        for d in all_docs
-        if d and d.get("kind") == "ExternalSecret"
-    )
-    assert (
-        sorted(
-            dep["metadata"]["annotations"]["secret.reloader.stakater.com/reload"].split(
-                ","
-            )
-        )
-        == targets
-    )
+    # Founder blueprint 2026-08-30 (~/.claude/docs/founder/2026-08-30T2326Z-*-4ca529a0.md): the
+    # enumerated reload list is deleted. The assertion that stood here hand-synced the list
+    # against the ExternalSecret targets -- "an assertion a developer can green by editing the
+    # expectation is not a control". `auto` is a constant: Reloader discovers every Secret and
+    # ConfigMap the pod consumes (projected sources included; stakater/Reloader chart-v2.2.16,
+    # internal/pkg/handler/upgrade.go getVolumeMountName), so there is nothing to keep in step.
+    ann = dep["metadata"]["annotations"]
+    assert ann.get("reloader.stakater.com/auto") == "true"
+    assert not any(k.endswith("reloader.stakater.com/reload") for k in ann)
 
 
 def github_token_is_minted_in_cluster(docs) -> bool:
