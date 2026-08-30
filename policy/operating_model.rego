@@ -322,7 +322,7 @@ touches_a_root if {
 touches_a_root if {
 	some f in input.pr.files
 	startswith(f, ".github/workflows/")
-	regex.match(`secrets\.SEED_`, input.pr.diff)
+	regex.match(`(?m)^\+.*secrets\.SEED_`, input.pr.added)
 }
 
 lifecycle_line_ok if {
