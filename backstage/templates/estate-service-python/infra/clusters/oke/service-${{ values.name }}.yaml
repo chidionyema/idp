@@ -1,0 +1,29 @@
+# ${{ values.name }}: ${{ values.description }}
+# Made by the Python golden path (crew#627 CP2). Same shape as every service row: after
+# secret-store (the vault entry) and edge (the route's Gateway).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: service-${{ values.name }}
+  namespace: flux-system
+spec:
+  interval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/services/${{ values.name }}
+  prune: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+  dependsOn:
+    - name: secret-store
+    - name: edge
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: ${{ values.name }}
+      namespace: ${{ values.name }}

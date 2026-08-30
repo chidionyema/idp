@@ -1,0 +1,178 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: estate-service-python
+  title: New Python service
+  description: >-
+    A Python service with everything it needs from one place: the repository with the estate
+    standards (ruff, pytest, bandit, pip-audit), scanners on from the first commit (gitleaks,
+    Trivy, CodeQL), tracing to the estate collector, the estate guards, and one pull request
+    that gives it a namespace, its secret, a deployment and a hostname behind the one login.
+    Founder, 2026-08-30: "provision a service with the infra it needs from one place".
+  tags:
+    - estate
+    - golden-path
+    - python
+spec:
+  owner: group:default/platform
+  type: service
+
+  parameters:
+    - title: What is it
+      required: [name, description, owner]
+      properties:
+        name:
+          title: Name
+          type: string
+          description: Lowercase, hyphenated. Becomes the repo, the entity, the namespace and the hostname.
+          pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+          maxLength: 30
+          ui:autofocus: true
+        description:
+          title: Description
+          type: string
+          description: One sentence a stranger can read. It shows on the entity page and in search.
+        owner:
+          title: Owner
+          type: string
+          ui:field: OwnerPicker
+          ui:options:
+            catalogFilter:
+              kind: [Group, User]
+        system:
+          title: System
+          type: string
+          default: estate
+          description: Which System it belongs to. Leave as estate unless it is its own stack.
+
+    - title: What it needs
+      properties:
+        addons:
+          title: Shared pieces
+          type: array
+          description: >-
+            Tracing, the guards and the scanners are always on. Tick only what this service
+            uses; each one is wired in the repository and provisioned in the infra pull request.
+          uniqueItems: true
+          ui:widget: checkboxes
+          items:
+            type: string
+            enum: [database, messaging, payments]
+            enumNames:
+              - "Database (Postgres on the cluster, CloudNativePG)"
+              - "Messaging (Apprise, the estate notifier)"
+              - "Payments (Stripe, keys from the vault)"
+
+    - title: Where it lives
+      required: [repoUrl]
+      properties:
+        repoUrl:
+          title: Repository
+          type: string
+          ui:field: RepoUrlPicker
+          ui:options:
+            allowedHosts: [github.com]
+            allowedOwners: [chidionyema]
+
+  steps:
+    - id: fetch
+      name: Render the repository
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          name: ${{ parameters.name }}
+          pkg: ${{ parameters.name | replace("-", "_") }}
+          description: ${{ parameters.description }}
+          owner: ${{ parameters.owner }}
+          system: ${{ parameters.system }}
+          addons: ${{ parameters.addons }}
+          destination: ${{ parameters.repoUrl | parseRepoUrl }}
+
+    - id: publish
+      name: Create the repository
+      action: publish:github
+      input:
+        repoUrl: ${{ parameters.repoUrl }}
+        description: ${{ parameters.description }}
+        defaultBranch: main
+        repoVisibility: private
+        protectDefaultBranch: true
+        requireCodeOwnerReviews: false
+        requiredStatusCheckContexts: [gate]
+
+    - id: register
+      name: Register it in the catalogue
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: /catalog-info.yaml
+
+    - id: infra
+      name: Render the infra
+      action: fetch:template
+      input:
+        url: ./infra
+        targetPath: infra
+        values:
+          name: ${{ parameters.name }}
+          description: ${{ parameters.description }}
+          addons: ${{ parameters.addons }}
+          destination: ${{ parameters.repoUrl | parseRepoUrl }}
+
+    - id: infra-pr
+      name: Open the infra pull request on idp
+      action: publish:github:pull-request
+      input:
+        repoUrl: github.com?owner=chidionyema&repo=idp
+        branchName: service/${{ parameters.name }}
+        sourcePath: infra
+        title: "service: ${{ parameters.name }} joins the cluster (golden path, crew#627 CP2)"
+        description: |
+          ## What
+          The Python golden path made **${{ parameters.name }}** (${{ parameters.description }}).
+          This pull request is the infra half: `platform/services/${{ parameters.name }}/`
+          (namespace, secret from the vault, deployment with two replicas spread across nodes,
+          service, route at `${{ parameters.name }}.<zone>` behind the one login) and the Flux row
+          `clusters/oke/service-${{ parameters.name }}.yaml`. Shared pieces ticked: ${{ parameters.addons | join(", ") }}.
+
+          Founder decision 3 (crew#627, 2026-08-30): it lands in staging on its own; a red check is
+          the only stop. Nothing here touches production.
+
+          ## Definition of done
+          1. Built: `platform/services/${{ parameters.name }}/`, `clusters/oke/service-${{ parameters.name }}.yaml`
+          2. Tests: the repository's own `gate` workflow; this repo's kustomize build and Kyverno rungs
+          3. CI green
+          4. Merged to main
+          5. Applied: Flux Kustomization `service-${{ parameters.name }}` Ready
+          6. Verified: `https://${{ parameters.name }}.<zone>/healthz` answers 200 behind the login
+          7. Drill: login-drill
+          8. Docs: the service repository's docs tree
+          9. Rollback: revert; the namespace is pruned by Flux
+          10. Evidence block: the Flux row's health check
+
+          ## Options considered
+          - Hand-written platform files as prospector has: rejected, that is the road the founder closed.
+          - A Helm chart per service: rejected, plain manifests are what every other row uses.
+
+          Drill: login-drill
+
+          ## Architecture laws
+          - LAW 1 zero-gravity: `kustomize build platform/services/${{ parameters.name }}` renders
+          - LAW 2 fractal: one namespace, one Flux row, one route; the same shape for every service
+          - LAW 3 nervous system: the Flux row's healthCheck on the Deployment is the receipt
+          - LAW 4 calibration: every manifest carries the labels the admission policies require
+
+          Optimised: template -> 1 PR, 0 hand edits; cut: nothing, the template is the plan
+
+          No-Issue: crew#627 CP2 (cross-repo issue)
+
+  output:
+    links:
+      - title: Repository
+        url: ${{ steps.publish.output.remoteUrl }}
+      - title: Open in catalogue
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}
+      - title: Infra pull request
+        url: ${{ steps['infra-pr'].output.remoteUrl }}

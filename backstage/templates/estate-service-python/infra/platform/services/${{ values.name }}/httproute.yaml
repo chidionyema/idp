@@ -1,0 +1,41 @@
+# ${{ values.name }}.<zone> behind the one login, the same two rules as platform/healthchecks:
+# /oauth2/ to the login, everything else through login-forward-auth to the service.
+# The Gateway needs a listener named https-${{ values.name }} for this hostname
+# (prospector deploy/k8s/base/edge.yaml); until the edge carries a wildcard listener that is
+# one line there per service.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ${{ values.name }}
+  namespace: ${{ values.name }}
+  labels:
+    backstage.io/kubernetes-id: ${{ values.name }}
+spec:
+  parentRefs:
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-${{ values.name }}
+  hostnames:
+    - "${{ values.name }}.${ESTATE_ZONE}"
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /oauth2/ }
+      filters:
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: friendly-errors }
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: edge-headers }
+      backendRefs:
+        - name: oauth2-proxy
+          namespace: identity
+          port: 80
+    - filters:
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: login-forward-auth }
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: friendly-errors }
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: edge-headers }
+      backendRefs:
+        - name: ${{ values.name }}
+          port: 80

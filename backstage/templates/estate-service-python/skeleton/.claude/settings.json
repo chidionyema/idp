@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "test -f \"$HOME/.claude/scripts/hook-run.py\" || { d=$(mktemp -d) && git clone -q --recurse-submodules \"${ESTATE_REPO:-https://github.com/chidionyema/claude-estate}\" \"$d\" && mkdir -p \"$HOME/.claude\" && cp -R \"$d\"/. \"$HOME/.claude\"/ && rm -rf \"$d\"; }",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

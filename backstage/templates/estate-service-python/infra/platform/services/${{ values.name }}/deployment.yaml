@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${{ values.name }}
+  namespace: ${{ values.name }}
+  annotations:
+    secret.reloader.stakater.com/reload: "${{ values.name }}-env"
+  labels:
+    app: ${{ values.name }}
+    app.kubernetes.io/name: ${{ values.name }}
+    backstage.io/kubernetes-id: ${{ values.name }}
+spec:
+  # Two replicas spread across nodes: one pod is one node event away from a 503
+  # (platform/scheduling/require-availability.yaml).
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ${{ values.name }}
+  template:
+    metadata:
+      labels:
+        app: ${{ values.name }}
+        app.kubernetes.io/name: ${{ values.name }}
+        backstage.io/kubernetes-id: ${{ values.name }}
+    spec:
+      automountServiceAccountToken: false
+      topologySpreadConstraints:
+        - topologyKey: kubernetes.io/hostname
+          maxSkew: 1
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: ${{ values.name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: ghcr.io/${{ values.destination.owner }}/${{ values.name }}:main # {"$imagepolicy": "flux-system:${{ values.name }}:tag"}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            - { name: OTEL_SERVICE_NAME, value: "${{ values.name }}" }
+            - { name: SECRET_DIR, value: /var/run/secrets/${{ values.name }} }
+          volumeMounts:
+            - name: env
+              mountPath: /var/run/secrets/${{ values.name }}
+              readOnly: true
+{%- if 'database' in values.addons %}
+            - name: db
+              mountPath: /var/run/secrets/${{ values.name }}/db
+              readOnly: true
+{%- endif %}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+      volumes:
+        - name: env
+          secret:
+            secretName: ${{ values.name }}-env
+            optional: true
+{%- if 'database' in values.addons %}
+        - name: db
+          secret:
+            secretName: ${{ values.name }}-db-app
+{%- endif %}

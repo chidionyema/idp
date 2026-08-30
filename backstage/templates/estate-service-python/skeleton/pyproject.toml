@@ -1,0 +1,44 @@
+[project]
+name = "${{ values.pkg }}"
+version = "0.1.0"
+description = "${{ values.description }}"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "opentelemetry-api>=1.27",
+  "opentelemetry-sdk>=1.27",
+  "opentelemetry-exporter-otlp-proto-http>=1.27",
+  "opentelemetry-instrumentation-fastapi>=0.48b0",
+{%- if 'database' in values.addons %}
+  "psycopg[binary]>=3.2",
+{%- endif %}
+{%- if 'messaging' in values.addons %}
+  "apprise>=1.9",
+{%- endif %}
+{%- if 'payments' in values.addons %}
+  "stripe>=11",
+{%- endif %}
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27", "ruff>=0.6", "bandit>=1.7", "pip-audit>=2.7", "pre-commit>=3.8"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E9", "F", "B", "S", "I"]
+per-file-ignores = { "tests/*" = ["S101"] }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
