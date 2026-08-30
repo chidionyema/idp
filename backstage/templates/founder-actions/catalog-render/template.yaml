@@ -26,7 +26,6 @@ spec:
         enum:
         - dry-run
         - commit
-        default: dry-run
   steps:
   - id: dispatch
     name: Dispatch catalog-render.yml on main
