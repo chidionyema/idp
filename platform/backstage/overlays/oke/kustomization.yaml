@@ -123,6 +123,11 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value: {name: APP_BASE_URL, value: "https://catalogue.${ESTATE_ZONE}"}
+      # crew#684 CP6, 2026-08-30: the one Host Healthchecks accepts (its ALLOWED_HOSTS,
+      # platform/healthchecks/env.yaml); app-config.container.yaml sends it on /healthchecks.
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: HEALTHCHECKS_HOST, value: "hc.${ESTATE_ZONE}"}
       # crew#562: Sunshine's Basic-auth header as a mounted file for the /sunshine proxy
       # endpoint (app-config.container.yaml). optional: false, like backstage-env: a pod that
       # cannot pair the founder's phone is not a pod that should report Ready.
