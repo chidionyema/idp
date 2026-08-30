@@ -48,7 +48,10 @@ def test_the_pod_reads_the_cluster_as_a_namespaced_service_account():
     spec = deploy["spec"]["template"]["spec"]
     assert spec["serviceAccountName"] == "hermes-agent"
     assert spec["automountServiceAccountToken"] is True
-    assert "rbac.yaml" in yaml.safe_load((HA / "kustomization.yaml").read_text())["resources"]
+    assert (
+        "rbac.yaml"
+        in yaml.safe_load((HA / "kustomization.yaml").read_text())["resources"]
+    )
 
 
 def test_the_estate_mcp_key_is_the_gateways_own_and_reaches_the_env_dir():
@@ -58,13 +61,22 @@ def test_the_estate_mcp_key_is_the_gateways_own_and_reaches_the_env_dir():
     assert row["secretKey"] == "ESTATE_MCP_KEY"
     assert row["remoteRef"] == {"key": "mcp-gateway", "property": "MCP_GATEWAY_KEY"}
     gateway_es = next(
-        d for d in _docs(ROOT / "platform" / "mcp" / "external-secret.yaml") if d["kind"] == "ExternalSecret"
+        d
+        for d in _docs(ROOT / "platform" / "mcp" / "external-secret.yaml")
+        if d["kind"] == "ExternalSecret"
     )
     assert gateway_es["spec"]["dataFrom"][0]["extract"]["key"] == "mcp-gateway"
     deploy = next(d for d in _docs(HA / "gateway.yaml") if d["kind"] == "Deployment")
-    env = next(v for v in deploy["spec"]["template"]["spec"]["volumes"] if v["name"] == "env")
-    assert {"name": "hermes-agent-mcp", "optional": True} in [s["secret"] for s in env["projected"]["sources"]]
-    assert "mcp-key.yaml" in yaml.safe_load((HA / "kustomization.yaml").read_text())["resources"]
+    env = next(
+        v for v in deploy["spec"]["template"]["spec"]["volumes"] if v["name"] == "env"
+    )
+    assert {"name": "hermes-agent-mcp", "optional": True} in [
+        s["secret"] for s in env["projected"]["sources"]
+    ]
+    assert (
+        "mcp-key.yaml"
+        in yaml.safe_load((HA / "kustomization.yaml").read_text())["resources"]
+    )
 
 
 def test_every_crew561_capability_is_a_graded_row_of_the_parity_playbook():
@@ -85,15 +97,31 @@ def test_every_crew561_capability_is_a_graded_row_of_the_parity_playbook():
     ):
         assert row in rows, row
     assert "show model-lane " not in body, "the model lane is graded, not listed"
-    assert "mcp.mumchimp.com" not in body, "the MCP URL comes from the pod's config (LAW 46)"
+    assert "mcp.mumchimp.com" not in body, (
+        "the MCP URL comes from the pod's config (LAW 46)"
+    )
 
 
 def test_the_parity_is_on_the_estates_clock_in_one_group_with_oke_check():
-    wf = yaml.safe_load((ROOT / ".github" / "workflows" / "otto-parity.yml").read_text(encoding="utf-8"))
+    wf = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "otto-parity.yml").read_text(encoding="utf-8")
+    )
     cron = wf[True]["schedule"][0]["cron"]
-    row = next(r for r in yaml.safe_load((ROOT / "drills" / "catalogue.yaml").read_text())["drills"] if r["name"] == "otto-parity")
-    assert row["schedule"] == cron and row["workflow"] == "otto-parity.yml" and row["owner"]
-    dispatcher = (ROOT / "platform" / "drills" / "drill-dispatcher.yaml").read_text(encoding="utf-8")
+    row = next(
+        r
+        for r in yaml.safe_load((ROOT / "drills" / "catalogue.yaml").read_text())[
+            "drills"
+        ]
+        if r["name"] == "otto-parity"
+    )
+    assert (
+        row["schedule"] == cron
+        and row["workflow"] == "otto-parity.yml"
+        and row["owner"]
+    )
+    dispatcher = (ROOT / "platform" / "drills" / "drill-dispatcher.yaml").read_text(
+        encoding="utf-8"
+    )
     assert "otto-parity.yml=" + cron.replace(" ", "_") in dispatcher
     assert wf["concurrency"]["group"] == "oke-check-workflow_dispatch"
     step = wf["jobs"]["parity"]["steps"][-1]
