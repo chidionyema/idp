@@ -257,3 +257,17 @@ def test_a_built_document_validates_and_a_missing_source_is_blind(tmp_path):
         b.now_utc(),
     )
     assert len(blind) == 6, blind
+
+
+def test_incident_crew648_a_bare_main_sha_is_refused_in_a_sentence_and_the_workflow_passes_repo_equals_sha():
+    """Run 33301723691 died on `--main-sha "$GITHUB_SHA"` with a dict traceback."""
+    import subprocess
+
+    r = subprocess.run(
+        [sys.executable, str(SCRIPT), "--main-sha", "abc123", "--out", "/dev/null"],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 2 and "repo=sha" in r.stderr and "Traceback" not in r.stderr
+    wf = (ROOT / ".github/workflows/estate-state.yml").read_text()
+    assert '--main-sha "idp=$GITHUB_SHA"' in wf

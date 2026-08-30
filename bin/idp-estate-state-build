@@ -301,11 +301,7 @@ def build(a, now: dt.datetime) -> dict:
         "delivery": {
             "open_p0": p0,
             "failed_runs": parse_runs(runs or [], a.window_hours),
-            **(
-                {"main_sha": dict(s.split("=", 1) for s in a.main_sha)}
-                if a.main_sha
-                else {}
-            ),
+            **({"main_sha": dict(a.main_sha)} if a.main_sha else {}),
         },
         "runtime": {
             "clusters": [cluster],
@@ -327,6 +323,14 @@ def validate(doc: dict) -> None:
     jsonschema.Draft202012Validator(json.loads(SCHEMA.read_text())).validate(doc)
 
 
+def _repo_sha(text: str) -> tuple[str, str]:
+    """`repo=sha`; a bare sha is refused with a plain sentence, not a dict traceback."""
+    repo, sep, sha = text.partition("=")
+    if not sep or not repo or not sha:
+        raise argparse.ArgumentTypeError(f"--main-sha wants repo=sha, got {text!r}")
+    return repo, sha
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--cluster-receipt")
@@ -340,7 +344,9 @@ def main(argv=None) -> int:
     )
     p.add_argument("--runs", help="JSON list of workflow runs over the window")
     p.add_argument("--window-hours", type=int, default=6)
-    p.add_argument("--main-sha", action="append", help="repo=sha, repeatable")
+    p.add_argument(
+        "--main-sha", action="append", type=_repo_sha, help="repo=sha, repeatable"
+    )
     p.add_argument("--out", required=True)
     a = p.parse_args(argv)
     now = now_utc()

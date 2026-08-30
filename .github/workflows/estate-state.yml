@@ -107,7 +107,7 @@ jobs:
           bin/idp-estate-state-build --cluster-receipt "$RUNNER_TEMP/cluster.txt" --feed "$RUNNER_TEMP/feed.md" \
             --rulings "$RUNNER_TEMP/rulings.json" --drill-log "$RUNNER_TEMP/drill.log" --drill-at "$(cat "$RUNNER_TEMP/drill.at")" \
             --issues "$RUNNER_TEMP/issues.json" --runs "$RUNNER_TEMP/runs.json" --window-hours 6 \
-            --main-sha "$GITHUB_SHA" --out "$RUNNER_TEMP/out/estate-state.json" | tee -a "$GITHUB_STEP_SUMMARY"
+            --main-sha "idp=$GITHUB_SHA" --out "$RUNNER_TEMP/out/estate-state.json" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: publish, never on a pull request (a PR builds and validates, main publishes)
         if: github.event_name != 'pull_request'
         env:
