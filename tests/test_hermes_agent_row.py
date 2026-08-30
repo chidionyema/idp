@@ -300,8 +300,8 @@ def test_github_token_is_minted_in_cluster_day0():
         "the generator holds exactly the application-engineer lane, no widening"
     )
     # LAW 46: the identifiers ride strict envsubst from the flux-system/github-app Secret
-    assert gen["spec"]["appID"] == "${githubAppID}"
-    assert gen["spec"]["installID"] == "${githubAppInstallationID}"
+    assert gen["spec"]["appID"] == "${githubAppIDQuoted}"
+    assert gen["spec"]["installID"] == "${githubAppInstallationIDQuoted}"
     pem = [
         d
         for d in docs
@@ -343,5 +343,5 @@ def test_the_flux_rows_define_the_generators_substitution_vars():
         assert {"kind": "Secret", "name": "github-app"} in row["spec"]["postBuild"][
             "substituteFrom"
         ], name
-        # strict envsubst: an undefined ${githubAppID} fails the row, so it waits on the Secret
+        # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
         assert {"name": "alerts-github"} in row["spec"]["dependsOn"], name

@@ -70,7 +70,10 @@ spec:
 # a fresh installation token of the estate-agents App on every refresh of the ExternalSecret above,
 # narrowed to the same application-engineer lane as platform/github-app/lanes.json. No workflow,
 # no script, no vault hop: freshness is a property of the platform layer, never of a drill.
-# ${githubAppID} / ${githubAppInstallationID} are substituted by Flux from the
+# ${githubAppIDQuoted} / ${githubAppInstallationIDQuoted} are substituted by Flux from the
+# flux-system/github-app Secret; the Quoted variants carry their own double quotes because
+# kustomize build re-emits every scalar plain (incident run 33339964930: a bare numeral
+# parses as int and the API server refuses spec.appID). Source of the keys:
 # flux-system/github-app Secret (platform/alerts-github/github-app.yaml; this row's substituteFrom
 # in clusters/oke/platform.yaml) -- account identifiers never typed in git (LAW 46).
 apiVersion: generators.external-secrets.io/v1alpha1
@@ -79,8 +82,8 @@ metadata:
   name: hermes-agent-github
   namespace: hermes-agent
 spec:
-  appID: "${githubAppID}"
-  installID: "${githubAppInstallationID}"
+  appID: ${githubAppIDQuoted}
+  installID: ${githubAppInstallationIDQuoted}
   permissions:
     metadata: read
     contents: write
