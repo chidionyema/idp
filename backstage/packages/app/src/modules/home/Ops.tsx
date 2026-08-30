@@ -1,11 +1,15 @@
 // The Ops dashboard (crew#684): "I need to see everything". CP1 is the cluster tile — nodes
 // ready, pods not ready by namespace, Flux rows not ready — read live through the Kubernetes
-// plugin. Later checkpoints add the open-reds table, founder tiles and the drills row here.
-import { Content, Page } from '@backstage/core-components';
+// plugin. CP2 adds the open-reds table: every firing alert, red drill and door down, with its
+// owner, since when, the next action and the board link; a red with no owner is itself a red.
+import { Content, Link, Page } from '@backstage/core-components';
 import { Typography, makeStyles } from '@material-ui/core';
 import { Pill } from './EstateHome';
 import { ClusterHealth, healthSentence } from './clusterHealth';
 import { useClusterHealth } from './useClusterHealth';
+import { Red, redsSentence } from './openReds';
+import { useOpenReds } from './useOpenReds';
+import { ago } from './estate';
 import { monoFamily } from '../theme/tokens';
 
 const useStyles = makeStyles(theme => ({
@@ -46,6 +50,22 @@ const useStyles = makeStyles(theme => ({
     color: theme.palette.text.secondary,
   },
   mono: { fontFamily: monoFamily, fontSize: 12, overflowWrap: 'anywhere' },
+  reds: { marginTop: theme.spacing(3) },
+  redsTitle: { fontWeight: 600, fontSize: 18, margin: theme.spacing(0, 0, 1) },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: 14,
+    '& th, & td': {
+      textAlign: 'left',
+      verticalAlign: 'top',
+      padding: theme.spacing(1),
+      borderBottom: `1px solid ${theme.palette.divider}`,
+    },
+    '& th': { fontWeight: 600, color: theme.palette.text.secondary },
+  },
+  unowned: { color: theme.palette.error.main, fontWeight: 600 },
+  scroll: { overflowX: 'auto' },
 }));
 
 export const TITLE = 'Ops';
@@ -120,9 +140,65 @@ const ClusterTile = ({ health }: { health: ClusterHealth }) => {
   );
 };
 
+const KIND_LABEL: Record<Red['kind'], string> = {
+  alert: 'Alert',
+  drill: 'Drill',
+  door: 'Door',
+};
+
+const RedsTable = ({ reds, now }: { reds: Red[]; now: number }) => {
+  const classes = useStyles();
+  return (
+    <div className={classes.scroll}>
+      <table className={classes.table} data-testid="ops-reds">
+        <thead>
+          <tr>
+            <th>Red</th>
+            <th>Owner</th>
+            <th>Since</th>
+            <th>Next action</th>
+            <th>Board</th>
+          </tr>
+        </thead>
+        <tbody>
+          {reds.map(r => (
+            <tr
+              key={r.key}
+              data-testid="ops-red"
+              data-kind={r.kind}
+              data-owned={r.owner ? 'yes' : 'no'}
+            >
+              <td>
+                <span className={classes.mono}>{KIND_LABEL[r.kind]}</span>{' '}
+                {r.link ? <Link to={r.link}>{r.name}</Link> : r.name}
+                <br />
+                <span className={classes.mono}>{r.why}</span>
+              </td>
+              <td>
+                {r.owner ?? <span className={classes.unowned}>No owner</span>}
+              </td>
+              <td title={r.since}>{ago(r.since, now) ?? 'Unknown'}</td>
+              <td>{r.nextAction}</td>
+              <td>
+                {r.boardUrl ? (
+                  <Link to={r.boardUrl}>Board</Link>
+                ) : (
+                  <span className={classes.unowned}>No board link</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 export const Ops = () => {
   const classes = useStyles();
   const loaded = useClusterHealth();
+  const reds = useOpenReds();
+  const now = Date.now();
   return (
     <Page themeId="home">
       <Content>
@@ -153,6 +229,29 @@ export const Ops = () => {
         <div className={classes.grid}>
           {loaded.state === 'ready' && <ClusterTile health={loaded.health} />}
         </div>
+        <section className={classes.reds} data-testid="ops-reds-section">
+          <h2 className={classes.redsTitle}>Open reds</h2>
+          {reds.state === 'loading' && (
+            <p data-testid="ops-reds-loading">
+              Reading the alerts and the catalogue.
+            </p>
+          )}
+          {reds.state === 'ready' && (
+            <>
+              <p data-testid="ops-reds-sentence">{redsSentence(reds.reds)}</p>
+              {reds.unread.map(u => (
+                <p
+                  key={u}
+                  data-testid="ops-reds-unread"
+                  className={classes.unowned}
+                >
+                  Could not be read, so its reds are unknown: {u}
+                </p>
+              ))}
+              {reds.reds.length > 0 && <RedsTable reds={reds.reds} now={now} />}
+            </>
+          )}
+        </section>
       </Content>
     </Page>
   );
