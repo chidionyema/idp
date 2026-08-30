@@ -161,6 +161,7 @@ nav:
       - Dockerfiles: how-to/onboarding/dockerfiles.md
       - LiteLLM: how-to/onboarding/litellm.md
       - KINI: how-to/onboarding/kini.md
+      - Otto (the founder's agent): how-to/onboarding/otto.md
       - Migration gate: how-to/onboarding/migration.md
       - Multiarch gate: how-to/onboarding/multiarch.md
       - Policy test: how-to/onboarding/policy-test.md
