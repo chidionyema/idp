@@ -25,6 +25,9 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "bin" / "lib"))
+from receipt_age import served_now  # noqa: E402 - path has to be set before the import
+
 SCHEMA = ROOT / "platform/estate-state/schema.json"
 # on disk (~/.estate/feed.md, state/feed/latest.md): `## 2026-08-30T08:08:03Z · session a7b41022 · lane science`;
 # the compact hook prints the same row as `## 2026-08-30T08:08Z · a7b41022 · science`; both are read.
@@ -40,8 +43,13 @@ DRILL_FAIL = re.compile(r"FAIL\s+login-drill\s+(?P<detail>.+)$")
 SESSION_ACTIVE_MINUTES = 90
 
 
-def now_utc() -> dt.datetime:
-    return dt.datetime.now(dt.timezone.utc)
+def now_utc(given: str | None = None) -> dt.datetime | None:
+    """The clock the document is stamped with: `--now` when given, else GitHub's own `Date`
+    header (bin/lib/receipt_age.served_now, crew#583). Never this machine's clock: a flat
+    battery would date every session and receipt wrong. None means the document cannot be built."""
+    if given:
+        return dt.datetime.fromisoformat(given.replace("Z", "+00:00"))
+    return served_now()
 
 
 def stamp(t: dt.datetime) -> str:
@@ -341,6 +349,9 @@ def _repo_sha(text: str) -> tuple[str, str]:
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument(
+        "--now", help="ISO-8601 clock for tests; otherwise GitHub's Date header"
+    )
     p.add_argument("--cluster-receipt")
     p.add_argument("--feed")
     p.add_argument("--rulings")
@@ -357,7 +368,12 @@ def main(argv=None) -> int:
     )
     p.add_argument("--out", required=True)
     a = p.parse_args(argv)
-    now = now_utc()
+    now = now_utc(a.now)
+    if now is None:
+        print(
+            "BLIND estate-state: no served clock (gh api rate_limit gave no Date header); not built"
+        )
+        return 1
     doc, blind = build(a, now)
     validate(doc)
     pathlib.Path(a.out).write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")

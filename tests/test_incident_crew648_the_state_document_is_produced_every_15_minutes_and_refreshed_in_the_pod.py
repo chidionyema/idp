@@ -222,6 +222,8 @@ def test_a_built_document_validates_and_a_missing_source_is_blind(tmp_path):
     out = tmp_path / "estate-state.json"
     rc = b.main(
         [
+            "--now",
+            "2026-08-30T09:00:00Z",
             "--cluster-receipt",
             str(tmp_path / "cluster.txt"),
             "--feed",
