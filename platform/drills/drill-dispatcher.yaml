@@ -99,17 +99,29 @@ spec:
 
                   def period_hours(cron):
                       """Hours between two firings of a catalogue cron. Only the shapes drills/catalogue.yaml
-                      uses: `m * * * *` hourly, `m */N * * *` every N hours, `m H * * *` daily,
+                      uses: `m * * * *` hourly, `m */N * * *` every N hours, `m H1,H2,.. * * *` an evenly
+                      spaced hour list (crew#684: catalog-render's `58 1,7,13,19`), `m H * * *` daily,
                       `m H * * D` weekly. Anything else is refused loudly, never guessed."""
+                      return _period_and_offset(cron)[0]
+
+
+                  def _period_and_offset(cron):
+                      """(hours between firings, the hour the first firing of the day is at)."""
                       minute, hour, dom, mon, dow = cron.split()
                       if not minute.isdigit() or dom != "*" or mon != "*":
                           raise ValueError("unsupported cron %r" % cron)
                       if hour == "*":
-                          return 1
+                          return 1, 0
                       if hour.startswith("*/") and hour[2:].isdigit() and 24 % int(hour[2:]) == 0:
-                          return int(hour[2:])
+                          return int(hour[2:]), 0
+                      if "," in hour and all(h.isdigit() for h in hour.split(",")):
+                          hours = [int(h) for h in hour.split(",")]
+                          steps = {b - a for a, b in zip(hours, hours[1:])}
+                          if len(steps) == 1 and 24 % len(hours) == 0 and steps == {24 // len(hours)}:
+                              return 24 // len(hours), hours[0]
+                          raise ValueError("unsupported cron %r (hours are not evenly spaced)" % cron)
                       if hour.isdigit():
-                          return 168 if dow != "*" else 24
+                          return (168 if dow != "*" else 24), 0
                       raise ValueError("unsupported cron %r" % cron)
 
 
@@ -119,13 +131,15 @@ spec:
                       before GitHub's cron gets its chance. Slower crons are due at their own H:M, so a
                       daily 07:41 drill is not dispatched at 00:03 and again by the cron at 07:41."""
                       minute, hour, _dom, _mon, dow = cron.split()
-                      p = period_hours(cron)
+                      p, offset = _period_and_offset(cron)
                       day = now.replace(hour=0, minute=0, second=0, microsecond=0)
                       if p == 1:
                           start = now.replace(minute=0, second=0, microsecond=0)
                           return start, start
                       if p < 24:
-                          start = day + timedelta(hours=(now.hour // p) * p)
+                          # an hour list `1,7,13,19` fires at offset 1: the period holding 00:03 began
+                          # at 19:00 the day before and its firing was 19:58 (floor division carries)
+                          start = day + timedelta(hours=((now.hour - offset) // p) * p + offset)
                           return start, start + timedelta(minutes=int(minute))
                       if p == 24:
                           return day, day + timedelta(hours=int(hour), minutes=int(minute))
@@ -198,7 +212,7 @@ spec:
                 - { name: HOME, value: /tmp }
                 - { name: GITHUB_REPO, value: "${ESTATE_GITHUB_REPO}" }
                 # every non-pending catalogue drill with its cron (spaces as _); the period comes from the cron
-                - { name: WORKFLOWS, value: "login-drill.yml=7_*_*_*_* stale.yml=17_*_*_*_* oke-check.yml=17_6_*_*_* estate-escrow.yml=29_*/6_*_*_* verdict-langfuse.yml=37_*_*_*_* messaging-drill.yml=47_5_*_*_*" }
+                - { name: WORKFLOWS, value: "login-drill.yml=7_*_*_*_* stale.yml=17_*_*_*_* oke-check.yml=17_6_*_*_* estate-escrow.yml=29_*/6_*_*_* verdict-langfuse.yml=37_*_*_*_* messaging-drill.yml=47_5_*_*_* catalog-render.yml=58_1,7,13,19_*_*_*" }
                 # kyverno secrets-not-from-env-vars: the App's id, installation id and key are files
                 # from the mounted Secret, never env values (offline-gate refused the secretKeyRef form).
                 - { name: GITHUB_APP_DIR, value: /var/run/github-app }

@@ -22,8 +22,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
+        # No default (crew#684): the estate's clock (platform/drills/drill-dispatcher.yaml) dispatches
+        # with no inputs when GitHub drops the cron, and an empty mode publishes exactly as the cron
+        # does. The founder's portal button always passes mode itself.
         description: "dry-run (diff in the summary) or commit (push the branch, open the PR)"
-        default: dry-run
         type: choice
         options: [dry-run, commit]
   schedule:
@@ -116,7 +118,7 @@ jobs:
           { echo; echo '```'; tail -60 "$RUNNER_TEMP/render.log"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit $rc
       - name: estate.db to the registry (crew#458 row 3; estate-mcp on the cluster pulls it)
-        if: ${{ (inputs.mode || 'dry-run') == 'commit' }}
+        if: ${{ (inputs.mode || 'commit') == 'commit' }}
         working-directory: idp
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

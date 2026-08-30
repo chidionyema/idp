@@ -50,10 +50,13 @@ def test_incident_crew516_keys_reach_rclone_as_environment_never_argv():
     assert "secrets." not in fetch["run"]                  # values live in env, not the command
 
 
-def test_incident_crew516_default_is_dry_run_and_commit_is_a_choice():
+def test_incident_crew516_dry_run_and_commit_are_choices_and_no_input_means_commit():
+    """crew#684 (2026-08-30): the dry-run default this test used to pin made the estate clock's
+    input-less dispatch (platform/drills/drill-dispatcher.yaml) push nothing, exactly as the hand
+    dispatch at 05:06Z did (run 33293939687). No default: the button chooses, the clock publishes."""
     wf = _wf()
     inputs = wf[True]["workflow_dispatch"]["inputs"]["mode"]   # yaml reads `on` as True
-    assert inputs["default"] == "dry-run" and inputs["options"] == ["dry-run", "commit"]
+    assert "default" not in inputs and inputs["options"] == ["dry-run", "commit"]
     render = next(s for s in _steps() if s.get("name") == "render")
     assert re.search(r"dry-run.*--dry-run", render["run"])
     assert "58 1,7,13,19 * * *" in [c["cron"] for c in wf[True]["schedule"]]
