@@ -197,6 +197,18 @@ drills:
       01:58Z schedule never fired, the Ops page read "What waits on you could not be read" and the
       founder saw the portal as down; GitHub's cron is best effort, this row is the estate's promise.
 
+  - name: otto-parity
+    owner: science
+    workflow: otto-parity.yml
+    job: parity
+    schedule: "41 * * * *"
+    max_age_hours: 3
+    proves: >-
+      Otto in the cluster has every capability crew#561 names, graded from inside the running
+      pod by the otto-parity playbook: gateway up, the Mac reachable through the tailnet, memory
+      answering, the model lane on the estate router, a repo workspace it can clone and push, a
+      ServiceAccount that reads its own namespace and nothing else, and the estate MCP answering
+      its key.
   - name: estate-state
     owner: science
     workflow: estate-state.yml

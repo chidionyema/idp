@@ -541,7 +541,30 @@ pb_otto_parity() {
   step mac-run-hostname $K exec "$d" -n "$ns" -c gateway -- mac-run hostname
   step hindsight-answers $K exec "$d" -n "$ns" -c gateway -- python3 -c 'import os,urllib.request; u=os.environ["HINDSIGHT_API_URL"]; print(u, urllib.request.urlopen(u+"/health", timeout=5).status)'
   step cron-lanes-installed sh -c "$K exec $d -n $ns -c gateway -- python3 -c 'import json; j=json.load(open(\"/data/cron/jobs.json\")); n=len(j.get(\"jobs\", j) if isinstance(j, dict) else j); print(\"jobs=%d\" % n); raise SystemExit(0 if n else 1)'"
-  show model-lane sh -c "$K exec $d -n $ns -c gateway -- sh -c 'grep -E \"^(model|provider|base_url|  provider|  base_url)\" /data/config.yaml | head -8'"
+  # crew#561 CP5 as a row, not a listing: the primary lane is the estate router, read from the
+  # pod's own rendered config, and no vendor key decides a turn.
+  step model-lane-is-router $K exec "$d" -n "$ns" -c gateway -- sh -c 'python3 -c "import yaml; c=yaml.safe_load(open(\"/data/config.yaml\")); m=c[\"model\"]; u=m[\"base_url\"]; assert m[\"provider\"]==\"custom\" and u.endswith(\"/v1\") and \"llm.\" in u, m; print(\"primary\", u)"'
+  # crew#561 CP1: repos as a workspace on the pod's own volume, cloned with the pod's own token.
+  # The push is a dry run: it proves the credential writes without leaving a branch behind.
+  step repo-workspace $K exec "$d" -n "$ns" -c gateway -- sh -c 'for f in /run/secrets/hermes-agent-env/*; do n=$(basename "$f"); case "$n" in [A-Z_][A-Z0-9_]*) export "$n=$(cat "$f")";; esac; done; test -n "${GITHUB_TOKEN:-}" || { echo "no GITHUB_TOKEN in the env dir"; exit 1; }; rm -rf /data/workspace/idp; git clone -q --depth 1 "https://x-access-token:${GITHUB_TOKEN}@github.com/chidionyema/idp" /data/workspace/idp && cd /data/workspace/idp && git checkout -q -b otto/parity-probe && git push -q --dry-run origin otto/parity-probe && echo "clone, branch and push (dry run) ok from $(git rev-parse --short HEAD)"'
+  # crew#561 CP2: the ServiceAccount reads its own namespace and nothing else. Both halves are
+  # graded: a yes inside the namespace and a no outside it (a role that reads everything is red).
+  step sa-reads-own-namespace $K auth can-i list pods -n "$ns" --as="system:serviceaccount:$ns:hermes-agent"
+  step sa-blind-elsewhere sh -c "a=\$($K auth can-i list secrets -n kube-system --as=system:serviceaccount:$ns:hermes-agent 2>/dev/null); [ \"\$a\" = no ] && echo 'kube-system secrets: no'"
+  # crew#561 CP3: the estate MCP answers the pod with the pod's own key, at the URL the pod's
+  # config names (never typed here, LAW 46). Only the status is printed, never the key.
+  # crew#561, founder 2026-08-30 "Otto need to be mandated also else may forget": the entrypoint reads
+  # estate state at boot and logs READ or BLIND; a boot with neither line is a boot that forgot.
+  step estate-state-read-at-start sh -c "$K logs $d -n $ns -c gateway | grep -m1 '^estate-state: READ '"
+  step estate-mcp-answers $K exec "$d" -n "$ns" -c gateway -- sh -c 'python3 -c "
+import json, os, sys, urllib.request, yaml
+c = yaml.safe_load(open(\"/data/config.yaml\"))
+url = c[\"mcp_servers\"][\"estate\"][\"url\"]
+key = open(\"/run/secrets/hermes-agent-env/ESTATE_MCP_KEY\").read().strip()
+body = json.dumps({\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-03-26\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"otto-parity\", \"version\": \"0\"}}}).encode()
+r = urllib.request.urlopen(urllib.request.Request(url, body, {\"Authorization\": \"Bearer \" + key, \"Content-Type\": \"application/json\", \"Accept\": \"application/json, text/event-stream\"}), timeout=15)
+print(url, r.status, \"session\" if r.headers.get(\"Mcp-Session-Id\") else \"no-session\")
+"'
 }
 
 # healthchecks-door: crew#684, 2026-08-30 07:0xZ. Read-only. idp#957 (Host header) and idp#962 (enrol
