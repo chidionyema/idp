@@ -21,11 +21,31 @@ def test_one_value_minted_by_terraform_is_read_by_both_rows() -> None:
     tf = (ROOT / "platform" / "oci" / "healthchecks.tf").read_text()
     assert 'resource "random_uuid" "healthchecks_ro_key"' in tf
     assert f'"{KEY}"' in tf and "random_uuid.healthchecks_ro_key.result" in tf
-    hc = list(yaml.safe_load_all((ROOT / "platform" / "healthchecks" / "external-secret.yaml").read_text()))
-    keys = {d["secretKey"]: d["remoteRef"]["key"] for doc in hc if doc for d in doc["spec"].get("data", [])}
+    hc = list(
+        yaml.safe_load_all(
+            (ROOT / "platform" / "healthchecks" / "external-secret.yaml").read_text()
+        )
+    )
+    keys = {
+        d["secretKey"]: d["remoteRef"]["key"]
+        for doc in hc
+        if doc
+        for d in doc["spec"].get("data", [])
+    }
     assert keys.get("RO_KEY") == KEY
-    bs = yaml.safe_load((ROOT / "platform" / "backstage" / "overlays" / "oke" / "healthchecks-ro-external-secret.yaml").read_text())
-    assert bs["spec"]["data"] == [{"secretKey": "HC_API_KEY_RO", "remoteRef": {"key": KEY}}]
+    bs = yaml.safe_load(
+        (
+            ROOT
+            / "platform"
+            / "backstage"
+            / "overlays"
+            / "oke"
+            / "healthchecks-ro-external-secret.yaml"
+        ).read_text()
+    )
+    assert bs["spec"]["data"] == [
+        {"secretKey": "HC_API_KEY_RO", "remoteRef": {"key": KEY}}
+    ]
     assert bs["metadata"]["namespace"] == "backstage"
 
 
@@ -38,8 +58,12 @@ def test_the_portal_holds_the_key_as_a_file_and_the_page_names_no_host() -> None
     cfg = yaml.safe_load((ROOT / "backstage" / "app-config.container.yaml").read_text())
     ep = cfg["proxy"]["endpoints"]["/healthchecks"]
     assert ep["allowedMethods"] == ["GET"]
-    assert ep["headers"]["X-Api-Key"] == {"$file": "/run/secrets/healthchecks-ro/HC_API_KEY_RO"}
-    kz = (ROOT / "platform" / "backstage" / "overlays" / "oke" / "kustomization.yaml").read_text()
+    assert ep["headers"]["X-Api-Key"] == {
+        "$file": "/run/secrets/healthchecks-ro/HC_API_KEY_RO"
+    }
+    kz = (
+        ROOT / "platform" / "backstage" / "overlays" / "oke" / "kustomization.yaml"
+    ).read_text()
     assert "healthchecks-ro-external-secret.yaml" in kz
     assert "mountPath: /run/secrets/healthchecks-ro" in kz and "optional: false" in kz
     hook = (HOME / "useHealthchecks.ts").read_text()
