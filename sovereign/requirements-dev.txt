@@ -16,3 +16,6 @@ pytest-xdist>=3.6
 -r requirements.txt
 # bin/catalog-gen and bin/catalog-links-check import yaml; the bdd steps run them (crew#297)
 pyyaml>=6.0
+
+# crew#648 CP1: tests/test_incident_crew648_* validates platform/estate-state/schema.json with jsonschema
+jsonschema==4.26.0
