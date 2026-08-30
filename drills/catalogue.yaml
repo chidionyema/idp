@@ -40,7 +40,20 @@ drills:
     max_age_hours: 26
     proves: >-
       A sign-in to the front door completes end to end from a runner that holds no password,
-      so the federated login is exercised daily rather than only when the founder tries it.
+      so the federated login is exercised hourly rather than only when the founder tries it;
+      the second hop is graded on every door: catalogue.<zone>, signoz.<zone>, hc.<zone>,
+      llm.<zone>/ui/, catalogue.<zone>/screen/ and langfuse.<zone> (founder 2026-08-29: the
+      one drill that stays, Backstage is the portal).
+
+  - name: verdict-langfuse
+    workflow: verdict-langfuse.yml
+    job: prove
+    schedule: "37 * * * *"
+    max_age_hours: 3
+    proves: >-
+      A signed verdict about the Langfuse image that is running: it answers, its API answers a key
+      and refuses none, and a cold browser handshake through the front door yields a session that
+      is the drill user while a context holding nothing gets no user (crew#631).
 
   - name: chaos-pod-kill
     workflow: oke-check.yml
@@ -64,28 +77,6 @@ drills:
       of it dying); the receipt is written from the node's identity and graded by
       bin/idp-chaos-drill langfuse-alert-drill alert-drill (age max 194h).
 
-  - name: trace-drill
-    workflow: trace-drill.yml
-    job: trace-drill
-    schedule: "23 * * * *"
-    max_age_hours: 3
-    proves: >-
-      One chat completion went through llm.<zone> with the master key from the vault and its
-      trace came back out of langfuse.<zone> by id within 90 s, so model routing and the trace
-      store work end to end from a runner that holds no key (crew#325 showcase).
-
-  - name: kyverno-secrets-drill
-    workflow: kyverno-secrets-drill.yml
-    job: kyverno-secrets-drill
-    schedule: "41 7 * * *"
-    max_age_hours: 26
-    proves: >-
-      The secrets-not-from-env-vars Kyverno policy still refuses a Pod that reads a secret via
-      env.valueFrom.secretKeyRef or envFrom.secretRef, and still passes the real vault-backed
-      volume-mount pattern already shipped (langfuse) plus two false-positive-risk cases
-      (no env at all, ConfigMap-sourced env) -- so a future dependency bump or CEL engine
-      change cannot silently reopen the class crew#341 closed.
-
   - name: cluster-state
     workflow: oke-check.yml
     job: cluster-state
@@ -97,20 +88,6 @@ drills:
       token read it back through OIDC (crew#345: bin/idp-cluster-state grades freshness and Ready);
       the cluster holds PrometheusRules and Alertmanager shows the Watchdog alert, so the alert
       pipeline is evaluating and delivering (crew#539 DoD 1).
-  - name: verify-drill
-    workflow: verify-drill.yml
-    job: verify-drill
-    schedule: "23 * * * *"
-    max_age_hours: 3
-    proves: >-
-      In the last hour a runner holding no key, on the estate-ci machine identity, named its own
-      session subject as that service user, saw the cluster and node pools ACTIVE through the OCI
-      API, and graded the cluster's own state/cluster receipt (platform/state, bin/idp-cluster-state)
-      written from inside on the node's instance principal. Twenty-four green rows in a row is crew#345's acceptance
-      criterion: live verification with nobody logged in. Since crew#66 root trust the same run also
-      grades the root-trust row (bin/idp-root-trust): every vault entry an ExternalSecret reads is
-      registered in docs/policy/root-trust.md with a bootstrapper on disk or a ticket, hourly.
-
   - name: kini-finish
     workflow: oke-check.yml
     job: kini-state
@@ -129,24 +106,6 @@ drills:
       Every pod Running for more than ten minutes wrote a log line or a metric sample that SigNoz
       stored in the last hour, measured by querying ClickHouse and diffing against the API server
       (crew#320, LAW 50: coverage is proved by the backend, never by scanning files).
-  - name: portability
-    workflow: portability-drill.yml
-    job: hydrate
-    schedule: "23 5 * * 1"
-    max_age_hours: 194
-    proves: >-
-      In the last week the whole clusters/oke/ Flux tree was applied to a vanilla k3d cluster on a
-      runner with no OCI identity and at least drills/portability-floor.txt layers came Ready, so
-      the platform hydrates a foreign cluster from git alone (crew#488, LAW 19).
-  - name: portability-k3s
-    workflow: portability-drill.yml
-    job: k3s
-    schedule: "23 5 * * 1"
-    max_age_hours: 194
-    proves: >-
-      In the last week the same clusters/oke/ tree hydrated a k3s node on a second provider (the
-      GitHub-hosted Azure runner, no docker, no OCI) from the same commit, met the same floor, and
-      the run printed its wall-clock and its cost (crew#488 CP2, LAW 19).
   - name: free-tier
     workflow: oke-check.yml
     job: free-tier
@@ -185,3 +144,15 @@ drills:
       rows per science.source in ClickHouse over the last 24 hours and writes the count as a receipt;
       at least one source is the only green, and a backend that cannot answer is BLIND
       (crew#516 CP5, LAW 50: the lane is graded by querying the backend, never by scanning files).
+
+  - name: estate-escrow
+    workflow: estate-escrow.yml
+    job: escrow
+    schedule: "29 */6 * * *"
+    max_age_hours: 13
+    proves: >-
+      GitHub is not the only copy of the estate: a runner on the exchanged OIDC session mints a
+      read-only App token, writes a full git bundle of every repository the installation sees to
+      Cloudflare R2 (mirrors/<owner>/<repo>/latest.bundle), and reads each one back -- the store's
+      MD5 equals the file's and `git bundle verify` passes on the download. A repository whose refs
+      have not moved is skipped. No laptop and no founder account in the loop (crew#290 layer 4).

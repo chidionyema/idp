@@ -4,6 +4,14 @@ metadata:
   name: broken-workload
   namespace: flux-system
 spec:
+  # 2026-08-29, founder: "how do i get anything done with 6vnessages ? nost of then recurring for
+  # past 5 days". The telegram Provider's channel is flux-telegram.channel = his PRIVATE chat, and
+  # this Alert re-posts every failed reconcile of every row there (Flux repeats a standing error
+  # each rate-limit window, around the clock). The DM is for conversation and founder actions
+  # (~/.claude/scripts/estate/estate_alert.py, 2026-08-25); automated alerts go to an alerts
+  # group. Suspended until flux-telegram.channel is that group; the GitHub path
+  # (platform/alerts-github) and the conscience page keep carrying the reds.
+  suspend: true
   providerRef: { name: telegram }
   eventSeverity: error
   summary: "estate: a reconciliation failed or a workload is not healthy"
@@ -20,7 +28,13 @@ spec:
       namespace: chaos-mesh
     - kind: HelmRelease
       name: "*"
+      namespace: commerce
+    - kind: HelmRelease
+      name: "*"
       namespace: edge
+    - kind: HelmRelease
+      name: "*"
+      namespace: event-bus
     - kind: HelmRelease
       name: "*"
       namespace: external-secrets
@@ -48,6 +62,9 @@ spec:
     - kind: HelmRelease
       name: "*"
       namespace: observability
+    - kind: HelmRelease
+      name: "*"
+      namespace: observability-agent
     - kind: HelmRelease
       name: "*"
       namespace: reloader

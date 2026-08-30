@@ -4,6 +4,8 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-model-router
   name: litellm
   namespace: llm
   annotations:
@@ -29,6 +31,17 @@ spec:
             scheme: https
             path: { type: ReplaceFullPath, replaceFullPath: /ui/ }
             statusCode: 301
-    - backendRefs:
+    - filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
         - name: litellm
           port: 4000

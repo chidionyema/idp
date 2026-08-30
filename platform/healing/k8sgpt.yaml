@@ -41,6 +41,22 @@ spec:
   postRenderers:
     - kustomize:
         patches:
+          - target: { kind: Service }
+            patch: |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: founder-alerts
+          - target: { kind: HTTPRoute }
+            patch: |
+              apiVersion: v1
+              kind: HTTPRoute
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: founder-alerts
           - target: { kind: Deployment, name: k8sgpt-operator-controller-manager }
             patch: |
               apiVersion: apps/v1
@@ -69,8 +85,12 @@ spec:
                           initialDelaySeconds: 5
                           periodSeconds: 10
   values:
+    # Founder, 2026-08-29: "why install anything if we don't use it ... it just fell into the void".
+    # false meant every finding K8sGPT wrote was read by nobody (LAW 28). On, the operator's
+    # k8sgpt_number_of_results* metrics reach the one Prometheus, and
+    # platform/monitoring/rules/k8sgpt.yaml pages them through Alertmanager -> Telegram.
     serviceMonitor:
-      enabled: false
+      enabled: true
     grafanaDashboard:
       enabled: false
     controllerManager:

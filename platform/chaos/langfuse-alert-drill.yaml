@@ -33,11 +33,10 @@ spec:
         children: [fail-web, receipt]
       - name: fail-web
         templateType: PodChaos
-        deadline: 540s
+        deadline: 480s
         podChaos:
           action: pod-failure
           mode: all
-          duration: 8m
           selector:
             namespaces: [observability]
             labelSelectors:

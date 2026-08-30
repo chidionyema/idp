@@ -43,6 +43,46 @@ spec:
     - secretKey: user_password
       remoteRef: { key: langfuse-init-user-password }
 ---
+# crew#503: the second login hop. Langfuse signs the founder in with its own OIDC client against
+# the estate identity domain (the app is platform/oci/identity main.tf `langfuse`, the id and
+# secret are written to the vault by tofu). AUTH_CUSTOM_ISSUER is the domain URL because that is
+# where IDCS serves /.well-known/openid-configuration (the `issuer` claim inside it is
+# identity.oraclecloud.com, which serves nothing -- measured 2026-08-29, HTTP 000). ID_TOKEN is
+# on (crew#626 CP15): it was set to false here to dodge that issuer string; the vendor page
+# (langfuse.com/self-hosting/security/authentication-and-sso, read 2026-08-29) says that
+# "switches the token exchange to the plain OAuth2 callback, which fails whenever the token
+# response contains an id_token", and the identity domain always returns one for scope openid. The drill
+# reproduced it: every SSO click came back with error=OAuthCallback (run 33256502843). ID_TOKEN
+# stays at the vendor default (true); the profile comes from the id_token claims.
+# Username+password is disabled: the front door is the only way in, and the LANGFUSE_INIT_*
+# user above is linked to the SSO identity by email (ALLOW_ACCOUNT_LINKING). The callback
+# /api/auth/callback/custom stays behind the ForwardAuth on purpose: the browser only reaches
+# Langfuse through the front door, so the cookie is already there when IDCS sends it back.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: langfuse-sso
+spec:
+  refreshInterval: 1h
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: langfuse-sso
+    template:
+      data:
+        AUTH_CUSTOM_CLIENT_ID: "{{ .client_id }}"
+        AUTH_CUSTOM_CLIENT_SECRET: "{{ .client_secret }}"
+        AUTH_CUSTOM_ISSUER: "${ESTATE_OIDC_DOMAIN_URL}"
+        AUTH_CUSTOM_NAME: "Bytesync estate"
+        AUTH_CUSTOM_SCOPE: "openid email profile"
+        AUTH_CUSTOM_ID_TOKEN: "true"
+        AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING: "true"
+        AUTH_DISABLE_USERNAME_PASSWORD: "true"
+  data:
+    - secretKey: client_id
+      remoteRef: { key: langfuse-sso-client-id }
+    - secretKey: client_secret
+      remoteRef: { key: langfuse-sso-client-secret }
+---
 # The ClickHouse admin password. SigNoz reads it through valuesFrom (signoz.yaml); Langfuse reads
 # it as auth.existingSecret. The chart's default (27ff0399-…) never reaches the cluster.
 apiVersion: external-secrets.io/v1
@@ -125,6 +165,22 @@ spec:
   postRenderers:
     - kustomize:
         patches:
+          - target: { kind: Service }
+            patch: |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: founder-traces
+          - target: { kind: HTTPRoute }
+            patch: |
+              apiVersion: v1
+              kind: HTTPRoute
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: founder-traces
           - target: { kind: Deployment, name: langfuse-web }
             patch: |
               apiVersion: apps/v1

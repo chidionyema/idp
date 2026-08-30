@@ -18,6 +18,8 @@ spec:
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-jobs
   name: healthchecks
   namespace: healthchecks
 spec:
@@ -30,6 +32,17 @@ spec:
   rules:
     - matches:
         - path: { type: PathPrefix, value: /oauth2/ }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: oauth2-proxy
           namespace: identity
@@ -40,6 +53,16 @@ spec:
             group: traefik.io
             kind: Middleware
             name: login-forward-auth
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: healthchecks
           port: 8000
@@ -47,6 +70,8 @@ spec:
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-jobs
   name: healthchecks-ping
   namespace: healthchecks
   annotations:
@@ -61,6 +86,17 @@ spec:
   rules:
     - matches:
         - path: { type: PathPrefix, value: /ping/ }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: healthchecks
           port: 8000

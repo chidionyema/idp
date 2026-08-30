@@ -6,6 +6,8 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-login
   name: login
   namespace: identity
 spec:
@@ -16,7 +18,18 @@ spec:
   hostnames:
     - "auth.${ESTATE_ZONE}"
   rules:
-    - backendRefs:
+    - filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
         - name: oauth2-proxy
           port: 80
 ---

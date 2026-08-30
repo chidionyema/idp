@@ -2,6 +2,10 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    # Never garbage-collected by Flux: a namespace moved between Kustomization rows or
+    # dropped from git stays, with everything in it (portal 404, 2026-08-29 01:05Z, idp#648).
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: chaos-mesh
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
@@ -19,6 +23,26 @@ metadata:
   name: chaos-mesh
   namespace: chaos-mesh
 spec:
+  # docs/policy/every-interface-is-a-door.md: the chart's Services name their door.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target: { kind: Service }
+            patch: |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: founder-chaos
+          - target: { kind: HTTPRoute }
+            patch: |
+              apiVersion: v1
+              kind: HTTPRoute
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: founder-chaos
   interval: 1h
   chart:
     spec:

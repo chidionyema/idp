@@ -17,6 +17,8 @@ spec:
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-traces
   name: langfuse
   namespace: observability
 spec:
@@ -29,6 +31,17 @@ spec:
   rules:
     - matches:
         - path: { type: PathPrefix, value: /oauth2/ }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: oauth2-proxy
           namespace: identity
@@ -39,6 +52,16 @@ spec:
             group: traefik.io
             kind: Middleware
             name: login-forward-auth
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: langfuse-web
           port: 3000
@@ -51,6 +74,8 @@ spec:
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-traces
   name: langfuse-api
   namespace: observability
   annotations:
@@ -65,6 +90,11 @@ spec:
   rules:
     - matches:
         - path: { type: PathPrefix, value: /api/public/ }
+        # crew#503: next-auth's own endpoints (signin, callback, session, providers) reach Langfuse
+        # directly. Password sign-in is off (langfuse-sso), so these only start or finish the OIDC
+        # round-trip with the identity domain; a fresh browser's callback must not be bounced to
+        # the front door first, and `curl /api/auth/providers` is the operational proof.
+        - path: { type: PathPrefix, value: /api/auth/ }
       backendRefs:
         - name: langfuse-web
           port: 3000
@@ -78,6 +108,8 @@ spec:
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-telemetry
   name: signoz
   namespace: observability
 spec:
@@ -90,6 +122,17 @@ spec:
   rules:
     - matches:
         - path: { type: PathPrefix, value: /oauth2/ }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: oauth2-proxy
           namespace: identity
@@ -100,6 +143,16 @@ spec:
             group: traefik.io
             kind: Middleware
             name: login-forward-auth
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: signoz
           port: 8080
@@ -140,6 +193,8 @@ spec:
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-telemetry
   name: otlp-ingest
   namespace: observability
   annotations:
@@ -162,6 +217,16 @@ spec:
             group: traefik.io
             kind: Middleware
             name: otlp-basic-auth
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: signoz-otel-collector
           port: 4318

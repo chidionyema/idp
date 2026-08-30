@@ -32,21 +32,21 @@ body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name state/cluster 2
 # their last log) outgrew ARG_MAX and `python3: Argument list too long` graded the estate BLIND
 # at the moment it needed reading. The body travels by file, never by argv.
 bodyf=$(mktemp); trap 'rm -f "$bodyf"' EXIT; printf '%s' "$body" > "$bodyf"
-python3 - "$head" "$bodyf" "$MAX_MIN" "${1:-}" <<'PY'
+IDP_LIB="$IDP/bin/lib" python3 - "$head" "$bodyf" "$MAX_MIN" "${1:-}" <<'PY'
 import os as _os
 def _body_arg(a):
     # crew#539: the receipt is a file path when the caller wrote it out (ARG_MAX, run 33129788480); a literal body is still accepted for the test harnesses.
     return (open(a, encoding='utf-8', errors='replace').read() if _os.path.isfile(a) else a).strip()
 import json, re, sys
-from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
+sys.path.insert(0, _os.environ.get("IDP_LIB", ""))
+from receipt_age import receipt_age  # crew#583 CP2: the store's clock, never this machine's
 head, body, max_min, flag = sys.argv[1], _body_arg(sys.argv[2]), float(sys.argv[3]), sys.argv[4]
 line1, _, rest = body.partition("\n")
 try:
-    lm = json.loads(head)["last-modified"]
+    head = json.loads(head)
 except Exception as e:
-    print(f"BLIND   cluster-state  object head carried no last-modified: {e}"); sys.exit(2)
-age = (datetime.now(timezone.utc) - parsedate_to_datetime(lm)).total_seconds() / 60
+    print(f"BLIND   cluster-state  object head was not readable JSON: {e}"); sys.exit(2)
+age = receipt_age(head, 60.0, "cluster-state")
 if not line1.startswith("ok "):
     print(f"FAIL    cluster-state  receipt does not start with ok: {line1[:120]!r}"); sys.exit(1)
 if age > max_min:
@@ -97,6 +97,31 @@ if int(kv["monitoring_rules"]) == 0 or int(kv["alert_watchdog"]) == 0:
         why = f"body unreadable: {e}"
     print(f"FAIL    cluster-state  monitoring_rules={kv['monitoring_rules']} alert_watchdog={kv['alert_watchdog']}: {why[:300]}"); sys.exit(1)
 print(f"ok      cluster-state  {line1} ({age:.0f} min ago)")
+# crew#584 (founder 2026-08-29 "why 4 cores ... do we have utilisation metrics?"): the capacity
+# row is the answer, printed on every read. -1 means the metrics API could not be read, and the
+# row says so; a receipt with no capacity numbers predates this and is graded FAIL, never clean.
+kv2 = dict(m.groups() for m in re.finditer(r"(\w+)=(-?\d+)", line1))
+if "cpu_used_pct" not in kv2:
+    print(f"FAIL    capacity       receipt carries no cpu_used_pct (collector predates crew#584 capacity row): {line1[:120]}"); sys.exit(1)
+try:
+    b = json.loads(rest); rows = b.get("capacity") or []; cap_err = b.get("capacity_error") or ""
+except Exception as e:
+    rows, cap_err = [], f"body unreadable: {e}"
+if int(kv2["cpu_used_pct"]) < 0:
+    print(f"FAIL    capacity       usage unreadable: {cap_err[:200] or 'no error recorded'}"); sys.exit(1)
+print(f"ok      capacity       cpu used {kv2['cpu_used_pct']}% requested {kv2['cpu_req_pct']}%, memory used {kv2['mem_used_pct']}% requested {kv2['mem_req_pct']}% of what is paid for")
+for r in rows:
+    print(f"  node {r['name']}: cpu {r['cpu_used']}/{r['cpu_allocatable']} cores used ({r['cpu_used_pct']}%), requests {r['cpu_requested']} ({r['cpu_requested_pct']}%);"
+          f" memory {r['memory_used_gb']}/{r['memory_allocatable_gb']} GB used ({r['memory_used_pct']}%), requests {r['memory_requested_gb']} GB ({r['memory_requested_pct']}%)")
+# K8sGPT findings (2026-08-29, founder: nothing is done until operational). Printed, never
+# graded here: K8sGPTFinding (platform/monitoring/rules/k8sgpt.yaml) is the pager; this is the read.
+try:
+    for f in (json.loads(rest).get("k8sgpt") or [])[:12]:
+        print(f"  k8sgpt     {f.get('kind')} {f.get('name')}: {(f.get('error') or '')[:160]}")
+        if f.get("details"):
+            print(f"             {f['details'][:300]}")
+except Exception as e:
+    print(f"  k8sgpt     body unreadable: {e}")
 if flag == "--json":
     print(rest)
 PY

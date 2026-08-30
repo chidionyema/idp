@@ -161,9 +161,9 @@ spec:
                 - { name: clickhouse-auth, mountPath: /secrets, readOnly: true }   # Kyverno: the password is a file, never an env var
                 - { name: tmp, mountPath: /tmp }
               resources:
-                # crew#539 CP9: requests == limits -> Guaranteed QoS
-                requests: { cpu: 100m, memory: 256Mi }
-                limits: { cpu: 100m, memory: 256Mi }
+                # crew#539 CP9 / crew#584: requests == limits -> Guaranteed QoS (radio-room set)
+                requests: { cpu: 50m, memory: 256Mi }
+                limits: { cpu: 50m, memory: 256Mi }
               securityContext:
                 runAsNonRoot: true
                 runAsUser: 1000

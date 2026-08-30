@@ -46,9 +46,10 @@ spec:
             - { name: secrets, mountPath: /run/secrets/mcp, readOnly: true }
             - { name: tmp, mountPath: /tmp }   # crew#458: writable /tmp under readOnlyRootFilesystem
           resources:
-            # crew#539 CP9: requests == limits -> Guaranteed QoS, evicted last under node pressure
-            requests: { cpu: 200m, memory: 256Mi }
-            limits: { cpu: 200m, memory: 256Mi }
+            # crew#584: radio-room set, Guaranteed QoS required (require-priority-class) -- request
+            # cut to 50m, limit held equal.
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { cpu: 50m, memory: 256Mi }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -73,7 +74,7 @@ kind: Service
 metadata:
   name: agentgateway
   namespace: mcp
-  labels: { app.kubernetes.io/name: agentgateway }
+  labels: { app.kubernetes.io/name: agentgateway, backstage.io/kubernetes-id: founder-mcp-gateway }
 spec:
   selector: { app.kubernetes.io/name: agentgateway }
   ports:

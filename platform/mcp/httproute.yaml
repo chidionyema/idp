@@ -1,6 +1,8 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-mcp-gateway
   name: mcp
   namespace: mcp
   annotations:
@@ -13,6 +15,17 @@ spec:
   hostnames:
     - "mcp.${ESTATE_ZONE}"
   rules:
-    - backendRefs:
+    - filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
         - name: agentgateway
           port: 3000

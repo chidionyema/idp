@@ -1,0 +1,2 @@
+ok telemetry-coverage pods=100 missing=93
+{"missing": [{"ns": "backstage", "pod": "catalogue-1"}, {"ns": "kyverno", "pod": "kyverno-1"}], "backend_errors": {}}

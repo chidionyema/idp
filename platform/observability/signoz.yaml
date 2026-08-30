@@ -5,14 +5,6 @@
 # so the postRenderers below add non-root, drop-ALL, seccomp and a read-only root filesystem to
 # every workload, with emptyDir scratch where the process writes. Proven offline by
 # bin/idp-kyverno-render (helm template + these patches + the cluster's ClusterPolicies).
-apiVersion: source.toolkit.fluxcd.io/v1
-kind: HelmRepository
-metadata:
-  name: signoz
-spec:
-  interval: 24h
-  url: https://charts.signoz.io
----
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -54,6 +46,22 @@ spec:
   postRenderers:
     - kustomize:
         patches:
+          - target: { kind: Service }
+            patch: |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: founder-telemetry
+          - target: { kind: HTTPRoute }
+            patch: |
+              apiVersion: v1
+              kind: HTTPRoute
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: founder-telemetry
           # --- restricted profile for the workloads the chart renders directly ---
           - target: { kind: Deployment, name: signoz-clickhouse-operator }
             patch: |

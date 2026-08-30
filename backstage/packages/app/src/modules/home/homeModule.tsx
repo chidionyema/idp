@@ -2,7 +2,10 @@
 // extension with the default name yields the id `page:home`, which overrides the
 // plugin's page at "/". The widget grid (and the toolkit whose links pointed at
 // 127.0.0.1) goes with it; the front page is the founder god view (crew#459).
-import { createFrontendModule, PageBlueprint } from '@backstage/frontend-plugin-api';
+import {
+  createFrontendModule,
+  PageBlueprint,
+} from '@backstage/frontend-plugin-api';
 
 const estateHomePage = PageBlueprint.make({
   params: {
@@ -11,7 +14,18 @@ const estateHomePage = PageBlueprint.make({
   },
 });
 
+// /pair: the founder types Moonlight's PIN into the portal and it reaches Sunshine on the
+// Mac over the proxy (crew#562, founder-screen-access path 1). Listed as a founder surface
+// in backstage/founder/catalog-info.yaml so the crew#401 gate and the god view carry it.
+const pairPhonePage = PageBlueprint.make({
+  name: 'pair',
+  params: {
+    path: '/pair',
+    loader: () => import('./PairPhone').then(m => <m.PairPhone />),
+  },
+});
+
 export const homeModule = createFrontendModule({
   pluginId: 'home',
-  extensions: [estateHomePage],
+  extensions: [estateHomePage, pairPhonePage],
 });

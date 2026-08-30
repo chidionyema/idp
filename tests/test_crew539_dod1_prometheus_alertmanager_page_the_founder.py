@@ -17,6 +17,7 @@ Proved offline, no sockets:
 """
 import pathlib
 import re
+import os
 import subprocess
 import sys
 
@@ -61,7 +62,7 @@ def test_flux_row_substitutes_the_zone_and_waits_on_both_releases():
     assert rules["spec"]["path"] == "./platform/monitoring/rules" and rules["spec"]["dependsOn"] == [{"name": "monitoring"}]
     assert {"kind": "ConfigMap", "name": "estate-config"} in rules["spec"]["postBuild"]["substituteFrom"]
     kz2 = yaml.safe_load((MON / "rules/kustomization.yaml").read_text())
-    assert set(kz2["resources"]) == {"estate.yaml", "founder-surfaces-probe.yaml", "agentgateway-servicemonitor.yaml"}
+    assert set(kz2["resources"]) == {"estate.yaml", "founder-surfaces-probe.yaml", "founder-mac-screen-sharing-probe.yaml", "agentgateway-servicemonitor.yaml", "k8sgpt.yaml", "capacity.yaml"}  # capacity.yaml: crew#645 CP5; K8sGPT findings PrometheusRule, idp#696
     ns = one("platform/monitoring/namespace.yaml", "Namespace")
     assert ns["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "restricted"
 
@@ -141,7 +142,7 @@ def test_probe_targets_are_exactly_the_founder_surfaces_and_the_module_accepts_4
 def test_estate_rules_carry_founder_surface_down_and_the_cp14_pvc_alert():
     pr = one("platform/monitoring/rules/estate.yaml", "PrometheusRule", "estate")
     rules = {r["alert"]: r for g in pr["spec"]["groups"] for r in g["rules"]}
-    assert set(rules) == {"FounderSurfaceDown", "PersistentVolumeAlmostFull", "GatewayRefusals", "GatewayMetricsAbsent"}
+    assert set(rules) == {"FounderSurfaceDown", "MacScreenSharingOff", "PersistentVolumeAlmostFull", "GatewayRefusals", "GatewayMetricsAbsent", "OttoDown"}
     assert rules["FounderSurfaceDown"]["expr"] == 'probe_success{job="founder-surfaces"} == 0'
     assert rules["FounderSurfaceDown"]["labels"]["severity"] == "critical"
     pvc = rules["PersistentVolumeAlmostFull"]
@@ -172,14 +173,14 @@ def grade(line1, body="{}"):
     # run only the python half of bin/idp-cluster-state, with a fresh head, the way the script does
     src = (IDP / "bin/idp-cluster-state").read_text()
     py = src.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
-    head = '{"last-modified": "%s"}' % __import__("email.utils").utils.formatdate(usegmt=True)
-    r = subprocess.run([sys.executable, "-c", py, head, line1 + "\n" + body, "60", ""], capture_output=True, text=True)
+    head = '{"last-modified": "%s", "date": "%s"}' % ((__import__("email.utils").utils.formatdate(usegmt=True),) * 2)
+    r = subprocess.run([sys.executable, "-c", py, head, line1 + "\n" + body, "60", ""], capture_output=True, text=True, env={**os.environ, "IDP_LIB": str(IDP / "bin" / "lib")})
     return r.returncode, r.stdout.strip()
 
 
 BASE = ("ok cluster-state at 2026-08-27T23:00:00Z nodes=2 ready=2 pods=60 pods_not_ready=0 flux=40 flux_not_ready=0"
         " ds=6 ds_short=0 events_warning=0 hostnames=9 spiffe_ids=3 spiffe_workloads=3 svids=3 spire_agents=2"
-        " oci_pods=2 oci_static_key_pods=0 policy_exceptions=9")
+        " oci_pods=2 oci_static_key_pods=0 policy_exceptions=9 cpu_used_pct=12 cpu_req_pct=45 mem_used_pct=30 mem_req_pct=50")
 
 
 def test_grader_passes_with_rules_and_watchdog_and_fails_without():
@@ -197,7 +198,7 @@ def test_broken_workload_alert_lists_namespace_monitoring():
     alert = one("platform/alerts/alert.yaml", "Alert", "broken-workload")
     ns = {s["namespace"] for s in alert["spec"]["eventSources"] if s["kind"] == "HelmRelease"}
     assert "monitoring" in ns
-    assert (IDP / "docs/onboarding/monitoring.md").exists()
+    assert (IDP / "docs/how-to/onboarding/monitoring.md").exists()
     (row,) = [r for r in yaml.safe_load((IDP / "drills/catalogue.yaml").read_text())["drills"] if r["name"] == "cluster-state"]
     assert "Watchdog" in row["proves"]
 
@@ -214,7 +215,7 @@ def test_gateway_refusals_are_scraped_and_alerted():
     assert {"name": "metrics", "port": 15020, "targetPort": "metrics"} in svc["spec"]["ports"]
     sm = one("platform/monitoring/rules/agentgateway-servicemonitor.yaml", "ServiceMonitor", "agentgateway")
     assert sm["spec"]["namespaceSelector"]["matchNames"] == ["mcp"]
-    assert sm["spec"]["selector"]["matchLabels"] == svc["metadata"]["labels"]
+    assert sm["spec"]["selector"]["matchLabels"].items() <= svc["metadata"]["labels"].items()
     assert sm["spec"]["endpoints"][0]["port"] == "metrics"
     pr = one("platform/monitoring/rules/estate.yaml", "PrometheusRule", "estate")
     (r,) = [r for g in pr["spec"]["groups"] for r in g["rules"] if r.get("alert") == "GatewayRefusals"]

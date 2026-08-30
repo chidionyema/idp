@@ -27,10 +27,11 @@ def _ks(name: str, ready: bool, msg: str = "") -> dict:
 
 def test_grade_both_ways():
     items = [_ks("edge", True), _ks("backstage", True), _ks("secret-store", False, "OCI vault unreachable")]
-    ok, bad = drill.grade(items, floor=2)
+    reds = [("secret-store", "OCI vault unreachable")]   # crew#488 CP5: a red of its own must be named
+    ok, bad = drill.grade(items, floor=2, reds=reds)
     assert ok.startswith("ok      portability  ready 2/3"), ok
-    assert bad == ["  not-ready  flux-system/secret-store: OCI vault unreachable"]
-    fail, _ = drill.grade(items, floor=3)
+    assert bad == ["  oci-red    flux-system/secret-store: OCI vault unreachable"]
+    fail, _ = drill.grade(items, floor=3, reds=reds)
     assert fail.startswith("FAIL    portability  ready 2/3 is below the floor 3"), fail
 
 

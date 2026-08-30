@@ -40,6 +40,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "FOUNDER.md"
+
+#: crew#583 CP5. The clock every age on this page is measured against comes from GitHub, not from
+#: this machine, and bin/lib/receipt_age.py is the one module in the estate allowed near that
+#: arithmetic -- so the function lives there and this file borrows it rather than keeping a second
+#: copy to get wrong (LAW 2).
+sys.path.insert(0, str(ROOT / "bin" / "lib"))
+from receipt_age import served_now  # noqa: E402 - path has to be set before the import
 CREW = os.environ.get("ESTATE_CREW_REPO", "chidionyema/crew")
 OWNER = os.environ.get("ESTATE_GITHUB_OWNER", CREW.split("/")[0])
 WINDOW_H = int(os.environ.get("ESTATE_FOUNDER_WINDOW_H", "24"))
@@ -199,26 +206,64 @@ def telegram_pin(text: str, urlopen=None) -> str:
         data = urllib.parse.urlencode({"chat_id": chat, **kw}).encode()
         return json.loads(urlopen(f"https://api.telegram.org/bot{token}/{method}", data=data, timeout=30).read())["result"]
 
-    pinned = call("getChat").get("pinned_message") or {}
-    if (pinned.get("text") or "").startswith("GOAL"):
+    state = Path(os.environ.get("ESTATE_FOUNDER_GOAL_STATE",
+                                str(Path.home() / ".estate" / "state" / "telegram_goal_message_id")))
+
+    def edit(mid: int) -> bool:
         try:
-            call("editMessageText", message_id=pinned["message_id"], text=text)
-            return str(pinned["message_id"])
+            call("editMessageText", message_id=mid, text=text)
+            return True
         except Exception as e:  # Telegram refuses an edit to identical text; that is the up-to-date case
             if "not modified" in str(getattr(e, "read", lambda: b"")() or str(e)):
-                return str(pinned["message_id"])
-            raise
+                return True
+            return False
+
+    pinned = call("getChat").get("pinned_message") or {}
+    if (pinned.get("text") or "").startswith("GOAL"):
+        if not edit(pinned["message_id"]):
+            raise SystemExit("estate-founder --telegram: the pinned GOAL message refused an edit")
+        return str(pinned["message_id"])
+    # 2026-08-29: while a FOUNDER ACTION or STAGED notice holds the pin (idp#729), every catalog-render
+    # (4x daily) sent a brand-new GOAL message; the founder: "how do i get anything done with
+    # 6vnessages". The goal is ONE message, remembered here and edited in place; a second is sent
+    # only when there is none to edit (deleted, or first run).
+    try:
+        remembered = int(state.read_text().strip())
+    except (OSError, ValueError):
+        remembered = 0
+    if remembered and edit(remembered):
+        return str(remembered)
     sent = call("sendMessage", text=text, disable_web_page_preview="true")
-    call("pinChatMessage", message_id=sent["message_id"], disable_notification="true")
+    try:
+        state.parent.mkdir(parents=True, exist_ok=True)
+        state.write_text(str(sent["message_id"]))
+    except OSError:
+        pass
+    # A founder action or a STAGED timer owns the pin until he acts; the goal is posted, not pinned.
+    if not (pinned.get("text") or "").startswith(("FOUNDER ACTION", "STAGED")):
+        call("pinChatMessage", message_id=sent["message_id"], disable_notification="true")
     return str(sent["message_id"])
 
 
-def hours_since(ts: str, now: datetime) -> float:
+def hours_since(ts: str, now: "datetime | None") -> "float | None":
+    """Hours between `now` and a stamp GitHub wrote, or None when that cannot be measured.
+
+    None rather than 0.0 (crew#583 CP5). `except ValueError: return 0.0` read an unparseable
+    stamp as "0 hours ago", which is not a refusal to measure -- it is the freshest possible
+    answer, on the page whose whole job is to say what has been waiting too long.
+
+    A negative age is also None: both stamps come from GitHub, so `now` earlier than the stamp is
+    not skew, it is a pull request claiming to have been opened after the response that listed
+    it. Neither direction is allowed to read as "not stuck".
+    """
+    if now is None:
+        return None
     try:
         t = datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
     except ValueError:
-        return 0.0
-    return (now - t).total_seconds() / 3600
+        return None
+    h = (now - t).total_seconds() / 3600
+    return None if h < 0 else h
 
 
 def render(merged: list[dict], open_prs: list[dict], issues: list[dict], by_repo_trailers: dict[str, dict[str, int]],
@@ -231,8 +276,12 @@ def render(merged: list[dict], open_prs: list[dict], issues: list[dict], by_repo
     # Stuck is scoped to the repositories the estate is shipping to: a May PR on a parked repository is
     # not a reviewer's debt this week (live 06:31Z listed haworks#5, 2987h). No merge in the window, no row.
     live_repos = set(by_repo)
-    stuck = [pr for pr in open_prs if pr["repo"] in live_repos and not pr.get("verdict")
-             and hours_since(pr["created_at"], now) >= REVIEW_H]
+    #: An unreviewed pull request whose age cannot be measured is carried, not dropped. The old
+    #: filter compared an age to REVIEW_H and a None or a negative silently fell out of the list,
+    #: which reads on the page as "nothing is waiting on a reviewer" (crew#583 CP5).
+    unreviewed = [(pr, hours_since(pr["created_at"], now)) for pr in open_prs
+                  if pr["repo"] in live_repos and not pr.get("verdict")]
+    stuck = [(pr, h) for pr, h in unreviewed if h is None or h >= REVIEW_H]
     waiting = founder_checkpoints(issues)
     goal_rows = goals(issues)
     out = [
@@ -264,8 +313,11 @@ def render(merged: list[dict], open_prs: list[dict], issues: list[dict], by_repo
     out += ["", "## What is stuck", ""]
     if stuck or waiting:
         out += ["| Who | What | Waiting since | Link |", "|---|---|---|---|"]
-        for pr in sorted(stuck, key=lambda p: p["created_at"]):
-            out.append(f"| reviewer | {pr['title'].replace('|', '/')[:100]} | {hours_since(pr['created_at'], now):.0f}h, no REVIEW: line | "
+        for pr, h in sorted(stuck, key=lambda c: c[0]["created_at"]):
+            waited = (f"{h:.0f}h, no REVIEW: line" if h is not None else
+                      "BLIND: GitHub's clock did not come back with the listing, so no age here "
+                      "is measurable; no REVIEW: line")
+            out.append(f"| reviewer | {pr['title'].replace('|', '/')[:100]} | {waited} | "
                        f"[{pr['repo'].split('/')[-1]}#{pr['number']}]({pr['url']}) |")
         for r in sorted(waiting, key=lambda r: (r["issue"], r["cp"])):
             out.append(f"| you | {r['cp']} {r['what'].replace('|', '/')} | open | [crew#{r['issue']}]({r['url']}) |")
@@ -301,7 +353,17 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--check", action="store_true", help="exit 1 when the page on disk differs from the inputs")
     ap.add_argument("--telegram", action="store_true", help="also edit (or send and pin) the GOAL message in TELEGRAM_HOME_CHANNEL")
     a = ap.parse_args(argv)
-    now = datetime.strptime(a.now[:16], "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc) if a.now else datetime.now(timezone.utc)
+    #: crew#583 CP5: GitHub's clock, or the one a test names, and no third option. There is no
+    #: `datetime.now` in this file on purpose -- the guard in
+    #: tests/test_guard_freshness_is_never_measured_against_this_machines_clock.py holds it that way.
+    now = (datetime.strptime(a.now[:16], "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc)
+           if a.now else served_now())
+    if now is None:
+        #: The search window needs a clock too. Without one the page cannot say what merged in the
+        #: last 24 hours at all, so this is the one place a missing clock is fatal rather than BLIND.
+        print("BLIND estate-founder: GitHub did not send a Date header, and this machine's clock is "
+              "not a substitute for it (crew#583). Nothing written.", file=sys.stderr)
+        return 2
     since = (now - timedelta(hours=WINDOW_H)).strftime("%Y-%m-%dT%H:%M:%SZ")
     offline = bool(a.merged or a.open or a.issues)
     merged = json.loads(Path(a.merged).read_text()) if a.merged else fetch_merged(since)

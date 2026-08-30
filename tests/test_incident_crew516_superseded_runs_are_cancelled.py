@@ -4,13 +4,14 @@ one-line oke-check dispatch waited 19 minutes for a runner (crew#516). Every per
 concurrency group keyed on workflow, event and ref with cancel-in-progress, so a newer push supersedes
 the older run instead of queueing behind it."""
 import os
-import re
 
 import yaml
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WORKFLOWS = os.path.join(os.path.dirname(HERE), ".github", "workflows")
-PER_REF = ("ci.yml", "build-multiarch.yml", "image-update-pr.yml")
+PER_REF = ("ci.yml", "image-update-pr.yml")
+# build-multiarch.yml supersedes pull-request runs only; a push to main builds every sha
+# (tests/test_incident_crew301_main_image_builds_are_never_cancelled.py).
 
 
 def supersedes_on_the_same_ref(text):

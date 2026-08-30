@@ -1,5 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: healing
+# no `namespace:` here: it would rewrite exception.yaml into healing, where Kyverno never reads it
+# (tests/test_incident_crew325_kyverno_refused_cert_manager_and_langfuse.py); k8sgpt.yaml names its own.
 resources:
   - k8sgpt.yaml
+  - exception.yaml

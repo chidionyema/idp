@@ -1,5 +1,5 @@
 {
-  "_comment": "Permissions an installation token is narrowed to at mint time (POST /app/installations/{id}/access_tokens). A lane never gets more than the App's default_permissions in manifest.json.",
+  "_comment": "Permissions an installation token is narrowed to at mint time (POST /app/installations/{id}/access_tokens). A lane never gets more than the App's default_permissions in manifest.json. The recovery lane (crew#290/crew#300) is read-only: bin/idp-escrow and bin/idp-recover-drill clone with it and can never write to a repository. The vault-writer lane (crew#568) writes one sops file into estate-secrets from vault-seed.yml: a router virtual key for the founder's Mac, encrypted to the age recipient the repo names, so the runner never holds a decryption key.",
   "platform-engineer": {
     "metadata": "read",
     "contents": "write",
@@ -19,5 +19,18 @@
   "conscience-reader": {
     "metadata": "read",
     "contents": "read"
+  },
+  "recovery": {
+    "metadata": "read",
+    "contents": "read"
+  },
+  "vault-writer": {
+    "metadata": "read",
+    "contents": "write"
+  },
+  "ticket-verifier": {
+    "metadata": "read",
+    "issues": "write",
+    "actions": "read"
   }
 }

@@ -11,18 +11,30 @@
 #   bin/idp-tests-for --list     # print the selection only
 #   bin/idp-tests-for --base X   # diff against another ref
 #
-# Exit 0 when nothing changed (the message says so); CI on a fresh checkout still runs everything.
+# Every test file that is not in tests/slow-files.txt is CHEAP and is run unconditionally -- the
+# selection rules above only decide which of the 108 expensive files to add. See that list's header
+# and bin/idp-slow-tests. Exit 0 when nothing changed (the message says so); CI on a fresh checkout
+# still runs everything.
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-base=origin/main; list=0
+base=origin/main; list=0; forced=''
 while [ $# -gt 0 ]; do
   case "$1" in
     --list) list=1 ;;
     --base) base="$2"; shift ;;
-    *) echo "usage: bin/idp-tests-for [--list] [--base REF]" >&2; exit 64 ;;
+    # --for PATH answers "which tests would a change to PATH select", with no git diff involved.
+    # It is how the selector's own guard proves the rule end to end instead of grading this file's
+    # text, and it is repeatable: bin/idp-tests-for --for bin/foo --for platform/bar/baz.yaml --list
+    --for) forced="$forced$2"$'\n'; shift ;;
+    *) echo "usage: bin/idp-tests-for [--list] [--base REF] [--for PATH]..." >&2; exit 64 ;;
   esac; shift
 done
-changed=$( { git -C "$IDP" diff --name-only "$base"...HEAD; git -C "$IDP" diff --name-only HEAD; git -C "$IDP" ls-files --others --exclude-standard; } | sort -u )
+if [ -n "$forced" ]; then
+  changed=$(printf '%s' "$forced" | sort -u)
+  SKIP_TESTS_ON_TRIVIAL=0   # a hypothetical path has no diff to call trivial
+else
+  changed=$( { git -C "$IDP" diff --name-only "$base"...HEAD; git -C "$IDP" diff --name-only HEAD; git -C "$IDP" ls-files --others --exclude-standard; } | sort -u )
+fi
 if [ -z "$changed" ]; then echo "ok    tests-for: nothing changed against $base, nothing to run"; exit 0; fi
 # SKIP_TESTS_ON_TRIVIAL (founder 2026-08-28, crew#584: "if you change only docs, comments, or trivial
 # files, the hook skips tests entirely"). A file is trivial when it is prose (.md/.txt/.rst, docs/,
@@ -34,7 +46,7 @@ trivial() {
   [ -f "$IDP/$1" ] || return 1
   git -C "$IDP" ls-files --error-unmatch "$1" >/dev/null 2>&1 || return 1
   ! { git -C "$IDP" diff -U0 "$base"...HEAD -- "$1"; git -C "$IDP" diff -U0 HEAD -- "$1"; } \
-      | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -qvE '^[+-][[:space:]]*(#|//|--|$)'
+      | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*(#|//|--|$)' >/dev/null
 }
 if [ "${SKIP_TESTS_ON_TRIVIAL:-1}" = 1 ]; then
   kept=""; dropped=0
@@ -47,11 +59,52 @@ if [ "${SKIP_TESTS_ON_TRIVIAL:-1}" = 1 ]; then
 fi
 sel=$(
   for f in $changed; do
-    case "$f" in tests/test_*.py|sovereign/tests/*/*.py) echo "$f" ;; esac
+    case "$f" in tests/test_*.py|sovereign/tests/*/*.py) [ -f "$IDP/$f" ] && echo "$f" ;; esac   # a deleted test file made pytest collect nothing: "no tests ran" and the push refused (2026-08-29)
     b=$(basename "$f")
     grep -rlF --include='*.py' -e "$f" -e "$b" "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null | sed "s#^$IDP/##" | grep -v '/fixtures/' || true   # a fixture under tests/fixtures is proof material, not a test (test_unbound.py fails by design)
   done | sort -u
+  # A class fence names a DIRECTORY, never a file: tests/test_incident_a_script_under_bin_pipes_into_grep_q.py
+  # rglobs bin/ and refuses `| grep -q` in any script there. Selecting on the changed path or its
+  # basename can never reach it, so on 2026-08-29 bin/idp-kyverno-dirs was written with that exact
+  # bug, this rung said green twice, and CI found it (run 33260499925) -- the selector graded whether
+  # a test NAMES the file instead of whether it READS it. So a sweeper is selected too: a test that
+  # both quotes an ancestor directory of a changed file and walks a tree (rglob, iterdir, listdir,
+  # os.walk). Measured the same day: 20 sweepers quote "bin", 35 "platform", 16 "clusters" -- tens of
+  # files, not the 248 that quoting the directory alone would have dragged in, and not the suite.
+  # A changed test file is already selected by itself, and its own directory is quoted by almost
+  # every test in the tree -- feeding tests/ into this would select 203 of 420 files, which is the
+  # suite wearing a smaller name. Only the directories of the non-test files a push changes.
+  dirs=$(for f in $changed; do
+    case "$f" in tests/*|sovereign/tests/*) continue ;; esac
+    d=$(dirname "$f"); while [ "$d" != "." ] && [ "$d" != "/" ]; do echo "$d"; d=$(dirname "$d"); done
+  done | sort -u)
+  if [ -n "$dirs" ]; then
+    dirs_re=$(printf '%s\n' "$dirs" | sed 's#[].[^$*\\/]#\\&#g' | paste -sd'|' -)
+    grep -rlE --include='*.py' '\b(rglob|iterdir|listdir|os\.walk)\b' "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null \
+      | grep -v '/fixtures/' \
+      | xargs -r grep -lE "[\"'/](${dirs_re})[\"'/]" 2>/dev/null \
+      | sed "s#^$IDP/##" | sort -u || true
+  fi
 )
+# Everything cheap runs, always. The selection above is a guess, and every guess this rung has
+# made has eventually been wrong in the same direction: it graded a PROXY for "this test reads
+# that file" -- first the file's name, then its basename, then four hand-typed walk verbs. The
+# fourth version still missed 50 of 421 files, because they sweep with .glob() or os.scandir and
+# nobody listed those. So stop guessing where guessing buys nothing. Measured 2026-08-29 with
+# `pytest --durations=0` on the whole suite: 2397 processor-seconds, of which 216 of the 324
+# timed files hold 164 -- about 41 seconds on four workers. tests/slow-files.txt names the 108
+# files that cost 3s or more; anything not on that list is cheap and is added to the run whether
+# or not any rule thinks it is relevant. A file missing from the list is treated as cheap, so a
+# new or renamed test always runs: the list going stale costs seconds, never coverage.
+slow="$IDP/tests/slow-files.txt"
+if [ -f "$slow" ]; then
+  cheap=$(
+    { cd "$IDP" && git ls-files 'tests/test_*.py' 'sovereign/tests/*/test_*.py'; } \
+      | grep -v '/fixtures/' \
+      | grep -vxFf <(grep -v '^#' "$slow") || true
+  )
+  sel=$(printf '%s\n%s\n' "$sel" "$cheap" | grep -v '^$' | sort -u)
+fi
 if [ -z "$sel" ]; then echo "ok    tests-for: $(printf '%s\n' "$changed" | wc -l | tr -d ' ') changed file(s), no test names them (CI runs the suite)"; exit 0; fi
 n=$(printf '%s\n' "$sel" | wc -l | tr -d ' ')
 echo "tests-for: $n test file(s) read the changed files"
@@ -68,7 +121,16 @@ root_sel=$(printf '%s\n' "$sel" | grep -v '^sovereign/' || true)
 sov_sel=$(printf '%s\n' "$sel" | grep '^sovereign/' | sed 's#^sovereign/##' || true)
 rc=0
 # shellcheck disable=SC2086
-if [ -n "$root_sel" ]; then (cd "$IDP" && "$py" -m pytest -q $root_sel) || rc=$?; fi
+# Worker cap (crew#562, 2026-08-29). pyproject addopts says `-n auto`: one worker per core, 12 on the
+# estate Mac. Tests that spawn bin/idp-verify-drill under a 60 s subprocess timeout
+# (test_incident_crew484_the_runner_has_a_kube_path.py, test_incident_crew292_drills_row_is_read_hourly.py,
+# test_incident_crew66_cp5d_cluster_noun.py) then time out on CPU contention: two pushes of idp#659 were
+# refused with 4-6 TimeoutExpired and 0 real failures, and the same files pass alone (17 passed, 126 s).
+# CI runners are clean and few-cored, so this only binds a laptop: outside CI, at most
+# TESTS_FOR_WORKERS (default 4) workers. Overrides pyproject because the last -n wins.
+workers=""
+if [ -z "${CI:-}" ]; then workers="-n ${TESTS_FOR_WORKERS:-4}"; fi
+if [ -n "$root_sel" ]; then (cd "$IDP" && "$py" -m pytest -q $workers $root_sel) || rc=$?; fi
 # shellcheck disable=SC2086
-if [ -n "$sov_sel" ]; then (cd "$IDP/sovereign" && "$py" -m pytest -q $sov_sel) || rc=$?; fi
+if [ -n "$sov_sel" ]; then (cd "$IDP/sovereign" && "$py" -m pytest -q $workers $sov_sel) || rc=$?; fi
 exit $rc

@@ -17,9 +17,9 @@ on:
         options: [check, apply, surge-node, surge-finish, break-glass]
         default: check
       playbook:
-        description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose and architect-doctor are read-only."
+        description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose, otto-parity and architect-doctor are read-only; so is router-spend."
         type: choice
-        options: [diagnose, architect-doctor, cilium-unchain, cilium-replace, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll]
+        options: [diagnose, architect-doctor, otto-parity, cilium-unchain, cilium-replace, helm-retry, namespace-unstick, ghcr-pull-restore, k8sgpt-analyze, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll, router-spend]
         default: diagnose
   pull_request:
     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
@@ -44,12 +44,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with: { tofu_version: "1.12.6", tofu_wrapper: false }
       - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
       - name: oci cli
-        run: pip install -q oci-cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
       - name: token exchange receipt (claims of the job token, and the domain's answer; never the tokens)
         env:
           OIDC: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
@@ -105,6 +108,7 @@ jobs:
       # bin/idp-verify-drill; no PAT is ever pasted. Exit 2 is BLIND (App not installed yet).
       - name: bin/idp-github-app refresh (crew#577)
         if: ${{ always() && inputs.mode == 'apply' }}
+        timeout-minutes: 5   # run 33223929243 hung here 20 min and, through the concurrency group, held every break-glass run behind it (2026-08-29)
         env:
           OCI_CLI_AUTH: security_token
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
@@ -150,7 +154,8 @@ jobs:
       # master key, the Postgres passwords, the store's JWT signing key and internal keys, the MCP
       # gateway key, the cookie secret, Backstage's env, and the router keys hindsight and hermes
       # hold -- is minted here by the machine identity and kept when the vault already holds a
-      # well-formed value. Vendor keys are bin/idp-bootstrap-vendors', never a SEED_* secret (crew#579).
+      # well-formed value. Vendor keys are bin/idp-bootstrap-vendors' (crew#579): one SEED_<VENDOR>_API_KEY
+      # root each, set once by the founder (R52), read by that step below and never by this one.
       - name: bin/idp-estate-seed (crew#66 root trust)
         if: ${{ always() && inputs.mode == 'apply' }}
         env:
@@ -184,6 +189,60 @@ jobs:
           ESTATE_ENV_FILE="$f" bin/idp-vault-put --merge hermes-agent-env $args
           rm -f "$f"
 
+      # crew#562 path 1: the Basic-auth credential the portal's /pair proxy sends to Sunshine on the
+      # estate Mac, born on this runner and written to vault `sunshine-auth`; a complete entry is
+      # kept. The Mac adopts it over the tailnet from the hermes-agent pod (bin/idp-bootstrap-sunshine
+      # header), never from a paste.
+      - name: bin/idp-bootstrap-sunshine (crew#562)
+        if: ${{ always() && inputs.mode == 'apply' }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+        run: bin/idp-bootstrap-sunshine
+
+      # crew#66 phase 1, zero-human secrets: the Tailscale operator client is minted here from the
+      # runner's OIDC token (tailscale.com/kb/1581, TAILSCALE_FEDERATED_CLIENT_ID in estate-config),
+      # written to vault `tailscale-operator`, read by ESO for the operator and the hermes-agent
+      # sidecar. A working entry is kept. No identity registered yet = BLIND, never a paste.
+      - name: bin/idp-bootstrap-tailscale (crew#66 phase 1)
+        if: ${{ always() && inputs.mode == 'apply' }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          # crew#66: the other one-time root: an OAuth client with the single scope oauth_keys write,
+          # set once as two repository secrets; the bootstrapper vaults it as tailscale-seed and they may go.
+          TAILSCALE_SEED_CLIENT_ID: ${{ secrets.SEED_TAILSCALE_CLIENT_ID }}
+          TAILSCALE_SEED_CLIENT_SECRET: ${{ secrets.SEED_TAILSCALE_CLIENT_SECRET }}
+        run: |
+          fed=$(awk '$1=="TAILSCALE_FEDERATED_CLIENT_ID:"{gsub(/"/,"",$2);print $2}' clusters/oke/estate-config.yaml)
+          [ -n "$fed" ] || [ -n "$TAILSCALE_SEED_CLIENT_ID" ] || { echo "BLIND   tailscale-operator   no federated identity in estate-config (TAILSCALE_FEDERATED_CLIENT_ID) and no SEED_TAILSCALE_CLIENT_ID repository secret; one of them is the one manual step, kb/1581 or kb/1215"; exit 0; }
+          bin/idp-bootstrap-tailscale
+
+      # crew#561: Otto's key to the founder's Mac sshd, minted here (Tailscale SSH cannot run on his
+      # GUI Tailscale build, platform/tailscale/policy.hujson header). Kept once minted; the public
+      # half is printed for bin/idp-mac-adopt-otto to read from this log. Never a paste.
+      - name: bin/idp-bootstrap-macrun (crew#561)
+        if: ${{ always() && inputs.mode == 'apply' }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+        run: bin/idp-bootstrap-macrun
+
+      # R52 (founder 2026-08-29): the Cloudflare root is one token set once as a repository secret; the
+      # DNS token and the R2 credential are minted from it here, never in a browser. No root = BLIND.
+      - name: bin/idp-bootstrap-cloudflare (crew#66, R52)
+        if: ${{ always() && inputs.mode == 'apply' }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          CLOUDFLARE_ROOT_TOKEN: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+        run: |
+          [ -n "$CLOUDFLARE_ROOT_TOKEN" ] || { echo "BLIND   cloudflare-api-token   no SEED_CLOUDFLARE_ROOT_TOKEN repository secret; one token with 'User API Tokens: Edit', set once, is the root (R52)"; exit 0; }
+          bin/idp-bootstrap-cloudflare
+
       # crew#539 CP4: the Cluster Autoscaler's node pool id, found by name after the apply, so the
       # row platform/oci/autoscaler never carries an OCID. Exit 2 is BLIND (no ACTIVE pool yet).
       - name: bin/idp-autoscaler-seed (crew#539 CP4)
@@ -195,6 +254,28 @@ jobs:
           OCI_CLUSTER_NAME: ${{ vars.OCI_CLUSTER_NAME || 'estate' }}
         run: |
           bin/idp-autoscaler-seed || { rc=$?; [ "$rc" = 2 ] && echo "BLIND   oke-autoscaler   no ACTIVE pool yet; the vault keeps what it holds" || exit "$rc"; }
+
+      # R52 (founder 2026-08-29): every vendor key is one root made once and set as a named repository
+      # secret; this step proves each against the vendor's API and writes the vault. A vendor with no
+      # secret whose vault key does not verify is BLIND, never a paste and never a browser.
+      - name: bin/idp-bootstrap-vendors (crew#579, R52)
+        if: ${{ always() && inputs.mode == 'apply' }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          SEED_ANTHROPIC_API_KEY: ${{ secrets.SEED_ANTHROPIC_API_KEY }}
+          SEED_OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
+          SEED_DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
+          SEED_MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
+          SEED_GROQ_API_KEY: ${{ secrets.SEED_GROQ_API_KEY }}
+          SEED_GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
+          SEED_EXA_API_KEY: ${{ secrets.SEED_EXA_API_KEY }}
+          SEED_TELEGRAM_HERMES_BOT_TOKEN: ${{ secrets.SEED_TELEGRAM_HERMES_BOT_TOKEN }}
+          SEED_TELEGRAM_ALERTS_BOT_TOKEN: ${{ secrets.SEED_TELEGRAM_ALERTS_BOT_TOKEN }}
+          SEED_STRIPE_SECRET_KEY: ${{ secrets.SEED_STRIPE_SECRET_KEY }}
+        run: |
+          bin/idp-bootstrap-vendors || { rc=$?; [ "$rc" = 2 ] || exit "$rc"; }
 
   # crew#292 CP4: the in-cluster chaos experiment leaves a receipt in Object Storage; this reads
   # it with the same machine identity and grades its age. A runner has no kube path, so the
@@ -208,9 +289,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
       - name: oci cli
-        run: pip install -q oci-cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -236,9 +320,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
       - name: oci cli
-        run: pip install -q oci-cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -264,9 +351,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
       - name: oci cli
-        run: pip install -q oci-cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -291,9 +381,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
       - name: oci cli
-        run: pip install -q oci-cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -338,6 +431,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: urls with the zone substituted
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           zone=$(awk '$1=="ESTATE_ZONE:"{print $2}' clusters/oke/estate-config.yaml)
@@ -345,6 +440,19 @@ jobs:
           grep -oE 'url: "https?://[^"]+"' backstage/founder/catalog-info.yaml \
             | sed -E 's/^url: "(.*)"$/\1/' | sed "s/\${ESTATE_ZONE}/$zone/g" | sort -u > founder-links.txt
           if grep -q '\${' founder-links.txt; then echo "unsubstituted placeholder"; cat founder-links.txt; exit 1; fi
+          # A catalogue entry for a file this pull request ADDS points at blob/main, which is where
+          # the founder will read it and where it does not exist yet -- so every such pull request
+          # went red on a link that is correct. Grade the proposed tree, not the old one: on a
+          # pull_request the blob ref becomes this branch's head sha, everywhere else it stays main.
+          # Found 2026-08-29 by platform/commerce/app/lago.yaml, run 33260499807.
+          if [ "${GITHUB_EVENT_NAME:-}" = pull_request ] && [ -n "${HEAD_SHA:-}" ]; then
+            # Only THIS repository's links. The first version of this rewrote every `/blob/main/`
+            # it saw, so five catalogue links into chidionyema/crew were asked for an idp commit
+            # sha and came back 404 -- the fix graded the string instead of the repository it
+            # belongs to (oke-check 33262262675). The repo is named, never assumed.
+            sed -i "s#github.com/${GITHUB_REPOSITORY}/blob/main/#github.com/${GITHUB_REPOSITORY}/blob/${HEAD_SHA}/#g" founder-links.txt
+            echo "pull request: blob links graded at ${HEAD_SHA}"
+          fi
           echo "$(wc -l < founder-links.txt) links"
       - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
@@ -368,9 +476,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
       - name: oci cli
-        run: pip install -q oci-cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -396,9 +507,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
       - name: oci cli
-        run: pip install -q oci-cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -424,9 +538,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
       - name: oci cli
-        run: pip install -q oci-cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:

@@ -5,7 +5,7 @@ and an Alert that named GitRepository but no image kind. The rule: every Flux ob
 condition is in the state/cluster receipt, the grader fails on any that is not Ready, and the
 image kinds page. Rung 4, incident test."""
 import json
-import re
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -32,9 +32,9 @@ def _grader_py():
 def _grade(receipt: str, age_min: float = 1.0, max_min: float = 60.0):
     from datetime import datetime, timedelta, timezone
     from email.utils import format_datetime
-    head = json.dumps({"last-modified": format_datetime(datetime.now(timezone.utc) - timedelta(minutes=age_min))})
+    head = json.dumps({"last-modified": format_datetime(datetime.now(timezone.utc) - timedelta(minutes=age_min)), "date": format_datetime(datetime.now(timezone.utc))})
     r = subprocess.run([sys.executable, "-c", _grader_py(), head, receipt, str(max_min), "--json"],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, env={**os.environ, "IDP_LIB": str(ROOT / "bin" / "lib")})
     return r.returncode, r.stdout
 
 
@@ -42,7 +42,7 @@ def _receipt(flux_not_ready: list, with_count: bool = True) -> str:
     n = len(flux_not_ready)
     head = "ok cluster-state at 2026-08-27T00:00:00Z nodes=1 ready=1 pods=48 pods_not_ready=0"
     if with_count:
-        head += f" flux=20 flux_not_ready={n} ds=3 ds_short=0 events_warning=0 monitoring_rules=1 alert_watchdog=1"  # crew#320, crew#539 rows
+        head += f" flux=20 flux_not_ready={n} ds=3 ds_short=0 events_warning=0 monitoring_rules=1 alert_watchdog=1 cpu_used_pct=30 mem_used_pct=25 cpu_req_pct=12 mem_req_pct=4"  # crew#320, crew#539, crew#584 rows
     return head + "\n" + json.dumps({"flux_not_ready": flux_not_ready})
 
 

@@ -97,7 +97,7 @@ kind: Service
 metadata:
   name: estate-mcp
   namespace: mcp
-  labels: { app.kubernetes.io/name: estate-mcp }
+  labels: { app.kubernetes.io/name: estate-mcp, backstage.io/kubernetes-id: founder-mcp-gateway }
 spec:
   selector: { app.kubernetes.io/name: estate-mcp }
   ports:

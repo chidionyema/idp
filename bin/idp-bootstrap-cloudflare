@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Root trust for Cloudflare, one command, no hands (crew#66 founder 2026-08-28; docs/policy/root-trust.md; crew#578).
+# Root trust for Cloudflare, one command, no hands (crew#66 founder 2026-08-28; docs/reference/policy/root-trust.md; crew#578).
 #   bin/idp-bootstrap-cloudflare              mint the DNS token and the R2 credential, write vault entries cloudflare-api-token + prospector-engine-env.R2_*
 #   bin/idp-bootstrap-cloudflare --preflight  prove the vault, the browser driver and the dashboard reachability, write nothing
 #   bin/idp-bootstrap-cloudflare --rotate     mint anew even though the vault entries already verify
+# R52 (founder 2026-08-29): with CLOUDFLARE_ROOT_TOKEN in the environment (oke-check apply reads repository
+# secret SEED_CLOUDFLARE_ROOT_TOKEN, one token with "User API Tokens: Edit", made once) nothing drives a browser.
 #
 # What the provider allows, measured 2026-08-28 from developers.cloudflare.com/api (User API Tokens)
 # and developers.cloudflare.com/r2/api/tokens:
@@ -49,13 +51,15 @@ cf() { # <token> <method> <path> [json] -> body; the token never reaches argv of
 }
 verify() { cf "$1" GET /user/tokens/verify | jq -e '.success and .result.status=="active"' >/dev/null 2>&1; }
 
-# 0. driver, once, into the estate venv
-if ! "$VENV/bin/python" -c 'import playwright' >/dev/null 2>&1; then
+# 0. driver, once, into the estate venv — only on the laptop road. R52 (founder 2026-08-29): the root
+# is ONE token with "User API Tokens: Edit", set once as repository secret SEED_CLOUDFLARE_ROOT_TOKEN;
+# oke-check apply hands it in as CLOUDFLARE_ROOT_TOKEN and no browser is driven.
+if [ -z "${CLOUDFLARE_ROOT_TOKEN:-}" ] && ! "$VENV/bin/python" -c 'import playwright' >/dev/null 2>&1; then
   say "" driver "installing playwright into $VENV (once)"
   python3 -m venv "$VENV" >/dev/null; "$VENV/bin/pip" install -q playwright >/dev/null; "$VENV/bin/playwright" install chromium >/dev/null
 fi
 PY="$VENV/bin/python"
-say ok driver "playwright $("$PY" -c 'import playwright,importlib.metadata as m;print(m.version("playwright"))')"
+[ -n "${CLOUDFLARE_ROOT_TOKEN:-}" ] || say ok driver "playwright $("$PY" -c 'import playwright,importlib.metadata as m;print(m.version("playwright"))')"
 
 # 1. the vault first (the same OCI SSO fallback as bin/idp-bootstrap-tailscale)
 if ! OCI_CLI_PROFILE=$("$IDP/bin/idp-oci-whoami" 2>/dev/null); then
@@ -87,8 +91,14 @@ if [ "$MODE" = --preflight ]; then
   say ok preflight "vault, driver and dashboard reachable; nothing written"; exit 0
 fi
 
-# 3. the one dashboard drive: a root token with "User API Tokens: Edit", one hour, read once from the page
+# 3. the root. Road a (R52): CLOUDFLARE_ROOT_TOKEN from the environment, the standing root, never revoked here.
+#    Road b (laptop): one dashboard drive makes a one-hour root that dies with this process.
 P=$(mktemp -d); trap 'rm -rf "$P"' EXIT; umask 077
+NAME=""
+if [ -n "${CLOUDFLARE_ROOT_TOKEN:-}" ]; then
+  ROOT=$CLOUDFLARE_ROOT_TOKEN; unset CLOUDFLARE_ROOT_TOKEN
+  say ok root "root token from the environment (repository secret SEED_CLOUDFLARE_ROOT_TOKEN); no browser"
+else
 NAME="estate-root $(date -u +%Y-%m-%dT%H:%MZ)"
 say "" console "opening $CONSOLE in the estate browser profile; if Cloudflare asks you to sign in, do — that is the only hand"
 "$PY" - "$CONSOLE" "$PROFILE" "$NAME" "$P/root" <<'PY'
@@ -132,6 +142,7 @@ with sync_playwright() as p:
     ctx.close()
 PY
 ROOT=$(cat "$P/root"); [ -n "$ROOT" ] || fail console "driver produced no token"
+fi
 verify "$ROOT" || fail verify "the root token does not verify at $API/user/tokens/verify"
 say ok root "root token verifies (User API Tokens: Edit)"
 
@@ -165,8 +176,11 @@ printf '%s' "$DNS" > "$P/dns"; "$IDP/bin/idp-cloud" secret put cloudflare-api-to
 printf 'V_ID=%s\nV_SECRET=%s\nV_ACCOUNT=%s\nV_BUCKET=%s\n' "$R2_ID" "$R2_SECRET" "$ACCOUNT_ID" "$BUCKET" > "$P/env"
 ESTATE_ENV_FILE="$P/env" "$IDP/bin/idp-vault-put" --merge prospector-engine-env R2_ACCESS_KEY_ID=V_ID R2_SECRET_ACCESS_KEY=V_SECRET R2_ACCOUNT_ID=V_ACCOUNT R2_BUCKET=V_BUCKET >/dev/null || fail vault "prospector-engine-env R2_* write refused"
 unset DNS R2_SECRET
-# 7. the root token dies with this process
-rid=$(cf "$ROOT" GET /user/tokens | jq -r --arg n "$NAME" '.result[] | select(.name==$n) | .id' | head -1)
-[ -z "$rid" ] || cf "$ROOT" DELETE "/user/tokens/$rid" >/dev/null || true
+# 7. a driver-born root dies with this process; the standing root (road a) is kept
+if [ -n "$NAME" ]; then
+  rid=$(cf "$ROOT" GET /user/tokens | jq -r --arg n "$NAME" '.result[] | select(.name==$n) | .id' | head -1)
+  [ -z "$rid" ] || cf "$ROOT" DELETE "/user/tokens/$rid" >/dev/null || true
+  revoked="root token revoked"
+else revoked="standing root kept"; fi
 unset ROOT
-say ok cloudflare "cloudflare-api-token + prospector-engine-env.R2_* written; root token revoked; ExternalSecrets refresh within 1h"
+say ok cloudflare "cloudflare-api-token + prospector-engine-env.R2_* written; $revoked; ExternalSecrets refresh within 1h"

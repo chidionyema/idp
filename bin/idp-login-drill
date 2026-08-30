@@ -71,6 +71,7 @@ export DRILL_SURFACES_EXPECTED
 # The founder cannot read a log. The drill photographs the page it graded so a red row comes with
 # the picture of what he would have seen (LAW 28: an instrument nobody reads is not an instrument).
 export DRILL_SHOT="${DRILL_SHOT:-${TMPDIR:-/tmp}/login-drill-home.png}"
+export IDP_ROOT="$IDP"   # crew#631: the L3 assertions are probes/langfuse.py, imported below
 
 # The password crosses into python as an environment variable only. It is never an argument, so
 # it never appears in ps, and the driver never prints it.
@@ -87,7 +88,8 @@ TIMEOUT = float(os.environ.get("DRILL_TIMEOUT_MS", "30000"))
 
 
 def fail(stage, detail):
-    detail = re.sub(re.escape(PASSWORD), "<redacted>", str(detail)).replace("\n", " ")[:200]
+    # 800, not 200: run 33237150499 cut Playwright's call log at "POST https://ca" and the cause was unreadable (crew#301)
+    detail = " ".join(re.sub(re.escape(PASSWORD), "<redacted>", str(detail)).split())[:800]
     print(f"FAIL    login-drill  {stage} {detail}")
     sys.exit(1)
 
@@ -204,10 +206,28 @@ with sync_playwright() as p:
         fail("catalogue", f"{HOME} did not reload with the session cookie: {e}")
     if resp is None or resp.status != 200:
         fail("catalogue", f"{HOME} answered {getattr(resp, 'status', 'no response')} to the signed-in session")
-    try:
-        page.locator("text=Catalog").first.wait_for(state="visible", timeout=TIMEOUT)
-    except PWError:
-        fail("catalogue", f"{HOME} answered 200 but no Backstage shell rendered (no 'Catalog' in the page)")
+    # No selector. Founder, 2026-08-29: a UI selector in the drill is a flaky test the estate
+    # itself introduced (run 33251546897 graded a fully drawn page red on an empty wrapper box).
+    # The founder path is: signed in, 200, the page drew words, and no JavaScript error.
+    words = ""
+    for _ in range(int(TIMEOUT / 1000)):
+        try:
+            words = " ".join(page.locator("body").inner_text(timeout=1000).split())
+        except PWError:
+            words = ""
+        if len(words) > 40:
+            break
+        time.sleep(1)
+    if len(words) <= 40:
+        try:
+            page.screenshot(path=os.environ.get("DRILL_SHOT", "/tmp/login-drill-home.png"), full_page=True)
+        except PWError:
+            pass
+        errs = " | ".join(e.splitlines()[0][:300] for e in page_errors) or "no uncaught page error"
+        fail(
+            "catalogue",
+            f"{HOME} answered 200 but drew nothing; page errors: {errs}; page says: {words or '(empty body)'}",
+        )
 
     # 5. the whole path, not just the door: the door's headers must reach Backstage's own
     # auth provider and come back as a signed-in identity. On 2026-08-26 the door was green
@@ -261,9 +281,10 @@ with sync_playwright() as p:
     expected = int(os.environ.get("DRILL_SURFACES_EXPECTED", "0"))
     try:
         surf = page.request.get(
-            f"{HOME}api/catalog/entities?filter=spec.type=founder-surface&fields=metadata.name",
+            f"{HOME}api/catalog/entities?filter=spec.type=founder-surface&fields=metadata.name,metadata.title",
             headers={"Authorization": f"Bearer {token}"})
-        n_surfaces = len(surf.json()) if surf.status == 200 else -1
+        surf_rows = surf.json() if surf.status == 200 else []
+        n_surfaces = len(surf_rows) if surf.status == 200 else -1
         surf_detail = "" if surf.status == 200 else f"API answered {surf.status}: {surf.text()[:120]}"
     except (PWError, ValueError) as e:
         n_surfaces, surf_detail = -1, str(e)[:120]
@@ -272,26 +293,15 @@ with sync_playwright() as p:
         page.goto(HOME, wait_until="domcontentloaded")
     except PWError as e:
         fail("home", f"{HOME} did not reload for the home-page check: {e}")
-    # Wait for the god view to settle: it fetches the catalogue, so the cards arrive after load.
-    # Either outcome ends the wait -- a card, or the page's own honest empty state -- so a real
-    # zero is graded rather than timing out into an ambiguous one.
-    try:
-        page.locator("a:has-text('Catalogue entry'), [data-testid='no-surfaces']").first.wait_for(
-            state="visible", timeout=TIMEOUT)
-    except PWError:
-        pass
-    # Counted on the deep link every SurfaceCard renders, not on a data-testid: InfoCard is a
-    # Backstage component and does not promise to forward unknown props to the DOM.
-    cards = page.locator("a:has-text('Catalogue entry')").count()
-    empty = page.locator("[data-testid='no-surfaces']").count() > 0
+    # Founder, 2026-08-29: the look and feel is being iterated on and the drill grades none of it.
+    # The home page is graded by the founder path only: it answered, and it threw no error.
     shot = os.environ.get("DRILL_SHOT")
     if shot:
         try:
             page.screenshot(path=shot, full_page=True)
         except PWError:
             pass
-    print(f"home    login-drill  {cards} surface cards drawn on /, "
-          f"{n_surfaces} founder-surface entities in the catalogue, {expected} declared in the repository")
+    print(f"home    login-drill  {n_surfaces} founder-surface entities in the catalogue, {expected} declared in the repository")
     # A missing surface is one of two different outages and the founder cannot tell them apart from
     # a count. Backstage keeps every configured location as a Location entity and hangs the read
     # error off its status, so the catalogue itself says which: a location that is absent means the
@@ -318,11 +328,6 @@ with sync_playwright() as p:
         fail("surfaces", f"the catalogue holds {n_surfaces} founder-surface entities and the repository "
                          f"declares {expected}; the founder-catalog ConfigMap or the /estate/founder "
                          f"location is not reaching the portal")
-    if cards < expected:
-        fail("surfaces", f"the home page drew {cards} surface cards from {n_surfaces} entities"
-                         f"{' and rendered its no-surfaces message' if empty else ''}; the founder lands "
-                         f"on {HOME} and sees {cards} of his {expected} surfaces")
-
     body_text = page.inner_text("body")
     # 2026-08-26 (crew#307): /catalog rendered "ERROR 404: PAGE NOT FOUND" inside a healthy shell
     # while this drill, visiting "/" and grading the word "Catalog" in the sidebar, stayed green.
@@ -378,8 +383,156 @@ with sync_playwright() as p:
         if marker in body_text:
             fail("shell", f"{HOME} rendered an error page: '{marker}'")
 
+    # 7b. Which portal is being served (crew#459, crew#301). The drill graded green for hours
+    # while the cluster ran an image from before the portal polish: nothing in it named the build.
+    # The polished app ships a branded web manifest and an SVG icon; the vendor image ships
+    # neither (manifest name 'Backstage', no /icon.svg). Read both with the signed-in session and
+    # print what is served; a vendor manifest means the rollout never landed, which is the
+    # crew#301 incident, so it is red, not a note.
+    # Run 33245245766 (2026-08-29 09:1xZ): /icon.svg answered 200 from the new build while
+    # /manifest.json still said 'Backstage' -- the edge had cached the vendor manifest. Read it
+    # past every cache (a fresh query string plus no-cache) and print the edge's own verdict, so
+    # the row grades the build the origin serves, and a cache that lies to a phone is visible.
+    mf_cache = "-"
+    try:
+        mf = page.request.get(f"{HOME}/manifest.json?drill={int(time.time())}",
+                              headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
+        mf_name = (mf.json().get("name") if mf.ok else "") or "-"
+        mf_cache = mf.headers.get("cf-cache-status") or mf.headers.get("x-cache") or "no cache header"
+    except Exception as e:  # noqa: BLE001 - the row must print whatever broke
+        mf, mf_name = None, f"unreadable: {str(e)[:80]}"
+    try:
+        ic_status = page.request.get(f"{HOME}/icon.svg").status
+    except Exception:  # noqa: BLE001
+        ic_status = 0
+    print(f"build   login-drill  the portal serves manifest name '{mf_name}' (edge cache: {mf_cache}), /icon.svg answered {ic_status}")
+    if mf is None or not mf.ok:
+        fail("build", f"{HOME}/manifest.json did not answer 200: the served portal has no web manifest")
+    if mf_name == "Backstage":
+        fail("build", "the served manifest is the vendor one ('Backstage'): the branded portal on main is not what the cluster runs (crew#459 rollout never landed)")
+    if ic_status != 200:
+        fail("build", f"{HOME}/icon.svg answered {ic_status}: the branded icon is not served")
+
+    # 8a. Every other surface behind the front door (founder 2026-08-29: "ensure all the sso are
+    # proven"). The hosts are the HTTPRoutes carrying the login-forward-auth filter under
+    # platform/: each must land on its own host with the front-door session, answer 200, and show
+    # no password field; stopping on the identity domain or on a vendor login form is red. They run
+    # before the Langfuse hop so a Langfuse red never hides them.
+    OTHER_SURFACES = {
+        "signoz": f"https://signoz.{ZONE}/",
+        "healthchecks": f"https://hc.{ZONE}/",
+        "llm": f"https://llm.{ZONE}/ui/",
+        "screen": f"https://catalogue.{ZONE}/screen/",
+    }
+    sso_red = []
+    for name, url in OTHER_SURFACES.items():
+        want_host = urlparse(url).hostname
+        try:
+            resp = page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_timeout(2500)
+        except PWError as e:
+            sso_red.append(f"{name}: {url} did not load ({str(e)[:80]})")
+            print(f"sso     login-drill  {name} did not load: {str(e)[:80]}")
+            continue
+        host = urlparse(page.url).hostname or ""
+        path = urlparse(page.url).path
+        status = getattr(resp, "status", 0)
+        pw = page.locator("input[type='password']").count()
+        print(f"sso     login-drill  {name} landed on {host}{path} ({status}), {pw} password field(s)")
+        if host == DOMAIN_HOST:
+            sso_red.append(f"{name}: stopped on the identity domain; the drill user is not granted the app")
+        elif host != want_host:
+            sso_red.append(f"{name}: landed on {host}, expected {want_host}")
+        elif status and status >= 400:
+            sso_red.append(f"{name}: answered {status} at {path}")
+        elif pw:
+            sso_red.append(f"{name}: showed its own password form at {path}: the one login is two")
+    if sso_red:
+        fail("second-hop", "; ".join(sso_red))
+
+    # 8. The second hop (crew#503, founder 2026-08-28: "a 2nd login hop is fiction"). Every
+    # surface behind the ForwardAuth 302s to the identity domain and this drill said green while
+    # Langfuse, behind that door, showed its own email+password form. With the front-door cookie
+    # in hand, open Langfuse: it must land on langfuse.<zone> with no password field on the page.
+    # Stopping on the identity domain means the drill user holds no grant for the Langfuse app.
+    LANGFUSE = f"https://langfuse.{ZONE}/"
+    try:
+        page.goto(LANGFUSE, wait_until="domcontentloaded")
+        page.wait_for_timeout(3000)
+    except PWError as e:
+        fail("second-hop", f"{LANGFUSE} did not load with the front-door session: {e}")
+    lf_host = urlparse(page.url).hostname or ""
+    lf_pw = page.locator("input[type='password']").count()
+    print(f"sso     login-drill  langfuse landed on {lf_host}{urlparse(page.url).path}, {lf_pw} password field(s)")
+    if lf_host == DOMAIN_HOST:
+        fail("second-hop", f"langfuse stopped on the identity domain at {page.url.split('?')[0]}; the drill user is not granted the Langfuse app")
+    if lf_pw:
+        fail("second-hop", f"langfuse showed its own password form at {page.url.split('?')[0]}: the one login is two")
+    # crew#626: a sign-in page with no password box is still a second login. The drill user
+    # landed on /auth/sign-in and the drill said green (run 33254022447) while the founder was
+    # asked to log in again. Any path under /auth/ is red; only the project page is signed in.
+    lf_path = urlparse(page.url).path
+    if lf_path.startswith("/auth/"):
+        # crew#626 CP15: the vendor has no automatic redirect to a single SSO provider
+        # (langfuse.com/self-hosting/authentication-and-sso, read 2026-08-29), so the sign-in
+        # page shows one button. The founder path is that one click and no credentials: the
+        # identity domain already holds the front-door session. The drill takes the click and
+        # grades where it lands; a password box or the identity domain's login page is red.
+        sso_btn = page.get_by_role("button", name=re.compile("estate|sso|sign in with", re.I))
+        if sso_btn.count() == 0:
+            fail("second-hop", f"langfuse sign-in page at {lf_path} has no SSO button; page says: {page.locator('body').inner_text()[:200]!r}")
+        try:
+            sso_btn.first.click()
+            page.wait_for_load_state("domcontentloaded")
+            page.wait_for_timeout(4000)
+        except PWError as e:
+            fail("second-hop", f"the SSO button on langfuse did not get through: {e}")
+        lf_host = urlparse(page.url).hostname or ""
+        lf_path = urlparse(page.url).path
+        lf_pw = page.locator("input[type='password']").count()
+        print(f"sso     login-drill  after the SSO click langfuse landed on {lf_host}{lf_path}, {lf_pw} password field(s)")
+        if lf_host == DOMAIN_HOST or lf_pw:
+            fail("second-hop", f"langfuse asked for credentials again at {lf_host}{lf_path}: the one login is two")
+        if lf_path.startswith("/auth/"):
+            q = urlparse(page.url).query
+            fail("second-hop", f"langfuse is still on its sign-in page at {lf_path}?{q} after the SSO click; page says: {page.locator('body').inner_text()[:400]!r}")
+    if lf_host != f"langfuse.{ZONE}":
+        fail("second-hop", f"langfuse landed on {lf_host}, expected langfuse.{ZONE}")
+
+    # 9. crew#631 L3, the human plane graded on identity, not on a page. /api/auth/session with
+    # this browser's jar must name the drill user; a context holding nothing must get no user.
+    # Both come from probes/langfuse.py so the prover and this drill grade one definition.
+    # The identity row is advisory here until the prover has graded it once for real
+    # (crew#631 §6.3: a probe that has never failed is not a probe); set DRILL_STRICT_IDENTITY=1
+    # to make it red for this drill too. The negative control is always red when it fails: an
+    # open gate is a P0 whatever the positive probe says.
+    sys.path.insert(0, os.environ["IDP_ROOT"])
+    from probes.langfuse import l3_from_sessions
+    def session_doc(rq):
+        try:
+            r = rq.get(f"{LANGFUSE}api/auth/session", timeout=TIMEOUT)
+            return r.json() if r.ok and "json" in (r.headers.get("content-type") or "") else None
+        except Exception:
+            return None
+    authed = session_doc(page.request)
+    cold_ctx = browser.new_context(ignore_https_errors=False)
+    cold = session_doc(cold_ctx.request)
+    cold_ctx.close()
+    l3 = l3_from_sessions(authed, cold, f"{USER}@{ZONE}")
+    for a in l3:
+        print(f"{'ok' if a['ok'] else 'FAIL'}      login-drill  {a['name']} expected {a['expected']} actual {a['actual'][:120]}")
+    out = os.environ.get("DRILL_ASSERTIONS_OUT")
+    if out:
+        import json as _json
+        with open(out, "w") as f:
+            _json.dump(l3, f)
+    if not l3[1]["ok"]:
+        fail("identity", f"the gate is open: a context with no credentials got a Langfuse session: {l3[1]['actual']}")
+    if not l3[0]["ok"] and os.environ.get("DRILL_STRICT_IDENTITY") == "1":
+        fail("identity", f"langfuse session is not {USER}@{ZONE}: {l3[0]['actual']}")
+
     ctx.close()
     browser.close()
 
-print(f"ok      login-drill  signed in as {USER}, catalogue rendered as {ref}, {n_entities} entities read, {cards} founder surfaces on the home page, 0 js errors, in {time.time() - started:.1f}s")
+print(f"ok      login-drill  signed in as {USER}, catalogue rendered as {ref}, {n_entities} entities read, {n_surfaces} founder surfaces in the catalogue, langfuse behind the one login, 0 js errors, portal build '{mf_name}', in {time.time() - started:.1f}s")
 PYDRIVER

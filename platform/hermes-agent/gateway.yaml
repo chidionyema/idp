@@ -30,6 +30,10 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    # Never garbage-collected by Flux: a namespace moved between Kustomization rows or
+    # dropped from git stays, with everything in it (portal 404, 2026-08-29 01:05Z, idp#648).
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: hermes-agent
   labels:
     app.kubernetes.io/part-of: idp
@@ -100,6 +104,7 @@ metadata:
   name: hermes-agent-gateway
   namespace: hermes-agent
   labels:
+    backstage.io/kubernetes-id: founder-telegram
     app.kubernetes.io/name: hermes-agent-gateway
 spec:
   selector:
@@ -207,12 +212,13 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           resources:
-            # crew#539 CP9: requests == limits -> Guaranteed QoS, evicted last under node pressure
+            # crew#584: radio-room set, Guaranteed QoS required (require-priority-class) -- request
+            # cut to 50m, limit held equal.
             requests:
-              cpu: 250m
+              cpu: 50m
               memory: 1Gi
             limits:
-              cpu: 250m
+              cpu: 50m
               memory: 1Gi
           securityContext:
             allowPrivilegeEscalation: false
@@ -239,6 +245,11 @@ spec:
               mountPath: /usr/local/bin/mac-run
               subPath: mac-run
               readOnly: true
+            # crew#561: mac-run's key to the Mac's sshd (mac-run-key.yaml); optional so the gateway
+            # still starts before the first apply has minted it, and mac-run says so (exit 2).
+            - name: mac-run-key
+              mountPath: /run/secrets/hermes-agent-mac-run
+              readOnly: true
         # crew#516 CP5 (founder order, crew#66 5451614620 + addendum): the tailnet identity for
         # this pod, so the gateway container's mac-run reaches the Mac through the SOCKS5 proxy
         # below instead of a sidecar-free "figure out the network" ask nobody made of Otto.
@@ -249,7 +260,7 @@ spec:
         # github.com/tailscale/tailscale/blob/main/cmd/containerboot/main.go: "If the value begins
         # with file:, it is treated as a path to a file containing the key").
         - name: tailscale
-          image: ghcr.io/tailscale/tailscale:v1.80.2
+          image: ghcr.io/tailscale/tailscale:v1.102.3  # tailscale/tailscale releases/latest 2026-08-29; v1.80.2 was never on ghcr (404), the sidecar sat in ImagePullBackOff
           env:
             - name: TS_AUTHKEY
               value: file:/run/secrets/hermes-agent-tailscale/TS_AUTHKEY
@@ -323,5 +334,10 @@ spec:
           configMap: { name: hermes-agent-estate }
         - name: mac-run
           configMap: { name: hermes-agent-mac-run, defaultMode: 0755 }
+        - name: mac-run-key
+          secret: { secretName: hermes-agent-mac-run, optional: true, defaultMode: 0440 }
         - name: tailscale-authkey
-          secret: { secretName: hermes-agent-tailscale }
+          # optional: the sidecar's key is born by bin/idp-bootstrap-tailscale (idp#763). Until it exists
+          # the gateway must still start; a missing sidecar secret kept Otto at ContainerCreating for
+          # 4h on 2026-08-29 (oke-check run 33247274077). The sidecar alone restarts, the gateway runs.
+          secret: { secretName: hermes-agent-tailscale, optional: true }

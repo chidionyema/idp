@@ -27,8 +27,16 @@ fi
 for t in gh jq conftest python3; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
 mkdir -p "$REPORTS"
 budget=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['infrastructure']['monthly_cap_usd'])" "$IDP/estate-defaults.yaml")
-gh pr view "$n" --json number,body,labels,files -q '{number: .number, body: .body, labels: [.labels[].name], files: [.files[].path]}' > "$REPORTS/pr-meta.json" || exit 2
-gh pr diff "$n" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true
+# createdAt: a rule that lands today may not red a PR that was planned yesterday. `rule=optimised_plan`
+# (LAW 51) did exactly that on the morning it landed and reddened nine already-reviewed PRs across
+# two repos, so the policy compares this field against the commit that introduced the rule.
+gh pr view "$n" --json number,createdAt,body,labels,files -q '{number: .number, createdAt: .createdAt, body: .body, labels: [.labels[].name], files: [.files[].path]}' > "$REPORTS/pr-meta.json" || exit 2
+# The added lines come from the local range when origin/main is here (pre-push: the remote branch
+# is exactly one push stale, so `gh pr diff` graded the lines this push removes; idp#860), and
+# from the PR on GitHub otherwise (CI's shallow checkout).
+base=$(git merge-base origin/main HEAD 2>/dev/null || true)
+if [ -n "$base" ]; then git diff "$base...HEAD" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true
+else gh pr diff "$n" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true; fi
 # LAW 45 (crew#539, idp#485): the same gitleaks CI's security-scan runs, over the lines this PR
 # adds, so a flagged line is refused here and never reaches a job log. BLIND (no gitleaks) is
 # exit 2 like any missing tool; a laptop is told what to install, CI installs it.
@@ -55,8 +63,11 @@ if jq -e '.files | index("drills/catalogue.yaml")' "$REPORTS/pr-meta.json" >/dev
   fi
 fi
 drills=$("$IDP/bin/idp-drill-names" "${cats[@]}" 2>/dev/null || echo '[]')
-jq -n --slurpfile m "$REPORTS/pr-meta.json" --slurpfile w "$REPORTS/pr-words.json" --rawfile a "$REPORTS/pr-added.txt" --argjson b "$budget" --argjson d "$drills" \
-  '{pr: ($m[0] + {added: $a} + $w[0]), budget_monthly_usd: $b, drills: $d}' > "$REPORTS/pr.json"
+# ADR 0009 (crew#562): the scored decisions a PR may cite with `Matrix: <slug>`; the rule
+# matrix_cited also accepts a slug the PR itself adds to the matrix.
+matrix=$(python3 "$IDP/bin/matrix-gate" --slugs 2>/dev/null || echo '[]')
+jq -n --slurpfile m "$REPORTS/pr-meta.json" --slurpfile w "$REPORTS/pr-words.json" --rawfile a "$REPORTS/pr-added.txt" --argjson b "$budget" --argjson d "$drills" --argjson x "$matrix" \
+  '{pr: ($m[0] + {added: $a} + $w[0]), budget_monthly_usd: $b, drills: $d, matrix: $x}' > "$REPORTS/pr.json"
 out=$(conftest test --parser json -p "$IDP/policy" "$REPORTS/pr.json" 2>&1); rc=$?
 if [ "$src" -eq 1 ]; then
   out=$(printf '%s\nFAIL - pr.json - main - rule=no_secret_added fix: gitleaks flagged an added line (bin/idp-pr-secrets reports/pr-added.txt); rename the field or remove the value, never allow-list it\n' "$out"); rc=1
@@ -70,7 +81,7 @@ tenet_rules=$(python3 -c "import yaml,sys; print(' '.join(r['pr_rule'] for r in 
 tenets=0; fired=0
 for r in $tenet_rules; do
   [ "$r" = "no_static_secret_in_diff" ] && r=no_secret_added
-  tenets=$((tenets+1)); printf '%s\n' "$out" | grep -q "rule=$r " && fired=$((fired+1))
+  tenets=$((tenets+1)); printf '%s\n' "$out" | grep "rule=$r " >/dev/null && fired=$((fired+1))
 done
 score=$((tenets-fired))
 if [ "$tenets" -gt 0 ]; then

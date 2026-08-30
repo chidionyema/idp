@@ -24,8 +24,18 @@ def test_k3s_job_is_a_second_distribution_on_the_runner_vm_not_docker() -> None:
     install = next(s for s in k3s["steps"] if "k3s on the runner VM" in s.get("name", ""))
     assert re.fullmatch(r"v\d+\.\d+\.\d+\+k3s\d+", install["env"]["INSTALL_K3S_VERSION"]), "k3s version must be pinned"
     assert "--disable traefik" in install["env"]["INSTALL_K3S_EXEC"], "the estate's traefik comes from the Flux tree"
-    assert "get.k3s.io" in install["run"] and "k3d" not in install["run"]
-    assert "docker" not in yaml.dump(k3s), "CP2 is a second distribution, not k3d under another name"
+    # comments stripped: this asks what the step runs, and the word k3d appearing in an
+    # explanation of why a fetch is retried is not the k3s job reaching for k3d.
+    cmds = "\n".join(ln for ln in install["run"].splitlines() if not ln.strip().startswith("#"))
+    assert "get.k3s.io" in cmds and "k3d" not in cmds
+    assert "docker" not in install["run"], "CP2 is a second distribution, not k3d under another name"
+    # crew#488 CP5: the front door's DoNotSchedule spread (crew#555) needs a second node and one VM
+    # cannot run two kubelets, so the second node is the k3s image joined as an agent over Docker.
+    # The distribution under test is still the k3s installed on the VM: the server, the CNI and
+    # the API are its own; only the extra kubelet is a container.
+    agent = next(s for s in k3s["steps"] if "second node" in s.get("name", ""))
+    assert "agent --server" in agent["run"] and "get.k3s.io" not in agent["run"]
+    assert "docker" not in yaml.dump([s for s in k3s["steps"] if s is not agent])
 
 
 def test_both_providers_run_the_one_hydration_script_at_the_same_commit() -> None:
@@ -49,12 +59,3 @@ def test_k3s_job_grades_the_same_floor_and_prints_wall_clock_and_cost() -> None:
     assert "wall_clock=${secs}s" in grade["run"] and "cost=${cost}" in grade["run"]
     assert grade["env"]["PRIVATE"] == "${{ github.event.repository.private }}", "cost is read from the repository, never assumed"
     assert "ok      portability-k3s" in grade["run"]
-
-
-def test_catalogue_row_grades_the_k3s_job_on_the_same_schedule() -> None:
-    rows = {r["name"]: r for r in yaml.safe_load((ROOT / "drills/catalogue.yaml").read_text())["drills"]}
-    a, b = rows["portability"], rows["portability-k3s"]
-    assert b["workflow"] == a["workflow"] == "portability-drill.yml"
-    assert b["job"] == "k3s" and a["job"] == "hydrate"
-    assert b["schedule"] == a["schedule"] and b["max_age_hours"] == a["max_age_hours"]
-    assert "cost" in b["proves"] and "k3s" in b["proves"]

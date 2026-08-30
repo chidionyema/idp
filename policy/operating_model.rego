@@ -86,7 +86,7 @@ deny contains msg if {
 # `DENY: <word>` comment from the repository owner's login (bin/pr-report pr.denials) is refused.
 # No word, no APPROVE, and a green PR merges. The word said on Telegram is still not evidence.
 
-founder_facing_prefixes := {"backstage/", "platform/identity/", "platform/edge/", "docs/policy/", "estate-defaults.yaml"}
+founder_facing_prefixes := {"backstage/", "platform/identity/", "platform/edge/", "docs/reference/policy/", "estate-defaults.yaml"}
 
 touches_founder_facing if {
 	some f in input.pr.files
@@ -220,4 +220,124 @@ warn contains msg if {
 	some n, slug in laws
 	not law_line_ok(n)
 	msg := sprintf("rule=architecture_laws | `- LAW %s %s:` is missing or is a sentence | fix: make it the command or path that proves the law for this change, or `n/a: <reason>`", [n, slug])
+}
+
+# --- matrix_cited (ADR 0009, crew#562) ------------------------------------------------------
+# Founder, 2026-08-28: "we need a matrix for decision making — rather than asking these
+# questions it should be auto — for all requirements" and "i like the matrix, enforce it".
+# A pull request that makes a build-or-buy decision names the scored entry in
+# docs/decisions/decision-matrix.yaml with a `Matrix: <slug>` line. Two shapes of PR are that
+# decision: one that adds an ADR (a `# NNNN.` title line under docs/decisions/), and one that
+# brings a new chart onto a platform layer (an added `kind: HelmRelease`). input.matrix is the
+# slug list bin/matrix-gate --slugs prints from idp main; a slug the PR itself adds counts.
+
+adds_adr if {
+	some f in input.pr.files
+	regex.match(`^docs/decisions/\d{4}-.+\.md$`, f)
+	regex.match(`(?m)^\+# \d{4}\. `, input.pr.added)
+}
+
+adds_helmrelease if {
+	touches_drilled_layer
+	regex.match(`(?m)^\+kind:\s*HelmRelease\s*$`, input.pr.added)
+}
+
+decides if adds_adr
+decides if adds_helmrelease
+
+matrix_line := m[0][1] if {
+	m := regex.find_all_string_submatch_n(`(?m)^Matrix:\s*(\S+)`, input.pr.body, 1)
+}
+
+slugs_added_in_pr contains s if {
+	"docs/decisions/decision-matrix.yaml" in input.pr.files
+	some m in regex.find_all_string_submatch_n(`(?m)^\+\s*-\s*slug:\s*(\S+)`, input.pr.added, -1)
+	s := m[1]
+}
+
+deny contains msg if {
+	decides
+	not matrix_line
+	msg := "rule=matrix_cited | the PR adds an ADR or a new HelmRelease and names no scored decision | fix: add `Matrix: <slug>` to the PR body, naming an entry in docs/decisions/decision-matrix.yaml (score it in this PR if none covers the choice; every cell needs evidence)"
+}
+
+deny contains msg if {
+	decides
+	matrix_line
+	not matrix_line in input.matrix
+	not matrix_line in slugs_added_in_pr
+	msg := sprintf("rule=matrix_cited | `Matrix: %s` names no entry in docs/decisions/decision-matrix.yaml | fix: use a scored slug, or add the decision to the matrix in this PR", [matrix_line])
+}
+
+# --- optimised_plan (LAW 51, crew#584) ------------------------------------------------------
+# Founder, 2026-08-29: "optimise before build ... note this process down as it will become law ...
+# how to plan and optimise before starting any execution ... i want to trial and if successful to
+# enforce this process". Trial measured on crew#584 5459773413: go -> three PRs merged in 12 min
+# against a 45-minute estimate. The body carries one `Optimised:` line of the shape the procedure
+# fixes (~/AGENTS-FULL.md): `Optimised: <steps before> -> <after>, <round trips before> -> <after>;
+# cut: <what, why>`. The gate grades the shape: a number on each side of an `->` and a `cut:` clause.
+# A sentence ("we made it faster") is not a plan that was counted.
+
+optimised_line_ok if {
+	regex.match(`(?m)^Optimised: [^\n]*\d[^\n]*->[^\n]*\d[^\n]*; *cut: \S[^\n]*$`, input.pr.body)
+}
+
+# WHEN THE RULE STARTS JUDGING. LAW 51 landed on main in dca2a929 at 2026-08-29T02:28:20Z. Between
+# that commit and the next hour the rule turned nine open pull requests red -- five on prospector,
+# four here -- every one of them written, reviewed and green before the law existed. Their authors
+# could only have cleared it by inventing a counted plan for work nobody counted, which is a
+# fabricated receipt, and LAW 38 says a guard that refuses correct work is an outage. So the rule
+# reads the PR's opening time: from the moment the law existed, the plan is a precondition; before
+# it, there was nothing to precede. A report with no `createdAt` is judged -- the field is absent
+# only on a hand-built fixture or an old report, and the safe default there is to grade, not skip.
+law51_landed := "2026-08-29T02:28:20Z"
+
+opened_before_law51 if {
+	is_string(input.pr.createdAt)
+	input.pr.createdAt < law51_landed
+}
+
+deny contains msg if {
+	is_string(input.pr.body)
+	not optimised_line_ok
+	not opened_before_law51
+	msg := "rule=optimised_plan | the PR body has no counted `Optimised:` line (LAW 51) | fix: plan first, then add `Optimised: <steps before> -> <after>, <round trips before> -> <after>; cut: <what, why>` — numbers on both sides of the arrow and a cut clause; the procedure is in ~/AGENTS-FULL.md"
+}
+
+# --- lifecycle_row (crew#618, founder 2026-08-29) -------------------------------------------
+# "no PR covering critical infra like this can have setup going to void: reusable? expiration? we
+# need policy." A pull request that touches a root credential's birth (bin/idp-bootstrap-*, the
+# vendor registry, the GitHub App files, or any `secrets.SEED_*` line in a workflow) carries one
+# `Lifecycle:` line naming the row on docs/reference/policy/credential-lifecycle.md. The test
+# tests/test_incident_crew618_every_root_has_a_life_cycle.py grades the page itself; this grades
+# that the author looked at it.
+
+lifecycle_landed := "2026-08-29T09:30:00Z"
+
+touches_a_root if {
+	some f in input.pr.files
+	regex.match(`^(bin/idp-bootstrap-|platform/vendors/|platform/github-app/)`, f)
+}
+
+touches_a_root if {
+	some f in input.pr.files
+	startswith(f, ".github/workflows/")
+	regex.match(`secrets\.SEED_`, input.pr.diff)
+}
+
+lifecycle_line_ok if {
+	regex.match(`(?m)^Lifecycle: \S[^\n]*$`, input.pr.body)
+}
+
+opened_before_lifecycle if {
+	is_string(input.pr.createdAt)
+	input.pr.createdAt < lifecycle_landed
+}
+
+deny contains msg if {
+	is_string(input.pr.body)
+	touches_a_root
+	not lifecycle_line_ok
+	not opened_before_lifecycle
+	msg := "rule=lifecycle_row | the PR touches a root credential's birth and the body has no `Lifecycle:` line (crew#618) | fix: add `Lifecycle: <SEED_NAME> row on docs/reference/policy/credential-lifecycle.md` and make sure the row exists with expiry, rotation and revocation filled"
 }

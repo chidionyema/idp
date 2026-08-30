@@ -3,6 +3,9 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - traefik.yaml
+  - status-page.yaml
+  - require-catalogue-entity.yaml
+  - catalogue-entity-exception.yaml
   - cert-manager.yaml
   - langfuse-exception.yaml
   - k8s-infra-namespace.yaml
@@ -12,7 +15,21 @@ resources:
   - hindsight-exception.yaml
   - robusta-exception.yaml
   - tailscale-operator-exception.yaml
-  - kyverno.yaml
+  - external-dns-exception.yaml
+  - protect-namespaces.yaml
+  # crew#341, wired 2026-08-28 (crew#488 CP5): the file sat here unreferenced since PR #259, so
+  # the cluster never held it. Audit mode until bin/idp-ci's kyverno row reports zero violations.
+  - kyverno-secrets-policy.yaml
   - provider-independence.yaml
+  - dev-loop-policy.yaml
   - provider-edge-exception.yaml
   - provider-storage-exception.yaml
+  - capacity-policy.yaml
+  # crew#623: the money layer. Three rules the Lago images cannot satisfy, scoped to lago-* in
+  # the commerce namespace; the file itself says what was measured and when each is retested.
+  - commerce-exception.yaml
+  # crew#623: the widened admission judge reached platform/oci/autoscaler for the first time and
+  # found nine failures on a workload nothing had ever graded. Seven were fixed in the manifest
+  # (securityContext, seccomp, dropped capabilities, a read-only root, probes); this excuses the
+  # last two, which the autoscaler's argv-only node-pool interface makes impossible to satisfy.
+  - autoscaler-exception.yaml
