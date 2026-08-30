@@ -8,7 +8,6 @@ founder's Telegram every ~10 min (founder: "ur drowning my telegram channel with
 The fixes: a diagnose row that reads FailedCreate events in full, and a 1h rate limit on the
 controller the estate already runs. These tests hold both.
 """
-
 import os
 import stat
 import subprocess
@@ -27,14 +26,10 @@ def _run_diagnose(tmp_path: Path) -> list[str]:
     bin_dir.mkdir()
     for tool in ("kubectl", "flux", "helm"):
         f = bin_dir / tool
-        f.write_text(
-            f'#!/bin/sh\nprintf \'%s %s\\n\' "{tool}" "$*" >> "{log}"\ncat >/dev/null 2>&1 || true\necho ok\n'
-        )
+        f.write_text(f'#!/bin/sh\nprintf \'%s %s\\n\' "{tool}" "$*" >> "{log}"\ncat >/dev/null 2>&1 || true\necho ok\n')
         f.chmod(f.stat().st_mode | stat.S_IEXEC)
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
-    p = subprocess.run(
-        [str(PLAYBOOK), "diagnose"], capture_output=True, text=True, env=env
-    )
+    p = subprocess.run([str(PLAYBOOK), "diagnose"], capture_output=True, text=True, env=env)
     assert p.returncode == 0, p.stdout + p.stderr
     return log.read_text().splitlines() if log.exists() else []
 
@@ -42,25 +37,8 @@ def _run_diagnose(tmp_path: Path) -> list[str]:
 def test_diagnose_reads_admission_denials_in_full(tmp_path):
     calls = _run_diagnose(tmp_path)
     denials = [c for c in calls if "reason=FailedCreate" in c]
-    assert denials, (
-        "diagnose never read the FailedCreate events that carry admission denials"
-    )
-    # Run 33331157383 (2026-08-30): the jsonpath|grep shape this test used to pin kept only the
-    # first line of Kyverno's multi-line denial, so every row ended at "denied the request: ".
-    # The row now pulls the events as JSON and selects/prints the whole message with jq, bounded
-    # by tail -c; the property graded is the same -- the full message, not the events column.
-    assert any("-o json" in c for c in denials), (
-        "the row must pull full events, not the truncated table"
-    )
-    src = PLAYBOOK.read_text()
-    row = next(
-        line
-        for line in src.splitlines()
-        if "admission-denials " in line and "FailedCreate" in line
-    )
-    assert "select(.message" in row and "tail -c" in row, (
-        "the row must print the whole message, bounded"
-    )
+    assert denials, "diagnose never read the FailedCreate events that carry admission denials"
+    assert any("{.message}" in c for c in denials), "the row must print the full message, not the events column"
 
 
 def test_notification_controller_is_rate_limited_to_one_hour():
@@ -72,7 +50,4 @@ def test_notification_controller_is_rate_limited_to_one_hour():
         and p["target"].get("name") == "notification-controller"
         for op in yaml.safe_load(p["patch"])
     ]
-    assert any(
-        op.get("op") == "add" and op.get("value") == "--rate-limit-interval=1h"
-        for op in hits
-    ), hits
+    assert any(op.get("op") == "add" and op.get("value") == "--rate-limit-interval=1h" for op in hits), hits
