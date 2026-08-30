@@ -7,10 +7,12 @@ import { Typography, makeStyles } from '@material-ui/core';
 import { Pill } from './EstateHome';
 import { ClusterHealth, healthSentence } from './clusterHealth';
 import { useClusterHealth } from './useClusterHealth';
-import { Red, redsSentence } from './openReds';
+import { DrillSummary, Red, drillsSentence, redsSentence } from './openReds';
 import { useOpenReds } from './useOpenReds';
 import { FounderData, receiptsSentence, waitingSentence } from './founder';
 import { useFounder } from './useFounder';
+import { useHealthchecks } from './useHealthchecks';
+import { Checks, STATUS_WORD, checksSentence, notUp } from './healthchecks';
 import { ago } from './estate';
 import { monoFamily } from '../theme/tokens';
 
@@ -241,11 +243,47 @@ const FounderTiles = ({ data, now }: { data: FounderData; now: number }) => {
   );
 };
 
+const DrillsTile = ({ drills }: { drills: DrillSummary }) => {
+  const classes = useStyles();
+  return (
+    <div className={classes.tile} data-testid="ops-drills">
+      <div className={classes.tileTop}>
+        <span className={classes.tileTitle}>Drills</span>
+      </div>
+      <p data-testid="ops-drills-sentence">{drillsSentence(drills)}</p>
+    </div>
+  );
+};
+
+const HealthchecksTile = ({ data }: { data: Checks }) => {
+  const classes = useStyles();
+  const rows = notUp(data);
+  return (
+    <div className={classes.tile} data-testid="ops-healthchecks">
+      <div className={classes.tileTop}>
+        <span className={classes.tileTitle}>Scheduled jobs</span>
+      </div>
+      <p data-testid="ops-healthchecks-sentence">{checksSentence(data)}</p>
+      {rows.length > 0 && (
+        <ul className={classes.list}>
+          {rows.map(c => (
+            <li key={c.name} data-testid="ops-healthcheck-row">
+              <span className={classes.mono}>{c.name}</span>{' '}
+              {STATUS_WORD[c.status]}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
 export const Ops = () => {
   const classes = useStyles();
   const loaded = useClusterHealth();
   const reds = useOpenReds();
   const founder = useFounder();
+  const checks = useHealthchecks();
   const now = Date.now();
   return (
     <Page themeId="home">
@@ -278,6 +316,16 @@ export const Ops = () => {
           {loaded.state === 'ready' && <ClusterTile health={loaded.health} />}
           {founder.state === 'ready' && (
             <FounderTiles data={founder.data} now={now} />
+          )}
+          {reds.state === 'ready' && reds.drills && (
+            <DrillsTile drills={reds.drills} />
+          )}
+          {checks.state === 'ready' && <HealthchecksTile data={checks.data} />}
+          {checks.state === 'error' && (
+            <div className={classes.tile} data-testid="ops-healthchecks-error">
+              Scheduled jobs could not be read, so their state is unknown.{' '}
+              <span className={classes.mono}>{checks.error}</span>
+            </div>
           )}
           {founder.state === 'error' && (
             <div className={classes.tile} data-testid="ops-founder-error">

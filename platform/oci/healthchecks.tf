@@ -10,12 +10,17 @@ resource "random_password" "healthchecks_db" {
   special = false
 }
 resource "random_uuid" "healthchecks_ping_key" {}
+# crew#684 CP5: the project's read-only API key. Healthchecks sets it at enrol (enrol.py), the portal
+# sends it as X-Api-Key from a mounted file (app-config.container.yaml proxy /healthchecks). One value,
+# two ExternalSecrets, no person ever sees it.
+resource "random_uuid" "healthchecks_ro_key" {}
 
 locals {
   healthchecks_secrets = {
     "healthchecks-secret-key"  = random_password.healthchecks_secret_key.result
     "healthchecks-db-password" = random_password.healthchecks_db.result
     "healthchecks-ping-key"    = random_uuid.healthchecks_ping_key.result
+    "healthchecks-ro-key"      = random_uuid.healthchecks_ro_key.result
   }
 }
 

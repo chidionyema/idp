@@ -1,5 +1,7 @@
 import { Entity } from '@backstage/catalog-model';
 import {
+  drillSummary,
+  drillsSentence,
   ownerName,
   redsFromAlerts,
   redsFromEntities,
@@ -157,5 +159,24 @@ describe('open reds', () => {
     expect(redsSentence([])).toBe('No reds open.');
     expect(ownerName('group:default/platform')).toBe('platform');
     expect(ownerName('  ')).toBeUndefined();
+  });
+
+  it('counts every drill for the drills row and is blind with none (crew#684 CP5)', () => {
+    const drill = (name: string, last: string) =>
+      ({
+        kind: 'Resource',
+        metadata: { name, annotations: { 'last-status': last } },
+        spec: { type: 'drill', owner: 'group:default/watch' },
+      } as any);
+    const d = drillSummary([
+      drill('a', 'passed'),
+      drill('b', 'failed'),
+      drill('c', 'passed'),
+    ]);
+    expect(d).toEqual({ total: 3, green: 2, red: 1 });
+    expect(drillsSentence(d)).toBe('2 of 3 drills green; 1 red, listed below.');
+    expect(drillsSentence(drillSummary([]))).toBe(
+      'No drills are in the catalogue, so nothing is rehearsed.',
+    );
   });
 });
