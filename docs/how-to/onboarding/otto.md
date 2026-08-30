@@ -25,10 +25,10 @@ hermes-v2/                             the image: config.yaml, templates/skills/
 | Models | the one router, `llm` row (`config.yaml` base_url + `LITELLM_API_KEY` from `hermes-agent-env`) | otto-parity `model-lane` |
 | Memory | self-hosted Hindsight, `platform/hindsight`; `HINDSIGHT_API_URL` env, `config.yaml` memory.provider: hindsight | otto-parity `hindsight-answers` |
 | GitHub | `gh` in the image; `GITHUB_TOKEN` field of `hermes-agent-env`, minted by the github-app lane (`platform/github-app/token-consumers.json`) | `gh auth status` from Telegram; parity step `gh-token-works` (crew#561) |
-| The founder's Mac | `mac-run <cmd>`: ssh over the tailscale sidecar (tag:k8s -> tag:founder-mac port 22, `platform/tailscale/policy.hujson`), key in vault entry `hermes-mac-run`, public half adopted by `bin/idp-mac-adopt-otto` | otto-parity `key-mounted`, `tailnet-up`, `mac-run-hostname` |
+| The founder's Mac | `mac-run <cmd>`: ssh over the tailscale sidecar (tag:k8s -> tag:founder-mac port 22, `platform/tailscale/policy.hujson`), key in vault entry `hermes-mac-run`, public half adopted by `bin/idp-mac-adopt-otto` | otto-parity `key-usable`, `key-direct`, `tailnet-up`, `mac-run-hostname` |
 | Agent-to-agent | `A2A_BEARER_TOKEN` in `hermes-agent-a2a` | otto-parity `a2a` |
 | Cron lanes | the jobs file under HERMES_HOME, installed at boot by `hermes-v2/bin/install-cron.py` | otto-parity `cron-lanes-installed` |
-| State | PVC `hermes-agent-data` at `/data` (HERMES_HOME): state.db, sessions, known_hosts, the mac-run key copy | `no-restart-loop` |
+| State | PVC `hermes-agent-data` at `/data` (HERMES_HOME): state.db, sessions, known_hosts | `no-restart-loop` |
 
 Secrets are named here, never valued (R49). Every one is a vault entry synced by external-secrets;
 `bin/idp-oke-break-glass architect-doctor` prints `Ready=True SecretSynced` per entry.
@@ -48,8 +48,12 @@ Every step in the run log reads `ok`. The founder's own proof is two Telegram me
   installs cron lanes before Telegram connects. `gateway-ready` waits 60s and can read FAIL while
   the pod is still booting; `no-restart-loop` tells the two apart.
 - `mac-run` exit 2: the key is not synced yet (oke-check apply mints it). Exit 255: ssh reached
-  nothing (tailnet, ACL or the Mac asleep). Exit 1 with `cp: Permission denied`: the key copy path
-  is not writable — it lives under HERMES_HOME since crew#561 (2026-08-30).
+  nothing (tailnet, ACL or the Mac asleep). Since idp#949 the wrapper copies nothing: it passes
+  the mounted key to `ssh -i`, so a `cp: Permission denied` means the pod is serving an old script.
+- A change to `mac-run.tpl` rolls the pod by itself: the ConfigMap comes from a
+  `configMapGenerator`, so its name carries a content hash (idp#970). A `subPath` mount is never
+  refreshed in place, and Reloader misses a change that lands in the same reconcile as its
+  annotation. The story is in [Otto on the founder's Mac](../../explanation/otto-on-the-mac.md).
 - Skills under `hermes-v2/skills/` are gitignored; a skill lives in `templates/skills/<name>/SKILL.md.tmpl`
   or it never reaches the image.
 
