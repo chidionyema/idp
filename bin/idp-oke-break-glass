@@ -555,8 +555,34 @@ pb_catalogue_roll() {
   step flux-source flux reconcile source git flux-system -n flux-system --timeout=3m
   step backstage flux reconcile kustomization backstage -n flux-system --with-source --timeout=5m
   show image $K get deploy catalogue -n backstage -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+  # crew#684, 2026-08-30 04:19Z: the login drill read 502 on /api/catalog/entities during a roll,
+  # and the body was the edge's own "Starting up" page (platform/edge/status-page.yaml), which
+  # Traefik serves when no backend answered. The only record left afterwards was the startup-probe
+  # warnings every catalogue pod prints while it warms up, which is noise on every roll and not a
+  # cause. Whether the Service ever had zero ready endpoints during the roll was never measured, so
+  # the roll measures it: once a second, the ready addresses on the catalogue EndpointSlice, and a
+  # red row naming every second the door had nothing behind it (maxUnavailable 1 / maxSurge 0 in
+  # the overlay promises one replica serves throughout; this is the row that proves the promise).
+  local door_watch door_pid door_empty door_total
+  door_watch=$(mktemp)
+  ( while :; do
+      printf '%s %s\n' "$(date -u +%H:%M:%S)" "$($K get endpointslice -n backstage -l kubernetes.io/service-name=catalogue -o jsonpath='{range .items[*].endpoints[?(@.conditions.ready==true)]}{.addresses[0]} {end}' 2>/dev/null)"
+      sleep 1
+    done ) > "$door_watch" &
+  door_pid=$!
   step rollout $K rollout status deploy/catalogue -n backstage --timeout=10m
+  kill "$door_pid" 2>/dev/null || true
+  wait "$door_pid" 2>/dev/null || true
+  door_empty=$(awk 'NF<2' "$door_watch" | wc -l | tr -d ' ')
+  door_total=$(wc -l < "$door_watch" | tr -d ' ')
+  if [ "$door_empty" -eq 0 ]; then
+    step door-backed echo "door-backed: a ready catalogue endpoint in every one of $door_total samples"
+  else
+    step door-backed sh -c "echo 'door unbacked for $door_empty of $door_total samples:'; awk 'NF<2' '$door_watch'; exit 1"
+  fi
+  rm -f "$door_watch"
   show replicasets $K get rs -n backstage
+  show roll-events $K get events -n backstage --sort-by=.lastTimestamp
   show pods $K get pods -n backstage -o wide
   # login-drill 33170826547 (12:24Z, after the roll to main-1747): five of the six locations that
   # app-config.container.yaml declares are registered and /estate/founder/catalog-info.yaml is not.
