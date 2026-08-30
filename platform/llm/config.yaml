@@ -113,6 +113,18 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       timeout: 300
 
+  # crew#659 CP3 (founder 2026-08-30, "GPT Researcher is the worker"): the research worker ranks
+  # what it scraped with an embedding model, and the router is the only door to a model (LAW 34).
+  # Gemini's embedding model on the same funded key as the gemini lane; model id from
+  # https://ai.google.dev/gemini-api/docs/embeddings (read 2026-08-30). Callers ask for "embed".
+  - model_name: embed
+    litellm_params:
+      model: gemini/gemini-embedding-001
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 120
+    model_info:
+      mode: embedding
+
 router_settings:
   fallbacks:
     # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat
