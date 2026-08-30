@@ -13,6 +13,8 @@
 #
 # Fields
 #   name            short name printed by the drills row
+#   owner           who is on it when it is red: a session lane (idp, science, crew) or a human
+#                   (founder). crew#684 CP3: a drill with no owner is refused by the gate.
 #   workflow        the workflow file under .github/workflows/
 #   job             optional: the job inside that workflow the drill is (documentation only;
 #                   the freshness check grades the workflow run)
@@ -25,6 +27,7 @@
 
 drills:
   - name: oke-check
+    owner: idp
     workflow: oke-check.yml
     job: check
     schedule: "17 6 * * *"
@@ -34,6 +37,7 @@ drills:
       OCI session and read the live cluster, so the platform can be rebuilt without a laptop.
 
   - name: login-drill
+    owner: idp
     workflow: login-drill.yml
     job: login-drill
     schedule: "7 * * * *"
@@ -46,6 +50,7 @@ drills:
       one drill that stays, Backstage is the portal).
 
   - name: verdict-langfuse
+    owner: science
     workflow: verdict-langfuse.yml
     job: prove
     schedule: "37 * * * *"
@@ -56,6 +61,7 @@ drills:
       is the drill user while a context holding nothing gets no user (crew#631).
 
   - name: chaos-pod-kill
+    owner: idp
     workflow: oke-check.yml
     job: chaos-drill
     schedule: "17 6 * * *"
@@ -66,6 +72,7 @@ drills:
       it back (bin/idp-chaos-drill grades the receipt's age, max 194h).
 
   - name: alert-drill
+    owner: idp
     workflow: oke-check.yml
     job: alert-drill
     schedule: "17 6 * * *"
@@ -78,6 +85,7 @@ drills:
       bin/idp-chaos-drill langfuse-alert-drill alert-drill (age max 194h).
 
   - name: cluster-state
+    owner: idp
     workflow: oke-check.yml
     job: cluster-state
     schedule: "17 6 * * *"
@@ -89,6 +97,7 @@ drills:
       the cluster holds PrometheusRules and Alertmanager shows the Watchdog alert, so the alert
       pipeline is evaluating and delivering (crew#539 DoD 1).
   - name: kini-finish
+    owner: idp
     workflow: oke-check.yml
     job: kini-state
     schedule: "17 6 * * *"
@@ -98,6 +107,7 @@ drills:
       from the engine's answer) is fresh and the last KiniFinishWorkflow is green, running, or not
       yet requested; a red checkpoint or a stale receipt fails it (crew#396: bin/idp-kini-state).
   - name: telemetry-coverage
+    owner: idp
     workflow: oke-check.yml
     job: telemetry-coverage
     schedule: "17 6 * * *"
@@ -107,6 +117,7 @@ drills:
       stored in the last hour, measured by querying ClickHouse and diffing against the API server
       (crew#320, LAW 50: coverage is proved by the backend, never by scanning files).
   - name: free-tier
+    owner: idp
     workflow: oke-check.yml
     job: free-tier
     schedule: "17 6 * * *"
@@ -117,6 +128,7 @@ drills:
       (ADR 0004) has not moved again without a red row (crew#488 CP3).
 
   - name: stale
+    owner: crew
     workflow: stale.yml
     job: stale
     schedule: "17 * * * *"
@@ -126,6 +138,7 @@ drills:
       ways back in the comment, so the queue cannot pile up behind ended sessions (crew#504 CP2).
 
   - name: wake-blocked
+    owner: crew
     workflow: wake-blocked.yml
     job: wake-blocked
     schedule: "7-59/30 * * * *"
@@ -135,6 +148,7 @@ drills:
       A pull request closed with a Blocked-by line is updated and reopened within 30 minutes of
       its blocker landing, so dependency waits never need a person to remember (crew#504 CP7).
   - name: science-facts
+    owner: science
     workflow: oke-check.yml
     job: science-facts
     schedule: "17 6 * * *"
@@ -146,6 +160,7 @@ drills:
       (crew#516 CP5, LAW 50: the lane is graded by querying the backend, never by scanning files).
 
   - name: estate-escrow
+    owner: idp
     workflow: estate-escrow.yml
     job: escrow
     schedule: "29 */6 * * *"
@@ -158,6 +173,7 @@ drills:
       have not moved is skipped. No laptop and no founder account in the loop (crew#290 layer 4).
 
   - name: messaging-demo
+    owner: idp
     workflow: messaging-drill.yml
     job: demo
     schedule: "47 5 * * *"

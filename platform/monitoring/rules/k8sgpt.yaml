@@ -17,6 +17,7 @@ spec:
           for: 10m
           labels:
             severity: warning
+            owner: idp
           annotations:
             summary: "K8sGPT: {{ $labels.kind }} {{ $labels.name }} needs attention"
             description: "K8sGPT has reported this object as broken for 10 minutes. Read its diagnosis: break-glass playbook `diagnose` (k8sgpt-results row) or the Result object in namespace healing."
@@ -25,6 +26,7 @@ spec:
           for: 15m
           labels:
             severity: warning
+            owner: idp
           annotations:
             summary: "K8sGPT cannot analyse the cluster"
             description: "Either its calls to the model (litellm, model minimax) are failing or its metrics are gone from Prometheus. Its findings are not arriving; do not read the quiet as healthy. Playbook: k8sgpt-analyze."

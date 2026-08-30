@@ -1,0 +1,258 @@
+// The Ops dashboard (crew#684): "I need to see everything". CP1 is the cluster tile — nodes
+// ready, pods not ready by namespace, Flux rows not ready — read live through the Kubernetes
+// plugin. CP2 adds the open-reds table: every firing alert, red drill and door down, with its
+// owner, since when, the next action and the board link; a red with no owner is itself a red.
+import { Content, Link, Page } from '@backstage/core-components';
+import { Typography, makeStyles } from '@material-ui/core';
+import { Pill } from './EstateHome';
+import { ClusterHealth, healthSentence } from './clusterHealth';
+import { useClusterHealth } from './useClusterHealth';
+import { Red, redsSentence } from './openReds';
+import { useOpenReds } from './useOpenReds';
+import { ago } from './estate';
+import { monoFamily } from '../theme/tokens';
+
+const useStyles = makeStyles(theme => ({
+  header: { marginBottom: theme.spacing(3) },
+  lead: { fontSize: 17, margin: theme.spacing(1, 0, 0) },
+  grid: {
+    display: 'grid',
+    gap: theme.spacing(1.5),
+    gridTemplateColumns: 'repeat(auto-fill, minmax(22em, 1fr))',
+  },
+  tile: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(1),
+    padding: theme.spacing(2),
+    borderRadius: 12,
+    border: `1px solid ${theme.palette.divider}`,
+    background: theme.palette.background.paper,
+    minWidth: 0,
+  },
+  tileTop: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+    flexWrap: 'wrap',
+  },
+  tileTitle: { fontWeight: 600, fontSize: 18, flex: '1 1 10em' },
+  row: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: theme.spacing(1),
+    fontSize: 14,
+  },
+  list: {
+    margin: 0,
+    paddingLeft: theme.spacing(2.5),
+    fontSize: 13,
+    color: theme.palette.text.secondary,
+  },
+  mono: { fontFamily: monoFamily, fontSize: 12, overflowWrap: 'anywhere' },
+  reds: { marginTop: theme.spacing(3) },
+  redsTitle: { fontWeight: 600, fontSize: 18, margin: theme.spacing(0, 0, 1) },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: 14,
+    '& th, & td': {
+      textAlign: 'left',
+      verticalAlign: 'top',
+      padding: theme.spacing(1),
+      borderBottom: `1px solid ${theme.palette.divider}`,
+    },
+    '& th': { fontWeight: 600, color: theme.palette.text.secondary },
+  },
+  unowned: { color: theme.palette.error.main, fontWeight: 600 },
+  scroll: { overflowX: 'auto' },
+}));
+
+export const TITLE = 'Ops';
+/** The sentence only this page says; the login drill grades the page on it. */
+export const LEAD = 'The cluster right now, and every red with its owner.';
+
+const ClusterTile = ({ health }: { health: ClusterHealth }) => {
+  const classes = useStyles();
+  const pods = health.podsNotReady.reduce((n, r) => n + r.count, 0);
+  return (
+    <div
+      className={classes.tile}
+      data-testid="ops-cluster"
+      data-state={health.state}
+    >
+      <div className={classes.tileTop}>
+        <Pill
+          state={health.state}
+          why={health.why}
+          testId="ops-cluster-health"
+        />
+        <span className={classes.tileTitle}>Cluster</span>
+      </div>
+      <div className={classes.row} data-testid="ops-nodes">
+        <span>Nodes ready</span>
+        <span>
+          {health.nodes.ready} of {health.nodes.total}
+        </span>
+      </div>
+      {health.nodes.notReady.length > 0 && (
+        <ul className={classes.list}>
+          {health.nodes.notReady.map(n => (
+            <li key={n} className={classes.mono}>
+              {n}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className={classes.row} data-testid="ops-pods">
+        <span>Pods not ready</span>
+        <span>{pods}</span>
+      </div>
+      {health.podsNotReady.length > 0 && (
+        <ul className={classes.list}>
+          {health.podsNotReady.map(r => (
+            <li key={r.namespace}>
+              <span className={classes.mono}>{r.namespace}</span> {r.count}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className={classes.row} data-testid="ops-flux">
+        <span>Flux rows ready</span>
+        <span>
+          {health.flux.ready} of {health.flux.total}
+        </span>
+      </div>
+      {health.flux.notReady.length > 0 && (
+        <ul className={classes.list}>
+          {health.flux.notReady.map(r => (
+            <li key={`${r.kind}/${r.namespace}/${r.name}`}>
+              <span className={classes.mono}>
+                {r.kind} {r.namespace ? `${r.namespace}/` : ''}
+                {r.name}
+              </span>{' '}
+              {r.why}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+const KIND_LABEL: Record<Red['kind'], string> = {
+  alert: 'Alert',
+  drill: 'Drill',
+  door: 'Door',
+};
+
+const RedsTable = ({ reds, now }: { reds: Red[]; now: number }) => {
+  const classes = useStyles();
+  return (
+    <div className={classes.scroll}>
+      <table className={classes.table} data-testid="ops-reds">
+        <thead>
+          <tr>
+            <th>Red</th>
+            <th>Owner</th>
+            <th>Since</th>
+            <th>Next action</th>
+            <th>Board</th>
+          </tr>
+        </thead>
+        <tbody>
+          {reds.map(r => (
+            <tr
+              key={r.key}
+              data-testid="ops-red"
+              data-kind={r.kind}
+              data-owned={r.owner ? 'yes' : 'no'}
+            >
+              <td>
+                <span className={classes.mono}>{KIND_LABEL[r.kind]}</span>{' '}
+                {r.link ? <Link to={r.link}>{r.name}</Link> : r.name}
+                <br />
+                <span className={classes.mono}>{r.why}</span>
+              </td>
+              <td>
+                {r.owner ?? <span className={classes.unowned}>No owner</span>}
+              </td>
+              <td title={r.since}>{ago(r.since, now) ?? 'Unknown'}</td>
+              <td>{r.nextAction}</td>
+              <td>
+                {r.boardUrl ? (
+                  <Link to={r.boardUrl}>Board</Link>
+                ) : (
+                  <span className={classes.unowned}>No board link</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+export const Ops = () => {
+  const classes = useStyles();
+  const loaded = useClusterHealth();
+  const reds = useOpenReds();
+  const now = Date.now();
+  return (
+    <Page themeId="home">
+      <Content>
+        <header className={classes.header}>
+          <Typography variant="h1" component="h1">
+            {TITLE}
+          </Typography>
+          <p className={classes.lead} data-testid="ops-lead">
+            {LEAD}
+          </p>
+          {loaded.state === 'loading' && (
+            <p className={classes.lead} data-testid="ops-loading">
+              Reading the cluster.
+            </p>
+          )}
+          {loaded.state === 'error' && (
+            <p className={classes.lead} data-testid="ops-error">
+              The cluster could not be read, so nothing below is known.{' '}
+              <span className={classes.mono}>{loaded.error}</span>
+            </p>
+          )}
+          {loaded.state === 'ready' && (
+            <p className={classes.lead} data-testid="ops-sentence">
+              {healthSentence(loaded.health)}
+            </p>
+          )}
+        </header>
+        <div className={classes.grid}>
+          {loaded.state === 'ready' && <ClusterTile health={loaded.health} />}
+        </div>
+        <section className={classes.reds} data-testid="ops-reds-section">
+          <h2 className={classes.redsTitle}>Open reds</h2>
+          {reds.state === 'loading' && (
+            <p data-testid="ops-reds-loading">
+              Reading the alerts and the catalogue.
+            </p>
+          )}
+          {reds.state === 'ready' && (
+            <>
+              <p data-testid="ops-reds-sentence">{redsSentence(reds.reds)}</p>
+              {reds.unread.map(u => (
+                <p
+                  key={u}
+                  data-testid="ops-reds-unread"
+                  className={classes.unowned}
+                >
+                  Could not be read, so its reds are unknown: {u}
+                </p>
+              ))}
+              {reds.reds.length > 0 && <RedsTable reds={reds.reds} now={now} />}
+            </>
+          )}
+        </section>
+      </Content>
+    </Page>
+  );
+};
