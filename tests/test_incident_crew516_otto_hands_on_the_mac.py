@@ -607,9 +607,12 @@ def test_mac_run_keeps_its_key_in_a_private_directory_it_makes_and_otto_parity_s
         if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "hermes-agent-mac-run"
     )
     script = cm["data"]["mac-run"]
-    code = "
-".join(l for l in script.splitlines() if not l.lstrip().startswith("#"))
-    assert "/tmp/mac-run.id_ed25519" not in code, "a fixed name in /tmp is the refused path"
+    code = "\n".join(
+        ln for ln in script.splitlines() if not ln.lstrip().startswith("#")
+    )
+    assert "/tmp/mac-run.id_ed25519" not in code, (
+        "a fixed name in /tmp is the refused path"
+    )
     assert 'mktemp -d "${TMPDIR:-/tmp}/mac-run.XXXXXX"' in script
     assert 'mktemp -d "${HERMES_HOME:-/data}/.mac-run.XXXXXX"' in script, (
         "no fallback = same outage"
