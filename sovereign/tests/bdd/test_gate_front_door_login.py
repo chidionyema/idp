@@ -95,7 +95,7 @@ def _oauth2_proxy_in_front(state: dict) -> None:
             paths = [m.get("path", {}) for r in d["spec"]["rules"] for m in r.get("matches", [])]
             assert paths and all(x == {"type": "PathPrefix", "value": "/ping/"} for x in paths), f"{p}: healthchecks-ping-key route exposes {paths}"
             assert "healthchecks-ping-key" in (p.parent / "external-secret.yaml").read_text(), f"{p}: the row pulls no ping key"
-            assert 'project.ping_key = os.environ["PING_KEY"]' in (p.parent / "healthchecks.yaml").read_text(), f"{p}: the row never pins the ping key"
+            assert 'project.ping_key = os.environ["PING_KEY"]' in (p.parent / "enrol.py").read_text(), f"{p}: the row never pins the ping key (idp#962: the enrol script is enrol.py)"
             continue
         if auth == "edge-basic-auth":
             # The collector's ingest door (crew#516 CP5): OTLP /v1/ paths only, and every rule carries a
