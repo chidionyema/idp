@@ -36,6 +36,7 @@ spec:
         - tailscale-operator
         - laptop
         - hermes
+        - science
         default: all
       delete:
         title: delete
