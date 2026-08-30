@@ -10,7 +10,7 @@ is parity: everything the Mac gateway could do, this pod can do, and a drill pro
 
 ```
 platform/hermes-agent/gateway.yaml     the Deployment (one replica, Recreate: one Telegram poller at a time)
-platform/hermes-agent/mac-run.yaml     the ssh wrapper that reaches the founder's Mac
+platform/hermes-agent/mac-run.sh       the ssh wrapper that reaches the founder's Mac
 platform/hermes-agent/estate.yaml      what the pod may call on the estate
 platform/hermes-agent/kustomization.yaml   the image tag, rewritten by Flux image automation; never by hand
 clusters/oke/estate-config.yaml        FOUNDER_MAC_USER / FOUNDER_MAC_TS_IP, the only two facts about the Mac

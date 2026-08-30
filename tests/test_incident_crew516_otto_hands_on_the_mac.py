@@ -54,7 +54,9 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 GATEWAY = ROOT / "platform" / "hermes-agent" / "gateway.yaml"
 ESTATE = ROOT / "platform" / "hermes-agent" / "estate.yaml"
-MAC_RUN = ROOT / "platform" / "hermes-agent" / "mac-run.yaml"
+MAC_RUN = (
+    ROOT / "platform" / "hermes-agent" / "mac-run.sh"
+)  # crew#561: generated ConfigMap, see kustomization.yaml
 TAILSCALE = ROOT / "platform" / "hermes-agent" / "tailscale.yaml"
 KUSTOMIZATION = ROOT / "platform" / "hermes-agent" / "kustomization.yaml"
 FOUNDER = ROOT / "backstage" / "founder" / "catalog-info.yaml"
@@ -339,13 +341,7 @@ def test_the_sidecars_own_secret_is_composed_from_the_one_oauth_client_not_a_sec
 
 
 def test_mac_run_script_carries_the_placeholders_not_a_literal_ip():
-    docs = _docs(MAC_RUN)
-    cm = next(
-        d
-        for d in docs
-        if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "hermes-agent-mac-run"
-    )
-    script = cm["data"]["mac-run"]
+    script = MAC_RUN.read_text()
     assert "${FOUNDER_MAC_TS_IP}" in script
     assert "${FOUNDER_MAC_USER}" in script
     assert not TAILNET_IP_RE.search(script), (
@@ -357,13 +353,7 @@ def test_mac_run_uses_the_ci_minted_key_and_no_key_is_ever_in_git():
     """crew#561: the key is born on a CI runner (bin/idp-bootstrap-macrun) into the vault and
     reaches the pod as a file; mac-run copies it to 0600 because sshd refuses a group-readable one.
     No key material, no authorized_keys line, in any manifest."""
-    docs = _docs(MAC_RUN)
-    cm = next(
-        d
-        for d in docs
-        if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "hermes-agent-mac-run"
-    )
-    script = cm["data"]["mac-run"]
+    script = MAC_RUN.read_text()
     assert (
         "/run/secrets/hermes-agent-mac-run" in script and "IdentitiesOnly=yes" in script
     )
@@ -428,7 +418,6 @@ def test_kustomization_carries_the_new_resources():
     assert set(ks["resources"]) >= {
         "gateway.yaml",
         "estate.yaml",
-        "mac-run.yaml",
         "tailscale.yaml",
     }
 
@@ -601,8 +590,7 @@ def test_mac_run_reads_the_mounted_key_and_never_copies_it_and_otto_parity_grade
     33294804159, row tmp-owner). The same run's key-direct row reached the Mac with `ssh -i` on the
     mounted file, so the copy had no reason to exist. mac-run now points ssh at the mount and copies
     nothing; the playbook grades key-direct as a step, not a look."""
-    cm = yaml.safe_load(MAC_RUN.read_text())
-    script = cm["data"]["mac-run"].replace("$$", "$")
+    script = MAC_RUN.read_text().replace("$$", "$")
     code = "\n".join(
         ln for ln in script.splitlines() if not ln.lstrip().startswith("#")
     )

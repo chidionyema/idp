@@ -178,7 +178,7 @@ spec:
             # public by design; every POST needs the token.
             - name: A2A_HOST
               value: 0.0.0.0
-            # crew#516 CP5: mac-run.yaml's only variables (LAW 46 — the Mac's tailnet IP and login
+            # crew#516 CP5: mac-run.sh's only variables (LAW 46 — the Mac's tailnet IP and login
             # user are named nowhere else). ConfigMap, not Secret: neither is a credential, Tailscale
             # SSH authenticates by tailnet node identity, not by these values.
             - name: FOUNDER_MAC_USER

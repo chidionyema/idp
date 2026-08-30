@@ -7,9 +7,16 @@ namespace: hermes-agent
 resources:
   - gateway.yaml
   - estate.yaml
-  - mac-run.yaml
   - mac-run-key.yaml
   - tailscale.yaml
+# crew#561, 2026-08-30: mac-run is generated, not a literal ConfigMap, because the gateway mounts it
+# as a subPath and a subPath mount never sees a ConfigMap update. The name hash is the rollout:
+# a change to mac-run.sh renames the ConfigMap, kustomize rewrites the Deployment's volume to the
+# new name, and the pod rolls. Never set disableNameSuffixHash here; that is the outage back.
+configMapGenerator:
+  - name: hermes-agent-mac-run
+    files:
+      - mac-run=mac-run.sh
 images:
   - name: ghcr.io/chidionyema/hermes-agent
     newTag: main-47-577cf23f81c14ccf89f6f269057da6293ff23319 # {"$imagepolicy": "flux-system:hermes-agent:tag"}
