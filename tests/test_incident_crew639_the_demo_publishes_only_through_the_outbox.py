@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 import yaml
@@ -146,3 +147,30 @@ def test_the_go_suite_and_both_demos_are_green():
     assert "duplicate=1" in r.stdout and "failed_again=1 effects_in_db=3" in r.stdout, (
         r.stdout
     )
+
+
+def test_checksum_manifests_are_not_scanned_for_secrets() -> None:
+    """idp#901: a go.sum `h1:` hash was read as a generic-api-key and reddened the gate. The secret
+    scan skips checksum manifests (gitleaks' own default does, in git mode); rego still reads every
+    added line."""
+    src = Path(ROOT, "bin", "pr-report").read_text()
+    assert "go\\.sum" in src and "pr-added-scan.txt" in src
+    assert 'idp-pr-secrets" "$REPORTS/pr-added-scan.txt"' in src
+    assert '--rawfile a "$REPORTS/pr-added.txt"' in src
+    prog = re.search(r"skip_sums='(.*)'\n", src).group(1)
+    diff = "+++ b/platform/messaging/go.sum\n+github.com/x v1 h1:AAAA=\n+++ b/bin/x\n+echo kept\n"
+    out = subprocess.run(
+        ["awk", prog], input=diff, capture_output=True, text=True, check=True
+    ).stdout
+    assert out == "+echo kept\n"
+
+
+def test_the_demo_is_a_catalogued_daily_drill() -> None:
+    """drill_named: a platform/ change names a drill in drills/catalogue.yaml; the demo is its own."""
+    cat = yaml.safe_load(Path(ROOT, "drills", "catalogue.yaml").read_text())
+    row = next(d for d in cat["drills"] if d["name"] == "messaging-demo")
+    text = Path(ROOT, ".github", "workflows", row["workflow"]).read_text()
+    wf = yaml.safe_load(text)
+    assert wf[True]["schedule"][0]["cron"] == row["schedule"]
+    assert row["job"] in wf["jobs"]
+    assert "bin/idp-messaging-demo all" in text
