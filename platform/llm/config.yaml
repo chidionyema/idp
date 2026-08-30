@@ -151,6 +151,20 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       timeout: 300
 
+  # The same Google model bought through OpenRouter, and it exists for the reason `embed` moved
+  # there on 2026-08-30: one empty account must not take a capability off the estate. Both routes
+  # to this model were measured empty on 2026-08-30 -- Google answered 429 RESOURCE_EXHAUSTED
+  # "Your prepayment credits are depleted" on every image model, and /api/v1/credits returned
+  # total_credits 10 against total_usage 10.17171079 -- so this pair is what makes funding EITHER
+  # one enough. Model id and its presence as an image-output model read from
+  # openrouter.ai/api/v1/models on 2026-08-30, where it is one of eleven rows whose
+  # architecture.output_modalities contains "image".
+  - model_name: image-or
+    litellm_params:
+      model: openrouter/google/gemini-3.1-flash-image
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 300
+
 router_settings:
   fallbacks:
     # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat
@@ -172,6 +186,11 @@ router_settings:
     # in the cheap model (cp30), like every other chain; claude-fast tries claude first.
     - claude: [minimax, deepseek]
     - claude-fast: [claude, deepseek]
+    # An image chain may only contain image models. Every other chain here ends in the cheap
+    # text model (cp30) and that is right for text; landing a picture request on a chat model
+    # would answer a caller waiting for bytes with prose, which is worse than a clean failure.
+    # So this chain is two ways to buy one Google model and stops there.
+    - image: [image-or]
   num_retries: 2
   allowed_fails: 3
   cooldown_time: 60

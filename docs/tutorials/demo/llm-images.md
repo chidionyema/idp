@@ -53,8 +53,14 @@ image model:
 ```
 
 The key itself is live: the same key lists all six image models with a 200.
-Until the Google account is funded, use the test lane and expect the shipping
-lane to fail loudly rather than quietly returning something worse.
+
+The same model is also bought through OpenRouter as the lane `image-or`, and
+`image` falls back to it, so funding either account brings the shipping lane
+back. On 2026-08-30 both were empty at once — OpenRouter answered
+`total_credits 10` against `total_usage 10.17171079` — which is why the pair
+exists rather than one route. Until one of them has money, use the test lane
+and expect the shipping lane to fail loudly rather than quietly returning
+something worse.
 
 ## What proves it
 

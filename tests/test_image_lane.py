@@ -70,8 +70,37 @@ def test_no_vendor_key_is_written_down_in_the_config() -> None:
 
 def test_an_image_lane_never_falls_back_to_a_text_model() -> None:
     """A fallback chain that lands a picture request on a chat model returns prose to a caller
-    waiting for bytes. Neither image lane is in a chain, and this is what keeps it that way."""
-    chains = CFG["router_settings"]["fallbacks"]
-    named = {src for entry in chains for src in entry}
-    targets = {t for entry in chains for ts in entry.values() for t in ts}
-    assert "image" not in named | targets
+    waiting for bytes: worse than a clean failure, because it looks like an answer. Every hop
+    out of an image lane must itself be an image lane."""
+    models = _models()
+    image_lanes = {n for n, p in models.items() if "image" in p["model"]}
+    assert "image" in image_lanes and "image-or" in image_lanes
+    for entry in CFG["router_settings"]["fallbacks"]:
+        for src, targets in entry.items():
+            if src not in image_lanes:
+                assert not (set(targets) & image_lanes), (
+                    f"{src} is a text lane and must not fall back into an image lane"
+                )
+                continue
+            for target in targets:
+                assert target in image_lanes, (
+                    f"{src} falls back to the text lane {target}"
+                )
+
+
+def test_the_shipping_lane_survives_one_empty_account() -> None:
+    """Measured 2026-08-30: Google's prepay was depleted AND OpenRouter was over its credit, so
+    a single-route image lane is a capability that leaves whenever one account runs dry, the way
+    `embed` did. Two ways to buy the same model, so funding either one is enough."""
+    models = _models()
+    assert models["image-or"]["model"].startswith("openrouter/")
+    assert models["image-or"]["api_key"] == "os.environ/OPENROUTER_API_KEY"
+    # Same underlying model, bought through two accounts -- not two different pictures.
+    assert (
+        models["image"]["model"].rsplit("/", 1)[1]
+        == models["image-or"]["model"].rsplit("/", 1)[1]
+    )
+    chain = next(
+        e["image"] for e in CFG["router_settings"]["fallbacks"] if "image" in e
+    )
+    assert "image-or" in chain

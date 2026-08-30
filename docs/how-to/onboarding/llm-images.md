@@ -15,8 +15,11 @@ cheaply, Gemini for anything that ships.
 ## Where it lives
 
 `platform/llm/config.yaml`, which is the LiteLLM configuration the cluster
-reconciles. The shipping lane is the `model_list` row named `image`. The test
-lane is a `pass_through_endpoints` route at `/minimax/image` in
+reconciles. The shipping lane is the `model_list` row named `image`, with
+`image-or` behind it: the same Google model bought through OpenRouter, so one
+empty account does not take pictures off the estate the way it took `embed`
+off on 2026-08-30. The test lane is a `pass_through_endpoints` route at
+`/minimax/image` in
 `general_settings`, and it is shaped differently for a vendor reason rather
 than a preference: LiteLLM has no MiniMax image provider, and OpenRouter does
 not resell one either — every MiniMax model it lists is text-output only. The
@@ -38,7 +41,8 @@ means unpriced, not free.
 
 ## How to stop it
 
-Delete the row, or the route, from `platform/llm/config.yaml` and let Flux
-reconcile. Nothing else in the estate depends on either lane yet, and no
-fallback chain names them — an image request that fails must fail, because a
-fallback into a text model answers a picture request with prose.
+Delete the rows, or the route, from `platform/llm/config.yaml` and let Flux
+reconcile. Nothing else in the estate depends on any of the three yet. The one
+chain that names them holds image models only, and must keep doing so: a
+fallback out of an image lane into a text model answers a picture request with
+prose, which looks like an answer and is worse than a clean failure.
