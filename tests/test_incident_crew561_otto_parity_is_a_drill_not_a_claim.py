@@ -88,6 +88,7 @@ def test_every_crew561_capability_is_a_graded_row_of_the_parity_playbook():
         "gateway-ready",
         "tailnet-up",
         "mac-run-hostname",
+        "git-in-pod",
         "hindsight-answers",
         "model-lane-is-router",
         "repo-workspace",
