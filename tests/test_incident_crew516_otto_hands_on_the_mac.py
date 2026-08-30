@@ -593,3 +593,37 @@ def test_mac_adopt_reads_the_key_from_any_dispatched_run_not_only_a_green_one():
     assert 'test("apply")' not in raw
     assert "--event workflow_dispatch" in raw
     assert "IDP_APPLY_RUN" in raw
+
+
+def test_mac_run_keeps_its_key_in_a_private_directory_it_makes_and_otto_parity_shows_tmp_owner():
+    """crew#561, otto-parity runs 33291368505 and 33292378273 (2026-08-30): tunnel up, key mounted,
+    and `cp` to the fixed name /tmp/mac-run.id_ed25519 died with "Permission denied", so Otto could
+    not reach the Mac. The key now lives in a directory mac-run makes for this one call (mktemp -d,
+    falling back to the gateway's own volume), removed after ssh; the playbook prints /tmp's owner
+    before it tries, so the next such failure names its cause on the first run."""
+    cm = next(
+        d
+        for d in _docs(MAC_RUN)
+        if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "hermes-agent-mac-run"
+    )
+    # Flux postBuild writes `$${x}` for a shell `${x}`; grade the shell the pod runs.
+    script = cm["data"]["mac-run"].replace("$$", "$")
+    code = "\n".join(
+        ln for ln in script.splitlines() if not ln.lstrip().startswith("#")
+    )
+    assert "/tmp/mac-run.id_ed25519" not in code, (
+        "a fixed name in /tmp is the refused path"
+    )
+    assert 'mktemp -d "${TMPDIR:-/tmp}/mac-run.XXXXXX"' in script
+    assert 'mktemp -d "${HERMES_HOME:-/data}/.mac-run.XXXXXX"' in script, (
+        "no fallback = same outage"
+    )
+    assert 'rm -rf "$dir"' in script and "exit $rc" in script, (
+        "the copy must be removed after ssh"
+    )
+    assert "exec ssh" not in script, "exec would skip the cleanup"
+    playbook = (ROOT / "bin" / "idp-oke-break-glass").read_text()
+    body = playbook.split("pb_otto_parity()", 1)[1]
+    assert body.index("tmp-owner") < body.index("mac-run-hostname"), (
+        "eyes come before the try"
+    )
