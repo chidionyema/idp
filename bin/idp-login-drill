@@ -440,6 +440,10 @@ with sync_playwright() as p:
     OTHER_SURFACES = {
         "signoz": f"https://signoz.{ZONE}/",
         "healthchecks": f"https://hc.{ZONE}/",
+        # crew#684 (founder 2026-08-30 "all cluster monitoring tools now"): the two doors that were
+        # "no public address yet" for 43 hours.
+        "alertmanager": f"https://alertmanager.{ZONE}/",
+        "prometheus": f"https://prometheus.{ZONE}/",
         "llm": f"https://llm.{ZONE}/ui/",
         "screen": f"https://catalogue.{ZONE}/screen/",
     }

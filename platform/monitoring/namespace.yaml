@@ -9,3 +9,6 @@ metadata:
   labels:
     app.kubernetes.io/part-of: idp
     pod-security.kubernetes.io/enforce: restricted
+    # The shared Gateway (prospector deploy/k8s/base/edge.yaml) only accepts routes from a namespace
+    # carrying this label; alertmanager.<zone> and prometheus.<zone> attach from here (crew#684).
+    idp.estate/edge-attach: "true"

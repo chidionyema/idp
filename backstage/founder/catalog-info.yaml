@@ -763,17 +763,20 @@ kind: Component
 metadata:
   name: founder-alerts
   title: "Alerts (Alertmanager)"
-  description: "Every alert rule fires here and is sent to your Telegram. The console runs on the cluster with no public address yet; the rules and the Telegram route are in git."
+  description: "Every alert rule fires here and is sent to your Telegram. Open it to see what is firing right now, silence one, and check the Telegram route; the rules themselves are in git."
   annotations:
     github.com/project-slug: chidionyema/idp
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Watch"
     idp/updated-by: "Flux from platform/monitoring; alerts arrive on Telegram"
-  tags: [founder, screen, no-address, kubernetes]
+  tags: [founder, screen, kubernetes]
   links:
-    - title: "Alert rules (no public address yet)"
-      url: "https://github.com/chidionyema/idp/blob/main/platform/monitoring/rules"
+    - title: "Open"
+      url: "https://alertmanager.${ESTATE_ZONE}"
       icon: dashboard
+    - title: "Alert rules"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/monitoring/rules"
+      icon: docs
     - title: "Telegram route"
       url: "https://github.com/chidionyema/idp/blob/main/platform/monitoring/alertmanager-config.yaml"
       icon: dashboard
@@ -892,17 +895,20 @@ kind: Component
 metadata:
   name: founder-metrics
   title: "Metrics (Prometheus)"
-  description: "Prometheus collects the numbers from every pod and node and raises the alerts. Its own screen and Grafana are switched off; Telemetry (SigNoz) is the screen we use."
+  description: "Prometheus collects the numbers from every pod and node and raises the alerts. Open it to query any number, read the rules and see which targets are being scraped. Grafana is switched off; Telemetry (SigNoz) is the dashboard screen."
   annotations:
     github.com/project-slug: chidionyema/idp
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
-    estate/group: "Kubernetes tooling"
+    estate/group: "Watch"
     idp/updated-by: "Flux from platform/monitoring"
-  tags: [founder, kubernetes, screen, no-address]
+  tags: [founder, kubernetes, screen]
   links:
-    - title: "Manifest (screen switched off)"
-      url: "https://github.com/chidionyema/idp/blob/main/platform/monitoring/kube-prometheus-stack.yaml"
+    - title: "Open"
+      url: "https://prometheus.${ESTATE_ZONE}"
       icon: dashboard
+    - title: "Manifest"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/monitoring/kube-prometheus-stack.yaml"
+      icon: docs
 spec:
   type: founder-surface
   lifecycle: production

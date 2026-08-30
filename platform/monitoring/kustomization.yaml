@@ -10,3 +10,4 @@ resources:
   - alertmanager-config.yaml
   - kube-prometheus-stack.yaml
   - blackbox.yaml
+  - httproute.yaml
