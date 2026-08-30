@@ -8,13 +8,18 @@ samples the catalogue EndpointSlice's ready addresses once a second across the r
 `door-backed` row that is red for every second the door had nothing behind it, then the namespace
 events, so the next 502 during a roll has a record.
 """
+
 from test_incident_crew412_catalogue_roll_from_ci import _run
 
 
 def test_the_roll_samples_the_ready_endpoints_across_the_rollout(tmp_path):
     p, calls = _run("catalogue-roll", tmp_path)
     assert p.returncode == 0, p.stdout + p.stderr
-    slices = [c for c in calls if "get endpointslice -n backstage" in c and "service-name=catalogue" in c]
+    slices = [
+        c
+        for c in calls
+        if "get endpointslice -n backstage" in c and "service-name=catalogue" in c
+    ]
     assert slices, f"the roll never read the catalogue EndpointSlice: {calls}"
     assert "conditions.ready==true" in slices[0], slices[0]
     assert "door-backed" in p.stdout, p.stdout
