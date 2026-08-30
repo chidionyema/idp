@@ -344,6 +344,7 @@ with sync_playwright() as p:
         ("search", "text=Search"),
         ("settings", "text=Settings"),
         ("visualizer", "text=Visualizer"),
+        ("tools", "text=Every tool we use"),  # crew#684 CP0: the sentence only the Tools page says once the catalogue answered
     )
     broken = []
     for path, must_see in PUBLISHED:

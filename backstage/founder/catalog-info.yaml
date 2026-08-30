@@ -538,6 +538,29 @@ spec:
   owner: group:default/platform
   system: system:default/estate
 ---
+# crew#684 CP0 (founder 2026-08-30: "so i need all the tools one place ... another page in
+# backstage just pure tools"): every door on one page, grouped by estate/group, read from the
+# catalogue. A new door listed in this file appears there without touching the page.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-tools
+  title: "Tools: every door on one page"
+  description: "Every place you sign in to, grouped (Watch, Run, Build, Companies), each with its Open link and its last probe. Read from this catalogue every render: add a door here and it is on the page."
+  annotations:
+    estate/group: "Watch"
+    idp/updated-by: "backstage/packages/app/src/modules/home/Tools.tsx ships with the portal image; the list is the founder-surface entities in this file"
+  tags: [founder]
+  links:
+    - title: "Open"
+      url: "https://catalogue.${ESTATE_ZONE}/tools"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
 # crew#562 (ADR 0009 decision founder-screen-access, path 1 of 3): Sunshine on the estate Mac,
 # Moonlight on the phone; the PIN goes from the founder's thumb to the Mac through this page.
 apiVersion: backstage.io/v1alpha1

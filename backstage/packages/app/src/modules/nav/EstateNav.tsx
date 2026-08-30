@@ -19,6 +19,7 @@ import SettingsApplicationsIcon from '@material-ui/icons/SettingsApplications';
 import SearchIcon from '@material-ui/icons/Search';
 import MenuBookIcon from '@material-ui/icons/MenuBook';
 import AccountCircleIcon from '@material-ui/icons/AccountCircle';
+import BuildIcon from '@material-ui/icons/Build';
 import { SidebarLogo } from './SidebarLogo';
 
 export const NAV = [
@@ -28,6 +29,7 @@ export const NAV = [
   // founder, 2026-08-29, for the umpteenth time: "where are all the k8s tooling".
   { title: 'Kubernetes', to: '/#kubernetes', icon: SettingsApplicationsIcon },
   { title: 'What we run', to: '/catalog', icon: LayersIcon },
+  { title: 'Tools', to: '/tools', icon: BuildIcon },
   { title: 'Find', to: '/search', icon: SearchIcon },
   { title: 'How-to', to: '/docs', icon: MenuBookIcon },
   { title: 'You', to: '/settings', icon: AccountCircleIcon },
