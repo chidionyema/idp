@@ -65,3 +65,18 @@ def test_science_is_a_vault_seed_entry_and_lands_in_the_sops_vault():
     assert re.search(r'\[ "\$ENTRY" = all \] \|\| \[ "\$ENTRY" = science \]', run)
     assert 'secret-add" dev LITELLM_SCIENCE_KEY LITELLM_API_KEY' in run
     assert "add secrets/dev/LITELLM_SCIENCE_KEY.yaml" in run
+
+
+def test_the_embed_lane_does_not_share_the_gemini_lane_account():
+    """2026-08-30 05:3xZ: Google's prepaid credit ran out, `embed` answered 429 RESOURCE_EXHAUSTED
+    and had no fallback group, so the worker could not rank a single page while `gemini-or` on
+    OpenRouter still answered. Embeddings go through the account that answered; endpoint from
+    https://openrouter.ai/docs/api-reference/embeddings (read 2026-08-30)."""
+    lanes = _lanes()
+    embed = lanes["embed"]["litellm_params"]
+    assert embed["api_base"] == "https://openrouter.ai/api/v1"
+    assert embed["api_key"] == "os.environ/OPENROUTER_API_KEY"
+    assert embed["model"] == "openai/openai/text-embedding-3-small"
+    assert embed["api_key"] != lanes["gemini"]["litellm_params"]["api_key"], (
+        "one empty account must not take both the grader and the ranker down"
+    )
