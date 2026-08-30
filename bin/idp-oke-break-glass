@@ -634,11 +634,29 @@ pb_helm_retry() {
     [ -n "$pname" ] || continue
     step "recreate-$pname" $K delete pod "$pname" -n "$pns" --wait=false
   done <<<"$stuck"
-  local ns name
+  # crew#678 CP2 (founder 2026-08-30: self-healing needs a circuit breaker). Each HelmRelease
+  # gets HELM_RETRY_MAX attempts (3) inside one HELM_RETRY_COOLOFF_S window (6 h); the count and
+  # the last attempt live on the object itself (annotations estate.idp/helm-retry-attempts and
+  # estate.idp/helm-retry-last, epoch seconds) so the Mac and the workflow read one record. An
+  # open breaker is printed as BREAKER OPEN with the reset command and fails the playbook, so a
+  # release nobody can retry is loud, never a quiet skip. Reset:
+  #   kubectl annotate helmrelease <name> -n <ns> estate.idp/helm-retry-attempts-
+  local max_attempts="${HELM_RETRY_MAX:-3}" cooloff="${HELM_RETRY_COOLOFF_S:-21600}" now open=0
+  now=$(date -u +%s)
+  local ns name attempts last
   while read -r ns name; do
     [ -n "$name" ] || continue
+    attempts=$($K get helmrelease "$name" -n "$ns" -o jsonpath='{.metadata.annotations.estate\.idp/helm-retry-attempts}' 2>/dev/null); attempts="${attempts:-0}"
+    last=$($K get helmrelease "$name" -n "$ns" -o jsonpath='{.metadata.annotations.estate\.idp/helm-retry-last}' 2>/dev/null); last="${last:-0}"
+    if [ $((now - last)) -ge "$cooloff" ]; then attempts=0; fi
+    if [ "$attempts" -ge "$max_attempts" ]; then
+      echo "BREAKER OPEN helm-retry $ns/$name: $attempts attempts since $(date -u -d "@$last" +%FT%TZ 2>/dev/null || date -u -r "$last" +%FT%TZ); reset: kubectl annotate helmrelease $name -n $ns estate.idp/helm-retry-attempts-"
+      open=$((open + 1)); continue
+    fi
+    $K annotate helmrelease "$name" -n "$ns" --overwrite "estate.idp/helm-retry-attempts=$((attempts + 1))" "estate.idp/helm-retry-last=$now" >/dev/null 2>&1 || true
     step "retry-$name" flux reconcile helmrelease "$name" -n "$ns" --reset --timeout=15m </dev/null
   done <<<"$failed"
+  [ "$open" -eq 0 ] || step "breaker-open-$open-releases" sh -c "exit 1"
   show helmreleases $K get helmreleases -A --no-headers
   step observability flux reconcile kustomization observability -n flux-system --timeout=5m
   show kustomizations $K get kustomizations -A
