@@ -52,7 +52,7 @@ decisions:
           feature_parity:      {score: 5, evidence: "https://docs.lizardbyte.dev/projects/sunshine/"}                            # hardware-encoded 60 fps+ stream, audio, input
           ecosystem_fit:       {score: 3, evidence: "https://apps.apple.com/app/moonlight-game-streaming/id1000551566"}           # App Store client, not Apple-native; rides the tailnet
           maturity:            {score: 4, evidence: "https://github.com/LizardByte/Sunshine"}                                     # maintained, releases, packaged in Homebrew
-          security_by_default: {score: 4, evidence: "platform/hermes-agent/mac-run.yaml"}                                        # tailnet-only reach; pairing PIN; no password travels
+          security_by_default: {score: 4, evidence: "platform/hermes-agent/mac-run.tpl"}                                        # tailnet-only reach; pairing PIN; no password travels
           portability:         {score: 5, evidence: "https://docs.lizardbyte.dev/projects/sunshine/"}                            # any host OS, any client OS
           operability:         {score: 4, evidence: "clusters/oke/estate-config.yaml"}                                           # FOUNDER_MAC_TS_IP row; serverinfo probe; brew service
           cost:                {score: 5, evidence: "https://github.com/LizardByte/Sunshine/blob/master/LICENSE"}                 # GPL-3.0, no service to run in the cluster
@@ -76,7 +76,7 @@ decisions:
           feature_parity:      {score: 3, evidence: "https://support.apple.com/guide/mac-help/share-the-screen-of-another-mac-mh14066/mac"}
           ecosystem_fit:       {score: 5, evidence: "https://support.apple.com/guide/mac-help/share-the-screen-of-another-mac-mh14066/mac"}
           maturity:            {score: 5, evidence: "https://support.apple.com/guide/mac-help/share-the-screen-of-another-mac-mh14066/mac"}
-          security_by_default: {score: 4, evidence: "platform/hermes-agent/mac-run.yaml"}                                        # tailnet-only; Apple ID auth
+          security_by_default: {score: 4, evidence: "platform/hermes-agent/mac-run.tpl"}                                        # tailnet-only; Apple ID auth
           portability:         {score: 2, evidence: "https://support.apple.com/guide/mac-help/share-the-screen-of-another-mac-mh14066/mac"}   # Apple both ends
           operability:         {score: 2, evidence: "clusters/oke/estate-config.yaml"}                                           # nothing the estate can probe or drill
           cost:                {score: 5, evidence: "https://support.apple.com/guide/mac-help/share-the-screen-of-another-mac-mh14066/mac"}

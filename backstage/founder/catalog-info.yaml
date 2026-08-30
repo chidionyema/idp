@@ -593,7 +593,7 @@ metadata:
   description: "Open Moonlight on the phone, tap the Mac, type the 4-digit PIN it shows into this page. The PIN reaches Sunshine on the Mac over the tailnet in one step; no chat, no waiting on a session. After the first pairing it is one tap in Moonlight for ever. Paths 2 and 3 (Guacamole in the browser, Apple Screen Sharing) follow the matrix order in docs/decisions/decision-matrix.yaml."
   annotations:
     estate/group: "Build"
-    idp/updated-by: "backstage/packages/app/src/modules/home/PairPhone.tsx ships with the portal image; the Mac side is the Sunshine service on the estate Mac (platform/hermes-agent/mac-run.yaml row)"
+    idp/updated-by: "backstage/packages/app/src/modules/home/PairPhone.tsx ships with the portal image; the Mac side is the Sunshine service on the estate Mac (platform/hermes-agent/mac-run.tpl row)"
   tags: [founder]
   links:
     - title: "Open"

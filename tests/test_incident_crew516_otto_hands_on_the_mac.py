@@ -28,7 +28,7 @@ Rung 2 properties over the checkout (no network, no cluster):
   - that Secret is composed, by the ExternalSecret's own template, from vault entry
     `tailscale-operator` -- the same one platform/tailscale/'s operator reads -- never a second,
     hand-minted vault entry;
-  - `mac-run.yaml`'s script targets `${FOUNDER_MAC_TS_IP}`/`${FOUNDER_MAC_USER}` as unresolved
+  - `mac-run.tpl`'s script targets `${FOUNDER_MAC_TS_IP}`/`${FOUNDER_MAC_USER}` as unresolved
     placeholders (LAW 46 -- no literal Tailscale CGNAT IP, 100.64.0.0/10), and carries no `-i` key
     flag -- Tailscale SSH authenticates by tailnet node identity, so no ssh keypair of ours is
     generated, mounted or held anywhere in platform/hermes-agent/ or platform/tailscale/;

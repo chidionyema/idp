@@ -5,8 +5,10 @@
 # never baked into the image, so a change here needs no rebuild. FOUNDER_MAC_USER and
 # FOUNDER_MAC_TS_IP are Flux postBuild substitutions from clusters/oke/estate-config.yaml (LAW 46:
 # this script is the only place the Mac's tailnet IP or login user may be named, and it names them
-# through a variable, never a literal). `$$` escapes a dollar Flux must leave alone; a bare `${...}`
-# is a substitution. The `.tpl` extension says exactly that, and keeps the shell linters off a file
+# through a variable, never a literal). `$$` escapes a dollar Flux must leave alone; a single dollar
+# in front of a braced name is a substitution. This comment may not spell an empty braced name: the
+# envsubst rung of bin/idp-ci parses comments too and answers `unable to parse variable name`.
+# The `.tpl` extension says the same thing, and keeps the shell linters off a file
 # that is not valid shell until Flux has rendered it.
 #
 # crew#561: the identity to sshd is a key, because Tailscale SSH cannot run on the founder's GUI
