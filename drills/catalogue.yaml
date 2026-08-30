@@ -183,3 +183,16 @@ drills:
       chart's nats-server version and an embedded Postgres: outbox relay, duplicate window,
       idempotent consumer, dead-letter copy and replay, so the messaging layer a service is
       onboarded onto is exercised daily, not only when a PR touches it.
+
+  - name: catalog-render
+    owner: idp
+    workflow: catalog-render.yml
+    job: render
+    schedule: "58 1,7,13,19 * * *"
+    max_age_hours: 8
+    proves: >-
+      The portal's catalogue and the founder tiles are re-published from the bucket copies of the
+      inventory and the feed four times a day without anyone's hand: the render commits
+      docs/founder.json and the architecture page to the state branch. crew#684 (2026-08-30): the
+      01:58Z schedule never fired, the Ops page read "What waits on you could not be read" and the
+      founder saw the portal as down; GitHub's cron is best effort, this row is the estate's promise.
