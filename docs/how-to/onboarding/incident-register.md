@@ -7,6 +7,5 @@ is the list of all of them, grouped by the class of mistake, and it is the input
 
 To add an incident: write the guard test with a docstring whose first lines say the date, the ticket,
 what broke (the founder's words where there are any) and the rule; then run `bin/incident-register`
-and commit the regenerated YAML and page with the test. `bin/incident-register --check` in the fast
-gate refuses a push where the register is behind the corpus. A class with many rows is the next drill
+and commit the page with the test; the YAML is written by `bin/mkdocs_hooks/incident_register.py` at every docs build and is never committed (crew#679 CP2). A class with many rows is the next drill
 to write; a class with one row is a guard that has not yet been generalised.

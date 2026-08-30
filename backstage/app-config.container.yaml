@@ -54,6 +54,15 @@ proxy:
     '/prometheus/api':
       target: http://kps-prometheus.monitoring.svc:9090/api/v1/
       allowedMethods: [GET]
+    # crew#684 CP5: the Healthchecks tile on the Ops page. The read-only API key is a mounted file
+    # from ExternalSecret healthchecks-ro (platform/backstage/overlays/oke), added here so the
+    # browser never holds it. Read only: v3 list checks. The page never names the host.
+    '/healthchecks':
+      target: http://healthchecks.healthchecks.svc:8000/api/v3
+      allowedMethods: [GET]
+      headers:
+        X-Api-Key:
+          $file: /run/secrets/healthchecks-ro/HC_API_KEY_RO
     '/sunshine':
       target: https://sunshine-mac.backstage.svc.cluster.local:47990
       changeOrigin: true
