@@ -257,7 +257,7 @@ def test_a_built_document_validates_and_a_missing_source_is_blind(tmp_path):
                 main_sha=["idp=abc"],
             ),
         )(),
-        b.now_utc(),
+        dt.datetime(2026, 8, 30, 9, 0, tzinfo=dt.timezone.utc),
     )
     assert len(blind) == 6, blind
 

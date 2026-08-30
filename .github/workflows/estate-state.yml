@@ -104,6 +104,8 @@ jobs:
           gh run view "$(echo "$drill" | jq -r .databaseId)" -R chidionyema/idp --log 2>/dev/null | grep -E "(sso|paths|FAIL) +login-drill" | sed -E 's/^[^Z]*Z //' > "$RUNNER_TEMP/drill.log" || echo "BLIND drill log not read"
           echo "issues $(jq length "$RUNNER_TEMP/issues.json") runs $(jq length "$RUNNER_TEMP/runs.json") drill rows $(wc -l < "$RUNNER_TEMP/drill.log")"
       - name: build and validate against platform/estate-state/schema.json
+        env:
+          GH_TOKEN: ${{ github.token }} # the document's clock is GitHub's Date header (crew#583)
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/out"
