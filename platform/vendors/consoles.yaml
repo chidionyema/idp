@@ -69,7 +69,8 @@ vendors:
     kind: secret
     secret: SEED_GEMINI_API_KEY
     page: https://aistudio.google.com/apikey
-    shape: "AIza[A-Za-z0-9_-]{35}"
+    # 2026-08-30: AI Studio issued the founder a key shaped AQ.<50 chars> that answers /v1beta/models; both shapes are real.
+    shape: "(AIza[A-Za-z0-9_-]{35}|AQ\\.[A-Za-z0-9_-]{40,})"
     verify: { method: GET, url: "https://generativelanguage.googleapis.com/v1beta/models?key={key}", headers: {} }
     targets:
       - { entry: litellm-upstream, field: GEMINI_API_KEY }
@@ -82,6 +83,18 @@ vendors:
     targets:
       - { entry: prospector-engine-env, field: EXA_API_KEY }
       - { entry: hermes-agent-env, field: EXA_API_KEY }
+  cursor:
+    # Founder, 2026-08-30: "we also have cursor ... cursor can do science". The Cloud Agents API
+    # (api.cursor.com, public beta) runs an agent with web access on a repository under the founder's
+    # Cursor plan; the research worker uses it as its researcher while the frontier accounts are
+    # empty and the Mac cannot search. One user API key, made once at Cursor Dashboard -> API Keys.
+    kind: secret
+    secret: SEED_CURSOR_API_KEY
+    page: https://cursor.com/dashboard?tab=integrations
+    shape: "[A-Za-z0-9_-]{20,}"
+    verify: { method: GET, url: https://api.cursor.com/v1/me, headers: { Authorization: "Bearer {key}" } }
+    targets:
+      - { entry: science-env, field: CURSOR_API_KEY }
   telegram:
     # BotFather has no HTTP API; each bot token is a root of its own, made once with /newbot.
     kind: secret

@@ -27,6 +27,7 @@ FAKE = {
     "SEED_GROQ_API_KEY": "gsk_" + "A" * 40,
     "SEED_GEMINI_API_KEY": "AIza" + "B" * 35,
     "SEED_EXA_API_KEY": "01234567-0123-0123-0123-0123456789ab",
+    "SEED_CURSOR_API_KEY": "key_" + "a" * 40,
     "SEED_TELEGRAM_HERMES_BOT_TOKEN": "12345678:" + "C" * 35,
     "SEED_TELEGRAM_ALERTS_BOT_TOKEN": "87654321:" + "D" * 35,
     "SEED_STRIPE_SECRET_KEY": "sk_test_" + "E" * 24,
