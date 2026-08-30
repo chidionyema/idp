@@ -1,8 +1,9 @@
-# crew#693. Every drill in this repository grades the platform -- a login, a cluster, a collector.
-# None of them opened the shop, so on 2026-08-30 the storefront served an eight-hour-old build with
-# no pack pictures while the login drill, flux and the front door all reported green. The founder
-# found it by looking at the site. This is the drill that finds it next time, and it holds no
-# credential: it grades what a stranger gets.
+# Opens the shop the way a stranger does and checks it is serving what the last merge built.
+# Every other drill here grades the platform -- a login, a cluster, a collector. None of them
+# opened the shop, so on 2026-08-30 the storefront served an eight-hour-old build with no pack
+# pictures while the login drill, flux and the front door all reported green, and the founder
+# found it by looking at the site. This holds no credential: it grades what a visitor gets.
+# Refs crew#693.
 name: storefront-drill
 on:
   schedule:
