@@ -17,6 +17,12 @@ rules:
   - apiGroups: [""]
     resources: [pods, pods/log, services, configmaps, limitranges, resourcequotas, namespaces]
     verbs: [get, list, watch]
+  # crew#684 incident 2026-08-30 05:01Z: the Ops page's cluster tile (useClusterHealth.ts) has read
+  # /api/v1/nodes since #918, and this role never granted it, so the tile answered 403 and the
+  # login drill failed the page (run 33294482021). Read only, cluster-scoped.
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list, watch]
   - apiGroups: [apps]
     resources: [deployments, replicasets, statefulsets, daemonsets]
     verbs: [get, list, watch]
