@@ -143,6 +143,8 @@ jobs:
             else
               echo "info    hermes key unchanged in estate-secrets"
             fi
+            rm -rf "$RUNNER_TEMP/estate-secrets"
+          fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = science ]; then
             # The research worker (crew science/research_worker.py, crew#659 CP3) calls the router on its
             # own virtual key. The lanes ARE the edge the founder asked for on 2026-08-30 ("run them against
