@@ -7,6 +7,7 @@ plugins:
 nav:
   - Home: index.md
   - Definition of Done: reference/policy/definition-of-done.md
+  - Notification channels: reference/policy/notification-channels.md
   - Documentation policy: reference/policy/documentation.md
   - Architecture:
       - explanation/architecture/index.md
