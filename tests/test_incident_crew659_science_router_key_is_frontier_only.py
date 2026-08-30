@@ -19,6 +19,12 @@ WORKFLOW = ROOT / ".github" / "workflows" / "vault-seed.yml"
 CONFIG = ROOT / "platform" / "llm" / "config.yaml"
 
 FRONTIER = {"claude", "claude-fast", "gemini", "gemini-or"}
+#: Paid vendor lanes that answered a 4096-token call with fallbacks off on 2026-08-30 06:2xZ while
+#: every frontier account refused on credit. Founder, 2026-08-30 07:0xZ: "why is minimax not there"
+#: ... "we have work to do". A paid lane is on the key so the worker runs while the frontier
+#: accounts are empty; a local model is still never on it.
+PAID = {"minimax", "minimax_m27", "groq"}
+ALLOWED = FRONTIER | PAID
 
 
 def _lanes() -> dict[str, dict]:
@@ -45,13 +51,16 @@ def test_the_router_has_an_embedding_lane_the_worker_can_rank_with():
     assert lanes["embed"]["model_info"]["mode"] == "embedding"
 
 
-def test_the_science_key_is_frontier_lanes_plus_embed_and_nothing_else():
+def test_the_science_key_is_frontier_and_paid_lanes_plus_embed_and_nothing_else():
     lanes = _science_lanes()
     assert "embed" in lanes
-    assert lanes - {"embed"} <= FRONTIER, (
-        f"a non-frontier lane is on the science key: {lanes - FRONTIER - {'embed'}}"
+    assert lanes - {"embed"} <= ALLOWED, (
+        f"a lane that is neither frontier nor a paid vendor is on the science key: {lanes - ALLOWED - {'embed'}}"
     )
     assert lanes & FRONTIER, "the worker has no frontier lane to run on"
+    assert PAID <= lanes, (
+        "the worker has no funded lane while the frontier accounts are empty"
+    )
     assert lanes <= set(_lanes()), (
         "the science key names a lane the router does not serve"
     )
