@@ -300,3 +300,49 @@ decisions:
           portability:         {score: 3, evidence: "platform/oci"}                                                                        # a second provider footprint
           operability:         {score: 2, evidence: "bin/idp-availability-gate"}                                                           # two estates to keep available
           cost:                {score: 1, evidence: "docs/decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md"}  # doubles the bill the founder capped
+
+  - slug: messaging-broker
+    requirement: "the broker under the estate's business events: at-least-once, replayable, one StatefulSet on a 4-6 OCPU cluster, swappable behind the outbox (founder specification v0.1 on crew#639, ADR 0012 messaging day 0)"
+    date: 2026-08-29
+    status: decided
+    next_review: 2026-11-29
+    decision: nats-jetstream   # 425 vs rabbitmq 340 vs kafka-redpanda 320; the gap is outside tie_band 25, so the matrix builds the top score; the founder's own specification names it (D5)
+    receipt: "https://github.com/chidionyema/crew/issues/639#issuecomment-5465231652"
+    reviews: []
+    candidates:
+      nats-jetstream:
+        note: "NATS with JetStream, the official nats-io chart already on platform/event-bus (idp#800); file store, pull consumers, dedupe window, nsc accounts"
+        scores:
+          first_time_user:     {score: 4, evidence: "docs/prose/messaging-cp9.feature"}                                           # one command, bin/idp-messaging-demo, no install (CP9)
+          founder_experience:  {score: 4, evidence: "docs/prose/messaging-cp10.feature"}                                          # one button on the portal (CP10), one receipt
+          feature_parity:      {score: 4, evidence: "https://docs.nats.io/nats-concepts/jetstream"}                                # streams, durable consumers, replay, dedupe; no exactly-once transactions across topics
+          ecosystem_fit:       {score: 5, evidence: "platform/event-bus/nats.yaml"}                                                # the chart is on the platform layer; same collector, same vault
+          maturity:            {score: 4, evidence: "https://github.com/nats-io/nats-server"}                                      # CNCF incubating, single Go binary, releases monthly
+          security_by_default: {score: 4, evidence: "https://docs.nats.io/running-a-nats-service/configuration/securing_nats/auth_intro/jwt"}  # operator mode, per-subject permissions, TLS on every port
+          portability:         {score: 5, evidence: "docs/decisions/0012-messaging-day-0.md"}                                      # one OSS binary, a StatefulSet and a PVC; D1 to D4 keep it swappable
+          operability:         {score: 4, evidence: "platform/event-bus/nats.yaml"}                                                # 256Mi guaranteed QoS; R1 on two nodes, R3 is one value
+          cost:                {score: 5, evidence: "platform/event-bus/nats.yaml"}                                                # 100m CPU, 2Gi PVC, no licence
+      rabbitmq:
+        note: "RabbitMQ with its cluster operator; quorum queues and streams"
+        scores:
+          first_time_user:     {score: 3, evidence: "https://www.rabbitmq.com/docs/download"}                                       # an Erlang broker plus an operator before the first message
+          founder_experience:  {score: 3, evidence: "https://www.rabbitmq.com/docs/management"}                                     # a management UI that is an admin console, not a portal action
+          feature_parity:      {score: 3, evidence: "https://www.rabbitmq.com/docs/streams"}                                        # replay only through the newer streams feature; dedupe is a plugin
+          ecosystem_fit:       {score: 2, evidence: "platform/event-bus/nats.yaml"}                                                 # a second broker beside the one already on the layer
+          maturity:            {score: 5, evidence: "https://github.com/rabbitmq/rabbitmq-server"}                                   # the oldest of the three, everywhere
+          security_by_default: {score: 3, evidence: "https://www.rabbitmq.com/docs/access-control"}                                  # vhost and user permissions; TLS is configuration, not default
+          portability:         {score: 5, evidence: "https://github.com/rabbitmq/rabbitmq-server/blob/main/LICENSE-MPL-RabbitMQ"}    # MPL-2.0, self-hosted anywhere
+          operability:         {score: 3, evidence: "https://www.rabbitmq.com/docs/kubernetes/operator/operator-overview"}           # an operator and an Erlang VM to size and patch
+          cost:                {score: 3, evidence: "https://www.rabbitmq.com/docs/production-checklist"}                            # no licence; 1-2Gi footprint on a 6 OCPU node
+      kafka-redpanda:
+        note: "Kafka (or Redpanda, the C++ rewrite) with a topic per subject"
+        scores:
+          first_time_user:     {score: 2, evidence: "https://docs.redpanda.com/current/get-started/quick-start/"}                    # a console, a schema registry and a connect layer to learn first
+          founder_experience:  {score: 3, evidence: "https://docs.redpanda.com/current/console/"}                                    # the console is good and is a second portal
+          feature_parity:      {score: 5, evidence: "https://kafka.apache.org/documentation/"}                                       # the reference: partitions, compaction, exactly-once, connect
+          ecosystem_fit:       {score: 2, evidence: "platform/event-bus/nats.yaml"}                                                 # a second broker beside the one already on the layer
+          maturity:            {score: 5, evidence: "https://github.com/apache/kafka"}                                                # the industry default at scale
+          security_by_default: {score: 3, evidence: "https://kafka.apache.org/documentation/#security"}                              # SASL and ACLs are configuration; plaintext by default
+          portability:         {score: 4, evidence: "https://github.com/redpanda-data/redpanda/blob/dev/licenses/bsl.md"}            # Kafka is Apache-2.0; Redpanda core is BSL
+          operability:         {score: 2, evidence: "https://docs.redpanda.com/current/deploy/deployment-option/self-hosted/kubernetes/k-requirements/"}  # dedicated nodes and local disks asked for
+          cost:                {score: 1, evidence: "https://docs.redpanda.com/current/deploy/deployment-option/self-hosted/kubernetes/k-requirements/"}  # a multi-GB footprint on a cluster whose whole budget is 4-6 OCPU (crew#289)
