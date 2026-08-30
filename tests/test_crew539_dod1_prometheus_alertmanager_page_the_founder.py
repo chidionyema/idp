@@ -64,13 +64,17 @@ def test_flux_row_substitutes_the_zone_and_waits_on_both_releases():
         ("HelmRelease", "blackbox", "monitoring"),
     }
     kz = yaml.safe_load((MON / "kustomization.yaml").read_text())
-    assert set(kz["resources"]) == {
-        "namespace.yaml",
-        "alertmanager-config.yaml",
-        "kube-prometheus-stack.yaml",
-        "blackbox.yaml",
-        "httproute.yaml",  # crew#684: the alertmanager and prometheus doors
-    }
+    assert (
+        set(kz["resources"])
+        == {
+            "namespace.yaml",
+            "alertmanager-config.yaml",
+            "kube-prometheus-stack.yaml",
+            "blackbox.yaml",
+            "httproute.yaml",  # crew#684: the alertmanager and prometheus doors
+            "edge-manners.yaml",  # crew#307: friendly-errors + edge-headers for the route namespace
+        }
+    )
     # the CRs apply from their own row after the chart's CRDs exist (incident 2026-08-25)
     rules = one("clusters/oke/platform.yaml", "Kustomization", "monitoring-rules")
     assert rules["spec"]["path"] == "./platform/monitoring/rules" and rules["spec"][
