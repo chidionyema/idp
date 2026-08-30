@@ -58,6 +58,7 @@ nav:
       - Estate showcase: tutorials/demo/estate-showcase.md
       - Estate next: tutorials/demo/estate-next.md
       - Messaging: tutorials/demo/messaging.md
+      - Incident register: tutorials/demo/incident-register.md
       - Trace matrix: tutorials/demo/trace-matrix.md
       - Matrix gate: tutorials/demo/matrix.md
       - Plist gate: tutorials/demo/plist.md
@@ -167,3 +168,4 @@ nav:
       - Wake blocked: how-to/onboarding/wake-blocked.md
       - Scheduling immunity: how-to/onboarding/scheduling-immunity.md
       - Founder god's view: how-to/onboarding/estate-founder.md
+      - Incident register: how-to/onboarding/incident-register.md
