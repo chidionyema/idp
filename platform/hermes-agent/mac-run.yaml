@@ -30,8 +30,17 @@ data:
     set -euo pipefail
     src=$${MAC_RUN_KEY_DIR:-/run/secrets/hermes-agent-mac-run}/id_ed25519
     [ -s "$src" ] || { echo "mac-run: no key at $src (vault hermes-mac-run not synced yet; oke-check apply mints it)" >&2; exit 2; }
-    key=$${TMPDIR:-/tmp}/mac-run.id_ed25519
+    # crew#561 (otto-parity run 33291368505, 2026-08-30 03:58Z): the tunnel was up and the key was
+    # mounted, and `cp` to the fixed name /tmp/mac-run.id_ed25519 died with "Permission denied", so
+    # Otto could not reach the Mac and the founder read it as "no tailscale on pod". A fixed name is
+    # also a race between two calls. Each call now gets its own 0700 directory: under TMPDIR, or
+    # under HERMES_HOME (the PVC, where known_hosts already lives) when /tmp refuses; removed on exit.
+    dir=$(mktemp -d "$${TMPDIR:-/tmp}/mac-run.XXXXXX" 2>/dev/null) || dir=$(mktemp -d "$${HERMES_HOME:-/data}/.mac-run.XXXXXX")
+    key=$dir/id_ed25519
     (umask 077; cp "$src" "$key")
-    exec ssh -i "$key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
+    rc=0
+    ssh -i "$key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
       -o UserKnownHostsFile="$${HERMES_HOME:-/data}/known_hosts" -o ConnectTimeout=5 \
-      -o ProxyCommand='nc -x localhost:1055 %h %p' "${FOUNDER_MAC_USER}@${FOUNDER_MAC_TS_IP}" "$@"
+      -o ProxyCommand='nc -x localhost:1055 %h %p' "${FOUNDER_MAC_USER}@${FOUNDER_MAC_TS_IP}" "$@" || rc=$?
+    rm -rf "$dir"
+    exit $rc

@@ -529,6 +529,9 @@ pb_otto_parity() {
   step gateway-ready $K rollout status "$d" -n "$ns" --timeout=60s
   step no-restart-loop sh -c "r=\$($K get pods -n $ns -l app=hermes-agent-gateway -o jsonpath='{.items[0].status.containerStatuses[?(@.name==\"gateway\")].restartCount}'); echo restarts=\$r; [ \"\${r:-0}\" -lt 5 ]"
   step key-mounted $K exec "$d" -n "$ns" -c gateway -- sh -c 'test -s /run/secrets/hermes-agent-mac-run/id_ed25519 && echo key-present'
+  # run 33291368505: mac-run died on "cp: cannot create regular file '/tmp/...': Permission denied"
+  # and nothing here said who owned /tmp. Eyes first (LAW 28): the container's id and /tmp's owner.
+  show tmp-owner $K exec "$d" -n "$ns" -c gateway -- sh -c 'id; ls -land /tmp; ls -lan /tmp | head -6'
   step tailnet-up $K exec "$d" -n "$ns" -c tailscale -- tailscale --socket=/tmp/tailscaled.sock status --json --peers=false
   step mac-run-hostname $K exec "$d" -n "$ns" -c gateway -- mac-run hostname
   step hindsight-answers $K exec "$d" -n "$ns" -c gateway -- python3 -c 'import os,urllib.request; u=os.environ["HINDSIGHT_API_URL"]; print(u, urllib.request.urlopen(u+"/health", timeout=5).status)'
