@@ -48,7 +48,7 @@ def _catalogue_workflows() -> set[str]:
     for d in yaml.safe_load((ROOT / "drills/catalogue.yaml").read_text())["drills"]:
         if d.get("pending"):
             continue
-        assert re.fullmatch(r"\d+", d["schedule"].split()[0]), d["name"]
+        assert re.fullmatch(r"\d+|\*/(15|30)", d["schedule"].split()[0]), d["name"]
         out.add("%s=%s" % (d["workflow"], d["schedule"].replace(" ", "_")))
     return out
 
@@ -57,7 +57,10 @@ def test_dispatcher_is_a_restricted_hourly_cronjob_on_the_pinned_image() -> None
     cj = _cronjob()
     assert cj["metadata"]["namespace"] == "flux-system", "the github-app Secret lives in flux-system"
     minute, hour, *_ = cj["spec"]["schedule"].split()
-    assert hour == "*" and minute.isdigit() and cj["spec"]["concurrencyPolicy"] == "Forbid"
+    minutes = [int(m) for m in minute.split(",")]
+    assert hour == "*" and cj["spec"]["concurrencyPolicy"] == "Forbid"
+    # crew#648: four firings an hour, 15 apart, so a `*/15` catalogue row is covered on the estate's clock
+    assert len(minutes) == 4 and {b - a for a, b in zip(minutes, minutes[1:])} == {15}, cj["spec"]["schedule"]
     pod = cj["spec"]["jobTemplate"]["spec"]["template"]["spec"]
     assert pod["securityContext"]["runAsNonRoot"] is True and pod["automountServiceAccountToken"] is False
     psc = pod["securityContext"]
@@ -198,3 +201,21 @@ def test_the_dispatcher_and_the_drills_row_agree_on_what_the_clock_is() -> None:
     assert 'ev == "schedule"' in sched
     assert '"[bot]"' in sched and 'ev == "workflow_dispatch"' in sched
     assert "pull_request" not in sched and '== "push"' not in sched
+
+
+def test_a_fifteen_minute_cron_is_covered_once_per_quarter_hour() -> None:
+    """crew#648 (2026-08-30): estate-state.yml (`*/15 * * * *`) never fired in its first three hours
+    and ping.yml (`*/5`) fired 10 times in 60h. The dispatcher only knew hours. A `*/N` minute cron
+    is an N-minute period due at its start: skipped when the clock ran it in this quarter hour,
+    dispatched when it did not, and never dispatched twice in one quarter hour."""
+    ns: dict = {}
+    exec(_script(), ns)  # noqa: S102 - the manifest's own code is the unit under test
+    plan, q = ns["plan"], "*/15 * * * *"
+    now = datetime(2026, 8, 30, 10, 18, tzinfo=timezone.utc)
+    assert plan([{"created_at": "2026-08-30T10:03:20Z", "event": "schedule", "id": 1}], now, q) == "dispatch"
+    got = plan([{"created_at": "2026-08-30T10:15:40Z", "event": "workflow_dispatch", "triggering_actor": {"login": "estate[bot]"}, "id": 2}], now, q)
+    assert got.startswith("skipped: workflow_dispatch run 2")
+    assert plan([{"created_at": "2026-08-30T10:16:00Z", "event": "push", "id": 3}], now, q) == "dispatch"
+    import pytest
+    with pytest.raises(ValueError):
+        ns["period_hours"]("*/5 * * * *")   # a five-minute promise this Job cannot keep

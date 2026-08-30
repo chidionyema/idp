@@ -196,3 +196,16 @@ drills:
       docs/founder.json and the architecture page to the state branch. crew#684 (2026-08-30): the
       01:58Z schedule never fired, the Ops page read "What waits on you could not be read" and the
       founder saw the portal as down; GitHub's cron is best effort, this row is the estate's promise.
+
+  - name: estate-state
+    owner: science
+    workflow: estate-state.yml
+    job: build
+    schedule: "*/15 * * * *"
+    max_age_hours: 1
+    proves: >-
+      The estate state document behind `get_estate_state` (crew#648) is rebuilt every 15 minutes
+      from the sources the estate already writes and pushed as an OCI artifact the estate-mcp pod
+      pulls, so the MCP answers stale:false. 2026-08-30: GitHub never fired this cron once in the
+      first three hours it existed, and the founder's MCP read stale:true; the dispatcher covers it
+      four times an hour and this row is the estate's promise, not GitHub's.
