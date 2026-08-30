@@ -28,7 +28,7 @@ Rung 2 properties over the checkout (no network, no cluster):
   - that Secret is composed, by the ExternalSecret's own template, from vault entry
     `tailscale-operator` -- the same one platform/tailscale/'s operator reads -- never a second,
     hand-minted vault entry;
-  - `mac-run.yaml`'s script targets `${FOUNDER_MAC_TS_IP}`/`${FOUNDER_MAC_USER}` as unresolved
+  - `mac-run.tpl`'s script targets `${FOUNDER_MAC_TS_IP}`/`${FOUNDER_MAC_USER}` as unresolved
     placeholders (LAW 46 -- no literal Tailscale CGNAT IP, 100.64.0.0/10), and carries no `-i` key
     flag -- Tailscale SSH authenticates by tailnet node identity, so no ssh keypair of ours is
     generated, mounted or held anywhere in platform/hermes-agent/ or platform/tailscale/;
@@ -54,7 +54,11 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 GATEWAY = ROOT / "platform" / "hermes-agent" / "gateway.yaml"
 ESTATE = ROOT / "platform" / "hermes-agent" / "estate.yaml"
-MAC_RUN = ROOT / "platform" / "hermes-agent" / "mac-run.yaml"
+# crew#561: the script is a plain file rendered into a ConfigMap by a configMapGenerator, so its
+# name carries a content hash and the pod rolls when it changes. It was a hand-written ConfigMap
+# (mac-run.yaml) until 2026-08-30, and a subPath mount meant three merged fixes never reached the
+# running pod. `.tpl`, not `.sh`: it is not valid shell until Flux substitutes it.
+MAC_RUN = ROOT / "platform" / "hermes-agent" / "mac-run.tpl"
 TAILSCALE = ROOT / "platform" / "hermes-agent" / "tailscale.yaml"
 KUSTOMIZATION = ROOT / "platform" / "hermes-agent" / "kustomization.yaml"
 FOUNDER = ROOT / "backstage" / "founder" / "catalog-info.yaml"
@@ -92,6 +96,10 @@ TOUCHED_DOCS = [
 
 def _docs(path):
     return [d for d in yaml.safe_load_all(path.read_text()) if d]
+
+
+def _mac_run_script():
+    return MAC_RUN.read_text()
 
 
 def _gateway_deployment():
@@ -339,13 +347,7 @@ def test_the_sidecars_own_secret_is_composed_from_the_one_oauth_client_not_a_sec
 
 
 def test_mac_run_script_carries_the_placeholders_not_a_literal_ip():
-    docs = _docs(MAC_RUN)
-    cm = next(
-        d
-        for d in docs
-        if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "hermes-agent-mac-run"
-    )
-    script = cm["data"]["mac-run"]
+    script = _mac_run_script()
     assert "${FOUNDER_MAC_TS_IP}" in script
     assert "${FOUNDER_MAC_USER}" in script
     assert not TAILNET_IP_RE.search(script), (
@@ -357,13 +359,7 @@ def test_mac_run_uses_the_ci_minted_key_and_no_key_is_ever_in_git():
     """crew#561: the key is born on a CI runner (bin/idp-bootstrap-macrun) into the vault and
     reaches the pod as a file; mac-run copies it to 0600 because sshd refuses a group-readable one.
     No key material, no authorized_keys line, in any manifest."""
-    docs = _docs(MAC_RUN)
-    cm = next(
-        d
-        for d in docs
-        if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "hermes-agent-mac-run"
-    )
-    script = cm["data"]["mac-run"]
+    script = _mac_run_script()
     assert (
         "/run/secrets/hermes-agent-mac-run" in script and "IdentitiesOnly=yes" in script
     )
@@ -428,9 +424,13 @@ def test_kustomization_carries_the_new_resources():
     assert set(ks["resources"]) >= {
         "gateway.yaml",
         "estate.yaml",
-        "mac-run.yaml",
         "tailscale.yaml",
     }
+    # crew#561: mac-run left `resources` on 2026-08-30. A hand-written ConfigMap behind a subPath
+    # mount keeps its name forever, so the pod keeps the script it started with; the generator's
+    # content hash is what rolls it.
+    gens = {g["name"]: g for g in ks.get("configMapGenerator", [])}
+    assert gens["hermes-agent-mac-run"]["files"] == ["mac-run=mac-run.tpl"]
 
 
 # ---------------------------------------------------------------------------
@@ -601,8 +601,7 @@ def test_mac_run_reads_the_mounted_key_and_never_copies_it_and_otto_parity_grade
     33294804159, row tmp-owner). The same run's key-direct row reached the Mac with `ssh -i` on the
     mounted file, so the copy had no reason to exist. mac-run now points ssh at the mount and copies
     nothing; the playbook grades key-direct as a step, not a look."""
-    cm = yaml.safe_load(MAC_RUN.read_text())
-    script = cm["data"]["mac-run"].replace("$$", "$")
+    script = _mac_run_script().replace("$$", "$")
     code = "\n".join(
         ln for ln in script.splitlines() if not ln.lstrip().startswith("#")
     )
