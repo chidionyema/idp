@@ -53,19 +53,7 @@ spec:
 # "switches the token exchange to the plain OAuth2 callback, which fails whenever the token
 # response contains an id_token", and the identity domain always returns one for scope openid. The drill
 # reproduced it: every SSO click came back with error=OAuthCallback (run 33256502843). ID_TOKEN
-# stays at the vendor default (true).
-#
-# crew#718 (founder 2026-08-30, "WHERE ARE ALL THE MONITORING TOOLS ... WHY CANT I USE THEM"):
-# with ID_TOKEN true the profile came from the id_token claims, and the identity domain does not
-# put `email` in that token, so every SSO click landed on /auth/error?error=No email found in user
-# object -- the founder could not open Langfuse for 30 hours and the hourly login-drill failed 150
-# of 200 runs (last green 2026-08-29T13:03Z, run 33329775406). The vendor page names this exact
-# case (langfuse.com/self-hosting/authentication-and-sso, read 2026-08-30): "set
-# AUTH_CUSTOM_FETCH_USERINFO=true to read the profile from userinfo instead" when the provider
-# omits email or name from the ID token, and it says to keep AUTH_CUSTOM_ID_TOKEN at its default
-# rather than flipping it -- flipping it is what produced the OAuthCallback failure above. So the
-# token exchange stays as the vendor wants it and the profile comes from /userinfo, which the
-# identity domain does serve for scope `openid email profile`.
+# stays at the vendor default (true); the profile comes from the id_token claims.
 # Username+password is disabled: the front door is the only way in, and the LANGFUSE_INIT_*
 # user above is linked to the SSO identity by email (ALLOW_ACCOUNT_LINKING). The callback
 # /api/auth/callback/custom stays behind the ForwardAuth on purpose: the browser only reaches
@@ -87,6 +75,12 @@ spec:
         AUTH_CUSTOM_NAME: "Bytesync estate"
         AUTH_CUSTOM_SCOPE: "openid email profile"
         AUTH_CUSTOM_ID_TOKEN: "true"
+        # crew#623 class receipt, break-glass run 33331157383 (2026-08-30): every SSO sign-in
+        # ended at /auth/error?error=No%20email%20found%20in%20user%20object because the IDCS
+        # id_token carries no email claim. AUTH_CUSTOM_FETCH_USERINFO merges the userinfo
+        # endpoint (which does carry email, scope "openid email profile" above) into the user
+        # object. The variable exists from app 4.21.0 (langfuse repo web/src/env.mjs: absent at
+        # v4.17.0, present at v4.21.0+), hence the image pin in langfuse-values.yaml.
         AUTH_CUSTOM_FETCH_USERINFO: "true"
         AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING: "true"
         AUTH_DISABLE_USERNAME_PASSWORD: "true"

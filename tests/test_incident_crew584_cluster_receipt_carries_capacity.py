@@ -15,7 +15,7 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 HEAD = json.dumps({"last-modified": "Thu, 27 Aug 2026 19:00:03 GMT", "date": "Thu, 27 Aug 2026 19:00:05 GMT", "content-length": "10"})
 MANIFEST = ROOT / "platform" / "state" / "cluster-state.yaml"
-GREEN = ("nodes=1 ready=1 pods=3 pods_not_ready=0 flux=1 flux_not_ready=0 ds=1 ds_short=0 events_warning=0"
+GREEN = ("nodes=1 ready=1 pods=3 pods_not_ready=0 flux=1 flux_not_ready=0 ds=1 ds_short=0 deploy_short=0 events_warning=0"
          " monitoring_rules=3 alert_watchdog=1")
 
 

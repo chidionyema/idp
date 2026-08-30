@@ -86,6 +86,23 @@ if int(kv["ds_short"]) > 0:
     except Exception:
         why = "body unreadable"
     print(f"FAIL    cluster-state  {kv['ds_short']} DaemonSet(s) short of desired: {why}"); sys.exit(1)
+# run 33332263130 (2026-08-30, founder: "did I not say everything must be transparent"): Deployment
+# healing/estate held zero pods for a day -- Kyverno denied every ReplicaSet pod at admission --
+# and this grader read ok, because only DaemonSets had a short row. A Deployment or StatefulSet
+# short of its desired replicas fails the row and prints the Warning events that name it.
+if "deploy_short" not in kv:
+    print(f"FAIL    cluster-state  receipt carries no deploy_short count (collector predates the workload row): {line1[:120]}"); sys.exit(1)
+if int(kv["deploy_short"]) > 0:
+    try:
+        b = json.loads(rest)
+        short = b.get("deploy_short", [])
+        names = {d["name"] for d in short}
+        why = "; ".join(f"{d['ns']}/{d['name']} available={d['available']}/{d['desired']}" for d in short[:4])
+        evs = [e for e in b.get("events_warning", []) if any(e.get("name", "").startswith(n) for n in names)][:6]
+        why += "".join(f"\n        event {e['at']} {e['kind']} {e['ns']}/{e['name']} {e['reason']} x{e['count']}: {e['message'][:160]}" for e in evs)
+    except Exception:
+        why = "body unreadable"
+    print(f"FAIL    cluster-state  {kv['deploy_short']} workload(s) short of desired: {why}"); sys.exit(1)
 # crew#539 DoD 1: a cluster with no PrometheusRule, or an Alertmanager that does not show the
 # always-firing Watchdog, has no alerting -- absent counts grade FAIL like every other row.
 if "monitoring_rules" not in kv or "alert_watchdog" not in kv:
