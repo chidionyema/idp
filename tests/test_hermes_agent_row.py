@@ -89,7 +89,8 @@ def test_secrets_are_files_the_container_exports_never_pod_env():
     # crew#561 CP3: plus the estate MCP key (mcp-key.yaml), optional so a vault miss never blocks the gateway.
     mcp = {
         d["metadata"]["name"]: d
-        for d in yaml.safe_load_all((DIR / "mcp-key.yaml").read_text())
+        for f in ("mcp-key.yaml", "langfuse-key.yaml")
+        for d in yaml.safe_load_all((DIR / f).read_text())
         if d and d.get("kind") == "ExternalSecret"
     }
     ess.update(mcp)
@@ -97,6 +98,7 @@ def test_secrets_are_files_the_container_exports_never_pod_env():
         "hermes-agent-env",
         "hermes-agent-a2a",
         "hermes-agent-mcp",
+        "hermes-agent-langfuse",
     ] and set(secrets) == set(ess)
     assert ess["hermes-agent-env"]["spec"]["target"]["name"] == "hermes-agent-env"
     assert ess["hermes-agent-env"]["spec"]["dataFrom"] == [
@@ -237,7 +239,7 @@ def test_the_pod_rolls_when_the_vault_entry_changes():
     # manifest in the same Kustomization -- still a Secret this Deployment mounts and should roll on.
     all_docs = _docs() + [
         d
-        for f in ("tailscale.yaml", "mcp-key.yaml")
+        for f in ("tailscale.yaml", "mcp-key.yaml", "langfuse-key.yaml")
         for d in yaml.safe_load_all((DIR / f).read_text())
     ]
     targets = sorted(
