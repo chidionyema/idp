@@ -124,6 +124,10 @@ metadata:
     # the same way litellm picks up litellm-upstream: the swap seeds TELEGRAM_BOT_TOKEN and the pod restarts.
     # crew#516 CP5: hermes-agent-tailscale added so the sidecar re-authenticates on a key rotation.
     secret.reloader.stakater.com/reload: "hermes-agent-env,hermes-agent-a2a,hermes-agent-tailscale"
+    # crew#561: mac-run is a subPath mount, and a subPath never sees a ConfigMap update (Kubernetes
+    # documents this). idp#949 changed the script on main and otto-parity 33295458987 still ran the
+    # old copy (`cp ... /tmp ... Permission denied`). Reloader rolls the pod on every mac-run change.
+    configmap.reloader.stakater.com/reload: "hermes-agent-mac-run"
   labels:
     app: hermes-agent-gateway
     app.kubernetes.io/name: hermes-agent-gateway
