@@ -54,6 +54,7 @@ nav:
   - Explanation:
       - explanation/index.md
       - Founder self-service, the field (crew#66): explanation/founder-self-service-research.md
+      - Otto on the founder's Mac, the setup and the friction (crew#561): explanation/otto-on-the-mac.md
   - Demo:
       - Portal: tutorials/demo/idp.md
       - Conscience: tutorials/demo/conscience.md
