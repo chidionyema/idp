@@ -334,6 +334,7 @@ with sync_playwright() as p:
     # Every published path is visited and graded on its own content, not on the shell.
     # Every path the sidebar publishes, graded on a string only that page renders. A path that
     # is not in this table is not published; adding a plugin means adding its row here.
+    UNREAD = "could not be read"  # crew#684 CP6: the Ops page's error tiles all say this
     PUBLISHED = (
         ("catalog", "text=Owner"),
         ("catalog-graph", "text=Catalog Graph"),
@@ -376,6 +377,19 @@ with sync_playwright() as p:
             errs = "; ".join(e[:300] for e in page_errors[before:]) or "none"
             broken.append(f"{path}: rendered but not its own content ({must_see} never appeared); "
                           f"page says: {seen}; js errors: {errs}")
+            continue
+        # crew#684 CP6: a page whose tile says its source could not be read is not doing its
+        # job, and it read green here for as long as the heading alone was graded. The phrase
+        # is the one the page prints to a person (R53: the sentence, never a selector); the
+        # test pins it to every error tile in the Ops module.
+        try:
+            shown = " ".join(page.locator("body").inner_text(timeout=3000).split())
+        except PWError:
+            shown = ""
+        if UNREAD in shown.lower():
+            at = shown.lower().find(UNREAD)
+            broken.append(f"{path}: a tile could not read its source: "
+                          f"...{shown[max(0, at - 80):at + 120]}...")
     print(f"paths   login-drill  {len(PUBLISHED) - len(broken)}/{len(PUBLISHED)} published paths render their own content")
     if broken:
         # One line per path: fail() caps its detail at 200 chars, which hid the third
