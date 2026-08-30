@@ -531,6 +531,12 @@ pb_otto_parity() {
   step key-mounted $K exec "$d" -n "$ns" -c gateway -- sh -c 'test -s /run/secrets/hermes-agent-mac-run/id_ed25519 && echo key-present'
   step tailnet-up $K exec "$d" -n "$ns" -c tailscale -- tailscale --socket=/tmp/tailscaled.sock status --json --peers=false
   step mac-run-hostname $K exec "$d" -n "$ns" -c gateway -- mac-run hostname
+  # crew#561, founder 2026-08-30 "OTTO CLAIMS NO ACCESS TO GITHUB OR MAC": the pod could ssh the Mac
+  # and the agent still said no, because the image had no gh and no skill named mac-run. These
+  # three rows grade what the agent's tools see, not what the operator can exec (hermes-v2#56).
+  step gh-installed $K exec "$d" -n "$ns" -c gateway -- gh --version
+  step gh-token-works $K exec "$d" -n "$ns" -c gateway -- sh -c 'gh api user -q .login >/dev/null && echo gh-authenticated'
+  step founder-mac-skill $K exec "$d" -n "$ns" -c gateway -- sh -c 'grep -q "mac-run hostname" /data/skills/founder-mac/SKILL.md && echo skill-present'
   step hindsight-answers $K exec "$d" -n "$ns" -c gateway -- python3 -c 'import os,urllib.request; u=os.environ["HINDSIGHT_API_URL"]; print(u, urllib.request.urlopen(u+"/health", timeout=5).status)'
   step cron-lanes-installed sh -c "$K exec $d -n $ns -c gateway -- python3 -c 'import json; j=json.load(open(\"/data/cron/jobs.json\")); n=len(j.get(\"jobs\", j) if isinstance(j, dict) else j); print(\"jobs=%d\" % n); raise SystemExit(0 if n else 1)'"
   show model-lane sh -c "$K exec $d -n $ns -c gateway -- sh -c 'grep -E \"^(model|provider|base_url|  provider|  base_url)\" /data/config.yaml | head -8'"
