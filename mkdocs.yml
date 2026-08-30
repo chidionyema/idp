@@ -101,6 +101,7 @@ nav:
       - Dockerfiles: tutorials/demo/dockerfiles.md
       - Langfuse: tutorials/demo/langfuse.md
       - LiteLLM: tutorials/demo/litellm.md
+      - Router image lanes: tutorials/demo/llm-images.md
       - KINI: tutorials/demo/kini.md
       - Migration gate: tutorials/demo/migration.md
       - Multiarch gate: tutorials/demo/multiarch.md
@@ -161,6 +162,7 @@ nav:
       - DB gen: how-to/onboarding/db-gen.md
       - Dockerfiles: how-to/onboarding/dockerfiles.md
       - LiteLLM: how-to/onboarding/litellm.md
+      - Router image lanes: how-to/onboarding/llm-images.md
       - KINI: how-to/onboarding/kini.md
       - Otto (the founder's agent): how-to/onboarding/otto.md
       - Migration gate: how-to/onboarding/migration.md

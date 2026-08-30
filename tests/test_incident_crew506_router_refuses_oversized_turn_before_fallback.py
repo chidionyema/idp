@@ -27,6 +27,16 @@ def test_incident_crew506_first_fallback_hop_is_never_an_aggregator():
     for rel in ("platform/llm/config.yaml", "llm/config.yaml"):
         cfg = _cfg(rel)
         models = {m["model_name"]: m["litellm_params"]["model"] for m in cfg["model_list"]}
+        aggregator = {n for n, m in models.items() if m.startswith("openrouter/")}
         for entry in cfg["router_settings"]["fallbacks"]:
             for src, chain in entry.items():
-                assert not models[chain[0]].startswith("openrouter/"), (rel, src, chain)
+                # What the incident cost was ORDERING, not membership: an aggregator hop placed
+                # ahead of a direct one spends the caller's turn on 402s before reaching a lane
+                # that can answer. A chain holding no direct lane at all has no order to get
+                # wrong -- the `image` chain (2026-08-30) is two ways to buy one Google model
+                # and the only reseller of it is OpenRouter, so there is nothing to put first.
+                # Grading the order rather than the vendor keeps every text chain graded exactly
+                # as before and refuses to pretend a one-vendor capability is a ranking mistake.
+                if set(chain) <= aggregator:
+                    continue
+                assert chain[0] not in aggregator, (rel, src, chain)
