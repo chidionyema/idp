@@ -301,7 +301,15 @@ def build(a, now: dt.datetime) -> dict:
         "delivery": {
             "open_p0": p0,
             "failed_runs": parse_runs(runs or [], a.window_hours),
-            **({"main_sha": dict(a.main_sha)} if a.main_sha else {}),
+            **(
+                {
+                    "main_sha": dict(
+                        _repo_sha(x) if isinstance(x, str) else x for x in a.main_sha
+                    )
+                }
+                if a.main_sha
+                else {}
+            ),
         },
         "runtime": {
             "clusters": [cluster],

@@ -13,6 +13,7 @@ import importlib.util
 import json
 import pathlib
 import re
+import sys
 
 import jsonschema
 import yaml
@@ -264,7 +265,14 @@ def test_incident_crew648_a_bare_main_sha_is_refused_in_a_sentence_and_the_workf
     import subprocess
 
     r = subprocess.run(
-        [sys.executable, str(SCRIPT), "--main-sha", "abc123", "--out", "/dev/null"],
+        [
+            sys.executable,
+            str(ROOT / "bin/idp-estate-state-build"),
+            "--main-sha",
+            "abc123",
+            "--out",
+            "/dev/null",
+        ],
         capture_output=True,
         text=True,
     )
