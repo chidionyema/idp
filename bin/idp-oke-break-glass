@@ -549,6 +549,9 @@ pb_otto_parity() {
   show tmp-owner $K exec "$d" -n "$ns" -c gateway -- sh -c 'id; ls -land /tmp; ls -lan /tmp | head -6'
   step tailnet-up $K exec "$d" -n "$ns" -c tailscale -- tailscale --socket=/tmp/tailscaled.sock status --json --peers=false
   step mac-run-hostname $K exec "$d" -n "$ns" -c gateway -- mac-run hostname
+  # crew#561 row 4 class: the plumbing was green while Otto believed it had no GitHub. The row
+  # runs the shipped doors from inside the pod: the git binary answers and gh holds a live login.
+  step git-in-pod $K exec "$d" -n "$ns" -c gateway -- sh -c 'git --version; gh auth status 2>&1 | tail -3'
   step hindsight-answers $K exec "$d" -n "$ns" -c gateway -- python3 -c 'import os,urllib.request; u=os.environ["HINDSIGHT_API_URL"]; print(u, urllib.request.urlopen(u+"/health", timeout=5).status)'
   step cron-lanes-installed sh -c "$K exec $d -n $ns -c gateway -- python3 -c 'import json; j=json.load(open(\"/data/cron/jobs.json\")); n=len(j.get(\"jobs\", j) if isinstance(j, dict) else j); print(\"jobs=%d\" % n); raise SystemExit(0 if n else 1)'"
   # crew#561 CP5 as a row, not a listing: the primary lane is the estate router, read from the
