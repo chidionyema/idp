@@ -90,6 +90,27 @@ def test_the_one_automation_walks_the_path_that_holds_the_markers():
     assert path in (".", "./") or rel.startswith(path.removeprefix("./")), (path, rel)
 
 
+def test_the_seeded_tag_is_one_the_policy_could_have_chosen():
+    """The seed is a deploy, so it has to be a tag the automation would itself select.
+
+    This override beats prospector's own overlay from the second it merges, before the
+    image-automation-controller has written a thing. The first draft of clusters/oke/edge.yaml
+    seeded 99cdc96a, the 25 August build, while the shop was serving the 30 August one the
+    founder had just released by hand: merging it would have rolled production backwards, and
+    every check here was green. A value the ImagePolicy could never have chosen is a value no
+    mechanism is accountable for, which is the whole defect crew#693 is about.
+    """
+    policies = _policies()
+    for entry in _prospector_kustomization()["spec"]["images"]:
+        name = entry["name"].rsplit("/", 1)[-1]
+        pattern = policies[name]["spec"]["filterTags"]["pattern"]
+        assert re.fullmatch(pattern, str(entry["newTag"])), (
+            f"{entry['name']} is seeded at {entry['newTag']!r}, which its own ImagePolicy "
+            f"pattern {pattern!r} would never select: merging that rolls production to a "
+            f"build nothing chose"
+        )
+
+
 def test_prospector_yaml_is_listed_by_the_automation_kustomization():
     listed = yaml.safe_load((AUTOMATION_DIR / "kustomization.yaml").read_text())[
         "resources"
