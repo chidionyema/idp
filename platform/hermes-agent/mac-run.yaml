@@ -35,12 +35,8 @@ data:
     # Otto could not reach the Mac and the founder read it as "no tailscale on pod". A fixed name is
     # also a race between two calls. Each call now gets its own 0700 directory: under TMPDIR, or
     # under HERMES_HOME (the PVC, where known_hosts already lives) when /tmp refuses; removed on exit.
-    dir=$(mktemp -d "$${TMPDIR:-/tmp}/mac-run.XXXXXX" 2>/dev/null) || dir=$(mktemp -d "$${HERMES_HOME:-/data}/.mac-run.XXXXXX")
-    key=$dir/id_ed25519
-    (umask 077; cp "$src" "$key")
-    rc=0
-    ssh -i "$key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
+    # otto-parity run 33294804159 (2026-08-30): ssh reaches the Mac with the mounted key directly
+    # (row key-direct), and the stale 0400 copy in /tmp was the whole outage; so no copy, ever.
+    exec ssh -i "$src" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
       -o UserKnownHostsFile="$${HERMES_HOME:-/data}/known_hosts" -o ConnectTimeout=5 \
-      -o ProxyCommand='nc -x localhost:1055 %h %p' "${FOUNDER_MAC_USER}@${FOUNDER_MAC_TS_IP}" "$@" || rc=$?
-    rm -rf "$dir"
-    exit $rc
+      -o ProxyCommand='nc -x localhost:1055 %h %p' "${FOUNDER_MAC_USER}@${FOUNDER_MAC_TS_IP}" "$@"
