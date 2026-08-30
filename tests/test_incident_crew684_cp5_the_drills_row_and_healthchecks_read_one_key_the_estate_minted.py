@@ -50,7 +50,7 @@ def test_one_value_minted_by_terraform_is_read_by_both_rows() -> None:
 
 
 def test_enrol_sets_the_read_only_key_on_the_project() -> None:
-    enrol = (ROOT / "platform" / "healthchecks" / "healthchecks.yaml").read_text()
+    enrol = (ROOT / "platform" / "healthchecks" / "enrol.py").read_text()
     assert 'project.api_key_readonly = os.environ["RO_KEY"]' in enrol
 
 

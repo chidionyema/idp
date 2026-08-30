@@ -10,3 +10,10 @@ resources:
   - availability.yaml
   - httproute.yaml
   - edge-manners.yaml
+# crew#684 CP6: the enrol script is a file, and its ConfigMap name carries a content hash so a
+# change to the script rolls the pod and the init container re-runs it (same fault as crew#561's
+# mac-run: a ConfigMap edited in place never reaches a running pod).
+configMapGenerator:
+  - name: healthchecks-enrol
+    files:
+      - enrol.py

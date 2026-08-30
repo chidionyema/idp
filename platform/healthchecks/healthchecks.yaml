@@ -17,31 +17,6 @@ spec:
   ports:
     - { name: http, port: 8000, targetPort: 8000 }
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: healthchecks-enrol
-  namespace: healthchecks
-data:
-  # Idempotent: one founder user, one project named "estate", its ping key = the vault entry.
-  enrol.py: |
-    import os
-    from django.contrib.auth.models import User
-    from hc.accounts.models import Profile, Project
-    email = os.environ["FOUNDER_EMAIL"]
-    user = User.objects.filter(email=email).first()
-    if user is None:
-        user = User.objects.create(username=email[:150], email=email)
-        Profile.objects.get_or_create(user=user)
-    project = Project.objects.filter(owner=user).order_by("id").first()
-    if project is None:
-        project = Project(owner=user)
-    project.name = "estate"
-    project.ping_key = os.environ["PING_KEY"]
-    project.api_key_readonly = os.environ["RO_KEY"]  # crew#684 CP5: the portal's read-only door
-    project.save()
-    print("enrolled", project.name, "for", email)
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
