@@ -15,6 +15,7 @@
 # verdict says so).
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
+export IDP
 S="$(mktemp -d)"; trap 'rm -rf "$S"' EXIT
 for t in helm kubectl kyverno python3; do command -v "$t" >/dev/null || { echo "BLIND  $t is not installed; nothing was judged"; exit 2; }; done
 
@@ -152,10 +153,13 @@ PY
   # Plain workloads in the same kustomize output, judged as they are. Services, Ingresses, claims
   # and secret stores too (crew#66, R43): provider-independence refuses those, not only pods.
   python3 - "$S/kz-$slug.yaml" "$S/plain-$slug.yaml" <<'PY2'
-import sys, yaml
+import sys, os, yaml
 kinds = {"Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Pod",
          "Service", "Ingress", "PersistentVolumeClaim", "ClusterSecretStore", "SecretStore"}
 docs = [d for d in yaml.safe_load_all(open(sys.argv[1])) if d and d.get("kind") in kinds]
+sys.path.insert(0, os.environ["IDP"] + "/bin/lib")
+from kyverno_pods import pods_for
+docs += pods_for(docs)
 open(sys.argv[2], "w").write(yaml.safe_dump_all(docs) if docs else "")
 PY2
 }
@@ -199,7 +203,7 @@ prepare_release() {  # kustomize the post-rendered chart and shape it the way ad
   # judged. Until 2026-08-26 this dropped all hooks, and the langfuse s3 post-upgrade bucket hook
   # merged with no securityContext; Kyverno then refused every Helm upgrade of the release (crew#325).
   python3 - "$S/$name.final.yaml" <<'PY'
-import sys, yaml
+import sys, os, yaml
 def _is_test_hook(d):
     hooks = (d["metadata"].get("annotations") or {}).get("helm.sh/hook", "")
     return hooks and all(h.strip().startswith("test") for h in hooks.split(","))
@@ -212,13 +216,13 @@ def _drop_null(x):
     if isinstance(x, list): return [_drop_null(v) for v in x]
     return x
 docs = [_drop_null(d) for d in docs]
-# Kyverno autogen covers Deployment/StatefulSet/DaemonSet but not Job/CronJob, so the CLI passed a
-# migrator Job whose Pod admission then refused (2026-08-25, require-pod-probes). Judge the Pod
-# a Job or CronJob would create, with the ownerReference admission would see.
-for d in list(docs):
-    tpl = d["spec"]["template"] if d["kind"] == "Job" else d["spec"]["jobTemplate"]["spec"]["template"] if d["kind"] == "CronJob" else None
-    if tpl: docs.append({"apiVersion": "v1", "kind": "Pod", "metadata": {"name": d["metadata"]["name"] + "-pod", "namespace": d["metadata"].get("namespace"),
-        "labels": (tpl.get("metadata") or {}).get("labels") or {}, "ownerReferences": [{"apiVersion": "batch/v1", "kind": "Job", "name": d["metadata"]["name"], "uid": "offline"}]}, "spec": tpl["spec"]})
+# Judge the Pod each workload would create, as admission does. Autogen covers Deployment,
+# StatefulSet and DaemonSet, so only Job and CronJob were synthesised here until 2026-08-30 --
+# but autogen covers the POLICY, never the EXCEPTION, and an exception excusing only the autogen
+# rule passed this judge and lost at admission (bin/lib/kyverno_pods.py).
+sys.path.insert(0, os.environ["IDP"] + "/bin/lib")
+from kyverno_pods import pods_for
+docs += pods_for(docs)
 open(p, "w").write(yaml.safe_dump_all(docs))
 PY
 }
