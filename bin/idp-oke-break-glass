@@ -261,7 +261,17 @@ pb_diagnose() {
   # denied the request: ...` for replicaset tailscale/operator -- the column cut the policy name and
   # the rule off, and bin/idp-kyverno-render passes the same manifest locally, so the row that names
   # the policy the cluster holds is the only way to see the drift. Full messages, admission only.
-  show admission-denials sh -c "$K get events -A --field-selector reason=FailedCreate -o jsonpath='{range .items[*]}{.lastTimestamp} {.involvedObject.namespace}/{.involvedObject.name}: {.message}{\"\\n\"}{end}' 2>/dev/null | grep -i 'admission webhook' | tail -12; true"
+  # crew#718 CP7, 2026-08-30: the line above was written for exactly this and STILL lost the answer.
+  # A Kyverno denial message is multi-line -- the policy and rule names are on the lines AFTER the
+  # one carrying `admission webhook`, so a plain grep keeps the useless half and drops the half that
+  # names the policy. Runs 33332291556 and 33333488911 both printed
+  # `tailscale/operator-56cf79864d: Error creating: admission webhook "validate.kyverno.svc-fail"
+  # denied the request:` and then nothing, for the second time in two days, while
+  # bin/idp-kyverno-render passes the same manifest locally. -A keeps the continuation lines.
+  show admission-denials sh -c "$K get events -A --field-selector reason=FailedCreate -o jsonpath='{range .items[*]}{.lastTimestamp} {.involvedObject.namespace}/{.involvedObject.name}: {.message}{\"\\n\"}{end}' 2>/dev/null | grep -i -A 6 'admission webhook' | tail -60; true"
+  # The policy report is the authority when the event is truncated anyway: Kyverno records every
+  # failed rule by name against the resource, and it survives the event's one-hour TTL.
+  show policy-reports sh -c "$K get policyreport,clusterpolicyreport -A -o jsonpath='{range .items[*]}{range .results[?(@.result==\"fail\")]}{.policy}/{.rule}: {.message}{\"\\n\"}{end}{end}' 2>/dev/null | sort -u | tail -40; true"
   # 2026-08-29 (run 33229461240): a claim that names no class gets the cluster default injected
   # before Kyverno sees it; a provider-named default made every new claim fail. Both facts are
   # read here so the next such outage is one diagnose run, not ninety minutes.
