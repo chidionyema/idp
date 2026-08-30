@@ -555,13 +555,16 @@ pb_healthchecks_door() {
   local pk=/run/secrets/healthchecks-ro/HC_API_KEY_RO hk=/run/secrets/healthchecks/RO_KEY
   step portal-key-mounted $K exec "$pd" -n "$pns" -- sh -c "test -s $pk && printf 'bytes=%s sha=%s\n' \"\$(wc -c < $pk)\" \"\$(sha256sum < $pk | cut -c1-12)\""
   step hc-key-mounted $K exec "$hd" -n "$hns" -c healthchecks -- sh -c "test -s $hk && printf 'bytes=%s sha=%s\n' \"\$(wc -c < $hk)\" \"\$(sha256sum < $hk | cut -c1-12)\""
-  step keys-agree sh -c "a=\$($K exec $pd -n $pns -- sh -c 'sha256sum < $pk'); b=\$($K exec $hd -n $hns -c healthchecks -- sh -c 'sha256sum < $hk'); echo portal=\${a:0:12} healthchecks=\${b:0:12}; [ \"\$a\" = \"\$b\" ]"
+  step keys-agree sh -c "a=\$($K exec $pd -n $pns -- sh -c 'sha256sum < $pk' | cut -c1-12); b=\$($K exec $hd -n $hns -c healthchecks -- sh -c 'sha256sum < $hk' | cut -c1-12); echo portal=\$a healthchecks=\$b; [ \"\$a\" = \"\$b\" ]"
   show_redacted enrol-log sh -c "$K logs $hd -n $hns -c migrate-and-enrol --tail=5"
   # The DB row, not the file: the key enrol saved is the one the API authorises against.
-  step key-enrolled $K exec "$hd" -n "$hns" -c healthchecks -- sh -c "cd /opt/healthchecks && python manage.py shell -c \"from hc.accounts.models import Project; k=open('$hk').read(); p=Project.objects.filter(api_key_readonly=k).first(); print('project', p.name if p else None); raise SystemExit(0 if p else 1)\""
+  # The container exports its secret files itself (the policy secrets-not-from-env-vars); so does this row.
+  step key-enrolled $K exec "$hd" -n "$hns" -c healthchecks -- sh -c "for f in /run/secrets/healthchecks/*; do export \"\$(basename \"\$f\")=\$(cat \"\$f\")\"; done; cd /opt/healthchecks && python manage.py shell -c \"from hc.accounts.models import Project; k=open('$hk').read(); ps=list(Project.objects.all()); print('projects', [(p.name, len(p.api_key_readonly or ''), p.api_key_readonly == k) for p in ps]); raise SystemExit(0 if any(p.api_key_readonly == k for p in ps) else 1)\""
+  # Django's own answer to the key, from inside the Healthchecks pod: no proxy, no network in the path.
+  step door-opens-locally $K exec "$hd" -n "$hns" -c healthchecks -- sh -c "python -c \"import os,urllib.request as u; k=open('$hk').read(); r=u.Request('http://127.0.0.1:8000/api/v3/checks/', headers={'X-Api-Key': k, 'Host': os.environ['ALLOWED_HOSTS'].split(',')[0]}); print(u.urlopen(r, timeout=10).status)\""
   # Exactly the request the portal proxy makes (backstage/app-config.container.yaml: X-Api-Key from
   # the mounted file, Host = ALLOWED_HOSTS), sent from the portal pod with the portal's own key.
-  step door-opens $K exec "$pd" -n "$pns" -- node -e "const fs=require('fs');const key=fs.readFileSync('$pk','utf8');const host=process.env.HEALTHCHECKS_HOST;fetch('http://healthchecks.healthchecks.svc:8000/api/v3/checks/',{headers:{'X-Api-Key':key,'Host':host}}).then(async r=>{const t=await r.text();console.log('status',r.status,'host',host,'key_len',key.length,'key_ends_with_newline',key.endsWith('\\n'));console.log(t.slice(0,120));process.exit(r.status===200?0:1)}).catch(e=>{console.log(String(e));process.exit(1)})"
+  step door-opens $K exec "$pd" -n "$pns" -- node -e "const fs=require('fs'),http=require('http');const key=fs.readFileSync('$pk','utf8');const host=process.env.HEALTHCHECKS_HOST;const r=http.request({host:'healthchecks.healthchecks.svc',port:8000,path:'/api/v3/checks/',headers:{'X-Api-Key':key,'Host':host}},res=>{let t='';res.on('data',d=>t+=d);res.on('end',()=>{console.log('status',res.statusCode,'host',host,'key_len',key.length,'key_ends_with_newline',key.endsWith('\\n'));console.log(t.slice(0,120));process.exit(res.statusCode===200?0:1)})});r.on('error',e=>{console.log(String(e));process.exit(1)});r.end()"
 }
 
 # catalogue-roll: crew#412, 2026-08-28: idp#564 (c6e6026) pinned the right portal image at 11:00Z
