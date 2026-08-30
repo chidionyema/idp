@@ -37,6 +37,11 @@ rules:
   - apiGroups: [kustomize.toolkit.fluxcd.io, helm.toolkit.fluxcd.io]
     resources: [kustomizations, helmreleases]
     verbs: [get, list, watch]
+  # crew#684 CP2: the Ops page reads Alertmanager's active alerts through the cluster API's
+  # service proxy (GET .../services/<alertmanager>:9093/proxy/api/v2/alerts). Read only.
+  - apiGroups: [""]
+    resources: [services/proxy]
+    verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
