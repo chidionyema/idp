@@ -6,6 +6,8 @@ and the committed file matching a fresh render.
 """
 
 import subprocess
+
+import pytest
 from pathlib import Path
 
 import yaml
@@ -25,6 +27,14 @@ def _hook():
 
 
 REG = ROOT / "docs" / "reference" / "incident-register.yaml"
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _register_written() -> None:
+    # #927 stopped committing the register; CI spreads this file across workers, so a
+    # reader that ran before the writer found no file (run 33293557422). Each worker
+    # writes it first.
+    _hook().write_register()
 
 
 def test_one_row_per_incident_test_and_every_row_classified() -> None:
