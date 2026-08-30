@@ -7,13 +7,16 @@
     bin/idp-portal-buttons --check    exit 1 naming each button that is missing or stale (CI, tests)
 
 One template per workflow, generated from the workflow's own `workflow_dispatch.inputs` (a choice
-becomes a drop-down, a default stays a default), one step: `github:actions:dispatch` on the
-installation token the portal holds (lane founder-actions, platform/github-app/lanes.json), on
-main. The founder taps Create; the run lands under Actions and the template's output links it.
+becomes a drop-down, a default stays a default), one step: `github:actions:dispatch` on main,
+authenticated by the portal's GitHub integration (`integrations.github[].token` in the app
+config; the token is a lane-narrowed installation token of the estate-agents App, minted by
+bin/idp-github-app refresh through platform/github-app/token-consumers.json, never a PAT). The
+founder taps Create; the run lands under Actions and the template's output links it.
 Nothing here is typed by hand, so a new dispatchable workflow with no button fails
 tests/test_incident_crew66_every_dispatchable_workflow_has_a_button.py until this is re-run.
 Reads only the tree; opens no socket.
 """
+
 import pathlib
 import sys
 
@@ -55,7 +58,10 @@ def template_for(wf, name, description, inputs):
     properties, required = {}, []
     for key, spec in inputs.items():
         spec = spec or {}
-        prop = {"title": key, "type": "boolean" if spec.get("type") == "boolean" else "string"}
+        prop = {
+            "title": key,
+            "type": "boolean" if spec.get("type") == "boolean" else "string",
+        }
         if spec.get("description"):
             prop["description"] = str(spec["description"])
         if spec.get("type") == "choice":
@@ -73,14 +79,17 @@ def template_for(wf, name, description, inputs):
         parameters.append(step)
     dispatch = {"repoUrl": REPO_URL, "workflowId": wf, "branchOrTagName": BRANCH}
     if properties:
-        dispatch["workflowInputs"] = {k: "${{ parameters." + k + " }}" for k in properties}
+        dispatch["workflowInputs"] = {
+            k: "${{ parameters." + k + " }}" for k in properties
+        }
     return {
         "apiVersion": "scaffolder.backstage.io/v1beta3",
         "kind": "Template",
         "metadata": {
             "name": f"run-{pathlib.Path(wf).stem}",
             "title": f"Run: {name}",
-            "description": description or f"Dispatches .github/workflows/{wf} on {BRANCH}.",
+            "description": description
+            or f"Dispatches .github/workflows/{wf} on {BRANCH}.",
             "tags": ["founder-action", "estate"],
         },
         "spec": {
@@ -88,11 +97,19 @@ def template_for(wf, name, description, inputs):
             "type": "founder-action",
             "parameters": parameters,
             "steps": [
-                {"id": "dispatch", "name": f"Dispatch {wf} on {BRANCH}", "action": "github:actions:dispatch", "input": dispatch}
+                {
+                    "id": "dispatch",
+                    "name": f"Dispatch {wf} on {BRANCH}",
+                    "action": "github:actions:dispatch",
+                    "input": dispatch,
+                }
             ],
             "output": {
                 "links": [
-                    {"title": f"Runs of {name}", "url": f"https://github.com/chidionyema/idp/actions/workflows/{wf}"}
+                    {
+                        "title": f"Runs of {name}",
+                        "url": f"https://github.com/chidionyema/idp/actions/workflows/{wf}",
+                    }
                 ]
             },
         },
@@ -100,16 +117,22 @@ def template_for(wf, name, description, inputs):
 
 
 def render(wf, name, description, inputs):
-    return HEADER.format(wf=wf) + yaml.safe_dump(template_for(wf, name, description, inputs), sort_keys=False, width=100)
+    return HEADER.format(wf=wf) + yaml.safe_dump(
+        template_for(wf, name, description, inputs), sort_keys=False, width=100
+    )
 
 
 def main(argv):
     check = "--check" in argv
     wanted = {}
     for wf, name, description, inputs in dispatchable():
-        wanted[OUT / pathlib.Path(wf).stem / "template.yaml"] = render(wf, name, description, inputs)
+        wanted[OUT / pathlib.Path(wf).stem / "template.yaml"] = render(
+            wf, name, description, inputs
+        )
     if not wanted:
-        print("BLIND   portal-buttons: no workflow_dispatch workflow found under .github/workflows")
+        print(
+            "BLIND   portal-buttons: no workflow_dispatch workflow found under .github/workflows"
+        )
         return 2
     present = set(OUT.glob("*/template.yaml"))
     bad = 0
@@ -128,11 +151,17 @@ def main(argv):
         print(f"{state:<8}portal-buttons: {path.relative_to(ROOT)}")
     for stray in sorted(present - set(wanted)):
         bad += 1
-        print(f"STRAY   portal-buttons: {stray.relative_to(ROOT)} has no workflow_dispatch workflow behind it")
+        print(
+            f"STRAY   portal-buttons: {stray.relative_to(ROOT)} has no workflow_dispatch workflow behind it"
+        )
     if check and bad:
-        print(f"FAIL    portal-buttons: {bad} button(s) out of step with .github/workflows; run bin/idp-portal-buttons and commit")
+        print(
+            f"FAIL    portal-buttons: {bad} button(s) out of step with .github/workflows; run bin/idp-portal-buttons and commit"
+        )
         return 1
-    print(f"ok      portal-buttons: {len(wanted)} dispatchable workflow(s), {len(wanted)} button(s)")
+    print(
+        f"ok      portal-buttons: {len(wanted)} dispatchable workflow(s), {len(wanted)} button(s)"
+    )
     return 0
 
 
