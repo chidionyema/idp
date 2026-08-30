@@ -221,3 +221,17 @@ drills:
       pulls, so the MCP answers stale:false. 2026-08-30: GitHub never fired this cron once in the
       first three hours it existed, and the founder's MCP read stale:true; the dispatcher covers it
       four times an hour and this row is the estate's promise, not GitHub's.
+  - name: storefront-smoke
+    owner: idp
+    workflow: storefront-drill.yml
+    job: storefront-drill
+    schedule: "23 * * * *"
+    max_age_hours: 3
+    proves: >-
+      The shop a stranger opens is serving what the last merge built: mumchimp answers with HTML,
+      a pack page the home page links to answers, and every pack picture the home page references
+      loads as an image. Zero pictures referenced is a FAIL, never a pass on an empty list.
+      2026-08-30: the pack pictures were built, merged and in the registry while the cluster served
+      the 17:01 build for eight hours; the login drill, flux and the front door all read green
+      because no drill in this estate ever opened the shop, and the founder found it by looking at
+      the site (crew#693).
