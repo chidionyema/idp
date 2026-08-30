@@ -11,6 +11,7 @@ resources:
   - ../../base
   - availability.yaml
   - backstage-external-secret.yaml
+  - healthchecks-ro-external-secret.yaml
   - httproute.yaml
   - edge-manners.yaml
   # crew#562: tailnet egress Service to Sunshine on the founder's Mac + its Basic-auth secret.
@@ -60,6 +61,20 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 2
+      # crew#684 CP5: the Healthchecks read-only key as a file for the /healthchecks proxy endpoint.
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: healthchecks-ro
+          secret:
+            secretName: healthchecks-ro
+            optional: false
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: healthchecks-ro
+          mountPath: /run/secrets/healthchecks-ro
+          readOnly: true
       # crew#307, 2026-08-28: maxSurge 1 / maxUnavailable 0 made this Deployment permanently
       # un-rollable, and silently. A surge asks the scheduler for a THIRD catalogue pod before
       # any old one is deleted, and the hard hostname anti-affinity below plus a two-node pool
