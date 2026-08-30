@@ -14,6 +14,7 @@ import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import { catalogApiMock } from '@backstage/plugin-catalog-react/testUtils';
 import { Entity } from '@backstage/catalog-model';
 import { HC_CHECKS } from './healthchecks';
+import { BACKUPS_JSON } from './backups';
 import { Ops } from './Ops';
 import { HELMRELEASES, KUSTOMIZATIONS, NODES, PODS } from './useClusterHealth';
 import { ALERTS } from './useOpenReds';
@@ -129,7 +130,11 @@ const render = (lists: Record<string, unknown[]>, fail = false) =>
                     ok: true,
                     status: 200,
                     json: async () =>
-                      url.endsWith(HC_CHECKS) ? healthchecks : founder,
+                      url.endsWith(HC_CHECKS)
+                        ? healthchecks
+                        : url.endsWith(BACKUPS_JSON)
+                          ? backups
+                          : founder,
                   },
           } as any,
         ],
@@ -142,6 +147,30 @@ const render = (lists: Record<string, unknown[]>, fail = false) =>
       <Ops />
     </TestApiProvider>,
   );
+
+const backups = {
+  taken: '2026-08-30T10:30Z',
+  bucket: 'prospector-backup',
+  state: 'ok',
+  sources: [
+    {
+      name: 'money-db',
+      newest: 'offsite/money-db/store-20260829T025019Z.db',
+      newest_at: '2026-08-29T02:50:19Z',
+      age_hours: 31.7,
+      copies: 30,
+      bytes: 4702208,
+    },
+    {
+      name: 'engine-repo',
+      newest: 'repo/2026-08-30T024107Z.bundle',
+      newest_at: '2026-08-30T02:41:07Z',
+      age_hours: 7.8,
+      copies: 14,
+      bytes: 41943040,
+    },
+  ],
+};
 
 describe('Ops', () => {
   it('draws the cluster tile from the four list reads', async () => {
@@ -251,5 +280,28 @@ describe('Ops', () => {
       await screen.findByTestId('ops-healthchecks-error'),
     ).toHaveTextContent('answered 502');
     expect(screen.queryByTestId('ops-healthchecks')).toBeNull();
+  });
+
+  it('draws every backup with its newest timestamp, stalest first (founder 2026-08-30)', async () => {
+    await render({});
+    expect(await screen.findByTestId('ops-backups-sentence')).toHaveTextContent(
+      '2 sources backed up, 1 older than 30h.',
+    );
+    const rows = screen.getAllByTestId('ops-backup-row');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent('money-db');
+    expect(rows[0]).toHaveTextContent('2026-08-29T02:50:19Z');
+    expect(rows[0]).toHaveTextContent('31.7h, stale');
+    expect(rows[0].getAttribute('data-stale')).toBe('true');
+    expect(rows[1]).toHaveTextContent('engine-repo');
+    expect(rows[1].getAttribute('data-stale')).toBe('false');
+  });
+
+  it('says no backup is known when backups.json cannot be read', async () => {
+    await render({}, true);
+    expect(await screen.findByTestId('ops-backups-error')).toHaveTextContent(
+      'no backup is known to exist',
+    );
+    expect(screen.queryByTestId('ops-backups')).toBeNull();
   });
 });

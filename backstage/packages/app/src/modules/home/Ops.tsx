@@ -11,6 +11,8 @@ import { DrillSummary, Red, drillsSentence, redsSentence } from './openReds';
 import { useOpenReds } from './useOpenReds';
 import { FounderData, receiptsSentence, waitingSentence } from './founder';
 import { useFounder } from './useFounder';
+import { useBackups } from './useBackups';
+import { BackupsData, backupsSentence, isStale, size } from './backups';
 import { useHealthchecks } from './useHealthchecks';
 import { Checks, STATUS_WORD, checksSentence, notUp } from './healthchecks';
 import { ago } from './estate';
@@ -278,12 +280,61 @@ const HealthchecksTile = ({ data }: { data: Checks }) => {
   );
 };
 
+// founder 2026-08-30: "I would like to see all of our backups are in backoffice with timestamp".
+// One row per backup source in the bucket, newest copy's stamp in UTC, stalest first; BLIND
+// when the bucket could not be listed.
+const BackupsTile = ({ data, now }: { data: BackupsData; now: number }) => {
+  const classes = useStyles();
+  return (
+    <div className={classes.tile} data-testid="ops-backups">
+      <div className={classes.tileTop}>
+        <span className={classes.tileTitle}>Backups</span>
+        <span className={classes.mono}>
+          {data.bucket}, listed {ago(data.taken, now)}
+        </span>
+      </div>
+      <p data-testid="ops-backups-sentence">{backupsSentence(data)}</p>
+      {data.sources.length > 0 && (
+        <div className={classes.scroll}>
+          <table className={classes.table}>
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Newest copy (UTC)</th>
+                <th>Age</th>
+                <th>Copies</th>
+                <th>Size</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.sources.map(s => (
+                <tr
+                  key={s.name}
+                  data-testid="ops-backup-row"
+                  data-stale={isStale(s) ? 'true' : 'false'}
+                >
+                  <td className={classes.mono}>{s.name}</td>
+                  <td className={classes.mono}>{s.newest_at}</td>
+                  <td>{isStale(s) ? `${s.age_hours}h, stale` : `${s.age_hours}h`}</td>
+                  <td>{s.copies}</td>
+                  <td>{size(s.bytes)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const Ops = () => {
   const classes = useStyles();
   const loaded = useClusterHealth();
   const reds = useOpenReds();
   const founder = useFounder();
   const checks = useHealthchecks();
+  const backups = useBackups();
   const now = Date.now();
   return (
     <Page themeId="home">
@@ -321,6 +372,15 @@ export const Ops = () => {
             <DrillsTile drills={reds.drills} />
           )}
           {checks.state === 'ready' && <HealthchecksTile data={checks.data} />}
+          {backups.state === 'ready' && (
+            <BackupsTile data={backups.data} now={now} />
+          )}
+          {backups.state === 'error' && (
+            <div className={classes.tile} data-testid="ops-backups-error">
+              Backups could not be read, so no backup is known to exist.{' '}
+              <span className={classes.mono}>{backups.error}</span>
+            </div>
+          )}
           {checks.state === 'error' && (
             <div className={classes.tile} data-testid="ops-healthchecks-error">
               Scheduled jobs could not be read, so their state is unknown.{' '}

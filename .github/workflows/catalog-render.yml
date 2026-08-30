@@ -76,6 +76,25 @@ jobs:
           if [ -s "$RUNNER_TEMP/feed.md" ]; then
             echo "feed taken, last handoff $(grep -E '^## ' "$RUNNER_TEMP/feed.md" | tail -1 | cut -c4-40)" | tee -a "$GITHUB_STEP_SUMMARY"
           else echo "feed: not in the bucket yet (state/feed/latest.md), NEXT.md renders BLIND" | tee -a "$GITHUB_STEP_SUMMARY"; fi
+      - name: backups from the backup bucket (founder 2026-08-30, every backup with its timestamp)
+        env:
+          RCLONE_CONFIG: /dev/null
+          RCLONE_S3_PROVIDER: Other
+          RCLONE_S3_REGION: auto
+          RCLONE_S3_FORCE_PATH_STYLE: "true"
+          RCLONE_S3_ENDPOINT: https://${{ secrets.SEED_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          RCLONE_S3_ACCESS_KEY_ID: ${{ secrets.SEED_R2_ACCESS_KEY_ID }}
+          RCLONE_S3_SECRET_ACCESS_KEY: ${{ secrets.SEED_R2_SECRET_ACCESS_KEY }}
+          BACKUPS_BUCKET: ${{ secrets.SEED_R2_BACKUP_BUCKET || 'prospector-backup' }}
+        run: |
+          set -uo pipefail
+          # one recursive listing; an absent or refused listing leaves no file and bin/estate-backups says BLIND
+          if rclone lsjson ":s3:$BACKUPS_BUCKET" --recursive --s3-no-check-bucket > "$RUNNER_TEMP/backups-listing.json" 2> "$RUNNER_TEMP/backups-listing.err"; then
+            echo "backups listed: $(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$RUNNER_TEMP/backups-listing.json") objects in $BACKUPS_BUCKET" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            rm -f "$RUNNER_TEMP/backups-listing.json"
+            echo "backups: bucket $BACKUPS_BUCKET could not be listed ($(head -c 160 "$RUNNER_TEMP/backups-listing.err")); the Ops tile says BLIND" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
       # idp#769: auto-merge armed under GITHUB_TOKEN merges as github-actions[bot] and starts no
       # workflow on main; the App's token arms it as an App push.
       - id: app
@@ -103,6 +122,8 @@ jobs:
           GHCR_TOKEN_FILE: ${{ runner.temp }}/ghcr.token   # bin/idp-catalog-push; the App token above has no packages scope (crew#624)
           INV: ${{ runner.temp }}/inventory.json
           ESTATE_FEED: ${{ runner.temp }}/feed.md
+          BACKUPS_LISTING: ${{ runner.temp }}/backups-listing.json   # bin/estate-backups; absent = BLIND tile
+          BACKUPS_BUCKET: ${{ secrets.SEED_R2_BACKUP_BUCKET || 'prospector-backup' }}
           IDP_STATE_WORKTREE: ${{ runner.temp }}/idp-state
           ESTATE_CODE: ${{ github.workspace }}
           ESTATE_ENV: dev

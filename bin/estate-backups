@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""estate-backups: every backup the estate holds, with its newest timestamp, on the Ops page.
+
+Founder, 2026-08-30: "I would like to see all of our backups are in backoffice with timestamp".
+Until now the only way to know was to run the offsite grader on his Mac by hand; the Mac's
+launchd backup jobs are not loaded, so nothing said the money database's newest copy was 31
+hours old. The bucket is the backend of record (LAW 50: coverage is proved by querying the
+backend, never by scanning files), so this reads one recursive listing of it and writes the
+rows the Ops page draws.
+
+    estate-backups --listing rclone-lsjson.json --bucket prospector-backup --out docs/backups.json
+    estate-backups                    # runs `rclone lsjson :s3:$BACKUPS_BUCKET --recursive` itself
+
+The listing is `rclone lsjson --recursive` (Path, Size, ModTime, IsDir) — a mature tool the
+render job already runs; nothing here talks to the bucket in its own words. Objects group into
+sources by the layout the offsite declaration uses: `offsite/<source>/…` is `<source>`; a
+top-level folder (`ledger/`, `db/`, `logs/`, `repo/`) is `engine-<folder>`. One row per source:
+newest object, its stamp, age, copies, bytes. Stalest first.
+
+No listing, or a listing that is not JSON, is `state: BLIND` with the reason, never an empty
+table that reads green (silent-green is the defect class). Exit 0 always: the render job
+carries on and the page says what it could not read.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+OUT = pathlib.Path(__file__).resolve().parent.parent / "docs" / "backups.json"
+DEFAULT_BUCKET = "prospector-backup"
+
+
+def source_of(path: str) -> str:
+    """`offsite/money-db/store-…db` -> money-db; `db/prospector-….gz` -> engine-db."""
+    parts = path.split("/")
+    if parts[0] == "offsite" and len(parts) >= 3:
+        return parts[1]
+    if len(parts) >= 2:
+        return f"engine-{parts[0]}"
+    return "(bucket root)"
+
+
+def parse_stamp(text: str) -> dt.datetime | None:
+    """rclone ModTime: RFC 3339 with nanoseconds; Python wants at most microseconds."""
+    if not text:
+        return None
+    t = text.strip()
+    if t.endswith("Z"):
+        t = t[:-1] + "+00:00"
+    head, _, tail = t.partition(".")
+    if tail:
+        digits = ""
+        for ch in tail:
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        rest = tail[len(digits) :]
+        frac = (digits + "000000")[:6]
+        t = f"{head}.{frac}{rest}"
+    try:
+        d = dt.datetime.fromisoformat(t)
+    except ValueError:
+        return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=dt.timezone.utc)
+    return d.astimezone(dt.timezone.utc)
+
+
+def group(listing: list[dict], now: dt.datetime) -> list[dict]:
+    rows: dict[str, dict] = {}
+    for o in listing:
+        if not isinstance(o, dict) or o.get("IsDir"):
+            continue
+        path = str(o.get("Path") or "")
+        when = parse_stamp(str(o.get("ModTime") or ""))
+        if not path or when is None:
+            continue
+        name = source_of(path)
+        r = rows.setdefault(
+            name, {"name": name, "copies": 0, "bytes": 0, "_when": None}
+        )
+        r["copies"] += 1
+        r["bytes"] += int(o.get("Size") or 0)
+        if r["_when"] is None or when > r["_when"]:
+            r["_when"] = when
+            r["newest"] = path
+    out = []
+    for r in rows.values():
+        when = r.pop("_when")
+        age = (now - when).total_seconds() / 3600
+        r["newest_at"] = when.strftime("%Y-%m-%dT%H:%M:%SZ")
+        r["age_hours"] = round(age, 1)
+        out.append(r)
+    out.sort(key=lambda r: (-r["age_hours"], r["name"]))
+    return out
+
+
+def document(
+    listing: list[dict] | None, bucket: str, now: dt.datetime, reason: str = ""
+) -> dict:
+    taken = now.strftime("%Y-%m-%dT%H:%MZ")
+    if listing is None:
+        return {
+            "taken": taken,
+            "bucket": bucket,
+            "state": "BLIND",
+            "reason": reason or "no listing",
+            "sources": [],
+        }
+    return {
+        "taken": taken,
+        "bucket": bucket,
+        "state": "ok",
+        "sources": group(listing, now),
+    }
+
+
+def read_listing(path: str | None, bucket: str) -> tuple[list[dict] | None, str]:
+    if path:
+        try:
+            text = pathlib.Path(path).read_text(encoding="utf-8")
+        except OSError as exc:
+            return None, f"listing not read: {exc}"
+    else:
+        if not os.environ.get("RCLONE_S3_ACCESS_KEY_ID"):
+            return (
+                None,
+                "no RCLONE_S3_ACCESS_KEY_ID in the environment and no --listing",
+            )
+        try:
+            p = subprocess.run(
+                [
+                    "rclone",
+                    "lsjson",
+                    f":s3:{bucket}",
+                    "--recursive",
+                    "--s3-no-check-bucket",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=600,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return None, f"rclone did not answer: {exc}"
+        if p.returncode != 0:
+            return None, f"rclone lsjson exit {p.returncode}: {p.stderr.strip()[:200]}"
+        text = p.stdout
+    try:
+        data = json.loads(text or "null")
+    except json.JSONDecodeError as exc:
+        return None, f"listing is not JSON: {exc}"
+    if not isinstance(data, list):
+        return None, "listing is not a JSON list"
+    return data, ""
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument(
+        "--listing",
+        help="rclone lsjson output (file); default: run rclone against --bucket",
+    )
+    ap.add_argument(
+        "--bucket", default=os.environ.get("BACKUPS_BUCKET", DEFAULT_BUCKET)
+    )
+    ap.add_argument("--out", default=str(OUT))
+    ap.add_argument("--now", help="clock, RFC 3339 (tests); default now UTC")
+    a = ap.parse_args(argv)
+    now = parse_stamp(a.now) if a.now else dt.datetime.now(dt.timezone.utc)
+    if now is None:
+        print(f"FAIL  --now is not a stamp: {a.now}", file=sys.stderr)
+        return 2
+    listing, reason = read_listing(a.listing, a.bucket)
+    doc = document(listing, a.bucket, now, reason)
+    out = pathlib.Path(a.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    if doc["state"] == "BLIND":
+        print(f"BLIND estate-backups: {doc['reason']}; {out} says so")
+    else:
+        stale = [r for r in doc["sources"] if r["age_hours"] > 30]
+        print(
+            f"ok    estate-backups: {len(doc['sources'])} source(s) in {a.bucket}, {len(stale)} older than 30h -> {out}"
+        )
+        for r in doc["sources"]:
+            print(
+                f"      {r['name']:22} newest {r['newest_at']}  {r['age_hours']:7.1f}h  copies {r['copies']}"
+            )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

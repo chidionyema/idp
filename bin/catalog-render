@@ -36,6 +36,7 @@ TRACE = "docs/TRACE-MATRIX.md"          # crew#495 CP1
 NEXT = "docs/NEXT.md"                   # crew#403 CP6
 FOUNDER = "docs/FOUNDER.md"             # crew#412 R38
 FOUNDER_JSON = "docs/founder.json"      # crew#684 CP4: the Ops page's founder tiles read this
+BACKUPS_JSON = "docs/backups.json"      # founder 2026-08-30: the Ops page's Backups tile reads this
 TRACE_JSON = "docs/trace-matrix.json"
 INV = Path(os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json"))
 
@@ -121,9 +122,14 @@ def main(argv: list[str]) -> int:
     telegram = ["--telegram"] if not dry and os.environ.get("TELEGRAM_BOT_TOKEN") else []
     step("estate-founder", [sys.executable, str(WT / "bin" / "estate-founder"), *telegram], WT, 300)
     step("estate-showcase", [sys.executable, str(WT / "bin" / "estate-showcase")], WT)
+    # founder 2026-08-30: every backup with its timestamp on the Ops page. The workflow lists the
+    # backup bucket once into BACKUPS_LISTING; no listing = the tile says BLIND, never an empty table.
+    listing = os.environ.get("BACKUPS_LISTING")
+    backups_args = ["--listing", listing] if listing and Path(listing).is_file() else []
+    step("estate-backups", [sys.executable, str(WT / "bin" / "estate-backups"), *backups_args, "--out", str(WT / BACKUPS_JSON)], WT)
     # crew#495 CP1: the trace matrix is rendered from the same worktree, on the same schedule.
     step("trace-matrix", [sys.executable, str(WT / "bin" / "trace-matrix")], WT)
-    rc, diff = sh(["git", "diff", "--stat", "--", PAGE, SHOWCASE, TRACE, TRACE_JSON, NEXT, FOUNDER, FOUNDER_JSON], WT)
+    rc, diff = sh(["git", "diff", "--stat", "--", PAGE, SHOWCASE, TRACE, TRACE_JSON, NEXT, FOUNDER, FOUNDER_JSON, BACKUPS_JSON], WT)
     if not diff:
         print("catalog-render: page unchanged since the last render; nothing to commit")
         return 0
@@ -131,7 +137,7 @@ def main(argv: list[str]) -> int:
         print(f"catalog-render --dry-run: would commit\n{diff}")
         return 0
     taken = step("inventory time", ["sed", "-n", "s/^# inventory taken: //p", "catalog/catalog-info.yaml"], WT)
-    step("stage", ["git", "add", PAGE, SHOWCASE, TRACE, TRACE_JSON, NEXT, FOUNDER, FOUNDER_JSON], WT)
+    step("stage", ["git", "add", PAGE, SHOWCASE, TRACE, TRACE_JSON, NEXT, FOUNDER, FOUNDER_JSON, BACKUPS_JSON], WT)
     step("commit", ["git", "commit", "-q", "-m", f"docs(architecture): live estate page, inventory taken {taken} (crew#401)\n\nAuthor-session: com.estate.catalog-render"], WT)
     step("push", ["git", "push", "-q", "--force-with-lease", "origin", f"HEAD:refs/heads/{BRANCH}"], WT)
     rc, existing = sh(["gh", "pr", "list", "--head", BRANCH, "--state", "open", "--json", "number", "--jq", ".[0].number"], WT)

@@ -59,6 +59,7 @@ nav:
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
       - Estate next: tutorials/demo/estate-next.md
+      - Backups on the Ops page: tutorials/demo/estate-backups.md
       - Messaging: tutorials/demo/messaging.md
       - Incident register: tutorials/demo/incident-register.md
       - Trace matrix: tutorials/demo/trace-matrix.md
@@ -118,6 +119,7 @@ nav:
       - Conscience: how-to/onboarding/conscience.md
       - Estate showcase: how-to/onboarding/estate-showcase.md
       - Estate next: how-to/onboarding/estate-next.md
+      - Backups on the Ops page: how-to/onboarding/estate-backups.md
       - Plist gate: how-to/onboarding/plist.md
       - Decision matrix: how-to/onboarding/matrix.md
       - Oracle identity: how-to/onboarding/oci.md
