@@ -606,7 +606,8 @@ def test_mac_run_keeps_its_key_in_a_private_directory_it_makes_and_otto_parity_s
         for d in _docs(MAC_RUN)
         if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "hermes-agent-mac-run"
     )
-    script = cm["data"]["mac-run"]
+    # Flux postBuild writes `$${x}` for a shell `${x}`; grade the shell the pod runs.
+    script = cm["data"]["mac-run"].replace("$$", "$")
     code = "\n".join(
         ln for ln in script.splitlines() if not ln.lstrip().startswith("#")
     )
