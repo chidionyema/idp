@@ -7,7 +7,8 @@ item, what broke and the guard. This reads them all and writes docs/reference/in
 one row per incident, never hand-typed, with a fault class the chaos generator (CP3) keys on.
 
     bin/incident-register            write the register, print the class counts
-    bin/incident-register --check    exit 1 when the committed register is stale (the CP5 gate)
+    bin/incident-register --check    exit 1 when the file on disk is stale (local use; the docs build
+                                     writes the file through docs/hooks/incident_register.py, crew#679 CP2)
 
 Fault classes are keyword rules over the docstring; a row that matches none is `unclassified`
 and listed as such (LAW 28: a row that cannot be generated is named, not hidden).
