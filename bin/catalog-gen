@@ -258,13 +258,22 @@ def _docline(path):
     m = re.search(r'^\s*[ru]?("""|\'\'\')(.*?)(\1|$)', head, re.S | re.M)
     text = m.group(2) if m else ""
     if not text:
-        lines = [l for l in head.splitlines()[1:12] if l.strip()]
+        # crew#612 CP7: only a shebang is skipped. Skipping line 1 of every file dropped the
+        # opening line of each YAML comment block, so a Helm chart read "Kubernetes Secrets."
+        raw = head.splitlines()
+        if raw and raw[0].startswith("#!"):
+            raw = raw[1:]
+        lines = [l for l in raw[:11] if l.strip()]
         cm = [l.lstrip("# ").strip() for l in lines if l.lstrip().startswith("#")]
         text = " ".join(cm) if cm and len(cm) == len(lines[:len(cm)]) else ""
     text = " ".join(text.split())
     if not text:
         return ""
-    sent = re.split(r"(?<=[.!?])\s", text, 1)[0]
+    parts = re.split(r"(?<=[.!?])\s", text, 2)
+    sent = parts[0]
+    # crew#612 CP7: "Edge row." or "ADR 0005." is a label, not a sentence; carry the next one too.
+    if len(sent.split()) < 3 and len(parts) > 1:
+        sent = f"{sent} {parts[1]}"
     return sent[:240]
 
 
@@ -275,6 +284,11 @@ def describe(r):
     never invented. Kinds without a row-level sentence are the bug, not a fallback."""
     k = r.get("kind")
     own = (r.get("what") or r.get("note") or "").strip()
+    # crew#612 CP7 (founder: "it's too cryptic"): a `what` under five words is a label the
+    # inventory writer left ("database", "the board of record"), not a sentence; it becomes a
+    # hint on the measured sentence instead of standing in for one.
+    hint = own if len(own.split()) < 5 else ""
+    own = "" if hint else own
     doc = _docline(r.get("path"))
     if k == "repo":
         return own or doc or f"Git checkout at {r.get('path')} on branch {r.get('branch') or '?'}, {r.get('tracked_files') or 0} tracked files."
@@ -290,10 +304,15 @@ def describe(r):
     if k == "container":
         return own or f"Container {r.get('service') or r.get('id')} from image {r.get('image')} in compose project {r.get('project')}, health {r.get('health') or 'unknown'}."
     if k == "ledger":
-        return own or f"Append-only ledger at {r.get('path')}, {r.get('rows') or 0} rows, " + ("read by something in the estate." if r.get("referenced") else "referenced by nothing.")
+        return own or (f"Append-only ledger at {r.get('path')}, {r.get('rows') or 0} rows, "
+                       + ("read by something in the estate" if r.get("referenced") else "referenced by nothing")
+                       + (f"; {hint}." if hint else "."))
     if k == "data":
-        return own or f"Data at {r.get('path')}, {r.get('mb') or 0} MB."
-    return own or doc
+        what = "Database file" if (hint == "database" or str(r.get("path", "")).endswith((".db", ".sqlite", ".sqlite3"))) else "Data"
+        return own or (f"{what} at {r.get('path')}, {r.get('mb') or 0} MB, "
+                       + ("read by something in the estate" if r.get("referenced") else "referenced by nothing")
+                       + (f"; {hint}." if hint and hint != "database" else "."))
+    return own or doc or (f"{hint}." if hint else "")
 
 
 def front_door_entities():
