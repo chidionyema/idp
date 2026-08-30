@@ -11,3 +11,4 @@ resources:
   - kube-prometheus-stack.yaml
   - blackbox.yaml
   - httproute.yaml
+  - edge-manners.yaml   # crew#307: friendly-errors + edge-headers, one pair per route namespace

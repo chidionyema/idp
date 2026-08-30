@@ -87,3 +87,36 @@ def test_the_probe_watches_both_doors_and_the_login_drill_grades_them():
     for host, _, _ in DOORS.values():
         assert f"https://{host}.${{ESTATE_ZONE}}" in targets, host
         assert re.search(rf'"{host}": f"https://{host}\.\{{ZONE\}}/"', drill), host
+
+
+def test_incident_crew684_a_new_door_is_not_graded_dead_before_it_merges_and_the_chart_pods_are_waived():
+    """idp#977 run 33300xxxxxx: founder-links probed alertmanager/prometheus on the pull request and
+    read 000 -- the door cannot exist before the PR merges. On pull_request a link absent from
+    main's catalogue is NEW; every link is probed on schedule. The two pods are chart-rendered
+    StatefulSets, so the availability gate is told so by name instead of going BLIND."""
+    wf = (ROOT / ".github/workflows/oke-check.yml").read_text()
+    i = wf.index("  founder-links:")
+    job = wf[i : wf.index("lycheeverse/lychee-action", i)]
+    assert 'github.event_name }}" = pull_request' in job
+    assert "FETCH_HEAD:backstage/founder/catalog-info.yaml" in job
+    assert "comm -12 founder-links.txt main-links.txt" in job, (
+        "only links on main are probed on a PR"
+    )
+    assert "graded after merge" in job
+    av = yaml.safe_load((ROOT / "platform/availability.yaml").read_text())
+    waived = {w["surface"]: w for w in av["waivers"]}
+    for s in ("monitoring/kps-alertmanager", "monitoring/kps-prometheus"):
+        assert waived[s]["issue"] and "kube-prometheus-stack" in waived[s]["reason"], s
+    manners = ROOT / "platform/monitoring/edge-manners.yaml"
+    kinds = {
+        (d["kind"], d["metadata"]["name"], d["metadata"]["namespace"])
+        for d in yaml.safe_load_all(manners.read_text())
+    }
+    assert {
+        ("Middleware", "friendly-errors", "monitoring"),
+        ("Middleware", "edge-headers", "monitoring"),
+    } <= kinds
+    assert (
+        "edge-manners.yaml"
+        in (ROOT / "platform/monitoring/kustomization.yaml").read_text()
+    )

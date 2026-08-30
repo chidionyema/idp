@@ -26,6 +26,18 @@ waivers:
       A component of the signoz chart; this repository renders no Deployment for it, so the values
       are the only lever and they follow the signoz row above.
     issue: chidionyema/idp#544
+  - surface: monitoring/kps-alertmanager
+    reason: >-
+      A component of the kube-prometheus-stack chart: the operator renders the Alertmanager
+      StatefulSet from the Alertmanager custom resource, so no kustomization here holds a Deployment
+      to grade; replicas are a chart value (kube-prometheus-stack.yaml) and follow idp#544.
+    issue: chidionyema/idp#544
+  - surface: monitoring/kps-prometheus
+    reason: >-
+      A component of the kube-prometheus-stack chart: the operator renders the Prometheus
+      StatefulSet from the Prometheus custom resource, so no kustomization here holds a Deployment
+      to grade; replicas are a chart value (kube-prometheus-stack.yaml) and follow idp#544.
+    issue: chidionyema/idp#544
   - surface: hermes-agent/hermes-agent-gateway
     reason: >-
       One Telegram token may be long-polled by exactly one process (two are 409s on both,
