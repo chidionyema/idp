@@ -19,6 +19,7 @@ spec:
           for: 5m
           labels:
             severity: critical
+            owner: idp
           annotations:
             summary: "founder surface {{ $labels.instance }} is down"
             description: "The in-cluster probe of {{ $labels.instance }} has failed for 5 minutes (blackbox module founder)."
@@ -27,6 +28,7 @@ spec:
           for: 10m
           labels:
             severity: warning
+            owner: founder
           annotations:
             summary: "the estate Mac is not sharing its screen"
             description: "Nothing answers on the Mac's screen-sharing port over the tailnet, so 'Estate Mac screen (in the browser)' and Apple Screen Sharing both refuse to connect. One switch fixes it: on the Mac, System Settings > General > Sharing > Screen Sharing on. This alert clears on its own within 10 minutes of the switch (crew#562)."
@@ -37,6 +39,7 @@ spec:
           for: 10m
           labels:
             severity: critical
+            owner: idp
           annotations:
             summary: "Otto (the Architect gateway) has no running pod"
             description: "hermes-agent-gateway has had zero available replicas for 10 minutes: Otto answers nobody on Telegram. On 2026-08-29 the pod sat at ContainerCreating for 4h behind a missing sidecar secret and only a break-glass run noticed. Read it with: gh workflow run oke-check.yml -f mode=break-glass -f playbook=architect-doctor (rows pods, externalsecrets, alerts-firing)."
@@ -47,6 +50,7 @@ spec:
           for: 5m
           labels:
             severity: warning
+            owner: idp
           annotations:
             summary: "MCP gateway refusing requests on {{ $labels.route }} ({{ $labels.status }})"
             description: "agentgateway answered {{ $labels.status }} on route {{ $labels.route }} at {{ $value | humanize }} req/s for 5 minutes (crew#498)."
@@ -55,6 +59,7 @@ spec:
           for: 10m
           labels:
             severity: warning
+            owner: idp
           annotations:
             summary: "the MCP gateway's metrics are not being scraped"
             description: "No up==1 sample for job agentgateway in 10 minutes: the ServiceMonitor or the metrics port is gone, and GatewayRefusals is blind."
@@ -67,6 +72,7 @@ spec:
           for: 10m
           labels:
             severity: warning
+            owner: idp
           annotations:
             summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is over 90% full"
             description: "{{ $value | humanizePercentage }} free on {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} for 10 minutes."
