@@ -420,12 +420,17 @@ spec:
   timeout: 5m
 ---
 # crew#396: the estate's one workflow engine, in the cluster instead of on the Mac.
+# Suspended 2026-08-30 on the founder's word (crew#284): "what I spec'd was not what was built; I
+# wouldn't spec a dumb watcher to use Temporal." What ran here was a Temporal server, its own
+# Postgres and a worker, serving two 15-minute CronJobs that write a receipt, red since 2026-08-27
+# (kini-finish green=0 red=7). The namespace and its volumes stay; `suspend: false` brings it back.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: temporal
   namespace: flux-system
 spec:
+  suspend: true
   interval: 1m
   dependsOn:
     - name: edge
