@@ -3,7 +3,7 @@
 graded against what git declares (crew#740; founder blueprint 2026-08-31T11:55Z).
 
     plane        what is read                              declared by
-    oci          the tenancy's discovery search            the OpenTofu state (platform/oci, /identity)
+    oci:         the tenancy's discovery search            the OpenTofu state (platform/oci, /identity)
     kubernetes   every listable object in the cluster       Flux labels, Helm labels, ownerReferences,
                                                             and each Kustomization's status.inventory
     github       repositories, branch protection, workflows the OpenTofu state (none today, so ORPHAN)

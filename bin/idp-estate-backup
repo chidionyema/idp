@@ -30,6 +30,8 @@ import re
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 IDP = Path(__file__).resolve().parent.parent
@@ -105,25 +107,88 @@ def volumes(env: dict[str, str]) -> tuple[list[dict], str | None]:
     return found, None
 
 
-def newest_backups(comp: str) -> tuple[dict[str, str], str | None]:
-    data, err = oci_json(["bv", "backup", "list", "--compartment-id", comp, "--all"])
-    if data is None:
-        return {}, err
-    newest: dict[str, str] = {}
-    for b in data:
-        if b.get("lifecycle-state") in ("CREATING", "AVAILABLE"):
-            vid, when = b.get("volume-id", ""), b.get("time-created", "")
-            if when > newest.get(vid, ""):
-                newest[vid] = when
-    return newest, None
+def region() -> str:
+    got = os.environ.get("OCI_REGION", "")
+    tfvars = IDP / "platform/oci/terraform.tfvars"
+    if not got and tfvars.exists():
+        m = re.search(r'^region\s*=\s*"([^"]+)"', tfvars.read_text(), re.M)
+        got = m.group(1) if m else ""
+    return got
 
 
-def age_hours(stamp: str) -> float:
+def blockstorage_endpoint() -> tuple[str, str | None]:
+    """The block-storage API endpoint for the region, from the vendor's own SDK table (the CLI
+    ships it), never a domain typed here: the platform stays blind to who owns the servers (R36).
+    OCI_BLOCKSTORAGE_ENDPOINT overrides it."""
+    got = os.environ.get("OCI_BLOCKSTORAGE_ENDPOINT", "")
+    if got:
+        return got.rstrip("/"), None
+    reg = region()
+    if not reg:
+        return "", "no region: set OCI_REGION or platform/oci/terraform.tfvars"
+    rc, cli, err = run(["which", "oci"], 10)
+    if rc != 0:
+        return "", "oci is not installed"
     try:
-        t = time.strptime(stamp[:19], "%Y-%m-%dT%H:%M:%S")
+        shebang = Path(cli.strip()).read_text(errors="replace").splitlines()[0]
+    except (OSError, IndexError):
+        return "", "could not read the oci CLI's interpreter"
+    py = shebang[2:].strip() if shebang.startswith("#!") else sys.executable
+    rc, out, err = run(
+        [py, "-c", f"import oci; print(oci.regions.endpoint_for('blockstorage', {reg!r}))"], 60
+    )
+    if rc != 0 or not out.strip().startswith("https://"):
+        return "", f"the SDK named no block-storage endpoint for {reg}: {(err.strip() or out.strip())[-200:]}"
+    return out.strip().rstrip("/"), None
+
+
+def newest_backups(comp: str) -> tuple[dict[str, str], str | None, str]:
+    """Newest AVAILABLE backup per volume, and the clock that came back with them.
+
+    The listing goes through `oci raw-request` so the response headers travel with the data:
+    `Date` is what the provider's clock said as it stamped this answer, and `time-created` on
+    each backup was stamped by that same clock. Age is one clock minus itself; this machine's
+    clock is never consulted (crew#583: a Mac whose battery died reads 1970 and every local age
+    is wrong in one direction or the other). Returns (newest, error, served_rfc2822)."""
+    endpoint, err = blockstorage_endpoint()
+    if err:
+        return {}, err, ""
+    base = f"{endpoint}/20160918/volumeBackups?compartmentId={comp}&limit=500"
+    newest: dict[str, str] = {}
+    served, page = "", ""
+    while True:
+        uri = base + (f"&page={page}" if page else "")
+        rc, out, err = run(["oci", "raw-request", "--http-method", "GET", "--target-uri", uri], 180)
+        if rc != 0:
+            lines = (err.strip() or out.strip()).splitlines()
+            return {}, (lines or ["the listing failed and said nothing"])[-1][:200], ""
+        try:
+            body = json.loads(out or "{}")
+        except json.JSONDecodeError as exc:
+            return {}, f"unparseable answer: {exc}", ""
+        headers = {str(k).lower(): v for k, v in (body.get("headers") or {}).items()}
+        served = served or str(headers.get("date", ""))
+        for b in body.get("data") or []:
+            if b.get("lifecycle-state") in ("CREATING", "AVAILABLE"):
+                vid, when = b.get("volume-id", ""), b.get("time-created", "")
+                if when > newest.get(vid, ""):
+                    newest[vid] = when
+        page = str(headers.get("opc-next-page", "") or "")
+        if not page:
+            break
+    if not served:
+        return {}, "the listing carried no Date header, so no age can be measured (crew#583)", ""
+    return newest, None, served
+
+
+def age_hours(stamp: str, served: str) -> float:
+    """Hours between a backup's time-created and the Date header that came back with it."""
+    try:
+        t = datetime.strptime(stamp[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+        now = parsedate_to_datetime(served)
     except (ValueError, TypeError):
         return float("inf")
-    return (time.time() - time.mktime(t) + time.timezone) / 3600
+    return (now - t).total_seconds() / 3600
 
 
 def main() -> int:
@@ -164,7 +229,7 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
-    newest, err = newest_backups(comp)
+    newest, err, served = newest_backups(comp)
     if err:
         print(
             f"BLIND   backup the cloud did not list existing backups: {err}",
@@ -177,8 +242,8 @@ def main() -> int:
     for v in vols:
         have = newest.get(v["volume_id"], "")
         v["last_backup"] = have or None
-        v["age_hours"] = round(age_hours(have), 1) if have else None
-        if have and age_hours(have) <= args.max_age:
+        v["age_hours"] = round(age_hours(have, served), 1) if have else None
+        if have and age_hours(have, served) <= args.max_age:
             v["action"] = "fresh"
         else:
             v["action"] = "would-create" if args.dry_run else "create"

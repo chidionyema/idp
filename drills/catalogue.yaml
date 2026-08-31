@@ -241,7 +241,7 @@ drills:
       Every plane the estate runs on (the cloud tenancy, the cluster, GitHub, Cloudflare,
       Tailscale, the Mac) was read from its own control plane in the last day and every thing
       found was graded MANAGED, DRIFTED, ORPHAN or GHOST against what git declares. A plane
-      that could not be read is an UNKNOWN row on the table, never a green zero (crew#740).
+      that could not be read is an UNKNOWN row on the table, never a green zero.
 
   - name: otto-parity
     owner: science
