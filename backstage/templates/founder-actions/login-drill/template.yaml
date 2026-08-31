@@ -16,7 +16,7 @@ spec:
   - title: Choices for this run
     properties:
       evidence_paths:
-        title: Comma-separated portal paths to photograph signed in (R66, crew#764); empty = home page
+        title: Portal pages to photograph signed in, separated by commas; leave empty for the home page
           only
         type: string
         default: ''
