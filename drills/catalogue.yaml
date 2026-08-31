@@ -283,3 +283,17 @@ drills:
       the 17:01 build for eight hours; the login drill, flux and the front door all read green
       because no drill in this estate ever opened the shop, and the founder found it by looking at
       the site.
+  - name: realm-drift
+    owner: idp
+    workflow: oke-check.yml
+    job: realm-drift
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    pending: true
+    proves: >-
+      The settings that decide who may sign in to the shop are what the repository says they
+      are: the running realm is exported and graded key by key against
+      platform/customer-identity/realm/shop.yaml, so a console change that turns off the
+      lock-out, stretches a session to a day or adds a web address a sign-in may be sent back to
+      is named within a day instead of living unseen. Pending until the sign-in service is
+      turned on; the check itself is proved today against two shipped exports.
