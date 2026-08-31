@@ -12,7 +12,14 @@ metadata:
 spec:
   owner: group:default/platform
   type: founder-action
-  parameters: []
+  parameters:
+  - title: Choices for this run
+    properties:
+      evidence_paths:
+        title: Comma-separated portal paths to photograph signed in (R66, crew#764); empty = home page
+          only
+        type: string
+        default: ''
   steps:
   - id: dispatch
     name: Start Test the front-door sign-in
@@ -21,6 +28,8 @@ spec:
       repoUrl: github.com?owner=chidionyema&repo=idp
       workflowId: login-drill.yml
       branchOrTagName: main
+      workflowInputs:
+        evidence_paths: ${{ parameters.evidence_paths }}
   output:
     links:
     - title: Past runs
