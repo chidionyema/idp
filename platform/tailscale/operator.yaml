@@ -97,14 +97,39 @@ spec:
       # registry. docker.io is where the chart means to point -- the tag answers 200 there
       # (registry-1.docker.io/v2/tailscale/k8s-operator/manifests/v1.102.3, measured 2026-08-30).
       # platform/edge/require-registry-host.yaml is the guard that stops the class returning.
+      # idp#1030 named the registry and the pull still failed, because the name was never the
+      # fault. The literal kubelet event, read off the pod on 2026-08-31: 'toomanyrequests: You
+      # have reached your unauthenticated pull rate limit' -- Docker Hub's anonymous quota, which
+      # a fully-qualified docker.io name does not change. The chart's own values file answers it:
+      # "Repository defaults to DockerHub, but images are also synced to
+      # ghcr.io/tailscale/k8s-operator" (helm show values tailscale-operator --version 1.102.3).
+      # ghcr serves the same tag with no credential and no quota: `crane digest
+      # ghcr.io/tailscale/k8s-operator:v1.102.3` ->
+      # sha256:d86a8be7ad9d38714968f5d4e010ba8dad30c8f672736ef94eda9b250febeb12 (2026-08-31).
       image:
-        repository: docker.io/tailscale/k8s-operator
+        repository: ghcr.io/tailscale/k8s-operator
+      # crew#539 platform-workload-names-a-class refused this Deployment for naming no class
+      # (PolicyViolation event on deployment/operator, 2026-08-31). The chart exposes the field
+      # (operatorConfig.priorityClassName in its values), so this needs no PolicyException.
+      priorityClassName: infrastructure-critical
       podSecurityContext:
+        # runAsNonRoot: true WITHOUT runAsUser is a permanent refusal, not a transient failure.
+        # This image declares no USER, so it would run as uid 0 and the kubelet rejects it on
+        # every single attempt: 'container has runAsNonRoot and image will run as root'. Read off
+        # the image itself, not inferred: `crane config --platform linux/amd64
+        # ghcr.io/tailscale/k8s-operator:v1.102.3` prints .config.User = null (2026-08-31).
+        # This is why no remediation retry count ever cleared it and why `helm rollback` has no
+        # target: all four release revisions failed, none was ever deployed. 65532 is the
+        # distroless 'nonroot' uid/gid this image's base provides.
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
         runAsNonRoot: true
         seccompProfile: { type: RuntimeDefault }
       securityContext:
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: true
+        runAsUser: 65532
         runAsNonRoot: true
         capabilities: { drop: [ALL] }
         seccompProfile: { type: RuntimeDefault }

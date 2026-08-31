@@ -39,6 +39,19 @@ spec:
         kind: HelmRepository
         name: jetstack
   values:
+    # 2026-08-31, same class as tailscale/operator the same night: chart cert-manager v1.21.1
+    # sets `runAsNonRoot: true` and no `runAsUser` in its top-level securityContext and in each of
+    # webhook/cainjector/startupapicheck (lines 425, 826, 1234, 1542 of `helm show values
+    # jetstack/cert-manager --version v1.21.1`). That works only while the image declares a
+    # non-root USER, which no reader of this repo can see and any image bump can remove -- and
+    # when it goes, the kubelet refuses the pod on every attempt, forever, with 'container has
+    # runAsNonRoot and image will run as root'. The uid below is not a choice; it is what these
+    # images already run as, read off them: `crane config --platform linux/amd64
+    # quay.io/jetstack/cert-manager-{controller,webhook,cainjector,startupapicheck}:v1.21.1`
+    # prints .config.User = 65532 for all four. Writing it down changes no running pod and makes
+    # the dependency visible to platform/edge/require-runasuser-with-nonroot.yaml.
+    securityContext:
+      runAsUser: 65532
     crds:
       enabled: true
     config:
@@ -57,6 +70,8 @@ spec:
         cpu: 200m
         memory: 256Mi
     webhook:
+      securityContext:
+        runAsUser: 65532
       resources:
         requests:
           cpu: 10m
@@ -65,6 +80,8 @@ spec:
           cpu: 100m
           memory: 128Mi
     cainjector:
+      securityContext:
+        runAsUser: 65532
       resources:
         requests:
           cpu: 10m
@@ -73,6 +90,8 @@ spec:
           cpu: 100m
           memory: 256Mi
     startupapicheck:
+      securityContext:
+        runAsUser: 65532
       resources:
         requests:
           cpu: 10m

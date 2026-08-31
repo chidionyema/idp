@@ -26,6 +26,10 @@ resources:
   - kyverno-secrets-policy.yaml
   - provider-independence.yaml
   - require-registry-host.yaml
+  # 2026-08-31: idp#1030 named the registry and tailscale/operator still would not start,
+  # because the second fault was runAsNonRoot with no runAsUser -- a permanent kubelet
+  # refusal that reads as correct in every check upstream of the kubelet.
+  - require-runasuser-with-nonroot.yaml
   - dev-loop-policy.yaml
   - provider-edge-exception.yaml
   - provider-storage-exception.yaml
