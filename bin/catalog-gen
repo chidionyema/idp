@@ -502,6 +502,23 @@ def _idp_source_link(rel):
             ("Cluster state", f"https://github.com/{gh}/actions/workflows/oke-check.yml")]
 
 
+def registry_vendors():
+    """Named vendor roots from platform/vendors/consoles.yaml (crew#751).
+
+    Inventory `coupling` is the blast-radius field. The vendor registry is the
+    list of third parties the estate actually holds a root for. A vendor in the
+    registry with no inventory tag still belongs in the catalogue: otherwise
+    Cursor (Hermes WORK) is invisible until some Mac path happens to be tagged.
+    Missing file: inventory couplings only, same as before this function existed.
+    """
+    path = os.path.join(IDP_ROOT, "platform", "vendors", "consoles.yaml")
+    if not os.path.isfile(path):
+        return {}
+    import yaml
+    data = yaml.safe_load(open(path)) or {}
+    return data.get("vendors") or {}
+
+
 def cluster_entities():
     import glob as _glob
     import yaml
@@ -615,6 +632,9 @@ def main() -> int:
     #     "what survives losing this vendor". Emitting it as a Resource turns the
     #     portal's relations graph into the blast radius: click the vendor, see
     #     every asset that stops. 139 of 241 rows on the same inventory.
+    #     Unioned with platform/vendors/consoles.yaml so a named root with no
+    #     inventory tag (Cursor, crew#751) still has a Resource the portal can
+    #     open. One entity per name; inventory dependents stay the measured count.
     #
     # Deliberately NOT emitted: providesApis. No repository in the estate publishes
     # an OpenAPI document -- measured, 0 of 26 -- so the field would be an empty
@@ -710,16 +730,35 @@ def main() -> int:
             return real_index.get(main)
         return None
 
-    couplings = sorted({r.get("coupling") for r in rows
-                        if r.get("coupling") and r.get("coupling") != "none"})
+    inv_couplings = {r.get("coupling") for r in rows
+                     if r.get("coupling") and r.get("coupling") != "none"}
+    reg = registry_vendors()
+    couplings = sorted(inv_couplings | set(reg.keys()))
+    vendor_docs = []
     for c in couplings:
         n = sum(1 for r in rows if r.get("coupling") == c)
-        docs.append(entity(
+        links = []
+        page = (reg.get(c) or {}).get("page")
+        if page:
+            links.append(("Console", page))
+        for title, url in _idp_source_link("platform/vendors/consoles.yaml"):
+            if title == "Source":
+                links.append((title, url))
+                break
+        if n:
+            desc = f"External vendor {c}: {n} estate assets stop if it does."
+        else:
+            desc = (f"External vendor {c}: named in the vendor registry; "
+                    "inventory has not tagged an asset against it yet.")
+        vendor_docs.append(entity(
             "Resource", f"vendor-{slug(c)}", f"Vendor: {c}", "vendor",
             {"coupling": c, "dependents": n,
-             "why": "every asset tagged with this coupling stops if it does"},
+             "why": "every asset tagged with this coupling stops if it does",
+             "registry": "platform/vendors/consoles.yaml" if c in reg else "inventory-only"},
             ["vendor", f"coupling-{slug(c)}"],
-            description=f"External vendor {c}: {n} estate assets stop if it does."))
+            links,
+            description=desc))
+    docs += vendor_docs
 
     # Domain and System take no spec.type/spec.system, so they are written out
     # literally rather than through entity(), which exists for the 194 rows.
@@ -1022,7 +1061,7 @@ def main() -> int:
     # Founder, 2026-08-27: "i thought i could see all my interface urls in one spot". One
     # entity carries every link the catalogue publishes, so the answer is one card in the
     # portal (Component `interfaces`), never a grep over 362 entities.
-    for d in front + founder + cluster:
+    for d in front + founder + cluster + vendor_docs:
         m = yaml_links(d)
         all_links += m
     all_links = sorted(set(all_links) | set(HIER_LINKS))

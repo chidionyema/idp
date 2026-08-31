@@ -24,6 +24,7 @@ configMapGenerator:
   - name: hermes-agent-mac-run
     files:
       - mac-run=mac-run.tpl
+      - cursor-agent=cursor-agent.tpl
 images:
   - name: ghcr.io/chidionyema/hermes-agent
     newTag: main-47-577cf23f81c14ccf89f6f269057da6293ff23319 # {"$imagepolicy": "flux-system:hermes-agent:tag"}

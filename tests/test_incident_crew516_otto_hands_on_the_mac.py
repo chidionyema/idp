@@ -434,7 +434,10 @@ def test_kustomization_carries_the_new_resources():
     # mount keeps its name forever, so the pod keeps the script it started with; the generator's
     # content hash is what rolls it.
     gens = {g["name"]: g for g in ks.get("configMapGenerator", [])}
-    assert gens["hermes-agent-mac-run"]["files"] == ["mac-run=mac-run.tpl"]
+    assert gens["hermes-agent-mac-run"]["files"] == [
+        "mac-run=mac-run.tpl",
+        "cursor-agent=cursor-agent.tpl",
+    ]
 
 
 # ---------------------------------------------------------------------------

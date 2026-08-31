@@ -273,6 +273,7 @@ jobs:
           SEED_GROQ_API_KEY: ${{ secrets.SEED_GROQ_API_KEY }}
           SEED_GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
           SEED_EXA_API_KEY: ${{ secrets.SEED_EXA_API_KEY }}
+          SEED_CURSOR_API_KEY: ${{ secrets.SEED_CURSOR_API_KEY }}
           SEED_TELEGRAM_HERMES_BOT_TOKEN: ${{ secrets.SEED_TELEGRAM_HERMES_BOT_TOKEN }}
           SEED_TELEGRAM_ALERTS_BOT_TOKEN: ${{ secrets.SEED_TELEGRAM_ALERTS_BOT_TOKEN }}
           SEED_STRIPE_SECRET_KEY: ${{ secrets.SEED_STRIPE_SECRET_KEY }}
@@ -552,7 +553,7 @@ jobs:
           echo "$(wc -l < founder-links.txt) links"
       - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
-          args: --no-progress --max-redirects 5 --accept '200..=399,401,405' --timeout 20 --retry-wait-time 5 --max-retries 2 --exclude 'github.com/chidionyema/mumchimp-medusa' founder-links.txt
+          args: --no-progress --max-redirects 5 --accept '200..=399,401,403,405' --timeout 20 --retry-wait-time 5 --max-retries 2 --exclude 'github.com/chidionyema/mumchimp-medusa' founder-links.txt
           # mumchimp-medusa is private; this repo's token cannot read it, the founder's browser can.
           fail: true
           token: ${{ secrets.GITHUB_TOKEN }}

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The founder's whole part for one provider, in one command, zero copying between windows (R52; crew#618).
-#   bin/idp-set-root tailscale | cloudflare | anthropic | openrouter | deepseek | minimax | groq | gemini | exa | stripe | telegram-hermes | telegram-alerts | google-oauth
+#   bin/idp-set-root tailscale | cloudflare | anthropic | openrouter | deepseek | minimax | groq | gemini | exa | cursor | stripe | telegram-hermes | telegram-alerts | google-oauth
 #   bin/idp-set-root all        every provider above in turn, skipping any whose secrets are already set; one apply run at the end
 #
 # It opens the provider's page, says exactly what to click and what to type, then asks for each
@@ -13,7 +13,7 @@ set -euo pipefail
 REPO=${IDP_REPO:-chidionyema/idp}
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 P=${1:-}; [ -n "$P" ] || { sed -n 3,4p "$0"; exit 2; }
-ALL="tailscale cloudflare anthropic openrouter deepseek minimax groq gemini exa stripe telegram-hermes telegram-alerts google-oauth"
+ALL="tailscale cloudflare anthropic openrouter deepseek minimax groq gemini exa cursor stripe telegram-hermes telegram-alerts google-oauth"
 if [ "$P" = all ]; then
   # Founder, 2026-08-29: "a single command for the master key for all". Each provider is one turn;
   # one already set (its secret names exist on the repository) is skipped, so this is safe to re-run.
@@ -75,7 +75,7 @@ T
         5. "Continue to summary", "Create Token". Copy the token when asked below.
 T
     ask SEED_CLOUDFLARE_ROOT_TOKEN "the token shown" ;;
-  anthropic|openrouter|deepseek|minimax|groq|gemini|exa|stripe)
+  anthropic|openrouter|deepseek|minimax|groq|gemini|exa|cursor|stripe)
     page=$(field "$P" page); name=$(field "$P" secret)
     [ -n "$page" ] && [ -n "$name" ] || { echo "FAIL    no page/secret for $P in platform/vendors/consoles.yaml"; exit 1; }
     echo "$P: one API key, once. The key page is opening."
