@@ -44,6 +44,11 @@ jobs:
           vale_flags: "--minAlertLevel=error"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/prose.txt
       - name: Install Vale for the whole-page and count steps (the action keeps its copy off PATH)
         run: |
           set -euo pipefail
@@ -56,7 +61,7 @@ jobs:
         run: |
           set -euo pipefail
           vale --minAlertLevel=error README.md
-          python3 -m pip install -q pyyaml pytest
+          pip install -q -r .github/requirements/prose.txt
           python3 -m pytest -q tests/test_incident_crew612_cp8_dev_speak_never_crosses_the_boundary.py
       - name: Count what is left on the docs tree
         if: always()

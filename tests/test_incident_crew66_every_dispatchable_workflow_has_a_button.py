@@ -45,7 +45,8 @@ def _dispatchable():
     return out
 
 
-SYNTHETIC = """# A workflow with every input shape the generator maps.
+SYNTHETIC = """# button: Synthetic inputs
+# founder: A workflow with every input shape the generator maps.
 name: Synthetic inputs
 on:
   workflow_dispatch:

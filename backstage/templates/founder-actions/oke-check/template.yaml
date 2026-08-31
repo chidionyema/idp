@@ -26,8 +26,8 @@ spec:
         - break-glass
         default: check
       playbook:
-        title: 'break-glass only: runs the one named recovery playbook while the runner is admitted to
-          the cluster'
+        title: 'Break-glass only: runs the one named recovery playbook while the runner is admitted to
+          the cluster; diagnose and architect-doctor are read-only'
         type: string
         enum:
         - diagnose
