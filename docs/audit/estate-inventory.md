@@ -65,7 +65,7 @@ Every resource below exists because someone made it by hand. Each one is a Terra
 | Compartment | estate | ACTIVE |
 | Group | All Domain Users | None |
 | Group | estate-operators | None |
-| Group | estate-provers | None |
+| Group | `estate-provers` | None |
 | Key | RSA wrapping key | PENDING_DELETION |
 | Key | RSA wrapping key | ENABLED |
 | Key | estate-secrets | PENDING_DELETION |
@@ -98,12 +98,12 @@ Every resource below exists because someone made it by hand. Each one is a Terra
 | VaultSecret | litellm-ui | ACTIVE |
 | VaultSecret | litellm-upstream | ACTIVE |
 | VaultSecret | mcp-gateway | ACTIVE |
-| VaultSecret | oauth2-proxy-cookie-secret | ACTIVE |
+| VaultSecret | `oauth2-proxy-cookie-secret` | ACTIVE |
 | VaultSecret | oke-autoscaler | ACTIVE |
 | VaultSecret | prospector-engine-env | ACTIVE |
 | VaultSecret | prospector-store-api-env | ACTIVE |
 | VaultSecret | science | ACTIVE |
-| VaultSecret | signoz-prover | ACTIVE |
+| VaultSecret | `signoz-prover` | ACTIVE |
 | VaultSecret | sunshine-auth | ACTIVE |
 | VaultSecret | tailscale-operator | ACTIVE |
 | VaultSecret | temporal-db | ACTIVE |
@@ -112,7 +112,7 @@ Every resource below exists because someone made it by hand. Each one is a Terra
 
 16 claims hold state, and 16 of the 16 volumes behind them are set to be destroyed when their claim is. Nothing here can be recreated from a repository; it has to be backed up.
 
-| Namespace | Claim | Size | Class | On claim deletion |
+| Cluster area | Claim | Size | Class | On claim deletion |
 |---|---|---|---|---|
 | backstage | pgdata-postgres-0 | 50Gi | estate-block | Delete |
 | healthchecks | pgdata-healthchecks-db-0 | 50Gi | oci-bv | Delete |

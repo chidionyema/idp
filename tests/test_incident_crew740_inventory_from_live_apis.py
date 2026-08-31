@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "bin/idp-inventory"
 WORKFLOW = ROOT / ".github/workflows/estate-inventory.yml"
 FIXTURE = ROOT / "tests/fixtures/inventory-kube-dump.json"
+CLEAN = ROOT / "tests/fixtures/inventory-kube-dump-clean.json"
 
 
 def grade(tmp_path: Path, fixture: Path = FIXTURE) -> dict:
@@ -108,9 +109,11 @@ def test_nothing_in_the_tool_lists_git_to_decide_what_exists():
     """The blueprint's first law: inventory from the control planes, never from git. The only git
     read is the Mac plane's 'is this plist tracked' on the declared side."""
     text = TOOL.read_text()
-    assert "git ls-files" not in text.replace(
-        '["git", "-C", str(repo), "ls-files"]', ""
-    )
+    before, _, after = text.partition("def tracked_files")
+    body, _, rest = after.partition("\ndef ")
+    # the token, not a phrase: a subprocess call spells it ["git", ..., "ls-files"]
+    assert "ls-files" not in before and "ls-files" not in rest
+    assert body.count("ls-files") == 1
     assert "glob(" not in text.replace('QUERIES.glob(f"{plane}-*.sql")', "")
 
 
@@ -140,3 +143,131 @@ def test_the_workflow_is_read_only_scheduled_and_on_the_drill_catalogue():
     assert "--strict" not in text, "audit mode until E1 flips the red gate on"
     assert "tofu apply" not in text and "kubectl apply" not in text
     assert re.search(r"steampipe-action-setup@[0-9a-f]{40}", text)
+
+
+def load_tool():
+    import importlib.util
+    from importlib.machinery import SourceFileLoader
+
+    spec = importlib.util.spec_from_loader(
+        "idp_inventory", SourceFileLoader("idp_inventory", str(TOOL))
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_a_clean_dump_is_all_managed_and_strict_exits_zero(tmp_path):
+    """The gate proved both ways: the same dump with every red object removed exits 0."""
+    p = subprocess.run(
+        [
+            sys.executable,
+            str(TOOL),
+            "--fixture",
+            str(CLEAN),
+            "--out",
+            str(tmp_path),
+            "--strict",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert p.returncode == 0, p.stdout + p.stderr
+    counts = json.loads((tmp_path / "inventory.json").read_text())["counts"][
+        "kubernetes"
+    ]
+    assert counts["MANAGED"] >= 1
+    assert counts["DRIFTED"] == counts["ORPHAN"] == counts["GHOST"] == 0
+    assert counts["read"] == "yes"
+
+
+def test_a_plane_that_cannot_be_read_is_blind_and_never_a_green_zero(tmp_path):
+    """No steampipe on PATH: the github plane is UNKNOWN, a BLIND line prints, exit 2."""
+    env = {"PATH": str(tmp_path / "empty-bin"), "HOME": str(tmp_path)}
+    (tmp_path / "empty-bin").mkdir()
+    p = subprocess.run(
+        [
+            sys.executable,
+            str(TOOL),
+            "--planes",
+            "github",
+            "--no-drift",
+            "--out",
+            str(tmp_path / "out"),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=env,
+    )
+    assert p.returncode == 2, p.stdout + p.stderr
+    assert "BLIND   inventory  github  UNKNOWN" in p.stdout
+    assert "ok      inventory  github" not in p.stdout
+    table = (tmp_path / "out/inventory.md").read_text()
+    assert "| github | 0 | 0 | 0 | 0 | UNKNOWN |" in table
+
+
+def test_a_half_read_plane_is_partial_never_ok():
+    """One row read and one kind unread: PARTIAL, and strict refuses it."""
+    mod = load_tool()
+    rows = [
+        mod.row(
+            "kubernetes",
+            "Deployment",
+            "a/Deployment/x",
+            "x",
+            "Kustomization a/b",
+            "MANAGED",
+        )
+    ]
+    blind = ["kubernetes: get deployments.apps: timed out after 300s"]
+    counts = mod.summarise(rows, ["kubernetes"], blind)
+    assert counts["kubernetes"]["read"] == "PARTIAL"
+    assert counts["kubernetes"]["UNKNOWN"] is False
+    assert mod.summarise(rows, ["kubernetes"], [])["kubernetes"]["read"] == "yes"
+    assert mod.summarise([], ["kubernetes"], blind)["kubernetes"]["read"] == "UNKNOWN"
+
+
+def test_no_ghost_is_graded_for_a_kind_kubectl_could_not_list():
+    """A failed `kubectl get deployments` removes Deployments from the live set; without the
+    unreadable list every Kustomization entry of that kind would be a fabricated GHOST."""
+    mod = load_tool()
+    items = json.loads(FIXTURE.read_text())["items"]
+    items = [i for i in items if i.get("kind") != "Deployment"]
+    ghosts = [r for r in mod.classify_kube(items) if r["verdict"] == "GHOST"]
+    assert {r["name"] for r in ghosts} == {"litellm", "gone"}  # the fabrication, proved
+    ghosts = [
+        r
+        for r in mod.classify_kube(items, ["deployments.apps"])
+        if r["verdict"] == "GHOST"
+    ]
+    assert ghosts == []
+
+
+def test_secret_payloads_never_reach_the_raw_dump_or_the_registry():
+    mod = load_tool()
+    items = [
+        {
+            "kind": "Secret",
+            "metadata": {"name": "s"},
+            "data": {"k": "aGVsbG8="},
+            "stringData": {"p": "x"},
+        }
+    ]
+    out = mod.redact_secrets(items)[0]
+    assert "aGVsbG8=" not in json.dumps(out) and "redacted" in out["data"]["k"]
+    wf = WORKFLOW.read_text()
+    assert '--path="$RUNNER_TEMP/publish"' in wf
+    assert '--path="$RUNNER_TEMP/inventory"' not in wf
+
+
+def test_the_workflows_query_joins_on_the_required_key_column():
+    """github_workflow requires repository_full_name as a key column; a sub-select is not
+    pushed down and the plane goes blind."""
+    sql = (ROOT / "platform/inventory/queries/github-workflows.sql").read_text().lower()
+    assert (
+        "join github_workflow" in sql
+        and "repository_full_name = r.name_with_owner" in sql
+    )
+    assert " in (select" not in sql

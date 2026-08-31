@@ -187,7 +187,7 @@ def tofu_drift(blind, dirs=None):
             600,
         )
         if rc not in (0, 2):
-            blind.append(f"drift unread in {d.relative_to(IDP)}: {last_line(err)}")
+            blind.append(f"oci: drift unread in {d.relative_to(IDP)}: {last_line(err)}")
             continue
         if rc == 0:
             continue
@@ -210,8 +210,9 @@ def tofu_drift(blind, dirs=None):
 
 
 # --- planes --------------------------------------------------------------------------------------
-def plane_oci(out, args, declared, drifted, blind):
+def plane_oci(out, args, declared, drifted, blind, drift_read=False):
     rows = []
+    unmeasured = []
     audit = IDP / "bin/idp-estate-audit"
     cmd = [
         sys.executable,
@@ -259,8 +260,12 @@ def plane_oci(out, args, declared, drifted, blind):
                 row("oci", kind, rid, name, "", "ORPHAN", "running, in no repository")
             )
     for rid, addr in declared.items():
-        if rid.startswith("ocid1.") and rid not in seen:
-            kind = rid.split(".")[1] if rid.count(".") > 1 else "unknown"
+        if not rid.startswith("ocid1.") or rid in seen:
+            continue
+        kind = rid.split(".")[1] if rid.count(".") > 1 else "unknown"
+        # Absent from the discovery search proves nothing on its own: the search does not
+        # index every type. The provider's own read (tofu plan -refresh-only) does.
+        if "delete" in drifted.get(rid, ""):
             rows.append(
                 row(
                     "oci",
@@ -269,36 +274,84 @@ def plane_oci(out, args, declared, drifted, blind):
                     "",
                     addr,
                     "GHOST",
-                    "in the state, absent from the discovery search "
-                    "(a type the search does not index reads GHOST until it is listed)",
+                    "gone per the provider's own read (refresh) and absent from the search",
                 )
             )
+        elif drift_read:
+            rows.append(
+                row(
+                    "oci",
+                    kind,
+                    rid,
+                    "",
+                    addr,
+                    "MANAGED",
+                    "live per the provider's own read; a type the discovery search does not index",
+                )
+            )
+        else:
+            unmeasured.append(kind)
+    if unmeasured:
+        blind.append(
+            f"oci: {len(unmeasured)} declared resources of types the discovery search does not "
+            f"index ({', '.join(sorted(set(unmeasured)))}) and drift was not read this run; "
+            "their presence is unmeasured (run without --no-drift)"
+        )
     return rows
 
 
+def kube_get(names, env):
+    """One kubectl get over a list of resource names; (items, error)."""
+    rc, o, e = run(
+        ["kubectl", "get", ",".join(names), "-A", "-o", "json", "--ignore-not-found"],
+        300,
+        env,
+    )
+    if rc != 0:
+        return None, last_line(e)
+    try:
+        return json.loads(o or "{}").get("items", []), ""
+    except ValueError:
+        return None, "returned no JSON"
+
+
 def kube_objects(env, blind):
+    """(items, unreadable resource names). A chunk that fails is retried one resource at a
+    time, so one broken API group blinds one kind, never twenty; every unreadable name is a
+    blind line and travels with the items so no GHOST is graded against a kind not read."""
     rc, out, err = run(
         ["kubectl", "api-resources", "--verbs=list", "-o", "name"], 120, env
     )
     if rc != 0:
         blind.append(f"kubernetes: api-resources: {last_line(err)}")
-        return None
+        return None, []
     names = [n for n in out.split() if not n.endswith("metrics.k8s.io")]
-    items = []
+    items, unreadable = [], []
     for i in range(0, len(names), 20):
-        chunk = ",".join(names[i : i + 20])
-        rc, o, e = run(
-            ["kubectl", "get", chunk, "-A", "-o", "json", "--ignore-not-found"],
-            300,
-            env,
-        )
-        if rc != 0:
-            blind.append(f"kubernetes: get {names[i]}..: {last_line(e)}")
+        chunk = names[i : i + 20]
+        got, why = kube_get(chunk, env)
+        if got is not None:
+            items.extend(got)
             continue
-        try:
-            items.extend(json.loads(o or "{}").get("items", []))
-        except ValueError:
-            blind.append(f"kubernetes: get {names[i]}.. returned no JSON")
+        for one in chunk:
+            got, why = kube_get([one], env)
+            if got is None:
+                unreadable.append(one)
+                blind.append(f"kubernetes: get {one}: {why}")
+            else:
+                items.extend(got)
+    return items, unreadable
+
+
+def redact_secrets(items):
+    """The raw dump is published; a Secret's payload never is. Values become their byte count."""
+    for it in items:
+        if it.get("kind") != "Secret":
+            continue
+        for field in ("data", "stringData"):
+            d = it.get(field)
+            if isinstance(d, dict):
+                it[field] = {k: f"<redacted {len(str(v))} bytes>" for k, v in d.items()}
     return items
 
 
@@ -306,9 +359,11 @@ def kube_key(ns, name, kind):
     return f"{ns or '_'}/{kind}/{name}"
 
 
-def classify_kube(items):
-    """Pure: the rows for a list of cluster objects. Tested on fixtures, run on the dump."""
+def classify_kube(items, unreadable=()):
+    """Pure: the rows for a list of cluster objects. Tested on fixtures, run on the dump.
+    `unreadable` names the resources kubectl could not list; no GHOST is graded for them."""
     rows = []
+    unread_kinds = {n.split(".")[0].lower() for n in unreadable}
     live = set()
     ready = {}
     for it in items:
@@ -362,6 +417,7 @@ def classify_kube(items):
                     if (
                         kube_key(e_ns, e_name, e_kind) not in live
                         and e_kind not in KUBE_NOISE
+                        and not any(u.startswith(e_kind.lower()) for u in unread_kinds)
                     ):
                         rows.append(
                             row(
@@ -470,12 +526,15 @@ def plane_kubernetes(out, args, blind):
         if env is None:
             blind.append("kubernetes: no cluster answered kubectl")
             return []
-    items = kube_objects(env, blind)
+    items, unreadable = kube_objects(env, blind)
     if items is None:
         return []
+    rows = classify_kube(items, unreadable)
     (out / "raw").mkdir(parents=True, exist_ok=True)
-    (out / "raw/kubernetes.json").write_text(json.dumps(items, default=str))
-    return classify_kube(items)
+    (out / "raw/kubernetes.json").write_text(
+        json.dumps(redact_secrets(items), default=str)
+    )
+    return rows
 
 
 def steampipe(sql, blind, plane, env=None):
@@ -538,7 +597,15 @@ def plane_sql(plane, declared, blind, env=None):
 def tracked_files():
     """Basenames a repository holds: a launchd label whose plist is in git is declared."""
     names = set()
-    for repo in (IDP, Path.home() / ".claude/scripts", Path.home() / "dev/code/crew"):
+    # Sibling checkouts, never a literal path (LAW 46): the crew repo sits beside this
+    # one; INVENTORY_REPOS (colon-separated) overrides the list.
+    extra = os.environ.get("INVENTORY_REPOS")
+    repos = (
+        [Path(x).expanduser() for x in extra.split(":") if x]
+        if extra
+        else [IDP, Path.home() / ".claude" / "scripts", IDP.parent / "crew"]
+    )
+    for repo in repos:
         if not (repo / ".git").exists():
             continue
         rc, out, _ = run(["git", "-C", str(repo), "ls-files"], 60)
@@ -634,14 +701,22 @@ def plane_mac(blind):
 
 # --- the table -----------------------------------------------------------------------------------
 def summarise(rows, planes, blind):
+    """Per plane: the four counts and `read`, one of yes / PARTIAL / UNKNOWN. A plane with any
+    blind line is PARTIAL however many rows it has; with no rows at all it is UNKNOWN. Neither
+    is ever printed as ok, so a half-read plane can never be a green count."""
     counts = {p: {v: 0 for v in VERDICTS} for p in planes}
     for r in rows:
         counts.setdefault(r["plane"], {v: 0 for v in VERDICTS})[r["verdict"]] += 1
     blind_planes = {b.split(":", 1)[0] for b in blind if ":" in b}
     for p in planes:
-        counts[p]["UNKNOWN"] = p in blind_planes and not any(
-            counts[p][v] for v in VERDICTS
-        )
+        rows_seen = any(counts[p][v] for v in VERDICTS)
+        if p in blind_planes and not rows_seen:
+            counts[p]["read"] = "UNKNOWN"
+        elif p in blind_planes:
+            counts[p]["read"] = "PARTIAL"
+        else:
+            counts[p]["read"] = "yes"
+        counts[p]["UNKNOWN"] = counts[p]["read"] == "UNKNOWN"
     return counts
 
 
@@ -651,7 +726,7 @@ def write_table(path, rows, counts, blind, generated_at):
         "",
         f"Generated by `bin/idp-inventory` at {generated_at} from the control planes, never from git.",
         "MANAGED: declared and live. DRIFTED: declared, live differs. ORPHAN: live, declared nowhere.",
-        "GHOST: declared, not live. UNKNOWN: the plane could not be read this run.",
+        "GHOST: declared, not live. UNKNOWN: the plane could not be read this run; PARTIAL: part of it was.",
         "",
         "| plane | MANAGED | DRIFTED | ORPHAN | GHOST | read |",
         "|---|---:|---:|---:|---:|---|",
@@ -659,7 +734,7 @@ def write_table(path, rows, counts, blind, generated_at):
     for p, c in counts.items():
         lines.append(
             f"| {p} | {c['MANAGED']} | {c['DRIFTED']} | {c['ORPHAN']} | {c['GHOST']} | "
-            f"{'UNKNOWN' if c.get('UNKNOWN') else 'yes'} |"
+            f"{c.get('read', 'yes')} |"
         )
     if blind:
         lines += ["", "## Not read this run", ""] + [f"- {b}" for b in blind]
@@ -734,9 +809,14 @@ def main() -> int:
         )
         declared = tofu_declared(blind) if needs_state else {}
         drifted = tofu_drift(blind) if ("oci" in planes and not args.no_drift) else {}
+        drift_read = (
+            "oci" in planes
+            and not args.no_drift
+            and not any(b.startswith("oci: drift unread") for b in blind)
+        )
         for p in planes:
             if p == "oci":
-                rows += plane_oci(out, args, declared, drifted, blind)
+                rows += plane_oci(out, args, declared, drifted, blind, drift_read)
             elif p == "kubernetes":
                 rows += plane_kubernetes(out, args, blind)
             elif p in ("github", "cloudflare", "tailscale"):
@@ -752,6 +832,9 @@ def main() -> int:
                         (out / "raw").mkdir(parents=True, exist_ok=True)
                         mac_snapshot.write_text(json.dumps(got, indent=1))
 
+    blind[:] = list(
+        dict.fromkeys(blind)
+    )  # one line per cause, however many queries hit it
     counts = summarise(rows, planes, blind)
     (out / "inventory.json").write_text(
         json.dumps(
@@ -767,27 +850,33 @@ def main() -> int:
     )
     write_table(out / "inventory.md", rows, counts, blind, generated_at)
     for p, c in counts.items():
-        if c.get("UNKNOWN"):
-            print(
-                f"BLIND   inventory  {p}  UNKNOWN: "
-                + "; ".join(b for b in blind if b.startswith(p + ":"))[:200]
-            )
+        tally = (
+            f"MANAGED {c['MANAGED']}  DRIFTED {c['DRIFTED']}  "
+            f"ORPHAN {c['ORPHAN']}  GHOST {c['GHOST']}"
+        )
+        if c["read"] == "UNKNOWN":
+            print(f"BLIND   inventory  {p}  UNKNOWN: nothing of this plane was read")
+        elif c["read"] == "PARTIAL":
+            print(f"PARTIAL inventory  {p}  {tally}  (part of the plane was not read)")
         else:
-            print(
-                f"ok      inventory  {p}  MANAGED {c['MANAGED']}  DRIFTED {c['DRIFTED']}  "
-                f"ORPHAN {c['ORPHAN']}  GHOST {c['GHOST']}"
-            )
+            print(f"ok      inventory  {p}  {tally}")
     for b in blind:
-        if ":" not in b:
-            print(f"BLIND   inventory  {b}")
+        print(f"BLIND   inventory  {b}")
     print(
         f"ok      inventory  table {out / 'inventory.md'}  json {out / 'inventory.json'}"
     )
-    if all(counts[p].get("UNKNOWN") for p in planes):
+    if all(counts[p]["read"] == "UNKNOWN" for p in planes):
         return 2
     red = sum(counts[p][v] for p in planes for v in ("DRIFTED", "ORPHAN", "GHOST"))
-    if args.strict and red:
-        print(f"FAIL    inventory  {red} rows are not MANAGED (--strict)")
+    unread = [p for p in planes if counts[p]["read"] != "yes"]
+    if args.strict and (red or unread):
+        if red:
+            print(f"FAIL    inventory  {red} rows are not MANAGED (--strict)")
+        if unread:
+            print(
+                f"FAIL    inventory  {', '.join(unread)} not fully read; a plane the run "
+                "cannot see cannot be called MANAGED (--strict)"
+            )
         return 1
     return 0
 

@@ -219,13 +219,16 @@ def kube_env(clusters: list[dict], region: str, out: Path) -> dict[str, str] | N
         )
         if rc == 0:
             env["KUBECONFIG"] = str(cfg)
-            probe = subprocess.run(
-                ["kubectl", "get", "--raw", "/version"],
-                capture_output=True,
-                text=True,
-                env=env,
-                timeout=40,
-            )
+            try:
+                probe = subprocess.run(
+                    ["kubectl", "get", "--raw", "/version"],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=40,
+                )
+            except subprocess.TimeoutExpired:
+                continue
             if probe.returncode == 0:
                 return env
     return None

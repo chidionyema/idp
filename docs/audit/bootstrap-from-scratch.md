@@ -1,7 +1,7 @@
 # Rebuilding this estate from nothing
 
 Founder, 2026-08-31: "i need estate audit and explain how we cann bootstrap estate fron scratch we
-need to start all over again", then "THIS PROCEES NEEDS AUTOMATION and rerunnable".
+need to start all over again," then "THIS PROCEES NEEDS AUTOMATION and rerunnable."
 
 The audit is `bin/idp-estate-audit`; its answer is
 [what the estate actually runs](estate-inventory.md) and it is regenerated, never typed. This page
@@ -30,7 +30,7 @@ Those are not work.
 
 Sixteen persistent volumes hold the estate's data, and all sixteen are provisioned with reclaim
 policy `Delete`: deleting a claim destroys the volume with it. No Terraform can bring that data
-back. `bin/idp-estate-backup` covers them, is idempotent, and exits non-zero while any volume is
+back. `bin/idp-estate-backup` covers them, is safe to run again, and exits non-zero while any volume is
 uncovered — so it can be a scheduled row rather than a morning of typing.
 
 Nothing else in this document may start until that command exits zero.
@@ -39,12 +39,12 @@ Nothing else in this document may start until that command exits zero.
 
 **Layer 0 — the ground the state stands on.** The compartment, the object-storage bucket
 `estate-tofu-state`, and the S3-compatible credential that reaches it. This is the chicken and the
-egg: it is the backend every other layer stores its state in, so it has to be created with local
+egg: it is the store every other layer keeps its state in, so it has to be created with local
 state and then migrated. *Code: does not exist.* It is the one piece that must be written before
 any of the rest can be applied to an empty tenancy.
 
 **Layer 1 — identity.** Four users, three groups, two policies, the vault and its keys. Under
-LAW 52 one root credential per provider is set by hand and the pipeline mints the rest, so this
+Under the one-root rule, one root credential per provider is set by hand and the pipeline mints the rest, so this
 layer's job is to describe the shape, not to hold any value. *Code: partly exists* —
 `platform/oci/identity/` and `platform/oci/iam.tf` already hold six policies, the dynamic group
 and the domain apps; the users, the groups and the two remaining policies are not described.
