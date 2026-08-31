@@ -150,3 +150,12 @@ def test_the_login_drill_walks_the_second_hop_and_the_drill_user_may() -> None:
     assert block and "oci_identity_domains_user.drill.id" in block.group(1), (
         "drill user not granted the Langfuse app: IDCS stops it"
     )
+
+
+def test_a_first_single_sign_on_may_create_the_account() -> None:
+    """crew#307: with signUpDisabled the drill user's first SSO sign-in threw in createUser
+    (OAuthCreateAccount) -- the identity domain's app grant is the gate, not this flag."""
+    values = yaml.safe_load(VALUES.read_text())
+    assert values["langfuse"]["features"]["signUpDisabled"] is False, (
+        "signUpDisabled sets AUTH_DISABLE_SIGNUP: a first single sign-on ends at OAuthCreateAccount"
+    )
