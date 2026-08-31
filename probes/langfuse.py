@@ -33,10 +33,13 @@ def http(url, auth=None, timeout=TIMEOUT_S, data=None, bearer=None, headers=None
     makes it a JSON POST. headers adds vendor headers (SigNoz reads SIGNOZ-API-KEY)."""
     if not url.startswith("https://"):
         return 0, "refused: only https targets"
-    headers = {"Accept": "application/json", "User-Agent": "idp-prove/1"}
+    base_headers = {"Accept": "application/json", "User-Agent": "idp-prove/1"}
     if data is not None:
-        headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, headers=headers, data=data)  # noqa: S310
+        base_headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, headers=base_headers, data=data)  # noqa: S310
+    # The caller's headers ride on top of the defaults. A local named `headers` once shadowed the
+    # parameter here, so the SigNoz key was never sent and every keyed row read 401 (verdict-signoz
+    # run 33369505931, 2026-08-31).
     for k, v in (headers or {}).items():
         req.add_header(k, v)
     if bearer:
