@@ -261,6 +261,31 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
     # The route may skip oauth2-proxy only when it says so AND exposes nothing but the OTLP /v1/
     # paths, AND every rule carries a basicAuth Middleware whose Secret an ExternalSecret in the
     # same file pulls from the vault (platform/oci/otlp-ingest.tf writes the htpasswd line).
+    # The Architect's Telegram webhook door (crew#736): Telegram's delivery fleet POSTs updates
+    # and cannot pass a browser login. The route may skip oauth2-proxy only when it says so AND
+    # exposes nothing but the exact /telegram path, AND gateway.yaml beside it proves webhook mode
+    # is on with the secret token minted: the pinned fork's adapter registers that token with
+    # Telegram (setWebhook secret_token), drops any POST that does not echo it in
+    # X-Telegram-Bot-Api-Secret-Token, and refuses to start without it (GHSA-3vpc-7q5r-276h),
+    # so the door is never fail-open.
+    if (route["metadata"].get("annotations") or {}).get(
+        "idp.estate/auth"
+    ) == "telegram-webhook-secret-token":
+        paths = [
+            m.get("path", {})
+            for rule in route["spec"]["rules"]
+            for m in rule.get("matches", [])
+        ]
+        assert paths and all(
+            p == {"type": "Exact", "value": "/telegram"} for p in paths
+        ), (
+            f"{f}: annotated telegram-webhook-secret-token but exposes a path other than /telegram: {paths}"
+        )
+        gw = (pathlib.Path(f).parent / "gateway.yaml").read_text()
+        assert "TELEGRAM_WEBHOOK_SECRET" in gw and "TELEGRAM_WEBHOOK_URL" in gw, (
+            f"{f}: annotated telegram-webhook-secret-token but gateway.yaml mints no webhook secret or sets no webhook URL"
+        )
+        return
     if (route["metadata"].get("annotations") or {}).get(
         "idp.estate/auth"
     ) == "edge-basic-auth":

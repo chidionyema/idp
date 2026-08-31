@@ -51,7 +51,17 @@ TIMEOUT_EXCEPTIONS = {
 
 # hermes-agent-a2a: the agent card is written once at bootstrap and never rotated by the
 # vault; refreshing it is a deliberate no ("0"), not a missed default.
-REFRESH_EXCEPTIONS = {"hermes-agent-a2a": "0"}
+# hermes-agent-env carries a GithubAccessToken the generator mints fresh on EVERY sync, so each
+# refresh changes the Secret and Reloader rolls the gateway: at the 10m default the bot was down
+# ~4.5 of every 10 minutes (crew#736, 2026-08-31). 45m is the vendor ceiling (installation tokens
+# live 60m); the vault-to-pod leg for this one row is 45m, not 25m, and says so here.
+# hermes-agent-webhook: the Telegram webhook secret token, generated once like the a2a bearer;
+# a rotation under a running gateway is a deliberate change (gateway.yaml, crew#736).
+REFRESH_EXCEPTIONS = {
+    "hermes-agent-a2a": "0",
+    "hermes-agent-env": "45m",
+    "hermes-agent-webhook": "0",
+}
 
 
 def flux_docs():
