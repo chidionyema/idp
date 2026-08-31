@@ -58,6 +58,7 @@ PR alongside these.
 | `require-availability` | Enforce | Founder-facing workloads survive losing one node | `scheduling` | `platform/scheduling/require-availability.yaml` |
 | `require-catalogue-entity` | Enforce | Everything that serves a port names its catalogue entity | `edge` | `platform/edge/require-catalogue-entity.yaml` |
 | `require-priority-class` | Audit 1, Enforce 2 | Require a PriorityClass on platform workloads | `scheduling` | `platform/scheduling/require-priority-class.yaml` |
+| `require-registry-host` | Audit | Every image names its registry | `edge` | `platform/edge/require-registry-host.yaml` |
 | `secrets-not-from-env-vars` | Audit | Disallow Secrets from Env Vars in CEL expressions | `edge` | `platform/edge/kyverno-secrets-policy.yaml` |
 <!-- admission-policies:end -->
 
