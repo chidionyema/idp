@@ -13,9 +13,18 @@ set -uo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 K="kubectl --request-timeout=60s"
 FAILED=""
-step() { local name="$1"; shift; local out rc; out=$("$@" 2>&1); rc=$?
-  printf '%-5s %-22s rc=%-3s %s\n' "$([ $rc -eq 0 ] && echo ok || echo FAIL)" "$name" "$rc" "$(printf %s "$out" | tail -1 | cut -c1-110)"
-  [ $rc -eq 0 ] || { FAILED="$FAILED $name"; printf '%s\n' "$out" | tail -6 | sed 's/^/      | /'; }; return $rc; }
+BLIND=""
+# BLIND verdict (2026-08-31, run 33384482689): a probe that never reached the workload's node was
+# graded FAIL, and 13 "broken" rows were one dead kubelet. Cannot-measure is not measured-broken:
+# such rows read BLIND, are listed separately, and still fail the playbook -- BLIND is never green.
+blind_out() { printf %s "$1" | grep -qE 'watch closed before UntilWithoutRetry timeout|error dialing backend|unable to upgrade connection'; }
+step() { local name="$1"; shift; local out rc v; out=$("$@" 2>&1); rc=$?
+  if [ $rc -eq 0 ]; then v=ok; elif blind_out "$out"; then v=BLIND; else v=FAIL; fi
+  printf '%-5s %-22s rc=%-3s %s\n' "$v" "$name" "$rc" "$(printf %s "$out" | tail -1 | cut -c1-110)"
+  case $v in
+    FAIL) FAILED="$FAILED $name"; printf '%s\n' "$out" | tail -6 | sed 's/^/      | /' ;;
+    BLIND) BLIND="$BLIND $name"; echo '      | unmeasured: the probe never reached the workload (node/kubelet unreachable); this row proves nothing either way' ;;
+  esac; return $rc; }
 show() { local name="$1"; shift; echo "--- $name"; "$@" 2>&1 | head -60; }
 # show_redacted is show for anything that prints a workload's own output: same shape, every line
 # through redact() first, so reading a log is never the thing that leaks a token (LAW 21).
@@ -1213,5 +1222,7 @@ case "${1:-}" in
   registries-conf) pb_registries_conf ;;
   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
 esac
-[ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }
-echo "FAIL  break-glass $1 broken:$FAILED"; exit 1
+[ -z "$FAILED" ] && [ -z "$BLIND" ] && { echo "PASS  break-glass $1"; exit 0; }
+[ -n "$BLIND" ] && echo "BLIND break-glass $1 unmeasured:$BLIND"
+[ -n "$FAILED" ] && echo "FAIL  break-glass $1 broken:$FAILED"
+exit 1
