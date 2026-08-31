@@ -719,7 +719,10 @@ else say "BLIND kyverno  helm or kyverno CLI not installed; HelmRelease renders 
 if [ "${dirs:-}" = skip ]; then say "ok    types    no platform dir changed against ${IDP_CI_BASE:-main}; every render was type-checked on main"
 elif [ ! -d "$tmp/render" ]; then say "BLIND types    rung 9 kept no render; nothing was type-checked"; fail=1
 else
-  kcf=$( (cd "$IDP" && bin/idp-kubeconform --rendered "$tmp/render") 2>&1 ); kcf_rc=$?
+  # $dirs is passed so a render that died early (a chart download reset by the peer, as main's
+  # own run 33355097800 did) is BLIND, never an `ok` over the files that happened to survive.
+  # shellcheck disable=SC2086
+  kcf=$( (cd "$IDP" && bin/idp-kubeconform --rendered "$tmp/render" $dirs) 2>&1 ); kcf_rc=$?
   if [ "$kcf_rc" = 0 ]; then say "ok    types    $(printf '%s' "$kcf" | tail -1 | sed 's/^ok *kubeconform *//')"
   elif [ "$kcf_rc" = 2 ]; then say "BLIND types    kubeconform did not judge the render:"; printf '%s\n' "$kcf" | sed 's/^/      /'; fail=1
   else say "FAIL  types    a rendered manifest does not match the type its schema declares:"; printf '%s\n' "$kcf" | sed 's/^/      /'; fail=1; fi

@@ -138,3 +138,32 @@ def test_the_entry_point_ci_uses_refuses_the_incident_shape_end_to_end(tmp_path)
         [str(SCRIPT), "--rendered", str(tmp_path)], capture_output=True, text=True
     )
     assert r.returncode == 0 and "invalid=0" in r.stdout, r.stdout + r.stderr
+
+
+def test_a_render_that_died_early_is_blind_not_an_ok_over_the_survivors(tmp_path):
+    """main's own run 33355097800 died this way: two chart downloads reset by the peer, so
+    bin/idp-kyverno-render copied out a partial render. Judging what survived and printing `ok`
+    is a pass over a subset -- silent-green, defect class 4 on this estate's ledger."""
+    _blind()
+    shutil.copy(FIXTURES / "good.yaml", tmp_path / "kz-platform_hermes-agent.yaml")
+    r = subprocess.run(
+        [
+            str(SCRIPT),
+            "--rendered",
+            str(tmp_path),
+            "platform/hermes-agent",
+            "platform/spire",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert "BLIND" in r.stdout and "platform/spire" in r.stdout, r.stdout
+    assert "no verdict is given for any of it" in r.stdout, r.stdout
+    # and the same directory, with nothing missing, is a clean pass -- the guard discriminates.
+    r = subprocess.run(
+        [str(SCRIPT), "--rendered", str(tmp_path), "platform/hermes-agent"],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0 and "invalid=0" in r.stdout, r.stdout + r.stderr

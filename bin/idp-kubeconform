@@ -48,7 +48,9 @@ belongs -- a class nothing in this pipeline graded before. Closing the substitut
 live tree needs a stand-in value per key and is not this change.
 
 Usage: bin/idp-kubeconform [platform-dir ...]      # renders, then judges (a second render)
-       bin/idp-kubeconform --rendered DIR          # judges a render the caller already has
+       bin/idp-kubeconform --rendered DIR [dir...] # judges a render the caller already has;
+                                                   # naming the dirs it should hold makes a
+                                                   # partial render BLIND, never a pass
 Exit 0 clean, 1 with each invalid or unrenderable resource printed, 2 (BLIND, never a pass) when
 kubeconform is not installed or the render did not produce anything to judge.
 """
@@ -151,11 +153,14 @@ def main(argv: list[str]) -> int:
         return 2
     handed_over = None
     if argv and argv[0] == "--rendered":
-        if len(argv) != 2:
-            print("usage: bin/idp-kubeconform --rendered DIR", file=sys.stderr)
+        if len(argv) < 2:
+            print(
+                "usage: bin/idp-kubeconform --rendered DIR [platform-dir ...]",
+                file=sys.stderr,
+            )
             return 64
         handed_over = pathlib.Path(argv[1])
-        argv = []
+        argv = argv[2:]
     if handed_over is not None:
         rendered = sorted(handed_over.glob("*.yaml"))
         if not rendered:
@@ -163,7 +168,20 @@ def main(argv: list[str]) -> int:
                 f"BLIND  {handed_over} holds no rendered YAML; nothing was type-checked"
             )
             return 2
-        return judge(rendered, [f"handed over: {handed_over}"])
+        # A handed-over render can be PARTIAL: bin/idp-kyverno-render copies out whatever it
+        # produced even when it died early, and on 2026-08-31 main's own run 33355097800 died
+        # exactly that way -- two chart downloads reset by the peer, so platform/healing and
+        # platform/spire never rendered. Judging the survivors and printing `ok` would be a pass
+        # over a subset, this estate's silent-green class (4 on the ledger). Any dir named on the
+        # command line whose render is missing makes the whole verdict BLIND.
+        gap = missing_dirs(argv, rendered) if argv else []
+        if gap:
+            print(
+                f"BLIND  the handed-over render is missing {', '.join(gap)}; "
+                "a subset was not judged and no verdict is given for any of it"
+            )
+            return 2
+        return judge(rendered, argv or [f"handed over: {handed_over}"])
     dirs = platform_dirs(argv)
     if not dirs:
         print("BLIND  no platform dir to render; nothing was type-checked")
