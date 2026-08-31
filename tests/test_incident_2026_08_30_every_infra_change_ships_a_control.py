@@ -163,3 +163,26 @@ def test_no_other_fixture_in_the_tree_is_refused_by_this_rule():
         if "rule=control_shipped" in _rules(fx):
             refused.append(fx.name)
     assert not refused, f"these fixtures are refused by control_shipped: {refused}"
+
+
+def test_a_control_written_in_backticks_is_accepted(tmp_path):
+    """LAW 38, found on #1047 the morning after this rule landed. Every body in this estate
+    writes paths in backticks -- the five Definition-of-done rows do, and so does this rule's own
+    fix hint. A `Control: `tests/x.py`` line naming a control the pull request really ships was
+    refused with "is not a control this PR ships", which tells the author nothing about the
+    backticks. Both spellings must be accepted, and a path the PR does not ship must still be
+    refused in either of them, or the strip would have bought a hole instead of a fix."""
+    shipped = "tests/test_incident_2026_08_30_every_infra_change_ships_a_control.py"
+    d = json.loads((FIX / "opmodel-no-control.json").read_text())
+    d["pr"]["files"] = [*d["pr"]["files"], shipped]
+    for body in (f"Control: {shipped}\n", f"Control: `{shipped}`\n"):
+        d["pr"]["body"] = body
+        p = tmp_path / "pr.json"
+        p.write_text(json.dumps(d))
+        assert RULE not in _rules(p), body
+    d["pr"]["body"] = (
+        "Control: `tests/test_a_file_this_pull_request_does_not_ship.py`\n"
+    )
+    p = tmp_path / "pr.json"
+    p.write_text(json.dumps(d))
+    assert RULE in _rules(p)

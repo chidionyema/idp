@@ -422,7 +422,13 @@ touches_the_world if {
 	startswith(f, p)
 }
 
-control_line := trim_space(m[0][1]) if {
+# The backticks are stripped, and that is not cosmetic. Every body in this estate writes a path
+# in backticks -- the five DoD rows above this line do, and so does the fix hint this rule prints.
+# Without the strip, an author who names a real control the pull request really ships is refused
+# with "is not a control this PR ships", which is a guard refusing correct work: LAW 38, and an
+# outage of the gate rather than of the rule it protects. Found on #1047, 2026-08-31, by an author
+# who had shipped the control and could not tell from the message what was wrong with the line.
+control_line := trim(trim_space(m[0][1]), "`") if {
 	m := regex.find_all_string_submatch_n(`(?m)^Control:[ \t]*(\S.*)$`, input.pr.body, 1)
 	count(m) == 1
 }
