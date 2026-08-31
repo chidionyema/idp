@@ -216,6 +216,25 @@ def _oauth2_proxy_in_front(state: dict) -> None:
                     f"{p}: the basicAuth Secret is pulled by no ExternalSecret in the file"
                 )
             continue
+        if auth == "telegram-webhook-secret-token":
+            # Otto's Telegram door (crew#736): Telegram's delivery fleet cannot pass a browser
+            # login. The adapter registers a secret token with setWebhook and drops any POST that
+            # does not echo it (GHSA-3vpc-7q5r-276h) -- so the route may expose exactly /telegram,
+            # and gateway.yaml in the same directory must mint that token in-cluster and hand the
+            # adapter its URL. The annotation alone is a label; this is the proof behind it.
+            paths = [
+                m.get("path", {})
+                for r in d["spec"]["rules"]
+                for m in r.get("matches", [])
+            ]
+            assert paths and all(
+                x == {"type": "Exact", "value": "/telegram"} for x in paths
+            ), f"{p}: telegram-webhook route exposes {paths}"
+            gw = (p.parent / "gateway.yaml").read_text()
+            assert "hermes-agent-webhook" in gw and "TELEGRAM_WEBHOOK_URL" in gw, (
+                f"{p}: annotated telegram-webhook-secret-token but gateway.yaml mints no token"
+            )
+            continue
         assert auth == "bearer-master-key", (
             f"{p}: route {d['metadata']['name']} has no oauth2-proxy Middleware in front ({refs}) and no idp.estate/auth annotation"
         )

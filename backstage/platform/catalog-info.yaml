@@ -688,10 +688,26 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: agents
+  providesApis:
+    - api:default/hermes-agent-api
   dependsOn:
     - component:default/layer-scheduling
     - component:default/layer-secret-store
     - component:default/layer-alerts-github
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: hermes-agent-api
+  description: 'Hermes: the HTTP interface, answering at otto.${ESTATE_ZONE}.'
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/agents
+  definition: |
+    # Not published. hermes-agent answers at otto.${ESTATE_ZONE}; this entity
+    # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component

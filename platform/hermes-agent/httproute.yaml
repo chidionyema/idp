@@ -26,6 +26,11 @@ spec:
   rules:
     - matches:
         - path: { type: Exact, value: /telegram }
+      filters:
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: friendly-errors }
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: edge-headers }
       backendRefs:
         - name: hermes-agent-gateway
           port: 8443

@@ -1,7 +1,7 @@
 # Otto's Telegram webhook door
 
 The Architect (hermes-agent gateway) receives Telegram updates by webhook, not polling
-(crew#736; founder blueprint 2026-08-31T15:24Z: a poller is a single consumer, so every
+([tracked on the crew board](https://github.com/chidionyema/crew/issues/736); founder blueprint 2026-08-31T15:24Z: a poller is a single consumer, so every
 deploy took the bot down; a webhook is an ordinary HTTP service and Telegram queues and
 retries every POST the pod misses).
 
@@ -10,7 +10,7 @@ retries every POST the pod misses).
   the pinned fork's adapter sees the variable, starts an HTTP server on port 8443 and registers
   the URL with Telegram itself (setWebhook) on every boot. No hand step, ever.
 - The route is `platform/hermes-agent/httproute.yaml` (listener `https-otto` on the shared
-  Gateway, prospector `deploy/k8s/base/edge.yaml`). external-dns writes the DNS record,
+  Gateway, `prospector/deploy/k8s/base/edge.yaml`). external-dns writes the DNS record,
   cert-manager adds the SAN to the one edge certificate. No console, no hand step.
 - Every POST must echo the token Telegram was given in the `X-Telegram-Bot-Api-Secret-Token`
   header; the adapter drops anything else and refuses to boot without the token
@@ -27,9 +27,9 @@ and no banner is announced (hermes-v2 config.yaml `gateway_restart_notification:
    and read gateway-log in the run: webhook mode prints `Webhook server listening on *:8443/telegram`.
 2. Telegram's own view: the adapter logs `get_webhook_info` state; `pending_update_count`
    climbing with the pod Ready means the edge path is broken — check the `https-otto` listener,
-   the HTTPRoute, and cert-manager's certificate in that order, from the run's playbook output.
+   the route, and cert-manager's certificate in that order, from the run's playbook output.
 
 ## Rollback
-Revert the idp PR: the env vars disappear, the adapter falls back to polling and deletes the
+Revert the idp pull request: the env vars disappear, the adapter falls back to polling and deletes the
 stale webhook registration itself on connect (`_delete_webhook_best_effort`). The listener and
 route can stay; they serve nothing.
