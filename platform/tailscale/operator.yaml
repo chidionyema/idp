@@ -66,6 +66,14 @@ spec:
         kind: HelmRepository
         name: tailscale
   values:
+    # The proxy image carries the same short name (`tailscale/tailscale`) from the same chart
+    # values file, so it is unresolvable on these nodes for the same reason; the operator only
+    # pulls it when it makes a proxy, which is why the operator's own image failed first. The tag
+    # answers 200 on Docker Hub (measured 2026-08-30) and the hermes-agent sidecar already runs
+    # this exact image from a fully-qualified reference.
+    proxyConfig:
+      image:
+        repository: docker.io/tailscale/tailscale
     # No `oauth:` block here on purpose (see the header comment): the chart falls back to reading
     # the pre-created `operator-oauth` Secret (external-secret.yaml) when this is left unset.
     apiServerProxyConfig:
@@ -79,6 +87,18 @@ spec:
     # platform/tailscale, run 2026-08-28). The chart exposes exactly these three fields; this is
     # the estate's own restricted posture applied through them, not a departure from it.
     operatorConfig:
+      # Run 33341390235, 2026-08-30: the chart's default is the bare `tailscale/k8s-operator`
+      # (tailscale/tailscale cmd/k8s-operator/deploy/chart/values.yaml at v1.102.3, read
+      # 2026-08-30), the OKE nodes run cri-o with short-name mode enforcing, and the kubelet
+      # answered "short name mode is enforcing, but image name tailscale/k8s-operator:v1.102.3
+      # returns ambiguous list". The Deployment stalled, the HelmRelease sat Failed, and
+      # Kustomization/guacamole waited behind it. Same class as the seaweedfs image in
+      # platform/observability/langfuse-values.yaml (crew#325), and the same fix: name the
+      # registry. docker.io is where the chart means to point -- the tag answers 200 there
+      # (registry-1.docker.io/v2/tailscale/k8s-operator/manifests/v1.102.3, measured 2026-08-30).
+      # platform/edge/require-registry-host.yaml is the guard that stops the class returning.
+      image:
+        repository: docker.io/tailscale/k8s-operator
       podSecurityContext:
         runAsNonRoot: true
         seccompProfile: { type: RuntimeDefault }
