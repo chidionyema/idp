@@ -1,3 +1,5 @@
+# button: Check SigNoz and sign the result
+# founder: Checks that SigNoz answers, answers its key, refuses a caller without one, and that a signed-in person reaches it; signs the result.
 # crew#631 CP9: the prover for SigNoz, the third surface. Same machine identity as verdict-langfuse
 # (GitHub OIDC -> OCI session token), so the service-account key, the drill password, the cluster
 # read and the signing key are reachable here and nowhere an agent runs. L1/L2/NEGATIVE go through
@@ -11,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       nonce:
-        description: "nonce issued by the control plane for this request (blank: the run mints one)"
+        description: "Request code for this run (leave blank; the run makes one)"
         required: false
         default: ""
   push:

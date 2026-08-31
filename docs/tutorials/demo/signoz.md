@@ -1,7 +1,7 @@
-# Demo: the SigNoz verdict
+# Demo: The SigNoz check
 
 Every hour at :47 the estate signs a statement about the SigNoz that is running: it answers, its
-dashboards API answers the prover's key, it refuses a caller holding no key, and the front-door
+dashboards API answers the checker's key, it refuses a caller holding no key, and the front-door
 walk to `signoz.<zone>` landed where a person would land. Run it by hand from a laptop, where the
 vault is not readable, and the same command lands BLOCKED with the reason instead of pretending:
 
@@ -17,7 +17,7 @@ BLOCKED prove  2/4 assertions on docker.io/signoz/signoz@ rev 6 nonce local-ab24
 
 Read the two `ok` rows first: the live edge answered a keyless read of `/api/v2/dashboards` with
 401, so the door is shut to anyone without the key, measured, not assumed. The `BLOCKED` line is
-the point of the design: with no key and no browser the prover says so and signs nothing, where the
+the point of the design: with no key and no browser the checker says so and signs nothing, where the
 old shape would have read a login screen and called it green.
 
 The hourly run on the cluster's identity has the key, the browser and the signing key, and prints:

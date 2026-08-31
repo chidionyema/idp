@@ -2,20 +2,20 @@
 
 ## What it is for
 
-SigNoz is the estate's telemetry backend (`platform/observability/signoz.yaml`). Before this, the
-only statement about it was "the pod is Running", which says nothing about whether it answers, whom
+SigNoz is the estate's telemetry store (`platform/observability/signoz.yaml`). Before this, the
+only statement about it was "the pod is Running," which says nothing about whether it answers, whom
 it answers, or whether a person who signed in at the front door can reach it. The verdict is a
-signed, hourly, machine-checked answer to those four questions, from the same prover identity that
-signs the Langfuse and catalogue verdicts (crew#631), so a buyer's engineer reads one page for all
+signed, hourly, machine-checked answer to those four questions, from the same checker identity that
+signs the Langfuse and catalogue checks, so a buyer's engineer reads one page for all
 three surfaces and sees the same shape.
 
 The negative control is the part that matters. `/api/v2/dashboards` is the one path a program is
-allowed to reach without the browser login, and every hour the prover proves that a caller holding
+allowed to reach without the browser login, and every hour the checker proves that a caller holding
 no key is refused there. If SigNoz ever answers that caller, the row turns red the same hour.
 
 ## What it costs
 
-Nothing new runs. One HTTPRoute on the existing edge, one GitHub Actions job an hour (the same
+Nothing new runs. One route on the existing edge, one GitHub Actions job an hour (the same
 runner minutes the Langfuse verdict already spends), one service account inside SigNoz with the
 vendor's read-only role, one entry in the vault.
 
@@ -36,7 +36,7 @@ tests/test_front_door_every_route_is_behind_the_one_login.py   refuses the route
 
 The key is born in the vault entry `signoz-prover`, field `key`, minted over a port-forward from
 the root login Terraform wrote (`signoz-root-email`, `signoz-root-password`); no person sees it and
-no console is touched (R52). The session and service-account endpoints stay behind the one login.
+no console is touched (the one-root-credential rule). The session and service-account endpoints stay behind the one login.
 
 ## How to stop it
 
@@ -47,6 +47,6 @@ a cluster session (`oke-check.yml -f mode=apply`).
 
 ## What it does not do
 
-It does not make SigNoz take the estate's one login; SigNoz community has no OIDC or SAML
-(crew#718 CP2). Until it does, the L3 layer marks the verdict BLOCKED with that reason, and the
+It does not make SigNoz take the estate's one login; SigNoz's community edition has no single sign-on.
+Until it does, the signed-in walk marks the check as blocked with that reason, and the
 verdict is never green over a login screen.
