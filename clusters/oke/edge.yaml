@@ -73,7 +73,7 @@ spec:
   timeout: 10m
   # The only place OKE's load balancer is named (R36): platform/edge stays provider-free.
   patches:
-    - target: { kind: HelmRelease, name: traefik, namespace: edge }
+    - target: {kind: HelmRelease, name: traefik, namespace: edge}
       patch: |
         apiVersion: helm.toolkit.fluxcd.io/v2
         kind: HelmRelease
@@ -160,9 +160,9 @@ spec:
   # images carry main-85 in ghcr, listed 2026-08-30T22:0xZ.
   images:
     - name: ghcr.io/chidionyema/prospector-store-web
-      newTag: main-85-0299e2c4bbc059f58cabe2e6dde968d64fae20bd # {"$imagepolicy": "flux-system:prospector-store-web:tag"}
+      newTag: main-94-3c27661a0a54df1b4cba763b60ae3cd71863c2d3 # {"$imagepolicy": "flux-system:prospector-store-web:tag"}
     - name: ghcr.io/chidionyema/prospector-store-api
-      newTag: main-85-0299e2c4bbc059f58cabe2e6dde968d64fae20bd # {"$imagepolicy": "flux-system:prospector-store-api:tag"}
+      newTag: main-94-3c27661a0a54df1b4cba763b60ae3cd71863c2d3 # {"$imagepolicy": "flux-system:prospector-store-api:tag"}
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -177,7 +177,6 @@ spec:
       # The Gateway's catalogue and auth listeners name the zone as ${ESTATE_ZONE} (prospector#734).
       - kind: ConfigMap
         name: estate-config
-
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
