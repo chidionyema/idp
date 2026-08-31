@@ -12,9 +12,10 @@
 #   bin/idp-kube --refresh get nodes          # rebuild the kubeconfig now
 #   bin/idp-kube                              # print the kubeconfig path only
 # Grading, same shape as every bin/idp-*: `BLIND   kube  <why>` exit 2 when no cluster could be
-# reached; the why names bin/idp-oci-login when the session is the gap. kubectl's own exit code
-# otherwise. rule-guard (claude-guards policy/command.rego, bare_kubectl) refuses bare kubectl and
-# names this file.
+# reached; the why is whatever bin/idp-cloud actually diagnosed -- the missing profile, the missing
+# compartment id, or the CLI's own error -- and this file adds no remedy of its own. kubectl's own
+# exit code otherwise. rule-guard (claude-guards policy/command.rego, bare_kubectl) refuses bare
+# kubectl and names this file.
 set -uo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 blind() { printf 'BLIND   kube  %s\n' "$1" >&2; exit 2; }
@@ -27,7 +28,12 @@ command -v kubectl >/dev/null || blind "kubectl is not installed"
 fresh=0
 if [ "$refresh" -eq 0 ] && [ -f "$KC" ] && [ -n "$(find "$KC" -mmin "-$MAX_MIN" 2>/dev/null)" ]; then fresh=1; fi
 if [ "$fresh" -eq 0 ]; then
-  cl=$("$IDP/bin/idp-cloud" cluster list 2>&1) || blind "cluster list failed: $(printf '%s' "$cl" | tail -1 | cut -c1-160) -- refresh the session with bin/idp-oci-login"
+  # idp-cloud names its own cause now, so relay it instead of appending one. The old tail said
+  # "refresh the session with bin/idp-oci-login" on every failure, including the ones a session
+  # cannot fix: on 2026-08-31 the real fault was an empty --compartment-id, and a browser login
+  # cannot supply a compartment id. The one instruction the operator got was the one that could
+  # not work. An instrument that names the wrong action is worse than one that names none.
+  cl=$("$IDP/bin/idp-cloud" cluster list 2>&1) || blind "cluster list failed: $(printf '%s' "$cl" | tail -1 | sed -E 's/^BLIND +cloud +//' | cut -c1-240)"
   # crew#345: the cluster is picked by name (OCI_CLUSTER_NAME, default estate), never by position;
   # a compartment with several ACTIVE clusters made NR==1 mint a kubeconfig for the wrong one.
   want="${OCI_CLUSTER_NAME:-estate}"
@@ -38,4 +44,8 @@ if [ "$fresh" -eq 0 ]; then
   chmod 600 "$KC"
 fi
 if [ $# -eq 0 ]; then printf 'ok      kube  kubeconfig %s\n' "$KC"; exit 0; fi
-KUBECONFIG="$KC" exec kubectl "$@"
+# The kubeconfig authenticates through an exec credential plugin, so kubectl runs `oci ce cluster
+# generate-token` itself and that child prints OCI's API-key label warning onto this command's
+# stderr, above kubectl's own output, on every single call. It is not a diagnosis and it is not
+# ours to emit; suppressing it is what the warning text itself asks for.
+KUBECONFIG="$KC" SUPPRESS_LABEL_WARNING=True exec kubectl "$@"

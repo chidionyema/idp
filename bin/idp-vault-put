@@ -12,17 +12,16 @@ set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 MERGE=0; [ "${1:-}" = --merge ] && { MERGE=1; shift; }
 DELETE=0; [ "${1:-}" = --delete ] && { DELETE=1; shift; }
-# SECRET_NAME, not `name`: bin/idp-oci-whoami is sourced below and its profile loop assigned `name`,
-# so the github-app entry was created as "DEFAULT" (vault-seed run 33089277235, crew#503).
+# SECRET_NAME, not `name`: bin/idp-oci-whoami used to be sourced below and its profile loop assigned
+# `name`, so the github-app entry was created as "DEFAULT" (vault-seed run 33089277235, crew#503).
+# It is a subprocess behind `idp-cloud identity env` now and can no longer reach this shell at all.
 SECRET_NAME=$1; shift
-# No profile is a hard stop: ~/.oci/config has no DEFAULT, only session-token profiles. Discover the
-# live one the way every other bin/idp-* does (crew#503, 2026-08-27: an unset profile failed the write
-# after a one-time GitHub manifest code had already been spent).
-if [ -z "${OCI_CLI_PROFILE:-}" ]; then
-  # shellcheck source=idp-oci-whoami
-  source "$IDP/bin/idp-oci-whoami" >&2 || exit 2
-fi
-export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
+# No profile is a hard stop (crew#503, 2026-08-27: an unset profile failed the write after a
+# one-time GitHub manifest code had already been spent). This used to source bin/idp-oci-whoami and
+# then hardcode security_token; both were wrong by 2026-08-31, when ~/.oci/config grew a DEFAULT
+# API-key profile that whoami cannot see (it scans ~/.oci/sessions only) and that security_token
+# cannot use. bin/idp-cloud is the one door to the estate's OCI identity (crew#66).
+eval "$("$IDP/bin/idp-cloud" identity env)" || exit 2
 ENVF=${ESTATE_ENV_FILE:-$HOME/.estate/.env}
 [ "${VAULT_PUT_PREFLIGHT:-}" = 1 ] || [ -f "$ENVF" ] || { echo "BLIND: no env file at $ENVF"; exit 2; }
 export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True

@@ -11,6 +11,7 @@
 #   bin/idp-cloud secret delete NAME                  schedule deletion; absent is exit 0
 #   bin/idp-cloud secret describe NAME                JSON {"id","vault-id","key-id"} of the ACTIVE secret in the compartment; exit 1 NotFound, 3 Split
 #   bin/idp-cloud secret list [--vault VAULT_ID]      one ACTIVE secret name per line; --vault restricts to that vault only
+#   bin/idp-cloud identity env                       `export OCI_CLI_PROFILE=... OCI_CLI_AUTH=...` for eval; the one door to the estate's OCI identity
 #   bin/idp-cloud vault list                         one ACTIVE vault per line as "<display-name> <id>", sorted by name
 #   bin/idp-cloud bucket head NAME                   exit 0 "ok" if the bucket exists in the tenancy namespace; exit 1 with NotFound on stderr when absent, exit 2 BLIND when the namespace cannot be read
 #   bin/idp-cloud cluster list                       one ACTIVE cluster per line as "<name> <id>", sorted by name
@@ -82,28 +83,94 @@ done
 file_object_path() { printf '%s' "$IDP_CLOUD_FILE_ROOT/objects/$BUCKET/$NAME"; }
 file_secret_path() { printf '%s' "$IDP_CLOUD_FILE_ROOT/secrets/$NAME"; }
 
-# Resolve $C the same way every oci verb does: whoami, the security_token auth, the sops envelope,
-# the env override. Centralised so vault-list and cluster-list share the exact same shape (crew#66 CP5d).
+# One value out of the tfvars the provisioner already rendered. That file is the estate's own
+# record of how THIS machine talks to OCI -- compartment_ocid, oci_profile, oci_auth, region -- and
+# both the laptop and the runner have it (the runner has it and no age key, idp#490).
+oci_tfvar() {
+  [ -f "$IDP/platform/oci/terraform.tfvars" ] || return 0
+  awk -F'"' -v k="$1" '$0 ~ "^"k"[ \t]*=" {print $2; exit}' "$IDP/platform/oci/terraform.tfvars"
+}
+
+# Which auth mode a profile can actually use. This used to be the hard default `security_token`,
+# and on 2026-08-31 that default was the whole of the wrong BLIND line: the laptop's working
+# profile is DEFAULT, an API-key profile, and security_token is a mode it cannot use. The tfvars
+# spelling ("APIKey") is the estate's own recorded answer; the profile's shape in ~/.oci/config is
+# the fallback, because a session-token profile is exactly the one that names a security_token_file.
+# When neither is knowable (a runner with no config file and no oci_auth key) the old default stands.
+oci_auth_for_profile() {
+  local a cfg
+  # tfvars records ONE machine's answer, so it answers for the profile it names and no other.
+  a=""
+  [ "$1" = "$(oci_tfvar oci_profile)" ] && a=$(printf '%s' "$(oci_tfvar oci_auth)" | tr '[:upper:]' '[:lower:]')
+  case "$a" in
+    apikey|api_key) printf 'api_key'; return 0;;
+    securitytoken|security_token) printf 'security_token'; return 0;;
+    instanceprincipal|instance_principal) printf 'instance_principal'; return 0;;
+  esac
+  cfg=${OCI_CLI_CONFIG_FILE:-$HOME/.oci/config}
+  [ -f "$cfg" ] || { printf 'security_token'; return 0; }
+  awk -v p="[$1]" '$0==p{f=1;next} /^\[/{f=0} f&&/^[ \t]*security_token_file/{s=1} END{print s?"security_token":"api_key"}' "$cfg"
+}
+
+# Export the profile and auth mode into THIS shell -- not into a $(...) subshell. An export inside
+# a command substitution dies with it, which is why the old `export OCI_CLI_AUTH` on line 94 never
+# reached the `oci` call that needed it.
+oci_identity() {
+  export SUPPRESS_LABEL_WARNING=True
+  export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}
+  local p
+  p=${OCI_CLI_PROFILE:-}
+  [ -n "$p" ] || p=$(oci_tfvar oci_profile)
+  if [ -n "$p" ]; then
+    export OCI_CLI_PROFILE="$p"
+    export OCI_CLI_AUTH=${OCI_CLI_AUTH:-$(oci_auth_for_profile "$p")}
+    return 0
+  fi
+  # Last resort: discover a live browser session. As a SUBPROCESS, never `source`. idp-oci-whoami
+  # ends in `exit 2`; sourced, that kills the caller instead of returning a status, and sourced
+  # inside a command substitution it killed only the subshell and left $C silently empty.
+  p=$("$IDP/bin/idp-oci-whoami" 2>/dev/null) || return 2
+  [ -n "$p" ] || return 2
+  export OCI_CLI_PROFILE="$p" OCI_CLI_AUTH=security_token
+  return 0
+}
+
+# Resolve $C: the env override, the tfvars the provisioner already rendered (the runner has that
+# and no age key -- idp#490 check job: nodes went BLIND for this), then the sops envelope on a
+# laptop. Centralised so vault-list and cluster-list share the exact same shape (crew#66 CP5d).
 oci_compartment() {
-  local MAIN
-  MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
-  if [ -z "${OCI_CLI_PROFILE:-}" ]; then
-    # shellcheck source=idp-oci-whoami
-    source "$IDP/bin/idp-oci-whoami" >&2 || return 2
-  fi
-  export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
-  export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-  # Order: env, the tfvars the provisioner already rendered (the runner has that and no age key —
-  # idp#490 check job: nodes went BLIND for this), then the sops envelope on a laptop.
+  local MAIN T
   if [ -n "${OCI_COMPARTMENT_OCID:-}" ]; then printf '%s' "$OCI_COMPARTMENT_OCID"; return 0; fi
-  if [ -f "$IDP/platform/oci/terraform.tfvars" ]; then
-    local T; T=$(awk -F'"' '/^compartment_ocid/{print $2}' "$IDP/platform/oci/terraform.tfvars")
-    if [ -n "$T" ]; then printf '%s' "$T"; return 0; fi
-  fi
+  T=$(oci_tfvar compartment_ocid)
+  if [ -n "$T" ]; then printf '%s' "$T"; return 0; fi
+  MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
   sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml"
 }
 
+# Both halves, each named separately when it is the one that is missing. The old code ran
+# `C=$(oci_compartment)` and checked nothing, so a failed identity became an empty --compartment-id
+# and OCI answered `InvalidParameter: compartmentId is not available` -- which the caller then
+# reported as an expired session (2026-08-31, bin/idp-kube get nodes).
+oci_ready() {
+  oci_identity || blind "no OCI identity: OCI_CLI_PROFILE is unset, platform/oci/terraform.tfvars names no oci_profile, and no profile in ~/.oci/sessions has a valid token -- export OCI_CLI_PROFILE, or run bin/idp-oci-login"
+  C=$(oci_compartment 2>/dev/null)
+  [ -n "$C" ] || blind "no compartment id as profile ${OCI_CLI_PROFILE:-<unset>}: OCI_COMPARTMENT_OCID is unset, platform/oci/terraform.tfvars names no compartment_ocid, and the sops envelope did not decrypt -- export OCI_COMPARTMENT_OCID"
+}
+
 case "$prim" in
+  # bin/idp-vault-put and anything else outside this file used to source bin/idp-oci-whoami and
+  # then hardcode `OCI_CLI_AUTH=security_token` themselves, which is the same defect in a second
+  # place. `eval "$(bin/idp-cloud identity env)"` is the one door (crew#66: every other bin/idp-*
+  # goes through bin/idp-cloud). It prints assignments and nothing else, so eval is safe to read.
+  identity)
+    case "$verb" in
+      env)
+        oci_identity || blind "no OCI identity: OCI_CLI_PROFILE is unset, platform/oci/terraform.tfvars names no oci_profile, and no profile in ~/.oci/sessions has a valid token -- export OCI_CLI_PROFILE, or run bin/idp-oci-login"
+        printf 'export OCI_CLI_PROFILE=%s OCI_CLI_AUTH=%s SUPPRESS_LABEL_WARNING=True\n' "$OCI_CLI_PROFILE" "$OCI_CLI_AUTH"
+        ;;
+      *) blind "unknown identity $verb";;
+    esac
+    ;;
   object)
     case "$verb" in
       head)
@@ -206,13 +273,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
             MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
-            if [ -z "${OCI_CLI_PROFILE:-}" ]; then
-              # shellcheck source=idp-oci-whoami
-              source "$IDP/bin/idp-oci-whoami" >&2 || exit 2
-            fi
-            export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
-            export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-            C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+            oci_ready
             ids=$(oci vault secret list --compartment-id "$C" --name "$NAME" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].id" --output json 2>/dev/null | python3 -c 'import json,sys; [print(i) for i in json.load(sys.stdin)]' 2>/dev/null) || ids=""
             n=$(printf '%s\n' "$ids" | grep -c .)
             [ "$n" -le 1 ] || { echo "Split: secret $NAME is ACTIVE in $n vaults of the compartment; bin/idp-vault-split-guard names them" >&2; exit 3; }
@@ -241,13 +302,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
             MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
-            if [ -z "${OCI_CLI_PROFILE:-}" ]; then
-              # shellcheck source=idp-oci-whoami
-              source "$IDP/bin/idp-oci-whoami" >&2 || exit 2
-            fi
-            export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
-            export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-            C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+            oci_ready
             ids=$(oci vault secret list --compartment-id "$C" --name "$NAME" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].id" --output json 2>/dev/null | python3 -c 'import json,sys; [print(i) for i in json.load(sys.stdin)]' 2>/dev/null) || ids=""
             n=$(printf '%s\n' "$ids" | grep -c .)
             [ "$n" -le 1 ] || { echo "Split: secret $NAME is ACTIVE in $n vaults of the compartment; bin/idp-vault-split-guard names them" >&2; exit 3; }
@@ -280,13 +335,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
             MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
-            if [ -z "${OCI_CLI_PROFILE:-}" ]; then
-              # shellcheck source=idp-oci-whoami
-              source "$IDP/bin/idp-oci-whoami" >&2 || exit 2
-            fi
-            export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
-            export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-            C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+            oci_ready
             ids=$(oci vault secret list --compartment-id "$C" --name "$NAME" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].id" --output json 2>/dev/null | python3 -c 'import json,sys; [print(i) for i in json.load(sys.stdin)]' 2>/dev/null) || ids=""
             n=$(printf '%s\n' "$ids" | grep -c .)
             [ "$n" -le 1 ] || { echo "Split: secret $NAME is ACTIVE in $n vaults of the compartment; bin/idp-vault-split-guard names them" >&2; exit 3; }
@@ -313,13 +362,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
             MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
-            if [ -z "${OCI_CLI_PROFILE:-}" ]; then
-              # shellcheck source=idp-oci-whoami
-              source "$IDP/bin/idp-oci-whoami" >&2 || exit 2
-            fi
-            export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
-            export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-            C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+            oci_ready
             list=$(oci vault secret list --compartment-id "$C" --name "$NAME" --all --query "data[?\"lifecycle-state\"=='ACTIVE']" --output json 2>/dev/null) || list=""
             n=$(printf '%s\n' "$list" | jq 'length // 0' 2>/dev/null) || n=0
             [ "$n" -le 1 ] || { echo "Split: secret $NAME is ACTIVE in $n vaults of the compartment; bin/idp-vault-split-guard names them" >&2; exit 3; }
@@ -346,13 +389,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
             MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
-            if [ -z "${OCI_CLI_PROFILE:-}" ]; then
-              # shellcheck source=idp-oci-whoami
-              source "$IDP/bin/idp-oci-whoami" >&2 || exit 2
-            fi
-            export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
-            export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-            C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+            oci_ready
             if [ -n "$VAULT" ]; then
               V=$VAULT
             else
@@ -382,8 +419,11 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             ;;
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
-            C=$(oci_compartment)
-            oci kms management vault list --compartment-id "$C" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].[\"display-name\",id]" --output json | jq -r '.[] | "\(.[0]) \(.[1])"' | sort || blind "oci kms management vault list failed"
+            oci_ready
+            out=$(oci kms management vault list --compartment-id "$C" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].[\"display-name\",id]" --output json 2>&1) \
+              || blind "oci kms management vault list failed as profile ${OCI_CLI_PROFILE:-<unset>} auth ${OCI_CLI_AUTH:-<unset>}: $(oneline "$(printf '%s' "$out" | grep -oE '"(code|message)": "[^"]*"' | paste -sd' ' -)")"
+            [ -n "$out" ] || exit 0
+            printf '%s' "$out" | jq -r '.[] | "\(.[0]) \(.[1])"' | sort
             ;;
           *) blind "unknown backend $BACKEND";;
         esac
@@ -432,8 +472,14 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             ;;
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
-            C=$(oci_compartment)
-            oci ce cluster list --compartment-id "$C" --lifecycle-state ACTIVE --query 'data[].[name,id]' --output json | jq -r '.[] | "\(.[0]) \(.[1])"' | sort || blind "oci ce cluster list failed"
+            oci_ready
+            # The CLI's own diagnosis, not a fixed string. Piping straight into jq threw the 400
+            # body away, so every cause -- wrong profile, wrong auth mode, empty compartment, a
+            # genuinely expired token -- reached the operator as the same six words (2026-08-31).
+            out=$(oci ce cluster list --compartment-id "$C" --lifecycle-state ACTIVE --query 'data[].[name,id]' --output json 2>&1) \
+              || blind "oci ce cluster list failed as profile ${OCI_CLI_PROFILE:-<unset>} auth ${OCI_CLI_AUTH:-<unset>}: $(oneline "$(printf '%s' "$out" | grep -oE '"(code|message)": "[^"]*"' | paste -sd' ' -)")"
+            [ -n "$out" ] || exit 0
+            printf '%s' "$out" | jq -r '.[] | "\(.[0]) \(.[1])"' | sort
             ;;
           *) blind "unknown backend $BACKEND";;
         esac
@@ -451,8 +497,11 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             ;;
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
-            C=$(oci_compartment)
-            oci ce node-pool list --compartment-id "$C" --query 'data[].[name,"lifecycle-state"]' --output json | jq -r '.[] | "\(.[0]) \(.[1])"' | sort || blind "oci ce node-pool list failed"
+            oci_ready
+            out=$(oci ce node-pool list --compartment-id "$C" --query 'data[].[name,"lifecycle-state"]' --output json 2>&1) \
+              || blind "oci ce node-pool list failed as profile ${OCI_CLI_PROFILE:-<unset>} auth ${OCI_CLI_AUTH:-<unset>}: $(oneline "$(printf '%s' "$out" | grep -oE '"(code|message)": "[^"]*"' | paste -sd' ' -)")"
+            [ -n "$out" ] || exit 0
+            printf '%s' "$out" | jq -r '.[] | "\(.[0]) \(.[1])"' | sort
             ;;
           *) blind "unknown backend $BACKEND";;
         esac
@@ -469,6 +518,10 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             ;;
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
+            # This branch needs no compartment, but it does need the same profile and auth mode as
+            # every other one. Without this it ran on whatever `oci` defaults to, and it worked only
+            # because that default happened to be a usable profile on this laptop (2026-08-31).
+            oci_identity || blind "no OCI identity for create-kubeconfig: OCI_CLI_PROFILE is unset, platform/oci/terraform.tfvars names no oci_profile, and no profile in ~/.oci/sessions has a valid token -- export OCI_CLI_PROFILE, or run bin/idp-oci-login"
             # crew#292: `|| blind "create-kubeconfig failed"` threw away the only sentence that
             # said why. bin/idp-kube then took tail -1 of the combined output, which is this
             # line, so the CLI's ServiceError never reached the receipt: 7 of 7 verify-drill runs
@@ -478,10 +531,10 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             # the kubeconfig goes to --file, and a token must never land in a log.
             if [ -n "$REGION" ]; then
               why=$(oci ce cluster create-kubeconfig --cluster-id "$NAME" --file "$FILE" --region "$REGION" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT 2>&1 >/dev/null) \
-                || blind "oci ce cluster create-kubeconfig failed: $(oneline "$why")"
+                || blind "oci ce cluster create-kubeconfig failed as profile ${OCI_CLI_PROFILE:-<unset>} auth ${OCI_CLI_AUTH:-<unset>}: $(oneline "$why")"
             else
               why=$(oci ce cluster create-kubeconfig --cluster-id "$NAME" --file "$FILE" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT 2>&1 >/dev/null) \
-                || blind "oci ce cluster create-kubeconfig failed: $(oneline "$why")"
+                || blind "oci ce cluster create-kubeconfig failed as profile ${OCI_CLI_PROFILE:-<unset>} auth ${OCI_CLI_AUTH:-<unset>}: $(oneline "$why")"
             fi
             ;;
           *) blind "unknown backend $BACKEND";;
