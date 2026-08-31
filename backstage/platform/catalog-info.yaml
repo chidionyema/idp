@@ -285,6 +285,7 @@ spec:
   dependsOn:
     - component:default/layer-scheduling
     - component:default/layer-backstage-namespace
+    - component:default/layer-external-secrets
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
