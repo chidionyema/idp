@@ -36,6 +36,7 @@ nav:
       - 0010 Tailscale trust is federated, the operator key is machine-made: decisions/0010-tailscale-trust-is-federated-and-the-operator-key-is-machine-made.md
       - 0011 Claude is a lane on the router, not a key on the Mac: decisions/0011-claude-is-a-lane-on-the-router-not-a-key-on-the-mac.md
       - 0012 Staging is a namespace, every option carries its cost: decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md
+      - 0013 Customer identity is Keycloak, the realm is code: decisions/0013-customer-identity-is-keycloak-and-the-realm-is-code.md
   - Specs:
       - KINI.AI master spec: reference/specs/kini-master-spec.md
       - Phone idea flow: reference/specs/phone-idea-flow.md
@@ -114,6 +115,7 @@ nav:
       - Wake blocked: tutorials/demo/wake-blocked.md
       - Founder god's view: tutorials/demo/estate-founder.md
       - Money: tutorials/demo/commerce.md
+      - Customer sign-in: tutorials/demo/customer-identity.md
   - Onboarding:
       - Trace matrix: how-to/onboarding/trace-matrix.md
       - Namespace fences: how-to/onboarding/ns-fence-gate.md
@@ -157,6 +159,7 @@ nav:
       - Spec gate: how-to/onboarding/spec-gate.md
       - Estate diagram: how-to/onboarding/estate-diagram.md
       - Catalog render: how-to/onboarding/catalog-render.md
+      - Customer sign-in: how-to/onboarding/customer-identity.md
       - owner-account: how-to/onboarding/owner-account.md
       - static-secret: how-to/onboarding/static-secret.md
       - Bind audit: how-to/onboarding/bind-audit.md
