@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""kubeconform grades TYPE on the exact bytes bin/idp-kyverno-render already produced for Kyverno
+to grade POLICY on: kustomize build, helm template, the release's own postRenderers. No second
+renderer -- IDP_RENDER_KEEP (bin/idp-kyverno-render) copies the render out before its own trap
+deletes it, and this script drives that render and pipes the same files into kubeconform
+(crew#584 comment in that script: a second renderer duplicates ~4 minutes of CI).
+
+Why this exists (idp#1027, commit cd9911df): kustomize build re-emits every scalar plain, Flux's
+envsubst then substituted a bare GitHub App id numeral into a quoted field, and the result typed
+`spec.appID` an int where the GithubAccessToken CRD (generators.external-secrets.io/v1alpha1)
+declares a string -- ".spec.appID: expected string, got 4740261". Kyverno grades whether a Pod is
+ALLOWED; nothing before this script graded whether a field is the TYPE its schema declares.
+tests/test_incident_idp1027_appid_types_as_a_string.py holds that exact shape as a permanent,
+never-BLIND-passes fixture; this script is the estate's ongoing coverage of every other rendered
+manifest, every PR, before merge.
+
+Schema sourcing, decided once (LAW 43 -- kubeconform is the mature tool, not reinvented):
+  * Built-in Kubernetes kinds (Deployment, Service, ...) come from kubeconform's own `default`
+    schema location, a network fetch of yannh/kubernetes-json-schema pinned to the Kubernetes
+    version below. The render this script drives already needs the network (helm pulls charts,
+    CI clones the prospector policy checkout for bin/idp-kyverno-render), so this is not a new
+    class of dependency the offline-gate job did not already carry.
+  * The CRDs this estate actually ships against (Flux, external-secrets, Kyverno, Tailscale) are
+    vendored under tests/fixtures/kubeconform/crd-schemas, pulled once from
+    datreeio/CRDs-catalog, rather than fetched live from that catalog on every run: this repo has
+    an offline-gate job, and idp#1027's own regression fixture must never go BLIND because a
+    catalog CDN blinked. The set is eleven files (LAW 23, the smaller road) -- it is not a mirror
+    of the whole catalog and is not trying to be one.
+  * SPIRE ships no entry in datreeio/CRDs-catalog (spire-controller-manager's ClusterSPIFFEID is
+    not published there); its resources, and any other CRD this estate adds without a vendored
+    schema, fall through to `-ignore-missing-schemas`: kubeconform counts and prints them as
+    `skipped`, visibly, in the same summary line as everything it did judge -- never silently
+    treated as passing (LAW 28).
+
+Usage: bin/idp-kubeconform [platform-dir ...]   # default: every dir bin/idp-kyverno-dirs names
+Exit 0 clean, 1 with each invalid or unrenderable resource printed, 2 (BLIND, never a pass) when
+kubeconform is not installed or the render did not produce anything to judge.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import tempfile
+
+IDP = pathlib.Path(__file__).resolve().parents[1]
+CRD_SCHEMAS = IDP / "tests" / "fixtures" / "kubeconform" / "crd-schemas"
+# platform/oci/variables.tf pins the OKE cluster to v1.35.2; kubeconform's default schema fetch
+# (yannh/kubernetes-json-schema) has not published that minor version yet (checked 2026-08-31:
+# newest tag is v1.34.11). Nearest published minor, and configurable because the cluster's
+# version and the schema registry's coverage move on two different clocks.
+DEFAULT_K8S_VERSION = "1.34.11"
+BAD_STATUSES = {"statusInvalid", "statusError"}
+
+
+def platform_dirs(argv: list[str]) -> list[str]:
+    if argv:
+        return argv
+    out = subprocess.run(
+        [str(IDP / "bin" / "idp-kyverno-dirs")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [d for d in out.stdout.splitlines() if d]
+
+
+def render(dirs: list[str], keep: pathlib.Path) -> subprocess.CompletedProcess:
+    env = {**os.environ, "IDP_RENDER_KEEP": str(keep)}
+    return subprocess.run(
+        [str(IDP / "bin" / "idp-kyverno-render"), *dirs],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def missing_dirs(dirs: list[str], rendered: list[pathlib.Path]) -> list[str]:
+    have = {p.name for p in rendered}
+    return [d for d in dirs if f"kz-{d.replace('/', '_')}.yaml" not in have]
+
+
+def main(argv: list[str]) -> int:
+    if shutil.which("kubeconform") is None:
+        print(
+            "BLIND  kubeconform is not installed; no rendered manifest was type-checked"
+        )
+        return 2
+    dirs = platform_dirs(argv)
+    if not dirs:
+        print("BLIND  no platform dir to render; nothing was type-checked")
+        return 2
+    keep = pathlib.Path(tempfile.mkdtemp(prefix="idp-kubeconform-"))
+    try:
+        proc = render(dirs, keep)
+        rendered = sorted(keep.glob("*.yaml"))
+        if proc.returncode == 2:
+            print(
+                "BLIND  bin/idp-kyverno-render could not judge the whole policy set; "
+                "kubeconform judges the same render and got none of it"
+            )
+            sys.stderr.write(proc.stdout + proc.stderr)
+            return 2
+        gap = missing_dirs(dirs, rendered)
+        if gap:
+            print(f"FAIL   render did not complete for: {', '.join(gap)}")
+            sys.stderr.write(proc.stdout + proc.stderr)
+            return 1
+        if not rendered:
+            print("BLIND  the render produced no YAML; nothing was type-checked")
+            return 2
+        kc = subprocess.run(
+            [
+                "kubeconform",
+                "-summary",
+                "-output",
+                "json",
+                "-ignore-missing-schemas",
+                "-kubernetes-version",
+                os.environ.get("IDP_KUBECONFORM_K8S_VERSION", DEFAULT_K8S_VERSION),
+                "-schema-location",
+                "default",
+                "-schema-location",
+                f"{CRD_SCHEMAS}/{{{{.Group}}}}/{{{{.ResourceKind}}}}_{{{{.ResourceAPIVersion}}}}.json",
+                *[str(p) for p in rendered],
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        try:
+            report = json.loads(kc.stdout)
+        except json.JSONDecodeError:
+            print("FAIL   kubeconform did not return a report:")
+            sys.stderr.write(kc.stdout + kc.stderr)
+            return 1
+        for r in report.get("resources", []):
+            if r["status"] in BAD_STATUSES:
+                print(
+                    f"FAIL   {r['filename']}: {r['kind']} {r.get('name', '')} ({r['version']}): {r['msg']}"
+                )
+        s = report["summary"]
+        line = f"valid={s['valid']} invalid={s['invalid']} errors={s['errors']} skipped={s['skipped']}"
+        if s["invalid"] or s["errors"]:
+            print(f"FAIL   kubeconform  {line}")
+            return 1
+        print(f"ok     kubeconform  {line} ({len(dirs)} dir(s): {', '.join(dirs)})")
+        return 0
+    finally:
+        shutil.rmtree(keep, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
