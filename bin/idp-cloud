@@ -63,6 +63,33 @@ print("\n".join(str(n) for n in old[int(sys.argv[1]):]))' "$keep" 2>/dev/null) |
 # A grading line is one line. Fold a multi-line CLI diagnosis onto it, drop anything shaped like
 # a bearer token or key so a diagnosis can never become a leak, and cap it so one row stays one row.
 oneline() { printf '%s' "$1" | tr '\n\r\t' '   ' | sed -E 's/[A-Za-z0-9_-]{40,}/<redacted>/g; s/  +/ /g; s/^ //' | cut -c1-300; }
+# crew#722: the canary seed on a GitHub runner died with OCI "keyId cannot be an empty string"
+# (oke-check run 33353772359) because a new secret's vault and key came only from `tofu output`,
+# and the runner has no tofu -- the empty string went straight to the API. Resolution order,
+# loud at the end: 1) ESTATE_VAULT_OCID / ESTATE_VAULT_KEY_OCID, 2) the metadata every ACTIVE
+# sibling secret in the compartment already carries (no state read; works wherever oci works),
+# 3) tofu state where a machine has it, 4) BLIND -- an empty id never reaches the API again.
+resolve_vault_and_key() { # needs $C; sets V and K, or exits 2 (BLIND)
+  local sv="" sk=""
+  V=${ESTATE_VAULT_OCID:-}; K=${ESTATE_VAULT_KEY_OCID:-}
+  if [ -z "$V" ] || [ -z "$K" ]; then
+    read -r sv sk < <(oci vault secret list --compartment-id "$C" --all --output json 2>/dev/null | python3 -c '
+import collections, json, sys
+rows = [r for r in (json.load(sys.stdin).get("data") or [])
+        if r.get("lifecycle-state") == "ACTIVE" and r.get("key-id") and r.get("vault-id")]
+if rows:
+    vault = collections.Counter(r["vault-id"] for r in rows).most_common(1)[0][0]
+    print(vault, next(r["key-id"] for r in rows if r["vault-id"] == vault))
+' 2>/dev/null) || true
+    V=${V:-$sv}; K=${K:-$sk}
+  fi
+  if { [ -z "$V" ] || [ -z "$K" ]; } && command -v tofu >/dev/null 2>&1; then
+    [ -n "$V" ] || V=$(cd "$MAIN/platform/oci" && tofu output -raw vault_id 2>/dev/null) || V=""
+    [ -n "$K" ] || K=$(cd "$MAIN/platform/oci" && tofu output -raw vault_key_id 2>/dev/null) || K=""
+  fi
+  [ -n "$V" ] && [ -n "$K" ] || blind "no vault key for a new secret: no ACTIVE sibling secret in the compartment carries one, tofu state is not readable here, and ESTATE_VAULT_OCID/ESTATE_VAULT_KEY_OCID are unset"
+}
+
 prim=$1; verb=$2; shift 2
 BUCKET=""; NAME=""; FILE=""; PREFIX=""; VAULT=""; REGION=""
 while [ $# -gt 0 ]; do
@@ -259,8 +286,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
               settle_secret "$payload"
               printf '%s' updated
             else
-              V=${ESTATE_VAULT_OCID:-$(cd "$MAIN/platform/oci" && tofu output -raw vault_id)}
-              K=${ESTATE_VAULT_KEY_OCID:-$(cd "$MAIN/platform/oci" && tofu output -raw vault_key_id)}
+              resolve_vault_and_key
               oci vault secret create-base64 --compartment-id "$C" --vault-id "$V" --key-id "$K" --secret-name "$NAME" --secret-content-content "$payload" >/dev/null
               settle_secret "$payload"
               printf '%s' created
@@ -356,7 +382,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             if [ -n "$VAULT" ]; then
               V=$VAULT
             else
-              V=${ESTATE_VAULT_OCID:-$(cd "$MAIN/platform/oci" && tofu output -raw vault_id)}
+              resolve_vault_and_key
             fi
             oci vault secret list --compartment-id "$C" --vault-id "$V" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].\"secret-name\"" --raw-output | python3 -c 'import json,sys; [print(n) for n in sorted(json.load(sys.stdin))]'
             ;;
