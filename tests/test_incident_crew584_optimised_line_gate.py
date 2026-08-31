@@ -182,3 +182,62 @@ def test_incident_idp750_the_workflow_runs_mains_copy_of_the_script():
     yml = (ROOT / ".github" / "workflows" / "image-update-pr.yml").read_text()
     assert "git show origin/main:bin/idp-image-update-pr" in yml
     assert "\n          bin/idp-image-update-pr\n" not in yml
+
+
+# Third incident, 2026-08-31, found while clearing the open queue on chidionyema/idp. Three of the
+# ten open pull requests were refused by rule=optimised_plan alone, for two reasons neither of
+# which is "nobody planned the work":
+#
+#   idp#1012 carried a real counted plan -- "Optimised: 4 -> 2 steps, 3 -> 1 round trip. Cut: ..."
+#   -- written with U+2192 for the arrow and a full stop before Cut. The rule matched the BYTES of
+#   an ASCII arrow, not the property it says it grades (a number on each side of an arrow and a cut
+#   clause), so it refused a correct body. LAW 38.
+#
+#   idp#726 and idp#797 are scheduled renders. bin/catalog-render and .github/workflows/
+#   conscience.yml write their bodies, and neither was taught LAW 51 -- exactly the idp#719 shape
+#   already recorded above, so the daily jobs piled up pull requests that could never go green.
+#   Both generators now write the line on create AND refresh an existing body that lacks it.
+
+@pytest.mark.parametrize("line", [
+    # idp#1012's line, verbatim in shape: unicode arrow, full stop, capital Cut.
+    "Optimised: 4 \u2192 2 steps, 3 \u2192 1 round trip. Cut: the commit was cherry-picked, not re-attached\n",
+    "Optimised: 4 -> 2 steps, 3 -> 1 round trips. Cut: one render\n",
+    "Optimised: 4 \u2192 2 steps, 3 \u2192 1 round trips; cut: one render\n",
+])
+def test_a_unicode_arrow_or_a_full_stop_is_the_same_plan(tmp_path, line):
+    assert "rule=optimised_plan" not in _rules(_with_body(tmp_path, line))
+
+
+@pytest.mark.parametrize("line", [
+    "Optimised: slow \u2192 fast. Cut: things\n",          # an arrow, still no counts
+    "Optimised: 4 \u2192 2 steps, 3 \u2192 1 round trip\n",   # counts, no cut clause
+])
+def test_widening_the_arrow_did_not_widen_the_rest(tmp_path, line):
+    assert "rule=optimised_plan" in _rules(_with_body(tmp_path, line))
+
+
+def _generated_line(text: str) -> str:
+    """The one `Optimised:` line a generator writes, taken from the generator itself."""
+    hits = [l for l in text.splitlines() if "Optimised: 1 -> 1 steps" in l]
+    assert len(hits) >= 1, "the generator no longer writes an Optimised line"
+    i = hits[0].index("Optimised: 1 -> 1 steps")
+    return hits[0][i:].split('"')[0]
+
+
+@pytest.mark.parametrize("path", ["bin/catalog-render", ".github/workflows/conscience.yml"])
+def test_incident_a_scheduled_render_carries_the_line(tmp_path, path):
+    """The literal line each generator writes is graded by the real rule, both ways."""
+    line = _generated_line((ROOT / path).read_text())
+    assert "rule=optimised_plan" not in _rules(_with_body(tmp_path, "\n" + line + "\n")), line
+    assert "rule=optimised_plan" in _rules(_with_body(tmp_path, "\n"))
+
+
+@pytest.mark.parametrize("path", ["bin/catalog-render", ".github/workflows/conscience.yml"])
+def test_incident_an_existing_generated_body_gains_the_line(path):
+    """idp#719's shape: the create branch never runs again for a branch that already has a PR, so
+    a body written before LAW 51 stays refused for ever unless the generator refreshes it."""
+    text = (ROOT / path).read_text()
+    assert "gh" in text and "pr" in text
+    assert "--body" in text
+    refresh = [l for l in text.splitlines() if "pr" in l and "edit" in l]
+    assert refresh, f"{path} writes the line on create but never refreshes an existing body"
