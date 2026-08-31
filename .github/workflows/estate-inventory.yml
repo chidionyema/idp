@@ -37,12 +37,21 @@ jobs:
       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with: { tofu_version: "1.12.6", tofu_wrapper: false }
       - uses: fluxcd/flux2/action@ed8c5f2c24d57715d08423d3c1a7b0554ceb030e # v2.9.4 -- flux push artifact
-      - uses: turbot/steampipe-action-setup@ea334bd03cc89b940db6b2daec94d0e0eab47dc0 # v1.7.0
-        with:
-          plugin-connections: |
-            connection "github" { plugin = "github" }
-            connection "cloudflare" { plugin = "cloudflare" }
-            connection "tailscale" { plugin = "tailscale" }
+      # turbot/steampipe-action-setup v1.7.0 pages the GitHub releases API with no token and
+      # takes no token input (dist/index.js: no GITHUB_TOKEN), so on a hosted runner it hits the
+      # anonymous rate limit: "Got 403 from api.github.com/repos/turbot/steampipe/releases"
+      # (run 33392031378). The vendor's own install script downloads the release asset by URL;
+      # this does the same with the version and the vendor-published checksum pinned.
+      - name: steampipe (pinned release, checksum verified; plugin install writes the connections)
+        run: |
+          set -euo pipefail
+          v=v2.4.5
+          sum=d68f31a7ec0950fa37e58b47797f9b85823be24464dcb4f6d409fe205612ea3e   # checksums.txt of $v
+          curl -fsSLo "$RUNNER_TEMP/steampipe.tar.gz" "https://github.com/turbot/steampipe/releases/download/$v/steampipe_linux_amd64.tar.gz"
+          echo "$sum  $RUNNER_TEMP/steampipe.tar.gz" | sha256sum -c -
+          sudo tar -xzf "$RUNNER_TEMP/steampipe.tar.gz" -C /usr/local/bin steampipe
+          steampipe plugin install github cloudflare tailscale
+          steampipe plugin list
       - name: tools
         run: |
           set -euo pipefail

@@ -44,7 +44,7 @@ state and then migrated. *Code: does not exist.* It is the one piece that must b
 any of the rest can be applied to an empty tenancy.
 
 **Layer 1 — identity.** Four users, three groups, two policies, the vault and its keys. Under
-Under the one-root rule, one root credential per provider is set by hand and the pipeline mints the rest, so this
+the one-root rule, one root credential per provider is set by hand and the pipeline mints the rest, so this
 layer's job is to describe the shape, not to hold any value. *Code: partly exists* —
 `platform/oci/identity/` and `platform/oci/iam.tf` already hold six policies, the dynamic group
 and the domain apps; the users, the groups and the two remaining policies are not described.
