@@ -38,7 +38,7 @@ jobs:
           cache-dependency-path: .github/requirements/oci-cli.txt
       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with: { tofu_version: "1.12.6", tofu_wrapper: false }
-      - uses: nhedger/setup-sops@e44d508fe5b00d5fd95e57ae935b4f05b675535b # v3.0.0
+      - uses: nhedger/setup-sops@18e52f363488ed469d2e1855e542a1c651743bba # v3.0.0
         with: { version: "3.10.2" }
       - name: oci cli
         run: pip install -q -r .github/requirements/oci-cli.txt
