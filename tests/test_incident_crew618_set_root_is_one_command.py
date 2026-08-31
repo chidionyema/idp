@@ -14,7 +14,7 @@ def test_every_founder_set_root_has_a_provider_road():
     for name in ("SEED_TAILSCALE_CLIENT_ID", "SEED_TAILSCALE_CLIENT_SECRET", "SEED_CLOUDFLARE_ROOT_TOKEN",
                  "SEED_TELEGRAM_HERMES_BOT_TOKEN", "SEED_TELEGRAM_ALERTS_BOT_TOKEN"):
         assert name in SCRIPT, name
-    for vendor in ("anthropic", "openrouter", "deepseek", "minimax", "groq", "gemini", "exa", "stripe"):
+    for vendor in ("anthropic", "openrouter", "deepseek", "minimax", "groq", "gemini", "exa", "cursor", "stripe"):
         assert re.search(rf"\b{vendor}\b", SCRIPT), vendor
 
 
@@ -46,7 +46,7 @@ def test_all_walks_every_provider_once_and_skips_the_ones_already_set(tmp_path):
     assert "tailscale already set; skipped" in r.stdout
     names = [l.split()[1] for l in (tmp_path / "set.log").read_text().splitlines()]
     assert names == ["SEED_CLOUDFLARE_ROOT_TOKEN", "SEED_ANTHROPIC_API_KEY", "SEED_OPENROUTER_API_KEY", "SEED_DEEPSEEK_API_KEY",
-                     "SEED_MINIMAX_API_KEY", "SEED_GROQ_API_KEY", "SEED_GEMINI_API_KEY", "SEED_EXA_API_KEY", "SEED_STRIPE_SECRET_KEY",
+                     "SEED_MINIMAX_API_KEY", "SEED_GROQ_API_KEY", "SEED_GEMINI_API_KEY", "SEED_EXA_API_KEY", "SEED_CURSOR_API_KEY", "SEED_STRIPE_SECRET_KEY",
                      "SEED_TELEGRAM_HERMES_BOT_TOKEN", "SEED_TELEGRAM_ALERTS_BOT_TOKEN",
                      # a pair: two hidden reads, two repository secrets, one client (the shop's
                      # Continue with Google button)

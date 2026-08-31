@@ -491,7 +491,7 @@ kind: Component
 metadata:
   name: founder-otto
   title: "Otto (the Architect agent)"
-  description: "The one agent that acts for you from anywhere: message @Ottototbot on Telegram (see the founder-telegram surface) in, a pull request or a run URL out. Runs in-cluster with a single Telegram poller (two pollers on one token block each other) and executes its shell tools on your Mac through a wrapper that reaches your machine over its own Tailscale sidecar, so it always has your machine's tools and files. Model calls route through the estate's one router (see founder-model-router); traces land in Langfuse (see founder-traces). No ssh key is ever held by this pod; the tailnet does the authenticating."
+  description: "The one agent that acts for you from anywhere: message @Ottototbot on Telegram (see the founder-telegram surface) in, a pull request or a run URL out. Runs in-cluster with a single Telegram poller (two pollers on one token block each other) and executes its shell tools on your Mac through a wrapper that reaches your machine over its own Tailscale sidecar, so it always has your machine's tools and files. Model calls route through the estate's one router (see founder-model-router); traces land in Langfuse (see founder-traces). WORK dispatch can run Cursor (see founder-cursor); Architect stays on the router. No ssh key is ever held by this pod; the tailnet does the authenticating."
   annotations:
     estate/group: "Run"
     backstage.io/kubernetes-id: hermes-agent-gateway
@@ -520,6 +520,46 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: system:default/estate
+  dependsOn:
+    - resource:default/vendor-cursor
+---
+# crew#751: Cursor is the Hermes WORK harness. It is not a LiteLLM lane and it is
+# not a second login. The Resource vendor-cursor is generated from the vendor
+# registry; this card is the door a person opens. Mint the key once at Console;
+# oke-check apply (already on founder-drills) seeds the vault. Never paste the
+# value into chat.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-cursor
+  title: "Cursor (Hermes worker)"
+  description: "The agent harness Hermes WORK dispatch runs. Architect stays on the model router; this is the worker, not a second Telegram brain. The catalogue Resource vendor-cursor is generated from the vendor registry. Mint the key once at the console; the cluster check apply seeds the vault. The value never crosses chat or a terminal."
+  annotations:
+    estate/group: "Run"
+    github.com/project-slug: "chidionyema/idp"
+    backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/platform/vendors/"
+    idp/updated-by: "bin/catalog-gen from platform/vendors/consoles.yaml; Flux from platform/hermes-agent"
+  tags: [founder]
+  links:
+    - title: "Open (catalogue Resource)"
+      url: "https://catalogue.${ESTATE_ZONE}/catalog/default/resource/vendor-cursor"
+      icon: dashboard
+    - title: "Console (mint the key once)"
+      url: "https://cursor.com/dashboard/integrations"
+      icon: dashboard
+    - title: "Vendor registry (source)"
+      url: "https://github.com/chidionyema/idp/blob/main/platform/vendors/consoles.yaml"
+      icon: docs
+    - title: "Where this is tracked"
+      url: "https://github.com/chidionyema/crew/issues/751"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+  dependsOn:
+    - resource:default/vendor-cursor
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component

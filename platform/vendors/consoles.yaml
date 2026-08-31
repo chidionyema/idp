@@ -89,6 +89,17 @@ vendors:
     targets:
       - { entry: prospector-engine-env, field: EXA_API_KEY }
       - { entry: hermes-agent-env, field: EXA_API_KEY }
+  cursor:
+    # crew#751: Cursor is an agent harness, not a LiteLLM completions lane. The key authenticates
+    # `agent -p` on the Mac via cursor-agent. Architect stays on the model router. Cursor publishes
+    # no create-key API (dashboard Integrations / API Keys, read 2026-08-31); the key is the root.
+    kind: secret
+    secret: SEED_CURSOR_API_KEY
+    page: https://cursor.com/dashboard/integrations
+    shape: "(key_|crsr_|cursor_)[A-Za-z0-9_-]{16,}"
+    verify: { method: GET, url: https://api.cursor.com/v1/me, headers: { Authorization: "Bearer {key}" } }
+    targets:
+      - { entry: hermes-agent-env, field: CURSOR_API_KEY }
   telegram:
     # BotFather has no HTTP API; each bot token is a root of its own, made once with /newbot.
     kind: secret

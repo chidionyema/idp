@@ -328,6 +328,11 @@ spec:
             - name: mac-run
               mountPath: /usr/local/bin/mac-run
               subPath: mac-run
+            # crew#751 CP1: same hashed ConfigMap as mac-run, second subPath. A new file in the
+            # generator changes the ConfigMap name, so the pod rolls (crew#561).
+            - name: mac-run
+              mountPath: /usr/local/bin/cursor-agent
+              subPath: cursor-agent
               readOnly: true
             # crew#561: mac-run's key to the Mac's sshd (mac-run-key.yaml); optional so the gateway
             # still starts before the first apply has minted it, and mac-run says so (exit 2).
