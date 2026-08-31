@@ -139,3 +139,60 @@ def test_prover_workflow_calls_key_wall_without_a_swallow():
     lines = [ln for ln in text.splitlines() if "bin/idp-verdict key-wall" in ln]
     assert lines, "verdict-backstage never asks whether the wall stands"
     assert all("|| true" not in ln.split("#", 1)[0] for ln in lines)
+
+
+def _verdict_module():
+    import importlib.machinery
+    import importlib.util
+
+    loader = importlib.machinery.SourceFileLoader(
+        "idp_verdict", str(ROOT / "bin" / "idp-verdict")
+    )
+    spec = importlib.util.spec_from_loader("idp_verdict", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+class _Ran:
+    def __init__(self, rc, out):
+        self.returncode, self.stdout, self.stderr = rc, out, ""
+
+
+def test_key_wall_is_dispatched_never_the_usage_banner(capsys, monkeypatch):
+    """2026-08-31, run 33354177734: the merged grader existed but main() did not dispatch
+    `key-wall`, so the runner printed the usage banner and exit 2 every hour; the tests had
+    graded the function and never the command. This one runs the command."""
+    import json
+
+    mod = _verdict_module()
+    generic = _es("False", "could not get secret data from provider")
+    events = {
+        "items": [
+            {
+                "involvedObject": {"name": "verdict-key-wall"},
+                "reason": "UpdateFailed",
+                "message": "error processing spec.data[0] (key: verdict-hmac-key), err: Secrets service "
+                "failed to GetSecretBundleByName, HTTP status code 404: Authorization failed or "
+                "requested resource not found.",
+            }
+        ]
+    }
+
+    def fake_run(argv, **kw):
+        return _Ran(0, json.dumps(events if "events" in argv else generic))
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    assert mod.main(["key-wall"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("ok      verdict  key-wall"), out
+    assert "404" in out
+    assert "bin/idp-verdict sign" not in out  # the usage banner
+
+
+def test_key_wall_generic_condition_without_a_refusal_event_stays_blind(capsys):
+    """A vault outage also leaves the secret unsynced with the same generic condition; without
+    the vault's refusal in the events that is not a standing wall, it is BLIND (silent-green class)."""
+    grade = _grade_key_wall()
+    assert grade(_es("False", "could not get secret data from provider"), []) == 2
+    assert capsys.readouterr().out.startswith("BLIND")
