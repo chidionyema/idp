@@ -162,3 +162,120 @@ def test_the_button_generator_refuses_a_workflow_without_plain_english_lines() -
         assert "# button:" in head and "# founder:" in head, (
             f"{wf.name} has no plain-English header"
         )
+
+
+# ── The live portal is re-measured with the drill's session (founder 2026-08-31: "need to
+#    remeasure when the PR is live"). bin/idp-prose-live grades what is SERVED, not the files.
+
+
+def _prose_live():
+    from importlib.machinery import SourceFileLoader
+
+    return SourceFileLoader(
+        "idp_prose_live", str(ROOT / "bin" / "idp-prose-live")
+    ).load_module()
+
+
+def test_prose_live_reads_only_the_fields_a_person_sees():
+    m = _prose_live()
+    template = {
+        "kind": "Template",
+        "metadata": {
+            "name": "verdict-signoz",
+            "title": "Check SigNoz",
+            "description": "Checks that SigNoz answers.",
+            "annotations": {"backstage.io/techdocs-ref": "url:x"},
+            "links": [{"url": "https://github.com/x", "title": "Past runs"}],
+        },
+        "spec": {
+            "parameters": [
+                {
+                    "title": "Choices",
+                    "properties": {
+                        "nonce": {"title": "Request code", "type": "string"}
+                    },
+                }
+            ],
+            "output": {
+                "links": [
+                    {"title": "Open the run", "url": "${{ steps.run.output.url }}"}
+                ]
+            },
+        },
+    }
+    fields = m.entity_fields(template)
+    assert fields == [
+        "Check SigNoz",
+        "Checks that SigNoz answers.",
+        "Past runs",
+        "Choices",
+        "Request code",
+        "Open the run",
+    ]
+    for leaked in (
+        "verdict-signoz",
+        "url:x",
+        "https://github.com/x",
+        "nonce",
+        "string",
+        "${{",
+    ):
+        assert all(leaked not in f for f in fields), leaked
+
+
+def test_prose_live_measures_each_surface_and_names_the_dev_speak():
+    if shutil.which("vale") is None:
+        pytest.skip("vale is not installed here; the workflow installs it")
+    m = _prose_live()
+    entities = [
+        {
+            "kind": "Template",
+            "metadata": {
+                "title": "Check the prover",
+                "description": "Runs L1 for crew#631.",
+            },
+            "spec": {},
+        },
+        {
+            "kind": "Component",
+            "metadata": {
+                "title": "Shop",
+                "description": "The shop a stranger opens.",
+                "links": [{"title": "Open the HelmRelease"}],
+            },
+        },
+    ]
+    docs = {
+        "default/component/x": [
+            {"title": "Page", "text": "The namespace reconciles crew#5."},
+            {"title": "Empty", "text": ""},
+        ]
+    }
+    got = m.measure(entities, docs)
+    assert (
+        got["buttons"]["items"],
+        got["catalogue"]["items"],
+        got["docs"]["items"],
+    ) == (1, 1, 1)
+    assert (
+        got["buttons"]["errors"] >= 2
+        and got["catalogue"]["errors"] >= 1
+        and got["docs"]["errors"] >= 2
+    )
+    checks = {a["Check"] for s in got.values() for a in s["alerts"]}
+    assert {"Estate.Layers", "Estate.TicketCodes", "Estate.DevSpeak"} <= checks
+
+
+def test_prose_live_runs_in_the_hourly_login_drill_and_reports_on_the_summary():
+    wf = (ROOT / ".github" / "workflows" / "login-drill.yml").read_text()
+    assert "DRILL_STATE_OUT: ${{ runner.temp }}/login-drill-state.json" in wf
+    assert "bin/idp-prose-live" in wf and "GITHUB_STEP_SUMMARY" in wf
+    assert (
+        "db947f89f2292e6a0381a61de155f6a5f5cb4cb460ca178ea412ef605559cefd  vale.tgz"
+        in wf
+    )
+    assert 'rm -f "$DRILL_STATE"' in wf, (
+        "the signed-in session must not outlive the step (R49)"
+    )
+    drill = (ROOT / "bin" / "idp-login-drill").read_text()
+    assert 'os.environ.get("DRILL_STATE_OUT")' in drill and "0o600" in drill

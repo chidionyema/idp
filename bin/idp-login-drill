@@ -247,6 +247,14 @@ with sync_playwright() as p:
         fail("identity", f"auth provider oauth2Proxy answered 200 without a Backstage identity: {who.text()[:240]}")
     if "guest" in ref or not ref.startswith("user:"):
         fail("identity", f"signed in as {ref}, not a user the identity domain vouched for")
+    # Hand the signed-in session to a later step (bin/idp-prose-live grades the served portal
+    # with it, crew#612: the founder wants the live pages re-measured, not the files). Written
+    # only when asked, mode 0600, and never printed: R49.
+    state_out = os.environ.get("DRILL_STATE_OUT")
+    if state_out:
+        import json as _json
+        with open(os.open(state_out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as fh:
+            _json.dump({"home": HOME, "token": token, "cookies": ctx.cookies()}, fh)
 
     # 6. crew#307, founder: "the drills need to be thorough". A rendered shell with a valid
     # identity can still be a broken portal. The signed-in session must read the catalogue
