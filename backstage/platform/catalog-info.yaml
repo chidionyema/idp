@@ -113,6 +113,9 @@ metadata:
     estate/path: './platform/alerts'
     estate/cluster: 'oke'
   tags: [platform, observability]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -133,6 +136,9 @@ metadata:
     estate/path: './platform/alerts-github'
     estate/cluster: 'oke'
   tags: [platform, observability]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -153,6 +159,9 @@ metadata:
     estate/path: './platform/alerts-secret'
     estate/cluster: 'oke'
   tags: [platform, observability]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -173,6 +182,9 @@ metadata:
     estate/path: './platform/oci/autoscaler'
     estate/cluster: 'oke'
   tags: [platform, scheduling]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -193,6 +205,9 @@ metadata:
     estate/path: './platform/backstage/overlays/oke'
     estate/cluster: 'oke'
   tags: [platform, delivery]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -232,6 +247,9 @@ metadata:
     estate/path: './platform/backstage/namespace/overlays/oke'
     estate/cluster: 'oke'
   tags: [platform, delivery]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -250,6 +268,9 @@ metadata:
     estate/path: './platform/chaos'
     estate/cluster: 'oke'
   tags: [platform, resilience]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -273,6 +294,9 @@ metadata:
     estate/path: './platform/chaos/mesh'
     estate/cluster: 'oke'
   tags: [platform, resilience]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -293,6 +317,9 @@ metadata:
     estate/path: './platform/state'
     estate/cluster: 'oke'
   tags: [platform, delivery]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -315,6 +342,9 @@ metadata:
     estate/path: './platform/commerce/app'
     estate/cluster: 'oke'
   tags: [platform, commerce]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -336,6 +366,9 @@ metadata:
     estate/path: './platform/commerce/data'
     estate/cluster: 'oke'
   tags: [platform, commerce]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -358,6 +391,9 @@ metadata:
     estate/path: './platform/dns'
     estate/cluster: 'oke'
   tags: [platform, edge]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -379,6 +415,9 @@ metadata:
     estate/path: './platform/drills'
     estate/cluster: 'oke'
   tags: [platform, resilience]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -399,6 +438,9 @@ metadata:
     estate/path: './platform/edge'
     estate/cluster: 'oke'
   tags: [platform, edge]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -421,6 +463,9 @@ metadata:
     estate/path: './'
     estate/cluster: 'oke'
   tags: [platform, delivery]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -439,6 +484,9 @@ metadata:
     estate/path: './platform/event-bus'
     estate/cluster: 'oke'
   tags: [platform, commerce]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -459,6 +507,9 @@ metadata:
     estate/path: './platform/secrets'
     estate/cluster: 'oke'
   tags: [platform, delivery]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -477,6 +528,9 @@ metadata:
     estate/path: './config/crd/experimental'
     estate/cluster: 'oke'
   tags: [platform, edge]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -495,6 +549,9 @@ metadata:
     estate/path: './platform/guacamole'
     estate/cluster: 'oke'
   tags: [platform, identity]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -533,6 +590,9 @@ metadata:
     estate/path: './platform/healing'
     estate/cluster: 'oke'
   tags: [platform, resilience]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -555,6 +615,9 @@ metadata:
     estate/path: './platform/healing/analyzer'
     estate/cluster: 'oke'
   tags: [platform, resilience]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -575,6 +638,9 @@ metadata:
     estate/path: './platform/healthchecks'
     estate/cluster: 'oke'
   tags: [platform, resilience]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -612,6 +678,11 @@ metadata:
     estate/path: './platform/hermes-agent'
     estate/cluster: 'oke'
   tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+    - url: https://langfuse.${ESTATE_ZONE}
+      title: 'Model traces'
 spec:
   type: platform-layer
   lifecycle: production
@@ -634,6 +705,9 @@ metadata:
     estate/path: './platform/hindsight'
     estate/cluster: 'oke'
   tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -655,6 +729,9 @@ metadata:
     estate/path: './platform/identity'
     estate/cluster: 'oke'
   tags: [platform, identity]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -692,6 +769,9 @@ metadata:
     estate/path: './platform/image-automation'
     estate/cluster: 'oke'
   tags: [platform, delivery]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -713,6 +793,9 @@ metadata:
     estate/path: './platform/keda'
     estate/cluster: 'oke'
   tags: [platform, scheduling]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -733,6 +816,9 @@ metadata:
     estate/path: './platform/kyverno'
     estate/cluster: 'oke'
   tags: [platform, edge]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -751,6 +837,11 @@ metadata:
     estate/path: './platform/llm'
     estate/cluster: 'oke'
   tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+    - url: https://langfuse.${ESTATE_ZONE}
+      title: 'Model traces'
 spec:
   type: platform-layer
   lifecycle: production
@@ -788,6 +879,9 @@ metadata:
     estate/path: './platform/mcp'
     estate/cluster: 'oke'
   tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -827,6 +921,9 @@ metadata:
     estate/path: './platform/metrics-server'
     estate/cluster: 'oke'
   tags: [platform, scheduling]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -847,6 +944,9 @@ metadata:
     estate/path: './platform/monitoring'
     estate/cluster: 'oke'
   tags: [platform, observability]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -868,6 +968,9 @@ metadata:
     estate/path: './platform/monitoring/rules'
     estate/cluster: 'oke'
   tags: [platform, observability]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -888,6 +991,11 @@ metadata:
     estate/path: './platform/observability'
     estate/cluster: 'oke'
   tags: [platform, observability]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+    - url: https://langfuse.${ESTATE_ZONE}
+      title: 'Model traces'
 spec:
   type: platform-layer
   lifecycle: production
@@ -926,6 +1034,9 @@ metadata:
     estate/path: './platform/observability-collector'
     estate/cluster: 'oke'
   tags: [platform, observability]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -947,6 +1058,9 @@ metadata:
     estate/path: './platform/priority-classes'
     estate/cluster: 'oke'
   tags: [platform, scheduling]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -965,6 +1079,9 @@ metadata:
     estate/path: './deploy/k8s/overlays/oke'
     estate/cluster: 'oke'
   tags: [platform, products]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -985,6 +1102,9 @@ metadata:
     estate/path: './platform/prospector'
     estate/cluster: 'oke'
   tags: [platform, products]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -1006,6 +1126,9 @@ metadata:
     estate/path: './platform/reloader'
     estate/cluster: 'oke'
   tags: [platform, delivery]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -1026,6 +1149,9 @@ metadata:
     estate/path: './platform/robusta'
     estate/cluster: 'oke'
   tags: [platform, resilience]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -1046,6 +1172,9 @@ metadata:
     estate/path: './platform/scheduling'
     estate/cluster: 'oke'
   tags: [platform, scheduling]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -1067,6 +1196,9 @@ metadata:
     estate/path: './platform/science'
     estate/cluster: 'oke'
   tags: [platform, observability]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -1087,6 +1219,9 @@ metadata:
     estate/path: './platform/secret-store'
     estate/cluster: 'oke'
   tags: [platform, delivery]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -1107,6 +1242,9 @@ metadata:
     estate/path: './platform/spire'
     estate/cluster: 'oke'
   tags: [platform, identity]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -1128,6 +1266,9 @@ metadata:
     estate/path: './platform/staging'
     estate/cluster: 'oke'
   tags: [platform, scheduling]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -1146,6 +1287,9 @@ metadata:
     estate/path: './platform/tailscale'
     estate/cluster: 'oke'
   tags: [platform, identity]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -1166,6 +1310,9 @@ metadata:
     estate/path: './platform/temporal'
     estate/cluster: 'oke'
   tags: [platform, scheduling]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
@@ -1188,6 +1335,9 @@ metadata:
     estate/path: './platform/verification'
     estate/cluster: 'oke'
   tags: [platform, identity]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
 spec:
   type: platform-layer
   lifecycle: production
