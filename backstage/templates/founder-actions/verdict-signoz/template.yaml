@@ -3,13 +3,9 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-verdict-signoz
-  title: 'Run: verdict-signoz'
-  description: 'crew#631 CP9: the prover for SigNoz, the third surface. Same machine identity as verdict-langfuse
-    (GitHub OIDC -> OCI session token), so the service-account key, the drill password, the cluster read
-    and the signing key are reachable here and nowhere an agent runs. L1/L2/NEGATIVE go through the edge''s
-    signoz-api route with the key bin/idp-signoz-key minted; L3 is the login drill''s walk to signoz.<zone>.
-    SigNoz community has no SSO (crew#718 CP2): until it does the verdict is BLOCKED with that reason
-    and the check-run neutral, never green over a login screen.'
+  title: Check SigNoz and sign the result
+  description: Checks that SigNoz answers, answers its key, refuses a caller without one, and that a signed-in
+    person reaches it; signs the result.
   tags:
   - founder-action
   - estate
@@ -17,16 +13,15 @@ spec:
   owner: group:default/platform
   type: founder-action
   parameters:
-  - title: Run verdict-signoz
+  - title: Choices for this run
     properties:
       nonce:
-        title: nonce
+        title: Request code for this run (leave blank; the run makes one)
         type: string
-        description: 'nonce issued by the control plane for this request (blank: the run mints one)'
         default: ''
   steps:
   - id: dispatch
-    name: Dispatch verdict-signoz.yml on main
+    name: Start Check SigNoz and sign the result
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -36,5 +31,5 @@ spec:
         nonce: ${{ parameters.nonce }}
   output:
     links:
-    - title: Runs of verdict-signoz
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/verdict-signoz.yml

@@ -37,7 +37,10 @@ def _literal(name, closer):
     return ast.literal_eval(DRILL[start + len(f"{name} = ") : end])
 
 
-SIGN_IN_PATHS = _literal("SIGN_IN_PATHS", ")")
+# idp#1050 moved the sign-in path list into probes/front_door.py so the drill and the SigNoz
+# prober share one; the test reads it from there, the same place the drill imports it.
+from probes.front_door import SIGN_IN_PATHS  # noqa: E402
+
 EXPECTED = _literal("SECOND_LOGIN_EXPECTED", "}")
 
 
