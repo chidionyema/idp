@@ -99,13 +99,22 @@ spec:
       # platform/edge/require-registry-host.yaml is the guard that stops the class returning.
       image:
         repository: docker.io/tailscale/k8s-operator
+      # 2026-08-31 (crew#661 CP1, diagnose run 33354635731): runAsNonRoot on this image is a pod
+      # that never starts. The image's own config declares no USER (registry config blob for
+      # docker.io/tailscale/k8s-operator:v1.102.3, read 2026-08-31), so the kubelet refused the
+      # container 86 times in 28 minutes with "container has runAsNonRoot and image will run as
+      # root", and the 102 re-pulls of a container that never ran then burned Docker Hub's
+      # unauthenticated pull rate limit as a side effect. Forcing runAsUser instead is disproven
+      # upstream: the operator writes $HOME/.config at start and dies "permission denied" as any
+      # non-root uid (tailscale/tailscale#10638) -- which also rules out readOnlyRootFilesystem,
+      # the same write refused one step later. Same class and same answer as the Lago images
+      # (platform/edge/commerce-exception.yaml): upstream's shipped posture, with the admission
+      # excuse scoped to this one pod in platform/edge/tailscale-operator-exception.yaml.
+      # Everything the image CAN satisfy stays below.
       podSecurityContext:
-        runAsNonRoot: true
         seccompProfile: { type: RuntimeDefault }
       securityContext:
         allowPrivilegeEscalation: false
-        readOnlyRootFilesystem: true
-        runAsNonRoot: true
         capabilities: { drop: [ALL] }
         seccompProfile: { type: RuntimeDefault }
       resources:
