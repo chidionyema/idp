@@ -8,8 +8,13 @@
 # run. Nobody read a ledger, so the founder found it himself by opening the portal (crew#307).
 # LAW 28: an instrument nobody reads is not an instrument.
 #
-# Now a severity=error event opens (or comments on) a P0 issue naming the object and fails the run,
-# and the recovery event closes it. Read the ledger the same way:
+# Now a severity=error event opens (or comments on) a P0 issue naming the object, and the recovery
+# event closes it. The ISSUE is the alarm; the run stays green once the alarm is filed. It used to
+# also `exit 1` per event — GitHub then emailed the founder one "Run failed" notice per reconcile,
+# thousands over a weekend (crew#766, founder 2026-08-31: "stop sending errors to email address...
+# too much noise"). A relayed cluster error is data for the board, not a CI failure. The run still
+# goes red when the alarm itself cannot be filed (any gh call failing kills the step under -e),
+# which is the only failure this workflow owns. Read the ledger the same way:
 #   gh run list -R chidionyema/idp --workflow flux-events.yml --limit 20
 #   gh run view <id> -R chidionyema/idp --log | grep -E '^(event|object|severity|revision|message)'
 name: flux-events
@@ -72,7 +77,6 @@ jobs:
             gh issue create --title "$title" --label P0 --body "$body"
           fi
           echo "::error::$OBJECT $MESSAGE"
-          exit 1
 
       # The recovery event is the only thing that closes it, so the board tracks the cluster and
       # never a session's opinion of the cluster. "Health check passed" and nothing weaker: the
