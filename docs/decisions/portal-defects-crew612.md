@@ -1,7 +1,8 @@
-# Portal defects fixed in one pass (crew#612)
+# Portal defects fixed in one pass
 
-Five portal defects the founder named on crew#612, fixed in the three files that own them
-and nowhere else. Authored with Cursor on 2026-08-31; delivered as one PR.
+Five portal defects the founder named on [the portal-defects
+ticket](https://github.com/chidionyema/crew/issues/612), fixed in the files that own them
+and nowhere else. Authored with Cursor on 2026-08-31; delivered as one pull request.
 
 ## What changed and why
 
@@ -9,8 +10,8 @@ and nowhere else. Authored with Cursor on 2026-08-31; delivered as one PR.
    Mumchimp; the portal is the estate portal, not the store. Both now read Bytesync.
    `LogoFull`/`LogoIcon` already render from `app.title`, so the sidebar wordmark, the
    icon letter and the browser tab follow the config with no component edit.
-2. **Create menu.** The scaffolder plugin was registered in the backend and in
-   `app-config.yaml` catalog locations, but never added to the frontend app, so `/create`
+2. **Create menu.** The scaffolder plugin was registered on the server side and in
+   `app-config.yaml` catalog locations, but never added to the portal app, so `/create`
    answered 404 while the nav pointed at it. `scaffolderPlugin` is now a feature in
    `App.tsx` and the nav carries a Create item.
 3. **Duplicate gear icon.** Kubernetes and Ops both used a gear; Kubernetes now uses
@@ -32,5 +33,6 @@ and nowhere else. Authored with Cursor on 2026-08-31; delivered as one PR.
 ## Naming note
 
 Bytesync is the name the catalogue hierarchy uses today; the parent-company name is an
-open decision on crew#691. If crew#691 lands a different name, the fix is the same two
-config lines this change touched.
+open decision on [the company-name ticket](https://github.com/chidionyema/crew/issues/691).
+If that decision lands a different name, the fix is the same two config lines this change
+touched.
