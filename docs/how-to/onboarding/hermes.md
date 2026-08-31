@@ -1,4 +1,4 @@
-# Onboarding: Cursor as Otto's WORK worker (crew#751)
+# Onboarding: Cursor as Otto's WORK worker
 
 ## What it is
 
@@ -42,3 +42,5 @@ Set `dispatch.runtime` in `platform/hermes-agent/estate.yaml` back to `claude`
 and ship that change. Delete the dashboard key to revoke. Removing the GitHub
 secret stops the next apply from refreshing the vault field; the wrapper then
 refuses WORK until a new key is seeded.
+
+Tracked on [this ticket](https://github.com/chidionyema/crew/issues/751).

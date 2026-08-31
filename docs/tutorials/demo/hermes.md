@@ -1,4 +1,4 @@
-# Demo: Cursor is Otto's WORK worker (crew#751)
+# Demo: Cursor is Otto's WORK worker
 
 Otto's WORK lane runs Cursor on the Mac through `cursor-agent`, which only starts
 when the vault holds `CURSOR_API_KEY`. Architect stays on the model router. A
@@ -37,3 +37,5 @@ catalog-gen: 129 entities, 3 dependsOn edges -> .../catalog-info.yaml
 The key is minted once in the Cursor dashboard and stored as the GitHub secret
 `SEED_CURSOR_API_KEY`. Apply proves it and writes the vault. Until that secret
 exists the wrapper prints `cursor-agent: no CURSOR_API_KEY in the vault; refusing the Mac login` and exits 2.
+
+Tracked on [this ticket](https://github.com/chidionyema/crew/issues/751).

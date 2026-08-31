@@ -195,10 +195,12 @@ def test_probe_targets_are_exactly_the_founder_surfaces_and_the_module_accepts_4
     )
     targets = sorted(probe["spec"]["targets"]["staticConfig"]["static"])
     assert targets == founder_surface_urls(), targets
-    # the estate's own hostnames are never literal (LAW 46); the two external surfaces are the only ones without the placeholder
+    # the estate's own hostnames are never literal (LAW 46); vendor consoles and Telegram are the only ones without the placeholder
     assert all(
         "${ESTATE_ZONE}" in t
-        or t.startswith(("https://cloud.oracle.com/", "https://t.me/"))
+        or t.startswith(
+            ("https://cloud.oracle.com/", "https://t.me/", "https://cursor.com/")
+        )
         for t in targets
     ), targets
     assert (

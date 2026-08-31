@@ -160,3 +160,9 @@ def test_catalog_gen_emits_vendor_cursor_from_the_registry(tmp_path):
     assert "https://cursor.com/dashboard/integrations" in {
         l["url"] for l in cursor["metadata"]["links"]
     }
+
+
+def test_founder_link_checker_accepts_a_login_walled_console():
+    """cursor.com/dashboard/integrations answers 403 to an unauthenticated crawler."""
+    text = (ROOT / ".github/workflows/oke-check.yml").read_text()
+    assert "401,403,405" in text

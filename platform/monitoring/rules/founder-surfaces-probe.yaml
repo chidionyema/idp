@@ -22,6 +22,7 @@ spec:
         - https://catalogue.${ESTATE_ZONE}/catalog/default/domain/hermes-v2
         - https://catalogue.${ESTATE_ZONE}/catalog/default/domain/mumchimp
         - https://catalogue.${ESTATE_ZONE}/catalog/default/domain/prospector
+        - https://catalogue.${ESTATE_ZONE}/catalog/default/resource/vendor-cursor
         - https://catalogue.${ESTATE_ZONE}/catalog?filters%5Bkind%5D=component&filters%5Btype%5D=founder-surface
         - https://catalogue.${ESTATE_ZONE}/docs/default/component/founder-gods-view/FOUNDER/
         - https://catalogue.${ESTATE_ZONE}/docs/default/component/founder-gods-view/explanation/architecture/model-stack/
@@ -32,6 +33,7 @@ spec:
         - https://catalogue.${ESTATE_ZONE}/screen/#ollama
         - https://catalogue.${ESTATE_ZONE}/tools
         - https://cloud.oracle.com/?region=uk-london-1
+        - https://cursor.com/dashboard/integrations
         - https://hc.${ESTATE_ZONE}
         - https://hc.${ESTATE_ZONE}/api/v3/status/
         - https://langfuse.${ESTATE_ZONE}
