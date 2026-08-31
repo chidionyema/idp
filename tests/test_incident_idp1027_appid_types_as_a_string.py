@@ -78,3 +78,63 @@ def test_the_fix_is_accepted():
     report = _judge(FIXTURES / "good.yaml")
     assert report["summary"]["invalid"] == 0, report
     assert report["summary"]["valid"] == 1, report
+
+
+# --- the control has to actually run before a merge, or it is documentation (rung 5 = zero) ---
+# The two tests above prove kubeconform refuses the incident shape. They say nothing about
+# whether anything ever runs it. These four grade the wiring: bin/idp-ci rung 9c calls the
+# script on rung 9's render, CI installs the binary, and the handover path is never a silent
+# pass. Written after the first cut of this change shipped the script with no caller at all.
+
+CI = ROOT / "bin" / "idp-ci"
+WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+SCRIPT = ROOT / "bin" / "idp-kubeconform"
+
+
+def test_the_type_check_runs_before_merge_on_the_render_kyverno_already_paid_for():
+    """One render, judged twice. A second render would cost the job ~160 s again (crew#584)."""
+    ci = CI.read_text()
+    assert 'IDP_RENDER_KEEP="$tmp/render" bin/idp-kyverno-render' in ci, (
+        "rung 9 does not keep its render"
+    )
+    assert 'bin/idp-kubeconform --rendered "$tmp/render"' in ci, (
+        "rung 9c does not judge that render"
+    )
+    # and it renders exactly once: the only IDP_RENDER_KEEP producer is rung 9's own call.
+    assert ci.count("IDP_RENDER_KEEP=") == 1, "more than one render is being kept"
+
+
+def test_ci_installs_the_binary_so_the_rung_is_never_blind_on_the_runner():
+    wf = WORKFLOW.read_text()
+    assert (
+        "kubeconform-linux-amd64.tar.gz" in wf
+        and "kubeconform/releases/download/v0.8.0" in wf
+    )
+    # BLIND counts as a failure in the rung, so an uninstalled binary can never read green.
+    assert 'say "BLIND types' in CI.read_text()
+
+
+def test_a_handover_that_judged_nothing_is_blind_not_a_pass(tmp_path):
+    """silent-green is defect class 4 on this estate's ledger: exit 0 having measured nothing."""
+    _blind()
+    r = subprocess.run(
+        [str(SCRIPT), "--rendered", str(tmp_path)], capture_output=True, text=True
+    )
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert "BLIND" in r.stdout and "nothing was type-checked" in r.stdout
+
+
+def test_the_entry_point_ci_uses_refuses_the_incident_shape_end_to_end(tmp_path):
+    """Not the fixture through a bare kubeconform call -- the exact command bin/idp-ci runs."""
+    _blind()
+    shutil.copy(FIXTURES / "bad.yaml", tmp_path / "kz-platform_hermes-agent.yaml")
+    r = subprocess.run(
+        [str(SCRIPT), "--rendered", str(tmp_path)], capture_output=True, text=True
+    )
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "want string" in r.stdout and "invalid=1" in r.stdout, r.stdout
+    shutil.copy(FIXTURES / "good.yaml", tmp_path / "kz-platform_hermes-agent.yaml")
+    r = subprocess.run(
+        [str(SCRIPT), "--rendered", str(tmp_path)], capture_output=True, text=True
+    )
+    assert r.returncode == 0 and "invalid=0" in r.stdout, r.stdout + r.stderr

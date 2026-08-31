@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """kubeconform grades TYPE on the exact bytes bin/idp-kyverno-render already produced for Kyverno
-to grade POLICY on: kustomize build, helm template, the release's own postRenderers. No second
-renderer -- IDP_RENDER_KEEP (bin/idp-kyverno-render) copies the render out before its own trap
-deletes it, and this script drives that render and pipes the same files into kubeconform
-(crew#584 comment in that script: a second renderer duplicates ~4 minutes of CI).
+to grade POLICY on: kustomize build, helm template, the release's own postRenderers.
+
+ONE render, judged twice -- but only when the caller passes --rendered. bin/idp-ci rung 9c does:
+rung 9 sets IDP_RENDER_KEEP on the kyverno render it was already paying for, and hands this
+script the kept directory, so the type check costs the render nothing (measured 2026-08-31:
+kubeconform over 16 rendered files, 0.4 s). Called with no --rendered this script drives its own
+render, which is a SECOND render of the same dirs -- convenient for a laptop, ~160 s on the
+hosted runner (crew#584 measured that rung), never how CI calls it.
 
 Why this exists (idp#1027, commit cd9911df): kustomize build re-emits every scalar plain, Flux's
 envsubst then substituted a bare GitHub App id numeral into a quoted field, and the result typed
@@ -32,7 +36,19 @@ Schema sourcing, decided once (LAW 43 -- kubeconform is the mature tool, not rei
     `skipped`, visibly, in the same summary line as everything it did judge -- never silently
     treated as passing (LAW 28).
 
-Usage: bin/idp-kubeconform [platform-dir ...]   # default: every dir bin/idp-kyverno-dirs names
+What this does NOT catch, stated because a control named for an incident that cannot catch it on
+the live tree is this estate's third defect class: Flux substitutes ${vars} in the CLUSTER, after
+everything here. In a render, `appID: ${githubAppIDQuoted}` is the literal string
+"${githubAppIDQuoted}" -- a string, so it type-checks clean either way, and this rung would NOT
+have refused idp#1027 on platform/hermes-agent. What refuses that exact shape is the permanent
+fixture below (tests/test_incident_idp1027_appid_types_as_a_string.py), which holds the
+post-substitution bytes. The live rung's coverage is every OTHER type error in every rendered
+manifest -- a field typed int where its schema says string, a misspelled enum, a map where a list
+belongs -- a class nothing in this pipeline graded before. Closing the substitution gap on the
+live tree needs a stand-in value per key and is not this change.
+
+Usage: bin/idp-kubeconform [platform-dir ...]      # renders, then judges (a second render)
+       bin/idp-kubeconform --rendered DIR          # judges a render the caller already has
 Exit 0 clean, 1 with each invalid or unrenderable resource printed, 2 (BLIND, never a pass) when
 kubeconform is not installed or the render did not produce anything to judge.
 """
@@ -85,12 +101,69 @@ def missing_dirs(dirs: list[str], rendered: list[pathlib.Path]) -> list[str]:
     return [d for d in dirs if f"kz-{d.replace('/', '_')}.yaml" not in have]
 
 
+def judge(rendered: list[pathlib.Path], what: list[str]) -> int:
+    """Type-check files that are already rendered. The two callers differ only in who
+    paid for the render: bin/idp-ci rung 9c hands over rung 9's, a laptop drives its own."""
+    kc = subprocess.run(
+        [
+            "kubeconform",
+            "-summary",
+            "-output",
+            "json",
+            "-ignore-missing-schemas",
+            "-kubernetes-version",
+            os.environ.get("IDP_KUBECONFORM_K8S_VERSION", DEFAULT_K8S_VERSION),
+            "-schema-location",
+            "default",
+            "-schema-location",
+            f"{CRD_SCHEMAS}/{{{{.Group}}}}/{{{{.ResourceKind}}}}_{{{{.ResourceAPIVersion}}}}.json",
+            *[str(p) for p in rendered],
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    try:
+        report = json.loads(kc.stdout)
+    except json.JSONDecodeError:
+        print("FAIL   kubeconform did not return a report:")
+        sys.stderr.write(kc.stdout + kc.stderr)
+        return 1
+    for r in report.get("resources", []):
+        if r["status"] in BAD_STATUSES:
+            print(
+                f"FAIL   {r['filename']}: {r['kind']} {r.get('name', '')} ({r['version']}): {r['msg']}"
+            )
+    s = report["summary"]
+    line = f"valid={s['valid']} invalid={s['invalid']} errors={s['errors']} skipped={s['skipped']}"
+    if s["invalid"] or s["errors"]:
+        print(f"FAIL   kubeconform  {line}")
+        return 1
+    print(f"ok     kubeconform  {line} ({len(what)} source(s): {', '.join(what)})")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if shutil.which("kubeconform") is None:
         print(
             "BLIND  kubeconform is not installed; no rendered manifest was type-checked"
         )
         return 2
+    handed_over = None
+    if argv and argv[0] == "--rendered":
+        if len(argv) != 2:
+            print("usage: bin/idp-kubeconform --rendered DIR", file=sys.stderr)
+            return 64
+        handed_over = pathlib.Path(argv[1])
+        argv = []
+    if handed_over is not None:
+        rendered = sorted(handed_over.glob("*.yaml"))
+        if not rendered:
+            print(
+                f"BLIND  {handed_over} holds no rendered YAML; nothing was type-checked"
+            )
+            return 2
+        return judge(rendered, [f"handed over: {handed_over}"])
     dirs = platform_dirs(argv)
     if not dirs:
         print("BLIND  no platform dir to render; nothing was type-checked")
@@ -114,43 +187,7 @@ def main(argv: list[str]) -> int:
         if not rendered:
             print("BLIND  the render produced no YAML; nothing was type-checked")
             return 2
-        kc = subprocess.run(
-            [
-                "kubeconform",
-                "-summary",
-                "-output",
-                "json",
-                "-ignore-missing-schemas",
-                "-kubernetes-version",
-                os.environ.get("IDP_KUBECONFORM_K8S_VERSION", DEFAULT_K8S_VERSION),
-                "-schema-location",
-                "default",
-                "-schema-location",
-                f"{CRD_SCHEMAS}/{{{{.Group}}}}/{{{{.ResourceKind}}}}_{{{{.ResourceAPIVersion}}}}.json",
-                *[str(p) for p in rendered],
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        try:
-            report = json.loads(kc.stdout)
-        except json.JSONDecodeError:
-            print("FAIL   kubeconform did not return a report:")
-            sys.stderr.write(kc.stdout + kc.stderr)
-            return 1
-        for r in report.get("resources", []):
-            if r["status"] in BAD_STATUSES:
-                print(
-                    f"FAIL   {r['filename']}: {r['kind']} {r.get('name', '')} ({r['version']}): {r['msg']}"
-                )
-        s = report["summary"]
-        line = f"valid={s['valid']} invalid={s['invalid']} errors={s['errors']} skipped={s['skipped']}"
-        if s["invalid"] or s["errors"]:
-            print(f"FAIL   kubeconform  {line}")
-            return 1
-        print(f"ok     kubeconform  {line} ({len(dirs)} dir(s): {', '.join(dirs)})")
-        return 0
+        return judge(rendered, dirs)
     finally:
         shutil.rmtree(keep, ignore_errors=True)
 
