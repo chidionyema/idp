@@ -1,0 +1,12 @@
+{"items": [
+ {"kind":"Kustomization","metadata":{"namespace":"flux-system","name":"llm"},"status":{"conditions":[{"type":"Ready","status":"True"}],"inventory":{"entries":[{"id":"llm_litellm_apps_Deployment"},{"id":"llm_gone_apps_Deployment"}]}}},
+ {"kind":"Kustomization","metadata":{"namespace":"flux-system","name":"tailscale"},"status":{"conditions":[{"type":"Ready","status":"False","message":"health check failed"}],"inventory":{"entries":[]}}},
+ {"kind":"Deployment","metadata":{"namespace":"llm","name":"litellm","labels":{"kustomize.toolkit.fluxcd.io/name":"llm","kustomize.toolkit.fluxcd.io/namespace":"flux-system"}}},
+ {"kind":"Deployment","metadata":{"namespace":"llm","name":"by-hand"}},
+ {"kind":"ReplicaSet","metadata":{"namespace":"llm","name":"litellm-abc","ownerReferences":[{"kind":"Deployment","name":"litellm"}]}},
+ {"kind":"Service","metadata":{"namespace":"observability","name":"signoz","labels":{"helm.toolkit.fluxcd.io/name":"signoz","helm.toolkit.fluxcd.io/namespace":"observability"}}},
+ {"kind":"ConfigMap","metadata":{"namespace":"llm","name":"kube-root-ca.crt"}},
+ {"kind":"Secret","metadata":{"namespace":"llm","name":"sh.helm.release.v1.x"},"type":"helm.sh/release.v1"},
+ {"kind":"ConfigMap","metadata":{"namespace":"kube-system","name":"coredns"}},
+ {"kind":"Deployment","metadata":{"namespace":"tools","name":"plain-helm","labels":{"app.kubernetes.io/managed-by":"Helm"},"annotations":{"meta.helm.sh/release-name":"tools"}}}
+]}
