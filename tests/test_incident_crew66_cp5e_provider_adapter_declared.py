@@ -134,7 +134,7 @@ def test_an_extensionless_bin_script_is_scanned_so_the_real_adapters_count(
     )
     (tmp_path / "bin" / "idp-plain").parent.mkdir(parents=True, exist_ok=True)
     (tmp_path / "bin" / "idp-plain").write_text(
-        "#!/usr/bin/env bash\ncurl https://objectstorage.example/x\n"
+        "#!/usr/bin/env bash\ncurl https://dynamodb.example/x\n"
     )
     r = _gate(tmp_path)
     assert "adapter oci  bin/idp-oci-door" in r.stdout, r.stdout
