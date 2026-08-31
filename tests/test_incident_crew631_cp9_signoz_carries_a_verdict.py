@@ -53,11 +53,11 @@ def _get(status: int, doc: object):
 def test_l2_reads_dashboards_with_the_key_header_and_the_negative_control_holds() -> (
     None
 ):
-    get = _get(200, {"data": []})
+    get = _get(200, {"status": "success", "data": {"dashboards": [], "total": 0}})
     rows = signoz.l2_machine("https://signoz.example", "k", get)
     assert {r["name"] for r in rows} == {
         "l2.dashboards.status_200_json",
-        "l2.dashboards.data_is_a_list",
+        "l2.dashboards.lists_dashboards",
     }
     assert all(r["ok"] for r in rows)
     assert get.calls[0][1]["headers"] == {signoz.KEY_HEADER: "k"}
@@ -73,7 +73,10 @@ def test_negative_control_turns_red_when_the_dashboards_answer_a_caller_holding_
     None
 ):
     (open_door,) = signoz.negative_no_key(
-        "https://signoz.example", _get(200, {"data": [{"id": 1}]})
+        "https://signoz.example",
+        _get(
+            200, {"status": "success", "data": {"dashboards": [{"id": 1}], "total": 1}}
+        ),
     )
     assert not open_door["ok"], (
         "SigNoz handed dashboards to a caller with no key and the row stayed green"
@@ -226,7 +229,9 @@ class _SigNoz(http.server.BaseHTTPRequestHandler):
         if self.path.startswith("/api/v2/dashboards"):
             key = self.headers.get("SIGNOZ-API-KEY")
             return (
-                self._send(200, {"data": []})
+                self._send(
+                    200, {"status": "success", "data": {"dashboards": [], "total": 0}}
+                )
                 if key in s["keys"]
                 else self._send(401, {"error": "unauthorized"})
             )

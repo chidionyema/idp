@@ -31,7 +31,7 @@ def _capture(monkeypatch):
     def fake_urlopen(req, timeout=None):
         seen["headers"] = {k.lower(): v for k, v in req.header_items()}
         seen["url"] = req.full_url
-        return _Reply(b'{"data": []}')
+        return _Reply(b'{"status": "success", "data": {"dashboards": [], "total": 0}}')
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     return seen
@@ -42,7 +42,7 @@ def test_the_vendor_header_the_caller_asks_for_is_on_the_request(monkeypatch) ->
     status, body = langfuse.http(
         "https://signoz.example/api/v2/dashboards", headers={signoz.KEY_HEADER: "k-1"}
     )
-    assert status == 200 and body == '{"data": []}'
+    assert status == 200 and '"dashboards"' in body
     assert seen["headers"].get(signoz.KEY_HEADER.lower()) == "k-1", seen["headers"]
     assert seen["headers"].get("accept") == "application/json", (
         "defaults still ride along"
