@@ -11,7 +11,10 @@
 #   bin/idp-tests-for --list     # print the selection only
 #   bin/idp-tests-for --base X   # diff against another ref
 #
-# Every test file that is not in tests/slow-files.txt is CHEAP and is run unconditionally -- the
+# Path-based, and the path decides. A change to platform/*.yaml runs the tests that read those
+# manifests and nothing else; it does not run the application suite. CI still runs everything.
+#
+# In CI (or with TESTS_FOR_ALL=1), every test file that is not in tests/slow-files.txt is CHEAP and is run unconditionally -- the
 # selection rules above only decide which of the 108 expensive files to add. See that list's header
 # and bin/idp-slow-tests. Exit 0 when nothing changed (the message says so); CI on a fresh checkout
 # still runs everything.
@@ -57,11 +60,26 @@ if [ "${SKIP_TESTS_ON_TRIVIAL:-1}" = 1 ]; then
   if [ -z "$changed" ]; then echo "ok    tests-for: $dropped changed file(s), all docs or comment-only (SKIP_TESTS_ON_TRIVIAL), nothing to run"; exit 0; fi
   [ "$dropped" -gt 0 ] && echo "tests-for: $dropped docs/comment-only file(s) skipped (SKIP_TESTS_ON_TRIVIAL)"
 fi
+# The basename test below runs once per changed file, so the tracked-file list is read once here
+# rather than 13 times in the loop.
+tracked=$(mktemp)
+trap 'rm -f "$tracked"' EXIT
+git -C "$IDP" ls-files > "$tracked"
 sel=$(
   for f in $changed; do
     case "$f" in tests/test_*.py|sovereign/tests/*/*.py) [ -f "$IDP/$f" ] && echo "$f" ;; esac   # a deleted test file made pytest collect nothing: "no tests ran" and the push refused (2026-08-29)
+    # A basename is evidence only when it identifies ONE file. Measured 2026-08-31 on the 13-file
+    # diff of idp#1030: `kustomization.yaml` names 58 tracked files and `postgres.yaml` names 7, so
+    # grepping every test for those literals selected 112 test files for a change to three of them,
+    # and the blanket below took that to 397 -- 1,628 tests, 33m34s, and 14 failures that were every
+    # one of them `subprocess.TimeoutExpired after 60 seconds` under the load the selection itself
+    # created. Zero real reds. The full path is always matched; the basename is matched only when
+    # exactly one tracked file carries it, which is a property of the repository and not a list
+    # anybody has to maintain.
     b=$(basename "$f")
-    grep -rlF --include='*.py' -e "$f" -e "$b" "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null | sed "s#^$IDP/##" | grep -v '/fixtures/' || true   # a fixture under tests/fixtures is proof material, not a test (test_unbound.py fails by design)
+    pats=(-e "$f")
+    if [ "$(awk -F/ -v b="$b" '$NF == b' "$tracked" | wc -l | tr -d ' ')" = 1 ]; then pats+=(-e "$b"); fi
+    grep -rlF --include='*.py' "${pats[@]}" "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null | sed "s#^$IDP/##" | grep -v '/fixtures/' || true   # a fixture under tests/fixtures is proof material, not a test (test_unbound.py fails by design)
   done | sort -u
   # A class fence names a DIRECTORY, never a file: tests/test_incident_a_script_under_bin_pipes_into_grep_q.py
   # rglobs bin/ and refuses `| grep -q` in any script there. Selecting on the changed path or its
@@ -96,14 +114,25 @@ sel=$(
 # files that cost 3s or more; anything not on that list is cheap and is added to the run whether
 # or not any rule thinks it is relevant. A file missing from the list is treated as cheap, so a
 # new or renamed test always runs: the list going stale costs seconds, never coverage.
+# TESTS_FOR_ALL -- the blanket is CI's job now, not a laptop's (founder 2026-08-31, doc
+# ~/.claude/docs/founder/2026-08-31T0234Z-cccou-are-right-to-be-furious-i-was-274594b7.md:
+# "A local machine should never be the primary compute node for a 400-file test matrix ... the
+# heavy integration tests must be physically removed from the local pre-push hook and shifted
+# exclusively to GitHub Actions"). The reasoning in the paragraph above is still correct -- a
+# selection is a guess and a blanket is not -- but it bought its coverage by making the laptop
+# run the suite, and the suite on a loaded laptop invents failures that do not exist. On a clean
+# runner it does not, so the blanket runs where it works: CI sets CI=1 and gets every cheap file,
+# a laptop gets the selection. Set TESTS_FOR_ALL=1 to force it anywhere.
 slow="$IDP/tests/slow-files.txt"
-if [ -f "$slow" ]; then
+if [ "${TESTS_FOR_ALL:-${CI:+1}}" = 1 ] && [ -f "$slow" ]; then
   cheap=$(
     { cd "$IDP" && git ls-files 'tests/test_*.py' 'sovereign/tests/*/test_*.py'; } \
       | grep -v '/fixtures/' \
       | grep -vxFf <(grep -v '^#' "$slow") || true
   )
   sel=$(printf '%s\n%s\n' "$sel" "$cheap" | grep -v '^$' | sort -u)
+else
+  echo "tests-for: selection only (every cheap file runs in CI, where a clean runner can answer its own subprocesses); TESTS_FOR_ALL=1 forces the full set here"
 fi
 if [ -z "$sel" ]; then echo "ok    tests-for: $(printf '%s\n' "$changed" | wc -l | tr -d ' ') changed file(s), no test names them (CI runs the suite)"; exit 0; fi
 n=$(printf '%s\n' "$sel" | wc -l | tr -d ' ')
