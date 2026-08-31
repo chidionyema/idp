@@ -551,7 +551,16 @@ pb_otto_parity() {
   step mac-run-hostname $K exec "$d" -n "$ns" -c gateway -- mac-run hostname
   # crew#561 row 4 class: the plumbing was green while Otto believed it had no GitHub. The row
   # runs the shipped doors from inside the pod: the git binary answers and gh holds a live login.
-  step git-in-pod $K exec "$d" -n "$ns" -c gateway -- sh -c 'git --version; gh auth status 2>&1 | tail -3'
+  # Two defects, both found on run 33347928190 (2026-08-31). First it ended in a pipe:
+  # `gh auth status 2>&1 | tail -3` returns tail's status, so the row printed "You are not logged
+  # into any GitHub hosts" and still reported rc=0 -- the silent-green class this row exists to
+  # catch. Second, and why the first went unnoticed, it graded a process Otto never uses: the
+  # credential is a file under HERMES_ENV_DIR (Kyverno secrets-not-from-env-vars refuses pod env,
+  # crew#341) and deploy/k8s/entrypoint.sh exports it for the agent, so a bare `kubectl exec` shell
+  # inherits nothing. Fixing only the pipe would have turned a false green into a false red on a pod
+  # where Otto's own gh works (LAW 38). The row now exports the env dir first, exactly as
+  # repo-workspace below does, and then keeps gh's own exit code.
+  step git-in-pod $K exec "$d" -n "$ns" -c gateway -- sh -c 'for f in "$HERMES_ENV_DIR"/*; do n=$(basename "$f"); case "$n" in [A-Z_][A-Z0-9_]*) export "$n=$(cat "$f")";; esac; done; git --version && { s=$(gh auth status 2>&1); rc=$?; printf "%s\n" "$s" | tail -3; exit $rc; }'
   step hindsight-answers $K exec "$d" -n "$ns" -c gateway -- python3 -c 'import os,urllib.request; u=os.environ["HINDSIGHT_API_URL"]; print(u, urllib.request.urlopen(u+"/health", timeout=5).status)'
   step cron-lanes-installed sh -c "$K exec $d -n $ns -c gateway -- python3 -c 'import json; j=json.load(open(\"/data/cron/jobs.json\")); n=len(j.get(\"jobs\", j) if isinstance(j, dict) else j); print(\"jobs=%d\" % n); raise SystemExit(0 if n else 1)'"
   # crew#561 CP5 as a row, not a listing: the primary lane is the estate router, read from the
@@ -566,6 +575,43 @@ pb_otto_parity() {
   step sa-blind-elsewhere sh -c "a=\$($K auth can-i list secrets -n kube-system --as=system:serviceaccount:$ns:hermes-agent 2>/dev/null); [ \"\$a\" = no ] && echo 'kube-system secrets: no'"
   # crew#561 CP3: the estate MCP answers the pod with the pod's own key, at the URL the pod's
   # config names (never typed here, LAW 46). Only the status is printed, never the key.
+  # crew#717 wave 1 (founder 2026-08-30 "i need otto sorted once and for all"): memory, voice
+  # and observability graded from inside the pod. toolsets-available is the inventory receipt:
+  # what the runtime says is on, and the env each dark toolset still needs.
+  show toolsets-available $K exec "$d" -n "$ns" -c gateway -- sh -c 'python3 -c "
+from tools.registry import registry
+a = registry.get_available_toolsets()
+want = (\"web\", \"browser\", \"vision\", \"image_gen\", \"tts\", \"cronjob\", \"delegation\", \"code_execution\", \"memory\", \"session_search\", \"computer_use\")
+for ts in sorted(set(a) & set(want)):
+    print(ts, a[ts][\"available\"], \",\".join(a[ts][\"requirements\"]) or \"-\")
+"'
+  step memory-survives-restart $K exec "$d" -n "$ns" -c gateway -- sh -c 'test -s /data/state.db && ls -l /data/state.db'
+  step memory-volume-bound sh -c "$K get pvc -n $ns | grep Bound"
+  step memory-hindsight-answers $K exec "$d" -n "$ns" -c gateway -- sh -c 'python3 -c "
+import os, urllib.request
+u = os.environ[\"HINDSIGHT_API_URL\"]
+err = None
+for path in (\"/health\", \"/\"):
+    try:
+        print(path, urllib.request.urlopen(u + path, timeout=10).status)
+        break
+    except Exception as e:
+        err = e
+else:
+    raise SystemExit(str(err))
+"'
+  step langfuse-key-mounted $K exec "$d" -n "$ns" -c gateway -- sh -c 'for f in LANGFUSE_PUBLIC_KEY LANGFUSE_SECRET_KEY; do test -s "/run/secrets/hermes-agent-env/$f" || exit 1; printf "%s bytes=%s\n" "$f" "$(wc -c < /run/secrets/hermes-agent-env/$f)"; done'
+  step otto-emits-traces $K exec "$d" -n "$ns" -c gateway -- sh -c 'python3 -c "
+import base64, json, os, urllib.request
+u = os.environ[\"LANGFUSE_BASE_URL\"]
+pk = open(\"/run/secrets/hermes-agent-env/LANGFUSE_PUBLIC_KEY\").read().strip()
+sk = open(\"/run/secrets/hermes-agent-env/LANGFUSE_SECRET_KEY\").read().strip()
+tok = base64.b64encode((pk + \":\" + sk).encode()).decode()
+r = urllib.request.urlopen(urllib.request.Request(u + \"/api/public/traces?limit=1\", headers={\"Authorization\": \"Basic \" + tok}), timeout=15)
+d = json.loads(r.read().decode())
+print(r.status, \"traces_total\", d.get(\"meta\", {}).get(\"totalItems\"))
+"'
+  step tts-edge-answers $K exec "$d" -n "$ns" -c gateway -- sh -c 'python3 -c "import edge_tts; print(\"edge-tts importable\")"'
   # crew#561, founder 2026-08-30 "Otto need to be mandated also else may forget": the entrypoint reads
   # estate state at boot and logs READ or BLIND; a boot with neither line is a boot that forgot.
   step estate-state-read-at-start sh -c "$K logs $d -n $ns -c gateway | grep -m1 '^estate-state: READ '"

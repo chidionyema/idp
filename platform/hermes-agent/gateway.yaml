@@ -249,6 +249,12 @@ spec:
               value: /etc/hermes/estate.yaml
             - name: HINDSIGHT_API_URL
               value: http://hindsight-api.hindsight.svc:8888
+            # crew#717 wave 1: where the observability plugin sends Otto's traces (LAW 50). The keys
+            # arrive in the env dir from langfuse-key.yaml; a URL with no keys is inert.
+            - name: LANGFUSE_BASE_URL
+              value: http://langfuse-web.observability.svc:3000
+            - name: HERMES_LANGFUSE_ENV
+              value: production
             - name: PYTHONUNBUFFERED
               value: "1"
             # crew#516 CP4: bind a2a on the pod IP so the probes below reach it; A2A_BEARER_TOKEN
@@ -409,6 +415,7 @@ spec:
               - secret: { name: hermes-agent-env }
               - secret: { name: hermes-agent-a2a }   # crew#516 CP4: A2A_BEARER_TOKEN
               - secret: { name: hermes-agent-mcp, optional: true }   # crew#561 CP3: ESTATE_MCP_KEY (mcp-key.yaml)
+              - secret: { name: hermes-agent-langfuse, optional: true }   # crew#717 wave 1: LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY (langfuse-key.yaml)
         - name: estate
           configMap: { name: hermes-agent-estate }
         - name: mac-run
