@@ -351,6 +351,15 @@ data:
                     # so the reader can go straight to the entry instead of guessing.
                     row["message"] = flux_message(
                         "{}; {}".format(row["message"], wanted_from(o.get("spec"))))
+            if (o["metadata"].get("annotations") or {}).get("estate/expect-ready") == "false":
+                # crew#631 CP2 (2026-08-31): a wall probe (backstage/verdict-key-wall) asks for a key its
+                # identity must be refused. Refused is the wall standing; synced is the breach. Graded
+                # inverted here so the cluster receipt reads the wall the same way bin/idp-verdict
+                # key-wall does, and a probe doing its job never turns the estate-state page red.
+                synced = c.get("status") == "True" or bool(st.get("syncedResourceVersion"))
+                row["ready"] = not synced
+                row["message"] = ("WALL BREACHED: this identity read the key it must be refused" if synced
+                                  else "wall standing: refused as designed; " + flux_message(c.get("message", "no Ready condition yet")))
             flux.append(row)
     flux_not_ready = [r for r in flux if not r["ready"]]
     # crew#483: the PolicyExceptions the cluster holds (kyverno.io/v2), name, namespace, policies
