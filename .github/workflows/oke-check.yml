@@ -274,6 +274,8 @@ jobs:
           SEED_TELEGRAM_HERMES_BOT_TOKEN: ${{ secrets.SEED_TELEGRAM_HERMES_BOT_TOKEN }}
           SEED_TELEGRAM_ALERTS_BOT_TOKEN: ${{ secrets.SEED_TELEGRAM_ALERTS_BOT_TOKEN }}
           SEED_STRIPE_SECRET_KEY: ${{ secrets.SEED_STRIPE_SECRET_KEY }}
+          SEED_GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.SEED_GOOGLE_OAUTH_CLIENT_ID }}
+          SEED_GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.SEED_GOOGLE_OAUTH_CLIENT_SECRET }}
         run: |
           bin/idp-bootstrap-vendors || { rc=$?; [ "$rc" = 2 ] || exit "$rc"; }
 
