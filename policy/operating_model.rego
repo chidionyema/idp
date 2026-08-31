@@ -279,7 +279,11 @@ deny contains msg if {
 # A sentence ("we made it faster") is not a plan that was counted.
 
 optimised_line_ok if {
-	regex.match(`(?m)^Optimised: [^\n]*\d[^\n]*->[^\n]*\d[^\n]*; *cut: \S[^\n]*$`, input.pr.body)
+	# The arrow may be ASCII `->` or U+2192, and the clause `cut:` or `Cut:` after `;` or `.`:
+	# idp#1012 carried a counted plan ("4 → 2 steps, 3 → 1 round trip. Cut: ...") and was refused
+	# for the bytes of its arrow, not for anything the rule is trying to grade. LAW 38 -- a guard
+	# that refuses correct work is an outage. The property is still two counts and a cut clause.
+	regex.match(`(?m)^Optimised: [^\n]*\d[^\n]*(->|→)[^\n]*\d[^\n]*[;.] *[Cc]ut: \S[^\n]*$`, input.pr.body)
 }
 
 # WHEN THE RULE STARTS JUDGING. LAW 51 landed on main in dca2a929 at 2026-08-29T02:28:20Z. Between
