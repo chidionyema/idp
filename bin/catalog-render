@@ -146,6 +146,9 @@ def main(argv: list[str]) -> int:
     # Same two-part fix as bin/idp-image-update-pr: the create path writes the line, and an
     # existing body that lacks it gains it.
     OPTIMISED = ("Optimised: 1 -> 1 steps (one render of the catalogue), 1 -> 1 round trips (one push, one pull request); cut: nothing, a scheduled render has no plan to shrink (operating-model-gate rule optimised_plan, LAW 51)")
+    # Ruling R62 (founder 2026-08-31): every body carries a Cleanup section; same two-part
+    # fix as the Optimised line so an existing render branch gains it too.
+    CLEANUP = "Cleanup: nothing to clean, the render replaces its own page and leaves no worktree or branch behind (operating-model-gate rule cleanup_section, ruling R62)"
     rc, existing = sh(["gh", "pr", "list", "--head", BRANCH, "--state", "open", "--json", "number", "--jq", ".[0].number"], WT)
     if not existing:
         step("open PR", ["gh", "pr", "create", "--base", "main", "--head", BRANCH,
@@ -156,7 +159,7 @@ def main(argv: list[str]) -> int:
                                    "it lands when security-scan and spec-gate pass.\n\n"
                                    # crew#474: the operating-model gate refuses a body with no laws section
                                    # (idp#376 sat BLOCKED for a day), so the generated body carries one.
-                                   f"{OPTIMISED}\n\n"
+                                   f"{OPTIMISED}\n{CLEANUP}\n\n"
                                    "## Architecture laws\n"
                                    f"- LAW 1 zero-gravity: n/a: generated pages only, {PAGE} and {SHOWCASE}\n"
                                    "- LAW 2 fractal: bin/catalog-render -> bin/estate-showcase -> bin/trace-matrix\n"
@@ -164,8 +167,10 @@ def main(argv: list[str]) -> int:
                                    "- LAW 4 calibration: n/a: no prediction made\n"], WT)
         rc, existing = sh(["gh", "pr", "list", "--head", BRANCH, "--state", "open", "--json", "number", "--jq", ".[0].number"], WT)
     rc, body = sh(["gh", "pr", "view", existing, "--json", "body", "--jq", ".body"], WT)
-    if not any(l.startswith("Optimised: ") for l in body.splitlines()):
-        step("refresh body", ["gh", "pr", "edit", existing, "--body", body + "\n\n" + OPTIMISED + "\n"], WT)
+    gained = [line for line in (OPTIMISED, CLEANUP)
+              if not any(l.startswith(line.split(":", 1)[0] + ":") for l in body.splitlines())]
+    if gained:
+        step("refresh body", ["gh", "pr", "edit", existing, "--body", body + "\n\n" + "\n".join(gained) + "\n"], WT)
 
     # crew#684: bin/idp-pr-age drafts a conflicting PR at 4h; a fresh render clears the conflict
     # but `gh pr merge --auto` refuses a draft (runs 33278169055, 33294242647). Un-draft first.

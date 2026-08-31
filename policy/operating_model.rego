@@ -308,6 +308,36 @@ deny contains msg if {
 	msg := "rule=optimised_plan | the PR body has no counted `Optimised:` line (LAW 51) | fix: plan first, then add `Optimised: <steps before> -> <after>, <round trips before> -> <after>; cut: <what, why>` — numbers on both sides of the arrow and a cut clause; the procedure is in ~/AGENTS-FULL.md"
 }
 
+# --- cleanup_section (ruling R62, founder 2026-08-31) ---------------------------------------
+# Founder, 2026-08-31, verbatim: "we never cleannup every pr nust have cleanup section
+# nandatory ... and i will defie what it says". Said while 13 leftover worktrees sat inside
+# the idp folder and 325 were registered against the repository: work piles up because no
+# pull request accounts for what it leaves behind. Every body carries a `## Cleanup` heading
+# (or a `Cleanup:` line) naming what the change removes or leaves behind.
+#
+# Presence only, deliberately: the founder said he will define what the section must say,
+# so until his definition lands this rule refuses nothing about the content. Same
+# grandfather clause as optimised_plan: a pull request opened before the rule existed is
+# not refused for lacking a section nobody had asked for.
+
+cleanup_section_ok if {
+	regex.match(`(?mi)^(##+ +Cleanup\b|Cleanup: \S)`, input.pr.body)
+}
+
+cleanup_landed := "2026-08-31T17:10:00Z"
+
+opened_before_cleanup if {
+	is_string(input.pr.createdAt)
+	input.pr.createdAt < cleanup_landed
+}
+
+deny contains msg if {
+	is_string(input.pr.body)
+	not cleanup_section_ok
+	not opened_before_cleanup
+	msg := "rule=cleanup_section | the PR body has no `## Cleanup` section (ruling R62, founder 2026-08-31) | fix: add a `## Cleanup` section saying what this change removes or leaves behind — worktrees, branches, dead files, state; say `nothing to clean` explicitly if so"
+}
+
 # --- lifecycle_row (crew#618, founder 2026-08-29) -------------------------------------------
 # "no PR covering critical infra like this can have setup going to void: reusable? expiration? we
 # need policy." A pull request that touches a root credential's birth (bin/idp-bootstrap-*, the

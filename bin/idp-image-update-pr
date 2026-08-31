@@ -14,14 +14,18 @@ branch=${IMAGE_UPDATE_BRANCH:-flux/image-updates}
 # shellcheck disable=SC2016  # backticks are the gate's own syntax, not a substitution
 VERIFY='Verify: `grep -rn imagepolicy platform/ clusters/ --include=*.yaml`'
 OPTIMISED="Optimised: 1 -> 1 steps (a newTag line written by the image controller), 1 -> 1 round trips (one push, one pull request); cut: nothing, a machine-written tag bump has no plan to shrink (operating-model-gate rule optimised_plan, LAW 51)"
+# Ruling R62 (founder 2026-08-31): every body carries a Cleanup section; same two-part fix
+# as the Optimised line so an already-open controller branch gains it too.
+CLEANUP="Cleanup: nothing to clean, the controller rewrites one newTag line and leaves no worktree or branch behind (operating-model-gate rule cleanup_section, ruling R62)"
 n=$(gh pr list --head "$branch" --base main --state open --json number -q '.[0].number')
 if [ -z "$n" ]; then
   gh pr create --head "$branch" --base main \
     --title "$(git log -1 --format=%s)" \
-    --body "$(printf '%s\n\n%s\n%s\n%s\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n' \
+    --body "$(printf '%s\n\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n' \
       "$(git log -1 --format=%b)" \
       "$VERIFY" \
       "$OPTIMISED" \
+      "$CLEANUP" \
       "Spec: tests/test_incident_catalogue_image_never_repulled.py" \
       "Drill: login-drill" \
       "Cost-delta-usd-month: 0" \
@@ -42,6 +46,15 @@ case "$body" in
   *)
     gh pr edit "$n" --body "$(printf '%s\n\n%s\n' "$body" "$OPTIMISED")"
     echo "refresh image-update-pr #$n body gained the Optimised line (LAW 51)"
+    ;;
+esac
+# Ruling R62: an already-open controller branch gains the Cleanup line the same way.
+body=$(gh pr view "$n" --json body -q .body)
+case "$body" in
+  "Cleanup: "*|*$'\n'"Cleanup: "*|*$'\n'"## Cleanup"*) ;;
+  *)
+    gh pr edit "$n" --body "$(printf '%s\n\n%s\n' "$body" "$CLEANUP")"
+    echo "refresh image-update-pr #$n body gained the Cleanup line (ruling R62)"
     ;;
 esac
 # The same backfill as above: idp#1011 was opened before this line existed and keeps its old body
