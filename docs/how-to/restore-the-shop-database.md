@@ -1,7 +1,7 @@
 # Restore the shop database
 
 The whole shop is one SQLite file: `/data/store.db` on claim `prospector-store-api-data` in
-namespace `prospector`. It holds the accounts, the 202-pack catalogue, the price history, the
+the `prospector` area of the cluster. It holds the accounts, the 202-pack catalogue, the price history, the
 orders, the entitlements and 41,035 analytics events. Losing it loses the shop, not the logins.
 
 A copy is made every day at 03:17 UTC (`17 3 * * *`) by `platform/prospector/store-db-backup.yaml`, into bucket
@@ -36,7 +36,7 @@ kubectl -n prospector wait --for=delete pod -l app.kubernetes.io/name=prospector
 
 Then a pod that can reach the bucket and write the claim. It runs as uid 10001, the user the API
 owns its files as; anything else restores a file the API cannot open. The security context is the
-one the namespace enforces — non-root, read-only root filesystem, all capabilities dropped, seccomp
+one this area of the cluster enforces — non-root, read-only root filesystem, all capabilities dropped, seccomp
 `RuntimeDefault` — and a bare image with none of it is refused at admission.
 
 ```

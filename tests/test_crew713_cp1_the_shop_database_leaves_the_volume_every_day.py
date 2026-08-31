@@ -61,7 +61,8 @@ def _fixture_db(path, packs, rows=1):
     for table in ("AspNetUsers", "Orders", "Entitlements", "AnalyticsEvents"):
         db.execute(f"create table {table} (Id integer primary key)")
         db.executemany(
-            f"insert into {table} (Id) values (?)", [(i,) for i in range(rows)]
+            f"insert into {table} (Id) values (?)",  # noqa: S608 -- table names are this file's own fixtures
+            [(i,) for i in range(rows)],
         )
     db.executemany("insert into Packs (Id) values (?)", [(i,) for i in range(packs)])
     db.commit()
@@ -75,9 +76,11 @@ def _run(tmp_path, packs, previous=None, ratio="0.5", pad=0):
     code = (
         _embedded_python()
         .replace("/data/store.db", str(source))
-        .replace("/tmp/store.db", str(tmp_path / "copy.db"))
-        .replace("/tmp/previous.json", str(tmp_path / "previous.json"))
-        .replace("/tmp/receipt.json", str(tmp_path / "receipt.json"))
+        # noqa lines: these four are the paths INSIDE the pod, which this test redirects at
+        # its own temporary directory. Nothing here opens a file on the machine running the test.
+        .replace("/tmp/store.db", str(tmp_path / "copy.db"))  # noqa: S108
+        .replace("/tmp/previous.json", str(tmp_path / "previous.json"))  # noqa: S108
+        .replace("/tmp/receipt.json", str(tmp_path / "receipt.json"))  # noqa: S108
     )
     (tmp_path / "previous.json").write_text(json.dumps(previous) if previous else "")
     done = subprocess.run(
@@ -199,7 +202,7 @@ def test_no_credential_reaches_the_pod():
 @pytest.mark.parametrize(
     "needle",
     [
-        f'name           = "${{var.cluster_name}}-shop-backups"',
+        'name           = "${var.cluster_name}-shop-backups"',
         'access_type    = "NoPublicAccess"',
         'versioning = "Enabled"',
     ],
