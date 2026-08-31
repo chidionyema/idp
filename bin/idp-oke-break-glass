@@ -686,6 +686,22 @@ print(\"bindings outside $ns naming hermes-agent:\", n)
 '"
 }
 
+# otto-restore: the undo of otto-lockdown (LAW 16, crew#736). Resumes the Flux row so the
+# deployment's own replica count (gateway.yaml) comes back, then waits for the gateway to answer.
+pb_otto_restore() {
+  local ns=hermes-agent
+  local row; row=$(flux get kustomizations -n flux-system 2>/dev/null | awk '$1=="hermes-agent"{print $1}')
+  if [ -n "$row" ]; then
+    step resume-flux-row flux resume kustomization "$row" -n flux-system --timeout=3m
+    step reconcile-row flux reconcile kustomization "$row" -n flux-system --timeout=3m
+  else
+    echo "n/a   resume-flux-row        no Flux Kustomization named hermes-agent; scaling by hand"
+    step scale-to-one $K scale deploy/hermes-agent-gateway -n "$ns" --replicas=1
+  fi
+  step gateway-back sh -c "$K rollout status deploy/hermes-agent-gateway -n $ns --timeout=180s 2>&1 | tail -1"
+  show gateway-after $K get deploy/hermes-agent-gateway -n "$ns"
+}
+
 # healthchecks-door: crew#684, 2026-08-30 07:0xZ. Read-only. idp#957 (Host header) and idp#962 (enrol
 # sets the read-only key on pod start) both rolled and the Ops tile still read "Healthchecks
 # answered 401" (login drill 33298467426). Every layer between the portal and Healthchecks is
@@ -1173,11 +1189,12 @@ YAML
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor otto-parity otto-lockdown healthchecks-door cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   otto-parity) pb_otto_parity ;;
   otto-lockdown) pb_otto_lockdown ;;
+  otto-restore) pb_otto_restore ;;
   healthchecks-door) pb_healthchecks_door ;;
   router-spend) pb_router_spend ;;
   dns-per-node) pb_dns_per_node ;;
