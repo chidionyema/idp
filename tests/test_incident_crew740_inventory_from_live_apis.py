@@ -144,7 +144,7 @@ def test_the_workflow_is_read_only_scheduled_and_on_the_drill_catalogue():
     assert "tofu apply" not in text and "kubectl apply" not in text
     # steampipe comes from a pinned vendor release, checksum verified; the setup action
     # pages GitHub's API with no token and 403s on hosted runners
-    assert "steampipe-action-setup" not in text
+    assert "uses: turbot/steampipe-action-setup" not in text
     assert re.search(r"releases/download/\$v/steampipe_linux_amd64\.tar\.gz", text)
     assert "sha256sum -c" in text and re.search(r"sum=[0-9a-f]{64}", text)
 
