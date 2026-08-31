@@ -1,5 +1,8 @@
 import { createApp } from '@backstage/frontend-defaults';
 import catalogPlugin from '@backstage/plugin-catalog/alpha';
+// Visual estate map at /catalog-graph: every system and its relations as a navigable graph.
+// A buyer's engineer reads the whole estate in one view (crew#612 10x, 2026-08-31).
+import catalogGraphPlugin from '@backstage/plugin-catalog-graph/alpha';
 // The Kubernetes plugin's API is what the front page reads the cluster through (crew#459).
 import kubernetesPlugin from '@backstage/plugin-kubernetes/alpha';
 // Declared in package.json and wired in the backend since crew#459, but never added here, so
@@ -20,6 +23,7 @@ import { metricsPlugin } from './modules/metrics';
 export default createApp({
   features: [
     catalogPlugin,
+    catalogGraphPlugin,
     kubernetesPlugin,
     searchPlugin,
     techdocsPlugin,

@@ -21,6 +21,7 @@ import TodayIcon from '@material-ui/icons/Today';
 import LayersIcon from '@material-ui/icons/Layers';
 import DnsIcon from '@material-ui/icons/Dns';
 import AddCircleOutlineIcon from '@material-ui/icons/AddCircleOutline';
+import AccountTreeIcon from '@material-ui/icons/AccountTree';
 import SettingsApplicationsIcon from '@material-ui/icons/SettingsApplications';
 import TimelineIcon from '@material-ui/icons/Timeline';
 import SearchIcon from '@material-ui/icons/Search';
@@ -36,6 +37,8 @@ export const NAV = [
   { title: 'What we run', to: '/catalog', icon: LayersIcon },
   // crew#612 item 1: templates on /create are the self-service menu.
   { title: 'Create', to: '/create', icon: AddCircleOutlineIcon },
+  // Visual estate map: every system and its relations as a navigable graph (crew#612 10x).
+  { title: 'Map', to: '/catalog-graph', icon: AccountTreeIcon },
   { title: 'Tools', to: '/tools', icon: BuildIcon },
   { title: 'Ops', to: '/ops', icon: TimelineIcon },
   { title: 'Find', to: '/search', icon: SearchIcon },
