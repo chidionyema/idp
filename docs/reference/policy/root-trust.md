@@ -82,6 +82,7 @@ absent here is red. Audit of 2026-08-28 (crew#66, session a0d64ea4): re-graded b
 | `commerce-lago-credentials` | platform/commerce/data/external-secret.yaml | estate (Terraform random) | `random_password` + `oci_vault_secret` (platform/oci/commerce.tf); one password, used both as the database's own and inside the URL that dials it | MEETS | Terraform · `bin/idp-oke-rebuild` |
 | `commerce-lago-encryption` | platform/commerce/data/external-secret.yaml | estate (Terraform random) | `random_password` + `oci_vault_secret` (platform/oci/commerce.tf); the ledger's at-rest keys, generated once and never rotated in place | MEETS | Terraform · `bin/idp-oke-rebuild` |
 | `commerce-payment-provider` | platform/commerce/data/external-secret.yaml | payment provider | one root secret key from the provider's dashboard, then the webhook signing secret minted by code through the provider's API; no second console visit (R52) | MISS | crew#623 CP3 |
+| `rotation-canary` | platform/state/rotation-canary.yaml | vault (drill fixture) | a fresh random value minted by code on every drill run: `bin/idp-vault-put rotation-canary` in the oke-check rotation-drill job; never touched by hand (crew#722) | MEETS | `bin/idp-vault-put` |
 | root OCI credential (`estate-tofu` key pair) | every `bin/idp-cloud` call | OCI | one browser SSO, IAM and key pair via API, private half to the sops vault | MEETS | `bin/idp-oci-bootstrap` |
 
 ## Security policy
