@@ -551,7 +551,16 @@ pb_otto_parity() {
   step mac-run-hostname $K exec "$d" -n "$ns" -c gateway -- mac-run hostname
   # crew#561 row 4 class: the plumbing was green while Otto believed it had no GitHub. The row
   # runs the shipped doors from inside the pod: the git binary answers and gh holds a live login.
-  step git-in-pod $K exec "$d" -n "$ns" -c gateway -- sh -c 'git --version; gh auth status 2>&1 | tail -3'
+  # Two defects, both found on run 33347928190 (2026-08-31). First it ended in a pipe:
+  # `gh auth status 2>&1 | tail -3` returns tail's status, so the row printed "You are not logged
+  # into any GitHub hosts" and still reported rc=0 -- the silent-green class this row exists to
+  # catch. Second, and why the first went unnoticed, it graded a process Otto never uses: the
+  # credential is a file under HERMES_ENV_DIR (Kyverno secrets-not-from-env-vars refuses pod env,
+  # crew#341) and deploy/k8s/entrypoint.sh exports it for the agent, so a bare `kubectl exec` shell
+  # inherits nothing. Fixing only the pipe would have turned a false green into a false red on a pod
+  # where Otto's own gh works (LAW 38). The row now exports the env dir first, exactly as
+  # repo-workspace below does, and then keeps gh's own exit code.
+  step git-in-pod $K exec "$d" -n "$ns" -c gateway -- sh -c 'for f in "$HERMES_ENV_DIR"/*; do n=$(basename "$f"); case "$n" in [A-Z_][A-Z0-9_]*) export "$n=$(cat "$f")";; esac; done; git --version && { s=$(gh auth status 2>&1); rc=$?; printf "%s\n" "$s" | tail -3; exit $rc; }'
   step hindsight-answers $K exec "$d" -n "$ns" -c gateway -- python3 -c 'import os,urllib.request; u=os.environ["HINDSIGHT_API_URL"]; print(u, urllib.request.urlopen(u+"/health", timeout=5).status)'
   step cron-lanes-installed sh -c "$K exec $d -n $ns -c gateway -- python3 -c 'import json; j=json.load(open(\"/data/cron/jobs.json\")); n=len(j.get(\"jobs\", j) if isinstance(j, dict) else j); print(\"jobs=%d\" % n); raise SystemExit(0 if n else 1)'"
   # crew#561 CP5 as a row, not a listing: the primary lane is the estate router, read from the
