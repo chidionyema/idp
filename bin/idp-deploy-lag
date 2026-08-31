@@ -40,12 +40,16 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The marker the image-automation-controller writes beside every line it owns.
-TAGGED = re.compile(r"^newTag:\s*(?P<tag>\S+)\s*#\s*\{\"\$imagepolicy\":\s*\"(?P<policy>[^\"]+)\"")
+TAGGED = re.compile(
+    r"^newTag:\s*(?P<tag>\S+)\s*#\s*\{\"\$imagepolicy\":\s*\"(?P<policy>[^\"]+)\""
+)
 DEFAULT_MAX_LAG_HOURS = float(os.environ.get("DEPLOY_LAG_MAX_HOURS", "2"))
 
 
 def git(*args, check=True):
-    p = subprocess.run(["git", "-C", ROOT, *args], capture_output=True, text=True, timeout=120)
+    p = subprocess.run(
+        ["git", "-C", ROOT, *args], capture_output=True, text=True, timeout=120
+    )
     if check and p.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)}: {(p.stderr or p.stdout).strip()}")
     return p.stdout
@@ -53,14 +57,23 @@ def git(*args, check=True):
 
 def tags_at(ref):
     """{policy: (path, tag)} for every automation-owned tag line at `ref`."""
-    out = git("grep", "-n", "--full-name", "imagepolicy", ref, "--", "platform", "clusters",
-              check=False)
+    out = git(
+        "grep",
+        "-n",
+        "--full-name",
+        "imagepolicy",
+        ref,
+        "--",
+        "platform",
+        "clusters",
+        check=False,
+    )
     found = {}
     for line in out.splitlines():
         # `git grep <ref>` emits `<ref>:<path>:<lineno>:<content>`.
         if not line.startswith(ref + ":"):
             continue
-        rest = line[len(ref) + 1:]
+        rest = line[len(ref) + 1 :]
         try:
             path, _lineno, content = rest.split(":", 2)
         except ValueError:
@@ -83,22 +96,31 @@ def age_hours(ref, path, now):
 def main(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument("--max-lag-hours", type=float, default=DEFAULT_MAX_LAG_HOURS)
-    ap.add_argument("--branch", default=os.environ.get("IMAGE_UPDATE_BRANCH", "flux/image-updates"))
+    ap.add_argument(
+        "--branch", default=os.environ.get("IMAGE_UPDATE_BRANCH", "flux/image-updates")
+    )
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
 
-    live, newest = f"origin/{os.environ.get('DEPLOY_LAG_BASE', 'main')}", f"origin/{a.branch}"
+    live, newest = (
+        f"origin/{os.environ.get('DEPLOY_LAG_BASE', 'main')}",
+        f"origin/{a.branch}",
+    )
     for ref in (live, newest):
         if git("rev-parse", "--verify", "--quiet", ref, check=False).strip() == "":
-            print(f"BLIND   deploy-lag  {ref} cannot be read; fetch it before grading -- an estate "
-                  f"that cannot tell whether it is deploying is not deploying")
+            print(
+                f"BLIND   deploy-lag  {ref} cannot be read; fetch it before grading -- an estate "
+                f"that cannot tell whether it is deploying is not deploying"
+            )
             return 2
 
     now = dt.datetime.now(dt.timezone.utc)
     have, want = tags_at(live), tags_at(newest)
     if not want:
-        print(f"BLIND   deploy-lag  no $imagepolicy tag lines found at {newest}; the marker moved "
-              f"or the branch is empty, and a check that measures nothing is not a check")
+        print(
+            f"BLIND   deploy-lag  no $imagepolicy tag lines found at {newest}; the marker moved "
+            f"or the branch is empty, and a check that measures nothing is not a check"
+        )
         return 2
 
     rows, rc = [], 0
@@ -112,20 +134,34 @@ def main(argv):
         lag = age_hours(newest, path, now)
         if lag is None:
             rows.append({"policy": policy, "state": "BLIND", "tag": old})
-            print(f"BLIND   deploy-lag  {policy} differs but {newest} has no history for {path}")
+            print(
+                f"BLIND   deploy-lag  {policy} differs but {newest} has no history for {path}"
+            )
             rc = max(rc, 2)
             continue
         state = "FAIL" if lag > a.max_lag_hours else "ok"
-        rows.append({"policy": policy, "state": state, "running": old, "built": new,
-                     "lag_hours": round(lag, 2), "path": path})
+        rows.append(
+            {
+                "policy": policy,
+                "state": state,
+                "running": old,
+                "built": new,
+                "lag_hours": round(lag, 2),
+                "path": path,
+            }
+        )
         if state == "FAIL":
             rc = max(rc, 1)
-            print(f"FAIL    deploy-lag  {policy} is running {old} but {new} was built "
-                  f"{lag:.1f}h ago and has not reached main (bound {a.max_lag_hours:g}h); "
-                  f"the deploy pull request from {a.branch} is not merging")
+            print(
+                f"FAIL    deploy-lag  {policy} is running {old} but {new} was built "
+                f"{lag:.1f}h ago and has not reached main (bound {a.max_lag_hours:g}h); "
+                f"the deploy pull request from {a.branch} is not merging"
+            )
         else:
-            print(f"ok      deploy-lag  {policy} deploy in flight, {lag:.1f}h "
-                  f"(bound {a.max_lag_hours:g}h)")
+            print(
+                f"ok      deploy-lag  {policy} deploy in flight, {lag:.1f}h "
+                f"(bound {a.max_lag_hours:g}h)"
+            )
 
     if a.json:
         print(json.dumps({"rows": rows, "max_lag_hours": a.max_lag_hours}, indent=2))
