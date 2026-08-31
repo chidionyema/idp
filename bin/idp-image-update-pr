@@ -50,7 +50,8 @@ case "$body" in
   *"Verify: "*) ;;
   *)
     gh pr edit "$n" --body "$(printf '%s\n\n%s\n' "$(gh pr view "$n" --json body -q .body)" "$VERIFY")"
-    echo "refresh image-update-pr #$n body gained the Verify line (idp#1046)"
+    # A note about the body, not the verdict: the last line of stdout is what the caller reads.
+    echo "refresh image-update-pr #$n body gained the Verify line (idp#1046)" >&2
     ;;
 esac
 m=UNKNOWN
@@ -82,9 +83,18 @@ esac
 # bin/idp-pr-arm reports the true state instead: armed if the repository allows it, waiting on the
 # founder if it does not. The branch is an old fork of main, so main's copy of the tool is used --
 # the same reason this script is itself run from origin/main (.github/workflows/image-update-pr.yml).
-arm=bin/idp-pr-arm
+# Three places to look, in order, because none of them is guaranteed. The two tools ship in the same
+# bin/ directory, so the copy beside this script is the one that matches it -- and it is the only one
+# that exists when the workflow runs this script from main against a checkout of the deploy branch.
+# Then this checkout, for a run started from the branch itself. Then neither, which is not a failure
+# of the deploy: it is this change on its way to main, so it says the true thing and exits 0 rather
+# than killing the run with git's exit 128.
+arm=$(cd "$(dirname "$0")" && pwd)/idp-pr-arm
 if [ ! -x "$arm" ]; then
-  arm=$(mktemp)
-  git show origin/main:bin/idp-pr-arm >"$arm"
+  arm=bin/idp-pr-arm
+fi
+if [ ! -x "$arm" ]; then
+  echo "waiting image-update-pr #$n is open; bin/idp-pr-arm is not in this checkout, so the merge is the founder's: https://github.com/${GH_REPO:-chidionyema/idp}/pull/$n"
+  exit 0
 fi
 bash "$arm" "$n" --squash

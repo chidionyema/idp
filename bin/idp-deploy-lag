@@ -34,9 +34,13 @@ import argparse
 import datetime as dt
 import json
 import os
+import pathlib
 import re
 import subprocess
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "lib"))
+from ledger_fresh import authority_now  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The marker the image-automation-controller writes beside every line it owns.
@@ -53,6 +57,21 @@ def git(*args, check=True):
     if check and p.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)}: {(p.stderr or p.stdout).strip()}")
     return p.stdout
+
+
+def fetch(*branches):
+    """Bring the two refs into this checkout before grading.
+
+    CI checks out one branch at one depth; asking the caller to fetch first is how an instrument
+    ends up working on a laptop and BLIND everywhere that matters (LAW 28). A shallow clone is
+    deepened for these branches only, because the age of a lag is read from the commit that last
+    touched the tag line, which is usually not the tip.
+    """
+    shallow = git("rev-parse", "--is-shallow-repository", check=False).strip() == "true"
+    args = ["fetch", "--quiet", "--no-tags"]
+    if shallow:
+        args.append("--unshallow")
+    git(*args, "origin", *branches, check=False)
 
 
 def tags_at(ref):
@@ -106,15 +125,25 @@ def main(argv):
         f"origin/{os.environ.get('DEPLOY_LAG_BASE', 'main')}",
         f"origin/{a.branch}",
     )
+    fetch(os.environ.get("DEPLOY_LAG_BASE", "main"), a.branch)
     for ref in (live, newest):
         if git("rev-parse", "--verify", "--quiet", ref, check=False).strip() == "":
             print(
-                f"BLIND   deploy-lag  {ref} cannot be read; fetch it before grading -- an estate "
+                f"BLIND   deploy-lag  {ref} cannot be read even after fetching it -- an estate "
                 f"that cannot tell whether it is deploying is not deploying"
             )
             return 2
 
-    now = dt.datetime.now(dt.timezone.utc)
+    # crew#583: the commit stamps below were written by whichever machine pushed them, so the
+    # clock they are measured against is GitHub's, from the same API that answered for the refs --
+    # never this one. A Mac whose battery has died reports 1970 and would call every deploy fresh.
+    now = authority_now()
+    if now is None:
+        print(
+            "BLIND   deploy-lag  no clock to measure the lag against (gh api gave no Date header); "
+            "this machine's clock is not one"
+        )
+        return 2
     have, want = tags_at(live), tags_at(newest)
     if not want:
         print(
