@@ -1,0 +1,429 @@
+{
+ "receipts": [
+  {
+   "merged_at": "2026-08-31T05:28:10Z",
+   "number": 1052,
+   "repo": "chidionyema/idp",
+   "title": "Plain English boundary: Vale grades every page a person reads; buttons written at the source",
+   "url": "https://github.com/chidionyema/idp/pull/1052",
+   "use": "open any pull request that touches `docs/`, README, a workflow, the catalogue or the drill catalogue; the `prose` check comments on the offending line with the word to use."
+  },
+  {
+   "merged_at": "2026-08-31T03:27:13Z",
+   "number": 1014,
+   "repo": "chidionyema/idp",
+   "title": "crew#717 wave 1: Otto's memory, voice and traces become graded rows",
+   "url": "https://github.com/chidionyema/idp/pull/1014",
+   "use": "merge after idp#1013; the :41 otto-parity run grades the new rows."
+  },
+  {
+   "merged_at": "2026-08-31T03:26:43Z",
+   "number": 1035,
+   "repo": "chidionyema/idp",
+   "title": "fix: every entity in the portal was owned by a team that existed nowhere",
+   "url": "https://github.com/chidionyema/idp/pull/1035",
+   "use": "merge. Flux reconciles the backstage Kustomization, the `org-catalog` ConfigMap lands, the pod picks the new projected file up and the catalogue re-reads its locations."
+  },
+  {
+   "merged_at": "2026-08-31T03:21:19Z",
+   "number": 1034,
+   "repo": "chidionyema/idp",
+   "title": "fix: five portal routes answered 404 and no state border met contrast",
+   "url": "https://github.com/chidionyema/idp/pull/1034",
+   "use": "merge, then open the portal and click the five menu entries that used to 404."
+  },
+  {
+   "merged_at": "2026-08-31T00:21:24Z",
+   "number": 1023,
+   "repo": "chidionyema/idp",
+   "title": "platform: point the shop at the build that has the pack pictures",
+   "url": "https://github.com/chidionyema/idp/pull/1023",
+   "use": "merge; Flux reconciles `clusters/oke/edge.yaml` and the prospector Kustomization rolls store-web and store-api. The drill then runs on the push to main and hourly after it."
+  },
+  {
+   "merged_at": "2026-08-30T23:12:12Z",
+   "number": 1027,
+   "repo": "chidionyema/idp",
+   "title": "fix: the cluster takes what git holds \u2014 appID substitutes as a string, wedged Helm releases rebuild from git",
+   "url": "https://github.com/chidionyema/idp/pull/1027",
+   "use": "merge; Flux reconciles \u2014 hermes-agent and mcp admit their generators, tailscale-operator remediates instead of sitting Failed."
+  },
+  {
+   "merged_at": "2026-08-30T22:36:41Z",
+   "number": 1018,
+   "repo": "chidionyema/idp",
+   "title": "The otto-parity drill grades git and gh from inside the pod",
+   "url": "https://github.com/chidionyema/idp/pull/1018",
+   "use": "`gh workflow run oke-check.yml -R chidionyema/idp -f mode=break-glass -f playbook=otto-parity`, or wait for the scheduled otto-parity run."
+  },
+  {
+   "merged_at": "2026-08-30T22:36:26Z",
+   "number": 1019,
+   "repo": "chidionyema/idp",
+   "title": "dispatch: prove a break-glass playbook on its branch before it is merged",
+   "url": "https://github.com/chidionyema/idp/pull/1019",
+   "use": "`OKE_REF=my-branch bin/idp-oke-dispatch diagnose` runs that branch's playbooks against the cluster. Plain `bin/idp-oke-dispatch diagnose` is unchanged."
+  },
+  {
+   "merged_at": "2026-08-30T22:35:56Z",
+   "number": 1020,
+   "repo": "chidionyema/idp",
+   "title": "The kyverno judge grades the Pod admission grades, not only the Deployment",
+   "url": "https://github.com/chidionyema/idp/pull/1020",
+   "use": "`bin/idp-kyverno-render platform/tailscale`, and the kyverno rung of `bin/idp-ci` on every PR."
+  },
+  {
+   "merged_at": "2026-08-30T22:35:35Z",
+   "number": 1024,
+   "repo": "chidionyema/idp",
+   "title": "Otto's GitHub token is minted in-cluster, day 0 (idp#852 root)",
+   "url": "https://github.com/chidionyema/idp/pull/1024",
+   "use": "merge; Flux reconciles hermes-agent and mcp; Otto's next `gh auth status` from Telegram signs in."
+  }
+ ],
+ "taken": "2026-08-31T08:04Z",
+ "waiting": [
+  {
+   "cp": "CP3",
+   "issue": 727,
+   "url": "https://github.com/chidionyema/crew/issues/727",
+   "what": "state visible, not inferred. The cluster-state receipt carries every Kustomization+HelmRelease row (ready, mes"
+  },
+  {
+   "cp": "CP5",
+   "issue": 718,
+   "url": "https://github.com/chidionyema/crew/issues/718",
+   "what": "\u2014 the founder-facing pages claimed something untrue.** The one-login tile said \"There is no second login anywh"
+  },
+  {
+   "cp": "CP7",
+   "issue": 716,
+   "url": "https://github.com/chidionyema/crew/issues/716",
+   "what": "Demo and onboarding (LAW 32): founder opens Backstage, sees every scheduled thing in the estate on one page, w"
+  },
+  {
+   "cp": "CP8",
+   "issue": 716,
+   "url": "https://github.com/chidionyema/crew/issues/716",
+   "what": "Founder receipt."
+  },
+  {
+   "cp": "CP0",
+   "issue": 701,
+   "url": "https://github.com/chidionyema/crew/issues/701",
+   "what": "founder confirms this restatement and the first brick (word: `APPROVE: crew#<this>`)"
+  },
+  {
+   "cp": "CP4",
+   "issue": 696,
+   "url": "https://github.com/chidionyema/crew/issues/696",
+   "what": "Founder uses it: one real post for the storefront goes out on his word and its numbers appear on the ledger. F"
+  },
+  {
+   "cp": "CP3",
+   "issue": 695,
+   "url": "https://github.com/chidionyema/crew/issues/695",
+   "what": "Founder uses it: a flow he triggers from Backstage (Tile: Tools page) and sees finish. Founder receipt."
+  },
+  {
+   "cp": "CP2",
+   "issue": 694,
+   "url": "https://github.com/chidionyema/crew/issues/694",
+   "what": "The kit in `idp`: tokens (colour, type scale, spacing, radius, motion), the component library pinned, page tem"
+  },
+  {
+   "cp": "CP3",
+   "issue": 694,
+   "url": "https://github.com/chidionyema/crew/issues/694",
+   "what": "Storefront as the first consumer: the pack page (the money page) and the home page rebuilt on the kit; before/"
+  },
+  {
+   "cp": "CP5",
+   "issue": 694,
+   "url": "https://github.com/chidionyema/crew/issues/694",
+   "what": "Founder receipt: he opens mumchimp.com, says it is top grade, and the receipt is on this issue."
+  },
+  {
+   "cp": "CP4",
+   "issue": 684,
+   "url": "https://github.com/chidionyema/crew/issues/684",
+   "what": "Founder tiles: open `FOUNDER ACTION` items and the last 10 receipts."
+  },
+  {
+   "cp": "CP3",
+   "issue": 680,
+   "url": "https://github.com/chidionyema/crew/issues/680",
+   "what": "Founder taps one during a real investigation and reaches the tool signed in (`Founder receipt:`)."
+  },
+  {
+   "cp": "CP5",
+   "issue": 676,
+   "url": "https://github.com/chidionyema/crew/issues/676",
+   "what": "Founder watches one scenario heal itself from Telegram (`Founder receipt:`)."
+  },
+  {
+   "cp": "CP5",
+   "issue": 675,
+   "url": "https://github.com/chidionyema/crew/issues/675",
+   "what": "Founder opens one runbook during a real alert and it carries him to the fix (`Founder receipt:`)."
+  },
+  {
+   "cp": "CP5",
+   "issue": 674,
+   "url": "https://github.com/chidionyema/crew/issues/674",
+   "what": "Founder reads the policy and confirms (`Founder receipt:`)."
+  },
+  {
+   "cp": "CP4",
+   "issue": 673,
+   "url": "https://github.com/chidionyema/crew/issues/673",
+   "what": "Second door: the root credentials escrowed outside GitHub (a sealed store the founder alone opens) with a test"
+  },
+  {
+   "cp": "CP6",
+   "issue": 673,
+   "url": "https://github.com/chidionyema/crew/issues/673",
+   "what": "The founder runs the recovery once himself and confirms (`Founder receipt:` on this issue)."
+  },
+  {
+   "cp": "CP4",
+   "issue": 671,
+   "url": "https://github.com/chidionyema/crew/issues/671",
+   "what": "Founder-facing decisions carry inline buttons whose tap is the APPROVE/DENY word on the board."
+  },
+  {
+   "cp": "CP5",
+   "issue": 671,
+   "url": "https://github.com/chidionyema/crew/issues/671",
+   "what": "Founder says it looks better (`Founder receipt:` on this issue)."
+  },
+  {
+   "cp": "CP4",
+   "issue": 670,
+   "url": "https://github.com/chidionyema/crew/issues/670",
+   "what": "Founder saves his first link and confirms (`Founder receipt:` on this issue)."
+  },
+  {
+   "cp": "CP5",
+   "issue": 668,
+   "url": "https://github.com/chidionyema/crew/issues/668",
+   "what": "Backstage page for the report; founder receipt."
+  },
+  {
+   "cp": "CP7",
+   "issue": 667,
+   "url": "https://github.com/chidionyema/crew/issues/667",
+   "what": "R3 17 of 23 repos with no licence: LICENSE (proprietary, Bytesync Ltd) in every repo the founder owns; count 0"
+  },
+  {
+   "cp": "CP5",
+   "issue": 665,
+   "url": "https://github.com/chidionyema/crew/issues/665",
+   "what": "founder receipt: he sees an infra PR refused for the queue, not for its content, once."
+  },
+  {
+   "cp": "CP4",
+   "issue": 664,
+   "url": "https://github.com/chidionyema/crew/issues/664",
+   "what": "Founder receipt: he presses the button from his phone and reads the page."
+  },
+  {
+   "cp": "CP3",
+   "issue": 663,
+   "url": "https://github.com/chidionyema/crew/issues/663",
+   "what": "**Subscriptions** delivered under crew#623's design (money never enters the application; the commerce primitiv"
+  },
+  {
+   "cp": "CP3",
+   "issue": 658,
+   "url": "https://github.com/chidionyema/crew/issues/658",
+   "what": "**Founder view.** A saved view \"Founder\" on the project: open items grouped by repository, sorted by Priority,"
+  },
+  {
+   "cp": "CP2",
+   "issue": 656,
+   "url": "https://github.com/chidionyema/crew/issues/656",
+   "what": "\u2014 claim envelope and gate.** Half exists: `bin/idp-verify-claims` (idp#874, crew#628 CP1) turns a `Verified:` "
+  },
+  {
+   "cp": "CP4",
+   "issue": 654,
+   "url": "https://github.com/chidionyema/crew/issues/654",
+   "what": "**One cloud session does a whole ticket** from the phone: picks a crew issue, opens the PR, watches CI, merges"
+  },
+  {
+   "cp": "CP6",
+   "issue": 648,
+   "url": "https://github.com/chidionyema/crew/issues/648",
+   "what": "Founder receipt: he opens a new session, asks \"what is the state of the estate\", and the answer is the documen"
+  },
+  {
+   "cp": "CP5",
+   "issue": 647,
+   "url": "https://github.com/chidionyema/crew/issues/647",
+   "what": "Founder receipt: he asks \"who owns X\" and the board answers."
+  },
+  {
+   "cp": "CP3",
+   "issue": 644,
+   "url": "https://github.com/chidionyema/crew/issues/644",
+   "what": "founder receipt"
+  },
+  {
+   "cp": "CP3",
+   "issue": 643,
+   "url": "https://github.com/chidionyema/crew/issues/643",
+   "what": "founder receipt"
+  },
+  {
+   "cp": "CP4",
+   "issue": 642,
+   "url": "https://github.com/chidionyema/crew/issues/642",
+   "what": "founder receipt"
+  },
+  {
+   "cp": "CP10",
+   "issue": 639,
+   "url": "https://github.com/chidionyema/crew/issues/639",
+   "what": "Founder receipt. The founder runs the demo from the portal (one button) and confirms. Accept when: his confirm"
+  },
+  {
+   "cp": "CP8",
+   "issue": 627,
+   "url": "https://github.com/chidionyema/crew/issues/627",
+   "what": "Seen locally before shipping: the redesign (design, UX, IA) is synthesised by creatives into `docs/design/miss"
+  },
+  {
+   "cp": "CP3",
+   "issue": 626,
+   "url": "https://github.com/chidionyema/crew/issues/626",
+   "what": "Founder controls guards from the page: enable / disable / edit a guard's setting, applied through git (a PR th"
+  },
+  {
+   "cp": "CP5",
+   "issue": 624,
+   "url": "https://github.com/chidionyema/crew/issues/624",
+   "what": "Founder receipt: he opens the page on his phone and does not ask a session for a number for one working day. D"
+  },
+  {
+   "cp": "CP5",
+   "issue": 623,
+   "url": "https://github.com/chidionyema/crew/issues/623",
+   "what": "\u2014 founder receipt.** He buys something and confirms it."
+  },
+  {
+   "cp": "CP5",
+   "issue": 619,
+   "url": "https://github.com/chidionyema/crew/issues/619",
+   "what": "\u2014 founder receipt: he follows one runbook end to end and it works first time."
+  },
+  {
+   "cp": "CP5",
+   "issue": 618,
+   "url": "https://github.com/chidionyema/crew/issues/618",
+   "what": "Founder receipt: he reads the page and confirms each root's one-time step is right."
+  },
+  {
+   "cp": "CP6",
+   "issue": 612,
+   "url": "https://github.com/chidionyema/crew/issues/612",
+   "what": "The founder opens it and says so. `DONE:` needs that receipt here."
+  },
+  {
+   "cp": "CP5",
+   "issue": 606,
+   "url": "https://github.com/chidionyema/crew/issues/606",
+   "what": "Demo + onboarding (LAW 32) and a founder receipt."
+  },
+  {
+   "cp": "CP2",
+   "issue": 596,
+   "url": "https://github.com/chidionyema/crew/issues/596",
+   "what": "Stage 2 \"One organism\" gate = 9D: drill `founder-unreachable-72h` green \u00b7 four `founder` SLO rows green 7 days"
+  },
+  {
+   "cp": "CP4",
+   "issue": 586,
+   "url": "https://github.com/chidionyema/crew/issues/586",
+   "what": "24h founder line via the hermes-v2 gateway: `\ud83e\udde0 score n/7, moved +x since yesterday, red: <tenet>` and `issue_c"
+  },
+  {
+   "cp": "CP5",
+   "issue": 586,
+   "url": "https://github.com/chidionyema/crew/issues/586",
+   "what": "Backstage Tech Insights scorecard on `catalogue.<zone>` reading `conscience.json`; prose-shape rules flip deny"
+  },
+  {
+   "cp": "CP3",
+   "issue": 562,
+   "url": "https://github.com/chidionyema/crew/issues/562",
+   "what": "Phase 5 checklist ticked by the founder (Cold Wake, Aspect, Portability, Latency). DONE = founder receipt."
+  },
+  {
+   "cp": "CP7",
+   "issue": 555,
+   "url": "https://github.com/chidionyema/crew/issues/555",
+   "what": "-- founder receipt.** He opens the surfaces during a drill and says they held."
+  },
+  {
+   "cp": "CP1",
+   "issue": 535,
+   "url": "https://github.com/chidionyema/crew/issues/535",
+   "what": "Founder clears billing; claude-estate#8 and estate-secrets#10 re-run green (receipt: run ids)"
+  },
+  {
+   "cp": "CP1",
+   "issue": 513,
+   "url": "https://github.com/chidionyema/crew/issues/513",
+   "what": "Founder confirms the six requirements above (or corrects them) \u2014 this issue's first comment"
+  },
+  {
+   "cp": "CP5",
+   "issue": 503,
+   "url": "https://github.com/chidionyema/crew/issues/503",
+   "what": "Founder opens the home page and each card once and confirms here (`DONE:` needs that receipt)."
+  },
+  {
+   "cp": "CP4",
+   "issue": 488,
+   "url": "https://github.com/chidionyema/crew/issues/488",
+   "what": "Founder receipt: he reads the ready count and the cost line on the STATE.md row and says so."
+  },
+  {
+   "cp": "CP5",
+   "issue": 481,
+   "url": "https://github.com/chidionyema/crew/issues/481",
+   "what": "Founder receipt: one real failure of the measured class produced a draft PR he reviewed and merged by hand."
+  },
+  {
+   "cp": "CP4",
+   "issue": 480,
+   "url": "https://github.com/chidionyema/crew/issues/480",
+   "what": "Founder receipt: a new repo with a `catalog-info.yaml` appears in the portal within one refresh interval with "
+  },
+  {
+   "cp": "CP5",
+   "issue": 474,
+   "url": "https://github.com/chidionyema/crew/issues/474",
+   "what": "founder receipt: he opened the page from the portal and said what he could not find. Expect: 2026-08-29"
+  },
+  {
+   "cp": "CP4",
+   "issue": 468,
+   "url": "https://github.com/chidionyema/crew/issues/468",
+   "what": "Founder receipt: an asset page in the portal opened by the founder shows its lineage and owner."
+  },
+  {
+   "cp": "CP5",
+   "issue": 459,
+   "url": "https://github.com/chidionyema/crew/issues/459",
+   "what": "Live on OKE and used by the founder: Flux image automation rolls the new image; `oke-check` cluster-state row "
+  },
+  {
+   "cp": "CP3",
+   "issue": 232,
+   "url": "https://github.com/chidionyema/crew/issues/232",
+   "what": "Founder reviews both side by side and records the decision here."
+  }
+ ]
+}
