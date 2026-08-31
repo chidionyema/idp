@@ -21,7 +21,16 @@ langfuse:
     tag: "4.24.0"
   features:
     telemetryEnabled: false
-    signUpDisabled: true
+    # crew#307 (second hop, measured 2026-08-31 by verdict-langfuse.yml: every SSO sign-in of the
+    # drill user ends at /auth/sign-in?error=OAuthCreateAccount). The chart maps this key to
+    # AUTH_DISABLE_SIGNUP (langfuse-k8s _helpers.tpl, read 2026-08-31), and Langfuse's createUser
+    # throws "Sign up is disabled." for any identity it has not seen (langfuse v4.24.0
+    # web/src/server/auth.ts), which NextAuth reports as OAuthCreateAccount. The only door into
+    # Langfuse is the identity domain (username/password is off, AUTH_DISABLE_USERNAME_PASSWORD in
+    # langfuse.yaml), so who may sign in is decided there, by the app grant -- not by this flag.
+    # Off, a first single sign-on creates the account; the founder's own account is the init user
+    # and links by email either way.
+    signUpDisabled: false
   nextauth:
     url: https://langfuse.${ESTATE_ZONE}   # substituted by Flux postBuild (clusters/oke/platform.yaml)
   additionalEnvFrom:
