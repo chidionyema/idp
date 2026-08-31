@@ -44,10 +44,17 @@ jobs:
           vale_flags: "--minAlertLevel=error"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Vale for the whole-page and count steps (the action keeps its copy off PATH)
+        run: |
+          set -euo pipefail
+          curl -sSL -o vale.tgz https://github.com/errata-ai/vale/releases/download/v3.17.1/vale_3.17.1_Linux_64-bit.tar.gz
+          echo "db947f89f2292e6a0381a61de155f6a5f5cb4cb460ca178ea412ef605559cefd  vale.tgz" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin" && tar -xzf vale.tgz -C "$HOME/.local/bin" vale && rm vale.tgz
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/vale" sync
       - name: The pages a person meets first are clean whole
         run: |
           set -euo pipefail
-          vale sync
           vale --minAlertLevel=error README.md
           python3 -m pip install -q pyyaml pytest
           python3 -m pytest -q tests/test_incident_crew612_cp8_dev_speak_never_crosses_the_boundary.py
