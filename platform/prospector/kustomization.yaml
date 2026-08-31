@@ -11,3 +11,5 @@ resources:
   # Secret cloudflare-api-token, namespace edge, key CF_API_TOKEN: pulled from OCI Vault
   # (secret cloudflare-api-token) by External Secrets; the token survival-stack issued.
   - cloudflare-external-secret.yaml
+  # crew#713 CP1: the daily copy of the shop database, off the volume, made by the cluster.
+  - store-db-backup.yaml
