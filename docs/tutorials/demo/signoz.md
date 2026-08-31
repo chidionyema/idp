@@ -25,7 +25,7 @@ The hourly run on the cluster's identity has the key, the browser and the signin
 ```
 ok      prove  l1.signoz.answers                            401
 ok      prove  l2.dashboards.status_200_json                200 dict
-ok      prove  l2.dashboards.data_is_a_list                 dict {"status":"success","data":[...]}
+ok      prove  l2.dashboards.lists_dashboards               dict {"status":"success","data":{"dashboards":[...],"total":0}}
 ok      prove  l2.NEGATIVE.no_key_is_refused                401 {}
 ok      prove  l3.front_door.signoz.reached_host            signoz.<zone>/login (200)
 FAIL    prove  l3.front_door.signoz.signed_in               /login, 1 password field(s)

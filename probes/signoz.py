@@ -24,8 +24,12 @@ def _keyed(url, key, *, get):
 
 
 def _listing(body):
+    """SigNoz v0.138.0 answers GET /api/v2/dashboards with {"status": "success", "data":
+    {"dashboards": [...], "total": n, ...}}: the list sits under data.dashboards, not under data
+    (verdict-signoz run 33370327956, 2026-08-31, read the live body; the first shape was assumed)."""
     doc = _json(body)
-    return doc, isinstance(doc, dict) and isinstance(doc.get("data"), list)
+    data = doc.get("data") if isinstance(doc, dict) else None
+    return doc, isinstance(data, dict) and isinstance(data.get("dashboards"), list)
 
 
 def l1_liveness(host, get=http):
@@ -44,8 +48,8 @@ def l2_machine(host, key, get=http):
             status == 200 and isinstance(doc, dict),
         ),
         assertion(
-            "l2.dashboards.data_is_a_list",
-            "a JSON object whose data is a list",
+            "l2.dashboards.lists_dashboards",
+            "a JSON object whose data.dashboards is a list",
             f"{type(doc).__name__} {str(body)[:60]}",
             listing,
         ),
@@ -58,7 +62,7 @@ def negative_no_key(host, get=http):
     return [
         assertion(
             "l2.NEGATIVE.no_key_is_refused",
-            "not a 200 JSON list",
+            "not a 200 dashboards listing",
             f"{status} {str(body)[:60]}",
             not (status == 200 and listing),
         )
