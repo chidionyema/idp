@@ -61,3 +61,16 @@ def test_the_lockdown_playbook_exists_and_is_reversible():
     assert "own-namespace" in body, "the binding rbac.yaml ships must survive"
     opts = re.search(r"playbook:.*?options: \[(.*?)\]", WF, re.S).group(1)
     assert "otto-lockdown" in opts.split(", ")
+
+
+def test_the_lockdown_has_its_undo_and_the_undo_waits_for_the_gateway():
+    """LAW 16: otto-lockdown suspends the Flux row and scales to zero; otto-restore resumes the
+    row and does not say done until the gateway rollout answers."""
+    assert "  otto-restore) pb_otto_restore ;;" in PB
+    body = re.search(r"^pb_otto_restore\(\) \{(.*?)^\}", PB, re.M | re.S).group(1)
+    assert "flux resume kustomization" in body
+    assert "rollout status deploy/hermes-agent-gateway" in body
+    opts = re.search(r"playbook:.*?options: \[(.*?)\]", WF, re.S).group(1)
+    assert "otto-restore" in opts.split(", ")
+    listed = re.search(r'--list\) echo "(.*?)"', PB).group(1).split()
+    assert "otto-restore" in listed and "otto-lockdown" in listed
