@@ -221,6 +221,20 @@ drills:
       pulls, so the MCP answers stale:false. 2026-08-30: GitHub never fired this cron once in the
       first three hours it existed, and the founder's MCP read stale:true; the dispatcher covers it
       four times an hour and this row is the estate's promise, not GitHub's.
+
+  - name: rotation-canary
+    owner: idp
+    workflow: oke-check.yml
+    job: rotation-drill
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    proves: >-
+      A secret rotation travels the whole road with no hand: a fresh value written to the vault
+      entry rotation-canary reaches the cluster copy (ESO, 10m refresh), Reloader restarts the
+      canary consumer, and the restarted pod publishes the sha of the value it is actually
+      running with -- within 25 minutes of the vault write. crew#722: both rotation incidents of
+      the week (crew#506 CP4, crew#684) were invisible because nothing exercised this road; a
+      vault write that succeeds is not a rotation until the running program answers with it.
   - name: storefront-smoke
     owner: idp
     workflow: storefront-drill.yml

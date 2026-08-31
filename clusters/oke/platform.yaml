@@ -423,6 +423,8 @@ spec:
     # crew#539: the namespace, not the portal. This row lands objects in namespace backstage and
     # needs it to exist; it must never wait on Deployment/catalogue being healthy.
     - name: backstage-namespace
+    # crew#722: rotation-canary.yaml carries an ExternalSecret; the CRD row must land first.
+    - name: external-secrets
   sourceRef:
     kind: GitRepository
     name: flux-system
