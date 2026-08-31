@@ -104,6 +104,7 @@ nav:
       - Langfuse: tutorials/demo/langfuse.md
       - SigNoz: tutorials/demo/signoz.md
       - LiteLLM: tutorials/demo/litellm.md
+      - Hermes (Cursor WORK worker): tutorials/demo/hermes.md
       - Router image lanes: tutorials/demo/llm-images.md
       - KINI: tutorials/demo/kini.md
       - Migration gate: tutorials/demo/migration.md
@@ -171,6 +172,7 @@ nav:
       - Router image lanes: how-to/onboarding/llm-images.md
       - KINI: how-to/onboarding/kini.md
       - Otto (the founder's agent): how-to/onboarding/otto.md
+      - Hermes (Cursor WORK worker): how-to/onboarding/hermes.md
       - Migration gate: how-to/onboarding/migration.md
       - Multiarch gate: how-to/onboarding/multiarch.md
       - Policy test: how-to/onboarding/policy-test.md
