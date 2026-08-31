@@ -64,25 +64,40 @@ export function verdictSentence(
   }
 
   const n = at(worst);
+  let sentence: string;
   switch (worst) {
     case 'red':
-      return `${outOf(n, total)} ${verb(n)} failing right now.`;
+      sentence = `${outOf(n, total)} ${verb(n)} failing right now.`;
+      break;
     case 'needs':
-      return `${outOf(n, total)} need${n === 1 ? 's' : ''} a person to act.`;
+      sentence = `${outOf(n, total)} need${n === 1 ? 's' : ''} a person to act.`;
+      break;
     case 'stale':
-      return `${outOf(n, total)} ${verb(
+      sentence = `${outOf(n, total)} ${verb(
         n,
       )} overdue a check, so what we say about them may be old.`;
+      break;
     case 'blind':
-      return `${outOf(
+      sentence = `${outOf(
         n,
         total,
       )} cannot be read at all, so we do not know if they work.`;
+      break;
     case 'running':
-      return `${outOf(n, total)} ${verb(n)} still starting or changing.`;
+      sentence = `${outOf(n, total)} ${verb(n)} still starting or changing.`;
+      break;
     default:
-      return 'Everything we run is working.';
+      sentence = 'Everything we run is working.';
   }
+
+  // The sentence named only the worst state, so a page with three red and nine unreadable
+  // said "3 of 40 are failing" and nothing else. What we could not measure is part of the
+  // answer, not a detail: the reader was being handed a number smaller than the truth.
+  if (at('blind') > 0 && worst !== 'blind') {
+    sentence = `${sentence} We cannot check ${at('blind')} more.`;
+  }
+
+  return sentence;
 }
 
 export type StateMeaning = {
