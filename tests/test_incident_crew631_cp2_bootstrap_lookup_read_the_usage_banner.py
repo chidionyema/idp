@@ -63,3 +63,79 @@ def test_refuse_test_counts_a_missing_grant_as_a_refusal():
     src = VERDICT.read_text()
     assert '("append-only" in err2 or "permission denied" in err2)' in src
     assert "ACCEPTED: the statement ran" in src
+
+
+# --- the refusal side of the wall (founder, 2026-08-31: "what do you mean by live") -------------
+# Prover-side live was measured (a signed row stored); the refusal side was UNKNOWN because no run
+# had ever tried the key as a non-prover. bin/idp-verdict key-wall grades the ExternalSecret
+# backstage/verdict-key-wall (platform/verification, its own Flux row): refused is ok, synced is
+# FAIL, absent is BLIND. The prover workflow calls it on every run, with no `|| true`.
+
+
+def _grade_key_wall():
+    import importlib.machinery
+    import importlib.util
+
+    loader = importlib.machinery.SourceFileLoader(
+        "idp_verdict", str(ROOT / "bin" / "idp-verdict")
+    )
+    spec = importlib.util.spec_from_loader("idp_verdict", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod.grade_key_wall
+
+
+def _es(status, message, synced=None):
+    obj = {
+        "metadata": {"name": "verdict-key-wall", "namespace": "backstage"},
+        "status": {},
+    }
+    if status is not None:
+        obj["status"]["conditions"] = [
+            {
+                "type": "Ready",
+                "status": status,
+                "reason": "SecretSyncedError" if status == "False" else "SecretSynced",
+                "message": message,
+            }
+        ]
+    if synced:
+        obj["status"]["syncedResourceVersion"] = synced
+    return obj
+
+
+def test_key_wall_refused_by_the_vault_is_the_wall_standing(capsys):
+    grade = _grade_key_wall()
+    assert (
+        grade(
+            _es(
+                "False",
+                "could not get secret data from provider: NotAuthorizedOrNotFound (404)",
+            )
+        )
+        == 0
+    )
+    assert capsys.readouterr().out.startswith("ok ")
+
+
+def test_key_wall_synced_means_a_pod_read_the_signing_key(capsys):
+    grade = _grade_key_wall()
+    assert grade(_es("True", "secret synced", synced="1-abc")) == 1
+    assert capsys.readouterr().out.startswith("FAIL")
+    # a synced version with a stale False condition is still a breach, never a green
+    assert grade(_es("False", "NotAuthorizedOrNotFound", synced="1-abc")) == 1
+
+
+def test_key_wall_with_no_verdict_yet_is_blind_not_green(capsys):
+    grade = _grade_key_wall()
+    assert grade(_es(None, "")) == 2
+    assert capsys.readouterr().out.startswith("BLIND")
+    # refused for a reason that is not the vault's (store missing, bad ref) is not the wall either
+    assert grade(_es("False", 'ClusterSecretStore "estate-vault" not found')) == 2
+
+
+def test_prover_workflow_calls_key_wall_without_a_swallow():
+    text = (ROOT / ".github/workflows/verdict-backstage.yml").read_text()
+    lines = [ln for ln in text.splitlines() if "bin/idp-verdict key-wall" in ln]
+    assert lines, "verdict-backstage never asks whether the wall stands"
+    assert all("|| true" not in ln.split("#", 1)[0] for ln in lines)
