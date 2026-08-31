@@ -10,8 +10,8 @@ The pod uses the worker node's own identity, so there is no key to rotate and no
 
 ## Is there a backup, and how old is it
 
-One object answers it. `shop/latest.json` is written last in each run, so its presence means the
-copy above it landed.
+One object answers it: `latest.json`, under the `shop/` prefix of the bucket. It is written last
+in each run, so its presence means the copy above it landed.
 
 ```
 oci os object get --bucket-name estate-shop-backups --name shop/latest.json --file -
@@ -77,6 +77,6 @@ refuses on.
 
 ## Proving it, before you need it
 
-The `packs` and `orders` counts printed above must match `shop/latest.json`, and the site's
+The `packs` and `orders` counts printed above must match the `latest.json` receipt, and the site's
 `/catalog` must answer with the catalogue after the API comes back. Both are one command, and both
 are the point: a backup nobody has restored is a claim, not a backup.

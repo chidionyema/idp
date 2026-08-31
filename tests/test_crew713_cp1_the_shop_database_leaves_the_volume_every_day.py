@@ -13,10 +13,12 @@ stop, and a test that greps for the word "REFUSED" would pass on a job that neve
 
 import datetime
 import json
+import os
 import pathlib
 import re
 import sqlite3
 import subprocess
+from email.utils import format_datetime
 import sys
 
 import pytest
@@ -236,11 +238,27 @@ def test_the_nodes_may_touch_this_bucket_and_no_other():
 GRADER = ROOT / "bin/idp-shop-backup"
 
 
-def _grade(tmp_path, receipt, hours="26"):
+def _head(age_hours=1.0, served=None):
+    """The object-head response the store hands back, with both of its clocks in it.
+
+    How old the copy is comes off these two headers -- `date` minus `last-modified`, one
+    authority's clock minus itself -- and never off the machine running the grader (crew#583).
+    `served` moves BOTH stamps together, which is what a machine with a dead battery does to them
+    and is exactly what must not change the verdict.
+    """
+    served = served or datetime.datetime.now(datetime.timezone.utc)
+    stamped = served - datetime.timedelta(hours=age_hours)
+    return {
+        "last-modified": format_datetime(stamped, usegmt=True),
+        "date": format_datetime(served, usegmt=True),
+    }
+
+
+def _grade(tmp_path, receipt, hours="26", head=None, age_hours=1.0, served=None):
     """Run the grader's own judgement against a receipt, without a cloud session.
 
-    The shell half fetches shop/latest.json; this is the half that decides, and it is the half
-    that can be wrong in a way nobody notices until a restore.
+    The shell half fetches the receipt and its head; this is the half that decides, and it is the
+    half that can be wrong in a way nobody notices until a restore.
     """
     lines = GRADER.read_text().splitlines()
     start = next(i for i, l in enumerate(lines) if l.endswith("<<'PY'"))
@@ -248,19 +266,18 @@ def _grade(tmp_path, receipt, hours="26"):
     body = "\n".join(lines[start + 1 : end])
     path = tmp_path / "latest.json"
     path.write_text(json.dumps(receipt))
+    head = _head(age_hours, served) if head is None else head
     return subprocess.run(
-        [sys.executable, "-c", body, str(path), hours, ""],
+        [sys.executable, "-c", body, json.dumps(head), str(path), hours, ""],
         capture_output=True,
         text=True,
+        env={**os.environ, "IDP_LIB": str(ROOT / "bin/lib")},
     )
 
 
-def _receipt(age_hours=1.0, **overrides):
-    stamp = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
-        hours=age_hours
-    )
+def _receipt(**overrides):
     return {
-        "stamp": stamp.strftime("%Y%m%dT%H%M%SZ"),
+        "stamp": "20260831T031700Z",
         "integrity": "ok",
         "bytes": 5_324_800,
         "packs": 202,
@@ -278,17 +295,48 @@ def test_a_fresh_verified_copy_grades_ok(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "receipt,because",
+    "receipt,age_hours,because",
     [
-        (_receipt(age_hours=48), "the last copy is"),
-        (_receipt(integrity="*** in database main"), "integrity_check answered"),
-        (_receipt(packs=0), "the copied catalogue is empty"),
+        (_receipt(), 48, "the last copy is"),
+        (_receipt(integrity="*** in database main"), 1, "integrity_check answered"),
+        (_receipt(packs=0), 1, "the copied catalogue is empty"),
     ],
 )
-def test_a_copy_that_would_not_restore_grades_red(tmp_path, receipt, because):
-    done = _grade(tmp_path, receipt)
+def test_a_copy_that_would_not_restore_grades_red(
+    tmp_path, receipt, age_hours, because
+):
+    done = _grade(tmp_path, receipt, age_hours=age_hours)
     assert done.returncode == 1, done.stdout
     assert done.stdout.startswith("FAIL    shop-backup") and because in done.stdout
+
+
+@pytest.mark.parametrize("shift_days", [-400, 0, 400])
+def test_the_verdict_follows_the_stores_clock_not_this_machines(tmp_path, shift_days):
+    """crew#583: a Mac whose battery died reads 1970, and a stale copy would grade green.
+
+    Both stamps move together, which is what a wrong local clock cannot do to them: they are the
+    store's, and the subtraction is one clock minus itself. Same copy, same verdict, whatever this
+    machine believes the date is.
+    """
+    served = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
+        days=shift_days
+    )
+    fresh = _grade(tmp_path, _receipt(), age_hours=1, served=served)
+    stale = _grade(tmp_path, _receipt(), age_hours=48, served=served)
+    assert fresh.returncode == 0, fresh.stdout + fresh.stderr
+    assert stale.returncode == 1 and "the last copy is" in stale.stdout
+
+
+def test_a_head_with_no_clock_is_blind_never_a_guess(tmp_path):
+    """A read that cannot be measured says so. Falling back to this machine's clock here is the
+    defect crew#583 exists to remove, with a longer code path."""
+    done = _grade(
+        tmp_path, _receipt(), head={"last-modified": "Mon, 31 Aug 2026 03:17:00 GMT"}
+    )
+    assert done.returncode == 2, done.stdout
+    assert (
+        done.stdout.startswith("BLIND   shop-backup") and "date header" in done.stdout
+    )
 
 
 def test_the_drill_is_named_and_owned_and_runs_daily():

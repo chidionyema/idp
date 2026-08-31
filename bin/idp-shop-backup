@@ -23,6 +23,21 @@ fail() {
 }
 command -v python3 >/dev/null || blind "python3 is not installed"
 
+# Two reads of the same object, and the head is not redundant: it carries the store's own clock in
+# its `date` header alongside the `last-modified` it stamped on the copy, and crew#583 says the age
+# of a receipt is those two subtracted from each other. This machine's clock never enters it -- a
+# Mac whose battery died reads 1970 and would grade a dead job green.
+head=$("$IDP/bin/idp-cloud" object head --bucket "$BUCKET" --name shop/latest.json 2>&1)
+rc=$?
+if [ $rc -ne 0 ]; then
+	case "$head" in
+	*404* | *NotFound* | *"not found"*)
+		fail "no receipt shop/latest.json in bucket $BUCKET: the CronJob has never completed a verified copy (Flux row prospector not reconciled, or platform/oci/shop-backups.tf not applied)"
+		;;
+	*) blind "object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
+	esac
+fi
+
 body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name shop/latest.json 2>&1)
 rc=$?
 if [ $rc -ne 0 ]; then
@@ -40,10 +55,13 @@ bodyf=$(mktemp)
 trap 'rm -f "$bodyf"' EXIT
 printf '%s' "$body" >"$bodyf"
 
-python3 - "$bodyf" "$MAX_HOURS" "${1:-}" <<'PY'
-import datetime, json, pathlib, sys
+IDP_LIB="$IDP/bin/lib" python3 - "$head" "$bodyf" "$MAX_HOURS" "${1:-}" <<'PY'
+import json, os, pathlib, sys
 
-path, max_hours, flag = sys.argv[1], float(sys.argv[2]), sys.argv[3]
+sys.path.insert(0, os.environ.get("IDP_LIB", ""))
+from receipt_age import receipt_age  # crew#583 CP2: the store's clock, never this machine's
+
+head, path, max_hours, flag = sys.argv[1], sys.argv[2], float(sys.argv[3]), sys.argv[4]
 try:
     receipt = json.loads(pathlib.Path(path).read_text())
 except ValueError as exc:
@@ -52,13 +70,15 @@ except ValueError as exc:
 if flag == "--json":
     print(json.dumps(receipt, indent=2, sort_keys=True))
 
-# The Mac's clock is not the estate's clock; both sides of this comparison are UTC.
-now = datetime.datetime.now(datetime.timezone.utc)
 try:
-    stamp = datetime.datetime.strptime(receipt["stamp"], "%Y%m%dT%H%M%SZ").replace(tzinfo=datetime.timezone.utc)
-except (KeyError, ValueError) as exc:
-    sys.exit(f"BLIND   shop-backup  the receipt carries no readable stamp: {exc}")
-age = (now - stamp).total_seconds() / 3600
+    head = json.loads(head)
+except ValueError as exc:
+    sys.exit(f"BLIND   shop-backup  object head was not readable JSON: {exc}")
+# 3600 seconds to the unit, so this reads in hours. A head with no `date` is BLIND inside
+# receipt_age, never a fall back to this machine's clock.
+age = receipt_age(head, 3600.0, "shop-backup")
+if "stamp" not in receipt:
+    sys.exit("BLIND   shop-backup  the receipt carries no stamp")
 
 problems = []
 if age > max_hours:
