@@ -269,11 +269,17 @@ def test_the_operator_chart_default_tag_is_defined_and_the_client_mints_it(polic
     """idp#586: tailscale-operator@1.102.3 joins the tailnet with its default device tag
     tag:k8s-operator (chart values operatorConfig.defaultTags, verified 2026-08-31). A tag the
     policy does not define, or a client not minted with it, is an authkey 400 and a crashloop
-    that took the tailnet down from 2026-08-28 to 2026-08-31 (diagnose run 33374905345)."""
+    that took the tailnet down from 2026-08-28 to 2026-08-31 (diagnose run 33374905345).
+
+    Run 33447033447 (2026-08-31): defining the tag admins-only ([]) is not enough — the policy
+    was applied at 22:40Z and the mint still 400d at 22:43Z, because the root OAuth client may
+    only request tags its own tags own (kb/1215/oauth-clients). tag:k8s must own the operator
+    tag; [] gives the minting client no path and only a console admin could grant it."""
     import pathlib as _pl
 
-    assert policy["tagOwners"].get("tag:k8s-operator") == [], (
-        "the operator's own tag must be defined, admins-only, like the other two"
+    assert policy["tagOwners"].get("tag:k8s-operator") == ["tag:k8s"], (
+        "run 33447033447: the root client is tagged tag:k8s and may only mint tags tag:k8s owns;"
+        " [] (admins-only) 400s the mint with the policy already applied"
     )
     operator = _pl.Path("platform/tailscale/operator.yaml").read_text()
     boot = _pl.Path("bin/idp-bootstrap-tailscale").read_text()
