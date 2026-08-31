@@ -3,14 +3,9 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-vault-seed
-  title: 'Run: vault-seed'
-  description: 'crew#284 CP1/CP2, crew#248: the estate vault is written by the machine identity, never
-    a laptop (crew#227 deleted the OCI API key; crew#247: infra is never Mac-bound). crew#66 root trust
-    (5453747447, docs/reference/policy/root-trust.md): an entry a bootstrapper births is never seeded
-    from a pasted GitHub secret; this workflow now carries only github-app (the four keys bin/idp-github-app
-    convert produces when no OCI session is live) and k8sgpt (a router key minted here, never pasted).
-    Every other entry chosen by name is refused with the command that owns it. Values travel from the
-    secret store '
+  title: Write or remove a vault entry
+  description: Writes one named entry into the vault under the machine identity, or schedules one for
+    deletion.
   tags:
   - founder-action
   - estate
@@ -18,12 +13,11 @@ spec:
   owner: group:default/platform
   type: founder-action
   parameters:
-  - title: Run vault-seed
+  - title: Choices for this run
     properties:
       entry:
-        title: entry
+        title: which vault entry to write
         type: string
-        description: which vault entry to write
         enum:
         - all
         - prospector-engine-env
@@ -39,14 +33,13 @@ spec:
         - science
         default: all
       delete:
-        title: delete
+        title: schedule deletion of one vault entry by name (for a mis-named entry); the entry field is
+          ignored when this is set
         type: string
-        description: 'schedule deletion of one vault secret by name (crew#503: a mis-named entry); entry
-          is ignored when set'
         default: ''
   steps:
   - id: dispatch
-    name: Dispatch vault-seed.yml on main
+    name: Start Write or remove a vault entry
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -57,5 +50,5 @@ spec:
         delete: ${{ parameters.delete }}
   output:
     links:
-    - title: Runs of vault-seed
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/vault-seed.yml

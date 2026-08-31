@@ -1,3 +1,5 @@
+# button: Check what Otto can do
+# founder: Runs every advertised Otto ability for real and reports each as a green or red row.
 # crew#561 CP7: "Otto can do X" is a green row on a schedule, not a sentence in an issue. This is
 # the otto-parity playbook of bin/idp-oke-break-glass on the estate's clock (the drill-dispatcher
 # fires it; the cron line below is the catalogue's copy). The steps are oke-check.yml's check job

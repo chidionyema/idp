@@ -3,13 +3,8 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-otto-parity
-  title: 'Run: otto-parity'
-  description: 'crew#561 CP7: "Otto can do X" is a green row on a schedule, not a sentence in an issue.
-    This is the otto-parity playbook of bin/idp-oke-break-glass on the estate''s clock (the drill-dispatcher
-    fires it; the cron line below is the catalogue''s copy). The steps are oke-check.yml''s check job
-    verbatim: the runner''s OIDC token becomes a one-hour OCI session, --break-glass admits the runner''s
-    /32 to the API endpoint for the length of the playbook and removes it on every exit. One concurrency
-    group with oke-check''s dispatches: two break-glass runs must never race on the NSG rule.'
+  title: Check what Otto can do
+  description: Runs every advertised Otto ability for real and reports each as a green or red row.
   tags:
   - founder-action
   - estate
@@ -19,7 +14,7 @@ spec:
   parameters: []
   steps:
   - id: dispatch
-    name: Dispatch otto-parity.yml on main
+    name: Start Check what Otto can do
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -27,5 +22,5 @@ spec:
       branchOrTagName: main
   output:
     links:
-    - title: Runs of otto-parity
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/otto-parity.yml

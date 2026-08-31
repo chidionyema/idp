@@ -1,6 +1,6 @@
 # idp — the estate's platform
 
-One platform, one of each layer, running on OKE and reconciled by Flux from this repository.
+One platform, one of each layer, running on Oracle's Kubernetes service and kept in step with this repository by Flux.
 Products (`prospector`, `hermes-v2`) run on it; they do not carry copies of it.
 
 Two generated pages describe it and are refreshed by `make diagrams`; a hand-drawn page is refused
@@ -13,13 +13,13 @@ by `bin/estate-diagram --check`:
 ## Layers
 
 Each directory under `platform/` is one layer. `clusters/oke/platform.yaml` is the Flux
-Kustomization that applies them; `clusters/oke/estate-config.yaml` holds `ESTATE_ZONE` and the
-other substitutions, so no manifest names a zone, a host or an account (LAW 46).
+folder of manifests that applies them; `clusters/oke/estate-config.yaml` holds `ESTATE_ZONE` and the
+other substitutions, so no manifest names a zone, a host or an account ([the no-hardcoding law](docs/reference/laws-and-guards.md)).
 
 | layer | directory | what runs |
 |---|---|---|
 | service catalog and portal | `platform/backstage`, `catalog/` | Backstage at `catalogue.<zone>`, the estate's front door |
-| identity | `platform/identity`, `platform/spire` | oauth2-proxy in front of every HTTPRoute; SPIRE for workload identity |
+| identity | `platform/identity`, `platform/spire` | the login proxy in front of every route; SPIRE for workload identity |
 | edge and DNS | `platform/edge`, `platform/dns` | the shared Gateway (Traefik) and external-dns |
 | secrets | `platform/secrets`, `platform/secret-store` | External Secrets Operator over OCI Vault |
 | model routing | `platform/llm` | LiteLLM at `llm.<zone>`, bearer master key, no browser login |
@@ -50,7 +50,7 @@ The GitHub workflows: `ci` (the three commands above, security scan, spec gate),
 ## Rules
 
 A rule that has no gate is not a rule here. `AGENTS.md` is the table of rules for this repository,
-each with a must-fail and a must-pass fixture; `bin/idp-ci` parses that table. Every PR that changes
+each with a must-fail and a must-pass fixture; `bin/idp-ci` parses that table. Every pull request that changes
 code also changes an executable spec (a `.feature`, a test, or a generator), or `spec-gate` refuses it.
 Architecture decisions are in `docs/decisions/`; the operating model and the definition of done are
 in `docs/reference/policy/`.
@@ -64,4 +64,4 @@ fails if anything but the gateway listens on a non-loopback address.
 ## Licence
 
 Apache-2.0 (`LICENSE`). Every layer above is open source; `bin/policy-test` refuses a dependency
-whose licence would block a sale (LAW 40).
+whose licence would block a sale ([the built-to-be-sold law](docs/reference/laws-and-guards.md)).

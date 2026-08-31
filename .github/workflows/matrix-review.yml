@@ -1,3 +1,5 @@
+# button: Review a pull request against the matrix
+# founder: Checks a pull request against the estate's review matrix and posts the result on its thread.
 name: matrix-review
 # ADR 0009 / crew#562. Founder, 2026-08-28: "i like the matrix, enforce it" / "rigorously, cant be
 # cheated" / "need evidence" / "and we eed to rview weekly". This is the weekly review, on the

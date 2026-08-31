@@ -33,7 +33,7 @@ drills:
     schedule: "17 6 * * *"
     max_age_hours: 26
     proves: >-
-      A machine identity with no OCI API key can still exchange its GitHub OIDC token for an
+      A machine identity with no OCI API key can still exchange its GitHub identity token for an
       OCI session and read the live cluster, so the platform can be rebuilt without a laptop.
 
   - name: login-drill
@@ -58,7 +58,7 @@ drills:
     proves: >-
       A signed verdict about the Langfuse image that is running: it answers, its API answers a key
       and refuses none, and a cold browser handshake through the front door yields a session that
-      is the drill user while a context holding nothing gets no user (crew#631).
+      is the drill user while a context holding nothing gets no user.
 
   - name: chaos-pod-kill
     owner: idp
@@ -80,7 +80,7 @@ drills:
     proves: >-
       In the last week Chaos Mesh failed every langfuse-web pod for 8 minutes and, while it was
       down, Alertmanager held an active FounderSurfaceDown for langfuse and its telegram receiver
-      delivered it (crew#539 DoD 2: the founder's phone learns of a dead surface within 5 minutes
+      delivered it (the founder's phone learns of a dead surface within 5 minutes
       of it dying); the receipt is written from the node's identity and graded by
       bin/idp-chaos-drill langfuse-alert-drill alert-drill (age max 194h).
 
@@ -93,9 +93,9 @@ drills:
     proves: >-
       The cluster wrote its own state receipt (nodes, pods not Ready) to Object Storage from the
       node's identity within the last hour and a runner with no kube path and no laptop session
-      token read it back through OIDC (crew#345: bin/idp-cluster-state grades freshness and Ready);
+      token read it back through single sign-on (bin/idp-cluster-state checks freshness and Ready);
       the cluster holds PrometheusRules and Alertmanager shows the Watchdog alert, so the alert
-      pipeline is evaluating and delivering (crew#539 DoD 1).
+      pipeline is evaluating and delivering.
   - name: kini-finish
     owner: idp
     workflow: oke-check.yml
@@ -103,9 +103,9 @@ drills:
     schedule: "17 6 * * *"
     max_age_hours: 26
     proves: >-
-      The KINI run's own receipt (state/kini, written every 15 minutes by the kini-state CronJob
+      The KINI run's own receipt (state/kini, written every 15 minutes by the kini-state scheduled job
       from the engine's answer) is fresh and the last KiniFinishWorkflow is green, running, or not
-      yet requested; a red checkpoint or a stale receipt fails it (crew#396: bin/idp-kini-state).
+      yet requested; a red checkpoint or a stale receipt fails it (bin/idp-kini-state).
   - name: telemetry-coverage
     owner: idp
     workflow: oke-check.yml
@@ -115,7 +115,7 @@ drills:
     proves: >-
       Every pod Running for more than ten minutes wrote a log line or a metric sample that SigNoz
       stored in the last hour, measured by querying ClickHouse and diffing against the API server
-      (crew#320, LAW 50: coverage is proved by the backend, never by scanning files).
+      (coverage is proved by asking the telemetry store, never by scanning files).
   - name: free-tier
     owner: idp
     workflow: oke-check.yml
@@ -125,7 +125,7 @@ drills:
     proves: >-
       The limits API granted the tenancy at least the A1 cores and memory platform/oci/variables.tf
       assumes free and enough to hold what it provisions, so the allowance OCI halved once
-      (ADR 0004) has not moved again without a red row (crew#488 CP3).
+      (the decision record on the identity provider) has not moved again without a red row.
 
   - name: stale
     owner: crew
@@ -135,7 +135,7 @@ drills:
     max_age_hours: 3
     proves: >-
       A pull request nobody has touched for 24 hours is closed by the platform with the two
-      ways back in the comment, so the queue cannot pile up behind ended sessions (crew#504 CP2).
+      ways back in the comment, so the queue cannot pile up behind ended sessions .
 
   - name: wake-blocked
     owner: crew
@@ -146,7 +146,7 @@ drills:
     pending: true
     proves: >-
       A pull request closed with a Blocked-by line is updated and reopened within 30 minutes of
-      its blocker landing, so dependency waits never need a person to remember (crew#504 CP7).
+      its blocker landing, so dependency waits never need a person to remember .
   - name: science-facts
     owner: science
     workflow: oke-check.yml
@@ -156,8 +156,8 @@ drills:
     proves: >-
       The science lane's rows reached the estate collector: an hourly job inside the cluster counts
       rows per science.source in ClickHouse over the last 24 hours and writes the count as a receipt;
-      at least one source is the only green, and a backend that cannot answer is BLIND
-      (crew#516 CP5, LAW 50: the lane is graded by querying the backend, never by scanning files).
+      at least one source is the only green, and a store that cannot answer is reported as unreadable, never green
+      (the lane is checked by asking the telemetry store, never by scanning files).
 
   - name: estate-escrow
     owner: idp
@@ -166,11 +166,11 @@ drills:
     schedule: "29 */6 * * *"
     max_age_hours: 13
     proves: >-
-      GitHub is not the only copy of the estate: a runner on the exchanged OIDC session mints a
+      GitHub is not the only copy of the estate: a runner on the exchanged single sign-on session mints a
       read-only App token, writes a full git bundle of every repository the installation sees to
-      Cloudflare R2 (mirrors/<owner>/<repo>/latest.bundle), and reads each one back -- the store's
+      Cloudflare's object store (mirrors/<owner>/<repository>/latest.bundle), and reads each one back -- the store's
       MD5 equals the file's and `git bundle verify` passes on the download. A repository whose refs
-      have not moved is skipped. No laptop and no founder account in the loop (crew#290 layer 4).
+      have not moved is skipped. No laptop and no founder account in the loop.
 
   - name: messaging-demo
     owner: idp
@@ -179,10 +179,10 @@ drills:
     schedule: "47 5 * * *"
     max_age_hours: 26
     proves: >-
-      The basic and advanced messaging demos (crew#639 CP9) still run end to end against the
+      The basic and advanced messaging demos still run end to end against the
       chart's nats-server version and an embedded Postgres: outbox relay, duplicate window,
-      idempotent consumer, dead-letter copy and replay, so the messaging layer a service is
-      onboarded onto is exercised daily, not only when a PR touches it.
+      consumer that is safe to run twice, dead-letter copy and replay, so the messaging layer a service is
+      onboarded onto is exercised daily, not only when a pull request touches it.
 
   - name: catalog-render
     owner: idp
@@ -193,7 +193,7 @@ drills:
     proves: >-
       The portal's catalogue and the founder tiles are re-published from the bucket copies of the
       inventory and the feed four times a day without anyone's hand: the render commits
-      docs/founder.json and the architecture page to the state branch. crew#684 (2026-08-30): the
+      docs/founder.json and the architecture page to the state branch. Since 2026-08-30 the
       01:58Z schedule never fired, the Ops page read "What waits on you could not be read" and the
       founder saw the portal as down; GitHub's cron is best effort, this row is the estate's promise.
 
@@ -204,10 +204,10 @@ drills:
     schedule: "41 * * * *"
     max_age_hours: 3
     proves: >-
-      Otto in the cluster has every capability crew#561 names, graded from inside the running
+      Otto in the cluster has every capability its brief names, checked from inside the running
       pod by the otto-parity playbook: gateway up, the Mac reachable through the tailnet, memory
-      answering, the model lane on the estate router, a repo workspace it can clone and push, a
-      ServiceAccount that reads its own namespace and nothing else, and the estate MCP answering
+      answering, the model lane on the estate router, a repository workspace it can clone and push, a
+      ServiceAccount that reads its own area of the cluster and nothing else, and the estate MCP answering
       its key.
   - name: estate-state
     owner: science
@@ -216,7 +216,7 @@ drills:
     schedule: "*/15 * * * *"
     max_age_hours: 1
     proves: >-
-      The estate state document behind `get_estate_state` (crew#648) is rebuilt every 15 minutes
+      The estate state document behind `get_estate_state` is rebuilt every 15 minutes
       from the sources the estate already writes and pushed as an OCI artifact the estate-mcp pod
       pulls, so the MCP answers stale:false. 2026-08-30: GitHub never fired this cron once in the
       first three hours it existed, and the founder's MCP read stale:true; the dispatcher covers it
@@ -232,8 +232,8 @@ drills:
       A secret rotation travels the whole road with no hand: a fresh value written to the vault
       entry rotation-canary reaches the cluster copy (ESO, 10m refresh), Reloader restarts the
       canary consumer, and the restarted pod publishes the sha of the value it is actually
-      running with -- within 25 minutes of the vault write. crew#722: both rotation incidents of
-      the week (crew#506 CP4, crew#684) were invisible because nothing exercised this road; a
+      running with -- within 25 minutes of the vault write. Both rotation incidents of
+      the week were invisible because nothing exercised this road; a
       vault write that succeeds is not a rotation until the running program answers with it.
   - name: storefront-smoke
     owner: idp
@@ -248,4 +248,4 @@ drills:
       2026-08-30: the pack pictures were built, merged and in the registry while the cluster served
       the 17:01 build for eight hours; the login drill, flux and the front door all read green
       because no drill in this estate ever opened the shop, and the founder found it by looking at
-      the site (crew#693).
+      the site.

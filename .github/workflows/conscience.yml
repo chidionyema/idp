@@ -1,3 +1,5 @@
+# button: Grade the estate against the founder's rules
+# founder: Reads the standing rules and grades the main branch against them, once an hour; keeps one running score.
 # The Conscience, hourly (crew#586 CP3): grade main against the founder's ethos and keep one
 # open issue per red tenet, never two. Same shape as drill-heartbeat.yml: a schedule, the
 # script, the step summary, and `gh issue` for the loud part. Founder, 2026-08-28: "an

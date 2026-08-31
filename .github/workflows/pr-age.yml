@@ -1,3 +1,5 @@
+# button: Tidy old pull requests
+# founder: Merges green pull requests and tells the author on the thread when one has waited too long.
 # crew#607 CP2/CP3: a green PR merges itself; a PR over four hours is told why on its own thread.
 # Founder, 2026-08-28: "why do we have open PRs not merged" / "4 maximum". Hourly so no PR waits on
 # a peer noticing; the job is red exactly when bin/idp-pr-age is (any row over PR_AGE_MAX_H).

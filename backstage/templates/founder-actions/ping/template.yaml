@@ -3,14 +3,8 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-ping
-  title: 'Run: ping'
-  description: 'crew#539 CP3: the dead-man''s switch that lives outside the blast radius. On 2026-08-27
-    langfuse answered 503 for nine minutes and nothing paged, because the estate''s only alert is a Flux
-    reconcile event raised from inside the cluster that was starving. This runs on a GitHub runner every
-    five minutes, probes every founder surface with a GET (the same list oke-check''s founder-links job
-    derives from the portal, so there is one list), and on any failure posts to the Telegram bot the estate
-    already runs (SEED_HERMES_TELEGRAM_* repo secrets; no new account, no new SaaS). When the previous
-    tick faile'
+  title: Ping the dead man's switch
+  description: Sends the heartbeat that proves the estate's monitoring is alive, from outside the cluster.
   tags:
   - founder-action
   - estate
@@ -20,7 +14,7 @@ spec:
   parameters: []
   steps:
   - id: dispatch
-    name: Dispatch ping.yml on main
+    name: Start Ping the dead man's switch
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -28,5 +22,5 @@ spec:
       branchOrTagName: main
   output:
     links:
-    - title: Runs of ping
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/ping.yml

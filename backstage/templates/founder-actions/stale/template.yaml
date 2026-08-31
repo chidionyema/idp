@@ -3,13 +3,8 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-stale
-  title: 'Run: stale'
-  description: 'Pull requests with no activity for 24 hours are labelled `stale` and closed in the same
-    run (crew#504 CP2, was 7+7 days under crew#299; actions/stale parses days-before-pr-close with parseInt,
-    so the only sub-day close is 0, and the close comment is the notice). Issues are never touched: the
-    board lives in issues and its items wait on founder words by design. Label `keep-open` exempts a PR.  Why:
-    on 2026-08-26 the estate held 66 open PRs and 0 were mergeable; on 2026-08-27, 113 open across seven
-    repos, and the runners thrashed behind them. A PR nobody has touched in a day is inventory that hid'
+  title: Close idle pull requests
+  description: Labels and closes pull requests that have had no activity for a day.
   tags:
   - founder-action
   - estate
@@ -19,7 +14,7 @@ spec:
   parameters: []
   steps:
   - id: dispatch
-    name: Dispatch stale.yml on main
+    name: Start Close idle pull requests
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -27,5 +22,5 @@ spec:
       branchOrTagName: main
   output:
     links:
-    - title: Runs of stale
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/stale.yml

@@ -1,3 +1,5 @@
+# button: Check the catalogue and sign the result
+# founder: Checks that the catalogue answers, answers its key, refuses a caller without one, and signs the result.
 # crew#631 CP9: the prover for the catalogue. Same machine identity as verdict-langfuse; no browser.
 # One signed verdict, one check-run `verify/backstage`, one row in the verdict table.
 name: verdict-backstage
@@ -7,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       nonce:
-        description: "nonce issued by the control plane for this request (blank: the run mints one)"
+        description: "request code for this run (leave blank; the run makes one)"
         required: false
         default: ""
   push:

@@ -1,3 +1,5 @@
+# button: Build every container image
+# founder: Builds every container image in this repository for both kinds of machine (Intel and ARM) and publishes them.
 name: build-multiarch
 # R24: every Dockerfile in this repository is built for linux/amd64 and linux/arm64
 # and pushed as one manifest list to GHCR on main. Pull requests build both

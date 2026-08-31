@@ -3,13 +3,9 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-conscience
-  title: 'Run: conscience'
-  description: 'The Conscience, hourly (crew#586 CP3): grade main against the founder''s ethos and keep
-    one open issue per red tenet, never two. Same shape as drill-heartbeat.yml: a schedule, the script,
-    the step summary, and `gh issue` for the loud part. Founder, 2026-08-28: "an eternal, ambient, active
-    presence that keeps everyone and everything in the estate aligned."  One issue per tenet, titled `conscience:
-    <tenet> is red`, labelled `conscience`. A red row comments on its open issue or opens it; a green
-    row closes its issue with the receipt line. No issue is ever opened twice for one tenet (the 113-open-P'
+  title: Grade the estate against the founder's rules
+  description: Reads the standing rules and grades the main branch against them, once an hour; keeps one
+    running score.
   tags:
   - founder-action
   - estate
@@ -17,16 +13,15 @@ spec:
   owner: group:default/platform
   type: founder-action
   parameters:
-  - title: Run conscience
+  - title: Choices for this run
     properties:
       founder_line:
-        title: founder_line
+        title: Send the founder's Telegram line from this run too
         type: boolean
-        description: Send the founder's Telegram line from this run too
         default: false
   steps:
   - id: dispatch
-    name: Dispatch conscience.yml on main
+    name: Start Grade the estate against the founder's rules
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -36,5 +31,5 @@ spec:
         founder_line: ${{ parameters.founder_line }}
   output:
     links:
-    - title: Runs of conscience
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/conscience.yml

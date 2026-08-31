@@ -3,12 +3,8 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-storefront-drill
-  title: 'Run: storefront-drill'
-  description: 'Opens the shop the way a stranger does and checks it is serving what the last merge built.
-    Every other drill here grades the platform -- a login, a cluster, a collector. None of them opened
-    the shop, so on 2026-08-30 the storefront served an eight-hour-old build with no pack pictures while
-    the login drill, flux and the front door all reported green, and the founder found it by looking at
-    the site. This holds no credential: it grades what a visitor gets. Refs crew#693.'
+  title: Test the shop
+  description: Opens the shop the way a stranger does and checks it serves what the last merge built.
   tags:
   - founder-action
   - estate
@@ -18,7 +14,7 @@ spec:
   parameters: []
   steps:
   - id: dispatch
-    name: Dispatch storefront-drill.yml on main
+    name: Start Test the shop
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -26,5 +22,5 @@ spec:
       branchOrTagName: main
   output:
     links:
-    - title: Runs of storefront-drill
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/storefront-drill.yml

@@ -3,9 +3,9 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-verdict-backstage
-  title: 'Run: verdict-backstage'
-  description: 'crew#631 CP9: the prover for the catalogue. Same machine identity as verdict-langfuse;
-    no browser. One signed verdict, one check-run `verify/backstage`, one row in the verdict table.'
+  title: Check the catalogue and sign the result
+  description: Checks that the catalogue answers, answers its key, refuses a caller without one, and signs
+    the result.
   tags:
   - founder-action
   - estate
@@ -13,16 +13,15 @@ spec:
   owner: group:default/platform
   type: founder-action
   parameters:
-  - title: Run verdict-backstage
+  - title: Choices for this run
     properties:
       nonce:
-        title: nonce
+        title: request code for this run (leave blank; the run makes one)
         type: string
-        description: 'nonce issued by the control plane for this request (blank: the run mints one)'
         default: ''
   steps:
   - id: dispatch
-    name: Dispatch verdict-backstage.yml on main
+    name: Start Check the catalogue and sign the result
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -32,5 +31,5 @@ spec:
         nonce: ${{ parameters.nonce }}
   output:
     links:
-    - title: Runs of verdict-backstage
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/verdict-backstage.yml

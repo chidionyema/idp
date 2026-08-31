@@ -3,10 +3,8 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-wake-blocked
-  title: 'Run: wake-blocked'
-  description: Copied verbatim into .github/workflows/wake-blocked.yml of every active estate repository
-    by bin/estate-security-rollout's sibling step (crew#504 CP7). A PR closed with a `Blocked-by:` line
-    in its body reopens itself, branch updated, when every key it names has landed.
+  title: Wake a blocked session
+  description: Tells a session that the thing it was waiting for has landed, so it carries on.
   tags:
   - founder-action
   - estate
@@ -14,16 +12,15 @@ spec:
   owner: group:default/platform
   type: founder-action
   parameters:
-  - title: Run wake-blocked
+  - title: Choices for this run
     properties:
       resolved:
-        title: resolved
+        title: 'the thing that has now landed, in a few words (for example: the SigNoz root secret)'
         type: string
-        description: free-text Blocked-by key that has landed, e.g. secret signoz-root
         default: ''
   steps:
   - id: dispatch
-    name: Dispatch wake-blocked.yml on main
+    name: Start Wake a blocked session
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -33,5 +30,5 @@ spec:
         resolved: ${{ parameters.resolved }}
   output:
     links:
-    - title: Runs of wake-blocked
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/wake-blocked.yml
