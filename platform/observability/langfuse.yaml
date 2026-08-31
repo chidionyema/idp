@@ -200,6 +200,15 @@ spec:
                     containers:
                       - name: langfuse-web
                         securityContext: { readOnlyRootFilesystem: true }
+                        env:
+                          # langfuse chart 2.0.2 renders its own default for this key through Helm's
+                          # float marshalling, so the manifest carries `value: 1e+09` -- unquoted
+                          # scientific notation, which every YAML 1.2 reader (the API server's
+                          # included) types as a NUMBER where core/v1 EnvVar.value declares a string.
+                          # Found by bin/idp-ci rung 9c on its first run against the live tree
+                          # (idp#1046), the same class as idp#1027. Restated here as a string.
+                          - name: LANGFUSE_S3_MEDIA_UPLOAD_MAX_CONTENT_LENGTH
+                            value: "1000000000"
                         volumeMounts:
                           - { name: tmp, mountPath: /tmp }
                           - { name: next-cache, mountPath: /app/web/.next/cache }
@@ -218,6 +227,15 @@ spec:
                     containers:
                       - name: langfuse-worker
                         securityContext: { readOnlyRootFilesystem: true }
+                        env:
+                          # langfuse chart 2.0.2 renders its own default for this key through Helm's
+                          # float marshalling, so the manifest carries `value: 1e+09` -- unquoted
+                          # scientific notation, which every YAML 1.2 reader (the API server's
+                          # included) types as a NUMBER where core/v1 EnvVar.value declares a string.
+                          # Found by bin/idp-ci rung 9c on its first run against the live tree
+                          # (idp#1046), the same class as idp#1027. Restated here as a string.
+                          - name: LANGFUSE_S3_MEDIA_UPLOAD_MAX_CONTENT_LENGTH
+                            value: "1000000000"
                         volumeMounts:
                           - { name: tmp, mountPath: /tmp }
                     volumes:
