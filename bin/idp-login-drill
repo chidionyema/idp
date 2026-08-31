@@ -298,14 +298,18 @@ with sync_playwright() as p:
     def painted_words(pg):
         # R66 (crew#764): run 33427731536 shipped a blank grey rectangle as its photograph --
         # the shot fired before the page painted. A photograph is taken only after words drew.
-        w = ""
+        # Settled, not merely started: the first Hermes photograph met a bare word-count
+        # threshold on the header alone while the overview cards were still loading, and the
+        # capability under proof was invisible. Words must exist AND stop growing.
+        w, prev = "", None
         for _ in range(int(TIMEOUT / 1000)):
             try:
                 w = " ".join(pg.locator("body").inner_text(timeout=1000).split())
             except PWError:
                 w = ""
-            if len(w) > 40:
+            if len(w) > 40 and w == prev:
                 return w
+            prev = w
             time.sleep(1)
         return w
 
