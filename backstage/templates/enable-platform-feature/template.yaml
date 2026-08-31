@@ -50,6 +50,7 @@ spec:
             - config-reload
             - dev-loop
             - commerce
+            - customer-identity
           enumNames:
             - "traces -- LLM traces and observability"
             - "logs-metrics-store -- Logs and metrics history"
