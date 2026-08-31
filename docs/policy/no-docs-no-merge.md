@@ -12,7 +12,7 @@ adds or updates nothing under `docs/` fails the fast gate with **Missing Archite
 - Pull requests opened before 2026-09-01 — warn only, so the gate never lands on work that
   branched before it existed (rule: a new gate is graded against the estate before it merges;
   every open PR was graded on 2026-08-31 — humans' PRs are grandfathered, bots exempt).
-- A PR body line `Docs-exempt: <reason>` — the escape valve a guard must have (LAW 38); the
+- A PR body line `Docs-exempt: <reason>` — the escape valve a guard must have (the self-service-with-guardrails law); the
   reason is printed into the run log and is on the record.
 
 **Where it runs:** the `no docs, no merge` step in `.github/workflows/fast-gate.yml`, which every
