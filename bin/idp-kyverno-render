@@ -31,8 +31,15 @@ S="$(mktemp -d)"
 save_render() {  # copies whatever this run produced, even a partial render on an early failure
 	local dir="$1" f
 	mkdir -p "$dir"
+	# `[ -f "$f" ] && cp` leaves the loop -- and the function -- at status 1 when the LAST glob
+	# matched nothing, and this function is called from an EXIT trap under `set -e`, so a clean
+	# render exited 1 and CI read "a HelmRelease or workload render fails admission policy" over
+	# `fail: 0`. It fires for a dir that ships plain workloads and no chart, because then no
+	# *.final.yaml is ever written: offline-gate on idp#1056, run 33362659743, where the whole
+	# failure block printed no verdict line because there was no failed verdict to print.
 	for f in "$S"/kz-*.yaml "$S"/*.final.yaml; do
-		[ -f "$f" ] && cp -p "$f" "$dir/"
+		[ -f "$f" ] || continue
+		cp -p "$f" "$dir/"
 	done
 }
 trap '[ -n "${IDP_RENDER_KEEP:-}" ] && save_render "$IDP_RENDER_KEEP"; rm -rf "$S"' EXIT

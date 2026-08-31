@@ -1,0 +1,157 @@
+# crew#713 CP1: a daily copy of the shop's database, off the volume, made by the cluster.
+#
+# The whole shop is one SQLite file. Census inside the running pod, 2026-08-31: 202 packs, 76
+# price-history rows, 41,035 analytics events, 3 orders, 2 entitlements, 1 account, 23 tables,
+# 5,324,800 bytes, on one ReadWriteOnce block volume. Nothing copied it anywhere. The offsite
+# sources the estate already declares for it are written by Mac launchd jobs that are not loaded,
+# and infra is never Mac-bound (founder 2026-08-25), so the copy is made here.
+#
+# Three things this does that `cp /data/store.db` does not:
+#   * It uses SQLite's online backup API, which takes a consistent snapshot of a file the API is
+#     writing to. A byte copy of a live database is a torn file, and a byte copy that misses the
+#     write-ahead log is the 2026-08-25 incident: a stale -wal replayed over a restored store.db
+#     and /catalog answered [] with 78 packs on disk.
+#   * It refuses to upload a copy it cannot verify. `pragma integrity_check` must answer ok, the
+#     catalogue must be non-empty, and the file must not have collapsed against yesterday's. An
+#     unverified backup that overwrites a good one is worse than no backup, and "it ran green"
+#     while measuring nothing is this estate's second-commonest defect.
+#   * It leaves a receipt at shop/latest.json, so freshness is read from the backend rather than
+#     inferred from a log nobody opens.
+#
+# No credential exists anywhere in this file. The worker node's own identity is authorised to
+# write objects into exactly one bucket (platform/oci/shop-backups.tf), and nothing else.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: store-db-backup
+  namespace: prospector
+spec:
+  # Daily. crew#713 grades this source stale past 24 hours, so the run has to be inside that
+  # window with room for one retry. 03:17 UTC is off the hour, away from every other estate job.
+  schedule: "17 3 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 86400
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          # The volume is ReadWriteOnce, so this pod has to land on the node already holding it.
+          # Naming the node would pin the backup to a machine that can be replaced; naming the pod
+          # that mounts the volume follows it wherever it goes.
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: prospector-store-api
+          securityContext:
+            runAsNonRoot: true
+            # The user in the image is "oracle", a name and not a uid, and a kubelet refuses
+            # runAsNonRoot against an image whose config declares no numeric user.
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: backup
+              # ghcr.io/oracle/oci-cli tags are dated; arm64 is published, which the A1 nodes need.
+              # The CLI is written in Python, so python3 and its sqlite3 module come with it and no
+              # second image is needed: proved from a pod on this node 2026-08-31, python 3.9.25
+              # against sqlite 3.26.0, online backup of the live file answering integrity ok.
+              image: ghcr.io/oracle/oci-cli:20260826
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+                  # Yesterday's receipt, if there is one. Absent on the first run, and absent is
+                  # not a failure; `|| :` keeps the empty file the comparison then reads as "none".
+                  oci --auth instance_principal os object get --bucket-name "$BUCKET" \
+                    --name shop/latest.json --file /tmp/previous.json >/dev/null 2>&1 || : > /tmp/previous.json
+                  python3 - "$STAMP" <<'PY'
+                  import hashlib, json, os, pathlib, sqlite3, sys
+
+                  stamp = sys.argv[1]
+                  out = "/tmp/store.db"
+
+                  src = sqlite3.connect("file:/data/store.db?mode=ro", uri=True)
+                  dst = sqlite3.connect(out)
+                  src.backup(dst)          # consistent snapshot of a database being written to
+                  dst.execute("vacuum")    # and no journal or -wal to replay on restore
+
+                  def count(table):
+                      return dst.execute(f"select count(*) from [{table}]").fetchone()[0]
+
+                  receipt = {
+                      "stamp": stamp,
+                      "object": f"shop/store-{stamp}.db",
+                      "integrity": dst.execute("pragma integrity_check").fetchone()[0],
+                      "bytes": 0,
+                      "packs": count("Packs"),
+                      "accounts": count("AspNetUsers"),
+                      "orders": count("Orders"),
+                      "entitlements": count("Entitlements"),
+                      "analytics_events": count("AnalyticsEvents"),
+                  }
+                  dst.close(); src.close()
+                  receipt["bytes"] = os.path.getsize(out)
+                  receipt["sha256"] = hashlib.sha256(pathlib.Path(out).read_bytes()).hexdigest()
+
+                  # Refuse rather than upload something unverified. Each of these has been a real
+                  # restore that read as success: a corrupt page, an empty catalogue, a truncated file.
+                  if receipt["integrity"] != "ok":
+                      sys.exit(f"REFUSED: integrity_check answered {receipt['integrity']!r}")
+                  if receipt["packs"] == 0:
+                      sys.exit("REFUSED: the catalogue is empty, which is what a bad restore looks like")
+
+                  raw = pathlib.Path("/tmp/previous.json").read_text().strip()
+                  if raw:
+                      previous = json.loads(raw)
+                      floor = previous["bytes"] * float(os.environ["MIN_SIZE_RATIO"])
+                      if receipt["bytes"] < floor:
+                          sys.exit(
+                              f"REFUSED: {receipt['bytes']} bytes is under {floor:.0f}, "
+                              f"{os.environ['MIN_SIZE_RATIO']} of the {previous['bytes']} copied at {previous['stamp']}"
+                          )
+
+                  pathlib.Path("/tmp/receipt.json").write_text(json.dumps(receipt, indent=2, sort_keys=True))
+                  print(json.dumps(receipt, sort_keys=True))
+                  PY
+                  NAME="$(python3 -c 'import json;print(json.load(open("/tmp/receipt.json"))["object"])')"
+                  oci --auth instance_principal os object put --bucket-name "$BUCKET" \
+                    --name "$NAME" --file /tmp/store.db \
+                    --content-type application/vnd.sqlite3 --force
+                  # The receipt goes up last, so its presence means the copy above it landed.
+                  oci --auth instance_principal os object put --bucket-name "$BUCKET" \
+                    --name shop/latest.json --file /tmp/receipt.json \
+                    --content-type application/json --force
+                  echo "shop database copied to $BUCKET/$NAME"
+              env:
+                - { name: HOME, value: /tmp }   # the CLI caches under HOME and the root fs is read-only
+                - { name: BUCKET, value: estate-shop-backups }   # platform/oci/shop-backups.tf
+                # How far the file may shrink overnight before the copy is refused. A threshold
+                # with a name and a default, not a number buried in the code.
+                - { name: MIN_SIZE_RATIO, value: "0.5" }
+              resources:
+                requests: { cpu: 100m, memory: 256Mi }
+                limits: { cpu: 500m, memory: 512Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+              volumeMounts:
+                - { name: data, mountPath: /data, readOnly: true }
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: prospector-store-api-data
+                readOnly: true
+            - name: tmp
+              emptyDir: { sizeLimit: 512Mi }

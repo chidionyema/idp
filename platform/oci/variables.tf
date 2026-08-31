@@ -78,6 +78,14 @@ variable "cluster_name" {
   default = "estate"
 }
 
+# crew#713 CP1: how long a daily copy of the shop database is kept. A number, not a constant, so
+# the retention story can be answered with a value rather than a rebuild (founder 2026-08-31,
+# "configurable obvs"). 90 days of 5.3 MB is 480 MB against a 20 GB always-free allowance.
+variable "shop_backup_retention_days" {
+  type    = number
+  default = 90
+}
+
 variable "oci_auth" {
   description = "Provider auth: APIKey on a laptop (bin/idp-oci-login), SecurityToken under GitHub OIDC."
   type        = string

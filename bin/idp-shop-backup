@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# crew#713 CP3: is there a copy of the shop database, and how old is it? Read from the backend,
+# never from a file scan. The CronJob in platform/prospector/store-db-backup.yaml writes
+# shop/latest.json last in each run, so its presence means the copy above it landed, and its body
+# carries what the copy contained. This reads it with whatever OCI auth the caller has (a runner's
+# exchanged OIDC session in oke-check.yml). Same grading shape as bin/idp-cluster-state.
+#   ok      shop-backup  <stamp, age, rows>   -- fresh, verified, non-empty
+#   FAIL    shop-backup  <why>                -- no receipt, stale, integrity not ok, empty catalogue
+#   BLIND   shop-backup  <why>                -- no python3, no session; nothing was graded
+# Print the receipt with --json. Max age 26 h = a daily copy plus scheduling slack.
+# Override SHOP_BACKUP_MAX_AGE_HOURS and SHOP_BACKUP_BUCKET.
+set -uo pipefail
+IDP=$(cd "$(dirname "$0")/.." && pwd)
+BUCKET="${SHOP_BACKUP_BUCKET:-estate-shop-backups}"
+MAX_HOURS="${SHOP_BACKUP_MAX_AGE_HOURS:-26}"
+blind() {
+	printf 'BLIND   shop-backup  %s\n' "$1"
+	exit 2
+}
+fail() {
+	printf 'FAIL    shop-backup  %s\n' "$1"
+	exit 1
+}
+command -v python3 >/dev/null || blind "python3 is not installed"
+
+# Two reads of the same object, and the head is not redundant: it carries the store's own clock in
+# its `date` header alongside the `last-modified` it stamped on the copy, and crew#583 says the age
+# of a receipt is those two subtracted from each other. This machine's clock never enters it -- a
+# Mac whose battery died reads 1970 and would grade a dead job green.
+head=$("$IDP/bin/idp-cloud" object head --bucket "$BUCKET" --name shop/latest.json 2>&1)
+rc=$?
+if [ $rc -ne 0 ]; then
+	case "$head" in
+	*404* | *NotFound* | *"not found"*)
+		fail "no receipt shop/latest.json in bucket $BUCKET: the CronJob has never completed a verified copy (Flux row prospector not reconciled, or platform/oci/shop-backups.tf not applied)"
+		;;
+	*) blind "object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
+	esac
+fi
+
+body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name shop/latest.json 2>&1)
+rc=$?
+if [ $rc -ne 0 ]; then
+	case "$body" in
+	*404* | *NotFound* | *"not found"*)
+		fail "no receipt shop/latest.json in bucket $BUCKET: the CronJob has never completed a verified copy (Flux row prospector not reconciled, or platform/oci/shop-backups.tf not applied)"
+		;;
+	*) blind "object get failed: $(printf '%s' "$body" | tail -1 | cut -c1-160)" ;;
+	esac
+fi
+[ -n "$body" ] || blind "object get returned an empty body"
+
+# The receipt travels by file, never by argv: crew#539 lost a whole grading run to ARG_MAX.
+bodyf=$(mktemp)
+trap 'rm -f "$bodyf"' EXIT
+printf '%s' "$body" >"$bodyf"
+
+IDP_LIB="$IDP/bin/lib" python3 - "$head" "$bodyf" "$MAX_HOURS" "${1:-}" <<'PY'
+import json, os, pathlib, sys
+
+sys.path.insert(0, os.environ.get("IDP_LIB", ""))
+from receipt_age import receipt_age  # crew#583 CP2: the store's clock, never this machine's
+
+head, path, max_hours, flag = sys.argv[1], sys.argv[2], float(sys.argv[3]), sys.argv[4]
+try:
+    receipt = json.loads(pathlib.Path(path).read_text())
+except ValueError as exc:
+    sys.exit(f"BLIND   shop-backup  the receipt is not JSON: {exc}")
+
+if flag == "--json":
+    print(json.dumps(receipt, indent=2, sort_keys=True))
+
+try:
+    head = json.loads(head)
+except ValueError as exc:
+    sys.exit(f"BLIND   shop-backup  object head was not readable JSON: {exc}")
+# 3600 seconds to the unit, so this reads in hours. A head with no `date` is BLIND inside
+# receipt_age, never a fall back to this machine's clock.
+age = receipt_age(head, 3600.0, "shop-backup")
+if "stamp" not in receipt:
+    sys.exit("BLIND   shop-backup  the receipt carries no stamp")
+
+problems = []
+if age > max_hours:
+    problems.append(f"the last copy is {age:.1f} h old, over {max_hours:g} h")
+if receipt.get("integrity") != "ok":
+    problems.append(f"integrity_check answered {receipt.get('integrity')!r}")
+if not receipt.get("packs"):
+    problems.append("the copied catalogue is empty")
+if problems:
+    print("FAIL    shop-backup  " + "; ".join(problems))
+    raise SystemExit(1)
+
+print(
+    f"ok      shop-backup  {receipt['stamp']} ({age:.1f} h old), {receipt['bytes']} bytes, "
+    f"{receipt['packs']} packs, {receipt['orders']} orders, {receipt['accounts']} accounts"
+)
+PY
