@@ -111,8 +111,12 @@ def test_the_hujson_still_parses_and_is_the_file_the_applier_will_put(policy):
     assert "ssh" not in policy, (
         "crew#561: no Tailscale SSH server runs on the Mac (kb/1193); an ssh rule is a promise nothing keeps"
     )
-    assert set(policy["tagOwners"]) == {"tag:k8s", "tag:founder-mac"}, (
-        "crew#561: the Mac is tagged (measured); a tag dropped from tagOwners is a tag the API refuses"
+    assert set(policy["tagOwners"]) == {
+        "tag:k8s",
+        "tag:founder-mac",
+        "tag:k8s-operator",
+    }, (
+        "crew#561: the Mac is tagged (measured); a tag dropped from tagOwners is a tag the API refuses; tag:k8s-operator is the operator chart's own default device tag (idp#586)"
     )
     assert policy["tagOwners"]["tag:founder-mac"] == [], (
         "admins only may tag a device as the Mac"
@@ -258,4 +262,27 @@ def test_the_file_carries_exactly_one_placeholder_and_only_in_the_body():
     assert "${FOUNDER_TAILNET_USER}" in body
     assert "${" not in "\n".join(
         ln for ln in text.splitlines() if ln.lstrip().startswith("//")
+    )
+
+
+def test_the_operator_chart_default_tag_is_defined_and_the_client_mints_it(policy):
+    """idp#586: tailscale-operator@1.102.3 joins the tailnet with its default device tag
+    tag:k8s-operator (chart values operatorConfig.defaultTags, verified 2026-08-31). A tag the
+    policy does not define, or a client not minted with it, is an authkey 400 and a crashloop
+    that took the tailnet down from 2026-08-28 to 2026-08-31 (diagnose run 33374905345)."""
+    import pathlib as _pl
+
+    assert policy["tagOwners"].get("tag:k8s-operator") == [], (
+        "the operator's own tag must be defined, admins-only, like the other two"
+    )
+    operator = _pl.Path("platform/tailscale/operator.yaml").read_text()
+    boot = _pl.Path("bin/idp-bootstrap-tailscale").read_text()
+    if "defaultTags" not in operator:
+        # the chart default applies, so the client must be minted carrying it
+        assert "OP_TAG=${TAILSCALE_OPERATOR_TAG:-tag:k8s-operator}" in boot
+        assert "tags:[$t,$ot]" in boot, (
+            "the mint body must carry both tags or the operator 400s again"
+        )
+    assert 'jq -e --arg w "$want"' in boot, (
+        "the mint answer must be refused when it lacks a tag"
     )

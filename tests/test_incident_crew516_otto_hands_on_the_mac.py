@@ -234,8 +234,12 @@ def test_policy_has_no_ssh_section_and_no_open_source():
 
 def test_policy_acl_and_tag_owners_match_the_locked_spec():
     pol = _policy_hujson()
-    assert set(pol["tagOwners"]) == {"tag:k8s", "tag:founder-mac"}, (
-        "crew#561: the Mac carries tag:founder-mac (measured 2026-08-29); the cluster carries tag:k8s"
+    assert set(pol["tagOwners"]) == {
+        "tag:k8s",
+        "tag:founder-mac",
+        "tag:k8s-operator",
+    }, (
+        "crew#561: the Mac carries tag:founder-mac (measured 2026-08-29); the cluster carries tag:k8s; tag:k8s-operator is the operator chart's own default device tag (idp#586)"
     )
     assert pol["acls"] == [
         {
