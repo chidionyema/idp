@@ -171,6 +171,15 @@ jobs:
         # .gitignore does not help a gate that globs. actions/checkout refuses a path outside the
         # workspace, so this is a clone. The repo is public: no credential, no secret.
         run: git clone --depth 1 https://github.com/chidionyema/prospector "$RUNNER_TEMP/kyverno-policies"
+      # crew#639, 2026-08-31: the embedded Postgres binaries are downloaded the first time the
+      # demo runs. That download was the only one in this workflow with no retry and no cache,
+      # and it took main red on `no version found matching 16.9.0` while that artefact answered
+      # 200 on Maven Central. Cached, the warm path never reaches the network at all; the key
+      # carries the major version so a bump fetches once and then stays cached.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/idp-messaging-demo/postgres-16
+          key: embedded-postgres-16-${{ runner.os }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
@@ -231,6 +240,15 @@ jobs:
         with:
           go-version-file: platform/messaging/go.mod
           cache-dependency-path: platform/messaging/go.sum
+      # crew#639, 2026-08-31: the embedded Postgres binaries are downloaded the first time the
+      # demo runs. That download was the only one in this workflow with no retry and no cache,
+      # and it took main red on `no version found matching 16.9.0` while that artefact answered
+      # 200 on Maven Central. Cached, the warm path never reaches the network at all; the key
+      # carries the major version so a bump fetches once and then stays cached.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/idp-messaging-demo/postgres-16
+          key: embedded-postgres-16-${{ runner.os }}
       - run: cd platform/messaging && go vet ./... && go test ./...
       - run: bin/idp-messaging-demo all
 
