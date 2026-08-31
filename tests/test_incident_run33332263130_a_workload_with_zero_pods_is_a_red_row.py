@@ -58,7 +58,7 @@ def _receipt(deploy_short: list, with_count: bool = True) -> str:
         head += f" deploy_short={len(deploy_short)}"
     head += (
         " events_warning=1 monitoring_rules=1 alert_watchdog=1"
-        " cpu_used_pct=30 mem_used_pct=25 cpu_req_pct=12 mem_req_pct=4"
+        " cpu_used_pct=30 mem_used_pct=25 cpu_req_pct=12 mem_req_pct=4 secret_stale_consumers=0"
     )
     events = [
         {
