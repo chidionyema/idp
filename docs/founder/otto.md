@@ -33,7 +33,7 @@ deploy; today the founder deploys, and Otto inherits that job when ready.
 - **His real memory is Hindsight**, a database-backed recall service:
   - switched on in hermes-v2 `config.yaml` (`memory_enabled: true`, `provider: hindsight`,
     5,000-character recall budget, lines 26-31);
-  - client code in `hermes-agent/agent/memory_manager.py` + `plugins/memory/hindsight/`;
+  - client code in `hermes-v2/hermes-agent/agent/memory_manager.py` + `hermes-v2/hermes-agent/plugins/memory/hindsight/`;
   - the service is a platform layer at `platform/hindsight/` with its own Postgres database.
   - **Known issue:** the recall table was measured quiet since 2026-08-28 09:00Z (unconfirmed,
     one session's measurement) — the memory pipe may have stopped recording.
@@ -49,7 +49,7 @@ coverage](https://github.com/chidionyema/crew/issues/761).
 |---|---|---|
 | Model-call traces | Langfuse plugin sends to `langfuse-web.observability.svc:3000` (gateway.yaml:254); keys arrive as a vault-fed secret (`platform/hermes-agent/langfuse-key.yaml`) | Wired; landing unproven. The keys mount `optional: true`, so a missing key silently turns tracing off — flagged for fix |
 | Logs | The observability agent collects every pod's output (`platform/observability/values.yaml`) | Should land; unproven while the coverage receipt cannot be read |
-| Agent metrics and events | An OpenTelemetry exporter ships in Otto's code (`hermes-agent/agent/monitoring/otlp_exporter.py`) | **Dormant** — config.yaml has no `monitoring:` block. Certain gap |
+| Agent metrics and events | An OpenTelemetry exporter ships in Otto's code (`hermes-v2/hermes-agent/agent/monitoring/otlp_exporter.py`) | **Dormant** — config.yaml has no `monitoring:` block. Certain gap |
 | Coverage proof | `bin/idp-telemetry-coverage` reads the in-cluster coverage receipt (`platform/observability/telemetry-coverage.yaml`) | **Cannot answer** — the receipt was unreadable on 2026-08-31. Fixing this is step 1 of the coverage ticket |
 
 ## 5. Rules that bind Otto
