@@ -101,6 +101,7 @@ nav:
       - DB gen: tutorials/demo/db-gen.md
       - Dockerfiles: tutorials/demo/dockerfiles.md
       - Langfuse: tutorials/demo/langfuse.md
+      - SigNoz: tutorials/demo/signoz.md
       - LiteLLM: tutorials/demo/litellm.md
       - Router image lanes: tutorials/demo/llm-images.md
       - KINI: tutorials/demo/kini.md
@@ -132,6 +133,7 @@ nav:
       - Estate zone: how-to/onboarding/estate-zone.md
       - k8s-infra: how-to/onboarding/k8s-infra.md
       - Langfuse: how-to/onboarding/langfuse.md
+      - SigNoz: how-to/onboarding/signoz.md
       - Manifests: how-to/onboarding/manifests.md
       - MCP: how-to/onboarding/mcp.md
       - Sovereign bus: how-to/onboarding/sb.md

@@ -60,6 +60,29 @@ drills:
       and refuses none, and a cold browser handshake through the front door yields a session that
       is the drill user while a context holding nothing gets no user.
 
+  # verification plane step two and step nine: https://github.com/chidionyema/crew/issues/631
+  - name: verdict-backstage
+    owner: science
+    workflow: verdict-backstage.yml
+    job: prove
+    schedule: "43 * * * *"
+    max_age_hours: 3
+    proves: >-
+      A signed verdict about the catalogue image that is running: its entities API answers the
+      checker's token with real entities and refuses a caller holding no token, and the cluster's
+      pods are refused the verdict signing key.
+  # verification plane step nine (crew issue 631); SigNoz sign-on row is crew issue 718
+  - name: verdict-signoz
+    owner: science
+    workflow: verdict-signoz.yml
+    job: prove
+    schedule: "47 * * * *"
+    max_age_hours: 3
+    proves: >-
+      A signed verdict about the SigNoz image that is running: its dashboards API answers the
+      checker's service-account key and refuses a caller holding none, and the front-door walk to
+      signoz.<zone> is graded honestly, BLOCKED while the SigNoz community edition has no
+      single sign-on.
   - name: chaos-pod-kill
     owner: idp
     workflow: oke-check.yml
