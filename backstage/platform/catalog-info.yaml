@@ -1062,3 +1062,25 @@ spec:
     - component:default/layer-edge
     - component:default/layer-secret-store
     - component:default/layer-image-automation
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-verification
+  title: 'Verification wall'
+  description: 'Proves, on every run, that the cluster''s pods are refused the key that signs a verdict; the probe is meant to stay refused.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=verification'
+    estate/flux-kustomization: 'verification'
+    estate/path: './platform/verification'
+    estate/cluster: 'oke'
+  tags: [platform, identity]
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: identity
+  dependsOn:
+    - component:default/layer-backstage-namespace
+    - component:default/layer-external-secrets
+    - component:default/layer-secret-store

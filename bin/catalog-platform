@@ -71,6 +71,11 @@ LAYERS = {
         "Secrets bridge",
         "Pulls every secret from the vault into the cluster; nothing is typed into a console.",
     ),
+    "verification": (
+        "identity",
+        "Verification wall",
+        "Proves, on every run, that the cluster's pods are refused the key that signs a verdict; the probe is meant to stay refused.",
+    ),
     "secret-store": (
         "delivery",
         "Vault connection",
