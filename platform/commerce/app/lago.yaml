@@ -38,7 +38,7 @@ metadata:
   name: lago
   namespace: commerce
 spec:
-  interval: 1h
+  interval: 10m
   timeout: 15m
   chart:
     spec:

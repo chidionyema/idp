@@ -44,7 +44,7 @@ spec:
     remediation: { retries: 3 }
   upgrade:
     remediation: { retries: 3, remediateLastFailure: true }
-  interval: 1h
+  interval: 10m
   chart:
     spec:
       chart: spire-crds
@@ -59,7 +59,7 @@ metadata:
   name: spire
   namespace: spire-mgmt
 spec:
-  interval: 1h
+  interval: 10m
   timeout: 10m
   dependsOn:
     - name: spire-crds

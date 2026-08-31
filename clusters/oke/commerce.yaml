@@ -16,7 +16,7 @@ metadata:
   namespace: flux-system
 spec:
   suspend: true
-  interval: 1m
+  interval: 10m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -43,7 +43,7 @@ metadata:
   namespace: flux-system
 spec:
   suspend: true
-  interval: 1m
+  interval: 10m
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -65,7 +65,7 @@ metadata:
   namespace: flux-system
 spec:
   suspend: true
-  interval: 1m
+  interval: 10m
   sourceRef:
     kind: GitRepository
     name: flux-system

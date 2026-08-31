@@ -24,7 +24,7 @@ metadata:
   name: keda
   namespace: keda
 spec:
-  interval: 1h
+  interval: 10m
   timeout: 10m
   chart:
     spec:
@@ -64,7 +64,7 @@ metadata:
   name: keda-add-ons-http
   namespace: keda
 spec:
-  interval: 1h
+  interval: 10m
   timeout: 10m
   dependsOn:
     - name: keda

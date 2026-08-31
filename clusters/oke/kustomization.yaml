@@ -1,0 +1,38 @@
+# crew#727 (founder 2026-08-31): the reconcile interval is not a number anyone has to know.
+#
+# One value, here, patched onto every Flux Kustomization in this build — a future file's
+# per-chart guess is overridden, not obeyed. 10m is DRIFT DETECTION: how often Flux re-asserts
+# git against the cluster when nothing changed. It is NOT time-to-land: a merged change lands
+# when the flux-system GitRepository (flux-system/gotk-sync.yaml, 1m poll) sees the new
+# revision, which triggers reconciliation immediately, whatever this interval says.
+# HelmRelease intervals cannot be patched from here (they live in builds this file never sees);
+# tests/test_incident_crew727_intervals_are_one_estate_value.py pins every one of them, and every
+# Kustomization literal, to the value in this patch.
+#
+# Every *.yaml beside this file MUST be listed below: an unlisted file is silently not applied
+# and, with prune, its objects are deleted from the cluster. The same test pins this list to the
+# directory, so adding a file without adding a row here is a red CI, never a silent prune.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - flux-system
+  - alerts.yaml
+  - catalog.yaml
+  - commerce.yaml
+  - edge.yaml
+  - estate-config.yaml
+  - image-automation.yaml
+  - platform.yaml
+  - secrets.yaml
+  - verification.yaml
+patches:
+  - target:
+      group: kustomize.toolkit.fluxcd.io
+      kind: Kustomization
+    patch: |-
+      apiVersion: kustomize.toolkit.fluxcd.io/v1
+      kind: Kustomization
+      metadata:
+        name: estate-reconcile-interval
+      spec:
+        interval: 10m

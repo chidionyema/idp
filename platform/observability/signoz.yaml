@@ -10,7 +10,7 @@ kind: HelmRelease
 metadata:
   name: signoz
 spec:
-  interval: 1h
+  interval: 10m
   timeout: 15m
   chart:
     spec:

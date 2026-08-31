@@ -64,7 +64,7 @@ spec:
     remediation: { retries: 3 }
   upgrade:
     remediation: { retries: 3, remediateLastFailure: true }
-  interval: 1h
+  interval: 10m
   chart:
     spec:
       chart: reloader

@@ -146,7 +146,7 @@ kind: HelmRelease
 metadata:
   name: langfuse
 spec:
-  interval: 1h
+  interval: 10m
   timeout: 15m
   # Incident 2026-08-26 (crew#325): langfuse-web crash-looped for four hours on
   # `lookup signoz-clickhouse: no such host` while the signoz release had never become Ready.
