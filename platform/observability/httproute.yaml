@@ -172,7 +172,7 @@ metadata:
   name: otlp-ingest-users
   namespace: observability
 spec:
-  refreshInterval: 1h
+  refreshInterval: 10m
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
   target: { name: otlp-ingest-users, creationPolicy: Owner }
   data:

@@ -211,7 +211,7 @@ kind: ExternalSecret
 metadata:
   name: signoz-root
 spec:
-  refreshInterval: 1h
+  refreshInterval: 10m
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
   target:
     name: signoz-root

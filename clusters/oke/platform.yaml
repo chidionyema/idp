@@ -20,7 +20,7 @@ spec:
   path: ./platform/backstage/namespace/overlays/oke
   prune: true
   wait: true
-  timeout: 2m
+  timeout: 10m
 ---
 # ADR 0004 step 3. `flux bootstrap github --path clusters/oke` writes flux-system/ beside this
 # file; everything below is what Flux then reconciles. Secrets reach the
@@ -56,7 +56,7 @@ spec:
       - kind: ConfigMap
         name: estate-config
   wait: true
-  timeout: 5m
+  timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -431,7 +431,7 @@ spec:
   path: ./platform/state
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 10m
 ---
 # crew#396: the estate's one workflow engine, in the cluster instead of on the Mac.
 # Suspended 2026-08-30 on the founder's word (crew#284): "what I spec'd was not what was built; I
@@ -537,7 +537,7 @@ spec:
   path: ./platform/science
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 10m
 ---
 # The Architect's memory (crew#524 CP1): Hindsight, the vendor chart on the pgvector Postgres
 # beside it, LLM behind the estate router. After secret-store for the one Secret it reads and
@@ -613,7 +613,7 @@ spec:
   dependsOn:
     - name: secret-store
   wait: true
-  timeout: 5m
+  timeout: 10m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -635,7 +635,7 @@ spec:
   path: ./platform/priority-classes
   prune: true
   wait: true
-  timeout: 2m
+  timeout: 10m
 ---
 # crew#539: scheduling immunity. The balloon and the Kyverno policies that keep the radio-room set
 # honest. After edge (Kyverno CRDs) and after priority-classes, which is where the two classes now
@@ -657,7 +657,7 @@ spec:
   path: ./platform/scheduling
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 10m
 ---
 # crew#539 CP6/CP7: the self-healing loops. Descheduler rebalances after every node swap; K8sGPT
 # explains a Pending wave through the estate's own router. After scheduling (it must not evict the
@@ -707,7 +707,7 @@ spec:
   path: ./platform/healing/analyzer
   prune: true
   wait: true
-  timeout: 5m  # test_incident_backstage_17h_unreported: a row with healthChecks must stall, never wait forever
+  timeout: 10m  # test_incident_backstage_17h_unreported: a row with healthChecks must stall, never wait forever
   # the object alone counts as Current; the analyzer the operator builds from it is the health
   # (run 33233870612: 29h green with no analyzer). Name = the K8sGPT object's name.
   healthChecks:
@@ -832,7 +832,7 @@ spec:
   dependsOn:
     - name: alerts-github
   wait: true
-  timeout: 5m
+  timeout: 10m
   postBuild:
     substituteFrom:
       - kind: ConfigMap
@@ -883,4 +883,4 @@ spec:
   path: ./platform/staging
   prune: true
   wait: true
-  timeout: 2m
+  timeout: 10m

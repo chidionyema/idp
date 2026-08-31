@@ -18,7 +18,7 @@ kind: ExternalSecret
 metadata:
   name: langfuse-init
 spec:
-  refreshInterval: 1h
+  refreshInterval: 10m
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
   target:
     name: langfuse-init
@@ -63,7 +63,7 @@ kind: ExternalSecret
 metadata:
   name: langfuse-sso
 spec:
-  refreshInterval: 1h
+  refreshInterval: 10m
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
   target:
     name: langfuse-sso
@@ -97,7 +97,7 @@ kind: ExternalSecret
 metadata:
   name: clickhouse-auth
 spec:
-  refreshInterval: 1h
+  refreshInterval: 10m
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
   target:
     name: clickhouse-auth

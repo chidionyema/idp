@@ -31,7 +31,7 @@ spec:
     # not created yet is refused by the API server and never schedules (crew#488 rung 4).
     - name: priority-classes
   wait: true
-  timeout: 5m
+  timeout: 10m
   healthChecks:
     - { apiVersion: apps/v1, kind: StatefulSet, name: commerce-db, namespace: commerce }
     - { apiVersion: apps/v1, kind: StatefulSet, name: commerce-redis, namespace: commerce }

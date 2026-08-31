@@ -10,7 +10,7 @@ metadata:
   name: hermes-agent-langfuse
   namespace: hermes-agent
 spec:
-  refreshInterval: 1h
+  refreshInterval: 10m
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
   target: { name: hermes-agent-langfuse, creationPolicy: Owner }
   data:

@@ -6,7 +6,7 @@ metadata:
   name: flux-telegram
   namespace: flux-system
 spec:
-  refreshInterval: 1h
+  refreshInterval: 10m
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
   target:
     name: flux-telegram

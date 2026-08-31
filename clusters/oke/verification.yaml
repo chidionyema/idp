@@ -18,7 +18,7 @@ spec:
   path: ./platform/verification
   prune: true
   wait: false
-  timeout: 2m
+  timeout: 10m
   # external-secrets brings the CRD, secret-store the ClusterSecretStore the probe asks through,
   # backstage-namespace the namespace the probe sits in beside its control (backstage-env).
   dependsOn:
