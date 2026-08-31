@@ -110,15 +110,23 @@ def store_cmds(cmd, argv):
     if cmd == "refuse-test":
         rc1, _, err1 = psql(S.refuse_sql())
         rc2, _, err2 = psql(S.refuse_update_sql())
-        ok1, ok2 = (
-            rc1 != 0 and "permission denied" in err1,
-            rc2 != 0 and "append-only" in err2,
+        # 2026-08-31: the prover role has no UPDATE grant at all, so Postgres answers "permission
+        # denied" before the append-only trigger can; both are the refusal the test wants. The old
+        # test wanted the trigger's word alone and printed "UPDATE as prover ACCEPTED" over a refused
+        # statement on every run (run 33346560259) — a FAIL that graded the wrong property.
+        ok1 = rc1 != 0 and "permission denied" in err1
+        ok2 = rc2 != 0 and ("append-only" in err2 or "permission denied" in err2)
+
+        def _why(rc, err):
+            if rc == 0:
+                return "ACCEPTED: the statement ran"
+            return "refused by something else: " + (err or "no error")[:100]
+
+        print(
+            f"{'ok  ' if ok1 else 'FAIL'}    verdict  INSERT as agent_role {'refused' if ok1 else _why(rc1, err1)}"
         )
         print(
-            f"{'ok  ' if ok1 else 'FAIL'}    verdict  INSERT as agent_role {'refused' if ok1 else 'ACCEPTED: ' + (err1 or 'no error')[:100]}"
-        )
-        print(
-            f"{'ok  ' if ok2 else 'FAIL'}    verdict  UPDATE as prover {'refused' if ok2 else 'ACCEPTED: ' + (err2 or 'no error')[:100]}"
+            f"{'ok  ' if ok2 else 'FAIL'}    verdict  UPDATE as prover {'refused (' + ('append-only trigger' if 'append-only' in err2 else 'no UPDATE grant') + ')' if ok2 else _why(rc2, err2)}"
         )
         return 0 if ok1 and ok2 else 1
     return 2
