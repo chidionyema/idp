@@ -4,6 +4,7 @@ stale birth claim ("GitHub OAuth App, founder, console") for a credential Terraf
 16 vault entries were seeded by hand with no ticket. The guard is bin/idp-root-trust; this test
 proves it both ways on a synthetic tree (no network, no real vault, no secret values).
 """
+
 import importlib.util
 import os
 import subprocess
@@ -35,17 +36,24 @@ def _tree(tmp, register):
     (tmp / "platform" / "x").mkdir(parents=True)
     (tmp / "platform" / "x" / "es.yaml").write_text(ES)
     (tmp / "docs" / "reference" / "policy").mkdir(parents=True)
-    (tmp / "docs" / "reference" / "policy" / "root-trust.md").write_text(HEAD + register)
+    (tmp / "docs" / "reference" / "policy" / "root-trust.md").write_text(
+        HEAD + register
+    )
 
 
 def _run(tmp, *args):
     env = {**os.environ, "IDP_ROOT": str(tmp)}
-    p = subprocess.run([sys.executable, str(GATE), *args], capture_output=True, text=True, env=env)
+    p = subprocess.run(
+        [sys.executable, str(GATE), *args], capture_output=True, text=True, env=env
+    )
     return p.returncode, p.stdout
 
 
 def test_gate_passes_when_every_entry_is_born_or_ticketed(tmp_path):
-    _tree(tmp_path, "| `alpha` | x | p | api | MEETS | `bin/idp-bootstrap-alpha` |\n| `beta` | x | p | by hand | MISS | crew#575 |\n")
+    _tree(
+        tmp_path,
+        "| `alpha` | x | p | api | MEETS | `bin/idp-bootstrap-alpha` |\n| `beta` | x | p | by hand | MISS | crew#575 |\n",
+    )
     rc, out = _run(tmp_path)
     assert rc == 0 and out.startswith("PASS"), out
     rc, out = _run(tmp_path, "--check")
@@ -55,11 +63,17 @@ def test_gate_passes_when_every_entry_is_born_or_ticketed(tmp_path):
 def test_gate_refuses_unregistered_entry(tmp_path):
     _tree(tmp_path, "| `alpha` | x | p | api | MEETS | `bin/idp-bootstrap-alpha` |\n")
     rc, out = _run(tmp_path)
-    assert rc == 1 and "beta: read by platform/x/es.yaml but absent from the register" in out, out
+    assert (
+        rc == 1
+        and "beta: read by platform/x/es.yaml but absent from the register" in out
+    ), out
 
 
 def test_gate_refuses_meets_without_bootstrapper_and_miss_without_ticket(tmp_path):
-    _tree(tmp_path, "| `alpha` | x | p | console | MEETS | `bin/idp-bootstrap-nope` |\n| `beta` | x | p | by hand | MISS | the founder pastes it |\n")
+    _tree(
+        tmp_path,
+        "| `alpha` | x | p | console | MEETS | `bin/idp-bootstrap-nope` |\n| `beta` | x | p | by hand | MISS | the founder pastes it |\n",
+    )
     rc, out = _run(tmp_path)
     assert rc == 1, out
     assert "bin/idp-bootstrap-nope which does not exist" in out
@@ -78,11 +92,18 @@ def test_gate_opens_no_socket(monkeypatch, tmp_path):
         raise AssertionError("root-trust gate opened a socket")
 
     monkeypatch.setattr(socket, "socket", boom)
-    spec = importlib.util.spec_from_loader("rt", importlib.machinery.SourceFileLoader("rt", str(GATE)))
+    spec = importlib.util.spec_from_loader(
+        "rt", importlib.machinery.SourceFileLoader("rt", str(GATE))
+    )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    _tree(tmp_path, "| `alpha` | x | p | api | MEETS | `bin/idp-bootstrap-alpha` |\n| `beta` | x | p | h | MISS | crew#1 |\n")
-    rows = mod.register_rows((tmp_path / "docs/reference/policy/root-trust.md").read_text())
+    _tree(
+        tmp_path,
+        "| `alpha` | x | p | api | MEETS | `bin/idp-bootstrap-alpha` |\n| `beta` | x | p | h | MISS | crew#1 |\n",
+    )
+    rows = mod.register_rows(
+        (tmp_path / "docs/reference/policy/root-trust.md").read_text()
+    )
     keys = mod.external_secret_keys(str(tmp_path / "platform"))
     findings, _ = mod.grade(rows, keys, str(tmp_path / "bin"))
     assert findings == []
