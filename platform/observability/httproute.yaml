@@ -230,3 +230,45 @@ spec:
       backendRefs:
         - name: signoz-otel-collector
           port: 4318
+---
+# SigNoz's read API, the one path a program uses (crew#631 CP9): the hourly prover
+# (.github/workflows/verdict-signoz.yml, bin/idp-prove signoz) reads /api/v2/dashboards with a
+# service-account key SigNoz itself enforces (header SIGNOZ-API-KEY, role signoz-viewer, minted by
+# bin/idp-signoz-key into vault entry signoz-prover), and a program cannot pass a browser login.
+# Same two-part proof as langfuse-api: the annotation says so, and the gates check that this route
+# exposes /api/v2/dashboards and nothing else, while the probe beside it (probes/signoz.py) carries
+# the negative control that measures the refusal every hour. Sessions, service accounts and every
+# other /api/ path stay behind the one login on the route above.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-telemetry
+  name: signoz-api
+  namespace: observability
+  annotations:
+    idp.estate/auth: signoz-service-account-key
+spec:
+  parentRefs:
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-signoz
+  hostnames:
+    - "signoz.${ESTATE_ZONE}"
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /api/v2/dashboards }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
+        - name: signoz
+          port: 8080

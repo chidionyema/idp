@@ -27,16 +27,18 @@ from probes.verdict import assertion
 TIMEOUT_S = 20
 
 
-def http(url, auth=None, timeout=TIMEOUT_S, data=None, bearer=None):
+def http(url, auth=None, timeout=TIMEOUT_S, data=None, bearer=None, headers=None):
     """(status, body_text). Redirects are followed; a redirect to the identity domain shows up
     as a 200 HTML sign-in page, which is why nothing below asserts on 200 alone. data (bytes)
-    makes it a JSON POST."""
+    makes it a JSON POST. headers adds vendor headers (SigNoz reads SIGNOZ-API-KEY)."""
     if not url.startswith("https://"):
         return 0, "refused: only https targets"
     headers = {"Accept": "application/json", "User-Agent": "idp-prove/1"}
     if data is not None:
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, headers=headers, data=data)  # noqa: S310
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
     if bearer:
         req.add_header("Authorization", f"Bearer {bearer}")
     if auth:

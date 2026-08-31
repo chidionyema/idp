@@ -204,6 +204,31 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
             f"{f}: annotated langfuse-project-keys but langfuse.yaml pulls no project keys"
         )
         return
+    # SigNoz's read API (crew#631 CP9): the hourly prover reads /api/v2/dashboards with a
+    # service-account key SigNoz enforces (SIGNOZ-API-KEY, role signoz-viewer, bin/idp-signoz-key).
+    # The route may skip oauth2-proxy only when it says so AND exposes nothing but that one prefix,
+    # AND the probe beside it carries the negative control that measures the refusal every hour.
+    if (route["metadata"].get("annotations") or {}).get(
+        "idp.estate/auth"
+    ) == "signoz-service-account-key":
+        paths = [
+            m.get("path", {})
+            for rule in route["spec"]["rules"]
+            for m in rule.get("matches", [])
+        ]
+        assert paths and all(
+            p == {"type": "PathPrefix", "value": "/api/v2/dashboards"} for p in paths
+        ), (
+            f"{f}: annotated signoz-service-account-key but exposes a path other than /api/v2/dashboards: {paths}"
+        )
+        probe = (ROOT / "probes" / "signoz.py").read_text()
+        assert (
+            'KEY_HEADER = "SIGNOZ-API-KEY"' in probe
+            and "l2.NEGATIVE.no_key_is_refused" in probe
+        ), (
+            f"{f}: annotated signoz-service-account-key but probes/signoz.py measures no refusal"
+        )
+        return
     # The job monitor's ping path (crew#177) is called by curl from every wrapped launchd job and
     # cannot sit behind a browser login. Healthchecks authenticates it with the project ping key in
     # the URL (/ping/<key>/<slug>). The route may skip oauth2-proxy only when it says so AND exposes

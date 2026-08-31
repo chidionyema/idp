@@ -4,6 +4,7 @@ result to the artifact that was running, signs it, and writes one verdict file.
 
   bin/idp-prove langfuse --out FILE      L1 + L2 + L3 + L4 (with negative controls) -> signed verdict
   bin/idp-prove backstage --out FILE     catalogue L1 + L2 (prover token) + NEGATIVE -> signed verdict (crew#631 CP9)
+  bin/idp-prove signoz --out FILE        SigNoz L1 + L2 (service-account key) + NEGATIVE + L3 (drill) -> signed verdict (crew#631 CP9)
 
 The agent cannot run this to any effect: the API key, the drill password, the cluster read and the
 signing key all come from the vault through the runner's machine identity. On a laptop with no
@@ -25,6 +26,7 @@ IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, IDP)
 from probes import backstage as BS  # noqa: E402
 from probes import langfuse as LF  # noqa: E402
+from probes import signoz as SZ  # noqa: E402
 from probes import verdict as V  # noqa: E402
 
 TTL = int(
@@ -269,7 +271,113 @@ def prove_backstage(out_path):
     return emit(v, out_path, key, digest, revision)
 
 
-TARGETS = {"langfuse": prove_langfuse, "backstage": prove_backstage}
+def workload_artifact(kind, name, ns):
+    """(image digest, generation-observed) of a workload's first ready pod, from the cluster. The
+    pods are found by the workload's own selector, never a guessed label."""
+    doc = kube("get", kind, name, "-n", ns, "-o", "json")
+    if not doc:
+        return None, None, f"no {kind} {name} readable in {ns}"
+    d = json.loads(doc)
+    if d["status"].get("observedGeneration") != d["metadata"].get("generation"):
+        return None, None, f"{kind} {name} not yet observed by its controller"
+    sel = ",".join(f"{k}={v}" for k, v in d["spec"]["selector"]["matchLabels"].items())
+    pods = kube("get", "pods", "-n", ns, "-l", sel, "-o", "json")
+    for pod in json.loads(pods).get("items", []) if pods else []:
+        for c in pod.get("status", {}).get("containerStatuses", []):
+            if c.get("ready") and c.get("imageID"):
+                return c["imageID"], str(d["metadata"]["generation"]), None
+    return None, None, f"no ready {name} pod reports an imageID"
+
+
+def surface_via_drill(name):
+    """The front-door walk to one surface is bin/idp-login-drill's, on this run: it writes every
+    surface's two L3 assertions (probes/front_door.py) to DRILL_SURFACES_OUT. Returns
+    (assertions, second_login_reason): the reason is the drill's own SECOND_LOGIN_EXPECTED text
+    when the surface came to rest on its own sign-in page, and the prover marks the verdict
+    BLOCKED with it (crew#718: never a green over a login screen)."""
+    out = os.path.join(tempfile.mkdtemp(prefix="prove-"), "surfaces.json")
+    env = dict(os.environ, DRILL_SURFACES_OUT=out)
+    rc, so, se = run(
+        [os.path.join(IDP, "bin", "idp-login-drill")], env=env, timeout=900
+    )
+    for line in so.splitlines():
+        if re.match(r"^(ok|FAIL|sso|2nd|BLIND) ", line):
+            print(f"drill   prove  {line[:200]}")
+    if os.path.exists(out):
+        with open(out) as f:
+            row = json.load(f).get(name) or {}
+        if row.get("assertions"):
+            return row["assertions"], row.get("second_login")
+    last = [ln for ln in so.splitlines() if ln.startswith("FAIL")] or [
+        se.strip()[-200:] or f"drill exit {rc}"
+    ]
+    return [
+        V.assertion(
+            f"l3.front_door.{name}.reached_host",
+            f"drill walked to {name}",
+            last[-1][:300],
+            False,
+        )
+    ], None
+
+
+def prove_signoz(out_path):
+    """crew#631 CP9, third surface. L1/L2/NEGATIVE on /api/v2/dashboards through the edge's
+    signoz-api route with the service-account key bin/idp-signoz-key minted; L3 from the login
+    drill's front-door walk. SigNoz community has no SSO (crew#718 CP2), so while the drill
+    reports the second login the outcome is BLOCKED with that reason, not PASS and not a
+    permanent red nobody reads."""
+    started = time.time()
+    z = zone()
+    host = f"https://signoz.{z}"
+    digest, revision, blocked = workload_artifact("statefulset", "signoz", "observability")
+    env_json = vault("signoz-prover")
+    key = None
+    if env_json:
+        try:
+            key = json.loads(env_json).get("key")
+        except ValueError:
+            key = None
+    if key:
+        assertions = SZ.probe(host, key)
+    else:
+        assertions = SZ.l1_liveness(host) + SZ.negative_no_key(host)
+        blocked = (
+            blocked
+            or "signoz-prover.key unreadable from the vault (oke-check.yml -f mode=apply runs bin/idp-estate-seed, whose step 4 is bin/idp-signoz-key)"
+        )
+    l3, second_login = surface_via_drill("signoz")
+    assertions += l3
+    if second_login:
+        blocked = blocked or f"L3 cannot pass: {second_login}"
+    v = V.build(
+        "signoz.l1-l3.service_account_key",
+        f"signoz@{z}",
+        os.environ.get("GITHUB_SHA")
+        or run(["git", "-C", IDP, "rev-parse", "HEAD"])[1].strip(),
+        digest,
+        revision,
+        assertions,
+        nonce=os.environ.get("VERDICT_NONCE")
+        or f"{os.environ.get('GITHUB_RUN_ID', 'local')}-{uuid.uuid4().hex[:12]}",
+        started_at=started,
+        ttl_seconds=TTL,
+        prover_id=os.environ.get("VERDICT_PROVER_ID", "github-actions/verdict-signoz"),
+        prover_run_id=os.environ.get("GITHUB_RUN_ID", "local"),
+        evidence_ref=os.environ.get("VERDICT_EVIDENCE_REF"),
+        blocked=blocked,
+    )
+    signing = os.environ.get("VERDICT_HMAC_KEY") or vault("verdict-hmac-key")
+    if signing:
+        v = V.sign(v, signing)
+    return emit(v, out_path, signing, digest, revision)
+
+
+TARGETS = {
+    "langfuse": prove_langfuse,
+    "backstage": prove_backstage,
+    "signoz": prove_signoz,
+}
 
 
 def main(argv):

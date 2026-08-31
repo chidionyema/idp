@@ -449,7 +449,11 @@ with sync_playwright() as p:
     # second hop ok while the founder was looking at a login screen -- the silent-green class
     # again. A surface that comes to rest on a sign-in path did not sign anybody in, whatever its
     # DOM says, so the path is graded too.
-    SIGN_IN_PATHS = ("/login", "/signin", "/sign-in", "/signup", "/sign-up", "/auth/")
+    # crew#631 CP9: the same measurements become each surface's L3 assertions (probes/front_door.py),
+    # written to DRILL_SURFACES_OUT so a surface's prover grades the person's road from this run.
+    sys.path.insert(0, os.environ["IDP_ROOT"])
+    from probes.front_door import SIGN_IN_PATHS, assertions as front_door_assertions
+    surfaces = {}
     # A surface that genuinely cannot join the one login is named here with the reason and the
     # ticket that will close it. It prints a loud `2nd` line every run instead of a silent pass,
     # so nobody can mistake "the drill is green" for "the founder can open it".
@@ -473,6 +477,10 @@ with sync_playwright() as p:
         status = getattr(resp, "status", 0)
         pw = page.locator("input[type='password']").count()
         print(f"sso     login-drill  {name} landed on {host}{path} ({status}), {pw} password field(s)")
+        surfaces[name] = {
+            "assertions": front_door_assertions(name, want_host, host, path, pw, status, DOMAIN_HOST),
+            "second_login": SECOND_LOGIN_EXPECTED.get(name) if any(path.startswith(sp) for sp in SIGN_IN_PATHS) else None,
+        }
         if host == DOMAIN_HOST:
             sso_red.append(f"{name}: stopped on the identity domain; the drill user is not granted the app")
         elif host != want_host:
@@ -490,6 +498,10 @@ with sync_playwright() as p:
                 sso_red.append(
                     f"{name}: came to rest on its own sign-in page at {path}, so nobody was signed "
                     f"in; the one login is two")
+    if os.environ.get("DRILL_SURFACES_OUT"):
+        import json as _json
+        with open(os.environ["DRILL_SURFACES_OUT"], "w") as f:
+            _json.dump(surfaces, f)
     if sso_red:
         fail("second-hop", "; ".join(sso_red))
 

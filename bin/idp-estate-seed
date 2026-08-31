@@ -28,6 +28,7 @@ IDP=$(cd "$(dirname "$0")/.." && pwd)
 CLOUD=${IDP_CLOUD:-$IDP/bin/idp-cloud}            # overridable so a test needs no vault
 VAULT_PUT=${IDP_VAULT_PUT:-$IDP/bin/idp-vault-put}
 ROUTER_KEY=${IDP_ROUTER_KEY:-$IDP/bin/idp-router-key}
+SIGNOZ_KEY=${IDP_SIGNOZ_KEY:-$IDP/bin/idp-signoz-key}
 MODE=${1:-mint}; ROTATE=""
 case "$MODE" in
   mint|--preflight) ;;
@@ -80,6 +81,7 @@ if [ "$MODE" = --preflight ]; then
   while read -r e k g; do [ -n "$e" ] || continue; say "" "$e" "$k <- ${g%%:*}"; n=$((n+1)); done <<<"$PLAN"
   while read -r e g; do [ -n "$e" ] || continue; say "" "$e" "(raw) <- $g"; n=$((n+1)); done <<<"$RAW_PLAN"
   while read -r e k m; do [ -n "$e" ] || continue; say "" "$e" "$k <- router key ($m)"; n=$((n+1)); done <<<"$ROUTER_PLAN"
+  say "" signoz-prover "key <- SigNoz service-account key (bin/idp-signoz-key, from the root login the vault holds)"; n=$((n+1))
   say ok preflight "$n keys would be minted or kept; nothing written"
   exit 0
 fi
@@ -153,5 +155,13 @@ while read -r e k m; do
   if [ "$ROTATE" = "$e" ]; then ROUTER_ROTATE=1; else ROUTER_ROTATE=""; fi
   ROUTER_ROTATE=$ROUTER_ROTATE "$ROUTER_KEY" "$e" "$m" --entry "$e" --field "$k" | sed 's/^/        /' || fail "$e" "router key $k not minted"
 done <<<"$ROUTER_PLAN"
+
+# --- 4. the SigNoz prover key, from the root login the vault holds (crew#631 CP9) -----------------
+# The seed runs where the cluster is readable (oke-check.yml apply); a laptop with no cluster is
+# BLIND on this row and nothing above is undone. FAIL means SigNoz or the vault refused.
+if [ "$ROTATE" = signoz-prover ]; then SIGNOZ_ROTATE=1; else SIGNOZ_ROTATE=""; fi
+rc=0; SIGNOZ_ROTATE=$SIGNOZ_ROTATE "$SIGNOZ_KEY" | sed 's/^/        /' || rc=$?
+[ "$rc" -ne 1 ] || fail signoz-prover "key not minted (bin/idp-signoz-key)"
+[ "$rc" -ne 2 ] || bl signoz-prover "not measurable from here (bin/idp-signoz-key BLIND: no cluster or no vault)"
 
 say ok estate-seed "$minted minted, $kept kept; ExternalSecrets pick them up within their refreshInterval (flux reconcile kustomization <name> to hurry)"
