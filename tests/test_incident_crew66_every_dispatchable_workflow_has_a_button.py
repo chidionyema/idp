@@ -133,7 +133,8 @@ def test_choice_inputs_become_drop_downs_and_defaults_survive(tmp_path):
         and props["mode"]["default"] == "check"
     )
     assert props["dry_run"]["type"] == "boolean" and props["dry_run"]["default"] is True
-    assert props["reason"]["description"] == "why" and page["required"] == ["reason"]
+    # the input's sentence is the form label (crew#612: the key is never shown to a person)
+    assert props["reason"]["title"] == "why" and page["required"] == ["reason"]
     assert doc["spec"]["steps"][0]["input"]["workflowInputs"] == {
         k: "${{ parameters." + k + " }}" for k in ("mode", "dry_run", "reason")
     }
