@@ -15,6 +15,7 @@ Grading, like every bin/idp-*: one line, `ok|FAIL|BLIND  verdict  <why>`.
 """
 
 import json
+import re
 import os
 import subprocess
 import sys
@@ -107,20 +108,82 @@ def store_cmds(cmd, argv):
             print(f"        verdict  {line.replace('|', '  ')}")
         print(f"ok      verdict  list {len(rows)} rows as agent_role")
         return 0
+    if cmd == "key-wall":
+        # crew#631 CP2, the refusal side: ExternalSecret backstage/verdict-key-wall asks the cluster's
+        # own store for verdict-hmac-key as the workers dynamic group. Not Ready with the vault's
+        # refusal is the wall standing; Ready means a pod can read the signing key; absent is BLIND
+        # (platform/verification/verdict-key-wall.yaml not landed).
+        r = subprocess.run(
+            [
+                os.path.join(IDP, "bin", "idp-kube"),
+                "get",
+                "externalsecret",
+                "-n",
+                "backstage",
+                "verdict-key-wall",
+                "-o",
+                "json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        if r.returncode != 0:
+            why = (r.stderr or r.stdout).strip().splitlines()[-1:] or ["no answer"]
+            print(
+                f"BLIND   verdict  key-wall  backstage/verdict-key-wall not readable: {why[0][:120]}"
+            )
+            return 2
+        return grade_key_wall(json.loads(r.stdout))
     if cmd == "refuse-test":
         rc1, _, err1 = psql(S.refuse_sql())
         rc2, _, err2 = psql(S.refuse_update_sql())
-        ok1, ok2 = (
-            rc1 != 0 and "permission denied" in err1,
-            rc2 != 0 and "append-only" in err2,
+        # 2026-08-31: the prover role has no UPDATE grant at all, so Postgres answers "permission
+        # denied" before the append-only trigger can; both are the refusal the test wants. The old
+        # test wanted the trigger's word alone and printed "UPDATE as prover ACCEPTED" over a refused
+        # statement on every run (run 33346560259) — a FAIL that graded the wrong property.
+        ok1 = rc1 != 0 and "permission denied" in err1
+        ok2 = rc2 != 0 and ("append-only" in err2 or "permission denied" in err2)
+
+        def _why(rc, err):
+            if rc == 0:
+                return "ACCEPTED: the statement ran"
+            return "refused by something else: " + (err or "no error")[:100]
+
+        print(
+            f"{'ok  ' if ok1 else 'FAIL'}    verdict  INSERT as agent_role {'refused' if ok1 else _why(rc1, err1)}"
         )
         print(
-            f"{'ok  ' if ok1 else 'FAIL'}    verdict  INSERT as agent_role {'refused' if ok1 else 'ACCEPTED: ' + (err1 or 'no error')[:100]}"
-        )
-        print(
-            f"{'ok  ' if ok2 else 'FAIL'}    verdict  UPDATE as prover {'refused' if ok2 else 'ACCEPTED: ' + (err2 or 'no error')[:100]}"
+            f"{'ok  ' if ok2 else 'FAIL'}    verdict  UPDATE as prover {'refused (' + ('append-only trigger' if 'append-only' in err2 else 'no UPDATE grant') + ')' if ok2 else _why(rc2, err2)}"
         )
         return 0 if ok1 and ok2 else 1
+    return 2
+
+
+def grade_key_wall(obj):
+    """0 when the ExternalSecret is refused the key by the vault, 1 when it synced, 2 when it says
+    nothing yet. Printed as one row; the message names the vault's own words."""
+    conds = {
+        c.get("type"): c for c in (obj.get("status") or {}).get("conditions") or []
+    }
+    ready = conds.get("Ready") or {}
+    msg = (ready.get("message") or "")[:140]
+    ctrl = obj.get("status", {}).get("syncedResourceVersion")
+    if ready.get("status") == "True" or ctrl:
+        print(
+            f"FAIL    verdict  key-wall  a pod READ verdict-hmac-key through estate-vault: {msg or 'synced'}"
+        )
+        return 1
+    if ready.get("status") == "False" and re.search(
+        r"NotAuthorized|404|not authorized|denied|forbidden", msg, re.I
+    ):
+        print(
+            f"ok      verdict  key-wall  pods are refused verdict-hmac-key ({ready.get('reason')}: {msg})"
+        )
+        return 0
+    print(
+        f"BLIND   verdict  key-wall  no verdict from the store yet: {ready.get('reason') or 'no Ready condition'} {msg}"
+    )
     return 2
 
 
