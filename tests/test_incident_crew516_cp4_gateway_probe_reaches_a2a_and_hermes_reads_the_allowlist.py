@@ -52,6 +52,7 @@ def test_a2a_token_is_generated_in_cluster_and_projected_into_the_env_dir():
     assert names == [
         "hermes-agent-env",
         "hermes-agent-a2a",
+        "hermes-agent-webhook",
         "hermes-agent-mcp",
         "hermes-agent-langfuse",
     ]  # crew#561 CP3

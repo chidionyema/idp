@@ -98,6 +98,7 @@ def test_secrets_are_files_the_container_exports_never_pod_env():
     assert secrets == [
         "hermes-agent-env",
         "hermes-agent-a2a",
+        "hermes-agent-webhook",
         "hermes-agent-mcp",
         "hermes-agent-langfuse",
     ]
