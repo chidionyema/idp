@@ -14,7 +14,8 @@ Age is measured against GitHub's clock (bin/lib/ledger_fresh.authority_now), nev
 (crew#583: a dead battery stamps 1970). No API clock -> BLIND, exit 2.
 
 With `--act` (crew#607 CP2/CP3) the table is acted on, never only printed: a `green` row gets
-`gh pr merge --auto --merge` so it merges the moment nothing holds it, and a row over the bound gets one
+`bin/idp-pr-arm` so it merges the moment nothing holds it where the repository allows auto-merge,
+and reads `waiting-on-founder` where it does not (idp#1046). A row over the bound gets one
 `PR AGE:` comment on its own thread naming the reason (never repeated while the reason is unchanged).
 A red or conflicting row is made a draft at the bound and closed at six bounds (CP4, the red clock).
 
@@ -77,12 +78,21 @@ def gh(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["gh", *args], capture_output=True, text=True, timeout=60)
 
 
+def arm(slug: str, n: int) -> subprocess.CompletedProcess:
+    """idp#1046: auto-merge is off on this repository (allow_auto_merge=false, set beside the founder-only-releases ruleset on 2026-08-30), so `gh pr merge --auto` answers `enablePullRequestAutoMerge` and exits 1. bin/idp-pr-arm arms it where the repository allows it and names the founder's merge where it does not."""
+    tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), "idp-pr-arm")
+    return subprocess.run([tool, str(n), "--merge"], capture_output=True, text=True,
+                          timeout=60, env={**os.environ, "GH_REPO": slug})
+
+
 def act(repo: str, n: int, age_h: float, why: str, max_h: float) -> str:
     """One action per row, returned as a word for the table: auto-merge | commented | quiet | -."""
     slug = f"{OWNER}/{repo}"
     if why == "green":
-        p = gh("pr", "merge", str(n), "-R", slug, "--auto", "--merge")
-        return "auto-merge" if p.returncode == 0 else f"auto-merge-refused:{(p.stderr or p.stdout).strip()[:80]}"
+        p = arm(slug, n)
+        if p.returncode != 0:
+            return f"auto-merge-refused:{(p.stderr or p.stdout).strip()[:80]}"
+        return "auto-merge" if p.stdout.startswith("ok") else "waiting-on-founder"
     if age_h <= max_h:
         return "-"
     if why.startswith("red:") or why == "conflict":
