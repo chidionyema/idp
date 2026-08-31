@@ -5,6 +5,10 @@ resources:
   - traefik.yaml
   - status-page.yaml
   - require-catalogue-entity.yaml
+  # crew#684 and the founder blueprint that closed it: the invariant "a workload restarts when
+  # its config changes" moves out of three hand-kept annotation lists and one hand-kept test
+  # into one mutation every workload gets at admission.
+  - require-auto-reload.yaml
   - catalogue-entity-exception.yaml
   - cert-manager.yaml
   - langfuse-exception.yaml

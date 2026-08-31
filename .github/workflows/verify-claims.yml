@@ -27,6 +27,11 @@ jobs:
           cache: pip
           cache-dependency-path: .github/requirements/oci-cli.txt
       - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
+      # A Verify: line that proves an admission-policy claim needs the CLI that judges it. Without
+      # this the guard tests skip as BLIND on this runner and the job still exits 0 -- the
+      # silent-green class the estate has hit four times. Same pinned version as ci.yml.
+      - name: kyverno cli
+        run: curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/kyverno/kyverno/releases/download/v1.19.0/kyverno-cli_v1.19.0_linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin kyverno
       - name: oci cli
         run: pip install -q -r .github/requirements/oci-cli.txt -r .github/requirements/kyverno-secrets-drill.txt -r sovereign/requirements-dev.txt   # Verify: lines run pytest with the same requirements the bdd tests job installs (ci.yml)
       - name: OCI session token from the GitHub OIDC token (read-only observer)

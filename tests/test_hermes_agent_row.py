@@ -238,28 +238,9 @@ def test_incident_apply_dispatch_is_not_displaced_by_pull_request_pushes():
     assert wf["concurrency"]["cancel-in-progress"] is False
 
 
-def test_the_pod_rolls_when_the_vault_entry_changes():
-    dep = _one(_docs(), "Deployment")
-    # crew#516 CP5: hermes-agent-tailscale's ExternalSecret lives in tailscale.yaml, a sibling
-    # manifest in the same Kustomization -- still a Secret this Deployment mounts and should roll on.
-    all_docs = _docs() + [
-        d
-        for f in ("tailscale.yaml", "mcp-key.yaml")
-        for d in yaml.safe_load_all((DIR / f).read_text())
-    ]
-    targets = sorted(
-        d["spec"]["target"]["name"]
-        for d in all_docs
-        if d and d.get("kind") == "ExternalSecret"
-    )
-    assert (
-        sorted(
-            dep["metadata"]["annotations"]["secret.reloader.stakater.com/reload"].split(
-                ","
-            )
-        )
-        == targets
-    )
+# "the pod rolls when the vault entry changes" was graded here, on this one Deployment. It is a
+# property of every workload, not of Otto, and it is graded as one in
+# tests/test_incident_crew684_every_workload_restarts_when_its_config_changes.py.
 
 
 def github_token_is_minted_in_cluster(docs) -> bool:
