@@ -11,6 +11,7 @@ backup job that reports success while copying an empty database is the failure t
 stop, and a test that greps for the word "REFUSED" would pass on a job that never refuses.
 """
 
+import datetime
 import json
 import pathlib
 import re
@@ -224,6 +225,84 @@ def test_the_nodes_may_touch_this_bucket_and_no_other():
     assert (
         "target.bucket.name='${oci_objectstorage_bucket.shop_backups.name}'"
         in statements[0]
+    )
+
+
+# --- CP3: the copy is graded from the backend, and the grade is read ------------------------
+
+GRADER = ROOT / "bin/idp-shop-backup"
+
+
+def _grade(tmp_path, receipt, hours="26"):
+    """Run the grader's own judgement against a receipt, without a cloud session.
+
+    The shell half fetches shop/latest.json; this is the half that decides, and it is the half
+    that can be wrong in a way nobody notices until a restore.
+    """
+    lines = GRADER.read_text().splitlines()
+    start = next(i for i, l in enumerate(lines) if l.endswith("<<'PY'"))
+    end = next(i for i, l in enumerate(lines) if i > start and l == "PY")
+    body = "\n".join(lines[start + 1 : end])
+    path = tmp_path / "latest.json"
+    path.write_text(json.dumps(receipt))
+    return subprocess.run(
+        [sys.executable, "-c", body, str(path), hours, ""],
+        capture_output=True,
+        text=True,
+    )
+
+
+def _receipt(age_hours=1.0, **overrides):
+    stamp = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
+        hours=age_hours
+    )
+    return {
+        "stamp": stamp.strftime("%Y%m%dT%H%M%SZ"),
+        "integrity": "ok",
+        "bytes": 5_324_800,
+        "packs": 202,
+        "orders": 3,
+        "accounts": 1,
+        **overrides,
+    }
+
+
+def test_a_fresh_verified_copy_grades_ok(tmp_path):
+    done = _grade(tmp_path, _receipt())
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.startswith("ok      shop-backup")
+    assert "202 packs" in done.stdout
+
+
+@pytest.mark.parametrize(
+    "receipt,because",
+    [
+        (_receipt(age_hours=48), "the last copy is"),
+        (_receipt(integrity="*** in database main"), "integrity_check answered"),
+        (_receipt(packs=0), "the copied catalogue is empty"),
+    ],
+)
+def test_a_copy_that_would_not_restore_grades_red(tmp_path, receipt, because):
+    done = _grade(tmp_path, receipt)
+    assert done.returncode == 1, done.stdout
+    assert done.stdout.startswith("FAIL    shop-backup") and because in done.stdout
+
+
+def test_the_drill_is_named_and_owned_and_runs_daily():
+    """crew#684 CP3: a drill with no owner is refused. The founder reads this row on the Ops page."""
+    catalogue = yaml.safe_load((ROOT / "drills/catalogue.yaml").read_text())
+    row = [d for d in catalogue["drills"] if d["name"] == "shop-backup"]
+    assert len(row) == 1
+    row = row[0]
+    assert row["owner"] and row["proves"].strip()
+    assert row["max_age_hours"] <= 26
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows" / row["workflow"]).read_text()
+    )
+    job = workflow["jobs"][row["job"]]
+    assert row["schedule"] in [s["cron"] for s in workflow[True]["schedule"]]
+    assert any(
+        step.get("run", "").strip() == "bin/idp-shop-backup" for step in job["steps"]
     )
 
 

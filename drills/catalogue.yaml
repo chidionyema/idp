@@ -96,6 +96,17 @@ drills:
       token read it back through single sign-on (bin/idp-cluster-state checks freshness and Ready);
       the cluster holds PrometheusRules and Alertmanager shows the Watchdog alert, so the alert
       pipeline is evaluating and delivering.
+  - name: shop-backup
+    owner: idp
+    workflow: oke-check.yml
+    job: shop-backup
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    proves: >-
+      The shop's whole database — the catalogue, the orders, the entitlements and the accounts, all
+      of it one file on one volume — left that volume within the last day, into a store the worker
+      machines may write to and nothing else can, and the copy was checked before it was sent: it
+      opens, its catalogue is not empty, and it has not collapsed against the copy before it.
   - name: kini-finish
     owner: idp
     workflow: oke-check.yml
