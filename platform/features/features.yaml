@@ -238,6 +238,23 @@ features:
         switches: []
     default: "off"
 
+  - name: customer-identity
+    title: Sign-in for a product's customers
+    why: "the shop keeps no password, no reset flow and no account table; one realm holds who may sign in, and that realm is a file in git a reviewer reads"
+    tiers:
+      - name: "on"
+        what: "Keycloak, one realm per product, reconciled from git by keycloak-config-cli on every change, with the running realm graded against the file by bin/idp-realm-diff"
+        switches: [customer-identity]
+        status: planned
+        # Typed, and only because the switch does not exist yet. From the vendor's sizing page:
+        # 1250 MB of RAM per pod including caches and 10,000 cached sessions. The database is a
+        # row on the shared Postgres below, never a seventh copy.
+        floor: { cpu: 0.5, memory_gb: 1.5, storage_gb: 2 }
+      - name: "off"
+        what: "no customer identity layer; whichever product needs customers holds its own sign-in code, which is what this feature exists to end"
+        switches: []
+    default: "off"
+
 products:
   # Products run ON the platform; they are rows so the plan sums them, never platform layers.
   - name: prospector

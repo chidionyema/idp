@@ -1,0 +1,139 @@
+{
+  "accessCodeLifespan": 60,
+  "accessTokenLifespan": 86400,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "attributes": {
+    "cibaBackchannelTokenLifespan": "120"
+  },
+  "browserFlow": "browser",
+  "bruteForceProtected": false,
+  "clients": [
+    {
+      "alwaysDisplayInConsole": false,
+      "clientId": "storefront-backend",
+      "directAccessGrantsEnabled": false,
+      "enabled": true,
+      "frontchannelLogout": true,
+      "id": "c-storefront-backend",
+      "implicitFlowEnabled": false,
+      "name": "Shop storefront, server side",
+      "nodeReRegistrationTimeout": -1,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "**********",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "surrogateAuthRequired": false
+    },
+    {
+      "alwaysDisplayInConsole": false,
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://shop.mumchimp.com"
+      },
+      "clientId": "storefront",
+      "directAccessGrantsEnabled": true,
+      "enabled": true,
+      "frontchannelLogout": true,
+      "id": "c-storefront",
+      "implicitFlowEnabled": false,
+      "name": "Shop storefront",
+      "nodeReRegistrationTimeout": -1,
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "config": {
+            "access.token.claim": "true",
+            "claim.name": "email",
+            "id.token.claim": "true",
+            "jsonType.label": "String",
+            "user.attribute": "email",
+            "userinfo.token.claim": "true"
+          },
+          "id": "m-email",
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper"
+        },
+        {
+          "config": {
+            "access.token.claim": "true",
+            "claim.name": "preferred_username",
+            "id.token.claim": "true",
+            "jsonType.label": "String",
+            "user.attribute": "username",
+            "userinfo.token.claim": "true"
+          },
+          "id": "m-preferred_username",
+          "name": "preferred_username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper"
+        }
+      ],
+      "publicClient": true,
+      "redirectUris": [
+        "https://shop.mumchimp.com/api/auth/callback/keycloak",
+        "https://evil.example/callback"
+      ],
+      "serviceAccountsEnabled": false,
+      "standardFlowEnabled": true,
+      "surrogateAuthRequired": false,
+      "webOrigins": [
+        "https://shop.mumchimp.com"
+      ]
+    }
+  ],
+  "defaultSignatureAlgorithm": "RS256",
+  "displayName": "Shop",
+  "duplicateEmailsAllowed": false,
+  "editUsernameAllowed": false,
+  "enabled": true,
+  "failureFactor": 5,
+  "id": "0a4b5f2e-3c11-4d8a-9d1e-77c0b2a4e610",
+  "internationalizationEnabled": false,
+  "loginWithEmailAllowed": true,
+  "maxDeltaTimeSeconds": 43200,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "notBefore": 0,
+  "offlineSessionIdleTimeout": 1209600,
+  "permanentLockout": false,
+  "quickLoginCheckMilliSeconds": 1000,
+  "realm": "shop",
+  "refreshTokenMaxReuse": 0,
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "registrationFlow": "registration",
+  "rememberMe": true,
+  "resetPasswordAllowed": true,
+  "revokeRefreshToken": true,
+  "roles": {
+    "realm": [
+      {
+        "description": "may read another customer's orders to answer a ticket, and nothing else",
+        "name": "support"
+      },
+      {
+        "description": "anyone who has signed up to the shop",
+        "name": "customer"
+      },
+      {
+        "composite": true,
+        "description": "${role_default-roles}",
+        "name": "default-roles-shop"
+      },
+      {
+        "composite": false,
+        "description": "${role_offline-access}",
+        "name": "offline_access"
+      }
+    ]
+  },
+  "sslRequired": "all",
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "supportedLocales": [],
+  "userManagedAccessAllowed": false,
+  "verifyEmail": true,
+  "waitIncrementSeconds": 60
+}

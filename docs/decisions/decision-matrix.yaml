@@ -403,3 +403,50 @@ decisions:
           portability:         {score: 4, evidence: "platform/mcp/agentgateway.yaml"}
           operability:         {score: 1, evidence: "cmd: get_estate_state -> available: false (2026-08-30)"}                       # the document does not exist yet
           cost:                {score: 4, evidence: "mcp/plugins/workload_state.py"}                                                # one more producer job
+  - slug: customer-identity
+    requirement: >-
+      a product's customers sign in, register, verify an email address and reset a password, and
+      the product itself keeps no password and no account table; the settings that decide who may
+      sign in are reviewed the way code is reviewed (docs/decisions/0013-customer-identity-is-keycloak-and-the-realm-is-code.md)
+    date: 2026-08-31
+    status: proposed
+    decision: keycloak-realm-as-code
+    next_review: 2026-09-07
+    reviews: []
+    candidates:
+      keycloak-realm-as-code:
+        note: "Keycloak, one realm per product, the realm held in git and applied by keycloak-config-cli; the running realm graded against the file by bin/idp-realm-diff"
+        scores:
+          first_time_user:     {score: 4, evidence: "https://www.keycloak.org/docs/latest/server_admin/index.html"}                 # hosted sign-in, register, verify, reset out of the box; the page needs theming
+          founder_experience:  {score: 4, evidence: "docs/tutorials/demo/customer-identity.md"}                                     # he reads one file and one verdict line, never a console
+          feature_parity:      {score: 5, evidence: "https://www.keycloak.org/docs/latest/server_admin/index.html"}                 # lock-out, email verification, reset, social login, OIDC, all standard
+          ecosystem_fit:       {score: 4, evidence: "platform/features/features.yaml"}                                              # a feature switch, a database on the shared Postgres, truth in git like every other layer
+          maturity:            {score: 5, evidence: "https://www.cncf.io/projects/keycloak/"}                                       # CNCF incubating, Red Hat behind it, a buyer's engineer knows it
+          security_by_default: {score: 5, evidence: "platform/customer-identity/realm/shop.yaml"}                                   # lock-out on, email verified, five-minute tokens, refresh tokens revoked on use
+          portability:         {score: 5, evidence: "https://openid.net/specs/openid-connect-core-1_0.html"}                        # plain OIDC, self-hosted, the realm and its users export whole
+          operability:         {score: 3, evidence: "https://www.keycloak.org/high-availability/multi-cluster/concepts-memory-and-cpu-sizing"}  # one more service and one more database to run
+          cost:                {score: 4, evidence: "https://github.com/keycloak/keycloak/blob/main/LICENSE.txt"}                   # Apache-2.0, no per-customer fee; the price is about 1.25 GB of RAM
+      storefront-own-signin:
+        note: "leave sign-in where it is: the shop's own code, its own account table, its own password hashing"
+        scores:
+          first_time_user:     {score: 3, evidence: "docs/decisions/0013-customer-identity-is-keycloak-and-the-realm-is-code.md"}   # it works today, for the one account the shop has
+          founder_experience:  {score: 2, evidence: "docs/decisions/0013-customer-identity-is-keycloak-and-the-realm-is-code.md"}   # every sign-in rule is code nobody reviews as a sign-in rule
+          feature_parity:      {score: 1, evidence: "docs/decisions/0013-customer-identity-is-keycloak-and-the-realm-is-code.md"}   # no lock-out, no email verification, no reset flow, no social login
+          ecosystem_fit:       {score: 2, evidence: "platform/features/features.yaml"}                                              # a product carrying its own copy of a platform layer is what the headline forbids
+          maturity:            {score: 1, evidence: "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html"}  # hand-written authentication against a published bar it does not meet
+          security_by_default: {score: 1, evidence: "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html"}  # passwords stored and checked by us, in the shop's own table
+          portability:         {score: 3, evidence: "docs/decisions/0013-customer-identity-is-keycloak-and-the-realm-is-code.md"}   # the rows are ours, but nothing else can read them
+          operability:         {score: 2, evidence: "drills/catalogue.yaml"}                                                        # no drill can exercise it; a change is invisible until someone cannot sign in
+          cost:                {score: 5, evidence: "docs/decisions/0013-customer-identity-is-keycloak-and-the-realm-is-code.md"}   # nothing new runs
+      hosted-identity-saas:
+        note: "a hosted identity service (Auth0, Clerk and the like): the customers' accounts live in the vendor"
+        scores:
+          first_time_user:     {score: 5, evidence: "https://auth0.com/docs/get-started"}                                          # nothing to run, a working sign-in page in an afternoon
+          founder_experience:  {score: 5, evidence: "https://auth0.com/docs/get-started"}                                          # the vendor keeps it up
+          feature_parity:      {score: 5, evidence: "https://auth0.com/docs/get-started"}                                          # every flow, and more
+          ecosystem_fit:       {score: 2, evidence: "docs/decisions/0013-customer-identity-is-keycloak-and-the-realm-is-code.md"}  # a second control plane outside git, changed in a console nobody reviews
+          maturity:            {score: 5, evidence: "https://auth0.com/docs/get-started"}                                          # a buyer's engineer knows it
+          security_by_default: {score: 5, evidence: "https://auth0.com/docs/secure"}                                               # no password ever reaches us
+          portability:         {score: 1, evidence: "https://auth0.com/docs/troubleshoot/customer-support/manage-subscriptions"}   # the customers are the vendor's rows; leaving asks every customer to set a password again
+          operability:         {score: 5, evidence: "https://auth0.com/docs/get-started"}                                          # nothing of ours to operate
+          cost:                {score: 2, evidence: "https://auth0.com/pricing"}                                                   # priced per monthly active user, forever, on a shop we intend to grow

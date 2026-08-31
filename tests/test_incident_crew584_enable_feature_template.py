@@ -37,9 +37,10 @@ REGISTER_FEATURES = [
     "config-reload",
     "dev-loop",
     "commerce",
+    "customer-identity",
 ]
 
-# Every tier name used anywhere in the register, across all 17 features.
+# Every tier name used anywhere in the register, across all 18 features.
 REGISTER_TIERS = {"enterprise", "lean", "on", "off", "namespace"}
 
 

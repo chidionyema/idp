@@ -1,0 +1,107 @@
+# The shop's customer realm, as code. This file is the whole truth about who may sign in to the
+# storefront and what a token says; nothing about it is clicked into an admin console.
+#
+# It is read by keycloak-config-cli (Apache-2.0), which the vendor describes as "declarative,
+# idempotent configuration for Keycloak via the Admin API -- version-controlled and CI/CD-ready".
+# That word idempotent is the whole reason it is here rather than the Keycloak Operator's
+# KeycloakRealmImport: the founder's own objection, 2026-08-30, is that realm import is
+# create-only and not a reconciler, so a second run of it leaves an edited realm edited.
+#
+# Placeholders are keycloak-config-cli variable substitution (IMPORT_VARSUBSTITUTION_ENABLED),
+# so the hostnames are not literals in git (LAW 46) and staging and production read the same file.
+realm: shop
+displayName: Shop
+enabled: true
+
+# The storefront holds no password and never will. Sign-in is email plus a one-time code the
+# realm sends, or a federated provider; either way the credential lives here, not in the shop.
+registrationAllowed: true
+registrationEmailAsUsername: true
+loginWithEmailAllowed: true
+duplicateEmailsAllowed: false
+verifyEmail: true
+resetPasswordAllowed: true
+rememberMe: true
+sslRequired: all
+
+# Brute force: an attacker gets 5 tries, then the account is held for a minute that doubles,
+# capped at 15. Keycloak counts per account, so this costs a real customer nothing.
+bruteForceProtected: true
+failureFactor: 5
+waitIncrementSeconds: 60
+maxFailureWaitSeconds: 900
+maxDeltaTimeSeconds: 43200
+quickLoginCheckMilliSeconds: 1000
+minimumQuickLoginWaitSeconds: 60
+permanentLockout: false
+
+# A stolen refresh token is worth one use. Rotation on, reuse zero.
+revokeRefreshToken: true
+refreshTokenMaxReuse: 0
+accessTokenLifespan: 300
+ssoSessionIdleTimeout: 1800
+ssoSessionMaxLifespan: 36000
+offlineSessionIdleTimeout: 1209600
+
+roles:
+  realm:
+    - name: customer
+      description: anyone who has signed up to the shop
+    - name: support
+      description: may read another customer's orders to answer a ticket, and nothing else
+
+clients:
+  # The browser half. Public, because a page cannot keep a secret, and therefore PKCE is required
+  # and the implicit flow and direct grants are both off -- those are the two ways a public client
+  # leaks a token.
+  - clientId: storefront
+    name: Shop storefront
+    enabled: true
+    protocol: openid-connect
+    publicClient: true
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    redirectUris:
+      - $(env:SHOP_REDIRECT_URI)
+    webOrigins:
+      - $(env:SHOP_ORIGIN)
+    attributes:
+      pkce.code.challenge.method: S256
+      post.logout.redirect.uris: $(env:SHOP_ORIGIN)
+    protocolMappers:
+      - name: email
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-property-mapper
+        config:
+          user.attribute: email
+          claim.name: email
+          jsonType.label: String
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
+      - name: preferred_username
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-property-mapper
+        config:
+          user.attribute: username
+          claim.name: preferred_username
+          jsonType.label: String
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
+
+  # The server half. Confidential, so it can ask about a customer without a browser in the loop.
+  # Its secret is never in this file: keycloak-config-cli reads it from the environment, which
+  # External Secrets fills from the estate vault.
+  - clientId: storefront-backend
+    name: Shop storefront, server side
+    enabled: true
+    protocol: openid-connect
+    publicClient: false
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: true
+    secret: $(env:SHOP_BACKEND_CLIENT_SECRET)
