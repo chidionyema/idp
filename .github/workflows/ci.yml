@@ -51,6 +51,9 @@ jobs:
           curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/kyverno/kyverno/releases/download/v1.19.0/kyverno-cli_v1.19.0_linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin kyverno
           curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/fluxcd/flux2/releases/download/v2.9.4/flux_2.9.4_linux_amd64.tar.gz | sudo tar -xz -C /usr/local/bin flux   # crew#483: bin/idp-envsubst-gate
           curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.7.1/kustomize_v5.7.1_linux_amd64.tar.gz | sudo tar -xz -C /usr/local/bin kustomize
+          # bin/idp-ci rung 9c: kubeconform type-checks rung 9's render (idp#1027). Without it
+          # that rung is BLIND, which this job counts as a failure -- it never reads green unjudged.
+          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin kubeconform
       - name: temporal cli (bin/idp-ci runs the same bdd suite; cp27 needs the dev server)
         run: |
           curl -sSf --retry 5 --retry-all-errors --retry-delay 2 https://temporal.download/cli.sh | sh -s -- --version 1.8.2

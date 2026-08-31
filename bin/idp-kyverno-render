@@ -13,10 +13,29 @@
 # dir), else prospector's deploy/k8s/policies when that checkout sits beside this one, else the
 # same pinned upstream set (public, no token; the two estate-only policies are absent and the
 # verdict says so).
+#
+# IDP_RENDER_KEEP=<dir>: Kyverno judges POLICY on this render; bin/idp-kubeconform judges TYPE on
+# the same bytes (crew#584 comment above: a second renderer would duplicate ~4 minutes of CI).
+# Set this to a directory and every kz-*.yaml (raw kustomize build: the Flux control objects --
+# HelmRelease, Kustomization, ExternalSecret, the GithubAccessToken generator -- and every plain
+# workload) and *.final.yaml (the Helm chart's own render, post postRenderers: the exact bytes
+# admission sees for that release) is copied out before the trap below deletes the scratch
+# directory. plain-*.yaml is deliberately not copied: it is a filtered subset of its kz-*.yaml
+# plus bin/lib/kyverno_pods.py's synthetic Pod stand-ins (ownerReferences[].uid: "offline"), built
+# so Kyverno sees the Pod a controller would create -- real for a policy verdict, not a real
+# object a type-checker should grade twice. One render, judged twice.
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 export IDP
-S="$(mktemp -d)"; trap 'rm -rf "$S"' EXIT
+S="$(mktemp -d)"
+save_render() {  # copies whatever this run produced, even a partial render on an early failure
+	local dir="$1" f
+	mkdir -p "$dir"
+	for f in "$S"/kz-*.yaml "$S"/*.final.yaml; do
+		[ -f "$f" ] && cp -p "$f" "$dir/"
+	done
+}
+trap '[ -n "${IDP_RENDER_KEEP:-}" ] && save_render "$IDP_RENDER_KEEP"; rm -rf "$S"' EXIT
 for t in helm kubectl kyverno python3; do command -v "$t" >/dev/null || { echo "BLIND  $t is not installed; nothing was judged"; exit 2; }; done
 
 # Beside the PRIMARY checkout, not beside this one. This said "$IDP/.." until 2026-08-28, and
