@@ -13,6 +13,7 @@ On main policy/no-manual-steps.rego does not exist and every test here fails on 
 No sockets: conftest runs against local files only, and the test skips when conftest is not
 installed rather than reaching for it.
 """
+
 import json
 import pathlib
 import shutil
@@ -120,7 +121,9 @@ def test_a_founder_action_whose_verb_is_a_hand_is_refused(line, tmp_path):
 
 @conftest_only
 def test_a_founder_action_naming_neither_a_url_nor_a_word_is_refused(tmp_path):
-    r = _run(_doc("FOUNDER ACTION: sign in to the OCI console and add estate-tofu"), tmp_path)
+    r = _run(
+        _doc("FOUNDER ACTION: sign in to the OCI console and add estate-tofu"), tmp_path
+    )
     assert r.returncode != 0, r.stdout
 
 
@@ -149,7 +152,9 @@ def test_a_file_outside_the_agreed_scope_is_not_judged(tmp_path):
 
 
 def test_the_runner_and_the_ci_job_exist():
-    assert RUNNER.is_file() and RUNNER.stat().st_mode & 0o111, f"missing or non-executable {RUNNER}"
+    assert RUNNER.is_file() and RUNNER.stat().st_mode & 0o111, (
+        f"missing or non-executable {RUNNER}"
+    )
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
     assert "no-toil-gate:" in ci, "the gate has no job in ci.yml"
     assert "bin/idp-no-toil" in ci, "the ci.yml job does not run the gate"

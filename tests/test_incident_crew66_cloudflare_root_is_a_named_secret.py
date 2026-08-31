@@ -14,12 +14,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _estate(tmp_path):
-    idp = tmp_path / "idp"; (idp / "bin").mkdir(parents=True); (idp / "clusters" / "oke").mkdir(parents=True)
-    shutil.copy(ROOT / "bin" / "idp-bootstrap-cloudflare", idp / "bin" / "idp-bootstrap-cloudflare")
-    (idp / "clusters" / "oke" / "estate-config.yaml").write_text("ESTATE_ZONE: example.test\n")
+    idp = tmp_path / "idp"
+    (idp / "bin").mkdir(parents=True)
+    (idp / "clusters" / "oke").mkdir(parents=True)
+    shutil.copy(
+        ROOT / "bin" / "idp-bootstrap-cloudflare",
+        idp / "bin" / "idp-bootstrap-cloudflare",
+    )
+    (idp / "clusters" / "oke" / "estate-config.yaml").write_text(
+        "ESTATE_ZONE: example.test\n"
+    )
     (idp / "estate-defaults.yaml").write_text("r2:\n  bucket: prospector-test\n")
-    log = tmp_path / "curl.log"; log.touch(); vault = tmp_path / "vault.json"; vault.write_text("{}")
-    sh = tmp_path / "shims"; sh.mkdir()
+    log = tmp_path / "curl.log"
+    log.touch()
+    vault = tmp_path / "vault.json"
+    vault.write_text("{}")
+    sh = tmp_path / "shims"
+    sh.mkdir()
     (sh / "curl").write_text(f'''#!/bin/bash
 echo "$@" >> "{log}"
 case "$*" in
@@ -50,32 +61,66 @@ case "$2" in
   get) exit 1;;
 esac
 ''')
-    for f in list(sh.iterdir()) + [idp / "bin" / n for n in ("idp-oci-whoami", "idp-vault-put", "idp-cloud", "idp-bootstrap-cloudflare")]:
+    for f in list(sh.iterdir()) + [
+        idp / "bin" / n
+        for n in (
+            "idp-oci-whoami",
+            "idp-vault-put",
+            "idp-cloud",
+            "idp-bootstrap-cloudflare",
+        )
+    ]:
         f.chmod(0o755)
-    env = {**{k: v for k, v in os.environ.items() if k != "R2_BUCKET"}, "PATH": f"{sh}:{os.environ['PATH']}", "ESTATE_HOME": str(tmp_path / "home"),
-           "CLOUDFLARE_API_URL": "https://api.test/client/v4", "CLOUDFLARE_ROOT_TOKEN": "cf-root-secret-value-00000000000000000000"}
+    env = {
+        **{k: v for k, v in os.environ.items() if k != "R2_BUCKET"},
+        "PATH": f"{sh}:{os.environ['PATH']}",
+        "ESTATE_HOME": str(tmp_path / "home"),
+        "CLOUDFLARE_API_URL": "https://api.test/client/v4",
+        "CLOUDFLARE_ROOT_TOKEN": "cf-root-secret-value-00000000000000000000",
+    }
     return idp, env, log, vault
 
 
-def test_incident_crew66_a_root_from_the_environment_mints_the_children_and_drives_no_browser(tmp_path):
+def test_incident_crew66_a_root_from_the_environment_mints_the_children_and_drives_no_browser(
+    tmp_path,
+):
     idp, env, log, vault = _estate(tmp_path)
-    p = subprocess.run([str(idp / "bin" / "idp-bootstrap-cloudflare")], env=env, capture_output=True, text=True, timeout=120)
+    p = subprocess.run(
+        [str(idp / "bin" / "idp-bootstrap-cloudflare")],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
     assert p.returncode == 0, p.stdout + p.stderr
     calls = log.read_text()
-    assert "playwright" not in (p.stdout + p.stderr).lower() and not (tmp_path / "home" / "bootstrap-venv").exists()
-    assert calls.count("POST -H Authorization: Bearer cf-root-secret-value-00000000000000000000 -H Content-Type: application/json -d {\"name\":\"estate-dns") == 1
+    assert (
+        "playwright" not in (p.stdout + p.stderr).lower()
+        and not (tmp_path / "home" / "bootstrap-venv").exists()
+    )
+    assert (
+        calls.count(
+            'POST -H Authorization: Bearer cf-root-secret-value-00000000000000000000 -H Content-Type: application/json -d {"name":"estate-dns'
+        )
+        == 1
+    )
     assert "estate-r2 prospector-test" in calls
     assert "DELETE" not in calls, "the standing root was revoked"
     assert "standing root kept" in p.stdout
     v = json.load(open(vault))
     assert v["cloudflare-api-token"] == "cf-child-secret-value-000000000000000000"
-    assert v["prospector-engine-env"]["R2_ACCESS_KEY_ID"] == "tok-child" and v["prospector-engine-env"]["R2_BUCKET"] == "prospector-test"
-    assert "cf-root-secret" not in p.stdout and "cf-child-secret" not in p.stdout, "a secret reached stdout"
+    assert (
+        v["prospector-engine-env"]["R2_ACCESS_KEY_ID"] == "tok-child"
+        and v["prospector-engine-env"]["R2_BUCKET"] == "prospector-test"
+    )
+    assert "cf-root-secret" not in p.stdout and "cf-child-secret" not in p.stdout, (
+        "a secret reached stdout"
+    )
 
 
 def test_incident_crew66_oke_check_apply_hands_the_root_in_and_is_blind_without_it():
     wf = (ROOT / ".github" / "workflows" / "oke-check.yml").read_text()
-    step = wf[wf.index("bin/idp-bootstrap-cloudflare (crew#66"):]
+    step = wf[wf.index("bin/idp-bootstrap-cloudflare (crew#66") :]
     step = step[: step.index("\n      - name:")]
     assert "CLOUDFLARE_ROOT_TOKEN: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}" in step
     assert "BLIND   cloudflare-api-token" in step and "inputs.mode == 'apply'" in step

@@ -12,6 +12,7 @@ and the sweep prunes vendored trees at any depth.
 On main: no row, no conftest in verify-drill.yml, and the prune is `-path ./node_modules`.
 No sockets: every check reads the working tree; the sweep itself runs only under conftest and
 against a temporary tree of two files."""
+
 import os
 import pathlib
 import shutil
@@ -27,21 +28,31 @@ RUNNER = ROOT / "bin" / "idp-no-toil"
 
 def test_verify_drill_has_a_no_toil_row_that_runs_the_sweep():
     s = DRILL.read_text()
-    assert 'idp-no-toil" --sweep' in s, "no scheduled sweep: the gate only ever reads a PR's files"
+    assert 'idp-no-toil" --sweep' in s, (
+        "no scheduled sweep: the gate only ever reads a PR's files"
+    )
     assert "fail no-toil" in s and "bl no-toil" in s and "ok no-toil" in s
 
 
 def test_sweep_prunes_vendored_trees_at_any_depth():
     s = RUNNER.read_text()
-    assert "-path ./node_modules -prune" not in s, "top-level prune only: backstage/node_modules is swept"
+    assert "-path ./node_modules -prune" not in s, (
+        "top-level prune only: backstage/node_modules is swept"
+    )
     assert "-name node_modules" in s and "-prune" in s
 
 
-@pytest.mark.skipif(shutil.which("conftest") is None, reason="conftest is not installed; CI pins v0.62.0")
+@pytest.mark.skipif(
+    shutil.which("conftest") is None,
+    reason="conftest is not installed; CI pins v0.62.0",
+)
 def test_sweep_skips_a_nested_node_modules_readme(tmp_path):
     (tmp_path / "policy").mkdir()
     (tmp_path / "bin").mkdir()
-    shutil.copy(ROOT / "policy" / "no-manual-steps.rego", tmp_path / "policy" / "no-manual-steps.rego")
+    shutil.copy(
+        ROOT / "policy" / "no-manual-steps.rego",
+        tmp_path / "policy" / "no-manual-steps.rego",
+    )
     shutil.copy(RUNNER, tmp_path / "bin" / "idp-no-toil")
     vendored = tmp_path / "app" / "node_modules" / "pkg"
     vendored.mkdir(parents=True)

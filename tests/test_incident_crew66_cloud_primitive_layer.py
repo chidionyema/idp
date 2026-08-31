@@ -1,5 +1,5 @@
-"""crew#66 CP1 / crew#309: 27 operator files called the oci CLI directly. bin/idp-cloud is the one layer; these tests run it on the file backend so no network is touched, and pin that the first three callers no longer name the CLI.
-"""
+"""crew#66 CP1 / crew#309: 27 operator files called the oci CLI directly. bin/idp-cloud is the one layer; these tests run it on the file backend so no network is touched, and pin that the first three callers no longer name the CLI."""
+
 import json
 import os
 import pathlib
@@ -23,7 +23,17 @@ def _run(tmp_path, *args):
 def test_object_put_head_get_list_round_trip(tmp_path):
     f = tmp_path / "payload.txt"
     f.write_text("hello\n")
-    put = _run(tmp_path, "object", "put", "--bucket", "b", "--name", "state/x", "--file", str(f))
+    put = _run(
+        tmp_path,
+        "object",
+        "put",
+        "--bucket",
+        "b",
+        "--name",
+        "state/x",
+        "--file",
+        str(f),
+    )
     assert put.returncode == 0, put.stderr
     head = _run(tmp_path, "object", "head", "--bucket", "b", "--name", "state/x")
     assert head.returncode == 0, head.stderr
@@ -57,19 +67,41 @@ def test_secret_get_and_list_on_the_file_backend(tmp_path):
 
 def test_unknown_backend_and_unset_root_are_blind(tmp_path):
     env = {**os.environ, "IDP_CLOUD_BACKEND": "nope"}
-    r = subprocess.run([str(CLOUD), "object", "head", "--bucket", "b", "--name", "x"], capture_output=True, text=True, env=env)
+    r = subprocess.run(
+        [str(CLOUD), "object", "head", "--bucket", "b", "--name", "x"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
     assert r.returncode == 2 and "BLIND" in r.stderr
     env = {**os.environ, "IDP_CLOUD_BACKEND": "file"}  # IDP_CLOUD_FILE_ROOT removed
-    r = subprocess.run([str(CLOUD), "object", "head", "--bucket", "b", "--name", "x"], capture_output=True, text=True, env=env)
+    r = subprocess.run(
+        [str(CLOUD), "object", "head", "--bucket", "b", "--name", "x"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
     assert r.returncode == 2 and "BLIND" in r.stderr
 
 
-@pytest.mark.parametrize("name", ["idp-cluster-state", "idp-kini-state", "idp-door-heartbeat", "idp-chaos-drill", "idp-science-facts", "idp-telemetry-coverage"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "idp-cluster-state",
+        "idp-kini-state",
+        "idp-door-heartbeat",
+        "idp-chaos-drill",
+        "idp-science-facts",
+        "idp-telemetry-coverage",
+    ],
+)
 def test_the_first_three_callers_go_through_the_layer_never_the_cli(name):
     text = (ROOT / "bin" / name).read_text()
     assert '"$IDP/bin/idp-cloud" object head' in text
     assert '"$IDP/bin/idp-cloud" object get' in text
-    assert not re.search(r"^\s*[^#]*\boci os object", text, re.M), f"{name} still names the oci CLI"
+    assert not re.search(r"^\s*[^#]*\boci os object", text, re.M), (
+        f"{name} still names the oci CLI"
+    )
 
 
 def test_secret_get_refuses_a_split_store(tmp_path):
@@ -82,12 +114,22 @@ def test_secret_get_refuses_a_split_store(tmp_path):
     assert "Split" in got.stderr
 
 
-@pytest.mark.parametrize("name", ["idp-hc-enroll", "idp-login-drill", "idp-trace-drill", "idp-github-app", "idp-vault-put"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "idp-hc-enroll",
+        "idp-login-drill",
+        "idp-trace-drill",
+        "idp-github-app",
+        "idp-vault-put",
+    ],
+)
 def test_secret_callers_go_through_the_layer(name):
     text = (ROOT / "bin" / name).read_text()
     assert '"$IDP/bin/idp-cloud" secret ' in text
-    assert not re.search(r"^\s*[^#]*\boci (vault|secrets)", text, re.M), \
+    assert not re.search(r"^\s*[^#]*\boci (vault|secrets)", text, re.M), (
         f"{name} still names the oci CLI for secret reads"
+    )
 
 
 def test_cluster_state_reads_a_file_backend_receipt_end_to_end(tmp_path):
@@ -119,12 +161,27 @@ def test_cluster_state_reads_a_file_backend_receipt_end_to_end(tmp_path):
         "hostnames": [],
         "hostnames_error": None,
         "spiffe": {},
-        "oci_identity": {"pods": [], "static_key_pods": [], "unknown_identity_pods": []},
+        "oci_identity": {
+            "pods": [],
+            "static_key_pods": [],
+            "unknown_identity_pods": [],
+        },
     }
-    (receipt_dir / "cluster").write_text(head_line + "\n" + json.dumps(body, sort_keys=True) + "\n")
+    (receipt_dir / "cluster").write_text(
+        head_line + "\n" + json.dumps(body, sort_keys=True) + "\n"
+    )
 
-    env = {**os.environ, "IDP_CLOUD_BACKEND": "file", "IDP_CLOUD_FILE_ROOT": str(tmp_path)}
-    r = subprocess.run([str(ROOT / "bin" / "idp-cluster-state")], capture_output=True, text=True, env=env)
+    env = {
+        **os.environ,
+        "IDP_CLOUD_BACKEND": "file",
+        "IDP_CLOUD_FILE_ROOT": str(tmp_path),
+    }
+    r = subprocess.run(
+        [str(ROOT / "bin" / "idp-cluster-state")],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
     assert r.returncode == 0, (r.stdout, r.stderr)
     assert r.stdout.startswith("ok ")
 
@@ -161,7 +218,9 @@ def test_vault_put_round_trip_on_file_backend(tmp_path):
     }
     p1 = subprocess.run(
         [str(ROOT / "bin" / "idp-vault-put"), "t1", "KA=A", "KB=B"],
-        capture_output=True, text=True, env=env,
+        capture_output=True,
+        text=True,
+        env=env,
     )
     assert p1.returncode == 0, (p1.stdout, p1.stderr)
     assert "created" in p1.stdout, p1.stdout
@@ -170,27 +229,47 @@ def test_vault_put_round_trip_on_file_backend(tmp_path):
     assert body == {"KA": "x", "KB": "y"}, body
     p2 = subprocess.run(
         [str(ROOT / "bin" / "idp-vault-put"), "--merge", "t1", "KC=B"],
-        capture_output=True, text=True, env=env,
+        capture_output=True,
+        text=True,
+        env=env,
     )
     assert p2.returncode == 0, (p2.stdout, p2.stderr)
     assert "updated" in p2.stdout, p2.stdout
     body2 = json.loads(secret_path.read_text())
-    assert body2.get("KA") == "x" and body2.get("KB") == "y" and body2.get("KC") == "y", body2
+    assert (
+        body2.get("KA") == "x" and body2.get("KB") == "y" and body2.get("KC") == "y"
+    ), body2
 
 
 def test_cp5a_secret_describe(tmp_path):
     secrets = tmp_path / "secrets"
     secrets.mkdir()
     (secrets / "withmeta").write_text("secret-bytes")
-    (secrets / "withmeta.meta.json").write_text(json.dumps({"id": "ocid1.secret.oc1..abc", "vault-id": "ocid1.vault.oc1..xyz", "key-id": "ocid1.key.oc1..k"}))
+    (secrets / "withmeta.meta.json").write_text(
+        json.dumps(
+            {
+                "id": "ocid1.secret.oc1..abc",
+                "vault-id": "ocid1.vault.oc1..xyz",
+                "key-id": "ocid1.key.oc1..k",
+            }
+        )
+    )
     r = _run(tmp_path, "secret", "describe", "withmeta")
     assert r.returncode == 0, r.stderr
-    assert json.loads(r.stdout) == {"id": "ocid1.secret.oc1..abc", "vault-id": "ocid1.vault.oc1..xyz", "key-id": "ocid1.key.oc1..k"}
+    assert json.loads(r.stdout) == {
+        "id": "ocid1.secret.oc1..abc",
+        "vault-id": "ocid1.vault.oc1..xyz",
+        "key-id": "ocid1.key.oc1..k",
+    }
 
     (secrets / "barefile").write_text("bare")
     r = _run(tmp_path, "secret", "describe", "barefile")
     assert r.returncode == 0, r.stderr
-    assert json.loads(r.stdout) == {"id": "file:barefile", "vault-id": "file", "key-id": "file"}
+    assert json.loads(r.stdout) == {
+        "id": "file:barefile",
+        "vault-id": "file",
+        "key-id": "file",
+    }
 
     r = _run(tmp_path, "secret", "describe", "absent")
     assert r.returncode == 1
@@ -277,15 +356,23 @@ def test_cp5a_header_documents_new_verbs():
 def test_cp5d_cluster_list_on_file_backend(tmp_path):
     r = _run(tmp_path, "cluster", "list")
     assert r.returncode == 0
-    assert r.stdout == ""   # no clusters/ dir yet
+    assert r.stdout == ""  # no clusters/ dir yet
 
-    for cid, name in [("ocid1.cluster.aaa", "Alpha"), ("ocid1.cluster.ccc", "Charlie"), ("ocid1.cluster.bbb", "Bravo")]:
+    for cid, name in [
+        ("ocid1.cluster.aaa", "Alpha"),
+        ("ocid1.cluster.ccc", "Charlie"),
+        ("ocid1.cluster.bbb", "Bravo"),
+    ]:
         d = tmp_path / "clusters" / cid
         d.mkdir(parents=True)
         (d / "name").write_text(name)
     r = _run(tmp_path, "cluster", "list")
     assert r.returncode == 0, r.stderr
-    assert r.stdout.strip().splitlines() == ["Alpha ocid1.cluster.aaa", "Bravo ocid1.cluster.bbb", "Charlie ocid1.cluster.ccc"]
+    assert r.stdout.strip().splitlines() == [
+        "Alpha ocid1.cluster.aaa",
+        "Bravo ocid1.cluster.bbb",
+        "Charlie ocid1.cluster.ccc",
+    ]
 
 
 def test_cp5d_cluster_nodepools_on_file_backend(tmp_path):
@@ -294,11 +381,19 @@ def test_cp5d_cluster_nodepools_on_file_backend(tmp_path):
     assert r.stdout == ""
 
     (tmp_path / "nodepools").mkdir()
-    for name, state in [("pool-b", "ACTIVE"), ("pool-a", "ACTIVE"), ("pool-c", "UPDATING")]:
+    for name, state in [
+        ("pool-b", "ACTIVE"),
+        ("pool-a", "ACTIVE"),
+        ("pool-c", "UPDATING"),
+    ]:
         (tmp_path / "nodepools" / name).write_text(state)
     r = _run(tmp_path, "cluster", "nodepools")
     assert r.returncode == 0, r.stderr
-    assert r.stdout.strip().splitlines() == ["pool-a ACTIVE", "pool-b ACTIVE", "pool-c UPDATING"]
+    assert r.stdout.strip().splitlines() == [
+        "pool-a ACTIVE",
+        "pool-b ACTIVE",
+        "pool-c UPDATING",
+    ]
 
 
 def test_cp5d_cluster_kubeconfig_copies_the_file_and_chmods_600(tmp_path):
@@ -315,7 +410,9 @@ def test_cp5d_cluster_kubeconfig_copies_the_file_and_chmods_600(tmp_path):
 
 def test_cp5d_cluster_kubeconfig_missing_cluster_is_exit_1_notfound(tmp_path):
     out = tmp_path / "kube"
-    r = _run(tmp_path, "cluster", "kubeconfig", "ocid1.cluster.absent", "--file", str(out))
+    r = _run(
+        tmp_path, "cluster", "kubeconfig", "ocid1.cluster.absent", "--file", str(out)
+    )
     assert r.returncode == 1
     assert "NotFound" in r.stderr
     assert "ocid1.cluster.absent" in r.stderr

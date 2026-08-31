@@ -34,7 +34,7 @@ case "$*" in
   *oauth/token*) pair=$(cat); case "$pair" in *SEED*) echo '{{"access_token":"at-seed","scope":"oauth_keys"}}';; *) echo '{{"access_token":"at-1","scope":"auth_keys devices:core policy_file users:read"}}';; esac;;
   *DELETE*) printf '204';;
   *keyType\\":\\"federated*) echo '{{"id":"kFEDNEW222","keyType":"federated"}}';;
-  *tailnet/-/keys*) echo '{{"id":"kNEW987654","key":"tskey-client-new-1","keyType":"client"}}';;
+  *tailnet/-/keys*) echo '{{"id":"kNEW987654","key":"tskey-client-new-1","keyType":"client","tags":["tag:k8s","tag:k8s-operator"]}}';;
   *) echo '{{}}';;
 esac
 ''')

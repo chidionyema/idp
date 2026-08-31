@@ -27,6 +27,7 @@ SECRET=tailscale-operator
 SEED=tailscale-seed
 API=${TAILSCALE_API_URL:-https://api.tailscale.com}
 TAG=${TAILSCALE_K8S_TAG:-tag:k8s}
+OP_TAG=${TAILSCALE_OPERATOR_TAG:-tag:k8s-operator}  # the operator's own device tag (chart default); the client must carry it to mint the operator's authkey (idp#586, diagnose run 33374905345)
 SCOPES='["auth_keys","devices:core","policy_file","users:read"]'   # users:read: bin/idp-tailscale-policy reads the tailnet owner for group:founder (crew#562)
 CONSOLE=${TAILSCALE_CONSOLE_URL:-https://console.tailscale.com/admin/settings/trust-credentials}
 VAULT_PUT=${IDP_VAULT_PUT:-$IDP/bin/idp-vault-put}   # tests point these at shims; no network, no vault
@@ -111,9 +112,18 @@ fi
 # 2. does the operator entry already work? (idempotent: a working client is kept unless --rotate)
 old_id=""
 if vault_pair "$SECRET"; then
-  if token_for "$cid" "$csec" | jq -e '.access_token' >/dev/null 2>&1; then
-    [ "$MODE" = --check ] && { say ok "$SECRET" "vault entry exchanges for an access token"; exit 0; }
-    [ "$MODE" = mint ] && { say ok "$SECRET" "vault entry exchanges for an access token; kept (--rotate to mint anew)"; exit 0; }
+  if tok_json=$(token_for "$cid" "$csec") && jq -e '.access_token' <<<"$tok_json" >/dev/null 2>&1; then
+    # tag drift: a client that exchanges but does not carry the operator's tag still 400s the
+    # operator's authkey mint (idp#586); read the client's own key record and remint on a miss.
+    ctok=$(jq -r .access_token <<<"$tok_json")
+    ctags=$(curl -sS -H "Authorization: Bearer $ctok" "$API/api/v2/tailnet/-/keys/$cid" | jq -c '.tags // []')
+    if jq -e --arg w "$OP_TAG" 'index($w)' <<<"$ctags" >/dev/null 2>&1; then
+      [ "$MODE" = --check ] && { say ok "$SECRET" "vault entry exchanges for an access token and carries $OP_TAG"; exit 0; }
+      [ "$MODE" = mint ] && { say ok "$SECRET" "vault entry exchanges for an access token and carries $OP_TAG; kept (--rotate to mint anew)"; exit 0; }
+    else
+      [ "$MODE" = --check ] && fail "$SECRET" "vault client lacks $OP_TAG (has: $ctags); run $0 to remint"
+      say "" "$SECRET" "vault client lacks $OP_TAG (has: $ctags); minting a replacement"
+    fi
     old_id=$cid
   else
     [ "$MODE" = --check ] && fail "$SECRET" "vault entry present but does not exchange for a token; run $0 to mint"
@@ -199,11 +209,12 @@ fi
 
 # 4. mint the operator client through the API (the SDK's CreateOAuthClient, verbatim body)
 desc="estate-operator-$(date -u +%Y%m%dT%H%MZ)"
-body=$(jq -cn --argjson s "$SCOPES" --arg t "$TAG" --arg d "$desc" '{keyType:"client",scopes:$s,tags:[$t],description:$d}')
+body=$(jq -cn --argjson s "$SCOPES" --arg t "$TAG" --arg ot "$OP_TAG" --arg d "$desc" '{keyType:"client",scopes:$s,tags:[$t,$ot],description:$d}')
 resp=$(curl -sS -H "Authorization: Bearer $seed_tok" -H 'Content-Type: application/json' -d "$body" "$API/api/v2/tailnet/-/keys")
 new_id=$(jq -r '.id // empty' <<<"$resp"); new_sec=$(jq -r '.key // empty' <<<"$resp")
 [ -n "$new_id" ] && [ -n "$new_sec" ] || fail mint "POST /keys keyType=client answered no id/key: $(jq -r '.message // .error // "no message"' <<<"$resp" | cut -c1-120)"
-say ok mint "OAuth client $new_id ($desc) scopes $SCOPES tag $TAG"
+for want in "$TAG" "$OP_TAG"; do jq -e --arg w "$want" '.tags // [] | index($w)' <<<"$resp" >/dev/null || fail mint "the minted client does not carry $want (answer tags: $(jq -c .tags <<<"$resp")); the operator authkey mint would 400 again"; done
+say ok mint "OAuth client $new_id ($desc) scopes $SCOPES tags $TAG $OP_TAG"
 
 # 5. prove the credential before anything is stored (LAW 15: the API said so, the token endpoint must agree)
 tok=$(token_for "$new_id" "$new_sec") || fail verify "token exchange did not answer"

@@ -8,6 +8,7 @@ it stands carries no coupling (LAW 38: an Enforce policy that refuses correct wo
 so it is graded against every plain manifest Flux applies before it can merge).
 
 Never a silent pass: without the CLI the module fails, it does not skip (LAW 28)."""
+
 import pathlib
 import re
 import shutil
@@ -19,13 +20,28 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 POLICY = ROOT / "platform/edge/provider-independence.yaml"
 EXCEPTION = ROOT / "platform/edge/provider-edge-exception.yaml"
 FIXTURES = ROOT / "tests/fixtures/kyverno/provider-coupled"
-JUDGED_KINDS = {"Service", "Ingress", "PersistentVolumeClaim", "StatefulSet", "Deployment",
-                "DaemonSet", "Pod", "Job", "CronJob", "ClusterSecretStore", "SecretStore"}
-FAILED = re.compile(r"^policy provider-independence -> resource (\S+) failed:\n\d+ - (\S+) ", re.M)
+JUDGED_KINDS = {
+    "Service",
+    "Ingress",
+    "PersistentVolumeClaim",
+    "StatefulSet",
+    "Deployment",
+    "DaemonSet",
+    "Pod",
+    "Job",
+    "CronJob",
+    "ClusterSecretStore",
+    "SecretStore",
+}
+FAILED = re.compile(
+    r"^policy provider-independence -> resource (\S+) failed:\n\d+ - (\S+) ", re.M
+)
 
 
 def _apply(resource: pathlib.Path, *, exception: bool) -> str:
-    assert shutil.which("kyverno"), "BLIND: the kyverno CLI is not installed; ci.yml installs it"
+    assert shutil.which("kyverno"), (
+        "BLIND: the kyverno CLI is not installed; ci.yml installs it"
+    )
     cmd = ["kyverno", "apply", str(POLICY), "--resource", str(resource)]
     if exception:
         cmd += ["--exception", str(EXCEPTION)]
@@ -48,7 +64,9 @@ def test_every_way_of_coupling_is_refused_by_the_rule_written_for_it():
         ("apps/Deployment/pod-with-oci-csi", "autogen-no-provider-csi-driver"),
         ("default/ClusterSecretStore/second-door", "one-provider-secret-door"),
     }, out
-    assert _summary(out)["fail"] == 6, out  # 7 until the PersistentVolumeClaim rule was removed (2026-08-29)
+    assert _summary(out)["fail"] == 6, (
+        out
+    )  # 7 until the PersistentVolumeClaim rule was removed (2026-08-29)
 
 
 def test_a_clean_tree_and_the_one_declared_hole_pass():
@@ -67,12 +85,20 @@ def test_the_platform_tree_as_it_stands_carries_no_coupling(tmp_path):
     assert shutil.which("kubectl"), "BLIND: kubectl is not installed"
     docs, dirs = [], []
     for kz in sorted(ROOT.glob("platform/**/kustomization.yaml")):
-        if any(part in {"k3d", "overlays", "base"} for part in kz.relative_to(ROOT).parts):
+        if any(
+            part in {"k3d", "overlays", "base"} for part in kz.relative_to(ROOT).parts
+        ):
             continue  # overlays are rendered through their parents; k3d is a throwaway local
-        r = subprocess.run(["kubectl", "kustomize", str(kz.parent)], capture_output=True, text=True)
+        r = subprocess.run(
+            ["kubectl", "kustomize", str(kz.parent)], capture_output=True, text=True
+        )
         assert r.returncode == 0, f"{kz.parent} does not build: {r.stderr}"
         dirs.append(kz.parent)
-        docs += [d for d in yaml.safe_load_all(r.stdout) if d and d.get("kind") in JUDGED_KINDS]
+        docs += [
+            d
+            for d in yaml.safe_load_all(r.stdout)
+            if d and d.get("kind") in JUDGED_KINDS
+        ]
     assert len(dirs) >= 10 and len(docs) >= 10, (dirs, len(docs))
     tree = tmp_path / "tree.yaml"
     tree.write_text(yaml.safe_dump_all(docs))
