@@ -71,10 +71,14 @@ def test_a2a_token_is_generated_in_cluster_and_projected_into_the_env_dir():
             "path": "/.well-known/agent-card.json",
             "port": "a2a",
         }
-    assert (
-        "hermes-agent-a2a"
-        in dep["metadata"]["annotations"]["secret.reloader.stakater.com/reload"]
-    )
+    # This line used to read the gateway's enumerated reload list for "hermes-agent-a2a". The
+    # commit before this one deleted that list -- it had already gone stale, omitting the Langfuse
+    # Secret added in the same commit -- so the assertion became a KeyError on an annotation that no
+    # longer exists, and CI found it (run 33351298943). The property it wanted, "this pod restarts
+    # when that Secret changes", is now carried by `auto`: Reloader resolves it against every Secret
+    # and ConfigMap the pod actually references, projected sources included, so hermes-agent-a2a is
+    # covered without being named and cannot be omitted the way it was.
+    assert dep["metadata"]["annotations"]["reloader.stakater.com/auto"] == "true"
 
 
 def test_no_token_or_allowlist_value_is_in_git():
