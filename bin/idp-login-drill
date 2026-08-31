@@ -295,8 +295,27 @@ with sync_playwright() as p:
         fail("home", f"{HOME} did not reload for the home-page check: {e}")
     # Founder, 2026-08-29: the look and feel is being iterated on and the drill grades none of it.
     # The home page is graded by the founder path only: it answered, and it threw no error.
+    def painted_words(pg):
+        # R66 (crew#764): run 33427731536 shipped a blank grey rectangle as its photograph --
+        # the shot fired before the page painted. A photograph is taken only after words drew.
+        # Settled, not merely started: the first Hermes photograph met a bare word-count
+        # threshold on the header alone while the overview cards were still loading, and the
+        # capability under proof was invisible. Words must exist AND stop growing.
+        w, prev = "", None
+        for _ in range(int(TIMEOUT / 1000)):
+            try:
+                w = " ".join(pg.locator("body").inner_text(timeout=1000).split())
+            except PWError:
+                w = ""
+            if len(w) > 40 and w == prev:
+                return w
+            prev = w
+            time.sleep(1)
+        return w
+
     shot = os.environ.get("DRILL_SHOT")
     if shot:
+        painted_words(page)
         try:
             page.screenshot(path=shot, full_page=True)
         except PWError:
@@ -585,6 +604,29 @@ with sync_playwright() as p:
         fail("identity", f"the gate is open: a context with no credentials got a Langfuse session: {l3[1]['actual']}")
     if not l3[0]["ok"] and os.environ.get("DRILL_STRICT_IDENTITY") == "1":
         fail("identity", f"langfuse session is not {USER}@{ZONE}: {l3[0]['actual']}")
+
+    # 10. R66 (crew#764): picture evidence for UI work. DRILL_EVIDENCE_PATHS is a comma-separated
+    # list of portal paths; each is walked with the signed-in session and photographed only after
+    # words drew on it. A page that never answers or never paints is a red drill, never a grey
+    # rectangle handed to the founder as proof.
+    ev_paths = [p.strip() for p in os.environ.get("DRILL_EVIDENCE_PATHS", "").split(",") if p.strip()]
+    if ev_paths:
+        shot_dir = os.environ.get("DRILL_SHOT_DIR") or os.path.dirname(os.environ.get("DRILL_SHOT") or ".") or "."
+        os.makedirs(shot_dir, exist_ok=True)
+        for ev in ev_paths:
+            try:
+                r = page.goto(f"{HOME}{ev.lstrip('/')}", wait_until="domcontentloaded", timeout=TIMEOUT)
+            except PWError as e:
+                fail("evidence", f"{ev} never loaded: {e}")
+            if r and r.status >= 400:
+                fail("evidence", f"{ev} answered {r.status}")
+            words = painted_words(page)
+            if len(words) <= 40:
+                fail("evidence", f"{ev} answered but never painted words; a blank photograph is not evidence")
+            slug = re.sub(r"[^a-z0-9]+", "-", ev.lower()).strip("-") or "root"
+            dest = os.path.join(shot_dir, f"{slug}.png")
+            page.screenshot(path=dest, full_page=True)
+            print(f"shot    login-drill  {ev} painted {len(words)} chars, photographed to {dest}")
 
     ctx.close()
     browser.close()

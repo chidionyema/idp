@@ -10,7 +10,12 @@ name: login-drill
 on:
   schedule:
     - cron: "7 * * * *"   # hourly full sign-in; the five-minute pulse is platform/identity/front-door-heartbeat.yaml (idp#229: GitHub dropped the */5 cron)
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      evidence_paths:
+        description: "Portal pages to photograph signed in, separated by commas; leave empty for the home page only"
+        required: false
+        default: ""
   push:
     branches: [main]
     paths:
@@ -63,6 +68,8 @@ jobs:
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
           OCI_REGION: ${{ vars.OCI_REGION }}
           DRILL_SHOT: ${{ runner.temp }}/login-drill-home.png
+          DRILL_SHOT_DIR: ${{ runner.temp }}/shots
+          DRILL_EVIDENCE_PATHS: ${{ inputs.evidence_paths }}
         run: |
           set -o pipefail
           bin/idp-login-drill 2>&1 | tee drill.out
@@ -71,7 +78,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: login-drill-home
-          path: ${{ runner.temp }}/login-drill-home.png
+          path: |
+            ${{ runner.temp }}/login-drill-home.png
+            ${{ runner.temp }}/shots/
           if-no-files-found: warn
           retention-days: 14
       - name: the verdict is on the run summary, pass or fail
