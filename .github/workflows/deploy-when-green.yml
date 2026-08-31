@@ -1,3 +1,10 @@
+# Ships the portal and the shop: merges the pull request that carries a new image tag to the
+# cluster, once its checks are green and nothing but the tag has changed.
+
+# The generator that builds the founder's button reads the comment block above this blank line
+# and stops there (bin/idp-portal-buttons), so the sentence he reads on the portal is a sentence,
+# and the reasoning below stays with the code where it belongs.
+#
 # The deploy lands itself. Nothing else in this repository does. (idp#1046)
 #
 # WHAT WAS BROKEN. Shipping here is a pull request: image-automation-controller writes the new tag
