@@ -48,6 +48,9 @@
   "tagOwners": {
     // [] = admins only: no login can tag a new device into either role by itself.
     "tag:k8s":         [],
+    // the k8s operator's own device (chart 1.102.3 default operatorConfig.defaultTags);
+    // absent from here = authkey mint 400s and the operator crashloops (P0 idp#586, run 33374905345)
+    "tag:k8s-operator": [],
     "tag:founder-mac": [],
   },
   "acls": [
