@@ -22,7 +22,6 @@ import LayersIcon from '@material-ui/icons/Layers';
 import DnsIcon from '@material-ui/icons/Dns';
 import AddCircleOutlineIcon from '@material-ui/icons/AddCircleOutline';
 import AccountTreeIcon from '@material-ui/icons/AccountTree';
-import SettingsApplicationsIcon from '@material-ui/icons/SettingsApplications';
 import TimelineIcon from '@material-ui/icons/Timeline';
 import SearchIcon from '@material-ui/icons/Search';
 import MenuBookIcon from '@material-ui/icons/MenuBook';
