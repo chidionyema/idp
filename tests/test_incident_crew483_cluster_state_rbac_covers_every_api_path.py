@@ -31,8 +31,10 @@ def _granted(role):
         verbs = set(rule["verbs"])
         for g in rule["apiGroups"]:
             for r in rule["resources"]:
-                # a subresource such as services/proxy is read with get alone; a collection needs list too
-                if ("/" in r and "get" in verbs) or {"get", "list"} <= verbs:
+                # a subresource such as services/proxy is read with get alone; a collection is
+                # read with list -- and list alone is a valid grant (crew#722: the secrets rule is
+                # deliberately list-only so a single named value read is not even expressible)
+                if ("/" in r and "get" in verbs) or "list" in verbs:
                     out.add((g, r))
     return out
 

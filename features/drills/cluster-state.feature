@@ -12,7 +12,7 @@ Feature: The cluster reports its own state and a runner grades it without a lapt
     Then require-pod-probes refuses it
 
   Scenario: A fresh receipt with every node Ready grades ok
-    Given a receipt "ok cluster-state at T nodes=2 ready=2 pods=40 pods_not_ready=1 flux=20 flux_not_ready=0 ds=3 ds_short=0 deploy_short=0 events_warning=0 monitoring_rules=1 alert_watchdog=1 cpu_used_pct=40 cpu_req_pct=55 mem_used_pct=60 mem_req_pct=70" written 5 minutes ago
+    Given a receipt "ok cluster-state at T nodes=2 ready=2 pods=40 pods_not_ready=1 flux=20 flux_not_ready=0 ds=3 ds_short=0 deploy_short=0 events_warning=0 monitoring_rules=1 alert_watchdog=1 cpu_used_pct=40 cpu_req_pct=55 mem_used_pct=60 mem_req_pct=70 secret_stale_consumers=0" written 5 minutes ago
     When bin/idp-cluster-state grades it
     Then the verdict line starts with "ok      cluster-state"
 
