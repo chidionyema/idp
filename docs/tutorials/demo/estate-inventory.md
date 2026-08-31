@@ -1,7 +1,9 @@
 # Demo: The estate inventory
 
 What the founder sees when the grader runs on a cluster dump, then on the Mac. Real output,
-command above it, run 2026-08-31 on the first pull request's branch.
+command above it, run 2026-08-31 on the first pull request's branch. In the portal the same
+counts are the "Estate inventory" tile on the Ops page: one sentence, one line per plane, unread
+planes named, and a link to the full table (`Ops.test.tsx` pins the tile's words).
 
 ```
 $ bin/idp-inventory --fixture tests/fixtures/inventory-kube-dump.json --out /tmp/inv --strict

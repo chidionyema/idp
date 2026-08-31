@@ -139,7 +139,15 @@ def test_the_workflow_is_read_only_scheduled_and_on_the_drill_catalogue():
     row = next(r for r in rows if r["workflow"] == "estate-inventory.yml")
     assert row["schedule"] == cron and row["owner"]
     assert wf["permissions"]["contents"] == "read"
+    # the job that reads the planes holds no write scope; the one write is the Ops tile's data
+    # (docs/inventory.{json,md} on state/live-diagram) in its own job, never on a pull request
+    assert "permissions" not in wf["jobs"]["inventory"]
+    pub = wf["jobs"]["publish-to-state-branch"]
+    assert pub["permissions"] == {"contents": "write"} and pub["needs"] == "inventory"
+    assert "pull_request" in pub["if"]
     text = WORKFLOW.read_text()
+    assert "HEAD:refs/heads/state/live-diagram" in text
+    assert "git add docs/inventory.json docs/inventory.md" in text
     assert "--strict" not in text, "audit mode until E1 flips the red gate on"
     assert "tofu apply" not in text and "kubectl apply" not in text
     # steampipe comes from a pinned vendor release, checksum verified; the setup action
@@ -275,3 +283,21 @@ def test_the_workflows_query_joins_on_the_required_key_column():
         and "repository_full_name = r.name_with_owner" in sql
     )
     assert " in (select" not in sql
+
+
+def test_the_render_carries_the_inventory_forward_and_the_tile_reads_the_same_path():
+    """bin/catalog-render force-pushes state/live-diagram from origin/main; without the carry the
+    inventory the workflow put there would vanish on the next render, and the Ops tile would read
+    a 404. The tile's path and the render's path are the same two files."""
+    render = (ROOT / "bin/catalog-render").read_text()
+    assert 'CARRIED = ["docs/inventory.json", "docs/inventory.md"]' in render
+    assert (
+        'f"origin/{BRANCH}", "--", f' in render and '["git", "add", *carried]' in render
+    )
+    home = ROOT / "backstage/packages/app/src/modules/home"
+    tile = (home / "inventory.ts").read_text()
+    assert "INVENTORY_JSON = '/estate-state/docs/inventory.json'" in tile
+    ops = (home / "Ops.tsx").read_text()
+    assert "useInventory()" in ops and 'data-testid="ops-inventory-error"' in ops
+    proxy = (ROOT / "backstage/app-config.yaml").read_text()
+    assert "state/live-diagram" in proxy.split("'/estate-state':")[1][:400]

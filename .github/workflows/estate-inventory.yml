@@ -2,7 +2,8 @@
 # founder: Reads what every cloud, the cluster, GitHub, Cloudflare and Tailscale actually run and grades each thing against what git declares: managed, drifted, orphan or ghost.
 # crew#740 PR 1 (founder blueprint 2026-08-31T11:55Z): the inventory comes from the control-plane
 # APIs, never from git. Read-only on every plane. One table (plane, type, id, declared_in, verdict)
-# published as an OCI artifact next to the estate state document, and attached to the run.
+# published as an OCI artifact next to the estate state document, attached to the run, and put
+# on the state branch the Ops dashboard reads (founder, crew#684: everything is seen from Backstage).
 # A plane that cannot be read is a BLIND line and an UNKNOWN row, never a green zero.
 # Audit mode: this run reports and never fails on a red row; the nightly red gate (E1) is the
 # next PR and turns the strict flag on once every row has been adopted or killed.
@@ -17,6 +18,8 @@ permissions:
   contents: read
   id-token: write   # traded for the OCI session (discovery search, state bucket, vault reads)
   packages: write   # the artifact push uses GITHUB_TOKEN, like estate-state
+# contents: read holds for the job that touches the planes; the one write (the state branch the
+# Ops tile reads) is a separate job below with its own scope and nothing but the two table files.
 concurrency:
   group: estate-inventory
   cancel-in-progress: false
@@ -145,3 +148,36 @@ jobs:
             --path="$RUNNER_TEMP/publish" --source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --revision="$GITHUB_REF_NAME@sha1:$GITHUB_SHA" --creds "$GITHUB_ACTOR:$GITHUB_TOKEN" >/dev/null
           echo "ok      inventory  published $ARTIFACT"
+  # The Ops dashboard's "Estate inventory" tile reads docs/inventory.json through the portal's
+  # /estate-state proxy, which serves the state/live-diagram branch. bin/catalog-render force-pushes
+  # that branch on its own schedule and carries these two files forward (it checks them out from
+  # origin before staging), so neither writer drops the other's work.
+  publish-to-state-branch:
+    if: github.event_name != 'pull_request'
+    needs: inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: state/live-diagram
+          fetch-depth: 1
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: estate-inventory
+          path: ${{ runner.temp }}/inventory
+      - name: put the table on the branch the Ops tile reads
+        run: |
+          set -euo pipefail
+          test -s "$RUNNER_TEMP/inventory/inventory.json"
+          mkdir -p docs
+          cp "$RUNNER_TEMP/inventory/inventory.json" "$RUNNER_TEMP/inventory/inventory.md" docs/
+          git config user.name "estate-inventory"
+          git config user.email "estate-inventory@users.noreply.github.com"
+          git add docs/inventory.json docs/inventory.md
+          if git diff --cached --quiet; then echo "ok      inventory  state branch already holds this table"; exit 0; fi
+          git commit -q -m "docs(inventory): estate inventory from the control planes, run $GITHUB_RUN_ID (crew#740)"
+          git push -q origin HEAD:refs/heads/state/live-diagram
+          echo "ok      inventory  docs/inventory.json on state/live-diagram; the Ops tile reads it within a minute"
