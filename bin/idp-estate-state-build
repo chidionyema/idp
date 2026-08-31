@@ -64,11 +64,37 @@ def parse_cluster_receipt(
     head, _, body = text.partition("\n")
     m = RECEIPT_HEAD.match(head.strip())
     if not m:
-        return {"name": name, "role": role, "state": "BLIND", "flux_rows": []}
+        return {
+            "name": name,
+            "role": role,
+            "state": "BLIND",
+            "flux_rows": [],
+            "reconcile": [],
+        }
     try:
-        rows = json.loads(body.strip() or "{}").get("flux_not_ready") or []
+        body_doc = json.loads(body.strip() or "{}")
     except json.JSONDecodeError:
-        rows = []
+        body_doc = {}
+    rows = body_doc.get("flux_not_ready") or []
+    # crew#727 (founder 2026-08-31: "make the actual state visible instead of inferred"): the
+    # receipt's FULL flux table -- every Kustomization and HelmRelease, ready or not, with the
+    # applied revision and the Ready condition's last transition -- reaches the page, so what is
+    # reconciling, when it last ran and whether it is ready is a read. Chart/image polling kinds
+    # (HelmRepository, ImageRepository, ...) are a different knob and stay off this table; the
+    # red-row grader below (`flux_rows`) is unchanged.
+    reconcile = [
+        {
+            "kind": str(r.get("kind", "")),
+            "namespace": str(r.get("ns", "")),
+            "name": str(r.get("name", "")),
+            "ready": bool(r.get("ready", False)),
+            "since": r.get("since"),
+            "revision": r.get("revision"),
+            "message": "" if r.get("ready") else str(r.get("message") or "")[:300],
+        }
+        for r in (body_doc.get("flux") or [])
+        if r.get("kind") in ("Kustomization", "HelmRelease")
+    ]
     flux_rows = [
         {
             "kind": str(r.get("kind", "")),
@@ -90,6 +116,7 @@ def parse_cluster_receipt(
         "state": state,
         "revision": m.group("at"),
         "flux_rows": flux_rows,
+        "reconcile": reconcile,
     }
 
 

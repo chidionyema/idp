@@ -10,7 +10,7 @@ metadata:
   name: hermes-agent-mac-run
   namespace: hermes-agent
 spec:
-  refreshInterval: 1h
+  refreshInterval: 10m
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
   target:
     name: hermes-agent-mac-run

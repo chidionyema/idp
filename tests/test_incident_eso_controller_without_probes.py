@@ -48,5 +48,5 @@ def test_no_flux_kustomization_decrypts_with_sops() -> None:
     # crew#227 CP3: with no sops files left, a decryption block is a dangling key reference.
     for f in ROOT.glob("clusters/oke/*.yaml"):
         for d in yaml.safe_load_all(f.read_text()):
-            if d and d.get("kind") == "Kustomization":
+            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit"):
                 assert "decryption" not in d["spec"], f

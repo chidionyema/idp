@@ -28,7 +28,7 @@ metadata:
   name: nats
   namespace: event-bus
 spec:
-  interval: 1h
+  interval: 10m
   timeout: 10m
   chart:
     spec:

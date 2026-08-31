@@ -4,93 +4,464 @@
   "title": "estate-state",
   "description": "The one structured document every session ingests at start (crew#648). Five sections, the same five the Backstage entity page uses (crew#627, founder 2026-08-30: adopt the categorisation so it is intuitive what belongs where): overview, delivery, runtime, docs_apis, security.",
   "type": "object",
-  "required": ["version", "generated_at", "overview", "delivery", "runtime", "docs_apis", "security"],
+  "required": [
+    "version",
+    "generated_at",
+    "overview",
+    "delivery",
+    "runtime",
+    "docs_apis",
+    "security"
+  ],
   "additionalProperties": false,
   "properties": {
-    "version": {"type": "integer", "const": 1},
-    "generated_at": {"type": "string", "format": "date-time", "description": "UTC, RFC 3339; the server compares it to now to set stale"},
-    "generated_by": {"type": "string", "description": "workflow run URL or job name that produced the document (never a Mac)"},
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC, RFC 3339; the server compares it to now to set stale"
+    },
+    "generated_by": {
+      "type": "string",
+      "description": "workflow run URL or job name that produced the document (never a Mac)"
+    },
     "overview": {
       "type": "object",
-      "required": ["freeze", "rulings", "sessions", "board"],
+      "required": [
+        "freeze",
+        "rulings",
+        "sessions",
+        "board"
+      ],
       "additionalProperties": false,
       "properties": {
         "freeze": {
-          "type": "object", "required": ["active"], "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "active"
+          ],
+          "additionalProperties": false,
           "properties": {
-            "active": {"type": "boolean"},
-            "since": {"type": "string", "format": "date-time"},
-            "reason": {"type": "string"},
-            "record": {"type": "string", "description": "issue or comment URL that declared it"}
+            "active": {
+              "type": "boolean"
+            },
+            "since": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "record": {
+              "type": "string",
+              "description": "issue or comment URL that declared it"
+            }
           }
         },
         "rulings": {
-          "type": "array", "description": "standing founder rulings, newest last",
-          "items": {"type": "object", "required": ["id", "date", "text"], "additionalProperties": false,
-            "properties": {"id": {"type": "string"}, "date": {"type": "string", "format": "date"}, "text": {"type": "string"}, "record": {"type": "string"}}}
+          "type": "array",
+          "description": "standing founder rulings, newest last",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "date",
+              "text"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string",
+                "format": "date"
+              },
+              "text": {
+                "type": "string"
+              },
+              "record": {
+                "type": "string"
+              }
+            }
+          }
         },
         "sessions": {
-          "type": "array", "description": "active sessions and their lanes, from the feed",
-          "items": {"type": "object", "required": ["id", "lane", "last_handoff_at"], "additionalProperties": false,
-            "properties": {"id": {"type": "string"}, "lane": {"type": "string"}, "last_handoff_at": {"type": "string", "format": "date-time"}, "blocked": {"type": "string"}, "active": {"type": "string"}}}
+          "type": "array",
+          "description": "active sessions and their lanes, from the feed",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "lane",
+              "last_handoff_at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "lane": {
+                "type": "string"
+              },
+              "last_handoff_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "blocked": {
+                "type": "string"
+              },
+              "active": {
+                "type": "string"
+              }
+            }
+          }
         },
         "board": {
-          "type": "array", "description": "open board issues by owner",
-          "items": {"type": "object", "required": ["repo", "number", "title"], "additionalProperties": false,
-            "properties": {"repo": {"type": "string"}, "number": {"type": "integer"}, "title": {"type": "string"}, "owner": {"type": "string"}, "priority": {"type": "string"}}}
+          "type": "array",
+          "description": "open board issues by owner",
+          "items": {
+            "type": "object",
+            "required": [
+              "repo",
+              "number",
+              "title"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "repo": {
+                "type": "string"
+              },
+              "number": {
+                "type": "integer"
+              },
+              "title": {
+                "type": "string"
+              },
+              "owner": {
+                "type": "string"
+              },
+              "priority": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     },
     "delivery": {
       "type": "object",
-      "required": ["open_p0", "failed_runs"],
+      "required": [
+        "open_p0",
+        "failed_runs"
+      ],
       "additionalProperties": false,
       "properties": {
-        "open_p0": {"type": "array", "items": {"type": "object", "required": ["repo", "number", "title", "opened_at"], "additionalProperties": false,
-          "properties": {"repo": {"type": "string"}, "number": {"type": "integer"}, "title": {"type": "string"}, "opened_at": {"type": "string", "format": "date-time"}}}},
-        "failed_runs": {"type": "array", "description": "workflow runs red in the last window, one row per workflow",
-          "items": {"type": "object", "required": ["repo", "workflow", "failed", "window_hours"], "additionalProperties": false,
-            "properties": {"repo": {"type": "string"}, "workflow": {"type": "string"}, "failed": {"type": "integer"}, "window_hours": {"type": "integer"}, "last_run": {"type": "string"}}}},
-        "main_sha": {"type": "object", "additionalProperties": {"type": "string"}, "description": "repo -> head sha of main at generation"}
+        "open_p0": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "repo",
+              "number",
+              "title",
+              "opened_at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "repo": {
+                "type": "string"
+              },
+              "number": {
+                "type": "integer"
+              },
+              "title": {
+                "type": "string"
+              },
+              "opened_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        "failed_runs": {
+          "type": "array",
+          "description": "workflow runs red in the last window, one row per workflow",
+          "items": {
+            "type": "object",
+            "required": [
+              "repo",
+              "workflow",
+              "failed",
+              "window_hours"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "repo": {
+                "type": "string"
+              },
+              "workflow": {
+                "type": "string"
+              },
+              "failed": {
+                "type": "integer"
+              },
+              "window_hours": {
+                "type": "integer"
+              },
+              "last_run": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "main_sha": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "repo -> head sha of main at generation"
+        }
       }
     },
     "runtime": {
       "type": "object",
-      "required": ["clusters", "surfaces"],
+      "required": [
+        "clusters",
+        "surfaces"
+      ],
       "additionalProperties": false,
       "properties": {
-        "clusters": {"type": "array", "items": {"type": "object", "required": ["name", "role", "flux_rows"], "additionalProperties": false,
-          "properties": {
-            "name": {"type": "string"}, "role": {"type": "string", "enum": ["production", "staging", "other"]},
-            "state": {"type": "string", "enum": ["ok", "FAIL", "BLIND"], "description": "bin/idp-cluster-state verdict"},
-            "revision": {"type": "string"},
-            "flux_rows": {"type": "array", "items": {"type": "object", "required": ["kind", "namespace", "name", "ready"], "additionalProperties": false,
-              "properties": {"kind": {"type": "string"}, "namespace": {"type": "string"}, "name": {"type": "string"}, "ready": {"type": "boolean"}, "message": {"type": "string"}}}}
-          }}},
-        "surfaces": {"type": "array", "description": "routed doors and the last drill verdict",
-          "items": {"type": "object", "required": ["name", "verdict"], "additionalProperties": false,
-            "properties": {"name": {"type": "string"}, "verdict": {"type": "string", "enum": ["ok", "FAIL", "BLIND"]}, "checked_at": {"type": "string", "format": "date-time"}, "detail": {"type": "string"}}}}
+        "clusters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "role",
+              "flux_rows"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "production",
+                  "staging",
+                  "other"
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "FAIL",
+                  "BLIND"
+                ],
+                "description": "bin/idp-cluster-state verdict"
+              },
+              "revision": {
+                "type": "string"
+              },
+              "flux_rows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "namespace",
+                    "name",
+                    "ready"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "type": "string"
+                    },
+                    "namespace": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "ready": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "reconcile": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "namespace",
+                    "name",
+                    "ready"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "type": "string"
+                    },
+                    "namespace": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "ready": {
+                      "type": "boolean"
+                    },
+                    "since": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "revision": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "surfaces": {
+          "type": "array",
+          "description": "routed doors and the last drill verdict",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "verdict"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "verdict": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "FAIL",
+                  "BLIND"
+                ]
+              },
+              "checked_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "detail": {
+                "type": "string"
+              }
+            }
+          }
+        }
       }
     },
     "docs_apis": {
       "type": "object",
-      "required": ["standards_page", "diagrams"],
+      "required": [
+        "standards_page",
+        "diagrams"
+      ],
       "additionalProperties": false,
       "properties": {
-        "standards_page": {"type": "string", "description": "where the standards rows live"},
-        "diagrams": {"type": "array", "items": {"type": "object", "required": ["name", "url"], "additionalProperties": false,
-          "properties": {"name": {"type": "string"}, "url": {"type": "string"}, "generated_at": {"type": "string", "format": "date-time"}}}},
-        "runbooks_index": {"type": "string"}
+        "standards_page": {
+          "type": "string",
+          "description": "where the standards rows live"
+        },
+        "diagrams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "url"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "generated_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        "runbooks_index": {
+          "type": "string"
+        }
       }
     },
     "security": {
       "type": "object",
-      "required": ["open_findings"],
+      "required": [
+        "open_findings"
+      ],
       "additionalProperties": false,
       "properties": {
-        "open_findings": {"type": "array", "items": {"type": "object", "required": ["repo", "severity", "count"], "additionalProperties": false,
-          "properties": {"repo": {"type": "string"}, "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]}, "count": {"type": "integer"}, "source": {"type": "string"}}}},
-        "secrets_in_git": {"type": "integer", "description": "open gitleaks findings (crew#240)"}
+        "open_findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "repo",
+              "severity",
+              "count"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "repo": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "critical",
+                  "high",
+                  "medium",
+                  "low"
+                ]
+              },
+              "count": {
+                "type": "integer"
+              },
+              "source": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "secrets_in_git": {
+          "type": "integer",
+          "description": "open gitleaks findings (crew#240)"
+        }
       }
     }
   }

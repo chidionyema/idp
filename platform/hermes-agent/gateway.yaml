@@ -47,7 +47,7 @@ metadata:
 spec:
   # 45m keeps every mint inside the token's 60-minute life (vendor page, generator/github: "Github
   # tokens expire after 60 minutes ... choose a refreshInterval that is below this number").
-  refreshInterval: 45m
+  refreshInterval: 10m
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
   target: { name: hermes-agent-env, creationPolicy: Owner }
   dataFrom:
@@ -106,7 +106,7 @@ metadata:
   name: hermes-agent-github-app-pem
   namespace: hermes-agent
 spec:
-  refreshInterval: 1h
+  refreshInterval: 10m
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
   target:
     name: github-app-pem

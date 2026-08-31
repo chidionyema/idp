@@ -9,7 +9,7 @@ metadata:
   name: hermes-agent-mcp
   namespace: hermes-agent
 spec:
-  refreshInterval: 1h
+  refreshInterval: 10m
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
   target: { name: hermes-agent-mcp, creationPolicy: Owner }
   data:

@@ -42,7 +42,7 @@ spec:
                 name: every-interface-is-a-door
                 labels:
                   backstage.io/kubernetes-id: founder-alerts
-  interval: 1h
+  interval: 10m
   timeout: 10m
   chart:
     spec:

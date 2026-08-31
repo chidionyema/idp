@@ -30,7 +30,7 @@ def layers() -> dict[str, str]:
             continue
         with open(os.path.join(d, f), encoding="utf-8") as fh:
             for doc in yaml.safe_load_all(fh):
-                if doc and doc.get("kind") == "Kustomization":
+                if doc and doc.get("kind") == "Kustomization" and str(doc.get("apiVersion", "")).startswith("kustomize.toolkit"):
                     out[str((doc.get("spec") or {}).get("path", "")).lstrip("./")] = doc["metadata"]["name"]
     return out
 

@@ -42,7 +42,7 @@ spec:
                 labels:
                   backstage.io/kubernetes-id: founder-login
   interval: 10m
-  timeout: 5m
+  timeout: 10m
   chart:
     spec:
       chart: oauth2-proxy

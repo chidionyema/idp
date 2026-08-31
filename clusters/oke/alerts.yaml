@@ -15,7 +15,7 @@ spec:
   path: ./platform/alerts
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 10m
   postBuild:
     substituteFrom:
       - kind: Secret
@@ -37,7 +37,7 @@ spec:
   path: ./platform/alerts-secret
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 10m
 ---
 # crew#406 row 4: the GitHub App (vault key github-app) was never created, so the github-app
 # ExternalSecret never became Ready, alerts-secret (wait: true) never became Ready, and `alerts`
@@ -58,4 +58,4 @@ spec:
   path: ./platform/alerts-github
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 10m

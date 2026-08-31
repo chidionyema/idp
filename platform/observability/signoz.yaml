@@ -10,7 +10,7 @@ kind: HelmRelease
 metadata:
   name: signoz
 spec:
-  interval: 1h
+  interval: 10m
   timeout: 15m
   chart:
     spec:
@@ -211,7 +211,7 @@ kind: ExternalSecret
 metadata:
   name: signoz-root
 spec:
-  refreshInterval: 1h
+  refreshInterval: 10m
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
   target:
     name: signoz-root

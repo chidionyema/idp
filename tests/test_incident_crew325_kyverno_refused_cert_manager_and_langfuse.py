@@ -46,7 +46,7 @@ def test_incident_crew325_every_policy_exception_lives_where_kyverno_reads() -> 
             d["spec"]["path"]
             for f in ROOT.glob("clusters/oke/*.yaml")
             for d in yaml.safe_load_all(f.read_text())
-            if d and d.get("kind") == "Kustomization" and d["spec"].get("path", "").startswith("./platform/")
+            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["spec"].get("path", "").startswith("./platform/")
         }
     )
     assert paths

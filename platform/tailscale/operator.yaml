@@ -57,7 +57,7 @@ spec:
                 name: every-interface-is-a-door
                 labels:
                   backstage.io/kubernetes-id: founder-screen
-  interval: 1h
+  interval: 10m
   chart:
     spec:
       chart: tailscale-operator

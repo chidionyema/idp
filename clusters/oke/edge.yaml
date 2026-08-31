@@ -138,7 +138,7 @@ spec:
   path: ./deploy/k8s/overlays/oke
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 10m
   # Which build runs is decided here, not in prospector's overlay (crew#693): the markers below are
   # written by the image-automation-controller from platform/image-automation/prospector.yaml, and
   # this override is applied after kustomize renders the overlay, so the hand-pinned tags there are
@@ -201,7 +201,7 @@ spec:
   path: ./platform/dns
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 10m
   postBuild:
     substituteFrom:
       - kind: ConfigMap

@@ -71,7 +71,7 @@ def kustomizations(cluster: str) -> dict[str, tuple[pathlib.Path, str | None, bo
     out = {}
     for f in cluster_files(cluster):
         for doc in yaml.safe_load_all(f.read_text()):
-            if not doc or doc.get("kind") != "Kustomization":
+            if not doc or doc.get("kind") != "Kustomization" or not str(doc.get("apiVersion", "")).startswith("kustomize.toolkit"):
                 continue
             spec = doc.get("spec", {})
             out[doc["metadata"]["name"]] = (f, spec.get("path"), bool(spec.get("suspend", False)))

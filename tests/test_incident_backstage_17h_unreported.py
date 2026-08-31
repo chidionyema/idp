@@ -33,7 +33,7 @@ def _namespace_of(path, doc):
 
 def test_every_cluster_kustomization_with_health_checks_waits():
     for f, d in _docs("clusters/*/*.yaml"):
-        if d.get("kind") == "Kustomization" and d["spec"].get("healthChecks"):
+        if d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["spec"].get("healthChecks"):
             assert d["spec"].get("wait") is True, f"{f}: {d['metadata']['name']} has healthChecks but wait is not true"
             assert d["spec"].get("timeout"), f"{f}: {d['metadata']['name']} has no timeout, so it never stalls"
 
@@ -44,7 +44,7 @@ def test_every_health_checked_kustomization_reconciles_within_ten_minutes():
     slow = []
     for f in sorted(glob.glob(str(ROOT / "clusters" / "*" / "*.yaml"))):
         for d in yaml.safe_load_all(open(f)):
-            if d and d.get("kind") == "Kustomization" and (
+            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and (
                 d["spec"].get("healthChecks") or d["spec"].get("wait")
             ):
                 iv = d["spec"]["interval"]

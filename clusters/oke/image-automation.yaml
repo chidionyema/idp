@@ -20,7 +20,7 @@ spec:
   path: ./platform/image-automation
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 10m
   healthChecks:
     - apiVersion: image.toolkit.fluxcd.io/v1
       kind: ImageRepository

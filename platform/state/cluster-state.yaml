@@ -323,6 +323,11 @@ data:
                 # every dark row into a cluster FAIL on the estate-state page.
                 row["ready"] = True
                 row["message"] = "suspended (dark switch)"
+            if kind in ("Kustomization", "HelmRelease"):
+                # crew#727: the founder's `flux get all -A` as a receipt -- the row names
+                # the revision actually applied, so "did my merge land" is a read, never
+                # arithmetic over intervals.
+                row["revision"] = st.get("lastAppliedRevision") or st.get("lastAttemptedRevision")
             if kind == "HelmRelease":
                 row.update(helm_last_attempt(st))
             if kind == "ImagePolicy":

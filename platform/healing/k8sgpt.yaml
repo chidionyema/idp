@@ -20,7 +20,7 @@ metadata:
   name: k8sgpt-operator
   namespace: healing
 spec:
-  interval: 1h
+  interval: 10m
   timeout: 10m
   chart:
     spec:

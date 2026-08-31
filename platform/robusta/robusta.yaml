@@ -23,7 +23,7 @@ metadata:
   name: robusta
   namespace: robusta
 spec:
-  interval: 1h
+  interval: 10m
   timeout: 15m
   chart:
     spec:

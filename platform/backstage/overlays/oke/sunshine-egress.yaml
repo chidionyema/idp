@@ -32,7 +32,7 @@ metadata:
   name: sunshine-auth
   namespace: backstage
 spec:
-  refreshInterval: 1h
+  refreshInterval: 10m
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
   target: { name: sunshine-auth, creationPolicy: Owner }
   data:
