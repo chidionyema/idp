@@ -1050,7 +1050,10 @@ spec:
   containers:
     - name: read
       image: public.ecr.aws/docker/library/busybox:1.36
-      command: ["sh", "-c", "echo '== registries.conf'; cat /host/registries.conf 2>&1; echo; echo '== registries.conf.d'; for f in /host/registries.conf.d/*; do echo \"-- $f\"; cat \"$f\" 2>&1; done"]
+      # No shell variable in this string: it sits inside an unquoted heredoc, so the OUTER shell
+      # would expand anything with a $ before the pod ever saw it. `grep -r . dir/` prints
+      # file:line and needs no loop variable. shellcheck SC2154 caught exactly that.
+      command: ["sh", "-c", "echo '== registries.conf'; cat /host/registries.conf 2>&1; echo; echo '== registries.conf.d, as file:line'; grep -r . /host/registries.conf.d/ 2>&1"]
       volumeMounts: [{ name: etc-containers, mountPath: /host, readOnly: true }]
       resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { cpu: 100m, memory: 32Mi } }
       readinessProbe: { exec: { command: ["true"] } }
