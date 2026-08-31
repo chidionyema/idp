@@ -19,7 +19,7 @@ def _kustomizations():
     names = set()
     for f in glob.glob(os.path.join(ROOT, "clusters", CLUSTER, "*.yaml")):
         for d in yaml.safe_load_all(open(f)):
-            if d and d.get("kind") == "Kustomization":
+            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit"):
                 names.add(d["metadata"]["name"])
     return names
 

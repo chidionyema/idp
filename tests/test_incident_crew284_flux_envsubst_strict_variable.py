@@ -53,7 +53,7 @@ def undefined_variables(path_text: str, allowed: set[str]) -> set[str]:
 def kustomizations():
     for f in glob.glob(str(ROOT / "clusters" / "*" / "*.yaml")):
         for d in yaml.safe_load_all(pathlib.Path(f).read_text()):
-            if d and d.get("kind") == "Kustomization" and d["spec"].get("path"):
+            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["spec"].get("path"):
                 yield d
 
 

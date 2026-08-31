@@ -78,7 +78,7 @@ def _rows():
     out = {}
     for f in sorted(glob.glob(str(ROOT / "clusters" / "*" / "*.yaml"))):
         for d in yaml.safe_load_all(open(f)):
-            if d and d.get("kind") == "Kustomization" and d["spec"].get("path"):
+            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["spec"].get("path"):
                 out[d["metadata"]["name"]] = (ROOT / d["spec"]["path"],
                                               {x["name"] for x in d["spec"].get("dependsOn", [])})
     return out
@@ -102,7 +102,7 @@ def _foreign_rows():
     out = set()
     for f in sorted(glob.glob(str(ROOT / "clusters" / "*" / "*.yaml"))):
         for d in yaml.safe_load_all(open(f)):
-            if d and d.get("kind") == "Kustomization" and d["spec"].get("path") \
+            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["spec"].get("path") \
                     and d["spec"].get("sourceRef", {}).get("name") != LOCAL_SOURCE:
                 out.add(d["metadata"]["name"])
     return out

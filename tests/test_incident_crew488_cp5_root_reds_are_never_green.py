@@ -97,7 +97,7 @@ def test_every_clusterpolicy_in_the_tree_is_applied_by_a_layer_that_waits_on_kyv
     deps = {}
     for f in sorted((ROOT / "clusters" / "oke").glob("*.yaml")):
         for d in yaml.safe_load_all(f.read_text()):
-            if d and d.get("kind") == "Kustomization":
+            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit"):
                 deps[d["metadata"]["name"]] = [x["name"] for x in (d.get("spec") or {}).get("dependsOn", [])]
 
     def waits_on_kyverno(layer: str, seen=()) -> bool:
@@ -168,7 +168,7 @@ def test_the_drill_clusters_have_two_nodes_because_the_front_door_spreads():
 def _spec(row: str) -> dict:
     for f in sorted((ROOT / "clusters" / "oke").glob("*.yaml")):
         for d in docs(f"clusters/oke/{f.name}"):
-            if d.get("kind") == "Kustomization" and d["metadata"]["name"] == row:
+            if d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["metadata"]["name"] == row:
                 return d["spec"]
     raise AssertionError(f"no Kustomization {row}")
 

@@ -38,7 +38,7 @@ def helmrelease_namespaces() -> list[str]:
     seen: set[str] = set()
     for f in sorted(glob.glob(str(ROOT / "clusters/*/*.yaml"))):
         for d in yaml.safe_load_all(pathlib.Path(f).read_text()):
-            if not d or d.get("kind") != "Kustomization":
+            if not d or d.get("kind") != "Kustomization" or not str(d.get("apiVersion", "")).startswith("kustomize.toolkit"):
                 continue
             path = (ROOT / d["spec"]["path"]).resolve()
             if not any((path / k).exists() for k in ("kustomization.yaml", "kustomization.yml", "Kustomization")):
