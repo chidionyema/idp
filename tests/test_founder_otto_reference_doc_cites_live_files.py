@@ -9,7 +9,7 @@ DOC = ROOT / "docs" / "founder" / "otto.md"
 
 def test_doc_exists_and_names_the_three_subjects():
     text = DOC.read_text()
-    for needle in ("Otto", "Backstage", "Telegram pin", "crew#761"):
+    for needle in ("Otto", "Backstage", "Telegram pin", "crew/issues/761"):
         assert needle in text, f"otto.md no longer covers: {needle}"
 
 
