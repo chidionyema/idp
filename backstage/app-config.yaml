@@ -1,5 +1,5 @@
 app:
-  title: Mumchimp estate
+  title: Bytesync
   baseUrl: http://localhost:3100
 
   # Enable all packages by default, this will discover packages from packages/app/package.json
@@ -38,7 +38,7 @@ app:
                   - relations: { $contains: { type: consumesApi } }
 
 organization:
-  name: Mumchimp
+  name: Bytesync
 
 backend:
   # Used for enabling authentication, secret is shared by all backend plugins
