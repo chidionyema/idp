@@ -10,8 +10,17 @@
 2. HelmRelease tailscale/tailscale-operator sat `Failed` blocking guacamole: helm-controller
    spends its remediation retries once and then waits forever for a spec change. Founder blueprint
    (~/.claude/docs/founder/2026-08-30T2252Z-also-o-eliminate-this-exact-class-of-failures-501c10b6.md):
-   a wedged upgrade is uninstalled and rebuilt from git, never left for a person to untangle.
-   Every HelmRelease declares bounded install and upgrade remediation.
+   a wedged release is not left for a person to untangle. Every HelmRelease declares bounded
+   install and upgrade remediation.
+
+   The strategy that shipped with it, `uninstall`, was taken back out on 2026-08-31. Founder,
+   2026-08-30 (~/.claude/docs/founder/2026-08-30T2332Z-yes-and-the-pattern-is-sound-but-two
+   -c08d08d9.md): "Uninstalling a wedged HelmRelease turns a degraded service into a deleted one
+   -- PVCs, PDBs, Secrets created by the release, gone ... More importantly, both destroy the
+   evidence. You cannot convert an incident into a permanent control if your first move erases the
+   state that tells you which invariant was violated. Keep the ability to repave -- but as a manual
+   break-glass after capture, never as automated remediation." The retries stay, the default
+   rollback strategy stays, and the repave is `bin/idp-oke-break-glass helm-retry`, by a hand.
 """
 
 from pathlib import Path
@@ -64,13 +73,21 @@ def test_every_helmrelease_remediates_a_wedged_install_and_upgrade() -> None:
         cwd=ROOT,
         check=True,
     ).stdout.split()
-    bare = []
+    bare, destructive = [], []
     for f in files:
         for d in _docs(f):
             if d.get("kind") != "HelmRelease":
                 continue
             spec = d["spec"]
             for phase in ("install", "upgrade"):
-                if spec.get(phase, {}).get("remediation", {}).get("retries", 0) < 1:
+                remediation = spec.get(phase, {}).get("remediation", {})
+                if remediation.get("retries", 0) < 1:
                     bare.append((f, d["metadata"]["name"], phase))
+                if remediation.get("strategy") == "uninstall":
+                    destructive.append((f, d["metadata"]["name"], phase))
     assert not bare, f"HelmRelease rows a wedge would freeze forever: {bare}"
+    assert not destructive, (
+        "these rows uninstall themselves when they fail, which deletes what the release made and "
+        "erases the state that says which invariant was violated -- the one thing an incident is "
+        f"read from. Repaving is a hand, `bin/idp-oke-break-glass helm-retry`: {destructive}"
+    )
