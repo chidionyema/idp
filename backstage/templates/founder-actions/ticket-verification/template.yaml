@@ -3,12 +3,8 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-ticket-verification
-  title: 'Run: ticket-verification'
-  description: 'crew#631 CP5: the ticket state machine. Runs after every prover run and hourly: a ticket
-    labelled RESOLVED_PENDING_VERIFICATION moves to VERIFIED or REJECTED only here, on the prover''s verdict,
-    as the estate''s GitHub App; a VERIFIED label set by anyone else, or one with no PASS verdict younger
-    than 24 h behind it, is reverted. The App token is minted from the vault (lane ticket-verifier: issues
-    write, actions read), which is why this needs the OCI session and lives in idp.'
+  title: Refresh ticket states
+  description: Moves each ticket's label to match what the checks proved since the last run.
   tags:
   - founder-action
   - estate
@@ -16,16 +12,15 @@ spec:
   owner: group:default/platform
   type: founder-action
   parameters:
-  - title: Run ticket-verification
+  - title: Choices for this run
     properties:
       apply:
-        title: apply
+        title: apply (move labels) or report only
         type: boolean
-        description: apply (move labels) or report only
         default: true
   steps:
   - id: dispatch
-    name: Dispatch ticket-verification.yml on main
+    name: Start Refresh ticket states
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -35,5 +30,5 @@ spec:
         apply: ${{ parameters.apply }}
   output:
     links:
-    - title: Runs of ticket-verification
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/ticket-verification.yml

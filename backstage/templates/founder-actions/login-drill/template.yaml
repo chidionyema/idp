@@ -3,13 +3,9 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-login-drill
-  title: 'Run: login-drill'
-  description: 'crew#292 CP1, rewritten under crew#307. A drill is an adversary, not a downstream step:
-    it runs on its own clock whether the platform pipeline is green, red or absent, because as a `needs:`
-    of the tofu check it was skipped on every check red and the skip read as green while the catalogue
-    served the founder an error. Same machine identity as oke-check (GitHub OIDC token exchanged for a
-    one-hour OCI session token); the drill''s credential is the domain password Terraform put in the vault,
-    read by name, never printed.'
+  title: Test the front-door sign-in
+  description: Signs in at the front door the way a person does and walks to every surface behind it;
+    reports where it landed.
   tags:
   - founder-action
   - estate
@@ -19,7 +15,7 @@ spec:
   parameters: []
   steps:
   - id: dispatch
-    name: Dispatch login-drill.yml on main
+    name: Start Test the front-door sign-in
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -27,5 +23,5 @@ spec:
       branchOrTagName: main
   output:
     links:
-    - title: Runs of login-drill
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/login-drill.yml

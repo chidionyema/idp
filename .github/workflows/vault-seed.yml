@@ -1,3 +1,5 @@
+# button: Write or remove a vault entry
+# founder: Writes one named entry into the vault under the machine identity, or schedules one for deletion.
 # crew#284 CP1/CP2, crew#248: the estate vault is written by the machine identity, never a laptop
 # (crew#227 deleted the OCI API key; crew#247: infra is never Mac-bound). crew#66 root trust
 # (5453747447, docs/reference/policy/root-trust.md): an entry a bootstrapper births is never seeded from a
@@ -16,7 +18,7 @@ on:
         options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, tailscale-operator, laptop, hermes, science]
         default: all
       delete:
-        description: "schedule deletion of one vault secret by name (crew#503: a mis-named entry); entry is ignored when set"
+        description: "schedule deletion of one vault entry by name (for a mis-named entry); the entry field is ignored when this is set"
         type: string
         default: ""
 permissions:

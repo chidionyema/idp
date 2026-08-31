@@ -3,13 +3,9 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-estate-state
-  title: 'Run: estate-state'
-  description: 'crew#648: the estate state document. Every 15 minutes this run reads the sources the estate
-    already writes (cluster receipt in the receipts bucket, feed in the state bucket, rulings in claude-guards,
-    the newest login-drill log, open P0/P1/security/freeze issues, failed runs of the last six hours)
-    and publishes one JSON document as an OCI artifact. The estate-mcp pod (platform/mcp/estate-mcp.yaml)
-    pulls it every ten minutes, so `get_estate_state` answers `available: true, stale: false` from a document
-    under 30 minutes old (mcp/plugins/estate_state.py). Never from a laptop (crew#247). A source t'
+  title: Refresh the estate status page
+  description: Reads every source of truth and rewrites the one status document the founder and the sessions
+    read.
   tags:
   - founder-action
   - estate
@@ -19,7 +15,7 @@ spec:
   parameters: []
   steps:
   - id: dispatch
-    name: Dispatch estate-state.yml on main
+    name: Start Refresh the estate status page
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -27,5 +23,5 @@ spec:
       branchOrTagName: main
   output:
     links:
-    - title: Runs of estate-state
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/estate-state.yml

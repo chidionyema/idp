@@ -3,10 +3,8 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-messaging-drill
-  title: 'Run: messaging-drill'
-  description: 'Daily drill: the messaging demos (crew#639 CP9) run end to end on a runner with no cluster
-    and no Docker, against the chart''s nats-server version and an embedded Postgres. Catalogued in drills/catalogue.yaml
-    as messaging-demo; the drills row of bin/idp-verify grades freshness.'
+  title: Test the messaging demos
+  description: Runs the messaging demos end to end on a clean machine and reports whether each one delivered.
   tags:
   - founder-action
   - estate
@@ -16,7 +14,7 @@ spec:
   parameters: []
   steps:
   - id: dispatch
-    name: Dispatch messaging-drill.yml on main
+    name: Start Test the messaging demos
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -24,5 +22,5 @@ spec:
       branchOrTagName: main
   output:
     links:
-    - title: Runs of messaging-drill
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/messaging-drill.yml

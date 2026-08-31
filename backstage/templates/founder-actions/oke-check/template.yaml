@@ -3,14 +3,9 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-oke-check
-  title: 'Run: oke-check'
-  description: 'crew#227 CP2: the platform is checked by a machine identity, not by a key on a laptop.
-    The job''s GitHub OIDC token is exchanged for a one-hour OCI session token that impersonates the service
-    user estate-ci (identity propagation trust `github-actions-estate`, created by bin/idp-oci-bootstrap).
-    No OCI API key exists for this path. Residual static credentials on this path, listed so nobody pretends
-    otherwise: the OIDC client secret (the trust''s own credential) and the S3 customer secret key for
-    the state bucket (OpenTofu 1.12''s S3 backend cannot take a session token). Both are GitHub repository
-    s'
+  title: Check or apply the cluster
+  description: Compares the cluster with what is declared, or applies the declared state and seeds the
+    vault; runs under the machine identity.
   tags:
   - founder-action
   - estate
@@ -18,16 +13,11 @@ spec:
   owner: group:default/platform
   type: founder-action
   parameters:
-  - title: Run oke-check
+  - title: Choices for this run
     properties:
       mode:
-        title: mode
+        title: check (compare and report drift) or apply (apply the declared state and seed the vault)
         type: string
-        description: 'check (plan, drift = FAIL), apply (crew#289: the STAGED node-pool change, refused
-          by main.tf above node_pool.budget_monthly_usd), or surge-node (crew#516: apply, then replace
-          the one node so a new boot volume or shape takes effect; every pod restarts once), or surge-finish
-          (the surge''s second half when its Ready gate went blind, run 33101801971: delete the old node
-          once the receipt shows the new one Ready). Never from a laptop (crew#247).'
         enum:
         - check
         - apply
@@ -36,12 +26,9 @@ spec:
         - break-glass
         default: check
       playbook:
-        title: playbook
+        title: 'Break-glass only: runs the one named recovery playbook while the runner is admitted to
+          the cluster; diagnose and architect-doctor are read-only'
         type: string
-        description: 'break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs
-          while the runner''s /32 is admitted to the API endpoint through tofu; the list is restored on
-          every exit path. diagnose, otto-parity, healthchecks-door and architect-doctor are read-only;
-          so is router-spend.'
         enum:
         - diagnose
         - architect-doctor
@@ -65,7 +52,7 @@ spec:
         default: diagnose
   steps:
   - id: dispatch
-    name: Dispatch oke-check.yml on main
+    name: Start Check or apply the cluster
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -76,5 +63,5 @@ spec:
         playbook: ${{ parameters.playbook }}
   output:
     links:
-    - title: Runs of oke-check
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/oke-check.yml

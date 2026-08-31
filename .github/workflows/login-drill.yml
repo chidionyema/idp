@@ -1,3 +1,5 @@
+# button: Test the front-door sign-in
+# founder: Signs in at the front door the way a person does and walks to every surface behind it; reports where it landed.
 # crew#292 CP1, rewritten under crew#307. A drill is an adversary, not a downstream step: it runs
 # on its own clock whether the platform pipeline is green, red or absent, because as a `needs:`
 # of the tofu check it was skipped on every check red and the skip read as green while the

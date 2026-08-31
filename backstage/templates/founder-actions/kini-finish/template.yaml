@@ -3,13 +3,8 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-kini-finish
-  title: 'Run: kini-finish'
-  description: 'crew#396 step 4: "type ''Finish KINI'', close the laptop". The word is an issue comment
-    `FINISH: KINI` from the repository owner (or a dispatch of this workflow). It renames the Job in platform/temporal/kini-finish.yaml
-    to kini-finish-<request> on a branch pushed with the Flux writer deploy key (a GITHUB_TOKEN push fires
-    no checks, so the ruleset could never merge it), opens the pull request and arms auto-merge. Flux
-    applies the renamed Job; the Job runs `sovereign.cli kini finish --wait` against the in-cluster engine;
-    platform/temporal/kini-state.yaml publishes state/kini; oke-check.yml job kin'
+  title: Finish KINI
+  description: Runs the close-out steps for KINI from the cloud, so the laptop can be shut.
   tags:
   - founder-action
   - estate
@@ -19,7 +14,7 @@ spec:
   parameters: []
   steps:
   - id: dispatch
-    name: Dispatch kini-finish.yml on main
+    name: Start Finish KINI
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -27,5 +22,5 @@ spec:
       branchOrTagName: main
   output:
     links:
-    - title: Runs of kini-finish
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/kini-finish.yml

@@ -1,3 +1,5 @@
+# button: Wake a blocked session
+# founder: Tells a session that the thing it was waiting for has landed, so it carries on.
 # Copied verbatim into .github/workflows/wake-blocked.yml of every active estate repository by
 # bin/estate-security-rollout's sibling step (crew#504 CP7). A PR closed with a `Blocked-by:` line
 # in its body reopens itself, branch updated, when every key it names has landed.
@@ -8,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       resolved:
-        description: "free-text Blocked-by key that has landed, e.g. secret signoz-root"
+        description: "the thing that has now landed, in a few words (for example: the SigNoz root secret)"
         default: ""
 permissions:
   contents: read

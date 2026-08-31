@@ -1,3 +1,5 @@
+# button: Check Langfuse and sign the result
+# founder: Checks that Langfuse answers, answers its key, refuses a caller without one, and that a signed-in person reaches it; signs the result.
 # crew#631 CP1: the prover for Langfuse. Runs on the estate's machine identity (the same GitHub
 # OIDC -> OCI session token exchange as login-drill.yml), so the API key, the drill password, the
 # cluster read and the signing key are all reachable here and nowhere an agent runs. The output is
@@ -11,11 +13,11 @@ on:
   workflow_dispatch:
     inputs:
       nonce:
-        description: "nonce issued by the control plane for this request (blank: the run mints one)"
+        description: "request code for this run (leave blank; the run makes one)"
         required: false
         default: ""
       lookup_trace:
-        description: "attribution: a trace id from an earlier run, read again now (info line, not graded)"
+        description: "a trace id from an earlier run, read again now (shown, not checked)"
         required: false
         default: ""
   push:

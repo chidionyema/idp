@@ -1,3 +1,5 @@
+# button: Ping the dead man's switch
+# founder: Sends the heartbeat that proves the estate's monitoring is alive, from outside the cluster.
 # crew#539 CP3: the dead-man's switch that lives outside the blast radius. On 2026-08-27 langfuse
 # answered 503 for nine minutes and nothing paged, because the estate's only alert is a Flux
 # reconcile event raised from inside the cluster that was starving. This runs on a GitHub runner

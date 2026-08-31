@@ -1,3 +1,5 @@
+# button: Audit vault reads
+# founder: Lists who read what from the vault and flags anything outside the expected pattern.
 # crew#584, founder 2026-08-29: the vault audit is monitoring, not a pull-request grade. It used to be
 # the vault-reads row of bin/idp-oke-rebuild --check, where a 90-minute OCI audit query (427 s, run
 # 33237964214) blocked every platform pull request. Now it runs on its own clock, never on

@@ -3,13 +3,9 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-portability-drill
-  title: 'Run: portability-drill'
-  description: 'crew#488 CP1: the hydration scenario of docs/prose/cloud-agnostic-drills.feature, run
-    for real.  A vanilla k3d cluster on a runner with no OCI identity, Flux installed from its own CLI,
-    one GitRepository at this run''s commit, every Kustomization under clusters/oke/ applied. Then bin/idp-portability-drill
-    counts how many layers came Ready and grades it against drills/portability-floor.txt. Layers that
-    need OCI (the vault behind secret-store, DNS, the receipts bucket) are expected to stay red; the drill
-    prints each with Flux''s own reason, and the count of everything else is the portability numbe'
+  title: Test the move to another cloud
+  description: Rebuilds the platform from its declarations as if on another cloud and reports what would
+    break.
   tags:
   - founder-action
   - estate
@@ -19,7 +15,7 @@ spec:
   parameters: []
   steps:
   - id: dispatch
-    name: Dispatch portability-drill.yml on main
+    name: Start Test the move to another cloud
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -27,5 +23,5 @@ spec:
       branchOrTagName: main
   output:
     links:
-    - title: Runs of portability-drill
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/portability-drill.yml

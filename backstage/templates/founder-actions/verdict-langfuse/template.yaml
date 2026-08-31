@@ -3,13 +3,9 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-verdict-langfuse
-  title: 'Run: verdict-langfuse'
-  description: 'crew#631 CP1: the prover for Langfuse. Runs on the estate''s machine identity (the same
-    GitHub OIDC -> OCI session token exchange as login-drill.yml), so the API key, the drill password,
-    the cluster read and the signing key are all reachable here and nowhere an agent runs. The output
-    is one signed verdict file, kept as the run''s artifact, and a check-run `verify/langfuse` on the
-    commit under test, whose conclusion is the verdict''s outcome. An agent token cannot create a check-run
-    and does not hold the key, so the only way to a green check is a Langfuse that works.'
+  title: Check Langfuse and sign the result
+  description: Checks that Langfuse answers, answers its key, refuses a caller without one, and that a
+    signed-in person reaches it; signs the result.
   tags:
   - founder-action
   - estate
@@ -17,21 +13,19 @@ spec:
   owner: group:default/platform
   type: founder-action
   parameters:
-  - title: Run verdict-langfuse
+  - title: Choices for this run
     properties:
       nonce:
-        title: nonce
+        title: request code for this run (leave blank; the run makes one)
         type: string
-        description: 'nonce issued by the control plane for this request (blank: the run mints one)'
         default: ''
       lookup_trace:
-        title: lookup_trace
+        title: a trace id from an earlier run, read again now (shown, not checked)
         type: string
-        description: 'attribution: a trace id from an earlier run, read again now (info line, not graded)'
         default: ''
   steps:
   - id: dispatch
-    name: Dispatch verdict-langfuse.yml on main
+    name: Start Check Langfuse and sign the result
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -42,5 +36,5 @@ spec:
         lookup_trace: ${{ parameters.lookup_trace }}
   output:
     links:
-    - title: Runs of verdict-langfuse
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/verdict-langfuse.yml

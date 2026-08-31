@@ -1,3 +1,5 @@
+# button: Ship the portal and the shop
+# founder: Merges the pull request that carries a new image tag once its checks are green and nothing but the tag changed.
 # Ships the portal and the shop: merges the pull request that carries a new image tag to the
 # cluster, once its checks are green and nothing but the tag has changed.
 

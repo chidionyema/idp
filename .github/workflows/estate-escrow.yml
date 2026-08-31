@@ -1,3 +1,5 @@
+# button: Back up every repository
+# founder: Copies every load-bearing repository to the escrow store so nothing depends on one machine or one account.
 # crew#290 layer 4: GitHub is the only copy of every load-bearing repository, and the only escrow
 # writer ran on the founder's Mac. Six times a day a runner with no static credential exchanges
 # its OIDC token for the estate-ci session, mints a read-only App token, and bin/idp-escrow writes

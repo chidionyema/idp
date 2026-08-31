@@ -1,3 +1,5 @@
+# button: Refresh the estate status page
+# founder: Reads every source of truth and rewrites the one status document the founder and the sessions read.
 # crew#648: the estate state document. Every 15 minutes this run reads the sources the estate
 # already writes (cluster receipt in the receipts bucket, feed in the state bucket, rulings in
 # claude-guards, the newest login-drill log, open P0/P1/security/freeze issues, failed runs of the

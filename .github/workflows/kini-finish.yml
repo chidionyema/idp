@@ -1,3 +1,5 @@
+# button: Finish KINI
+# founder: Runs the close-out steps for KINI from the cloud, so the laptop can be shut.
 # crew#396 step 4: "type 'Finish KINI', close the laptop". The word is an issue comment
 # `FINISH: KINI` from the repository owner (or a dispatch of this workflow). It renames the Job in
 # platform/temporal/kini-finish.yaml to kini-finish-<request> on a branch pushed with the Flux

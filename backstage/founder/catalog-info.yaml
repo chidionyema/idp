@@ -126,7 +126,7 @@ kind: Component
 metadata:
   name: founder-telemetry
   title: "Telemetry (SigNoz)"
-  description: "Every workload's traces, metrics and logs land here. The telemetry-coverage receipt in the cluster check is the count of pods this backend has seen; the alert rules are declared against it. This is the one tool that asks for a second sign-in: SigNoz community has no OIDC, so the estate login gets you to its door and its own account gets you in. Prometheus and Alertmanager run beside it with no web page of their own, and Grafana is switched off on purpose so there is one place to look, not two."
+  description: "Every workload's traces, metrics and logs land here. The telemetry-coverage receipt in the cluster check is the count of pods this store has seen; the alert rules are declared against it. This is the one tool that asks for a second sign-in: SigNoz's community edition has no single sign-on, so the estate login gets you to its door and its own account gets you in. Prometheus and Alertmanager run beside it with no web page of their own, and Grafana is switched off on purpose so there is one place to look, not two."
   annotations:
     estate/group: "Watch"
     idp/updated-by: "Flux from platform/observability; rows arrive live from the OTel collector"
@@ -178,7 +178,7 @@ kind: Component
 metadata:
   name: founder-login
   title: "The one login (auth)"
-  description: "oauth2-proxy in front of every hostname on the zone; Oracle IDCS is the identity provider. One tool still asks for a second credential after this one: SigNoz, because its community edition has no OIDC. Every other door opens on this login alone, and the hourly login-drill proves it door by door."
+  description: "The login proxy in front of every hostname on the zone; Oracle IDCS is the identity provider. One tool still asks for a second credential after this one: SigNoz, because its community edition has no single sign-on. Every other door opens on this login alone, and the hourly login-drill proves it door by door."
   annotations:
     estate/group: "Build"
     idp/updated-by: "Flux from platform/identity"
@@ -348,7 +348,7 @@ metadata:
     - title: "login-drill: the one login works"
       url: "https://github.com/chidionyema/idp/actions/workflows/login-drill.yml"
       icon: dashboard
-    - title: "kyverno-secrets-drill: policy refuses a bad secret"
+    - title: "Secrets drill: the admission policy refuses a bad secret"
       url: "https://github.com/chidionyema/idp/actions/workflows/kyverno-secrets-drill.yml"
       icon: dashboard
     - title: "portability-drill: the platform hydrates on a cluster with no OCI"
@@ -360,10 +360,10 @@ metadata:
     - title: "vault-seed: put a secret in the vault from CI"
       url: "https://github.com/chidionyema/idp/actions/workflows/vault-seed.yml"
       icon: dashboard
-    - title: "stale: closes a PR idle for 24h, branch kept"
+    - title: "stale: closes a pull request idle for 24h, branch kept"
       url: "https://github.com/chidionyema/idp/actions/workflows/stale.yml"
       icon: dashboard
-    - title: "wake-blocked: reopens a closed PR when its Blocked-by lands"
+    - title: "wake-blocked: reopens a closed pull request when its Blocked-by lands"
       url: "https://github.com/chidionyema/idp/actions/workflows/wake-blocked.yml"
       icon: dashboard
 spec:
@@ -564,14 +564,14 @@ spec:
   owner: group:default/platform
   system: system:default/estate
 ---
-# crew#684 CP1: the Ops dashboard. Nodes ready, pods not ready by namespace, Flux rows not
+# crew#684 CP1: the Ops dashboard. Nodes ready, pods not ready by area of the cluster, Flux rows not
 # ready, read live through the Kubernetes plugin's proxy (ADR 0009 row ops-dashboard-cluster-health).
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: founder-ops
   title: "Ops: the cluster right now"
-  description: "Nodes ready, pods not ready by namespace, and every Flux row that is not ready, re-read every minute while the page is open. A cluster that cannot be read says so instead of showing green."
+  description: "Nodes ready, pods not ready by area of the cluster, and every Flux row that is not ready, re-read every minute while the page is open. A cluster that cannot be read says so instead of showing green."
   annotations:
     estate/group: "Watch"
     idp/updated-by: "backstage/packages/app/src/modules/home/Ops.tsx ships with the portal image; the numbers come from the cluster on every render"
@@ -1101,7 +1101,7 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: founder-collector
-  title: "Telemetry collector (OpenTelemetry k8s-infra)"
+  title: "Telemetry collector (OpenTelemetry Kubernetes collector)"
   description: "The one collector every workload emits to; logs, metrics and traces land here before Telemetry (SigNoz) shows them. No screen of its own."
   annotations:
     github.com/project-slug: chidionyema/idp

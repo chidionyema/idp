@@ -1,3 +1,5 @@
+# button: Refresh the catalogue
+# founder: Reads what is running and rewrites the Backstage catalogue to match, as a pull request or a preview.
 # crew#516 CP3 slice 2: the catalogue render runs off the Mac.
 #
 # Until 2026-08-27 bin/catalog-render ran only as com.estate.catalog-render on the founder's Mac,
@@ -25,7 +27,7 @@ on:
         # No default (crew#684): the estate's clock (platform/drills/drill-dispatcher.yaml) dispatches
         # with no inputs when GitHub drops the cron, and an empty mode publishes exactly as the cron
         # does. The founder's portal button always passes mode itself.
-        description: "dry-run (diff in the summary) or commit (push the branch, open the PR)"
+        description: "Preview (the difference on the run summary) or commit (push the branch and open the pull request)"
         type: choice
         options: [dry-run, commit]
   schedule:

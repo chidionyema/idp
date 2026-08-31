@@ -1,3 +1,5 @@
+# button: Test the move to another cloud
+# founder: Rebuilds the platform from its declarations as if on another cloud and reports what would break.
 # crew#488 CP1: the hydration scenario of docs/prose/cloud-agnostic-drills.feature, run for real.
 #
 # A vanilla k3d cluster on a runner with no OCI identity, Flux installed from its own CLI, one

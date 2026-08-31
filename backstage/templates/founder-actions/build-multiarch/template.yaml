@@ -3,8 +3,9 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-build-multiarch
-  title: 'Run: build-multiarch'
-  description: Dispatches .github/workflows/build-multiarch.yml on main.
+  title: Build every container image
+  description: Builds every container image in this repository for both kinds of machine (Intel and ARM)
+    and publishes them.
   tags:
   - founder-action
   - estate
@@ -12,16 +13,15 @@ spec:
   owner: group:default/platform
   type: founder-action
   parameters:
-  - title: Run build-multiarch
+  - title: Choices for this run
     properties:
       since:
-        title: since
+        title: 'build the images changed since this commit (empty: every image)'
         type: string
-        description: 'build the images changed since this commit (empty: every image)'
         default: ''
   steps:
   - id: dispatch
-    name: Dispatch build-multiarch.yml on main
+    name: Start Build every container image
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -31,5 +31,5 @@ spec:
         since: ${{ parameters.since }}
   output:
     links:
-    - title: Runs of build-multiarch
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/build-multiarch.yml

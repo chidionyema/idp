@@ -1,3 +1,5 @@
+# button: Test the checks against broken targets
+# founder: Breaks each thing the hourly checks watch, on purpose, and proves every check turns red.
 # crew#631 CP8: weekly, every probe is run against a broken target (auth off, database down, an
 # ingest that drops, wrong digest). A probe that passes a broken door is quarantined and the run
 # is red. Then the last 30 real verdicts grade each assertion's graduation: UNPROVEN until it has

@@ -1,3 +1,5 @@
+# button: Test the messaging demos
+# founder: Runs the messaging demos end to end on a clean machine and reports whether each one delivered.
 # Daily drill: the messaging demos (crew#639 CP9) run end to end on a runner with no cluster and
 # no Docker, against the chart's nats-server version and an embedded Postgres. Catalogued in
 # drills/catalogue.yaml as messaging-demo; the drills row of bin/idp-verify grades freshness.

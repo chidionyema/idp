@@ -3,10 +3,8 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-pr-age
-  title: 'Run: pr-age'
-  description: 'crew#607 CP2/CP3: a green PR merges itself; a PR over four hours is told why on its own
-    thread. Founder, 2026-08-28: "why do we have open PRs not merged" / "4 maximum". Hourly so no PR waits
-    on a peer noticing; the job is red exactly when bin/idp-pr-age is (any row over PR_AGE_MAX_H).'
+  title: Tidy old pull requests
+  description: Merges green pull requests and tells the author on the thread when one has waited too long.
   tags:
   - founder-action
   - estate
@@ -16,7 +14,7 @@ spec:
   parameters: []
   steps:
   - id: dispatch
-    name: Dispatch pr-age.yml on main
+    name: Start Tidy old pull requests
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -24,5 +22,5 @@ spec:
       branchOrTagName: main
   output:
     links:
-    - title: Runs of pr-age
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/pr-age.yml

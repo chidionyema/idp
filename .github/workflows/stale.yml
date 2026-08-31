@@ -1,3 +1,5 @@
+# button: Close idle pull requests
+# founder: Labels and closes pull requests that have had no activity for a day.
 # Pull requests with no activity for 24 hours are labelled `stale` and closed in the same run
 # (crew#504 CP2, was 7+7 days under crew#299; actions/stale parses days-before-pr-close with
 # parseInt, so the only sub-day close is 0, and the close comment is the notice). Issues are

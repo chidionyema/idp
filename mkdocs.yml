@@ -64,6 +64,7 @@ nav:
       - Incident register: tutorials/demo/incident-register.md
       - Trace matrix: tutorials/demo/trace-matrix.md
       - Matrix gate: tutorials/demo/matrix.md
+      - Plain English: tutorials/demo/plain-english.md
       - Plist gate: tutorials/demo/plist.md
       - Namespace fences: tutorials/demo/ns-fence-gate.md
       - k8s-infra: tutorials/demo/k8s-infra.md
@@ -122,6 +123,7 @@ nav:
       - Estate next: how-to/onboarding/estate-next.md
       - Plist gate: how-to/onboarding/plist.md
       - Decision matrix: how-to/onboarding/matrix.md
+      - Plain English: how-to/onboarding/plain-english.md
       - Oracle identity: how-to/onboarding/oci.md
       - Flux on OKE: how-to/onboarding/oke.md
       - Cloud-agnostic: how-to/onboarding/cloud-agnostic.md

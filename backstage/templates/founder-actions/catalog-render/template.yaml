@@ -3,13 +3,9 @@ apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: run-catalog-render
-  title: 'Run: catalog-render'
-  description: 'crew#516 CP3 slice 2: the catalogue render runs off the Mac.  Until 2026-08-27 bin/catalog-render
-    ran only as com.estate.catalog-render on the founder''s Mac, because its one input, ~/.estate/state/inventory.json,
-    lived there. estate#9 made the inventory job publish that file to the estate bucket at state/inventory/latest.json,
-    read back. This workflow is the reader: it takes the object, checks out crew beside idp (estate-showcase
-    reads crew/docs/STANDARDS.md through ESTATE_CODE), and runs the same bin/catalog-render.  It started
-    in --dry-run (the diff as the receipt, measured against the Mac r'
+  title: Refresh the catalogue
+  description: Reads what is running and rewrites the Backstage catalogue to match, as a pull request
+    or a preview.
   tags:
   - founder-action
   - estate
@@ -17,18 +13,18 @@ spec:
   owner: group:default/platform
   type: founder-action
   parameters:
-  - title: Run catalog-render
+  - title: Choices for this run
     properties:
       mode:
-        title: mode
+        title: Preview (the difference on the run summary) or commit (push the branch and open the pull
+          request)
         type: string
-        description: dry-run (diff in the summary) or commit (push the branch, open the PR)
         enum:
         - dry-run
         - commit
   steps:
   - id: dispatch
-    name: Dispatch catalog-render.yml on main
+    name: Start Refresh the catalogue
     action: github:actions:dispatch
     input:
       repoUrl: github.com?owner=chidionyema&repo=idp
@@ -38,5 +34,5 @@ spec:
         mode: ${{ parameters.mode }}
   output:
     links:
-    - title: Runs of catalog-render
+    - title: Past runs
       url: https://github.com/chidionyema/idp/actions/workflows/catalog-render.yml
