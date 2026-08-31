@@ -15,10 +15,14 @@ import subprocess
 
 TOOL = pathlib.Path(__file__).resolve().parents[1] / "bin" / "idp-cloud"
 
+# Named KMS_*, not KEY_*: these are fake OCIDs of a KMS key, but gitleaks' generic-api-key
+# rule reads any identifier containing "key" assigned a high-entropy string as a leak, and
+# reddened bin/idp-pr-secrets on this very file (rule=generic-api-key, 2026-08-31). Same
+# class as crew#539. The gate's own instruction is to rename the field, never allow-list it.
 VAULT_A = "ocid1.vault.oc1..estate"
-KEY_A = "ocid1.key.oc1..estatekey"
+KMS_A = "ocid1.key.oc1..estatekey"
 VAULT_B = "ocid1.vault.oc1..stray"
-KEY_B = "ocid1.key.oc1..straykey"
+KMS_B = "ocid1.key.oc1..straykey"
 
 OCI_STUB = """#!/bin/bash
 # Stub OCI CLI: answers the exact calls bin/idp-cloud makes on the secret put road.
@@ -84,7 +88,7 @@ def _put(secret_file, env):
 def test_a_new_secret_is_created_with_the_sibling_secrets_key_when_tofu_is_absent(
     tmp_path,
 ):
-    siblings = [_row(VAULT_A, KEY_A), _row(VAULT_A, KEY_A), _row(VAULT_B, KEY_B)]
+    siblings = [_row(VAULT_A, KMS_A), _row(VAULT_A, KMS_A), _row(VAULT_B, KMS_B)]
     stub_dir, secret_file, env = _arena(tmp_path, siblings)
     r = _put(secret_file, env)
     assert r.returncode == 0, r.stderr
@@ -92,7 +96,7 @@ def test_a_new_secret_is_created_with_the_sibling_secrets_key_when_tofu_is_absen
     created = (stub_dir / "created").read_text().splitlines()
     # The majority vault wins, so one stray secret in a second vault cannot steer the key.
     assert _flag(created, "--vault-id") == VAULT_A
-    assert _flag(created, "--key-id") == KEY_A
+    assert _flag(created, "--key-id") == KMS_A
 
 
 def test_an_empty_compartment_with_no_tofu_is_blind_never_an_empty_key_on_the_wire(
@@ -107,12 +111,12 @@ def test_an_empty_compartment_with_no_tofu_is_blind_never_an_empty_key_on_the_wi
 
 
 def test_the_env_override_is_used_untouched(tmp_path):
-    stub_dir, secret_file, env = _arena(tmp_path, [_row(VAULT_B, KEY_B)])
+    stub_dir, secret_file, env = _arena(tmp_path, [_row(VAULT_B, KMS_B)])
     env["ESTATE_VAULT_OCID"] = VAULT_A
-    env["ESTATE_VAULT_KEY_OCID"] = KEY_A
+    env["ESTATE_VAULT_KEY_OCID"] = KMS_A
     r = _put(secret_file, env)
     assert r.returncode == 0, r.stderr
     created = (stub_dir / "created").read_text().splitlines()
     assert _flag(created, "--vault-id") == VAULT_A
-    assert _flag(created, "--key-id") == KEY_A
-    assert VAULT_B not in created and KEY_B not in created
+    assert _flag(created, "--key-id") == KMS_A
+    assert VAULT_B not in created and KMS_B not in created
