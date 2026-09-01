@@ -40,7 +40,9 @@ TRACE_JSON = "docs/trace-matrix.json"
 # crew#740: the estate-inventory workflow writes these two onto the same branch. This render
 # force-pushes the branch from origin/main, so they are checked out from origin first and staged
 # with the rest; otherwise every render would drop the Ops tile's data.
-CARRIED = ["docs/inventory.json", "docs/inventory.md"]
+# crew#684: docs/reports/ (the portal's Reports page: index.json and one markdown file per report,
+# written by estate-state.yml and estate-inventory.yml) rides on the same branch and is carried too.
+CARRIED = ["docs/inventory.json", "docs/inventory.md", "docs/reports"]
 INV = Path(os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json"))
 
 

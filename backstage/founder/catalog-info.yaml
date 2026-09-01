@@ -629,6 +629,28 @@ spec:
   owner: group:default/platform
   system: system:default/estate
 ---
+# crew#684 (founder 2026-09-01: "can we automate all reports, need report tab in Backstage"): every
+# report the estate writes on a clock, on one page, each dated and red when it is late.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-reports
+  title: "Reports: what the estate wrote for you"
+  description: "Every report produced on a clock: what Flux has applied (every 15 minutes, from the cluster receipt) and how often work lands right first time (once a day, from GitHub). Each shows when it was produced and goes red when it is older than twice its schedule; a source that could not be read says so instead of an empty table."
+  annotations:
+    estate/group: "Watch"
+    idp/updated-by: "backstage/packages/app/src/modules/home/Reports.tsx ships with the portal image; the reports are written to the state branch by .github/workflows/estate-state.yml and estate-inventory.yml through bin/idp-reports-render"
+  tags: [founder]
+  links:
+    - title: "Open"
+      url: "https://catalogue.${ESTATE_ZONE}/reports"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
 # crew#562 (ADR 0009 decision founder-screen-access, path 1 of 3): Sunshine on the estate Mac,
 # Moonlight on the phone; the PIN goes from the founder's thumb to the Mac through this page.
 apiVersion: backstage.io/v1alpha1

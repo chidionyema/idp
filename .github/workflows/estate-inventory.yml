@@ -13,11 +13,14 @@ on:
     - cron: "23 2 * * *"
   workflow_dispatch:
   pull_request:
-    paths: [".github/workflows/estate-inventory.yml", "bin/idp-inventory", "bin/idp-estate-audit", "platform/inventory/**"]
+    paths: [".github/workflows/estate-inventory.yml", "bin/idp-inventory", "bin/idp-estate-audit", "bin/idp-reports-render", "platform/inventory/**"]
 permissions:
   contents: read
   id-token: write   # traded for the OCI session (discovery search, state bucket, vault reads)
   packages: write   # the artifact push uses GITHUB_TOKEN, like estate-state
+  actions: read     # the delivery report reads workflow runs (bin/idp-reports-render first-time-success)
+  checks: read      # and the check runs on each merged pull request's first commit
+  pull-requests: read
 # contents: read holds for the job that touches the planes; the one write (the state branch the
 # Ops tile reads) is a separate job below with its own scope and nothing but the two table files.
 concurrency:
@@ -126,6 +129,13 @@ jobs:
           else
             echo "no table was written; read the inventory step above"
           fi
+      - name: render the delivery report for the portal's Reports page (crew#684, founder 2026-09-01)
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bin/idp-reports-render first-time-success --days 14 --out-dir "$RUNNER_TEMP/inventory/reports" | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
@@ -133,6 +143,7 @@ jobs:
           path: |
             ${{ runner.temp }}/inventory/inventory.md
             ${{ runner.temp }}/inventory/inventory.json
+            ${{ runner.temp }}/inventory/reports/*
           if-no-files-found: warn
       - name: publish the table next to the estate state document (same door as estate-state)
         if: github.event_name != 'pull_request'
@@ -177,7 +188,23 @@ jobs:
           git config user.name "estate-inventory"
           git config user.email "estate-inventory@users.noreply.github.com"
           git add docs/inventory.json docs/inventory.md
+          # crew#684: the delivery report and its index entry ride on the same commit. The index is
+          # upserted by id so the Flux report estate-state.yml writes every 15 minutes is kept.
+          if compgen -G "$RUNNER_TEMP/inventory/reports/*.md" >/dev/null; then
+            mkdir -p docs/reports
+            cp "$RUNNER_TEMP"/inventory/reports/*.md docs/reports/
+            [ -s docs/reports/index.json ] || echo '{"reports":[]}' > docs/reports/index.json
+            for frag in "$RUNNER_TEMP"/inventory/reports/*.meta.json; do
+              jq --slurpfile e "$frag" '.reports = (((.reports // []) | map(select(.id != $e[0].id))) + $e | sort_by(.id)) | .updated_at = (now | todate)' docs/reports/index.json > docs/reports/index.json.new
+              mv docs/reports/index.json.new docs/reports/index.json
+            done
+            git add docs/reports
+          fi
           if git diff --cached --quiet; then echo "ok      inventory  state branch already holds this table"; exit 0; fi
           git commit -q -m "docs(inventory): estate inventory from the control planes, run $GITHUB_RUN_ID (crew#740)"
-          git push -q origin HEAD:refs/heads/state/live-diagram
+          for attempt in 1 2 3; do
+            git push origin HEAD:refs/heads/state/live-diagram && break
+            echo "retry $attempt: another writer pushed first; rebasing"
+            git pull --rebase origin state/live-diagram
+          done
           echo "ok      inventory  docs/inventory.json on state/live-diagram; the Ops tile reads it within a minute"
