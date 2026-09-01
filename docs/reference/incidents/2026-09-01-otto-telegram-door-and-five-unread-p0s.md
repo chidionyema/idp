@@ -129,11 +129,11 @@ page (row 1 above).
 
 The founder said "get the cluster stable" at 12:3xZ, and the first cluster read since 00:15Z settled it. Flux applied the listener fix at 12:14Z and cert-manager ordered a fresh certificate (`prospector-edge-tls-7`), but the challenge for `otto.mumchimp.com` never presented. Its reason, verbatim from the challenge object:
 
-> admission webhook "validate.kyverno.svc-fail" denied the request: Service prospector/cm-acme-http-solver-g94gg serves a port but names no catalogue entity.
+> `admission webhook "validate.kyverno.svc-fail" denied the request: Service prospector/cm-acme-http-solver-g94gg serves a port but names no catalogue entity.`
 
-The Kyverno rule `service-names-its-entity` (policy `require-catalogue-entity`, `platform/edge`) has been in Enforce since 2026-08-29T07:32Z. cert-manager mints a Service and an HTTPRoute for every HTTP-01 challenge and labels them `acme.cert-manager.io/http01-solver`; neither carries a catalogue label, so the rule refuses both. The last certificate that issued (order 6) predates the rule by two days. Every edge renewal since then was refused at admission.
+The Kyverno rule `service-names-its-entity` (policy `require-catalogue-entity`, `platform/edge`) has been in Enforce since 2026-08-29T07:32Z. cert-manager mints a `Service` and an `HTTPRoute` for every HTTP-01 challenge and labels them `acme.cert-manager.io/http01-solver`; neither carries a catalogue label, so the rule refuses both. The last certificate that issued (order 6) predates the rule by two days. Every edge renewal since then was refused at admission.
 
-So two defects stacked. The two listeners without a resolving record made the shared order fail (prospector PR #803, merged 12:11Z). The catalogue rule then refused the solver of every order, including the clean one. The fix for the second is a policy exception keyed on the solver label, in no namespace, with a test that refuses a future exception that drops the label (`tests/test_incident_crew768_acme_solver_passes_the_catalogue_rule.py`).
+So two defects stacked. The two listeners without a resolving record made the shared order fail (prospector pull request [803](https://github.com/chidionyema/prospector/pull/803), merged 12:11Z). The catalogue rule then refused the solver of every order, including the clean one. The fix for the second is a policy exception keyed on the solver label, not pinned to one project, with a test that refuses a future exception that drops the label (`tests/test_incident_crew768_acme_solver_passes_the_catalogue_rule.py`).
 
 What this changes in the rows above: the door probe and the `Certificate Ready=False` rule are still the alarm; the class fix is now also "a new Enforce rule is graded against every controller that mints objects" before it merges.
 
