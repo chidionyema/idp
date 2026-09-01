@@ -346,3 +346,15 @@ drills:
       The main branch of every repository the estate App can see is free of hardcoded estate
       names: the gate refuses its bad fixture before grading anyone, then grades every clone,
       so a literal that reaches any main is a red row within six hours, never a silent drift.
+  - name: otto-staging
+    owner: idp
+    workflow: oke-check.yml
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    pending: true
+    proves: >-
+      The staging Otto answers from outside the cluster: the health endpoint on the
+      otto host returns 200 and the Telegram webhook path refuses a plain GET (the
+      probe is quoted in docs/runbooks/otto-staging.md). Pending until the founder
+      deploys platform/otto-staging; the oke-check job lands with the deploy and
+      this line comes off.
