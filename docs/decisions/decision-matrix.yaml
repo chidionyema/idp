@@ -450,3 +450,48 @@ decisions:
           portability:         {score: 1, evidence: "https://auth0.com/docs/troubleshoot/customer-support/manage-subscriptions"}   # the customers are the vendor's rows; leaving asks every customer to set a password again
           operability:         {score: 5, evidence: "https://auth0.com/docs/get-started"}                                          # nothing of ours to operate
           cost:                {score: 2, evidence: "https://auth0.com/pricing"}                                                   # priced per monthly active user, forever, on a shop we intend to grow
+  - slug: estate-scheduler
+    requirement: "one estate clock on the cluster instead of the Mac: runs every scheduled tick the launchd jobs run today, one pane showing every clock, hybrid compute so Mac-bound work still runs on the Mac (crew#716; the Mac is 16 GB and sacred)"
+    date: 2026-09-01
+    status: decided
+    next_review: 2026-12-01
+    decision: dagster   # 405 vs windmill 365 vs temporal 325; the gap is outside tie_band 25. Temporal already lost the infra lane on the founder's word (crew#695: Windmill is its named fallback; Temporal stays for the enterprise lane), and Dagster beats Windmill on schedule lineage and licence.
+    receipt: "https://github.com/chidionyema/crew/issues/716"
+    reviews: []
+    candidates:
+      dagster:
+        note: "Dagster OSS by HelmRelease (platform/dagster/dagster.yaml): webserver, daemon, schedules and runs in one pane; hybrid: a Mac agent can take Mac-bound ticks"
+        scores:
+          first_time_user:     {score: 4, evidence: "docs/demo/dagster.md"}                                                        # one demo doc, no local install; the chart brings everything
+          founder_experience:  {score: 4, evidence: "docs/onboarding/dagster.md"}                                                  # one pane: every clock, last tick, next tick — no terminal
+          feature_parity:      {score: 5, evidence: "https://docs.dagster.io/guides/automate/schedules"}                            # schedules, sensors, backfills, run history, alerting hooks
+          ecosystem_fit:       {score: 4, evidence: "platform/dagster/dagster.yaml"}                                                # a Flux HelmRelease on the platform layer, image pull from the estate registry
+          maturity:            {score: 4, evidence: "https://github.com/dagster-io/dagster"}                                        # 12k+ stars, Dagster Labs behind it, monthly releases; younger than Temporal
+          security_by_default: {score: 3, evidence: "platform/edge/dagster-exception.yaml"}                                         # OSS webserver ships no auth; reached only through the edge, exception scoped in this PR
+          portability:         {score: 5, evidence: "https://github.com/dagster-io/dagster/blob/master/LICENSE"}                    # Apache-2.0, one chart and a Postgres; leaves the vendor in a day
+          operability:         {score: 4, evidence: "clusters/oke/platform.yaml"}                                                   # healthChecks on the HelmRelease, waits on edge and secret-store
+          cost:                {score: 4, evidence: "platform/dagster/dagster.yaml"}                                                # webserver+daemon on the existing 4-6 OCPU cluster, no licence
+      windmill:
+        note: "Windmill OSS: scripts, flows and schedules with built-in auth; the founder's named fallback for Temporal in the infra lane (crew#695)"
+        scores:
+          first_time_user:     {score: 4, evidence: "https://www.windmill.dev/docs/getting_started/how_to_use_windmill"}            # quick to first schedule; concepts are scripts and flows
+          founder_experience:  {score: 4, evidence: "https://www.windmill.dev/docs/core_concepts/scheduling"}                       # good UI over schedules and runs
+          feature_parity:      {score: 4, evidence: "https://www.windmill.dev/docs/core_concepts/jobs"}                             # schedules and flows yes; no asset/run lineage across ticks
+          ecosystem_fit:       {score: 3, evidence: "https://www.windmill.dev/docs/advanced/self_host"}                             # self-hosts fine; nothing on the layer uses it yet
+          maturity:            {score: 3, evidence: "https://github.com/windmill-labs/windmill"}                                     # active and growing; the company and community are younger
+          security_by_default: {score: 4, evidence: "https://www.windmill.dev/docs/core_concepts/authentification"}                 # auth and SSO in the OSS core
+          portability:         {score: 3, evidence: "https://github.com/windmill-labs/windmill/blob/main/LICENSE-AGPL"}             # AGPLv3 core, some features behind the enterprise licence
+          operability:         {score: 4, evidence: "https://www.windmill.dev/docs/advanced/self_host#helm-chart"}                  # one chart and a Postgres
+          cost:                {score: 4, evidence: "https://www.windmill.dev/docs/misc/plans_details"}                             # OSS core free; small footprint
+      temporal:
+        note: "Temporal self-hosted: durable workflow engine; already ruled out of the infra lane by the founder (crew#695), kept for the enterprise product lane"
+        scores:
+          first_time_user:     {score: 2, evidence: "https://docs.temporal.io/self-hosted-guide"}                                   # server, workers, SDKs and workflow concepts before the first tick
+          founder_experience:  {score: 3, evidence: "https://docs.temporal.io/web-ui"}                                              # the UI shows workflows, not a clock table
+          feature_parity:      {score: 4, evidence: "https://docs.temporal.io/schedule"}                                            # schedules exist, but the product is durable execution, not a scheduler pane
+          ecosystem_fit:       {score: 3, evidence: "https://docs.temporal.io/self-hosted-guide/setup"}                             # nothing else on the layer speaks it; a second workflow runtime
+          maturity:            {score: 5, evidence: "https://github.com/temporalio/temporal"}                                       # battle-proven at scale, the reference for durable execution
+          security_by_default: {score: 3, evidence: "https://docs.temporal.io/self-hosted-guide/security"}                          # mTLS and authorizer are configuration, not default
+          portability:         {score: 4, evidence: "https://github.com/temporalio/temporal/blob/main/LICENSE"}                     # MIT; but data lives in its own Cassandra/Postgres schema
+          operability:         {score: 2, evidence: "https://docs.temporal.io/self-hosted-guide/setup"}                             # four services plus a database to size and patch
+          cost:                {score: 2, evidence: "https://docs.temporal.io/self-hosted-guide/production-checklist"}               # multi-service footprint on a 4-6 OCPU cluster budget
