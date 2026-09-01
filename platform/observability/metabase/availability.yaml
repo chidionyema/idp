@@ -1,0 +1,14 @@
+# crew#539: a founder-facing surface survives losing one node.
+# 2026-08-28 06:20-06:39Z one node was cordoned, the single metabase pod had nowhere to land, and
+# the surface answered 503. maxUnavailable 1 is deliberate: a budget whose floor equals the replica
+# count refuses every drain for ever. Graded by bin/idp-availability-gate in bin/idp-ci.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: metabase
+  namespace: observability
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: metabase
