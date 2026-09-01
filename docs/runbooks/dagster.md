@@ -3,7 +3,7 @@
 ## Who does what
 
 - **Founder**: Merges the branch after `APPROVE: crew#716`
-- **Flux**: Reconciles the HelmRelease
+- **Flux**: Reconciles the chart install
 - **You**: Monitors the rollout
 
 ## Verification after merge
@@ -45,7 +45,7 @@ kubectl rollout restart deployment/estate-scheduler -n dagster
 
 ### Postgres PVC backup
 
-**Not yet implemented** (crew#716 CP3).
+**Not yet implemented**: backups land with a later checkpoint of [the scheduler move](https://github.com/chidionyema/crew/issues/716).
 
 The postgres data is stored in a PVC:
 ```bash
@@ -64,7 +64,7 @@ kubectl run backup --rm -i --tty --image=docker.io/library/busybox:1.28 -- \
   tar xzf - -C /tmp/backup
 ```
 
-CP3 will add automated backups.
+A later checkpoint adds automated backups.
 
 ### Debugging a schedule
 

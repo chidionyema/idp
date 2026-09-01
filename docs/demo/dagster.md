@@ -31,4 +31,4 @@ Every schedule follows the same pattern:
 
 ## Accessing from the Mac screen
 
-Before crew#716, Dagster was accessed through the Mac screen at port 3210. Now it runs on the cluster and the catalogue provides a direct link to the component.
+Before this move, Dagster was reached through the Mac screen at port 3210. Now it runs on the cluster and the catalogue provides a direct link to the component.

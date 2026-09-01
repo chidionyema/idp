@@ -40,7 +40,7 @@ The build runs in GitHub Actions (see `.github/workflows/build-multiarch.yml`).
 
 ### Step 4: Flux rolls the deployment
 
-Flux reconciles the `dagster-user-deployments` HelmRelease in namespace `dagster`:
+Flux reconciles the `dagster-user-deployments` chart install in the `dagster` area of the cluster:
 - Detects the new image tag from the ImagePolicy
 - Rolls the `estate-scheduler` Deployment
 - The new code location is loaded automatically
@@ -58,7 +58,7 @@ kubectl get pods -n dagster -l backstage.io/kubernetes-id=estate-scheduler
    - On new image, updates the tag in `platform/dagster/dagster.yaml`
 
 2. **Flux reconciliation** (clusters/oke/platform.yaml row `dagster`):
-   - Pulls the updated HelmRelease
+   - Pulls the updated chart install
    - Updates the user-code deployment
 
 3. **Dagster**:

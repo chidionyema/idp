@@ -1,4 +1,4 @@
-# crew#396 step 4: the receipt. Every 15 minutes the init container asks the engine where the
+# The receipt. Every 15 minutes the init container asks the engine where the
 # KINI run is (`sovereign.cli kini receipt`: verdict line, then JSON) and the main container
 # puts it in the drill-receipts bucket as state/kini from the node's instance principal, the
 # same path platform/state/cluster-state.yaml uses. Reader: bin/idp-kini-state, job kini-state

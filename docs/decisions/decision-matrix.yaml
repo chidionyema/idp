@@ -456,7 +456,7 @@ decisions:
     status: decided
     next_review: 2026-12-01
     decision: dagster   # 405 vs windmill 365 vs temporal 325; the gap is outside tie_band 25. Temporal already lost the infra lane on the founder's word (crew#695: Windmill is its named fallback; Temporal stays for the enterprise lane), and Dagster beats Windmill on schedule lineage and licence.
-    receipt: "https://github.com/chidionyema/crew/issues/716"
+    receipt: "https://github.com/chidionyema/crew/issues/716#issuecomment-5497878063"
     reviews: []
     candidates:
       dagster:

@@ -1,4 +1,4 @@
-# The hourly drills run on the estate's clock, not GitHub's (crew#554 CP3).
+# The hourly drills run on the estate's clock, not GitHub's.
 #
 # crew#648 (2026-08-30): the same for the 15-minute estate-state producer. Measured over 60h,
 # ping.yml's `*/5` cron fired 10 times (05:53, 00:42, 22:36, 19:59, 17:40Z ...) against 720

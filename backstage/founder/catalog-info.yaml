@@ -765,7 +765,7 @@ kind: Component
 metadata:
   name: estate-scheduler
   title: "Scheduler (Dagster, on the cluster)"
-  description: "The estate's clock: every scheduled job, its last run and its next run, on the cluster instead of the founder's laptop (crew#716)."
+  description: "The estate's clock: every scheduled job, its last run and its next run, on the cluster instead of the founder's laptop."
   annotations:
     github.com/project-slug: chidionyema/idp
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/platform/dagster/
