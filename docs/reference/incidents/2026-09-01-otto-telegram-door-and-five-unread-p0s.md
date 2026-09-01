@@ -22,7 +22,7 @@ issues about other things and nobody had read those either.
 
 | When | What | Receipt |
 |------|------|---------|
-| 08-31 23:07 | [The storefront change](https://github.com/chidionyema/prospector/pull/800) adds the `https-otto` listener to the shared edge Gateway | `deploy/k8s/base/edge.yaml` (prospector) |
+| 08-31 23:07 | [The storefront change](https://github.com/chidionyema/prospector/pull/800) adds the `https-otto` listener to the shared edge Gateway | `prospector/deploy/k8s/base/edge.yaml` (prospector) |
 | 08-31 23:18 | [The platform change](https://github.com/chidionyema/idp/pull/1078) switches Otto from polling to the webhook at `otto.<zone>/telegram` | `platform/hermes-agent/gateway.yaml:315` |
 | 09-01 00:15 | cert-manager opens an Order for the new names; three `cm-acme-http-solver` pods appear in `prospector` and stay | [founder's doctor run at 06:18Z](https://github.com/chidionyema/idp/actions/runs/33477023541) |
 | 09-01 05:01:50 | Flux `scheduling` fails: `mutate.kyverno.svc-fail … EOF` | [Flux event run](https://github.com/chidionyema/idp/actions/runs/33472027384); [P0 issue](https://github.com/chidionyema/idp/issues/1101) opened at 05:02:04 |
@@ -107,7 +107,7 @@ accepted the mechanism and left three threads open. Two close from git and publi
   were authorised on 2026-08-27 and need no new challenge. The third solver is otto's own, starved
   by the order it shares with the two dead names. No third dead listener exists.
 - **Rule or hand-deletion?** The fix commit (`1b053318`) deletes the two listeners and pins the
-  remaining set in `tests/unit/test_edge_platform_listeners.py`. That is an instance fix with a
+  remaining set in `prospector/tests/unit/test_edge_platform_listeners.py`. That is an instance fix with a
   list, not the input-side rule "no listener without a resolving record" — that rule is still to
   build, and it belongs with the containment fix below.
 - **Drop, or publish DNS?** Drop. The alert console and the metrics store are the monitoring plane;
