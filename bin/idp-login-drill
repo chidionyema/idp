@@ -423,6 +423,8 @@ with sync_playwright() as p:
         # last row comment-free: tests slice this tuple by text and a trailing comment eats the ")".
         ("tools", "text=Every tool we use"),
         ("ops", "text=The cluster right now"),
+        # crew#718: the Cluster doctor tile (K8sGPT's findings) is on the page, not only the heading.
+        ("ops", "text=Cluster doctor"),
         ("pair", "text=Type the PIN Moonlight shows you"),
         ("estate", "text=to find · Enter opens the first"),
     )

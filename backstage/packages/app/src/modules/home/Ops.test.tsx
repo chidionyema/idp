@@ -18,6 +18,7 @@ import { INVENTORY_JSON } from './inventory';
 import { Ops } from './Ops';
 import { HELMRELEASES, KUSTOMIZATIONS, NODES, PODS } from './useClusterHealth';
 import { ALERTS } from './useOpenReds';
+import { DOCTOR_DEPLOYMENTS, RESULTS } from './useFindings';
 
 const entities: Entity[] = [
   {
@@ -303,6 +304,65 @@ describe('Ops', () => {
     expect(screen.getByTestId('ops-inventory')).toHaveTextContent(
       'The full table',
     );
+  });
+
+  it('draws the cluster doctor tile from the K8sGPT Result objects (crew#718)', async () => {
+    await render({
+      [DOCTOR_DEPLOYMENTS]: [
+        {
+          metadata: { name: 'estate', namespace: 'healing' },
+          status: { readyReplicas: 1, replicas: 1 },
+        },
+      ],
+      [RESULTS]: [
+        {
+          metadata: {
+            name: 'healingestate7c9d',
+            namespace: 'healing',
+            creationTimestamp: new Date(Date.now() - 40 * 60_000).toISOString(),
+          },
+          spec: {
+            kind: 'Pod',
+            name: 'llm/litellm-7c9d',
+            backend: 'openai',
+            error: [{ text: 'Back-off restarting failed container' }],
+            details:
+              'The container keeps crashing because its database is unreachable.\nCheck the pgbouncer Service.',
+          },
+        },
+      ],
+    });
+    expect(await screen.findByTestId('ops-doctor-sentence')).toHaveTextContent(
+      'The cluster doctor (K8sGPT) has 1 finding, newest first.',
+    );
+    expect(screen.getByTestId('ops-doctor')).toHaveAttribute(
+      'data-running',
+      'yes',
+    );
+    const finding = screen.getByTestId('ops-finding');
+    expect(finding).toHaveTextContent('Pod llm/litellm-7c9d');
+    expect(finding).toHaveTextContent('40m ago');
+    expect(finding).toHaveTextContent('Back-off restarting failed container');
+    expect(finding).toHaveTextContent('Check the pgbouncer Service.');
+  });
+
+  it('says the doctor is not running instead of a quiet green tile', async () => {
+    await render({});
+    expect(await screen.findByTestId('ops-doctor-sentence')).toHaveTextContent(
+      'The cluster doctor (K8sGPT) is not running, so nothing has been checked.',
+    );
+    expect(screen.getByTestId('ops-doctor')).toHaveAttribute(
+      'data-running',
+      'no',
+    );
+  });
+
+  it('says the doctor could not be read when the Result list answers an error', async () => {
+    await render({}, true);
+    expect(await screen.findByTestId('ops-doctor-error')).toHaveTextContent(
+      'answered 503',
+    );
+    expect(screen.queryByTestId('ops-doctor')).toBeNull();
   });
 
   it('says the inventory is unknown when inventory.json cannot be read', async () => {

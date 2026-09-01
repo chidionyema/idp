@@ -20,7 +20,7 @@ spec:
             owner: idp
           annotations:
             summary: "K8sGPT: {{ $labels.kind }} {{ $labels.name }} needs attention"
-            description: "K8sGPT has reported this object as broken for 10 minutes. Read its diagnosis: break-glass playbook `diagnose` (k8sgpt-results row) or the Result object in namespace healing."
+            description: "K8sGPT has reported this object as broken for 10 minutes. Read its diagnosis on the Ops page, Cluster doctor tile (catalogue /ops); the break-glass playbook `diagnose` prints the same Result object."
         - alert: K8sGPTBlind
           expr: increase(k8sgpt_number_of_failed_backend_ai_calls[30m]) > 0 or absent(k8sgpt_number_of_results)
           for: 15m

@@ -48,6 +48,11 @@ rules:
   - apiGroups: [""]
     resources: [services/proxy]
     verbs: [get]
+  # crew#718: the Ops page's Cluster doctor tile lists K8sGPT's Result objects (its diagnoses,
+  # platform/healing) so the founder reads them; until 2026-09-01 nobody could. Read only.
+  - apiGroups: [core.k8sgpt.ai]
+    resources: [results]
+    verbs: [get, list, watch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

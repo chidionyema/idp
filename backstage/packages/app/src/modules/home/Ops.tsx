@@ -23,6 +23,8 @@ import {
   planeSentence,
 } from './inventory';
 import { useInventory } from './useInventory';
+import { Doctor, doctorSentence } from './findings';
+import { useFindings } from './useFindings';
 import { ago } from './estate';
 import { monoFamily } from '../theme/tokens';
 
@@ -80,6 +82,14 @@ const useStyles = makeStyles(theme => ({
   },
   unowned: { color: theme.palette.error.main, fontWeight: 600 },
   scroll: { overflowX: 'auto' },
+  // A diagnosis is the model's own paragraphs; keep its line breaks, never its width.
+  details: {
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'anywhere',
+    fontSize: 13,
+    margin: theme.spacing(0.5, 0, 0),
+  },
+  finding: { marginBottom: theme.spacing(1) },
 }));
 
 export const TITLE = 'Ops';
@@ -288,6 +298,47 @@ const HealthchecksTile = ({ data }: { data: Checks }) => {
   );
 };
 
+// crew#718: what the cluster doctor found, in the model's own words. Until 2026-09-01 K8sGPT
+// wrote every diagnosis to a Result object nobody opened (founder: "no black boxes in estate").
+// The tile says whether the doctor is running, so an empty list is never mistaken for health.
+const DoctorTile = ({ doctor, now }: { doctor: Doctor; now: number }) => {
+  const classes = useStyles();
+  return (
+    <div
+      className={classes.tile}
+      data-testid="ops-doctor"
+      data-running={doctor.running ? 'yes' : 'no'}
+    >
+      <div className={classes.tileTop}>
+        <span className={classes.tileTitle}>Cluster doctor</span>
+      </div>
+      <p data-testid="ops-doctor-sentence">{doctorSentence(doctor)}</p>
+      {doctor.findings.length > 0 && (
+        <ul className={classes.list}>
+          {doctor.findings.map(f => (
+            <li
+              key={f.key}
+              data-testid="ops-finding"
+              className={classes.finding}
+            >
+              <span className={classes.mono}>{f.object}</span>{' '}
+              <span className={classes.mono} title={f.since}>
+                {ago(f.since, now) ?? ''}
+              </span>
+              {f.seen.map(s => (
+                <div key={s} className={classes.mono}>
+                  {s}
+                </div>
+              ))}
+              {f.details && <p className={classes.details}>{f.details}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
 // crew#740: what every plane actually holds, graded against git, from the table the inventory
 // workflow publishes on the state branch. An unread plane is said so, never a green zero.
 const InventoryTile = ({ data, now }: { data: InventoryData; now: number }) => {
@@ -339,6 +390,7 @@ export const Ops = () => {
   const founder = useFounder();
   const checks = useHealthchecks();
   const inventory = useInventory();
+  const findings = useFindings();
   const now = Date.now();
   return (
     <Page themeId="home">
@@ -389,6 +441,15 @@ export const Ops = () => {
             <div className={classes.tile} data-testid="ops-inventory-error">
               The estate inventory could not be read, so it is unknown.{' '}
               <span className={classes.mono}>{inventory.error}</span>
+            </div>
+          )}
+          {findings.state === 'ready' && (
+            <DoctorTile doctor={findings.doctor} now={now} />
+          )}
+          {findings.state === 'error' && (
+            <div className={classes.tile} data-testid="ops-doctor-error">
+              The cluster doctor could not be read, so its findings are unknown.{' '}
+              <span className={classes.mono}>{findings.error}</span>
             </div>
           )}
           {founder.state === 'error' && (

@@ -228,3 +228,10 @@ kubernetes:
           # Kubernetes tab shows CPU and memory used against requested (founder 2026-08-29:
           # "i need all metrics exposed ... on backstage").
           skipMetricsLookup: false
+  # crew#718: K8sGPT's diagnoses are Result objects (core.k8sgpt.ai). Listed here, the Kubernetes
+  # tab of an entity whose label selector matches them (founder-healing) shows each one, and the
+  # Ops page's Cluster doctor tile reads the same objects through the plugin's proxy.
+  customResources:
+    - group: core.k8sgpt.ai
+      apiVersion: v1alpha1
+      plural: results

@@ -998,14 +998,21 @@ kind: Component
 metadata:
   name: founder-healing
   title: "Self-healing (k8sgpt, Robusta, descheduler)"
-  description: "k8sgpt explains a failing pod in plain words, Robusta acts on it, and the descheduler moves pods off a crowded node. No screen; their findings arrive as alerts."
+  description: "k8sgpt (the cluster doctor) explains a failing pod in plain words, Robusta acts on it, and the descheduler moves pods off a crowded node. Read the doctor's findings on the Ops page, Cluster doctor tile; the Kubernetes tab here lists the same Result objects."
   annotations:
+    # crew#718: the operator labels every Result with the K8sGPT object's name, so this selector
+    # lists the doctor's diagnoses on the Kubernetes tab (kubernetes.customResources in app-config).
+    backstage.io/kubernetes-namespace: healing
+    backstage.io/kubernetes-label-selector: "k8sgpts.k8sgpt.ai/name=estate"
     github.com/project-slug: chidionyema/idp
     backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/
     estate/group: "Kubernetes tooling"
     idp/updated-by: "Flux from platform/healing"
-  tags: [founder, kubernetes, no-screen]
+  tags: [founder, kubernetes]
   links:
+    - title: "Open (the Cluster doctor tile on the Ops page)"
+      url: "https://catalogue.${ESTATE_ZONE}/ops"
+      icon: dashboard
     - title: "Manifests"
       url: "https://github.com/chidionyema/idp/blob/main/platform/healing"
       icon: github
