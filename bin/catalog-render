@@ -43,7 +43,8 @@ TRACE_JSON = "docs/trace-matrix.json"
 # crew#786: the Mac sessions publish docs/FEED.md (and an hourly docs/NEXT.md) from feed-guard;
 # the render carries both across renders, reads FEED.md as estate-next's input, and re-renders
 # NEXT.md from it, so a published page is never older than the last render.
-CARRIED = ["docs/inventory.json", "docs/inventory.md", "docs/FEED.md", "docs/NEXT.md"]
+CARRIED = ["docs/inventory.json", "docs/inventory.md"]
+CARRIED += ["docs/FEED.md", "docs/NEXT.md"]  # the feed and its answer ride the same carry (crew#786)
 INV = Path(os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json"))
 
 

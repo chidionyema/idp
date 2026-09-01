@@ -83,7 +83,7 @@ jobs:
             rclone copyto ":s3:$BUCKET/state/feed/latest.md" "$RUNNER_TEMP/feed.md" --s3-no-check-bucket 2>/dev/null || true
             if [ -s "$RUNNER_TEMP/feed.md" ]; then
               echo "feed taken from the bucket, last handoff $(grep -E '^## ' "$RUNNER_TEMP/feed.md" | tail -1 | cut -c4-40)" | tee -a "$GITHUB_STEP_SUMMARY"
-            else echo "feed: not published yet (state/live-diagram and bucket both empty), NEXT.md renders BLIND" | tee -a "$GITHUB_STEP_SUMMARY"; fi
+            else echo "feed: not in the bucket yet (state/live-diagram and bucket both empty), NEXT.md renders BLIND" | tee -a "$GITHUB_STEP_SUMMARY"; fi
           fi
       # idp#769: auto-merge armed under GITHUB_TOKEN merges as github-actions[bot] and starts no
       # workflow on main; the App's token arms it as an App push.
