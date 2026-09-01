@@ -26,6 +26,12 @@ data:
   # recompile: every compiled workload follows, the agents never notice.
   ESTATE_REGISTRY: "ghcr.io/chidionyema"
   ESTATE_STORAGE_PROVIDER: "oci"
+  # Founder 2026-09-02: "estate dna is missing email address, basically core company info that
+  # can change". The estate's contact address — ACME/cert contact, catalog owner mail, anywhere a
+  # surface needs "who runs this" — is referenced as ${ESTATE_EMAIL}, never a literal. Same rule
+  # as every key here: change it once, recompile/reconcile, everything follows; bin/intent-compile
+  # refuses any intent that speaks it.
+  ESTATE_EMAIL: "chidionyema@gmail.com"
   # crew#516 CP5, founder's locked spec (crew#66 5451926212): the founder's Mac, reached by mac-run
   # (platform/hermes-agent/mac-run.tpl) over the Tailscale sidecar's SOCKS5 proxy, and named in
   # platform/tailscale/policy.hujson's ssh rule (bin/idp-tailscale-policy reads FOUNDER_MAC_USER

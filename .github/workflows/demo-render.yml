@@ -23,10 +23,24 @@ jobs:
           python-version: '3.11'
       - name: dependencies the demos exercise
         run: pip install jsonschema pyyaml
+      - name: install vhs and dependencies
+        run: |
+          # vhs ships from Charm's own apt repository (https://github.com/charmbracelet/vhs#installation)
+          sudo mkdir -p /etc/apt/keyrings
+          curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list
+          sudo apt-get update
+          sudo apt-get install -y vhs ffmpeg
+          # ttyd, pinned release (no unauthenticated latest-lookup flake)
+          curl -sL "https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64" -o /tmp/ttyd
+          chmod +x /tmp/ttyd && sudo mv /tmp/ttyd /usr/local/bin/ttyd
       - name: render every tape
-        uses: charmbracelet/vhs-action@v2
-        with:
-          path: demos/intent-compiler.tape
+        run: |
+          for tape in demos/*.tape; do
+            if [ -f "$tape" ]; then
+              vhs < "$tape"
+            fi
+          done
       - name: commit the rendered demo back
         run: |
           git config user.name 'estate-agents[bot]'
