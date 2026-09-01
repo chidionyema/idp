@@ -1,0 +1,16 @@
+# Notifications row (STANDARDS.md). Apprise API is the single fan-out engine: publish once, deliver
+# everywhere (R75). Named channels define the routing (founder-telegram, Slack, email). All credentials
+# come from the vault, never inline. A surface that sends uses /notify/<channel> and never learns the
+# backend URL or the key.
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    # Never garbage-collected by Flux: a namespace moved between Kustomization rows or
+    # dropped from git stays, with everything in it (portal 404, 2026-08-29 01:05Z, idp#648).
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: notify
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    availability.idp/tier: platform
+    idp.estate/edge-attach: "true"
