@@ -12,7 +12,7 @@ Type "# Generate the catalogue from the estate's inventory"
 Enter
 Type "INV=tests/fixtures/inventory.json OUT=/tmp/demo-cat ESTATE_ENV=dev python3 bin/catalog-gen"
 Enter
-Sleep 3s
+Sleep 6s
 Type "# Verify every Component in the catalogue carries a URL"
 Enter
 Type "python3 bin/catalog-links-check /tmp/demo-cat/catalog-info.yaml"
@@ -22,7 +22,7 @@ Type "# Run again — the output is deterministic"
 Enter
 Type "INV=tests/fixtures/inventory.json OUT=/tmp/demo-cat2 ESTATE_ENV=dev python3 bin/catalog-gen"
 Enter
-Sleep 2s
+Sleep 6s
 Type "diff -q /tmp/demo-cat/catalog-info.yaml /tmp/demo-cat2/catalog-info.yaml"
 Enter
 Sleep 3s
