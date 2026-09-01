@@ -1,5 +1,5 @@
 # Metabase's application-database password (crew#R74 CP1). Generated here so no person ever
-# types it; platform/observability/metabase/external-secret.yaml reads it from the vault for
+# types it; platform/observability/metabase-external-secret.yaml reads it from the vault for
 # both the app (MB_DB_PASS) and its Postgres (POSTGRES_PASSWORD_FILE).
 resource "random_password" "metabase_db" {
   length  = 32
