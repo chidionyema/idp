@@ -656,7 +656,7 @@ kind: Component
 metadata:
   name: company-mumchimp
   title: "Mumchimp — our company: the store, and Prospector, its idea engine"
-  description: "One company. The storefront, its API and everything that takes a customer's money — and Prospector, the business-idea and prospect engine it grew from. The two read as one company; the catalogue's deeper split merges on the founder's word (crew#799)."
+  description: "One company. The storefront, its API and everything that takes a customer's money — and Prospector, the business-idea and prospect engine it grew from. The two read as one company; the catalogue's deeper split merges on the founder's word."
   annotations:
     estate/group: "Companies"
     idp/updated-by: "bin/catalog-gen builds the company tree under this card from the inventory, four times a day"
