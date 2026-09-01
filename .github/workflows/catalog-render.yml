@@ -72,12 +72,19 @@ jobs:
           set -euo pipefail
           rclone copyto ":s3:$BUCKET/state/inventory/latest.json" "$RUNNER_TEMP/inventory.json" --s3-no-check-bucket
           python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("inventory taken", d.get("at"), "assets", len(d.get("rows",[])))' "$RUNNER_TEMP/inventory.json" | tee -a "$GITHUB_STEP_SUMMARY"
-          # the session feed (estate#10 publishes it beside the inventory); absent = estate-next says BLIND itself
-          # rclone copyto exits 0 for an absent object (run 33102084969 said "feed taken" with no file): the file is the receipt
-          rclone copyto ":s3:$BUCKET/state/feed/latest.md" "$RUNNER_TEMP/feed.md" --s3-no-check-bucket 2>/dev/null || true
+          # crew#786: the Mac sessions publish the feed to state/live-diagram. Try that first, fall back to bucket.
+          # The render script also carries the feed from the branch, so this is a second source for redundancy.
+          git -C idp fetch --depth 1 origin state/live-diagram 2>/dev/null || true
+          git -C idp show origin/state/live-diagram:docs/FEED.md > "$RUNNER_TEMP/feed.md" 2>/dev/null || true
           if [ -s "$RUNNER_TEMP/feed.md" ]; then
-            echo "feed taken, last handoff $(grep -E '^## ' "$RUNNER_TEMP/feed.md" | tail -1 | cut -c4-40)" | tee -a "$GITHUB_STEP_SUMMARY"
-          else echo "feed: not in the bucket yet (state/feed/latest.md), NEXT.md renders BLIND" | tee -a "$GITHUB_STEP_SUMMARY"; fi
+            echo "feed taken from state/live-diagram, last handoff $(grep -E '^## ' "$RUNNER_TEMP/feed.md" | tail -1 | cut -c4-40)" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            # rclone copyto exits 0 for an absent object (run 33102084969 said "feed taken" with no file): the file is the receipt
+            rclone copyto ":s3:$BUCKET/state/feed/latest.md" "$RUNNER_TEMP/feed.md" --s3-no-check-bucket 2>/dev/null || true
+            if [ -s "$RUNNER_TEMP/feed.md" ]; then
+              echo "feed taken from the bucket, last handoff $(grep -E '^## ' "$RUNNER_TEMP/feed.md" | tail -1 | cut -c4-40)" | tee -a "$GITHUB_STEP_SUMMARY"
+            else echo "feed: not in the bucket yet (state/live-diagram and bucket both empty), NEXT.md renders BLIND" | tee -a "$GITHUB_STEP_SUMMARY"; fi
+          fi
       # idp#769: auto-merge armed under GITHUB_TOKEN merges as github-actions[bot] and starts no
       # workflow on main; the App's token arms it as an App push.
       - id: app
