@@ -94,6 +94,7 @@ nav:
       - Spec gate: tutorials/demo/spec-gate.md
       - Estate diagram: tutorials/demo/estate-diagram.md
       - Catalog render: tutorials/demo/catalog-render.md
+      - Estate clocks: tutorials/demo/estate-clocks.md
       - owner-account: tutorials/demo/owner-account.md
       - static-secret: tutorials/demo/static-secret.md
       - Bind audit: tutorials/demo/bind-audit.md
@@ -186,3 +187,4 @@ nav:
       - Scheduling immunity: how-to/onboarding/scheduling-immunity.md
       - Founder god's view: how-to/onboarding/estate-founder.md
       - Incident register: how-to/onboarding/incident-register.md
+      - Estate clocks: how-to/onboarding/estate-clocks.md
