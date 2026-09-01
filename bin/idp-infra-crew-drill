@@ -32,10 +32,15 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
 IDP = Path(__file__).resolve().parents[1]
+# Ages are measured against GitHub's own clock, never this machine's (crew#583): the Date header
+# of a response GitHub just served is the same authority that stamped created_at.
+sys.path.insert(0, str(IDP / "bin" / "lib"))
+from receipt_age import served_now  # noqa: E402 - path has to be set before the import
+
 CLAIM_MARK = "Optimised:"  # the plan comment's last line; the crew's own claim mark (src/infra_crew/main.py)
 TRACE_NAME = "infra-crew.run"  # the root span the crew opens on every worked ticket
 
@@ -101,7 +106,13 @@ def langfuse_traces(host: str, pk: str, sk: str, since: datetime) -> int | None:
 
 
 def main() -> int:
-    now = datetime.now(timezone.utc)
+    now = served_now()
+    if now is None:
+        row(
+            "BLIND",
+            "GitHub did not answer `gh api -i rate_limit` with a Date header; no age can be measured",
+        )
+        return 2
     grace = timedelta(minutes=float(os.environ.get("INFRA_CREW_GRACE_MINUTES", "60")))
     window = timedelta(hours=float(os.environ.get("INFRA_CREW_WINDOW_HOURS", "24")))
     label = os.environ.get("INFRA_CREW_QUEUE_LABEL", "lane:infra")
