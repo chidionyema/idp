@@ -82,7 +82,7 @@ spec:
             periodSeconds: 30
             failureThreshold: 3
           resources:
-            requests: { cpu: 100m, memory: 512Mi }
+            requests: { cpu: 50m, memory: 512Mi }
             limits: { cpu: 1000m, memory: 2Gi }
           volumeMounts:
             - { name: tmp, mountPath: /tmp }

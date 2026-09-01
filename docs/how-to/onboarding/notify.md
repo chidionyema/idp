@@ -1,16 +1,16 @@
-# Onboarding: Apprise API fan-out notifications (R75)
+# Onboarding: Fan-out notifications with Apprise
 
 ## What it is
 
 Apprise API is the platform's single notification endpoint. A surface sends one POST to
 `/notify/founder-telegram` with a title and body. The platform fan-out reaches Telegram, Slack,
-email, Discord or any backend Apprise supports. Every channel owns its own backend URL(s) and
+email, Discord or any service Apprise supports. Every channel owns its own delivery URLs and
 credentials, stored in the vault as `notify-apprise-<channel>`. Callers never learn what they are.
 
 ## What it costs
 
 No cost for using it. Slack and email incur no platform overhead; Telegram is on the founder's
-personal account. Each new backend URL is one vault entry and one line in
+personal account. Each new channel URL is one vault entry and one line in
 `platform/notify/external-secret.yaml`.
 
 ## Where it lives
@@ -81,6 +81,6 @@ Delete the GitHub secret `SEED_NOTIFY_APPRISE_FOUNDER_TELEGRAM` and comment out 
 `external-secret.yaml`. The next apply removes the channel URL from the vault; the pod continues
 running but that channel never fires.
 
-To disable the entire notify platform row, remove the `notify` Kustomization from
-`clusters/oke/platform.yaml` and apply. The namespace and all its objects are garbage-collected.
+To disable the entire notify platform row, remove the `notify` row from
+`clusters/oke/platform.yaml` and apply. That whole area of the cluster, and everything in it, is removed.
 

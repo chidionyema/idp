@@ -1,7 +1,7 @@
-# Demo: Apprise API, one endpoint to everywhere (R75)
+# Demo: One endpoint to everywhere with Apprise
 
 Apprise publishes once and delivers to Telegram, Slack, email, Discord and 100+ other services
-from a single HTTP POST. The platform names the channels in the vault and never exposes a backend
+from a single HTTP POST. The platform names the channels in the vault and never exposes a delivery
 URL or key to the caller. A surface posts to `/notify/founder-telegram` and reaches the founder's
 phone every time.
 

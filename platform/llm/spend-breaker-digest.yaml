@@ -22,8 +22,8 @@ data:
     # Spend velocity checker: query LiteLLM database, check hourly spend.
     set -e
     
-    MAX_SPEND="${SPEND_VELOCITY_MAX_DOLLARS:-10.0}"
-    COOLDOWN="${SPEND_VELOCITY_COOLDOWN_SECONDS:-1800}"
+    MAX_SPEND="$${SPEND_VELOCITY_MAX_DOLLARS:-10.0}"
+    COOLDOWN="$${SPEND_VELOCITY_COOLDOWN_SECONDS:-1800}"
     STATE_FILE="/tmp/spend_velocity_state"
     
     # Query LiteLLM PostgreSQL for spend in the last hour
@@ -48,14 +48,14 @@ data:
     # Check if breaker should close
     if [ "$BREAKER_UNTIL" -gt "$NOW" ]; then
       REMAINING=$((BREAKER_UNTIL - NOW))
-      echo "SPEND_VELOCITY: Breaker OPEN, spend $HOURLY_SPEND (limit $MAX_SPEND), resets in ${REMAINING}s (trip #$TRIP_COUNT)"
+      echo "SPEND_VELOCITY: Breaker OPEN, spend $HOURLY_SPEND (limit $MAX_SPEND), resets in $${REMAINING}s (trip #$TRIP_COUNT)"
     else
       # Check if spend exceeded
       if [ "$(echo "$HOURLY_SPEND > $MAX_SPEND" | bc)" = "1" ]; then
         TRIP_COUNT=$((TRIP_COUNT + 1))
         BREAKER_UNTIL=$((NOW + COOLDOWN))
         echo "SPEND_VELOCITY: ALERT - hourly spend \$$HOURLY_SPEND exceeds limit \$$MAX_SPEND"
-        echo "SPEND_VELOCITY: Breaker OPEN for ${COOLDOWN}s (trip #$TRIP_COUNT)"
+        echo "SPEND_VELOCITY: Breaker OPEN for $${COOLDOWN}s (trip #$TRIP_COUNT)"
         # Save state
         mkdir -p "$(dirname "$STATE_FILE")"
         echo "breaker_until=$BREAKER_UNTIL" > "$STATE_FILE"
@@ -152,13 +152,13 @@ data:
         # Build message
         lines = [
             f"Spend digest: {hour_start.strftime('%Y-%m-%d %H:00')} UTC",
-            f"Total hourly spend: ${total_spend:.2f}",
+            f"Total hourly spend: $${total_spend:.2f}",
             "",
             "Spend by team:",
         ]
         
         for team, calls, spend in team_spend:
-            lines.append(f"  {team}: ${spend:.2f} ({calls} calls)")
+            lines.append(f"  {team}: $${spend:.2f} ({calls} calls)")
         
         # Add breaker status
         lines.append("")
@@ -327,6 +327,8 @@ spec:
                 - name: shared
                   mountPath: /shared
                   readOnly: true
+                - name: tmp
+                  mountPath: /tmp
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
@@ -344,4 +346,6 @@ spec:
                 secretName: litellm-upstream
             - name: shared
               emptyDir: { sizeLimit: 512Mi }
+            - name: tmp
+              emptyDir: {}
 

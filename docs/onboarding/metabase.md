@@ -1,12 +1,12 @@
 # Getting started with Metabase dashboards
 
-Metabase is the boardroom view of LLM traces: query Langfuse data, build dashboards, share insights. The founder is auto-enrolled as an admin on first sign-in.
+Metabase is the boardroom view of LLM traces: query Langfuse data, build dashboards, share insights. The founder is enrolled as an admin automatically on first sign-in.
 
 ## Steps
 
 1. Open https://metabase.${ESTATE_ZONE} in a browser.
-2. Sign in with your estate login (one-click OIDC, no password).
-3. Metabase auto-detects you are an admin and lets you configure data sources if needed:
+2. Sign in with your estate login (one-click single sign-on, no password).
+3. Metabase recognises you as an admin and lets you configure data sources if needed:
    - Source: PostgreSQL
    - Host: langfuse-postgresql.observability.svc.cluster.local (or ask for the connection string)
    - Database: langfuse
