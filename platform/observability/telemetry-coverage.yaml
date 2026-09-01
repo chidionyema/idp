@@ -1,4 +1,4 @@
-# crew#320 / LAW 50 (founder, 2026-08-27): "every workload emits telemetry to SigNoz, and the
+# Founder, 2026-08-27: "every workload emits telemetry to SigNoz, and the
 # coverage is verified by querying the backend, not by scanning files."
 #
 # Every 15 minutes a Job-owned pod asks two questions and diffs the answers: the API server for

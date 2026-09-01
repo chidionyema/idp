@@ -1,4 +1,4 @@
-# crew#345 (founder, 2026-08-26: "zero-touch OCI auth, no local oci session authenticate").
+# Founder, 2026-08-26: "zero-touch OCI auth, no local oci session authenticate."
 # Every session that wanted to know the cluster's state ran `oci session authenticate` on a laptop,
 # because control_plane_allowed_cidrs admits only the Mac (platform/oci/main.tf:20). Same pattern
 # as the crew#292 chaos receipt: the answer is written from inside, read from outside.

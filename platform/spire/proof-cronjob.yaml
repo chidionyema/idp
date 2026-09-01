@@ -1,4 +1,4 @@
-# crew#227 CP4: a workload that holds an SVID, on the cluster, every 15 minutes, with no hand.
+# A workload that holds an SVID, on the cluster, every 15 minutes, with no hand.
 # platform/spire/proof.yaml is the same fetch as a one-shot Job for `make spire-proof` on k3d; this
 # CronJob is the Flux-managed copy for OKE. The cluster-state receipt (platform/state/cluster-state.yaml)
 # lists every pod that mounts csi.spiffe.io under spiffe.csi_workloads, so this pod is the row that
