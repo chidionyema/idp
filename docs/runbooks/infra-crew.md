@@ -100,8 +100,6 @@ and a trace in Langfuse. If nothing happens within an hour the drill goes red an
 
 ## Not done
 
-- The router has no embedding alias yet (`llm/config.yaml`); the workload names `openai/embed`
-  and the first run refuses to boot until that row exists.
 - The crew reads the router with the router's own key; a virtual key minted for this crew alone,
   with its own budget, replaces that line when the router's key management is on.
 - The `agents_enabled` toggle (switch 2) is not built; the board ticket above tracks it.
