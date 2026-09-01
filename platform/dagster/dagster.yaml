@@ -120,9 +120,14 @@ spec:
         limits:
           cpu: 100m
           memory: 128Mi
-      # require-pod-probes: the chart renders no daemon probe unless livenessProbe is non-empty;
-      # left without an exec field it fills in its own `dagster-daemon liveness-check`.
+      # require-pod-probes needs a daemon probe, and chart 1.13.19 renders this block verbatim
+      # (templates/deployment-daemon.yaml toYaml's it), so the handler must be spelled out here:
+      # a probe without one is refused by the API server (incident 2026-09-01, HelmRelease Failed).
       livenessProbe:
+        exec:
+          command:
+            - dagster-daemon
+            - liveness-check
         initialDelaySeconds: 60
         periodSeconds: 30
         timeoutSeconds: 10
