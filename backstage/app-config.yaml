@@ -11,12 +11,64 @@ app:
     # bookmark) a client-side ERROR 404 while the login drill, visiting "/", stayed green.
     # crew#307. The Home page takes "/".
     #
-    # The home plugin's widget grid, its toolkit (whose links pointed at 127.0.0.1) and the
-    # "Welcome to Backstage" card are gone: packages/app/src/modules/home overrides
-    # `page:home` with the founder god view, read from the catalogue (crew#459).
+    # The front page is Backstage's own home page (founder, 2026-09-01: "use Backstage
+    # templates"). The grid below is the plugin's `defaultConfig` (plugin-home 0.9.9): a search
+    # bar, then the ten doors as the toolkit, starred entities, and the pages the person visited.
+    # A person can move, resize and add widgets on the page itself. Between 2026-08-29 (crew#459)
+    # and today packages/app/src/modules/home overrode this page with a hand-drawn god view;
+    # that page is kept at /estate.
     - page:home:
         config:
           path: /
+          defaultConfig:
+            - component: HomePageSearchBar
+              column: 0
+              row: 0
+              width: 12
+              height: 2
+              deletable: false
+            - component: HomePageToolkit
+              column: 0
+              row: 2
+              width: 6
+              height: 6
+            - component: HomePageStarredEntities
+              column: 6
+              row: 2
+              width: 6
+              height: 4
+            - component: HomePageRecentlyVisited
+              column: 6
+              row: 6
+              width: 6
+              height: 4
+            - component: HomePageMostVisited
+              column: 0
+              row: 8
+              width: 6
+              height: 4
+    # Visit tracking feeds the "Recently visited" and "Most visited" widgets; it is off in the
+    # plugin until switched on here, and it stores visits in the browser.
+    - api:home/visits: true
+    - app-root-element:home/visit-listener: true
+    # A joke widget and world clocks in the "Add widget" dialog of a platform that is for sale.
+    - home-page-widget:home/random-joke: false
+    - home-page-widget:home/world-clock: false
+    # The toolkit is the same ten doors as the menu, in the same order
+    # (packages/app/src/modules/nav/EstateNav.tsx); a test holds the two lists equal.
+    - home-page-widget:home/toolkit:
+        config:
+          tools:
+            - { url: /, label: Today, icon: dashboard }
+            - { url: '/catalog?filters%5Bkind%5D=Component', label: Kubernetes, icon: 'kind:resource' }
+            - { url: /catalog, label: What we run, icon: catalog }
+            - { url: /create, label: Create, icon: scaffolder }
+            - { url: /catalog-graph, label: Map, icon: 'kind:system' }
+            - { url: /tools, label: Tools, icon: 'kind:component' }
+            - { url: /ops, label: Ops, icon: warning }
+            - { url: /search, label: Find, icon: search }
+            - { url: /docs, label: How-to, icon: docs }
+            - { url: /settings, label: You, icon: user }
 
     # crew#612 CP5: no empty tab on an entity page. The TechDocs content ships with no filter,
     # so every one of the 338 entities grew a "TechDocs" tab and 334 of them opened on an
