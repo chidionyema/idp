@@ -160,7 +160,9 @@ def main() -> int:
     if a.zone:
         print("\n".join(sorted(zs)))
         return 0
-    pat = re.compile(r"(?<![A-Za-z0-9-])(" + "|".join(re.escape(z) for z in sorted(zs)) + r")(?![A-Za-z0-9-])")
+    # The left boundary admits "-" on purpose: a shell default `${X:-zone}` is the commonest way
+    # a literal hides (the store's verify_store.sh:24 read green until crew#796).
+    pat = re.compile(r"(?<![A-Za-z0-9])(" + "|".join(re.escape(z) for z in sorted(zs)) + r")(?![A-Za-z0-9-])")
     if a.diff:
         try:
             diff = pathlib.Path(a.diff).read_text(errors="replace")
