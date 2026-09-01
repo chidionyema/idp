@@ -1,4 +1,4 @@
-# Onboarding: estate-clocks
+# Onboarding the estate-clocks tool
 
 `bin/estate-clocks` writes `docs/scheduling/CLOCKS.md`, the one page that answers "what runs on a
 clock, where, and when" — so nobody reads twenty source files to find out.

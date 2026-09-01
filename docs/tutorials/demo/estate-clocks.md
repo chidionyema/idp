@@ -1,4 +1,4 @@
-# Demo: estate-clocks
+# The estate-clocks demo
 
 The founder asked for one page naming every clock in the estate, after scheduled jobs ended up
 scattered across the cluster, this machine and GitHub with no single place listing them. The
