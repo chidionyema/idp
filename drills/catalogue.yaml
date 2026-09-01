@@ -107,6 +107,19 @@ drills:
       of it dying); the receipt is written from the node's identity and graded by
       bin/idp-chaos-drill langfuse-alert-drill alert-drill (age max 194h).
 
+  - name: infra-crew
+    owner: idp
+    workflow: oke-check.yml
+    job: infra-crew
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    proves: >-
+      The infrastructure crew is taking its queue, read from outside the cluster: no open board
+      ticket with the crew's label has waited more than an hour without a plan comment, and every
+      plan comment the crew left in the last day has a matching trace in Langfuse
+      (bin/idp-infra-crew-drill, as the estate's own GitHub identity). A queued ticket left
+      unplanned, or work with no trace, is the red.
+
   - name: cluster-state
     owner: idp
     workflow: oke-check.yml
@@ -309,3 +322,16 @@ drills:
       lock-out, stretches a session to a day or adds a web address a sign-in may be sent back to
       is named within a day instead of living unseen. Pending until the sign-in service is
       turned on; the check itself is proved today against two shipped exports.
+
+  - name: dagster
+    owner: idp
+    workflow: oke-check.yml
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    pending: true
+    proves: >-
+      The estate scheduler answers from the cluster, read from outside it: the Dagster
+      webserver's readiness endpoint responds and the daily tick left a run newer than a
+      day (the probe is quoted in docs/runbooks/dagster.md). Pending until the founder
+      deploys platform/dagster; the oke-check job lands with the deploy and this line
+      comes off.

@@ -38,3 +38,6 @@ resources:
   # (securityContext, seccomp, dropped capabilities, a read-only root, probes); this excuses the
   # last two, which the autoscaler's argv-only node-pool interface makes impossible to satisfy.
   - autoscaler-exception.yaml
+  # crew#716 CP1: the dagster chart passes postgres password through env.valueFrom.secretKeyRef
+  # (DAGSTER_PG_PASSWORD, POSTGRES_PASSWORD); no file form exists without a wrapper.
+  - dagster-exception.yaml

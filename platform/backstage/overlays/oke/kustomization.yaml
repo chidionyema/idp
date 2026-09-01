@@ -34,7 +34,7 @@ images:
     newName: ghcr.io/chidionyema/backstage
     # image-automation-controller rewrites this line from ImagePolicy flux-system/backstage
     # (platform/image-automation/backstage.yaml, crew#267); the marker is how it finds the line.
-    newTag: main-3177-e1bcf949ce85acac4be67dd743405ab0ca0b177a # {"$imagepolicy": "flux-system:backstage:tag"}
+    newTag: main-3190-163d6cd80ed13f49faf85032005e6580fa070501 # {"$imagepolicy": "flux-system:backstage:tag"}
   # OKE's CRI-O enforces fully qualified names: `postgres:17.6-alpine` failed with
   # "short name mode is enforcing" on 2026-08-25. k3d resolves either form. The name now
   # arrives qualified from the base, so this entry no longer renames anything; it is kept
@@ -134,6 +134,11 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value: {name: HEALTHCHECKS_HOST, value: "hc.${ESTATE_ZONE}"}
+      # crew#716 CP1: the estate's scheduler is now on the cluster (Dagster). The catalogue's
+      # Dagster entity provider reads this URL from backstage/app-config.yaml:207-213.
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: DAGSTER_GRAPHQL_URL, value: "http://dagster-dagster-webserver.dagster.svc:80/graphql"}
       # crew#562: Sunshine's Basic-auth header as a mounted file for the /sunshine proxy
       # endpoint (app-config.container.yaml). optional: false, like backstage-env: a pod that
       # cannot pair the founder's phone is not a pod that should report Ready.

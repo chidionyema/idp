@@ -93,7 +93,10 @@ nav:
       - Estate security rollout: tutorials/demo/estate-security-rollout.md
       - Spec gate: tutorials/demo/spec-gate.md
       - Estate diagram: tutorials/demo/estate-diagram.md
+      - Spend breaker: tutorials/demo/spend-breaker.md
+      - Notifications: tutorials/demo/notify.md
       - Catalog render: tutorials/demo/catalog-render.md
+      - Estate clocks: tutorials/demo/estate-clocks.md
       - owner-account: tutorials/demo/owner-account.md
       - static-secret: tutorials/demo/static-secret.md
       - Bind audit: tutorials/demo/bind-audit.md
@@ -139,6 +142,8 @@ nav:
       - k8s-infra: how-to/onboarding/k8s-infra.md
       - Langfuse: how-to/onboarding/langfuse.md
       - SigNoz: how-to/onboarding/signoz.md
+      - Spend breaker: how-to/onboarding/spend-breaker.md
+      - Notifications: how-to/onboarding/notify.md
       - Manifests: how-to/onboarding/manifests.md
       - MCP: how-to/onboarding/mcp.md
       - Sovereign bus: how-to/onboarding/sb.md
@@ -186,3 +191,4 @@ nav:
       - Scheduling immunity: how-to/onboarding/scheduling-immunity.md
       - Founder god's view: how-to/onboarding/estate-founder.md
       - Incident register: how-to/onboarding/incident-register.md
+      - Estate clocks: how-to/onboarding/estate-clocks.md

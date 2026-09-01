@@ -68,6 +68,11 @@ SYSTEMS = {
 
 # kustomization name -> (area, plain title, one sentence)
 LAYERS = {
+    "notify": (
+        "observability",
+        "Notification fan-out",
+        "One place every alert goes; it delivers to the founder's phone and any channel after it.",
+    ),
     "external-secrets": (
         "delivery",
         "Secrets bridge",
@@ -199,6 +204,11 @@ LAYERS = {
         "Workload autoscaler",
         "Scales a workload on its queue or its traffic, to zero when idle.",
     ),
+    "dagster": (
+        "scheduling",
+        "The estate clock",
+        "Runs the estate's schedules from the cluster, off the Mac; every run and its logs on one screen.",
+    ),
     "temporal": (
         "scheduling",
         "Workflows",
@@ -268,6 +278,11 @@ LAYERS = {
         "agents",
         "Agent tools",
         "The tools an agent may use, behind one gateway with one audit log.",
+    ),
+    "infra-crew": (
+        "agents",
+        "Infrastructure crew",
+        "The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.",
     ),
     "hindsight": (
         "agents",

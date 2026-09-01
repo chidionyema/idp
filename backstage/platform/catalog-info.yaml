@@ -382,6 +382,31 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-dagster
+  title: 'The estate clock'
+  description: 'Runs the estate''s schedules from the cluster, off the Mac; every run and its logs on one screen.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=dagster'
+    estate/flux-kustomization: 'dagster'
+    estate/path: './platform/dagster'
+    estate/cluster: 'oke'
+  tags: [platform, scheduling]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: scheduling
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-edge
+    - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-dns
   title: 'DNS'
   description: 'Every hostname the estate answers to, managed from git.'
@@ -800,6 +825,34 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-infra-crew
+  title: 'Infrastructure crew'
+  description: 'The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=infra-crew'
+    estate/flux-kustomization: 'infra-crew'
+    estate/path: './platform/infra-crew'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+    - url: https://langfuse.${ESTATE_ZONE}
+      title: 'Model traces'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+    - component:default/layer-alerts-github
+    - component:default/layer-llm
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-keda
   title: 'Workload autoscaler'
   description: 'Scales a workload on its queue or its traffic, to zero when idle.'
@@ -998,6 +1051,30 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-notify
+  title: 'Notification fan-out'
+  description: 'One place every alert goes; it delivers to the founder''s phone and any channel after it.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=notify'
+    estate/flux-kustomization: 'notify'
+    estate/path: './platform/notify'
+    estate/cluster: 'oke'
+  tags: [platform, observability]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: observability
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-observability
   title: 'Traces and model calls'
   description: 'Where every request and every model call is kept and searched.'
@@ -1028,14 +1105,14 @@ apiVersion: backstage.io/v1alpha1
 kind: API
 metadata:
   name: observability-api
-  description: 'Traces and model calls: the HTTP interface, answering at langfuse.${ESTATE_ZONE} and signoz.${ESTATE_ZONE}.'
+  description: 'Traces and model calls: the HTTP interface, answering at langfuse.${ESTATE_ZONE} and metabase.${ESTATE_ZONE} and signoz.${ESTATE_ZONE}.'
 spec:
   type: openapi
   lifecycle: production
   owner: group:default/platform
   system: system:default/observability
   definition: |
-    # Not published. observability answers at langfuse.${ESTATE_ZONE} and signoz.${ESTATE_ZONE}; this entity
+    # Not published. observability answers at langfuse.${ESTATE_ZONE} and metabase.${ESTATE_ZONE} and signoz.${ESTATE_ZONE}; this entity
     # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1

@@ -9,6 +9,7 @@ resources:
   - availability.yaml
   - httproute.yaml
   - edge-manners.yaml
+  - spend-breaker-digest.yaml
 configMapGenerator:
   # The router config is the file, not a copy of it. tests/test_llm_row.py holds
   # platform/llm/config.yaml to llm/config.yaml model for model.

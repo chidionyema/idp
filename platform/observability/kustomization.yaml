@@ -10,6 +10,11 @@ resources:
   - langfuse.yaml
   - httproute.yaml
   - edge-manners.yaml
+  - metabase-external-secret.yaml
+  - metabase-postgres.yaml
+  - metabase-deployment.yaml
+  - metabase-availability.yaml
+  - metabase-httproute.yaml
 configMapGenerator:
   - name: signoz-values
     files:

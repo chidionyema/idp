@@ -32,6 +32,10 @@ data:
   # as every key here: change it once, recompile/reconcile, everything follows; bin/intent-compile
   # refuses any intent that speaks it.
   ESTATE_EMAIL: "chidionyema@gmail.com"
+  # The GitHub account that owns the estate repositories (crew#729 step 3): the infrastructure
+  # crew reads its board and its law files under this owner (platform/infra-crew). Flux envsubst
+  # is strict and takes no shell modifiers, so the owner cannot be cut from the line above.
+  ESTATE_GITHUB_OWNER: chidionyema
   # crew#516 CP5, founder's locked spec (crew#66 5451926212): the founder's Mac, reached by mac-run
   # (platform/hermes-agent/mac-run.tpl) over the Tailscale sidecar's SOCKS5 proxy, and named in
   # platform/tailscale/policy.hujson's ssh rule (bin/idp-tailscale-policy reads FOUNDER_MAC_USER

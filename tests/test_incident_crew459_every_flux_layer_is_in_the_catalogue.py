@@ -58,3 +58,13 @@ def test_the_portal_reads_the_platform_catalogue_and_may_read_flux():
     assert "kustomize.toolkit.fluxcd.io" in rbac and "kustomizations" in rbac
     overlay = open(os.path.join(ROOT, "platform/backstage/overlays/oke/kustomization.yaml")).read()
     assert "platform-catalog" in overlay
+
+
+def test_the_notify_fanout_layer_is_catalogued():
+    """The 2026-09-01 release wave shipped the notification fan-out; the incident this file
+    guards is a layer that runs with no catalogue row, and notify was the newest instance."""
+    assert "notify" in _kustomizations(), "the notify layer is not a Flux Kustomization"
+    comps = {e["metadata"]["annotations"]["estate/flux-kustomization"]: e for e in _entities() if e["kind"] == "Component"}
+    e = comps.get("notify")
+    assert e, "the notify layer has no catalogue entity"
+    assert e["metadata"]["title"] and e["metadata"]["description"].endswith("."), "notify has no plain-English row"

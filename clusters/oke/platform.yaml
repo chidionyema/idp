@@ -409,6 +409,68 @@ spec:
       - kind: Secret
         name: github-app
 ---
+# The infrastructure crew (crew#729 step 3): a crewAI CronJob that takes a `lane:infra` board
+# ticket to a plan comment and a pull request. No RBAC, no cluster hand; the founder merges and
+# deploys. After scheduling (its priority class), secret-store (the vault), alerts-github (the
+# App Secret its token generator reads through strict envsubst) and llm (the router it calls).
+# `wait: true` on a CronJob proves the objects applied, nothing more: a CronJob carries no
+# readiness, so kstatus reads it Current the moment it exists. Whether a run succeeds is read
+# from outside by the infra-crew drill (drills/catalogue.yaml), never from this row.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infra-crew
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/infra-crew
+  prune: true
+  postBuild:
+    substituteFrom:
+      # OTLP_ENDPOINT and ESTATE_GITHUB_OWNER: one value each in estate-config (LAW 46).
+      - kind: ConfigMap
+        name: estate-config
+      # The estate-agents App's id and installation id for the GithubAccessToken generator;
+      # rendered into flux-system by platform/alerts-github/github-app.yaml from the vault.
+      - kind: Secret
+        name: github-app
+  dependsOn:
+    - name: scheduling
+    - name: secret-store
+    - name: alerts-github
+    - name: llm
+  wait: true
+  timeout: 10m
+---
+# crew#716 CP1: the estate scheduler (Dagster) on the cluster instead of the Mac.
+# After edge (Kyverno policies) and secret-store (the image pull secret).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: dagster
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/dagster
+  prune: true
+  dependsOn:
+    - name: scheduling
+    - name: edge
+    - name: secret-store
+  wait: true
+  timeout: 15m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: dagster
+      namespace: dagster
+---
 # crew#345: the cluster writes its own state receipt to Object Storage every 15 minutes, so no
 # session needs a kube path or `oci session authenticate` to read it (bin/idp-cluster-state).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -884,3 +946,30 @@ spec:
   prune: true
   wait: true
   timeout: 10m
+---
+# Notifications row (R75 founder spec 2026-08-29): Apprise API, the single fan-out engine. Publish
+# once, deliver everywhere. Named channels (founder-telegram, Slack, email) route to distinct
+# backends; every surface sends a POST to /notify/<channel> and never learns the URL or the key.
+# After secret-store (the channel URLs live in the vault).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: notify
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/notify
+  prune: true
+  dependsOn:
+    - name: scheduling
+    - name: secret-store
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: apprise
+      namespace: notify

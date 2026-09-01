@@ -19,6 +19,7 @@ spec:
         - https://${ESTATE_ZONE}
         - https://auth.${ESTATE_ZONE}
         - https://catalogue.${ESTATE_ZONE}
+        - https://catalogue.${ESTATE_ZONE}/catalog/default/component/estate-scheduler
         - https://catalogue.${ESTATE_ZONE}/catalog/default/domain/hermes-v2
         - https://catalogue.${ESTATE_ZONE}/catalog/default/domain/mumchimp
         - https://catalogue.${ESTATE_ZONE}/catalog/default/domain/prospector
@@ -42,6 +43,8 @@ spec:
         - https://llm.${ESTATE_ZONE}/
         - https://llm.${ESTATE_ZONE}/ui
         - https://mcp.${ESTATE_ZONE}/github/mcp
+        - https://metabase.${ESTATE_ZONE}
+        - https://metabase.${ESTATE_ZONE}/api/health
         - https://signoz.${ESTATE_ZONE}
         - https://t.me/Ottototbot
         - https://www.${ESTATE_ZONE}

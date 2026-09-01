@@ -1,0 +1,359 @@
+# THE ESTATE SCHEDULER (crew#716): Dagster on the cluster instead of the Mac.
+#
+# Dagster chart 1.13.19 / app 1.13.19. The scheduler runs the estate's scheduled jobs
+# (science, catalogue) and serves the UI at DAGSTER_GRAPHQL_URL. The user-code deployment
+# (estate-scheduler) loads scheduler/workspace.yaml and the facts location from the crew checkout.
+# crew#716 CP1: the Mac scheduler moves onto the cluster; CP2 will add the postgres backup.
+#
+# WHY DAGSTER. The estate already runs it (Mac scheduler), it serves every use case the founder
+# has today (hourly CronJobs, scheduled science runs, the facts source), and it has a first-party
+# Helm chart that bundles postgres. One tool instead of stitching: the headline's rule.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: dagster
+  namespace: dagster
+spec:
+  interval: 24h
+  url: https://dagster-io.github.io/helm
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: dagster
+  namespace: dagster
+spec:
+  interval: 10m
+  timeout: 15m
+  chart:
+    spec:
+      chart: dagster
+      version: "1.13.19"
+      sourceRef:
+        kind: HelmRepository
+        name: dagster
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # Internal name: dagster. The webserver Service is dagster-dagster-webserver.dagster.svc:80.
+    global:
+      postgresqlSecretName: dagster-postgresql-secret
+      generatePostgresqlPasswordSecret: true
+
+    imagePullSecrets:
+      - name: ghcr-pull
+
+    postgresql:
+      enabled: true
+      image:
+        registry: docker.io
+        repository: library/postgres
+        tag: "14.6"
+        pullPolicy: IfNotPresent
+      persistence:
+        enabled: true
+        size: 5Gi
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 250m
+          memory: 512Mi
+      podSecurityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+
+    dagsterWebserver:
+      replicaCount: 1
+      # The chart's init containers (check-db-ready, init-user-deployment) carry no resources
+      # of their own and require-requests-limits judges every container.
+      initContainerResources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+      resources:
+        requests:
+          cpu: 100m
+          memory: 512Mi
+        limits:
+          cpu: 250m
+          memory: 1Gi
+      podSecurityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      readinessProbe:
+        httpGet:
+          path: /server_info
+          port: 80
+      service:
+        type: ClusterIP
+
+    dagsterDaemon:
+      enabled: true
+      initContainerResources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+      # require-pod-probes: the chart renders no daemon probe unless livenessProbe is non-empty;
+      # left without an exec field it fills in its own `dagster-daemon liveness-check`.
+      livenessProbe:
+        initialDelaySeconds: 60
+        periodSeconds: 30
+        timeoutSeconds: 10
+        failureThreshold: 3
+      resources:
+        requests:
+          cpu: 100m
+          memory: 384Mi
+        limits:
+          cpu: 250m
+          memory: 768Mi
+      podSecurityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      runCoordinator:
+        enabled: true
+        type: QueuedRunCoordinator
+        config:
+          queuedRunCoordinator:
+            maxConcurrentRuns: 2
+
+    runLauncher:
+      type: K8sRunLauncher
+      config:
+        k8sRunLauncher:
+          jobNamespace: dagster
+          imagePullPolicy: IfNotPresent
+          loadInclusterConfig: true
+          envSecrets: []
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 250m
+              memory: 1Gi
+          runK8sConfig:
+            podSpecConfig:
+              securityContext:
+                runAsNonRoot: true
+                seccompProfile:
+                  type: RuntimeDefault
+              priorityClassName: platform-batch
+            containerConfig:
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+            podTemplateSpecMetadata:
+              labels:
+                backstage.io/kubernetes-id: estate-scheduler
+
+    dagster-user-deployments:
+      enabled: true
+      imagePullSecrets:
+        - name: ghcr-pull
+      deployments:
+        - name: estate-scheduler
+          image:
+            repository: ghcr.io/chidionyema/estate-scheduler
+            tag: "main-0-0000000000000000000000000000000000000000" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
+            pullPolicy: IfNotPresent
+          dagsterApiGrpcArgs:
+            - "-h"
+            - "0.0.0.0"
+            - "-p"
+            - "3030"
+            - "-m"
+            - "estate_scheduler.definitions"
+          port: 3030
+          includeConfigInLaunchedRuns:
+            enabled: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: 250m
+              memory: 768Mi
+          podSecurityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          readinessProbe:
+            enabled: true
+
+  # CPU request total: 100m (postgresql) + 100m (webserver) + 100m (daemon) + 50m (runLauncher) + 100m (user-deploy) = 450m
+  # The postRenderers add the priorityClassName, security contexts and labels the chart does not expose.
+  postRenderers:
+    - kustomize:
+        images:
+          # Every image names its registry host. The nodes run cri-o with short-name mode enforcing
+          # (crew#284, crew#396): a reference without a registry host is admitted then fails to pull.
+          - name: docker.io/busybox
+            newName: docker.io/busybox
+          - name: docker.io/bitnami/minideb
+            newName: docker.io/bitnami/minideb
+        patches:
+          # Every Deployment and StatefulSet gets platform-batch priority (the estate's batch tier).
+          - target:
+              kind: Deployment
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: not-used-kustomize-matches-on-target
+              spec:
+                template:
+                  spec:
+                    priorityClassName: platform-batch
+                    securityContext:
+                      seccompProfile:
+                        type: RuntimeDefault
+          - target:
+              kind: StatefulSet
+            patch: |
+              apiVersion: apps/v1
+              kind: StatefulSet
+              metadata:
+                name: not-used-kustomize-matches-on-target
+              spec:
+                template:
+                  spec:
+                    priorityClassName: platform-batch
+                    # The postgres subchart exposes no securityContext values at all; the whole
+                    # non-root story is written here. uid/gid 999 is the postgres user baked into
+                    # docker.io/library/postgres; fsGroup 999 overrides the chart's 1001 so the
+                    # PV is group-writable to the uid that actually runs.
+                    securityContext:
+                      seccompProfile:
+                        type: RuntimeDefault
+                      runAsNonRoot: true
+                      runAsUser: 999
+                      runAsGroup: 999
+                      fsGroup: 999
+          # Container-level security context where the chart does not set it.
+          - target:
+              kind: Deployment
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/securityContext
+                value:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                      - ALL
+          - target:
+              kind: StatefulSet
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/securityContext
+                value:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                      - ALL
+          # The postgres subchart hard-codes a root init container (init-chmod-data,
+          # bitnami/minideb, runAsUser 0) whose only job is chowning the data dir to 1001.
+          # fsGroup 999 in the pod securityContext does the same job without root, so the
+          # container is removed and the pod runs wholly non-root -- which is what
+          # require-run-as-nonroot, require-run-as-non-root-user, disallow-privilege-escalation,
+          # disallow-capabilities-strict and drop-all-capabilities all refused it for.
+          - target:
+              kind: StatefulSet
+              name: dagster-postgresql
+            patch: |
+              - op: remove
+                path: /spec/template/spec/initContainers
+          # generateCeleryConfigSecret: true means the celery config Secret ships with the
+          # release, so the reference need not be optional; the chart hard-codes optional: true
+          # and no-optional-secret-references (the 2026-08-24 half-configured-box incident as a
+          # policy) refuses exactly that. envFrom index 2 is the chart's celery secretRef
+          # (0 and 1 are ConfigMaps); a chart bump that moves the index fails this same render
+          # gate loudly, never silently.
+          - target:
+              kind: Deployment
+              name: dagster-dagster-user-deployments-estate-scheduler
+            patch: |
+              - op: replace
+                path: /spec/template/spec/containers/0/envFrom/2
+                value:
+                  secretRef:
+                    name: dagster-celery-config-secret
+                    optional: false
+          # Labels for the catalogue: every workload carries its Backstage ID.
+          - target:
+              kind: Deployment
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: not-used-kustomize-matches-on-target
+              spec:
+                template:
+                  metadata:
+                    labels:
+                      backstage.io/kubernetes-id: estate-scheduler
+                      app.kubernetes.io/part-of: idp
+                  spec:
+                    priorityClassName: platform-batch
+          - target:
+              kind: StatefulSet
+            patch: |
+              apiVersion: apps/v1
+              kind: StatefulSet
+              metadata:
+                name: not-used-kustomize-matches-on-target
+              spec:
+                template:
+                  metadata:
+                    labels:
+                      backstage.io/kubernetes-id: estate-scheduler
+                      app.kubernetes.io/part-of: idp
+          - target:
+              kind: Service
+            patch: |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: not-used-kustomize-matches-on-target
+                labels:
+                  backstage.io/kubernetes-id: estate-scheduler

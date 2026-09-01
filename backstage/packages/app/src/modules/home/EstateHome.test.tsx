@@ -365,7 +365,7 @@ describe('EstateHome', () => {
     ).toHaveTextContent('6');
     expect(
       screen.getByTestId('held-component-founder-surface'),
-    ).toHaveTextContent('doors');
+    ).toHaveTextContent('sign-in pages');
     expect(screen.getByTestId('held-component-platform-layer')).toHaveAttribute(
       'href',
       '/catalog?filters%5Bkind%5D=component&filters%5Btype%5D=platform-layer&filters%5Buser%5D=all',
