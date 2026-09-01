@@ -1,0 +1,38 @@
+# Demo Standard (crew#805): demos are code; the machines render them so they never go stale.
+name: demo-render
+on:
+  push:
+    paths:
+      - 'demos/**'
+      - 'bin/intent-compile'
+      - 'schema/intent/**'
+      - '.github/workflows/demo-render.yml'
+  workflow_dispatch: {}
+permissions:
+  contents: write
+concurrency:
+  group: demo-render-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: dependencies the demos exercise
+        run: pip install jsonschema pyyaml
+      - name: render every tape
+        uses: charmbracelet/vhs-action@v2
+        with:
+          path: demos/intent-compiler.tape
+      - name: commit the rendered demo back
+        run: |
+          git config user.name 'estate-agents[bot]'
+          git config user.email 'estate-agents[bot]@users.noreply.github.com'
+          git add docs/demos/
+          if git diff --cached --quiet; then echo 'render unchanged'; exit 0; fi
+          git commit -m 'demo-render: machines refreshed the rendered demos [skip ci]'
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
