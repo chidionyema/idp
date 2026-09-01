@@ -22,6 +22,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   drift:
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

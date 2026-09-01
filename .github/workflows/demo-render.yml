@@ -1,3 +1,5 @@
+# button: Re-render every demo recording
+# founder: Replays every demo script against the real tools and commits fresh recordings, so a demo can never show what the software no longer does.
 # Demo Standard (crew#805): demos are code; the machines render them so they never go stale.
 name: demo-render
 on:
@@ -17,8 +19,8 @@ jobs:
   render:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
       - name: dependencies the demos exercise

@@ -1,8 +1,9 @@
-# Onboarding: the Demo Standard (crew#805)
+# Onboarding: The demo standard
 
 **What it is for.** Every feature ships a demo a person can watch, and the machines record it —
 a script in git (`demos/*.tape` for CLI, a Playwright demo spec for UI) replayed by CI on every
-relevant push, so a demo can never show what the software no longer does.
+relevant push, so a demo can never show what the software no longer does. Tracked in
+[the demo standard issue](https://github.com/chidionyema/crew/issues/805).
 
 **What it costs.** Nothing recurring: VHS (MIT) and Playwright are free; rendering runs on CI,
 never on the founder's Mac.
