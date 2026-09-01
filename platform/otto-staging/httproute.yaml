@@ -1,0 +1,41 @@
+# Otto staging's public door. The shared Gateway (prospector-edge, defined in the prospector-main
+# repo, out of scope here) already carries a listener named https-otto for hostname
+# otto.${ESTATE_ZONE} -- platform/hermes-agent/httproute.yaml owns the path /telegram on it today
+# for the production gateway. This route attaches to the SAME listener and hostname (no new
+# listener needed, nothing to change in prospector-main) and claims only the two paths the fixed
+# deploy contract names: POST /telegram-webhook and GET /healthz. Gateway API merges rules from
+# multiple HTTPRoutes bound to one listener/hostname pair; the paths here do not collide with
+# hermes-agent's /telegram, so both routes coexist unchanged.
+#
+# Nothing else on this host is exposed -- no catch-all path, so a request to any other path on
+# otto.${ESTATE_ZONE} falls through to whichever other route (or Traefik's own default) already
+# owns it; this route adds no new surface beyond the two paths the contract names.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: otto-staging
+  namespace: otto-staging
+spec:
+  parentRefs:
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-otto
+  hostnames:
+    - "otto.${ESTATE_ZONE}"
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /telegram-webhook
+          method: POST
+      backendRefs:
+        - name: otto-staging
+          port: 8080
+    - matches:
+        - path:
+            type: Exact
+            value: /healthz
+          method: GET
+      backendRefs:
+        - name: otto-staging
+          port: 8080

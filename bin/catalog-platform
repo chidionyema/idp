@@ -274,6 +274,11 @@ LAYERS = {
         "Hermes",
         "The agent that acts for the founder from anywhere: a message in, a pull request out.",
     ),
+    "otto-staging": (
+        "agents",
+        "Otto (staging)",
+        "The new agent's own webhook and health door, running its own pod ahead of production.",
+    ),
     "mcp": (
         "agents",
         "Agent tools",

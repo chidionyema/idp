@@ -1,0 +1,18 @@
+# Otto staging (founder order 2026-09-01). Same image as platform/hermes-agent, pinned to the
+# same tag deliberately -- one build, two commands. No Flux image-automation policy here: that
+# is a second thing to keep in sync for a staging lane that is not this branch's job; bump this
+# tag by hand alongside hermes-agent's until this lane earns its own policy.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: otto-staging
+resources:
+  - namespace.yaml
+  - quota.yaml
+  - network-policy.yaml
+  - telegram-secret.yaml
+  - config.yaml
+  - deployment.yaml
+  - httproute.yaml
+images:
+  - name: ghcr.io/chidionyema/hermes-agent
+    newTag: main-56-78e54b5c35292b87917c00d32f5fca36b9e40f53

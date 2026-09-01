@@ -1142,6 +1142,47 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-otto-staging
+  title: 'Otto (staging)'
+  description: 'The new agent''s own webhook and health door, running its own pod ahead of production.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=otto-staging'
+    estate/flux-kustomization: 'otto-staging'
+    estate/path: './platform/otto-staging'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  providesApis:
+    - api:default/otto-staging-api
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+    - component:default/layer-edge
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: otto-staging-api
+  description: 'Otto (staging): the HTTP interface, answering at otto.${ESTATE_ZONE}.'
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/agents
+  definition: |
+    # Not published. otto-staging answers at otto.${ESTATE_ZONE}; this entity
+    # exists so the catalogue records that the interface is reachable and who owns it.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-priority-classes
   title: 'Priorities'
   description: 'Which pods survive when a node is short: platform first, batch last.'

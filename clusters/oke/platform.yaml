@@ -364,6 +364,41 @@ spec:
       name: hermes-agent-gateway
       namespace: hermes-agent
 ---
+# Otto staging row (founder order 2026-09-01: "get this shipped and operational now"). A second,
+# separate pod from hermes-agent above -- the new otto.boot process (hermes-v2 branch
+# otto/boot-surface), same image, its own namespace and its own HTTPRoute paths
+# (/telegram-webhook, /healthz) on the shared otto.${ESTATE_ZONE} host. Needs edge (the shared
+# Gateway prospector-edge and its https-otto listener) as well as scheduling and secret-store;
+# hermes-agent's row above needs no edge dependency only because it has no HTTPRoute of its own.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: otto-staging
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/otto-staging
+  prune: true
+  postBuild:
+    substituteFrom:
+      # ESTATE_ZONE for the HTTPRoute hostname, like every other row.
+      - kind: ConfigMap
+        name: estate-config
+  dependsOn:
+    - name: scheduling
+    - name: secret-store
+    - name: edge
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: otto-staging
+      namespace: otto-staging
+---
 # MCP row (crew#458): agentgateway + github-mcp on the cluster, reached at mcp.<zone> through the
 # https-mcp listener on prospector-edge. Replaces the colima VM on the founder Mac. After edge
 # and secret-store (the gateway key and GitHub token), like llm.
