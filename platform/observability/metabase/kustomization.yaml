@@ -1,0 +1,12 @@
+# Metabase: the boardroom dashboard for the LLM trace store (crew#R74 CP1).
+# Deployment, Service, PodDisruptionBudget, HTTPRoute, and Secrets wired into the observability
+# namespace (platform/observability/kustomization.yaml). The middlewares friendly-errors and
+# edge-headers are defined at the namespace level (platform/observability/edge-manners.yaml).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - external-secret.yaml
+  - postgres.yaml
+  - deployment.yaml
+  - availability.yaml
+  - httproute.yaml

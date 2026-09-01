@@ -127,6 +127,28 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: founder-dashboards
+  title: "Dashboards (metabase)"
+  description: "Boardroom view of the traces in Langfuse: drill down into prompt, response, cost and latency across all calls, build custom charts and dashboards, share insights with the team. Sign-in is single, from the estate login. Query Langfuse data directly and save dashboard definitions to the Metabase database."
+  annotations:
+    estate/group: "Watch"
+    idp/updated-by: "Flux from platform/observability; dashboards read Langfuse data live"
+  tags: [founder, screen]
+  links:
+    - title: "Open"
+      url: "https://metabase.${ESTATE_ZONE}"
+      icon: dashboard
+    - title: "Health"
+      url: "https://metabase.${ESTATE_ZONE}/api/health"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: founder-telemetry
   title: "Telemetry (SigNoz)"
   description: "Every workload's traces, metrics and logs land here. The telemetry-coverage receipt in the cluster check is the count of pods this store has seen; the alert rules are declared against it. This is the one tool that asks for a second sign-in: SigNoz's community edition has no single sign-on, so the estate login gets you to its door and its own account gets you in. Prometheus and Alertmanager run beside it with no web page of their own, and Grafana is switched off on purpose so there is one place to look, not two."

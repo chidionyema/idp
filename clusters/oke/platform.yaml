@@ -920,3 +920,30 @@ spec:
   prune: true
   wait: true
   timeout: 10m
+---
+# Notifications row (R75 founder spec 2026-08-29): Apprise API, the single fan-out engine. Publish
+# once, deliver everywhere. Named channels (founder-telegram, Slack, email) route to distinct
+# backends; every surface sends a POST to /notify/<channel> and never learns the URL or the key.
+# After secret-store (the channel URLs live in the vault).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: notify
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/notify
+  prune: true
+  dependsOn:
+    - name: scheduling
+    - name: secret-store
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: apprise
+      namespace: notify
