@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+"""estate-clocks: the table of every clock in the estate, generated (crew#716 CP2).
+
+This script reads three sources and produces a Markdown table:
+    1. scheduler/schedule.yml — Dagster jobs with cron, runs_on, command, timeout_s
+    2. platform/**/*.yaml — every CronJob (kind: CronJob)
+    3. .github/workflows/*.yml — every workflow with on.schedule
+
+The output lives in docs/scheduling/CLOCKS.md; --check verifies it is current.
+    estate-clocks                  write docs/scheduling/CLOCKS.md
+    estate-clocks --check          exit 1 when the page is stale
+    estate-clocks --stdout         print the page to stdout
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+OUT = ROOT / "docs" / "scheduling" / "CLOCKS.md"
+
+
+def _read_schedule_yml(root: Path) -> list[dict]:
+    """Read scheduler/schedule.yml and return a list of clock dicts."""
+    spec = root / "scheduler" / "schedule.yml"
+    if not spec.exists():
+        return []
+    data = yaml.safe_load(spec.read_text()) or {}
+    jobs = data.get("jobs", {})
+    clocks = []
+    for name, job in jobs.items():
+        cron = job.get("cron")
+        if not cron:
+            continue
+        runs_on = job.get("runs_on", "unknown")
+        command = job.get("command", [])
+        timeout_s = job.get("timeout_s")
+        # Pick the field that reads as prose: why, description, does
+        description = job.get("description") or job.get("why") or job.get("does", "")
+        if isinstance(command, list):
+            cmd_str = " ".join(str(c) for c in command)
+        else:
+            cmd_str = str(command or "")
+        # If no prose description, use first word of command after "bin/"
+        if not description:
+            cmd_parts = cmd_str.split()
+            for i, part in enumerate(cmd_parts):
+                if part == "bin/" and i + 1 < len(cmd_parts):
+                    description = cmd_parts[i + 1]
+                    break
+            else:
+                description = cmd_str[:80]
+        # Truncate to 110 characters
+        if len(description) > 110:
+            description = description[:107] + "…"
+        # Format where based on runs_on
+        if runs_on == "retire":
+            where = "Mac scheduler (Dagster) · retiring (crew#716)"
+        elif runs_on == "mac":
+            where = "Mac scheduler (Dagster) · moves to the cluster (crew#716)"
+        else:
+            where = f"Mac scheduler (Dagster) · runs_on={runs_on}"
+        clocks.append(
+            {
+                "clock": name,
+                "where": where,
+                "cron": cron,
+                "source": "scheduler/schedule.yml",
+                "what": description,
+            }
+        )
+    return clocks
+
+
+def _read_cronjobs(root: Path) -> list[dict]:
+    """Read all CronJob YAMLs under platform/** and return a list of clock dicts."""
+    clocks = []
+    platform_dir = root / "platform"
+    if not platform_dir.exists():
+        return []
+
+    for yaml_path in platform_dir.rglob("*.yaml"):
+        try:
+            content = yaml_path.read_text()
+        except Exception:
+            continue
+
+        # Get the first comment line for description
+        first_comment = ""
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("# "):
+                first_comment = stripped[2:].strip()
+                break
+            elif stripped and not stripped.startswith("#"):
+                break
+
+        # Parse all documents
+        for doc in yaml.safe_load_all(content):
+            if doc is None:
+                continue
+            if doc.get("kind") != "CronJob":
+                continue
+
+            metadata = doc.get("metadata", {})
+            name = metadata.get("name", "unknown")
+            namespace = metadata.get("namespace")
+
+            # If no namespace, try to find it from kustomization in the same dir
+            if not namespace:
+                # Walk up to find nearest kustomization.yaml
+                kustomization = None
+                for parent in [yaml_path.parent] + list(yaml_path.parents):
+                    if (parent / "kustomization.yaml").exists():
+                        kustomization = parent / "kustomization.yaml"
+                        break
+                if kustomization and kustomization.exists():
+                    try:
+                        kuname = yaml.safe_load(kustomization.read_text())
+                        # First check if kustomization has namespace directly set
+                        ns_from_kustomize = kuname.get("namespace")
+                        if ns_from_kustomize:
+                            namespace = ns_from_kustomize
+                        else:
+                            # Look for namespace.yaml in resources
+                            resources = kuname.get("resources", [])
+                            for res in resources:
+                                if (
+                                    res.endswith("namespace.yaml")
+                                    or res == "namespace.yaml"
+                                ):
+                                    ns_path = kustomization.parent / res
+                                    if ns_path.exists():
+                                        ns_doc = yaml.safe_load(ns_path.read_text())
+                                        if ns_doc.get("kind") == "Namespace":
+                                            namespace = ns_doc.get("metadata", {}).get(
+                                                "name"
+                                            )
+                                            break
+                    except Exception:
+                        pass
+
+            if not namespace:
+                namespace = "(namespace set by Flux)"
+
+            spec = doc.get("spec", {})
+            schedule = spec.get("schedule", "")
+
+            if not schedule:
+                continue
+
+            clocks.append(
+                {
+                    "clock": name,
+                    "where": f"cluster · {namespace}",
+                    "cron": schedule,
+                    "source": str(yaml_path.relative_to(root)),
+                    "what": first_comment,
+                }
+            )
+
+    return clocks
+
+
+def _read_github_workflows(root: Path) -> list[dict]:
+    """Read all GitHub workflow files with schedules."""
+    clocks = []
+    workflows_dir = root / ".github" / "workflows"
+    if not workflows_dir.exists():
+        return []
+
+    for yml_path in workflows_dir.glob("*.yml"):
+        try:
+            content = yml_path.read_text()
+        except Exception:
+            continue
+
+        # Get the first # comment line for description
+        first_comment = ""
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("# "):
+                first_comment = stripped[2:].strip()
+                break
+            elif stripped and not stripped.startswith("#"):
+                break
+
+        doc = yaml.safe_load(content)
+        if doc is None:
+            continue
+
+        # Handle both "on:" (parsed as True) and "on:" (string)
+        on = doc.get("on") or doc.get(True)
+        if not on:
+            continue
+
+        # Get workflow name
+        workflow_name = doc.get("name", yml_path.stem)
+
+        # Find schedules - could be a list or dict
+        schedules = []
+        if isinstance(on, dict):
+            schedules = on.get("schedule", [])
+        elif isinstance(on, list):
+            for item in on:
+                if isinstance(item, dict):
+                    schedules.extend(item.get("schedule", []))
+                elif isinstance(item, str) and item == "schedule":
+                    # Just a string "schedule" - unlikely but handle it
+                    pass
+
+        if not schedules:
+            continue
+
+        for sched in schedules:
+            if isinstance(sched, dict):
+                cron = sched.get("cron", "")
+            else:
+                cron = str(sched)
+
+            if not cron:
+                continue
+
+            # Use first comment if available, else use workflow name
+            what = first_comment if first_comment else workflow_name
+            # Truncate to 110 characters
+            if len(what) > 110:
+                what = what[:107] + "…"
+
+            clocks.append(
+                {
+                    "clock": workflow_name,
+                    "where": "GitHub Actions",
+                    "cron": cron,
+                    "source": str(yml_path.relative_to(root)),
+                    "what": what,
+                }
+            )
+
+    return clocks
+
+
+def render(repo_root: Path) -> str:
+    """Render the complete clocks table as Markdown."""
+    clocks = []
+    clocks.extend(_read_schedule_yml(repo_root))
+    clocks.extend(_read_cronjobs(repo_root))
+    clocks.extend(_read_github_workflows(repo_root))
+
+    # Sort by Where then Clock
+    clocks.sort(key=lambda c: (c["where"], c["clock"]))
+
+    # Count clocks by type for summary
+    github_count = sum(1 for c in clocks if c["where"] == "GitHub Actions")
+    mac_count = sum(1 for c in clocks if "Mac scheduler" in c["where"])
+    cluster_count = sum(1 for c in clocks if c["where"].startswith("cluster"))
+
+    lines = [
+        "# Every clock in the estate (generated by bin/estate-clocks, crew#716)",
+        "",
+        f"{len(clocks)} clocks: {github_count} on GitHub Actions, {mac_count} on the Mac scheduler, {cluster_count} CronJobs in the cluster.",
+        "",
+        "Regenerate with `bin/estate-clocks`; the test tests/test_clocks_table_matches_sources.py fails when this page is stale.",
+        "",
+        "| Clock | Where it runs | Cron | Source | What it does |",
+        "| ----- | ------------- | ---- | ------ | ------------ |",
+    ]
+
+    for c in clocks:
+        # Escape pipes in content
+        clock = str(c["clock"]).replace("|", "\\|")
+        where = str(c["where"]).replace("|", "\\|")
+        cron = str(c["cron"]).replace("|", "\\|")
+        source = str(c["source"]).replace("|", "\\|")
+        what = str(c.get("what", "")).replace("|", "\\|")
+
+        lines.append(f"| {clock} | {where} | {cron} | {source} | {what} |")
+
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate or check the clocks table.")
+    parser.add_argument(
+        "--check", action="store_true", help="Exit 1 if the page is stale"
+    )
+    parser.add_argument(
+        "--stdout", action="store_true", help="Print to stdout instead of writing file"
+    )
+    args = parser.parse_args()
+
+    output = render(ROOT)
+
+    if args.stdout:
+        print(output, end="")
+        return
+
+    # For --check, read current file first, then compare
+    if args.check:
+        if not OUT.exists():
+            print(
+                "docs/scheduling/CLOCKS.md is stale: run bin/estate-clocks",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        current = OUT.read_text()
+        if output != current:
+            print(
+                "docs/scheduling/CLOCKS.md is stale: run bin/estate-clocks",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        print("docs/scheduling/CLOCKS.md is up to date")
+        return
+
+    OUT.write_text(output)
+    print(f"Wrote {OUT}")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,1 +1,2 @@
 - [Otto's Telegram webhook door](otto-telegram-webhook.md) — how updates arrive, what a deploy looks like, what to read when the bot goes quiet.
+- [Dagster scheduler](dagster.md) — crew#716: the estate scheduler on the cluster, verifying the rollout, handling Kyverno rejections.

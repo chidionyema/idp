@@ -134,6 +134,11 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value: {name: HEALTHCHECKS_HOST, value: "hc.${ESTATE_ZONE}"}
+      # crew#716 CP1: the estate's scheduler is now on the cluster (Dagster). The catalogue's
+      # Dagster entity provider reads this URL from backstage/app-config.yaml:207-213.
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: DAGSTER_GRAPHQL_URL, value: "http://dagster-dagster-webserver.dagster.svc:80/graphql"}
       # crew#562: Sunshine's Basic-auth header as a mounted file for the /sunshine proxy
       # endpoint (app-config.container.yaml). optional: false, like backstage-env: a pod that
       # cannot pair the founder's phone is not a pod that should report Ready.

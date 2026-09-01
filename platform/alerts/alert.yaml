@@ -31,6 +31,9 @@ spec:
       namespace: commerce
     - kind: HelmRelease
       name: "*"
+      namespace: dagster
+    - kind: HelmRelease
+      name: "*"
       namespace: edge
     - kind: HelmRelease
       name: "*"
