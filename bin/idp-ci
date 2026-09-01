@@ -295,6 +295,18 @@ if ! ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/es
   say "ok    zone     estate-zone-gate refuses a literal zone (tree and diff), permits \${ESTATE_ZONE}, and the repo is clean"
 else say "FAIL  zone     estate-zone-gate is not discriminating or the platform names the zone outside clusters/*/estate-config.yaml"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
+# crew#804 Diamond Standard (founder 2026-09-01): agents emit capability intents, the compiler is
+# deterministic. Proved both ways in one run: the bad fixtures (unknown vocabulary, an intent that
+# speaks the zone) are refused, the good ones compile, and two runs are byte-identical.
+ic_a=$(mktemp -d); ic_b=$(mktemp -d)
+if ! python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/bad" --out "$ic_a" >/dev/null 2>&1 \
+   && python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/good" --out "$ic_a" >/dev/null 2>&1 \
+   && python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/good" --out "$ic_b" >/dev/null 2>&1 \
+   && diff -r "$ic_a" "$ic_b" >/dev/null 2>&1; then
+  say "ok    intent   intent-compile refuses unknown vocabulary and a spoken estate name, compiles the good intents, byte-deterministic"
+else say "FAIL  intent   intent-compile is not discriminating or not deterministic"; fail=1; fi
+rm -rf "$ic_a" "$ic_b"
+
 if ! COMPOSE_GLOB='tests/fixtures/ports-bad/*.yml' python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
    && out=$(python3 "$IDP/bin/port-gate" 2>&1); then
   say "ok    portlock $(printf '%s' "$out" | tail -1 | sed 's/^ok *ports *//')"

@@ -20,6 +20,12 @@ data:
   # The repository the estate's GitHub App acts on (crew#554): platform/drills/drill-dispatcher.yaml
   # dispatches the hourly drills here. Same repo as clusters/oke/flux-system/gotk-sync.yaml; one value.
   ESTATE_GITHUB_REPO: chidionyema/idp
+  # crew#804 Diamond Standard (founder 2026-09-01): DNA the intent compiler reads. The agents'
+  # intent vocabulary (schema/intent/) has no field for these; bin/intent-compile injects them
+  # and refuses any intent that speaks a value from this data: block. Change a value here and
+  # recompile: every compiled workload follows, the agents never notice.
+  ESTATE_REGISTRY: "ghcr.io/chidionyema"
+  ESTATE_STORAGE_PROVIDER: "oci"
   # crew#516 CP5, founder's locked spec (crew#66 5451926212): the founder's Mac, reached by mac-run
   # (platform/hermes-agent/mac-run.tpl) over the Tailscale sidecar's SOCKS5 proxy, and named in
   # platform/tailscale/policy.hujson's ssh rule (bin/idp-tailscale-policy reads FOUNDER_MAC_USER
