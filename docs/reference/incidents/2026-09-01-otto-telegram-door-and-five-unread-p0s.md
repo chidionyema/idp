@@ -96,6 +96,35 @@ The fix (pushed by code-0c, no pull request, the founder merges): prospector bra
 fix is a gate that refuses a Gateway listener whose hostname has no route, or one Certificate per
 listener, so one dead name can never freeze twelve live ones again.
 
+## The third peer reply, and what it settled
+
+The founder's third peer reply (captured verbatim as
+`~/.claude/docs/founder/2026-09-01T1147Z-count-this-as-the-third-peer-reply-the-f60bf5c1.md`)
+accepted the mechanism and left three threads open. Two close from git and public DNS:
+
+- **Three stuck solvers, two dead names.** Exactly three listener hostnames on the storefront's main
+  branch are missing from the live certificate: `otto`, `alertmanager`, `prometheus`. The other ten
+  were authorised on 2026-08-27 and need no new challenge. The third solver is otto's own, starved
+  by the order it shares with the two dead names. No third dead listener exists.
+- **Rule or hand-deletion?** The fix commit (`1b053318`) deletes the two listeners and pins the
+  remaining set in `tests/unit/test_edge_platform_listeners.py`. That is an instance fix with a
+  list, not the input-side rule "no listener without a resolving record" — that rule is still to
+  build, and it belongs with the containment fix below.
+- **Drop, or publish DNS?** Drop. The alert console and the metrics store are the monitoring plane;
+  they belong behind the private network, not on the public edge beside the shop. The outage forced
+  a question the 2026-08-30 change skipped.
+
+His line for the record, verbatim: "The two names that broke your cert were alertmanager and
+prometheus: the monitoring stack took down its own alarm wiring."
+
+**Containment, class level.** Second incident in two days with one shape: a shared control-plane
+object turns one bad input into estate-wide failure (yesterday a fail-closed admission webhook froze
+every apply; today a shared-name certificate let two unused hostnames hold the Telegram money path
+hostage). The containment is splitting the edge certificate — core serving names on one
+Certificate, everything experimental on another — so no new listener can ever poison the order the
+shop and Otto ride on. And `Certificate Ready=False` ran silent from 2026-08-30 to now; it has to
+page (row 1 above).
+
 ## What is still not done
 
 - The door is still closed until the founder merges and deploys the prospector fix; cert-manager
