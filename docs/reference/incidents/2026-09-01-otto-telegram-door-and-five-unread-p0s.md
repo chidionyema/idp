@@ -78,12 +78,28 @@ None of this is a new script. It is three rows of configuration on tools already
 (Prometheus rules, a GitHub Actions workflow, an mkdocs hook), and the fault-class keywords in
 `bin/incident-register` already know `tls|certificate` as `network`.
 
+## The cause, confirmed from two angles
+
+Session code-0c found it and this session checked it independently. Every listener on the shared
+edge Gateway uses one Secret, `prospector-edge-tls`, so cert-manager orders one certificate carrying
+every listener's name. Two listeners added on 2026-08-30 (`https-alertmanager`, `https-prometheus`)
+have no route on the platform's main branch, and the DNS publisher writes records only from
+routes (`platform/dns/external-dns.yaml:76`, source `gateway-httproute`). `dig +short alertmanager.mumchimp.com`
+and `prometheus.mumchimp.com` return nothing; `otto` and `api` return the edge address. An ACME
+order fails whole when two of its thirteen names cannot be reached, so the ten-name certificate
+from 2026-08-27 stays, and `otto` — which has a route, a record and a running server — is refused
+along with the two dead names. The Kyverno failure at 05:01Z was real but unrelated: the solver
+pods predate it (00:15Z) and the Otto image rolled through it at 05:17Z.
+
+The fix (pushed by code-0c, no pull request, the founder merges): prospector branch
+`fix/edge-drop-listeners-without-dns`, commit `1b053318`, drops the two dead listeners. The class
+fix is a gate that refuses a Gateway listener whose hostname has no route, or one Certificate per
+listener, so one dead name can never freeze twelve live ones again.
+
 ## What is still not done
 
-- The door is still closed. The stuck HTTP-01 challenges need a cluster read the founder holds
-  (`bin/idp-kube -n prospector get challenge,order -o wide`), then a Kyverno restart if the
-  admission webhook is the refuser, then `cmctl renew prospector-edge-tls -n prospector`. Runbook:
-  `docs/runbooks/otto-telegram-webhook.md`.
+- The door is still closed until the founder merges and deploys the prospector fix; cert-manager
+  then retries the order on its own. Runbook: `docs/runbooks/otto-telegram-webhook.md`.
 - The three parts above are a decision record until the founder's word; this page names them so
   the next session does not rediscover them.
 - Class question he raised and this report does not settle: one fail-closed Kyverno webhook can
