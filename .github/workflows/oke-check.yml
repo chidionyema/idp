@@ -530,6 +530,7 @@ jobs:
       - name: urls with the zone substituted
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           zone=$(awk '$1=="ESTATE_ZONE:"{print $2}' clusters/oke/estate-config.yaml)
@@ -549,6 +550,26 @@ jobs:
             # belongs to (oke-check 33262262675). The repo is named, never assumed.
             sed -i "s#github.com/${GITHUB_REPOSITORY}/blob/main/#github.com/${GITHUB_REPOSITORY}/blob/${HEAD_SHA}/#g" founder-links.txt
             echo "pull request: blob links graded at ${HEAD_SHA}"
+          fi
+          # A cluster surface this pull request ADDS to the portal cannot answer yet: agents never
+          # deploy (founder, 2026-09-01), so the surface goes live only after the founder applies
+          # the merged state. Grading it before that refused every new-surface pull request
+          # (metabase, run 33568385208). On a pull_request, a URL whose catalogue row is new in
+          # this diff is skipped with a printed "pending deploy" line; the schedule and every
+          # main run still probe it, so a dead surface pages within one tick of going live.
+          if [ "${GITHUB_EVENT_NAME:-}" = pull_request ] && [ -n "${BASE_SHA:-}" ]; then
+            git fetch --quiet --depth=1 origin "$BASE_SHA"
+            git diff "$BASE_SHA" HEAD -- backstage/founder/catalog-info.yaml \
+              | grep -oE '^\+.*url: "https?://[^"]+"' | grep -oE 'https?://[^"]+' \
+              | sed "s/\${ESTATE_ZONE}/$zone/g" | sort -u > added-links.txt || true
+            if [ -s added-links.txt ]; then
+              while read -r u; do
+                if grep -qxF "$u" founder-links.txt; then
+                  grep -vxF "$u" founder-links.txt > founder-links.tmp && mv founder-links.tmp founder-links.txt
+                  echo "pending deploy (added by this pull request, probed on main): $u"
+                fi
+              done < added-links.txt
+            fi
           fi
           echo "$(wc -l < founder-links.txt) links"
       - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0

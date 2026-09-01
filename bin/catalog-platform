@@ -68,6 +68,11 @@ SYSTEMS = {
 
 # kustomization name -> (area, plain title, one sentence)
 LAYERS = {
+    "notify": (
+        "observability",
+        "Notification fan-out",
+        "One place every alert goes; it delivers to the founder's phone and any channel after it.",
+    ),
     "external-secrets": (
         "delivery",
         "Secrets bridge",
