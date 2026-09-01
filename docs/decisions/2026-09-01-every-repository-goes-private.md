@@ -19,8 +19,11 @@ executed; the order below starts on his word.
 - Actions minutes are free on public repositories. On private ones the plan's allowance applies:
   Free 2,000 minutes a month, Pro 3,000 (GitHub's plans page, read today). The estate's own
   usage, measured from the billable timing of every run in the last 24 hours across idp, crew,
-  prospector, hermes-v2 and infra-crew, is in the evidence section below. If that number is above
-  roughly 65 a day, Free runs out inside the month and Pro does too.
+  prospector, hermes-v2 and infra-crew, is **2,981 job-minutes in 24 hours** (idp 2,413 across
+  1,902 jobs; and the API caps a listing at 1,000 runs, so idp's true number is higher). That is
+  roughly 89,000 a month against an allowance of 2,000 (Free) or 3,000 (Pro): either plan is
+  spent before the first day is over. Runners of our own are a precondition of the flip, not an
+  option.
 - Container images on ghcr are a separate switch. Package visibility does not follow the
   repository; 9 of the estate's 11 packages are public today and stay so until changed.
 - The cluster's own Git access survives: Flux reads idp over ssh with a deploy key
@@ -41,13 +44,13 @@ tree under the Claude scripts) for anything that only works while the code is pu
 | 5 | Silent blindness that pages nobody. A Flux source created without a credential, a drift check that only authenticates when a variable happens to be set, a research reader that swallows failure. | `idp/bin/idp-hydrate:16`, `idp/bin/idp-catalogue-drift:57-59`, `crew/science/research_intake.py:56-62` | Make the token mandatory: fail loud when it is absent, never fall back to anonymous. |
 | 6 | GitHub's free security features go. Secret scanning, push protection and Dependabot alerts are free on public repositories only. | account-wide | Our own security-scan gate (gitleaks in `idp/.github/actions/security-scan`) stays and is the control; nothing to build. |
 | 7 | The merge fence disappears (see above). | idp rulesets | GitHub Pro on the account, before the flip, keeps protected branches and rulesets on private repositories. This is the one thing only the founder can do. |
-| 8 | Minutes run out. | every repository | Runners of our own on the cluster, with GitHub's own actions-runner-controller (mature tool; no script). Whether it is needed before the flip is decided by the measured number below. |
+| 8 | Minutes run out on the first day (2,981 job-minutes in the last 24 hours, measured). | every repository | Runners of our own on the cluster, with GitHub's own actions-runner-controller (mature tool; no script), registered through the estate GitHub App, and every workflow's `runs-on` pointed at them before the flip. Needed before the flip; the measurement above says so. |
 
 ## The one order
 
 1. **Founder, one action.** Upgrade the account to GitHub Pro. Without it the flip deletes the
    merge fence, and the "agents never merge" ruling becomes a wish.
-2. **Crew, on his word, before the flip.** Land fixes 1 to 5 as one change per repository, each
+2. **Crew, on his word, before the flip.** Land fixes 1 to 5 and the runners (fix 8) as one change per repository, each
    green on its own gates while the repositories are still public. Extend
    `~/.claude/scripts/estate/repo_must_be_private.py` from one repository to all nine, so the
    flip has a probe that grades it.
@@ -78,6 +81,8 @@ tree under the Claude scripts) for anything that only works while the code is pu
 - Plan: `gh api repos/chidionyema/estate-secrets/rulesets` answers 403 with the Pro upgrade text.
 - Rulesets on idp: `gh api repos/chidionyema/idp/rulesets` lists four, all `active`.
 - Deploy keys on idp: `gh api repos/chidionyema/idp/keys` shows the Flux read-only key and flux-writer.
-- Actions minutes, last 24 hours, billable, summed over five repositories: see the board comment on
-  the tracked item; the script that produced it is quoted there.
+- Actions minutes, last 24 hours: every job's `completed_at - started_at` rounded up to the minute
+  (how GitHub bills), summed over the five repositories' runs created in the last 24 hours, read
+  through `gh api --paginate`. Output 2026-09-01 15:1xZ: idp 2413, crew 181, prospector 304,
+  hermes-v2 79, infra-crew 4, total 2981. The script is quoted on the tracked item.
 - The sweep itself: crew tracked item for this plan, first comment.
