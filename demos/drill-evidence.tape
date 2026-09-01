@@ -20,6 +20,6 @@ Enter
 Sleep 2s
 Type "# Validate the drill's configuration and test framework"
 Enter
-Type "python3 -c \"from tests.test_incident_crew301_login_drill_red_is_readable_and_green_closes_the_p0 import test_the_fail_line_keeps_the_call_log; test_the_fail_line_keeps_the_call_log(); print('✓ drill configuration valid')\""
+Type `python3 -c "from tests.test_incident_crew301_login_drill_red_is_readable_and_green_closes_the_p0 import test_the_fail_line_keeps_the_call_log; test_the_fail_line_keeps_the_call_log(); print('ok: drill configuration valid')"`
 Enter
 Sleep 3s

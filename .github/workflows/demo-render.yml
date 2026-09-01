@@ -36,6 +36,11 @@ jobs:
           chmod +x /tmp/ttyd && sudo mv /tmp/ttyd /usr/local/bin/ttyd
       - name: render every tape
         run: |
+          # vhs's parser does not support \" escapes inside a quoted string (run 33570143182);
+          # a tape needing quotes-in-quotes uses a backtick string. Refuse the class before rendering.
+          if grep -n '\\"' demos/*.tape; then
+            echo 'FAIL: tape uses \" escapes; vhs cannot parse them — use a backtick string'; exit 1
+          fi
           for tape in demos/*.tape; do
             if [ -f "$tape" ]; then
               vhs < "$tape"
