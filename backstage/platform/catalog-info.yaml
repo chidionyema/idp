@@ -382,6 +382,31 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-dagster
+  title: 'The estate clock'
+  description: 'Runs the estate''s schedules from the cluster, off the Mac; every run and its logs on one screen.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=dagster'
+    estate/flux-kustomization: 'dagster'
+    estate/path: './platform/dagster'
+    estate/cluster: 'oke'
+  tags: [platform, scheduling]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: scheduling
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-edge
+    - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-dns
   title: 'DNS'
   description: 'Every hostname the estate answers to, managed from git.'

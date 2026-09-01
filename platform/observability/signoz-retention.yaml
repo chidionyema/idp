@@ -1,4 +1,4 @@
-# crew#584 CP-I: the registry (platform/features/features.yaml, logs-metrics-store/enterprise)
+# The feature registry (platform/features/features.yaml, logs-metrics-store/enterprise)
 # promises `knobs: { retention_days: 7 }` and says "retention is a tier knob, not a hand edit".
 # The SigNoz chart has no retention value (only ClickHouse system-log TTLs) and the docs point at
 # Settings -> Retention Controls, a hand edit; the same setting is the admin API

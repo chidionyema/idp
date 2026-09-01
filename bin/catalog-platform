@@ -199,6 +199,11 @@ LAYERS = {
         "Workload autoscaler",
         "Scales a workload on its queue or its traffic, to zero when idle.",
     ),
+    "dagster": (
+        "scheduling",
+        "The estate clock",
+        "Runs the estate's schedules from the cluster, off the Mac; every run and its logs on one screen.",
+    ),
     "temporal": (
         "scheduling",
         "Workflows",

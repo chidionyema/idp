@@ -31,6 +31,8 @@ DEFAULT_RETRIES = 3
 #   temporal, commerce) sized above default before this wave; lower only with a measured
 #   upgrade run showing it fits.
 TIMEOUT_EXCEPTIONS = {
+    # first install runs the Dagster chart's postgres migration and pulls five images:
+    ("Kustomization", "dagster"): "15m",
     ("Kustomization", "commerce"): "15m",
     ("Kustomization", "spire"): "15m",
     ("Kustomization", "keda"): "15m",
@@ -40,6 +42,8 @@ TIMEOUT_EXCEPTIONS = {
     ("Kustomization", "observability"): "20m",
     ("Kustomization", "temporal"): "20m",
     ("Kustomization", "monitoring"): "20m",
+    # same install: the chart's migration job + five image pulls:
+    ("HelmRelease", "dagster"): "15m",
     ("HelmRelease", "lago"): "15m",
     ("HelmRelease", "hindsight"): "15m",
     ("HelmRelease", "kube-prometheus-stack"): "15m",

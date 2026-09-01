@@ -759,6 +759,34 @@ spec:
   lifecycle: production
   owner: group:default/platform
 ---
+# crew#716 CP1: the estate's scheduler now runs on the cluster instead of the Mac.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: estate-scheduler
+  title: "Scheduler (Dagster, on the cluster)"
+  description: "The estate's clock: every scheduled job, its last run and its next run, on the cluster instead of the founder's laptop."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/platform/dagster/
+    estate/group: "Run"
+    backstage.io/kubernetes-id: estate-scheduler
+    backstage.io/kubernetes-namespace: dagster
+    idp/updated-by: "Flux from platform/dagster"
+  tags: [founder]
+  links:
+    - title: "Dagster UI"
+      url: "https://catalogue.${ESTATE_ZONE}/catalog/default/component/estate-scheduler"
+      icon: dashboard
+    - title: "Where this is tracked"
+      url: "https://github.com/chidionyema/crew/issues/716"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
