@@ -800,6 +800,34 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-infra-crew
+  title: 'Infrastructure crew'
+  description: 'The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=infra-crew'
+    estate/flux-kustomization: 'infra-crew'
+    estate/path: './platform/infra-crew'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+    - url: https://langfuse.${ESTATE_ZONE}
+      title: 'Model traces'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+    - component:default/layer-alerts-github
+    - component:default/layer-llm
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-keda
   title: 'Workload autoscaler'
   description: 'Scales a workload on its queue or its traffic, to zero when idle.'
