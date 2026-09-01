@@ -30,7 +30,7 @@ COMPANIES = {
     # checkout on this machine (mumchimp runs on OKE; its repos are not in the inventory).
     "mumchimp": ("Mumchimp", ("mumchimp", "medusa", "ecommerce", "ebookstore", "store"),
                  "The store: the storefront, its API and everything that takes a customer's money.",
-                 ("The store, live", "https://mumchimp.com")),
+                 ("The store, live", "https://${ESTATE_ZONE}")),  # substituted by _company_link()
     "prospector": ("Prospector", ("prospector",),
                    "The product that finds and qualifies prospects; stays the product whatever the platform does.",
                    ("Prospector on GitHub", "https://github.com/chidionyema/prospector")),
@@ -313,6 +313,16 @@ def describe(r):
                        + ("read by something in the estate" if r.get("referenced") else "referenced by nothing")
                        + (f"; {hint}." if hint and hint != "database" else "."))
     return own or doc or (f"{hint}." if hint else "")
+
+
+def estate_zone() -> str:
+    """The one value in clusters/*/estate-config.yaml (crew#269, crew#796); a company home link
+    written as https://${ESTATE_ZONE} is substituted here, never spelled out in this file."""
+    import glob as _glob
+    zs = set()
+    for f in sorted(_glob.glob(os.path.join(IDP_ROOT, "clusters", "*", "estate-config.yaml"))):
+        zs.update(ZONE_KEY.findall(open(f).read()))
+    return sorted(zs)[0] if zs else "estate-zone-not-declared.invalid"
 
 
 def front_door_entities():
@@ -769,7 +779,7 @@ def main() -> int:
     def company_links(key):
         """One 'Source' link per tracked repository in the company, so a Domain page
         opens onto real code. Sorted by name so the render is byte-stable."""
-        out = list(COMPANIES.get(key, ((),) * 4)[3:4])
+        out = [(t, u.replace("${ESTATE_ZONE}", estate_zone())) for t, u in COMPANIES.get(key, ((),) * 4)[3:4]]
         for rn in sorted(repo_gh):
             gh_slug = repo_gh[rn][0]
             url = f"https://github.com/{gh_slug}"

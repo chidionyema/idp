@@ -5,6 +5,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  # The one place a name lives (crew#269, crew#796). Every other file in every estate repository
+  # says ${ESTATE_ZONE}; bin/estate-zone-gate refuses a literal, bin/pr-report refuses a PR that
+  # adds one, name-drift.yml grades every repository's main on the estate clock.
   name: estate-config
   namespace: flux-system
 data:
