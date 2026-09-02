@@ -160,9 +160,9 @@ spec:
   # images carry main-85 in ghcr, listed 2026-08-30T22:0xZ.
   images:
     - name: ghcr.io/chidionyema/prospector-store-web
-      newTag: main-96-b658a1a8eda1700b3787c4005cd5660e8cab09bf # {"$imagepolicy": "flux-system:prospector-store-web:tag"}
+      newTag: main-101-5a6bbe6395092bbaded77ef25e8277f83c675b2f # {"$imagepolicy": "flux-system:prospector-store-web:tag"}
     - name: ghcr.io/chidionyema/prospector-store-api
-      newTag: main-96-b658a1a8eda1700b3787c4005cd5660e8cab09bf # {"$imagepolicy": "flux-system:prospector-store-api:tag"}
+      newTag: main-101-5a6bbe6395092bbaded77ef25e8277f83c675b2f # {"$imagepolicy": "flux-system:prospector-store-api:tag"}
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
