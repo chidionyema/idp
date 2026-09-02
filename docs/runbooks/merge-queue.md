@@ -12,6 +12,8 @@ setting `allow_auto_merge` is on, the review count is zero, and
 required checks pass. The queue ruleset stays declared in
 `platform/github/ruleset.idp.merge-queue.json`; the day the repository is
 organization-owned, `bin/repo-rulesets --apply` arms it with no other change.
+The founder ruled on 2026-09-02 that the estate is not ready for that transfer
+yet, so the bridge below is the standing state, not a stopgap.
 
 ## Normal operation (automatic merge bridge)
 Nothing to do. Queue each green pull request with
