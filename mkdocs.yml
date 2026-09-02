@@ -112,6 +112,7 @@ nav:
       - Bind audit: tutorials/demo/bind-audit.md
       - Build image: tutorials/demo/build-image.md
       - Catalog: tutorials/demo/catalog.md
+      - Portal catalogue: tutorials/demo/portal.md
       - Conformity report: tutorials/demo/conformity.md
       - DB gen: tutorials/demo/db-gen.md
       - Dockerfiles: tutorials/demo/dockerfiles.md
@@ -193,6 +194,7 @@ nav:
       - Bind audit: how-to/onboarding/bind-audit.md
       - Build image: how-to/onboarding/build-image.md
       - Catalog: how-to/onboarding/catalog.md
+      - Portal catalogue: how-to/onboarding/portal.md
       - Conformity report: how-to/onboarding/conformity.md
       - DB gen: how-to/onboarding/db-gen.md
       - Dockerfiles: how-to/onboarding/dockerfiles.md

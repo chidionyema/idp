@@ -27,6 +27,12 @@ backend.add(import('@backstage/plugin-techdocs-backend'));
 backend.add(import('@backstage/plugin-auth-backend'));
 // The estate front door signs people in; Backstage trusts its headers (src/auth).
 backend.add(import('./auth'));
+// Official guest provider for `yarn start` only. The production image sets
+// NODE_ENV=production and does not register this module, so the live catalogue
+// stays on the front door. Do not set dangerouslyAllowOutsideDevelopment here.
+if (process.env.NODE_ENV !== 'production') {
+  backend.add(import('@backstage/plugin-auth-backend-module-guest-provider'));
+}
 
 // catalog plugin
 backend.add(import('@backstage/plugin-catalog-backend'));
