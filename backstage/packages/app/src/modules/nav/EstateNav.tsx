@@ -1,9 +1,7 @@
-// Ten doors and nothing else (crew#459 redesign, 2026-08-29). The vendor sidebar carried a
-// search modal, a notifications bell, a visualizer and every plugin's page; the founder
-// reads it on a phone. On a desktop Backstage's own Sidebar stays underneath: it handles
-// focus, keyboard and the collapsed rail, so the desktop nav is a list, not a component
-// (LAW 43). Every page it hides is still published at its path and still graded by
-// bin/idp-login-drill.
+// Buyer first, operator in a submenu (founder 2026-09-02: catalogue, health, docs, login
+// first; the content pane scrolls, the nav stays). Backstage's own Sidebar and
+// SidebarSubmenu are the chrome (LAW 43). Every page it hides is still published at its
+// path and still graded by bin/idp-login-drill.
 //
 // On a phone (founder, 2026-09-01: "I am the one using it and I don't like it") the menu
 // slides in from the left behind a menu button in the top-left corner. Backstage's Sidebar
@@ -16,7 +14,7 @@
 // removed. Screens section is visible on Today (/). Kubernetes is in the catalog.
 // crew#612 item 1: /create added; scaffolderPlugin registered in App.tsx.
 // crew#612 item 3: DnsIcon for Kubernetes so Ops keeps the single gear icon.
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import {
   Link,
   Sidebar,
@@ -24,6 +22,8 @@ import {
   SidebarGroup,
   SidebarItem,
   SidebarSpace,
+  SidebarSubmenu,
+  SidebarSubmenuItem,
 } from '@backstage/core-components';
 import { NavContentBlueprint } from '@backstage/plugin-app-react';
 import Drawer from '@material-ui/core/Drawer';
@@ -46,25 +46,26 @@ import SearchIcon from '@material-ui/icons/Search';
 import MenuBookIcon from '@material-ui/icons/MenuBook';
 import AccountCircleIcon from '@material-ui/icons/AccountCircle';
 import BuildIcon from '@material-ui/icons/Build';
+import MoreHorizIcon from '@material-ui/icons/MoreHoriz';
 import { SidebarLogo } from './SidebarLogo';
 import { LogoIcon } from './LogoIcon';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 
 export const NAV = [
-  { title: 'Today', to: '/', icon: TodayIcon },
-  // crew#612: /#kubernetes was a hash-jump; catalog is the real route for cluster entities.
-  { title: 'Kubernetes', to: '/catalog?filters%5Bkind%5D=Component', icon: DnsIcon },
-  { title: 'What we run', to: '/catalog', icon: LayersIcon },
-  // crew#612 item 1: templates on /create are the self-service menu.
-  { title: 'Create', to: '/create', icon: AddCircleOutlineIcon },
-  // Visual estate map: every system and its relations as a navigable graph (crew#612 10x).
-  { title: 'Map', to: '/catalog-graph', icon: AccountTreeIcon },
-  { title: 'Tools', to: '/tools', icon: BuildIcon },
-  { title: 'Ops', to: '/ops', icon: TimelineIcon },
-  { title: 'Find', to: '/search', icon: SearchIcon },
-  { title: 'How-to', to: '/docs', icon: MenuBookIcon },
+  { title: 'Home', to: '/', icon: TodayIcon },
+  { title: 'Catalogue', to: '/catalog', icon: LayersIcon },
+  { title: 'Health', to: '/ops', icon: TimelineIcon },
+  { title: 'Docs', to: '/docs', icon: MenuBookIcon },
   { title: 'You', to: '/settings', icon: AccountCircleIcon },
+  { title: 'Create', to: '/create', icon: AddCircleOutlineIcon },
+  { title: 'Map', to: '/catalog-graph', icon: AccountTreeIcon },
+  { title: 'Kubernetes', to: '/catalog?filters%5Bkind%5D=Component', icon: DnsIcon },
+  { title: 'Tools', to: '/tools', icon: BuildIcon },
+  { title: 'Find', to: '/search', icon: SearchIcon },
 ] as const;
+
+/** The first doors a visitor sees; the rest live under More. */
+export const BUYER_COUNT = 5;
 
 // The words a person reads on the phone menu. bin/idp-login-drill grades the phone view on
 // these words, never on a selector (R53).
@@ -99,6 +100,14 @@ const usePhoneStyles = makeStyles(theme => ({
     borderBottom: `1px solid ${theme.palette.divider}`,
   },
   item: { minHeight: 48 },
+  section: {
+    padding: theme.spacing(2, 2, 0.5, 2),
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+    color: theme.palette.text.secondary,
+  },
 }));
 
 // The phone nav: a menu button, and the ten doors in a drawer that slides in from the left.
@@ -139,20 +148,27 @@ const PhoneNav = () => {
           </IconButton>
         </div>
         <List component="nav" aria-label={PHONE_MENU_LABEL}>
-          {NAV.map(({ title, to, icon: Icon }) => (
-            <ListItem
-              key={to}
-              button
-              component={Link}
-              to={to}
-              className={classes.item}
-              onClick={() => setOpen(false)}
-            >
-              <ListItemIcon>
-                <Icon />
-              </ListItemIcon>
-              <ListItemText primary={title} />
-            </ListItem>
+          {NAV.map(({ title, to, icon: Icon }, i) => (
+            <Fragment key={to}>
+              {i === 0 && (
+                <Typography className={classes.section}>Start here</Typography>
+              )}
+              {i === BUYER_COUNT && (
+                <Typography className={classes.section}>More</Typography>
+              )}
+              <ListItem
+                button
+                component={Link}
+                to={to}
+                className={classes.item}
+                onClick={() => setOpen(false)}
+              >
+                <ListItemIcon>
+                  <Icon />
+                </ListItemIcon>
+                <ListItemText primary={title} />
+              </ListItem>
+            </Fragment>
           ))}
         </List>
       </Drawer>
@@ -166,11 +182,19 @@ const DesktopNav = () => (
     <Sidebar>
       <SidebarLogo />
       <SidebarDivider />
-      {NAV.map(({ title, to, icon: Icon }) => (
+      {NAV.slice(0, BUYER_COUNT).map(({ title, to, icon: Icon }) => (
         <SidebarGroup key={to} label={title} icon={<Icon />} to={to}>
           <SidebarItem icon={Icon} to={to} text={title} />
         </SidebarGroup>
       ))}
+      <SidebarDivider />
+      <SidebarItem icon={MoreHorizIcon} text="More">
+        <SidebarSubmenu title="More">
+          {NAV.slice(BUYER_COUNT).map(({ title, to, icon: Icon }) => (
+            <SidebarSubmenuItem key={to} title={title} to={to} icon={Icon} />
+          ))}
+        </SidebarSubmenu>
+      </SidebarItem>
       <SidebarSpace />
     </Sidebar>
   </div>

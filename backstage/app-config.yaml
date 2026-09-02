@@ -30,23 +30,8 @@ app:
             - component: HomePageToolkit
               column: 0
               row: 2
-              width: 6
-              height: 6
-            - component: HomePageStarredEntities
-              column: 6
-              row: 2
-              width: 6
-              height: 4
-            - component: HomePageRecentlyVisited
-              column: 6
-              row: 6
-              width: 6
-              height: 4
-            - component: HomePageMostVisited
-              column: 0
-              row: 8
-              width: 6
-              height: 4
+              width: 12
+              height: 8
     # Visit tracking feeds the "Recently visited" and "Most visited" widgets; it is off in the
     # plugin until switched on here, and it stores visits in the browser.
     - api:home/visits: true
@@ -59,16 +44,34 @@ app:
     - home-page-widget:home/toolkit:
         config:
           tools:
-            - { url: /, label: Today, icon: dashboard }
-            - { url: '/catalog?filters%5Bkind%5D=Component', label: Kubernetes, icon: 'kind:resource' }
-            - { url: /catalog, label: What we run, icon: catalog }
+            - { url: /, label: Home, icon: dashboard }
+            - { url: /catalog, label: Catalogue, icon: catalog }
+            - { url: /ops, label: Health, icon: warning }
+            - { url: /docs, label: Docs, icon: docs }
+            - { url: /settings, label: You, icon: user }
             - { url: /create, label: Create, icon: scaffolder }
             - { url: /catalog-graph, label: Map, icon: 'kind:system' }
+            - { url: '/catalog?filters%5Bkind%5D=Component', label: Kubernetes, icon: 'kind:resource' }
             - { url: /tools, label: Tools, icon: 'kind:component' }
-            - { url: /ops, label: Ops, icon: warning }
             - { url: /search, label: Find, icon: search }
-            - { url: /docs, label: How-to, icon: docs }
-            - { url: /settings, label: You, icon: user }
+
+
+    # The catalogue index defaults to kind=component and list=owned, so 391 of 587
+    # git entities never appear and a first paint of the rest flashes then vanishes
+    # (plugin-catalog 2.0.8 CatalogFilterBlueprint). Official NFS config, not a
+    # second feed: cursor pagination pages /api/catalog/entities/query; the sidebar stays.
+    # page:catalog is configured here without moving its path (crew#307).
+    - page:catalog:
+        config:
+          pagination:
+            mode: cursor
+            limit: 50
+    - catalog-filter:catalog/list:
+        config:
+          initialFilter: all
+    - catalog-filter:catalog/kind:
+        config:
+          initialFilter: ""
 
     # crew#612 CP5: no empty tab on an entity page. The TechDocs content ships with no filter,
     # so every one of the 338 entities grew a "TechDocs" tab and 334 of them opened on an
