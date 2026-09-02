@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The founder's whole part for one provider, in one command, zero copying between windows (R52; crew#618).
-#   bin/idp-set-root tailscale | cloudflare | anthropic | openrouter | deepseek | minimax | kimi | groq | gemini | exa | cursor | stripe | telegram-hermes | telegram-alerts | google-oauth
-#   bin/idp-set-root all        every provider above in turn, skipping any whose secrets are already set; one apply run at the end
+#   bin/idp-set-root <provider>   tailscale | cloudflare | telegram-hermes | telegram-alerts | google-oauth,
+#                                 or any vendor platform/vendors/consoles.yaml gives a secret: row (the registry is the one list)
+#   bin/idp-set-root all          every provider above in turn, skipping any whose secrets are already set; one apply run at the end
 #
 # It opens the provider's page, says exactly what to click and what to type, then asks for each
 # value right here with hidden input and hands it straight to `gh secret set` (the repository
@@ -12,12 +13,18 @@
 set -euo pipefail
 REPO=${IDP_REPO:-chidionyema/idp}
 IDP=$(cd "$(dirname "$0")/.." && pwd)
-P=${1:-}; [ -n "$P" ] || { sed -n 3,4p "$0"; exit 2; }
-ALL="tailscale cloudflare anthropic openrouter deepseek minimax kimi groq gemini exa cursor stripe telegram-hermes telegram-alerts google-oauth"
+P=${1:-}; [ -n "$P" ] || { sed -n 3,5p "$0"; exit 2; }
+# a field of one vendor in platform/vendors/consoles.yaml, with no yaml module (the founder's Mac python has none)
+field() { awk -v v="  $1:" -v k="$2:" '$0==v{on=1;next} on&&/^  [a-z]/{exit} on&&$1==k{print $2;exit}' "$IDP/platform/vendors/consoles.yaml"; }
+# every vendor the registry gives a secret: row, in registry order. The registry is the ONE list
+# (founder 2026-09-02): no vendor name is written in this script, so adding or
+# removing a vendor is a consoles.yaml edit and nothing here.
+vendors() { awk '/^vendors:/{on=1;next} on&&/^[a-z]/{exit} on&&/^  [a-z_]+:$/{v=$1;sub(/:$/,"",v)} on&&v&&$1=="secret:"{print v;v=""}' "$IDP/platform/vendors/consoles.yaml"; }
+ALL="tailscale cloudflare $(vendors | xargs) telegram-hermes telegram-alerts google-oauth"
 if [ "$P" = all ]; then
   # Founder, 2026-08-29: "a single command for the master key for all". Each provider is one turn;
   # one already set (its secret names exist on the repository) is skipped, so this is safe to re-run.
-  have=$(gh secret list -R "${IDP_REPO:-chidionyema/idp}" --json name --jq '.[].name')
+  have=$(gh secret list -R "$REPO" --json name --jq '.[].name')
   n=0
   for p in $ALL; do
     case "$p" in
@@ -25,23 +32,21 @@ if [ "$P" = all ]; then
       cloudflare) need=SEED_CLOUDFLARE_ROOT_TOKEN ;;
       telegram-hermes) need=SEED_TELEGRAM_HERMES_BOT_TOKEN ;;
       telegram-alerts) need=SEED_TELEGRAM_ALERTS_BOT_TOKEN ;;
-      stripe) need=SEED_STRIPE_SECRET_KEY ;;
       google-oauth) need="SEED_GOOGLE_OAUTH_CLIENT_ID SEED_GOOGLE_OAUTH_CLIENT_SECRET" ;;
-      *) need=SEED_$(printf %s "$p" | tr a-z A-Z)_API_KEY ;;
+      *) need=$(field "$p" secret) ;;   # the registry names the vendor's one root (R52)
     esac
+    [ -n "$need" ] || { echo "FAIL    no secret name for $p in platform/vendors/consoles.yaml"; exit 1; }
     missing=0; for k in $need; do printf '%s\n' "$have" | grep -x "$k" >/dev/null || missing=1; done
     if [ $missing = 0 ]; then echo "ok      $p already set; skipped"; continue; fi
     n=$((n+1)); echo; echo "=== $p ($n) ==="
     IDP_NO_DISPATCH=1 "$0" "$p"
   done
-  echo; gh workflow run oke-check.yml -R "${IDP_REPO:-chidionyema/idp}" -f mode=apply >/dev/null && echo "ok      apply run dispatched; the pipeline mints the rest. Every provider is set."
+  echo; gh workflow run oke-check.yml -R "$REPO" -f mode=apply >/dev/null && echo "ok      apply run dispatched; the pipeline mints the rest. Every provider is set."
   exit 0
 fi
 command -v gh >/dev/null || { echo "FAIL    gh is not installed: brew install gh, then gh auth login"; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "FAIL    gh is not signed in: run gh auth login once"; exit 1; }
 open_page() { if command -v open >/dev/null; then open "$1"; elif command -v xdg-open >/dev/null; then xdg-open "$1"; else echo "        open $1"; fi; }
-# a field of one vendor in platform/vendors/consoles.yaml, with no yaml module (the founder's Mac python has none)
-field() { awk -v v="  $1:" -v k="$2:" '$0==v{on=1;next} on&&/^  [a-z]/{exit} on&&$1==k{print $2;exit}' "$IDP/platform/vendors/consoles.yaml"; }
 # the estate's DNS zone, written once in clusters/<cluster>/estate-config.yaml (crew#269)
 zone() { awk '$1=="ESTATE_ZONE:"{print $2; exit}' "$IDP"/clusters/*/estate-config.yaml; }
 ask() { # ask NAME "what it is"; hidden input, straight into gh, never echoed
@@ -75,14 +80,6 @@ T
         5. "Continue to summary", "Create Token". Copy the token when asked below.
 T
     ask SEED_CLOUDFLARE_ROOT_TOKEN "the token shown" ;;
-  anthropic|openrouter|deepseek|minimax|kimi|groq|gemini|exa|cursor|stripe)
-    page=$(field "$P" page); name=$(field "$P" secret)
-    [ -n "$page" ] && [ -n "$name" ] || { echo "FAIL    no page/secret for $P in platform/vendors/consoles.yaml"; exit 1; }
-    echo "$P: one API key, once. The key page is opening."
-    open_page "$page"
-    echo "        1. Create a key. Name it: estate"
-    echo "        2. Copy it when asked below."
-    ask "$name" "the key shown" ;;
   google-oauth)
     # The shop's "Continue with Google" button. Google publishes no create-client API (the IAP one
     # cannot set a redirect URI), so this client is a root made once, like a BotFather token.
@@ -114,6 +111,14 @@ T
     echo "        1. Send /token and pick the bot (${P#telegram-})."
     echo "        2. Copy the token BotFather answers with, when asked below."
     ask "$name" "the token shown" ;;
-  *) echo "FAIL    unknown provider $P"; sed -n 3p "$0"; exit 2 ;;
+  *)
+    vendors | grep -x -- "$P" >/dev/null || { echo "FAIL    unknown provider $P"; sed -n 3,4p "$0"; exit 2; }
+    page=$(field "$P" page); name=$(field "$P" secret)
+    [ -n "$page" ] && [ -n "$name" ] || { echo "FAIL    no page/secret for $P in platform/vendors/consoles.yaml"; exit 1; }
+    echo "$P: one API key, once. The key page is opening."
+    open_page "$page"
+    echo "        1. Create a key. Name it: estate"
+    echo "        2. Copy it when asked below."
+    ask "$name" "the key shown" ;;
 esac
 [ -n "${IDP_NO_DISPATCH:-}" ] || { gh workflow run oke-check.yml -R "$REPO" -f mode=apply >/dev/null && echo "ok      apply run dispatched; the pipeline mints the rest. You are done with $P."; }

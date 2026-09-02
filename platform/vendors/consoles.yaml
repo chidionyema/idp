@@ -4,7 +4,7 @@
 # machine and set as a named repository secret; code does everything after that. None of these
 # vendors publishes a create-key API (measured 2026-08-28: Anthropic's Admin API lists and updates
 # keys but does not create them; OpenRouter's /api/v1/keys needs a provisioning key that is itself
-# console-born; DeepSeek, Minimax, Groq, Exa and Stripe publish no key API; BotFather has no HTTP
+# console-born; DeepSeek, Minimax, Exa and Stripe publish no key API; BotFather has no HTTP
 # API), so for each of them the API key IS the root: the founder makes it once at `page`, runs
 # `gh secret set <secret> -R chidionyema/idp`, and never touches that vendor again. The bootstrapper
 # reads the secret from its environment in the apply run, proves it against `verify` (anything but
@@ -34,6 +34,34 @@ vendors:
       - { entry: prospector-engine-env, field: ANTHROPIC_API_KEY }
       - { entry: hermes-agent-env, field: ANTHROPIC_API_KEY }
       - { entry: litellm-upstream, field: ANTHROPIC_API_KEY }   # crew#568 phase 1: the claude lanes on the router
+    router:
+      lanes: |
+        # crew#568 phase 1 (ADR 0011): Claude is a lane on the router, not a key on the Mac. Every
+        # caller that wants Claude asks the router by name; the key lives in litellm-upstream and is
+        # born by bin/idp-bootstrap-vendors from SEED_ANTHROPIC_API_KEY (R52), never pasted anywhere.
+        # Model ids from https://docs.anthropic.com/en/docs/about-claude/models (read 2026-08-29).
+        - model_name: claude
+          litellm_params:
+            model: anthropic/claude-sonnet-5
+            api_key: os.environ/ANTHROPIC_API_KEY
+            timeout: 300
+            max_tokens: 8192
+          model_info:
+            max_input_tokens: 200000
+
+        - model_name: claude-fast
+          litellm_params:
+            model: anthropic/claude-haiku-4-5-20251001
+            api_key: os.environ/ANTHROPIC_API_KEY
+            timeout: 300
+            max_tokens: 8192
+          model_info:
+            max_input_tokens: 200000
+      fallbacks: |
+        # crew#568 phase 1: a Claude turn that 4xx/5xxs falls to the funded direct lanes and ends
+        # in the cheap model (cp30), like every other chain; claude-fast tries claude first.
+        - claude: [minimax, deepseek]
+        - claude-fast: [claude, deepseek]
   openrouter:
     kind: secret
     secret: SEED_OPENROUTER_API_KEY
@@ -44,6 +72,65 @@ vendors:
       - { entry: litellm-upstream, field: OPENROUTER_API_KEY }
       - { entry: prospector-engine-env, field: OPENROUTER_API_KEY }
       - { entry: hermes-agent-env, field: OPENROUTER_API_KEY }
+    router:
+      lanes: |
+        - model_name: openrouter
+          litellm_params:
+            model: openrouter/deepseek/deepseek-chat
+            api_key: os.environ/OPENROUTER_API_KEY
+            timeout: 300
+
+        # crew#284: every direct consensus account (MiniMax, DeepSeek, Gemini) answered 429 on balance on
+        # 2026-08-26 while the OpenRouter account answered 200. These three route the same models through
+        # OpenRouter and sit first in each fallback chain, so consensus survives one empty account.
+        - model_name: minimax-or
+          litellm_params:
+            model: openrouter/minimax/minimax-m2
+            api_key: os.environ/OPENROUTER_API_KEY
+            timeout: 300
+
+        - model_name: deepseek-or
+          litellm_params:
+            model: openrouter/deepseek/deepseek-chat
+            api_key: os.environ/OPENROUTER_API_KEY
+            timeout: 300
+
+        - model_name: gemini-or
+          litellm_params:
+            model: openrouter/google/gemini-2.5-flash
+            api_key: os.environ/OPENROUTER_API_KEY
+            timeout: 300
+      cluster_lanes: |
+        # crew#659 CP3 (founder 2026-08-30, "GPT Researcher is the worker"): the research worker ranks
+        # what it scraped with an embedding model, and the router is the only door to a model (LAW 34).
+        # Served through OpenRouter, the one account that answered on 2026-08-30 05:3xZ when Google's
+        # prepaid credit was depleted (embed answered 429 RESOURCE_EXHAUSTED and had no fallback group).
+        # Endpoint and model id from https://openrouter.ai/docs/api-reference/embeddings (read
+        # 2026-08-30): POST /api/v1/embeddings, model openai/text-embedding-3-small. Callers ask for "embed".
+        - model_name: embed
+          litellm_params:
+            model: openai/openai/text-embedding-3-small
+            api_base: https://openrouter.ai/api/v1
+            api_key: os.environ/OPENROUTER_API_KEY
+            timeout: 120
+          model_info:
+            mode: embedding
+
+        # The same Google model bought through OpenRouter, and it exists for the reason `embed` moved
+        # there on 2026-08-30: one empty account must not take a capability off the estate. Both routes
+        # to this model were measured empty on 2026-08-30 -- Google answered 429 RESOURCE_EXHAUSTED
+        # "Your prepayment credits are depleted" on every image model, and /api/v1/credits returned
+        # total_credits 10 against total_usage 10.17171079 -- so this pair is what makes funding EITHER
+        # one enough. Model id and its presence as an image-output model read from
+        # openrouter.ai/api/v1/models on 2026-08-30, where it is one of eleven rows whose
+        # architecture.output_modalities contains "image".
+        - model_name: image-or
+          litellm_params:
+            model: openrouter/google/gemini-3.1-flash-image
+            api_key: os.environ/OPENROUTER_API_KEY
+            timeout: 300
+      fallbacks: |
+        - openrouter: [minimax, deepseek]
   deepseek:
     kind: secret
     secret: SEED_DEEPSEEK_API_KEY
@@ -53,6 +140,15 @@ vendors:
     targets:
       - { entry: litellm-upstream, field: DEEPSEEK_API_KEY }
       - { entry: prospector-engine-env, field: DEEPSEEK_API_KEY }
+    router:
+      lanes: |
+        - model_name: deepseek
+          litellm_params:
+            model: deepseek/deepseek-chat
+            api_key: os.environ/DEEPSEEK_API_KEY
+            timeout: 300
+      fallbacks: |
+        - deepseek: [minimax]
   minimax:
     kind: secret
     secret: SEED_MINIMAX_API_KEY
@@ -62,6 +158,34 @@ vendors:
     targets:
       - { entry: litellm-upstream, field: MINIMAX_API_KEY }
       - { entry: prospector-engine-env, field: MINIMAX_API_KEY }
+    router:
+      lanes: |
+        # --- the moat's cheap primary --------------------------------------------------------
+        # MiniMax has no first-class LiteLLM provider; it is OpenAI-compatible, so it is declared
+        # with an explicit api_base rather than a provider prefix.
+        - model_name: minimax
+          litellm_params:
+            model: openai/MiniMax-M2
+            api_base: https://api.minimax.io/v1
+            api_key: os.environ/MINIMAX_API_KEY
+            timeout: 300
+            max_tokens: 8192
+          model_info:
+            # crew#506 CP1: the router refuses an oversized turn before it leaves the estate.
+            # MiniMax-M2 context window is 204,800 tokens; a turn above it 400s here instead of
+            # walking the fallback chain into unfunded lanes (the 2026-08-27 Telegram outage).
+            max_input_tokens: 204800
+
+        # The failover tier: same account and adapter, different model. It is a failover, never
+        # a routing choice — see prospector config.yaml on `minimax_m27`.
+        - model_name: minimax_m27
+          litellm_params:
+            model: openai/MiniMax-Text-01
+            api_base: https://api.minimax.io/v1
+            api_key: os.environ/MINIMAX_API_KEY
+            timeout: 300
+      fallbacks: |
+        - minimax: [deepseek]
   kimi:
     # Moonshot's Kimi (platform.kimi.ai). The vendor documents no key shape (API overview and
     # list-models pages, read 2026-09-02), so the shape only refuses an empty or malformed paste;
@@ -73,14 +197,19 @@ vendors:
     verify: { method: GET, url: https://api.moonshot.ai/v1/models, headers: { Authorization: "Bearer {key}" } }
     targets:
       - { entry: litellm-upstream, field: MOONSHOT_API_KEY }
-  groq:
-    kind: secret
-    secret: SEED_GROQ_API_KEY
-    page: https://console.groq.com/keys
-    shape: "gsk_[A-Za-z0-9]{40,}"
-    verify: { method: GET, url: https://api.groq.com/openai/v1/models, headers: { Authorization: "Bearer {key}" } }
-    targets:
-      - { entry: litellm-upstream, field: GROQ_API_KEY }
+    router:
+      lanes: |
+        # Kimi (Moonshot) -- the founder's primary for both Ottos (2026-09-02). First-class LiteLLM
+        # provider prefix `moonshot/`; kimi-k3 is the flagship (1M-token window, platform.kimi.ai/docs/models
+        # read 2026-09-02). The key arrives as MOONSHOT_API_KEY, the name LiteLLM's moonshot adapter reads.
+        - model_name: kimi
+          litellm_params:
+            model: moonshot/kimi-k3
+            api_key: os.environ/MOONSHOT_API_KEY
+            timeout: 300
+            max_tokens: 8192
+          model_info:
+            max_input_tokens: 1000000
   gemini:
     # Google can mint keys with gcloud, but that road needed the founder's laptop SSO every time the
     # session lapsed (a wrong root, crew#66 comment 5461144560). One key made once is the root (R52).
@@ -91,6 +220,50 @@ vendors:
     verify: { method: GET, url: "https://generativelanguage.googleapis.com/v1beta/models?key={key}", headers: {} }
     targets:
       - { entry: litellm-upstream, field: GEMINI_API_KEY }
+    router:
+      lanes: |
+        - model_name: gemini
+          litellm_params:
+            model: gemini/gemini-2.5-flash
+            api_key: os.environ/GEMINI_API_KEY
+            timeout: 300
+      cluster_lanes: |
+        - model_name: vision
+          litellm_params:
+            model: gemini/gemini-2.5-flash
+            api_key: os.environ/GEMINI_API_KEY
+            timeout: 300
+
+        # Founder 2026-08-30, verbatim: "we test with MiniMax see what the image quality is like, then
+        # we use Gemini for the ones that will ship to production". So there are two image lanes, and
+        # the reason they are shaped differently is a vendor fact, not a preference:
+        #
+        #   image           this row. Gemini is a first-class LiteLLM lane, so callers ask the router
+        #                   for "image" by capability and never name Google.
+        #   /minimax/image  a pass-through in general_settings below. LiteLLM v1.98.0 has no MiniMax
+        #                   image provider (docs.litellm.ai/docs/image_generation lists OpenAI, Azure,
+        #                   Google AI Studio, Vertex, Bedrock, Recraft, OpenRouter, Nscale, Xinference,
+        #                   read 2026-08-30), and OpenRouter does not resell it either: every
+        #                   minimax/* row on openrouter.ai/api/v1/models is output_modalities ["text"]
+        #                   (measured 2026-08-30). MiniMax's own /v1/image_generation is the only door.
+        #
+        # Model id from https://ai.google.dev/gemini-api/docs/image-generation (read 2026-08-30), where
+        # gemini-2.5-flash-image is marked legacy. It is newer than this LiteLLM's price map, so a call
+        # on this lane traces with a zero cost until the image ships and the map catches up; spend is
+        # still capped by general_settings.max_budget like every other lane.
+        - model_name: image
+          litellm_params:
+            model: gemini/gemini-3.1-flash-image
+            api_key: os.environ/GEMINI_API_KEY
+            timeout: 300
+      fallbacks: |
+        - gemini: [minimax, deepseek]
+      cluster_fallbacks: |
+        # An image chain may only contain image models. Every other chain here ends in the cheap
+        # text model (cp30) and that is right for text; landing a picture request on a chat model
+        # would answer a caller waiting for bytes with prose, which is worse than a clean failure.
+        # So this chain is two ways to buy one Google model and stops there.
+        - image: [image-or]
   exa:
     kind: secret
     secret: SEED_EXA_API_KEY
