@@ -288,8 +288,29 @@ spec:
             capabilities:
               drop:
                 - ALL
+          # Founder instruction 2026-09-02: give Python enough time to boot. The
+          # deployments key is a LIST and helm never merges list entries, so the bare
+          # `enabled: true` that sat here replaced the chart's whole probe block and the
+          # timings fell to the Kubernetes defaults -- a 1-second timeout the CPU-limited
+          # `dagster api grpc-health-check` CLI can never meet ("Readiness probe failed:
+          # command timed out", events 2026-09-02T18:5xZ). The pod was never Ready and
+          # every helm upgrade stalled on it. Handlers are spelled out because a probe
+          # rendered without one is refused by the API server (incident 2026-09-01).
+          livenessProbe:
+            exec:
+              command: ["dagster", "api", "grpc-health-check", "-p", "3030"]
+            timeoutSeconds: 5
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
           readinessProbe:
             enabled: true
+            exec:
+              command: ["dagster", "api", "grpc-health-check", "-p", "3030"]
+            timeoutSeconds: 5
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
           # crew#555 at admission, founder order 2026-09-02 (oke-check run 33618879684): the
           # dagster namespace is founder-facing, so every Deployment runs 2 replicas spread
           # across nodes. The chart exposes all three levers for a user deployment. The
