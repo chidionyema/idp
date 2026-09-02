@@ -126,8 +126,11 @@ this commit.)
 17. **`curl | sh` installs in CI** (`ci.yml:59,200` temporal; `portability-drill.yml:121`
     k3s) and hermes-v2 actions pinned `@main` with no permissions block.
 
-**Secrets**
-18. **The payment-provider vault entry can never sync** (ExternalSecret orphan,
+**Secrets and dependencies**
+18. **GitHub's dependency scanner reports 12 open vulnerabilities on idp's default
+    branch (2 high, 9 moderate, 1 low)** — surfaced by the push that carried this very
+    audit; triage at https://github.com/chidionyema/idp/security/dependabot.
+19. **The payment-provider vault entry can never sync** (ExternalSecret orphan,
     root-trust MISS — already ticketed, crew#623 CP3) and **the registry pull secret is a
     hand-minted personal token** outside the vault path (`bin/idp-flux-bootstrap:55`).
 
