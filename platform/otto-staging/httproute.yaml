@@ -15,6 +15,10 @@ kind: HTTPRoute
 metadata:
   name: otto-staging
   namespace: otto-staging
+  labels:
+    # Admission physics: the require-catalogue-entity policy (platform/edge/) refuses any
+    # HTTPRoute that names no catalogue entity. Same entity the Service next door names.
+    backstage.io/kubernetes-id: otto-staging
   annotations:
     # The webhook door is authenticated at the gateway, not in the pod (founder edict
     # 2026-09-02: auth is infrastructure physics; the app stays ignorant of it). The rule
