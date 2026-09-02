@@ -394,3 +394,15 @@ drills:
       probe is quoted in docs/runbooks/otto-staging.md). Pending until the founder
       deploys platform/otto-staging; the oke-check job lands with the deploy and
       this line comes off.
+
+  - name: notify
+    owner: idp
+    workflow: oke-check.yml
+    job: notify-drill
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    pending: true
+    proves: >-
+      From the node's identity a POST to the apprise service at /notify/founder-telegram
+      returns 200 and the message reaches the founder's phone, so the publish-once alert
+      channel is graded end to end, never by its kustomization status alone.
