@@ -9,8 +9,11 @@ One person does three small things once. Everything else is the machine's job.
 2. Open **Secrets Manager → Machine accounts**, create a machine account named `estate`,
    then on its **Access tokens** tab choose **Create access token**. The token is shown once
    and cannot be retrieved later.
-3. Put that token into the estate vault as an entry named `bitwarden-machine`.
-   The token is never pasted into chat, a terminal, or a file.
+3. Hand the token to the machine: put it in a file only your user can read
+   (`umask 077` first), run `bin/idp-cloud secret put bitwarden-machine --file <that file>`,
+   and delete the file in the same breath. The token never appears in chat, in a command
+   line, or in anything that persists. The write targets the vault by identifier from the
+   platform's own state, so there is no console form — and no vault picker — to get wrong.
 
 ## What the machine does
 
