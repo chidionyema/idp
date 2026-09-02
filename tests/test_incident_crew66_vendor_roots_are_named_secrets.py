@@ -24,7 +24,7 @@ FAKE = {
     "SEED_ANTHROPIC_API_KEY": "sk-ant-" + "a" * 64,
     "SEED_OPENROUTER_API_KEY": "sk-or-v1-" + "0" * 64,
     "SEED_DEEPSEEK_API_KEY": "sk-" + "1" * 32,
-    "SEED_MINIMAX_API_KEY": "eyJx.eyJy.zzz",
+    "SEED_MINIMAX_API_KEY": "mm-" + "m" * 30,
     "SEED_KIMI_API_KEY": "sk-" + "k" * 40,
     "SEED_GROQ_API_KEY": "gsk_" + "A" * 40,
     "SEED_GEMINI_API_KEY": "AIza" + "B" * 35,
