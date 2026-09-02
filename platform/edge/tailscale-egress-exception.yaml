@@ -1,0 +1,48 @@
+# The two Mac egress proxies the Tailscale operator renders (StatefulSets ts-founder-mac-vnc-*
+# for guacamole/founder-mac-vnc and ts-sunshine-mac-* for backstage/sunshine-mac) cannot pass the
+# restricted policy set, by the physics of a VPN: the proxy runs tailscaled, which programs the
+# pod's network (tun device, routing) and so needs NET_ADMIN via a privileged init container the
+# operator hardcodes. Same class as spire/exception.yaml and chaos/mesh/exception.yaml: an
+# upstream pod spec this repository does not render and cannot patch field-by-field.
+#
+# Measured, not assumed: admission denial in the operator log 2026-09-02T14:02:45Z names exactly
+# these nine policies for StatefulSet/tailscale/ts-founder-mac-vnc-92d4f (and the same set at
+# 13:59:27Z for ts-sunshine-mac-ql4xm); no other policy failed and no other is excused.
+# Founder order 2026-09-02 (docs/founder 2026-09-02T1350Z…a466b5d4.md + …1351Z…4f516e6d.md):
+# a surgical exception scoped to the exact workloads, never a weaker baseline.
+# Scope is mathematically locked: namespace tailscale only, names ts-founder-mac-vnc*/
+# ts-sunshine-mac* only; no other pod can piggyback, and every other namespace still refuses
+# these objects. Tightening path when the operator ships it: a ProxyClass with a least-privilege
+# securityContext (drop ALL, add NET_ADMIN) would let several rows here be deleted.
+# Lives in namespace kyverno because platform/kyverno/kyverno.yaml restricts exceptions to it.
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: tailscale-egress-proxies
+  namespace: kyverno
+spec:
+  match:
+    any:
+      - resources:
+          namespaces: [tailscale]
+          names: [ts-founder-mac-vnc*, ts-sunshine-mac*]
+          kinds: [StatefulSet, Pod, ReplicaSet]
+  exceptions:
+    - policyName: disallow-capabilities-strict
+      ruleNames: [require-drop-all, autogen-require-drop-all]
+    - policyName: disallow-privilege-escalation
+      ruleNames: [privilege-escalation, autogen-privilege-escalation]
+    - policyName: disallow-privileged-containers
+      ruleNames: [privileged-containers, autogen-privileged-containers]
+    - policyName: drop-all-capabilities
+      ruleNames: [require-drop-all, autogen-require-drop-all]
+    - policyName: require-pod-probes
+      ruleNames: [validate-probes, autogen-validate-probes]
+    - policyName: require-requests-limits
+      ruleNames: [validate-resources, autogen-validate-resources]
+    - policyName: require-ro-rootfs
+      ruleNames: [validate-readOnlyRootFilesystem, autogen-validate-readOnlyRootFilesystem]
+    - policyName: require-run-as-nonroot
+      ruleNames: [run-as-non-root, autogen-run-as-non-root]
+    - policyName: restrict-seccomp-strict
+      ruleNames: [check-seccomp-strict, autogen-check-seccomp-strict]

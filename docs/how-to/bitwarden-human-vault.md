@@ -2,9 +2,9 @@
 
 One-time bootstrap for the human secret door (decision 0017), written for the operator role:
 today that is the founder, on a customer estate it is the platform admin — the steps are
-identical. Every step is a browser step;
-nothing is typed into a terminal and no value ever appears in a chat. Total: about ten minutes,
-once, then never again.
+identical. The Bitwarden steps are browser steps quoted from the vendor; the vault write is
+one command run by the machine, and no value ever appears in a chat. Total: about ten
+minutes, once, then never again.
 
 ## 1. Turn on Secrets Manager (Bitwarden, browser)
 
@@ -21,14 +21,25 @@ in the Secrets Manager web app select **New → Project** (name it for the estat
 project with **Can read**. On its **Access tokens** tab select **Create access token** —
 the token is shown once.
 
-## 3. Put the token in the cloud vault (Oracle console, browser)
+## 3. Hand the token to the machine — never to a console form
 
-Quoted from docs.oracle.com/iaas (vault secrets): open the estate's vault, select
-**Secrets → Create Secret**, choose **Manual secret generation**, paste the token as the
-**Secret Contents**, name it `bitwarden-machine`, and select **Create Secret**. This is the
-bridge's one root credential — the one-root-then-code rule: a person hands over exactly one
-value, and code mints everything after it. The register row for it is in
-docs/reference/policy/root-trust.md.
+The vault write is code, not clicks. (2026-09-02: Oracle's console showed two identically
+named vault rows, one of them scheduled for deletion, and a paste landed in the dying one;
+the code path targets the vault by identifier from the platform's own state, so that
+mistake cannot exist on it.) Put the token in a file only your user can read, let the
+platform write it, and delete the file:
+
+    umask 077
+    pbpaste > /tmp/bw.token
+    bin/idp-cloud secret put bitwarden-machine --file /tmp/bw.token
+    rm -P /tmp/bw.token
+
+The entry's content is the raw token, never JSON: the bootstrap reads it back decoded as
+`BWS_ACCESS_TOKEN`. This is the bridge's one root credential — the one-root-then-code rule:
+a person hands over exactly one value, and code mints everything after it. The register row
+for it is in docs/reference/policy/root-trust.md. (To merely look at secrets, Oracle's
+console now lives under Identity & Security → Secret Management,
+cloud.oracle.com/security/secrets — Oracle moved it off the vault page.)
 
 ## 4. Send the two public names
 

@@ -11,5 +11,13 @@ metadata:
   name: tailscale
   labels:
     app.kubernetes.io/part-of: idp
-    pod-security.kubernetes.io/enforce: baseline
+    # The proxies the operator creates run a privileged `sysctler` init container and a
+    # privileged `tailscale` container (vendor images, 2026-09-02 FailedCreate events). Pod
+    # Security Admission is enforced by the API server per namespace and no Kyverno exception
+    # can waive it (same reasoning as platform/edge/k8s-infra-namespace.yaml). Only the
+    # operator and its proxies live here; warn and audit stay restricted so anything else
+    # that lands in this namespace is reported. Record:
+    # docs/reference/policy/tailscale-pod-security.md
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted

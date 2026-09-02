@@ -22,9 +22,10 @@ COPY scheduler/ /app/scheduler/
 # Install dagster and its kubernetes library, matching the helm chart version.
 RUN pip install --no-cache-dir \
     dagster==1.13.19 \
+    dagster-webserver==1.13.19 \
     dagster-postgres==0.29.19 \
     dagster-k8s==0.29.19
 # The image runs as non-root.
-USER scheduler
+USER 10001
 EXPOSE 3030
 CMD ["dagster", "api", "grpc", "-h", "0.0.0.0", "-p", "3030", "-m", "estate_scheduler.definitions"]
