@@ -294,20 +294,26 @@ spec:
           # timings fell to the Kubernetes defaults -- a 1-second timeout the CPU-limited
           # `dagster api grpc-health-check` CLI can never meet ("Readiness probe failed:
           # command timed out", events 2026-09-02T18:5xZ). The pod was never Ready and
-          # every helm upgrade stalled on it. Handlers are spelled out because a probe
-          # rendered without one is refused by the API server (incident 2026-09-01).
+          # every helm upgrade stalled on it.
+          # Measured 2026-09-02T19:2xZ in-pod: the exec CLI's HEALTHY path takes 5s wall
+          # at the 250m CPU limit -- equal to its own timeout, so an exec probe can only
+          # flap, and each run burns ~5 CPU-seconds spawning Python. The kubelet-native
+          # gRPC probe below is a millisecond RPC from the node, spawns nothing, and the
+          # code server answers grpc.health.v1 with SERVING (measured, service '' and
+          # 'DagsterApi'). Handlers are spelled out because a probe rendered without one
+          # is refused by the API server (incident 2026-09-01).
           livenessProbe:
-            exec:
-              command: ["dagster", "api", "grpc-health-check", "-p", "3030"]
-            timeoutSeconds: 5
+            grpc:
+              port: 3030
+            timeoutSeconds: 30
             initialDelaySeconds: 30
             periodSeconds: 30
             failureThreshold: 3
           readinessProbe:
             enabled: true
-            exec:
-              command: ["dagster", "api", "grpc-health-check", "-p", "3030"]
-            timeoutSeconds: 5
+            grpc:
+              port: 3030
+            timeoutSeconds: 30
             initialDelaySeconds: 30
             periodSeconds: 20
             failureThreshold: 3
