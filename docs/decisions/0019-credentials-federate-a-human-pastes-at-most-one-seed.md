@@ -53,8 +53,8 @@ the one machine token remains the whole manual surface.
 
 - The three one-time founder moves (subscribe, machine account + token, one paste) are the entire
   human credential ceremony for the estate; everything downstream is code.
-- Telegram alert repo secrets (`SEED_TELEGRAM_ALERTS_*`) are seeded by an agent from the hermes
+- Telegram alert repository secrets (`SEED_TELEGRAM_ALERTS_*`) are seeded by an agent from the hermes
   gateway's existing store, replacing the rejected pinned commands.
 - Any design that adds a second pasted credential fails review against this record.
 
-Related: 0003 (identity is OIDC at the gateway), 0007 (federated login, no held passwords).
+Related: 0003 (identity is single sign-on at the gateway), 0007 (federated login, no held passwords).
