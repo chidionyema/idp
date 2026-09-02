@@ -78,7 +78,10 @@ spec:
             - ALL
 
     dagsterWebserver:
-      replicaCount: 1
+      # crew#555: founder-facing namespace, so 2 replicas. The chart exposes replicaCount but
+      # no spread or strategy value for the webserver; the spread is a postRenderer patch below,
+      # in the estate's standard shape (litellm, oauth2-proxy: DoNotSchedule on hostname).
+      replicaCount: 2
       # The chart's init containers (check-db-ready, init-user-deployment) carry no resources
       # of their own and require-requests-limits judges every container.
       initContainerResources:
@@ -225,8 +228,27 @@ spec:
                 - ALL
           readinessProbe:
             enabled: true
+          # crew#555 at admission, founder order 2026-09-02 (oke-check run 33618879684): the
+          # dagster namespace is founder-facing, so every Deployment runs 2 replicas spread
+          # across nodes. The chart exposes all three levers for a user deployment. The
+          # strategy block is crew#307's other half: hard hostname anti-affinity means a surge
+          # pod can never place beside a replica, so the roll must free a node first --
+          # maxUnavailable 1, maxSurge 0 -- or the default 25%/25% deadlocks silently.
+          replicaCount: 2
+          deploymentStrategy:
+            type: RollingUpdate
+            rollingUpdate:
+              maxUnavailable: 1
+              maxSurge: 0
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      deployment: estate-scheduler
 
-  # CPU request total: 100m (postgresql) + 100m (webserver) + 100m (daemon) + 50m (runLauncher) + 100m (user-deploy) = 450m
+  # CPU request total: 100m (postgresql) + 2x100m (webserver) + 100m (daemon) + 50m (runLauncher) + 2x100m (user-deploy) = 650m standing (crew#555: webserver and user-deploy run 2 replicas)
   # The postRenderers add the priorityClassName, security contexts and labels the chart does not expose.
   postRenderers:
     - kustomize:
@@ -324,6 +346,24 @@ spec:
                   secretRef:
                     name: dagster-celery-config-secret
                     optional: false
+          # crew#555 (founder order 2026-09-02): the webserver must spread across nodes and the
+          # chart offers no values key for it. DoNotSchedule, not preferred: best-effort spread
+          # collapses onto one node exactly when the cluster is tight (platform/llm/litellm.yaml).
+          # No strategy patch needed: a spread constraint at maxSkew 1 admits the surge pod
+          # (2 on one node vs 1 is skew 1), unlike hard anti-affinity.
+          - target:
+              kind: Deployment
+              name: dagster-dagster-webserver
+            patch: |
+              - op: add
+                path: /spec/template/spec/topologySpreadConstraints
+                value:
+                  - maxSkew: 1
+                    topologyKey: kubernetes.io/hostname
+                    whenUnsatisfiable: DoNotSchedule
+                    labelSelector:
+                      matchLabels:
+                        component: dagster-webserver
           # Labels for the catalogue: every workload carries its Backstage ID.
           - target:
               kind: Deployment

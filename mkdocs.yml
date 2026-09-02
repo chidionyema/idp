@@ -61,6 +61,7 @@ nav:
       - explanation/index.md
       - Founder self-service, the field (crew#66): explanation/founder-self-service-research.md
       - Otto on the founder's Mac, the setup and the friction (crew#561): explanation/otto-on-the-mac.md
+      - The dagster scheduler survives a node (pull request 1138): explanation/dagster-availability.md
       - The secret bridge's certificate deadlock (decision 0017): explanation/sdk-server-certificate-deadlock.md
   - Demo:
       - The Demo Standard: demo/demo-standard.md
