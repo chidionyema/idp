@@ -355,7 +355,15 @@ with sync_playwright() as p:
     menu_btn.first.click()
     page.wait_for_timeout(800)
     on_screen = " ".join(page.locator("body").inner_text().split())
-    DOORS = ("Today", "Kubernetes", "What we run", "Create", "Map", "Tools", "Ops", "Find", "How-to", "You")
+    # The expected doors are read from the same list that seeds the front page's toolkit
+    # (backstage/app-config.yaml, home-page-widget:home/toolkit), which a test already holds
+    # equal to the menu (tests/test_crew612_portal_doors_are_real_and_distinct.py). One place
+    # for every name (R70): idp#1130 renamed the doors and a third hardcoded copy here kept
+    # grading the rename as an outage for 90 minutes (idp#1141, 2026-09-02).
+    import yaml
+    _rows = yaml.safe_load(open(os.path.join(os.environ["IDP_ROOT"], "backstage", "app-config.yaml")))["app"]["extensions"]
+    _toolkit = next(r for r in _rows if isinstance(r, dict) and "home-page-widget:home/toolkit" in r)
+    DOORS = tuple(t["label"] for t in _toolkit["home-page-widget:home/toolkit"]["config"]["tools"])
     missing = [d for d in DOORS if d not in on_screen]
     page.screenshot(path=os.path.join(shot_dir, "home-phone-menu.png"))
     if missing:
