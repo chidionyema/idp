@@ -1,14 +1,15 @@
-# LATEST — session a0d64ea4 (crew#66 founder lane)
+# RESUME HERE — 2026-09-02 ~01:5xZ (.wt-eye-breaker, session 54539261)
 
-## RESUME HERE
-
-Branch `feat/crew66-root-trust` (from crew459-portal-polish worktree): root-trust gate PR
-for crew#66 ruling 5453747447 / crew#580. Files: bin/idp-root-trust (+ test
-tests/test_incident_crew66_root_trust_register.py, 5 passed), docs/reference/policy/root-trust.md
-(register, 33 entries, MEETS 11 / PARTIAL 1 / MISS 19), bin/idp-bootstrap-tailscale (written,
-not run end to end), security-policy row, idp-ci + verify-drill rows, stale comments fixed,
-vault-seed tailscale entry refused. Next: commit, push, bin/pr-report, PR (Tracked: crew#66,
-Drill: root-trust), then tell the founder `bin/idp-bootstrap-tailscale` is ready to run.
-Then the bootstrappers PR (#575–#579): bin/idp-estate-seed, router keys, github-app tokens,
-bin/idp-bootstrap-cloudflare, bin/idp-bootstrap-vendors, umbrella bin/idp-bootstrap-estate.
-Founder plan recorded crew#66 5453918598 (one-shot, "just you").
+## Current thread: OTTO COMMERCIAL-INSTALL MAP — all 3 lanes reported, COMPILING NOW
+Founder order: "map current fragile process end to end" for Otto commercial install.
+Facts in hand (task outputs in this session's tasks/ dir): idp platform lane (9
+founder-hand steps, no tenancy primitive, commerce suspended, order_paid unsubscribed);
+hermes-v2 lane (./install has 3 hard stops for a stranger: NousResearch repo pin,
+missing hermes: block, dangling sovereign symlink; config.yaml defaults to
+llm.mumchimp.com; public repo; SessionStart hook clones founder claude config over
+~/.claude); spec lane (bar = golden-goose capture d531aefa + ADR 0016 @ d838734a
+unmerged + approved plan stateful-coalescing-prism + readiness rows: hermes second
+tenant/pay path RED).
+Writing docs/otto-commercial-install-map-2026-09-02.md on branch docs/otto-install-map
+(off origin/main 8cad7b0f); commit estate-agents[bot], push, no PR; then feed + reply.
+Prior thread state: see git log of feat/security-end-to-end (audit @ c2fb97d7).
