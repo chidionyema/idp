@@ -12,6 +12,7 @@ nav:
   - Notification channels: reference/policy/notification-channels.md
   - Incident register: reference/incident-register.md
   - Documentation policy: reference/policy/documentation.md
+  - Tailscale egress proxy exception: reference/policy/tailscale-egress-exception.md
   - Architecture:
       - explanation/architecture/index.md
       - Live estate: explanation/architecture/live.md
