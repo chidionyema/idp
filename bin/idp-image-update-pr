@@ -14,14 +14,20 @@ branch=${IMAGE_UPDATE_BRANCH:-flux/image-updates}
 # shellcheck disable=SC2016  # backticks are the gate's own syntax, not a substitution
 VERIFY='Verify: `grep -rn imagepolicy platform/ clusters/ --include=*.yaml`'
 OPTIMISED="Optimised: 1 -> 1 steps (a newTag line written by the image controller), 1 -> 1 round trips (one push, one pull request); cut: nothing, a machine-written tag bump has no plan to shrink (operating-model-gate rule optimised_plan, LAW 51)"
+# idp#1157 (2026-09-02): operating-model-gate rule control_shipped landed 2026-08-31 and this
+# script never learned it, so the storefront release sat refused on a body no person wrote --
+# the gate-landed-after-branch class, a third time on this one script. The reasoned none is
+# the honest form: a tag bump ships no test, policy rule or admission rule.
+CONTROL="Control: none: a machine-written image tag bump; the only changed lines are newTag pins under the imagepolicy markers, so there is no test, policy rule or admission rule to ship"
 n=$(gh pr list --head "$branch" --base main --state open --json number -q '.[0].number')
 if [ -z "$n" ]; then
   gh pr create --head "$branch" --base main \
     --title "$(git log -1 --format=%s)" \
-    --body "$(printf '%s\n\n%s\n%s\n%s\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n' \
+    --body "$(printf '%s\n\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n' \
       "$(git log -1 --format=%b)" \
       "$VERIFY" \
       "$OPTIMISED" \
+      "$CONTROL" \
       "Spec: tests/test_incident_catalogue_image_never_repulled.py" \
       "Drill: login-drill" \
       "Cost-delta-usd-month: 0" \
@@ -52,6 +58,17 @@ case "$body" in
     gh pr edit "$n" --body "$(printf '%s\n\n%s\n' "$(gh pr view "$n" --json body -q .body)" "$VERIFY")"
     # A note about the body, not the verdict: the last line of stdout is what the caller reads.
     echo "refresh image-update-pr #$n body gained the Verify line (idp#1046)" >&2
+    ;;
+esac
+# idp#1157, the same class a third time: operating-model-gate rule control_shipped refuses a
+# platform/ or clusters/ body with no `Control:` line, and #1157 held the storefront release
+# until a hand added the line. An existing body that lacks it gets the reasoned none.
+body=$(gh pr view "$n" --json body -q .body)
+case "$body" in
+  *"Control: "*) ;;
+  *)
+    gh pr edit "$n" --body "$(printf '%s\n\n%s\n' "$body" "$CONTROL")"
+    echo "refresh image-update-pr #$n body gained the Control line (idp#1157)" >&2
     ;;
 esac
 m=UNKNOWN

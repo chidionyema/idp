@@ -156,9 +156,10 @@ VERIFY = "Verify: `grep -rn imagepolicy platform/ clusters/ --include=*.yaml`"
 
 
 def test_a_body_that_already_carries_both_lines_is_left_alone(tmp_path):
-    """Two backfills now run on every controller push, `Optimised:` and `Verify:` (idp#1046, the
-    same class one gate later), so "left alone" means neither of them found anything to add."""
-    r = _fake_gh(tmp_path, "Written by image-automation-controller.\n\nOptimised: 1 -> 1 steps, 1 -> 1 round trips; cut: nothing\n" + VERIFY + "\n")
+    """Three backfills now run on every controller push -- `Optimised:`, `Verify:` (idp#1046) and
+    `Control:` (idp#1157, the same class each time) -- so "left alone" means none of them found
+    anything to add."""
+    r = _fake_gh(tmp_path, "Written by image-automation-controller.\n\nOptimised: 1 -> 1 steps, 1 -> 1 round trips; cut: nothing\n" + VERIFY + "\nControl: none: a machine tag bump ships no test or rule\n")
     assert r.returncode == 0, r.stdout + r.stderr
     assert not (tmp_path / "edits.txt").exists()
 
