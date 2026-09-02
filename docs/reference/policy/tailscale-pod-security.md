@@ -40,7 +40,8 @@ cannot waive it.
 
 Editing the vendor's proxy spec to drop the privileged containers: rejected
 because the operator owns and rewrites those workloads, so the edit would be
-fought and reverted on every reconcile, and the vendor's images need those
+fought and reverted every time the operator applies its declared state, and
+the vendor's images need those
 privileges to program routing.
 
 ## How to undo it
