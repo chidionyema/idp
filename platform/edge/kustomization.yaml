@@ -12,6 +12,10 @@ resources:
   - catalogue-entity-exception.yaml
   - cert-manager.yaml
   - langfuse-exception.yaml
+  # run 33618879684's wedge class, closed for observability: six by-design singletons the
+  # availability debt registry already records (idp#544) would be refused at the next chart
+  # upgrade; the file says why each cannot run two.
+  - observability-availability-exception.yaml
   - k8s-infra-namespace.yaml
   - k8s-infra-exception.yaml
   - temporal-exception.yaml

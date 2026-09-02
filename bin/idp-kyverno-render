@@ -84,6 +84,7 @@ rm -rf "$S/exceptions"; mkdir -p "$S/exceptions"
 python3 - "$IDP" "$S/exceptions" <<'PY'
 import sys, yaml, pathlib, subprocess
 idp = pathlib.Path(sys.argv[1]); out = pathlib.Path(sys.argv[2]); n = 0; paths = set()
+ns_rows = {}  # run 33618879684: namespace labels, or namespaceSelector rules silently skip
 for k in sorted((idp / "clusters/oke").glob("*.yaml")):
     for d in yaml.safe_load_all(open(k)):
         path = ((d or {}).get("spec") or {}).get("path", "")
@@ -98,15 +99,35 @@ for path in sorted(paths):
     for d in yaml.safe_load_all(r.stdout):
         if d and d.get("kind") == "PolicyException" and d["metadata"].get("namespace") == "kyverno":
             (out / f"{n}.yaml").write_text(yaml.safe_dump(d)); n += 1
+        if d and d.get("kind") == "Namespace" and (d["metadata"].get("labels") or {}):
+            # 2026-09-02, oke-check run 33618879684: require-availability matches by
+            # namespaceSelector (availability.idp/tier: founder-facing). The CLI judging an
+            # offline render knows no namespace labels, so the rule reported skip -- this judge
+            # printed "ok ... pass: 302, fail: 0" for the exact Deployment admission then denied,
+            # and HelmRelease dagster/dagster wedged scheduling, dagster, notify and otto-staging.
+            # Every labelled Namespace the cluster applies is handed to `kyverno apply -f` below.
+            ns_rows[d["metadata"]["name"]] = d["metadata"]["labels"]
         if d and d.get("kind") == "ClusterPolicy":
             # platform/scheduling's kustomization stamps a namespace on its ClusterPolicies; the API
             # server ignores it on a cluster-scoped object, the CLI skips the policy with an error
             # count and no verdict. Strip it so the policy is judged, not skipped.
             d["metadata"].pop("namespace", None)
             with open(out.parent / "policies.yaml", "a") as f: f.write("---\n" + yaml.safe_dump(d)); est += 1
+values = {"apiVersion": "cli.kyverno.io/v1alpha1", "kind": "Values",
+          "namespaceSelector": [{"name": k, "labels": v} for k, v in sorted(ns_rows.items())]}
+(out.parent / "ns-values.yaml").write_text(yaml.safe_dump(values))
 print(f"exceptions {n} PolicyExceptions in namespace kyverno across clusters/oke paths")
+print(f"namespaces {len(ns_rows)} labelled Namespaces feed namespaceSelector rules (run 33618879684)")
 print(f"policies  +{est} estate ClusterPolicies from clusters/oke paths (platform/edge, platform/scheduling)")
 PY
+# The set the CLI can grade the way admission does: clusters/oke copies win name collisions
+# (the loop above appended all 11 estate policies a second time, so every estate-policy verdict
+# printed doubled) and mixed Enforce+Audit policies are split, because --audit-warn decides per
+# POLICY while admission decides per RULE (measured on kyverno v1.19.0, 2026-09-02; the incident
+# test holds the fixture). Without the split, an Audit rule's miss -- one the cluster ADMITS --
+# reads FAIL here, which is the run 33618879684 defect mirrored: the judge red where admission
+# is green instead of green where admission is red.
+python3 "$IDP/bin/lib/kyverno_policy_set.py" "$S/policies.yaml"
 
 rc=0
 # 2026-08-28 (crew#584, founder: "tests were supposed to be 9x faster"): this loop ran the 16 platform
@@ -197,12 +218,26 @@ open(sys.argv[2], "w").write(yaml.safe_dump_all(docs) if docs else "")
 PY2
 }
 
+# crew#623 keeps every */base on the judged list, but the cluster admits the oke OVERLAY's bytes
+# (clusters/oke/platform.yaml -> platform/backstage/overlays/oke), and with namespace labels
+# resolving offline (run 33618879684) the base's deliberate one-replica k3d shape fails a rule
+# admission never applies to those bytes. A base whose oke overlay exists is judged as that
+# overlay: the list is unchanged, the judged bytes are the admitted ones. Measured 2026-09-02:
+# overlays/oke pass 178 fail 0; base alone fail 4 (require-availability on catalogue).
+dirs=()
 for dir in "$@"; do
+  if [[ "$dir" == */base && -f "${dir%/base}/overlays/oke/kustomization.yaml" ]]; then
+    dirs+=("${dir%/base}/overlays/oke")
+  else
+    dirs+=("$dir")
+  fi
+done
+for dir in "${dirs[@]}"; do
   _slot; render_dir "$dir" > "$S/releases-$(_slug "$dir").txt" 2> "$S/render-err-$(_slug "$dir").txt" &
 done
 wait
 : > "$S/releases.txt"
-for dir in "$@"; do
+for dir in "${dirs[@]}"; do
   slug="$(_slug "$dir")"
   # A render that died before any verdict (kustomize `must build at directory`, a chart that will
   # not pull) says so here, verbatim, and the judge exits 1 -- the shape crew#292's tests hold.
@@ -215,16 +250,24 @@ _exc() { for x in "$S"/exceptions/*.yaml; do [ -f "$x" ] && printf -- '--excepti
 judge() {  # judge <label-kind> <label> <resource-file>: one verdict block; exit 1 on a failed policy
   local kind="$1" label="$2" res="$3" out summary
   mapfile -t exc < <(_exc)
-  out=$(kyverno apply "$S/policies.yaml" --resource "$res" "${exc[@]}" 2>&1 || true)
+  # -f hands the CLI every labelled Namespace (run 33618879684): without it a namespaceSelector
+  # rule is a skip, and a skip printed as "ok" is the silent-green class on the estate ledger.
+  # --audit-warn mirrors admission (run 33618879684 follow-up): a failureAction Audit rule never
+  # blocks an apply on the cluster, so counting its miss as FAIL here fails PRs the cluster would
+  # admit. The flag decides per POLICY, so bin/lib/kyverno_policy_set.py has already split every
+  # mixed policy; audit misses land in the warn count, Enforce misses alone turn the verdict red.
+  out=$(kyverno apply "$S/policies.yaml" --resource "$res" -f "$S/ns-values.yaml" --audit-warn "${exc[@]}" 2>&1 || true)
   summary=$(printf '%s\n' "$out" | grep -E '^pass:' | tail -1)
   # Read the verdict from a here-string, never `printf | grep -q`: under pipefail grep -q quits at
   # the first match, printf dies of SIGPIPE on a big render, the pipeline reports failure and the
   # judge said "ok" over 52 failed policies (run 33248103977, 2026-08-29: the must-fail fixture
   # passed on main). The CLI also glues "Mutation has been applied successfully." onto the first
   # failed line, so the pattern is anchored on the arrow, not the line start.
-  if grep -qE 'policy .* -> resource .* failed' <<<"$out"; then
+  # `failed:` with the colon: an Audit rule's miss prints `failed as audit warning:` under
+  # --audit-warn, and a warning that matched here would put the FAIL verdict right back.
+  if grep -qE 'policy .* -> resource .* failed:' <<<"$out"; then
     echo "FAIL  $kind $label: $summary"
-    grep -E 'policy .* -> resource .* failed' <<<"$out" | sed 's/^/      /'; return 1
+    grep -E 'policy .* -> resource .* failed:' <<<"$out" | sed 's/^/      /'; return 1
   else echo "ok    $kind $label: $summary"; fi
 }
 

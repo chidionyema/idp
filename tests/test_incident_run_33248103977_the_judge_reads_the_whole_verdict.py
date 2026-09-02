@@ -19,7 +19,7 @@ def test_the_judge_never_pipes_the_verdict_into_grep_q():
     code = [l for l in text.splitlines() if not l.lstrip().startswith("#")]
     piped = [l for l in code if "| grep -q" in l]
     assert not piped, f"a `| grep -q` on the CLI verdict is the SIGPIPE silent green: {piped}"
-    assert "grep -qE 'policy .* -> resource .* failed' <<<\"$out\"" in text
+    assert "grep -qE 'policy .* -> resource .* failed:' <<<\"$out\"" in text
 
 
 def test_the_bug_shape_reads_ok_and_the_fix_reads_fail():
@@ -29,7 +29,7 @@ def test_the_bug_shape_reads_ok_and_the_fix_reads_fail():
 set -euo pipefail
 out=$(cat "$1")
 if printf '%s\n' "$out" | grep -qE '^policy .* failed'; then echo PIPE=FAIL; else echo PIPE=ok; fi
-if grep -qE 'policy .* -> resource .* failed' <<<"$out"; then echo HERE=FAIL; else echo HERE=ok; fi
+if grep -qE 'policy .* -> resource .* failed:' <<<"$out"; then echo HERE=FAIL; else echo HERE=ok; fi
 """
     p = pathlib.Path(__file__).parent / "_verdict.tmp"
     try:
@@ -44,5 +44,14 @@ if grep -qE 'policy .* -> resource .* failed' <<<"$out"; then echo HERE=FAIL; el
 
 def test_a_glued_first_line_is_still_a_failure():
     line = "Mutation has been applied successfully.policy require-catalogue-entity -> resource observability/Service/s failed:"
-    r = subprocess.run(["grep", "-qE", "policy .* -> resource .* failed"], input=line, text=True)
+    r = subprocess.run(["grep", "-qE", "policy .* -> resource .* failed:"], input=line, text=True)
     assert r.returncode == 0
+
+
+def test_an_audit_warning_is_never_a_failure():
+    """Under --audit-warn an Audit rule's miss prints `failed as audit warning:` -- one the
+    cluster ADMITS. The FAIL pattern anchors on `failed:` so the warning cannot match; without
+    the colon the audit-vs-enforce split (bin/lib/kyverno_policy_set.py) buys nothing."""
+    line = "policy require-priority-class-audit-rules -> resource llm/Deployment/litellm failed as audit warning:"
+    r = subprocess.run(["grep", "-qE", "policy .* -> resource .* failed:"], input=line, text=True)
+    assert r.returncode == 1
