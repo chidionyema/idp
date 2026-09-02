@@ -51,3 +51,24 @@ cluster-status: ## Nodes, pods, and what the cluster costs the machine
 .PHONY: bind-audit
 bind-audit: ## Fail if anything but the gateway is listening on a non-loopback address
 	@bin/bind-audit
+
+# ---------------------------------------------------------------------------
+# Research build targets (crew#396 step 3)
+# ---------------------------------------------------------------------------
+
+.PHONY: test lint research-install research-test research-lint
+
+test: ## Run the full test suite (unit + research smoke)
+	python -m pytest tests -q
+
+lint: ## Run ruff on the whole repo (excluding backstage, node_modules, .venv)
+	ruff check .
+
+research-install: ## Install research dependencies into the current environment
+	python -m pip install -r requirements-research.txt
+
+research-test: ## Run only the research smoke tests
+	python -m pytest tests/research -q
+
+research-lint: ## Lint only the research directories
+	ruff check contract db engine profiles scripts tests/research
