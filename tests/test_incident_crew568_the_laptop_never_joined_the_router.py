@@ -33,9 +33,17 @@ def test_laptop_is_a_seedable_entry_and_all_covers_it():
 
 
 def test_the_laptop_key_is_a_router_key_for_every_lane():
+    """The lane list is derived from the rendered router config at seed time, never typed
+    by hand: the line must name the config, and running its own derivation must emit
+    exactly the lanes the cluster serves (two angles on the same claim)."""
     _, run, _ = _seed_step()
     line = next(l for l in run.splitlines() if "idp-router-key laptop" in l)
-    lanes = set(line.split()[-1].split(","))
+    assert "platform/llm/config.yaml" in line and "model_list" in line
+    snippet = line.split("python3 -c '", 1)[1].rsplit("'", 1)[0]
+    out = subprocess.run(
+        ["python3", "-c", snippet], capture_output=True, text=True, cwd=ROOT, check=True
+    )
+    lanes = set(out.stdout.strip().split(","))
     cfg = yaml.safe_load((ROOT / "platform" / "llm" / "config.yaml").read_text())
     assert lanes == {m["model_name"] for m in cfg["model_list"]}
 

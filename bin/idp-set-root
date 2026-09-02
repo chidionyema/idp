@@ -112,7 +112,7 @@ T
     echo "        2. Copy the token BotFather answers with, when asked below."
     ask "$name" "the token shown" ;;
   *)
-    vendors | grep -qx -- "$P" || { echo "FAIL    unknown provider $P"; sed -n 3,4p "$0"; exit 2; }
+    vendors | grep -x -- "$P" >/dev/null || { echo "FAIL    unknown provider $P"; sed -n 3,4p "$0"; exit 2; }
     page=$(field "$P" page); name=$(field "$P" secret)
     [ -n "$page" ] && [ -n "$name" ] || { echo "FAIL    no page/secret for $P in platform/vendors/consoles.yaml"; exit 1; }
     echo "$P: one API key, once. The key page is opening."
