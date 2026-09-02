@@ -43,6 +43,13 @@ spec:
     global:
       postgresqlSecretName: dagster-postgresql-secret
       generatePostgresqlPasswordSecret: true
+      # Chart 1.13.19 generates the celery config Secret only under CeleryK8sRunLauncher,
+      # and this estate runs K8sRunLauncher, so the Secret can never exist. An empty name
+      # stops every template rendering a reference to it; the subchart has its own copy of
+      # this key below because it falls back to its own default when only this one is blank.
+      # Restored 2026-09-02: the merge that kept the controller's newTag lines dropped it,
+      # and the render gate plus the incident guard both went red on this branch.
+      celeryConfigSecretName: ""
     imagePullSecrets:
       - name: ghcr-pull
     postgresql:
