@@ -29,8 +29,10 @@ every claim names the file or ruling that enforces it. Four journeys, then the k
    policy lets that group read secret bundles — except the receipt-signing key, which is
    fenced even from them. No vault credential is stored in the cluster.
 4. **Delivered**: External Secrets checks the vault every 10 minutes and writes the value as
-   a Kubernetes Secret; pods mount it as a file — an admission policy refuses secrets in
-   environment variables.
+   a Kubernetes Secret; pods mount it as a file. An admission policy watches for secrets in
+   environment variables — today it **reports** a violation rather than refusing it
+   (`platform/edge/kyverno-secrets-policy.yaml:30`, Audit mode; the flip to refusal is an
+   open item below).
 5. **Rotated**: change the vault entry; Reloader rolls the pod
    (`docs/policy/secrets-rotation.md`, drilled).
 
@@ -49,9 +51,12 @@ machine account, free tier, no command lines for you again.
 3. Flux, running inside the cluster, pulls from git. Git is the only way in — no laptop holds
    cluster-write credentials. Flux's own write-back identity is a GitHub App token, machine
    made (`platform/image-automation/flux-writer.yaml`).
-4. On arrival every object faces admission policy (no `:latest` images, no secret in an env
-   var, telemetry required — LAW 50) and lands in a namespace that denies all traffic both
-   ways by default, with quotas (AGENTS.md ns_fence rule).
+4. On arrival every object faces admission policy (telemetry required — LAW 50; the
+   no-`:latest` and pod-hardening rules are enforced from the prospector policy bundle, not
+   this repo). The namespace fence the rules call for — deny all traffic both ways by
+   default, with quotas (AGENTS.md ns_fence rule) — is **a gate that exists but is not yet
+   applied**: 0 of 33 namespaces carry the fence today, and the CI row is report-only. The
+   2026-09-02 audit (`docs/security-audit-2026-09-02.md`) grades this P0.
 
 ## The keys that exist
 
@@ -68,3 +73,9 @@ machine account, free tier, no command lines for you again.
 - Metabase's inner door: decision 0016, awaiting GO.
 - The human-secret home: decision 0017 (Bitwarden), awaiting GO.
 - The two Telegram values themselves: still to be set by your hand (or by 0017 once built).
+- The namespace fences: 0 of 33 namespaces have the default-deny + quota fence; the debt
+  counter grew from 76 to 127 while the CI row could only warn. Graded P0 in the audit.
+- The env-var-secret policy reports instead of refusing; the flip condition (zero
+  violations) is blocked by one permanent exception (Dagster).
+- The full graded picture, every finding named to file and line:
+  `docs/security-audit-2026-09-02.md`.
