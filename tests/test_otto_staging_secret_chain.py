@@ -25,14 +25,18 @@ def test_external_secret_maps_the_vault_token_to_the_env_key() -> None:
     ]
     assert kinds, "telegram-secret.yaml lost its ExternalSecret document"
     spec = kinds[0]["spec"]
-    assert spec["secretStoreRef"]["name"] == "human-vault", (
-        "the token must enter through the human door (decision 0017), not estate-vault"
+    assert spec["secretStoreRef"]["name"] == "estate-vault", (
+        "the token rides the machine road (founder 2026-09-02 evening): the vault entry "
+        "otto-staging-telegram was measured holding fields token+webhook_secret while the "
+        "Bitwarden project held nothing and the pod never booted; a human-vault pointer "
+        "here reads an entry nobody writes"
     )
     row = spec["data"][0]
     assert row["secretKey"] == "OTTO_TELEGRAM_BOT_TOKEN"
     assert row["remoteRef"]["key"] == "otto-staging-telegram"
-    assert "property" not in row["remoteRef"], (
-        "a Bitwarden secret is one raw value; a property selector would read nothing"
+    assert row["remoteRef"].get("property") == "token", (
+        "the entry is JSON with fields token and webhook_secret; without the property "
+        "selector the pod would read the whole JSON blob as its bot token"
     )
 
 
