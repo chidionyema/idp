@@ -387,10 +387,18 @@ spec:
       # ESTATE_ZONE for the HTTPRoute hostname, like every other row.
       - kind: ConfigMap
         name: estate-config
+      # OTTO_WEBHOOK_SECRET for the route's exact header match: the gateway forwards a
+      # webhook POST only when Telegram echoes this value (rendered into flux-system by
+      # platform/otto-staging-secret/webhook-substitution.yaml from the vault). Not
+      # optional: a missing Secret fails the row rather than applying a route whose
+      # expected header is the literal '${OTTO_WEBHOOK_SECRET}'.
+      - kind: Secret
+        name: otto-webhook
   dependsOn:
     - name: scheduling
     - name: secret-store
     - name: edge
+    - name: otto-staging-secret
   wait: true
   timeout: 10m
   healthChecks:
@@ -398,6 +406,26 @@ spec:
       kind: Deployment
       name: otto-staging
       namespace: otto-staging
+---
+# The otto-webhook ExternalSecret, its own row like alerts-secret (crew#284 shape): a failing
+# secret sync holds only otto-staging, and the substitution Secret exists before the row
+# that substitutes from it is built.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: otto-staging-secret
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: secret-store
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/otto-staging-secret
+  prune: true
+  wait: true
+  timeout: 10m
 ---
 # MCP row (crew#458): agentgateway + github-mcp on the cluster, reached at mcp.<zone> through the
 # https-mcp listener on prospector-edge. Replaces the colima VM on the founder Mac. After edge

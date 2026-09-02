@@ -47,6 +47,28 @@ This is the one physical step; nothing else in this lane waits on a console.
 Until step 2 runs, the vault-fed secret's own status names the missing vault entry by name. No
 token value ever appears in that status, in a log, or on this page.
 
+## The webhook door: locked at the gateway, not in the pod
+
+The pod never sees an unauthenticated webhook and holds no auth code at all (founder edict,
+2026-09-02: auth is infrastructure physics). The route
+(`platform/otto-staging/httproute.yaml`) forwards `POST /telegram-webhook` only when the
+request carries `X-Telegram-Bot-Api-Secret-Token` exactly equal to the vault value
+(`otto-staging-telegram`, property `webhook_secret`, rendered for substitution by
+`platform/otto-staging-secret/webhook-substitution.yaml`). A missing or wrong header is
+dropped at the edge and never reaches the pod.
+
+The secret was seeded 2026-09-02 the same way as the token, from the env file:
+```
+bin/idp-vault-put --merge otto-staging-telegram webhook_secret=OTTO_STAGING_WEBHOOK_SECRET
+```
+
+**Connecting the webhook** (after deploy, one call): Telegram must be told the URL AND the
+same secret, or every delivery will be dropped by the gateway. From a shell with the env
+file loaded, call Telegram's `setWebhook` with `url=https://otto.<zone>/telegram-webhook`
+and `secret_token` set to the same `OTTO_STAGING_WEBHOOK_SECRET` value (both read from the
+env file, never typed). Telegram then echoes the secret in the header on every delivery.
+Rotating the secret is the same two steps in the same order: vault first, `setWebhook` second.
+
 ## If the webhook goes quiet
 Read the pod's own health first: `GET https://otto.<zone>/healthz` answers from the edge whether
 or not Telegram can reach it. If `/healthz` answers but updates stop arriving, the fault is

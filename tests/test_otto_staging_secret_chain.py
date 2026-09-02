@@ -51,3 +51,55 @@ def test_the_drill_catalogue_carries_the_otto_staging_row() -> None:
     assert "name: otto-staging" in text, (
         "drills/catalogue.yaml lost the otto-staging row"
     )
+
+
+def test_the_webhook_door_is_locked_at_the_gateway_not_in_the_pod() -> None:
+    """Founder edict 2026-09-02: auth is infrastructure physics. The route itself must
+    enforce the Telegram secret with an exact header match fed from the vault; if any
+    link drifts the gateway either drops every webhook (loud) or the row fails by name
+    (loud) -- never an open door."""
+    routes = [
+        d
+        for d in _docs("platform/otto-staging/httproute.yaml")
+        if d.get("kind") == "HTTPRoute"
+    ]
+    assert routes, "httproute.yaml lost its HTTPRoute document"
+    route = routes[0]
+    assert (route["metadata"].get("annotations") or {}).get(
+        "idp.estate/auth"
+    ) == "telegram-webhook-secret-token"
+    webhook_matches = [
+        m
+        for r in route["spec"]["rules"]
+        for m in r.get("matches", [])
+        if m.get("path", {}).get("value") == "/telegram-webhook"
+    ]
+    assert webhook_matches, "the route lost its /telegram-webhook rule"
+    for m in webhook_matches:
+        headers = m.get("headers", [])
+        assert any(
+            h.get("type") == "Exact"
+            and h.get("name") == "X-Telegram-Bot-Api-Secret-Token"
+            and h.get("value") == "${OTTO_WEBHOOK_SECRET}"
+            for h in headers
+        ), "the webhook match lost its exact secret-token header match"
+
+    ext = [
+        d
+        for d in _docs("platform/otto-staging-secret/webhook-substitution.yaml")
+        if d.get("kind") == "ExternalSecret"
+    ]
+    assert ext, "webhook-substitution.yaml lost its ExternalSecret"
+    row = ext[0]["spec"]["data"][0]
+    assert row["secretKey"] == "OTTO_WEBHOOK_SECRET"
+    assert row["remoteRef"]["key"] == "otto-staging-telegram"
+    assert row["remoteRef"]["property"] == "webhook_secret"
+    assert ext[0]["metadata"]["namespace"] == "flux-system"
+
+    clusters = (ROOT / "clusters/oke/platform.yaml").read_text()
+    assert "name: otto-webhook" in clusters, (
+        "the otto-staging row no longer substitutes from the otto-webhook Secret"
+    )
+    assert "name: otto-staging-secret" in clusters, (
+        "the otto-staging-secret row left clusters/oke/platform.yaml"
+    )
