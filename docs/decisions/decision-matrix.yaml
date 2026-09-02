@@ -540,3 +540,48 @@ decisions:
           portability:         {score: 4, evidence: "https://docs.oracle.com/en-us/iaas/Content/ContEng/Concepts/contengoverview.htm"} # portable pattern, provider-shaped provisioning
           operability:         {score: 2, evidence: "https://docs.oracle.com/en-us/iaas/Content/ContEng/Concepts/contengoverview.htm"} # a second control plane to patch and watch
           cost:                {score: 1, evidence: "https://www.oracle.com/cloud/price-list/"}                                        # nodes bill whether the buyer shows up or not
+
+  - slug: merge-queue
+    requirement: "green pull requests merge themselves: the queue rebuilds each one on the latest main, reruns the required checks, and lands it — the founder handles only failures, never routine merges (founder order 2026-09-02)"
+    date: 2026-09-02
+    status: proposed
+    next_review: 2026-09-16
+    decision: github-merge-queue   # 470 vs mergify 385 vs bors-ng 325; outside tie_band 25. Proposed until the first pull request lands through the queue untouched — that run is the receipt.
+    reviews: []
+    candidates:
+      github-merge-queue:
+        note: "GitHub's native merge queue, switched on by a repository ruleset: no new service, no new credential, the queue reruns the existing required checks on the merged state and squash-lands"
+        scores:
+          first_time_user:     {score: 5, evidence: "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue"} # gh pr merge --auto and walk away
+          founder_experience:  {score: 5, evidence: "docs/onboarding/merge-queue.md"}                                               # he stops typing APPROVE; exceptions only
+          feature_parity:      {score: 4, evidence: "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue"} # batching, auto-rebase, retest; no custom rules language
+          ecosystem_fit:       {score: 5, evidence: "platform/github/ruleset.idp.merge-queue.json"}                                 # a ruleset beside the ones bin/repo-rulesets already applies
+          maturity:            {score: 5, evidence: "https://github.blog/2023-07-12-github-merge-queue-is-generally-available/"}    # generally available since 2023, runs github/github
+          security_by_default: {score: 5, evidence: "bin/repo-rulesets"}                                                            # no third-party app, no new token, no webhook surface
+          portability:         {score: 3, evidence: "docs/runbooks/merge-queue.md"}                                                 # GitHub-shaped; the rollback is one ruleset delete
+          operability:         {score: 5, evidence: "docs/runbooks/merge-queue.md"}                                                 # pause = disable one ruleset; queue state is one API read
+          cost:                {score: 5, evidence: "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue"} # included in the plan; only the reran checks bill minutes
+      mergify:
+        note: "a hosted merge-queue service driven by a rules file: strongest feature set (priorities, partial batches, custom conditions), but a third-party app with write access to the repository"
+        scores:
+          first_time_user:     {score: 4, evidence: "https://docs.mergify.com/merge-queue/"}                                        # queue works out of the box once the app is installed
+          founder_experience:  {score: 4, evidence: "https://docs.mergify.com/merge-queue/"}                                        # same hands-off merge, one more dashboard to know
+          feature_parity:      {score: 5, evidence: "https://docs.mergify.com/merge-queue/"}                                        # priorities, batching, speculative checks — the richest queue
+          ecosystem_fit:       {score: 4, evidence: "https://docs.mergify.com/configuration/file-format/"}                          # a rules file in git, but its own DSL beside the rulesets
+          maturity:            {score: 4, evidence: "https://mergify.com/customers"}                                                # years in production across large repositories
+          security_by_default: {score: 3, evidence: "https://docs.mergify.com/security/"}                                           # a third-party app holds write access to main
+          portability:         {score: 4, evidence: "https://docs.mergify.com/merge-queue/"}                                        # works on any GitHub repository; still GitHub-only
+          operability:         {score: 4, evidence: "https://docs.mergify.com/merge-queue/"}                                        # good visibility, but an outage of theirs stalls merges
+          cost:                {score: 2, evidence: "https://mergify.com/pricing"}                                                  # per-seat subscription for what the platform includes
+      bors-ng:
+        note: "the self-hosted bot that pioneered the pattern: staging branch, batch, retest, fast-forward — but the project is in maintenance and recommends GitHub's native queue"
+        scores:
+          first_time_user:     {score: 3, evidence: "https://github.com/bors-ng/bors-ng"}                                           # bors r+ comments instead of the merge button
+          founder_experience:  {score: 3, evidence: "https://github.com/bors-ng/bors-ng"}                                           # hands-off once running, but we run the bot
+          feature_parity:      {score: 4, evidence: "https://github.com/bors-ng/bors-ng"}                                           # batching and retest, the original design
+          ecosystem_fit:       {score: 3, evidence: "https://github.com/bors-ng/bors-ng#how-to-set-up-your-own-real-instance"}      # an Elixir service plus database the estate must host
+          maturity:            {score: 3, evidence: "https://github.com/bors-ng/bors-ng#maintenance-status"}                        # maintenance mode; its own readme points at GitHub's queue
+          security_by_default: {score: 3, evidence: "https://github.com/bors-ng/bors-ng#how-to-set-up-your-own-real-instance"}      # a GitHub App we operate, with write access to main
+          portability:         {score: 4, evidence: "https://github.com/bors-ng/bors-ng/blob/master/LICENSE"}                       # Apache-2.0, self-hosted anywhere
+          operability:         {score: 3, evidence: "https://github.com/bors-ng/bors-ng#how-to-set-up-your-own-real-instance"}      # one more standing service to watch and patch
+          cost:                {score: 4, evidence: "https://github.com/bors-ng/bors-ng"}                                           # free software, but paid for in hosting and care
