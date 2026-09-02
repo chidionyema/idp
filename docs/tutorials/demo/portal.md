@@ -25,6 +25,5 @@ $ curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3100/catalog
 
 ## What to expect
 
-Unauthenticated local still hits the front-door sign-in page ("Your sign-in did not
-reach the portal") because production auth is the Oracle login on the live host.
-Live `https://catalogue.mumchimp.com/catalog` stays old until this branch merges and rolls.
+Local `yarn start` shows Backstage's own Guest card. Click **Enter**. Live
+`https://catalogue.mumchimp.com/catalog` still uses the Oracle front door.
