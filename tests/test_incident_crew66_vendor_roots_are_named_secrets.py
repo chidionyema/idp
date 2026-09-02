@@ -31,6 +31,7 @@ FAKE = {
     "SEED_CURSOR_API_KEY": "key_" + "a" * 24,
     "SEED_TELEGRAM_HERMES_BOT_TOKEN": "12345678:" + "C" * 35,
     "SEED_TELEGRAM_ALERTS_BOT_TOKEN": "87654321:" + "D" * 35,
+    "SEED_TELEGRAM_ALERTS_CHAT_ID": "-1001234567890",
     "SEED_STRIPE_SECRET_KEY": "sk_test_" + "E" * 24,
     "SEED_GOOGLE_OAUTH_CLIENT_ID": "123456789012-abcdefghijklmnop.apps.googleusercontent.com",
     "SEED_GOOGLE_OAUTH_CLIENT_SECRET": "GOCSPX-" + "F" * 28,

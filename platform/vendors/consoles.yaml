@@ -109,6 +109,23 @@ vendors:
     targets:
       - { entry: hermes-agent-env, field: TELEGRAM_BOT_TOKEN, secret: SEED_TELEGRAM_HERMES_BOT_TOKEN }
       - { entry: flux-telegram, field: token, secret: SEED_TELEGRAM_ALERTS_BOT_TOKEN }
+  apprise_telegram:
+    # The founder's alert channel (root-trust row notify-apprise-founder-telegram). Apprise wants
+    # one URL, tgram://<bottoken>/<chatid>/, but a URL is not gradeable whole: the two halves only
+    # mean something to Telegram together, so this is a PAIR like google_oauth below. `getChat`
+    # grades both in one call: a wrong token is refused outright, a chat the bot cannot see is an
+    # error body. platform/notify/external-secret.yaml composes the tgram:// URL from the two
+    # vault fields, so no secret store ever holds a half-URL.
+    kind: secret
+    pair: true
+    page: https://t.me/BotFather
+    verify:
+      method: GET
+      url: "https://api.telegram.org/bot{token}/getChat?chat_id={chat}"
+      headers: {}
+    targets:
+      - { entry: notify-apprise-founder-telegram, field: token, secret: SEED_TELEGRAM_ALERTS_BOT_TOKEN, shape: "[0-9]{8,10}:[A-Za-z0-9_-]{35}" }
+      - { entry: notify-apprise-founder-telegram, field: chat, secret: SEED_TELEGRAM_ALERTS_CHAT_ID, shape: "-?[0-9]{6,14}" }
   stripe:
     kind: secret
     secret: SEED_STRIPE_SECRET_KEY
