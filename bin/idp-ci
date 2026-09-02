@@ -291,6 +291,7 @@ if ! ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/es
    && ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/good" python3 "$IDP/bin/estate-zone-gate" >/dev/null 2>&1 \
    && ! ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" --diff "$IDP/tests/fixtures/estate-zone/added-literal.diff" >/dev/null 2>&1 \
    && ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" --diff "$IDP/tests/fixtures/estate-zone/added-substituted.diff" >/dev/null 2>&1 \
+   && ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" --diff "$IDP/tests/fixtures/estate-zone/added-self-marker.diff" >/dev/null 2>&1 \
    && out=$(python3 "$IDP/bin/estate-zone-gate" 2>&1); then
   say "ok    zone     estate-zone-gate refuses a literal zone (tree and diff), permits \${ESTATE_ZONE}, and the repo is clean"
 else say "FAIL  zone     estate-zone-gate is not discriminating or the platform names the zone outside clusters/*/estate-config.yaml"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi

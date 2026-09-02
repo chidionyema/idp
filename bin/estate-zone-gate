@@ -33,9 +33,12 @@ Exempt, and why (the only list; bin/pr-report and name-drift.yml reuse it by cal
   a marked file             one of its first three lines reads `estate-zone-gate: exempt (<why>)`;
                             adding that marker is itself reported by --diff, and the policy
                             accepts it only with the founder's `APPROVE: zone-exempt` on the PR
+                            (one exception: this gate's own file defines the marker, so its own
+                            lines are never graded as adding one)
 Exit 0 clean, 1 with each literal printed, 2 (BLIND) when no config declares a zone or the root
 cannot be read: a gate that lost its evidence reports BLIND, never a verdict.
 """
+
 import argparse
 import os
 import pathlib
@@ -44,16 +47,45 @@ import sys
 
 HERE = pathlib.Path(__file__).resolve().parents[1]
 ZONE_KEY = re.compile(r"^\s*ESTATE_ZONE:\s*['\"]?([A-Za-z0-9.-]+)['\"]?\s*$", re.M)
-SUFFIXES = {".yaml", ".yml", ".py", ".ts", ".tsx", ".js", ".mjs", ".cjs", ".tf", ".sh", ".json",
-            ".env", ".toml", ".conf", ".ini", ".cfg", ".rego", ".sql", ".example", ".hcl", ".cs",
-            ".go", ".rs"}
+SUFFIXES = {
+    ".yaml",
+    ".yml",
+    ".py",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".mjs",
+    ".cjs",
+    ".tf",
+    ".sh",
+    ".json",
+    ".env",
+    ".toml",
+    ".conf",
+    ".ini",
+    ".cfg",
+    ".rego",
+    ".sql",
+    ".example",
+    ".hcl",
+    ".cs",
+    ".go",
+    ".rs",
+}
 BARE_NAMES = {"Caddyfile", "Dockerfile", "Makefile", "Procfile"}
 EXEMPT_PREFIX = ("clusters/", "platform/oci/", "platform/ai/", "tests/", "docs/")
 EXEMPT_PART = ("/tests/", "/.git/", "/node_modules/", "/.claude/worktrees/", "/docs/")
-EXEMPT_SUFFIX = (".md", ".zone", "science/verdicts.json", ".dependencies.json", "_receipts.json")
+EXEMPT_SUFFIX = (
+    ".md",
+    ".zone",
+    "science/verdicts.json",
+    ".dependencies.json",
+    "_receipts.json",
+)
 COMMENT = re.compile(r"^\s*(#|//|;|--|<!--|\*)")
 DECLARATION = re.compile(r"^\s*(export\s+)?ESTATE_ZONE\s*[:=]")
 MARKER = "estate-zone-gate: exempt ("
+SELF = "bin/estate-zone-gate"  # the file that defines the marker must spell it; never a marker *addition*
 
 
 def zones(zone_root: pathlib.Path) -> set[str]:
@@ -85,8 +117,20 @@ def graded(line: str) -> bool:
     return not (COMMENT.match(line) or DECLARATION.match(line))
 
 
-PRUNE_DIRS = {".git", "node_modules", ".claude", ".venv", "venv", "__pycache__", "dist", "build",
-              ".next", ".terraform", "tests", "docs"}
+PRUNE_DIRS = {
+    ".git",
+    "node_modules",
+    ".claude",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "dist",
+    "build",
+    ".next",
+    ".terraform",
+    "tests",
+    "docs",
+}
 
 
 def scan_tree(root: pathlib.Path, pat: re.Pattern) -> list[str]:
@@ -95,9 +139,13 @@ def scan_tree(root: pathlib.Path, pat: re.Pattern) -> list[str]:
         # Prune while walking: node_modules alone is hundreds of thousands of files, and a
         # gate that takes a minute is a gate nobody runs (R58: local rungs under five seconds).
         rel_dir = pathlib.Path(dirpath).relative_to(root).as_posix()
-        dirnames[:] = sorted(d for d in dirnames
-                             if d not in PRUNE_DIRS and not d.startswith(".wt-")
-                             and not exempt_path((rel_dir + "/" + d + "/").lstrip("/")))
+        dirnames[:] = sorted(
+            d
+            for d in dirnames
+            if d not in PRUNE_DIRS
+            and not d.startswith(".wt-")
+            and not exempt_path((rel_dir + "/" + d + "/").lstrip("/"))
+        )
         for name in sorted(filenames):
             f = pathlib.Path(dirpath) / name
             if f.is_symlink() or not f.is_file():
@@ -134,8 +182,10 @@ def scan_diff(diff: str, pat: re.Pattern) -> list[str]:
             body = line[1:]
             if path == "/dev/null" or exempt_path(path) or not scannable(path):
                 continue
-            if MARKER in body:
-                hits.append(f"{path}:{n}: adds an exemption marker; needs the founder's APPROVE: zone-exempt")
+            if MARKER in body and path != SELF:
+                hits.append(
+                    f"{path}:{n}: adds an exemption marker; needs the founder's APPROVE: zone-exempt"
+                )
             elif graded(body) and pat.search(body):
                 hits.append(f"{path}:{n}: {body.strip()}")
         elif not line.startswith("-"):
@@ -145,9 +195,13 @@ def scan_diff(diff: str, pat: re.Pattern) -> list[str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--root", help="checkout to grade (default: where the zone is declared)")
+    ap.add_argument(
+        "--root", help="checkout to grade (default: where the zone is declared)"
+    )
     ap.add_argument("--diff", help="unified diff: grade only the lines it adds")
-    ap.add_argument("--zone", action="store_true", help="print the declared zone(s) and exit")
+    ap.add_argument(
+        "--zone", action="store_true", help="print the declared zone(s) and exit"
+    )
     a = ap.parse_args()
     zone_root = pathlib.Path(os.environ.get("ESTATE_ZONE_ROOT") or HERE)
     if not zone_root.is_dir():
@@ -162,7 +216,11 @@ def main() -> int:
         return 0
     # The left boundary admits "-" on purpose: a shell default `${X:-zone}` is the commonest way
     # a literal hides (the store's verify_store.sh:24 read green until crew#796).
-    pat = re.compile(r"(?<![A-Za-z0-9])(" + "|".join(re.escape(z) for z in sorted(zs)) + r")(?![A-Za-z0-9-])")
+    pat = re.compile(
+        r"(?<![A-Za-z0-9])("
+        + "|".join(re.escape(z) for z in sorted(zs))
+        + r")(?![A-Za-z0-9-])"
+    )
     if a.diff:
         try:
             diff = pathlib.Path(a.diff).read_text(errors="replace")
@@ -178,8 +236,10 @@ def main() -> int:
         hits, where = scan_tree(root, pat), f"in {root.name}"
     for h in hits:
         print(h)
-    print(f"{'FAIL' if hits else 'ok'}    zone     {len(hits)} literal zone name(s) {where} outside "
-          f"clusters/*/estate-config.yaml; zone(s): {', '.join(sorted(zs))}")
+    print(
+        f"{'FAIL' if hits else 'ok'}    zone     {len(hits)} literal zone name(s) {where} outside "
+        f"clusters/*/estate-config.yaml; zone(s): {', '.join(sorted(zs))}"
+    )
     return 1 if hits else 0
 
 
