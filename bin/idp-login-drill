@@ -355,7 +355,13 @@ with sync_playwright() as p:
     menu_btn.first.click()
     page.wait_for_timeout(800)
     on_screen = " ".join(page.locator("body").inner_text().split())
-    DOORS = ("Today", "Kubernetes", "What we run", "Create", "Map", "Tools", "Ops", "Find", "How-to", "You")
+    # crew#612 regression (2026-09-02): PR #1130 renamed four doors to plain English and this
+    # drill kept grading the old names, so it failed a healthy page. The door names now come
+    # from the same file that builds the menu; a rename can never split the two again (LAW 45).
+    NAV_SRC = os.path.join(os.environ["IDP_ROOT"], "backstage/packages/app/src/modules/nav/EstateNav.tsx")
+    DOORS = tuple(re.findall(r"\{\s*title:\s*'([^']+)',\s*to:\s*'[^']+',\s*icon:\s*\w+\s*\}", open(NAV_SRC).read()))
+    if len(DOORS) < 5:
+        fail("phone", f"parsed only {len(DOORS)} door names from EstateNav.tsx; the NAV shape moved")
     missing = [d for d in DOORS if d not in on_screen]
     page.screenshot(path=os.path.join(shot_dir, "home-phone-menu.png"))
     if missing:
@@ -414,7 +420,7 @@ with sync_playwright() as p:
         ("catalog-graph", "text=Catalog Graph"),
         ("catalog-import", "text=Register an existing component"),
         ("api-docs", "text=APIs"),
-        ("docs", "text=Owned"),  # the TechDocs index heading is "Docs" (shell text too); "Owned" is its ownership picker, "Documentation" was Backstage 1.x
+        ("docs", "text=Owned"),  # the TechDocs index heading repeats the door name (shell text too); "Owned" is its ownership picker, "Documentation" was Backstage 1.x
         ("create", "text=Templates"),  # the scaffolder page heading is "Templates"; "Create a new component" was Backstage 1.x
         ("search", "text=Search"),
         ("settings", "text=Settings"),

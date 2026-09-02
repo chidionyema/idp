@@ -160,3 +160,20 @@ def test_the_portal_is_not_branded_as_the_store():
             assert "Mumchimp" not in line, (
                 f"portal branded as the store: {line.strip()}"
             )
+
+
+def test_the_phone_drill_reads_door_names_from_the_nav_source():
+    """2026-09-02: PR #1130 renamed four doors to plain English and bin/idp-login-drill kept
+    a hardcoded list of the old names, so the drill failed a healthy live page ('the phone
+    menu opened without these doors'). The drill must parse EstateNav.tsx for its door names
+    and may hold no door title as a literal, so a rename cannot split page and drill again."""
+    drill = (ROOT / "bin/idp-login-drill").read_text()
+    assert "EstateNav.tsx" in drill, (
+        "the drill no longer reads the nav source for door names"
+    )
+    for item in nav_items():
+        quoted = (f"'{item['title']}'", f'"{item["title"]}"')
+        assert not any(q in drill for q in quoted), (
+            f"door name {item['title']!r} is hardcoded in bin/idp-login-drill; a rename in "
+            "EstateNav.tsx would break the drill again"
+        )
