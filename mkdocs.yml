@@ -15,6 +15,7 @@ nav:
   - Tailscale egress proxy exception: reference/policy/tailscale-egress-exception.md
   - Tailscale pod-security level: reference/policy/tailscale-pod-security.md
   - Tailscale images come from GitHub registry: reference/policy/tailscale-ghcr-images.md
+  - Dagster runs on estate-built images: reference/policy/dagster-arm64-images.md
   - Architecture:
       - explanation/architecture/index.md
       - Live estate: explanation/architecture/live.md
