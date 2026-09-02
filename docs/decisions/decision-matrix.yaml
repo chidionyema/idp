@@ -546,7 +546,7 @@ decisions:
     date: 2026-09-02
     status: proposed
     next_review: 2026-09-16
-    decision: github-merge-queue   # 470 vs mergify 385 vs bors-ng 325; outside tie_band 25. Proposed until the first pull request lands through the queue untouched — that run is the receipt.
+    decision: github-merge-queue   # 470 vs mergify 385 vs bors-ng 325; outside tie_band 25. Vendor refuses the merge_queue rule on a user-owned repository (422; GA note 2023-07-12 scopes it to organization-owned repos) — bridge: repository auto-merge with zero reviews, same gh pr merge --auto command; the ruleset arms on the organization transfer. Proposed until the first pull request lands hands-free — that run is the receipt.
     reviews: []
     candidates:
       github-merge-queue:
