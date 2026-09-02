@@ -132,9 +132,17 @@ spec:
       readinessProbe:
         httpGet:
           path: /server_info
-          port: 80
+          port: 3000
       service:
         type: ClusterIP
+        # The image runs non-root (uid 999 above) and a non-root process cannot bind a
+        # port under 1024: the webserver died at start binding 0.0.0.0:80 with
+        # "[Errno 13] permission denied" (pod log, 2026-09-02T18:1xZ). The chart serves
+        # on this value (container -p, containerPort and Service alike), so the bind
+        # moves to 3000; the postRenderer patch at the bottom keeps the Service
+        # answering on 80 outside, where every consumer knocks (Backstage names
+        # dagster-dagster-webserver.dagster.svc:80).
+        port: 3000
 
     dagsterDaemon:
       enabled: true
@@ -440,3 +448,13 @@ spec:
                 name: not-used-kustomize-matches-on-target
                 labels:
                   backstage.io/kubernetes-id: estate-scheduler
+          # The webserver bind moved to 3000 (non-root cannot hold 80), which also
+          # renders the chart's Service as 3000 -> 3000. Put the front door back:
+          # 80 outside, 3000 inside.
+          - target:
+              kind: Service
+              name: dagster-dagster-webserver
+            patch: |
+              - op: replace
+                path: /spec/ports/0/port
+                value: 80
