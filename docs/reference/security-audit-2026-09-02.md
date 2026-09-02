@@ -4,7 +4,7 @@ Ordered by the founder ("deeep audit all", 2026-09-02). Four read-only lanes swe
 estate — identity and sign-in, secrets, network and admission fences, supply chain — over
 `idp`, the prospector edge, and `hermes-v2`, plus live probes of the public perimeter.
 Nothing was changed by the audit itself except this record and one correction to
-`docs/security-end-to-end.md`, whose fence claim the audit proved false.
+`docs/explanation/security-end-to-end.md`, whose fence claim the audit proved false.
 
 **Verdict in one line: the perimeter and the secrets discipline are genuinely strong; the
 inside of the cluster has no walls, and three doors behind the front gate are unlocked.**

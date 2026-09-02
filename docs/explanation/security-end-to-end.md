@@ -56,7 +56,7 @@ machine account, free tier, no command lines for you again.
    this repo). The namespace fence the rules call for — deny all traffic both ways by
    default, with quotas (AGENTS.md ns_fence rule) — is **a gate that exists but is not yet
    applied**: 0 of 33 namespaces carry the fence today, and the CI row is report-only. The
-   2026-09-02 audit (`docs/security-audit-2026-09-02.md`) grades this P0.
+   2026-09-02 audit (`docs/reference/security-audit-2026-09-02.md`) grades this P0.
 
 ## The keys that exist
 
@@ -78,4 +78,4 @@ machine account, free tier, no command lines for you again.
 - The env-var-secret policy reports instead of refusing; the flip condition (zero
   violations) is blocked by one permanent exception (Dagster).
 - The full graded picture, every finding named to file and line:
-  `docs/security-audit-2026-09-02.md`.
+  `docs/reference/security-audit-2026-09-02.md`.

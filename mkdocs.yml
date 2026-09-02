@@ -47,6 +47,7 @@ nav:
       - reference/index.md
       - Oracle tenancy: reference/oci-tenancy.md
       - Security policy: reference/security-policy.md
+      - "Security audit, 2026-09-02": reference/security-audit-2026-09-02.md
       - Laws and guards (generated): reference/laws-and-guards.md
       - EU AI Act: reference/eu-ai-act.md
   - AI systems:
@@ -56,6 +57,7 @@ nav:
       - explanation/index.md
       - Founder self-service, the field (crew#66): explanation/founder-self-service-research.md
       - Otto on the founder's Mac, the setup and the friction (crew#561): explanation/otto-on-the-mac.md
+      - "Security, end to end: what stands between the internet and the estate": explanation/security-end-to-end.md
   - Demo:
       - Portal: tutorials/demo/idp.md
       - Estate compiler: tutorials/demo/intent.md
