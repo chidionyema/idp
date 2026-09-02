@@ -47,7 +47,7 @@ This is the one physical step; nothing else in this lane waits on a console.
 Until step 2 runs, the vault-fed secret's own status names the missing vault entry by name. No
 token value ever appears in that status, in a log, or on this page.
 
-## The webhook door: locked at the gateway, not in the pod
+## The webhook door is locked at the gateway, not in the pod
 
 The pod never sees an unauthenticated webhook and holds no auth code at all (founder edict,
 2026-09-02: auth is infrastructure physics). The route
