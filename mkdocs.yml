@@ -39,6 +39,7 @@ nav:
       - 0013 Customer identity is Keycloak, the realm is code: decisions/0013-customer-identity-is-keycloak-and-the-realm-is-code.md
       - 0017 Bitwarden is the human door for secrets: decisions/0017-bitwarden-is-the-human-door-for-secrets.md
       - 0018 Superset is the dashboard: decisions/0018-superset-is-the-dashboard-because-it-takes-the-gateways-word.md
+      - 0019 Credentials federate, one pasted seed at most: decisions/0019-credentials-federate-a-human-pastes-at-most-one-seed.md
   - Specs:
       - KINI.AI master spec: reference/specs/kini-master-spec.md
       - Phone idea flow: reference/specs/phone-idea-flow.md
