@@ -1,0 +1,10 @@
+# The human door (decision 0017): the one place a person's secret enters the estate. A phone
+# browser writes the value into Bitwarden Secrets Manager; the operator pulls it into the
+# cluster. No terminal, no file on disk, no chat message ever carries the value.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - certs.yaml
+  - access-token.yaml
+  - store.yaml
+  - exceptions.yaml

@@ -1,0 +1,22 @@
+# The bridge's own credential (decision 0017, R52): the Bitwarden machine-account access token,
+# born once in the founder's browser and placed in the OCI vault as `bitwarden-machine`
+# (register row: docs/reference/policy/root-trust.md; runbook: docs/how-to/bitwarden-human-vault.md).
+# The machine store (estate-vault) mints it into the cluster; the human store (store.yaml)
+# authenticates with it. Until the vault entry exists this ExternalSecret is red and holds
+# nothing but its own Flux row (clusters/oke/human-vault.yaml).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: bitwarden-access-token
+  namespace: external-secrets
+spec:
+  refreshInterval: 10m
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: estate-vault
+  target:
+    name: bitwarden-access-token
+  data:
+    - secretKey: token
+      remoteRef:
+        key: bitwarden-machine

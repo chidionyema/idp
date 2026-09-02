@@ -14,6 +14,7 @@ Prints one line per finding, then a count line. Exit 0 = PASS (`--check` additio
 every row MEETS, the end state the founder set: exit 1 while any MISS/PARTIAL remains).
 No network, no secret values: it reads two kinds of file and nothing else.
 """
+
 import glob
 import os
 import re
@@ -39,7 +40,14 @@ def register_rows(text):
         if len(cells) != 6 or cells[4] not in VERDICTS:
             continue
         keys = re.findall(r"`([^`]+)`", cells[0])
-        rows.append({"keys": [k.split(" ")[0] for k in keys] or [cells[0]], "verdict": cells[4], "path": cells[5], "raw": cells[0]})
+        rows.append(
+            {
+                "keys": [k.split(" ")[0] for k in keys] or [cells[0]],
+                "verdict": cells[4],
+                "path": cells[5],
+                "raw": cells[0],
+            }
+        )
     return rows
 
 
@@ -77,14 +85,20 @@ def grade(rows, keys, bin_dir):
             if tools:
                 for t in tools:
                     if not os.path.isfile(os.path.join(bin_dir, t)):
-                        findings.append(f"FAIL    {r['raw']}: MEETS names bin/{t} which does not exist")
+                        findings.append(
+                            f"FAIL    {r['raw']}: MEETS names bin/{t} which does not exist"
+                        )
             elif not any(m in r["path"] for m in IN_ESTATE):
-                findings.append(f"FAIL    {r['raw']}: MEETS names no bootstrapper under bin/ and no in-estate birth path")
-        elif not re.search(r"crew#\d+", r["path"]):
+                findings.append(
+                    f"FAIL    {r['raw']}: MEETS names no bootstrapper under bin/ and no in-estate birth path"
+                )
+        elif not re.search(r"crew#\d+|crew/issues/\d+", r["path"]):
             findings.append(f"FAIL    {r['raw']}: {r['verdict']} without a crew ticket")
     for k, files in sorted(keys.items()):
         if k not in registered:
-            findings.append(f"FAIL    {k}: read by {', '.join(sorted(files))} but absent from the register")
+            findings.append(
+                f"FAIL    {k}: read by {', '.join(sorted(files))} but absent from the register"
+            )
     return findings, registered
 
 
@@ -99,15 +113,22 @@ def main(argv):
     findings, registered = grade(rows, keys, BIN)
     for line in findings:
         print(line)
-    counts = {v: sum(1 for r in rows if r["verdict"] == v) for v in ("MEETS", "PARTIAL", "MISS")}
+    counts = {
+        v: sum(1 for r in rows if r["verdict"] == v)
+        for v in ("MEETS", "PARTIAL", "MISS")
+    }
     summary = f"{len(keys)} vault entries read by ExternalSecrets, {len(rows)} register rows: MEETS {counts['MEETS']} PARTIAL {counts['PARTIAL']} MISS {counts['MISS']}"
     if findings:
         print(f"FAIL    root-trust: {len(findings)} finding(s); {summary}")
         return 1
     if check and (counts["PARTIAL"] or counts["MISS"]):
-        print(f"FAIL    root-trust --check: {counts['PARTIAL'] + counts['MISS']} row(s) not MEETS; {summary}")
+        print(
+            f"FAIL    root-trust --check: {counts['PARTIAL'] + counts['MISS']} row(s) not MEETS; {summary}"
+        )
         return 1
-    print(f"PASS    root-trust: every entry registered, every MEETS row has its bootstrapper, every miss its ticket; {summary}")
+    print(
+        f"PASS    root-trust: every entry registered, every MEETS row has its bootstrapper, every miss its ticket; {summary}"
+    )
     return 0
 
 

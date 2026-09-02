@@ -1,0 +1,61 @@
+# TLS for the Bitwarden SDK server (decision 0017). The bitwarden-sdk-server chart refuses to
+# serve without a certificate in the Secret named bitwarden-tls-certs; this is the vendor's own
+# chain from the External Secrets Operator documentation (Bitwarden Secrets Manager provider
+# page): a self-signed issuer signs a CA, the CA signs the serving certificate, and the store
+# (store.yaml) trusts the CA through its ca.crt key. cert-manager (platform/edge) issues all of it;
+# no hand ever makes a key.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: human-vault-selfsigned
+  namespace: external-secrets
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: human-vault-ca
+  namespace: external-secrets
+spec:
+  isCA: true
+  commonName: human-vault-ca
+  secretName: human-vault-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: human-vault-selfsigned
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: human-vault-ca
+  namespace: external-secrets
+spec:
+  ca:
+    secretName: human-vault-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: bitwarden-tls-certs
+  namespace: external-secrets
+spec:
+  secretName: bitwarden-tls-certs
+  dnsNames:
+    - bitwarden-sdk-server.external-secrets.svc.cluster.local
+    - external-secrets-bitwarden-sdk-server.external-secrets.svc.cluster.local
+    - localhost
+  ipAddresses:
+    - 127.0.0.1
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS8
+    size: 2048
+  issuerRef:
+    name: human-vault-ca
+    kind: Issuer
+    group: cert-manager.io

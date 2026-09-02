@@ -369,6 +369,19 @@ drills:
       main by the queue's own run, and lands with nobody touching it, so the founder handles
       exceptions only and never types the landing word again.
 
+  - name: human-vault
+    owner: idp
+    workflow: oke-check.yml
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    pending: true
+    proves: >-
+      The human door stands: the Bitwarden vault connection reports Ready
+      and the otto token Secret exists in the cluster without any hand touching a
+      terminal. Pending until the founder's four Bitwarden browser steps
+      (docs/how-to/bitwarden-human-vault.md); the oke-check job lands with them and
+      this line comes off.
+
   - name: otto-staging
     owner: idp
     workflow: oke-check.yml

@@ -93,6 +93,11 @@ LAYERS = {
         "Vault connection",
         "The cluster's one root credential to the vault; every other secret is minted from it.",
     ),
+    "human-vault": (
+        "delivery",
+        "Human secret door",
+        "The one place a person's secret enters the estate: a phone browser writes it into Bitwarden and the cluster pulls it; no terminal, no file, no chat.",
+    ),
     "image-automation": (
         "delivery",
         "Image roll-out",

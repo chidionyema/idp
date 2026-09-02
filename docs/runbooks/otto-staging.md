@@ -27,22 +27,17 @@ This is the one physical step; nothing else in this lane waits on a console.
      changed later).
    - It replies: *"Done! Congratulations on your new bot. ... Use this token to access the HTTP
      API: `<token>`"* — that token is the one secret this runbook exists for. Do not paste it
-     anywhere but the env file in the next step: not this page, not a chat, not a ticket, not a
+     anywhere but Bitwarden in the next step: not this page, not a chat, not a ticket, not a
      log.
 
-2. **Hand the token to the vault**, from a shell with estate access, using the same tool every
-   other estate secret is seeded with rather than a console step:
-   ```
-   printf 'OTTO_STAGING_TELEGRAM_BOT_TOKEN=%s\n' '<token from BotFather>' >> "${ESTATE_ENV_FILE:-$HOME/.estate/.env}"
-   bin/idp-vault-put otto-staging-telegram token=OTTO_STAGING_TELEGRAM_BOT_TOKEN
-   ```
-   `bin/idp-vault-put` is the estate's one sanctioned way to seed a vault entry (the same tool
-   that seeded `flux-telegram` and every other estate secret); it reads the named key from the env
-   file, writes it to the vault, and prints only the key name back — never the value. The
-   vault-fed secret in git already names this exact vault key (`otto-staging-telegram`, property
-   `token`). The next sync (10 minutes, or `kubectl annotate -n otto-staging externalsecret
-   otto-staging-telegram force-sync=$(date +%s) --overwrite` for immediately) creates the
-   Kubernetes Secret and Reloader rolls the pod.
+2. **Hand the token to Bitwarden**, straight from the same phone, through the human door
+   (decision 0017; the old env-file hand was retired 2026-09-02 on the founder's word):
+   open the Bitwarden web vault in the phone's browser, go to Secrets Manager, and add a
+   secret named `otto-staging-telegram` in the estate project whose value is the token,
+   exactly as `docs/how-to/bitwarden-human-vault.md` walks through. The vault-fed secret in
+   git already names this exact secret (`otto-staging-telegram`, store `human-vault`), so the
+   cluster pulls it on its own within 10 minutes and Reloader rolls the pod. Nothing is
+   typed into a terminal and no file ever holds the token.
 
 Until step 2 runs, the vault-fed secret's own status names the missing vault entry by name. No
 token value ever appears in that status, in a log, or on this page.
@@ -57,17 +52,16 @@ request carries `X-Telegram-Bot-Api-Secret-Token` exactly equal to the vault val
 `platform/otto-staging-secret/webhook-substitution.yaml`). A missing or wrong header is
 dropped at the edge and never reaches the pod.
 
-The secret was seeded 2026-09-02 the same way as the token, from the env file:
-```
-bin/idp-vault-put --merge otto-staging-telegram webhook_secret=OTTO_STAGING_WEBHOOK_SECRET
-```
+The webhook secret is machine-born, unlike the token: code minted it into the estate vault
+2026-09-02 (`otto-staging-telegram`, property `webhook_secret`) and no person has ever seen it.
 
 **Connecting the webhook** (after deploy, one call): Telegram must be told the URL AND the
-same secret, or every delivery will be dropped by the gateway. From a shell with the env
-file loaded, call Telegram's `setWebhook` with `url=https://otto.<zone>/telegram-webhook`
-and `secret_token` set to the same `OTTO_STAGING_WEBHOOK_SECRET` value (both read from the
-env file, never typed). Telegram then echoes the secret in the header on every delivery.
-Rotating the secret is the same two steps in the same order: vault first, `setWebhook` second.
+same secret, or every delivery will be dropped by the gateway. The registration step reads
+the `webhook_secret` value from the vault and calls Telegram's `setWebhook` with
+`url=https://otto.<zone>/telegram-webhook` and `secret_token` set to that value — read by
+code, never typed and never printed. Telegram then echoes the secret in the header on every
+delivery. Rotating the secret is the same two steps in the same order: vault first,
+`setWebhook` second.
 
 ## If the webhook goes quiet
 Read the pod's own health first: `GET https://otto.<zone>/healthz` answers from the edge whether

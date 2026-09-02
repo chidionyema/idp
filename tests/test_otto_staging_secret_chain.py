@@ -24,10 +24,16 @@ def test_external_secret_maps_the_vault_token_to_the_env_key() -> None:
         if d.get("kind") == "ExternalSecret"
     ]
     assert kinds, "telegram-secret.yaml lost its ExternalSecret document"
-    row = kinds[0]["spec"]["data"][0]
+    spec = kinds[0]["spec"]
+    assert spec["secretStoreRef"]["name"] == "human-vault", (
+        "the token must enter through the human door (decision 0017), not estate-vault"
+    )
+    row = spec["data"][0]
     assert row["secretKey"] == "OTTO_TELEGRAM_BOT_TOKEN"
     assert row["remoteRef"]["key"] == "otto-staging-telegram"
-    assert row["remoteRef"]["property"] == "token"
+    assert "property" not in row["remoteRef"], (
+        "a Bitwarden secret is one raw value; a property selector would read nothing"
+    )
 
 
 def test_the_pod_reads_the_mounted_file_and_boots_otto() -> None:

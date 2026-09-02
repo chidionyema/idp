@@ -76,3 +76,10 @@ data:
   # (crew#483: the otlphttp exporter takes this value verbatim and a bare host:4317 exports
   # nothing). tests/test_incident_crew483_k8s_infra_endpoint_scheme.py judges the value here.
   OTLP_ENDPOINT: "http://signoz-otel-collector.observability.svc:4318"
+  # decision 0017: the Bitwarden organisation and project the human secret door reads
+  # (platform/human-vault/store.yaml). Public identifiers, not secrets - the same rule as
+  # TAILSCALE_FEDERATED_CLIENT_ID above. Empty until the founder creates the organisation in
+  # his browser (docs/how-to/bitwarden-human-vault.md); while empty, the human-vault Flux row
+  # is red on its own and holds nothing else.
+  BITWARDEN_ORG_ID: ""
+  BITWARDEN_PROJECT_ID: ""
