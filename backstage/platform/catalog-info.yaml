@@ -1151,14 +1151,14 @@ apiVersion: backstage.io/v1alpha1
 kind: API
 metadata:
   name: observability-api
-  description: 'Traces and model calls: the HTTP interface, answering at langfuse.${ESTATE_ZONE} and metabase.${ESTATE_ZONE} and signoz.${ESTATE_ZONE}.'
+  description: 'Traces and model calls: the HTTP interface, answering at langfuse.${ESTATE_ZONE} and signoz.${ESTATE_ZONE} and superset.${ESTATE_ZONE}.'
 spec:
   type: openapi
   lifecycle: production
   owner: group:default/platform
   system: system:default/observability
   definition: |
-    # Not published. observability answers at langfuse.${ESTATE_ZONE} and metabase.${ESTATE_ZONE} and signoz.${ESTATE_ZONE}; this entity
+    # Not published. observability answers at langfuse.${ESTATE_ZONE} and signoz.${ESTATE_ZONE} and superset.${ESTATE_ZONE}; this entity
     # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1

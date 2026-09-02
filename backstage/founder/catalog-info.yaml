@@ -128,18 +128,18 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: founder-dashboards
-  title: "Dashboards (metabase)"
-  description: "Boardroom view of the traces in Langfuse: drill down into prompt, response, cost and latency across all calls, build custom charts and dashboards, share insights with the team. Sign-in is single, from the estate login. Query Langfuse data directly and save dashboard definitions to the Metabase database."
+  title: "Dashboards (Superset)"
+  description: "Boardroom view of the traces in Langfuse: drill down into prompt, response, cost and latency across all calls, build custom charts and dashboards, share insights with the team. Sign-in is single, from the estate login. Query Langfuse data directly and save dashboard definitions to Superset's own database."
   annotations:
     estate/group: "Watch"
     idp/updated-by: "Flux from platform/observability; dashboards read Langfuse data live"
   tags: [founder, screen]
   links:
     - title: "Open"
-      url: "https://metabase.${ESTATE_ZONE}"
+      url: "https://superset.${ESTATE_ZONE}"
       icon: dashboard
     - title: "Health"
-      url: "https://metabase.${ESTATE_ZONE}/api/health"
+      url: "https://superset.${ESTATE_ZONE}/health"
       icon: dashboard
 spec:
   type: founder-surface
