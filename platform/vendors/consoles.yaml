@@ -62,6 +62,17 @@ vendors:
     targets:
       - { entry: litellm-upstream, field: MINIMAX_API_KEY }
       - { entry: prospector-engine-env, field: MINIMAX_API_KEY }
+  kimi:
+    # Moonshot's Kimi (platform.kimi.ai). The vendor documents no key shape (API overview and
+    # list-models pages, read 2026-09-02), so the shape only refuses an empty or malformed paste;
+    # the verify probe is the real proof: GET /v1/models answers 2xx only with a live key.
+    kind: secret
+    secret: SEED_KIMI_API_KEY
+    page: https://platform.kimi.ai/console/api-keys
+    shape: "[A-Za-z0-9_.-]{20,}"
+    verify: { method: GET, url: https://api.moonshot.ai/v1/models, headers: { Authorization: "Bearer {key}" } }
+    targets:
+      - { entry: litellm-upstream, field: MOONSHOT_API_KEY }
   groq:
     kind: secret
     secret: SEED_GROQ_API_KEY

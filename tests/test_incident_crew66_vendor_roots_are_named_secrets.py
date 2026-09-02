@@ -25,6 +25,7 @@ FAKE = {
     "SEED_OPENROUTER_API_KEY": "sk-or-v1-" + "0" * 64,
     "SEED_DEEPSEEK_API_KEY": "sk-" + "1" * 32,
     "SEED_MINIMAX_API_KEY": "eyJx.eyJy.zzz",
+    "SEED_KIMI_API_KEY": "sk-" + "k" * 40,
     "SEED_GROQ_API_KEY": "gsk_" + "A" * 40,
     "SEED_GEMINI_API_KEY": "AIza" + "B" * 35,
     "SEED_EXA_API_KEY": "01234567-0123-0123-0123-0123456789ab",
