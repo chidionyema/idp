@@ -1,6 +1,8 @@
-# Bitwarden human vault — the founder's steps
+# Bitwarden human vault — operator setup
 
-One-time bootstrap for the human secret door (decision 0017). Every step is a browser step;
+One-time bootstrap for the human secret door (decision 0017), written for the operator role:
+today that is the founder, on a customer estate it is the platform admin — the steps are
+identical. Every step is a browser step;
 nothing is typed into a terminal and no value ever appears in a chat. Total: about ten minutes,
 once, then never again.
 

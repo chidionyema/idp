@@ -18,7 +18,7 @@ docs/reference/policy/root-trust.md, which registers every root either way).
    `secretStoreRef: {kind: ClusterSecretStore, name: human-vault}` and `remoteRef.key` set to
    that name. `platform/human-vault/access-token.yaml` is the shape to copy.
 3. Add the register row in docs/reference/policy/root-trust.md naming where the value was born.
-4. Push the branch; the founder applies. The value itself never appears in the branch, a
+4. Push the branch; the platform operator applies the release. The value never appears in the branch, a
    terminal, or a chat.
 
 ## What exists underneath

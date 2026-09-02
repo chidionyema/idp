@@ -10,7 +10,7 @@ metadata:
   name: bitwarden-access-token
   namespace: external-secrets
 spec:
-  refreshInterval: 1h
+  refreshInterval: 10m
   secretStoreRef:
     kind: ClusterSecretStore
     name: estate-vault

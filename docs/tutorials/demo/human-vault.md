@@ -23,7 +23,7 @@ is a Kubernetes Secret; the paste-into-a-terminal path it replaces no longer exi
 
 ## What holds it up
 
-Until the founder has created the Bitwarden organisation and seeded the machine token
+Until an operator has created the Bitwarden organisation and seeded the machine token
 (docs/how-to/bitwarden-human-vault.md), the `human-vault` Flux row is red on its own and holds
 nothing else — that isolation is deliberate: the estate's sync rows are built so one broken
 row never holds another.

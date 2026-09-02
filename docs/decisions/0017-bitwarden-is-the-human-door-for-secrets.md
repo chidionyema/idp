@@ -28,8 +28,8 @@ wherever his browser put them. Chat is banned as a carrier — no secret ever ri
    Human-supplied → Bitwarden. A secret never lives in both; this is a role split, not a second
    copy of a layer, so the one-platform rule holds.
 4. **First use: the Telegram alert roots.** Instead of two `gh secret set` lines, the founder
-   pastes the BotFather token and chat id into Bitwarden and the platform pulls them. Every
-   future FOUNDER ACTION involving a secret becomes "paste it into Bitwarden."
+   saves the BotFather token and chat id in Bitwarden and the platform pulls them. Every
+   future secret hand from the founder becomes one Bitwarden entry made from his phone.
 
 ## Cost
 
