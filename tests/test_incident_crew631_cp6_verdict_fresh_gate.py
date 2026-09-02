@@ -130,7 +130,10 @@ def test_the_context_is_required_on_main_and_the_job_carries_that_name():
     ci = yaml.safe_load((IDP / ".github/workflows/ci.yml").read_text())
     job = ci["jobs"]["verdict-fresh"]
     assert job["name"] == "verify/verdict-fresh"
-    assert job["if"] == "github.event_name == 'pull_request'"
+    assert (
+        job["if"]
+        == "github.event_name == 'pull_request' || github.event_name == 'merge_group'"
+    )
     assert "bin/idp-verdict-fresh langfuse --changed" in job["steps"][-1]["run"]
 
 
