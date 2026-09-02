@@ -405,4 +405,4 @@ drills:
     proves: >-
       From the node's identity a POST to the apprise service at /notify/founder-telegram
       returns 200 and the message reaches the founder's phone, so the publish-once alert
-      channel is graded end to end, never by its kustomization status alone.
+      channel is graded end to end, never by its manifests applying cleanly.
