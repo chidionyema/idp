@@ -271,6 +271,44 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
     if (route["metadata"].get("annotations") or {}).get(
         "idp.estate/auth"
     ) == "telegram-webhook-secret-token":
+        # Two proofs are accepted behind this label. (a) The production adapter's shape
+        # (crew#736): exactly /telegram, and gateway.yaml beside the route mints the
+        # secret in-cluster. (b) The gateway-physics shape (founder edict 2026-09-02:
+        # auth is infrastructure, the app stays ignorant of it): the route ITSELF
+        # enforces the secret with an exact header match on
+        # X-Telegram-Bot-Api-Secret-Token, whose value is a Flux substitution variable,
+        # never a literal (LAW 46); beyond the webhook path only GET /healthz may show.
+        rules = route["spec"]["rules"]
+        webhook_rules = [
+            r
+            for r in rules
+            if any(
+                "telegram" in m.get("path", {}).get("value", "")
+                for m in r.get("matches", [])
+            )
+        ]
+        other = [
+            m for r in rules if r not in webhook_rules for m in r.get("matches", [])
+        ]
+        header_matched = webhook_rules and all(
+            any(
+                h.get("type") == "Exact"
+                and h.get("name") == "X-Telegram-Bot-Api-Secret-Token"
+                and str(h.get("value", "")).startswith("${")
+                for h in m.get("headers", [])
+            )
+            for r in webhook_rules
+            for m in r.get("matches", [])
+        )
+        if header_matched:
+            assert all(
+                m.get("path") == {"type": "Exact", "value": "/healthz"}
+                and m.get("method") == "GET"
+                for m in other
+            ), (
+                f"{f}: header-matched telegram route exposes more than GET /healthz: {other}"
+            )
+            return
         paths = [
             m.get("path", {})
             for rule in route["spec"]["rules"]

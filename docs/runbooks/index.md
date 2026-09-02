@@ -1,2 +1,3 @@
 - [Otto's Telegram webhook door](otto-telegram-webhook.md) — how updates arrive, what a deploy looks like, what to read when the bot goes quiet.
 - [Dagster scheduler](dagster.md) — the estate scheduler on the cluster: verifying the rollout, handling Kyverno rejections.
+- [Otto staging, the bot token](otto-staging.md) — the one founder step (BotFather, then the vault) that the new staging pod waits on.

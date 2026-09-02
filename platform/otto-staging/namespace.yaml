@@ -1,0 +1,30 @@
+# Otto's staging deployment (founder order 2026-09-01: "get this shipped and operational
+# now"). This is a second, separate pod from platform/hermes-agent -- the production
+# Architect gateway (Telegram polling, a2a, mac-run) -- and runs the new otto.boot process
+# hermes-v2 is building on branch otto/boot-surface. Same image
+# (ghcr.io/chidionyema/hermes-agent), only the command differs (deployment.yaml). A staging
+# lane earns its own namespace, not the shared platform/staging/ area (that one carries
+# services.loadbalancers: "0" and no public HTTPRoute -- Telegram has to reach this one from
+# the internet, so it needs the public listener platform/staging/ deliberately refuses).
+#
+# ns_fence_gate (crew#191, bin/ns-fence-gate) requires a both-ways default-deny NetworkPolicy,
+# a ResourceQuota, a LimitRange and a DNS exception on every namespace; network-policy.yaml
+# and quota.yaml carry those. This is the first namespace in the fleet to actually pass the
+# gate rather than merely being counted by it (`bin/ns-fence-gate platform` reads FAIL across
+# all 30 existing namespaces today, crew#191 report-only) -- the fence goes on new work first,
+# per the fixed deploy contract's own hard constraints; the rest of the fleet is a follow-up,
+# not this branch's job.
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    # Never garbage-collected by Flux: a namespace moved between Kustomization rows or
+    # dropped from git stays, with everything in it (portal 404, 2026-08-29 01:05Z, idp#648).
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: otto-staging
+  labels:
+    # crew#539 admission arm: Kyverno require-availability grades this namespace in the cluster too.
+    availability.idp/tier: founder-facing
+    app.kubernetes.io/part-of: idp
+    pod-security.kubernetes.io/enforce: restricted
+    idp.estate/edge-attach: "true"   # the shared Gateway (prospector-edge) selects route namespaces by this label
