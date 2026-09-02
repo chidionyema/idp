@@ -192,7 +192,7 @@ spec:
         - name: estate-scheduler
           image:
             repository: ghcr.io/chidionyema/estate-scheduler
-            tag: "main-3226-d3f9dbcdfaab7c5c0437e96e04997ad3c1d810b4" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
+            tag: "main-3349-fd5037ac87954d762620dea87983405927af3a86" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
             pullPolicy: IfNotPresent
           dagsterApiGrpcArgs:
             - "-h"
