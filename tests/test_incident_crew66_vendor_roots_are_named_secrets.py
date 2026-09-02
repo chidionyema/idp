@@ -26,7 +26,6 @@ FAKE = {
     "SEED_DEEPSEEK_API_KEY": "sk-" + "1" * 32,
     "SEED_MINIMAX_API_KEY": "eyJx.eyJy.zzz",
     "SEED_KIMI_API_KEY": "sk-" + "k" * 40,
-    "SEED_GROQ_API_KEY": "gsk_" + "A" * 40,
     "SEED_GEMINI_API_KEY": "AIza" + "B" * 35,
     "SEED_EXA_API_KEY": "01234567-0123-0123-0123-0123456789ab",
     "SEED_CURSOR_API_KEY": "key_" + "a" * 24,
@@ -152,13 +151,16 @@ def test_roots_from_the_environment_are_verified_then_written_and_never_printed(
 
 def test_a_missing_root_is_blind_for_that_vendor_only_and_the_exit_is_two(tmp_path):
     idp, log, site = _tree(tmp_path)
-    partial = {k: v for k, v in FAKE.items() if k != "SEED_GROQ_API_KEY"}
+    partial = {k: v for k, v in FAKE.items() if k != "SEED_GEMINI_API_KEY"}
     r = _run(idp, site, partial)
     assert r.returncode == 2, r.stdout + r.stderr
-    assert "BLIND   groq" in r.stdout and "gh secret set SEED_GROQ_API_KEY" in r.stdout
+    assert (
+        "BLIND   gemini" in r.stdout and "gh secret set SEED_GEMINI_API_KEY" in r.stdout
+    )
     assert "1 blind" in r.stdout
     assert (
-        "GROQ_API_KEY" not in log.read_text() and "ANTHROPIC_API_KEY" in log.read_text()
+        "GEMINI_API_KEY" not in log.read_text()
+        and "ANTHROPIC_API_KEY" in log.read_text()
     )
 
 
@@ -172,3 +174,17 @@ def test_the_apply_step_tolerates_blind_and_the_hermes_env_step_carries_no_vendo
             "bin/idp-bootstrap-vendors (crew#579, R52)"
         )
     ].split("run: |")[0].replace("SEED_HERMES_", "")
+
+
+def test_every_seed_row_in_the_workflow_is_a_registry_root():
+    """The groq-removal class (2026-09-02): when a vendor leaves the registry, its SEED_ row must
+    leave the workflow in the same commit, or a dead env row reads green forever."""
+    step = WF[WF.index("bin/idp-bootstrap-vendors (crew#579, R52)") :]
+    step = step.split("- name:", 1)[0]
+    wf_names = set(re.findall(r"(SEED_[A-Z_]+):", step))
+    reg_names = set(
+        re.findall(
+            r"SEED_[A-Z_]+", (ROOT / "platform/vendors/consoles.yaml").read_text()
+        )
+    )
+    assert wf_names <= reg_names, wf_names - reg_names

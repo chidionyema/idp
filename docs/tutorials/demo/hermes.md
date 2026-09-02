@@ -27,11 +27,11 @@ $ .venv/bin/pytest -o addopts= -q tests/test_incident_crew751_cursor_is_the_herm
 ```
 
 `bin/catalog-gen` against the fixture inventory emits `vendor-cursor` among the
-registry vendors (captured 2026-08-31 on this branch):
+registry vendors (captured 2026-09-02 on this branch):
 
 ```
-catalog-gen: 129 entities, 3 dependsOn edges -> .../catalog-info.yaml
-  vendors        11  (anthropic, cursor, deepseek, exa, gemini, google_oauth, groq, minimax, openrouter, stripe, telegram)
+catalog-gen: 142 entities, 3 dependsOn edges -> .../catalog-info.yaml
+  vendors        12  (anthropic, apprise_telegram, cursor, deepseek, exa, gemini, google_oauth, kimi, minimax, openrouter, stripe, telegram)
 ```
 
 The key is minted once in the Cursor dashboard and stored as the GitHub secret

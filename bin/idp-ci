@@ -153,6 +153,13 @@ if cmp -s "$a/catalog-info.yaml" "$b/catalog-info.yaml"; then
   say "ok    idempot  catalog-gen twice over one inventory: identical ($(wc -c < "$a/catalog-info.yaml" | tr -d ' ') bytes)"
 else say "FAIL  idempot  catalog-gen is not deterministic:"; diff "$a/catalog-info.yaml" "$b/catalog-info.yaml" | head -10 | sed 's/^/      /'; fail=1; fi
 
+# 4b2. The router config pair is generated from the vendor registry (founder 2026-09-02:
+#      one vendor, one place). A hand edit to either rendered file, or a registry edit that
+#      skipped bin/idp-vendor-render, is drift and fails here.
+if "$IDP/bin/idp-vendor-render" --check >/dev/null 2>&1; then
+  say "ok    render   llm/config.yaml + platform/llm/config.yaml match platform/vendors/consoles.yaml"
+else say "FAIL  render   rendered router configs do not match the vendor registry; run bin/idp-vendor-render"; fail=1; fi
+
 # 4c. The catalogue must carry relationships. An entity list with no edges renders
 #     exactly like a mapped estate and is the failure a peer session named on
 #     2026-08-24: "Backstage doesn't magically discover your architecture". Two

@@ -48,7 +48,7 @@ spec:
       env:
         # An alias on the estate router (platform/llm/config.yaml), so a lane swap never touches this row.
         HINDSIGHT_API_LLM_PROVIDER: openai
-        HINDSIGHT_API_LLM_MODEL: groq
+        HINDSIGHT_API_LLM_MODEL: deepseek  # was groq until that vendor was removed (2026-09-02)
       persistence:
         modelCache: { enabled: true, size: 5Gi }   # the local embedding model survives a restart
       extraVolumes: [{ name: tmp, emptyDir: {} }]  # the only writable path besides the model cache

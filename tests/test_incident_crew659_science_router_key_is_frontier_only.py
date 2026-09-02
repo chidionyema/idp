@@ -23,7 +23,7 @@ FRONTIER = {"claude", "claude-fast", "gemini", "gemini-or"}
 #: every frontier account refused on credit. Founder, 2026-08-30 07:0xZ: "why is minimax not there"
 #: ... "we have work to do". A paid lane is on the key so the worker runs while the frontier
 #: accounts are empty; a local model is still never on it.
-PAID = {"minimax", "minimax_m27", "groq"}
+PAID = {"minimax", "minimax_m27"}
 ALLOWED = FRONTIER | PAID
 
 

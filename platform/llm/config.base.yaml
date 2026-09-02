@@ -1,0 +1,70 @@
+# LiteLLM config for the cluster. Every hosted model here is the same entry as llm/config.yaml
+# (tests/test_llm_row.py diffs them); what is missing is on purpose:
+#   - the ollama* entries: they point at the founder's Mac (host.docker.internal), which the
+#     cluster cannot reach. The free local lane stays on the laptop compose.
+#   - the ollama fallbacks, for the same reason.
+# `vision` is an alias so photo intake names a capability, not a vendor (crew#284 CP1).
+
+model_list:
+  # @vendor-lanes@
+
+  # @vendor-cluster-lanes@
+
+router_settings:
+  fallbacks:
+    # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat
+    # at ~2,400 tokens of credit and Google prepaid was empty, so the crew#284 order (OpenRouter
+    # first) walked every turn through 402/429 before reaching a lane that answers. Consensus
+    # still survives any one account dry. Every chain not headed by the cheap model ends in it
+    # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
+    # job aliases) but sit in no chain while the account is unfunded: a hop that always
+    # answers 402 is latency, not redundancy.
+    # @vendor-fallbacks@
+    # @vendor-cluster-fallbacks@
+  num_retries: 2
+  allowed_fails: 3
+  cooldown_time: 60
+
+litellm_settings:
+  callbacks: ["otel"]
+  # Every routed call lands in Langfuse (platform/observability) as a trace, whatever product made
+  # it: tracing at the router is the one instrument, not one SDK per product (crew#325 showcase).
+  # Keys arrive as env from the litellm-langfuse ExternalSecret; LANGFUSE_HOST is set in litellm.yaml.
+  success_callback: ["langfuse"]
+  failure_callback: ["langfuse"]
+  drop_params: true
+  turn_off_message_logging: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # crew#400: the founder picks and adds models in the Admin UI at llm.<zone>/ui, not by PR (LAW 31).
+  # Models added there are rows in litellm-db and survive a restart; this model_list stays the floor.
+  # The console signs in through the estate identity domain (GENERIC_* env from the litellm-sso
+  # mount, external-secret.yaml); no console password exists (crew#408, ADR 0007).
+  store_model_in_db: true
+  max_budget: 5.0
+  budget_duration: 1d
+  background_health_checks: false
+  # The MiniMax half of the founder's 2026-08-30 ruling. MiniMax's image API is not
+  # OpenAI-shaped -- POST https://api.minimax.io/v1/image_generation, body {model, prompt,
+  # aspect_ratio, n, response_format}, answer data.image_base64
+  # (https://platform.minimax.io/docs/guides/image-generation, read 2026-08-30) -- so it cannot
+  # be a model_list row. A pass-through forwards the vendor's own shape and puts the key in the
+  # header from the mounted secret, which keeps LAW 34 whole: the caller holds a router virtual
+  # key, never MINIMAX_API_KEY.
+  #
+  # `auth: true` is what makes that true, and it is free on this version. It used to be an
+  # enterprise flag; in v1.98.0 _register_pass_through_endpoint attaches Depends(user_api_key_auth)
+  # and adds the path to LiteLLMRoutes.openai_routes for everyone
+  # (litellm/proxy/pass_through_endpoints/pass_through_endpoints.py:2802-2812 at tag v1.98.0).
+  # Without it this path would forward anything the internet sent to llm.<zone>, spending the
+  # MiniMax account with no key at all, so the flag is load-bearing and not a default.
+  pass_through_endpoints:
+    - path: /minimax/image
+      target: https://api.minimax.io/v1/image_generation
+      auth: true
+      methods: ["POST"]
+      headers:
+        Authorization: Bearer os.environ/MINIMAX_API_KEY
+        content-type: application/json
+      timeout: 120

@@ -4,9 +4,11 @@ Rung 2 (property over the two config files) and rung 4 (incident crew#313: the r
 on the founder's Mac, so stopping colima took every routed model call down). The rule under
 test: the cluster router is the laptop router minus the entries the cluster cannot reach.
 """
+
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -23,11 +25,21 @@ def _models(cfg: dict) -> dict[str, dict]:
 
 def test_cluster_router_is_laptop_router_minus_local_lane() -> None:
     laptop, cluster = _models(LAPTOP_CFG), _models(CLUSTER_CFG)
-    local = {n for n, p in laptop.items() if "host.docker.internal" in str(p.get("api_base", ""))}
+    local = {
+        n
+        for n, p in laptop.items()
+        if "host.docker.internal" in str(p.get("api_base", ""))
+    }
     assert local, "the laptop config is expected to carry the ollama lane"
     hosted = {n: p for n, p in laptop.items() if n not in local}
-    assert {n: cluster[n] for n in hosted} == hosted, "hosted entries drifted between the two files"
-    assert not [n for n, p in cluster.items() if "host.docker.internal" in str(p.get("api_base", ""))]
+    assert {n: cluster[n] for n in hosted} == hosted, (
+        "hosted entries drifted between the two files"
+    )
+    assert not [
+        n
+        for n, p in cluster.items()
+        if "host.docker.internal" in str(p.get("api_base", ""))
+    ]
     # Every fallback target on the cluster must be a cluster model.
     for entry in CLUSTER_CFG["router_settings"]["fallbacks"]:
         for src, targets in entry.items():
@@ -40,35 +52,65 @@ def test_vision_alias_names_a_capability() -> None:
 
 
 def test_image_version_matches_laptop_compose() -> None:
-    laptop = re.search(r"image:\s*ghcr\.io/berriai/litellm-database:(\S+)", (ROOT / "llm" / "litellm.yml").read_text())
-    cluster = re.search(r"image:\s*ghcr\.io/berriai/litellm-database:(\S+)", (CLUSTER / "litellm.yaml").read_text())
+    laptop = re.search(
+        r"image:\s*ghcr\.io/berriai/litellm-database:(\S+)",
+        (ROOT / "llm" / "litellm.yml").read_text(),
+    )
+    cluster = re.search(
+        r"image:\s*ghcr\.io/berriai/litellm-database:(\S+)",
+        (CLUSTER / "litellm.yaml").read_text(),
+    )
     assert laptop and cluster and laptop.group(1) == cluster.group(1)
 
 
 def test_secret_env_names_cover_every_os_environ_ref() -> None:
-    refs = set(re.findall(r"os\.environ/([A-Z_]+)", (CLUSTER / "config.yaml").read_text()))
-    documented = set(re.findall(r"([A-Z_]+_KEY)=\1", (CLUSTER / "external-secret.yaml").read_text()))
-    assert refs == documented, (refs ^ documented)
+    refs = set(
+        re.findall(r"os\.environ/([A-Z_]+)", (CLUSTER / "config.yaml").read_text())
+    )
+    documented = set(
+        re.findall(r"([A-Z_]+_KEY)=\1", (CLUSTER / "external-secret.yaml").read_text())
+    )
+    assert refs == documented, refs ^ documented
     # The file holds two ExternalSecrets since the Langfuse callback (crew#325); this rule is about the upstream one.
-    es = next(d for d in yaml.safe_load_all((CLUSTER / "external-secret.yaml").read_text()) if d["metadata"]["name"] == "litellm-upstream")
+    es = next(
+        d
+        for d in yaml.safe_load_all((CLUSTER / "external-secret.yaml").read_text())
+        if d["metadata"]["name"] == "litellm-upstream"
+    )
     assert es["spec"]["dataFrom"][0]["extract"]["key"] == "litellm-upstream"
-    dep = next(d for d in yaml.safe_load_all((CLUSTER / "litellm.yaml").read_text()) if d["kind"] == "Deployment")
+    dep = next(
+        d
+        for d in yaml.safe_load_all((CLUSTER / "litellm.yaml").read_text())
+        if d["kind"] == "Deployment"
+    )
     # idp#253: the Secret is a mounted volume the container exports itself; Kyverno refuses envFrom.
     spec = dep["spec"]["template"]["spec"]
-    assert es["spec"]["target"]["name"] in {v.get("secret", {}).get("secretName") for v in spec["volumes"]}
+    assert es["spec"]["target"]["name"] in {
+        v.get("secret", {}).get("secretName") for v in spec["volumes"]
+    }
     assert "envFrom" not in spec["containers"][0]
 
 
 def test_route_attaches_to_the_edge_llm_listener() -> None:
     route = yaml.safe_load((CLUSTER / "httproute.yaml").read_text())
-    assert route["spec"]["parentRefs"][0] == {"name": "prospector-edge", "namespace": "prospector", "sectionName": "https-llm"}
+    assert route["spec"]["parentRefs"][0] == {
+        "name": "prospector-edge",
+        "namespace": "prospector",
+        "sectionName": "https-llm",
+    }
     assert route["spec"]["hostnames"] == ["llm.${ESTATE_ZONE}"]
     ns = yaml.safe_load((CLUSTER / "namespace.yaml").read_text())
     assert ns["metadata"]["labels"]["idp.estate/edge-attach"] == "true"
 
 
 def test_flux_row_waits_on_edge_and_secret_store() -> None:
-    rows = [d for d in yaml.safe_load_all((ROOT / "clusters" / "oke" / "platform.yaml").read_text()) if d]
+    rows = [
+        d
+        for d in yaml.safe_load_all(
+            (ROOT / "clusters" / "oke" / "platform.yaml").read_text()
+        )
+        if d
+    ]
     llm = next(d for d in rows if d["metadata"]["name"] == "llm")
     assert llm["spec"]["path"] == "./platform/llm"
     assert {d["name"] for d in llm["spec"]["dependsOn"]} >= {"edge", "secret-store"}
@@ -81,28 +123,68 @@ def test_founder_picks_models_in_the_admin_ui_not_by_pr() -> None:
     assert CLUSTER_CFG["general_settings"].get("store_model_in_db") is True
     docs = list(yaml.safe_load_all((CLUSTER / "external-secret.yaml").read_text()))
     sso = next(d for d in docs if d["metadata"]["name"] == "litellm-sso")
-    assert {d["secretKey"] for d in sso["spec"]["data"]} == {"GENERIC_CLIENT_ID", "GENERIC_CLIENT_SECRET", "PROXY_ADMIN_ID"}
-    dep = next(d for d in yaml.safe_load_all((CLUSTER / "litellm.yaml").read_text()) if d["kind"] == "Deployment")
+    assert {d["secretKey"] for d in sso["spec"]["data"]} == {
+        "GENERIC_CLIENT_ID",
+        "GENERIC_CLIENT_SECRET",
+        "PROXY_ADMIN_ID",
+    }
+    dep = next(
+        d
+        for d in yaml.safe_load_all((CLUSTER / "litellm.yaml").read_text())
+        if d["kind"] == "Deployment"
+    )
     spec = dep["spec"]["template"]["spec"]
-    vol = next(v for v in spec["volumes"] if v.get("secret", {}).get("secretName") == "litellm-sso")
+    vol = next(
+        v
+        for v in spec["volumes"]
+        if v.get("secret", {}).get("secretName") == "litellm-sso"
+    )
     mounts = {m["name"]: m["mountPath"] for m in spec["containers"][0]["volumeMounts"]}
-    assert mounts[vol["name"]].startswith("/run/secrets/litellm/"), "the container exports /run/secrets/litellm/*/* as env"
+    assert mounts[vol["name"]].startswith("/run/secrets/litellm/"), (
+        "the container exports /run/secrets/litellm/*/* as env"
+    )
     env = {e["name"]: e.get("value", "") for e in spec["containers"][0]["env"]}
-    assert env["GENERIC_AUTHORIZATION_ENDPOINT"] == "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/authorize"
+    assert (
+        env["GENERIC_AUTHORIZATION_ENDPOINT"]
+        == "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/authorize"
+    )
     assert env["PROXY_BASE_URL"] == "https://llm.${ESTATE_ZONE}"
     # The client is created by tofu (platform/oci/identity) with the founder grant; nothing is seeded by hand.
     tf = (ROOT / "platform" / "oci" / "identity" / "main.tf").read_text()
     # crew#408: the module is applied by the machine identity in oke-check, never from a laptop
     wf = (ROOT / ".github" / "workflows" / "oke-check.yml").read_text()
-    assert "bin/idp-identity-apply apply -auto-approve" in wf and "bin/idp-identity-apply plan" in wf
+    assert (
+        "bin/idp-identity-apply apply -auto-approve" in wf
+        and "bin/idp-identity-apply plan" in wf
+    )
     vt = (ROOT / "platform" / "oci" / "identity" / "versions.tf").read_text()
-    assert "auth                = var.oci_auth" in vt, "identity provider must sign in as the CLI does (SecurityToken in CI)"
+    assert "auth                = var.oci_auth" in vt, (
+        "identity provider must sign in as the CLI does (SecurityToken in CI)"
+    )
     # run 33030450105: SecurityToken auth cannot read the region from the profile; it is a provider input
-    assert "region              = var.region" in vt, "identity provider needs region under SecurityToken auth"
+    assert "region              = var.region" in vt, (
+        "identity provider needs region under SecurityToken auth"
+    )
     step = wf.split("bin/idp-identity-apply ${{", 1)[1].split("- name:", 1)[0]
-    assert "OCI_REGION: ${{ vars.OCI_REGION }}" in step, "identity step must pass OCI_REGION"
+    assert "OCI_REGION: ${{ vars.OCI_REGION }}" in step, (
+        "identity step must pass OCI_REGION"
+    )
     assert 'display_name  = "estate-router-console"' in tf
     assert 'redirect_uris             = ["https://llm.${var.zone}/sso/callback"]' in tf
     # crew#407: no console password exists, so none can ever be sent.
-    for f in list(CLUSTER.glob("*.yaml")) + [ROOT / ".github" / "workflows" / "vault-seed.yml"]:
+    for f in list(CLUSTER.glob("*.yaml")) + [
+        ROOT / ".github" / "workflows" / "vault-seed.yml"
+    ]:
         assert not re.search(r"UI_(USERNAME|PASSWORD)|litellm-ui", f.read_text()), f
+
+
+def test_the_rendered_pair_matches_the_vendor_registry() -> None:
+    """One vendor, one place (founder 2026-09-02): both router configs are generated from the
+    router: blocks in platform/vendors/consoles.yaml. A hand edit to either rendered file, or a
+    registry edit without a re-render, fails here and in bin/idp-ci."""
+    r = subprocess.run(
+        [str(ROOT / "bin" / "idp-vendor-render"), "--check"],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr

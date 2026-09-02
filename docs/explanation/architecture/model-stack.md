@@ -68,7 +68,7 @@ flowchart LR
     K8S["k8sgpt"]
     HERMES["Hermes · the Architect"]
     PROS["Prospector"]
-    ROUTER["Router · llm.zone<br/>lanes: claude · minimax · deepseek · gemini · groq · openrouter · local<br/>one login + budget per caller"]
+    ROUTER["Router · llm.zone<br/>lanes: claude · minimax · deepseek · gemini · openrouter · local<br/>one login + budget per caller"]
   end
   OTTO["Otto · Telegram"] --> HERMES
   OC -- "laptop" --> ROUTER
@@ -77,7 +77,7 @@ flowchart LR
   HERMES -- "hermes" --> ROUTER
   PROS -- "prospector" --> ROUTER
   ROUTER --> ANTH["Anthropic (API key, small budget)"]
-  ROUTER --> VENDORS["MiniMax · DeepSeek · Gemini · Groq · OpenRouter"]
+  ROUTER --> VENDORS["MiniMax · DeepSeek · Gemini · OpenRouter"]
   ROUTER -. "Tailscale" .-> OLLAMA["Ollama on the Mac (local lane)"]
   CC == "subscription, unchanged" ==> ANTH
 ```
