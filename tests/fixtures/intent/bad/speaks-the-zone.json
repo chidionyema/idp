@@ -1,0 +1,8 @@
+{
+  "capability": "workload",
+  "name": "sneaky",
+  "component": "sneaky",
+  "purpose": "fixture that MUST be refused: schema-valid, but an env value speaks the estate zone",
+  "port": 8080,
+  "env": { "API_BASE": "https://api.mumchimp.com/v1" }
+}

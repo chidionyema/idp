@@ -4,7 +4,7 @@
     bin/idp-availability-gate [dir ...]        # default: every platform/ dir that renders an HTTPRoute
 
 2026-08-28 06:20-06:39Z: cordoning one node (10.0.148.221) put the only catalogue pod into
-Pending -- the other node had no room -- and https://catalogue.mumchimp.com answered 503 to the
+Pending -- the other node had no room -- and the catalogue host answered 503 to the
 founder for ~15 minutes (login-drill run 33148483050). Nothing was broken: the manifest said
 `replicas: 1`, `strategy: Recreate`, and platform/ contained no PodDisruptionBudget at all. The
 estate had no availability standard, so no review could fail one. This is that standard, and it

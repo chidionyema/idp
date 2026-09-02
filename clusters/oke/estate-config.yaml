@@ -5,6 +5,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  # The one place a name lives (crew#269, crew#796). Every other file in every estate repository
+  # says ${ESTATE_ZONE}; bin/estate-zone-gate refuses a literal, bin/pr-report refuses a PR that
+  # adds one, name-drift.yml grades every repository's main on the estate clock.
   name: estate-config
   namespace: flux-system
 data:
@@ -17,6 +20,18 @@ data:
   # The repository the estate's GitHub App acts on (crew#554): platform/drills/drill-dispatcher.yaml
   # dispatches the hourly drills here. Same repo as clusters/oke/flux-system/gotk-sync.yaml; one value.
   ESTATE_GITHUB_REPO: chidionyema/idp
+  # crew#804 Diamond Standard (founder 2026-09-01): DNA the intent compiler reads. The agents'
+  # intent vocabulary (schema/intent/) has no field for these; bin/intent-compile injects them
+  # and refuses any intent that speaks a value from this data: block. Change a value here and
+  # recompile: every compiled workload follows, the agents never notice.
+  ESTATE_REGISTRY: "ghcr.io/chidionyema"
+  ESTATE_STORAGE_PROVIDER: "oci"
+  # Founder 2026-09-02: "estate dna is missing email address, basically core company info that
+  # can change". The estate's contact address — ACME/cert contact, catalog owner mail, anywhere a
+  # surface needs "who runs this" — is referenced as ${ESTATE_EMAIL}, never a literal. Same rule
+  # as every key here: change it once, recompile/reconcile, everything follows; bin/intent-compile
+  # refuses any intent that speaks it.
+  ESTATE_EMAIL: "chidionyema@gmail.com"
   # The GitHub account that owns the estate repositories (crew#729 step 3): the infrastructure
   # crew reads its board and its law files under this owner (platform/infra-crew). Flux envsubst
   # is strict and takes no shell modifiers, so the owner cannot be cut from the line above.
