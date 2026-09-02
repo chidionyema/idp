@@ -75,6 +75,15 @@ spec:
           drop:
             - ALL
     dagsterWebserver:
+      # The chart default (docker.io/dagster/dagster-celery-k8s) publishes no arm64 build and
+      # every node is arm64 (kubelet ErrImagePull, 2026-09-02T15:2xZ). The estate-scheduler
+      # image is built for both machine kinds by build-multiarch.yml and carries
+      # dagster-webserver, so it serves the webserver and daemon too. Record:
+      # docs/reference/policy/dagster-arm64-images.md
+      image:
+        repository: ghcr.io/chidionyema/estate-scheduler
+        tag: "main-3226-d3f9dbcdfaab7c5c0437e96e04997ad3c1d810b4" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
+        pullPolicy: IfNotPresent
       # crew#555: founder-facing namespace, so 2 replicas. The chart exposes replicaCount but
       # no spread or strategy value for the webserver; the spread is a postRenderer patch below,
       # in the estate's standard shape (litellm, oauth2-proxy: DoNotSchedule on hostname).
@@ -97,6 +106,12 @@ spec:
           memory: 1Gi
       podSecurityContext:
         runAsNonRoot: true
+        # The chart's check-db-ready init container runs the postgres image, which declares no
+        # USER, so runAsNonRoot alone is a kubelet refusal at start ("image will run as root",
+        # events 2026-09-02T14:1xZ). uid 999 is proven by the postgresql pod above running 1/1.
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
         seccompProfile:
           type: RuntimeDefault
       securityContext:
@@ -112,6 +127,15 @@ spec:
         type: ClusterIP
     dagsterDaemon:
       enabled: true
+      # The chart default (docker.io/dagster/dagster-celery-k8s) publishes no arm64 build and
+      # every node is arm64 (kubelet ErrImagePull, 2026-09-02T15:2xZ). The estate-scheduler
+      # image is built for both machine kinds by build-multiarch.yml and carries
+      # dagster-webserver, so it serves the webserver and daemon too. Record:
+      # docs/reference/policy/dagster-arm64-images.md
+      image:
+        repository: ghcr.io/chidionyema/estate-scheduler
+        tag: "main-3226-d3f9dbcdfaab7c5c0437e96e04997ad3c1d810b4" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
+        pullPolicy: IfNotPresent
       initContainerResources:
         requests:
           cpu: 50m
@@ -140,6 +164,12 @@ spec:
           memory: 768Mi
       podSecurityContext:
         runAsNonRoot: true
+        # The chart's check-db-ready init container runs the postgres image, which declares no
+        # USER, so runAsNonRoot alone is a kubelet refusal at start ("image will run as root",
+        # events 2026-09-02T14:1xZ). uid 999 is proven by the postgresql pod above running 1/1.
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
         seccompProfile:
           type: RuntimeDefault
       securityContext:
@@ -186,6 +216,9 @@ spec:
                 backstage.io/kubernetes-id: estate-scheduler
     dagster-user-deployments:
       enabled: true
+      # The subchart falls back to its own default when the global name is empty
+      # (deployment-user.yaml line 1: global | default local), so both are blanked.
+      celeryConfigSecretName: ""
       imagePullSecrets:
         - name: ghcr-pull
       deployments:
@@ -304,22 +337,6 @@ spec:
             patch: |
               - op: remove
                 path: /spec/template/spec/initContainers
-          # generateCeleryConfigSecret: true means the celery config Secret ships with the
-          # release, so the reference need not be optional; the chart hard-codes optional: true
-          # and no-optional-secret-references (the 2026-08-24 half-configured-box incident as a
-          # policy) refuses exactly that. envFrom index 2 is the chart's celery secretRef
-          # (0 and 1 are ConfigMaps); a chart bump that moves the index fails this same render
-          # gate loudly, never silently.
-          - target:
-              kind: Deployment
-              name: dagster-dagster-user-deployments-estate-scheduler
-            patch: |
-              - op: replace
-                path: /spec/template/spec/containers/0/envFrom/2
-                value:
-                  secretRef:
-                    name: dagster-celery-config-secret
-                    optional: false
           # crew#555 (founder order 2026-09-02): the webserver must spread across nodes and the
           # chart offers no values key for it. DoNotSchedule, not preferred: best-effort spread
           # collapses onto one node exactly when the cluster is tight (platform/llm/litellm.yaml).

@@ -19,6 +19,7 @@ resources:
   - hindsight-exception.yaml
   - robusta-exception.yaml
   - tailscale-operator-exception.yaml
+  - tailscale-egress-exception.yaml
   - external-dns-exception.yaml
   - protect-namespaces.yaml
   # crew#341, wired 2026-08-28 (crew#488 CP5): the file sat here unreferenced since PR #259, so
