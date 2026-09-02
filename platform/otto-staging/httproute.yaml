@@ -43,6 +43,17 @@ spec:
             - type: Exact
               name: X-Telegram-Bot-Api-Secret-Token
               value: "${OTTO_WEBHOOK_SECRET}"
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: otto-staging
           port: 8080
@@ -51,6 +62,17 @@ spec:
             type: Exact
             value: /healthz
           method: GET
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
       backendRefs:
         - name: otto-staging
           port: 8080

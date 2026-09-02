@@ -55,10 +55,11 @@ metadata:
     app.kubernetes.io/name: otto-staging
     app.kubernetes.io/part-of: idp
 spec:
-  # One process, one webhook lock; Recreate so a rollout never runs two pods holding it at once.
-  replicas: 1
-  strategy:
-    type: Recreate
+  # Two pods behind the door (crew#539: a routed surface survives one node). The pod is
+  # stateless -- Telegram delivers each update once to the Service and any replica may answer;
+  # nothing exclusive is held (no volume outlives the pod), so the earlier one-pod Recreate
+  # caution protected nothing and went.
+  replicas: 2
   selector:
     matchLabels:
       app: otto-staging
@@ -68,6 +69,12 @@ spec:
         app: otto-staging
         app.kubernetes.io/name: otto-staging
     spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: otto-staging }
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true

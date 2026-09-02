@@ -1165,6 +1165,7 @@ spec:
     - component:default/layer-scheduling
     - component:default/layer-secret-store
     - component:default/layer-edge
+    - component:default/layer-otto-staging-secret
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -1179,6 +1180,29 @@ spec:
   definition: |
     # Not published. otto-staging answers at otto.${ESTATE_ZONE}; this entity
     # exists so the catalogue records that the interface is reachable and who owns it.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-otto-staging-secret
+  title: 'Otto (staging) webhook secret'
+  description: 'Feeds the secret word Telegram must echo from the vault into the gateway rule on Otto''s door.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=otto-staging-secret'
+    estate/flux-kustomization: 'otto-staging-secret'
+    estate/path: './platform/otto-staging-secret'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  dependsOn:
+    - component:default/layer-secret-store
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component

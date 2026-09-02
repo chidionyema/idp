@@ -23,6 +23,8 @@ metadata:
     kustomize.toolkit.fluxcd.io/prune: disabled
   name: otto-staging
   labels:
+    # crew#539 admission arm: Kyverno require-availability grades this namespace in the cluster too.
+    availability.idp/tier: founder-facing
     app.kubernetes.io/part-of: idp
     pod-security.kubernetes.io/enforce: restricted
     idp.estate/edge-attach: "true"   # the shared Gateway (prospector-edge) selects route namespaces by this label
