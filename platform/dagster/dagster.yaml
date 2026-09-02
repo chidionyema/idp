@@ -100,6 +100,12 @@ spec:
           memory: 1Gi
       podSecurityContext:
         runAsNonRoot: true
+        # The chart's check-db-ready init container runs the postgres image, which declares no
+        # USER, so runAsNonRoot alone is a kubelet refusal at start ("image will run as root",
+        # events 2026-09-02T14:1xZ). uid 999 is proven by the postgresql pod above running 1/1.
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
         seccompProfile:
           type: RuntimeDefault
       securityContext:
@@ -144,6 +150,12 @@ spec:
           memory: 768Mi
       podSecurityContext:
         runAsNonRoot: true
+        # The chart's check-db-ready init container runs the postgres image, which declares no
+        # USER, so runAsNonRoot alone is a kubelet refusal at start ("image will run as root",
+        # events 2026-09-02T14:1xZ). uid 999 is proven by the postgresql pod above running 1/1.
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
         seccompProfile:
           type: RuntimeDefault
       securityContext:
@@ -198,7 +210,7 @@ spec:
         - name: estate-scheduler
           image:
             repository: ghcr.io/chidionyema/estate-scheduler
-            tag: "main-0-0000000000000000000000000000000000000000" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
+            tag: "main-3226-d3f9dbcdfaab7c5c0437e96e04997ad3c1d810b4" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
             pullPolicy: IfNotPresent
           dagsterApiGrpcArgs:
             - "-h"
