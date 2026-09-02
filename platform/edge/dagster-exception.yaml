@@ -50,3 +50,33 @@ spec:
             - StatefulSet
           namespaces:
             - dagster
+---
+# crew#555 at admission, founder order 2026-09-02 (oke-check run 33618879684). The dagster
+# namespace is founder-facing, so require-availability wants every Deployment at 2 replicas
+# spread across nodes. The webserver and the estate-scheduler user deployment now comply
+# (platform/dagster/dagster.yaml). The daemon cannot: chart 1.13.19 exposes no replicaCount
+# for it because two daemons double-fire every schedule -- upstream dagster has no daemon
+# leader election. Two of those is an outage, not availability (the hermes-agent-gateway
+# waiver is the same class: platform/availability.yaml). Scope is exactly one Deployment and
+# exactly the two rules it cannot meet; every other availability rule still binds it.
+# Debt tracked open: https://github.com/chidionyema/idp/issues/1136
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: dagster-daemon-is-a-singleton
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: require-availability
+      ruleNames:
+        - founder-facing-runs-two
+        - founder-facing-spreads-across-nodes
+  match:
+    any:
+      - resources:
+          kinds:
+            - Deployment
+          namespaces:
+            - dagster
+          names:
+            - dagster-daemon

@@ -1,0 +1,46 @@
+# Superset (decision 0018) and the two policies its chart cannot satisfy by shape. Kyverno
+# honours exceptions from namespace kyverno only (platform/kyverno/kyverno.yaml); this file
+# lives in platform/edge because this directory has no namespace transformer (crew#325, the
+# langfuse exception next door records the incident).
+#
+# 1. secrets-not-from-env-vars: the chart hands every pod its generated `superset-env` Secret
+#    through envFrom to carry the database host, port and name — connection facts, not
+#    credentials. The real credentials never ride the environment: SECRET_KEY and the database
+#    password are vault-fed files under /run/secrets/superset (superset-external-secret.yaml),
+#    read by superset_config.py, and the env copy of the password is a fixed placeholder string.
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: superset-secrets-from-env
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: secrets-not-from-env-vars
+      ruleNames: [secrets-not-from-env-vars, secrets-not-from-envfrom, autogen-secrets-not-from-env-vars, autogen-secrets-not-from-envfrom]
+  match:
+    any:
+      - resources:
+          kinds: [Deployment, Pod, ReplicaSet, Job]
+          namespaces: [observability]
+          names: [superset*]
+---
+# 2. require-availability: the chart renders its Celery worker Deployment unconditionally, and
+#    the estate runs it at zero replicas on purpose (no async jobs, no broker — superset.yaml).
+#    An empty Deployment is not a founder surface; without this the founder-facing rules would
+#    refuse the whole release at admission for a workload that runs no pod. The web Deployment
+#    stays fully graded: two replicas, spread across nodes, a rollout that can free a node.
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: superset-worker-zero-replicas
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: require-availability
+      ruleNames: [founder-facing-runs-two, founder-facing-spreads-across-nodes]
+  match:
+    any:
+      - resources:
+          kinds: [Deployment]
+          namespaces: [observability]
+          names: [superset-worker]

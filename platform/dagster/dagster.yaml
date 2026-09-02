@@ -75,7 +75,10 @@ spec:
           drop:
             - ALL
     dagsterWebserver:
-      replicaCount: 1
+      # crew#555: founder-facing namespace, so 2 replicas. The chart exposes replicaCount but
+      # no spread or strategy value for the webserver; the spread is a postRenderer patch below,
+      # in the estate's standard shape (litellm, oauth2-proxy: DoNotSchedule on hostname).
+      replicaCount: 2
       # The chart's init containers (check-db-ready, init-user-deployment) carry no resources
       # of their own and require-requests-limits judges every container.
       initContainerResources:
@@ -317,6 +320,24 @@ spec:
                   secretRef:
                     name: dagster-celery-config-secret
                     optional: false
+          # crew#555 (founder order 2026-09-02): the webserver must spread across nodes and the
+          # chart offers no values key for it. DoNotSchedule, not preferred: best-effort spread
+          # collapses onto one node exactly when the cluster is tight (platform/llm/litellm.yaml).
+          # No strategy patch needed: a spread constraint at maxSkew 1 admits the surge pod
+          # (2 on one node vs 1 is skew 1), unlike hard anti-affinity.
+          - target:
+              kind: Deployment
+              name: dagster-dagster-webserver
+            patch: |
+              - op: add
+                path: /spec/template/spec/topologySpreadConstraints
+                value:
+                  - maxSkew: 1
+                    topologyKey: kubernetes.io/hostname
+                    whenUnsatisfiable: DoNotSchedule
+                    labelSelector:
+                      matchLabels:
+                        component: dagster-webserver
           # Labels for the catalogue: every workload carries its Backstage ID.
           - target:
               kind: Deployment
