@@ -88,5 +88,5 @@ apply run proves them together in one call and writes both or neither.
 
 ## Configuration that is not a credential
 
-`SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS`, `SEED_HERMES_TELEGRAM_HOME_CHANNEL`, `SEED_R2_BUCKET`. A chat id, a user
+`SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS`, `SEED_HERMES_TELEGRAM_HOME_CHANNEL`, `SEED_TELEGRAM_ALERTS_CHAT_ID`, `SEED_R2_BUCKET`. Two chat ids, a user
 id list and a bucket name. They ride the hermes-agent-env step as configuration and have no life cycle.
