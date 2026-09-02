@@ -68,12 +68,16 @@ spec:
   values:
     # The proxy image carries the same short name (`tailscale/tailscale`) from the same chart
     # values file, so it is unresolvable on these nodes for the same reason; the operator only
-    # pulls it when it makes a proxy, which is why the operator's own image failed first. The tag
-    # answers 200 on Docker Hub (measured 2026-08-30) and the hermes-agent sidecar already runs
-    # this exact image from a fully-qualified reference.
+    # pulls it when it makes a proxy, which is why the operator's own image failed first.
+    # 2026-09-02: both proxy pods then sat waiting on Docker Hub's unauthenticated pull quota
+    # ("toomanyrequests", kubelet events 16:0xZ) -- the cluster shares one outbound address, so
+    # any anonymous docker.io pull can be refused on quota another workload already burned.
+    # The vendor publishes the same images on GitHub's registry, which sets no such anonymous
+    # quota on public images: ghcr.io/tailscale/tailscale:v1.102.3 answers 200 with an arm64
+    # build (measured 2026-09-02). Record: docs/reference/policy/tailscale-ghcr-images.md
     proxyConfig:
       image:
-        repository: docker.io/tailscale/tailscale
+        repository: ghcr.io/tailscale/tailscale
     # No `oauth:` block here on purpose (see the header comment): the chart falls back to reading
     # the pre-created `operator-oauth` Secret (external-secret.yaml) when this is left unset.
     apiServerProxyConfig:
@@ -94,11 +98,12 @@ spec:
       # returns ambiguous list". The Deployment stalled, the HelmRelease sat Failed, and
       # Kustomization/guacamole waited behind it. Same class as the seaweedfs image in
       # platform/observability/langfuse-values.yaml (crew#325), and the same fix: name the
-      # registry. docker.io is where the chart means to point -- the tag answers 200 there
-      # (registry-1.docker.io/v2/tailscale/k8s-operator/manifests/v1.102.3, measured 2026-08-30).
-      # platform/edge/require-registry-host.yaml is the guard that stops the class returning.
+      # registry. platform/edge/require-registry-host.yaml is the guard that stops the class
+      # returning. 2026-09-02: the named registry moved to GitHub's after Docker Hub's anonymous
+      # pull quota refused the proxy pulls (see the note above proxyConfig);
+      # ghcr.io/tailscale/k8s-operator:v1.102.3 answers 200 (measured 2026-09-02).
       image:
-        repository: docker.io/tailscale/k8s-operator
+        repository: ghcr.io/tailscale/k8s-operator
       # 2026-08-31 (crew#661 CP1, diagnose run 33354635731): runAsNonRoot on this image is a pod
       # that never starts. The image's own config declares no USER (registry config blob for
       # docker.io/tailscale/k8s-operator:v1.102.3, read 2026-08-31), so the kubelet refused the
