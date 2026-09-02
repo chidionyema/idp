@@ -515,7 +515,7 @@ decisions:
           security_by_default: {score: 4, evidence: "platform/sandbox/vcluster/helmrelease.yaml"}                                   # rootless profile pinned; chart default was root
           portability:         {score: 5, evidence: "https://github.com/loft-sh/vcluster/blob/main/LICENSE"}                        # Apache-2.0, runs on any conformant cluster
           operability:         {score: 5, evidence: "platform/sandbox/vcluster/kustomization.yaml"}                                 # one HelmRelease; the TTL reaper is the whole lifecycle
-          cost:                {score: 5, evidence: "platform/sandbox/vcluster/helmrelease.yaml"}                                   # $0 licence; 40m paper, bursts on idle headroom  
+          cost:                {score: 5, evidence: "platform/sandbox/vcluster/helmrelease.yaml"}                                   # $0 licence; 15m paper, bursts on idle headroom  
       namespace-sandbox:
         note: "a plain namespace with quota and RBAC: cheapest possible sandbox, but the engineer hits the walls (no CRDs, no cluster roles) in the first ten minutes"
         scores:
