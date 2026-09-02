@@ -27,6 +27,26 @@ seed he never touches one again.
    Bitwarden machine-account token is tracked separately and will be specified from Bitwarden's
    API documentation before any build (memory rule: console steps come from the vendor page).
 
+## Target end-state (founder edict 2026-09-02 12:03Z, second record)
+
+Founder record: `~/.claude/docs/founder/2026-09-02T1203Z-you-have-reached-the-exact-limit-of-what-c656c4da.md`.
+
+5. **Machine identity is platform-rooted; no first secret is ever pasted for OCI.** The mechanism,
+   verified from the vendor (Oracle OKE Workload Identity, 2026-09-02): a pod presents its
+   Kubernetes service-account token to OCI IAM, which validates issuer and signature and returns a
+   Resource Principal Session Token — temporary credentials at runtime, nothing stored in the
+   cluster. Workloads that talk to OCI (the vault included) migrate to this road; SPIFFE/SPIRE is
+   optional plumbing behind the same idea, adopted only if a workload needs identity outside OCI's
+   own issuer — it is not a must.
+6. **Already enforced, for the record:** agents write declarative YAML into git only and operators
+   reconcile (permanent ruling 2026-09-01, "agents never deploy"; Flux is the reconciler), and
+   human actions are golden-path buttons (30 Backstage founder-action templates generated from the
+   30 dispatchable workflows, gated by `bin/idp-portal-buttons --check`). The edict's planks two
+   and three restate standing law; nothing new to build there.
+
+The Bitwarden seam in point 2 is unchanged by the end-state: until the vendor sells federation,
+the one machine token remains the whole manual surface.
+
 ## Consequences
 
 - The three one-time founder moves (subscribe, machine account + token, one paste) are the entire
