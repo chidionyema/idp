@@ -153,7 +153,11 @@ vendors:
     kind: secret
     secret: SEED_MINIMAX_API_KEY
     page: https://platform.minimax.io/user-center/basic-information/interface-key
-    shape: "eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+"
+    # The vendor documents no key format (platform.minimax.io quickstart, read 2026-09-02); the old
+    # JSON-web-token regex was a guess, and on run 33685104831 it refused the founder's funded key
+    # before the vendor ever saw it. The shape refuses only an empty or malformed paste; the verify
+    # probe is the proof, as for kimi.
+    shape: "[A-Za-z0-9_.-]{20,}"
     verify: { method: GET, url: https://api.minimax.io/v1/models, headers: { Authorization: "Bearer {key}" } }
     targets:
       - { entry: litellm-upstream, field: MINIMAX_API_KEY }

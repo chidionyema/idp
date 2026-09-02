@@ -101,16 +101,44 @@ def verify(v, subs):
     data = fill(spec["body"]).encode() if spec.get("body") else None
     req = urllib.request.Request(fill(spec["url"]), data=data, method=spec["method"], headers=headers)
     refuse = spec.get("refuse_when")
+    def head(body):
+        # The first 120 characters of what the vendor said, on one line, with every substituted
+        # value scrubbed. A vendor echoing a key back must never reach the log.
+        text = body.decode("utf-8", "replace")
+        for val in subs.values():
+            if val: text = text.replace(val, "***")
+        return " ".join(text.split())[:120]
+    # Returns "" when the credential verifies, otherwise the vendor's answer: "HTTP <status> <body
+    # head>" or "no answer (<error>)". Measured 2026-09-02 (runs 33681830297, 33685104831): three
+    # funded vendor keys read "refused" with the status swallowed, so a dead key, an empty balance,
+    # a wrong probe URL and a rate limit were one word, and the founder was told to revoke keys he
+    # had made that day. The status is the evidence; it rides the FAIL line.
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
-            if refuse: return not re.search(refuse, resp.read(65536).decode("utf-8", "replace"))
-            return 200 <= resp.status < 300
+            body = resp.read(65536)
+            if refuse:
+                return "" if not re.search(refuse, body.decode("utf-8", "replace")) else f"HTTP {resp.status} {head(body)}"
+            return "" if 200 <= resp.status < 300 else f"HTTP {resp.status} {head(body)}"
     except urllib.error.HTTPError as e:
         # An HTTPError IS the response, and a `refuse_when` vendor answers on a 4xx on purpose: the
         # Google token endpoint will not confirm an OAuth client, it will only refuse one it does
         # not know. Reading that body is the whole check. Without refuse_when a 4xx is still a FAIL.
-        return bool(refuse) and not re.search(refuse, e.read(65536).decode("utf-8", "replace"))
-    except Exception: return False
+        body = e.read(65536)
+        if refuse and not re.search(refuse, body.decode("utf-8", "replace")): return ""
+        return f"HTTP {e.code} {head(body)}"
+    except Exception as e: return f"no answer ({type(e).__name__})"
+
+def blame(reason):
+    """Whose fault, in plain words, read off the vendor's status. The founder and a buyer's
+    engineer read the same line and neither has to guess (the instrument-nobody-reads class)."""
+    m = re.match(r"HTTP (\d+)", reason)
+    code = int(m.group(1)) if m else 0
+    if code in (401, 403): return "the vendor does not accept this key"
+    if code == 402: return "the vendor accepts the key and reports no balance"
+    if code == 404: return "our probe URL is wrong; the key was not judged"
+    if code == 429: return "rate limited; the key was not judged"
+    if code >= 500: return "vendor outage; the key was not judged"
+    return "the runner could not reach the vendor; the key was not judged"
 
 
 def sec(v, t):
@@ -120,11 +148,14 @@ def sec(v, t):
 
 
 def holds(v, targets, values):
-    """Does what we have verify? A pair is graded ONCE with every half substituted by its field
+    """Does what we have verify? "" when it does, else the vendor's reason. A pair is graded ONCE with every half substituted by its field
     name, because neither half means anything to the vendor alone. Everything else is graded once
     per distinct value as {key}, exactly as before."""
     if v.get("pair"): return verify(v, {t["field"]: values[t["field"]] for t in targets})
-    return all(verify(v, {"key": k}) for k in {values[t["field"]] for t in targets})
+    for k in sorted({values[t["field"]] for t in targets}):
+        reason = verify(v, {"key": k})
+        if reason: return reason
+    return ""
 
 _roots = {}
 def root(name, secret):
@@ -152,7 +183,7 @@ for name, v in reg.items():
         if MODE == "preflight":
             say("", who, " + ".join(names) + " -> " + ", ".join(f"{t['entry']}.{t['field']}" for t in targets)); continue
         have = {t["field"]: vault_get(t["entry"]).get(t["field"], "") for t in targets}
-        if not ROTATE and all(have.values()) and holds(v, targets, have):
+        if not ROTATE and all(have.values()) and not holds(v, targets, have):
             say("ok", who, "every target verifies; kept"); kept += 1; del have; continue
         del have
         # One pop per SECRET, not per target: root() consumes the environment variable, so several
@@ -170,11 +201,12 @@ for name, v in reg.items():
             if not shape: say("FAIL", who, f"{t['field']} has no shape in the registry; every root is anchored"); failed.append(who); del keys; break
             if not re.fullmatch(shape, keys[t["field"]]): say("FAIL", who, f"{sec(v, t)} does not match the registry shape"); failed.append(who); del keys; break
         if who in failed: continue
-        if not holds(v, targets, keys):
+        reason = holds(v, targets, keys)
+        if reason:
             # crew#729 class, measured on run 33677001751 (2026-09-02): one refused vendor key
             # aborted the loop here and the apprise pair five vendors later was never seeded.
             # A FAIL is recorded and the loop finishes every other vendor, like BLIND always did.
-            say("FAIL", who, f"{' + '.join(names)} refused by {v['verify']['url'].split('{')[0]}; revoke it and make one that works"); failed.append(who); del keys; continue
+            say("FAIL", who, f"{' + '.join(names)} refused by {v['verify']['url'].split('{')[0]}: {reason}; {blame(reason)}"); failed.append(who); del keys; continue
         for t in targets: vault_put(t["entry"], t["field"], keys[t["field"]])
         del keys; written += 1
         say("ok", who, "verified, written to " + ", ".join(f"{t['entry']}.{t['field']}" for t in targets))
