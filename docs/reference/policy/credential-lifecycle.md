@@ -37,6 +37,7 @@ list, a slug) are listed at the end so the gate knows them; they have no life cy
 | `SEED_OPENROUTER_API_KEY` | OpenRouter | settings, keys; set a credit limit | model calls | none | as Anthropic | delete the key | OpenRouter activity per key |
 | `SEED_DEEPSEEK_API_KEY` | DeepSeek | platform, API keys | model calls | none | as Anthropic | delete the key | DeepSeek usage |
 | `SEED_MINIMAX_API_KEY` | Minimax | platform, interface key | model calls | none | as Anthropic | delete the key | Minimax usage |
+| `SEED_KIMI_API_KEY` | Kimi (Moonshot) | platform.kimi.ai console, API keys | model calls | none | as Anthropic | delete the key | Kimi console usage |
 | `LITELLM_LAPTOP_KEY` (the Mac reads it as `LITELLM_API_KEY`) | the estate router (LiteLLM, `platform/llm`) | `vault-seed.yml` entry `laptop`: `bin/idp-router-key laptop <lanes>` mints it from the router's master key, `estate-secrets/scripts/secret-add` vaults it; no console | model calls on the listed lanes only, `max_budget` per day (`bin/idp-router-key`); no vendor key, no admin | none; the daily budget is the ceiling | re-run `vault-seed.yml` entry `laptop`: a new virtual key, same secret name; the Mac picks it up through `scripts/secret-load` | delete the key in the router console (`/ui`, Virtual Keys) or set its budget to 0; the Mac has nothing else | router spend ledger (`oke-check.yml -f mode=break-glass -f playbook=router-spend`) per key alias `laptop` |
 | `SEED_GROQ_API_KEY` | Groq | console, keys | model calls | none | as Anthropic | delete the key | Groq usage |
 | `SEED_GEMINI_API_KEY` | Google | AI Studio, API key; restrict to Generative Language API | model calls | none | as Anthropic | delete the key | Google Cloud API key usage |
@@ -72,7 +73,7 @@ Permissions: one row, "User", "User API Tokens", "Edit". TTL: one year. Create. 
 **AI and search vendors.** Make one key on the vendor's key page (the `page` field in
 `platform/vendors/consoles.yaml`), name it `estate`, then set it under the name in the table
 above, for example `gh secret set SEED_ANTHROPIC_API_KEY -R chidionyema/idp`. One command per
-vendor: Anthropic, OpenRouter, DeepSeek, Minimax, Groq, Gemini, Exa, Stripe.
+vendor: Anthropic, OpenRouter, DeepSeek, Minimax, Kimi, Groq, Gemini, Exa, Stripe.
 
 **Telegram.** In BotFather, `/token`, pick the bot, copy the token. Hermes bot:
 `gh secret set SEED_TELEGRAM_HERMES_BOT_TOKEN -R chidionyema/idp`. Alerts bot:
