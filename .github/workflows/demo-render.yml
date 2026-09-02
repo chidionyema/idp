@@ -1,0 +1,61 @@
+# button: Re-render every demo recording
+# founder: Replays every demo script against the real tools and commits fresh recordings, so a demo can never show what the software no longer does.
+# Demo Standard (crew#805): demos are code; the machines render them so they never go stale.
+name: demo-render
+on:
+  push:
+    paths:
+      - 'demos/**'
+      - 'bin/intent-compile'
+      - 'schema/intent/**'
+      - '.github/workflows/demo-render.yml'
+  workflow_dispatch: {}
+permissions:
+  contents: write
+concurrency:
+  group: demo-render-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: .github/requirements/demo-render.txt
+      - name: dependencies the demos exercise
+        run: pip install -r .github/requirements/demo-render.txt
+      - name: install vhs and dependencies
+        run: |
+          # vhs ships from Charm's own apt repository (https://github.com/charmbracelet/vhs#installation)
+          sudo mkdir -p /etc/apt/keyrings
+          curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list
+          sudo apt-get update
+          sudo apt-get install -y vhs ffmpeg
+          # ttyd, pinned release (no unauthenticated latest-lookup flake)
+          curl -sL "https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64" -o /tmp/ttyd
+          chmod +x /tmp/ttyd && sudo mv /tmp/ttyd /usr/local/bin/ttyd
+      - name: render every tape
+        run: |
+          # vhs's parser does not support \" escapes inside a quoted string (run 33570143182);
+          # a tape needing quotes-in-quotes uses a backtick string. Refuse the class before rendering.
+          if grep -n '\\"' demos/*.tape; then
+            echo 'FAIL: tape uses \" escapes; vhs cannot parse them — use a backtick string'; exit 1
+          fi
+          for tape in demos/*.tape; do
+            if [ -f "$tape" ]; then
+              vhs < "$tape"
+            fi
+          done
+      - name: commit the rendered demo back
+        run: |
+          git config user.name 'estate-agents[bot]'
+          git config user.email 'estate-agents[bot]@users.noreply.github.com'
+          git add docs/demos/
+          if git diff --cached --quiet; then echo 'render unchanged'; exit 0; fi
+          git commit -m 'demo-render: machines refreshed the rendered demos [skip ci]'
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

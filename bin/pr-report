@@ -35,8 +35,13 @@ gh pr view "$n" --json number,createdAt,body,labels,files -q '{number: .number, 
 # is exactly one push stale, so `gh pr diff` graded the lines this push removes; idp#860), and
 # from the PR on GitHub otherwise (CI's shallow checkout).
 base=$(git merge-base origin/main HEAD 2>/dev/null || true)
-if [ -n "$base" ]; then git diff "$base...HEAD" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true
-else gh pr diff "$n" | grep '^+' | grep -v '^+++' > "$REPORTS/pr-added.txt" || true; fi
+if [ -n "$base" ]; then git diff "$base...HEAD" > "$REPORTS/pr.diff" || true
+else gh pr diff "$n" > "$REPORTS/pr.diff" || true; fi
+grep '^+' "$REPORTS/pr.diff" | grep -v '^+++' > "$REPORTS/pr-added.txt" || true
+# crew#796 (founder 2026-09-01, P0): a line this PR adds that spells the estate zone is refused by
+# rule=no_zone_literal_added. bin/estate-zone-gate owns the one exemption list; here it grades only
+# the added lines, so a repository still carrying old literals is not refused for someone else's debt.
+python3 "$IDP/bin/estate-zone-gate" --diff "$REPORTS/pr.diff" 2>/dev/null | grep -v '^\(ok\|FAIL\|BLIND\)' > "$REPORTS/pr-zone.txt" || true
 # Checksum manifests (go.sum, package-lock.json, yarn.lock, Cargo.lock, poetry.lock, pnpm-lock.yaml)
 # hold base64 hashes that gitleaks reads as generic-api-keys once the path is gone (stdin mode);
 # gitleaks' own default config skips these paths in git mode. They are dropped from the SECRET scan
@@ -69,8 +74,8 @@ drills=$("$IDP/bin/idp-drill-names" "${cats[@]}" 2>/dev/null || echo '[]')
 # ADR 0009 (crew#562): the scored decisions a PR may cite with `Matrix: <slug>`; the rule
 # matrix_cited also accepts a slug the PR itself adds to the matrix.
 matrix=$(python3 "$IDP/bin/matrix-gate" --slugs 2>/dev/null || echo '[]')
-jq -n --slurpfile m "$REPORTS/pr-meta.json" --slurpfile w "$REPORTS/pr-words.json" --rawfile a "$REPORTS/pr-added.txt" --argjson b "$budget" --argjson d "$drills" --argjson x "$matrix" \
-  '{pr: ($m[0] + {added: $a} + $w[0]), budget_monthly_usd: $b, drills: $d, matrix: $x}' > "$REPORTS/pr.json"
+jq -n --slurpfile m "$REPORTS/pr-meta.json" --slurpfile w "$REPORTS/pr-words.json" --rawfile a "$REPORTS/pr-added.txt" --rawfile z "$REPORTS/pr-zone.txt" --argjson b "$budget" --argjson d "$drills" --argjson x "$matrix" \
+  '{pr: ($m[0] + {added: $a, zone_literals: ($z | split("\n") | map(select(length > 0)))} + $w[0]), budget_monthly_usd: $b, drills: $d, matrix: $x}' > "$REPORTS/pr.json"
 out=$(conftest test --parser json -p "$IDP/policy" "$REPORTS/pr.json" 2>&1); rc=$?
 if [ "$src" -eq 1 ]; then
   out=$(printf '%s\nFAIL - pr.json - main - rule=no_secret_added fix: gitleaks flagged an added line (bin/idp-pr-secrets reports/pr-added.txt); rename the field or remove the value, never allow-list it\n' "$out"); rc=1
