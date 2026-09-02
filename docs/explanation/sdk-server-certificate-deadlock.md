@@ -1,6 +1,6 @@
 # The secret bridge's certificate deadlock
 
-Owner: @chidionyema. Record for decision 0017; found live in oke-check run 33619832091 on 2026-09-02.
+Owner: @chidionyema. Record for decision 0017; found live on 2026-09-02 by [the cluster's own state check](https://github.com/chidionyema/idp/actions/runs/33619832091).
 
 ## What broke
 
