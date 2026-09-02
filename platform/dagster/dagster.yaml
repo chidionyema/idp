@@ -43,15 +43,17 @@ spec:
     global:
       postgresqlSecretName: dagster-postgresql-secret
       generatePostgresqlPasswordSecret: true
-      # Chart 1.13.19 generates the celery config Secret only under CeleryK8sRunLauncher,
-      # and this estate runs K8sRunLauncher, so the Secret can never exist. An empty name
-      # stops every template rendering a reference to it; the subchart has its own copy of
-      # this key below because it falls back to its own default when only this one is blank.
-      # Restored 2026-09-02: the merge that kept the controller's newTag lines dropped it,
-      # and the render gate plus the incident guard both went red on this branch.
+      # Chart 1.13.19 generates the celery config Secret only under CeleryK8sRunLauncher
+      # (templates/secret-celery-config.yaml), and this estate runs K8sRunLauncher, so the
+      # Secret can never exist. An empty name stops every template rendering a reference to
+      # it (deployment-user.yaml line 1 guards on the name). The scheduler pod sat in
+      # CreateContainerConfigError on exactly this: secret "dagster-celery-config-secret"
+      # not found (2026-09-02T15:2xZ).
       celeryConfigSecretName: ""
+
     imagePullSecrets:
       - name: ghcr-pull
+
     postgresql:
       enabled: true
       image:
@@ -81,6 +83,7 @@ spec:
         capabilities:
           drop:
             - ALL
+
     dagsterWebserver:
       # The chart default (docker.io/dagster/dagster-celery-k8s) publishes no arm64 build and
       # every node is arm64 (kubelet ErrImagePull, 2026-09-02T15:2xZ). The estate-scheduler
@@ -132,6 +135,7 @@ spec:
           port: 80
       service:
         type: ClusterIP
+
     dagsterDaemon:
       enabled: true
       # The chart default (docker.io/dagster/dagster-celery-k8s) publishes no arm64 build and
@@ -190,6 +194,7 @@ spec:
         config:
           queuedRunCoordinator:
             maxConcurrentRuns: 2
+
     runLauncher:
       type: K8sRunLauncher
       config:
@@ -224,6 +229,12 @@ spec:
             podTemplateSpecMetadata:
               labels:
                 backstage.io/kubernetes-id: estate-scheduler
+
+    # The daemon writes a telemetry id into DAGSTER_HOME at boot; that directory is a
+    # read-only mount here, so boot died with PermissionError (.telemetry, 2026-09-02T16:4xZ).
+    telemetry:
+      enabled: false
+
     dagster-user-deployments:
       enabled: true
       # The subchart falls back to its own default when the global name is empty
@@ -271,7 +282,27 @@ spec:
                 - ALL
           readinessProbe:
             enabled: true
-  # CPU request total: 100m (postgresql) + 100m (webserver) + 100m (daemon) + 50m (runLauncher) + 100m (user-deploy) = 450m
+          # crew#555 at admission, founder order 2026-09-02 (oke-check run 33618879684): the
+          # dagster namespace is founder-facing, so every Deployment runs 2 replicas spread
+          # across nodes. The chart exposes all three levers for a user deployment. The
+          # strategy block is crew#307's other half: hard hostname anti-affinity means a surge
+          # pod can never place beside a replica, so the roll must free a node first --
+          # maxUnavailable 1, maxSurge 0 -- or the default 25%/25% deadlocks silently.
+          replicaCount: 2
+          deploymentStrategy:
+            type: RollingUpdate
+            rollingUpdate:
+              maxUnavailable: 1
+              maxSurge: 0
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      deployment: estate-scheduler
+
+  # CPU request total: 100m (postgresql) + 2x100m (webserver) + 100m (daemon) + 50m (runLauncher) + 2x100m (user-deploy) = 650m standing (crew#555: webserver and user-deploy run 2 replicas)
   # The postRenderers add the priorityClassName, security contexts and labels the chart does not expose.
   postRenderers:
     - kustomize:
