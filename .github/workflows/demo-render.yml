@@ -9,6 +9,8 @@ on:
       - 'bin/intent-compile'
       - 'schema/intent/**'
       - '.github/workflows/demo-render.yml'
+      - '!docs/demos/**'
+      - '!**/*.gif'
   workflow_dispatch: {}
 permissions:
   contents: write
@@ -56,6 +58,6 @@ jobs:
           git config user.email 'estate-agents[bot]@users.noreply.github.com'
           git add docs/demos/
           if git diff --cached --quiet; then echo 'render unchanged'; exit 0; fi
-          git commit -m 'demo-render: machines refreshed the rendered demos [skip ci]'
+          git commit -m 'demo-render: machines refreshed the rendered demos'
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push origin "HEAD:${GITHUB_REF_NAME}"

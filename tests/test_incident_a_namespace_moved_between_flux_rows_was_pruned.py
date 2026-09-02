@@ -90,6 +90,8 @@ def test_a_pull_request_never_deletes_or_moves_a_namespace_manifest():
         if parts[0][0] not in "DR":
             continue
         old = parts[1]
+        if not old.endswith((".yaml", ".yml")):
+            continue  # a Namespace manifest is YAML; a binary blob (a gif) is not text to decode
         blob = subprocess.run(["git", "-C", str(ROOT), "show", f"{_base_ref()}:{old}"], capture_output=True, text=True)
         if blob.returncode == 0 and "kind: Namespace" in blob.stdout:
             bad.append(line)

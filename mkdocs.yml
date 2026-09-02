@@ -38,6 +38,7 @@ nav:
       - 0012 Staging is a namespace, every option carries its cost: decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md
       - 0013 Customer identity is Keycloak, the realm is code: decisions/0013-customer-identity-is-keycloak-and-the-realm-is-code.md
       - 0017 Bitwarden is the human door for secrets: decisions/0017-bitwarden-is-the-human-door-for-secrets.md
+      - 0018 Superset is the dashboard: decisions/0018-superset-is-the-dashboard-because-it-takes-the-gateways-word.md
   - Specs:
       - KINI.AI master spec: reference/specs/kini-master-spec.md
       - Phone idea flow: reference/specs/phone-idea-flow.md
@@ -67,7 +68,7 @@ nav:
       - Drill evidence: demo/drill-evidence.md
       - Estate compiler recording: demo/intent-compiler.md
       - Estate clock recording: demo/dagster.md
-      - Dashboards recording: demo/metabase.md
+      - Dashboards recording: demo/superset.md
       - Portal: tutorials/demo/idp.md
       - Estate compiler: tutorials/demo/intent.md
       - Conscience: tutorials/demo/conscience.md
@@ -144,7 +145,7 @@ nav:
       - Drill evidence: onboarding/drill-evidence.md
       - Estate compiler recording: onboarding/intent-compiler.md
       - Estate clock recording: onboarding/dagster.md
-      - Dashboards recording: onboarding/metabase.md
+      - Dashboards recording: onboarding/superset.md
       - Trace matrix: how-to/onboarding/trace-matrix.md
       - Namespace fences: how-to/onboarding/ns-fence-gate.md
       - Portal: how-to/onboarding/idp.md
