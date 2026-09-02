@@ -561,6 +561,8 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: delivery
+  dependsOn:
+    - component:default/layer-edge
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
