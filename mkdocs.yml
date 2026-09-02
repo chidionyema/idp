@@ -82,6 +82,7 @@ nav:
       - Cloud-agnostic: tutorials/demo/cloud-agnostic.md
       - Estate zone: tutorials/demo/estate-zone.md
       - MCP: tutorials/demo/mcp.md
+      - Otto staging: tutorials/demo/otto-staging.md
       - Estate inventory: tutorials/demo/estate-inventory.md
       - Sovereign bus: tutorials/demo/sb.md
       - VM-shared path guard: tutorials/demo/vm-shared-path.md
@@ -162,6 +163,7 @@ nav:
       - Notifications: how-to/onboarding/notify.md
       - Manifests: how-to/onboarding/manifests.md
       - MCP: how-to/onboarding/mcp.md
+      - Otto staging: how-to/onboarding/otto-staging.md
       - Sovereign bus: how-to/onboarding/sb.md
       - VM-shared path guard: how-to/onboarding/vm-shared-path.md
       - Placement: how-to/onboarding/placement.md
