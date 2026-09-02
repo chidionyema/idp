@@ -48,6 +48,7 @@ nav:
   - How-to:
       - how-to/index.md
       - Bitwarden human vault, the founder's steps: how-to/bitwarden-human-vault.md
+      - Boot Dagster and Superset: how-to/boot-dagster-and-superset.md
   - Reference:
       - reference/index.md
       - Oracle tenancy: reference/oci-tenancy.md
