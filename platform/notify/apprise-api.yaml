@@ -49,19 +49,20 @@ spec:
       containers:
         - name: apprise
           image: docker.io/caronc/apprise:1.5.3
-          # Secrets are mounted as files (Kyverno policy secrets-not-from-env-vars); the container
-          # reads them and starts the Apprise API server. The container defaults to running the
-          # API server; we just set up environment before that.
-          command: ["/bin/bash", "-c"]
-          args:
-            - |
-              set -eu
-              # Export channel URLs from mounted secret files
-              for f in /run/secrets/notify/*; do
-                export "$(basename "$f")=$(cat "$f")"
-              done
-              # Let the container's default entry point run Apprise with our environment
-              exec apprise-api -b 0.0.0.0:8000 -s 1 -t 60
+          # Channels are files, never environment (Kyverno secrets-not-from-env-vars — and a shell
+          # that expands a secret value can print it into the pod log; it did on 2026-09-02, which
+          # is why no script touches these files at all). Stateful "simple" mode reads
+          # {channel}.cfg straight from APPRISE_CONFIG_DIR (vendor README), so the vault-synced
+          # mount IS the config store and the image's own entrypoint (supervisord: nginx on 8000 +
+          # gunicorn) runs unmodified. Everything it writes at runtime sits under /tmp
+          # (supervisord.conf, nginx.conf in the image) — the emptyDir below.
+          env:
+            - name: APPRISE_STATEFUL_MODE
+              value: simple
+            - name: APPRISE_CONFIG_DIR
+              value: /run/secrets/notify
+            - name: APPRISE_ATTACH_SIZE
+              value: "0"  # attachments off: nothing sends files and /attach is read-only here
           ports:
             - { containerPort: 8000, name: http }
           securityContext:
