@@ -44,3 +44,19 @@ deleted. See the memory rule: remove the bad input, do not guard it.
 `tests/test_incident_dagster_amd64_only_images.py` fails any change that points the web
 page or daemon back at a vendor image, or that reintroduces a reference to the celery
 `Secret`.
+
+## Runtime security follow-up (2026-09-02, same day)
+
+The arm64 image landed and three pods still failed, all one class: security
+settings that disagree with the image.
+
+- The code server and launched-run pods set `runAsNonRoot` with no numeric uid.
+  The image names its user (`scheduler`), and the kubelet refuses what it
+  cannot verify: "container has runAsNonRoot and image has non-numeric user."
+  Every `runAsNonRoot` in the release now carries `runAsUser: 999`.
+- The daemon crashed writing a telemetry id into its home directory, which is a
+  read-only mount here. Telemetry is off in the release values.
+- The image now declares `USER 10001` numerically, so the kubelet check can
+  never trip on it again.
+
+Guard: `tests/test_incident_dagster_nonroot_needs_numeric_uid.py`.
