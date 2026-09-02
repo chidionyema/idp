@@ -81,5 +81,5 @@ data:
   # TAILSCALE_FEDERATED_CLIENT_ID above. Empty until the founder creates the organisation in
   # his browser (docs/how-to/bitwarden-human-vault.md); while empty, the human-vault Flux row
   # is red on its own and holds nothing else.
-  BITWARDEN_ORG_ID: ""
-  BITWARDEN_PROJECT_ID: ""
+  BITWARDEN_ORG_ID: "a9f79fcf-7059-4bad-94ab-b4b900acc259"
+  BITWARDEN_PROJECT_ID: "18e57b2f-d5c6-4c0b-9ba9-b4b900e1d792"
