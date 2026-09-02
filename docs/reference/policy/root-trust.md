@@ -87,6 +87,7 @@ absent here is red. Audit of 2026-08-28 (crew#66, session a0d64ea4): re-graded b
 | `commerce-lago-encryption` | platform/commerce/data/external-secret.yaml | estate (Terraform random) | `random_password` + `oci_vault_secret` (platform/oci/commerce.tf); the ledger's at-rest keys, generated once and never rotated in place | MEETS | Terraform · `bin/idp-oke-rebuild` |
 | `commerce-payment-provider` | platform/commerce/data/external-secret.yaml | payment provider | one root secret key from the provider's dashboard, then the webhook signing secret minted by code through the provider's API; no second console visit (R52) | MISS | crew#623 CP3 |
 | `rotation-canary` | platform/state/rotation-canary.yaml | vault (drill fixture) | a fresh random value minted by code on every drill run: `bin/idp-vault-put rotation-canary` in the oke-check rotation-drill job; never touched by hand (crew#722) | MEETS | `bin/idp-vault-put` |
+| `otto-staging-telegram` | platform/otto-staging/telegram-secret.yaml, platform/otto-staging-secret/webhook-substitution.yaml | Telegram (BotFather) | `token` is born on the founder's phone in BotFather and pasted into the estate env file, never a terminal; `webhook_secret` is minted in-process and never printed; both reach the vault via `bin/idp-vault-put` --merge | MEETS | `bin/idp-vault-put` |
 | root OCI credential (`estate-tofu` key pair) | every `bin/idp-cloud` call | OCI | one browser SSO, IAM and key pair via API, private half to the sops vault | MEETS | `bin/idp-oci-bootstrap` |
 
 ## Security policy
