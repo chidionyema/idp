@@ -196,6 +196,8 @@ spec:
       template:
         spec:
           automountServiceAccountToken: false
+          # crew#539: the scheduler ranks this workload under CPU pressure instead of guessing
+          priorityClassName: platform-batch
           restartPolicy: Never
           securityContext:
             runAsNonRoot: true
@@ -282,6 +284,8 @@ spec:
       template:
         spec:
           automountServiceAccountToken: false
+          # crew#539: the scheduler ranks this workload under CPU pressure instead of guessing
+          priorityClassName: platform-batch
           restartPolicy: Never
           securityContext:
             runAsNonRoot: true

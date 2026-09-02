@@ -35,3 +35,16 @@ value: 1000
 globalDefault: false
 preemptionPolicy: PreemptLowerPriority
 description: "crew#584: nightly platform jobs; finish when the node is calm, yield to the radio room"
+---
+# Long-running platform services that are not the radio room (crew#539, founder order 2026-09-02,
+# ~/.claude/docs/founder/2026-09-02T1357Z-the-cluster-is-bleeding-out-across-three-different-cba107c9.md):
+# litellm, its database, the MCP servers. Above platform-batch so a nightly job never evicts the
+# model router; far below infrastructure-critical so monitoring and routing are always seated first.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: platform-service
+value: 10000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: "crew#539: everyday platform services; outrank batch jobs, yield to the radio room"

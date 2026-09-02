@@ -38,6 +38,8 @@ spec:
       labels: { app.kubernetes.io/name: litellm-db, app.kubernetes.io/part-of: idp }
     spec:
       automountServiceAccountToken: false
+      # crew#539: the scheduler ranks this workload under CPU pressure instead of guessing
+      priorityClassName: platform-service
       securityContext:
         runAsNonRoot: true
         runAsUser: 70   # postgres uid in the alpine image

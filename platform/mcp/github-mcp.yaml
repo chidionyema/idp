@@ -33,6 +33,8 @@ spec:
           labelSelector:
             matchLabels: { app.kubernetes.io/name: github-mcp }
       automountServiceAccountToken: false
+      # crew#539: the scheduler ranks this workload under CPU pressure instead of guessing
+      priorityClassName: platform-service
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
