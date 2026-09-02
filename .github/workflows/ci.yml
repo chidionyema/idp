@@ -73,16 +73,6 @@ jobs:
           # ran the same 132 s again (run 33202098401). Locally bin/idp-ci still runs them.
           IDP_CI_SKIP_PYTEST: "1"
 
-  # crew#286: the Estate-as-Platform operating model as a gate. One job, one script, the
-  # same conftest CI already installs; deny lines come back as a PR comment (CP10).
-  # crew#292 CP3: the steps moved to .github/workflows/operating-model-gate.yml so
-  # hermes-v2 and crew call the same file. idp calls it like any other repo -- one
-  # copy of the gate, and idp is not a special case of it. The push-to-main skip
-  # lives in the reusable workflow now.
-  operating-model-gate:
-    needs: fast-gate
-    uses: ./.github/workflows/operating-model-gate.yml
-    permissions: { contents: read, pull-requests: write }
 
   # crew#219 R39/R41: the Sovereign Bus acceptance suite, under the branch
   # policy AGENTS.md [merge] declares. offline-gate above already runs this
