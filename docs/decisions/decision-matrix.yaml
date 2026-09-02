@@ -585,3 +585,47 @@ decisions:
           portability:         {score: 4, evidence: "https://github.com/bors-ng/bors-ng/blob/master/LICENSE"}                       # Apache-2.0, self-hosted anywhere
           operability:         {score: 3, evidence: "https://github.com/bors-ng/bors-ng#how-to-set-up-your-own-real-instance"}      # one more standing service to watch and patch
           cost:                {score: 4, evidence: "https://github.com/bors-ng/bors-ng"}                                           # free software, but paid for in hosting and care
+  - slug: dashboards-take-the-gateways-word
+    requirement: "the founder's dashboards sit behind the one login (ADR 0007): the dashboard layer must trust the gateway's identity header instead of growing a second password store (decision 0018; founder 2026-09-02: Metabase out by the roots)"
+    date: 2026-09-02
+    status: proposed
+    next_review: 2026-09-09
+    decision: superset   # 440 vs metabase-pro 380 vs metabase-oss 285 (cmd: bin/matrix-gate); outside tie_band
+    reviews: []
+    candidates:
+      superset:
+        note: "Apache Superset behind the gateway: AUTH_REMOTE_USER header trust is in the free tier, so the one login is the only login"
+        scores:
+          first_time_user:     {score: 4, evidence: "https://superset.apache.org/docs/installation/kubernetes"}                     # helm chart, first dashboard in one sitting
+          founder_experience:  {score: 4, evidence: "docs/runbooks/superset-dashboards.md"}                                         # one login, no second password, boardroom page
+          feature_parity:      {score: 4, evidence: "https://superset.apache.org/docs/intro"}                                       # dashboards, SQL Lab, alerts — at least Metabase's job
+          ecosystem_fit:       {score: 5, evidence: "docs/decisions/0018-superset-is-the-dashboard-because-it-takes-the-gateways-word.md"}  # takes the gateway's word natively
+          maturity:            {score: 5, evidence: "https://github.com/apache/superset"}                                           # Apache top-level project, wide production use
+          security_by_default: {score: 4, evidence: "platform/oci/superset.tf"}                                                     # both secrets machine-minted; no person types one
+          portability:         {score: 5, evidence: "https://github.com/apache/superset/blob/master/LICENSE.txt"}                   # Apache-2.0, runs on any cluster
+          operability:        {score: 4, evidence: "platform/observability/superset-availability.yaml"}                             # availability rows, PDB, emits like the layer
+          cost:                {score: 5, evidence: "https://superset.apache.org/"}                                                 # free tier carries the whole requirement
+      metabase-pro:
+        note: "Metabase with the paid tier's SSO: solves the login, at a per-month price for what Superset ships free"
+        scores:
+          first_time_user:     {score: 4, evidence: "https://www.metabase.com/docs/latest/installation-and-operation/running-metabase-on-kubernetes"}  # same easy start
+          founder_experience:  {score: 4, evidence: "https://www.metabase.com/docs/latest/people-and-groups/start"}                 # SSO works once paid for
+          feature_parity:      {score: 4, evidence: "https://www.metabase.com/docs/latest/"}                                        # the incumbent's feature set
+          ecosystem_fit:       {score: 4, evidence: "https://www.metabase.com/docs/latest/people-and-groups/authenticating-with-jwt"}  # JWT/SAML, not plain header trust
+          maturity:            {score: 5, evidence: "https://github.com/metabase/metabase"}                                         # equally proven
+          security_by_default: {score: 4, evidence: "https://www.metabase.com/docs/latest/people-and-groups/start"}                 # federated once on the paid tier
+          portability:         {score: 3, evidence: "https://www.metabase.com/license/"}                                            # paid features live behind a commercial licence
+          operability:         {score: 3, evidence: "https://www.metabase.com/docs/latest/installation-and-operation/observability-with-prometheus"}  # fine, one more vendor relationship
+          cost:                {score: 0, evidence: "https://www.metabase.com/pricing/"}                                            # a monthly bill for what the top score ships free
+      metabase-oss:
+        note: "keep the free Metabase: its free edition cannot trust the gateway's header, so it keeps its own password store beside the one login — the defect decision 0018 removes"
+        scores:
+          first_time_user:     {score: 4, evidence: "https://www.metabase.com/docs/latest/installation-and-operation/running-metabase-on-kubernetes"}  # easy to stand up
+          founder_experience:  {score: 1, evidence: "docs/decisions/0018-superset-is-the-dashboard-because-it-takes-the-gateways-word.md"}  # the second login he hit
+          feature_parity:      {score: 4, evidence: "https://www.metabase.com/docs/latest/"}                                        # the feature set is not the defect
+          ecosystem_fit:       {score: 1, evidence: "https://www.metabase.com/docs/latest/people-and-groups/start"}                 # SSO is behind the paid tier
+          maturity:            {score: 5, evidence: "https://github.com/metabase/metabase"}                                         # mature, but mature at the wrong shape
+          security_by_default: {score: 1, evidence: "https://www.metabase.com/docs/latest/people-and-groups/managing"}              # its own password store beside ADR 0007
+          portability:         {score: 3, evidence: "https://www.metabase.com/license/"}                                            # AGPL core
+          operability:         {score: 3, evidence: "https://www.metabase.com/docs/latest/installation-and-operation/observability-with-prometheus"}  # ran fine; the login is the defect
+          cost:                {score: 5, evidence: "https://www.metabase.com/start/oss/"}                                          # free, and the reason the login grew
