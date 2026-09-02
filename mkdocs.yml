@@ -42,6 +42,14 @@ nav:
       - Phone idea flow: reference/specs/phone-idea-flow.md
       - Fortress stack: reference/specs/fortress-stack.md
   - Tutorials: tutorials/index.md
+  - Runbooks:
+      - runbooks/index.md
+      - Dagster: runbooks/dagster.md
+      - Estate inventory: runbooks/estate-inventory.md
+      - Infra crew: runbooks/infra-crew.md
+      - Infra crew identity: runbooks/infra-crew-identity.md
+      - Otto Telegram webhook: runbooks/otto-telegram-webhook.md
+      - Metabase Google sign-in: runbooks/metabase-google-signin.md
   - How-to: how-to/index.md
   - Reference:
       - reference/index.md

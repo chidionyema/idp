@@ -68,6 +68,14 @@ data:
   # (GET /tailnet/-/users, the single "owner"); no owner answer is BLIND, never a PUT naming nobody.
   # A value here overrides the API answer. Nobody's hand is needed.
   FOUNDER_TAILNET_USER: ""
+  # Decision 0016: Metabase's interactive door is Google Sign-In (the open-source edition cannot
+  # consume the gateway's identity header; verified against the vendor's environment-variable
+  # reference 2026-09-02). This is the OAuth *client id* -- public by design, like the Tailscale
+  # id above, never a secret. Google exposes no API to create a standard OAuth client (only
+  # IAP-internal ones), so it is born once in the Google console by the founder; the exact steps
+  # are quoted in docs/runbooks/metabase-google-signin.md. Empty = the Google door stays off and
+  # Metabase is reachable only through the gateway login; nothing breaks.
+  METABASE_GOOGLE_CLIENT_ID: ""
   # crew#584 traces/lean (idp#702): where the node agent (platform/observability-collector,
   # SigNoz k8s-infra) ships every log, metric and trace. Enterprise leaves it at the in-cluster
   # store; the lean tier, which installs no store, points it at a remote OTLP receiver (a hosted

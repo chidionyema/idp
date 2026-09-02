@@ -15,7 +15,12 @@ resources:
   - metabase-deployment.yaml
   - metabase-availability.yaml
   - metabase-httproute.yaml
+  - metabase-setup.yaml
 configMapGenerator:
+  # Decision 0016: name keeps the hash so an edited script re-runs the setup Job's pod template.
+  - name: metabase-setup-script
+    files:
+      - setup.py=metabase-setup/setup.py
   - name: signoz-values
     files:
       - values.yaml

@@ -1,9 +1,10 @@
 # Metabase on the OKE node pool: the boardroom dashboard reads LLM traces from Langfuse's
-# PostgreSQL and stores dashboards in its own database (crew#R74 CP1). Sign-in is the front
-# door: oauth2-proxy answers the ForwardAuth subrequest and Traefik copies X-Auth-Request-Email;
-# Metabase reads it as METABASE_USER_LOGIN_EMAIL_HEADER and creates or updates the user by email
-# (the founder is enrolled at setup). No password exists anywhere for Metabase; ADMIN_EMAIL is
-# set to the founder's email and the account is an admin (ADR 0007).
+# PostgreSQL and stores dashboards in its own database (crew#R74 CP1). Two doors (decision 0016):
+# the gateway's ForwardAuth login guards the route, and inside it Metabase's own session comes
+# from Google Sign-In (MB_GOOGLE_AUTH_*; the open-source edition has no header-auth -- the
+# earlier METABASE_* header lines here were inert vendor-nonexistent settings and are gone).
+# The first admin is created by machine (metabase-setup.yaml Job) with a vault password no
+# person is shown; auto-create is off, so only the seeded founder account can sign in.
 apiVersion: v1
 kind: Service
 metadata:
@@ -58,7 +59,9 @@ spec:
               # Secrets are mounted as files (Kyverno secrets-not-from-env-vars policy).
               # Read them and export as environment variables for Metabase to use.
               export MB_DB_PASS=$(cat /run/secrets/metabase/MB_DB_PASS)
-              export METABASE_ADMIN_EMAIL=$(cat /run/secrets/metabase/METABASE_ADMIN_EMAIL)
+              # Google door only turns on once the founder has minted the client id (decision
+              # 0016); until then the pod runs and the gateway login still fences the route.
+              if [ -n "$MB_GOOGLE_AUTH_CLIENT_ID" ]; then export MB_GOOGLE_AUTH_ENABLED=true; fi
               exec java -jar /app/metabase.jar
           env:
             - { name: MB_DB_TYPE, value: postgres }
@@ -66,8 +69,10 @@ spec:
             - { name: MB_DB_PORT, value: "5432" }
             - { name: MB_DB_USER, value: metabase }
             - { name: MB_DB_DBNAME, value: metabase }
-            # SSO integration: read email from the Traefik header set by oauth2-proxy (ADR 0007)
-            - { name: METABASE_USER_LOGIN_EMAIL_HEADER, value: X-Auth-Request-Email }
+            # Decision 0016: Google Sign-In, pinned by omission -- no auto-create domain is set,
+            # so only the machine-seeded founder account exists to sign in. The client id is
+            # public (one place: clusters/oke/estate-config.yaml, Flux postBuild).
+            - { name: MB_GOOGLE_AUTH_CLIENT_ID, value: "${METABASE_GOOGLE_CLIENT_ID}" }
             - { name: METABASE_SESSION_COOKIE_SAMESITE, value: lax }
           securityContext:
             allowPrivilegeEscalation: false

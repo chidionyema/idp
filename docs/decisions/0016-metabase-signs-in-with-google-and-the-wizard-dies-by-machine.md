@@ -1,7 +1,6 @@
 # 0016 — Metabase signs in with Google, and the setup wizard dies by machine
 
-Date: 2026-09-02. Status: proposed, awaiting the founder's word (permission-before-building,
-2026-08-31). Fires on: the founder was asked by Metabase to create a password (2026-09-01).
+Date: 2026-09-02. Status: accepted (founder word, 2026-09-02, session 54539261). Fires on: the founder was asked by Metabase to create a password (2026-09-01).
 
 ## The defect
 
@@ -30,8 +29,12 @@ Verified against the vendor's live documentation on 2026-09-02:
    and a random password minted into the vault (`metabase-admin-password`) that no person is
    ever shown or types. The wizard is gone before anyone visits.
 2. **Google Sign-In is the interactive door**, pinned so only the founder's account enrols.
-   Federated login, no password ever held for a person (decision 0007). The Google OAuth client
-   is minted by code under the one Google root (R52); its id/secret live in the vault.
+   Federated login, no password ever held for a person (decision 0007). Google exposes no API for
+   standard OAuth clients (verified 2026-09-02: only IAP-internal clients are API-creatable),
+   so the client is born once in the Google console by the founder -- the exact steps are
+   quoted in `docs/runbooks/metabase-google-signin.md`. The client id is public and lives in
+   `clusters/oke/estate-config.yaml` (one place for every name, R70); Metabase Google Sign-In
+   needs no client secret.
 3. **The deployment stops lying.** The two inert `METABASE_*` env lines and the header-auth
    comment go; the manifest says what is true.
 
