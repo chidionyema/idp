@@ -23,8 +23,10 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
+          cache: pip
+          cache-dependency-path: .github/requirements/demo-render.txt
       - name: dependencies the demos exercise
-        run: pip install jsonschema pyyaml
+        run: pip install -r .github/requirements/demo-render.txt
       - name: install vhs and dependencies
         run: |
           # vhs ships from Charm's own apt repository (https://github.com/charmbracelet/vhs#installation)

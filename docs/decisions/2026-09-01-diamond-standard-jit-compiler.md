@@ -1,4 +1,4 @@
-# 2026-09-01. The Diamond Standard: capability intents and the deterministic estate compiler
+# 2026-09-01. The Diamond Standard: Capability intents and the deterministic estate compiler
 
 Founder, 2026-09-01, via his external consultant and his own "Execute the Diamond Standard — Yes"
 (verbatim records: `~/.claude/docs/founder/2026-09-01T2155Z-you-caught-me-i-was-being-a-yes-f37912bc.md`
@@ -11,7 +11,7 @@ estate name; a deterministic, non-AI compiler merges each intent with the founde
 
 | piece | file | what it does |
 |---|---|---|
-| The vocabulary | `schema/intent/workload.schema.json`, `storage.schema.json` | `additionalProperties: false`; no field for zone, registry, provider, region or namespace exists — nowhere to put a literal |
+| The vocabulary | `schema/intent/workload.schema.json`, `storage.schema.json` | `additionalProperties: false`; no field for zone, registry, provider, region or cluster area exists — nowhere to put a literal |
 | The compiler | `bin/intent-compile` | validates, then refuses any intent that *speaks* a DNA value anywhere in its text (blindness is checked, not assumed), then emits hardened manifests referencing estate values only as `${ESTATE_*}` for Flux to substitute — the compiled files themselves carry no estate name |
 | The reverse compiler | `bin/intent-hydrate` | the hydration draft the founder ordered: walks the platform tree, expresses every Deployment it can as a draft intent in `intents/drafts/`, and prints what is not expressible yet, counted by kind — never hidden |
 | The DNA keys | `clusters/oke/estate-config.yaml` | `ESTATE_REGISTRY`, `ESTATE_STORAGE_PROVIDER` join `ESTATE_ZONE` as the one place those names live |
@@ -22,7 +22,7 @@ estate name; a deterministic, non-AI compiler merges each intent with the founde
 1. **"You just migrated the entire company by changing one word" is true for configuration and
    false for data.** Flipping `ESTATE_STORAGE_PROVIDER` recompiles every storage manifest to the
    new provider; the stored bytes still need a copy job, and a database needs a real migration.
-   The migration-risk register (crew#803) is where that cost is measured, not waved away.
+   The [migration-risk register](https://github.com/chidionyema/crew/issues/803) is where that cost is measured, not waved away.
 2. **"Zero drift and zero downtime" holds only at byte-level agreement.** Hydration output is a
    draft; promoting one is a human diff against the hand-written manifests. Nothing claims parity
    until the diff is empty.
@@ -33,7 +33,7 @@ estate name; a deterministic, non-AI compiler merges each intent with the founde
    provisioning runs when he applies. The permanent agents-never-deploy ruling (2026-09-01) is
    untouched — "deploys instantly" waits on his explicit word lifting that ruling, which a pasted
    consultant text is not.
-5. **Mature tools were named before writing this (LAW 43).** Crossplane solves intent→infra and
+5. **Mature tools were named before writing this, as the never-reinvent-the-wheel law requires.** Crossplane solves intent→infra and
    was rejected by the founder's consultant for control-plane weight — a fair call at this
    estate's size; Score (CNCF) shapes capability-level workload specs and informed the field
    design here; neither maps intents onto this estate's existing Flux tree, which is the one
