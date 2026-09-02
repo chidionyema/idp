@@ -782,6 +782,31 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-human-vault
+  title: 'Human secret door'
+  description: 'The one place a person''s secret enters the estate: a phone browser writes it into Bitwarden and the cluster pulls it; no terminal, no file, no chat.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=human-vault'
+    estate/flux-kustomization: 'human-vault'
+    estate/path: './platform/human-vault'
+    estate/cluster: 'oke'
+  tags: [platform, delivery]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: delivery
+  dependsOn:
+    - component:default/layer-external-secrets
+    - component:default/layer-secret-store
+    - component:default/layer-edge
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-identity
   title: 'Single sign-on'
   description: 'One login in front of every door; the founder signs in once.'

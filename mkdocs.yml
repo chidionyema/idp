@@ -37,12 +37,15 @@ nav:
       - 0011 Claude is a lane on the router, not a key on the Mac: decisions/0011-claude-is-a-lane-on-the-router-not-a-key-on-the-mac.md
       - 0012 Staging is a namespace, every option carries its cost: decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md
       - 0013 Customer identity is Keycloak, the realm is code: decisions/0013-customer-identity-is-keycloak-and-the-realm-is-code.md
+      - 0017 Bitwarden is the human door for secrets: decisions/0017-bitwarden-is-the-human-door-for-secrets.md
   - Specs:
       - KINI.AI master spec: reference/specs/kini-master-spec.md
       - Phone idea flow: reference/specs/phone-idea-flow.md
       - Fortress stack: reference/specs/fortress-stack.md
   - Tutorials: tutorials/index.md
-  - How-to: how-to/index.md
+  - How-to:
+      - how-to/index.md
+      - Bitwarden human vault, the founder's steps: how-to/bitwarden-human-vault.md
   - Reference:
       - reference/index.md
       - Oracle tenancy: reference/oci-tenancy.md
@@ -131,6 +134,7 @@ nav:
       - Founder god's view: tutorials/demo/estate-founder.md
       - Money: tutorials/demo/commerce.md
       - Customer sign-in: tutorials/demo/customer-identity.md
+      - Human secret door: tutorials/demo/human-vault.md
   - Onboarding:
       - The Demo Standard: onboarding/demo-standard.md
       - Buyer sandbox (one hour): onboarding/demo-sandbox.md
@@ -212,6 +216,7 @@ nav:
       - Founder god's view: how-to/onboarding/estate-founder.md
       - Incident register: how-to/onboarding/incident-register.md
       - Estate clocks: how-to/onboarding/estate-clocks.md
+      - Human secret door: how-to/onboarding/human-vault.md
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md
