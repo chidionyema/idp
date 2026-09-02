@@ -21,6 +21,7 @@ resources:
   - commerce.yaml
   - edge.yaml
   - estate-config.yaml
+  - human-vault.yaml
   - image-automation.yaml
   - platform.yaml
   - secrets.yaml

@@ -67,5 +67,9 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
+          if ! command -v vale >/dev/null 2>&1; then
+            echo "the count is skipped: vale never got installed because an earlier step failed, and that step already made the job red" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           n=$(vale --output=JSON --no-exit --minAlertLevel=error docs | python3 -c 'import json,sys; d=json.load(sys.stdin); print(sum(len(v) for v in d.values()))')
           printf '### plain English\n%s dev-speak errors remain on the docs tree (target: 0)\n' "$n" >> "$GITHUB_STEP_SUMMARY"

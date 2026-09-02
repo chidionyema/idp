@@ -15,8 +15,19 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 def test_incident_crew307_catalog_stays_at_catalog():
-    cfg = (ROOT / "backstage" / "app-config.yaml").read_text()
-    assert not re.search(r"^\s*- page:catalog:", cfg, re.M), "page:catalog override moves /catalog; crew#307"
+    """page:catalog may set pagination and filters; it must not move the path off /catalog."""
+    import yaml
+
+    cfg_path = ROOT / "backstage" / "app-config.yaml"
+    cfg = yaml.safe_load(cfg_path.read_text())
+    for row in cfg["app"]["extensions"]:
+        if not isinstance(row, dict) or "page:catalog" not in row:
+            continue
+        page = row["page:catalog"] or {}
+        path = (page.get("config") or {}).get("path")
+        assert path in (None, "/catalog"), (
+            f"page:catalog moved /catalog to {path!r}; crew#307"
+        )
 
 
 def test_incident_crew307_drill_grades_every_published_path():

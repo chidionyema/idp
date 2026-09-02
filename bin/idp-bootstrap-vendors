@@ -48,6 +48,7 @@ export IDP REG MODE ONLY ROTATE
 exec python3 - <<'PY'
 import os, re, sys, glob, json, functools, subprocess, tempfile, urllib.error, urllib.request
 import yaml
+failed = []
 IDP, REG, MODE, ONLY, ROTATE = (os.environ[k] for k in ("IDP", "REG", "MODE", "ONLY", "ROTATE"))
 reg = yaml.safe_load(open(REG))["vendors"]
 def say(st, who, msg): print(f"{st:<7} {who:<20} {msg}", flush=True)
@@ -125,10 +126,14 @@ def holds(v, targets, values):
     if v.get("pair"): return verify(v, {t["field"]: values[t["field"]] for t in targets})
     return all(verify(v, {"key": k}) for k in {values[t["field"]] for t in targets})
 
+_roots = {}
 def root(name, secret):
-    """The root from the environment, consumed once; never on argv, never printed."""
-    key = os.environ.pop(secret, "")
-    return key.strip()
+    """The root from the environment, consumed once; never on argv, never printed. Cached in
+    process across vendors: one provider root (R52) may feed several vendors — the alerts bot
+    token serves both the flux-telegram target and the apprise pair — and the environment
+    variable is scrubbed on the first read either way."""
+    if secret not in _roots: _roots[secret] = os.environ.pop(secret, "").strip()
+    return _roots[secret]
 
 written = kept = 0; blind = []
 for name, v in reg.items():
@@ -162,15 +167,21 @@ for name, v in reg.items():
             say("BLIND", who, f"no {' or '.join(blank)} in the environment and the vault does not verify; the root is made once at {v['page']} and set with gh secret set {' '.join(blank)} (R52)"); continue
         for t in targets:
             shape = t.get("shape") or v.get("shape")
-            if not shape: say("FAIL", who, f"{t['field']} has no shape in the registry; every root is anchored"); del keys; sys.exit(1)
-            if not re.fullmatch(shape, keys[t["field"]]): say("FAIL", who, f"{sec(v, t)} does not match the registry shape"); del keys; sys.exit(1)
+            if not shape: say("FAIL", who, f"{t['field']} has no shape in the registry; every root is anchored"); failed.append(who); del keys; break
+            if not re.fullmatch(shape, keys[t["field"]]): say("FAIL", who, f"{sec(v, t)} does not match the registry shape"); failed.append(who); del keys; break
+        if who in failed: continue
         if not holds(v, targets, keys):
-            say("FAIL", who, f"{' + '.join(names)} refused by {v['verify']['url'].split('{')[0]}; revoke it and make one that works"); del keys; sys.exit(1)
+            # crew#729 class, measured on run 33677001751 (2026-09-02): one refused vendor key
+            # aborted the loop here and the apprise pair five vendors later was never seeded.
+            # A FAIL is recorded and the loop finishes every other vendor, like BLIND always did.
+            say("FAIL", who, f"{' + '.join(names)} refused by {v['verify']['url'].split('{')[0]}; revoke it and make one that works"); failed.append(who); del keys; continue
         for t in targets: vault_put(t["entry"], t["field"], keys[t["field"]])
         del keys; written += 1
         say("ok", who, "verified, written to " + ", ".join(f"{t['entry']}.{t['field']}" for t in targets))
 if MODE == "preflight": say("ok", "preflight", f"{len(reg)} vendors registered; nothing written")
 else:
-    say("ok" if not blind else "BLIND", "vendors", f"{written} written, {kept} kept, {len(blind)} blind; ExternalSecrets refresh within 1h")
+    state = "FAIL" if failed else ("BLIND" if blind else "ok")
+    say(state, "vendors", f"{written} written, {kept} kept, {len(failed)} failed, {len(blind)} blind; ExternalSecrets refresh within 1h")
+    if failed: sys.exit(1)
     if blind: sys.exit(2)
 PY

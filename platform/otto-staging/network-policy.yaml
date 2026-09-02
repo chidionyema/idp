@@ -1,0 +1,103 @@
+# crew#191 fence (bin/ns-fence-gate, tests/fixtures/ns-fence/good.yaml is the shape this
+# mirrors): a both-ways default deny, plus the four narrow holes this pod actually needs --
+# DNS, the shared edge Gateway reaching the webhook port, the estate's own trace collector
+# (LAW 50), and outbound HTTPS for the Telegram Bot API itself (sendMessage and friends; the
+# inbound webhook is covered by the ingress-from-edge rule below, not this one). Every rule
+# uses `podSelector: {}` (every pod in the namespace, there is only ever one) so a rule that
+# denies is provably the floor and not somebody's allow-list (bin/ns-fence-gate's own
+# docstring: selection, not emptiness, sets the floor).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: otto-staging
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: otto-staging
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# The shared Traefik gateway (namespace `edge`) is what an HTTPRoute forwards through; without
+# this, Telegram's POST to /telegram-webhook and any GET /healthz probe from the edge would
+# arrive at a pod that drops every ingress packet by default.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-edge
+  namespace: otto-staging
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: edge
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# LAW 50: every workload emits to the central collector. signoz-otel-collector lives in the
+# observability namespace; OTEL_EXPORTER_OTLP_ENDPOINT in deployment.yaml points at it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-observability
+  namespace: otto-staging
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4318
+---
+# The Telegram Bot API itself (api.telegram.org and friends) has no stable, publishable IP
+# range to name here, so this is scoped by port, not by destination, and it deliberately
+# excludes the three private ranges: a compromised pod in this namespace can still reach the
+# public internet on 443 (which is the point -- Telegram calls back), but not another
+# namespace's ClusterIP or a node's internal address by guessing it (that lateral path is
+# exactly what crew#191 measured: a pod reaching another pod's IP with no credential).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-internet-https
+  namespace: otto-staging
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

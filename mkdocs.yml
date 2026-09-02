@@ -12,6 +12,10 @@ nav:
   - Notification channels: reference/policy/notification-channels.md
   - Incident register: reference/incident-register.md
   - Documentation policy: reference/policy/documentation.md
+  - Tailscale egress proxy exception: reference/policy/tailscale-egress-exception.md
+  - Tailscale pod-security level: reference/policy/tailscale-pod-security.md
+  - Tailscale images come from GitHub registry: reference/policy/tailscale-ghcr-images.md
+  - Dagster runs on estate-built images: reference/policy/dagster-arm64-images.md
   - Architecture:
       - explanation/architecture/index.md
       - Live estate: explanation/architecture/live.md
@@ -37,12 +41,18 @@ nav:
       - 0011 Claude is a lane on the router, not a key on the Mac: decisions/0011-claude-is-a-lane-on-the-router-not-a-key-on-the-mac.md
       - 0012 Staging is a namespace, every option carries its cost: decisions/0012-staging-is-a-namespace-and-every-option-carries-its-cost.md
       - 0013 Customer identity is Keycloak, the realm is code: decisions/0013-customer-identity-is-keycloak-and-the-realm-is-code.md
+      - 0017 Bitwarden is the human door for secrets: decisions/0017-bitwarden-is-the-human-door-for-secrets.md
+      - 0018 Superset is the dashboard: decisions/0018-superset-is-the-dashboard-because-it-takes-the-gateways-word.md
+      - 0019 Credentials federate, one pasted seed at most: decisions/0019-credentials-federate-a-human-pastes-at-most-one-seed.md
   - Specs:
       - KINI.AI master spec: reference/specs/kini-master-spec.md
       - Phone idea flow: reference/specs/phone-idea-flow.md
       - Fortress stack: reference/specs/fortress-stack.md
   - Tutorials: tutorials/index.md
-  - How-to: how-to/index.md
+  - How-to:
+      - how-to/index.md
+      - Bitwarden human vault, the founder's steps: how-to/bitwarden-human-vault.md
+      - Boot Dagster and Superset: how-to/boot-dagster-and-superset.md
   - Reference:
       - reference/index.md
       - Oracle tenancy: reference/oci-tenancy.md
@@ -56,8 +66,19 @@ nav:
       - explanation/index.md
       - Founder self-service, the field (crew#66): explanation/founder-self-service-research.md
       - Otto on the founder's Mac, the setup and the friction (crew#561): explanation/otto-on-the-mac.md
+      - The dagster scheduler survives a node (pull request 1138): explanation/dagster-availability.md
+      - The secret bridge's certificate deadlock (decision 0017): explanation/sdk-server-certificate-deadlock.md
   - Demo:
+      - The Demo Standard: demo/demo-standard.md
+      - Buyer sandbox (one hour): demo/demo-sandbox.md
+      - Merge queue (hands-free landing): demo/merge-queue.md
+      - Catalogue links: demo/catalog-links.md
+      - Drill evidence: demo/drill-evidence.md
+      - Estate compiler recording: demo/intent-compiler.md
+      - Estate clock recording: demo/dagster.md
+      - Dashboards recording: demo/superset.md
       - Portal: tutorials/demo/idp.md
+      - Estate compiler: tutorials/demo/intent.md
       - Conscience: tutorials/demo/conscience.md
       - Estate showcase: tutorials/demo/estate-showcase.md
       - Estate next: tutorials/demo/estate-next.md
@@ -74,6 +95,7 @@ nav:
       - Cloud-agnostic: tutorials/demo/cloud-agnostic.md
       - Estate zone: tutorials/demo/estate-zone.md
       - MCP: tutorials/demo/mcp.md
+      - Otto staging: tutorials/demo/otto-staging.md
       - Estate inventory: tutorials/demo/estate-inventory.md
       - Sovereign bus: tutorials/demo/sb.md
       - VM-shared path guard: tutorials/demo/vm-shared-path.md
@@ -93,12 +115,16 @@ nav:
       - Estate security rollout: tutorials/demo/estate-security-rollout.md
       - Spec gate: tutorials/demo/spec-gate.md
       - Estate diagram: tutorials/demo/estate-diagram.md
+      - Spend breaker: tutorials/demo/spend-breaker.md
+      - Notifications: tutorials/demo/notify.md
       - Catalog render: tutorials/demo/catalog-render.md
+      - Estate clocks: tutorials/demo/estate-clocks.md
       - owner-account: tutorials/demo/owner-account.md
       - static-secret: tutorials/demo/static-secret.md
       - Bind audit: tutorials/demo/bind-audit.md
       - Build image: tutorials/demo/build-image.md
       - Catalog: tutorials/demo/catalog.md
+      - Portal catalogue: tutorials/demo/portal.md
       - Conformity report: tutorials/demo/conformity.md
       - DB gen: tutorials/demo/db-gen.md
       - Dockerfiles: tutorials/demo/dockerfiles.md
@@ -118,10 +144,20 @@ nav:
       - Founder god's view: tutorials/demo/estate-founder.md
       - Money: tutorials/demo/commerce.md
       - Customer sign-in: tutorials/demo/customer-identity.md
+      - Human secret door: tutorials/demo/human-vault.md
   - Onboarding:
+      - The Demo Standard: onboarding/demo-standard.md
+      - Buyer sandbox (one hour): onboarding/demo-sandbox.md
+      - Merge queue (hands-free landing): onboarding/merge-queue.md
+      - Catalogue links: onboarding/catalog-links.md
+      - Drill evidence: onboarding/drill-evidence.md
+      - Estate compiler recording: onboarding/intent-compiler.md
+      - Estate clock recording: onboarding/dagster.md
+      - Dashboards recording: onboarding/superset.md
       - Trace matrix: how-to/onboarding/trace-matrix.md
       - Namespace fences: how-to/onboarding/ns-fence-gate.md
       - Portal: how-to/onboarding/idp.md
+      - Estate compiler: how-to/onboarding/intent.md
       - Estate Mac screen: how-to/onboarding/founder-screen-access.md
       - Conscience: how-to/onboarding/conscience.md
       - Estate showcase: how-to/onboarding/estate-showcase.md
@@ -139,8 +175,11 @@ nav:
       - k8s-infra: how-to/onboarding/k8s-infra.md
       - Langfuse: how-to/onboarding/langfuse.md
       - SigNoz: how-to/onboarding/signoz.md
+      - Spend breaker: how-to/onboarding/spend-breaker.md
+      - Notifications: how-to/onboarding/notify.md
       - Manifests: how-to/onboarding/manifests.md
       - MCP: how-to/onboarding/mcp.md
+      - Otto staging: how-to/onboarding/otto-staging.md
       - Sovereign bus: how-to/onboarding/sb.md
       - VM-shared path guard: how-to/onboarding/vm-shared-path.md
       - Placement: how-to/onboarding/placement.md
@@ -168,6 +207,7 @@ nav:
       - Bind audit: how-to/onboarding/bind-audit.md
       - Build image: how-to/onboarding/build-image.md
       - Catalog: how-to/onboarding/catalog.md
+      - Portal catalogue: how-to/onboarding/portal.md
       - Conformity report: how-to/onboarding/conformity.md
       - DB gen: how-to/onboarding/db-gen.md
       - Dockerfiles: how-to/onboarding/dockerfiles.md
@@ -186,3 +226,14 @@ nav:
       - Scheduling immunity: how-to/onboarding/scheduling-immunity.md
       - Founder god's view: how-to/onboarding/estate-founder.md
       - Incident register: how-to/onboarding/incident-register.md
+      - Estate clocks: how-to/onboarding/estate-clocks.md
+      - Human secret door: how-to/onboarding/human-vault.md
+  - Runbooks:
+      - What these are: runbooks/index.md
+      - Buyer sandbox (one hour): runbooks/demo-sandbox.md
+      - Merge queue (hands-free landing): runbooks/merge-queue.md
+      - Estate clock: runbooks/dagster.md
+      - Estate inventory: runbooks/estate-inventory.md
+      - Infrastructure crew: runbooks/infra-crew.md
+      - Infrastructure crew identity: runbooks/infra-crew-identity.md
+      - Otto's Telegram webhook: runbooks/otto-telegram-webhook.md

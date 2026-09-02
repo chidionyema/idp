@@ -1,4 +1,4 @@
-# crew#713 CP1: a daily copy of the shop's database, off the volume, made by the cluster.
+# A daily copy of the shop's database, off the volume, made by the cluster.
 #
 # The whole shop is one SQLite file. Census inside the running pod, 2026-08-31: 202 packs, 76
 # price-history rows, 41,035 analytics events, 3 orders, 2 entitlements, 1 account, 23 tables,

@@ -66,7 +66,7 @@ def test_sovereign_files_run_from_sovereign_and_root_files_from_root(tmp_path):
     fake.write_text('#!/bin/sh\necho "$PWD $*" >> "%s"\n' % log)
     fake.chmod(0o755)
     out = subprocess.run([str(repo / "bin/idp-tests-for"), "--base", "HEAD"], text=True, capture_output=True,
-                         env={**os.environ, "IDP_PY": str(fake)})
+                         env={**os.environ, "IDP_PY": str(fake), "TESTS_FOR_RUN": "1"})  # R58 skips the run outside CI; this test asserts the run itself
     assert out.returncode == 0, out.stderr
     # crew#562: outside CI the script appends "-n <TESTS_FOR_WORKERS>" to cap pytest workers; strip it
     # here since this test asserts selection (which files, which cwd), not worker count.

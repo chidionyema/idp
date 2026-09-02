@@ -1,0 +1,16 @@
+{
+  "capability": "workload",
+  "component": "backstage",
+  "env": {
+    "POSTGRES_DB": "backstage",
+    "POSTGRES_HOST": "postgres",
+    "POSTGRES_PORT": "5432",
+    "POSTGRES_USER": "backstage"
+  },
+  "name": "catalogue",
+  "port": 3100,
+  "public_host": "catalogue",
+  "purpose": "hydrated from the live tree; was ?/catalogue",
+  "replicas": 2,
+  "size": "l"
+}

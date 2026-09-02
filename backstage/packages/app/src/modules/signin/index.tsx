@@ -1,12 +1,17 @@
-// The front door has already signed the person in; this page exchanges the door's
-// headers for a Backstage session without showing a guest "Enter" button.
+// Production: the front door has already signed the person in; this page
+// exchanges the door's headers for a Backstage session without showing a guest
+// "Enter" button.
+//
+// Local `yarn start` (NODE_ENV !== production): official Backstage guest
+// SignInPage. Live catalogue.mumchimp.com is a production webpack build, so it
+// keeps the front-door page.
 //
 // When the exchange fails (a direct hit that skipped the door, a proxy hiccup) the
 // first frame a visitor sees is this page. It carries the estate's name and one
 // sentence, never the vendor's error text (crew#459 audit, 2026-08-29).
 import { createFrontendModule } from '@backstage/frontend-plugin-api';
 import { SignInPageBlueprint } from '@backstage/plugin-app-react';
-import { ProxiedSignInPage } from '@backstage/core-components';
+import { ProxiedSignInPage, SignInPage } from '@backstage/core-components';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import { Button, Typography, makeStyles } from '@material-ui/core';
 import {
@@ -79,7 +84,9 @@ export const SignInUnavailable = ({ error }: { error?: Error }) => {
 const frontDoorSignInPage = SignInPageBlueprint.make({
   params: {
     loader: async () => props =>
-      (
+      process.env.NODE_ENV !== 'production' ? (
+        <SignInPage {...props} providers={['guest']} />
+      ) : (
         <ProxiedSignInPage
           {...props}
           provider="oauth2Proxy"

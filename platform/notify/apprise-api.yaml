@@ -1,0 +1,93 @@
+# Apprise API: publish once, deliver everywhere (R75). Named channels are stored in the vault as
+# Apprise URLs. A POST to /notify/<channel>?title=X&body=Y fires to every backend the channel owns.
+# No backend URL, key or shape leaks to the caller. The server emits traces to the central
+# collector (LAW 50).
+apiVersion: v1
+kind: Service
+metadata:
+  name: apprise
+  namespace: notify
+  labels: { app.kubernetes.io/name: apprise, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: platform-notify }
+spec:
+  selector: { app.kubernetes.io/name: apprise }
+  ports:
+    - { name: http, port: 8000, targetPort: 8000 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apprise
+  namespace: notify
+  annotations:
+    # A rotated vault key reaches the pod only if it rolls (LAW 50 circuit breaker).
+    reloader.stakater.com/auto: "true"
+  labels: { app.kubernetes.io/name: apprise, app.kubernetes.io/part-of: idp }
+spec:
+  replicas: 2   # One pod is one node event away from a 503
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app.kubernetes.io/name: apprise }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: apprise, app.kubernetes.io/part-of: idp }
+    spec:
+      automountServiceAccountToken: false
+      # Two replicas on one node are one replica. DoNotSchedule, not ScheduleAnyway.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: apprise }
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: apprise
+          image: docker.io/caronc/apprise:1.5.3
+          # Channels are files, never environment (Kyverno secrets-not-from-env-vars — and a shell
+          # that expands a secret value can print it into the pod log; it did on 2026-09-02, which
+          # is why no script touches these files at all). Stateful "simple" mode reads
+          # {channel}.cfg straight from APPRISE_CONFIG_DIR (vendor README), so the vault-synced
+          # mount IS the config store and the image's own entrypoint (supervisord: nginx on 8000 +
+          # gunicorn) runs unmodified. Everything it writes at runtime sits under /tmp
+          # (supervisord.conf, nginx.conf in the image) — the emptyDir below.
+          env:
+            - name: APPRISE_STATEFUL_MODE
+              value: simple
+            - name: APPRISE_CONFIG_DIR
+              value: /run/secrets/notify
+            - name: APPRISE_ATTACH_SIZE
+              value: "0"  # attachments off: nothing sends files and /attach is read-only here
+          ports:
+            - { containerPort: 8000, name: http }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 256Mi }
+          volumeMounts:
+            - { name: channels, mountPath: /run/secrets/notify, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: channels
+          secret: { secretName: notify-channels }
+        - name: tmp
+          emptyDir: {}

@@ -68,6 +68,16 @@ SYSTEMS = {
 
 # kustomization name -> (area, plain title, one sentence)
 LAYERS = {
+    "demo-sandbox": (
+        "products",
+        "Buyer sandbox",
+        "A one-hour throwaway cluster inside the cluster for a buyer's engineer; launched by hand from the runbook, reaped by the platform when the hour is up.",
+    ),
+    "notify": (
+        "observability",
+        "Notification fan-out",
+        "One place every alert goes; it delivers to the founder's phone and any channel after it.",
+    ),
     "external-secrets": (
         "delivery",
         "Secrets bridge",
@@ -82,6 +92,11 @@ LAYERS = {
         "delivery",
         "Vault connection",
         "The cluster's one root credential to the vault; every other secret is minted from it.",
+    ),
+    "human-vault": (
+        "delivery",
+        "Human secret door",
+        "The one place a person's secret enters the estate: a phone browser writes it into Bitwarden and the cluster pulls it; no terminal, no file, no chat.",
     ),
     "image-automation": (
         "delivery",
@@ -199,6 +214,11 @@ LAYERS = {
         "Workload autoscaler",
         "Scales a workload on its queue or its traffic, to zero when idle.",
     ),
+    "dagster": (
+        "scheduling",
+        "The estate clock",
+        "Runs the estate's schedules from the cluster, off the Mac; every run and its logs on one screen.",
+    ),
     "temporal": (
         "scheduling",
         "Workflows",
@@ -264,10 +284,25 @@ LAYERS = {
         "Hermes",
         "The agent that acts for the founder from anywhere: a message in, a pull request out.",
     ),
+    "otto-staging": (
+        "agents",
+        "Otto (staging)",
+        "The new agent's own webhook and health door, running its own pod ahead of production.",
+    ),
+    "otto-staging-secret": (
+        "agents",
+        "Otto (staging) webhook secret",
+        "Feeds the secret word Telegram must echo from the vault into the gateway rule on Otto's door.",
+    ),
     "mcp": (
         "agents",
         "Agent tools",
         "The tools an agent may use, behind one gateway with one audit log.",
+    ),
+    "infra-crew": (
+        "agents",
+        "Infrastructure crew",
+        "The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.",
     ),
     "hindsight": (
         "agents",
@@ -307,13 +342,31 @@ LAYERS = {
 }
 
 
+# Layers launched by hand, on purpose, so they never sit in clusters/<cluster>/*.yaml: the buyer
+# sandbox is created imperatively by the founder (docs/runbooks/demo-sandbox.md) and reaped on a
+# one-hour timer. The catalogue still records it -- the launch stamps exactly the label the
+# selector below matches, so the page lights up while the sandbox lives and reads empty after.
+IMPERATIVE = [
+    {
+        "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+        "kind": "Kustomization",
+        "metadata": {"name": "demo-sandbox"},
+        "spec": {"path": "./platform/sandbox/vcluster"},
+    },
+]
+
+
 def kustomizations():
     rows = []
     for f in sorted(glob.glob(os.path.join(ROOT, "clusters", CLUSTER, "*.yaml"))):
         for d in yaml.safe_load_all(open(f)):
-            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit"):
+            if (
+                d
+                and d.get("kind") == "Kustomization"
+                and str(d.get("apiVersion", "")).startswith("kustomize.toolkit")
+            ):
                 rows.append(d)
-    return rows
+    return rows + [dict(r) for r in IMPERATIVE]
 
 
 def q(s):
@@ -338,7 +391,11 @@ def http_hostnames(src):
             if d.get("kind") == "HTTPRoute":
                 hosts += (d.get("spec") or {}).get("hostnames", [])
             elif d.get("kind") == "Ingress":
-                hosts += [rule["host"] for rule in (d.get("spec") or {}).get("rules", []) if rule.get("host")]
+                hosts += [
+                    rule["host"]
+                    for rule in (d.get("spec") or {}).get("rules", [])
+                    if rule.get("host")
+                ]
     return sorted(set(hosts))
 
 

@@ -1,0 +1,26 @@
+# The webhook door's secret, rendered where Flux can substitute it (same shape as
+# platform/alerts-secret/flux-telegram.yaml): one vault entry (otto-staging-telegram,
+# property webhook_secret), decoded into a flux-system Secret whose one key,
+# OTTO_WEBHOOK_SECRET, the otto-staging Kustomization substitutes into the HTTPRoute's
+# exact header match (platform/otto-staging/httproute.yaml). No manifest carries the
+# value (LAW 46); a missing vault property fails this row by name, never fail-open --
+# the otto-staging row waits on this one, so the route is never applied with the
+# literal '${OTTO_WEBHOOK_SECRET}' as its expected header.
+#
+# The same value must be registered with Telegram at connect time
+# (setWebhook secret_token, docs/runbooks/otto-staging.md); Telegram then echoes it
+# in X-Telegram-Bot-Api-Secret-Token on every delivery and the gateway drops the rest.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: otto-webhook
+  namespace: flux-system
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: otto-webhook
+    creationPolicy: Owner
+  data:
+    - secretKey: OTTO_WEBHOOK_SECRET
+      remoteRef: { key: otto-staging-telegram, property: webhook_secret }

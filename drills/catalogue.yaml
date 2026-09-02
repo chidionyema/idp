@@ -107,6 +107,19 @@ drills:
       of it dying); the receipt is written from the node's identity and graded by
       bin/idp-chaos-drill langfuse-alert-drill alert-drill (age max 194h).
 
+  - name: infra-crew
+    owner: idp
+    workflow: oke-check.yml
+    job: infra-crew
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    proves: >-
+      The infrastructure crew is taking its queue, read from outside the cluster: no open board
+      ticket with the crew's label has waited more than an hour without a plan comment, and every
+      plan comment the crew left in the last day has a matching trace in Langfuse
+      (bin/idp-infra-crew-drill, as the estate's own GitHub identity). A queued ticket left
+      unplanned, or work with no trace, is the red.
+
   - name: cluster-state
     owner: idp
     workflow: oke-check.yml
@@ -309,3 +322,87 @@ drills:
       lock-out, stretches a session to a day or adds a web address a sign-in may be sent back to
       is named within a day instead of living unseen. Pending until the sign-in service is
       turned on; the check itself is proved today against two shipped exports.
+
+  - name: dagster
+    owner: idp
+    workflow: oke-check.yml
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    pending: true
+    proves: >-
+      The estate scheduler answers from the cluster, read from outside it: the Dagster
+      webserver's readiness endpoint responds and the daily tick left a run newer than a
+      day (the probe is quoted in docs/runbooks/dagster.md). Pending until the founder
+      deploys platform/dagster; the oke-check job lands with the deploy and this line
+      comes off.
+
+  - name: name-drift
+    owner: idp
+    workflow: name-drift.yml
+    job: drift
+    schedule: "37 */6 * * *"
+    max_age_hours: 8
+    proves: >-
+      The main branch of every repository the estate App can see is free of hardcoded estate
+      names: the gate refuses its bad fixture before grading anyone, then grades every clone,
+      so a literal that reaches any main is a red row within six hours, never a silent drift.
+
+  - name: demo-sandbox
+    owner: idp
+    workflow: oke-check.yml
+    job: demo-sandbox
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    pending: true
+    proves: >-
+      The one-hour buyer sandbox launches from its folder, comes Ready, and its expiry label is
+      honoured by the cleanup controller, so a diligence demo works the day it is asked for.
+
+  - name: merge-queue
+    owner: idp
+    workflow: oke-check.yml
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    pending: true
+    proves: >-
+      A green pull request enters the queue with `gh pr merge --auto`, is retested on top of
+      main by the queue's own run, and lands with nobody touching it, so the founder handles
+      exceptions only and never types the landing word again.
+
+  - name: human-vault
+    owner: idp
+    workflow: oke-check.yml
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    pending: true
+    proves: >-
+      The human door stands: the Bitwarden vault connection reports Ready
+      and the otto token Secret exists in the cluster without any hand touching a
+      terminal. Pending until the founder's four Bitwarden browser steps
+      (docs/how-to/bitwarden-human-vault.md); the oke-check job lands with them and
+      this line comes off.
+
+  - name: otto-staging
+    owner: idp
+    workflow: oke-check.yml
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    pending: true
+    proves: >-
+      The staging Otto answers from outside the cluster: the health endpoint on the
+      otto host returns 200 and the Telegram webhook path refuses a plain GET (the
+      probe is quoted in docs/runbooks/otto-staging.md). Pending until the founder
+      deploys platform/otto-staging; the oke-check job lands with the deploy and
+      this line comes off.
+
+  - name: notify
+    owner: idp
+    workflow: oke-check.yml
+    job: notify-drill
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    pending: true
+    proves: >-
+      From the node's identity a POST to the apprise service at /notify/founder-telegram
+      returns 200 and the message reaches the founder's phone, so the publish-once alert
+      channel is graded end to end, never by its manifests applying cleanly.

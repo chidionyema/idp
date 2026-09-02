@@ -479,3 +479,18 @@ deny contains msg if {
 	not control_is_shipped_in_this_pr
 	msg := sprintf("rule=control_shipped | `Control: %s` is not a control this PR ships | fix: name a file the PR changes under tests/, policy/ or platform/edge/, or `Control: none: <reason>`", [control_line])
 }
+
+
+# --- no_zone_literal_added ---------------------------------------------------------------
+# Founder, 2026-09-01 (crew#796), on the store carrying 61 live lines of the zone name while
+# the platform had one configurable value since crew#269: "THAT SHOULD NEVER HAPPEN, P0 ...
+# CAN'T EVER HAPPEN AGAIN ... needs monitoring for any drift ... and PR rejection". The
+# lines come from bin/estate-zone-gate --diff (one exemption list, proved both ways in
+# bin/idp-ci); this rule only refuses. An exemption marker is a line like any other until the
+# founder writes APPROVE: zone-exempt on the PR.
+
+deny contains msg if {
+	some hit in input.pr.zone_literals
+	not "zone-exempt" in input.pr.approvals
+	msg := sprintf("rule=no_zone_literal_added | %s | fix: write the host as <service>.${ESTATE_ZONE} (Flux substitutes it on the cluster; compose, shell and Python read ESTATE_ZONE from the environment; workflows read vars.ESTATE_ZONE); the zone is declared once, in clusters/<cluster>/estate-config.yaml", [hit])
+}

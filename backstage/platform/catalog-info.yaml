@@ -382,6 +382,52 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-dagster
+  title: 'The estate clock'
+  description: 'Runs the estate''s schedules from the cluster, off the Mac; every run and its logs on one screen.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=dagster'
+    estate/flux-kustomization: 'dagster'
+    estate/path: './platform/dagster'
+    estate/cluster: 'oke'
+  tags: [platform, scheduling]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: scheduling
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-edge
+    - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-demo-sandbox
+  title: 'Buyer sandbox'
+  description: 'A one-hour throwaway cluster inside the cluster for a buyer''s engineer; launched by hand from the runbook, reaped by the platform when the hour is up.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=demo-sandbox'
+    estate/flux-kustomization: 'demo-sandbox'
+    estate/path: './platform/sandbox/vcluster'
+    estate/cluster: 'oke'
+  tags: [platform, products]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: products
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-dns
   title: 'DNS'
   description: 'Every hostname the estate answers to, managed from git.'
@@ -515,6 +561,8 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: delivery
+  dependsOn:
+    - component:default/layer-edge
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -736,6 +784,31 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-human-vault
+  title: 'Human secret door'
+  description: 'The one place a person''s secret enters the estate: a phone browser writes it into Bitwarden and the cluster pulls it; no terminal, no file, no chat.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=human-vault'
+    estate/flux-kustomization: 'human-vault'
+    estate/path: './platform/human-vault'
+    estate/cluster: 'oke'
+  tags: [platform, delivery]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: delivery
+  dependsOn:
+    - component:default/layer-external-secrets
+    - component:default/layer-secret-store
+    - component:default/layer-edge
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-identity
   title: 'Single sign-on'
   description: 'One login in front of every door; the founder signs in once.'
@@ -796,6 +869,34 @@ spec:
   dependsOn:
     - component:default/layer-secret-store
     - component:default/layer-backstage-namespace
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-infra-crew
+  title: 'Infrastructure crew'
+  description: 'The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=infra-crew'
+    estate/flux-kustomization: 'infra-crew'
+    estate/path: './platform/infra-crew'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+    - url: https://langfuse.${ESTATE_ZONE}
+      title: 'Model traces'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+    - component:default/layer-alerts-github
+    - component:default/layer-llm
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -998,6 +1099,30 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-notify
+  title: 'Notification fan-out'
+  description: 'One place every alert goes; it delivers to the founder''s phone and any channel after it.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=notify'
+    estate/flux-kustomization: 'notify'
+    estate/path: './platform/notify'
+    estate/cluster: 'oke'
+  tags: [platform, observability]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: observability
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-observability
   title: 'Traces and model calls'
   description: 'Where every request and every model call is kept and searched.'
@@ -1028,14 +1153,14 @@ apiVersion: backstage.io/v1alpha1
 kind: API
 metadata:
   name: observability-api
-  description: 'Traces and model calls: the HTTP interface, answering at langfuse.${ESTATE_ZONE} and signoz.${ESTATE_ZONE}.'
+  description: 'Traces and model calls: the HTTP interface, answering at langfuse.${ESTATE_ZONE} and signoz.${ESTATE_ZONE} and superset.${ESTATE_ZONE}.'
 spec:
   type: openapi
   lifecycle: production
   owner: group:default/platform
   system: system:default/observability
   definition: |
-    # Not published. observability answers at langfuse.${ESTATE_ZONE} and signoz.${ESTATE_ZONE}; this entity
+    # Not published. observability answers at langfuse.${ESTATE_ZONE} and signoz.${ESTATE_ZONE} and superset.${ESTATE_ZONE}; this entity
     # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
@@ -1061,6 +1186,71 @@ spec:
   dependsOn:
     - component:default/layer-scheduling
     - component:default/layer-edge
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-otto-staging
+  title: 'Otto (staging)'
+  description: 'The new agent''s own webhook and health door, running its own pod ahead of production.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=otto-staging'
+    estate/flux-kustomization: 'otto-staging'
+    estate/path: './platform/otto-staging'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  providesApis:
+    - api:default/otto-staging-api
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+    - component:default/layer-edge
+    - component:default/layer-otto-staging-secret
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: otto-staging-api
+  description: 'Otto (staging): the HTTP interface, answering at otto.${ESTATE_ZONE}.'
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/agents
+  definition: |
+    # Not published. otto-staging answers at otto.${ESTATE_ZONE}; this entity
+    # exists so the catalogue records that the interface is reachable and who owns it.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-otto-staging-secret
+  title: 'Otto (staging) webhook secret'
+  description: 'Feeds the secret word Telegram must echo from the vault into the gateway rule on Otto''s door.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=otto-staging-secret'
+    estate/flux-kustomization: 'otto-staging-secret'
+    estate/path: './platform/otto-staging-secret'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  dependsOn:
+    - component:default/layer-secret-store
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component

@@ -70,7 +70,7 @@ jobs:
           [ -n "$run" ] || { echo "BLIND no pull_request run found for $sha"; exit 0; }
           gh run rerun "$run" --repo "$GITHUB_REPOSITORY" --failed && echo "rerun $run for #$PR at $sha"
   operating-model-gate:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     permissions: { contents: read, pull-requests: write }
     steps:
@@ -109,5 +109,9 @@ jobs:
         # no file never hits while reading as though it does, and one pyyaml wheel is cheaper than
         # the setup-python step that would carry it.
         run: |
+          if [ -z "$PR_NUMBER" ]; then
+            # merge_group run: the queue ref is gh-readonly-queue/<base>/pr-<number>-<sha>
+            PR_NUMBER=$(printf '%s' "$GITHUB_REF" | sed -n 's|.*queue/[^/]*/pr-\([0-9]\{1,\}\)-.*|\1|p')
+          fi
           pip install -q pyyaml
           "$IDP_ROOT/bin/pr-report" "$PR_NUMBER" $COMMENT

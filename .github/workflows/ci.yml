@@ -1,6 +1,9 @@
 name: ci
 on:
   pull_request:
+  # The merge queue builds each queued pull request on top of main and reruns the
+  # required checks against that exact merged state before anything lands.
+  merge_group:
   push:
     # flux/image-updates is the branch image-automation-controller pushes a new catalogue tag to
     # (crew#267). The required checks run on that push, so the pull request that
@@ -135,7 +138,7 @@ jobs:
   verdict-fresh:
     name: verify/verdict-fresh
     needs: fast-gate
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     permissions: { contents: read, actions: read }
     steps:
@@ -145,7 +148,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mapfile -t changed < <(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          BASE="${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || format('origin/{0}', github.base_ref) }}"
+          mapfile -t changed < <(git diff --name-only "$BASE...HEAD")
           bin/idp-verdict-fresh langfuse --changed "${changed[@]}"
 
   bdd-suites:

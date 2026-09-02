@@ -1,0 +1,28 @@
+# The bitwarden-sdk-server chart (v0.6.0) bakes its probes into the template (/live and
+# /ready over HTTPS) and exposes security-context values, both set in
+# platform/secrets/external-secrets.yaml - so those policies are satisfied, not excepted.
+# The one thing the chart has no key for is a priorityClassName; this exception carries it,
+# the same shape as the cert-manager cainjector one (platform/edge/cert-manager.yaml).
+# The chart sets fullnameOverride: bitwarden-sdk-server, so that is the workload's name.
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: bitwarden-sdk-server-priority-class
+  namespace: kyverno
+spec:
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+            - Deployment
+            - ReplicaSet
+          namespaces:
+            - external-secrets
+          names:
+            - bitwarden-sdk-server*
+  exceptions:
+    - policyName: require-priority-class
+      ruleNames:
+        - platform-workload-names-a-class
+        - autogen-platform-workload-names-a-class

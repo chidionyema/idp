@@ -127,6 +127,28 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: founder-dashboards
+  title: "Dashboards (Superset)"
+  description: "Boardroom view of the traces in Langfuse: drill down into prompt, response, cost and latency across all calls, build custom charts and dashboards, share insights with the team. Sign-in is single, from the estate login. Query Langfuse data directly and save dashboard definitions to Superset's own database."
+  annotations:
+    estate/group: "Watch"
+    idp/updated-by: "Flux from platform/observability; dashboards read Langfuse data live"
+  tags: [founder, screen]
+  links:
+    - title: "Open"
+      url: "https://superset.${ESTATE_ZONE}"
+      icon: dashboard
+    - title: "Health"
+      url: "https://superset.${ESTATE_ZONE}/health"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: founder-telemetry
   title: "Telemetry (SigNoz)"
   description: "Every workload's traces, metrics and logs land here. The telemetry-coverage receipt in the cluster check is the count of pods this store has seen; the alert rules are declared against it. This is the one tool that asks for a second sign-in: SigNoz's community edition has no single sign-on, so the estate login gets you to its door and its own account gets you in. Prometheus and Alertmanager run beside it with no web page of their own, and Grafana is switched off on purpose so there is one place to look, not two."
@@ -456,7 +478,7 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: founder-store
-  title: "The store (mumchimp)"
+  title: "The store, live (mumchimp)"
   description: "The one place a customer pays this estate: the storefront and the Medusa API behind it. Revenue is read by the crew science outcomes script. No API health link here: the api hostname answers 404 on every path, so the Medusa API is not published there; the link returns when mumchimp-medusa publishes one."
   annotations:
     estate/group: "Companies"
@@ -677,8 +699,8 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: company-mumchimp
-  title: "Mumchimp: the store"
-  description: "Everything that takes a customer's money: the storefront, its API, the cluster it runs on and the jobs that keep it up. Open it to see every product and asset the store owns, and what is red."
+  title: "Mumchimp — our company: the store, and Prospector, its idea engine"
+  description: "One company. The storefront, its API and everything that takes a customer's money — and Prospector, the business-idea and prospect engine it grew from. The two read as one company; the catalogue's deeper split merges on the founder's word."
   annotations:
     estate/group: "Companies"
     idp/updated-by: "bin/catalog-gen builds the company tree under this card from the inventory, four times a day"
@@ -697,12 +719,12 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: company-prospector
-  title: "Prospector: finds and qualifies prospects"
+  title: "Prospector: finds and qualifies prospects (part of mumchimp)"
   description: "The product you sell, whatever the platform under it does. Open it to see its repositories, its jobs and its data, and what is red."
   annotations:
-    estate/group: "Companies"
+    estate/group: "Products"
     idp/updated-by: "bin/catalog-gen builds the company tree under this card from the inventory, four times a day"
-  tags: [founder, company]
+  tags: [founder, product]
   links:
     - title: "Open (everything this company owns)"
       url: "https://catalogue.${ESTATE_ZONE}/catalog/default/domain/prospector"
@@ -717,12 +739,12 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: company-hermes
-  title: "Hermes: acts for you from anywhere"
-  description: "Telegram in, a pull request or a run out. Open it to see the gateway, its schedules and its receipts, and what is red."
+  title: "Hermes: our product that acts for you from anywhere"
+  description: "Telegram in, a pull request or a run out. Open it to see the gateway, its schedules and its receipts, and what is red. A product, not a company."
   annotations:
-    estate/group: "Companies"
+    estate/group: "Products"
     idp/updated-by: "bin/catalog-gen builds the company tree under this card from the inventory, four times a day"
-  tags: [founder, company]
+  tags: [founder, product]
   links:
     - title: "Open (everything this company owns)"
       url: "https://catalogue.${ESTATE_ZONE}/catalog/default/domain/hermes-v2"
@@ -780,6 +802,34 @@ spec:
   type: founder-surface
   lifecycle: production
   owner: group:default/platform
+---
+# crew#716 CP1: the estate's scheduler now runs on the cluster instead of the Mac.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: estate-scheduler
+  title: "Scheduler (Dagster, on the cluster)"
+  description: "The estate's clock: every scheduled job, its last run and its next run, on the cluster instead of the founder's laptop."
+  annotations:
+    github.com/project-slug: chidionyema/idp
+    backstage.io/source-location: url:https://github.com/chidionyema/idp/tree/main/platform/dagster/
+    estate/group: "Run"
+    backstage.io/kubernetes-id: estate-scheduler
+    backstage.io/kubernetes-namespace: dagster
+    idp/updated-by: "Flux from platform/dagster"
+  tags: [founder]
+  links:
+    - title: "Dagster UI"
+      url: "https://catalogue.${ESTATE_ZONE}/catalog/default/component/estate-scheduler"
+      icon: dashboard
+    - title: "Where this is tracked"
+      url: "https://github.com/chidionyema/crew/issues/716"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component

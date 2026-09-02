@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "estate:intent:workload",
+  "title": "Workload capability intent",
+  "description": "Diamond Standard (founder 2026-09-01): an agent asks for the capability of running a container, and nothing else. Fields for the DNS zone, the image registry, the cloud provider, the namespace layout or the collector endpoint do not exist here on purpose: the agent cannot hallucinate a literal because there is nowhere to put it. bin/intent-compile merges this intent with the estate DNA (clusters/*/estate-config.yaml) and emits the manifests deterministically.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["capability", "name", "component", "purpose"],
+  "properties": {
+    "capability": { "const": "workload" },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,40}$",
+      "description": "what the thing is called everywhere: namespace, labels, service"
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 300,
+      "description": "one plain-English sentence a buyer's engineer understands"
+    },
+    "component": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,40}$",
+      "description": "the image basename; the registry is estate DNA the agent never sees"
+    },
+    "port": { "type": "integer", "minimum": 1024, "maximum": 65535 },
+    "public_host": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,30}$",
+      "description": "subdomain slug only; the zone is estate DNA"
+    },
+    "env": {
+      "type": "object",
+      "maxProperties": 20,
+      "additionalProperties": { "type": "string", "maxLength": 200 },
+      "description": "plain values only, never secrets and never estate names; the compiler injects observability and estate endpoints itself"
+    },
+    "replicas": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 6,
+      "description": "two is the floor: every routed surface survives one node (founder 2026-08-28)"
+    },
+    "size": { "enum": ["s", "m", "l"], "description": "resource preset; the numbers are estate DNA" }
+  }
+}

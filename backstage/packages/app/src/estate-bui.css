@@ -1,0 +1,37 @@
+/* Backstage UI tokens for this portal (https://backstage.io/docs/conf/user-interface/).
+   Official CSS-variable overlay, not a second design system. Colours match
+   packages/app/src/modules/theme/tokens.ts. */
+
+:root {
+  --bui-bg-app: #ffffff;
+  --bui-bg-neutral-1: #f9fafb;
+  --bui-bg-neutral-2: #ffffff;
+  --bui-bg-neutral-3: #f2f4f7;
+  --bui-fg-primary: #0b0c0e;
+  --bui-fg-secondary: #4a515c;
+  --bui-accent-bg: #175cd3;
+  --bui-accent-fg: #ffffff;
+  --bui-bg-solid: #0b0c0e;
+  --bui-fg-solid: #ffffff;
+  --bui-radius-3: 12px;
+  --bui-font-regular: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+[data-theme='dark'],
+.dark {
+  --bui-bg-app: #0b0c0e;
+  --bui-bg-neutral-1: #121316;
+  --bui-bg-neutral-2: #17191d;
+  --bui-bg-neutral-3: #1c1f24;
+  --bui-fg-primary: #f2f4f7;
+  --bui-fg-secondary: #a8afba;
+  --bui-accent-bg: #4c8dff;
+  --bui-accent-fg: #0b0c0e;
+  --bui-bg-solid: #f2f4f7;
+  --bui-fg-solid: #0b0c0e;
+}
+
+/* Catalogue feed: the sidebar stays; the table uses the content pane. */
+.BackstageContent-root:has(.MuiTable-root) {
+  max-width: none;
+}

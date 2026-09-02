@@ -36,3 +36,13 @@ spec:
           selector:
             matchLabels:
               acme.cert-manager.io/http01-solver: "true"
+      # crew#805 tier 3 (2026-09-02): the one-hour buyer sandbox is a vCluster; its syncer
+      # mints host Services at runtime (its DNS, anything a guest deploys inside) that cannot
+      # carry a catalogue label any more than the ACME solver can. The sandbox's own door (the
+      # control-plane Service) still carries backstage.io/kubernetes-id via its HelmRelease
+      # postRenderer, the namespace expires by the cleanup controller's clock, and nothing in
+      # it is a door a person opens from the portal. Pin:
+      # tests/test_demo_sandbox_is_defined_and_expires.py.
+      - resources:
+          kinds: [Service]
+          namespaces: [demo-sandbox]

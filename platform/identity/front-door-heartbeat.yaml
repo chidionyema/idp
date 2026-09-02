@@ -1,4 +1,4 @@
-# The front door's pulse, on the estate's own clock (idp#229, crew#307).
+# The front door's pulse, on the estate's own clock.
 #
 # login-drill.yml carried a "*/5" cron and a 20-minute heartbeat in oke-check. Measured
 # 2026-08-27 over the last 30 runs: 3 came from the cron, 17 from pushes, 10 from dispatches,

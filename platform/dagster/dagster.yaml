@@ -1,0 +1,487 @@
+# THE ESTATE SCHEDULER (crew#716): Dagster on the cluster instead of the Mac.
+#
+# Dagster chart 1.13.19 / app 1.13.19. The scheduler runs the estate's scheduled jobs
+# (science, catalogue) and serves the UI at DAGSTER_GRAPHQL_URL. The user-code deployment
+# (estate-scheduler) loads scheduler/workspace.yaml and the facts location from the crew checkout.
+# crew#716 CP1: the Mac scheduler moves onto the cluster; CP2 will add the postgres backup.
+#
+# WHY DAGSTER. The estate already runs it (Mac scheduler), it serves every use case the founder
+# has today (hourly CronJobs, scheduled science runs, the facts source), and it has a first-party
+# Helm chart that bundles postgres. One tool instead of stitching: the headline's rule.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: dagster
+  namespace: dagster
+spec:
+  interval: 24h
+  url: https://dagster-io.github.io/helm
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: dagster
+  namespace: dagster
+spec:
+  interval: 10m
+  timeout: 15m
+  chart:
+    spec:
+      chart: dagster
+      version: "1.13.19"
+      sourceRef:
+        kind: HelmRepository
+        name: dagster
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # Internal name: dagster. The webserver Service is dagster-dagster-webserver.dagster.svc:80.
+    global:
+      postgresqlSecretName: dagster-postgresql-secret
+      generatePostgresqlPasswordSecret: true
+      # Chart 1.13.19 generates the celery config Secret only under CeleryK8sRunLauncher
+      # (templates/secret-celery-config.yaml), and this estate runs K8sRunLauncher, so the
+      # Secret can never exist. An empty name stops every template rendering a reference to
+      # it (deployment-user.yaml line 1 guards on the name). The scheduler pod sat in
+      # CreateContainerConfigError on exactly this: secret "dagster-celery-config-secret"
+      # not found (2026-09-02T15:2xZ).
+      celeryConfigSecretName: ""
+
+    imagePullSecrets:
+      - name: ghcr-pull
+
+    postgresql:
+      enabled: true
+      image:
+        registry: docker.io
+        repository: library/postgres
+        tag: "14.6"
+        pullPolicy: IfNotPresent
+      persistence:
+        enabled: true
+        size: 5Gi
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 250m
+          memory: 512Mi
+      podSecurityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+
+    dagsterWebserver:
+      # The chart default (docker.io/dagster/dagster-celery-k8s) publishes no arm64 build and
+      # every node is arm64 (kubelet ErrImagePull, 2026-09-02T15:2xZ). The estate-scheduler
+      # image is built for both machine kinds by build-multiarch.yml and carries
+      # dagster-webserver, so it serves the webserver and daemon too. Record:
+      # docs/reference/policy/dagster-arm64-images.md
+      image:
+        repository: ghcr.io/chidionyema/estate-scheduler
+        tag: "main-3357-d1f0d6fc88a3f9513f7e784509e8b059667dc2ad" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
+        pullPolicy: IfNotPresent
+      # crew#555: founder-facing namespace, so 2 replicas. The chart exposes replicaCount but
+      # no spread or strategy value for the webserver; the spread is a postRenderer patch below,
+      # in the estate's standard shape (litellm, oauth2-proxy: DoNotSchedule on hostname).
+      replicaCount: 2
+      # The chart's init containers (check-db-ready, init-user-deployment) carry no resources
+      # of their own and require-requests-limits judges every container.
+      initContainerResources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+      resources:
+        requests:
+          cpu: 100m
+          memory: 512Mi
+        limits:
+          cpu: 250m
+          memory: 1Gi
+      podSecurityContext:
+        runAsNonRoot: true
+        # The chart's check-db-ready init container runs the postgres image, which declares no
+        # USER, so runAsNonRoot alone is a kubelet refusal at start ("image will run as root",
+        # events 2026-09-02T14:1xZ). uid 999 is proven by the postgresql pod above running 1/1.
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      readinessProbe:
+        httpGet:
+          path: /server_info
+          port: 3000
+      service:
+        type: ClusterIP
+        # The image runs non-root (uid 999 above) and a non-root process cannot bind a
+        # port under 1024: the webserver died at start binding 0.0.0.0:80 with
+        # "[Errno 13] permission denied" (pod log, 2026-09-02T18:1xZ). The chart serves
+        # on this value (container -p, containerPort and Service alike), so the bind
+        # moves to 3000; the postRenderer patch at the bottom keeps the Service
+        # answering on 80 outside, where every consumer knocks (Backstage names
+        # dagster-dagster-webserver.dagster.svc:80).
+        port: 3000
+
+    dagsterDaemon:
+      enabled: true
+      # The chart default (docker.io/dagster/dagster-celery-k8s) publishes no arm64 build and
+      # every node is arm64 (kubelet ErrImagePull, 2026-09-02T15:2xZ). The estate-scheduler
+      # image is built for both machine kinds by build-multiarch.yml and carries
+      # dagster-webserver, so it serves the webserver and daemon too. Record:
+      # docs/reference/policy/dagster-arm64-images.md
+      image:
+        repository: ghcr.io/chidionyema/estate-scheduler
+        tag: "main-3357-d1f0d6fc88a3f9513f7e784509e8b059667dc2ad" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
+        pullPolicy: IfNotPresent
+      initContainerResources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+      # require-pod-probes needs a daemon probe, and chart 1.13.19 renders this block verbatim
+      # (templates/deployment-daemon.yaml toYaml's it), so the handler must be spelled out here:
+      # a probe without one is refused by the API server (incident 2026-09-01, HelmRelease Failed).
+      livenessProbe:
+        exec:
+          command:
+            - dagster-daemon
+            - liveness-check
+        initialDelaySeconds: 60
+        periodSeconds: 30
+        timeoutSeconds: 10
+        failureThreshold: 3
+      resources:
+        requests:
+          cpu: 100m
+          memory: 384Mi
+        limits:
+          cpu: 250m
+          memory: 768Mi
+      podSecurityContext:
+        runAsNonRoot: true
+        # The chart's check-db-ready init container runs the postgres image, which declares no
+        # USER, so runAsNonRoot alone is a kubelet refusal at start ("image will run as root",
+        # events 2026-09-02T14:1xZ). uid 999 is proven by the postgresql pod above running 1/1.
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      runCoordinator:
+        enabled: true
+        type: QueuedRunCoordinator
+        config:
+          queuedRunCoordinator:
+            maxConcurrentRuns: 2
+
+    runLauncher:
+      type: K8sRunLauncher
+      config:
+        k8sRunLauncher:
+          jobNamespace: dagster
+          imagePullPolicy: IfNotPresent
+          loadInclusterConfig: true
+          envSecrets: []
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 250m
+              memory: 1Gi
+          runK8sConfig:
+            podSpecConfig:
+              securityContext:
+                runAsNonRoot: true
+                # Same non-numeric-user refusal class as the code server above.
+                runAsUser: 999
+                runAsGroup: 999
+                seccompProfile:
+                  type: RuntimeDefault
+              priorityClassName: platform-batch
+            containerConfig:
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+            podTemplateSpecMetadata:
+              labels:
+                backstage.io/kubernetes-id: estate-scheduler
+
+    # The daemon writes a telemetry id into DAGSTER_HOME at boot; that directory is a
+    # read-only mount here, so boot died with PermissionError (.telemetry, 2026-09-02T16:4xZ).
+    telemetry:
+      enabled: false
+
+    dagster-user-deployments:
+      enabled: true
+      # The subchart falls back to its own default when the global name is empty
+      # (deployment-user.yaml line 1: global | default local), so both are blanked.
+      celeryConfigSecretName: ""
+      imagePullSecrets:
+        - name: ghcr-pull
+      deployments:
+        - name: estate-scheduler
+          image:
+            repository: ghcr.io/chidionyema/estate-scheduler
+            tag: "main-3357-d1f0d6fc88a3f9513f7e784509e8b059667dc2ad" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
+            pullPolicy: IfNotPresent
+          dagsterApiGrpcArgs:
+            - "-h"
+            - "0.0.0.0"
+            - "-p"
+            - "3030"
+            - "-m"
+            - "estate_scheduler.definitions"
+          port: 3030
+          includeConfigInLaunchedRuns:
+            enabled: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: 250m
+              memory: 768Mi
+          podSecurityContext:
+            runAsNonRoot: true
+            # The image's USER is the name "scheduler"; the kubelet cannot verify a
+            # name is non-root and refuses the container ("non-numeric user",
+            # events 2026-09-02T16:4xZ). A numeric uid ends the check.
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          # Founder instruction 2026-09-02: give Python enough time to boot. The
+          # deployments key is a LIST and helm never merges list entries, so the bare
+          # `enabled: true` that sat here replaced the chart's whole probe block and the
+          # timings fell to the Kubernetes defaults -- a 1-second timeout the CPU-limited
+          # `dagster api grpc-health-check` CLI can never meet ("Readiness probe failed:
+          # command timed out", events 2026-09-02T18:5xZ). The pod was never Ready and
+          # every helm upgrade stalled on it.
+          # Measured 2026-09-02T19:2xZ in-pod: the exec CLI's HEALTHY path takes 5s wall
+          # at the 250m CPU limit, so the founder set timeoutSeconds 30. The handler is
+          # spelled out as the chart's own exec command ON PURPOSE: the chart copies only
+          # the known timing fields from this block and silently DROPS any other handler
+          # key (a kubelet-native `grpc:` probe placed here never reached the cluster,
+          # measured on the rendered Deployment 2026-09-02T19:4xZ), so the values must
+          # say exactly what the chart renders or this file lies to the reader.
+          livenessProbe:
+            exec:
+              command: ["dagster", "api", "grpc-health-check", "-p", "3030"]
+            timeoutSeconds: 30
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            enabled: true
+            exec:
+              command: ["dagster", "api", "grpc-health-check", "-p", "3030"]
+            timeoutSeconds: 30
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
+          # crew#555 at admission, founder order 2026-09-02 (oke-check run 33618879684): the
+          # dagster namespace is founder-facing, so every Deployment runs 2 replicas spread
+          # across nodes. The chart exposes all three levers for a user deployment. The
+          # strategy block is crew#307's other half: hard hostname anti-affinity means a surge
+          # pod can never place beside a replica, so the roll must free a node first --
+          # maxUnavailable 1, maxSurge 0 -- or the default 25%/25% deadlocks silently.
+          replicaCount: 2
+          deploymentStrategy:
+            type: RollingUpdate
+            rollingUpdate:
+              maxUnavailable: 1
+              maxSurge: 0
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      deployment: estate-scheduler
+
+  # CPU request total: 100m (postgresql) + 2x100m (webserver) + 100m (daemon) + 50m (runLauncher) + 2x100m (user-deploy) = 650m standing (crew#555: webserver and user-deploy run 2 replicas)
+  # The postRenderers add the priorityClassName, security contexts and labels the chart does not expose.
+  postRenderers:
+    - kustomize:
+        images:
+          # Every image names its registry host. The nodes run cri-o with short-name mode enforcing
+          # (crew#284, crew#396): a reference without a registry host is admitted then fails to pull.
+          - name: docker.io/busybox
+            newName: docker.io/busybox
+          - name: docker.io/bitnami/minideb
+            newName: docker.io/bitnami/minideb
+        patches:
+          # Every Deployment and StatefulSet gets platform-batch priority (the estate's batch tier).
+          - target:
+              kind: Deployment
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: not-used-kustomize-matches-on-target
+              spec:
+                template:
+                  spec:
+                    priorityClassName: platform-batch
+                    securityContext:
+                      seccompProfile:
+                        type: RuntimeDefault
+          - target:
+              kind: StatefulSet
+            patch: |
+              apiVersion: apps/v1
+              kind: StatefulSet
+              metadata:
+                name: not-used-kustomize-matches-on-target
+              spec:
+                template:
+                  spec:
+                    priorityClassName: platform-batch
+                    # The postgres subchart exposes no securityContext values at all; the whole
+                    # non-root story is written here. uid/gid 999 is the postgres user baked into
+                    # docker.io/library/postgres; fsGroup 999 overrides the chart's 1001 so the
+                    # PV is group-writable to the uid that actually runs.
+                    securityContext:
+                      seccompProfile:
+                        type: RuntimeDefault
+                      runAsNonRoot: true
+                      runAsUser: 999
+                      runAsGroup: 999
+                      fsGroup: 999
+          # Container-level security context where the chart does not set it.
+          - target:
+              kind: Deployment
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/securityContext
+                value:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                      - ALL
+          - target:
+              kind: StatefulSet
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/securityContext
+                value:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                      - ALL
+          # The postgres subchart hard-codes a root init container (init-chmod-data,
+          # bitnami/minideb, runAsUser 0) whose only job is chowning the data dir to 1001.
+          # fsGroup 999 in the pod securityContext does the same job without root, so the
+          # container is removed and the pod runs wholly non-root -- which is what
+          # require-run-as-nonroot, require-run-as-non-root-user, disallow-privilege-escalation,
+          # disallow-capabilities-strict and drop-all-capabilities all refused it for.
+          - target:
+              kind: StatefulSet
+              name: dagster-postgresql
+            patch: |
+              - op: remove
+                path: /spec/template/spec/initContainers
+          # crew#555 (founder order 2026-09-02): the webserver must spread across nodes and the
+          # chart offers no values key for it. DoNotSchedule, not preferred: best-effort spread
+          # collapses onto one node exactly when the cluster is tight (platform/llm/litellm.yaml).
+          # No strategy patch needed: a spread constraint at maxSkew 1 admits the surge pod
+          # (2 on one node vs 1 is skew 1), unlike hard anti-affinity.
+          - target:
+              kind: Deployment
+              name: dagster-dagster-webserver
+            patch: |
+              - op: add
+                path: /spec/template/spec/topologySpreadConstraints
+                value:
+                  - maxSkew: 1
+                    topologyKey: kubernetes.io/hostname
+                    whenUnsatisfiable: DoNotSchedule
+                    labelSelector:
+                      matchLabels:
+                        component: dagster-webserver
+          # Labels for the catalogue: every workload carries its Backstage ID.
+          - target:
+              kind: Deployment
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: not-used-kustomize-matches-on-target
+              spec:
+                template:
+                  metadata:
+                    labels:
+                      backstage.io/kubernetes-id: estate-scheduler
+                      app.kubernetes.io/part-of: idp
+                  spec:
+                    priorityClassName: platform-batch
+          - target:
+              kind: StatefulSet
+            patch: |
+              apiVersion: apps/v1
+              kind: StatefulSet
+              metadata:
+                name: not-used-kustomize-matches-on-target
+              spec:
+                template:
+                  metadata:
+                    labels:
+                      backstage.io/kubernetes-id: estate-scheduler
+                      app.kubernetes.io/part-of: idp
+          - target:
+              kind: Service
+            patch: |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: not-used-kustomize-matches-on-target
+                labels:
+                  backstage.io/kubernetes-id: estate-scheduler
+          # The webserver bind moved to 3000 (non-root cannot hold 80), which also
+          # renders the chart's Service as 3000 -> 3000. Put the front door back:
+          # 80 outside, 3000 inside.
+          - target:
+              kind: Service
+              name: dagster-dagster-webserver
+            patch: |
+              - op: replace
+                path: /spec/ports/0/port
+                value: 80

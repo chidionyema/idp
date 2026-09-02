@@ -284,11 +284,29 @@ else say "FAIL  agnostic cloud-agnostic-gate is not discriminating or the platfo
 
 # crew#269 (founder: "as always configurable"): the DNS zone is one value in clusters/*/estate-config.yaml;
 # a platform file naming it as a literal fails. Proved both ways on fixtures, then run on the repo.
+# crew#796 (founder 2026-09-01, P0: "can't ever happen again ... PR rejection"): the same gate grades a
+# pull-request diff (bin/pr-report) and any other checkout (name-drift.yml); the diff mode is proved
+# both ways here too, so a rule that never refuses anything cannot land.
 if ! ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" >/dev/null 2>&1 \
    && ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/good" python3 "$IDP/bin/estate-zone-gate" >/dev/null 2>&1 \
+   && ! ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" --diff "$IDP/tests/fixtures/estate-zone/added-literal.diff" >/dev/null 2>&1 \
+   && ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" --diff "$IDP/tests/fixtures/estate-zone/added-substituted.diff" >/dev/null 2>&1 \
+   && ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" --diff "$IDP/tests/fixtures/estate-zone/added-self-marker.diff" >/dev/null 2>&1 \
    && out=$(python3 "$IDP/bin/estate-zone-gate" 2>&1); then
-  say "ok    zone     estate-zone-gate refuses a literal zone, permits \${ESTATE_ZONE}, and the repo is clean"
+  say "ok    zone     estate-zone-gate refuses a literal zone (tree and diff), permits \${ESTATE_ZONE}, and the repo is clean"
 else say "FAIL  zone     estate-zone-gate is not discriminating or the platform names the zone outside clusters/*/estate-config.yaml"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
+# crew#804 Diamond Standard (founder 2026-09-01): agents emit capability intents, the compiler is
+# deterministic. Proved both ways in one run: the bad fixtures (unknown vocabulary, an intent that
+# speaks the zone) are refused, the good ones compile, and two runs are byte-identical.
+ic_a=$(mktemp -d); ic_b=$(mktemp -d)
+if ! python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/bad" --out "$ic_a" >/dev/null 2>&1 \
+   && python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/good" --out "$ic_a" >/dev/null 2>&1 \
+   && python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/good" --out "$ic_b" >/dev/null 2>&1 \
+   && diff -r "$ic_a" "$ic_b" >/dev/null 2>&1; then
+  say "ok    intent   intent-compile refuses unknown vocabulary and a spoken estate name, compiles the good intents, byte-deterministic"
+else say "FAIL  intent   intent-compile is not discriminating or not deterministic"; fail=1; fi
+rm -rf "$ic_a" "$ic_b"
 
 if ! COMPOSE_GLOB='tests/fixtures/ports-bad/*.yml' python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
    && out=$(python3 "$IDP/bin/port-gate" 2>&1); then

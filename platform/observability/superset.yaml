@@ -1,0 +1,242 @@
+# Superset: the boardroom dashboards behind the one login (decision 0018). Metabase is evicted:
+# its open-source edition cannot take the gateway's word for who is signed in (header trust is
+# paid-tier only; community request discourse.metabase.com/t/11475, read 2026-09-02), and the
+# estate standard is that a surface never runs its own login (decision 0003, auth-is-infrastructure).
+# Superset reads the gateway's X-Auth-Request-Email header natively (Flask-AppBuilder
+# AUTH_REMOTE_USER, free) — one sign-in at the front door, nothing inside.
+# Chart 0.22.4 (app 6.1.0), read 2026-09-02 from https://apache.github.io/superset/index.yaml.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: superset
+  namespace: observability
+spec:
+  interval: 24h
+  url: https://apache.github.io/superset
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: superset
+  namespace: observability
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: superset
+      version: "0.22.4"
+      sourceRef:
+        kind: HelmRepository
+        name: superset
+  install:
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3 }
+  values:
+    # apache/superset:6.1.0 ships no postgres driver: gunicorn workers died on
+    # ModuleNotFoundError psycopg2 (28 restarts, exit 3, measured 2026-09-02T14:12Z). The chart's
+    # documented fix is bootstrapScript, sourced before run-server.sh in every superset container
+    # (web and the init job), pinned so the install is reproducible. The install lands in the
+    # writable superset_home volume because the root filesystem is read-only by policy.
+    bootstrapScript: |
+      #!/bin/bash
+      export PYTHONUSERBASE=/app/superset_home/.pyuser
+      pip install --no-cache-dir --user psycopg2-binary==2.9.9
+      export PYTHONPATH=/app/superset_home/.pyuser/lib/python3.10/site-packages:$PYTHONPATH
+    # Values for the superset HelmRelease (superset.yaml, decision 0018). Receipts, all read 2026-09-02:
+    # config.py 6.1.0 defines ADDITIONAL_MIDDLEWARE, ENABLE_PROXY_FIX and reads SUPERSET_SECRET_KEY;
+    # the image runs as user `superset` with HOME=/app/superset_home (Dockerfile); the chart's
+    # values.yaml 0.22.4 carries every key used here. Secrets never ride environment variables
+    # (kyverno-secrets-policy): the vault values are mounted as files and read in configOverrides,
+    # and the chart-generated env Secret carries only the placeholder below.
+    runAsUser: 1000
+    # The namespace enforces the restricted pod-security profile; the chart defaults to root.
+    resources:
+      # require-requests-limits wants CPU+memory requests and a memory limit on every container;
+      # capacity-requests-need-proof (crew#584) refuses a CPU request over 250m without a measured
+      # receipt, so this is the estate shape: a micro request with a burst limit, as metabase ran.
+      # The chart applies this global block to the web and worker containers unless overridden.
+      requests: { cpu: 25m, memory: 1Gi }
+      limits: { cpu: 1000m, memory: 2Gi }
+    supersetNode:
+      replicas:
+        replicaCount: 2   # a routed founder surface survives losing one node (bin/idp-availability-gate)
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: superset
+                  app.kubernetes.io/component: web
+      podSecurityContext:
+        # runAsUser comes from the chart's global runAsUser above; naming it again here
+        # renders the key twice and the offline render refuses the document
+        runAsNonRoot: true
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      strategy:
+        # require-availability a-rollout-can-always-free-a-node (crew#307): with required
+        # hostname anti-affinity a surge pod has no node, so the rollout frees one first.
+        type: RollingUpdate
+        rollingUpdate: { maxUnavailable: 1, maxSurge: 0 }
+      # The chart's default wait-for-postgres initContainer ships no securityContext, and the
+      # restricted namespace refuses any container without one (disallow-privilege-escalation,
+      # drop-all-capabilities). Same /dev/tcp probe as the chart default, plus the contexts.
+      initContainers: &superset-wait-for-postgres
+        - name: wait-for-postgres
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: "{{ .Values.image.pullPolicy }}"
+          envFrom:
+            - secretRef:
+                name: "{{ tpl .Values.envFromSecret . }}"
+          command:
+            - /bin/bash
+            - -c
+            - |
+              SECONDS=0
+              until (exec 3<>/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; do
+                if [ "$SECONDS" -ge 120 ]; then
+                  echo "timeout waiting for postgres after 120s" >&2
+                  exit 1
+                fi
+                sleep 2
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities: { drop: [ALL] }
+            seccompProfile: { type: RuntimeDefault }
+          resources:
+            requests: { cpu: 5m, memory: 128Mi }
+            limits: { memory: 256Mi }
+    supersetWorker:
+      # The chart renders the worker Deployment unconditionally; zero replicas keeps it empty.
+      # No async jobs, no Celery, no redis: the boardroom use is interactive queries only.
+      replicas:
+        enabled: true
+        replicaCount: 0
+      podSecurityContext:
+        # runAsUser comes from the chart's global runAsUser above; naming it again here
+        # renders the key twice and the offline render refuses the document
+        runAsNonRoot: true
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      # Same hardened wait-for-postgres as the web pods (anchor above).
+      initContainers: *superset-wait-for-postgres
+    supersetCeleryBeat:
+      enabled: false
+    init:
+      enabled: true      # runs `superset db upgrade` and `superset init` once per release
+      createAdmin: false # nobody is seeded by password; the gateway's word creates the account (below)
+      loadExamples: false
+      podSecurityContext:
+        # runAsUser comes from the chart's global runAsUser above; naming it again here
+        # renders the key twice and the offline render refuses the document
+        runAsNonRoot: true
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      resources:
+        # `superset db upgrade` is RAM-hungry (chart values.yaml warns it can be OOM-killed)
+        requests: { cpu: 10m, memory: 512Mi }
+        limits: { memory: 1Gi }
+      # Same hardened wait-for-postgres as the web pods (anchor above).
+      initContainers: *superset-wait-for-postgres
+    redis:
+      enabled: false     # CACHE_CONFIG defaults suffice for one founder; no broker, no worker
+    postgresql:
+      enabled: false     # the estate ships its own Postgres (superset-db.yaml), password from the vault
+    database:
+      host: superset-db.observability.svc.cluster.local
+      port: 5432
+      user: superset
+      name: superset
+      # Never the real value: the URI is rebuilt in configOverrides from the mounted vault file, and
+      # a later assignment in superset_config.py wins (configOverrides append at the end of the file).
+      password: "placeholder-real-password-is-a-mounted-file"
+    extraVolumes:
+      - name: vault-secrets
+        secret: { secretName: superset }
+      - name: superset-home
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+    extraVolumeMounts:
+      - { name: vault-secrets, mountPath: /run/secrets/superset, readOnly: true }
+      - { name: superset-home, mountPath: /app/superset_home }
+      - { name: tmp, mountPath: /tmp }
+    configOverrides:
+      estate_identity: |
+        # Decision 0018: the gateway is the only login. Traefik's ForwardAuth overwrites
+        # X-Auth-Request-Email with oauth2-proxy's verdict on every request (authResponseHeaders,
+        # httproute.yaml), so the value is the gateway's word, never the client's. The namespace
+        # default-deny NetworkPolicy means no request reaches this pod except through the gateway.
+        from flask_appbuilder.security.manager import AUTH_REMOTE_USER
+        AUTH_TYPE = AUTH_REMOTE_USER
+        AUTH_USER_REGISTRATION = True
+        # Whoever the front door admits IS the operator: the gateway is the fence, the app holds
+        # no second opinion (docs/policy/auth-is-infrastructure.md).
+        AUTH_USER_REGISTRATION_ROLE = "Admin"
+        class EstateGatewayIdentity:
+            """Copy the gateway's authenticated email into REMOTE_USER for Flask-AppBuilder."""
+            def __init__(self, wsgi_app):
+                self.wsgi_app = wsgi_app
+            def __call__(self, environ, start_response):
+                email = environ.get("HTTP_X_AUTH_REQUEST_EMAIL")
+                if email:
+                    environ["REMOTE_USER"] = email
+                return self.wsgi_app(environ, start_response)
+        ADDITIONAL_MIDDLEWARE = [EstateGatewayIdentity]
+        ENABLE_PROXY_FIX = True
+      estate_secrets: |
+        # Secrets are files (kyverno secrets-not-from-env-vars), mounted by extraVolumes above from
+        # the ExternalSecret `superset` (superset-external-secret.yaml <- the estate vault <- Terraform).
+        def _estate_secret(name):
+            with open(f"/run/secrets/superset/{name}", encoding="utf-8") as fh:
+                return fh.read().strip()
+        SECRET_KEY = _estate_secret("SECRET_KEY")
+        SQLALCHEMY_DATABASE_URI = (
+            "postgresql+psycopg2://superset:"
+            + _estate_secret("DB_PASSWORD")
+            + "@superset-db.observability.svc.cluster.local:5432/superset"
+        )
+      estate_cache: |
+        CACHE_CONFIG = {"CACHE_TYPE": "SimpleCache"}
+        DATA_CACHE_CONFIG = {"CACHE_TYPE": "SimpleCache"}
+  # The portal's Kubernetes plugin reads live pods through this label (crew#459); the chart has
+  # no knob for extra Deployment/Service labels, so they ride a postRenderer like langfuse's.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target: { kind: Deployment, name: superset }
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: superset
+                labels:
+                  backstage.io/kubernetes-id: founder-dashboards
+          - target: { kind: Service, name: superset }
+            patch: |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: superset
+                labels:
+                  backstage.io/kubernetes-id: founder-dashboards

@@ -62,6 +62,17 @@ vendors:
     targets:
       - { entry: litellm-upstream, field: MINIMAX_API_KEY }
       - { entry: prospector-engine-env, field: MINIMAX_API_KEY }
+  kimi:
+    # Moonshot's Kimi (platform.kimi.ai). The vendor documents no key shape (API overview and
+    # list-models pages, read 2026-09-02), so the shape only refuses an empty or malformed paste;
+    # the verify probe is the real proof: GET /v1/models answers 2xx only with a live key.
+    kind: secret
+    secret: SEED_KIMI_API_KEY
+    page: https://platform.kimi.ai/console/api-keys
+    shape: "[A-Za-z0-9_.-]{20,}"
+    verify: { method: GET, url: https://api.moonshot.ai/v1/models, headers: { Authorization: "Bearer {key}" } }
+    targets:
+      - { entry: litellm-upstream, field: MOONSHOT_API_KEY }
   groq:
     kind: secret
     secret: SEED_GROQ_API_KEY
@@ -109,6 +120,23 @@ vendors:
     targets:
       - { entry: hermes-agent-env, field: TELEGRAM_BOT_TOKEN, secret: SEED_TELEGRAM_HERMES_BOT_TOKEN }
       - { entry: flux-telegram, field: token, secret: SEED_TELEGRAM_ALERTS_BOT_TOKEN }
+  apprise_telegram:
+    # The founder's alert channel (root-trust row notify-apprise-founder-telegram). Apprise wants
+    # one URL, tgram://<bottoken>/<chatid>/, but a URL is not gradeable whole: the two halves only
+    # mean something to Telegram together, so this is a PAIR like google_oauth below. `getChat`
+    # grades both in one call: a wrong token is refused outright, a chat the bot cannot see is an
+    # error body. platform/notify/external-secret.yaml composes the tgram:// URL from the two
+    # vault fields, so no secret store ever holds a half-URL.
+    kind: secret
+    pair: true
+    page: https://t.me/BotFather
+    verify:
+      method: GET
+      url: "https://api.telegram.org/bot{token}/getChat?chat_id={chat}"
+      headers: {}
+    targets:
+      - { entry: notify-apprise-founder-telegram, field: token, secret: SEED_TELEGRAM_ALERTS_BOT_TOKEN, shape: "[0-9]{8,10}:[A-Za-z0-9_-]{35}" }
+      - { entry: notify-apprise-founder-telegram, field: chat, secret: SEED_TELEGRAM_ALERTS_CHAT_ID, shape: "-?[0-9]{6,14}" }
   stripe:
     kind: secret
     secret: SEED_STRIPE_SECRET_KEY

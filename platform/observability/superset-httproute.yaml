@@ -1,0 +1,57 @@
+# superset.<zone>: the boardroom dashboard behind the one login (crew#R74 CP1). Same shape as the
+# langfuse route (platform/observability/httproute.yaml): every request is subrequested to oauth2-proxy
+# first through Traefik's ForwardAuth (login-forward-auth middleware defined at namespace level in
+# edge-manners.yaml), which must live in the identity namespace; the /oauth2/ path goes to oauth2-proxy
+# itself (ReferenceGrant in platform/identity). The listener is https-superset on the shared Gateway
+# (prospector-main deploy/k8s/base/edge.yaml).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-dashboards
+  name: superset
+  namespace: observability
+spec:
+  parentRefs:
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-superset
+  hostnames:
+    - "superset.${ESTATE_ZONE}"
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /oauth2/ }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
+        - name: oauth2-proxy
+          namespace: identity
+          port: 80
+    - filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: login-forward-auth
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
+        - name: superset
+          port: 8088

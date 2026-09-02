@@ -1,4 +1,4 @@
-# crew#516 CP5 slice 1 (LAW 50, crew#320): `science-collect` on the Mac reads 41 stores, 31 of them
+# The science collector, `science-collect`, on the Mac reads 41 stores, 31 of them
 # under the laptop's home directory, and every one of them declares `receiver: otlp` in
 # crew science/sources.json. A cluster copy of that script would read paths that do not exist
 # there. The cluster-side truth is what the collector's backend holds: every science row that

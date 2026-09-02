@@ -8,5 +8,6 @@ metadata:
   name: observability
   labels:
     pod-security.kubernetes.io/enforce: restricted
-    idp.estate/edge-attach: "true"   # the shared Gateway selects route namespaces by this label
+    idp.estate/edge-attach: "true"
+    availability.idp/tier: founder-facing  # superset is a routed founder surface (decision 0018)   # the shared Gateway selects route namespaces by this label
     chaos-mesh.org/inject: enabled   # crew#539 DoD 2: the langfuse-alert-drill Schedule fails langfuse-web here

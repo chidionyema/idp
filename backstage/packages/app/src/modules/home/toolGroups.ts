@@ -40,11 +40,10 @@ export const groupTools = (doors: Entity[]): ToolGroup[] => {
     );
 };
 
-/** The first sentence on the page: how many doors, in how many groups, never a bare number. */
+/** The first sentence on the page: how many sign-in pages, in how many groups, never a bare number. */
 export const toolsSentence = (groups: ToolGroup[]): string => {
   const n = groups.reduce((s, g) => s + g.tools.length, 0);
-  if (n === 0) return 'No tools are registered yet; they appear here on their own once a door is listed.';
-  const doors = n === 1 ? 'door' : 'doors';
+  if (n === 0) return 'No tools are registered yet; they appear here on their own once a sign-in page is listed.';
   const gs = groups.length === 1 ? 'group' : 'groups';
-  return `Every tool we use, ${n} ${doors} in ${groups.length} ${gs}; choose one and it opens on your estate login, unless its tile says it asks for a second credential.`;
+  return `Every tool we use, ${n} sign-in ${n===1?'page':'pages'} in ${groups.length} ${gs}; choose one and it opens on your estate login, unless its tile says it asks for a second credential.`;
 };

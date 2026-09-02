@@ -1,0 +1,29 @@
+# The human secret store (decision 0017): Bitwarden Secrets Manager, reached through the
+# bitwarden-sdk-server the external-secrets chart runs in-cluster (platform/secrets/
+# external-secrets.yaml, chart dependency v0.6.0). The organisation and project identifiers are
+# public names and live in the one place names live, clusters/oke/estate-config.yaml (LAW 46);
+# Flux postBuild substitutes them on this row only. The provider is not a cloud vault, so the
+# one-cloud-door admission rule does not apply to it; the cloud door stays estate-vault.
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: human-vault
+spec:
+  provider:
+    bitwardensecretsmanager:
+      apiURL: https://api.bitwarden.com
+      identityURL: https://identity.bitwarden.com
+      bitwardenServerSDKURL: https://bitwarden-sdk-server.external-secrets.svc.cluster.local:9998
+      auth:
+        secretRef:
+          credentials:
+            name: bitwarden-access-token
+            namespace: external-secrets
+            key: token
+      caProvider:
+        type: Secret
+        name: bitwarden-tls-certs
+        namespace: external-secrets
+        key: ca.crt
+      organizationID: "${BITWARDEN_ORG_ID}"
+      projectID: "${BITWARDEN_PROJECT_ID}"

@@ -222,6 +222,38 @@ def _oauth2_proxy_in_front(state: dict) -> None:
             # does not echo it (GHSA-3vpc-7q5r-276h) -- so the route may expose exactly /telegram,
             # and gateway.yaml in the same directory must mint that token in-cluster and hand the
             # adapter its URL. The annotation alone is a label; this is the proof behind it.
+            # Second accepted proof (founder edict 2026-09-02, gateway physics): the route
+            # itself enforces the secret -- every webhook match carries an Exact header
+            # match on X-Telegram-Bot-Api-Secret-Token whose value is a Flux substitution
+            # variable (never a literal, LAW 46), and only GET /healthz shows besides it.
+            rules = d["spec"]["rules"]
+            wh = [
+                r
+                for r in rules
+                if any(
+                    "telegram" in m.get("path", {}).get("value", "")
+                    for m in r.get("matches", [])
+                )
+            ]
+            rest = [m for r in rules if r not in wh for m in r.get("matches", [])]
+            if wh and all(
+                any(
+                    h.get("type") == "Exact"
+                    and h.get("name") == "X-Telegram-Bot-Api-Secret-Token"
+                    and str(h.get("value", "")).startswith("${")
+                    for h in m.get("headers", [])
+                )
+                for r in wh
+                for m in r.get("matches", [])
+            ):
+                assert all(
+                    m.get("path") == {"type": "Exact", "value": "/healthz"}
+                    and m.get("method") == "GET"
+                    for m in rest
+                ), (
+                    f"{p}: header-matched telegram route exposes more than GET /healthz: {rest}"
+                )
+                continue
             paths = [
                 m.get("path", {})
                 for r in d["spec"]["rules"]

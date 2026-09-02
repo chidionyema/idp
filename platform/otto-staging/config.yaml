@@ -1,0 +1,21 @@
+# OTTO_BOOT_CONFIG (deployment.yaml). Nothing secret lives here (LAW 21) -- the token comes
+# through telegram-secret.yaml, never this file.
+#
+# NOT DONE / gap, stated rather than hidden: otto.boot's own config schema had not landed on
+# hermes-v2 main as of this branch (checked live: hermes-v2 branch otto/boot-surface carries
+# otto/gateway, otto/obs, otto/router, otto/spine, otto/surface, otto/memory but no otto/boot
+# package yet). This ConfigMap therefore carries the one fact the fixed deploy contract states
+# (the webhook path) and nothing guessed beyond it. Once otto.boot defines its real config
+# keys, this file is the one to update -- the Deployment's OTTO_BOOT_CONFIG mount path does not
+# change.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otto-staging-boot-config
+  namespace: otto-staging
+data:
+  boot.yaml: |
+    # Placeholder pending otto.boot's own config schema (see the comment above this file in
+    # git). The one thing this deployment's own manifests already commit to:
+    webhook_path: /telegram-webhook
+    health_path: /healthz

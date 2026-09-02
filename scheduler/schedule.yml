@@ -142,7 +142,7 @@ jobs:
     - --enforce
     - --json
     cwd: $IDP
-    description: Evaluates the self-termination rules (KINI spec 5, crew#284 CP6) every five minutes and acts on the verdict; Langfuse blind over blind.halt_after_min or a low-confidence streak stops running sessions, an alert flood posts one signed digest.
+    description: Evaluates the self-termination rules of the KINI spec every five minutes and acts on the verdict; Langfuse blind over blind.halt_after_min or a low-confidence streak stops running sessions, an alert flood posts one signed digest.
     cron: '*/5 * * * *'
     skip_on_battery: false
     timeout_s: 120

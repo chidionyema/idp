@@ -19,6 +19,7 @@ resources:
   - hindsight-exception.yaml
   - robusta-exception.yaml
   - tailscale-operator-exception.yaml
+  - tailscale-egress-exception.yaml
   - external-dns-exception.yaml
   - protect-namespaces.yaml
   # crew#341, wired 2026-08-28 (crew#488 CP5): the file sat here unreferenced since PR #259, so
@@ -38,3 +39,9 @@ resources:
   # (securityContext, seccomp, dropped capabilities, a read-only root, probes); this excuses the
   # last two, which the autoscaler's argv-only node-pool interface makes impossible to satisfy.
   - autoscaler-exception.yaml
+  # crew#716 CP1: the dagster chart passes postgres password through env.valueFrom.secretKeyRef
+  # (DAGSTER_PG_PASSWORD, POSTGRES_PASSWORD); no file form exists without a wrapper.
+  - dagster-exception.yaml
+  # decision 0018: superset's chart-generated env Secret (connection facts, placeholder
+  # password) and its deliberately empty Celery worker; the file says what each excuses.
+  - superset-exception.yaml

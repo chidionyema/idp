@@ -1,0 +1,9 @@
+diff --git a/platform/edge/route.yaml b/platform/edge/route.yaml
+--- a/platform/edge/route.yaml
++++ b/platform/edge/route.yaml
+@@ -1,3 +1,5 @@
+ spec:
+   hostnames:
++    # the old host, catalogue.mumchimp.com, is a comment and comments are not configuration
++    - catalogue.${ESTATE_ZONE}
+     - otto.${ESTATE_ZONE}
