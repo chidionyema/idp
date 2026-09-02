@@ -360,7 +360,7 @@ drills:
 
   - name: merge-queue
     owner: idp
-    workflow: ci.yml
+    workflow: oke-check.yml
     schedule: "17 6 * * *"
     max_age_hours: 26
     pending: true

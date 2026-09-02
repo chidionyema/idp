@@ -1,5 +1,6 @@
 """Binds features/policy/operating-model-offline.feature (crew#286, crew#297). Steps run
 bin/policy-test (conftest over the real fixtures) and bin/pr-report; nothing is mocked."""
+
 import os
 import re
 import subprocess
@@ -25,7 +26,9 @@ def _fixture_present() -> None:
 
 @when("bin/policy-test runs")
 def _policy_test(state: dict) -> None:
-    state["run"] = subprocess.run(["bash", str(IDP / "bin" / "policy-test")], capture_output=True, text=True)
+    state["run"] = subprocess.run(
+        ["bash", str(IDP / "bin" / "policy-test")], capture_output=True, text=True
+    )
     rows = {}
     for line in state["run"].stdout.splitlines():
         m = re.match(r"(opmodel-[\w-]+\.json)\s+(\d)\s+(\d)\s", line)
@@ -34,7 +37,9 @@ def _policy_test(state: dict) -> None:
     state["rows"] = rows
 
 
-@then("every opmodel-* row that expects 0 gets 0 and at least five rows expect and get 1")
+@then(
+    "every opmodel-* row that expects 0 gets 0 and at least five rows expect and get 1"
+)
 def _rows(state: dict) -> None:
     # crew#473: the no-word and unanswered-word fixtures expect 0 since 2026-08-27; the
     # expectation column of bin/policy-test is the spec, and the DENY row must stay a refusal.
@@ -49,12 +54,16 @@ def _rows(state: dict) -> None:
 
 @then("no row's exit code differs from the one it expects")
 def _no_surprise(state: dict) -> None:
-    assert state["run"].returncode == 0 and all(w == g for w, g in state["rows"].values()), state["run"].stdout
+    assert state["run"].returncode == 0 and all(
+        w == g for w, g in state["rows"].values()
+    ), state["run"].stdout
 
 
 @given("the reusable workflow .github/workflows/operating-model-gate.yml")
 def _wf(state: dict) -> None:
-    state["wf"] = (IDP / ".github" / "workflows" / "operating-model-gate.yml").read_text()
+    state["wf"] = (
+        IDP / ".github" / "workflows" / "operating-model-gate.yml"
+    ).read_text()
 
 
 @when("the job is evaluated for a push event")
@@ -62,9 +71,13 @@ def _push() -> None:
     pass
 
 
-@then("the job carries if: github.event_name == 'pull_request' so main stays green")
+@then("the job admits only pull_request and merge_group events so main stays green")
 def _guard(state: dict) -> None:
-    assert re.search(r"^\s+if: github\.event_name == 'pull_request'\s*$", state["wf"], re.M), state["wf"]
+    assert re.search(
+        r"^\s+if: github\.event_name == 'pull_request' \|\| github\.event_name == 'merge_group'\s*$",
+        state["wf"],
+        re.M,
+    ), state["wf"]
 
 
 @given("IDP_ROOT names a directory with no policy/ dir")
@@ -74,7 +87,12 @@ def _no_policy(state: dict, tmp_path: Path) -> None:
 
 @when("bin/pr-report runs")
 def _pr_report(state: dict) -> None:
-    state["run"] = subprocess.run(["bash", str(IDP / "bin" / "pr-report"), "1"], env=state["env"], capture_output=True, text=True)
+    state["run"] = subprocess.run(
+        ["bash", str(IDP / "bin" / "pr-report"), "1"],
+        env=state["env"],
+        capture_output=True,
+        text=True,
+    )
 
 
 @then("it exits 2 with a line starting BLIND")
