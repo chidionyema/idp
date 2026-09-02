@@ -3,14 +3,15 @@
 Two classes of mistake, one file. First: helm never merges list entries. The
 user-deployments entry set a bare `readinessProbe: enabled: true`, which
 replaced the chart's whole probe block, so the timings fell to the Kubernetes
-API defaults -- a 1-second timeout. Second: an exec probe that spawns the
-`dagster` CLI costs a full Python boot per probe; measured in-pod on the 250m
-CPU limit its HEALTHY path takes 5 seconds wall -- equal to its own timeout --
-so an exec probe on a CPU-limited pod can only flap, and the liveness variant
-kills healthy pods. This test refuses both: timings explicit and humane, and
-the handler is the kubelet-native gRPC probe (a millisecond RPC from the
-node), never a spawned process. A probe rendered without any handler is
-refused by the API server (incident 2026-09-01).
+API defaults -- a 1-second timeout the CPU-limited health-check CLI can never
+meet (measured in-pod: its HEALTHY path takes 5 seconds wall at the 250m CPU
+limit, so a 5s timeout also flaps and its liveness variant kills healthy
+pods; the founder set 30). Second: the chart copies only the known timing
+fields from the values probe block and silently drops any other handler key
+-- a kubelet-native `grpc:` probe written here never reached the cluster
+(measured on the rendered Deployment 2026-09-02) -- so the values must spell
+out the exec handler the chart actually renders, on the port the code server
+listens on.
 """
 
 from pathlib import Path
@@ -32,28 +33,30 @@ def test_every_user_deployment_probe_has_explicit_humane_timings():
             probe = dep.get(kind)
             if not probe:
                 continue
-            assert probe.get("timeoutSeconds", 1) >= 5, (
-                f"{dep['name']} {kind} leans on the 1s Kubernetes default timeout"
+            assert probe.get("timeoutSeconds", 1) >= 30, (
+                f"{dep['name']} {kind} timeout is under the founder-set 30s; "
+                "the health-check CLI's healthy path alone takes 5s wall at "
+                "the 250m CPU limit"
             )
             assert probe.get("initialDelaySeconds", 0) >= 30, (
                 f"{dep['name']} {kind} probes before Python can possibly have booted"
             )
 
 
-def test_the_probe_spawns_no_process():
+def test_the_probe_handler_is_one_the_chart_renders():
     for dep in deployments():
         for kind in ("readinessProbe", "livenessProbe"):
             probe = dep.get(kind)
             if not probe:
                 continue
-            assert "exec" not in probe, (
-                f"{dep['name']} {kind} spawns a process per probe; measured "
-                "2026-09-02: the CLI's healthy path takes 5s wall at the 250m "
-                "CPU limit, equal to its own timeout, so it can only flap"
+            assert "grpc" not in probe and "httpGet" not in probe, (
+                f"{dep['name']} {kind} carries a handler the chart silently "
+                "drops (only known timing fields and exec survive rendering, "
+                "measured on the Deployment 2026-09-02); the values would lie"
             )
-            assert "grpc" in probe, (
-                f"{dep['name']} {kind} names no handler; a probe rendered "
-                "without one is refused by the API server (incident 2026-09-01)"
+            assert "exec" in probe, (
+                f"{dep['name']} {kind} spells out no exec handler; the values "
+                "must say exactly what the chart renders"
             )
 
 
@@ -62,9 +65,9 @@ def test_the_probe_knocks_on_the_code_server_port():
         port = dep.get("port", 3030)
         for kind in ("readinessProbe", "livenessProbe"):
             probe = dep.get(kind) or {}
-            grpc_port = probe.get("grpc", {}).get("port")
-            if grpc_port is not None:
-                assert str(grpc_port) == str(port), (
-                    f"{dep['name']} {kind} knocks on {grpc_port} but the code "
-                    f"server listens on {port}"
+            cmd = probe.get("exec", {}).get("command", [])
+            if cmd:
+                assert str(port) in [str(c) for c in cmd], (
+                    f"{dep['name']} {kind} checks {cmd} but the code server "
+                    f"listens on {port}"
                 )
