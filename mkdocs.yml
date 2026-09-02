@@ -59,6 +59,7 @@ nav:
   - Demo:
       - The Demo Standard: demo/demo-standard.md
       - Buyer sandbox (one hour): demo/demo-sandbox.md
+      - Merge queue (hands-free landing): demo/merge-queue.md
       - Catalogue links: demo/catalog-links.md
       - Drill evidence: demo/drill-evidence.md
       - Estate compiler recording: demo/intent-compiler.md
@@ -133,6 +134,7 @@ nav:
   - Onboarding:
       - The Demo Standard: onboarding/demo-standard.md
       - Buyer sandbox (one hour): onboarding/demo-sandbox.md
+      - Merge queue (hands-free landing): onboarding/merge-queue.md
       - Catalogue links: onboarding/catalog-links.md
       - Drill evidence: onboarding/drill-evidence.md
       - Estate compiler recording: onboarding/intent-compiler.md
@@ -213,6 +215,7 @@ nav:
   - Runbooks:
       - What these are: runbooks/index.md
       - Buyer sandbox (one hour): runbooks/demo-sandbox.md
+      - Merge queue (hands-free landing): runbooks/merge-queue.md
       - Estate clock: runbooks/dagster.md
       - Estate inventory: runbooks/estate-inventory.md
       - Infrastructure crew: runbooks/infra-crew.md
