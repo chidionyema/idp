@@ -43,10 +43,8 @@ spec:
     global:
       postgresqlSecretName: dagster-postgresql-secret
       generatePostgresqlPasswordSecret: true
-
     imagePullSecrets:
       - name: ghcr-pull
-
     postgresql:
       enabled: true
       image:
@@ -76,7 +74,6 @@ spec:
         capabilities:
           drop:
             - ALL
-
     dagsterWebserver:
       replicaCount: 1
       # The chart's init containers (check-db-ready, init-user-deployment) carry no resources
@@ -110,7 +107,6 @@ spec:
           port: 80
       service:
         type: ClusterIP
-
     dagsterDaemon:
       enabled: true
       initContainerResources:
@@ -154,7 +150,6 @@ spec:
         config:
           queuedRunCoordinator:
             maxConcurrentRuns: 2
-
     runLauncher:
       type: K8sRunLauncher
       config:
@@ -186,7 +181,6 @@ spec:
             podTemplateSpecMetadata:
               labels:
                 backstage.io/kubernetes-id: estate-scheduler
-
     dagster-user-deployments:
       enabled: true
       imagePullSecrets:
@@ -195,7 +189,7 @@ spec:
         - name: estate-scheduler
           image:
             repository: ghcr.io/chidionyema/estate-scheduler
-            tag: "main-0-0000000000000000000000000000000000000000" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
+            tag: "main-3226-d3f9dbcdfaab7c5c0437e96e04997ad3c1d810b4" # {"$imagepolicy": "flux-system:estate-scheduler:tag"}
             pullPolicy: IfNotPresent
           dagsterApiGrpcArgs:
             - "-h"
@@ -225,7 +219,6 @@ spec:
                 - ALL
           readinessProbe:
             enabled: true
-
   # CPU request total: 100m (postgresql) + 100m (webserver) + 100m (daemon) + 50m (runLauncher) + 100m (user-deploy) = 450m
   # The postRenderers add the priorityClassName, security contexts and labels the chart does not expose.
   postRenderers:
