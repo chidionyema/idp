@@ -52,7 +52,7 @@ settings that disagree with the image.
 
 - The code server and launched-run pods set `runAsNonRoot` with no numeric uid.
   The image names its user (`scheduler`), and the kubelet refuses what it
-  cannot verify: "container has runAsNonRoot and image has non-numeric user".
+  cannot verify: "container has runAsNonRoot and image has non-numeric user."
   Every `runAsNonRoot` in the release now carries `runAsUser: 999`.
 - The daemon crashed writing a telemetry id into its home directory, which is a
   read-only mount here. Telemetry is off in the release values.
