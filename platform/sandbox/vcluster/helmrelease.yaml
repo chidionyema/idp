@@ -1,7 +1,7 @@
 # vCluster OSS 0.36.1 — the sandbox control plane. Every value below answers an admission
 # policy or an estate pin, verified against the vendor's published chart values 2026-09-02:
 #   image: the chart default points at the paid build; the OSS build is pinned explicitly.
-#   cpu request 200m: the capacity policy refuses anything over 250m without approval.
+#   cpu request 40m: a borrowed-headroom demo, burstable (no cpu limit); under the 250m fence.
 #   persistence off: a one-hour sandbox keeps no state; a pod restart resets it, by design.
 #   interval 10m: the one estate drift value (clusters/oke/kustomization.yaml, crew#727).
 #   Service label: the catalogue policy requires backstage.io/kubernetes-id on Services.
@@ -62,7 +62,11 @@ spec:
           repository: loft-sh/vcluster-oss
         resources:
           requests:
-            cpu: 200m
+            # A one-hour demo reserves almost nothing: the standing-capacity budget
+            # (tests/test_incident_crew584_capacity_requests_need_proof.py, 6.9 cores)
+            # guards what runs around the clock, and the sandbox borrows idle headroom
+            # instead — no cpu limit is set, so it bursts to whatever the node has free.
+            cpu: 40m
             memory: 512Mi
           limits:
             memory: 2Gi
