@@ -56,6 +56,7 @@ nav:
       - explanation/index.md
       - Founder self-service, the field (crew#66): explanation/founder-self-service-research.md
       - Otto on the founder's Mac, the setup and the friction (crew#561): explanation/otto-on-the-mac.md
+      - "Otto: the commercial install map, 2026-09-02": explanation/otto-commercial-install-map-2026-09-02.md
   - Demo:
       - Portal: tutorials/demo/idp.md
       - Estate compiler: tutorials/demo/intent.md

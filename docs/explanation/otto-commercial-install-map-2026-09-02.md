@@ -148,6 +148,6 @@ There is none. Not fragile — absent:
 
 Platform sweep, product sweep and records inventory: session 54539261 task outputs,
 2026-09-02. Peer lane record: `origin/docs/self-service-tenancy` @ d838734a. Related:
-`docs/security-audit-2026-09-02.md` (feat/security-end-to-end) — three of its findings
+`docs/reference/security-audit-2026-09-02.md` (feat/security-end-to-end) — three of its findings
 (hermes CI `@main`, the unpinned cross-repo gate, the imperative vault entry) reappear
 here as commercial-readiness defects.
