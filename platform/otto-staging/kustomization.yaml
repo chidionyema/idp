@@ -17,4 +17,4 @@ resources:
   - availability.yaml
 images:
   - name: ghcr.io/chidionyema/hermes-agent
-    newTag: main-58-0b9c24164b2b9d36c591e0391c97c9c41eaa95a3
+    newTag: main-62-62e3830e633a8ca23e822a4210c1bd0f88d71364
