@@ -37,3 +37,19 @@ holds only the Tailscale pair.
 
 `tests/test_incident_tailscale_dockerhub_rate_limit.py` fails any change that points
 either Tailscale image back at Docker Hub.
+
+## Reload loop follow-up (2026-09-02, same day)
+
+With images fixed, both proxy StatefulSets still rolled forever: pods started,
+then were killed one to two seconds later, 689 generations deep. Two control
+loops were fighting. The estate's auto-reload policy annotates every workload
+at admission, and Reloader then restarts a workload when a Secret it references
+changes — but the tailscale proxy *writes its own state Secret on every boot*.
+Reload-on-self-write is a perpetual motion machine, and the tailscale operator
+reverting the injected env made it a two-front war.
+
+The fix follows the policy's own scope note: the mutation now excludes the
+`tailscale` namespace, because the operator owns config rollout there and the
+workload authors its own config.
+
+Guard: `tests/test_incident_tailscale_reload_loop.py`.

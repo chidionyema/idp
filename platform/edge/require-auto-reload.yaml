@@ -57,7 +57,14 @@ spec:
       exclude:
         any:
           - resources:
-              namespaces: [kube-system, flux-system, kyverno, cert-manager, spire-mgmt, metrics-server, reloader, keda, external-secrets]
+              # tailscale is excluded for a different reason than the machinery above: the
+              # proxy pod WRITES its own state Secret on every boot, and that Secret is also
+              # mounted by its StatefulSet. Auto-reload on a self-written Secret is a perpetual
+              # motion machine -- measured 2026-09-02T16:5xZ as 689 StatefulSet generations,
+              # pods killed 1-2 seconds after start, while the tailscale operator reverted the
+              # injected env in a second loop. The operator owns those StatefulSets; config
+              # rollout there is the operator's job, not Reloader's.
+              namespaces: [kube-system, flux-system, kyverno, cert-manager, spire-mgmt, metrics-server, reloader, keda, external-secrets, tailscale]
       mutate:
         patchStrategicMerge:
           metadata:
