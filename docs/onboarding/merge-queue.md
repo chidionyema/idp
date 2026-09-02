@@ -4,17 +4,20 @@ The repository merges its own pull requests. Your job ends at green.
 
 - **What you do:** push the branch, open the pull request, fix anything red,
   then queue it: `gh pr merge <number> --squash --auto`. Done.
-- **What the machine does:** the queue builds your change on top of the latest
-  main, reruns the required checks against that exact merged state, and lands
-  it squash-merged with the branch deleted. If several pull requests are
-  queued it tests them together and lands them in order.
+- **What the machine does:** lands the pull request squash-merged with the
+  branch deleted the moment every required check passes, with zero reviews
+  required. On an organization-owned repository the armed queue additionally
+  rebuilds your change on top of the latest main and reruns the required
+  checks against that exact merged state before landing it.
 - **What the founder does:** nothing, unless something fails. The founder
-  handles exceptions — a queue entry that cannot rebase, a drift alert — and
+  handles exceptions — a check that will not go green, a drift alert — and
   never green-lights routine merges.
-- **When the queue says no:** your entry is removed and the pull request gets
-  a comment saying which check failed in the queued state. Fix, push, queue
-  again.
+- **When the landing says no:** read
+  `gh pr view <number> --json mergeStateStatus,statusCheckRollup`, fix the red
+  check or rebase a `DIRTY` branch, push, and the armed automatic merge fires by
+  itself.
 
-The queue's own settings live in git at
+The queue's declared settings live in git at
 `platform/github/ruleset.idp.merge-queue.json`; `bin/repo-rulesets --apply`
-is the only way they change.
+is the only way they change. The availability note and the bridge live in
+`docs/runbooks/merge-queue.md`.
