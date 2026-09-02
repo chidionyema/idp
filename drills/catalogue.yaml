@@ -346,3 +346,14 @@ drills:
       The main branch of every repository the estate App can see is free of hardcoded estate
       names: the gate refuses its bad fixture before grading anyone, then grades every clone,
       so a literal that reaches any main is a red row within six hours, never a silent drift.
+
+  - name: demo-sandbox
+    owner: idp
+    workflow: oke-check.yml
+    job: demo-sandbox
+    schedule: "17 6 * * *"
+    max_age_hours: 26
+    pending: true
+    proves: >-
+      The one-hour buyer sandbox launches from its folder, comes Ready, and its expiry label is
+      honoured by the cleanup controller, so a diligence demo works the day it is asked for .

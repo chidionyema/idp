@@ -17,3 +17,11 @@ The `shots/` folder in the artifact holds one picture per requested page, named 
 ## What it proves
 
 Each picture shows the page as the signed-in drill user saw it, after the page painted. Because the drill fails when a page is blank, a picture existing at all is proof the page rendered with real content.
+
+## Watch it
+
+The machines record this demo from the real drill configuration on every relevant
+push (`demos/drill-evidence.tape`), so the picture below can never show something
+the software no longer does:
+
+![The sign-in drill's shape and its passing test, recorded by the machines](../demos/drill-evidence.gif)

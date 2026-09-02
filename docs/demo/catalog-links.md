@@ -10,3 +10,11 @@ route manifests to learn the two hostnames, and it grants the traces link only t
 manifests actually project tracing keys into their pods — so a link never points at traces
 that were never sent. Regenerate with `bin/catalog-platform`; the check mode fails the build
 when the committed file drifts from what the cluster manifests say.
+
+## Watch it
+
+The machines record this demo from the real generator on every relevant push
+(`demos/catalog-links.tape`), so the picture below can never show something the
+software no longer does:
+
+![The catalogue generating from real inventory, recorded by the machines](../demos/catalog-links.gif)

@@ -32,3 +32,12 @@ Every schedule follows the same pattern:
 ## Accessing from the Mac screen
 
 Before this move, Dagster was reached through the Mac screen at port 3210. Now it runs on the cluster and the catalogue provides a direct link to the component.
+
+## Watch it
+
+The machines record the scheduler's paper trail from the real generator on every
+relevant push (`demos/dagster.tape`): the generated clocks table, the check that
+fails when it goes stale, and the declared row the cluster applies from git. The
+recording appears after the first green render and refreshes itself:
+
+![The estate scheduler's clocks table and its declared row, recorded by the machines](../demos/dagster.gif)
