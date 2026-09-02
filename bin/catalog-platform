@@ -68,6 +68,11 @@ SYSTEMS = {
 
 # kustomization name -> (area, plain title, one sentence)
 LAYERS = {
+    "demo-sandbox": (
+        "products",
+        "Buyer sandbox",
+        "A one-hour throwaway cluster inside the cluster for a buyer's engineer; launched by hand from the runbook, reaped by the platform when the hour is up.",
+    ),
     "notify": (
         "observability",
         "Notification fan-out",
@@ -332,13 +337,31 @@ LAYERS = {
 }
 
 
+# Layers launched by hand, on purpose, so they never sit in clusters/<cluster>/*.yaml: the buyer
+# sandbox is created imperatively by the founder (docs/runbooks/demo-sandbox.md) and reaped on a
+# one-hour timer. The catalogue still records it -- the launch stamps exactly the label the
+# selector below matches, so the page lights up while the sandbox lives and reads empty after.
+IMPERATIVE = [
+    {
+        "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+        "kind": "Kustomization",
+        "metadata": {"name": "demo-sandbox"},
+        "spec": {"path": "./platform/sandbox/vcluster"},
+    },
+]
+
+
 def kustomizations():
     rows = []
     for f in sorted(glob.glob(os.path.join(ROOT, "clusters", CLUSTER, "*.yaml"))):
         for d in yaml.safe_load_all(open(f)):
-            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit"):
+            if (
+                d
+                and d.get("kind") == "Kustomization"
+                and str(d.get("apiVersion", "")).startswith("kustomize.toolkit")
+            ):
                 rows.append(d)
-    return rows
+    return rows + [dict(r) for r in IMPERATIVE]
 
 
 def q(s):
@@ -363,7 +386,11 @@ def http_hostnames(src):
             if d.get("kind") == "HTTPRoute":
                 hosts += (d.get("spec") or {}).get("hostnames", [])
             elif d.get("kind") == "Ingress":
-                hosts += [rule["host"] for rule in (d.get("spec") or {}).get("rules", []) if rule.get("host")]
+                hosts += [
+                    rule["host"]
+                    for rule in (d.get("spec") or {}).get("rules", [])
+                    if rule.get("host")
+                ]
     return sorted(set(hosts))
 
 

@@ -34,6 +34,9 @@ spec:
       namespace: dagster
     - kind: HelmRelease
       name: "*"
+      namespace: demo-sandbox
+    - kind: HelmRelease
+      name: "*"
       namespace: edge
     - kind: HelmRelease
       name: "*"

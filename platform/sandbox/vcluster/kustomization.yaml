@@ -1,0 +1,12 @@
+# The tier 3 buyer sandbox (crew#805): a throwaway cluster-in-a-cluster a buyer's engineer
+# can hold for one hour. DELIBERATELY not listed in clusters/oke/kustomization.yaml — the
+# estate root never applies this folder. The founder launches it as one imperative Flux row
+# carrying the kyverno time-to-live label (docs/runbooks/demo-sandbox.md); when the kyverno
+# cleanup controller deletes that row on schedule, Flux prune sweeps everything here except
+# the marked namespace below. Pin: tests/test_demo_sandbox_is_defined_and_expires.py.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - helmrepository.yaml
+  - helmrelease.yaml

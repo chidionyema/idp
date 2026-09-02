@@ -1,0 +1,156 @@
+# vCluster OSS 0.36.1 — the sandbox control plane. Every value below answers an admission
+# policy or an estate pin, verified against the vendor's published chart values 2026-09-02:
+#   image: the chart default points at the paid build; the OSS build is pinned explicitly.
+#   cpu request 15m: a borrowed-headroom demo, burstable (no cpu limit); under the 250m fence.
+#   persistence off: a one-hour sandbox keeps no state; a pod restart resets it, by design.
+#   interval 10m: the one estate drift value (clusters/oke/kustomization.yaml, crew#727).
+#   Service label: the catalogue policy requires backstage.io/kubernetes-id on Services.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: demo-sandbox
+  namespace: demo-sandbox
+spec:
+  interval: 10m
+  timeout: 10m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: vcluster
+      version: 0.36.1
+      sourceRef:
+        kind: HelmRepository
+        name: loft
+  postRenderers:
+    - kustomize:
+        patches:
+          # The chart offers no value for the init container's security context (verified
+          # against the vendor's published values 2026-09-02); admission requires it.
+          - target:
+              kind: Deployment
+              name: demo-sandbox
+            patch: |-
+              - op: add
+                path: /spec/template/spec/initContainers/0/securityContext
+                value:
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: true
+                  capabilities:
+                    drop:
+                      - ALL
+                  runAsNonRoot: true
+                  runAsUser: 12345
+                  runAsGroup: 12345
+                  seccompProfile:
+                    type: RuntimeDefault
+          - target:
+              kind: Service
+            patch: |-
+              - op: add
+                path: /metadata/labels/backstage.io~1kubernetes-id
+                value: demo-sandbox
+  values:
+    controlPlane:
+      statefulSet:
+        image:
+          registry: ghcr.io
+          repository: loft-sh/vcluster-oss
+        resources:
+          requests:
+            # A one-hour demo reserves almost nothing: the standing-capacity budget
+            # (tests/test_incident_crew584_capacity_requests_need_proof.py, 6.9 cores)
+            # guards what runs around the clock, and the sandbox borrows idle headroom
+            # instead — no cpu limit is set, so it bursts to whatever the node has free.
+            cpu: 15m
+            memory: 512Mi
+          limits:
+            memory: 2Gi
+        # The chart default runs the control plane as root (vendor values: runAsUser 0).
+        # The estate refuses root, missing seccomp, and escalation at admission; this is
+        # the vendor's documented rootless profile (uid 12345).
+        security:
+          podSecurityContext:
+            runAsNonRoot: true
+            runAsUser: 12345
+            runAsGroup: 12345
+            fsGroup: 12345
+            seccompProfile:
+              type: RuntimeDefault
+          containerSecurityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 12345
+            runAsGroup: 12345
+            seccompProfile:
+              type: RuntimeDefault
+        persistence:
+          volumeClaim:
+            enabled: false
+    experimental:
+      deploy:
+        vcluster:
+          manifests: |-
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: demo
+            ---
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: demo-shop
+              namespace: demo
+            spec:
+              replicas: 1
+              selector:
+                matchLabels:
+                  app: demo-shop
+              template:
+                metadata:
+                  labels:
+                    app: demo-shop
+                spec:
+                  securityContext:
+                    runAsNonRoot: true
+                    runAsUser: 101
+                    seccompProfile:
+                      type: RuntimeDefault
+                  containers:
+                    - name: web
+                      image: docker.io/nginxinc/nginx-unprivileged:1.27-alpine
+                      ports:
+                        - containerPort: 8080
+                      securityContext:
+                        allowPrivilegeEscalation: false
+                        capabilities:
+                          drop:
+                            - ALL
+                      resources:
+                        requests:
+                          cpu: 50m
+                          memory: 64Mi
+                        limits:
+                          memory: 128Mi
+            ---
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: demo-shop
+              namespace: demo
+              labels:
+                backstage.io/kubernetes-id: demo-sandbox
+            spec:
+              selector:
+                app: demo-shop
+              ports:
+                - port: 80
+                  targetPort: 8080

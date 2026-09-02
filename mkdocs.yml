@@ -57,6 +57,13 @@ nav:
       - Founder self-service, the field (crew#66): explanation/founder-self-service-research.md
       - Otto on the founder's Mac, the setup and the friction (crew#561): explanation/otto-on-the-mac.md
   - Demo:
+      - The Demo Standard: demo/demo-standard.md
+      - Buyer sandbox (one hour): demo/demo-sandbox.md
+      - Catalogue links: demo/catalog-links.md
+      - Drill evidence: demo/drill-evidence.md
+      - Estate compiler recording: demo/intent-compiler.md
+      - Estate clock recording: demo/dagster.md
+      - Dashboards recording: demo/metabase.md
       - Portal: tutorials/demo/idp.md
       - Estate compiler: tutorials/demo/intent.md
       - Conscience: tutorials/demo/conscience.md
@@ -124,6 +131,13 @@ nav:
       - Money: tutorials/demo/commerce.md
       - Customer sign-in: tutorials/demo/customer-identity.md
   - Onboarding:
+      - The Demo Standard: onboarding/demo-standard.md
+      - Buyer sandbox (one hour): onboarding/demo-sandbox.md
+      - Catalogue links: onboarding/catalog-links.md
+      - Drill evidence: onboarding/drill-evidence.md
+      - Estate compiler recording: onboarding/intent-compiler.md
+      - Estate clock recording: onboarding/dagster.md
+      - Dashboards recording: onboarding/metabase.md
       - Trace matrix: how-to/onboarding/trace-matrix.md
       - Namespace fences: how-to/onboarding/ns-fence-gate.md
       - Portal: how-to/onboarding/idp.md
@@ -196,3 +210,11 @@ nav:
       - Founder god's view: how-to/onboarding/estate-founder.md
       - Incident register: how-to/onboarding/incident-register.md
       - Estate clocks: how-to/onboarding/estate-clocks.md
+  - Runbooks:
+      - What these are: runbooks/index.md
+      - Buyer sandbox (one hour): runbooks/demo-sandbox.md
+      - Estate clock: runbooks/dagster.md
+      - Estate inventory: runbooks/estate-inventory.md
+      - Infrastructure crew: runbooks/infra-crew.md
+      - Infrastructure crew identity: runbooks/infra-crew-identity.md
+      - Otto's Telegram webhook: runbooks/otto-telegram-webhook.md

@@ -495,3 +495,48 @@ decisions:
           portability:         {score: 4, evidence: "https://github.com/temporalio/temporal/blob/main/LICENSE"}                     # MIT; but data lives in its own Cassandra/Postgres schema
           operability:         {score: 2, evidence: "https://docs.temporal.io/self-hosted-guide/setup"}                             # four services plus a database to size and patch
           cost:                {score: 2, evidence: "https://docs.temporal.io/self-hosted-guide/production-checklist"}               # multi-service footprint on a 4-6 OCPU cluster budget
+
+  - slug: demo-sandbox
+    requirement: "a buyer's engineer gets a real cluster to poke for one hour, launched by the founder with one command, expiring by machinery, costing nothing while idle (crew#805 tier 3)"
+    date: 2026-09-02
+    status: proposed
+    next_review: 2026-09-16
+    decision: vcluster-oss   # 470 vs namespace-sandbox 420 vs second-cluster 320; the gap is outside tie_band 25, so the matrix builds the top score. Proposed until the founder's APPROVE on the pull request that lands it becomes the receipt.
+    reviews: []
+    candidates:
+      vcluster-oss:
+        note: "vCluster OSS 0.36.1 as a HelmRelease inside the existing cluster: a throwaway control plane with cluster-scoped freedom, reaped on a one-hour TTL, burstable on idle headroom"
+        scores:
+          first_time_user:     {score: 5, evidence: "docs/runbooks/demo-sandbox.md"}                                                # one command launches it, one command connects
+          founder_experience:  {score: 5, evidence: "docs/onboarding/demo-sandbox.md"}                                              # he types one line; the platform cleans up without him
+          feature_parity:      {score: 5, evidence: "https://www.vcluster.com/docs/vcluster/introduction/architecture"}             # a real API server: CRDs, RBAC, namespaces, the lot
+          ecosystem_fit:       {score: 5, evidence: "platform/sandbox/vcluster/helmrelease.yaml"}                                   # rides the estate's Flux, admission policies and catalogue
+          maturity:            {score: 4, evidence: "https://github.com/loft-sh/vcluster"}                                          # CNCF-adjacent, widely deployed, active vendor
+          security_by_default: {score: 4, evidence: "platform/sandbox/vcluster/helmrelease.yaml"}                                   # rootless profile pinned; chart default was root
+          portability:         {score: 5, evidence: "https://github.com/loft-sh/vcluster/blob/main/LICENSE"}                        # Apache-2.0, runs on any conformant cluster
+          operability:         {score: 5, evidence: "platform/sandbox/vcluster/kustomization.yaml"}                                 # one HelmRelease; the TTL reaper is the whole lifecycle
+          cost:                {score: 5, evidence: "platform/sandbox/vcluster/helmrelease.yaml"}                                   # $0 licence; 15m paper, bursts on idle headroom  
+      namespace-sandbox:
+        note: "a plain namespace with quota and RBAC: cheapest possible sandbox, but the engineer hits the walls (no CRDs, no cluster roles) in the first ten minutes"
+        scores:
+          first_time_user:     {score: 4, evidence: "https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/"} # kubectl works at once, inside the fence
+          founder_experience:  {score: 4, evidence: "https://kubernetes.io/docs/concepts/policy/resource-quotas/"}                   # one manifest, but he fields the "can I install a CRD?" question
+          feature_parity:      {score: 2, evidence: "https://kubernetes.io/docs/concepts/security/rbac-good-practices/"}             # no cluster-scoped objects; diligence stops at the wall
+          ecosystem_fit:       {score: 5, evidence: "https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/"} # nothing new on the layer at all
+          maturity:            {score: 5, evidence: "https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/"} # plain Kubernetes
+          security_by_default: {score: 4, evidence: "https://kubernetes.io/docs/concepts/security/pod-security-admission/"}          # the estate's own admission already fences it
+          portability:         {score: 5, evidence: "https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/"} # everywhere Kubernetes is
+          operability:         {score: 4, evidence: "https://kubernetes.io/docs/concepts/policy/resource-quotas/"}                   # quota plus TTL, but RBAC edge cases accumulate
+          cost:                {score: 5, evidence: "https://kubernetes.io/docs/concepts/policy/resource-quotas/"}                   # nothing runs until the buyer deploys
+      second-cluster:
+        note: "a second real OKE cluster provisioned for the demo: full fidelity, but a second estate to keep honest and recurring node cost for an hour of use"
+        scores:
+          first_time_user:     {score: 3, evidence: "https://docs.oracle.com/en-us/iaas/Content/ContEng/Concepts/contengoverview.htm"} # real cluster, but minutes of provisioning first
+          founder_experience:  {score: 2, evidence: "https://docs.oracle.com/en-us/iaas/Content/ContEng/Concepts/contengoverview.htm"} # provisioning, kubeconfig hand-off, teardown on him
+          feature_parity:      {score: 5, evidence: "https://docs.oracle.com/en-us/iaas/Content/ContEng/Concepts/contengoverview.htm"} # it is simply a cluster
+          ecosystem_fit:       {score: 2, evidence: "clusters/oke/kustomization.yaml"}                                                 # none of the estate's guards or catalogue reach it
+          maturity:            {score: 5, evidence: "https://docs.oracle.com/en-us/iaas/Content/ContEng/Concepts/contengoverview.htm"} # managed Kubernetes
+          security_by_default: {score: 3, evidence: "https://docs.oracle.com/en-us/iaas/Content/ContEng/Concepts/contengsecurity.htm"} # fresh cluster ships without the estate's admission wall
+          portability:         {score: 4, evidence: "https://docs.oracle.com/en-us/iaas/Content/ContEng/Concepts/contengoverview.htm"} # portable pattern, provider-shaped provisioning
+          operability:         {score: 2, evidence: "https://docs.oracle.com/en-us/iaas/Content/ContEng/Concepts/contengoverview.htm"} # a second control plane to patch and watch
+          cost:                {score: 1, evidence: "https://www.oracle.com/cloud/price-list/"}                                        # nodes bill whether the buyer shows up or not

@@ -407,6 +407,27 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-demo-sandbox
+  title: 'Buyer sandbox'
+  description: 'A one-hour throwaway cluster inside the cluster for a buyer''s engineer; launched by hand from the runbook, reaped by the platform when the hour is up.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=demo-sandbox'
+    estate/flux-kustomization: 'demo-sandbox'
+    estate/path: './platform/sandbox/vcluster'
+    estate/cluster: 'oke'
+  tags: [platform, products]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: products
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-dns
   title: 'DNS'
   description: 'Every hostname the estate answers to, managed from git.'

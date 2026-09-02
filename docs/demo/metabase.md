@@ -14,3 +14,12 @@ Metabase reads Langfuse data and lets the founder build dashboards and explore t
 ## What it proves
 
 The dashboard connects to the live Langfuse database and reads trace data without a separate pipeline. Every call through the router is immediately queryable: no latency, no batch job, the same data Langfuse shows, with the flexibility to group, filter and chart however the founder needs.
+
+## Watch it
+
+The machines record the dashboard layer's declaration from the real manifests on
+every relevant push (`demos/metabase.tape`): the five files, the public door behind
+the one estate login, and the declared floor that survives losing a node. The
+recording appears after the first green render and refreshes itself:
+
+![The dashboard layer declared in git, recorded by the machines](../demos/metabase.gif)
