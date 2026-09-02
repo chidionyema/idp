@@ -209,6 +209,9 @@ spec:
             podSpecConfig:
               securityContext:
                 runAsNonRoot: true
+                # Same non-numeric-user refusal class as the code server above.
+                runAsUser: 999
+                runAsGroup: 999
                 seccompProfile:
                   type: RuntimeDefault
               priorityClassName: platform-batch
@@ -253,6 +256,12 @@ spec:
               memory: 768Mi
           podSecurityContext:
             runAsNonRoot: true
+            # The image's USER is the name "scheduler"; the kubelet cannot verify a
+            # name is non-root and refuses the container ("non-numeric user",
+            # events 2026-09-02T16:4xZ). A numeric uid ends the check.
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
             seccompProfile:
               type: RuntimeDefault
           securityContext:
