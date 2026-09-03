@@ -72,21 +72,35 @@ person clicking is, so the invite can be signed to them.
 8. Any later message from that chat is routed to that tenant. A message from an unbound chat
    gets one sentence telling the sender to connect through the portal, and nothing else.
 
-### A.3 Data
+### A.3 Data — most of which is already built, do not build it again
 
-`ChannelBinding`, one row per bound chat, stored in the estate's existing state store, never
-in a file:
+**`platform/otto-gateway/` already implements this.** It is a complete layer in git, with its
+own Postgres, a seeded `channel_binding` table and a route of `/webhook/<channel>`, and it has
+never been applied to the cluster because its Flux row carries `suspend: true`. Anyone
+building piece A starts by reading that layer, not by designing a store.
 
-| Field | Notes |
+The table as `platform/otto-gateway/binding-seed.yaml` declares it, primary key
+`(channel, external_id)`:
+
+| Column | Notes |
 |---|---|
-| `chat_id` | Telegram chat id. Primary key with `channel`. |
-| `channel` | `telegram` today. The column exists so Slack and WhatsApp cost a row, not a rewrite. |
 | `tenant_id` | Matches an `OttoTenant` name. |
-| `bound_by` | Telegram user id that redeemed the invite. |
-| `bound_at`, `revoked_at` | Revocation is a write, never a delete. |
+| `channel` | `telegram` today. The column is why Slack costs a row, not a rewrite. |
+| `external_id` | The chat as the channel knows it. |
+| `secret_ref` | A pointer into the vault. Never the credential. |
+| `token_fingerprint` | One-way. A dumped table leaks nothing. |
+| `status` | Revocation is a write, never a delete. |
+| `created_at` | When the chat was connected. |
 
-Invites are stored only as `jti` plus `redeemed_at`, so replay is refused without keeping the
-token itself.
+Two additions this spec does need, and they are the only schema work:
+
+- `bound_by`, the channel user id that redeemed the invite, so a binding can be attributed.
+- An `invite` table holding `jti` and `redeemed_at` only, so replay is refused without the
+  token itself ever being stored.
+
+The same definition lives in `otto/ingress/store.py`, and
+`tests/test_otto_gateway_manifests_are_releasable.py` is the control that stops the two
+drifting. Any column added here is added in both places or that test fails, which is correct.
 
 ### A.4 Refusals, all of which are tested
 
@@ -194,7 +208,7 @@ as it is and becomes tenant zero later, in its own change.
 | CP0 | Rulings in §9 answered and recorded | Three answers on the issue |
 | CP1 | Login payload verification and invite minting, as a library with tests | The five refusals in §A.4 are tested and red without the code |
 | CP2 | Connect service and portal button | A person binds a chat end to end on the estate bot, no token seen |
-| CP3 | `ChannelBinding` storage, routing by binding, unbound-chat refusal | A message from a bound chat reaches its tenant; unbound gets the one sentence |
+| CP3 | Wake `platform/otto-gateway`, add `bound_by` and the invite table, prove routing by binding and the unbound-chat refusal | A message from a bound chat reaches its tenant; unbound gets the one sentence. Waking the layer needs §9 R3, because it wakes with the event-bus row and costs 0.10 cores. |
 | CP4 | XRD and Composition, one tenant provisioned by hand | `OttoTenant` created, pod answers on its host |
 | CP5 | Connect service creates the `OttoTenant` on sign-up | Sign-up to answering bot with no human step |
 | CP6 | Drill row, the 60-second measurement, and the runbook section deleted | Drill green three consecutive runs |
@@ -205,8 +219,27 @@ as it is and becomes tenant zero later, in its own change.
    bot per tenant with the client still meeting BotFather. This spec assumes one bot.
 2. **R2, Crossplane.** Approve adding Crossplane to the estate for the tenant API, or take
    the `kro` fallback, or the generated-Kustomization fallback.
-3. **R3, capacity.** A tenant costs roughly the `otto-golden` profile. The standing CPU budget
-   is already at its ceiling, so the first tenant needs headroom bought or the budget raised.
+3. **R3, capacity.** Two separate asks. Waking `platform/otto-gateway` costs 0.10 cores against
+   a platform already asking 6.90 of the 6.9 the guard allows, and it wakes together with the
+   suspended `event-bus` row. Each tenant after that costs roughly the `otto-golden` profile.
+   Both need headroom bought or the budget raised.
+
+---
+
+## 10. What already exists, so it is not built twice
+
+| Piece | State | Where |
+|---|---|---|
+| The door itself, one path per channel | Written, never applied | `platform/otto-gateway/` |
+| `channel_binding` table and its seed row | Written | `platform/otto-gateway/binding-seed.yaml` |
+| Per-tenant pod shape, quota, route, network policy | Written for one tenant | `platform/otto-golden/` is the reference profile |
+| Model lane keys minted by code | Working | `platform/otto-golden/router-key.yaml` |
+| Webhook self-repair every five minutes | Working | `platform/otto-golden/registration-reconciler.yaml` |
+| Signed-invite connect flow | **Missing** | this spec, §3 |
+| Tenant provisioning API | **Missing** | this spec, §4 |
+
+The wiring of the three existing Otto layers is mapped in
+`docs/explanation/the-three-ottos.md`. Read it before CP1.
 
 ---
 
