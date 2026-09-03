@@ -93,6 +93,7 @@ spec:
             - |
               set -eu
               export OTTO_TELEGRAM_BOT_TOKEN="$(cat /run/secrets/otto-staging-telegram/OTTO_TELEGRAM_BOT_TOKEN)"
+              export LITELLM_API_KEY="$(cat /run/secrets/otto-golden-router-key/LITELLM_API_KEY)"
               exec python -m otto.boot
           env:
             - name: OTTO_BOOT_PORT
@@ -159,6 +160,9 @@ spec:
             - name: telegram-token
               mountPath: /run/secrets/otto-staging-telegram
               readOnly: true
+            - name: router-key
+              mountPath: /run/secrets/otto-golden-router-key
+              readOnly: true
       volumes:
         - name: tmp
           emptyDir: {}
@@ -166,3 +170,5 @@ spec:
           configMap: { name: otto-golden-boot-config }
         - name: telegram-token
           secret: { secretName: otto-staging-telegram }
+        - name: router-key
+          secret: { secretName: otto-golden-router-key }
