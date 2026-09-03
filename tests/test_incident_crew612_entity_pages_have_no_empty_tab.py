@@ -71,7 +71,8 @@ def _extension_config():
     for item in app["app"]["extensions"]:
         if isinstance(item, dict):
             (name, body), = item.items()
-            out[name] = (body or {}).get("config") or {}
+            # `extension: true|false` is Backstage's own on/off shape; it carries no config.
+            out[name] = (body.get("config") if isinstance(body, dict) else None) or {}
     return out
 
 

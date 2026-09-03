@@ -1129,7 +1129,7 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
         <p className={classes.hDesc}>{SECTIONS.doors.blurb}</p>
         {estate.doors.length === 0 ? (
           <p className={classes.note} data-testid="no-surfaces">
-            No doors yet. Doors appear here on their own once they are
+            No sign-in pages yet. They appear here on their own once they are
             registered.
           </p>
         ) : (

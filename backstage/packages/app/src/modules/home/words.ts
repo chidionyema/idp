@@ -34,7 +34,7 @@ export type PageWords = {
 export const PAGE: PageWords = {
   title: 'The Bytesync estate',
   tagline:
-    'This is every service of software we run and every door we sign in through, read live from the machines that run them.',
+    'This is every service of software we run and every page we sign in through, read live from the machines that run them.',
   liveLabel: (readAtClock: string) => `Live: read at ${readAtClock}`,
   notLive: (why: string) => endStop(`Not live: ${why}`),
   notLivePlain:
@@ -181,7 +181,7 @@ export const SECTIONS: {
       'Every service of software we run, grouped by the job it does; open a group to see each service and how it is doing.',
   },
   doors: {
-    title: 'Doors',
+    title: 'Sign-in pages',
     blurb:
       'The places you sign in to; choose one and it opens in a new tab, already knowing who you are.',
   },
@@ -206,7 +206,7 @@ export const OPEN_WORD = 'Open';
  */
 export const INVENTORY_WORDS: Record<string, { one: string; many: string }> = {
   'Component/platform-layer': { one: 'service', many: 'services' },
-  'Component/founder-surface': { one: 'door', many: 'doors' },
+  'Component/founder-surface': { one: 'sign-in page', many: 'sign-in pages' },
   'Component/flux-row': { one: 'deployment row', many: 'deployment rows' },
   'Component/helm-chart': { one: 'chart', many: 'charts' },
   'Component/service': { one: 'app', many: 'apps' },
@@ -244,12 +244,13 @@ export function inventoryWord(
 export const everythingSentence = (n: number) =>
   n === 1 ? 'We hold 1 thing.' : `We hold ${n} things.`;
 
-export type GlossaryTerm = 'service' | 'door' | 'system' | 'cluster';
+export type GlossaryTerm = 'service' | 'sign-in page' | 'system' | 'cluster';
 
 export const GLOSSARY: Record<GlossaryTerm, string> = {
   service:
     'A service is one running service of our software. Some screens call it a layer; it means the same thing.',
-  door: 'A door is somewhere you sign in, such as the place we keep code or the screen for a tool we pay for.',
+  'sign-in page':
+    'A sign-in page is somewhere you sign in, such as the place we keep code or the screen for a tool we pay for.',
   system: 'A system is a group of services that work together to do one job.',
   cluster:
     'A cluster is the set of machines that runs our software and tells us whether each service is working.',

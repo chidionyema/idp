@@ -40,7 +40,11 @@ TRACE_JSON = "docs/trace-matrix.json"
 # crew#740: the estate-inventory workflow writes these two onto the same branch. This render
 # force-pushes the branch from origin/main, so they are checked out from origin first and staged
 # with the rest; otherwise every render would drop the Ops tile's data.
+# crew#786: the Mac sessions publish docs/FEED.md (and an hourly docs/NEXT.md) from feed-guard;
+# the render carries both across renders, reads FEED.md as estate-next's input, and re-renders
+# NEXT.md from it, so a published page is never older than the last render.
 CARRIED = ["docs/inventory.json", "docs/inventory.md"]
+CARRIED += ["docs/FEED.md", "docs/NEXT.md"]  # the feed and its answer ride the same carry (crew#786)
 INV = Path(os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json"))
 
 
@@ -76,8 +80,8 @@ def reexec_from_worktree(driver: Path, on_main: Path, argv: list[str]) -> None:
     os.execv(sys.executable, [sys.executable, str(on_main), *argv])
 
 
-def sh(cmd: list[str], cwd: Path, timeout: int = 120) -> tuple[int, str]:
-    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+def sh(cmd: list[str], cwd: Path, timeout: int = 120, env: dict | None = None) -> tuple[int, str]:
+    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env)
     return p.returncode, (p.stdout + p.stderr).strip()
 
 
@@ -118,7 +122,21 @@ def main(argv: list[str]) -> int:
     step("estate-diagram", [sys.executable, str(WT / "bin" / "estate-diagram")], WT)
     # crew#474: the graded page, red rows first, from the same catalogue in the same run.
     # crew#403 CP6: planned / blocking / when, before the showcase so its bar can quote it.
-    step("estate-next", [sys.executable, str(WT / "bin" / "estate-next")], WT)
+    # crew#786: the Mac sessions publish docs/FEED.md and docs/NEXT.md from feed-guard. The render
+    # carries them. Before calling estate-next, check out the carried files from the previous branch
+    # and use the carried FEED.md as input if it exists and is non-empty (fall back to bucket copy).
+    carried_feed = WT / "docs" / "FEED.md"
+    # the Mac sessions publish docs/FEED.md (and an hourly docs/NEXT.md as a stop-gap) to the
+    # state branch; the render never overwrites FEED.md and always re-renders NEXT.md from it,
+    # so the page is at least as fresh as the newest handoff plus the newest issue state.
+    sh(["git", "checkout", "-q", f"origin/{BRANCH}", "--", "docs/FEED.md"], WT)
+    feed_arg: list[str] = []
+    if carried_feed.is_file() and carried_feed.stat().st_size > 0:
+        feed_arg = ["--feed", str(carried_feed)]
+        print(f"catalog-render: estate-next reads the feed from the state branch ({carried_feed})")
+    else:
+        print("catalog-render: no published feed on the state branch yet; estate-next reads its default")
+    step("estate-next", [sys.executable, str(WT / "bin" / "estate-next"), *feed_arg], WT)
     # crew#412 (R38): the founder's three questions, from GitHub, on the same schedule.
     # crew#596: the same goal block is the pinned GOAL message in the home channel (Otto's), refreshed here;
     # --dry-run and a runner with no token leave the pin alone.

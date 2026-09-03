@@ -13,6 +13,10 @@ import techdocsPlugin from '@backstage/plugin-techdocs/alpha';
 import scaffolderPlugin from '@backstage/plugin-scaffolder/alpha';
 import userSettingsPlugin from '@backstage/plugin-user-settings/alpha';
 import apiDocsPlugin from '@backstage/plugin-api-docs/alpha';
+// The front page is Backstage's own home page (founder, 2026-09-01: "use Backstage templates",
+// "our UI and design skills are shit"): the widget grid, laid out from app-config.yaml, with
+// the ten doors as its toolkit. Nothing on "/" is drawn by this repository any more.
+import homePlugin from '@backstage/plugin-home/alpha';
 import { navModule } from './modules/nav';
 import { homeModule } from './modules/home';
 import { signInModule } from './modules/signin';
@@ -29,6 +33,7 @@ export default createApp({
     techdocsPlugin,
     scaffolderPlugin,
     apiDocsPlugin,
+    homePlugin,
     userSettingsPlugin,
     navModule,
     homeModule,
