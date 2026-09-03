@@ -23,7 +23,10 @@ import {
 import { CustomHomepageGrid } from '@backstage/plugin-home';
 import { Content, Header, Page } from '@backstage/core-components';
 
-export function EstateHomeLayout({ widgets, defaultConfig }: HomePageLayoutProps) {
+export function EstateHomeLayout({
+  widgets,
+  defaultConfig,
+}: HomePageLayoutProps) {
   const brand = useApi(configApiRef).getOptionalString('app.title') ?? 'Estate';
   const gridConfig = useMemo(
     () =>
@@ -101,7 +104,27 @@ const opsPage = PageBlueprint.make({
   },
 });
 
+// /reports (crew#684, founder 2026-09-01: "can we automate all reports, need report tab in
+// Backstage"): every report the estate writes on a clock, read from docs/reports/index.json on
+// the state branch through the /estate-state proxy, red when older than twice its schedule.
+// Listed as a founder surface in backstage/founder/catalog-info.yaml so the crew#401 gate and
+// the login drill carry it.
+const reportsPage = PageBlueprint.make({
+  name: 'reports',
+  params: {
+    path: '/reports',
+    loader: () => import('./Reports').then(m => <m.Reports />),
+  },
+});
+
 export const homeModule = createFrontendModule({
   pluginId: 'home',
-  extensions: [homeLayout, estatePage, pairPhonePage, toolsPage, opsPage],
+  extensions: [
+    homeLayout,
+    estatePage,
+    pairPhonePage,
+    toolsPage,
+    opsPage,
+    reportsPage,
+  ],
 });

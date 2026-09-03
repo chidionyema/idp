@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""Render the founder's reports for the portal's Reports page (crew#684, founder 2026-09-01:
+"can we automate all reports, need report tab in Backstage").
+
+Each report is one markdown file plus a one-line JSON meta fragment (`<id>.meta.json`). The
+publishing job puts the file on the state/live-diagram branch under docs/reports/ and folds the
+fragment into docs/reports/index.json; the portal's /reports page reads that index through the
+/estate-state proxy and shows a report red when it is older than twice its schedule.
+
+    bin/idp-reports-render flux-state --cluster-receipt FILE --out-dir DIR
+    bin/idp-reports-render first-time-success --repos owner/a,owner/b --days 14 --out-dir DIR
+
+This script signs in to nothing. The Flux report reads the receipt the estate-state workflow has
+already fetched (platform/state/cluster-state.yaml writes it); the delivery report reads GitHub
+through `gh`, with whatever token the caller holds. A source that cannot be read is written into
+the report as its own state, never an empty table that reads as green.
+"""
+
+from __future__ import annotations
+
+import argparse
+import collections
+import datetime as dt
+import json
+import pathlib
+import re
+import subprocess
+import sys
+
+SUSPENDED = "suspended (dark switch)"  # the marker cluster-state.yaml writes on a suspended row
+
+
+def now_iso() -> str:
+    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def write(out_dir: pathlib.Path, meta: dict, body: str) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / f"{meta['id']}.md").write_text(body, encoding="utf-8")
+    (out_dir / f"{meta['id']}.meta.json").write_text(json.dumps(meta, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"ok      report {meta['id']}: {meta['summary']}")
+
+
+def short_rev(rev) -> str:
+    if not rev:
+        return ""
+    m = re.match(r"^(.*)@sha1:([0-9a-f]{7})[0-9a-f]*$", str(rev))
+    return f"{m.group(1)}@{m.group(2)}" if m else str(rev)[:40]
+
+
+def cell(s) -> str:
+    return str(s or "").replace("|", "\\|").replace("\n", " ")
+
+
+# ---------------------------------------------------------------- flux-state
+
+
+def flux_state(args: argparse.Namespace) -> int:
+    out_dir = pathlib.Path(args.out_dir)
+    meta = {"id": "flux-state", "title": "Flux: what is applied", "file": "docs/reports/flux-state.md",
+            "schedule_minutes": 15, "source": "the cluster receipt platform/state/cluster-state.yaml writes to the receipts bucket every 15 minutes"}
+    text = pathlib.Path(args.cluster_receipt).read_text(encoding="utf-8") if pathlib.Path(args.cluster_receipt).is_file() else ""
+    head, _, body = text.partition("\n")
+    try:
+        doc = json.loads(body.strip() or "{}")
+    except json.JSONDecodeError:
+        doc = {}
+    at = re.search(r"\bat (\S+)", head)
+    rows = [r for r in (doc.get("flux") or []) if r.get("kind") in ("Kustomization", "HelmRelease")]
+    if not rows:
+        meta.update({"generated_at": now_iso(), "blind": True, "summary": "BLIND: the cluster receipt could not be read"})
+        write(out_dir, meta, f"# Flux: what is applied\n\nGenerated {meta['generated_at']}.\n\n"
+              "**The cluster receipt could not be read, so nothing is known about the Flux rows.** "
+              "The estate-state run that produced this report says why under its BLIND line.\n")
+        return 0
+
+    def state(r) -> str:
+        if r.get("message") == SUSPENDED:
+            return "Suspended"
+        if r.get("ready"):
+            return "Ready"
+        if str(r.get("message", "")).startswith("no Ready condition"):
+            return "Unknown"
+        return "Not ready"
+
+    counts = collections.Counter(state(r) for r in rows)
+    order = {"Not ready": 0, "Unknown": 1, "Suspended": 2, "Ready": 3}
+    rows.sort(key=lambda r: (order[state(r)], r.get("kind", ""), r.get("ns", ""), r.get("name", "")))
+    generated = at.group(1) if at else now_iso()
+    summary = (f"{len(rows)} objects: {counts['Ready']} ready, {counts['Not ready']} not ready, "
+               f"{counts['Unknown']} unknown, {counts['Suspended']} suspended")
+    meta.update({"generated_at": generated, "summary": summary})
+    lines = ["# Flux: what is applied", "",
+             f"Read from the cluster receipt taken at {generated}. Every Kustomization and HelmRelease, "
+             "with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose "
+             "(temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has "
+             "never graded.", "", f"**{summary}.**", ""]
+    not_ready = [r for r in rows if state(r) == "Not ready"]
+    if not_ready:
+        lines += ["## Not ready right now", ""]
+        for r in not_ready:
+            lines.append(f"- **{r.get('kind')} {r.get('ns')}/{r.get('name')}** since {r.get('since') or 'unknown'}: {cell(r.get('message'))}")
+        lines.append("")
+    lines += ["## Every row", "", "| Kind | Namespace | Name | State | Applied revision | Since | Message |",
+              "|---|---|---|---|---|---|---|"]
+    for r in rows:
+        msg = "" if state(r) in ("Ready", "Suspended") else cell(str(r.get("message") or "")[:160])
+        lines.append(f"| {r.get('kind')} | {cell(r.get('ns'))} | {cell(r.get('name'))} | {state(r)} | "
+                     f"{cell(short_rev(r.get('revision')))} | {cell(r.get('since'))} | {msg} |")
+    lines.append("")
+    write(out_dir, meta, "\n".join(lines))
+    return 0
+
+
+# ------------------------------------------------------- first-time-success
+
+
+def gh(path: str, paginate: bool = False) -> list | dict:
+    cmd = ["gh", "api", path] + (["--paginate"] if paginate else [])
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=False).stdout
+    if not paginate:
+        return json.loads(out) if out.strip() else []
+    dec, i, res = json.JSONDecoder(), 0, []  # --paginate concatenates JSON documents
+    while i < len(out):
+        while i < len(out) and out[i].isspace():
+            i += 1
+        if i >= len(out):
+            break
+        obj, i = dec.raw_decode(out, i)
+        res.append(obj)
+    return res
+
+
+def repo_section(repo: str, since: str) -> tuple[list[str], dict]:
+    lines = [f"## {repo}", ""]
+    prs = gh(f"repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100")
+    prs = [p for p in prs if p.get("merged_at") and p["merged_at"] >= since]
+    first_green = graded = nocheck = 0
+    pushes: list[int] = []
+    for p in prs:
+        commits = gh(f"repos/{repo}/pulls/{p['number']}/commits?per_page=100")
+        if not commits:
+            continue
+        pushes.append(len(commits))
+        cr = gh(f"repos/{repo}/commits/{commits[0]['sha']}/check-runs?per_page=100")
+        runs = [c for c in (cr.get("check_runs") or []) if c.get("conclusion") not in (None, "skipped", "neutral")]
+        if not runs:
+            nocheck += 1
+            continue
+        graded += 1
+        if len(commits) == 1 and all(c["conclusion"] == "success" for c in runs):
+            first_green += 1
+    lines.append(f"Merged pull requests: {len(prs)}; with checks on the first commit: {graded}; no checks recorded: {nocheck}.")
+    pct = f"{100 * first_green / graded:.0f}%" if graded else "no graded pull requests"
+    lines.append(f"**Green on the first push** (one commit, every check passed): {first_green}/{graded} = {pct}.")
+    if pushes:
+        pushes.sort()
+        lines.append(f"Commits per merged pull request: median {pushes[len(pushes) // 2]}, most {pushes[-1]}; "
+                     f"needing a second commit: {sum(1 for x in pushes if x > 1)}/{len(pushes)}.")
+    lines.append("")
+    runs: list[dict] = []
+    for page in gh(f"repos/{repo}/actions/runs?created=%3E%3D{since}&branch=main&per_page=100", paginate=True):
+        runs += page.get("workflow_runs", [])
+    by: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+    for r in runs:
+        if r.get("status") != "completed":
+            continue
+        c = by[r["name"]]
+        c["runs"] += 1
+        if r.get("run_attempt", 1) > 1:
+            c["reruns"] += 1
+        if r.get("run_attempt", 1) == 1 and r.get("conclusion") == "success":
+            c["first_ok"] += 1
+    tot: collections.Counter = collections.Counter()
+    lines += ["Runs on main, completed, passed on the first attempt (workflows with three or more runs):", "",
+              "| Workflow | First-attempt pass | Runs | Rate | Re-runs |", "|---|---|---|---|---|"]
+    for k, c in sorted(by.items(), key=lambda kv: -kv[1]["runs"]):
+        if c["runs"] < 3:
+            continue
+        tot.update(c)
+        lines.append(f"| {cell(k[:48])} | {c['first_ok']} | {c['runs']} | {100 * c['first_ok'] / c['runs']:.0f}% | {c['reruns']} |")
+    lines.append("")
+    if tot["runs"]:
+        lines.append(f"**All runs on main: {tot['first_ok']}/{tot['runs']} = {100 * tot['first_ok'] / tot['runs']:.0f}% "
+                     f"passed on the first attempt; {tot['reruns']} re-runs.**")
+        lines.append("")
+    return lines, {"prs": len(prs), "graded": graded, "first_green": first_green, "runs": tot["runs"], "first_ok": tot["first_ok"]}
+
+
+def first_time_success(args: argparse.Namespace) -> int:
+    since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=args.days)).strftime("%Y-%m-%d")
+    meta = {"id": "first-time-success", "title": "Delivery: right first time", "file": "docs/reports/first-time-success.md",
+            "schedule_minutes": 1440, "generated_at": now_iso(),
+            "source": f"GitHub pull requests and workflow runs since {since}, read through gh api"}
+    lines = ["# Delivery: right first time", "",
+             f"Generated {meta['generated_at']}, window since {since} ({args.days} days). Two measures per repository: "
+             "how many merged pull requests were green on the first push (one commit, every check passed), and "
+             "how many runs on main passed on the first attempt.", ""]
+    totals: collections.Counter = collections.Counter()
+    blind = []
+    for repo in args.repos.split(","):
+        try:
+            sec, t = repo_section(repo.strip(), since)
+        except Exception as e:  # noqa: BLE001 -- the report carries the failure as its own state
+            blind.append(repo)
+            sec, t = [f"## {repo}", "", f"**BLIND: GitHub could not be read for this repository ({type(e).__name__}: {e}).**", ""], {}
+        lines += sec
+        totals.update(t)
+    graded, first_green = totals["graded"], totals["first_green"]
+    pr_pct = f"{100 * first_green / graded:.0f}%" if graded else "n/a"
+    run_pct = f"{100 * totals['first_ok'] / totals['runs']:.0f}%" if totals["runs"] else "n/a"
+    meta["summary"] = f"pull requests green on the first push {first_green}/{graded} ({pr_pct}); runs on main first-attempt {totals['first_ok']}/{totals['runs']} ({run_pct})"
+    if blind:
+        meta["blind"] = True
+        meta["summary"] = "BLIND for " + ", ".join(blind) + "; " + meta["summary"]
+    write(pathlib.Path(args.out_dir), meta, "\n".join(lines))
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    a = sub.add_parser("flux-state", help="every Kustomization and HelmRelease from the cluster receipt")
+    a.add_argument("--cluster-receipt", required=True)
+    a.add_argument("--out-dir", required=True)
+    a.set_defaults(fn=flux_state)
+    b = sub.add_parser("first-time-success", help="pull requests green on the first push, runs on main first-attempt")
+    b.add_argument("--repos", default="chidionyema/idp,chidionyema/prospector")
+    b.add_argument("--days", type=int, default=14)
+    b.add_argument("--out-dir", required=True)
+    b.set_defaults(fn=first_time_success)
+    args = ap.parse_args(argv)
+    return args.fn(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

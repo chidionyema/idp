@@ -14,7 +14,7 @@ on:
     - cron: "*/15 * * * *"
   workflow_dispatch:
   pull_request:
-    paths: [".github/workflows/estate-state.yml", "bin/idp-estate-state-build", "platform/estate-state/**"]
+    paths: [".github/workflows/estate-state.yml", "bin/idp-estate-state-build", "bin/idp-reports-render", "platform/estate-state/**"]
 permissions:
   contents: read
   id-token: write   # traded for the OCI session that reads the receipts bucket and the App key
@@ -124,6 +124,14 @@ jobs:
             --rulings "$RUNNER_TEMP/rulings.json" --drill-log "$RUNNER_TEMP/drill.log" --drill-at "$(cat "$RUNNER_TEMP/drill.at")" \
             --issues "$RUNNER_TEMP/issues.json" --runs "$RUNNER_TEMP/runs.json" --window-hours 6 \
             --main-sha "idp=$GITHUB_SHA" --out "$RUNNER_TEMP/out/estate-state.json" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: render the Flux report for the portal's Reports page (crew#684, founder 2026-09-01)
+        run: |
+          set -euo pipefail
+          bin/idp-reports-render flux-state --cluster-receipt "$RUNNER_TEMP/cluster.txt" --out-dir "$RUNNER_TEMP/reports" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: estate-reports-flux
+          path: ${{ runner.temp }}/reports/*
       - name: publish, never on a pull request (a PR builds and validates, main publishes)
         if: github.event_name != 'pull_request'
         env:
@@ -133,3 +141,47 @@ jobs:
           printf '%s' "$T" | flux push artifact "$ARTIFACT" --path="$RUNNER_TEMP/out" \
             --source="https://github.com/chidionyema/idp" --revision="$GITHUB_SHA" --creds "chidionyema:$(cat)" >/dev/null
           echo "ok      estate-state pushed $ARTIFACT revision $GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
+  # crew#684 (founder 2026-09-01: "can we automate all reports, need report tab in Backstage"): the
+  # portal's /reports page reads docs/reports/index.json through the /estate-state proxy, which
+  # serves the state/live-diagram branch. This job puts the Flux report there every run and folds
+  # its meta fragment into the index (upsert by id, so the daily delivery report written by
+  # estate-inventory.yml is kept). bin/catalog-render carries docs/reports forward when it
+  # force-pushes the branch. Two writers can race on the push; the loop rebases and retries.
+  publish-reports:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: state/live-diagram
+          fetch-depth: 1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: estate-reports-flux
+          path: ${{ runner.temp }}/reports
+      - name: put the report on the branch the Reports page reads
+        run: |
+          set -euo pipefail
+          test -s "$RUNNER_TEMP/reports/flux-state.md"
+          mkdir -p docs/reports
+          cp "$RUNNER_TEMP"/reports/*.md docs/reports/
+          [ -s docs/reports/index.json ] || echo '{"reports":[]}' > docs/reports/index.json
+          for frag in "$RUNNER_TEMP"/reports/*.meta.json; do
+            jq --slurpfile e "$frag" '.reports = (((.reports // []) | map(select(.id != $e[0].id))) + $e | sort_by(.id)) | .updated_at = (now | todate)' docs/reports/index.json > docs/reports/index.json.new
+            mv docs/reports/index.json.new docs/reports/index.json
+          done
+          git config user.name "estate-state"
+          git config user.email "estate-state@users.noreply.github.com"
+          git add docs/reports
+          if git diff --cached --quiet; then echo "ok      reports  state branch already holds this report"; exit 0; fi
+          git commit -q -m "docs(reports): Flux report from the cluster receipt, run $GITHUB_RUN_ID (crew#684)"
+          for attempt in 1 2 3; do
+            git push origin HEAD:refs/heads/state/live-diagram && break
+            echo "retry $attempt: another writer pushed first; rebasing"
+            git pull --rebase origin state/live-diagram
+          done
+          echo "ok      reports  docs/reports/flux-state.md on state/live-diagram; the Reports page reads it within a minute"
