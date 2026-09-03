@@ -56,6 +56,27 @@ Two rules the console enforces that are easy to trip over:
   console refuses to edit it or attach a key to it ("defined in config"). If a lane should
   be console-owned, its git row is removed first — that is a platform change, not an
   operator step (the `kimi` lane moved to console-owned this way on 2026-09-03).
+
+## Moving every git lane to the console (the founder, one run)
+
+The founder's ruling of 2026-09-03 ("enable the thing", on the greyed-out Update API Key
+button) makes every lane console-owned, not only Kimi. The move is one run of the
+`vault-seed` workflow on the repository's Actions page: choose "Run workflow", pick the entry
+`router-rows`, and run it. The run copies each lane of `platform/llm/config.yaml` into the
+console with the vendor key the vault already holds, prints one line per lane (`ok`, `kept`
+or `FAIL` naming the key it could not find) and never prints a value. A lane the console
+already owns is kept, so the run can be repeated.
+
+Until the git rows are removed (the follow-up platform change), the console lists each lane
+twice, one row locked and one editable, and the router shares calls between the two; that
+is its ordinary load balancing. Once the git rows are gone, the Update API Key form works on
+every lane, and a key changed there is live within the router's next poll, no restart.
+
+Why the rows move rather than a credential being attached to the git rows: at the version
+the estate runs (v1.98.0) the router reads a named credential once, when the row is added,
+and a credential edit only refreshes the list in memory. A git row pointing at a console
+credential would keep its old key until the pod restarted, which is the greyed button with
+extra steps.
 - **A Kimi (Moonshot) key answers only at its home host** (see the section below). The
   console cannot probe the three hosts, so if the model's test call fails with an
   incorrect-key answer, set the row's API Base to the next host on the list and test again.

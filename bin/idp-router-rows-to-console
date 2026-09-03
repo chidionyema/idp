@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""Copy the git-owned router lanes into the router's own console, from CI.
+
+    bin/idp-router-rows-to-console --config platform/llm/config.yaml \\
+        --zone-from clusters/oke/estate-config.yaml [--dry-run]
+
+Founder, 2026-09-03, on the console's greyed-out "Update API Key" button: "enable the thing".
+LiteLLM locks every row that comes from config.yaml ("defined in config"); only a row the
+console owns, stored in litellm-db, takes a new key from the form. The kimi lane moved that
+way by hand (idp bab90eac). The other fifteen lanes carry three fallback chains and five
+tests, so they move by code, never by fifteen forms (R75: the founder is enterprise client
+zero; R52: one root per provider, code mints the rest).
+
+Why rows move and not credentials: at v1.98.0 the router resolves `litellm_credential_name`
+once, when a row is added (litellm/router.py `_create_deployment`), and a credential edit
+only refreshes the in-memory credential list (proxy/credential_endpoints/endpoints.py
+`update_credential`). A git row naming a console credential would keep its old key until a
+pod restart, which is the greyed button with extra steps. A console row's key edit goes
+through /model/update and the router's periodic upsert, so it is live within a poll.
+
+What it does: reads the model_list of the rendered cluster config, resolves every
+`os.environ/NAME` from the vault entry `litellm-upstream` (the same JSON the pod mounts), and
+POSTs each lane the console does not yet own to /model/new with the router's master key, the
+way bin/idp-router-key mints virtual keys. Idempotent: a lane whose model the console
+already owns is kept. Until the git rows are removed (the follow-up change) the router
+serves each lane from both rows; that is LiteLLM's ordinary load balancing, not an error.
+
+No value is ever printed: not the master key, not a vendor key, not a response body.
+Exit 0 ok, 1 FAIL (vault key missing, router refused), 2 BLIND (a missing input).
+"""
+
+import argparse
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+import yaml
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+ENTRY = "litellm-upstream"
+TAG = "router-rows"
+
+
+def zone(estate_config: str) -> str:
+    """`ESTATE_ZONE: <zone>` in clusters/oke/estate-config.yaml (R70: one place for the hostname)."""
+    for line in pathlib.Path(estate_config).read_text().splitlines():
+        if line.strip().startswith("ESTATE_ZONE:"):
+            return line.split(":", 1)[1].strip()
+    raise SystemExit(f"BLIND   {TAG}   no ESTATE_ZONE: line in {estate_config}")
+
+
+def vault(cloud: str) -> dict:
+    out = subprocess.run(
+        [cloud, "secret", "get", ENTRY], capture_output=True, text=True
+    )
+    if out.returncode != 0:
+        raise SystemExit(
+            f"FAIL    {TAG}   vault read of {ENTRY} exited {out.returncode}"
+        )
+    try:
+        doc = json.loads(out.stdout)
+    except ValueError:
+        raise SystemExit(f"FAIL    {TAG}   {ENTRY} is not one JSON object") from None
+    return doc if isinstance(doc, dict) else {}
+
+
+def resolve(params: dict, secrets: dict) -> tuple[dict, list[str]]:
+    """Replace every `os.environ/NAME` with the vault's value; name what the vault lacks."""
+    out, missing = {}, []
+    for key, value in params.items():
+        if isinstance(value, str) and value.startswith("os.environ/"):
+            name = value.split("/", 1)[1]
+            if secrets.get(name):
+                out[key] = secrets[name]
+            else:
+                missing.append(name)
+        else:
+            out[key] = value
+    return out, missing
+
+
+def call(
+    url: str, key: str, method: str = "GET", body: dict | None = None
+) -> tuple[int, dict]:
+    req = urllib.request.Request(
+        url,
+        method=method,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        data=json.dumps(body).encode() if body is not None else None,
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 https to the estate router
+            return resp.status, json.loads(resp.read() or b"{}")
+    except urllib.error.HTTPError as err:
+        return err.code, {}
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return 0, {}
+
+
+def main(argv=None) -> int:
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument(
+        "--config", required=True, help="the rendered router config with model_list"
+    )
+    p.add_argument("--zone-from", required=True, help="clusters/oke/estate-config.yaml")
+    p.add_argument(
+        "--dry-run", action="store_true", help="say what would move, POST nothing"
+    )
+    a = p.parse_args(argv)
+
+    cfg = yaml.safe_load(pathlib.Path(a.config).read_text()) or {}
+    rows = [
+        m
+        for m in cfg.get("model_list") or []
+        if isinstance(m, dict) and m.get("model_name")
+    ]
+    if not rows:
+        print(f"BLIND   {TAG}   {a.config} has no model_list rows")
+        return 2
+    cloud = os.environ.get("IDP_CLOUD") or str(ROOT / "bin/idp-cloud")
+    secrets = vault(cloud)
+    master = secrets.get("LITELLM_MASTER_KEY")
+    if not master:
+        print(f"FAIL    {TAG}   {ENTRY} holds no LITELLM_MASTER_KEY")
+        return 1
+    router = os.environ.get("ROUTER_URL") or f"https://llm.{zone(a.zone_from)}"
+
+    status, info = call(f"{router}/model/info", master)
+    if status != 200:
+        print(f"FAIL    {TAG}   {router}/model/info answered {status}")
+        return 1
+    owned = {
+        (d.get("model_name"), (d.get("litellm_params") or {}).get("model"))
+        for d in info.get("data") or []
+        if isinstance(d, dict) and (d.get("model_info") or {}).get("db_model")
+    }
+
+    added = kept = failed = 0
+    for row in rows:
+        name = row["model_name"]
+        params = row.get("litellm_params") or {}
+        model = params.get("model")
+        if (name, model) in owned:
+            print(f"kept    {TAG}   {name}: the console already owns a {model} row")
+            kept += 1
+            continue
+        resolved, missing = resolve(params, secrets)
+        if missing:
+            print(
+                f"FAIL    {TAG}   {name}: {ENTRY} holds no {', '.join(sorted(missing))}"
+            )
+            failed += 1
+            continue
+        if a.dry_run:
+            print(f"plan    {TAG}   {name}: would add {model}")
+            added += 1
+            continue
+        body = {
+            "model_name": name,
+            "litellm_params": resolved,
+            "model_info": row.get("model_info") or {},
+        }
+        status, _ = call(f"{router}/model/new", master, "POST", body)
+        if status != 200:
+            print(f"FAIL    {TAG}   {name}: {router}/model/new answered {status}")
+            failed += 1
+            continue
+        print(f"ok      {TAG}   {name}: {model} is now a console row")
+        added += 1
+
+    verdict = "FAIL" if failed else "ok"
+    print(
+        f"{verdict:<7} {TAG}   {added} added, {kept} already console-owned, {failed} failed of {len(rows)} lanes"
+    )
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
