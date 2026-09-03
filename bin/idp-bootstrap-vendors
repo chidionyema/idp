@@ -147,14 +147,41 @@ def sec(v, t):
     return t.get("secret") or v["secret"]
 
 
+def bases(v):
+    """The API hosts a vendor's key may belong to. One vendor, several homes (Kimi, 2026-09-03: a
+    key made on kimi.com's Kimi Code console answers only at api.kimi.com/coding/v1, one made on the
+    open platform only at api.moonshot.ai/v1 or api.moonshot.cn/v1; the vendor's own FAQ says the
+    key and the base URL must match). The probe tries each in order; the one that accepts the key
+    is written to every `derived: base` target so the router calls the host the key belongs to."""
+    return v.get("bases") or [None]
+
+
+def probes(v):
+    """The probe URLs with the base filled and the secret placeholders cut, for the FAIL line."""
+    return ", ".join((v["verify"]["url"].replace("{base}", b) if b else v["verify"]["url"]).split("{")[0] for b in bases(v))
+
+
+def real(targets):
+    """The targets that carry a root. A `derived: base` target carries the host the root verified at."""
+    return [t for t in targets if not t.get("derived")]
+
+
 def holds(v, targets, values):
     """Does what we have verify? "" when it does, else the vendor's reason. A pair is graded ONCE with every half substituted by its field
     name, because neither half means anything to the vendor alone. Everything else is graded once
-    per distinct value as {key}, exactly as before."""
+    per distinct value as {key}, exactly as before. A vendor with several `bases` is graded at each
+    in turn; the first host that accepts the key is kept on v["_base"], and a refusal names every
+    host's answer so nobody guesses which one was tried."""
     if v.get("pair"): return verify(v, {t["field"]: values[t["field"]] for t in targets})
-    for k in sorted({values[t["field"]] for t in targets}):
-        reason = verify(v, {"key": k})
-        if reason: return reason
+    for k in sorted({values[t["field"]] for t in real(targets)}):
+        reasons = []
+        for b in bases(v):
+            reason = verify(v, {"key": k, "base": b or ""})
+            if not reason:
+                v["_base"] = b; break
+            reasons.append(reason if b is None else f"{reason} ({b})")
+        else:
+            return " | ".join(reasons)
     return ""
 
 _roots = {}
@@ -189,14 +216,14 @@ for name, v in reg.items():
         # One pop per SECRET, not per target: root() consumes the environment variable, so several
         # targets sharing one root must read it once between them.
         roots = {}
-        for t in targets: roots.setdefault(sec(v, t), root(name, sec(v, t)))
-        keys = {t["field"]: roots[sec(v, t)] for t in targets}
+        for t in real(targets): roots.setdefault(sec(v, t), root(name, sec(v, t)))
+        keys = {t["field"]: roots[sec(v, t)] for t in real(targets)}
         del roots
-        blank = sorted({sec(v, t) for t in targets if not keys[t["field"]]})
+        blank = sorted({sec(v, t) for t in real(targets) if not keys[t["field"]]})
         if blank:
             blind.append(who); del keys
             say("BLIND", who, f"no {' or '.join(blank)} in the environment and the vault does not verify; the root is made once at {v['page']} and set with gh secret set {' '.join(blank)} (R52)"); continue
-        for t in targets:
+        for t in real(targets):
             shape = t.get("shape") or v.get("shape")
             if not shape: say("FAIL", who, f"{t['field']} has no shape in the registry; every root is anchored"); failed.append(who); del keys; break
             if not re.fullmatch(shape, keys[t["field"]]): say("FAIL", who, f"{sec(v, t)} does not match the registry shape"); failed.append(who); del keys; break
@@ -206,10 +233,14 @@ for name, v in reg.items():
             # crew#729 class, measured on run 33677001751 (2026-09-02): one refused vendor key
             # aborted the loop here and the apprise pair five vendors later was never seeded.
             # A FAIL is recorded and the loop finishes every other vendor, like BLIND always did.
-            say("FAIL", who, f"{' + '.join(names)} refused by {v['verify']['url'].split('{')[0]}: {reason}; {blame(reason)}"); failed.append(who); del keys; continue
-        for t in targets: vault_put(t["entry"], t["field"], keys[t["field"]])
+            say("FAIL", who, f"{' + '.join(names)} refused by {probes(v)}: {reason}; {blame(reason)}"); failed.append(who); del keys; continue
+        for t in real(targets): vault_put(t["entry"], t["field"], keys[t["field"]])
+        # the host the key verified at, so the router never calls a home the key does not have
+        for t in targets:
+            if t.get("derived") == "base": vault_put(t["entry"], t["field"], v.get("_base") or "")
         del keys; written += 1
-        say("ok", who, "verified, written to " + ", ".join(f"{t['entry']}.{t['field']}" for t in targets))
+        where = ", ".join(f"{t['entry']}.{t['field']}" for t in targets)
+        say("ok", who, f"verified{' at ' + v['_base'] if v.get('_base') else ''}, written to {where}")
 if MODE == "preflight": say("ok", "preflight", f"{len(reg)} vendors registered; nothing written")
 else:
     state = "FAIL" if failed else ("BLIND" if blind else "ok")
