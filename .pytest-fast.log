@@ -1,0 +1,155 @@
+bringing up nodes...
+bringing up nodes...
+
+.........F..................F.F..........................F........F..... [ 82%]
+...F.....F.....                                                          [100%]
+=================================== FAILURES ===================================
+____________ test_grader_passes_when_every_daemonset_is_at_desired _____________
+[gw5] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+
+    def test_grader_passes_when_every_daemonset_is_at_desired():
+        rc, out = _grade(_receipt([], []))
+>       assert rc == 0 and out.startswith("ok") and "ds_short=0" in out, out
+E       AssertionError: ok      cluster-state  ok cluster-state at 2026-08-27T01:00:00Z nodes=1 ready=1 pods=45 pods_not_ready=0 flux=20 flux_not_ready=0 ds=3 ds_short=0 deploy_short=0 events_warning=0 monitoring_rules=1 alert_watchdog=1 cpu_used_pct=30 mem_used_pct=25 cpu_req_pct=12 mem_req_pct=4 (1 min ago)
+E         ok      capacity       cpu used 30% requested 12%, memory used 25% requested 4% of what is paid for
+E         FAIL    secret-freshness  receipt carries no secret_stale_consumers (collector predates crew#722): ok cluster-state at 2026-08-27T01:00:00Z nodes=1 ready=1 pods=45 pods_not_ready=0 flux=20 flux_not_ready=0 ds=3 ds_short
+E         
+E       assert (1 == 0)
+
+tests/test_incident_crew320_daemonset_short_is_in_the_receipt.py:74: AssertionError
+_________ test_grader_passes_with_rules_and_watchdog_and_fails_without _________
+[gw5] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+
+    def test_grader_passes_with_rules_and_watchdog_and_fails_without():
+        rc, out = grade(BASE + " monitoring_rules=31 alert_watchdog=1")
+>       assert rc == 0 and out.startswith("ok"), out
+E       AssertionError: ok      cluster-state  ok cluster-state at 2026-08-27T23:00:00Z nodes=2 ready=2 pods=60 pods_not_ready=0 flux=40 flux_not_ready=0 ds=6 ds_short=0 deploy_short=0 events_warning=0 hostnames=9 spiffe_ids=3 spiffe_workloads=3 svids=3 spire_agents=2 oci_pods=2 oci_static_key_pods=0 policy_exceptions=9 cpu_used_pct=12 cpu_req_pct=45 mem_used_pct=30 mem_req_pct=50 monitoring_rules=31 alert_watchdog=1 (0 min ago)
+E         ok      capacity       cpu used 12% requested 45%, memory used 30% requested 50% of what is paid for
+E         FAIL    secret-freshness  receipt carries no secret_stale_consumers (collector predates crew#722): ok cluster-state at 2026-08-27T23:00:00Z nodes=2 ready=2 pods=60 pods_not_ready=0 flux=40 flux_not_ready=0 ds=6 ds_short
+E       assert (1 == 0)
+
+tests/test_crew539_dod1_prometheus_alertmanager_page_the_founder.py:299: AssertionError
+______________ test_grader_passes_when_every_flux_object_is_ready ______________
+[gw2] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+
+    def test_grader_passes_when_every_flux_object_is_ready():
+        rc, out = _grade(_receipt([]))
+>       assert rc == 0 and out.startswith("ok") and "flux_not_ready=0" in out, out
+E       AssertionError: ok      cluster-state  ok cluster-state at 2026-08-27T00:00:00Z nodes=1 ready=1 pods=48 pods_not_ready=0 flux=20 flux_not_ready=0 ds=3 ds_short=0 deploy_short=0 events_warning=0 monitoring_rules=1 alert_watchdog=1 cpu_used_pct=30 mem_used_pct=25 cpu_req_pct=12 mem_req_pct=4 (1 min ago)
+E         ok      capacity       cpu used 30% requested 12%, memory used 25% requested 4% of what is paid for
+E         FAIL    secret-freshness  receipt carries no secret_stale_consumers (collector predates crew#722): ok cluster-state at 2026-08-27T00:00:00Z nodes=1 ready=1 pods=48 pods_not_ready=0 flux=20 flux_not_ready=0 ds=3 ds_short
+E         
+E       assert (1 == 0)
+
+tests/test_incident_crew406_flux_objects_have_a_receipt.py:93: AssertionError
+__________ test_cluster_state_reads_a_file_backend_receipt_end_to_end __________
+[gw1] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+
+tmp_path = PosixPath('/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5312/popen-gw1/test_cluster_state_reads_a_fil0')
+
+    def test_cluster_state_reads_a_file_backend_receipt_end_to_end(tmp_path):
+        r"""Build a fresh, all-green receipt on the file backend and let idp-cluster-state grade it.
+    
+        The receipt line the python block grades is parsed by `re.finditer(r"(\w+)=(\d+)", line1)`,
+        so every value must be a digit and `flux_not_ready`/`ds_short` must both be 0. The body is
+        parsed only when the corresponding count is > 0, so empty arrays are fine here.
+        """
+        receipt_dir = tmp_path / "objects" / "estate-drill-receipts" / "state"
+        receipt_dir.mkdir(parents=True)
+        head_line = (
+            "ok cluster-state at 2026-08-27T00:00:00Z nodes=1 ready=1 pods=0 pods_not_ready=0"
+            " flux=0 flux_not_ready=0 ds=0 ds_short=0 deploy_short=0 events_warning=0"
+            " hostnames=0 spiffe_ids=0 spiffe_workloads=0 svids=0 spire_agents=0"
+            " oci_pods=0 oci_static_key_pods=0 policy_exceptions=0 monitoring_rules=1 alert_watchdog=1 cpu_used_pct=12 cpu_req_pct=45 mem_used_pct=30 mem_req_pct=50"
+        )
+        body = {
+            "at": "2026-08-27T00:00:00Z",
+            "nodes": [],
+            "pods_total": 0,
+            "pods_not_ready": [],
+            "flux": [],
+            "flux_not_ready": [],
+            "policy_exceptions": [],
+            "daemonsets": [],
+            "ds_short": [],
+            "events_warning": [],
+            "hostnames": [],
+            "hostnames_error": None,
+            "spiffe": {},
+            "oci_identity": {"pods": [], "static_key_pods": [], "unknown_identity_pods": []},
+        }
+        (receipt_dir / "cluster").write_text(head_line + "\n" + json.dumps(body, sort_keys=True) + "\n")
+    
+        env = {**os.environ, "IDP_CLOUD_BACKEND": "file", "IDP_CLOUD_FILE_ROOT": str(tmp_path)}
+        r = subprocess.run([str(ROOT / "bin" / "idp-cluster-state")], capture_output=True, text=True, env=env)
+>       assert r.returncode == 0, (r.stdout, r.stderr)
+E       AssertionError: ('ok      cluster-state  ok cluster-state at 2026-08-27T00:00:00Z nodes=1 ready=1 pods=0 pods_not_ready=0 flux=0 flux_...r-state at 2026-08-27T00:00:00Z nodes=1 ready=1 pods=0 pods_not_ready=0 flux=0 flux_not_ready=0 ds=0 ds_short=0
+E         ', '')
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-cluster-state'], returncode=1, stdout... at 2026-08-27T00:00:00Z nodes=1 ready=1 pods=0 pods_not_ready=0 flux=0 flux_not_ready=0 ds=0 ds_short=0\n', stderr='').returncode
+
+tests/test_incident_crew66_cloud_primitive_layer.py:128: AssertionError
+______________ test_reader_prints_the_capacity_row_in_plain_words ______________
+[gw0] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+
+tmp_path = PosixPath('/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5312/popen-gw0/test_reader_prints_the_capacit0')
+
+    def test_reader_prints_the_capacity_row_in_plain_words(tmp_path):
+        body = {"capacity": [{"name": "n1", "cpu_allocatable": 4.0, "memory_allocatable_gb": 24.0, "cpu_requested": 0.5, "memory_requested_gb": 1.0,
+                              "cpu_used": 1.2, "memory_used_gb": 6.0, "cpu_used_pct": 30, "memory_used_pct": 25, "cpu_requested_pct": 12, "memory_requested_pct": 4}],
+                "capacity_error": ""}
+        line1 = f"ok cluster-state at 2026-08-29T02:00:03Z {GREEN} cpu_used_pct=30 mem_used_pct=25 cpu_req_pct=12 mem_req_pct=4"
+        r = _grade(_tree(tmp_path, line1 + "\n" + json.dumps(body) + "\n"))
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: ok      cluster-state  ok cluster-state at 2026-08-29T02:00:03Z nodes=1 ready=1 pods=3 pods_not_ready=0 flux=1 flux_not_ready=0 ds=1 ds_short=0 deploy_short=0 events_warning=0 monitoring_rules=3 alert_watchdog=1 cpu_used_pct=30 mem_used_pct=25 cpu_req_pct=12 mem_req_pct=4 (0 min ago)
+E         ok      capacity       cpu used 30% requested 12%, memory used 25% requested 4% of what is paid for
+E           node n1: cpu 1.2/4.0 cores used (30%), requests 0.5 (12%); memory 6.0/24.0 GB used (25%), requests 1.0 GB (4%)
+E         FAIL    secret-freshness  receipt carries no secret_stale_consumers (collector predates crew#722): ok cluster-state at 2026-08-29T02:00:03Z nodes=1 ready=1 pods=3 pods_not_ready=0 flux=1 flux_not_ready=0 ds=1 ds_short=0
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5312/pop... at 2026-08-29T02:00:03Z nodes=1 ready=1 pods=3 pods_not_ready=0 flux=1 flux_not_ready=0 ds=1 ds_short=0\n', stderr='').returncode
+
+tests/test_incident_crew584_cluster_receipt_carries_capacity.py:95: AssertionError
+_________________ test_grader_passes_when_no_workload_is_short _________________
+[gw1] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+
+    def test_grader_passes_when_no_workload_is_short():
+        rc, out = _grade(_receipt([]))
+>       assert rc == 0, out
+E       AssertionError: ok      cluster-state  ok cluster-state at 2026-08-30T20:00:00Z nodes=1 ready=1 pods=45 pods_not_ready=0 flux=20 flux_not_ready=0 ds=3 ds_short=0 deploy_short=0 events_warning=1 monitoring_rules=1 alert_watchdog=1 cpu_used_pct=30 mem_used_pct=25 cpu_req_pct=12 mem_req_pct=4 (1 min ago)
+E         ok      capacity       cpu used 30% requested 12%, memory used 25% requested 4% of what is paid for
+E         FAIL    secret-freshness  receipt carries no secret_stale_consumers (collector predates crew#722): ok cluster-state at 2026-08-30T20:00:00Z nodes=1 ready=1 pods=45 pods_not_ready=0 flux=20 flux_not_ready=0 ds=3 ds_short
+E         
+E       assert 1 == 0
+
+tests/test_incident_run33332263130_a_workload_with_zero_pods_is_a_red_row.py:116: AssertionError
+_ test_a_fresh_receipt_by_the_stores_clock_is_ok_whatever_this_machine_says[bin/idp-cluster-state] _
+[gw3] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+
+tmp_path = PosixPath('/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5312/popen-gw3/test_a_fresh_receipt_by_the_st0')
+script = 'bin/idp-cluster-state'
+
+    @pytest.mark.parametrize("script", sorted(ROWS))
+    def test_a_fresh_receipt_by_the_stores_clock_is_ok_whatever_this_machine_says(tmp_path, script):
+        """Both stamps sit in 2019, far behind this machine: the row is still ok because this machine
+        was never asked."""
+        head = {"last-modified": "Tue, 01 Jan 2019 12:00:00 GMT", "date": "Tue, 01 Jan 2019 12:05:00 GMT"}
+        r = _run(tmp_path, script, head, ROWS[script][2])
+>       assert r.returncode == 0 and r.stdout.startswith("ok"), r.stdout + r.stderr
+E       AssertionError: ok      cluster-state  ok cluster-state at 2026-08-29T02:00:03Z nodes=1 ready=1 pods=3 pods_not_ready=0 flux=1 flux_not_ready=0 ds=1 ds_short=0 deploy_short=0 events_warning=0 monitoring_rules=3 alert_watchdog=1 cpu_used_pct=30 mem_used_pct=25 cpu_req_pct=12 mem_req_pct=4 (5 min ago)
+E         ok      capacity       cpu used 30% requested 12%, memory used 25% requested 4% of what is paid for
+E         FAIL    secret-freshness  receipt carries no secret_stale_consumers (collector predates crew#722): ok cluster-state at 2026-08-29T02:00:03Z nodes=1 ready=1 pods=3 pods_not_ready=0 flux=1 flux_not_ready=0 ds=1 ds_short=0
+E         
+E       assert (1 == 0)
+E        +  where 1 = CompletedProcess(args=['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5312/pop... at 2026-08-29T02:00:03Z nodes=1 ready=1 pods=3 pods_not_ready=0 flux=1 flux_not_ready=0 ds=1 ds_short=0\n', stderr='').returncode
+
+tests/test_incident_crew583_cp2_cluster_rows_read_the_stores_clock.py:60: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_incident_crew320_daemonset_short_is_in_the_receipt.py::test_grader_passes_when_every_daemonset_is_at_desired
+FAILED tests/test_crew539_dod1_prometheus_alertmanager_page_the_founder.py::test_grader_passes_with_rules_and_watchdog_and_fails_without
+FAILED tests/test_incident_crew406_flux_objects_have_a_receipt.py::test_grader_passes_when_every_flux_object_is_ready
+FAILED tests/test_incident_crew66_cloud_primitive_layer.py::test_cluster_state_reads_a_file_backend_receipt_end_to_end
+FAILED tests/test_incident_crew584_cluster_receipt_carries_capacity.py::test_reader_prints_the_capacity_row_in_plain_words
+FAILED tests/test_incident_run33332263130_a_workload_with_zero_pods_is_a_red_row.py::test_grader_passes_when_no_workload_is_short
+FAILED tests/test_incident_crew583_cp2_cluster_rows_read_the_stores_clock.py::test_a_fresh_receipt_by_the_stores_clock_is_ok_whatever_this_machine_says[bin/idp-cluster-state]
+7 failed, 80 passed in 148.20s (0:02:28)
