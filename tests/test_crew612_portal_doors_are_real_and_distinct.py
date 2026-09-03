@@ -157,12 +157,19 @@ def test_the_front_page_is_backstage_own_home_page_and_its_toolkit_is_the_menu()
     ], (
         "the toolkit on the front page and the menu list different doors or a different order"
     )
-    assert (
+    visit_cards = {"HomePageRecentlyVisited", "HomePageMostVisited"} & set(components)
+    tracking = (
         ext.get("api:home/visits") is True
         and ext.get("app-root-element:home/visit-listener") is True
-    ), (
-        "Recently visited and Most visited are on the grid with visit tracking switched off"
     )
+    if visit_cards:
+        assert tracking, (
+            "Recently visited and Most visited are on the grid with visit tracking switched off"
+        )
+    else:
+        assert not tracking, (
+            "visit tracking stores every visit in the browser and no card on the page reads it"
+        )
 
 
 def test_the_portal_is_not_branded_as_the_store():
