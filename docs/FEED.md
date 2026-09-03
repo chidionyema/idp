@@ -4802,3 +4802,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: none
 📍 State: /Users/chidionyema/.claude/docs/founder/2026-09-03T1150Z-can-you-create-new-branch-annd-workong-tis-38cf2f2f.md ; /Users/chidionyema/dev/code/.wt-mumchimp-broadsheet
 
+
+## 2026-09-03T12:18:35Z · session a14fc078 · lane .wt-reports
+🟢 Done: recovery PR idp#1256 opened (job + test + record, one commit) and its first red root-caused and fixed same turn: the paper CPU budget guard (crew#584) sat at exactly 6.90/6.9 cores, so the job's 100m standing request tipped it — fixed by riding the estate's own batch bucket (priorityClassName platform-batch, seated by preempting the balloon; 100m < balloon 225m bound); 25 guard tests green locally (crew584 + crew623 + the new recovery test), fix pushed
+🟡 Active: merge watcher re-arming on the new head; post-merge chain btrjm4gjg already standing: waits for MERGED → watches Job metabase-recovery-dump → captures the dump log to scratchpad/metabase-dump.log
+🔴 Blocked: none
+⚪ Pending: phase 2 Superset rebuild from the dump once captured; volume deletion = founder decision after he confirms
+🔧 TOUCHES: recover/metabase-dump branch only
+🔀 OVERLAP: none
+📎 FACTS: platform/ paper CPU budget is full to the last 0.0 core — ANY new standing cpu request under platform/ reds crew584/crew623; one-shot jobs belong in the batch bucket via priorityClassName platform-batch (bounded by balloon 225m per pod). ALSO: `pytest ... | tail -2` can swallow the verdict line behind cleanup warnings — grep 'passed|failed', never tail
+📍 State: https://github.com/chidionyema/idp/pull/1256
+
