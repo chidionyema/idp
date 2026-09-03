@@ -17,7 +17,7 @@ BLIND=""
 # BLIND verdict (2026-08-31, run 33384482689): a probe that never reached the workload's node was
 # graded FAIL, and 13 "broken" rows were one dead kubelet. Cannot-measure is not measured-broken:
 # such rows read BLIND, are listed separately, and still fail the playbook -- BLIND is never green.
-blind_out() { printf %s "$1" | grep -qE 'watch closed before UntilWithoutRetry timeout|error dialing backend|unable to upgrade connection'; }
+blind_out() { grep -qE 'watch closed before UntilWithoutRetry timeout|error dialing backend|unable to upgrade connection' <<<"$1"; }
 step() { local name="$1"; shift; local out rc v; out=$("$@" 2>&1); rc=$?
   if [ $rc -eq 0 ]; then v=ok; elif blind_out "$out"; then v=BLIND; else v=FAIL; fi
   printf '%-5s %-22s rc=%-3s %s\n' "$v" "$name" "$rc" "$(printf %s "$out" | tail -1 | cut -c1-110)"
