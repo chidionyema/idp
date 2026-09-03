@@ -85,3 +85,16 @@ hover opened a second click. Widgets stay; the board does not.
     tighter. Still Material through Backstage's theme, not a second design system.
 
 Test: the portal-doors test (`tests/test_crew612_portal_doors_are_real_and_distinct.py`) plus `homeLayout.test.ts`.
+
+## 2026-09-03, after PR 1239: the landing page header
+
+The founder saw the landing page break after PR 1239: the Backstage UI `Header` sat
+outside `Content`, in its own container, at a different width to the search field and
+the doors under it. The fix, carried in from the rescue snapshot of the main checkout:
+
+11. **One column.** Header, search, doors and any visit cards share one column inside
+    `Content`, wrapped in `.estate-today` (`homeLayout.tsx`). Each door's icon and title
+    sit on one row (`DoorGrid.tsx`).
+12. **The look stays on the landing page.** `styles.css` scopes the header and card sizing
+    to `.estate-today` and `.estate-today-doors`. Every other Backstage page keeps the
+    vendor's own header and card sizing; the portal has one design system, not two.

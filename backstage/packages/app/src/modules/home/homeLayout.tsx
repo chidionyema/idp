@@ -1,13 +1,18 @@
 // The front page layout. Backstage supplies search; the ten doors are drawn here as
 // Backstage UI cards. The visit and starred cards are empty for a visitor and are not
-// placed (app-config.yaml); the layout still seats them if a config ever adds them. The plugin's stamp-sized
-// toolkit is the 2020 look and is not placed (the widget stays installed).
+// placed (app-config.yaml); the layout still seats them if a config ever adds them. The
+// plugin's stamp-sized toolkit is the 2020 look and is not placed (the widget stays
+// installed).
+//
+// Header, search, doors and visits share one column inside Content. A BUI Header
+// outside Content used its own container and sat at a different width to the
+// page, which broke the landing layout (founder 2026-09-03).
 import { useMemo } from 'react';
 import type { ReactElement } from 'react';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import type { HomePageLayoutProps } from '@backstage/plugin-home-react/alpha';
 import { Content, Page } from '@backstage/core-components';
-import { ButtonLink, Flex, Grid, Header, Text } from '@backstage/ui';
+import { ButtonLink, Flex, Grid, Header } from '@backstage/ui';
 import { RiAddCircleLine, RiSearchLine } from '@remixicon/react';
 import { DoorGrid } from './DoorGrid';
 
@@ -41,67 +46,58 @@ export function EstateHomeLayout({ widgets }: HomePageLayoutProps) {
     () => usedWidgets(widgets, [search, toolkit, starred, recently, most]),
     [widgets, search, toolkit, starred, recently, most],
   );
+  const visits = [starred, recently, most, ...leftover.map(w => w.component)].filter(
+    Boolean,
+  );
 
   return (
     <Page themeId="home">
-      <Header
-        title="Today"
-        tags={[{ label: brand }]}
-        description={`${brand}. What needs you, and every door into the estate.`}
-        customActions={
-          <Flex gap="2">
-            <ButtonLink
-              href="/search"
-              variant="secondary"
-              size="medium"
-              iconStart={<RiSearchLine />}
-            >
-              Find
-            </ButtonLink>
-            <ButtonLink
-              href="/create"
-              variant="primary"
-              size="medium"
-              iconStart={<RiAddCircleLine />}
-            >
-              Create
-            </ButtonLink>
-          </Flex>
-        }
-      />
       <Content>
-        <Flex direction="column" gap="6">
-          {search && <div className="estate-today-search">{search}</div>}
-          <Flex direction="column" gap="3">
-            <Text as="h2" variant="title-medium" weight="bold">
-              Doors
-            </Text>
+        <div className="estate-today">
+          <Flex direction="column" gap="5">
+            <Header
+              title="Today"
+              description={`${brand}. What needs you, and every door into the estate.`}
+              customActions={
+                <Flex gap="2">
+                  <ButtonLink
+                    href="/search"
+                    variant="secondary"
+                    size="medium"
+                    iconStart={<RiSearchLine />}
+                  >
+                    Find
+                  </ButtonLink>
+                  <ButtonLink
+                    href="/create"
+                    variant="primary"
+                    size="medium"
+                    iconStart={<RiAddCircleLine />}
+                  >
+                    Create
+                  </ButtonLink>
+                </Flex>
+              }
+            />
+            {search && <div className="estate-today-search">{search}</div>}
             <DoorGrid />
+            {visits.length > 0 && (
+              <Grid.Root
+                className="estate-today-aside"
+                columns={{
+                  initial: '1',
+                  md:
+                    visits.length >= 3 ? '3' : visits.length === 2 ? '2' : '1',
+                }}
+                gap="4"
+              >
+                {visits.map((node, index) => (
+                  <Grid.Item key={index}>{node}</Grid.Item>
+                ))}
+              </Grid.Root>
+            )}
           </Flex>
-          {(starred || recently || most || leftover.length > 0) && (
-            <Grid.Root columns={{ initial: '1', md: '12' }} gap="4">
-              {(starred || recently || most) && (
-                <Grid.Item colSpan={{ initial: '1', md: '4' }}>
-                  <div className="estate-today-aside">
-                    <Flex direction="column" gap="4">
-                      {starred}
-                      {recently}
-                      {most}
-                    </Flex>
-                  </div>
-                </Grid.Item>
-              )}
-              {leftover.map((widget, index) => (
-                <Grid.Item
-                  key={widget.name ?? index}
-                  colSpan={{ initial: '1', md: '4' }}
-                >
-                  <div className="estate-today-aside">{widget.component}</div>
-                </Grid.Item>
-              ))}
-            </Grid.Root>
-          )}
-        </Flex>
+        </div>
       </Content>
     </Page>
   );
