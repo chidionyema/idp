@@ -74,6 +74,7 @@ nav:
       - Otto's registration checker, asking Telegram not guessing: explanation/otto-registration-reconciler.md
       - One door for every customer's messages: explanation/customer-event-door.md
       - The dagster scheduler survives a node (pull request 1138): explanation/dagster-availability.md
+      - The model router's cache runs one replica on purpose (pull request 1249): explanation/litellm-cache-availability.md
       - The secret bridge's certificate deadlock (decision 0017): explanation/sdk-server-certificate-deadlock.md
   - Demo:
       - The Demo Standard: demo/demo-standard.md
