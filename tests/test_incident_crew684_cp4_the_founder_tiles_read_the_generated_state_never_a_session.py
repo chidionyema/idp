@@ -104,15 +104,3 @@ def test_the_render_driver_stages_the_sidecar_and_the_proxy_serves_the_state_bra
     ep = cfg["proxy"]["endpoints"]["/estate-state"]
     assert ep["target"].endswith("/chidionyema/idp/state/live-diagram")
     assert ep["allowedMethods"] == ["GET"]
-
-
-def test_the_page_reads_through_the_proxy_never_a_typed_host() -> None:
-    hook = (HOME / "useFounder.ts").read_text()
-    assert "getBaseUrl('proxy')" in hook and "FOUNDER_JSON" in hook
-    assert "https://" not in hook and "githubusercontent" not in hook
-    assert "'/estate-state/docs/founder.json'" in (HOME / "founder.ts").read_text()
-    ops = (HOME / "Ops.tsx").read_text()
-    assert 'data-testid="ops-waiting"' in ops and 'data-testid="ops-receipts"' in ops
-    assert 'data-testid="ops-founder-error"' in ops, (
-        "an unread founder.json must say so, never show empty tiles"
-    )

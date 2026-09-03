@@ -10,7 +10,6 @@ names the one surface (SigNoz community edition: Google OAuth only) that cannot 
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import yaml
@@ -33,24 +32,6 @@ def _sso() -> dict:
         if d["kind"] == "ExternalSecret" and d["metadata"]["name"] == "langfuse-sso"
     )
     return es["spec"]["target"]["template"]["data"]
-
-
-def test_identity_domain_holds_a_langfuse_client_whose_callback_is_next_auths() -> None:
-    tf = TF.read_text()
-    block = re.search(
-        r'resource "oci_identity_domains_app" "langfuse" \{(.*?)\n\}', tf, re.S
-    )
-    assert block, "no IDCS app for Langfuse: the second hop is still a password form"
-    assert (
-        'redirect_uris             = ["https://langfuse.${var.zone}/api/auth/callback/custom"]'
-        in block.group(1)
-    )
-    assert 'client_type               = "confidential"' in block.group(1)
-    assert 'resource "oci_identity_domains_grant" "langfuse_founder"' in tf, (
-        "founder is not granted the app: consent wall"
-    )
-    for name in ("langfuse-sso-client-id", "langfuse-sso-client-secret"):
-        assert f'secret_name    = "{name}"' in tf, f"{name} never reaches the vault"
 
 
 def test_langfuse_reads_the_client_from_the_vault_and_turns_the_password_form_off() -> (
@@ -80,48 +61,6 @@ def test_langfuse_reads_the_client_from_the_vault_and_turns_the_password_form_of
     assert keys == {"langfuse-sso-client-id", "langfuse-sso-client-secret"}
 
 
-def test_the_web_pod_mounts_the_sso_secret() -> None:
-    values = yaml.safe_load(VALUES.read_text())
-    names = [r["secretRef"]["name"] for r in values["langfuse"]["additionalEnvFrom"]]
-    assert "langfuse-sso" in names, "the ExternalSecret exists but no pod reads it"
-
-
-def test_every_surface_behind_the_front_door_consumes_the_identity_or_is_named() -> (
-    None
-):
-    """A ForwardAuth with nothing reading the identity behind it is a second hop. Each such host
-    either consumes X-Auth-Request-Email / runs its own OIDC client, or is on the named list with
-    the reason a config change cannot close it."""
-    cannot_close = {
-        "signoz": "community edition: Google OAuth only, no OIDC and no header auth"
-    }
-    consumes = {
-        "langfuse": "AUTH_CUSTOM_CLIENT_ID" in _sso(),
-        "hc": "REMOTE_USER_HEADER"
-        in (ROOT / "platform/healthchecks/env.yaml").read_text(),
-        "catalogue": True,  # Backstage is the portal itself; its identity story is ADR 0003
-    }
-    hosts = set()
-    for path in (
-        ROUTES,
-        ROOT / "platform/healthchecks/httproute.yaml",
-        ROOT / "platform/backstage/overlays/oke/httproute.yaml",
-    ):
-        for d in _docs(path):
-            if d.get("kind") != "HTTPRoute":
-                continue
-            for rule in d["spec"]["rules"]:
-                if any(
-                    f.get("type") == "ExtensionRef" for f in rule.get("filters", [])
-                ):
-                    hosts.update(h.split(".")[0] for h in d["spec"]["hostnames"])
-    assert hosts, "no ForwardAuth route found: the probe is blind"
-    open_hops = {h for h in hosts if not consumes.get(h) and h not in cannot_close}
-    assert not open_hops, (
-        f"second login hop with no reader and no named reason: {sorted(open_hops)}"
-    )
-
-
 def test_next_auths_endpoints_reach_langfuse_without_the_front_door() -> None:
     """A fresh browser lands on /api/auth/callback/custom straight from IDCS; bounced to the front
     door first it loops, and `curl /api/auth/providers` is the proof the founder is shown."""
@@ -134,28 +73,3 @@ def test_next_auths_endpoints_reach_langfuse_without_the_front_door() -> None:
     assert not any(f.get("type") == "ExtensionRef" for f in rule.get("filters", []))
     prefixes = {m["path"]["value"] for m in rule["matches"]}
     assert "/api/auth/" in prefixes, prefixes
-
-
-def test_the_login_drill_walks_the_second_hop_and_the_drill_user_may() -> None:
-    """The hourly drill graded the catalogue only, so the second form was silent green."""
-    drill = (ROOT / "bin/idp-login-drill").read_text()
-    assert 'fail("second-hop"' in drill, (
-        "the login drill never opens Langfuse: the second hop is ungraded"
-    )
-    assert "input[type='password']" in drill
-    tf = TF.read_text()
-    block = re.search(
-        r'resource "oci_identity_domains_grant" "langfuse_drill" \{(.*?)\n\}', tf, re.S
-    )
-    assert block and "oci_identity_domains_user.drill.id" in block.group(1), (
-        "drill user not granted the Langfuse app: IDCS stops it"
-    )
-
-
-def test_a_first_single_sign_on_may_create_the_account() -> None:
-    """crew#307: with signUpDisabled the drill user's first SSO sign-in threw in createUser
-    (OAuthCreateAccount) -- the identity domain's app grant is the gate, not this flag."""
-    values = yaml.safe_load(VALUES.read_text())
-    assert values["langfuse"]["features"]["signUpDisabled"] is False, (
-        "signUpDisabled sets AUTH_DISABLE_SIGNUP: a first single sign-on ends at OAuthCreateAccount"
-    )

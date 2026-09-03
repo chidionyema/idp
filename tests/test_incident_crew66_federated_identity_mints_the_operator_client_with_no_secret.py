@@ -97,11 +97,3 @@ def test_crew66_outside_actions_with_an_identity_the_script_stops_and_never_fall
     assert (
         "token-exchange" not in log.read_text() and "oauth/token" not in log.read_text()
     )
-
-
-def test_crew66_the_apply_run_mints_the_operator_client_and_estate_config_names_the_identity():
-    wf = (IDP / ".github/workflows/oke-check.yml").read_text()
-    assert "bin/idp-bootstrap-tailscale" in wf and "TAILSCALE_FEDERATED_CLIENT_ID" in wf
-    assert "id-token: write" in wf
-    cfg = (IDP / "clusters/oke/estate-config.yaml").read_text()
-    assert "TAILSCALE_FEDERATED_CLIENT_ID:" in cfg

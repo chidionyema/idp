@@ -29,22 +29,6 @@ def test_bootstrap_lookup_is_a_scim_get_never_the_cli_list_command():
     assert "raw-request" in body.group(1) and "?filter=" in body.group(1)
 
 
-def test_bootstrap_lookup_only_returns_a_32_hex_id():
-    body = re.search(
-        r"^scim_find\(\) \{\n(.*?)^\}", BOOTSTRAP.read_text(), re.S | re.M
-    ).group(1)
-    assert "[ ${#id} -eq 32 ]" in body and "*[!0-9a-f]*" in body
-
-
-def test_every_lookup_names_a_scim_endpoint():
-    calls = re.findall(r"scim_find (\S+) ", BOOTSTRAP.read_text())
-    assert calls, "no scim_find call sites"
-    for res in calls:
-        assert res[0].isupper(), (
-            f"{res}: SCIM endpoints are capitalised (Users, Groups, Apps, ...)"
-        )
-
-
 def test_prover_workflows_store_the_file_the_prover_wrote_and_a_store_failure_is_red():
     for wf in ("verdict-backstage.yml", "verdict-langfuse.yml"):
         lines = [
@@ -57,12 +41,6 @@ def test_prover_workflows_store_the_file_the_prover_wrote_and_a_store_failure_is
             assert '"$RUNNER_TEMP/verdict.json"' in ln, f"{wf}: {ln.strip()}"
             code = ln.split("#", 1)[0]
             assert "|| true" not in code, f"{wf}: a store Traceback must not read green"
-
-
-def test_refuse_test_counts_a_missing_grant_as_a_refusal():
-    src = VERDICT.read_text()
-    assert '("append-only" in err2 or "permission denied" in err2)' in src
-    assert "ACCEPTED: the statement ran" in src
 
 
 # --- the refusal side of the wall (founder, 2026-08-31: "what do you mean by live") -------------

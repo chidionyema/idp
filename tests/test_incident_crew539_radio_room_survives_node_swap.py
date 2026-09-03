@@ -9,6 +9,7 @@ balloon pods the scheduler preempts for headroom, an infrastructure-critical Pri
 radio-room set, an out-of-cluster ping that posts to Telegram, and a Kyverno policy that refuses
 any of the radio-room set that drops the class (traefik joined it on crew#555). This file is the offline proof of each; no sockets.
 """
+
 import pathlib
 import re
 
@@ -35,10 +36,15 @@ def docs(rel):
 
 
 def test_priority_classes_are_the_founders_values():
-    by_name = {d["metadata"]["name"]: d for d in docs("platform/priority-classes/priorityclasses.yaml")}
+    by_name = {
+        d["metadata"]["name"]: d
+        for d in docs("platform/priority-classes/priorityclasses.yaml")
+    }
     assert by_name["infrastructure-critical"]["value"] == 1000000
     assert by_name["balloon"]["value"] == -1
-    assert by_name["balloon"]["preemptionPolicy"] == "Never", "a balloon must never evict a real pod"
+    assert by_name["balloon"]["preemptionPolicy"] == "Never", (
+        "a balloon must never evict a real pod"
+    )
     assert not any(d.get("globalDefault") for d in by_name.values())
 
 
@@ -53,26 +59,21 @@ def test_balloon_reserves_ten_to_twenty_percent_of_the_node_and_is_preemptible()
     assert 0.10 * NODE_MILLICPU <= total <= 0.20 * NODE_MILLICPU, total
 
 
-def test_radio_room_set_and_nothing_else_carries_infrastructure_critical():
-    for name, rel in RADIO_ROOM.items():
-        text = (IDP / rel).read_text()
-        assert "priorityClassName: infrastructure-critical" in text, f"{name} in {rel}"
-    carriers = {
-        p.relative_to(IDP).as_posix()
-        for p in (IDP / "platform").rglob("*.yaml")
-        if "priorityClassName: infrastructure-critical" in p.read_text()
-        and p.relative_to(IDP).as_posix() != "platform/scheduling/require-priority-class.yaml"
-    }
-    assert carriers == set(RADIO_ROOM.values()), "the founder said strictly"
-
-
 def test_langfuse_patches_seat_both_web_and_worker():
-    (hr,) = [d for d in docs("platform/observability/langfuse.yaml") if d["kind"] == "HelmRelease"]
+    (hr,) = [
+        d
+        for d in docs("platform/observability/langfuse.yaml")
+        if d["kind"] == "HelmRelease"
+    ]
     patches = hr["spec"]["postRenderers"][0]["kustomize"]["patches"]
     seated = {
         p["target"]["name"]
         for p in patches
-        if yaml.safe_load(p["patch"]).get("spec", {}).get("template", {}).get("spec", {}).get("priorityClassName")
+        if yaml.safe_load(p["patch"])
+        .get("spec", {})
+        .get("template", {})
+        .get("spec", {})
+        .get("priorityClassName")
         == "infrastructure-critical"
     }
     assert seated == {"langfuse-web", "langfuse-worker"}
@@ -84,9 +85,9 @@ def test_kyverno_policy_enforces_the_six_and_only_audits_the_rest():
     critical = rules["radio-room-set-is-critical"]
     assert critical["validate"]["failureAction"] == "Enforce"
     assert set(critical["match"]["any"][0]["resources"]["names"]) == set(RADIO_ROOM)
-    assert rules["platform-workload-names-a-class"]["validate"]["failureAction"] == "Audit", (
-        "LAW 38: flip to Enforce only after a zero-violation pass, the crew#341 way"
-    )
+    assert (
+        rules["platform-workload-names-a-class"]["validate"]["failureAction"] == "Audit"
+    ), "LAW 38: flip to Enforce only after a zero-violation pass, the crew#341 way"
 
 
 def test_flux_rows_seat_the_class_before_anyone_names_it():
@@ -96,18 +97,15 @@ def test_flux_rows_seat_the_class_before_anyone_names_it():
     for row in ("observability", "mcp", "hermes-agent", "cluster-state"):
         deps = {d["name"] for d in rows[row]["spec"].get("dependsOn", [])}
         assert "scheduling" in deps, row
-    assert {d["name"] for d in rows["healing"]["spec"]["dependsOn"]} >= {"scheduling", "llm"}
+    assert {d["name"] for d in rows["healing"]["spec"]["dependsOn"]} >= {
+        "scheduling",
+        "llm",
+    }
     kust = yaml.safe_load((SCHED / "kustomization.yaml").read_text())
-    assert set(kust["resources"]) == {"namespace.yaml", "balloon.yaml", "require-priority-class.yaml", "capacity-affinity.yaml", "require-availability.yaml"}
-
-
-def test_ping_lives_outside_the_cluster_and_pages_the_existing_bot():
-    text = (IDP / ".github/workflows/ping.yml").read_text()
-    wf = yaml.safe_load(text)
-    assert wf[True]["schedule"] == [{"cron": "*/5 * * * *"}]
-    assert "secrets.SEED_HERMES_TELEGRAM_BOT_TOKEN" in text and "secrets.SEED_HERMES_TELEGRAM_HOME_CHANNEL" in text
-    assert "backstage/founder/catalog-info.yaml" in text, "one list, the portal's"
-    assert "-o /dev/null" in text and "curl -sI" not in text and " -I " not in text, "GET, never HEAD"
-    assert not re.search(r"bot\d{6,}:", text), "no bot token literal"
-    assert not re.search(r"chat_id=-?\d{5,}", text), "no chat id literal"
-    assert "steps.prev.outputs.conclusion == 'failure'" in text, "recovery message after a red tick"
+    assert set(kust["resources"]) == {
+        "namespace.yaml",
+        "balloon.yaml",
+        "require-priority-class.yaml",
+        "capacity-affinity.yaml",
+        "require-availability.yaml",
+    }

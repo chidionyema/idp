@@ -69,24 +69,6 @@ def test_missing_gitleaks_is_blind_never_a_pass(tmp_path: Path) -> None:
     assert r.stdout.startswith("BLIND   secrets   gitleaks not on PATH")
 
 
-def test_pr_report_runs_the_secrets_step_and_exits_on_blind() -> None:
-    src = (ROOT / "bin" / "pr-report").read_text()
-    assert 'idp-pr-secrets" "$REPORTS/pr-added-scan.txt"' in src
-    assert '[ "$src" -eq 2 ] && exit 2' in src
-    assert "rule=no_secret_added" in src
-
-
-def test_gate_workflow_installs_the_same_pinned_gitleaks() -> None:
-    gate = (ROOT / ".github" / "workflows" / "operating-model-gate.yml").read_text()
-    scan = (ROOT / ".github" / "actions" / "security-scan" / "action.yml").read_text()
-    pin = re.search(r"gitleaks/releases/download/(v[\d.]+)/", scan).group(1)
-    sha = re.search(r"([0-9a-f]{64})  \S*gitleaks\.tgz", scan).group(1)
-    assert f"gitleaks/releases/download/{pin}/" in gate, (
-        "gate installs a different gitleaks than security-scan"
-    )
-    assert sha in gate, "gate does not verify the same sha256 as security-scan"
-
-
 def test_checksum_manifests_are_not_scanned_for_secrets() -> None:
     """idp#901: a go.sum `h1:` hash was read as a generic-api-key (stdin mode drops the path gitleaks'
     default allowlist keys on) and reddened the gate. The secret scan skips checksum manifests; rego

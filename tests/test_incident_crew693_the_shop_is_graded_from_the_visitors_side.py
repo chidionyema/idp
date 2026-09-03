@@ -26,7 +26,6 @@ import pathlib
 import re
 
 import pytest
-import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DRILL = ROOT / "bin" / "idp-storefront-drill"
@@ -117,35 +116,3 @@ def test_the_shop_host_is_read_from_the_estate_config_never_typed():
         "LAW 46: the zone is read from clusters/oke/estate-config.yaml"
     )
     assert "ESTATE_ZONE" in body
-
-
-def test_the_drill_grades_features_and_never_layout():
-    source = DRILL.read_text().lower()
-    for word in (
-        "data-testid",
-        "queryselector",
-        "css",
-        "pixel",
-        "font",
-        "colour",
-        "stylesheet",
-    ):
-        assert word not in source, f"R53: a drill may not grade look and feel ({word})"
-
-
-def test_the_catalogue_entry_names_this_workflow_and_its_cron_verbatim():
-    row = [
-        d
-        for d in yaml.safe_load(CATALOGUE.read_text())["drills"]
-        if d["name"] == "storefront-smoke"
-    ]
-    assert row, (
-        "the drill is not in drills/catalogue.yaml, so bin/idp-verify never grades its freshness"
-    )
-    entry = row[0]
-    workflow = ROOT / ".github" / "workflows" / entry["workflow"]
-    cron = re.findall(r"- cron: \"([^\"]+)\"", workflow.read_text())
-    assert entry["schedule"] in cron, (
-        f"{entry['schedule']} is not a cron line in {entry['workflow']}"
-    )
-    assert entry["owner"], "crew#684 CP3: a drill with no owner is refused"

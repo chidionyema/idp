@@ -73,15 +73,6 @@ def test_every_subpath_configmap_the_gateway_mounts_is_generated() -> None:
     assert not (HERMES / "mac-run.yaml").exists()
 
 
-def test_the_script_still_uses_the_mounted_key_and_copies_nothing() -> None:
-    """idp#949's actual content, pinned where a reader can see it (the `cp` is the outage)."""
-    script = (HERMES / "mac-run.tpl").read_text()
-    assert "\ncp " not in script and " cp " not in script, (
-        "mac-run copies the key again; ssh reads the mount directly (row key-direct)"
-    )
-    assert 'exec ssh -i "$src"' in script
-
-
 def test_the_rendered_deployment_mounts_the_hashed_name() -> None:
     out = subprocess.run(
         ["kubectl", "kustomize", str(HERMES)],

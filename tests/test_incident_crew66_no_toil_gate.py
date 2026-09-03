@@ -151,15 +151,6 @@ def test_a_file_outside_the_agreed_scope_is_not_judged(tmp_path):
     assert r.returncode == 0, r.stdout
 
 
-def test_the_runner_and_the_ci_job_exist():
-    assert RUNNER.is_file() and RUNNER.stat().st_mode & 0o111, (
-        f"missing or non-executable {RUNNER}"
-    )
-    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
-    assert "no-toil-gate:" in ci, "the gate has no job in ci.yml"
-    assert "bin/idp-no-toil" in ci, "the ci.yml job does not run the gate"
-
-
 def test_the_gate_is_scoped_to_the_changed_files_so_main_stays_green():
     """main carries pre-existing prose that trips the phrases (bin/idp-no-toil --sweep lists
     them). The job grades the pull request's own files, never the whole tree."""

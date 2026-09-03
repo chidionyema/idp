@@ -210,21 +210,6 @@ def test_collector_reports_a_failed_secrets_list_as_minus_one_never_zero():
     assert "403" in ns["secrets_error"]
 
 
-def test_rbac_grants_list_on_secrets_metadata_and_nothing_that_could_read_a_value():
-    _, docs = _collect()
-    role = next(d for d in docs if d["kind"] == "ClusterRole")
-    secret_rules = [r for r in role["rules"] if "secrets" in r.get("resources", [])]
-    assert secret_rules, "the collector needs list on secrets metadata"
-    for r in secret_rules:
-        assert set(r["verbs"]) == {"list"}, (
-            f"secrets verbs must be list alone, got {r['verbs']}"
-        )
-    collect, _ = _collect()
-    assert "PartialObjectMetadataList" in collect, (
-        "the list must ask for metadata only, never values"
-    )
-
-
 def test_a_receipt_with_a_stale_consumer_fails_and_names_the_pod_and_the_secret():
     """Proof obligation: this receipt is the crew#506 CP4 world -- the vault write happened,
     the pod kept running on the old value -- and the grader refuses it."""

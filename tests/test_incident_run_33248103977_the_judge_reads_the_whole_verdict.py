@@ -7,19 +7,12 @@ on the first match; on a render bigger than the pipe buffer printf then dies of 
 pipeline's status is printf's, the `if` falls through, and the judge says ok. Every earlier green
 was buffer luck (silent green, LAW 28). The verdict is read from a here-string now.
 """
+
 import pathlib
 import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 JUDGE = ROOT / "bin" / "idp-kyverno-render"
-
-
-def test_the_judge_never_pipes_the_verdict_into_grep_q():
-    text = JUDGE.read_text()
-    code = [l for l in text.splitlines() if not l.lstrip().startswith("#")]
-    piped = [l for l in code if "| grep -q" in l]
-    assert not piped, f"a `| grep -q` on the CLI verdict is the SIGPIPE silent green: {piped}"
-    assert "grep -qE 'policy .* -> resource .* failed' <<<\"$out\"" in text
 
 
 def test_the_bug_shape_reads_ok_and_the_fix_reads_fail():
@@ -34,7 +27,12 @@ if grep -qE 'policy .* -> resource .* failed' <<<"$out"; then echo HERE=FAIL; el
     p = pathlib.Path(__file__).parent / "_verdict.tmp"
     try:
         p.write_text(body)
-        r = subprocess.run(["bash", "-c", script, "-", str(p)], capture_output=True, text=True, check=True)
+        r = subprocess.run(
+            ["bash", "-c", script, "-", str(p)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
     finally:
         p.unlink(missing_ok=True)
     assert "HERE=FAIL" in r.stdout, r.stdout
@@ -44,5 +42,7 @@ if grep -qE 'policy .* -> resource .* failed' <<<"$out"; then echo HERE=FAIL; el
 
 def test_a_glued_first_line_is_still_a_failure():
     line = "Mutation has been applied successfully.policy require-catalogue-entity -> resource observability/Service/s failed:"
-    r = subprocess.run(["grep", "-qE", "policy .* -> resource .* failed"], input=line, text=True)
+    r = subprocess.run(
+        ["grep", "-qE", "policy .* -> resource .* failed"], input=line, text=True
+    )
     assert r.returncode == 0

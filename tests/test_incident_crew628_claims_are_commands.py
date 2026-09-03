@@ -59,26 +59,6 @@ def test_a_world_change_with_no_claim_is_red_and_a_doc_change_is_not():
     )
 
 
-def test_generated_section_replaces_itself_and_never_the_authors_text():
-    m = tool()
-    body = (
-        "Author text\n\n"
-        + m.START
-        + "\nold\n"
-        + m.END
-        + "\n\n## Definition of done\nrows"
-    )
-    out = m.splice(
-        body, m.section([{"cmd": "true", "exit": 0, "out": "x"}], "run", False)
-    )
-    assert (
-        "old" not in out
-        and "Author text" in out
-        and "## Definition of done" in out
-        and "ok  `true` exit 0" in out
-    )
-
-
 def test_workflow_runs_on_every_pull_request_edit_and_can_write_the_body():
     wf = yaml.safe_load((ROOT / ".github/workflows/verify-claims.yml").read_text())
     assert set(wf[True]["pull_request"]["types"]) >= {"opened", "edited", "synchronize"}

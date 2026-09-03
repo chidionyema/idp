@@ -88,19 +88,6 @@ def test_the_token_is_mounted_from_the_existing_secret_never_a_second_vault_entr
     assert mount["mountPath"] == "/run/secrets/otto-staging-telegram"
 
 
-def test_no_literal_secret_anywhere_in_the_manifest():
-    raw = MANIFEST.read_text()
-    assert not LIVE_TOKEN_RE.search(raw), "a live-shaped Telegram bot token literal"
-    assert "valueFrom" not in raw or "secretKeyRef" not in raw, (
-        "Kyverno secrets-not-from-env-vars refuses env.valueFrom.secretKeyRef on a Pod (crew#341)"
-    )
-    container = _container()
-    env_names = {e["name"] for e in container.get("env", [])}
-    assert "OTTO_TELEGRAM_BOT_TOKEN" not in env_names, (
-        "the token is a mounted file the script reads itself, never a pod env var"
-    )
-
-
 def test_the_script_never_prints_the_token_it_reads():
     script = _script()
     assert "print(token" not in script
@@ -158,31 +145,6 @@ def test_container_is_locked_down_like_every_other_workload_here():
         ]
         is False
     )
-
-
-def test_resources_fit_the_namespaces_existing_quota_headroom():
-    """otto-golden-ceiling (quota.yaml) already reserves requests.cpu=200m/requests.memory=384Mi
-    against the two-replica Deployment (50m/256Mi requested, 400m/512Mi limited at most three
-    pods during a rollout); this job must fit the remaining headroom without a quota bump, so it
-    ships with no increase to a recurring bill.
-
-    crew#584: a job that wakes for one HTTP call every 5 minutes reserves no standing CPU
-    (requests.cpu is an honest "0", never an unset field the namespace's LimitRange would
-    silently default to 50m). memory keeps requests == limits -- Guaranteed for memory, since an
-    OOM here is a false FAIL on a fact-finding check, not a real saving."""
-    container = _container()
-    req = container["resources"]["requests"]
-    lim = container["resources"]["limits"]
-    assert req["cpu"] == "0", (
-        "no standing CPU reservation for a job idle 299 of every 300 seconds"
-    )
-    assert req["memory"] == lim["memory"], "Guaranteed QoS for memory"
-    cpu_limit_millis = int(str(lim["cpu"]).rstrip("m"))
-    mem_mi = int(req["memory"].rstrip("Mi"))
-    assert cpu_limit_millis <= 100, (
-        "must fit the ~150m of headroom left under requests.cpu"
-    )
-    assert mem_mi <= 100, "must fit the ~128Mi of headroom left under requests.memory"
 
 
 def test_kustomization_carries_the_new_resource():

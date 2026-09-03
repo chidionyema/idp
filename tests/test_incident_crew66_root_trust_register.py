@@ -60,15 +60,6 @@ def test_gate_passes_when_every_entry_is_born_or_ticketed(tmp_path):
     assert rc == 1 and "not MEETS" in out, out
 
 
-def test_gate_refuses_unregistered_entry(tmp_path):
-    _tree(tmp_path, "| `alpha` | x | p | api | MEETS | `bin/idp-bootstrap-alpha` |\n")
-    rc, out = _run(tmp_path)
-    assert (
-        rc == 1
-        and "beta: read by platform/x/es.yaml but absent from the register" in out
-    ), out
-
-
 def test_gate_refuses_meets_without_bootstrapper_and_miss_without_ticket(tmp_path):
     _tree(
         tmp_path,

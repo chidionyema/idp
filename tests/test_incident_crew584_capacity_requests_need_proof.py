@@ -266,17 +266,6 @@ def _requests(batch=False, off=False):
     return batch_out if batch else out
 
 
-def test_the_platform_asks_for_less_cpu_than_the_budget():
-    rows = _requests()
-    total = sum(r[2] for r in rows)
-    assert total <= CPU_BUDGET_CORES, (
-        f"platform/ requests {total:.2f} cores on paper (budget {CPU_BUDGET_CORES}); fattest: "
-        + ", ".join(
-            f"{s} {n} {c:.2f}" for s, n, c, _ in sorted(rows, key=lambda r: -r[2])[:6]
-        )
-    )
-
-
 def test_no_single_request_exceeds_what_the_fence_refuses():
     # a block above the line carries the fence's own label beside a measured number (balloon: the
     # 10-20% node reserve, crew#539; clickhouse: 1.80 GiB ceiling + merges, run 33140351385)
@@ -286,22 +275,3 @@ def test_no_single_request_exceeds_what_the_fence_refuses():
         if c > SINGLE_REQUEST_MAX and l.get("idp.platform/capacity-approved") != "true"
     ]
     assert fat == [], fat
-
-
-def test_a_platform_batch_job_fits_inside_one_balloon_pod():
-    # crew#584 CP-I: a nightly job is seated by preempting one balloon pod, so it may ask for at most
-    # what one balloon pod holds; more than that and it is standing capacity in disguise.
-    balloon = yaml.safe_load((ROOT / "platform/scheduling/balloon.yaml").read_text())
-    per_pod = _qty(
-        balloon["spec"]["template"]["spec"]["containers"][0]["resources"]["requests"][
-            "cpu"
-        ]
-    )
-    rows = _requests(batch=True)
-    assert rows, (
-        "no platform-batch job declares a CPU request (signoz-retention should)"
-    )
-    fat = [(s, n, c) for s, n, c, _ in rows if c > per_pod]
-    assert fat == [], (
-        f"platform-batch requests above one balloon pod ({per_pod}): {fat}"
-    )

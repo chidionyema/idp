@@ -13,6 +13,7 @@ nav:
   - Notification channels: reference/policy/notification-channels.md
   - Incident register: reference/incident-register.md
   - Documentation policy: reference/policy/documentation.md
+  - Test strategy, no prose pinning: reference/policy/test-strategy.md
   - Tailscale egress proxy exception: reference/policy/tailscale-egress-exception.md
   - Tailscale pod-security level: reference/policy/tailscale-pod-security.md
   - Tailscale images come from GitHub registry: reference/policy/tailscale-ghcr-images.md
@@ -93,6 +94,7 @@ nav:
       - Estate showcase: tutorials/demo/estate-showcase.md
       - Estate next: tutorials/demo/estate-next.md
       - Messaging: tutorials/demo/messaging.md
+      - Prose-pin gate: tutorials/demo/test-prose-gate.md
       - Incident register: tutorials/demo/incident-register.md
       - Trace matrix: tutorials/demo/trace-matrix.md
       - Matrix gate: tutorials/demo/matrix.md
@@ -222,6 +224,7 @@ nav:
       - DB gen: how-to/onboarding/db-gen.md
       - Dockerfiles: how-to/onboarding/dockerfiles.md
       - LiteLLM: how-to/onboarding/litellm.md
+      - Prose-pin gate: how-to/onboarding/test-prose-gate.md
       - Router image lanes: how-to/onboarding/llm-images.md
       - KINI: how-to/onboarding/kini.md
       - Otto (the founder's agent): how-to/onboarding/otto.md

@@ -41,16 +41,6 @@ def _estate_interval() -> str:
     return yaml.safe_load(hits[0]["patch"])["spec"]["interval"]
 
 
-def test_the_estate_root_never_applies_the_sandbox():
-    """The sandbox exists only while the founder's launch row exists."""
-    offenders = [
-        str(f)
-        for f in (ROOT / "clusters").rglob("*.yaml")
-        if "platform/sandbox" in f.read_text()
-    ]
-    assert offenders == [], f"sandbox must never ride the estate root: {offenders}"
-
-
 def test_the_namespace_survives_prune():
     """protect-namespaces refuses namespace deletes; prune must skip it or expiry deadlocks."""
     ns = _by_kind()["Namespace"]
@@ -120,26 +110,3 @@ def test_the_expiry_reaper_is_enabled_and_may_delete_the_flux_row():
     assert flux and {"list", "watch", "delete"} <= set(flux[0]["verbs"]), (
         "the reaper needs list/watch/delete on Flux Kustomizations to expire the sandbox"
     )
-
-
-def test_the_runbook_quotes_the_launch_and_the_expiry():
-    text = (ROOT / "docs" / "runbooks" / "demo-sandbox.md").read_text()
-    assert "cleanup.kyverno.io/ttl" in text, "the runbook must quote the expiry label"
-    assert "--prune" in text, "the launch command must prune, or expiry sweeps nothing"
-    assert "platform/sandbox/vcluster" in text
-
-
-def test_synced_services_have_an_admission_exception():
-    """The syncer mints host Services at runtime; without this exception the sandbox's DNS
-    and every guest deployment inside it are refused by require-catalogue-entity (Enforce)."""
-    doc = yaml.safe_load(
-        (ROOT / "platform" / "edge" / "catalogue-entity-exception.yaml").read_text()
-    )
-    matches = doc["spec"]["match"]["any"]
-    hit = [
-        m
-        for m in matches
-        if m["resources"].get("namespaces") == ["demo-sandbox"]
-        and m["resources"]["kinds"] == ["Service"]
-    ]
-    assert hit, "demo-sandbox Services need the catalogue-entity exception to sync"

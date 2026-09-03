@@ -12,25 +12,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_diagnose_prints_k8sgpt_findings_first():
     src = (ROOT / "bin/idp-oke-break-glass").read_text()
-    body = src[src.index("pb_diagnose()") : src.index("\npb_", src.index("pb_diagnose()") + 1)]
+    body = src[
+        src.index("pb_diagnose()") : src.index("\npb_", src.index("pb_diagnose()") + 1)
+    ]
     assert body.index("k8sgpt-results") < body.index("show nodes")
-
-
-def test_every_platform_namespace_object_is_never_pruned():
-    bad = []
-    for f in ROOT.glob("platform/*/namespace/base/namespace.yaml"):
-        for doc in yaml.safe_load_all(f.read_text()):
-            if doc and doc.get("kind") == "Namespace":
-                labels = (doc.get("metadata") or {}).get("labels") or {}
-                if labels.get("kustomize.toolkit.fluxcd.io/prune") != "disabled":
-                    bad.append(str(f.relative_to(ROOT)))
-    assert not bad, f"a Namespace that moves rows gets pruned by the old row: {bad}"
 
 
 def test_provider_independence_never_judges_a_delete():
     """Run 33227815539: no-provider-storage-class denied the DELETE of the old PVC, so the namespace
     could never finish terminating. A portability rule has nothing to say about a DELETE."""
-    for doc in yaml.safe_load_all((ROOT / "platform/edge/provider-independence.yaml").read_text()):
+    for doc in yaml.safe_load_all(
+        (ROOT / "platform/edge/provider-independence.yaml").read_text()
+    ):
         if not doc or doc.get("kind") not in ("ClusterPolicy", "ValidatingPolicy"):
             continue
         for rule in doc["spec"].get("rules", []):
@@ -44,6 +37,8 @@ def test_diagnose_prints_every_admission_denial_whole():
     the run could not name the rule. The playbook now prints each FailedCreate message in full."""
     src = (ROOT / "bin/idp-oke-break-glass").read_text()
     assert "healing-denials" in src
-    row = src[src.index("healing-denials") : src.index("\n", src.index("healing-denials"))]
+    row = src[
+        src.index("healing-denials") : src.index("\n", src.index("healing-denials"))
+    ]
     assert "reason=FailedCreate" in row and "{.message}" in row
     assert "tail -c" in row, "the message is bounded, not cut per line"

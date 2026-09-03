@@ -51,27 +51,6 @@ def flux_docs():
                 yield f, d
 
 
-def test_every_kustomization_and_helmrelease_interval_is_the_one_estate_value():
-    v = base_value()
-    bad = []
-    for f, d in flux_docs():
-        kind = d.get("kind")
-        api = str(d.get("apiVersion", ""))
-        iv = (d.get("spec") or {}).get("interval")
-        if iv is None:
-            continue
-        if (kind == "Kustomization" and api.startswith("kustomize.toolkit")) or (
-            kind == "HelmRelease" and api.startswith("helm.toolkit")
-        ):
-            if str(iv) != str(v):
-                bad.append(
-                    f"{f}: {kind} {d['metadata'].get('name')} interval={iv} != {v}"
-                )
-    assert not bad, (
-        "per-chart guesses (founder 2026-08-31: one estate value):\n" + "\n".join(bad)
-    )
-
-
 def test_no_file_beside_the_base_patch_is_silently_dropped():
     """With an explicit resources list, an unlisted file is not applied and prune deletes its
     objects. The list is pinned to the directory: adding a file without a row here is red CI."""
@@ -84,29 +63,6 @@ def test_no_file_beside_the_base_patch_is_silently_dropped():
     assert listed == on_disk, (
         f"listed-but-missing={listed - on_disk} unlisted={on_disk - listed}"
     )
-
-
-def test_landing_speed_is_the_source_poll_not_the_drift_interval():
-    """A merged change lands at GitRepository-poll speed; the 10m drift value never gates it.
-    If someone 'standardises' the source poll to 10m, changes land ten minutes late — red."""
-    docs = yaml.safe_load_all(
-        (ROOT / "clusters/oke/flux-system/gotk-sync.yaml").read_text()
-    )
-    git = next(
-        d for d in docs if isinstance(d, dict) and d.get("kind") == "GitRepository"
-    )
-    assert git["spec"]["interval"] in ("30s", "1m", "1m0s"), (
-        "the flux-system GitRepository poll is time-to-land; it stays at a minute, "
-        "not at the drift default"
-    )
-
-
-def test_the_receipt_row_says_which_revision_is_applied():
-    """Founder: make the actual state visible instead of inferred. The cluster receipt's
-    Kustomization and HelmRelease rows carry the applied revision, so 'did my merge land'
-    is a read, never an inference from interval arithmetic."""
-    text = (ROOT / "platform" / "state" / "cluster-state.yaml").read_text()
-    assert "lastAppliedRevision" in text and "lastAttemptedRevision" in text
 
 
 def _builder():

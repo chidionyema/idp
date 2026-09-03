@@ -201,26 +201,6 @@ def test_no_credential_reaches_the_pod():
     assert "--auth instance_principal" in _script()
 
 
-@pytest.mark.parametrize(
-    "needle",
-    [
-        'name           = "${var.cluster_name}-shop-backups"',
-        'access_type    = "NoPublicAccess"',
-        'versioning = "Enabled"',
-    ],
-)
-def test_the_bucket_is_private_and_keeps_history(needle):
-    assert needle in TERRAFORM.read_text()
-
-
-def test_retention_is_declared_and_configurable():
-    body = TERRAFORM.read_text()
-    assert "oci_objectstorage_object_lifecycle_policy" in body
-    assert "time_amount = var.shop_backup_retention_days" in body
-    variables = (ROOT / "platform/oci/variables.tf").read_text()
-    assert 'variable "shop_backup_retention_days"' in variables
-
-
 def test_the_nodes_may_touch_this_bucket_and_no_other():
     statements = [
         l for l in TERRAFORM.read_text().splitlines() if l.strip().startswith('"Allow ')
@@ -355,22 +335,6 @@ def test_the_drill_is_named_and_owned_and_runs_daily():
     assert any(
         step.get("run", "").strip() == "bin/idp-shop-backup" for step in job["steps"]
     )
-
-
-def test_the_runbook_and_the_job_cannot_drift_apart():
-    """R54: a runbook per change, and a test that pins it to what the change actually does."""
-    runbook = (ROOT / "docs/how-to/restore-the-shop-database.md").read_text()
-    for needle in (
-        BUCKET,  # the bucket the job writes
-        "shop/latest.json",  # the receipt the job writes last
-        "prospector-store-api-data",  # the claim being restored
-        _cronjob()["spec"]["schedule"],  # when the copy is made
-        "store.db-wal",  # the 2026-08-25 trap
-        "shop_backup_retention_days",  # how long a copy is kept
-    ):
-        assert needle in runbook, needle
-    # Restoring is destructive and stops for a person; a runbook that lost that line is wrong.
-    assert "needs the founder's word first" in runbook
 
 
 def test_the_row_is_applied_by_flux_and_not_by_a_hand():

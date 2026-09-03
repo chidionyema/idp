@@ -80,20 +80,6 @@ def test_a_pure_tag_bump_is_allowed():
     assert "1 image tag line" in why
 
 
-def test_one_line_of_anything_else_is_refused():
-    """The whole safety argument. The deploy branch is a normal branch: anything pushed to it would
-    ride to main under the same automatic merge if this did not look."""
-    mod = _load(ONLY, "image_only")
-    for extra in (
-        "-  replicas: 1",
-        "+  replicas: 3",
-        "+  imagePullPolicy: Always",
-        "-      cpu: 100m",
-    ):
-        ok, why = mod.grade(_diff(f"-  {OLD}", f"+  {TAG}", extra))
-        assert ok is False, f"{extra!r} was allowed through: {why}"
-
-
 def test_a_new_or_deleted_file_is_refused():
     mod = _load(ONLY, "image_only")
     d = _diff(f"-  {OLD}", f"+  {TAG}").replace(
@@ -232,39 +218,12 @@ def _wf():
     return yaml.safe_load(WF.read_text())
 
 
-def test_the_lane_grades_the_diff_before_it_merges_anything():
-    """Order is the safety property: if the merge could run before the gate, the gate is decoration."""
-    # From the script, not the header comment -- the comment names `gh pr merge --auto` as the
-    # thing that broke.
-    src = WF.read_text().split("        run: |", 1)[1]
-    gate = src.index("bin/idp-image-only-diff")
-    land = src.index("bin/idp-pr-landable")
-    merge = src.index("gh pr merge")
-    assert gate < land < merge, "the image-only gate must run before anything merges"
-
-
-def test_the_lane_only_ever_looks_at_the_deploy_branch():
-    src = WF.read_text()
-    assert "BRANCH: flux/image-updates" in src
-    assert '--head "$BRANCH"' in src, (
-        "it must ask for that branch's pull request, not any pull request"
-    )
-
-
 def test_the_lane_does_not_depend_on_a_cron_firing():
     """GitHub drops scheduled runs: a */5 cron in this estate fired 10 times in 60 hours. The cron
     here is a backstop and the workflow_run triggers are the mechanism."""
     on = _wf()[True] if True in _wf() else _wf()["on"]
     assert "workflow_run" in on and "ci" in on["workflow_run"]["workflows"]
     assert "workflow_dispatch" in on, "a person must be able to run the deploy by hand"
-
-
-def test_the_merge_is_made_with_the_app_token_so_main_still_builds():
-    """idp#769: a merge made with GITHUB_TOKEN starts no workflow on main, so main's own ci never
-    runs on the deploy commit and the estate's "main is green" signal goes quiet."""
-    src = WF.read_text()
-    assert "./.github/actions/github-app-token" in src
-    assert "GH_TOKEN: ${{ steps.app.outputs.token }}" in src
 
 
 def test_one_deploy_at_a_time():

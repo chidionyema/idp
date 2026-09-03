@@ -170,20 +170,6 @@ def test_router_refused_key_is_replaced(tmp_path: Path) -> None:
     assert "put k8sgpt key=ROUTER_KEY" in fk["log"].read_text()
 
 
-def test_vault_seed_mints_k8sgpt_and_carries_no_hand_seeded_secret() -> None:
-    wf = (ROOT / ".github" / "workflows" / "vault-seed.yml").read_text()
-    assert "bin/idp-router-key k8sgpt minimax" in wf
-    assert "SEED_K8SGPT_KEY" not in wf, (
-        "a person would have to mint and paste the key again"
-    )
-    model = yaml.safe_load(
-        (ROOT / "platform" / "healing" / "analyzer" / "k8sgpt.yaml").read_text()
-    )["spec"]["ai"]["model"]
-    assert model == "minimax", (
-        "the key is minted for a model the K8sGPT CR does not call"
-    )
-
-
 def test_budget_is_a_config_row_not_a_literal_in_the_script() -> None:
     d = yaml.safe_load((ROOT / "estate-defaults.yaml").read_text())
     assert isinstance(d["llm"]["virtual_key_daily_usd"], (int, float))

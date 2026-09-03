@@ -48,26 +48,6 @@ def _root_image_exception():
     )
 
 
-def test_the_values_carry_no_flag_the_image_cannot_satisfy():
-    """The regression itself: runAsNonRoot on a no-USER image is a container the kubelet refuses,
-    and readOnlyRootFilesystem is the operator's own $HOME/.config write refused at first boot."""
-    oc = _operator_config()
-    for ctx_name in ("podSecurityContext", "securityContext"):
-        ctx = oc.get(ctx_name, {})
-        assert "runAsNonRoot" not in ctx, (
-            f"{ctx_name}.runAsNonRoot is back on an image whose config declares no USER; "
-            "the kubelet refuses that container at start (diagnose run 33354635731)"
-        )
-        assert "runAsUser" not in ctx, (
-            f"{ctx_name}.runAsUser forces a uid the operator cannot run as: it writes "
-            "$HOME/.config at start (tailscale/tailscale#10638)"
-        )
-    assert "readOnlyRootFilesystem" not in oc.get("securityContext", {}), (
-        "readOnlyRootFilesystem refuses the operator's own $HOME/.config write at boot "
-        "(tailscale/tailscale#10638)"
-    )
-
-
 def test_everything_the_image_can_satisfy_still_binds():
     """The exception must stay exactly as wide as what was measured, nothing wider."""
     oc = _operator_config()

@@ -29,18 +29,6 @@ def test_incident_crew717_langfuse_keys_come_from_the_init_pair():
     }
 
 
-def test_incident_crew717_gateway_points_traces_at_the_cluster_langfuse():
-    text = (HA / "gateway.yaml").read_text(encoding="utf-8")
-    assert "value: http://langfuse-web.observability.svc:3000" in text
-    assert "hermes-agent-langfuse" in text
-    # 4ca529a0.md: no enumerated reload list to fall out of step with a new Secret
-    assert 'reloader.stakater.com/auto: "true"' in text
-    assert "secret.reloader.stakater.com/reload" not in text
-    assert "langfuse-key.yaml" in (HA / "kustomization.yaml").read_text(
-        encoding="utf-8"
-    )
-
-
 def test_incident_crew717_wave1_rows_are_steps_in_the_playbook():
     body = (ROOT / "bin" / "idp-oke-break-glass").read_text(encoding="utf-8")
     rows = set(re.findall(r"^\s+step ([a-z0-9-]+) ", body, re.M))

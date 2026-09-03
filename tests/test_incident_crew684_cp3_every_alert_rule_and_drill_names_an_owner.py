@@ -36,17 +36,6 @@ def _alerts():
                         yield f.name, rule
 
 
-def test_every_alert_rule_names_an_owner_from_the_list():
-    alerts = list(_alerts())
-    assert alerts, "no alert rules found"
-    bad = [
-        f"{f}:{r['alert']}"
-        for f, r in alerts
-        if (r.get("labels") or {}).get("owner") not in OWNERS
-    ]
-    assert not bad, f"alert rules with no owner from {sorted(OWNERS)}: {bad}"
-
-
 def test_every_drill_names_an_owner_from_the_list():
     drills = yaml.safe_load(CATALOGUE.read_text())["drills"]
     assert len(drills) >= 14

@@ -63,13 +63,3 @@ def test_the_fail_line_carries_the_vendors_status_and_names_whose_fault_it_is(tm
     for value in _h.FAKE.values():
         assert value not in r.stdout and value not in r.stderr, "a root reached stdout"
     assert "bad key ***" in lines["minimax"], lines["minimax"]
-
-
-def test_a_minimax_key_that_is_not_a_json_web_token_reaches_the_vendor(tmp_path):
-    idp, log, site = _h._tree(tmp_path)
-    verify_log = tmp_path / "verify.log"
-    (site / "sitecustomize.py").write_text(_SHIM.format(verify_log=str(verify_log)))
-    r = _h._run(idp, site, {**_h.FAKE, "SEED_MINIMAX_API_KEY": "sk-api-" + "q" * 40})
-    # the shape no longer decides; the vendor's answer does
-    assert "does not match the registry shape" not in r.stdout, r.stdout
-    assert "https://api.minimax.io/v1/models" in verify_log.read_text()

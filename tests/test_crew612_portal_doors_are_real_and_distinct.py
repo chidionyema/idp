@@ -28,78 +28,6 @@ def nav_items() -> list[dict[str, str]]:
     return [{"title": t, "to": to, "icon": icon} for t, to, icon in rows]
 
 
-def test_no_door_is_a_hash_jump():
-    for item in nav_items():
-        assert "/#" not in item["to"], (
-            f"nav item {item['title']!r} points at layout anchor {item['to']!r}; "
-            "link the real route, a scroll position is not a page"
-        )
-
-
-def test_no_two_doors_share_an_icon():
-    icons = [i["icon"] for i in nav_items()]
-    dupes = {icon for icon in icons if icons.count(icon) > 1}
-    assert not dupes, (
-        f"nav icons used twice: {sorted(dupes)}; each door reads as itself"
-    )
-
-
-def test_no_two_doors_share_a_route():
-    routes = [i["to"] for i in nav_items()]
-    dupes = {r for r in routes if routes.count(r) > 1}
-    assert not dupes, f"nav routes used twice: {sorted(dupes)}"
-
-
-def test_every_nav_door_has_its_page_wired():
-    """The doors this fix added exist, and their pages are wired into the app."""
-    routes = {i["to"] for i in nav_items()}
-    app = APP.read_text()
-    for route, plugin in [
-        ("/create", "scaffolderPlugin"),
-        ("/catalog-graph", "catalogGraphPlugin"),
-    ]:
-        assert route in routes, f"the {route} door is missing from the nav"
-        assert plugin in app, (
-            f"{plugin} is not wired in App.tsx while the nav links {route}; "
-            "that door answers 404"
-        )
-
-
-def test_every_imported_icon_is_used():
-    # An icon counts as used when the file body names it anywhere but its import line: the
-    # menu button's MenuIcon is used in JSX, not in the NAV table (2026-09-01, phone menu).
-    src = NAV.read_text()
-    imported = re.findall(r"import (\w+Icon) from '@material-ui/icons/", src)
-    body = re.sub(r"^import .*$", "", src, flags=re.M)
-    dead = [icon for icon in imported if not re.search(rf"\b{icon}\b", body)]
-    assert not dead, f"icon imports nothing uses: {dead}"
-
-
-def test_the_phone_gets_a_menu_that_slides_in_from_the_left():
-    """Founder, 2026-09-01, on his phone: "where the fuck is the menu"; "why would someone scroll
-    to bottom of page to see menu". Backstage folds its sidebar into a bottom bar under 600px.
-    The nav now switches on that same breakpoint to a Material Drawer anchored left, opened by
-    a button a screen reader calls "Open menu", listing every door in NAV in order."""
-    src = NAV.read_text()
-    assert "useMediaQuery(theme.breakpoints.down('xs'))" in src, (
-        "the phone switch is not Backstage's own xs breakpoint"
-    )
-    assert re.search(r"<Drawer\s+anchor=\"left\"", src), (
-        "the phone menu is not a Drawer anchored left"
-    )
-    assert (
-        "aria-label={`Open ${PHONE_MENU_LABEL.toLowerCase()}`}" in src
-        and "PHONE_MENU_LABEL = 'Menu'" in src
-    ), "the menu button has no spoken name; the drill opens it by that name (R53)"
-    phone = src.split("const PhoneNav")[1].split("const DesktopNav")[0]
-    assert "NAV.map(" in phone and "component={Link}" in phone, (
-        "the drawer does not list the NAV doors as links"
-    )
-    assert "onClose={() => setOpen(false)}" in phone, (
-        "the drawer does not close on the backdrop or Escape"
-    )
-
-
 APP_CONFIG = ROOT / "backstage/app-config.yaml"
 HOME_MODULE = ROOT / "backstage/packages/app/src/modules/home/homeModule.tsx"
 
@@ -170,13 +98,3 @@ def test_the_front_page_is_backstage_own_home_page_and_its_toolkit_is_the_menu()
         assert not tracking, (
             "visit tracking stores every visit in the browser and no card on the page reads it"
         )
-
-
-def test_the_portal_is_not_branded_as_the_store():
-    """The portal is the estate portal; Mumchimp is the store it runs, not its name."""
-    cfg = CONFIG.read_text()
-    for line in cfg.splitlines():
-        if re.match(r"\s*(title|name):", line):
-            assert "Mumchimp" not in line, (
-                f"portal branded as the store: {line.strip()}"
-            )

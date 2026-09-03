@@ -25,19 +25,6 @@ def toolkit_labels() -> list[str]:
     return [t["label"] for t in row[TOOLKIT_KEY]["config"]["tools"]]
 
 
-def test_drill_reads_the_doors_from_app_config_not_a_local_copy():
-    src = DRILL.read_text()
-    assert TOOLKIT_KEY in src, (
-        "bin/idp-login-drill no longer reads the toolkit from app-config; "
-        "the drill must grade the one guarded door list, never its own copy"
-    )
-    for stale in ("What we run", "How-to"):
-        assert stale not in src, (
-            f"bin/idp-login-drill still names the pre-#1130 door {stale!r}; "
-            "a hardcoded door name here is the idp#1141 outage again"
-        )
-
-
 def test_the_toolkit_parse_the_drill_uses_yields_real_distinct_doors():
     labels = toolkit_labels()
     assert len(labels) >= 8, (

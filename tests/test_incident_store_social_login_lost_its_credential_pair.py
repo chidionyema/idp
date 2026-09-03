@@ -227,26 +227,3 @@ def test_the_registry_still_names_the_keys_the_store_actually_reads():
     assert re.fullmatch(secret_shape, FAKE_SECRET) and not re.fullmatch(
         secret_shape, FAKE_ID
     )
-
-
-def test_the_founder_command_carries_the_redirect_uri_and_both_secret_names():
-    """R53/R54: his whole part is one command, and the one thing he can get wrong is the redirect
-    URI. If it is not in front of him at the moment he types it, it is not in the command."""
-    setroot = (ROOT / "bin/idp-set-root").read_text()
-    workflow = (ROOT / ".github/workflows/oke-check.yml").read_text()
-    assert "google-oauth)" in setroot
-    assert "/signin-google" in setroot
-    assert "ESTATE_ZONE" in setroot, (
-        "the redirect URI is typed, not read from the estate config"
-    )
-    for s in ("SEED_GOOGLE_OAUTH_CLIENT_ID", "SEED_GOOGLE_OAUTH_CLIENT_SECRET"):
-        assert f"ask {s} " in setroot, f"{s} is not asked for"
-        # and mapped into the apply run, or the vendor is BLIND for ever however carefully he types
-        assert f"{s}: ${{{{ secrets.{s} }}}}" in workflow, (
-            f"{s} is not mapped into the apply step"
-        )
-    assert any(
-        "google-oauth" in line
-        for line in setroot.splitlines()
-        if line.startswith("ALL=")
-    ), "google-oauth is not in the `all` road"

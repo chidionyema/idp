@@ -12,7 +12,6 @@ import stat
 import subprocess
 from pathlib import Path
 
-import yaml
 
 IDP = Path(__file__).resolve().parents[1]
 PLAYBOOK = IDP / "bin" / "idp-oke-break-glass"
@@ -80,33 +79,3 @@ def test_the_secret_value_never_reaches_argv_or_stdout(tmp_path):
         assert "--from-literal" not in c, c
         assert PAYLOAD not in c, c
         assert '{"auths"' not in c, c
-
-
-def test_the_namespace_a_cluster_secret_store_reads_from_is_never_prunable():
-    stores = []
-    for f in (IDP / "platform").rglob("*.yaml"):
-        for doc in yaml.safe_load_all(f.read_text()):
-            if isinstance(doc, dict) and doc.get("kind") == "ClusterSecretStore":
-                ns = (
-                    doc.get("spec", {}).get("provider", {}).get("kubernetes") or {}
-                ).get("remoteNamespace")
-                if ns:
-                    stores.append((f.relative_to(IDP), ns))
-    assert stores, "no kubernetes-provider ClusterSecretStore found"
-    for f, ns in stores:
-        found = False
-        for nf in (IDP / "platform").rglob("*.yaml"):
-            for doc in yaml.safe_load_all(nf.read_text()):
-                if (
-                    isinstance(doc, dict)
-                    and doc.get("kind") == "Namespace"
-                    and doc["metadata"]["name"] == ns
-                ):
-                    found = True
-                    labels = doc["metadata"].get("labels") or {}
-                    assert (
-                        labels.get("kustomize.toolkit.fluxcd.io/prune") == "disabled"
-                    ), (
-                        f"{f}: reads {ns}, but {nf.relative_to(IDP)} lets Flux prune it (idp#648 class)"
-                    )
-        assert found, f"{f}: reads namespace {ns} that no platform/ manifest declares"

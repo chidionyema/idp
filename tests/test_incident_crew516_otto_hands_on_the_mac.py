@@ -48,7 +48,6 @@ import json
 import pathlib
 import re
 
-import pytest
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -255,34 +254,12 @@ def test_policy_acl_and_tag_owners_match_the_locked_spec():
     ]
 
 
-def test_tailscale_policy_script_exists_executable_and_reads_the_estate_config():
-    assert POLICY_SCRIPT.exists() and (POLICY_SCRIPT.stat().st_mode & 0o111), (
-        "bin/idp-tailscale-policy must be executable"
-    )
-    raw = POLICY_SCRIPT.read_text()
-    assert "FOUNDER_MAC_USER" in raw and "estate-config.yaml" in raw
-    assert "api.tailscale.com/api/v2/tailnet" in raw
-
-
 def test_oke_check_apply_runs_the_policy_script_never_a_laptop():
     raw = OKE_CHECK.read_text()
     assert "bin/idp-tailscale-policy apply" in raw
     step = raw.split("bin/idp-tailscale-policy apply (crew#516 CP5)")[1][:400]
     assert "inputs.mode == 'apply'" in step
     assert "bin/idp-tailscale-policy apply" in step
-
-
-def test_mac_checklist_names_the_adopt_command_and_no_admin_console_step():
-    raw = (ROOT / "docs" / "founder" / "mac-remote-desk" / "README.md").read_text()
-    assert "tailscale up --ssh" not in raw, (
-        "crew#561: Tailscale SSH does not run on the GUI build; the checklist must not ask for it"
-    )
-    assert "bin/idp-mac-adopt-otto" in raw
-    assert (
-        "admin console" not in raw.lower()
-        or "no admin-console edit" in raw.lower()
-        or "no ACL step" in raw
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -445,40 +422,6 @@ def test_kustomization_carries_the_new_resources():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("directory", [HERMES_AGENT_DIR, OPERATOR_DIR])
-def test_no_authkey_literal_or_ssh_keypair_anywhere_in_the_two_directories(directory):
-    # .md prose is allowed to *name* authorized_keys/ssh-keygen while stating none is used (e.g.
-    # "node identity, no keypair, no `authorized_keys`") -- README.md is scanned separately below
-    # for the actual banned toil phrases. Manifests, scripts and the policy file may never contain
-    # any of these strings at all: there is no legitimate reason for one to appear there.
-    for f in directory.rglob("*"):
-        if f.is_file() and (
-            f.suffix in (".yaml", ".yml", ".hujson") or f.name.startswith("idp-")
-        ):
-            text = f.read_text()
-            assert not re.search(r"tskey-(client|auth)-[A-Za-z0-9]", text), (
-                f"{f}: a live-shaped Tailscale key"
-            )
-            assert "authorized_keys" not in text, f
-            assert "ssh-keygen" not in text, f
-            assert "-----BEGIN" not in text, f
-        elif f.is_file() and f.suffix == ".md":
-            text = f.read_text()
-            assert not re.search(r"tskey-(client|auth)-[A-Za-z0-9]", text), (
-                f"{f}: a live-shaped Tailscale key"
-            )
-            assert "-----BEGIN" not in text, f
-
-
-@pytest.mark.parametrize("doc", TOUCHED_DOCS)
-def test_no_toil_phrase_in_a_touched_readme_or_doc(doc):
-    text = doc.read_text().lower()
-    for phrase in TOIL_PHRASES:
-        assert phrase not in text, (
-            f"{doc}: {phrase!r} is the mistake 5451623095/5451909915 named"
-        )
-
-
 # ---------------------------------------------------------------------------
 # the executor runs through mac-run.
 # ---------------------------------------------------------------------------
@@ -500,13 +443,6 @@ def test_executor_keeps_the_existing_allowed_tools():
     assert "Bash(git *)" in allowed and "Bash(gh *)" in allowed
 
 
-def test_no_ssh_flag_or_key_in_the_executor_line():
-    cfg = yaml.safe_load(ESTATE.read_text())
-    doc = yaml.safe_load(cfg["data"]["estate.yaml"])
-    claude_cmd = doc["dispatch"]["runtimes"]["claude"]
-    assert "ssh" not in claude_cmd, "ssh is mac-run's job, not the executor line's"
-
-
 # ---------------------------------------------------------------------------
 # (A) single Telegram poller lock.
 # ---------------------------------------------------------------------------
@@ -524,13 +460,6 @@ def test_hermes_agent_gateway_is_one_replica_recreate():
 # ---------------------------------------------------------------------------
 
 VENDOR_ENDPOINTS = ("api.anthropic.com", "api.openai.com")
-
-
-def test_no_vendor_endpoint_literal_in_hermes_agent_manifests():
-    for f in (ROOT / "platform" / "hermes-agent").glob("*.yaml"):
-        text = f.read_text()
-        for v in VENDOR_ENDPOINTS:
-            assert v not in text, f"{f}: {v}"
 
 
 def test_the_model_is_a_config_key_not_an_inline_endpoint():
@@ -573,33 +502,6 @@ def test_founder_otto_surface_exists_and_carries_no_unresolved_link():
     for link in links:
         assert "${" not in link["url"], link["url"]
         assert re.match(r"https?://", link["url"])
-
-
-def test_founder_otto_link_urls_are_unique_in_the_file():
-    """tests/test_incident_crew401_every_founder_surface_is_in_the_catalogue.py refuses a
-    duplicate link URL anywhere in the file; check it here too so this test fails on its own."""
-    docs = _docs(FOUNDER)
-    all_urls = [
-        l["url"]
-        for d in docs
-        if d.get("kind") == "Component"
-        for l in d["metadata"].get("links", [])
-    ]
-    assert len(all_urls) == len(set(all_urls)), (
-        "a link URL is reused across two Components"
-    )
-
-
-def test_mac_adopt_reads_the_key_from_any_dispatched_run_not_only_a_green_one():
-    """2026-08-29: apply run 33280019151 minted the key, then failed on steps owned by other lanes,
-    and dispatched runs are titled "oke-check" -- so a selector that wanted `--status success`
-    and a title containing "apply" could never find the key. The adopter now walks the last
-    dispatched runs for the key line, and IDP_APPLY_RUN names one run outright."""
-    raw = (ROOT / "bin" / "idp-mac-adopt-otto").read_text()
-    assert "--status success" not in raw
-    assert 'test("apply")' not in raw
-    assert "--event workflow_dispatch" in raw
-    assert "IDP_APPLY_RUN" in raw
 
 
 def test_mac_run_reads_the_mounted_key_and_never_copies_it_and_otto_parity_grades_key_direct():

@@ -26,22 +26,6 @@ WORKFLOW = ROOT / ".github" / "workflows" / "verify-drill.yml"
 RUNNER = ROOT / "bin" / "idp-no-toil"
 
 
-def test_verify_drill_has_a_no_toil_row_that_runs_the_sweep():
-    s = DRILL.read_text()
-    assert 'idp-no-toil" --sweep' in s, (
-        "no scheduled sweep: the gate only ever reads a PR's files"
-    )
-    assert "fail no-toil" in s and "bl no-toil" in s and "ok no-toil" in s
-
-
-def test_sweep_prunes_vendored_trees_at_any_depth():
-    s = RUNNER.read_text()
-    assert "-path ./node_modules -prune" not in s, (
-        "top-level prune only: backstage/node_modules is swept"
-    )
-    assert "-name node_modules" in s and "-prune" in s
-
-
 @pytest.mark.skipif(
     shutil.which("conftest") is None,
     reason="conftest is not installed; CI pins v0.62.0",

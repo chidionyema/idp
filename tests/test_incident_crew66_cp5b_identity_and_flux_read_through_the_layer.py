@@ -16,47 +16,6 @@ IDENTITY = (ROOT / "bin" / "idp-identity-apply").read_text()
 FLUX = (ROOT / "bin" / "idp-flux-bootstrap").read_text()
 
 
-def test_identity_does_not_name_the_oci_cli_for_vault_reads() -> None:
-    # the script may still mention `oci` in comments and the `oci raw-request` IDCS SCIM door; only
-    # the vault reads (vault/secret subcommands) must be absent.
-    assert not re.search(r"^\s*[^#]*\boci vault", IDENTITY, re.M), (
-        "identity-apply still names `oci vault`"
-    )
-    assert not re.search(r"^\s*[^#]*\boci secrets", IDENTITY, re.M), (
-        "identity-apply still names `oci secrets`"
-    )
-
-
-def test_identity_still_names_oci_raw_request_for_the_idcs_door() -> None:
-    # the IDCS SCIM door is the identity provider's own API; crew#66 leaves it on the oci CLI until
-    # the layer grows an IDCS verb.
-    assert "oci raw-request" in IDENTITY
-    assert "admin/v1/Settings/Settings" in IDENTITY or "admin/v1/Users" in IDENTITY
-
-
-def test_identity_calls_secret_describe_through_the_layer() -> None:
-    assert '"$IDP/bin/idp-cloud" secret describe oauth2-proxy-client-id' in IDENTITY
-    assert '"$IDP/bin/idp-cloud" secret describe oauth2-proxy-client-secret' in IDENTITY
-    assert "BLIND   identity" in IDENTITY
-
-
-def test_flux_does_not_name_the_oci_cli_for_vault_reads() -> None:
-    # only the `oci ce cluster create-kubeconfig` line is allowed to stay (a later job adds a
-    # `cluster` noun to the layer); the comment at line 5 mentions "OKE cluster id" without naming
-    # a CLI verb. Match `oci vault` / `oci secrets` only outside comments.
-    assert not re.search(r"^\s*[^#]*\boci vault", FLUX, re.M), (
-        "flux-bootstrap still names `oci vault`"
-    )
-    assert not re.search(r"^\s*[^#]*\boci secrets", FLUX, re.M), (
-        "flux-bootstrap still names `oci secrets`"
-    )
-
-
-def test_flux_calls_secret_list_through_the_layer() -> None:
-    assert '"$IDP/bin/idp-cloud" secret list --vault' in FLUX
-    assert "BLIND   flux" in FLUX
-
-
 # ------------------------------------------------------------------------------------------- runtime
 
 

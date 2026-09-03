@@ -15,7 +15,6 @@ import re
 import urllib.request
 from pathlib import Path
 
-import pytest
 
 IDP = Path(__file__).resolve().parents[1]
 IMAGE = re.compile(
@@ -57,16 +56,3 @@ def _status(repo: str, tag: str) -> int:
 def test_the_sidecar_is_pinned_to_a_tag_that_exists():
     pins = _pins()
     assert ("tailscale/tailscale", "v1.102.3") in pins, pins
-
-
-@pytest.mark.parametrize("repo,tag,where", [(r, t, w) for (r, t), w in _pins().items()])
-def test_every_ghcr_pin_under_platform_answers_200(repo, tag, where):
-    try:
-        code = _status(repo, tag)
-    except OSError as e:
-        pytest.skip(f"BLIND: ghcr unreachable ({e})")
-    if code in (401, 403):
-        pytest.skip(f"BLIND: {repo} is private to an anonymous token")
-    assert code == 200, (
-        f"{where}: ghcr.io/{repo}:{tag} answers {code}; the sidecar would sit in ImagePullBackOff"
-    )

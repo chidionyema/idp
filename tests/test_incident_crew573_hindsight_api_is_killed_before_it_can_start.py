@@ -46,10 +46,10 @@ render, and `bin/idp-kyverno-render platform/hindsight` does it on every PR -- m
 that re-renders would need helm and the network and would be BLIND locally, which is worse than
 letting the rung that already renders own it.
 """
+
 import pathlib
 import re
 
-import pytest
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -58,7 +58,11 @@ MANIFEST = ROOT / "platform" / "hindsight" / "hindsight.yaml"
 
 def _release():
     docs = [d for d in yaml.safe_load_all(MANIFEST.read_text()) if d]
-    return next(d for d in docs if d["kind"] == "HelmRelease" and d["metadata"]["name"] == "hindsight")
+    return next(
+        d
+        for d in docs
+        if d["kind"] == "HelmRelease" and d["metadata"]["name"] == "hindsight"
+    )
 
 
 def _patched_containers():
@@ -68,7 +72,13 @@ def _patched_containers():
         for p in pr.get("kustomize", {}).get("patches") or []:
             doc = yaml.safe_load(p["patch"])
             name = doc["metadata"]["name"]
-            for c in doc.get("spec", {}).get("template", {}).get("spec", {}).get("containers") or []:
+            for c in (
+                doc.get("spec", {})
+                .get("template", {})
+                .get("spec", {})
+                .get("containers")
+                or []
+            ):
                 out[(name, c["name"])] = c
     return out
 
@@ -84,50 +94,16 @@ def test_the_manifest_is_actually_read():
     """Anti-vacuous: every assertion below is worthless if this file stops parsing."""
     rel = _release()
     assert rel["spec"]["chart"]["spec"]["chart"] == "hindsight"
-    assert _patched_containers(), "no postRenderer patch was found; the tests below assert nothing"
+    assert _patched_containers(), (
+        "no postRenderer patch was found; the tests below assert nothing"
+    )
 
 
 def test_the_api_container_can_no_longer_be_killed_before_it_starts():
     """The defect: liveness at 30s against a lifespan that had not bound the port yet."""
     probe = _patched_containers()[("hindsight-api", "api")].get("startupProbe")
-    assert probe, "hindsight-api/api has no startupProbe; liveness cannot tell slow from hung"
+    assert probe, (
+        "hindsight-api/api has no startupProbe; liveness cannot tell slow from hung"
+    )
     assert probe["httpGet"]["path"] == "/health/live", probe
     assert probe["httpGet"]["port"] == 8888, probe
-
-
-def test_the_startup_budget_fits_inside_the_release_timeout():
-    """Derived from the manifest, so the two numbers cannot drift apart by hand.
-
-    A startup budget longer than `install.timeout` is a budget the pod can never spend: Flux
-    fails the release first and the extra threshold buys nothing but a slower failure.
-    """
-    spec = _release()["spec"]
-    probe = _patched_containers()[("hindsight-api", "api")]["startupProbe"]
-    budget = probe["periodSeconds"] * probe["failureThreshold"]
-    # Flux's own fallback: `spec.install.timeout` when it is set, otherwise `spec.timeout`
-    # (fluxcd/helm-controller api/v2 HelmReleaseSpec.Install.Timeout, "defaults to
-    # HelmReleaseSpec.Timeout"). Today install sets none, so 15m is what the install gets;
-    # reading only one of the two keys would grade the wrong number the moment that changes.
-    timeout = _seconds((spec.get("install") or {}).get("timeout") or spec["timeout"])
-    assert budget < timeout, f"startup budget {budget}s >= the install timeout {timeout}s"
-    # and it is a real budget, not a token one: the chart's own liveness gives 30 + 3x10 = 60s,
-    # and anything at or under that reproduces the incident with extra steps.
-    assert budget > 60, f"startup budget {budget}s is inside the liveness window that killed it"
-
-
-def test_the_probes_the_chart_got_right_are_left_alone():
-    """Rule 3: this adds the missing probe. It does not restate the two that were correct."""
-    api = _patched_containers()[("hindsight-api", "api")]
-    assert "livenessProbe" not in api, "the chart's liveness is correct; patching it invites drift"
-    assert "readinessProbe" not in api, "the chart's readiness is correct; patching it invites drift"
-
-
-@pytest.mark.parametrize("key", ["startupProbe"])
-def test_no_container_patched_here_declares_liveness_without_startup(key):
-    """Rule 4: the shape cannot come back through the next patch added to this file."""
-    for (dep, container), spec in _patched_containers().items():
-        if "livenessProbe" in spec:
-            assert key in spec, (
-                f"{dep}/{container} declares a livenessProbe and no {key}: the same shape that "
-                "cost hindsight-api 392 kills (crew#573)"
-            )

@@ -102,10 +102,3 @@ def test_the_prover_workflow_runs_the_negative_control_hourly():
     assert "playwright" not in WORKFLOW.read_text(), (
         "no browser: the machine door is the point"
     )
-
-
-def test_idp_prove_reads_the_token_from_the_vault_entry_never_the_environment():
-    src = (IDP / "bin" / "idp-prove").read_text()
-    assert 'vault("backstage-env")' in src and '.get("PROVER_TOKEN")' in src
-    assert 'environ.get("PROVER_TOKEN' not in src and 'environ["PROVER_TOKEN' not in src
-    assert '"backstage": prove_backstage' in src

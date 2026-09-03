@@ -22,40 +22,15 @@ regressing to skip the refresh attempt again):
       PATH at all), the script fails BLIND (exit 2) rather than hanging or
       silently reporting a live session that doesn't exist.
 """
+
 from __future__ import annotations
 
 import os
-import stat
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "bin" / "idp-oci-whoami"
-
-
-def test_t1_script_calls_oci_session_refresh_before_giving_up():
-    text = SCRIPT.read_text()
-    assert "oci session refresh" in text, (
-        "idp-oci-whoami must attempt a same-session refresh (crew#345) before "
-        "falling back to demanding a fresh founder browser login"
-    )
-    # The refresh call must happen in the fallback path (after validate() fails
-    # on every profile), not replace the fast-path check for an already-valid
-    # session -- both real behaviours matter.
-    assert "oci session validate" in text, "must still check for an already-valid session first"
-
-
-def test_t2_refresh_is_attempted_per_profile_not_just_first():
-    """A loop, not a single hardcoded profile name -- LAW 46, no hardcoded identity."""
-    text = SCRIPT.read_text()
-    # The refresh fallback must live inside a loop over $SESSIONS_DIR/*/, the
-    # same pattern the primary validate() loop already uses -- confirms it is
-    # not special-cased to one profile name.
-    preceding = text[:text.index("oci session refresh")]
-    assert 'for d in "$SESSIONS_DIR"' in preceding or 'for d in "$SESSIONS_DIR"' in text, (
-        "refresh fallback must iterate every profile, matching the primary "
-        "validate() loop's pattern -- not hardcode a single profile name"
-    )
 
 
 def test_t3_missing_oci_binary_fails_blind_not_hung():
@@ -78,8 +53,3 @@ def test_t3_missing_oci_binary_fails_blind_not_hung():
     assert result.returncode != 0 or "ok" in result.stdout, (
         f"script must not silently report success with no oci tooling reachable: {result.stdout!r}"
     )
-
-
-def test_script_is_executable():
-    mode = SCRIPT.stat().st_mode
-    assert mode & stat.S_IXUSR, "idp-oci-whoami must be chmod +x"

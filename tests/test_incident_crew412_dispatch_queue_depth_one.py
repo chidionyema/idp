@@ -29,17 +29,16 @@ def _stub_gh(tmp_path: Path, pending_ids: str) -> dict:
         "exit 0\n"
     )
     gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
-    env = dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}", PENDING_IDS=pending_ids)
+    env = dict(
+        os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}", PENDING_IDS=pending_ids
+    )
     return {"env": env, "log": log}
 
 
 def _run(args, env):
-    return subprocess.run([str(SCRIPT), *args], env=env, capture_output=True, text=True, timeout=30)
-
-
-def test_workflow_keeps_one_pending_run_per_group():
-    text = WORKFLOW.read_text()
-    assert "cancel-in-progress: false" in text, "the guard exists because the group does not cancel in progress"
+    return subprocess.run(
+        [str(SCRIPT), *args], env=env, capture_output=True, text=True, timeout=30
+    )
 
 
 def test_refuses_while_a_dispatch_is_pending(tmp_path):
@@ -55,14 +54,19 @@ def test_dispatches_when_nothing_is_pending(tmp_path):
     r = _run(["catalogue-roll"], stub["env"])
     assert r.returncode == 0, r.stdout + r.stderr
     logged = stub["log"].read_text()
-    assert "workflow run oke-check.yml --ref main -f mode=break-glass -f playbook=catalogue-roll" in logged
+    assert (
+        "workflow run oke-check.yml --ref main -f mode=break-glass -f playbook=catalogue-roll"
+        in logged
+    )
 
 
 def test_unknown_playbook_is_refused_before_any_gh_call(tmp_path):
     stub = _stub_gh(tmp_path, "")
     r = _run(["no-such-playbook"], stub["env"])
     assert r.returncode == 64
-    assert not stub["log"].exists(), "gh was called before the playbook name was checked"
+    assert not stub["log"].exists(), (
+        "gh was called before the playbook name was checked"
+    )
 
 
 def test_a_playbook_fix_can_be_proved_on_a_branch_before_it_is_merged(tmp_path):

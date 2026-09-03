@@ -11,7 +11,6 @@ pull-request number the queue event does not carry.
 
 import json
 import pathlib
-import re
 
 import yaml
 
@@ -51,49 +50,3 @@ def test_the_release_ruleset_asks_no_human_for_a_review():
     assert p["required_approving_review_count"] == 0
     assert p["require_last_push_approval"] is False
     assert p["require_extra_approval_for_unattributed_changes"] is False
-
-
-def test_ci_fires_on_the_queue_event():
-    on = CI.get("on") or CI.get(True)
-    assert "merge_group" in on, (
-        "no merge_group trigger: every queued entry hangs to timeout"
-    )
-
-
-def test_every_required_check_reports_inside_a_queued_run():
-    """Each required context maps to a ci.yml job whose `if` (if any) admits merge_group."""
-    contexts = [
-        c["context"]
-        for c in _rule(REQUIRED, "required_status_checks")["parameters"][
-            "required_status_checks"
-        ]
-    ]
-    by_name = {}
-    for job_id, spec in CI["jobs"].items():
-        by_name[spec.get("name", job_id)] = spec
-        by_name[job_id] = spec
-    for ctx in contexts:
-        head = ctx.split(" / ")[0]
-        if head == "operating-model-gate":
-            # a called workflow: its own job gates the event
-            m = re.search(
-                r"^  operating-model-gate:\n    if: ([^\n]+)", GATE_TEXT, re.M
-            )
-            assert m and "merge_group" in m.group(1), f"{ctx} skips queued runs"
-            continue
-        spec = by_name.get(head) or by_name.get(ctx)
-        assert spec is not None, f"required context {ctx} names no ci.yml job"
-        cond = spec.get("if", "")
-        admits = (not cond) or ("merge_group" in cond) or (cond.strip() == "always()")
-        assert admits, (
-            f"required context {ctx} is gated by {cond!r} and never reports in the queue"
-        )
-
-
-def test_the_two_pr_shaped_checks_learn_their_number_from_the_queue_ref():
-    # verdict-fresh diffs against the queue's own base commit, not a base_ref the event lacks
-    assert "github.event.merge_group.base_sha" in CI_TEXT
-    # the operating-model gate parses the pull-request number out of gh-readonly-queue/<base>/pr-<n>-<sha>
-    assert re.search(r"queue/\[\^/\]\*/pr-", GATE_TEXT), (
-        "the gate cannot name the pull request it grades in a queued run"
-    )

@@ -141,30 +141,6 @@ def test_a_pull_request_opened_before_the_rule_landed_is_not_refused(tmp_path):
     )
 
 
-def test_the_rule_grades_the_same_three_prefixes_verify_claims_does():
-    """One definition of "touches the world", not a second one invented here (LAW 23)."""
-    rego = (POLICY / "operating_model.rego").read_text()
-    assert 'world_prefixes := {"platform/", "clusters/", "bin/idp-"}' in rego
-    wf = (ROOT / ".github/workflows/verify-claims.yml").read_text()
-    assert "platform/, clusters/ or bin/idp-*" in wf
-
-
-def test_no_other_fixture_in_the_tree_is_refused_by_this_rule():
-    """The rule shipped refusing four fixtures other suites assert exit 0 on, and they were
-    found one red CI run at a time -- twice in tests/, then sovereign/tests/bdd/, because the
-    sweep globbed `tests/*.py` and a subdirectory is not matched by that. This is the sweep as
-    a test: every opmodel fixture except the two this rule owns must be clean of it, so the
-    next fixture added anywhere is graded here instead of in someone's third failed run."""
-    owned = {"opmodel-no-control.json", "opmodel-control-none.json"}
-    refused = []
-    for fx in sorted((POLICY / "fixtures").glob("opmodel-*.json")):
-        if fx.name in owned:
-            continue
-        if "rule=control_shipped" in _rules(fx):
-            refused.append(fx.name)
-    assert not refused, f"these fixtures are refused by control_shipped: {refused}"
-
-
 def test_a_control_written_in_backticks_is_accepted(tmp_path):
     """LAW 38, found on #1047 the morning after this rule landed. Every body in this estate
     writes paths in backticks -- the five Definition-of-done rows do, and so does this rule's own

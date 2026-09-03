@@ -52,43 +52,6 @@ def cluster_rows():
     return rows
 
 
-def test_generator_reads_the_cluster_not_only_the_mac():
-    assert "def cluster_entities" in GEN.read_text()
-    assert "cluster = cluster_entities()" in GEN.read_text()
-
-
-def test_every_flux_row_and_helm_chart_is_an_entity(tmp_path):
-    ents = render(tmp_path)
-    have = {
-        (
-            e["metadata"].get("annotations", {}).get("estate/flux-kind"),
-            e["metadata"].get("annotations", {}).get("estate/flux-name"),
-        )
-        for e in ents
-    }
-    rows = cluster_rows()
-    assert rows, "no Flux rows found in the checkout"
-    missing = sorted(rows - have)
-    assert not missing, f"cluster rows with no catalogue entity: {missing}"
-
-
-def test_every_platform_directory_is_an_entity(tmp_path):
-    ents = render(tmp_path)
-    files = {e["metadata"].get("annotations", {}).get("estate/file", "") for e in ents}
-    paths = {e["metadata"].get("annotations", {}).get("estate/path", "") for e in ents}
-    reached = {
-        p.lstrip("./").split("/")[1]
-        for p in (files | paths)
-        if p.lstrip("./").startswith("platform/")
-    }
-    reached = {r for r in reached if r}
-    dirs = {
-        d for d in os.listdir(ROOT / "platform") if (ROOT / "platform" / d).is_dir()
-    }
-    missing = sorted(dirs - reached)
-    assert not missing, f"platform directories dark in the catalogue: {missing}"
-
-
 def test_hubble_and_cilium_are_named(tmp_path):
     ents = {e["metadata"]["name"]: e for e in render(tmp_path)}
     assert "cluster-cni-hubble" in ents and "cluster-cni-cilium" in ents

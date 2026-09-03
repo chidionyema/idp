@@ -57,18 +57,3 @@ def test_every_layer_between_the_portal_and_healthchecks_has_a_row():
         )
     # hashes and lengths only: a key value never reaches a run log (R49)
     assert "sha256sum" in fn and "cat $pk" not in fn and "cat $hk" not in fn
-
-
-def test_door_opens_sends_exactly_the_portal_proxys_headers():
-    fn = PLAYBOOK.read_text().split("pb_healthchecks_door() {", 1)[1]
-    cfg = yaml.safe_load(APP_CONFIG.read_text())["proxy"]["endpoints"]["/healthchecks"]
-    # node fetch drops a Host header (forbidden header name); the row must use http.request
-    assert (
-        "http.request(" in fn
-        and "fetch(" not in fn.split("door-opens ", 1)[1].split("\n", 1)[0]
-    )
-    assert "healthchecks.healthchecks.svc" in fn and cfg["target"].startswith(
-        "http://healthchecks.healthchecks.svc:8000"
-    )
-    assert cfg["headers"]["X-Api-Key"]["$file"] in fn
-    assert "HEALTHCHECKS_HOST" in fn and "HEALTHCHECKS_HOST" in cfg["headers"]["Host"]

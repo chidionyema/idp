@@ -3,6 +3,7 @@ was told. Rule (R35 scenario 4, crew#250): a broken workload is reported within 
 Flux reports it only if (a) every cluster Kustomization with health checks waits on them, so a
 stalled workload becomes an error event, and (b) an Alert forwards Kustomization errors from
 flux-system and HelmRelease errors from every namespace a HelmRelease lives in."""
+
 import glob
 import pathlib
 
@@ -28,14 +29,9 @@ def _namespace_of(path, doc):
         stamped = yaml.safe_load(k.read_text()).get("namespace")
         if stamped:
             return stamped
-    raise AssertionError(f"{path}: HelmRelease {doc['metadata']['name']} has no namespace anywhere")
-
-
-def test_every_cluster_kustomization_with_health_checks_waits():
-    for f, d in _docs("clusters/*/*.yaml"):
-        if d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["spec"].get("healthChecks"):
-            assert d["spec"].get("wait") is True, f"{f}: {d['metadata']['name']} has healthChecks but wait is not true"
-            assert d["spec"].get("timeout"), f"{f}: {d['metadata']['name']} has no timeout, so it never stalls"
+    raise AssertionError(
+        f"{path}: HelmRelease {doc['metadata']['name']} has no namespace anywhere"
+    )
 
 
 def test_every_health_checked_kustomization_reconciles_within_ten_minutes():
@@ -44,8 +40,11 @@ def test_every_health_checked_kustomization_reconciles_within_ten_minutes():
     slow = []
     for f in sorted(glob.glob(str(ROOT / "clusters" / "*" / "*.yaml"))):
         for d in yaml.safe_load_all(open(f)):
-            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and (
-                d["spec"].get("healthChecks") or d["spec"].get("wait")
+            if (
+                d
+                and d.get("kind") == "Kustomization"
+                and str(d.get("apiVersion", "")).startswith("kustomize.toolkit")
+                and (d["spec"].get("healthChecks") or d["spec"].get("wait"))
             ):
                 iv = d["spec"]["interval"]
                 if not iv.endswith("m") or int(iv[:-1]) > 10:
@@ -56,9 +55,18 @@ def test_every_health_checked_kustomization_reconciles_within_ten_minutes():
 def test_alert_covers_every_namespace_that_holds_a_helmrelease():
     alerts = [d for _, d in _docs("platform/alerts/*.yaml") if d.get("kind") == "Alert"]
     assert alerts, "no Alert in platform/alerts"
-    covered = {(s["kind"], s.get("namespace")) for a in alerts for s in a["spec"]["eventSources"] if s["name"] == "*"}
+    covered = {
+        (s["kind"], s.get("namespace"))
+        for a in alerts
+        for s in a["spec"]["eventSources"]
+        if s["name"] == "*"
+    }
     assert ("Kustomization", "flux-system") in covered
-    hr_namespaces = {_namespace_of(f, d) for f, d in _docs("platform/**/*.yaml") if d.get("kind") == "HelmRelease"}
+    hr_namespaces = {
+        _namespace_of(f, d)
+        for f, d in _docs("platform/**/*.yaml")
+        if d.get("kind") == "HelmRelease"
+    }
     missing = {ns for ns in hr_namespaces if ("HelmRelease", ns) not in covered}
     assert not missing, f"HelmRelease namespaces with no alert: {sorted(missing)}"
     # The founder's channel carries errors only; a machine ledger (githubdispatch, crew#325)
@@ -72,7 +80,12 @@ def test_telegram_channel_survives_substitution_as_a_string():
     """Live incident 2026-08-25: kustomize dropped the quotes around `${channel}`, the
     numeric chat id substituted in as a YAML integer and the Provider dry-run refused it.
     The synced Secret value carries its own quotes; the Provider leaves the scalar bare."""
-    es = next(d for d in yaml.safe_load_all(open(ROOT / "platform" / "alerts-secret" / "flux-telegram.yaml")))
+    es = next(
+        d
+        for d in yaml.safe_load_all(
+            open(ROOT / "platform" / "alerts-secret" / "flux-telegram.yaml")
+        )
+    )
     channel = es["spec"]["target"]["template"]["data"]["channel"]
     assert channel.startswith('"') and channel.endswith('"'), channel
     prov = (ROOT / "platform" / "alerts" / "provider.yaml").read_text()
@@ -89,22 +102,29 @@ def _alert_rows(root, *args, env=None):
     import subprocess
     import sys
 
-    return subprocess.run([sys.executable, str(ROOT / "bin/idp-alert-rows"), *args], capture_output=True, text=True,
-                          cwd=root, env={**os.environ, **(env or {})})
+    return subprocess.run(
+        [sys.executable, str(ROOT / "bin/idp-alert-rows"), *args],
+        capture_output=True,
+        text=True,
+        cwd=root,
+        env={**os.environ, **(env or {})},
+    )
 
 
 def test_incident_crew344_alert_rows_are_generated_and_current():
     r = _alert_rows(ROOT, "--check")
-    assert r.returncode == 0 and r.stdout.startswith("ok      alert-rows"), r.stdout + r.stderr
+    assert r.returncode == 0 and r.stdout.startswith("ok      alert-rows"), (
+        r.stdout + r.stderr
+    )
 
 
 def test_incident_crew344_a_missing_namespace_row_is_refused(tmp_path):
     # never mutate the real alert.yaml: under pytest -n auto another worker reads it in the same second
     # (idp#638 bdd run 33204318695: crew406 saw an eventSource with no namespace)
     keep = (ROOT / "platform/alerts/alert.yaml").read_text()
-    assert '      namespace: temporal\n' in keep
+    assert "      namespace: temporal\n" in keep
     mutated = tmp_path / "alert.yaml"
-    mutated.write_text(keep.replace('      namespace: temporal\n', '', 1))
+    mutated.write_text(keep.replace("      namespace: temporal\n", "", 1))
     r = _alert_rows(ROOT, "--check", env={"IDP_ALERT_FILE": str(mutated)})
     assert r.returncode == 1 and "stale" in r.stdout, r.stdout + r.stderr
     assert (ROOT / "platform/alerts/alert.yaml").read_text() == keep

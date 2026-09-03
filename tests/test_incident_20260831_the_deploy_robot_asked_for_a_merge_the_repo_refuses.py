@@ -20,7 +20,6 @@ so the robot's body could never satisfy it. Both halves are held here.
 import os
 import re
 import subprocess
-import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ARM = os.path.join(ROOT, "bin", "idp-pr-arm")
@@ -50,29 +49,6 @@ def _code_lines(text):
         if s.startswith("#") or s.startswith("//"):
             continue
         yield i, line
-
-
-def test_no_robot_asks_github_for_an_auto_merge():
-    hits = [
-        f"{p}:{i}: {line.strip()}"
-        for p, text in _files()
-        for i, line in _code_lines(text)
-        if AUTO.search(line)
-    ]
-    assert not hits, (
-        "these call `gh pr merge --auto`, which this repository refuses "
-        "(allow_auto_merge=false); route them through bin/idp-pr-arm:\n"
-        + "\n".join(hits)
-    )
-
-
-def test_the_arm_tool_is_silent_about_the_repository_and_asks_it():
-    """LAW 46: the tool must read the setting, never assume it."""
-    src = open(ARM, encoding="utf-8").read()
-    assert "allow_auto_merge" in src, (
-        "bin/idp-pr-arm must ask the repository what it allows"
-    )
-    assert "gh api" in src, "the answer comes from the API, not from a constant"
 
 
 def _run_arm(allow, tmp_path):
@@ -108,28 +84,3 @@ def test_auto_merge_off_waits_on_the_founder_and_does_not_fail(tmp_path):
     assert p.stdout.startswith("waiting"), p.stdout
     assert "pull/77" in p.stdout, "the founder needs the link, not a status word"
     assert "pr merge" not in calls, "it must not ask for a merge the repository refuses"
-
-
-def test_the_image_update_body_carries_a_verify_line_the_gate_accepts():
-    src = open(
-        os.path.join(ROOT, "bin", "idp-image-update-pr"), encoding="utf-8"
-    ).read()
-    m = re.search(r"VERIFY='Verify: `([^`]+)`'", src)
-    assert m, (
-        "bin/idp-image-update-pr must declare the Verify: line the verify gate requires"
-    )
-
-    sys.path.insert(0, os.path.join(ROOT, "bin"))
-    heads = re.search(
-        r"ALLOWED_HEADS\s*=\s*\((.*?)\)",
-        open(os.path.join(ROOT, "bin", "idp-verify-claims"), encoding="utf-8").read(),
-        re.S,
-    )
-    allowed = tuple(re.findall(r'"([^"]+)"', heads.group(1)))
-    assert m.group(1).startswith(allowed), (
-        f"{m.group(1)!r} is not an observing command; bin/idp-verify-claims accepts {allowed}"
-    )
-    assert '"$VERIFY"' in src, "the line must be printed into the body on create"
-    assert "Verify: " in src.split("m=UNKNOWN")[0], (
-        "and backfilled onto a body opened before it"
-    )

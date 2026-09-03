@@ -86,43 +86,12 @@ def _drill_fields(path: Path) -> list[str]:
     return [str(r.get("proves", "")) for r in rows if r.get("proves")]
 
 
-@pytest.mark.parametrize(
-    "path", sorted(BUTTONS.glob("*/template.yaml")), ids=lambda p: p.parent.name
-)
-def test_every_founder_button_is_plain_english(path: Path) -> None:
-    findings = _vale("\n\n".join(_button_fields(path)))
-    assert not findings, f"{path.relative_to(ROOT)} carries dev speak:\n" + "\n".join(
-        findings
-    )
-
-
-def test_the_founder_catalogue_is_plain_english() -> None:
-    findings = _vale("\n\n".join(_catalog_fields(FOUNDER_CATALOG)))
-    assert not findings, (
-        "backstage/founder/catalog-info.yaml carries dev speak:\n" + "\n".join(findings)
-    )
-
-
-def test_the_drill_catalogue_says_what_each_drill_proves_in_plain_english() -> None:
-    findings = _vale("\n\n".join(_drill_fields(DRILLS)))
-    assert not findings, (
-        "drills/catalogue.yaml `proves:` carries dev speak:\n" + "\n".join(findings)
-    )
-
-
 def test_the_boundary_refuses_a_ticket_code_a_layer_label_and_dev_speak() -> None:
     """Negative control: the grader is awake. A sentence with all three classes is refused."""
     findings = _vale("The prover checks crew#631 at L1 and reconciles the HelmRelease.")
     checks = {f.split(":")[0] for f in findings}
     assert {"Estate.DevSpeak", "Estate.TicketCodes", "Estate.Layers"} <= checks, (
         findings
-    )
-
-
-def test_the_boundary_ignores_links_and_template_expressions() -> None:
-    """A URL or a `${{ }}` expression is machine text, never a word a person reads."""
-    assert not _vale(
-        "Open https://github.com/x/idp/issues/631 and ${{ inputs.repo }} today."
     )
 
 

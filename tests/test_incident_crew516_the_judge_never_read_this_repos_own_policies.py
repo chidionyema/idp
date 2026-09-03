@@ -13,6 +13,7 @@ the cluster refused robusta on the 25th, and monitoring stayed down 8h. crew#539
 two missing policies in a list. A list is the part that does not survive the next policy, so this
 one derives: the loader walks platform/ and these tests walk platform/, and neither knows a name.
 """
+
 import os
 import subprocess
 import sys
@@ -43,24 +44,26 @@ def shipped_policies():
     return found
 
 
-def test_this_repo_ships_cluster_policies_at_all():
-    """The premise. If it ever goes to zero the tests below pass vacuously and prove nothing."""
-    shipped = shipped_policies()
-    assert shipped, "no ClusterPolicy under platform/: the tests below would pass on an empty set"
-
-
 def test_every_policy_this_repo_ships_reaches_the_judged_set(tmp_path):
     empty = tmp_path / "policies.yaml"
     empty.write_text("")
-    out = subprocess.run([sys.executable, LOADER, PLATFORM, str(empty)],
-                         capture_output=True, text=True, check=True).stdout
-    loaded = {d["metadata"]["name"] for d in yaml.safe_load_all(empty.read_text())
-              if isinstance(d, dict) and d.get("kind") == "ClusterPolicy"}
+    out = subprocess.run(
+        [sys.executable, LOADER, PLATFORM, str(empty)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    loaded = {
+        d["metadata"]["name"]
+        for d in yaml.safe_load_all(empty.read_text())
+        if isinstance(d, dict) and d.get("kind") == "ClusterPolicy"
+    }
     shipped = shipped_policies()
     missing = {n: p for n, p in shipped.items() if n not in loaded}
     assert not missing, (
         f"the judge would render against a set that omits {missing}; that is the 2026-08-28 "
-        f"blindness back. Loader said: {out.strip()!r}")
+        f"blindness back. Loader said: {out.strip()!r}"
+    )
 
 
 def test_a_policy_already_in_the_rendered_set_is_not_duplicated(tmp_path):
@@ -73,15 +76,26 @@ def test_a_policy_already_in_the_rendered_set_is_not_duplicated(tmp_path):
     for dirpath, _, names in os.walk(PLATFORM):
         for n in names:
             if os.path.relpath(os.path.join(dirpath, n), IDP) == shipped[name]:
-                doc = [d for d in yaml.safe_load_all(open(os.path.join(dirpath, n)))
-                       if isinstance(d, dict) and d.get("kind") == "ClusterPolicy"
-                       and d["metadata"]["name"] == name][0]
+                doc = [
+                    d
+                    for d in yaml.safe_load_all(open(os.path.join(dirpath, n)))
+                    if isinstance(d, dict)
+                    and d.get("kind") == "ClusterPolicy"
+                    and d["metadata"]["name"] == name
+                ][0]
     pre = tmp_path / "policies.yaml"
     pre.write_text(yaml.safe_dump(doc, sort_keys=False))
-    subprocess.run([sys.executable, LOADER, PLATFORM, str(pre)],
-                   capture_output=True, text=True, check=True)
-    names = [d["metadata"]["name"] for d in yaml.safe_load_all(pre.read_text())
-             if isinstance(d, dict) and d.get("kind") == "ClusterPolicy"]
+    subprocess.run(
+        [sys.executable, LOADER, PLATFORM, str(pre)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    names = [
+        d["metadata"]["name"]
+        for d in yaml.safe_load_all(pre.read_text())
+        if isinstance(d, dict) and d.get("kind") == "ClusterPolicy"
+    ]
     assert names.count(name) == 1, f"{name} was written twice: {names}"
 
 
@@ -90,24 +104,18 @@ def test_a_file_the_loader_cannot_parse_is_skipped_not_fatal(tmp_path):
     judge nobody runs, and the fallback that gets reached for is `|| true`."""
     root = tmp_path / "platform"
     (root / "chart").mkdir(parents=True)
-    (root / "chart" / "template.yaml").write_text("{{- if .Values.x }}\nkind: NotYaml: [\n")
+    (root / "chart" / "template.yaml").write_text(
+        "{{- if .Values.x }}\nkind: NotYaml: [\n"
+    )
     (root / "real.yaml").write_text(
-        "apiVersion: kyverno.io/v1\nkind: ClusterPolicy\nmetadata:\n  name: a-real-one\nspec: {}\n")
+        "apiVersion: kyverno.io/v1\nkind: ClusterPolicy\nmetadata:\n  name: a-real-one\nspec: {}\n"
+    )
     out = tmp_path / "policies.yaml"
     out.write_text("")
-    r = subprocess.run([sys.executable, LOADER, str(root), str(out)],
-                       capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, LOADER, str(root), str(out)], capture_output=True, text=True
+    )
     assert r.returncode == 0, r.stderr
-    assert "a-real-one" in out.read_text(), "the unparseable neighbour swallowed a real policy"
-
-
-def test_the_render_script_loads_them_before_it_judges_anything():
-    """The loader existing is not the fix; being called is. It must run before the first
-    `kyverno apply`, or the first render is judged against the set that was missing them."""
-    body = open(RENDER).read()
-    call = body.index("idp-kyverno-own-policies")
-    apply_at = body.index("kyverno apply")
-    assert call < apply_at, "the own policies are loaded after the first render is judged"
-    assert '"$IDP/bin/idp-kyverno-own-policies"' in body, (
-        "the loader is invoked by a relative path: the judge is run from CI, from a worktree and "
-        "from a pre-push hook, and only $IDP is true in all three (LAW 46)")
+    assert "a-real-one" in out.read_text(), (
+        "the unparseable neighbour swallowed a real policy"
+    )

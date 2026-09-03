@@ -17,6 +17,7 @@ setup-venv`) was only in the cluster's events, which nothing correlated to the p
 A diagnostic that names a broken pod and cannot say why is the proxy this estate keeps grading.
 These tests run the real playbook against a recording kubectl that reports exactly that pod.
 """
+
 import os
 import stat
 import subprocess
@@ -43,9 +44,9 @@ def _fake_cluster(tmp_path: Path) -> tuple[Path, Path]:
         f'printf \'%s\\n\' "kubectl $*" >> "{log}"\n'
         'case "$*" in\n'
         f'  *"{PENDING_SELECTOR}"*-o\\ jsonpath*) echo "{NS} {POD}" ;;\n'
-        '  *jsonpath*) : ;;\n'
-        '  *) echo ok ;;\n'
-        'esac\n'
+        "  *jsonpath*) : ;;\n"
+        "  *) echo ok ;;\n"
+        "esac\n"
         "exit 0\n"
     )
     kubectl.chmod(kubectl.stat().st_mode | stat.S_IEXEC)
@@ -59,8 +60,13 @@ def _fake_cluster(tmp_path: Path) -> tuple[Path, Path]:
 def _diagnose(tmp_path: Path) -> tuple[subprocess.CompletedProcess, str]:
     bin_dir, log = _fake_cluster(tmp_path)
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
-    p = subprocess.run([str(PLAYBOOK), "diagnose"], capture_output=True, text=True, env=env,
-                       timeout=300)
+    p = subprocess.run(
+        [str(PLAYBOOK), "diagnose"],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=300,
+    )
     return p, (log.read_text() if log.exists() else "")
 
 
@@ -69,21 +75,17 @@ def test_a_pod_stuck_in_init_is_described(tmp_path):
     p, calls = _diagnose(tmp_path)
     assert p.returncode == 0, p.stdout + p.stderr
     assert f"describe pod {POD} -n {NS}" in calls, (
-        "diagnose listed the pod under pods-not-running and never described it:\n" + calls)
+        "diagnose listed the pod under pods-not-running and never described it:\n"
+        + calls
+    )
 
 
 def test_a_pod_stuck_in_init_has_its_log_read(tmp_path):
     p, calls = _diagnose(tmp_path)
-    assert f"logs {POD} -n {NS} --all-containers" in calls or \
-           f"logs '{POD}' -n '{NS}' --all-containers" in calls, calls
-
-
-def test_the_previous_attempt_is_read_too(tmp_path):
-    """A container that is between crash-loop attempts has an empty current log; the words that
-    name the fault are in the previous one."""
-    _, calls = _diagnose(tmp_path)
-    previous = [c for c in calls.splitlines() if "--previous" in c and POD in c]
-    assert previous, "no --previous read; a crash-loop's current log is usually empty:\n" + calls
+    assert (
+        f"logs {POD} -n {NS} --all-containers" in calls
+        or f"logs '{POD}' -n '{NS}' --all-containers" in calls
+    ), calls
 
 
 def test_diagnose_stays_read_only(tmp_path):
@@ -91,8 +93,23 @@ def test_diagnose_stays_read_only(tmp_path):
     it reads must not widen what it touches."""
     p, calls = _diagnose(tmp_path)
     assert p.returncode == 0, p.stdout + p.stderr
-    banned = [c for c in calls.splitlines()
-              if any(f"kubectl {v} " in c or f"flux {v} " in c
-                     for v in ("delete", "apply", "patch", "scale", "edit", "replace", "rollout",
-                               "reconcile", "create", "run"))]
+    banned = [
+        c
+        for c in calls.splitlines()
+        if any(
+            f"kubectl {v} " in c or f"flux {v} " in c
+            for v in (
+                "delete",
+                "apply",
+                "patch",
+                "scale",
+                "edit",
+                "replace",
+                "rollout",
+                "reconcile",
+                "create",
+                "run",
+            )
+        )
+    ]
     assert banned == [], banned

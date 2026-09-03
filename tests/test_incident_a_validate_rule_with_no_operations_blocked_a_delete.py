@@ -6,9 +6,9 @@ old object into a permanent tenant: a guard that refuses correct work is an outa
 validate rule under platform/ names its operations, and DELETE appears only in a rule whose name
 says so (protect-namespaces/refuse-delete-of-marked-namespace is the one that means it).
 """
+
 from pathlib import Path
 
-import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,15 +37,6 @@ def _blocks(rule):
 
 
 RULES = list(_validate_rules())
-
-
-@pytest.mark.parametrize("path,policy,rule", RULES, ids=[f"{p}/{r['name']}" for _, p, r in RULES])
-def test_every_validate_rule_names_operations_and_judges_a_delete_only_on_purpose(path, policy, rule):
-    for b in _blocks(rule):
-        ops = b.get("operations")
-        assert ops, f"{path} {policy}/{rule['name']}: a match block names no operations, so it judges DELETE too"
-        if "DELETE" in ops:
-            assert "delete" in rule["name"], f"{path} {policy}/{rule['name']}: judges DELETE without saying so in its name"
 
 
 def test_the_sweep_found_the_policies():

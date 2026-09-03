@@ -23,6 +23,7 @@ behind the ledger and a ledger stamped 400 days ahead of the machine are the sam
 No test here opens a socket (estate rule: tests never open network sockets). The subprocess cases
 run the CLI with a PATH that holds no `gh`, which is exactly the "no authority clock" branch.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -38,14 +39,18 @@ CONSCIENCE = ROOT / "bin" / "idp-conscience"
 sys.path.insert(0, str(ROOT / "bin" / "lib"))
 from ledger_fresh import ledger_fresh  # noqa: E402
 
-NOW = dt.datetime(2026, 8, 28, 12, 0, tzinfo=dt.timezone.utc)  # the authority clock, injected
+NOW = dt.datetime(
+    2026, 8, 28, 12, 0, tzinfo=dt.timezone.utc
+)  # the authority clock, injected
 
 
 def _ledger(tmp_path: Path, *offsets: dt.timedelta, key: str = "ts") -> Path:
     """An estate tree whose crew checkout holds a research ledger stamped at `offsets` from NOW."""
     led = tmp_path / "crew" / "science" / "RESEARCH-LEDGER.jsonl"
     led.parent.mkdir(parents=True)
-    led.write_text("".join(json.dumps({key: (NOW + o).isoformat()}) + "\n" for o in offsets))
+    led.write_text(
+        "".join(json.dumps({key: (NOW + o).isoformat()}) + "\n" for o in offsets)
+    )
     return led
 
 
@@ -56,9 +61,12 @@ def _row(led: Path, capsys, hours: int = 24) -> tuple[int, str]:
 
 def _cli(tmp_path: Path, hours: int = 24) -> subprocess.CompletedProcess:
     """The real command with no `gh` on PATH: the only clock it may use is one it cannot reach."""
-    return subprocess.run([sys.executable, str(CONSCIENCE), "--ledger-fresh-hours", str(hours)],
-                          capture_output=True, text=True,
-                          env={"PATH": "/usr/bin:/bin", "ESTATE_CODE": str(tmp_path)})
+    return subprocess.run(
+        [sys.executable, str(CONSCIENCE), "--ledger-fresh-hours", str(hours)],
+        capture_output=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin", "ESTATE_CODE": str(tmp_path)},
+    )
 
 
 def test_research_inside_the_window_is_green(tmp_path, capsys):
@@ -74,8 +82,11 @@ def test_research_outside_the_window_is_red(tmp_path, capsys):
     assert "older than 24h" in out
 
 
-@pytest.mark.parametrize("ahead", [dt.timedelta(days=400), dt.timedelta(days=20000)],
-                         ids=["clock_400d_behind_the_ledger", "clock_at_the_1970_epoch"])
+@pytest.mark.parametrize(
+    "ahead",
+    [dt.timedelta(days=400), dt.timedelta(days=20000)],
+    ids=["clock_400d_behind_the_ledger", "clock_at_the_1970_epoch"],
+)
 def test_a_clock_behind_the_ledger_is_blind_and_never_green(tmp_path, ahead, capsys):
     """The incident. Every stamp later than `now` means the clock is behind the data it is
     grading; the old cutoff called that "fresh" and exited 0."""
@@ -88,7 +99,9 @@ def test_a_clock_behind_the_ledger_is_blind_and_never_green(tmp_path, ahead, cap
 def test_the_newest_entry_decides_not_any_entry(tmp_path, capsys):
     """A ledger holding one recent entry and a hundred ancient ones is fresh; the old code agreed,
     and the point of asserting it is that measuring the newest is what keeps that true."""
-    led = _ledger(tmp_path, *([dt.timedelta(days=-900)] * 20 + [dt.timedelta(hours=-2)]))
+    led = _ledger(
+        tmp_path, *([dt.timedelta(days=-900)] * 20 + [dt.timedelta(hours=-2)])
+    )
     rc, out = _row(led, capsys)
     assert rc == 0, out
     assert "2.0h old" in out
@@ -119,13 +132,3 @@ def test_no_authority_clock_is_blind_never_the_local_clock(tmp_path):
     assert p.returncode == 2, p.stdout + p.stderr
     assert p.stdout.startswith("BLIND"), p.stdout
     assert "no clock to measure against" in p.stdout
-
-
-def test_the_row_parses_no_timestamp_of_its_own(tmp_path):
-    """Not a style rule. bin/lib/ledger_fresh.py is the one place allowed to put a stamp and the
-    authority clock in the same subtraction, and it is the only file the incident tests for this
-    class cover. A second copy of the parse in bin/idp-conscience is a second place to get it wrong,
-    and the estate guard would fail on it -- this says so at the file that would grow it."""
-    src = CONSCIENCE.read_text()
-    assert "fromisoformat" not in src.split('"""')[-1], \
-        "bin/idp-conscience parses a stamp again; route it through bin/lib/ledger_fresh.py"

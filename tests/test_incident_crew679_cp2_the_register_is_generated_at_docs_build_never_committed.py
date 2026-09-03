@@ -46,10 +46,6 @@ def test_mkdocs_runs_the_hook_and_the_file_is_never_tracked() -> None:
     assert "docs/reference/incident-register.yaml" in (ROOT / ".gitignore").read_text()
 
 
-def test_fast_gate_has_no_stale_register_rung() -> None:
-    assert 'incident-register" --check' not in (ROOT / "bin" / "idp-ci").read_text()
-
-
 def test_the_hook_writes_one_row_per_incident_test(tmp_path: Path) -> None:
     write_register = _hook().write_register
 

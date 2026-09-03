@@ -49,11 +49,6 @@ def test_one_value_minted_by_terraform_is_read_by_both_rows() -> None:
     assert bs["metadata"]["namespace"] == "backstage"
 
 
-def test_enrol_sets_the_read_only_key_on_the_project() -> None:
-    enrol = (ROOT / "platform" / "healthchecks" / "enrol.py").read_text()
-    assert 'project.api_key_readonly = os.environ["RO_KEY"]' in enrol
-
-
 def test_the_portal_holds_the_key_as_a_file_and_the_page_names_no_host() -> None:
     cfg = yaml.safe_load((ROOT / "backstage" / "app-config.container.yaml").read_text())
     ep = cfg["proxy"]["endpoints"]["/healthchecks"]

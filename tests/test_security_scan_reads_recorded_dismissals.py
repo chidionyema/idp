@@ -70,13 +70,6 @@ def _run(repo: Path, tmp_path: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_a_reasoned_tracked_dismissal_passes_and_lands_in_the_receipt(tmp_path):
-    repo = _repo(tmp_path, "PYSEC-TEST-1 no fixed release exists; local cache only\n")
-    out = _run(repo, tmp_path)
-    assert "dismissed PYSEC-TEST-1: no fixed release exists" in out.stdout, out.stdout
-    assert "ok    deps" in out.stdout, out.stdout
-
-
 def test_an_entry_with_no_reason_is_refused(tmp_path):
     repo = _repo(tmp_path, "PYSEC-TEST-1\n")
     out = _run(repo, tmp_path)

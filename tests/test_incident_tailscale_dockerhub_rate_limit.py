@@ -34,10 +34,3 @@ def test_both_tailscale_images_come_from_github_registry() -> None:
         values["operatorConfig"]["image"]["repository"]
         == "ghcr.io/tailscale/k8s-operator"
     )
-
-
-def test_no_tailscale_image_points_at_docker_hub() -> None:
-    assert "docker.io/tailscale" not in yaml.safe_dump(_values()), (
-        "a Tailscale image points back at Docker Hub; its anonymous pull quota is shared "
-        "across the cluster's one outbound address and took both proxy pods down"
-    )

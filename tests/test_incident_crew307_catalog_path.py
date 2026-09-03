@@ -8,27 +8,12 @@ Rule 2: the drill grades every published path on answering: it loads, is not a c
 docs/prose/front-door-login-drill-live.feature scenario
 "Every published path answers (crew#307)".
 """
+
 import ast
 import pathlib
 import re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-
-
-def test_incident_crew307_catalog_stays_at_catalog():
-    """page:catalog may set pagination and filters; it must not move the path off /catalog."""
-    import yaml
-
-    cfg_path = ROOT / "backstage" / "app-config.yaml"
-    cfg = yaml.safe_load(cfg_path.read_text())
-    for row in cfg["app"]["extensions"]:
-        if not isinstance(row, dict) or "page:catalog" not in row:
-            continue
-        page = row["page:catalog"] or {}
-        path = (page.get("config") or {}).get("path")
-        assert path in (None, "/catalog"), (
-            f"page:catalog moved /catalog to {path!r}; crew#307"
-        )
 
 
 def test_incident_crew307_drill_grades_every_published_path():
@@ -53,23 +38,16 @@ def test_incident_crew307_oke_tag_is_orderable():
     import re
     from pathlib import Path
 
-    text = Path(__file__).resolve().parents[1].joinpath(
-        "platform/backstage/overlays/oke/kustomization.yaml").read_text()
+    text = (
+        Path(__file__)
+        .resolve()
+        .parents[1]
+        .joinpath("platform/backstage/overlays/oke/kustomization.yaml")
+        .read_text()
+    )
     m = re.search(r"newTag:\s*(\S+)\s*#\s*\{\"\$imagepolicy\"", text)
     assert m, "backstage newTag with the $imagepolicy marker is missing"
     assert re.fullmatch(r"main-[0-9]+-[0-9a-f]{40}", m.group(1)), m.group(1)
-
-
-def test_incident_crew307_broken_path_row_says_what_rendered():
-    """A broken published path prints the page text (features/hard_execution_chain.feature).
-
-    docs and create stayed broken after the rollout and the log could not say whether the
-    plugin never loaded or the locator drifted (crew#307, 2026-08-26).
-    """
-    from pathlib import Path
-
-    src = Path(__file__).resolve().parents[1].joinpath("bin/idp-login-drill").read_text()
-    assert "page says: {seen}; js errors: {errs}" in src
 
 
 def test_incident_crew307_material_table_keeps_its_own_uuid():
@@ -79,6 +57,7 @@ def test_incident_crew307_material_table_keeps_its_own_uuid():
     browser bundle. The scoped rule must exist and come before the global one: yarn applies
     the first matching resolution."""
     import json
+
     pkg = json.load(open(ROOT / "backstage" / "package.json"))
     keys = list(pkg["resolutions"])
     assert "@material-table/core/uuid" in keys

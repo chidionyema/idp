@@ -25,6 +25,7 @@ all. The default IS the bug, so the next Deployment written the ordinary way wou
 straight past the guard that was written for this incident (found by session 59cfc4 reviewing
 idp#564; it fed the rule a no-strategy manifest and a 25% manifest and both came back False).
 """
+
 import math
 import pathlib
 import shutil
@@ -34,7 +35,9 @@ import pytest
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-OVERLAYS = sorted(p.parent for p in ROOT.glob("platform/*/overlays/*/kustomization.yaml"))
+OVERLAYS = sorted(
+    p.parent for p in ROOT.glob("platform/*/overlays/*/kustomization.yaml")
+)
 HOSTNAME_KEYS = ("kubernetes.io/hostname",)
 
 # apps/v1 DeploymentSpec defaults, as the API server applies them when the field is absent.
@@ -50,9 +53,13 @@ pytestmark = pytest.mark.skipif(
 
 
 def _render(overlay):
-    out = subprocess.run(["kubectl", "kustomize", str(overlay)], capture_output=True, text=True)
+    out = subprocess.run(
+        ["kubectl", "kustomize", str(overlay)], capture_output=True, text=True
+    )
     if out.returncode != 0:
-        pytest.skip(f"{overlay.relative_to(ROOT)} does not render here: {out.stderr.strip()[:200]}")
+        pytest.skip(
+            f"{overlay.relative_to(ROOT)} does not render here: {out.stderr.strip()[:200]}"
+        )
     return [d for d in yaml.safe_load_all(out.stdout) if d]
 
 
@@ -66,7 +73,9 @@ def _scaled(value, replicas: int, *, round_up: bool) -> int:
     """
     if isinstance(value, str) and value.strip().endswith("%"):
         exact = float(value.strip()[:-1]) * replicas / 100.0
-        return int(math.ceil(exact - 1e-9)) if round_up else int(math.floor(exact + 1e-9))
+        return (
+            int(math.ceil(exact - 1e-9)) if round_up else int(math.floor(exact + 1e-9))
+        )
     return int(value)
 
 
@@ -82,13 +91,17 @@ def _effective_fenceposts(spec):
     replicas = spec.get("replicas", DEFAULT_REPLICAS)
     rolling = strategy.get("rollingUpdate") or {}
     return (
-        _scaled(rolling.get("maxUnavailable", DEFAULT_MAX_UNAVAILABLE), replicas, round_up=False),
+        _scaled(
+            rolling.get("maxUnavailable", DEFAULT_MAX_UNAVAILABLE),
+            replicas,
+            round_up=False,
+        ),
         _scaled(rolling.get("maxSurge", DEFAULT_MAX_SURGE), replicas, round_up=True),
     )
 
 
 def _requires_its_own_node(spec) -> bool:
-    anti = ((spec.get("affinity") or {}).get("podAntiAffinity") or {})
+    anti = (spec.get("affinity") or {}).get("podAntiAffinity") or {}
     rules = anti.get("requiredDuringSchedulingIgnoredDuringExecution") or []
     return any(r.get("topologyKey") in HOSTNAME_KEYS for r in rules)
 
@@ -115,34 +128,19 @@ def test_at_least_one_overlay_was_rendered_and_graded():
     """
     rendered, refused = [], []
     for overlay in OVERLAYS:
-        out = subprocess.run(["kubectl", "kustomize", str(overlay)],
-                             capture_output=True, text=True)
+        out = subprocess.run(
+            ["kubectl", "kustomize", str(overlay)], capture_output=True, text=True
+        )
         name = str(overlay.relative_to(ROOT))
         (rendered if out.returncode == 0 else refused).append(
-            name if out.returncode == 0 else f"{name}: {out.stderr.strip().splitlines()[-1][:120]}")
+            name
+            if out.returncode == 0
+            else f"{name}: {out.stderr.strip().splitlines()[-1][:120]}"
+        )
     assert rendered, (
         "no platform overlay rendered, so this guard graded nothing at all. Refused:\n  "
         + "\n  ".join(refused or ["(no overlay found by the glob either)"])
     )
-
-
-@pytest.mark.parametrize("overlay", OVERLAYS, ids=lambda p: str(p.relative_to(ROOT)))
-def test_a_deployment_pinned_to_its_own_node_can_still_roll(overlay):
-    for d in _render(overlay):
-        if d.get("kind") != "Deployment":
-            continue
-        rolling = (d["spec"].get("strategy") or {}).get("rollingUpdate") or {}
-        literal = rolling.get("maxUnavailable", "unset -> 25% of replicas, rounded down")
-        assert not _deadlocked(d), (
-            f"Deployment/{d['metadata']['name']} in {overlay.relative_to(ROOT)} requires its own "
-            f"node (podAntiAffinity required on kubernetes.io/hostname) and its effective "
-            f"maxUnavailable is 0 (manifest says {literal!r} at replicas "
-            f"{d['spec'].get('replicas', DEFAULT_REPLICAS)}). A surge then needs a node no "
-            f"replica occupies, which no manifest can promise: the new pod stays Pending for "
-            f"ever and the old ReplicaSet keeps serving, so the stall is invisible. Set "
-            f"maxUnavailable to at least 1 and maxSurge to 0 so a node is freed before it is "
-            f"needed (crew#307)."
-        )
 
 
 INCIDENT = yaml.safe_load("""
@@ -175,9 +173,17 @@ def test_the_shape_that_broke_the_portal_is_refused():
 
 
 def test_the_fix_is_accepted():
-    assert _deadlocked(_variant(strategy={"type": "RollingUpdate",
-                                          "rollingUpdate": {"maxSurge": 0, "maxUnavailable": 1}})
-                       ) is False
+    assert (
+        _deadlocked(
+            _variant(
+                strategy={
+                    "type": "RollingUpdate",
+                    "rollingUpdate": {"maxSurge": 0, "maxUnavailable": 1},
+                }
+            )
+        )
+        is False
+    )
 
 
 def test_writing_no_strategy_at_all_is_the_same_bug():
@@ -189,8 +195,12 @@ def test_writing_no_strategy_at_all_is_the_same_bug():
     assert _deadlocked(bare) is True
     assert _effective_fenceposts(bare["spec"]) == (0, 1)
 
-    spelled_out = _variant(strategy={"type": "RollingUpdate",
-                                     "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"}})
+    spelled_out = _variant(
+        strategy={
+            "type": "RollingUpdate",
+            "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
+        }
+    )
     assert _deadlocked(spelled_out) is True
 
 
@@ -221,10 +231,16 @@ def test_a_deployment_without_hard_hostname_anti_affinity_may_surge():
     soft = yaml.safe_load(yaml.safe_dump(INCIDENT))
     soft["spec"]["template"]["spec"]["affinity"]["podAntiAffinity"] = {
         "preferredDuringSchedulingIgnoredDuringExecution": [
-            {"weight": 100, "podAffinityTerm": {"topologyKey": "kubernetes.io/hostname"}}]}
+            {
+                "weight": 100,
+                "podAffinityTerm": {"topologyKey": "kubernetes.io/hostname"},
+            }
+        ]
+    }
     assert _deadlocked(soft) is False
 
     zonal = yaml.safe_load(yaml.safe_dump(INCIDENT))
     zonal["spec"]["template"]["spec"]["affinity"]["podAntiAffinity"][
-        "requiredDuringSchedulingIgnoredDuringExecution"][0]["topologyKey"] = "topology.kubernetes.io/zone"
+        "requiredDuringSchedulingIgnoredDuringExecution"
+    ][0]["topologyKey"] = "topology.kubernetes.io/zone"
     assert _deadlocked(zonal) is False

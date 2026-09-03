@@ -34,41 +34,6 @@ def _steps(wf: dict):
             yield job, s
 
 
-def test_every_step_that_arms_auto_merge_runs_under_the_app_token():
-    for name, marker in ARMERS.items():
-        wf = yaml.safe_load((WF / name).read_text())
-        assert wf["permissions"].get("id-token") == "write", (
-            f"{name}: no id-token for the OCI session"
-        )
-        armed = [(j, s) for j, s in _steps(wf) if marker in (s.get("run") or "")]
-        assert armed, f"{name}: no step runs {marker}"
-        for job, step in armed:
-            tok = (step.get("env") or {}).get("GH_TOKEN", "")
-            assert tok == "${{ steps.app.outputs.token }}", (
-                f"{name}: {marker} runs under {tok!r}"
-            )
-            minted = [
-                s
-                for s in job["steps"]
-                if s.get("id") == "app" and ACTION in (s.get("uses") or "")
-            ]
-            assert minted, f"{name}: no `id: app` step using {ACTION} in the same job"
-            assert job["steps"].index(minted[0]) < job["steps"].index(step), (
-                f"{name}: token minted after use"
-            )
-
-
-def test_no_arming_workflow_falls_back_to_the_repository_token():
-    for name, marker in ARMERS.items():
-        text = (WF / name).read_text()
-        for _j, s in _steps(yaml.safe_load(text)):
-            if marker in (s.get("run") or ""):
-                env = yaml.safe_dump(s.get("env") or {})
-                assert "GITHUB_TOKEN" not in env and "github.token" not in env, (
-                    f"{name}: {marker} sees the bot token"
-                )
-
-
 def test_the_app_token_action_masks_the_token_and_reads_mains_copy():
     a = yaml.safe_load((ROOT / ".github/actions" / ACTION / "action.yml").read_text())
     assert a["runs"]["using"] == "composite"

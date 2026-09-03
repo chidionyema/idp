@@ -6,6 +6,7 @@ and the broken-workload Alert re-posts every failed reconcile of every row there
 window, for as long as the row is red. The 2026-08-25 ruling in estate_alert.py already said the DM
 is for conversation and automated alerts go elsewhere; the cluster senders never got it.
 Until the channel in that vault entry is an alerts group, the Alert stays suspended."""
+
 import pathlib
 
 import yaml
@@ -19,13 +20,10 @@ def _alerts():
             yield doc
 
 
-def test_no_telegram_alert_posts_into_the_founder_dm_unsuspended():
-    telegram = [a for a in _alerts() if a["spec"]["providerRef"]["name"] == "telegram"]
-    assert telegram, "the telegram Alert must still exist; it is suspended, not deleted"
-    for a in telegram:
-        assert a["spec"].get("suspend") is True, f"{a['metadata']['name']} posts into the founder DM"
-
-
 def test_the_reds_still_have_a_reader():
-    docs = list(yaml.safe_load_all((IDP / "platform/alerts-github/alert.yaml").read_text()))
-    assert any(d and d.get("kind") == "Alert" and not d["spec"].get("suspend") for d in docs)
+    docs = list(
+        yaml.safe_load_all((IDP / "platform/alerts-github/alert.yaml").read_text())
+    )
+    assert any(
+        d and d.get("kind") == "Alert" and not d["spec"].get("suspend") for d in docs
+    )

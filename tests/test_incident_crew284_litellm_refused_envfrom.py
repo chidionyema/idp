@@ -31,29 +31,6 @@ def _judged_dirs() -> set:
     return {d for d in out.stdout.split() if d}
 
 
-def test_ci_judges_every_plain_workload_dir() -> None:
-    judged = _judged_dirs()
-    missed = sorted(
-        str(f.parent.relative_to(ROOT))
-        for f in (ROOT / "platform").rglob("*.y*ml")
-        if KINDS.search(f.read_text()) and str(f.parent.relative_to(ROOT)) not in judged
-    )
-    assert missed == [], (
-        f"a plain workload lives here and no offline judge renders it: {missed}"
-    )
-    tool = (ROOT / "bin" / "idp-kyverno-render").read_text()
-    # crew#66 R43 widened the judged kinds beyond pods: provider-independence refuses a Service,
-    # Ingress, PersistentVolumeClaim or secret store too, not only the workloads crew#284 fixed.
-    assert (
-        'kinds = {"Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Pod",'
-        in tool
-    )
-    assert (
-        '"Service", "Ingress", "PersistentVolumeClaim", "ClusterSecretStore", "SecretStore"}'
-        in tool
-    )
-
-
 def test_litellm_takes_no_secret_from_env() -> None:
     docs = [
         d

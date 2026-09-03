@@ -274,17 +274,6 @@ def test_secret_payloads_never_reach_the_raw_dump_or_the_registry():
     assert '--path="$RUNNER_TEMP/inventory"' not in wf
 
 
-def test_the_workflows_query_joins_on_the_required_key_column():
-    """github_workflow requires repository_full_name as a key column; a sub-select is not
-    pushed down and the plane goes blind."""
-    sql = (ROOT / "platform/inventory/queries/github-workflows.sql").read_text().lower()
-    assert (
-        "join github_workflow" in sql
-        and "repository_full_name = r.name_with_owner" in sql
-    )
-    assert " in (select" not in sql
-
-
 def test_the_render_carries_the_inventory_forward_and_the_tile_reads_the_same_path():
     """bin/catalog-render force-pushes state/live-diagram from origin/main; without the carry the
     inventory the workflow put there would vanish on the next render, and the Ops tile would read

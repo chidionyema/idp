@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -152,19 +151,6 @@ def test_a_masked_secret_is_not_drift() -> None:
     assert any(c.get("secret") == "**********" for c in doc["clients"])
     r = run("--export", str(EXPORT))
     assert r.returncode == 0, r.stdout + r.stderr
-
-
-def test_no_hostname_is_a_literal_in_the_git_realm() -> None:
-    """LAW 46: the file names no host. Staging and production read the same bytes."""
-    text = REALM.read_text()
-    literals = [
-        line
-        for line in text.splitlines()
-        if re.search(r"https?://", line)
-        and "$(env:" not in line
-        and not line.lstrip().startswith("#")
-    ]
-    assert literals == [], f"a hostname is typed into the realm: {literals}"
 
 
 def test_the_checker_never_needs_the_client_secret_to_run():

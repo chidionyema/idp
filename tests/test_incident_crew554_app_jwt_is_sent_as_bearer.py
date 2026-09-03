@@ -8,27 +8,11 @@ an unrelated red row; this file carries it on its own."""
 
 from __future__ import annotations
 
-import re
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "bin" / "idp-github-app"
-
-
-def test_an_app_jwt_is_sent_as_bearer_never_through_gh_token() -> None:
-    app = APP.read_text()
-    assert 'GH_TOKEN="$jwt"' not in app
-    assert re.search(r'-H "Authorization: Bearer \$jwt"', app)
-    for path in ("/app/installations", "/app/installations/$inst/access_tokens"):
-        assert f'app_api "$jwt" {path}' in app or f'app_api "$jwt" "{path}"' in app, path
-
-
-def test_a_401_body_is_never_taken_for_an_installation_id() -> None:
-    """Run 33097094260: gh printed the 401 body on stdout and a non-empty check took it for an id."""
-    app = APP.read_text()
-    assert app.count('[[ "$inst" =~ ^[0-9]+$ ]] || app_jwt_diag') == 2, "installation and token both grade the id by shape"
-    assert 'jq -r \'if type=="array" then (.[0].id // empty) else empty end\'' in app
 
 
 def test_the_script_still_parses() -> None:

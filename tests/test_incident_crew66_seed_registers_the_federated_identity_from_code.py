@@ -114,12 +114,3 @@ def test_refused_and_no_seed_names_the_one_hand_and_mints_nothing(tmp_path):
     assert "bin/idp-set-root tailscale" in out
     assert '"keyType"' not in log.read_text()
     assert "tailscale-operator" not in json.load(open(vault))
-
-
-def test_the_workflow_hands_the_seed_pair_to_the_bootstrapper():
-    wf = (IDP / ".github/workflows/oke-check.yml").read_text()
-    assert "TAILSCALE_SEED_CLIENT_ID: ${{ secrets.SEED_TAILSCALE_CLIENT_ID }}" in wf
-    assert (
-        "TAILSCALE_SEED_CLIENT_SECRET: ${{ secrets.SEED_TAILSCALE_CLIENT_SECRET }}"
-        in wf
-    )

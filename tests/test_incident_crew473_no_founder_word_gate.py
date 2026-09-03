@@ -6,6 +6,7 @@ Rule: the operating-model gate never waits for the founder's word on any path. A
 founder-facing prefix with no `Approval-word:` line, or with a word he has not answered, passes.
 His veto stays: a `DENY: <word>` from his GitHub login on the declared word still refuses.
 Rung 4, one test per bug. Runs conftest over the policy directory; opens no socket."""
+
 import json
 import pathlib
 import shutil
@@ -17,13 +18,27 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 POLICY = ROOT / "policy"
 FIX = POLICY / "fixtures"
 
-pytestmark = pytest.mark.skipif(shutil.which("conftest") is None, reason="conftest not installed")
+pytestmark = pytest.mark.skipif(
+    shutil.which("conftest") is None, reason="conftest not installed"
+)
 
 
 def _deny_rules(fixture: str) -> set[str]:
     out = subprocess.run(
-        ["conftest", "test", "--parser", "json", "-p", str(POLICY), "-o", "json", str(FIX / fixture)],
-        capture_output=True, text=True, check=False,
+        [
+            "conftest",
+            "test",
+            "--parser",
+            "json",
+            "-p",
+            str(POLICY),
+            "-o",
+            "json",
+            str(FIX / fixture),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
     ).stdout
     rules = set()
     for result in json.loads(out):
@@ -46,9 +61,3 @@ def test_founder_facing_change_with_an_unanswered_word_passes():
 
 def test_a_deny_from_the_founder_still_refuses():
     assert "rule=founder_denied" in _deny_rules("opmodel-denied.json")
-
-
-def test_the_retired_rules_are_gone_from_the_policy():
-    rego = (POLICY / "operating_model.rego").read_text()
-    assert "founder_approval_required" not in rego
-    assert "founder_approval_pending" not in rego

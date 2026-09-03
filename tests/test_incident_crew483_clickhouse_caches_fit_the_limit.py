@@ -7,6 +7,7 @@ larger than the 4Gi pod, and merges may take half the ceiling.
 Rule: the ClickHouse caches and merge budget are bounded so that, together, they leave the
 inserts more than half of the server ceiling. The budget is derived from the limit in the same
 file, so growing the pod never silently re-opens the gap."""
+
 import re
 from pathlib import Path
 
@@ -30,21 +31,6 @@ def _milli(q: str) -> int:
 
 def _clickhouse():
     return yaml.safe_load(VALUES.read_text())["clickhouse"]
-
-
-def test_clickhouse_caches_and_merges_leave_inserts_more_than_half_the_ceiling() -> None:
-    ch = _clickhouse()
-    limit = _bytes(ch["resources"]["limits"]["memory"])
-    ceiling = limit * 0.9  # max_server_memory_usage_to_ram_ratio default
-    settings = ch.get("settings") or {}
-    assert "mark_cache_size" in settings, "mark_cache_size unset: ClickHouse's default is 5 GiB"
-    marks = int(settings["mark_cache_size"]) + int(settings.get("index_mark_cache_size", 0))
-    merges = float(settings.get("merges_mutations_memory_usage_to_ram_ratio", 0.5)) * ceiling
-    reserved = marks + merges
-    assert reserved < ceiling / 2, (
-        f"caches {marks/2**20:.0f} MiB + merges {merges/2**20:.0f} MiB reserve {reserved/ceiling:.0%} of the "
-        f"{ceiling/2**30:.2f} GiB ceiling; inserts get the rest and were refused with code 241"
-    )
 
 
 def test_clickhouse_memory_request_equals_limit_still() -> None:

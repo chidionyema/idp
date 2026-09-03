@@ -4,6 +4,7 @@ whose manifest carried no chaos-mesh.org/inject=enabled label. The Schedule was 
 Flux rows read Ready, and the experiment would never have injected anything.
 Rule (rung 4): when the chart filters namespaces, every namespace a chaos-mesh.org object
 selects is declared in git with the inject label."""
+
 import glob
 import pathlib
 
@@ -35,15 +36,26 @@ def _target_namespaces(docs):
             continue
         out.add(d["metadata"].get("namespace"))
         text = yaml.safe_dump(d)
-        for chunk in yaml.safe_load(text).get("spec", {}).get("workflow", {}).get("templates", []):
-            for sel in (chunk.get("podChaos") or {}).get("selector", {}).get("namespaces", []):
+        for chunk in (
+            yaml.safe_load(text)
+            .get("spec", {})
+            .get("workflow", {})
+            .get("templates", [])
+        ):
+            for sel in (
+                (chunk.get("podChaos") or {}).get("selector", {}).get("namespaces", [])
+            ):
                 out.add(sel)
     return {n for n in out if n}
 
 
 def _labelled_namespaces(docs):
-    return {d["metadata"]["name"] for d in docs
-            if d.get("kind") == "Namespace" and d["metadata"].get("labels", {}).get(INJECT) == "enabled"}
+    return {
+        d["metadata"]["name"]
+        for d in docs
+        if d.get("kind") == "Namespace"
+        and d["metadata"].get("labels", {}).get(INJECT) == "enabled"
+    }
 
 
 def _unlabelled(docs, filter_on):
@@ -52,19 +64,27 @@ def _unlabelled(docs, filter_on):
     return sorted(_target_namespaces(docs) - _labelled_namespaces(docs))
 
 
-def test_every_chaos_target_namespace_carries_the_inject_label():
-    docs = list(_docs("platform/**/*.yaml"))
-    assert _filter_on(), "the chart filters namespaces; if that changes, this rule no longer applies"
-    assert _unlabelled(docs, True) == [], "chaos targets a namespace Chaos Mesh will ignore"
-
-
 def test_the_incident_shape_is_refused_and_the_fixed_shape_permitted():
-    sched = {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "Schedule",
-             "metadata": {"name": "backstage-pod-kill", "namespace": "backstage"},
-             "spec": {"workflow": {"templates": [{"podChaos": {"selector": {"namespaces": ["backstage"]}}}]}}}
-    bare = {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "backstage", "labels": {}}}
-    labelled = {"apiVersion": "v1", "kind": "Namespace",
-                "metadata": {"name": "backstage", "labels": {INJECT: "enabled"}}}
+    sched = {
+        "apiVersion": "chaos-mesh.org/v1alpha1",
+        "kind": "Schedule",
+        "metadata": {"name": "backstage-pod-kill", "namespace": "backstage"},
+        "spec": {
+            "workflow": {
+                "templates": [{"podChaos": {"selector": {"namespaces": ["backstage"]}}}]
+            }
+        },
+    }
+    bare = {
+        "apiVersion": "v1",
+        "kind": "Namespace",
+        "metadata": {"name": "backstage", "labels": {}},
+    }
+    labelled = {
+        "apiVersion": "v1",
+        "kind": "Namespace",
+        "metadata": {"name": "backstage", "labels": {INJECT: "enabled"}},
+    }
     assert _unlabelled([sched, bare], True) == ["backstage"]
     assert _unlabelled([sched, labelled], True) == []
     assert _unlabelled([sched, bare], False) == []

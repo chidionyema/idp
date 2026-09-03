@@ -15,6 +15,7 @@ a HelmRelease's spec.values.otelCollectorEndpoint, or a Deployment container's
 OTEL_EXPORTER_OTLP_ENDPOINT env value -- that targets the collector's HTTP port 4318 must carry
 an http(s):// scheme, and no HelmRelease whose otlphttp exporter is on (the signoz k8s-infra
 chart default, unless explicitly disabled) may point that endpoint at the bare gRPC port 4317."""
+
 import re
 from pathlib import Path
 
@@ -36,9 +37,14 @@ def _estate_config() -> dict:
     there so the lean tier can point the agent elsewhere; the scheme rule below judges the value
     the cluster actually sees, not the placeholder."""
     for doc in _yaml_docs(ROOT / "clusters" / "oke" / "estate-config.yaml"):
-        if doc.get("kind") == "ConfigMap" and doc["metadata"]["name"] == "estate-config":
+        if (
+            doc.get("kind") == "ConfigMap"
+            and doc["metadata"]["name"] == "estate-config"
+        ):
             return doc.get("data") or {}
-    raise AssertionError("clusters/oke/estate-config.yaml carries no estate-config ConfigMap")
+    raise AssertionError(
+        "clusters/oke/estate-config.yaml carries no estate-config ConfigMap"
+    )
 
 
 def _resolve(value: str) -> str:
@@ -47,8 +53,11 @@ def _resolve(value: str) -> str:
     cfg = _estate_config()
 
     def sub(m):
-        assert m.group(1) in cfg, f"{value!r}: {m.group(1)} is not in clusters/oke/estate-config.yaml"
+        assert m.group(1) in cfg, (
+            f"{value!r}: {m.group(1)} is not in clusters/oke/estate-config.yaml"
+        )
         return cfg[m.group(1)]
+
     return re.sub(r"\$\{([A-Z0-9_]+)\}", sub, value)
 
 
@@ -70,7 +79,9 @@ def _helmrelease_otel_endpoints():
                 continue
             endpoint = _resolve(endpoint)
             presets = values.get("presets") or {}
-            otlphttp_enabled = ((presets.get("otlphttpExporter") or {}).get("enabled", True))
+            otlphttp_enabled = (presets.get("otlphttpExporter") or {}).get(
+                "enabled", True
+            )
             out.append((f, endpoint, otlphttp_enabled))
     return out
 
@@ -85,36 +96,14 @@ def _deployment_otlp_env_endpoints():
         for doc in _yaml_docs(f):
             if doc.get("kind") != "Deployment":
                 continue
-            containers = (((doc.get("spec") or {}).get("template") or {}).get("spec") or {}).get("containers") or []
+            containers = (
+                ((doc.get("spec") or {}).get("template") or {}).get("spec") or {}
+            ).get("containers") or []
             for c in containers:
                 for env in c.get("env") or []:
                     if env.get("name") == "OTEL_EXPORTER_OTLP_ENDPOINT":
                         out.append((f, c.get("name"), _resolve(env.get("value") or "")))
     return out
-
-
-def test_helmrelease_otel_endpoints_exist() -> None:
-    # proves the scan isn't green by vacuity -- a future rename that drops otelCollectorEndpoint
-    # from every platform/ file would otherwise leave every check below trivially passing.
-    assert _helmrelease_otel_endpoints(), "no HelmRelease under platform/ declares spec.values.otelCollectorEndpoint"
-
-
-def test_deployment_otlp_env_endpoints_exist() -> None:
-    assert _deployment_otlp_env_endpoints(), "no Deployment under platform/ sets OTEL_EXPORTER_OTLP_ENDPOINT"
-
-
-def test_4318_endpoints_carry_an_http_scheme() -> None:
-    bad = []
-    for f, endpoint, _ in _helmrelease_otel_endpoints():
-        if ":4318" in endpoint and not endpoint.startswith(("http://", "https://")):
-            bad.append(f"{f}: otelCollectorEndpoint={endpoint!r}")
-    for f, name, endpoint in _deployment_otlp_env_endpoints():
-        if endpoint and ":4318" in endpoint and not endpoint.startswith(("http://", "https://")):
-            bad.append(f"{f} ({name}): OTEL_EXPORTER_OTLP_ENDPOINT={endpoint!r}")
-    assert not bad, (
-        "port 4318 is the collector's HTTP receiver; without http(s):// the otlphttp exporter "
-        "rejects every request with 'unsupported protocol scheme':\n" + "\n".join(bad)
-    )
 
 
 def test_no_helmrelease_pairs_the_otlphttp_exporter_with_a_bare_grpc_port() -> None:
@@ -127,9 +116,13 @@ def test_no_helmrelease_pairs_the_otlphttp_exporter_with_a_bare_grpc_port() -> N
             continue
         has_scheme = endpoint.startswith(("http://", "https://"))
         if not has_scheme:
-            bad.append(f"{f}: otelCollectorEndpoint={endpoint!r} (otlphttp exporter needs http(s)://)")
+            bad.append(
+                f"{f}: otelCollectorEndpoint={endpoint!r} (otlphttp exporter needs http(s)://)"
+            )
         elif ":4317" in endpoint:
-            bad.append(f"{f}: otelCollectorEndpoint={endpoint!r} (4317 is the gRPC port, not the HTTP one)")
+            bad.append(
+                f"{f}: otelCollectorEndpoint={endpoint!r} (4317 is the gRPC port, not the HTTP one)"
+            )
     assert not bad, "\n".join(bad)
 
 
@@ -137,7 +130,9 @@ def test_k8s_infra_endpoint_is_the_working_http_form() -> None:
     # pins the exact fixed value so a future edit that regresses the scheme or the port is caught
     # by name, not only by the generic scan above.
     f, endpoint, otlphttp_enabled = next(
-        (f, e, o) for f, e, o in _helmrelease_otel_endpoints() if f.name == "k8s-infra.yaml"
+        (f, e, o)
+        for f, e, o in _helmrelease_otel_endpoints()
+        if f.name == "k8s-infra.yaml"
     )
     assert otlphttp_enabled is True
     assert endpoint == "http://signoz-otel-collector.observability.svc:4318", endpoint
