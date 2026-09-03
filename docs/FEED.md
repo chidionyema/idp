@@ -3,26 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-01T05:17:07Z · session a14fc078 · lane .wt-crew612-phone
-🟡 crew#612: founder on his phone found no menu and a front page that is one long scroll of our own design; building on branch fix/crew612-phone-menu: left slide-in phone menu (MUI Drawer), "/" switched to Backstage's own home page (plugin-home 0.9.9 grid from app-config, toolkit = the ten doors), god view parked at /estate, drill photographs phone + Create every hour and counts Templates
-🟢 Done: research on record (docs page + 0.9.9 tarball read, not memory); EstateNav.tsx, App.tsx, homeModule.tsx, app-config.yaml, bin/idp-login-drill, tests, decision record written
-⚪ Pending: yarn install + tsc in the worktree (background bf3f0snve), pytest, shellcheck, commit, push the branch; founder deploys; agents open no pull request, never deploy
-🔧 TOUCHES: .wt-crew612-phone (idp branch fix/crew612-phone-menu): backstage/packages/app/src/{App.tsx,modules/nav/EstateNav.tsx,modules/home/homeModule.tsx}, backstage/app-config.yaml, bin/idp-login-drill, tests/test_crew612_portal_doors_are_real_and_distinct.py, docs/decisions/portal-defects-crew612.md
-🔀 OVERLAP: a2aed3c9 holds lane code (crew#768, idp#1099); ef0354ef on crew#729; eb8e04bf/82cea017 on crew#774 storefront; nobody else on the portal front page or nav
-📎 FACTS: https://github.com/chidionyema/crew/issues/612
-📍 METER: 2026-09-01 $168.84 774 req $0.218/req transport 83% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T05:24:21Z · session 54539261 · lane code
-🔴 Telegram (Otto) is down: since idp#1078 (2026-08-31T23:18Z) the bot works by webhook at https://otto.mumchimp.com/telegram, and that door fails from the internet — TLS serves CN=TRAEFIK DEFAULT CERT (edge certificate prospector-edge-tls has no otto SAN 6h after prospector#800), and with certificate checks off the route answers 503 while Flux says Deployment hermes-agent-gateway is healthy (05:17Z, image main-56-78e54b5); Telegram refuses a self-signed webhook so no update is delivered
-🟡 Active: read-only diagnosis only; no cluster access, no dispatch, nothing changed
-⚪ Pending: founder runs the runbook step (docs/runbooks/otto-telegram-webhook.md): gh workflow run oke-check.yml -R chidionyema/idp -f mode=break-glass -f playbook=architect-doctor, then reads cert-manager Certificate prospector-edge-tls (Order/Challenge for otto.mumchimp.com) and the gateway log line "Webhook server listening on *:8443/telegram"; rollback path is revert idp#1078 (adapter falls back to polling)
-🔧 TOUCHES: nothing in git; probes were curl/openssl against otto.mumchimp.com and gh reads of idp/prospector/hermes-v2
-🔀 OVERLAP: a14fc078 holds lane code; a2aed3c9 (crew#768, idp#1099 merged 05:00Z); ef0354ef (crew#729); nobody on the Telegram door
-📎 FACTS: https://github.com/chidionyema/idp/blob/main/docs/runbooks/otto-telegram-webhook.md
-📍 METER: 2026-09-01 $174.58 793 req $0.220/req transport 83% | fable-5 100%, opus-5 0% (crew#26)
-
-
 ## 2026-09-01T10:58:54Z · session a2aed3c9 · lane idp
 🔴 crew#768: Otto v1 NOT live. idp#1099 merged 843868bd (hermes-agent → main-56-78e54b5) but the hermes-agent Kustomization sits at DependencyNotReady: its dependency scheduling reported ReconciliationFailed at 05:01:50Z; also otto.mumchimp.com serves the TRAEFIK DEFAULT CERT — the shared prospector-edge-tls certificate (issued 08-27) was never re-issued with the otto, alertmanager, prometheus SANs (pre-existing since 08-30)
 🟢 Done: hermes-v2#62 merged → main 78e54b5, image built; idp#1099 green and merged by the founder
@@ -4449,5 +4429,16 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔧 TOUCHES: ~/.claude/scripts worktree only (opa-hook.py, policy/hooks.rego, policy/reply.rego, policy/*_test.rego, tests/test_incident_estate_snapshot_is_mandatory_no_agent_proceeds_blind.py) on branch guards/relay-refuses-blind-session
 🔀 OVERLAP: once 240 lands, every session's Bash/Write/Edit hook refuses while ~/.estate/estate-state.json is unreadable and the MCP cannot be reached — the way out is `python3 ~/.claude/scripts/estate-state-relay.py --fetch`, and the refusal text says so
 📎 FACTS: claude-guards CI runs on pull_request only (a pushed branch gets no checks); the relay's fetch is three MCP posts, so the hook budget holds at 3 s per post
+📍 State: https://github.com/chidionyema/claude-guards/pull/240
+
+
+## 2026-09-03T09:25:06Z · session 2c88870e · lane code
+🟢 Done: idp PR 1213 (estate snapshot version 2) MERGED at 7d1db1be, 20 success / 3 skipped; claude-guards PR 240 (a blind session is refused) GREEN at 28e56c9 — 5 success, 1 skipped; the one red (compile) was the gate doing its job on the runner's HOME, fixed by giving the crew603 end-to-end test a seeing HOME; the whole incident suite reran green under a HOME with no estate cache (374 passed, 4 skipped)
+🟡 Active: reporting to the founder; checking the live snapshot carries the version-2 fields after the merge
+🔴 Blocked: Kimi lane still waits on the founder re-setting SEED_KIMI_API_KEY and SEED_DEEPSEEK_API_KEY from his own tab and saying go (Telegram 21834)
+⚪ Pending: founder merge word for claude-guards PR 240; once it lands every session's Bash/Write/Edit hook refuses while blind, the way out is `python3 ~/.claude/scripts/estate-state-relay.py --fetch`
+🔧 TOUCHES: none since 05:04Z beyond the guards worktree branch (tests/test_incident_crew603_... given a seeing HOME)
+🔀 OVERLAP: none
+📎 FACTS: the guards incident suite cannot collect under a blank HOME (aiden/observe.py read at import, pytest_bdd missing locally) — simulate the runner with a HOME that symlinks ~/.claude and holds no .estate
 📍 State: https://github.com/chidionyema/claude-guards/pull/240
 
