@@ -1,0 +1,34 @@
+# require-availability and the one workload whose two replicas would be a bug. The llm answer
+# cache (idp#1244) is a single bounded Redis holding the router's shared state -- cooldowns,
+# budgets, rate counters, exact-match answers. Two plain replicas behind one Service name are
+# two caches that disagree: each pod would learn a different half of the state this Deployment
+# exists to unify, which is precisely the per-worker split the founder pasted from the router's
+# own banner. The loss a node event costs here is cache hits, not answers -- the routers keep
+# serving without it -- and the honest record of that trade is the waiver row
+# platform/availability.yaml (surface llm/litellm-cache, issue idp#1184), whose named remedy is
+# Sentinel or a managed Redis, not a second naive replica.
+#
+# Without this file the policy's dry-run refusal wedges the whole llm kustomization and every
+# dependent layer (healing, hindsight, infra-crew) -- the exact incident that forced the revert
+# of the first landing (idp#1182 -> idp#1192, run 33239797940, 2026-09-03 01:59Z).
+#
+# Kyverno honours exceptions from namespace kyverno only (platform/kyverno/kyverno.yaml); this
+# file lives in platform/edge because this directory has no namespace transformer (crew#325,
+# the langfuse exception next door records the incident). Scope is one Deployment by name in
+# one namespace; nothing else in llm is excused, and the litellm router itself stays fully
+# graded at two spread replicas.
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: litellm-cache-one-replica
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: require-availability
+      ruleNames: [founder-facing-runs-two, founder-facing-spreads-across-nodes]
+  match:
+    any:
+      - resources:
+          kinds: [Deployment]
+          namespaces: [llm]
+          names: [litellm-cache]

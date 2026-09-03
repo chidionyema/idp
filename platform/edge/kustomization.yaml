@@ -18,6 +18,7 @@ resources:
   - scheduling-exception.yaml
   - hindsight-exception.yaml
   - robusta-exception.yaml
+  - litellm-cache-exception.yaml
   - tailscale-operator-exception.yaml
   - tailscale-egress-exception.yaml
   - external-dns-exception.yaml
