@@ -171,6 +171,13 @@ techdocs:
     runIn: 'local'
   publisher:
     type: 'local' # Alternatives - 'googleGcs' or 'awsS3'. Read documentation for using alternatives.
+    local:
+      # Catalogue pods run with a read-only root filesystem and a writable /tmp emptyDir
+      # (platform/backstage/base/catalogue.yaml). The local publisher's default is
+      # node_modules/@backstage/plugin-techdocs-backend/static/docs, which mkdir cannot
+      # create there. 2026-09-02: every Docs tab 404'd; the builder error was ENOENT on
+      # founder-gods-view. Keep this path under /tmp.
+      publishDirectory: /tmp/techdocs
 
 auth:
   # see https://backstage.io/docs/auth/ to learn about auth providers

@@ -129,6 +129,12 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value: {name: APP_BASE_URL, value: "https://catalogue.${ESTATE_ZONE}"}
+      # 2026-09-02: TechDocs published into node_modules on a read-only root and every
+      # Docs tab 404'd (ENOENT mkdir founder-gods-view). Same path as app-config.yaml;
+      # the env override lands on the running image before the next backstage build.
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: APP_CONFIG_techdocs_publisher_local_publishDirectory, value: /tmp/techdocs}
       # crew#684 CP6, 2026-08-30: the one Host Healthchecks accepts (its ALLOWED_HOSTS,
       # platform/healthchecks/env.yaml); app-config.container.yaml sends it on /healthchecks.
       - op: add
