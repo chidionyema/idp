@@ -62,6 +62,7 @@ def _dispatch(state: dict) -> None:
         "laptop",
         "hermes",
         "science",
+        "router-rows",
     ]
 
 
