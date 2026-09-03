@@ -1,0 +1,48 @@
+# The canary itself: one nginx that answers nothing anyone needs. No Service, no route, no
+# probe row, no alert rule, no catalog entity of type service. `replicas` is deliberately absent:
+# the scheduler owns that field (server-side apply, field manager canary-scheduler), so Flux
+# never scales the window back mid-way.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: canary
+  namespace: staging
+  labels:
+    app: canary
+    idp.platform/canary: "true"
+  annotations:
+    idp.platform/never-an-incident: "true"   # crew#656: nothing depends on it; no incident is ever about it
+spec:
+  selector:
+    matchLabels:
+      app: canary
+  template:
+    metadata:
+      labels:
+        app: canary
+        idp.platform/canary: "true"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: canary
+          image: docker.io/nginxinc/nginx-unprivileged:1.27-alpine   # the same pinned image platform/edge/status-page.yaml runs
+          ports:
+            - { name: http, containerPort: 8080 }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 50m, memory: 32Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: cache, mountPath: /var/cache/nginx }
+            - { name: run, mountPath: /tmp }
+      volumes:
+        - { name: cache, emptyDir: {} }
+        - { name: run, emptyDir: {} }

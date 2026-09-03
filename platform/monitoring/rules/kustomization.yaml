@@ -10,3 +10,4 @@ resources:
   - founder-surfaces-probe.yaml
   - founder-mac-screen-sharing-probe.yaml
   - agentgateway-servicemonitor.yaml
+  - canary-servicemonitor.yaml
