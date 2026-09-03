@@ -6,6 +6,8 @@ kind: Kustomization
 namespace: hermes-agent
 resources:
   - gateway.yaml
+  - httproute.yaml
+  - edge-manners.yaml
   - estate.yaml
   - mac-run-key.yaml
   - tailscale.yaml
@@ -27,4 +29,4 @@ configMapGenerator:
       - cursor-agent=cursor-agent.tpl
 images:
   - name: ghcr.io/chidionyema/hermes-agent
-    newTag: main-47-577cf23f81c14ccf89f6f269057da6293ff23319 # {"$imagepolicy": "flux-system:hermes-agent:tag"}
+    newTag: main-56-78e54b5c35292b87917c00d32f5fca36b9e40f53 # {"$imagepolicy": "flux-system:hermes-agent:tag"}

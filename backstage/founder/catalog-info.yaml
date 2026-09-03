@@ -48,6 +48,9 @@ metadata:
     - title: "Open (GitHub, docs/FOUNDER.md)"
       url: "https://github.com/chidionyema/idp/blob/main/docs/FOUNDER.md"
       icon: dashboard
+    - title: "Open (the one-page estate view, parked off the menu)"
+      url: "https://catalogue.${ESTATE_ZONE}/estate"
+      icon: dashboard
     - title: "Planned, blocking, when (NEXT.md)"
       url: "https://github.com/chidionyema/idp/blob/main/docs/NEXT.md"
       icon: dashboard
@@ -453,7 +456,7 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: founder-store
-  title: "The store (mumchimp)"
+  title: "The store, live (mumchimp)"
   description: "The one place a customer pays this estate: the storefront and the Medusa API behind it. Revenue is read by the crew science outcomes script. No API health link here: the api hostname answers 404 on every path, so the Medusa API is not published there; the link returns when mumchimp-medusa publishes one."
   annotations:
     estate/group: "Companies"
@@ -652,8 +655,8 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: company-mumchimp
-  title: "Mumchimp: the store"
-  description: "Everything that takes a customer's money: the storefront, its API, the cluster it runs on and the jobs that keep it up. Open it to see every product and asset the store owns, and what is red."
+  title: "Mumchimp — our company: the store, and Prospector, its idea engine"
+  description: "One company. The storefront, its API and everything that takes a customer's money — and Prospector, the business-idea and prospect engine it grew from. The two read as one company; the catalogue's deeper split merges on the founder's word."
   annotations:
     estate/group: "Companies"
     idp/updated-by: "bin/catalog-gen builds the company tree under this card from the inventory, four times a day"
@@ -672,12 +675,12 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: company-prospector
-  title: "Prospector: finds and qualifies prospects"
+  title: "Prospector: finds and qualifies prospects (part of mumchimp)"
   description: "The product you sell, whatever the platform under it does. Open it to see its repositories, its jobs and its data, and what is red."
   annotations:
-    estate/group: "Companies"
+    estate/group: "Products"
     idp/updated-by: "bin/catalog-gen builds the company tree under this card from the inventory, four times a day"
-  tags: [founder, company]
+  tags: [founder, product]
   links:
     - title: "Open (everything this company owns)"
       url: "https://catalogue.${ESTATE_ZONE}/catalog/default/domain/prospector"
@@ -692,12 +695,12 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: company-hermes
-  title: "Hermes: acts for you from anywhere"
-  description: "Telegram in, a pull request or a run out. Open it to see the gateway, its schedules and its receipts, and what is red."
+  title: "Hermes: our product that acts for you from anywhere"
+  description: "Telegram in, a pull request or a run out. Open it to see the gateway, its schedules and its receipts, and what is red. A product, not a company."
   annotations:
-    estate/group: "Companies"
+    estate/group: "Products"
     idp/updated-by: "bin/catalog-gen builds the company tree under this card from the inventory, four times a day"
-  tags: [founder, company]
+  tags: [founder, product]
   links:
     - title: "Open (everything this company owns)"
       url: "https://catalogue.${ESTATE_ZONE}/catalog/default/domain/hermes-v2"

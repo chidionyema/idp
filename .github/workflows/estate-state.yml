@@ -31,7 +31,7 @@ jobs:
       ARTIFACT: oci://ghcr.io/chidionyema/idp/estate-state:latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
           cache: pip
@@ -70,7 +70,7 @@ jobs:
           bin/idp-cloud object get --bucket estate-drill-receipts --name state/cluster > "$RUNNER_TEMP/cluster.txt" \
             || { echo "BLIND cluster receipt not read (exit $?)"; : > "$RUNNER_TEMP/cluster.txt"; }
           head -c 160 "$RUNNER_TEMP/cluster.txt"; echo
-      - name: feed from the state bucket (same door as catalog-render)
+      - name: feed from the state branch, fall back to bucket (crew#786)
         env:
           RCLONE_S3_PROVIDER: Cloudflare
           RCLONE_S3_ENDPOINT: https://${{ secrets.SEED_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
@@ -79,9 +79,18 @@ jobs:
           BUCKET: ${{ secrets.SEED_R2_BUCKET || 'prospector-packs' }}
         run: |
           set -uo pipefail
-          # rclone copyto exits 0 for an absent object; the file is the receipt, the builder says BLIND without it
-          rclone copyto ":s3:$BUCKET/state/feed/latest.md" "$RUNNER_TEMP/feed.md" --s3-no-check-bucket 2>/dev/null || true
-          echo "feed $(wc -c < "$RUNNER_TEMP/feed.md" 2>/dev/null || echo 0) bytes"
+          # crew#786: try the feed from state/live-diagram first (published by Mac sessions)
+          git fetch --depth 1 origin state/live-diagram 2>/dev/null || true
+          git show origin/state/live-diagram:docs/FEED.md > "$RUNNER_TEMP/feed.md" 2>/dev/null || true
+          if [ -s "$RUNNER_TEMP/feed.md" ]; then
+            echo "feed taken from state/live-diagram, $(wc -c < "$RUNNER_TEMP/feed.md") bytes"
+          else
+            # rclone copyto exits 0 for an absent object; the file is the receipt, the builder says BLIND without it
+            rclone copyto ":s3:$BUCKET/state/feed/latest.md" "$RUNNER_TEMP/feed.md" --s3-no-check-bucket 2>/dev/null || true
+            if [ -s "$RUNNER_TEMP/feed.md" ]; then
+              echo "feed taken from the bucket, $(wc -c < "$RUNNER_TEMP/feed.md") bytes"
+            else echo "feed: not published yet, state/live-diagram and bucket both empty"; fi
+          fi
       - name: rulings, issues, runs and the newest login-drill log (App token)
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
