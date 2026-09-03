@@ -141,7 +141,9 @@ spec:
               files = {}
               files["metadata.yaml"] = {
                   "version": "1.0.0",
-                  "type": "assets",
+                  # ImportDashboardsCommand validates metadata.type == "Dashboard"; "assets" is the
+                  # bundle type of the command 6.1 does not ship (second run, pod superset-boardroom-seed-t9sbh).
+                  "type": "Dashboard",
                   "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               }
               files["databases/langfuse_clickhouse.yaml"] = {
