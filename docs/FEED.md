@@ -4684,3 +4684,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: image-update PR carries every changed pin in one PR; ghcr web tag landed 3 min after api, so the first PR revision can miss one image
 📍 State: https://github.com/chidionyema/idp/pull/1243
 
+
+## 2026-09-03T10:50:05Z · session a14fc078 · lane .wt-reports
+🟢 Done: founder's strike steps 1-3 SECURED-then-cut: 1,099 backup refs pushed (785 idp, 240 crew, 74 hermes-v2 under backup/20260903/) + 19 rescue/ snapshots of every dirty worktree (stash create, trees untouched), THEN 123 remote squash-ghosts deleted (88 idp, 31 crew, 4 hermes-v2; tip SHA == merged PR head, open-PR heads excluded); feat/litellm-redis rebased onto main (2 stale LATEST.md checkpoints dropped, kept at backup ref) and pushed
+🟡 Active: idp#1238 red was my Verify line (gate refused compile-'exec' as a world-changing verb) — reworded to ast.parse, rerunning verify; crew#821 reds: missing Chosen: line (body edit) + pre-existing nltk 3.10.3 PYSEC-2026-3740 in requirements-research.txt (bumping in-pass, main scan red 3 runs straight)
+🔴 Blocked: none
+⚪ Pending: feat/litellm-redis PR next (gate-shaped body, waiver design needs founder word REDIS); fetch --prune + local gone-branch cleanup after reds
+🔧 TOUCHES: remote refs backup/20260903/* rescue/* (new), 123 deleted ghost refs, feat/litellm-redis force-with-lease, crew requirements-research.txt (nltk bump), PR bodies 1238/821
+🔀 OVERLAP: purge touched no open-PR head and no other session's live branch; rescue refs read-only snapshots
+📎 FACTS: zsh mangles $sha:refs via the :r modifier — always brace ${sha}:refs; crew security-scan has been red on main since at least 05:05Z on the same nltk finding
+📍 State: https://github.com/chidionyema/crew/pull/821
+
