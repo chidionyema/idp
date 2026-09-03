@@ -88,6 +88,10 @@ python3 -c 'import json,sys; d=json.load(open("{vault}")); v=d.get(sys.argv[1]);
         "IDP_VAULT_PUT": str(sh / "vault-put"),
         "ESTATE_CONFIG": str(tmp_path / "no-federated-config.yaml"),
         "TAILSCALE_FEDERATED_CLIENT_ID": "",
+        # off the runner: the verify-claims job runs these tests with the runner's
+        # own OIDC variables set, and they would send the seed road down road b
+        "ACTIONS_ID_TOKEN_REQUEST_URL": "",
+        "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "",
         "IDP_CLOUD": str(sh / "cloud"),
         "IDP_OCI_WHOAMI": str(sh / "whoami"),
         "TAILSCALE_API_URL": "https://api.test",
@@ -218,6 +222,7 @@ echo "$@" >> "{log}"
 case "$*" in
   *github.test/token*) h=$(printf '{{"alg":"none"}}' | base64 | tr -d '=\n'); c=$(printf '{{"iss":"gh","sub":"repo:x"}}' | base64 | tr -d '=\n'); printf '{{"value":"%s.%s."}}' "$h" "$c";;
   *oauth/token-exchange*) for a in "$@"; do case "$prev" in -o) printf '{{"access_token":"at-fed","scope":"{scope}"}}' > "$a";; esac; prev=$a; done; printf 200;;
+  *-/keys/tFED111CNTRL*) echo '{{"id":"tFED111CNTRL","keyType":"federated","tags":["tag:k8s","tag:k8s-operator"]}}';;
   *tailnet/-/keys*) echo '{{"id":"kNEW987654","key":"tskey-client-new-1","keyType":"client","tags":["tag:k8s","tag:k8s-operator"]}}';;
   *oauth/token*) echo '{{"access_token":"at-1","scope":"auth_keys devices:core policy_file users:read"}}';;
   *) echo '{{}}';;
@@ -261,7 +266,10 @@ def test_incident_crew66_a_federated_identity_missing_an_operator_scope_is_refus
     assert p.returncode == 1 and "lacks scope auth_keys" in p.stdout, (
         p.stdout + p.stderr
     )
-    assert "tailnet/-/keys" not in log.read_text()
+    # the identity's own key record may be read (GET, tag drift); a mint is a POST with -d
+    for l in log.read_text().splitlines():
+        if "tailnet/-/keys" in l:
+            assert " -d " not in l, f"minted before the scope refusal: {l}"
 
 
 def test_incident_crew66_a_seed_pair_from_the_environment_mints_and_is_vaulted_so_the_repo_secret_can_go(

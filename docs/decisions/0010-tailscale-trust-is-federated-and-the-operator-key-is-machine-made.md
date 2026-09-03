@@ -92,3 +92,19 @@ The estate-wide fence for the shell-script class is crew#620.
 - github.com/tailscale/github-action README: federation section (`audience`, `id-token: write`)
 - oracle terraform-provider-oci `containerengine_cluster` doc; docs.oracle.com OIDC discovery and
   enhanced-vs-basic pages; apexapps.oracle.com cetools price-list API
+
+## Amendment 2026-09-03: the identity carries the tags it mints
+
+The apply run of 2026-09-03 12:42Z (run 33756246171) exchanged the federated identity's token,
+held every scope, and then the operator mint answered `requested tags [tag:k8s tag:k8s-operator]
+are invalid or not permitted`. Tailscale lets an actor mint only the tags its own tags own
+(kb/1215); the identity had been registered from code with scopes and no tags, and `tagOwners`
+in the policy cannot change that.
+
+Decision: the registration body carries `tags: [tag:k8s, tag:k8s-operator]`, and road a reads
+the identity's own key record (`GET /api/v2/tailnet/-/keys/<id>`) before trusting it; an
+identity that exchanges but carries no tag is re-registered by road b on the next apply, with no
+console step. Guard: `tests/test_incident_crew66_seed_registers_the_federated_identity_from_code.py`
+(the drift test `..._carries_no_tags_is_re_registered_with_them`). The tests also blank the
+runner's `ACTIONS_ID_TOKEN_REQUEST_*` variables themselves: the verify-claims job runs them with
+those set, and road b was being entered from a test that meant to stay off the runner.
