@@ -42,6 +42,8 @@ The "Boardroom" dashboard (model spend per day, spend by model and by prompt, ca
 volume, latency, trace volume) is not hand-built: the one-shot job
 `superset-boardroom-seed` (platform/observability/superset-boardroom-seed.yaml)
 renders a Superset import bundle against the live ClickHouse trace store and loads
-it with Superset's own importer class, `ImportDashboardsCommand` (6.1 ships no `import-assets` command). Every object carries a fixed uuid, so re-running
-the job overwrites the same rows — it never doubles charts. Jobs are immutable: to
-change the seed, edit the manifest and bump the job name; Flux runs the new one.
+it with Superset's own importer class, `ImportDashboardsCommand` (6.1 ships no `import-assets` command);
+the bundle's `metadata.yaml` says `type: Dashboard`, the one type that importer accepts. Every object carries a fixed uuid, so re-running
+the job overwrites the same rows — it never doubles charts. Jobs are immutable, so the Job carries
+the Flux force annotation (`kustomize.toolkit.fluxcd.io/force: Enabled`): edit the manifest and
+Flux recreates the Job in place; no name bump.
