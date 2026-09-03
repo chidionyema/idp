@@ -3,10 +3,10 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: otto-staging
-  namespace: otto-staging
+  name: otto-golden
+  namespace: otto-golden
 spec:
   minAvailable: 1
   selector:
     matchLabels:
-      app: otto-staging
+      app: otto-golden

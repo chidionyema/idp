@@ -3,7 +3,7 @@
 Date: 2026-09-02. Status: accepted — the founder's word landed 2026-09-02T01:49Z: "APPROVE
 0017 (BITWARDEN BRIDGE) WITH STRICT PHYSICS." Implemented by `platform/human-vault/` and the
 `bitwarden-sdk-server` values in `platform/secrets/external-secrets.yaml`; the first customer is
-the otto-staging Telegram token. Fires on: the founder, 2026-09-02: "i think we need to think about bitwarden
+the otto-golden Telegram token. Fires on: the founder, 2026-09-02: "i think we need to think about bitwarden
 integration."
 
 ## The gap it closes

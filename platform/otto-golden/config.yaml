@@ -11,8 +11,8 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: otto-staging-boot-config
-  namespace: otto-staging
+  name: otto-golden-boot-config
+  namespace: otto-golden
 data:
   boot.yaml: |
     # Placeholder pending otto.boot's own config schema (see the comment above this file in

@@ -1,4 +1,4 @@
-# Otto staging (founder order 2026-09-01). Fixed deploy contract from the crew#otto-staging
+# Otto staging (founder order 2026-09-01). Fixed deploy contract from the crew#otto-golden
 # task: container command `python -m otto.boot`, port from OTTO_BOOT_PORT (default 8080),
 # health at GET /healthz, webhook at POST /telegram-webhook, the bot token via env
 # OTTO_TELEGRAM_BOT_TOKEN, the config file path via env OTTO_BOOT_CONFIG. Same image as
@@ -26,14 +26,14 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: otto-staging
-  namespace: otto-staging
+  name: otto-golden
+  namespace: otto-golden
   labels:
-    backstage.io/kubernetes-id: otto-staging
-    app.kubernetes.io/name: otto-staging
+    backstage.io/kubernetes-id: otto-golden
+    app.kubernetes.io/name: otto-golden
 spec:
   selector:
-    app: otto-staging
+    app: otto-golden
   ports:
     - name: http
       port: 8080
@@ -42,8 +42,8 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: otto-staging
-  namespace: otto-staging
+  name: otto-golden
+  namespace: otto-golden
   annotations:
     # Reloader (platform/reloader) rolls the pod when the vault-sourced Secret changes; the
     # ConfigMap the same way. `auto` discovers every Secret/ConfigMap this pod mounts, so a new
@@ -51,8 +51,8 @@ metadata:
     # enumerated-list mistake).
     reloader.stakater.com/auto: "true"
   labels:
-    app: otto-staging
-    app.kubernetes.io/name: otto-staging
+    app: otto-golden
+    app.kubernetes.io/name: otto-golden
     app.kubernetes.io/part-of: idp
 spec:
   # Two pods behind the door (crew#539: a routed surface survives one node). The pod is
@@ -62,19 +62,19 @@ spec:
   replicas: 2
   selector:
     matchLabels:
-      app: otto-staging
+      app: otto-golden
   template:
     metadata:
       labels:
-        app: otto-staging
-        app.kubernetes.io/name: otto-staging
+        app: otto-golden
+        app.kubernetes.io/name: otto-golden
     spec:
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: DoNotSchedule
           labelSelector:
-            matchLabels: { app.kubernetes.io/name: otto-staging }
+            matchLabels: { app.kubernetes.io/name: otto-golden }
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -163,6 +163,6 @@ spec:
         - name: tmp
           emptyDir: {}
         - name: boot-config
-          configMap: { name: otto-staging-boot-config }
+          configMap: { name: otto-golden-boot-config }
         - name: telegram-token
           secret: { secretName: otto-staging-telegram }

@@ -1190,13 +1190,13 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: layer-otto-staging
+  name: layer-otto-golden
   title: 'Otto (staging)'
   description: 'The new agent''s own webhook and health door, running its own pod ahead of production.'
   annotations:
-    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=otto-staging'
-    estate/flux-kustomization: 'otto-staging'
-    estate/path: './platform/otto-staging'
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=otto-golden'
+    estate/flux-kustomization: 'otto-golden'
+    estate/path: './platform/otto-golden'
     estate/cluster: 'oke'
   tags: [platform, agents]
   links:
@@ -1208,17 +1208,17 @@ spec:
   owner: group:default/platform
   system: agents
   providesApis:
-    - api:default/otto-staging-api
+    - api:default/otto-golden-api
   dependsOn:
     - component:default/layer-scheduling
     - component:default/layer-secret-store
     - component:default/layer-edge
-    - component:default/layer-otto-staging-secret
+    - component:default/layer-otto-golden-secret
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
 metadata:
-  name: otto-staging-api
+  name: otto-golden-api
   description: 'Otto (staging): the HTTP interface, answering at otto.${ESTATE_ZONE}.'
 spec:
   type: openapi
@@ -1226,19 +1226,19 @@ spec:
   owner: group:default/platform
   system: system:default/agents
   definition: |
-    # Not published. otto-staging answers at otto.${ESTATE_ZONE}; this entity
+    # Not published. otto-golden answers at otto.${ESTATE_ZONE}; this entity
     # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: layer-otto-staging-secret
+  name: layer-otto-golden-secret
   title: 'Otto (staging) webhook secret'
   description: 'Feeds the secret word Telegram must echo from the vault into the gateway rule on Otto''s door.'
   annotations:
-    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=otto-staging-secret'
-    estate/flux-kustomization: 'otto-staging-secret'
-    estate/path: './platform/otto-staging-secret'
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=otto-golden-secret'
+    estate/flux-kustomization: 'otto-golden-secret'
+    estate/path: './platform/otto-golden-secret'
     estate/cluster: 'oke'
   tags: [platform, agents]
   links:

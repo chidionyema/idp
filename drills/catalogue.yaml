@@ -382,7 +382,7 @@ drills:
       (docs/how-to/bitwarden-human-vault.md); the oke-check job lands with them and
       this line comes off.
 
-  - name: otto-staging
+  - name: otto-golden
     owner: idp
     workflow: oke-check.yml
     schedule: "17 6 * * *"
@@ -391,8 +391,8 @@ drills:
     proves: >-
       The staging Otto answers from outside the cluster: the health endpoint on the
       otto host returns 200 and the Telegram webhook path refuses a plain GET (the
-      probe is quoted in docs/runbooks/otto-staging.md). Pending until the founder
-      deploys platform/otto-staging; the oke-check job lands with the deploy and
+      probe is quoted in docs/runbooks/otto-golden.md). Pending until the founder
+      deploys platform/otto-golden; the oke-check job lands with the deploy and
       this line comes off.
 
   - name: notify

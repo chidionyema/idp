@@ -4,7 +4,7 @@ This page is for anyone picking up work on the new Otto agent platform's deploym
 it for the first time. It names where the pieces live and what each one is responsible for.
 
 ## Where the manifests live
-`platform/otto-staging/` in the `idp` repository, mirroring the shape every other platform layer
+`platform/otto-golden/` in the `idp` repository, mirroring the shape every other platform layer
 uses (`platform/hermes-agent/` is the closest sibling, and the one this lane copied its pattern
 from):
 
@@ -26,7 +26,7 @@ from):
 - `kustomization.yaml` — the list above, plus the pinned image tag.
 
 ## Where the deployment is wired in
-`clusters/oke/platform.yaml` carries the Flux `Kustomization` row named `otto-staging`, listed
+`clusters/oke/platform.yaml` carries the Flux `Kustomization` row named `otto-golden`, listed
 right after `hermes-agent`'s own row. It depends on `scheduling`, `secret-store` and `edge` — the
 same dependencies `mcp`'s row declares, because like `mcp` this lane has its own route on the
 shared Gateway and needs it to exist first.
@@ -34,7 +34,7 @@ shared Gateway and needs it to exist first.
 ## Where the catalog entity comes from
 `bin/catalog-platform` reads every Flux `Kustomization` under `clusters/<cluster>/` and emits one
 Backstage entity per row, using a plain-English name and description named in that script's own
-`LAYERS` table. This lane's row (`"otto-staging"`) sits next to `"hermes-agent"`'s own row in that
+`LAYERS` table. This lane's row (`"otto-golden"`) sits next to `"hermes-agent"`'s own row in that
 table; running `bin/catalog-platform` regenerates `backstage/platform/catalog-info.yaml` from it —
 never hand-edit that generated file.
 

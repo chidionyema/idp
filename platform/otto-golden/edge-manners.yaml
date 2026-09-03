@@ -14,7 +14,7 @@ apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: friendly-errors
-  namespace: otto-staging
+  namespace: otto-golden
 spec:
   errors:
     status: ["502-504"]
@@ -28,7 +28,7 @@ apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: edge-headers
-  namespace: otto-staging
+  namespace: otto-golden
 spec:
   headers:
     stsSeconds: 63072000

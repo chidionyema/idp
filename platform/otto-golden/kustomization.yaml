@@ -4,7 +4,7 @@
 # tag by hand alongside hermes-agent's until this lane earns its own policy.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: otto-staging
+namespace: otto-golden
 resources:
   - namespace.yaml
   - quota.yaml
