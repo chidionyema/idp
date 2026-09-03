@@ -37,6 +37,10 @@ NEXT = "docs/NEXT.md"                   # crew#403 CP6
 FOUNDER = "docs/FOUNDER.md"             # crew#412 R38
 FOUNDER_JSON = "docs/founder.json"      # crew#684 CP4: the Ops page's founder tiles read this
 TRACE_JSON = "docs/trace-matrix.json"
+# crew#740: the estate-inventory workflow writes these two onto the same branch. This render
+# force-pushes the branch from origin/main, so they are checked out from origin first and staged
+# with the rest; otherwise every render would drop the Ops tile's data.
+CARRIED = ["docs/inventory.json", "docs/inventory.md"]
 INV = Path(os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json"))
 
 
@@ -131,7 +135,10 @@ def main(argv: list[str]) -> int:
         print(f"catalog-render --dry-run: would commit\n{diff}")
         return 0
     taken = step("inventory time", ["sed", "-n", "s/^# inventory taken: //p", "catalog/catalog-info.yaml"], WT)
+    carried = [f for f in CARRIED if sh(["git", "checkout", "-q", f"origin/{BRANCH}", "--", f], WT)[0] == 0]
     step("stage", ["git", "add", PAGE, SHOWCASE, TRACE, TRACE_JSON, NEXT, FOUNDER, FOUNDER_JSON], WT)
+    if carried:
+        step("stage the inventory the workflow put on the branch", ["git", "add", *carried], WT)
     step("commit", ["git", "commit", "-q", "-m", f"docs(architecture): live estate page, inventory taken {taken} (crew#401)\n\nAuthor-session: com.estate.catalog-render"], WT)
     step("push", ["git", "push", "-q", "--force-with-lease", "origin", f"HEAD:refs/heads/{BRANCH}"], WT)
     # crew#584 / idp#719: a body written before LAW 51 keeps its old text on every scheduled
