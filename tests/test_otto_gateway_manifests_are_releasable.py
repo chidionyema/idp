@@ -417,6 +417,56 @@ def test_flux_runs_this_layer() -> None:
     ), "the route's hostname would apply as the literal placeholder"
 
 
+def _flux_rows() -> dict:
+    rows = {}
+    for f in sorted((ROOT / "clusters").rglob("*.y*ml")):
+        for d in yaml.safe_load_all(f.read_text()):
+            if not isinstance(d, dict) or d.get("kind") != "Kustomization":
+                continue
+            md = d.get("metadata")
+            if isinstance(md, dict) and md.get("name"):
+                rows[md["name"]] = d.get("spec") or {}
+    return rows
+
+
+def test_the_door_never_wakes_before_its_bus() -> None:
+    """The door's only output is a task on the bus, so a running door with a dark bus
+    accepts a customer's message and drops it -- green pod, lost work. event-bus is
+    suspended (clusters/oke/commerce.yaml: a bus with no publisher is a workload nobody
+    reads) and this door is the publisher it was waiting for, so the two wake together.
+    This is the assertion the cutover change has to satisfy, not a note about today."""
+    rows = _flux_rows()
+    bus = rows["event-bus"].get("suspend") is True
+    door = rows["otto-gateway"].get("suspend") is True
+    assert not (bus and not door), (
+        "otto-gateway is running while event-bus is suspended: every message this door "
+        "accepts is published to a bus no cluster reconciles. Unsuspend both in one change."
+    )
+
+
+def test_the_vault_entries_this_layer_reads_are_minted_by_the_estate() -> None:
+    """A door that boots before its credential exists is an outage nobody can undo from a
+    keyboard. Every entry the layer reads is either minted in-process by the estate's
+    bootstrapper or already registered as somebody else's root, and the register is the one
+    list that says which (docs/reference/policy/root-trust.md, graded by bin/idp-root-trust)."""
+    keys = {
+        d["remoteRef"]["key"]
+        for doc in _docs("external-secret.yaml")
+        for d in doc["spec"]["data"]
+    }
+    register = (ROOT / "docs/reference/policy/root-trust.md").read_text()
+    for key in sorted(keys):
+        assert f"`{key}`" in register, (
+            f"{key} is read by platform/otto-gateway/external-secret.yaml and named nowhere "
+            "in the root trust register, so nothing in the estate says who mints it"
+        )
+    seed = (ROOT / "bin/idp-estate-seed").read_text()
+    assert re.search(r"^otto-gateway-db\s+password\s+hex32\s*$", seed, re.M), (
+        "the door's own database password is not in the estate seed plan, so the release "
+        "would wait on a hand to write it into the vault"
+    )
+
+
 def test_the_catalogue_carries_the_layer() -> None:
     text = (ROOT / "backstage/platform/catalog-info.yaml").read_text()
     assert "otto-gateway" in text, (
