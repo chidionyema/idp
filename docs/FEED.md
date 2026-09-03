@@ -4710,3 +4710,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: LiteLLM v1.98.0 resolves litellm_credential_name once at row add (router.py _create_deployment) and a credential PATCH only refreshes the in-memory list, so a git row naming a console credential keeps its old key until a restart; console-owned rows are the only live-editable road
 📍 State: https://github.com/chidionyema/prospector/pull/812
 
+
+## 2026-09-03T11:35:42Z · session a14fc078 · lane .wt-reports
+🟢 Done: idp#1249 MERGED -> main cacd383e (head 54dc4c0e proven 21 checks 0 pending 0 red): the Kyverno PolicyException for the one-replica llm cache, the never-built admission half of the availability waiver. Check ladder cost 3 commits/~14 min: docs-gate wanted an Architectural Record (docs/explanation/litellm-cache-availability.md + nav row), then Vale flagged 5 dev-speak words (reworded in context). Founder pushed back on the ladder ("3 coinit in 14 ninutes is way too slow ... get the shit done", doc 2026-09-03T1131Z-what-you-are-watching-is-the-linter-death-34c56e8f.md): answered that fast-gate ALREADY exempts [bot] authors + has Docs-exempt: valve; the real fix is his own 2026-09-01 estate-agents[bot] identity ruling; Vale bot-bypass refused pending his explicit word (his 2026-08-31 "slowness is process violation, never the controls")
+🟡 Active: read-only cluster watcher until llm kustomization Ready=True at cacd383e + litellm-cache pod Running; then check litellm logs for the per-worker banner gone
+🔴 Blocked: none
+⚪ Pending: agent-lane [bot] authorship wiring is the standing fix for the gate friction — needs its own PR + founder word; watcher bvfnkws0w (old) superseded
+🔧 TOUCHES: merge of 1249 only; no tree edits this window
+🔀 OVERLAP: none
+📎 FACTS: a mid-command # comment inside a backgrounded compound breaks zsh eval ("parse error near \n") — annotate only at the very end of the whole command
+📍 State: https://github.com/chidionyema/idp/commit/cacd383eeeb8fa0202bdb26d36286d50873dd703
+
