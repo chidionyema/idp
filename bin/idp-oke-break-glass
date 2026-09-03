@@ -572,7 +572,26 @@ pb_otto_parity() {
   # crew#561 CP2: the ServiceAccount reads its own namespace and nothing else. Both halves are
   # graded: a yes inside the namespace and a no outside it (a role that reads everything is red).
   step sa-reads-own-namespace $K auth can-i list pods -n "$ns" --as="system:serviceaccount:$ns:hermes-agent"
-  step sa-blind-elsewhere sh -c "a=\$($K auth can-i list secrets -n kube-system --as=system:serviceaccount:$ns:hermes-agent 2>/dev/null); [ \"\$a\" = no ] && echo 'kube-system secrets: no'"
+  # crew#736 (founder 2026-08-31 09:41Z, "eradicate agent trust"): this row was red on all 17 runs
+  # since idp#1013 and printed NOTHING, so a broken command and a real leak read the same. Every
+  # branch now prints the answer: no = ok, yes = the leak, anything else = the check is blind.
+  step sa-blind-elsewhere sh -c "a=\$($K auth can-i list secrets -n kube-system --as=system:serviceaccount:$ns:hermes-agent 2>&1 | tr -d '\r' | head -1); echo \"kube-system secrets: \${a:-<no answer>}\"; case \"\$a\" in no*) exit 0;; yes*) echo 'LEAK: the account reads kube-system secrets'; exit 1;; *) echo 'BLIND: the check got no yes/no'; exit 1;; esac"
+  # crew#736: which bindings, anywhere in the cluster, name Otto's account. rbac.yaml on main binds
+  # it once, in its own namespace; anything else is drift the lockdown playbook deletes.
+  step bindings-outside-namespace sh -c "$K get rolebindings,clusterrolebindings -A -o json 2>&1 | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+bad = []
+for b in d.get(\"items\", []):
+    ns = b[\"metadata\"].get(\"namespace\", \"\")
+    for sub in b.get(\"subjects\") or []:
+        if sub.get(\"kind\") == \"ServiceAccount\" and sub.get(\"name\") == \"hermes-agent\" and sub.get(\"namespace\") == \"$ns\":
+            if b[\"kind\"] == \"ClusterRoleBinding\" or ns != \"$ns\":
+                bad.append(\"%s %s/%s -> %s/%s\" % (b[\"kind\"], ns or \"-\", b[\"metadata\"][\"name\"], b[\"roleRef\"][\"kind\"], b[\"roleRef\"][\"name\"]))
+print(\"bindings outside $ns naming hermes-agent: %d\" % len(bad))
+for x in bad: print(x)
+sys.exit(1 if bad else 0)
+'"
   # crew#561 CP3: the estate MCP answers the pod with the pod's own key, at the URL the pod's
   # config names (never typed here, LAW 46). Only the status is printed, never the key.
   # crew#717 wave 1 (founder 2026-08-30 "i need otto sorted once and for all"): memory, voice
@@ -614,16 +633,73 @@ print(r.status, \"traces_total\", d.get(\"meta\", {}).get(\"totalItems\"))
   step tts-edge-answers $K exec "$d" -n "$ns" -c gateway -- sh -c 'python3 -c "import edge_tts; print(\"edge-tts importable\")"'
   # crew#561, founder 2026-08-30 "Otto need to be mandated also else may forget": the entrypoint reads
   # estate state at boot and logs READ or BLIND; a boot with neither line is a boot that forgot.
-  step estate-state-read-at-start sh -c "$K logs $d -n $ns -c gateway | grep -m1 '^estate-state: READ '"
+  step estate-state-read-at-start sh -c "l=\$($K logs $d -n $ns -c gateway 2>&1 | grep -m1 '^estate-state: '); echo \"\${l:-no 'estate-state:' line in the gateway log: the boot never read the estate state (hermes-v2 entrypoint, crew#736 CP2)}\"; case \"\$l\" in 'estate-state: READ '*) exit 0;; *) exit 1;; esac"
   step estate-mcp-answers $K exec "$d" -n "$ns" -c gateway -- sh -c 'python3 -c "
 import json, os, sys, urllib.request, yaml
 c = yaml.safe_load(open(\"/data/config.yaml\"))
-url = c[\"mcp_servers\"][\"estate\"][\"url\"]
+url = ((c or {}).get(\"mcp_servers\") or {}).get(\"estate\", {}).get(\"url\")
+if not url:
+    print(\"config.yaml has no mcp_servers.estate.url: the estate MCP is not configured for Otto (crew#736 CP2)\"); sys.exit(1)
 key = open(\"/run/secrets/hermes-agent-env/ESTATE_MCP_KEY\").read().strip()
 body = json.dumps({\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-03-26\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"otto-parity\", \"version\": \"0\"}}}).encode()
 r = urllib.request.urlopen(urllib.request.Request(url, body, {\"Authorization\": \"Bearer \" + key, \"Content-Type\": \"application/json\", \"Accept\": \"application/json, text/event-stream\"}), timeout=15)
 print(url, r.status, \"session\" if r.headers.get(\"Mcp-Session-Id\") else \"no-session\")
 "'
+}
+
+# otto-lockdown: crew#736 step 1 (founder 2026-08-31 09:20Z: "Revoke that ClusterRoleBinding
+# immediately ... scale Otto to 0 replicas until the foundational runtime is actually stable").
+# Deletes every binding outside hermes-agent that names Otto's account (drift: rbac.yaml on main
+# never binds it elsewhere), suspends the Flux row that owns platform/hermes-agent so the next
+# reconcile does not undo the scale, and scales the gateway to zero. Reversible: `flux resume` and
+# the feature flag PR bring it back. Not read-only.
+pb_otto_lockdown() {
+  local ns=hermes-agent
+  show bindings-before sh -c "$K get rolebindings,clusterrolebindings -A -o json 2>&1 | python3 -c '
+import json, sys
+for b in json.load(sys.stdin).get(\"items\", []):
+    ns = b[\"metadata\"].get(\"namespace\", \"\")
+    if any(s.get(\"kind\") == \"ServiceAccount\" and s.get(\"name\") == \"hermes-agent\" and s.get(\"namespace\") == \"$ns\" for s in b.get(\"subjects\") or []):
+        print(b[\"kind\"], ns or \"-\", b[\"metadata\"][\"name\"], \"drift\" if (b[\"kind\"] == \"ClusterRoleBinding\" or ns != \"$ns\") else \"own-namespace\")
+'"
+  local kind bns name tag
+  while read -r kind bns name tag; do
+    [ "$tag" = drift ] || continue
+    if [ "$kind" = ClusterRoleBinding ]; then step "delete-$name" $K delete clusterrolebinding "$name"
+    else step "delete-$bns-$name" $K delete rolebinding "$name" -n "$bns"; fi
+  done < <($K get rolebindings,clusterrolebindings -A -o json 2>/dev/null | python3 -c '
+import json, sys
+for b in json.load(sys.stdin).get("items", []):
+    ns = b["metadata"].get("namespace", "")
+    if any(s.get("kind") == "ServiceAccount" and s.get("name") == "hermes-agent" and s.get("namespace") == "hermes-agent" for s in b.get("subjects") or []):
+        print(b["kind"], ns or "-", b["metadata"]["name"], "drift" if (b["kind"] == "ClusterRoleBinding" or ns != "hermes-agent") else "own-namespace")
+')
+  local row; row=$(flux get kustomizations -n flux-system 2>/dev/null | awk '$1=="hermes-agent"{print $1}')
+  if [ -n "$row" ]; then step suspend-flux-row flux suspend kustomization "$row" -n flux-system
+  else echo "n/a   suspend-flux-row       no Flux Kustomization named hermes-agent; the scale holds until its owner row reconciles"; fi
+  step scale-to-zero $K scale deploy/hermes-agent-gateway -n "$ns" --replicas=0
+  step gateway-gone sh -c "$K wait pod -n $ns -l app=hermes-agent-gateway --for=delete --timeout=120s 2>&1 || true; n=\$($K get pods -n $ns -l app=hermes-agent-gateway --no-headers 2>/dev/null | wc -l | tr -d ' '); echo pods=\$n; [ \"\$n\" = 0 ]"
+  show bindings-after sh -c "$K get rolebindings,clusterrolebindings -A -o json 2>&1 | python3 -c '
+import json, sys
+n = sum(1 for b in json.load(sys.stdin).get(\"items\", []) if any(s.get(\"name\") == \"hermes-agent\" and s.get(\"namespace\") == \"$ns\" for s in b.get(\"subjects\") or []) and (b[\"kind\"] == \"ClusterRoleBinding\" or b[\"metadata\"].get(\"namespace\") != \"$ns\"))
+print(\"bindings outside $ns naming hermes-agent:\", n)
+'"
+}
+
+# otto-restore: the undo of otto-lockdown (LAW 16, crew#736). Resumes the Flux row so the
+# deployment's own replica count (gateway.yaml) comes back, then waits for the gateway to answer.
+pb_otto_restore() {
+  local ns=hermes-agent
+  local row; row=$(flux get kustomizations -n flux-system 2>/dev/null | awk '$1=="hermes-agent"{print $1}')
+  if [ -n "$row" ]; then
+    step resume-flux-row flux resume kustomization "$row" -n flux-system --timeout=3m
+    step reconcile-row flux reconcile kustomization "$row" -n flux-system --timeout=3m
+  else
+    echo "n/a   resume-flux-row        no Flux Kustomization named hermes-agent; scaling by hand"
+    step scale-to-one $K scale deploy/hermes-agent-gateway -n "$ns" --replicas=1
+  fi
+  step gateway-back sh -c "$K rollout status deploy/hermes-agent-gateway -n $ns --timeout=180s 2>&1 | tail -1"
+  show gateway-after $K get deploy/hermes-agent-gateway -n "$ns"
 }
 
 # healthchecks-door: crew#684, 2026-08-30 07:0xZ. Read-only. idp#957 (Host header) and idp#962 (enrol
@@ -1113,10 +1189,12 @@ YAML
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor otto-parity healthchecks-door cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   otto-parity) pb_otto_parity ;;
+  otto-lockdown) pb_otto_lockdown ;;
+  otto-restore) pb_otto_restore ;;
   healthchecks-door) pb_healthchecks_door ;;
   router-spend) pb_router_spend ;;
   dns-per-node) pb_dns_per_node ;;
