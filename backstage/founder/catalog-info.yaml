@@ -540,6 +540,9 @@ metadata:
     - title: "Where this is tracked"
       url: "https://github.com/chidionyema/crew/issues/516"
       icon: dashboard
+    - title: "The door of the new Otto (health check, watched by the founder-surfaces probe)"
+      url: "https://otto.${ESTATE_ZONE}/healthz"
+      icon: web
 spec:
   type: founder-surface
   lifecycle: production

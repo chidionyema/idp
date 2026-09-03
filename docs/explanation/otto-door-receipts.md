@@ -1,7 +1,7 @@
 # The otto door is a standing query, not a question to a person
 
 On 2026-09-03 the founder asked whether the new Otto was operational, and the only offered
-proof was "send the bot a message". He rejected that, correctly: a live surface must be
+proof was "send the bot a message." He rejected that, correctly: a live surface must be
 measured by the platform, and the answer must be readable without a human probing anything.
 
 This page records the first step of that proof plane, and why it is shaped this way.
@@ -23,7 +23,7 @@ Two existing instruments should have covered the door at `otto.<zone>` and did n
 Both additions watch **our hostname**, not any chat vendor. Under the founder's event-gateway
 directive (crew branch `spec/otto-gateway-tenancy`), channel-specific proof — webhook
 registration with the vendor, a canary tenant round-trip — belongs to the Universal Event
-Gateway's namespace and lands with it; this page's two lines are the channel-agnostic floor
+Gateway and lands with it; this page's two lines are the channel-agnostic floor
 under all of it.
 
 ## How to read the answer

@@ -1200,8 +1200,6 @@ metadata:
     estate/cluster: 'oke'
   tags: [platform, agents]
   links:
-    - url: https://otto.${ESTATE_ZONE}/healthz
-      title: 'The door (health check)'
     - url: https://signoz.${ESTATE_ZONE}
       title: 'Live logs and metrics'
 spec:
