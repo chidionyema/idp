@@ -203,6 +203,13 @@ spec:
                     environ["REMOTE_USER"] = email
                 return self.wsgi_app(environ, start_response)
         ADDITIONAL_MIDDLEWARE = [EstateGatewayIdentity]
+        # Run 33713430188 + pod logs 04:04Z: with AUTH_USER_REGISTRATION on, this Superset
+        # build reads RECAPTCHA_PUBLIC_KEY unguarded on every /login/ render (KeyError ->
+        # 500 for every signed-in visitor; /health never renders it, so the probe stayed
+        # green). Upstream master guards the read (views/base.py); until the image carries
+        # that, define the pair empty -- no widget, no crash.
+        RECAPTCHA_PUBLIC_KEY = ""
+        RECAPTCHA_PRIVATE_KEY = ""
         ENABLE_PROXY_FIX = True
       estate_secrets: |
         # Secrets are files (kyverno secrets-not-from-env-vars), mounted by extraVolumes above from
