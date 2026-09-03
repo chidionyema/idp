@@ -150,6 +150,7 @@ spec:
                   "database_name": "Langfuse (ClickHouse)",
                   "sqlalchemy_uri": uri,
                   "expose_in_sqllab": True,
+                  "extra": {},
                   "uuid": DB,
                   "version": "1.0.0",
               }
