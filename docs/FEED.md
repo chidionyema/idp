@@ -4497,3 +4497,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: friendly-errors middleware only rewrites 502-504, a 401 passes clean; oauth2-proxy /oauth2/auth answers only 202/401 by endpoint contract
 📍 State: https://github.com/chidionyema/idp/pull/1233
 
+
+## 2026-09-03T09:45:58Z · session 54539261 · lane code
+🟢 Done: idp PR 1206 (otto-gateway-manifests, head f5a39320) is fully green — 23 checks success, including bdd, bdd-suites (tests), bdd-suites (acceptance) and offline-gate, all read over REST check-runs; the one cancelled row is a superseded verify run 7 seconds older than the successful one
+🟡 Active: local full tests/ leg still running as the second angle; nothing else outstanding in this lane
+🔴 Blocked: none
+⚪ Pending: founder's word to merge 1206; nothing is merged by me
+🔧 TOUCHES: bin/idp-estate-seed, clusters/oke/platform.yaml, docs/reference/policy/root-trust.md, tests/test_otto_gateway_manifests_are_releasable.py, mkdocs.yml (rebase, both nav rows kept)
+🔀 OVERLAP: session 2c88870e also writes the code lane; no shared files with its vendor-key work. Rebased onto 723a239c which carries PR 1200's registration reconciler; still off platform/otto-golden/kustomization.yaml
+📎 FACTS: the layer lands with suspend: true, so it changes nothing that runs; the standing processor total is back to exactly 6.900 of 6.9 cores and this layer's 0.10 sits in the off bucket until a cutover change wakes it together with event-bus
+📍 State: https://github.com/chidionyema/idp/pull/1206
+
