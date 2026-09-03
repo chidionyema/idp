@@ -60,6 +60,11 @@ spec:
           readinessProbe:
             exec: { command: ["valkey-cli", "ping"] }
             periodSeconds: 10
+          livenessProbe:
+            exec: { command: ["valkey-cli", "ping"] }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
           resources:
             requests: { cpu: 50m, memory: 128Mi }
             limits: { cpu: 50m, memory: 128Mi }

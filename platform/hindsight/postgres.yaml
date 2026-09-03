@@ -64,6 +64,11 @@ spec:
           readinessProbe:
             exec: { command: ["pg_isready", "-U", "hindsight", "-d", "hindsight"] }
             periodSeconds: 10
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "hindsight", "-d", "hindsight"] }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
           volumeMounts:
             - { name: pgdata, mountPath: /var/lib/postgresql/data }
             - { name: secret, mountPath: /run/secrets/hindsight-env, readOnly: true }

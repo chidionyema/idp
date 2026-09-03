@@ -77,6 +77,7 @@ nav:
       - The dagster scheduler survives a node (pull request 1138): explanation/dagster-availability.md
       - The model router's cache runs one replica on purpose (pull request 1249): explanation/litellm-cache-availability.md
       - Recovering the old dashboards after the swap: explanation/metabase-recovery.md
+      - A lower tier never waits on a higher one (pull request 1257): explanation/flux-tiers-never-wait-upward.md
       - The secret bridge's certificate deadlock (decision 0017): explanation/sdk-server-certificate-deadlock.md
   - Demo:
       - The Demo Standard: demo/demo-standard.md

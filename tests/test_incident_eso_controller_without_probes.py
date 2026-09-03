@@ -21,7 +21,7 @@ def test_incident_eso_controller_probes_enabled() -> None:
 
 
 def test_cloudflare_token_comes_from_oci_vault_not_sops() -> None:
-    d = yaml.safe_load((ROOT / "platform/prospector/cloudflare-external-secret.yaml").read_text())
+    d = yaml.safe_load((ROOT / "platform/dns/cloudflare-external-secret.yaml").read_text())
     assert d["kind"] == "ExternalSecret"
     assert d["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": "estate-vault"}
     assert not (ROOT / "platform/prospector/cloudflare.sops.yaml").exists()

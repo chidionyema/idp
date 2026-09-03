@@ -91,6 +91,11 @@ spec:
               mountPath: /tmp
           readinessProbe:
             httpGet: { path: /index.html, port: 8080 }
+          livenessProbe:
+            httpGet: { path: /index.html, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
