@@ -1,0 +1,152 @@
+# The Universal Event Gateway itself: `python -m otto.ingress`, from the same image the rest
+# of Otto runs (one build, several commands). The entrypoint refuses to start without the
+# collector, the binding database and the event bus, in that order, so a pod that is
+# listening is a pod that can accept a customer's event.
+apiVersion: v1
+kind: Service
+metadata:
+  name: otto-gateway
+  namespace: otto-gateway
+  labels:
+    app: otto-gateway
+    app.kubernetes.io/name: otto-gateway
+    app.kubernetes.io/part-of: idp
+    backstage.io/kubernetes-id: otto-gateway
+spec:
+  type: ClusterIP
+  selector: { app: otto-gateway }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  name: otto-gateway
+  namespace: otto-gateway
+  labels:
+    app: otto-gateway
+    app.kubernetes.io/name: otto-gateway
+    app.kubernetes.io/part-of: idp
+    backstage.io/kubernetes-id: otto-gateway
+spec:
+  # Two, because this is a routed surface and a drain may never take the last door
+  # (crew#539 availability).
+  replicas: 2
+  selector:
+    matchLabels: { app: otto-gateway }
+  template:
+    metadata:
+      labels:
+        app: otto-gateway
+        app.kubernetes.io/name: otto-gateway
+        app.kubernetes.io/part-of: idp
+    spec:
+      # DoNotSchedule and not ScheduleAnyway, the same choice otto-golden makes: two doors on
+      # one node are one eviction, and bin/idp-availability-gate refuses the softer form for
+      # a routed surface. On an estate with one node the second pod stays pending until a
+      # second node exists, which is the honest state rather than a false pair.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: { app: otto-gateway }
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      initContainers:
+        # Binding row one, from the vault. Reads the operator's chat and the Telegram
+        # webhook word from mounted files, turns the word into the one-way fingerprint the
+        # lookup indexes on, and writes the row. Idempotent: safe on every replica and on
+        # every restart, and it never prints either value.
+        - name: seed-binding
+          image: docker.io/library/postgres:17.6-alpine
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              PGPASSWORD=$(cat /run/secrets/otto-gateway-db/POSTGRES_PASSWORD); export PGPASSWORD
+              fingerprint=$(sha256sum < /run/secrets/otto-gateway-channels/OTTO_TELEGRAM_WEBHOOK_SECRET | cut -d' ' -f1)
+              psql -h otto-gateway-db -U otto_gateway -d otto_gateway -v ON_ERROR_STOP=1 \
+                -v chat_id="$(cat /run/secrets/otto-gateway-channels/TELEGRAM_CHAT_ID)" \
+                -v fingerprint="$fingerprint" \
+                -f /seed/seed.sql
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          volumeMounts:
+            - { name: db-password, mountPath: /run/secrets/otto-gateway-db, readOnly: true }
+            - { name: channels, mountPath: /run/secrets/otto-gateway-channels, readOnly: true }
+            - { name: seed, mountPath: /seed, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      containers:
+        - name: gateway
+          image: ghcr.io/chidionyema/hermes-agent
+          workingDir: /app/estate
+          command: ["/bin/sh", "-c"]
+          # The channel credential is read from its mounted file and exported here, never
+          # delivered as pod environment: Kyverno's secrets-not-from-env-vars policy refuses
+          # env.valueFrom.secretKeyRef on a pod. The variable name is not a choice made here
+          # -- otto/ingress/secrets.py maps the binding row's reference
+          # `vault://otto-staging-telegram/webhook_secret` onto exactly this name.
+          args:
+            - |
+              set -eu
+              OTTO_CHANNEL_SECRET_VAULT_OTTO_STAGING_TELEGRAM_WEBHOOK_SECRET=$(cat /run/secrets/otto-gateway-channels/OTTO_TELEGRAM_WEBHOOK_SECRET)
+              export OTTO_CHANNEL_SECRET_VAULT_OTTO_STAGING_TELEGRAM_WEBHOOK_SECRET
+              exec python -m otto.ingress
+          env:
+            - { name: OTTO_INGRESS_PORT, value: "8080" }
+            - { name: OTTO_INGRESS_DB_HOST, value: otto-gateway-db }
+            - { name: OTTO_INGRESS_DB_PORT, value: "5432" }
+            - { name: OTTO_INGRESS_DB_NAME, value: otto_gateway }
+            - { name: OTTO_INGRESS_DB_USER, value: otto_gateway }
+            - { name: OTTO_INGRESS_DB_PASSWORD_FILE, value: /run/secrets/otto-gateway-db/POSTGRES_PASSWORD }
+            - { name: OTTO_NATS_URL, value: "nats://nats.event-bus.svc:4222" }
+            # LAW 50. The entrypoint refuses to start without this, so a door that cannot be
+            # seen never opens rather than running dark.
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            - { name: PYTHONUNBUFFERED, value: "1" }
+          ports:
+            - { containerPort: 8080, name: http }
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 25m, memory: 128Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: db-password, mountPath: /run/secrets/otto-gateway-db, readOnly: true }
+            - { name: channels, mountPath: /run/secrets/otto-gateway-channels, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: db-password
+          secret: { secretName: otto-gateway-db }
+        - name: channels
+          secret: { secretName: otto-gateway-channels }
+        - name: seed
+          configMap: { name: otto-gateway-binding-seed }
+        - name: tmp
+          emptyDir: {}

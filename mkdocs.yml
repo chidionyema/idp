@@ -69,6 +69,7 @@ nav:
       - The otto door is a standing query, not a question to a person (pull request 1188): explanation/otto-door-receipts.md
       - Otto rolls on every build, never by hand: explanation/otto-rolls-on-every-build.md
       - Otto's registration checker, asking Telegram not guessing: explanation/otto-registration-reconciler.md
+      - One door for every customer's messages: explanation/customer-event-door.md
       - The dagster scheduler survives a node (pull request 1138): explanation/dagster-availability.md
       - The secret bridge's certificate deadlock (decision 0017): explanation/sdk-server-certificate-deadlock.md
   - Demo:

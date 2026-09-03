@@ -1,0 +1,31 @@
+# The Universal Event Gateway: one door for every channel and every customer.
+#
+# This is the door the founder's 2026-09-03 directive asked for. Onboarding a customer's
+# channel is a row in a database table, never a deployment: the door reads the credential
+# that arrived, looks up which customer owns it, and mints a task that carries that
+# customer's name. Adding a second customer, or a channel this estate has never carried,
+# changes no manifest in this directory.
+#
+# It is a separate area of the cluster from otto-golden, deliberately. otto-golden is the
+# single-tenant staging pod and keeps its own exact-path Telegram route untouched while this
+# door is proved; the cutover that removes that route is its own small change, released on
+# its own. Two doors answering on the same host, on different paths, is what makes that
+# cutover reversible.
+#
+# The fence (bin/ns-fence-gate, crew#191) wants a both-ways default-deny NetworkPolicy, a
+# ResourceQuota, a LimitRange and a DNS exception on every area. network-policy.yaml and
+# quota.yaml carry those.
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    # Never garbage-collected by Flux: an area moved between rows or dropped from git stays,
+    # with everything in it (portal 404, 2026-08-29 01:05Z, idp#648).
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: otto-gateway
+  labels:
+    # Kyverno require-availability grades this area in the cluster too (crew#539).
+    availability.idp/tier: founder-facing
+    app.kubernetes.io/part-of: idp
+    pod-security.kubernetes.io/enforce: restricted
+    idp.estate/edge-attach: "true"   # the shared Gateway selects route areas by this label

@@ -1,0 +1,52 @@
+# Binding row one, seeded from the vault.
+#
+# The door's whole premise is that onboarding a channel is a database write. That premise
+# needs one row to exist before the first message arrives, and the estate's operator chat is
+# it: customer `estate`, channel `telegram`, the operator's own chat as the external
+# identifier. Nothing in this file names that identifier or the credential -- both are read
+# at run time from files the secret store projects, and the credential is stored as a
+# one-way fingerprint, so the table holds no secret material even if it is dumped.
+#
+# The shape is the one platform/guacamole/guacamole.yaml already uses: an init container on
+# the pod that needs the data, running psql against a mounted script, idempotent under an
+# advisory lock so every replica may run it and only one does the work.
+#
+# The table definition here is the same definition otto/ingress/store.py declares. It is
+# repeated rather than imported because the init container is a plain postgres image with no
+# application code in it; tests/test_otto_gateway_manifests_are_releasable.py is the control
+# that keeps the two from drifting.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otto-gateway-binding-seed
+  namespace: otto-gateway
+data:
+  seed.sql: |
+    SELECT pg_advisory_lock(776003);
+
+    CREATE TABLE IF NOT EXISTS channel_binding (
+        tenant_id         TEXT        NOT NULL,
+        channel           TEXT        NOT NULL,
+        external_id       TEXT        NOT NULL,
+        secret_ref        TEXT        NOT NULL,
+        token_fingerprint TEXT        NOT NULL,
+        status            TEXT        NOT NULL DEFAULT 'active',
+        created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (channel, external_id)
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS channel_binding_lookup
+        ON channel_binding (channel, token_fingerprint);
+
+    INSERT INTO channel_binding
+        (tenant_id, channel, external_id, secret_ref, token_fingerprint, status)
+    VALUES
+        ('estate', 'telegram', :'chat_id',
+         'vault://otto-staging-telegram/webhook_secret', :'fingerprint', 'active')
+    ON CONFLICT (channel, external_id) DO UPDATE SET
+        tenant_id = excluded.tenant_id,
+        secret_ref = excluded.secret_ref,
+        token_fingerprint = excluded.token_fingerprint,
+        status = excluded.status;
+
+    SELECT pg_advisory_unlock(776003);

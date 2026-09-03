@@ -407,6 +407,45 @@ spec:
       name: otto-golden
       namespace: otto-golden
 ---
+# The Universal Event Gateway row (founder directive 2026-09-03). One door for every channel
+# and every customer, answering /webhook/<channel> on the same otto.${ESTATE_ZONE} host the
+# staging row above answers on. It runs alongside otto-golden rather than replacing it: the
+# old exact path keeps working until the cutover, which is its own small change.
+#
+# Needs edge for the shared Gateway and its https-otto listener, secret-store for the two
+# ExternalSecrets, event-bus because the door's whole output is a task on the bus, and
+# scheduling like every other row. It substitutes only ESTATE_ZONE: unlike otto-golden there
+# is no secret in the route, because this door checks credentials against the binding table
+# rather than at the edge.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: otto-gateway
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/otto-gateway
+  prune: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+  dependsOn:
+    - name: scheduling
+    - name: secret-store
+    - name: edge
+    - name: event-bus
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: otto-gateway
+      namespace: otto-gateway
+---
 # The otto-webhook ExternalSecret, its own row like alerts-secret (crew#284 shape): a failing
 # secret sync holds only otto-golden, and the substitution Secret exists before the row
 # that substitutes from it is built.

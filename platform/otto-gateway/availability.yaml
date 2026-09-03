@@ -1,0 +1,12 @@
+# crew#539: a routed surface survives one node. A drain may never evict the last door;
+# minAvailable 1 against replicas 2 keeps one open and still lets every drain finish.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: otto-gateway
+  namespace: otto-gateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: otto-gateway

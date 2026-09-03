@@ -1,0 +1,122 @@
+# The crew#191 fence: a both-ways default deny, plus the narrow holes this door actually
+# needs -- DNS, the shared edge Gateway reaching the door's port, the estate's own trace
+# collector (LAW 50), the event bus the door hands tasks to, and the binding database that
+# lives in this same area.
+#
+# There is deliberately no hole to the public internet. The door only ever receives; it
+# never calls a channel's API back. That work belongs to the agent lanes reading the bus,
+# which run elsewhere and have their own fences. A door that cannot dial out is a door that
+# cannot be turned into an exfiltration path by a bad event.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: otto-gateway
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: otto-gateway
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# The shared Traefik gateway (area `edge`) is what an HTTPRoute forwards through; without
+# this, a channel's POST to /webhook/telegram and the edge's own health probe would arrive
+# at a pod that drops every inbound packet by default.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-edge
+  namespace: otto-gateway
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: edge
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# LAW 50: every workload emits to the central collector. The door refuses to start without
+# the collector endpoint, so this rule is not optional decoration -- without it the pod
+# starts, exports nothing, and reads green.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-observability
+  namespace: otto-gateway
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4318
+---
+# The door's whole output: a task envelope on the estate's event bus. Without this the door
+# accepts a customer's event, cannot publish it, and answers unavailable -- loudly, which is
+# right, but the fix is this rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-event-bus
+  namespace: otto-gateway
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: event-bus
+      ports:
+        - protocol: TCP
+          port: 4222
+---
+# The binding table lives in this same area, so this rule is area-internal on both sides:
+# the door reaches the database, and the database accepts only from this area.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-binding-database
+  namespace: otto-gateway
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432
