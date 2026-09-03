@@ -4442,3 +4442,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: the guards incident suite cannot collect under a blank HOME (aiden/observe.py read at import, pytest_bdd missing locally) — simulate the runner with a HOME that symlinks ~/.claude and holds no .estate
 📍 State: https://github.com/chidionyema/claude-guards/pull/240
 
+
+## 2026-09-03T09:26:50Z · session a14fc078 · lane .wt-reports
+🟢 Done: founder asked "is this live" — re-measured fresh at 09:26Z: superset pods 78cd9b6b5-* Running 4h39m 0 restarts, signed-in /login/ probe 200 (15KB page) over port-forward, public door 302s to the estate sign-in as designed
+🟡 Active: awaiting the founder's own retry of superset.mumchimp.com for the DONE receipt
+🔴 Blocked: none
+⚪ Pending: signed-in render probe for founder dashboards (PR 1210 Cleanup follow-up, needs his word)
+🔧 TOUCHES: none (reads + port-forward probe only)
+🔀 OVERLAP: none
+📎 FACTS: MEASURED_OK superset signed-in render (curl via port-forward with X-Auth-Request-Email, 200, 09:26Z)
+📍 State: https://github.com/chidionyema/idp/pull/1210
+
