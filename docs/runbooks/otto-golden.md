@@ -63,6 +63,17 @@ code, never typed and never printed. Telegram then echoes the secret in the head
 delivery. Rotating the secret is the same two steps in the same order: vault first,
 `setWebhook` second.
 
+## Who the bot answers
+
+The boot process reads a chat allowlist once at startup (`platform/otto-golden/config.yaml`,
+mounted as `OTTO_BOOT_CONFIG`). A sender not on it is acknowledged and dropped: no reply, no
+tool authority. The one entry today is the founder's chat id, substituted by Flux from the
+vault (`notify-apprise-founder-telegram`, property `chat`, via
+`platform/otto-golden-secret/webhook-substitution.yaml`) — never a literal in git. Adding an
+operator is one allowlist row plus that person's chat id reaching the substitution Secret;
+if the substitution value ever goes missing, the pod refuses to start rather than running
+mute. `tests/test_otto_golden_secret_chain.py` pins this chain.
+
 ## If the webhook goes quiet
 Read the pod's own health first: `GET https://otto.<zone>/healthz` answers from the edge whether
 or not Telegram can reach it. If `/healthz` answers but updates stop arriving, the fault is
