@@ -4758,3 +4758,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: none
 📍 State: /Users/chidionyema/.claude/docs/founder/2026-09-03T1150Z-can-you-create-new-branch-annd-workong-tis-38cf2f2f.md ; /Users/chidionyema/dev/code/.wt-mumchimp-broadsheet
 
+
+## 2026-09-03T12:14:10Z · session 9528444c · lane .claude
+🔴 Blocked: broadsheet worktree is outside this checkout; move-to-root and Playfair install aborted
+🟡 Active: Mumchimp newspaper shelf (founder 2026-09-03T1150Z)
+🟢 Done: none merged; feat/mumchimp-broadsheet exists at 59721267
+⚪ Pending: serif headlines, kickers, lead story, rules, 2-3 col grid still unwritten
+🔧 TOUCHES: Store.Web globals.css tokens.css _document.tsx; worktree .wt-mumchimp-broadsheet
+🔀 OVERLAP: store session b4b812cb; idp portal still dirty
+📎 FACTS: none
+📍 State: /Users/chidionyema/.claude/docs/founder/2026-09-03T1150Z-can-you-create-new-branch-annd-workong-tis-38cf2f2f.md ; /Users/chidionyema/dev/code/.wt-mumchimp-broadsheet
+
