@@ -4651,3 +4651,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: LiteLLM console refuses key-attach on config-defined rows ("defined in config"); a test per fire built 90% of idp tests/
 📍 State: https://github.com/chidionyema/idp/pull/1242 + crew branch docs/r76-test-architect
 
+
+## 2026-09-03T10:40:11Z · session 2c88870e · lane code
+🟢 Done: founder 10:3xZ 'get them live super quick' → both merged over REST after REST-proved green (guard's GraphQL read rate-limited, override stated): prospector PR 808 → main b6ce2fc6 (store), idp PR 1239 → main 44e74276 (portal look, crew#612). Branches deleted
+🟡 Active: watching the post-merge pipelines: prospector 'container images' + CI on b6ce2fc6; idp build-multiarch, login-drill and ci on 44e74276. Agents do not touch the cluster; the merges are the release trigger
+🔴 Blocked: none
+⚪ Pending: confirm the portal image rolls via image automation and the store deploy workflow fires; then tell the founder what he can now open
+🔧 TOUCHES: nothing new (merges only)
+🔀 OVERLAP: session 54539261 holds lane code (files disjoint); sessions 9528444c (portal look) and b4b812cb (store) — their claimed work is now on main
+📎 FACTS: the merge guard refuses when it cannot read checks; the REST merge endpoint with the stated override, after REST check-runs proof, is the road
+📍 State: https://github.com/chidionyema/idp/commit/44e74276 + https://github.com/chidionyema/prospector/commit/b6ce2fc6
+
