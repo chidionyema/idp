@@ -94,6 +94,25 @@ def step(label: str, cmd: list[str], cwd: Path, timeout: int = 120) -> str:
     return out
 
 
+def push_carrying_the_racer(carried: list[str]) -> None:
+    """Runs 33705855559 and 33706068568 (2026-09-03): another state-branch writer (a report
+    job, a feed publish) moved state/live-diagram between this run's fetch and its push; the
+    lease refused and the whole finished render exited 1. The branch moves constantly, so the
+    race is the norm, not a dispatch accident. On refusal: refresh the lease, take the
+    racer's files, amend, push again -- three tries, every one still under a lease."""
+    for _ in range(3):
+        rc, out = sh(["git", "push", "--force-with-lease", "origin", f"HEAD:refs/heads/{BRANCH}"], WT)
+        if rc == 0:
+            return
+        print(f"catalog-render: push lease refused, carrying the racer and retrying: {out[:200]}")
+        sh(["git", "fetch", "-q", "-f", "origin", f"+refs/heads/{BRANCH}:refs/remotes/origin/{BRANCH}"], WT)
+        kept = [f for f in carried if sh(["git", "checkout", "-q", f"origin/{BRANCH}", "--", f], WT)[0] == 0]
+        if kept:
+            sh(["git", "add", "--", *kept], WT)
+            sh(["git", "commit", "-q", "--amend", "--no-edit"], WT)
+    step("push", ["git", "push", "--force-with-lease", "origin", f"HEAD:refs/heads/{BRANCH}"], WT)
+
+
 def main(argv: list[str]) -> int:
     dry = "--dry-run" in argv
     if not INV.is_file():
@@ -159,7 +178,7 @@ def main(argv: list[str]) -> int:
     if carried:
         step("stage the inventory the workflow put on the branch", ["git", "add", *carried], WT)
     step("commit", ["git", "commit", "-q", "-m", f"docs(architecture): live estate page, inventory taken {taken} (crew#401)\n\nAuthor-session: com.estate.catalog-render"], WT)
-    step("push", ["git", "push", "-q", "--force-with-lease", "origin", f"HEAD:refs/heads/{BRANCH}"], WT)
+    push_carrying_the_racer(carried)
     # crew#584 / idp#719: a body written before LAW 51 keeps its old text on every scheduled
     # push, so operating-model-gate rule optimised_plan refused idp#726 render after render.
     # Same two-part fix as bin/idp-image-update-pr: the create path writes the line, and an
