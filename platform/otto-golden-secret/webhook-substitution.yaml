@@ -1,11 +1,12 @@
 # The webhook door's secret, rendered where Flux can substitute it (same shape as
-# platform/alerts-secret/flux-telegram.yaml): one vault entry (otto-staging-telegram,
-# property webhook_secret), decoded into a flux-system Secret whose one key,
-# OTTO_WEBHOOK_SECRET, the otto-golden Kustomization substitutes into the HTTPRoute's
-# exact header match (platform/otto-golden/httproute.yaml). No manifest carries the
-# value (LAW 46); a missing vault property fails this row by name, never fail-open --
-# the otto-golden row waits on this one, so the route is never applied with the
-# literal '${OTTO_WEBHOOK_SECRET}' as its expected header.
+# platform/alerts-secret/flux-telegram.yaml): OTTO_WEBHOOK_SECRET (vault entry
+# otto-staging-telegram, property webhook_secret) for the HTTPRoute's exact header
+# match (platform/otto-golden/httproute.yaml), and OTTO_OPERATOR_CHAT_ID (vault entry
+# notify-apprise-founder-telegram, property chat -- the same entry the alert channel
+# reads) for the boot config's chat allowlist (platform/otto-golden/config.yaml).
+# No manifest carries either value (LAW 46); a missing vault property fails this row
+# by name, never fail-open -- the otto-golden row waits on this one, so the route is
+# never applied with the literal '${OTTO_WEBHOOK_SECRET}' as its expected header.
 #
 # The same value must be registered with Telegram at connect time
 # (setWebhook secret_token, docs/runbooks/otto-golden.md); Telegram then echoes it
@@ -24,3 +25,5 @@ spec:
   data:
     - secretKey: OTTO_WEBHOOK_SECRET
       remoteRef: { key: otto-staging-telegram, property: webhook_secret }
+    - secretKey: OTTO_OPERATOR_CHAT_ID
+      remoteRef: { key: notify-apprise-founder-telegram, property: chat }

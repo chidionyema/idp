@@ -1,13 +1,21 @@
-# OTTO_BOOT_CONFIG (deployment.yaml). Nothing secret lives here (LAW 21) -- the token comes
-# through telegram-secret.yaml, never this file.
+# OTTO_BOOT_CONFIG (deployment.yaml). The boot process reads this once at startup:
+# otto.boot.config (hermes-v2 main) requires a `chat_allowlist` mapping of numeric Telegram
+# chat id -> principal name, and treats every sender not in it as unrecognised (ack 200,
+# drop, no reply, no tool authority).
 #
-# NOT DONE / gap, stated rather than hidden: otto.boot's own config schema had not landed on
-# hermes-v2 main as of this branch (checked live: hermes-v2 branch otto/boot-surface carries
-# otto/gateway, otto/obs, otto/router, otto/spine, otto/surface, otto/memory but no otto/boot
-# package yet). This ConfigMap therefore carries the one fact the fixed deploy contract states
-# (the webhook path) and nothing guessed beyond it. Once otto.boot defines its real config
-# keys, this file is the one to update -- the Deployment's OTTO_BOOT_CONFIG mount path does not
-# change.
+# The one chat id here is the founder's, and it is not typed as a literal (LAW 46): Flux
+# substitutes ${OTTO_OPERATOR_CHAT_ID} from the otto-webhook substitution Secret
+# (platform/otto-golden-secret/webhook-substitution.yaml, vault entry
+# notify-apprise-founder-telegram property chat -- the same entry the alert channel reads).
+# If the substitution value is ever missing, the literal placeholder fails otto.boot's
+# integer check and the pod refuses to start, loudly, rather than running mute with a green
+# manifest -- which is exactly the failure this file shipped with before this change.
+# Nothing secret lives here (LAW 21) -- the bot token comes through telegram-secret.yaml,
+# never this file; a chat id is an address, not a credential.
+#
+# The quotes around the key ride in this file on purpose: Flux's substitution strips
+# nothing, YAML delivers the key as a string, and otto.boot's config parser converts it to
+# the integer chat id itself.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -15,7 +23,7 @@ metadata:
   namespace: otto-golden
 data:
   boot.yaml: |
-    # Placeholder pending otto.boot's own config schema (see the comment above this file in
-    # git). The one thing this deployment's own manifests already commit to:
+    chat_allowlist:
+      "${OTTO_OPERATOR_CHAT_ID}": founder
     webhook_path: /telegram-webhook
     health_path: /healthz
