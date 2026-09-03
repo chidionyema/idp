@@ -31,6 +31,7 @@ spec:
         - laptop
         - hermes
         - science
+        - router-rows
         default: all
       delete:
         title: schedule deletion of one vault entry by name (for a mis-named entry); the entry field is
