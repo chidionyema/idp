@@ -4508,3 +4508,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: the layer lands with suspend: true, so it changes nothing that runs; the standing processor total is back to exactly 6.900 of 6.9 cores and this layer's 0.10 sits in the off bucket until a cutover change wakes it together with event-bus
 📍 State: https://github.com/chidionyema/idp/pull/1206
 
+
+## 2026-09-03T09:50:50Z · session 54539261 · lane idp
+🟢 Done: otto-golden's Telegram webhook REGISTERED per the runbook (setWebhook url+secret_token, values read from cluster secrets by code, never printed) — getWebhookInfo now returns https://otto.mumchimp.com/telegram-webhook, bot is @numun_bot; root cause of the mute bot found: boot config was a placeholder with NO chat_allowlist, so otto.boot acks 200 and drops every sender
+🟡 Active: idp PR 1234 (fix/otto-golden-allowlist, 9ebfcabf) adds the founder's chat id via Flux substitution from vault notify-apprise-founder-telegram property chat + chain test (mutation-proved) + runbook section; REST watcher bbjz022k5 polling checks; founder gets one APPROVE word when green (platform/** is his merge)
+🔴 Blocked: none
+⚪ Pending: merge → ExternalSecret 10m adds OTTO_OPERATOR_CHAT_ID → Flux substitutes → Reloader rolls pod → founder messages @numun_bot → reply = DONE
+🔧 TOUCHES: platform/otto-golden/config.yaml, platform/otto-golden-secret/webhook-substitution.yaml, tests/test_otto_golden_secret_chain.py, docs/runbooks/otto-golden.md (branch only)
+🔀 OVERLAP: lane code held by session 2c88870e — no shared files; no otto-gateway (1206) files touched
+📎 FACTS: otto.boot drops unrecognised chat ids silently by design (ack 200, no reply); registration reconciler FAIL 09:2xZ was "Telegram holds no webhook URL", now cleared by the setWebhook call
+📍 State: https://github.com/chidionyema/idp/pull/1234
+
