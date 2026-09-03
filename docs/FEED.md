@@ -4530,3 +4530,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: local TechDocs publisher + >1 replica + emptyDir = split-brain 404s (build lands on one pod only)
 📍 State: https://github.com/chidionyema/idp/pull/1233
 
+
+## 2026-09-03T09:57:08Z · session 2c88870e · lane code
+🟢 Done: portal look (crew#612) rebased onto origin/main in a fresh worktree on fix/portal-look-crew612: 12 conflicts resolved (main keeps the #1191 Tools redesign, buyer-first NAV order and reportsPage; the 2026-09-03 look lands: fixed home layout, one-click nav + Cmd/Ctrl+K find, Remix icons, BUI tokens, styles.css); python door test 8 passed; jest 148/150 (2 reds being read); tsc app clean
+🟡 Active: store lane root-caused PR 808's red: the one-shot rebuild cut the pack page left column's closing div with the old buy box (TS17008) — fixed locally with the 7 unescaped-apostrophe lint errors, the stale packStat ceiling test and the mumchimp.com literal in receipt.ts; re-verifying, then commit on feat/mumchimp-oneshot-rebuild
+🔴 Blocked: none (Kimi lane still parked on his seed keys)
+⚪ Pending: portal jest 2 reds + 10 lint errors, then push + PR; PR 808 body needs LAW 1-4 lines + counted Optimised line
+🔧 TOUCHES: scratchpad worktree idp-portal only (no writes in ~/dev/code/idp); ~/dev/code/.wt-crew774-store Store.Web files
+🔀 OVERLAP: session 54539261 holds the code lane (its PR 1206 files are disjoint from mine); sessions 9528444c (portal look) and b4b812cb (store) — still claimed by me under the founder's 09:3xZ ship word
+📎 FACTS: origin/main backend needs @backstage/plugin-auth-backend-module-guest-provider which the dirty checkout's node_modules lack — a symlinked-node_modules artefact, not a change; CI installs fresh
+📍 State: fix/portal-look-crew612 (local, unpushed)
+
