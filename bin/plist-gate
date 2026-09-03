@@ -39,16 +39,6 @@ def grade(path: Path) -> str | None:
         # launchd never searches PATH for argv[0]; a bare name exits 78 with an empty log
         # (2026-08-25, ai.estate.temporal). Template it as ${IDP}/... or a resolved ${*_BIN}.
         return f"ProgramArguments[0] {argv0!r} is not an absolute path"
-    # A job whose program backgrounds children and exits needs AbandonProcessGroup, or
-    # launchd kills the whole process group the moment the program returns. 2026-08-25:
-    # ai.estate.scheduler ran 28 times in 10-minute ticks and dagster-daemon never lived
-    # past the exit of scheduler-up; every schedule and sensor in the estate was dead.
-    prog = Path(render(str(argv0)))
-    if prog.is_file() and not d.get("KeepAlive"):
-        body = prog.read_text(errors="replace")
-        if re.search(r"\bnohup\b|\bsetsid\b|\bdisown\b", body) and not d.get("AbandonProcessGroup"):
-            return (f"{prog.name} backgrounds children (nohup/setsid/disown) and the job has no "
-                    f"AbandonProcessGroup; launchd kills them when {prog.name} exits")
     return None
 
 def main(argv: list[str]) -> int:

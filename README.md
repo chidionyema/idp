@@ -13,14 +13,6 @@ Neither portal is the source of truth. Both are renderings of the inventory, whi
 is plain JSON on disk. That is the whole design: a renderer you can replace in one
 command is not a dependency.
 
-## Front door
-
-One hostname, `catalogue.<zone>` (the zone is `ESTATE_ZONE` in `clusters/*/estate-config.yaml`),
-behind the one login on the shared Gateway. Every other URL the estate publishes is an `Open`
-link on a catalogue entity, and nowhere else: not in chat, not in a doc, not in a log
-(crew#269). `bin/catalog-links-check` refuses a Component with no URL a person can open;
-`bin/idp-ci` proves it both ways on every PR and `bin/idp-verify` grades the live catalogue.
-
 ## Why two
 
 Backstage is the recognised answer and the one an outsider expects to see. It is

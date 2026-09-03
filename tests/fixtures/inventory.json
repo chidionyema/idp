@@ -7,24 +7,21 @@
    "kind": "repo",
    "root": "a",
    "path": "/tmp/a/shared name",
-   "coupling": null,
-   "remote": "https://github.com/example/shared-name.git"
+   "coupling": null
   },
   {
    "id": "shared name",
    "kind": "repo",
    "root": "b",
    "path": "/tmp/b/shared name",
-   "coupling": null,
-   "remote": "https://github.com/example/shared-name.git"
+   "coupling": null
   },
   {
    "id": "shared name",
    "kind": "repo",
    "root": "b",
    "path": "/tmp/b2/shared name",
-   "coupling": null,
-   "remote": "https://github.com/example/shared-name.git"
+   "coupling": null
   },
   {
    "id": "ai.example.job",

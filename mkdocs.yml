@@ -6,10 +6,10 @@ plugins:
   - techdocs-core
 nav:
   - Home: index.md
-  - Definition of Done: policy/definition-of-done.md
   - Architecture:
-      - architecture/index.md
-      - Live estate: architecture/live.md
+      - The platform, drawn: architecture.md
+      - Generated C4 model: architecture/index.md
+      - Ports: architecture/PORTS.md
   - Decisions:
       - 0001 Gateway API is the routing standard: decisions/0001-gateway-api-is-the-routing-standard.md
       - 0002 Documentation is code: decisions/0002-documentation-is-code-and-the-portal-renders-it.md
@@ -17,12 +17,12 @@ nav:
       - 0004 Oracle OKE is the Kubernetes target: decisions/0004-oracle-oke-is-the-kubernetes-target.md
       - 0005 Chaos Mesh is the chaos framework: decisions/0005-chaos-mesh-is-the-chaos-framework.md
       - 0006 The platform answers for itself over one MCP: decisions/0006-the-platform-answers-for-itself-over-one-mcp.md
-  - Specs:
-      - KINI.AI master spec: specs/kini-master-spec.md
-      - Phone idea flow: specs/phone-idea-flow.md
-      - Fortress stack: specs/fortress-stack.md
   - Tutorials: tutorials/index.md
-  - How-to: how-to/index.md
+  - How-to:
+      - how-to/index.md
+      - Build an image: how-to/build-an-image.md
+      - Declare an AI system: how-to/declare-an-ai-system.md
+      - Store a credential: how-to/store-a-credential.md
   - Reference:
       - reference/index.md
       - Oracle tenancy: reference/oci-tenancy.md
@@ -32,13 +32,17 @@ nav:
       - ai-systems/index.md
       - Prospector technical file: ai-systems/prospector/technical-file.md
   - Explanation: explanation/index.md
+  - Specs:
+      - KINI.AI master spec: specs/kini-master-spec.md
+      - Fortress stack: specs/fortress-stack.md
+      - Phone idea flow: specs/phone-idea-flow.md
+  - Migrations:
+      - Scheduler, launchd to Dagster: migrations/scheduler.md
   - Demo:
       - Portal: demo/idp.md
       - Plist gate: demo/plist.md
       - Oracle identity: demo/oci.md
       - Flux on OKE: demo/oke.md
-      - Cloud-agnostic: demo/cloud-agnostic.md
-      - Estate zone: demo/estate-zone.md
       - MCP: demo/mcp.md
       - Sovereign bus: demo/sb.md
       - VM-shared path guard: demo/vm-shared-path.md
@@ -49,13 +53,6 @@ nav:
       - EU AI Act: demo/ai-act.md
       - LAW 32 gate: demo/law32.md
       - Actions pinned: demo/actions-pinned.md
-      - Estate security scan: demo/estate-security-scan.md
-      - Estate security rollout: demo/estate-security-rollout.md
-      - Spec gate: demo/spec-gate.md
-      - Estate diagram: demo/estate-diagram.md
-      - Catalog render: demo/catalog-render.md
-      - owner-account: demo/owner-account.md
-      - static-secret: demo/static-secret.md
       - Bind audit: demo/bind-audit.md
       - Build image: demo/build-image.md
       - Catalog: demo/catalog.md
@@ -74,8 +71,6 @@ nav:
       - Plist gate: onboarding/plist.md
       - Oracle identity: onboarding/oci.md
       - Flux on OKE: onboarding/oke.md
-      - Cloud-agnostic: onboarding/cloud-agnostic.md
-      - Estate zone: onboarding/estate-zone.md
       - Langfuse: onboarding/langfuse.md
       - Manifests: onboarding/manifests.md
       - MCP: onboarding/mcp.md
@@ -90,13 +85,6 @@ nav:
       - EU AI Act: onboarding/ai-act.md
       - LAW 32 gate: onboarding/law32.md
       - Actions pinned: onboarding/actions-pinned.md
-      - Estate security scan: onboarding/estate-security-scan.md
-      - Estate security rollout: onboarding/estate-security-rollout.md
-      - Spec gate: onboarding/spec-gate.md
-      - Estate diagram: onboarding/estate-diagram.md
-      - Catalog render: onboarding/catalog-render.md
-      - owner-account: onboarding/owner-account.md
-      - static-secret: onboarding/static-secret.md
       - Bind audit: onboarding/bind-audit.md
       - Build image: onboarding/build-image.md
       - Catalog: onboarding/catalog.md
@@ -109,3 +97,16 @@ nav:
       - Policy test: onboarding/policy-test.md
       - Port gate: onboarding/port.md
       - Repo rulesets: onboarding/repo-rulesets.md
+
+# mkdocs --strict only refuses what is at least a warning. A page in docs/ that
+# is missing from nav is `info` by default, so the gate in bin/idp-ci passed
+# the orphan fixture (CI run 32801387343: clean rc=0, orphan rc=0). Raise the
+# nav checks to warn so strict mode refuses an unreachable page.
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+    absolute_links: warn
+  links:
+    not_found: warn
+    absolute_links: warn

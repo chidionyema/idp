@@ -133,37 +133,8 @@ KEYS: dict[str, KeySpec] = {
     "sidecar.dag_dir": KeySpec(str(_estate_home() / "sovereign" / "dag"), "path", "SB_SIDECAR_DAG_DIR", "cp8: Merkle DAG node directory, one JSON file per observed write"),
     "sidecar.head_filename": KeySpec("HEAD.json", "str", None, "cp8: current DAG head marker filename inside sidecar.dag_dir"),
 
-    "shadow.heads_dir": KeySpec(str(_estate_home() / "heads"), "path", "SB_SHADOW_HEADS_DIR", "cp9/R15: dir holding every branch-pointer file; spec 3.1 topology is <estate.home>/heads, one level under estate.home and never a second .estate under it"),
+    "shadow.heads_dir": KeySpec(str(_estate_home() / ".estate" / "heads"), "path", "SB_SHADOW_HEADS_DIR", "cp9: dir holding the shadow branch-pointer files"),
     "shadow.head_filename": KeySpec("shadow_main", "str", None, "cp9: shadow_main -- the head that always names the DAG root equal to the legacy DB's current state"),
-    "shadow.legacy_heads_dirs": KeySpec([str(_estate_home() / ".estate" / "heads")], "list", "SB_SHADOW_LEGACY_HEADS_DIRS", "R15: extra dirs the sweep also reads. The default is where the pre-fix doubled-.estate default wrote heads on this Mac; the sweep must be able to see an instance it no longer creates"),
-    "dag.main_head_filename": KeySpec("main", "str", "SB_DAG_MAIN_HEAD", "R15: the head every rewind/recover moves; sits beside shadow_main in shadow.heads_dir"),
-    "dag.node_suffix": KeySpec(".json", "str", None, "R15: filename suffix of one content-addressed DAG node"),
-    "dag.max_walk_nodes": KeySpec(1000000, "int", "SB_DAG_MAX_WALK_NODES", "R15: hard stop on a DAG walk, so a corrupt chain can never spin forever"),
-
-    "ops.fs_commit_tokens": KeySpec(200, "int", "SB_OPS_FS_COMMIT_TOKENS", "R9: tokens charged for one fs_commit (spec 3.1 checkpoint example: added_tokens 200)"),
-    "ops.default_tokens": KeySpec(100, "int", "SB_OPS_DEFAULT_TOKENS", "R9: tokens charged for an op with no entry of its own"),
-    "ops.nondestructive": KeySpec(["fs_commit", "fs_read", "git_status", "tool_result", "doc_commit", "budget_refill"], "list", "SB_OPS_NONDESTRUCTIVE", "R9: ops that need budget only -- no quorum, no hardware signature (spec 2.3 step 3)"),
-    "ops.destructive": KeySpec(["fs_delete", "git_push_force", "db_drop", "service_destroy", "rewind"], "list", "SB_OPS_DESTRUCTIVE", "R9: ops that need quorum and a hardware signature on top of budget"),
-
-    "budget.db_filename": KeySpec(str(_estate_home() / "sovereign" / "budget.db"), "path", "SB_BUDGET_DB", "R29: sqlite file holding one versioned budget row per session, the optimistic lock"),
-    "budget.max_cas_retries": KeySpec(50, "int", "SB_BUDGET_MAX_CAS_RETRIES", "R29: compare-and-swap attempts before a spend gives up rather than spinning"),
-    "budget.busy_timeout_ms": KeySpec(5000, "int", "SB_BUDGET_BUSY_TIMEOUT_MS", "R29: sqlite busy_timeout for the budget connection"),
-
-    "fsm.cycle_path": KeySpec(["planning", "tool_use", "synthesis"], "list", "SB_FSM_CYCLE_PATH", "R30: the repeating loop counted against fsm.max_cycles (spec 4.3)"),
-    "fsm.initial_state": KeySpec("init", "str", None, "R28: the state every session starts in"),
-    "fsm.terminal_state": KeySpec("terminal", "str", None, "R28: the state no transition leaves"),
-
-    "interventions.dir": KeySpec(str(_estate_home() / "interventions"), "path", "SB_INTERVENTIONS_DIR", "R17: append-only transparency log dir, spec 3.1 topology <estate.home>/interventions"),
-    "interventions.filename_sep": KeySpec("_", "str", None, "R17: separator in <counter><sep><hash>.json"),
-    "interventions.kinds": KeySpec(["stop", "approve", "deny", "steer", "refill", "undo", "rewind", "recover", "halt"], "list", "SB_INTERVENTIONS_KINDS", "R17: receipt kinds mirrored into the intervention log"),
-
-    "receipts.counter_filename": KeySpec("receipts.counter", "str", "SB_RECEIPTS_COUNTER_FILENAME", "R23: signed monotonic-counter watermark; survives deletion of the log itself"),
-
-    "undo.git_timeout_s": KeySpec(30, "int", "SB_UNDO_GIT_TIMEOUT_S", "R7: timeout on one git subprocess call made by undo/rewind"),
-    "undo.parent_suffix": KeySpec("^", "str", None, "R7: git revision suffix naming a commit's first parent"),
-    "recover.start_services": KeySpec(True, "bool", "SB_RECOVER_START_SERVICES", "cp35: whether `sb recover` also brings the worker and Temporal back up"),
-    "views.dir": KeySpec(str(_estate_home() / "sovereign" / "views"), "path", "SB_VIEWS_DIR", "cp33/cp35: dir holding the projection views rebuilt from the DAG by rewind and recover"),
-    "views.main_filename": KeySpec("main.json", "str", None, "cp33/cp35: the projection view of heads/main, materialized state plus the root it came from"),
 
     "dualread.max_overhead_ms": KeySpec(15, "int", "SB_DUALREAD_MAX_OVERHEAD_MS", "cp10: p95 budget for the dual-read router's added cost (DAG walk + receipt) over the legacy-only read, measured over 1000 reads"),
     "dualread.latency_round_ndigits": KeySpec(4, "int", None, "cp10: decimal places dual-read latencies are rounded to before entering a receipt"),
@@ -204,8 +175,6 @@ KEYS: dict[str, KeySpec] = {
     "blind.halt_after_min": KeySpec(5, "int", "SB_BLIND_HALT_AFTER_MIN", ""),
     "alerts.digest_over_per_hour": KeySpec(50, "int", "SB_ALERTS_DIGEST_OVER_PER_HOUR", ""),
     "card.poll_s": KeySpec(3, "int", "SB_CARD_POLL_S", ""),
-    "approval.timeout_min": KeySpec(15, "int", "SB_APPROVAL_TIMEOUT_MIN", "R12 default-deny: minutes an approval request may go unanswered before the workflow halts itself. Silence is not consent, so this halts rather than denies -- a denial would end the session and lose the work, and the founder who was in a meeting can still refill/approve"),
-    "trust.require_signed_approval": KeySpec(True, "bool", "SB_REQUIRE_SIGNED_APPROVAL", "R11/R22: refuse `sb approve` without a verified signature. Off only for a host with no trust anchor at all, and the receipt records which"),
     "trust.backend": KeySpec("auto", "str", "SB_TRUST_BACKEND", ""),
     "presence.default": KeySpec("ghost", "str", "SB_PRESENCE_DEFAULT", ""),
 
@@ -278,82 +247,6 @@ try:
     _merge_external_keys(ATTACH_KEYS)
 except ImportError:
     pass
-
-try:
-    from sovereign.consensus.config_keys import CONSENSUS_KEYS
-
-    _merge_external_keys(CONSENSUS_KEYS)
-except ImportError:
-    pass
-
-try:
-    from sovereign.engine.config_keys import TERMINATION_KEYS
-
-    _merge_external_keys(TERMINATION_KEYS)
-except ImportError:
-    pass
-
-# ---------------------------------------------------------------------------
-# Presence block (W3, master spec 2.1, 2.2, 2.5, 2.6). Every presence.* key
-# -- the state file the menu bar dot reads, the digest hour and line cap,
-# the receipt format, the haptic switch, the Spatial colours, the Siri
-# sentence -- is defined once in sovereign/presence/config_keys.py and
-# merged here. Nothing under sovereign/presence/ types a literal.
-# ---------------------------------------------------------------------------
-try:
-    from sovereign.presence.config_keys import PRESENCE_KEYS
-
-    _merge_external_keys(PRESENCE_KEYS)
-except ImportError:
-    pass
-
-try:
-    from sovereign.shadow.config_keys import SHADOW_KEYS
-
-    _merge_external_keys(SHADOW_KEYS)
-except ImportError:
-    pass
-
-try:
-    from sovereign.intake.config_keys import INTAKE_KEYS
-
-    _merge_external_keys(INTAKE_KEYS)
-except ImportError:
-    pass
-
-
-# ---------------------------------------------------------------------------
-# crew#219 R38/R40: the living policy. AGENTS.md at the repository root is the
-# one place the per-day budgets, the cost contract, the routing table and the
-# merge criteria are written; sovereign/policy.py parses its toml block and
-# the keys below are built from it, so the doc cannot drift from the code.
-# A missing or unparseable block raises here, on import, rather than
-# defaulting: config with no policy behind it is the thing R38 exists to end.
-# ---------------------------------------------------------------------------
-
-from sovereign.policy import load as _load_policy  # noqa: E402
-
-POLICY = _load_policy()
-
-
-def _env_name(prefix: str, name: str) -> str:
-    return prefix + name.upper().replace(".", "_").replace("-", "_")
-
-
-for _name, _usd in POLICY.budget_usd_per_day.items():
-    KEYS[f"budget.usd_per_day.{_name}"] = KeySpec(
-        float(_usd), "float", _env_name("SB_BUDGET_USD_PER_DAY_", _name),
-        f"R40: default USD per day {_name} may spend; the sum over cost.days_per_month sits inside the cost contract (AGENTS.md)")
-KEYS["cost.contract_min_usd_month"] = KeySpec(float(POLICY.cost["contract_min_usd_month"]), "float", "SB_COST_CONTRACT_MIN_USD_MONTH", "R40: spec section 8 floor of direct monthly cost (AGENTS.md)")
-KEYS["cost.contract_max_usd_month"] = KeySpec(float(POLICY.cost["contract_max_usd_month"]), "float", "SB_COST_CONTRACT_MAX_USD_MONTH", "R40: spec section 8 ceiling of direct monthly cost (AGENTS.md)")
-KEYS["cost.days_per_month"] = KeySpec(int(POLICY.cost["days_per_month"]), "int", "SB_COST_DAYS_PER_MONTH", "R40: days the per-day budgets are summed over (AGENTS.md)")
-for _purpose, _alias in POLICY.routing.items():
-    KEYS[f"routing.{_purpose}"] = KeySpec(
-        list(_alias) if isinstance(_alias, list) else str(_alias), "list" if isinstance(_alias, list) else "str",
-        _env_name("SB_ROUTING_", _purpose), f"R38: LiteLLM alias(es) used for {_purpose} (AGENTS.md routing table)")
-KEYS["merge.strict_branches"] = KeySpec(list(POLICY.merge["strict_branches"]), "list", "SB_MERGE_STRICT_BRANCHES", "R41: branches whose PRs fail on any pending feature (AGENTS.md)")
-KEYS["merge.require_bdd_green"] = KeySpec(bool(POLICY.merge["require_bdd_green"]), "bool", "SB_MERGE_REQUIRE_BDD_GREEN", "R41: a PR needs sovereign/tests/bdd green (AGENTS.md)")
-KEYS["merge.pending_owner_required_on"] = KeySpec(list(POLICY.merge["pending_owner_required_on"]), "list", "SB_MERGE_PENDING_OWNER_REQUIRED_ON", "R39: branches where a pending mark must name a real owner (AGENTS.md)")
 
 
 _SECRET_LAST_SEGMENTS = ("token", "secret", "password", "api_key")
@@ -515,30 +408,6 @@ SIDECAR_DAG_DIR: Path = Path(_R["sidecar.dag_dir"].value)
 SIDECAR_HEAD_FILENAME: str = _R["sidecar.head_filename"].value
 SHADOW_HEADS_DIR: Path = Path(_R["shadow.heads_dir"].value)
 SHADOW_HEAD_FILENAME: str = _R["shadow.head_filename"].value
-DAG_MAIN_HEAD_FILENAME: str = _R["dag.main_head_filename"].value
-DAG_NODE_SUFFIX: str = _R["dag.node_suffix"].value
-DAG_MAX_WALK_NODES: int = _R["dag.max_walk_nodes"].value
-OPS_FS_COMMIT_TOKENS: int = _R["ops.fs_commit_tokens"].value
-OPS_DEFAULT_TOKENS: int = _R["ops.default_tokens"].value
-SHADOW_LEGACY_HEADS_DIRS: list[str] = _R["shadow.legacy_heads_dirs"].value
-OPS_NONDESTRUCTIVE: list[str] = _R["ops.nondestructive"].value
-OPS_DESTRUCTIVE: list[str] = _R["ops.destructive"].value
-BUDGET_DB: Path = Path(_R["budget.db_filename"].value)
-BUDGET_MAX_CAS_RETRIES: int = _R["budget.max_cas_retries"].value
-BUDGET_BUSY_TIMEOUT_MS: int = _R["budget.busy_timeout_ms"].value
-FSM_CYCLE_PATH: list[str] = _R["fsm.cycle_path"].value
-FSM_INITIAL_STATE: str = _R["fsm.initial_state"].value
-FSM_TERMINAL_STATE: str = _R["fsm.terminal_state"].value
-FSM_MAX_CYCLES: int = _R["fsm.max_cycles"].value
-INTERVENTIONS_DIR: Path = Path(_R["interventions.dir"].value)
-INTERVENTIONS_FILENAME_SEP: str = _R["interventions.filename_sep"].value
-INTERVENTIONS_KINDS: list[str] = _R["interventions.kinds"].value
-RECEIPTS_COUNTER: Path = Path(_R["receipts.head_dir"].value) / _R["receipts.counter_filename"].value
-UNDO_GIT_TIMEOUT_S: int = _R["undo.git_timeout_s"].value
-UNDO_PARENT_SUFFIX: str = _R["undo.parent_suffix"].value
-RECOVER_START_SERVICES: bool = _R["recover.start_services"].value
-VIEWS_DIR: Path = Path(_R["views.dir"].value)
-VIEWS_MAIN_FILENAME: str = _R["views.main_filename"].value
 DUALREAD_MAX_OVERHEAD_MS: int = _R["dualread.max_overhead_ms"].value
 DUALREAD_LATENCY_ROUND_NDIGITS: int = _R["dualread.latency_round_ndigits"].value
 MS_PER_SECOND: int = _R["time.ms_per_second"].value
@@ -618,8 +487,6 @@ RECEIPT_RETRY_MAX_ATTEMPTS: int = _R["receipt.retry_max_attempts"].value
 NOTIFY_ACTIVITY_TIMEOUT_S: int = _R["notify.activity_timeout_s"].value
 NOTIFY_RETRY_MAX_ATTEMPTS: int = _R["notify.retry_max_attempts"].value
 STEP_ACTIVITY_RETRY_MAX_ATTEMPTS: int = _R["step.activity_retry_max_attempts"].value
-APPROVAL_TIMEOUT_MIN: int = _R["approval.timeout_min"].value
-REQUIRE_SIGNED_APPROVAL: bool = _R["trust.require_signed_approval"].value
 CLI_EXIT_USAGE_ERROR: int = _R["cli.exit_usage_error"].value
 CLIENT_QUERY_TIMEOUT_S: float = _R["client.query_timeout_s"].value
 LOG_BOT_TOKEN_REDACT_PATTERN: str = _R["log.bot_token_redact_pattern"].value

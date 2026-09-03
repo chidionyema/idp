@@ -1,1 +1,0 @@
-{"command": "git status && git push --force origin main", "destructive": true}

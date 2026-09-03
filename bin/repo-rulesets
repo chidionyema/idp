@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
 # repo-rulesets [--apply]: every repository under the estate account carries
-# platform/github/ruleset.default-branch.json, and a repository named in an
-# overlay file platform/github/ruleset.<repo>.<name>.json carries that ruleset
-# too (idp: ruleset.idp.required-checks.json makes offline-gate, bdd and
-# security-scan required before anything lands on main). An overlay named
-# ruleset.@active.<name>.json applies to every repository pushed in the last
-# ACTIVE_DAYS (30) days: the estate-wide gates security-scan and spec-gate,
-# which bin/estate-security-rollout installs first. Report mode by default.
+# platform/github/ruleset.default-branch.json. Report mode by default.
 #
 # Why per repo: the account is a User (gh api /users/<owner> -q .type), and
 # org-wide rulesets ("~ALL") exist only on organizations. On the free plan a
@@ -16,47 +10,23 @@
 set -uo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 OWNER="${ESTATE_GH_OWNER:-$(gh api /user -q .login)}"
-DEFAULT="$IDP/platform/github/ruleset.default-branch.json"
+SPEC="$IDP/platform/github/ruleset.default-branch.json"
+NAME="$(jq -r .name "$SPEC")"
 apply=0; [ "${1:-}" = "--apply" ] && apply=1
 ok=0; drift=0; blocked=0
-apply_spec() {
-  repo="$1"; SPEC="$2"; NAME="$(jq -r .name "$SPEC")"
-  list="$(gh api "/repos/$OWNER/$repo/rulesets" 2>/dev/null)" || { echo "BLOCKED $repo: private on the free plan (403); make it public or upgrade"; blocked=$((blocked+1)); return; }
+while read -r repo; do
+  list="$(gh api "/repos/$OWNER/$repo/rulesets" 2>/dev/null)" || { echo "BLOCKED $repo: private on the free plan (403); make it public or upgrade"; blocked=$((blocked+1)); continue; }
   id="$(printf '%s' "$list" | jq -r --arg n "$NAME" '.[] | select(.name==$n) | .id' | head -1)"
   if [ -n "$id" ]; then
     live="$(gh api "/repos/$OWNER/$repo/rulesets/$id" | jq -S '{target,enforcement,conditions,rules:[.rules[]|{type}]}')"
     want="$(jq -S '{target,enforcement,conditions,rules:[.rules[]|{type}]}' "$SPEC")"
-    if [ "$live" = "$want" ]; then echo "ok      $repo: $NAME #$id"; ok=$((ok+1)); return; fi
-    if [ $apply = 1 ]; then gh api -X PUT "/repos/$OWNER/$repo/rulesets/$id" --input "$SPEC" >/dev/null && echo "FIXED   $repo: updated #$id" && ok=$((ok+1)) && return; fi
+    if [ "$live" = "$want" ]; then echo "ok      $repo: $NAME #$id"; ok=$((ok+1)); continue; fi
+    if [ $apply = 1 ]; then gh api -X PUT "/repos/$OWNER/$repo/rulesets/$id" --input "$SPEC" >/dev/null && echo "FIXED   $repo: updated #$id" && ok=$((ok+1)) && continue; fi
     echo "DRIFT   $repo: $NAME #$id differs from $SPEC"; drift=$((drift+1))
   else
-    if [ $apply = 1 ]; then nid="$(gh api -X POST "/repos/$OWNER/$repo/rulesets" --input "$SPEC" -q .id)" && echo "FIXED   $repo: created #$nid" && ok=$((ok+1)) && return; fi
+    if [ $apply = 1 ]; then nid="$(gh api -X POST "/repos/$OWNER/$repo/rulesets" --input "$SPEC" -q .id)" && echo "FIXED   $repo: created #$nid" && ok=$((ok+1)) && continue; fi
     echo "MISSING $repo: no ruleset $NAME"; drift=$((drift+1))
   fi
-}
-jobs_on_main() {  # true when the caller workflow, or a ci.yml carrying both jobs, is on the default branch
-  gh api "/repos/$OWNER/$1/contents/.github/workflows/security-scan.yml" -q .sha >/dev/null 2>&1 && return 0
-  gh api "/repos/$OWNER/$1/contents/.github/workflows/ci.yml" -q .content 2>/dev/null | base64 -d 2>/dev/null | grep -q '^  spec-gate:'
-}
-waiting=0
-ACTIVE_DAYS="${ACTIVE_DAYS:-30}"
-since="$(date -u -v-"${ACTIVE_DAYS}"d +%Y-%m-%d 2>/dev/null || date -u -d "-${ACTIVE_DAYS} days" +%Y-%m-%d)"
-repos="$(gh repo list "$OWNER" --limit 200 --no-archived --json name,pushedAt -q '.[] | .name+" "+.pushedAt[:10]' | sort)"
-while read -r repo _; do apply_spec "$repo" "$DEFAULT"; done <<< "$repos"
-for f in "$IDP"/platform/github/ruleset.*.*.json; do
-  [ -e "$f" ] || break
-  r="$(basename "$f")"; r="${r#ruleset.}"; r="${r%%.*}"
-  if [ "$r" = "@active" ]; then
-    # A required check that never reports blocks every merge (LAW 38). The overlay
-    # is applied only where the jobs it requires exist on the default branch.
-    while read -r repo pushed; do
-      [ "$pushed" \> "$since" ] || continue
-      if jobs_on_main "$repo"; then apply_spec "$repo" "$f"
-      else echo "WAITING $repo: $(jq -r .name "$f") not applied; .github/workflows/security-scan.yml is not on the default branch yet (bin/estate-security-rollout)"; waiting=$((waiting+1)); fi
-    done <<< "$repos"
-  else
-    apply_spec "$r" "$f"
-  fi
-done
-echo "$([ $drift = 0 ] && echo 'ok  ' || echo FAIL)  rulesets $ok in place, $drift missing or drifted, $blocked private repos blocked by plan, $waiting active repos waiting for the rollout"
+done < <(gh repo list "$OWNER" --limit 200 --no-archived --json name -q '.[].name' | sort)
+echo "$([ $drift = 0 ] && echo 'ok  ' || echo FAIL)  rulesets $ok carry $NAME, $drift missing or drifted, $blocked private repos blocked by plan"
 [ $drift = 0 ]

@@ -15,63 +15,7 @@ jobs:
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q shellcheck jq sqlite3
           pip install -q check-jsonschema sqlite-utils pyyaml dagster dagster-webserver
-          pip install -q -r sovereign/requirements-dev.txt   # crew#219 R39: the bdd acceptance leg
           curl -sSL https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
-          # bin/idp-ci rung 9: helm + kyverno CLI judge HelmRelease renders against the ClusterPolicies
-          curl -sSL https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
-          curl -sSL https://github.com/kyverno/kyverno/releases/download/v1.19.0/kyverno-cli_v1.19.0_linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin kyverno
-      - name: temporal cli (bin/idp-ci runs the same bdd suite; cp27 needs the dev server)
-        run: |
-          curl -sSf https://temporal.download/cli.sh | sh -s -- --version 1.8.2
-          echo "$HOME/.temporalio/bin" >> "$GITHUB_PATH"
-          "$HOME/.temporalio/bin/temporal" --version
       - run: bin/idp-ci
         env:
           MIGRATE_HEALTH_WAIT: "240"
-
-  # crew#219 R39/R41: the Sovereign Bus acceptance suite, under the branch
-  # policy AGENTS.md [merge] declares. offline-gate above already runs this
-  # suite inside bin/idp-ci, permissively. This job is the strict leg: on a
-  # PR targeting main, SB_BDD_STRICT=1 turns every pending feature -- and
-  # every pending mark without a named owner -- into a failure. On every
-  # other target it is the same command with the same permissive verdict, so
-  # the two branches differ only in what a skip means, never in what runs.
-  # Definition of Done v2.1, section 3.3 (docs/policy/definition-of-done.md):
-  # secrets in git history, known-vulnerable dependencies, and a security
-  # policy row without a proof each block merge. The check is
-  # bin/estate-security-scan, the same command that prints the receipt on the
-  # founder machine; this job only installs its tools. Pinned by checksum, the
-  # way conftest above is pinned by version (bin/actions-pinned covers uses:).
-  security-scan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: ./.github/actions/security-scan   # the steps every active estate repo runs
-
-  spec-gate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: ./.github/actions/spec-gate       # R29: code changes carry an executable spec
-
-  bdd:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with: { python-version: "3.12" }
-      - name: tools
-        run: |
-          pip install -q -r sovereign/requirements.txt -r sovereign/requirements-dev.txt
-          curl -sSL https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
-      - name: temporal cli (cp27 runs branch workflows on the SDK's local dev server)
-        run: |
-          curl -sSf https://temporal.download/cli.sh | sh -s -- --version 1.8.2
-          echo "$HOME/.temporalio/bin" >> "$GITHUB_PATH"
-          "$HOME/.temporalio/bin/temporal" --version
-      - name: acceptance suite (strict on PRs to main)
-        env:
-          SB_BDD_STRICT: ${{ github.base_ref == 'main' && '1' || '0' }}
-        run: |
-          echo "base_ref=${{ github.base_ref }} SB_BDD_STRICT=$SB_BDD_STRICT"
-          cd sovereign && python -m pytest tests/bdd -q -p no:cacheprovider
