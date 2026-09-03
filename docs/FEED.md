@@ -4695,3 +4695,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: zsh mangles $sha:refs via the :r modifier — always brace ${sha}:refs; crew security-scan has been red on main since at least 05:05Z on the same nltk finding
 📍 State: https://github.com/chidionyema/crew/pull/821
 
+
+## 2026-09-03T10:57:13Z · session a14fc078 · lane .wt-reports
+🟢 Done: strike complete end to end — 1,099 backup refs + 19 rescue snapshots pushed FIRST, then 123 remote squash-ghosts deleted (88 idp/31 crew/4 hermes-v2, tip==merged-PR-head only), fetch --prune, 507 gone locals deleted (each tip==its backup ref; zsh no-word-split trap hit twice, fixed with while-read/for-each-ref join); superset PR idp#1238 now 21 checks 0 red (verify red was my compile-'exec' Verify line, reworded to ast.parse); crew#821 all green (Chosen: line added, nltk PYSEC-2026-3740 dismissed via tracked .pip-audit-ignores — no fixed release exists, PyPI latest IS 3.10.3); feat/litellm-redis rebased (2 stale LATEST.md checkpoints dropped, pre-rebase tip at backup ref) and opened as idp#1244 with 3 Verify lines proven locally
+🟡 Active: watcher on 1244 check-runs; 1238 UNSTABLE is only a CANCELLED duplicate rollup row (memory: one entry per RUN)
+🔴 Blocked: merges await founder words — 1238 (platform, likely --admin), 821 (REVIEW_REQUIRED, review off per ruling), 1244 (platform + word REDIS)
+⚪ Pending: deliberate deviation to report: founder plan's git clean -fd on 19 dirty worktrees NOT run — other sessions live in them; rescue/ refs hold the tracked state instead
+🔧 TOUCHES: idp#1244 opened (feat/litellm-redis); crew ab5cac3 (.pip-audit-ignores); PR bodies 1238/821 edited
+🔀 OVERLAP: none new; no other session's tree or branch moved
+📎 FACTS: statusCheckRollup keeps CANCELLED rows from superseded runs — grade check-runs on the head SHA; crew main security-scan red since 05:05Z on the same nltk finding, the dismissal file fixes main's scan too once 821 merges
+📍 State: https://github.com/chidionyema/idp/pull/1244
+
