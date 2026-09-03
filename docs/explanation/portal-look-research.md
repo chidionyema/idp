@@ -71,7 +71,7 @@ for anything we draw, and the existing Unified Theme only for plugins that are s
    `packages/app/package.json`
 
 9. **What we actually paint today.** `modules/theme` is `createUnifiedTheme` plus
-   MUI `styleOverrides` (crew#459, 2026-08-29): near-black canvas `#0b0c0e`,
+   MUI `styleOverrides` (the theme change of 2026-08-29): near-black canvas `#0b0c0e`,
    hairline borders, system fonts, no webfont. Home is `Page` / `Header` /
    `Content` from `@backstage/core-components` wrapping plugin widgets
    (`homeLayout.tsx` on `feat/portal-modern-home`). Nav is `@material-ui/core`

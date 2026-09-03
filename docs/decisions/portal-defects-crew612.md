@@ -84,4 +84,4 @@ hover opened a second click. Widgets stay; the board does not.
 10. **Chrome.** Cards lift on hover, buttons are 40px, content is 1280px, headers are
     tighter. Still Material through Backstage's theme, not a second design system.
 
-Test: the crew#612 portal test plus `homeLayout.test.ts`.
+Test: the portal-doors test (`tests/test_crew612_portal_doors_are_real_and_distinct.py`) plus `homeLayout.test.ts`.

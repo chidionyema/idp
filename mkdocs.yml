@@ -44,6 +44,7 @@ nav:
       - 0017 Bitwarden is the human door for secrets: decisions/0017-bitwarden-is-the-human-door-for-secrets.md
       - 0018 Superset is the dashboard: decisions/0018-superset-is-the-dashboard-because-it-takes-the-gateways-word.md
       - 0019 Credentials federate, one pasted seed at most: decisions/0019-credentials-federate-a-human-pastes-at-most-one-seed.md
+      - Portal defects fixed in one pass: decisions/portal-defects-crew612.md
   - Specs:
       - KINI.AI master spec: reference/specs/kini-master-spec.md
       - Phone idea flow: reference/specs/phone-idea-flow.md
@@ -68,6 +69,7 @@ nav:
       - Otto on the founder's Mac, the setup and the friction (crew#561): explanation/otto-on-the-mac.md
       - The otto door is a standing query, not a question to a person (pull request 1188): explanation/otto-door-receipts.md
       - Otto rolls on every build, never by hand: explanation/otto-rolls-on-every-build.md
+      - Why the catalogue still looks old, and the one look that is allowed: explanation/portal-look-research.md
       - Otto's registration checker, asking Telegram not guessing: explanation/otto-registration-reconciler.md
       - The dagster scheduler survives a node (pull request 1138): explanation/dagster-availability.md
       - The secret bridge's certificate deadlock (decision 0017): explanation/sdk-server-certificate-deadlock.md
