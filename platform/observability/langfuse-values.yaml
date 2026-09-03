@@ -11,14 +11,6 @@ global:
       repository: docker.io/chrislusf
 langfuse:
   nodeEnv: production
-  image:
-    # Chart 2.0.2 is the newest chart and ships app 4.17.0, which predates
-    # AUTH_CUSTOM_FETCH_USERINFO (added in app 4.21.0). 4.24.0 is the newest app release
-    # (github langfuse/langfuse releases) and the tag answers 200 on the chart's own
-    # registry (docker.langfuse.com/v2/langfuse/langfuse/manifests/4.24.0 -- the registry
-    # is a Docker Hub proxy and the tags carry no "v"). langfuse.image.tag sets web and
-    # worker together (chart values: web/worker image.tag default to it).
-    tag: "4.24.0"
   features:
     telemetryEnabled: false
     signUpDisabled: true

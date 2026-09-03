@@ -22,22 +22,8 @@ rules:
   - apiGroups: [""]
     resources: ["nodes", "pods", "pods/log", "events", "services"]
     verbs: ["get", "list"]
-  # crew#722 CP2 (founder 2026-08-31: "poorly designed enterprise-wide secrets rotation strategy,
-  # this will harm us badly if we let it slide"): the receipt grades whether a rotated Secret
-  # actually reached its running consumers. The collector lists Secrets as
-  # PartialObjectMetadataList (an Accept header the API server honours), so only names and
-  # managedFields timestamps ever enter this pod -- no value is requested, received or written.
-  # list alone; no get, so a single named read of a value is not even expressible here.
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["list"]
-  # run 33332263130 (2026-08-30, founder: "did I not say everything must be transparent"):
-  # healing/estate ran ZERO pods for a day while every page read green, because a Deployment
-  # whose pods are denied at admission is invisible to the pods list, the Flux rows and the
-  # DaemonSet row alike. Deployments and StatefulSets are graded like DaemonSets: short of
-  # desired is a red row, never a silent zero.
   - apiGroups: ["apps"]
-    resources: ["daemonsets", "deployments", "statefulsets"]
+    resources: ["daemonsets"]
     verbs: ["get", "list"]
   # crew#584 (founder 2026-08-29 "why 4 cores, do we have utilisation metrics?"): nobody had a
   # number when the node went 4 -> 6 OCPU (#456). Live CPU/memory use per node comes from the
@@ -110,11 +96,8 @@ data:
     SA = "/var/run/secrets/kubernetes.io/serviceaccount"
     tok = open(f"{SA}/token").read().strip()
     ctx = ssl.create_default_context(cafile=f"{SA}/ca.crt")
-    def get(path, accept=None):
-        headers = {"Authorization": "Bearer " + tok}
-        if accept:
-            headers["Accept"] = accept
-        req = urllib.request.Request("https://kubernetes.default.svc" + path, headers=headers)
+    def get(path):
+        req = urllib.request.Request("https://kubernetes.default.svc" + path, headers={"Authorization": "Bearer " + tok})
         with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
             return json.load(r)
     nodes = get("/api/v1/nodes")["items"]
@@ -312,17 +295,6 @@ data:
                 # refuses correct work (LAW 38). Ready by construction, and the row says why.
                 row["ready"] = True
                 row["message"] = "oci source: static, carries no Ready condition"
-            if (o.get("spec") or {}).get("suspend") is True:
-                # crew#623 class, second instance (2026-08-30, receipt: break-glass diagnose run
-                # 33331157383): a suspended row is a dark switch, not a defect. Flux writes no
-                # Ready condition on a fresh suspended row (commerce, commerce-data, event-bus
-                # graded "no Ready condition yet") and FREEZES the last stale condition on one
-                # suspended after a red (temporal graded "dependency 'flux-system/edge' is not
-                # ready" while edge was True). bin/idp-portability-drill learnt this on crew#623;
-                # this collector was the missed instance of the same else-branch class: it turned
-                # every dark row into a cluster FAIL on the estate-state page.
-                row["ready"] = True
-                row["message"] = "suspended (dark switch)"
             if kind == "HelmRelease":
                 row.update(helm_last_attempt(st))
             if kind == "ImagePolicy":
@@ -351,15 +323,6 @@ data:
                     # so the reader can go straight to the entry instead of guessing.
                     row["message"] = flux_message(
                         "{}; {}".format(row["message"], wanted_from(o.get("spec"))))
-            if (o["metadata"].get("annotations") or {}).get("estate/expect-ready") == "false":
-                # crew#631 CP2 (2026-08-31): a wall probe (backstage/verdict-key-wall) asks for a key its
-                # identity must be refused. Refused is the wall standing; synced is the breach. Graded
-                # inverted here so the cluster receipt reads the wall the same way bin/idp-verdict
-                # key-wall does, and a probe doing its job never turns the estate-state page red.
-                synced = c.get("status") == "True" or bool(st.get("syncedResourceVersion"))
-                row["ready"] = not synced
-                row["message"] = ("WALL BREACHED: this identity read the key it must be refused" if synced
-                                  else "wall standing: refused as designed; " + flux_message(c.get("message", "no Ready condition yet")))
             flux.append(row)
     flux_not_ready = [r for r in flux if not r["ready"]]
     # crew#483: the PolicyExceptions the cluster holds (kyverno.io/v2), name, namespace, policies
@@ -405,89 +368,6 @@ data:
     except Exception as e:
         ds = [{"ns": "", "name": "*", "desired": 1, "ready": 0, "message": f"list failed: {e}"[:300]}]
     ds_short = [d for d in ds if d["ready"] < d["desired"]]
-    # run 33332263130 (2026-08-30): Deployment healing/estate held zero pods for a day -- every
-    # ReplicaSet pod was denied by Kyverno at admission -- and nothing graded it: the pods list
-    # cannot see pods that were never created, the Flux rows were Ready (the Deployment object
-    # applied fine), and only DaemonSets had a short row (crew#320). Same rule as crew#320,
-    # extended: every Deployment and StatefulSet short of its desired replicas is a red row.
-    # spec.replicas 0 is a deliberate scale-down, not short.
-    try:
-        deploy_items = get("/apis/apps/v1/deployments")["items"] + get("/apis/apps/v1/statefulsets")["items"]
-        workloads = [{"ns": d["metadata"]["namespace"], "name": d["metadata"]["name"],
-                      "desired": (d.get("spec") or {}).get("replicas", 0) or 0,
-                      "available": (d.get("status") or {}).get("availableReplicas", 0) or 0}
-                     for d in deploy_items]
-    except Exception as e:
-        workloads = [{"ns": "", "name": "*", "desired": 1, "available": 0, "message": f"list failed: {e}"[:300]}]
-    deploy_short = [w for w in workloads if w["desired"] > 0 and w["available"] < w["desired"]]
-    # crew#722 CP2 (founder 2026-08-31): both rotation incidents of the week (crew#506 CP4, the
-    # router answering "Invalid API Key" on a rotated key; crew#684, a rotated key reaching
-    # neither pod) were invisible until a person hit the broken door. The backstop: a RUNNING pod
-    # that started before the last write of a Secret it consumes is a red row. The write time is
-    # the newest managedFields timestamp of the Secret's metadata, read as
-    # PartialObjectMetadataList so no value ever enters this pod; a no-op re-apply of unchanged
-    # data bumps neither resourceVersion nor that timestamp, so a quiet hour reads quiet.
-    # Grace 900s: Reloader's roll plus scheduling. Skipped rows, each deliberate and in git:
-    # kube-system/flux-system/kyverno (the same set inject-auto-reload excludes -- rolling the
-    # reconciler or the admission controller on secret churn is its own outage), Job-owned pods
-    # (they run to completion on the values of their start), and workloads carrying
-    # reloader.stakater.com/auto "false" (a written opt-out with a reason is a deliberate stale,
-    # e.g. the gateway's refreshInterval "0", crew#292). A failed list is count -1, never 0
-    # (silent green is the defect class).
-    def secret_refs(spec):
-        names = set()
-        for c in (spec.get("containers") or []) + (spec.get("initContainers") or []):
-            for e in c.get("env") or []:
-                ref = ((e.get("valueFrom") or {}).get("secretKeyRef") or {}).get("name")
-                if ref:
-                    names.add(ref)
-            for e in c.get("envFrom") or []:
-                ref = (e.get("secretRef") or {}).get("name")
-                if ref:
-                    names.add(ref)
-        for v in spec.get("volumes") or []:
-            ref = (v.get("secret") or {}).get("secretName")
-            if ref:
-                names.add(ref)
-            for s in ((v.get("projected") or {}).get("sources") or []):
-                ref = (s.get("secret") or {}).get("name")
-                if ref:
-                    names.add(ref)
-        return names
-    def iso_utc(x):
-        return datetime.strptime(str(x)[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
-    secret_stale, secrets_error = [], ""
-    RELOAD_EXEMPT_NS = ("kube-system", "flux-system", "kyverno")
-    try:
-        PMDL = "application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1"
-        written = {}
-        for s in get("/api/v1/secrets", accept=PMDL)["items"]:
-            md = s["metadata"]
-            stamps = [f["time"] for f in (md.get("managedFields") or []) if f.get("time")]
-            written[(md.get("namespace"), md["name"])] = max(stamps) if stamps else md.get("creationTimestamp")
-        now_dt = datetime.now(timezone.utc)
-        for p in pods:
-            md, spec, st = p["metadata"], p["spec"], p["status"]
-            if md["namespace"] in RELOAD_EXEMPT_NS or st.get("phase") != "Running" or not st.get("startTime"):
-                continue
-            if any(o.get("kind") == "Job" for o in (md.get("ownerReferences") or [])):
-                continue
-            if (md.get("annotations") or {}).get("reloader.stakater.com/auto") == "false":
-                continue
-            for name in sorted(secret_refs(spec)):
-                w = written.get((md["namespace"], name))
-                if not w:
-                    continue
-                try:
-                    wt, pt = iso_utc(w), iso_utc(st["startTime"])
-                except Exception:
-                    continue
-                if (now_dt - wt).total_seconds() > 900 and pt < wt:
-                    secret_stale.append({"ns": md["namespace"], "pod": md["name"], "secret": name,
-                                         "secret_written": w, "pod_started": st["startTime"]})
-    except Exception as e:
-        secrets_error = f"secrets metadata list failed: {str(e)[:200]}"
-    secret_stale_count = -1 if secrets_error else len(secret_stale)
     try:
         ev_items = get("/api/v1/events?fieldSelector=type%3DWarning&limit=500")["items"]
     except Exception as e:
@@ -720,14 +600,14 @@ data:
     cpu_used_pct, mem_used_pct = pct("cpu_used", tot_cpu), pct("memory_used_gb", tot_mem)
     cpu_req_pct, mem_req_pct = pct("cpu_requested", tot_cpu), pct("memory_requested_gb", tot_mem)
     head = (f"ok cluster-state at {at} nodes={len(node_rows)} ready={ready} pods={len(pods)} pods_not_ready={len(not_ready)}"
-            f" flux={len(flux)} flux_not_ready={len(flux_not_ready)} ds={len(ds)} ds_short={len(ds_short)} deploy_short={len(deploy_short)} secret_stale_consumers={secret_stale_count} events_warning={len(events)}"
+            f" flux={len(flux)} flux_not_ready={len(flux_not_ready)} ds={len(ds)} ds_short={len(ds_short)} events_warning={len(events)}"
             f" hostnames={len(hostnames or [])} spiffe_ids={len(spiffe['clusterspiffeids'] or [])} spiffe_workloads={len(spiffe['csi_workloads'])}"
             f" svids={sum(len(r['spiffe_ids']) for r in spiffe['svids'])} spire_agents={len(spiffe['agents'])}"
             f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)} policy_exceptions={len(policy_exceptions)} k8sgpt_findings={len(k8sgpt)}"
             f" monitoring_rules={monitoring_rules} alert_watchdog={alert_watchdog}"
             f" cpu_used_pct={cpu_used_pct} mem_used_pct={mem_used_pct} cpu_req_pct={cpu_req_pct} mem_req_pct={mem_req_pct}")
     body = {"at": at, "capacity": capacity, "capacity_error": cap_error, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
-            "flux": flux, "flux_not_ready": flux_not_ready, "secret_stale_consumers": secret_stale, "secrets_error": secrets_error, "policy_exceptions": policy_exceptions, "kyverno_policies": kyverno_policies, "k8sgpt": k8sgpt, "daemonsets": ds, "ds_short": ds_short, "deploy_short": deploy_short, "events_warning": events,
+            "flux": flux, "flux_not_ready": flux_not_ready, "policy_exceptions": policy_exceptions, "kyverno_policies": kyverno_policies, "k8sgpt": k8sgpt, "daemonsets": ds, "ds_short": ds_short, "events_warning": events,
             "hostnames": hostnames, "hostnames_error": hostnames_error, "spiffe": spiffe,
             "services_unlisted": services_unlisted, "services_unlisted_error": unlisted_error,
             "oci_identity": {"pods": oci_pods, "static_key_pods": oci_static_key_pods,

@@ -20,26 +20,20 @@ resources:
   # a file outside the overlay may not, and plain `kustomize build` in the tests refuses it).
   - ../../../../backstage/founder
   - ../../../../backstage/platform
-  # The org (Groups): every entity bin/catalog-gen emits is stamped
-  # owner: group:default/platform, and until this landed no tracked file defined that Group,
-  # so every ownedBy relation in the portal pointed at nothing.
-  - ../../../../backstage/org
 images:
   # build-multiarch pushes ghcr.io/chidionyema/<image name from bin/dockerfiles>:<commit sha>
   # and nothing else (its header: a moving tag leaves a rollback nothing to roll back to).
   # 2026-08-25: this pointed at idp/backstage:main, a name and a tag that never existed, and
   # the pod sat in ImagePullBackOff after idp#132. Until crew#267 (image automation) lands,
   # every main build that changes the image is followed by a PR that moves this sha.
-  - name: ghcr.io/chidionyema/backstage
+  - name: idp/backstage
     newName: ghcr.io/chidionyema/backstage
     # image-automation-controller rewrites this line from ImagePolicy flux-system/backstage
     # (platform/image-automation/backstage.yaml, crew#267); the marker is how it finds the line.
-    newTag: main-3078-26ea770611627fe51d52567e92e662543bb9910a # {"$imagepolicy": "flux-system:backstage:tag"}
+    newTag: main-2913-2ca4dd33aa2512856255e8ac02a3afc7f2f139cc # {"$imagepolicy": "flux-system:backstage:tag"}
   # OKE's CRI-O enforces fully qualified names: `postgres:17.6-alpine` failed with
-  # "short name mode is enforcing" on 2026-08-25. k3d resolves either form. The name now
-  # arrives qualified from the base, so this entry no longer renames anything; it is kept
-  # because kustomize's images transformer is where a reader looks for the effective name.
-  - name: docker.io/library/postgres
+  # "short name mode is enforcing" on 2026-08-25. k3d resolves either form.
+  - name: postgres
     newName: docker.io/library/postgres
 patches:
   # The availability.idp/tier label moved with the Namespace to
@@ -178,7 +172,3 @@ patches:
                   name: platform-catalog
                   items:
                     - {key: catalog-info.yaml, path: platform/catalog-info.yaml}
-              - configMap:
-                  name: org-catalog
-                  items:
-                    - {key: catalog-info.yaml, path: org/catalog-info.yaml}

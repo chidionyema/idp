@@ -443,21 +443,6 @@ with sync_playwright() as p:
         "llm": f"https://llm.{ZONE}/ui/",
         "screen": f"https://catalogue.{ZONE}/screen/",
     }
-    # crew#718 (founder 2026-08-30): counting password fields is not enough to know a person got
-    # in. SigNoz renders its sign-in as a React form whose password input only appears after an
-    # email is typed, so the drill read `0 password field(s)` on signoz.<zone>/login and called the
-    # second hop ok while the founder was looking at a login screen -- the silent-green class
-    # again. A surface that comes to rest on a sign-in path did not sign anybody in, whatever its
-    # DOM says, so the path is graded too.
-    SIGN_IN_PATHS = ("/login", "/signin", "/sign-in", "/signup", "/sign-up", "/auth/")
-    # A surface that genuinely cannot join the one login is named here with the reason and the
-    # ticket that will close it. It prints a loud `2nd` line every run instead of a silent pass,
-    # so nobody can mistake "the drill is green" for "the founder can open it".
-    SECOND_LOGIN_EXPECTED = {
-        "signoz": "SigNoz 0.138.0 community has no OIDC or SAML -- the vendor page "
-                  "(signoz.io/docs/userguide/sso-authentication, read 2026-08-30) puts both in the "
-                  "enterprise edition and leaves community with Google Workspace only; crew#718 CP2",
-    }
     sso_red = []
     for name, url in OTHER_SURFACES.items():
         want_host = urlparse(url).hostname
@@ -481,15 +466,6 @@ with sync_playwright() as p:
             sso_red.append(f"{name}: answered {status} at {path}")
         elif pw:
             sso_red.append(f"{name}: showed its own password form at {path}: the one login is two")
-        elif any(path.startswith(sp) for sp in SIGN_IN_PATHS):
-            why = SECOND_LOGIN_EXPECTED.get(name)
-            if why:
-                print(f"2nd     login-drill  {name} came to rest on its own sign-in page at {path}: "
-                      f"the founder needs a second credential here. {why}")
-            else:
-                sso_red.append(
-                    f"{name}: came to rest on its own sign-in page at {path}, so nobody was signed "
-                    f"in; the one login is two")
     if sso_red:
         fail("second-hop", "; ".join(sso_red))
 

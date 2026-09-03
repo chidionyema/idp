@@ -589,21 +589,11 @@ export const ScreenCard = ({
   const off = noScreen || hasNoAddress(entity) || !url;
   const title = entity.metadata.title ?? entity.metadata.name;
   const Icon = systemIcon(`${entity.metadata.name} ${title}`);
-  // Three different reasons a tile can be dark, and they are not the same thing: the entity
-  // names no screen at all, it names one we have no address for, or it has a real state.
-  let screenState: string;
-  if (noScreen) {
-    screenState = 'no-screen';
-  } else if (off) {
-    screenState = 'no-address';
-  } else {
-    screenState = s.state;
-  }
   return (
     <div
       className={`${classes.screen} ${off ? classes.screenOff : ''}`}
       data-testid={`screen-${entity.metadata.name}`}
-      data-state={screenState}
+      data-state={noScreen ? 'no-screen' : off ? 'no-address' : s.state}
     >
       <div className={classes.screenHead}>
         <span className={classes.screenIcon}>
@@ -866,9 +856,9 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
     .sort((a, b) => rank(stateOf(a).state) - rank(stateOf(b).state));
   const held = estate.inventory.reduce((n, r) => n + r.count, 0);
   const listPath = (kind: string, type?: string) =>
-    `/catalog?filters%5Bkind%5D=${encodeURIComponent(kind.toLowerCase())}${
-      type ? `&filters%5Btype%5D=${encodeURIComponent(type)}` : ''
-    }&filters%5Buser%5D=all`;
+    `/catalog?filters%5Bkind%5D=${encodeURIComponent(kind.toLowerCase())}` +
+    (type ? `&filters%5Btype%5D=${encodeURIComponent(type)}` : '') +
+    '&filters%5Buser%5D=all';
   const templates = matches(query, estate.templates);
   const systemTitle = (id: string) => {
     const s = estate.systems.find(x => x.metadata.name === id);
@@ -915,11 +905,7 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
         data-testid="verdict"
         title={verdict(counts, all.length)}
       >
-        {/* The one sentence that answers the page. It changes when the poll returns and
-            nothing announced it: this file had no aria-live region at all. */}
-        <span role="status" aria-live="polite" aria-atomic="true">
-          {verdictSentence(counts, all.length)}
-        </span>
+        <span>{verdictSentence(counts, all.length)}</span>
         <LiveChip estate={estate} />
       </p>
       <TextField
@@ -1170,30 +1156,6 @@ export const EstateHome = () => {
   const config = useApi(configApiRef);
   const brand = config.getOptionalString('app.title') ?? 'Estate';
   const { loaded, retry } = useEstate();
-  // The nav links at /#screens and /#kubernetes changed the URL and moved nothing: no
-  // scrollIntoView existed anywhere on this page. Focus moves too, so the section is announced
-  // and not merely scrolled to.
-  useEffect(() => {
-    const handler = () => {
-      const hash = window.location.hash;
-      if (!hash) return;
-      const el = document.getElementById(hash.slice(1));
-      if (!el) return;
-      const reduced =
-        typeof window !== 'undefined' && window.matchMedia
-          ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
-          : false;
-      el.scrollIntoView({ block: 'start', behavior: reduced ? 'auto' : 'smooth' });
-      el.tabIndex = -1;
-      el.focus({ preventScroll: true });
-    };
-    const raf = requestAnimationFrame(handler);
-    window.addEventListener('hashchange', handler);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener('hashchange', handler);
-    };
-  }, []);
   return (
     <Page themeId="home">
       <Content>

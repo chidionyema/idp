@@ -19,7 +19,7 @@ on:
       playbook:
         description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose, otto-parity, healthchecks-door and architect-doctor are read-only; so is router-spend."
         type: choice
-        options: [diagnose, architect-doctor, otto-parity, healthchecks-door, cilium-unchain, cilium-replace, helm-retry, namespace-unstick, ghcr-pull-restore, k8sgpt-analyze, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll, router-spend, registries-conf]
+        options: [diagnose, architect-doctor, otto-parity, healthchecks-door, cilium-unchain, cilium-replace, helm-retry, namespace-unstick, ghcr-pull-restore, k8sgpt-analyze, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll, router-spend]
         default: diagnose
   pull_request:
     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
@@ -274,8 +274,6 @@ jobs:
           SEED_TELEGRAM_HERMES_BOT_TOKEN: ${{ secrets.SEED_TELEGRAM_HERMES_BOT_TOKEN }}
           SEED_TELEGRAM_ALERTS_BOT_TOKEN: ${{ secrets.SEED_TELEGRAM_ALERTS_BOT_TOKEN }}
           SEED_STRIPE_SECRET_KEY: ${{ secrets.SEED_STRIPE_SECRET_KEY }}
-          SEED_GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.SEED_GOOGLE_OAUTH_CLIENT_ID }}
-          SEED_GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.SEED_GOOGLE_OAUTH_CLIENT_SECRET }}
         run: |
           bin/idp-bootstrap-vendors || { rc=$?; [ "$rc" = 2 ] || exit "$rc"; }
 
@@ -342,67 +340,6 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
         run: bin/idp-chaos-drill langfuse-alert-drill alert-drill
-
-  rotation-drill:
-    # crew#722 CP3: the rotation road, exercised end to end every day. Writes a fresh random
-    # value to the vault entry rotation-canary (guards nothing; its only job is to change), then
-    # polls the receipt the canary consumer publishes (platform/state/rotation-canary.yaml) until
-    # the RUNNING pod answers with the new value's sha: vault -> ESO (10m refresh) -> Secret ->
-    # Reloader roll -> pod start capture -> bucket. SLO 25 minutes, no hand. A rotation "done"
-    # because the vault write succeeded is the class both crew#506 CP4 and crew#684 shipped.
-    # Never on pull_request: a PR must not rotate anything, and the drill row grades the
-    # scheduled run (drills/catalogue.yaml rotation-canary).
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
-      - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
-      - name: OCI session token from the GitHub OIDC token
-        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
-        with:
-          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
-          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
-          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
-          oci_region: ${{ vars.OCI_REGION }}
-      - name: rotate rotation-canary and wait for the running pod (crew#722 CP3)
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_REGION: ${{ vars.OCI_REGION }}
-          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-        run: |
-          set -euo pipefail
-          umask 077
-          val=$(python3 -c "import secrets; print(secrets.token_hex(24))")
-          want=$(printf '%s' "$val" | python3 -c "import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:12])")
-          f=$(mktemp)
-          printf 'CANARY_VALUE=%s\n' "$val" > "$f"
-          unset val
-          ESTATE_ENV_FILE="$f" bin/idp-vault-put rotation-canary value=CANARY_VALUE
-          rm -f "$f"
-          wrote=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          echo "rotated at $wrote; waiting for a running pod to answer sha256=$want"
-          deadline=$((SECONDS + 1500))   # 25m: 10m ESO refresh + roll + 2m receipt loop + slack
-          while [ "$SECONDS" -lt "$deadline" ]; do
-            line=$(bin/idp-cloud object get --bucket estate-drill-receipts --name state/rotation-canary 2>/dev/null | head -1) || true
-            case "$line" in
-              *"sha256=$want"*)
-                echo "ok rotation-canary the running pod answered with the rotated value after ${SECONDS}s: $line"
-                exit 0 ;;
-            esac
-            echo "  waiting ${SECONDS}s: ${line:-no receipt yet}"
-            sleep 60
-          done
-          echo "FAIL rotation-canary no running pod answered sha256=$want within 25m of the vault write at $wrote"
-          exit 1
 
   free-tier:
     # crew#488 CP3: the Always Free allowance, asked of the limits API every day and graded

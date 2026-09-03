@@ -46,13 +46,13 @@ def test_collector_rows_every_externalsecret_with_its_last_sync_and_the_role_can
 def test_stale_externalsecret_row_fails_the_receipt_and_names_the_secret():
     row = {"kind": "ExternalSecret", "ns": "llm", "name": "litellm-upstream", "ready": False, "last_sync": "2026-08-26T01:00:00Z",
            "message": "Ready but last sync 2026-08-26T01:00:00Z is older than 2x refreshInterval 1h"}
-    head = "ok cluster-state at 2026-08-27T05:00:00Z nodes=1 ready=1 pods=45 pods_not_ready=0 flux=21 flux_not_ready=1 ds=3 ds_short=0 deploy_short=0 events_warning=0"
+    head = "ok cluster-state at 2026-08-27T05:00:00Z nodes=1 ready=1 pods=45 pods_not_ready=0 flux=21 flux_not_ready=1 ds=3 ds_short=0 events_warning=0"
     rc, out = _grade(head + "\n" + json.dumps({"flux_not_ready": [row], "ds_short": [], "events_warning": []}))
     assert rc == 1 and out.startswith("FAIL"), out
     assert "ExternalSecret llm/litellm-upstream" in out and "older than 2x refreshInterval" in out, out
 
 
 def test_fresh_externalsecrets_leave_the_receipt_ok():
-    head = "ok cluster-state at 2026-08-27T05:00:00Z nodes=1 ready=1 pods=45 pods_not_ready=0 flux=21 flux_not_ready=0 ds=3 ds_short=0 deploy_short=0 events_warning=0 monitoring_rules=1 alert_watchdog=1 cpu_used_pct=12 cpu_req_pct=45 mem_used_pct=30 mem_req_pct=50 secret_stale_consumers=0"
+    head = "ok cluster-state at 2026-08-27T05:00:00Z nodes=1 ready=1 pods=45 pods_not_ready=0 flux=21 flux_not_ready=0 ds=3 ds_short=0 events_warning=0 monitoring_rules=1 alert_watchdog=1 cpu_used_pct=12 cpu_req_pct=45 mem_used_pct=30 mem_req_pct=50"
     rc, out = _grade(head + "\n" + json.dumps({"flux_not_ready": [], "ds_short": [], "events_warning": []}))
     assert rc == 0 and out.startswith("ok"), out

@@ -12,7 +12,7 @@ metadata:
 spec:
   exceptions:
     - policyName: require-pod-probes
-      ruleNames: [validate-probes, autogen-validate-probes]
+      ruleNames: [require-pod-probes, autogen-validate-probes]
     # run 33238265861: with the security context in place the operator's Deployment was still denied by
     # secrets-not-from-env-vars: the operator builds `env[].valueFrom.secretKeyRef` for the AI backend
     # key (k8sgpt-operator 0.2.29 pkg/resources/k8sgpt.go) and the CRD has no volume field for it.

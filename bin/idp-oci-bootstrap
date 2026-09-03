@@ -153,29 +153,19 @@ EP="$(vget OCI_IDENTITY_DOMAIN_URL || true)"
 [ -n "$EP" ] && [ "$EP" != null ] || { echo "FAIL    no identity domain URL"; exit 1; }
 printf %s "$EP" | vput OCI_IDENTITY_DOMAIN_URL
 scim() { oci raw-request "${O[@]}" --http-method "$1" --target-uri "$EP/admin/v1/$2" "${@:3}"; }
-# 2026-08-31: `oci identity-domains <resource> list` does not exist on the CLI this runs from
-# (3.90.3 answers "No such command" on stdout), so the old lookup read the usage banner as the id,
-# PATCHed /IdentityPropagationTrusts/Usage:%20oci..., and printed "PATCH refused: " with no detail
-# on every founder bootstrap since 2026-08-26 (crew#631 CP2). The lookup is a SCIM GET with a
-# filter over the same raw-request seam the POST and PATCH already use, and an id is 32 hex
-# characters or it is nothing: a banner can never be an id again.
-scim_find() {
-  local res="$1" f; f=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "$2")
-  local id; id=$(oci raw-request "${O[@]}" --http-method GET --target-uri "$EP/admin/v1/$res?filter=$f&attributes=id" 2>/dev/null | jq -r '.data.Resources[0].id // empty' 2>/dev/null || true)
-  case "$id" in *[!0-9a-f]*|"") ;; *) [ ${#id} -eq 32 ] && printf %s "$id" ;; esac
-}
+scim_find() { oci identity-domains "$1" list "${O[@]}" --endpoint "$EP" --filter "$2" --query 'data.resources[0].id' --raw-output 2>/dev/null | grep -v '^null$' || true; }
 T2=$(mktemp -d); chmod 700 "$T2"; trap 'rm -rf "$T2" ${T:-}' EXIT
-CI_UID=$(scim_find Users 'userName eq "estate-ci"')
+CI_UID=$(scim_find users 'userName eq "estate-ci"')
 if [ -z "$CI_UID" ]; then
   printf '%s' '{"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:oracle:idcs:extension:user:User"],"userName":"estate-ci","name":{"givenName":"estate","familyName":"ci"},"displayName":"estate-ci (GitHub Actions service user)","urn:ietf:params:scim:schemas:oracle:idcs:extension:user:User":{"serviceUser":true}}' > "$T2/u.json"
   CI_UID=$(scim POST Users --request-body "file://$T2/u.json" | jq -r .data.id); echo "wif     user estate-ci created"
 else echo "wif     user estate-ci"; fi
-G_ID=$(scim_find Groups 'displayName eq "estate-operators"')
+G_ID=$(scim_find groups 'displayName eq "estate-operators"')
 printf '{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"add","path":"members","value":[{"value":"%s","type":"User"}]}]}' "$CI_UID" > "$T2/g.json"
 scim PATCH "Groups/$G_ID" --request-body "file://$T2/g.json" >/dev/null 2>&1 || true   # already a member is not an error
-P_ID=$(scim_find Groups 'displayName eq "estate-provers"')
+P_ID=$(scim_find groups 'displayName eq "estate-provers"')
 scim PATCH "Groups/$P_ID" --request-body "file://$T2/g.json" >/dev/null 2>&1 || true   # estate-ci reads the verdict signing key; nobody else (crew#631 CP2)
-APP_ID=$(scim_find Apps 'displayName eq "estate-github-oidc"')
+APP_ID=$(scim_find apps 'displayName eq "estate-github-oidc"')
 if [ -z "$APP_ID" ]; then
   printf '%s' '{"schemas":["urn:ietf:params:scim:schemas:oracle:idcs:App"],"displayName":"estate-github-oidc","description":"GitHub Actions OIDC to OCI session token exchange (crew#227)","basedOnTemplate":{"value":"CustomWebAppTemplateId"},"isOAuthClient":true,"clientType":"confidential","allowedGrants":["client_credentials","urn:ietf:params:oauth:grant-type:jwt-bearer"],"active":true,"trustScope":"Explicit"}' > "$T2/a.json"
   scim POST Apps --request-body "file://$T2/a.json" > "$T2/app.out"
@@ -188,7 +178,7 @@ REPO="${GITHUB_REPO:-$(git -C "$IDP" remote get-url origin | sed -E 's#\.git$##;
 # GitHub's OIDC `sub` carries numeric ids: repo:<owner>@<owner id>/<repo>@<repo id>:<context>
 # (measured 2026-08-25 in run 32883584446; a rule on the bare name matches nothing).
 SUB_PREFIX=$(gh api "repos/$REPO" -q '"repo:\(.owner.login)@\(.owner.id)/\(.name)@\(.id):"' 2>/dev/null) || { echo "FAIL    gh cannot read repos/$REPO for the OIDC subject ids"; exit 1; }
-TR_ID=$(scim_find IdentityPropagationTrusts 'name eq "github-actions-estate"')
+TR_ID=$(scim_find identity-propagation-trusts 'name eq "github-actions-estate"')
 if [ -z "$TR_ID" ]; then
   jq -n --arg c "$CLIENT_ID" --arg u "$CI_UID" --arg r "sub eq ${SUB_PREFIX}*" '{"schemas":["urn:ietf:params:scim:schemas:oracle:idcs:IdentityPropagationTrust"],"name":"github-actions-estate","type":"JWT","issuer":"https://token.actions.githubusercontent.com","active":true,"subjectType":"User","subjectClaimName":"sub","publicKeyEndpoint":"https://token.actions.githubusercontent.com/.well-known/jwks","oauthClients":[$c],"clientClaimName":"aud","clientClaimValues":["https://cloud.oracle.com"],"allowImpersonation":true,"impersonationServiceUsers":[{"rule":$r,"value":$u}]}' > "$T2/t.json"
   scim POST IdentityPropagationTrusts --request-body "file://$T2/t.json" | jq -e .data.id >/dev/null; echo "wif     trust github-actions-estate created for $REPO"

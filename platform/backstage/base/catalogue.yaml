@@ -22,13 +22,10 @@ kind: Deployment
 metadata:
   name: catalogue
   # crew#684: app-config reads `$file` values once at start (the Healthchecks read-only key,
-  # /run/secrets/healthchecks-ro). A rotated key is a 401 on the Ops tile until the pod rolls.
-  # Founder blueprint 2026-08-30 (4ca529a0.md): no hand-kept list of Secret names. Reloader
-  # discovers every Secret and ConfigMap this pod references, and
-  # platform/edge/require-auto-reload.yaml injects this annotation at admission, so git and the
-  # cluster say the same thing.
+  # /run/secrets/healthchecks-ro). A rotated key is a 401 on the Ops tile until the pod rolls;
+  # Reloader (platform/reloader) rolls it when that Secret changes.
   annotations:
-    reloader.stakater.com/auto: "true"
+    secret.reloader.stakater.com/reload: "healthchecks-ro"
 spec:
   replicas: 1
   strategy:
@@ -51,11 +48,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: catalogue
-          # The registry is written out here, not left to the overlay: on cri-o with
-          # short-name mode enforcing, `idp/backstage:local` is admitted and then fails to
-          # pull with "returns ambiguous list". The overlay still moves the tag to the sha
-          # image-automation ordered; only the host stops depending on being overlaid.
-          image: ghcr.io/chidionyema/backstage:local
+          image: idp/backstage:local
           imagePullPolicy: Never   # built locally, imported with `k3d image import`; a pull would fetch a stranger's image of the same name
           env:
             - name: POSTGRES_HOST

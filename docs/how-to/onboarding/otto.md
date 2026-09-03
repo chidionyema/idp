@@ -24,7 +24,7 @@ hermes-v2/                             the image: config.yaml, templates/skills/
 | Telegram | `TELEGRAM_BOT_TOKEN` in the vault entry `hermes-agent-env` | gateway banner in the pod log after boot |
 | Models | the one router, `llm` row (`config.yaml` base_url + `LITELLM_API_KEY` from `hermes-agent-env`) | otto-parity `model-lane` |
 | Memory | self-hosted Hindsight, `platform/hindsight`; `HINDSIGHT_API_URL` env, `config.yaml` memory.provider: hindsight | otto-parity `hindsight-answers` |
-| GitHub | `gh` in the image; `GITHUB_TOKEN` field of `hermes-agent-env`, minted in-cluster every 45 minutes by the `hermes-agent-github` GithubAccessToken generator (`platform/hermes-agent/gateway.yaml`) | `gh auth status` from Telegram; parity step `gh-token-works` (crew#561) |
+| GitHub | `gh` in the image; `GITHUB_TOKEN` field of `hermes-agent-env`, minted by the github-app lane (`platform/github-app/token-consumers.json`) | `gh auth status` from Telegram; parity step `gh-token-works` (crew#561) |
 | The founder's Mac | `mac-run <cmd>`: ssh over the tailscale sidecar (tag:k8s -> tag:founder-mac port 22, `platform/tailscale/policy.hujson`), key in vault entry `hermes-mac-run`, public half adopted by `bin/idp-mac-adopt-otto` | otto-parity `key-usable`, `key-direct`, `tailnet-up`, `mac-run-hostname` |
 | Agent-to-agent | `A2A_BEARER_TOKEN` in `hermes-agent-a2a` | otto-parity `a2a` |
 | Cron lanes | the jobs file under HERMES_HOME, installed at boot by `hermes-v2/bin/install-cron.py` | otto-parity `cron-lanes-installed` |
