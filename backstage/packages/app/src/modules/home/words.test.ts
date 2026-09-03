@@ -127,7 +127,7 @@ describe('STATE_MEANING', () => {
 describe('SECTIONS', () => {
   it('gives every section a plain title and a one-sentence blurb', () => {
     expect(SECTIONS.layers.title).toBe('What we run');
-    expect(SECTIONS.doors.title).toBe('Doors');
+    expect(SECTIONS.doors.title).toBe('Sign-in pages');
     expect(SECTIONS.actions.title).toBe('Do');
     [SECTIONS.layers, SECTIONS.doors, SECTIONS.actions].forEach(s => {
       expect(s.blurb.endsWith('.')).toBe(true);
@@ -138,7 +138,7 @@ describe('SECTIONS', () => {
 
 describe('GLOSSARY', () => {
   it('defines each word without using the word to define itself alone', () => {
-    (['service', 'door', 'system', 'cluster'] as const).forEach(term => {
+    (['service', 'sign-in page', 'system', 'cluster'] as const).forEach(term => {
       expect(GLOSSARY[term].toLowerCase()).toContain(term);
       expect(GLOSSARY[term].endsWith('.')).toBe(true);
     });
@@ -190,7 +190,7 @@ describe('no insider words anywhere on the page', () => {
 describe('inventory words', () => {
   it('names each kind of thing in plain words, one or many', () => {
     expect(inventoryWord('Component', 'platform-layer', 1)).toBe('service');
-    expect(inventoryWord('Component', 'founder-surface', 29)).toBe('doors');
+    expect(inventoryWord('Component', 'founder-surface', 29)).toBe('sign-in pages');
     expect(inventoryWord('Resource', 'ledger', 187)).toBe('ledgers');
     expect(inventoryWord('Domain', undefined, 4)).toBe('companies');
     expect(inventoryWord('Resource', 'odd-thing', 2)).toBe('odd things');

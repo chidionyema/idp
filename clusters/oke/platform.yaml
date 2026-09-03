@@ -409,6 +409,42 @@ spec:
       - kind: Secret
         name: github-app
 ---
+# The infrastructure crew (crew#729 step 3): a crewAI CronJob that takes a `lane:infra` board
+# ticket to a plan comment and a pull request. No RBAC, no cluster hand; the founder merges and
+# deploys. After scheduling (its priority class), secret-store (the vault), alerts-github (the
+# App Secret its token generator reads through strict envsubst) and llm (the router it calls).
+# `wait: true` on a CronJob proves the objects applied, nothing more: a CronJob carries no
+# readiness, so kstatus reads it Current the moment it exists. Whether a run succeeds is read
+# from outside by the infra-crew drill (drills/catalogue.yaml), never from this row.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infra-crew
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/infra-crew
+  prune: true
+  postBuild:
+    substituteFrom:
+      # OTLP_ENDPOINT and ESTATE_GITHUB_OWNER: one value each in estate-config (LAW 46).
+      - kind: ConfigMap
+        name: estate-config
+      # The estate-agents App's id and installation id for the GithubAccessToken generator;
+      # rendered into flux-system by platform/alerts-github/github-app.yaml from the vault.
+      - kind: Secret
+        name: github-app
+  dependsOn:
+    - name: scheduling
+    - name: secret-store
+    - name: alerts-github
+    - name: llm
+  wait: true
+  timeout: 10m
+---
 # crew#345: the cluster writes its own state receipt to Object Storage every 15 minutes, so no
 # session needs a kube path or `oci session authenticate` to read it (bin/idp-cluster-state).
 apiVersion: kustomize.toolkit.fluxcd.io/v1

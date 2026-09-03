@@ -26,6 +26,10 @@ def _federated(tmp_path, cid="kFED111111", oidc_ok=True):
     mint = '{"id":"kNEW987654","key":"tskey-client-new-1","keyType":"client","tags":["tag:k8s","tag:k8s-operator"]}'
     (sh / "curl").write_text(f'''#!/bin/bash
 echo "$@" >> "{log}"
+# `-K -` means the config (the credential pair) arrives on stdin; read it the way real curl does.
+# Run 33461818477 (idp#1098): this stand-in exited without reading, the writer's printf took
+# SIGPIPE, and under pipefail the verify step read "token exchange did not answer" on a green path.
+for a in "$@"; do [ "$a" = -K ] && cat >/dev/null; done
 # honour -o <file> and -w '%{{http_code}}' the way the federated exchange calls curl
 out=/dev/stdout; code=""
 args=("$@"); for i in "${{!args[@]}}"; do [ "${{args[$i]}}" = -o ] && out="${{args[$((i+1))]}}"; [ "${{args[$i]}}" = -w ] && code=200; done

@@ -37,7 +37,7 @@ const render = (entities: Entity[]) =>
 describe('Tools', () => {
   it('draws one tile per door, in its group, with every link the door publishes', async () => {
     await render([door('signal', 'Watch', 'Signal'), door('runner', 'Run', 'Runner')]);
-    expect(await screen.findByTestId('tools-sentence')).toHaveTextContent('2 doors in 2 groups');
+    expect(await screen.findByTestId('tools-sentence')).toHaveTextContent('2 sign-in pages in 2 groups');
     const watch = await screen.findByTestId('tools-group-Watch');
     expect(watch).toHaveTextContent('Signal');
     expect(screen.getByTestId('tools-group-Run')).toHaveTextContent('Runner');
