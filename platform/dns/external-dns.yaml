@@ -1,5 +1,5 @@
 # external-dns writes Cloudflare from HTTPRoute hostnames and the Gateway's load-balancer address.
-# The token comes from platform/prospector/cloudflare-external-secret.yaml (Secret cloudflare-api-token in
+# The token comes from platform/dns/cloudflare-external-secret.yaml (Secret cloudflare-api-token in
 # this namespace, key CF_API_TOKEN), scoped to Zone:DNS:Edit on the estate zone (clusters/<cluster>/estate-config.yaml, ESTATE_ZONE).
 #
 # Policy is upsert-only with a TXT registry: it creates and updates only records it owns and

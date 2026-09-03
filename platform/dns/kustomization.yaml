@@ -1,4 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  # Secret cloudflare-api-token, namespace edge, key CF_API_TOKEN: pulled from OCI Vault by External
+  # Secrets. It rides in this row (founder 2026-09-03, blueprint phase 1): dns used to wait on the
+  # product row that held it, so a product red held the estate's DNS records back.
+  - cloudflare-external-secret.yaml
   - external-dns.yaml

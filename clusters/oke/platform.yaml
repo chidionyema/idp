@@ -672,8 +672,10 @@ spec:
       namespace: spire-mgmt
 ---
 # KEDA and its HTTP add-on: the estate's one autoscaler, so a request-scoped product workload can
-# sit at zero replicas and wake on the first request (crew#488 CP7). After observability so the
-# operator's OTLP export has a collector to reach; the product opts in from its own repo.
+# sit at zero replicas and wake on the first request (crew#488 CP7). The operator's OTLP export
+# names the collector by service DNS and retries until it answers, so this row waits on
+# scheduling only, never on observability (founder 2026-09-03, blueprint phase 1: the 20-minute
+# observability timeout held the autoscaler back). The product opts in from its own repo.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -682,7 +684,7 @@ metadata:
 spec:
   interval: 10m
   dependsOn:
-    - name: observability
+    - name: scheduling
   sourceRef:
     kind: GitRepository
     name: flux-system
