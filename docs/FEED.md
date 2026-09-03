@@ -4736,3 +4736,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: bl() in bin/idp-estate-seed exits 2 — offline preflight dies at the vault probe unless IDP_VAULT_PUT points at a fake; a re-added file (deleted then restored) reads as new to python-strict, the ratchet no longer shields it
 📍 State: https://github.com/chidionyema/idp/pull/1254
 
+
+## 2026-09-03T12:09:50Z · session 2c88870e · lane code
+🟢 Done: idp PR 1251 merged (main 8fec9077): vault-seed entry router-rows moves every git router lane into the LiteLLM console. Founder blueprint question answered from the repo (record ~/.claude/docs/founder/2026-09-03T1145Z-pkhopw-close-are-we-to-thi-you-are-21463de7.md, corrected against origin/main: external-secrets waits on edge, 28 workloads, 23 liveness, 1 grace period). Founder directive ddd4671a items 1+2 built and pushed: idp PR 1257 (fix/blueprint-waits-and-probes ff4096be) — cloudflare token ExternalSecret moves to platform/dns so dns waits on secret-store not the product; keda waits on scheduling not observability; liveness probes on 4 workloads; guard test_no_platform_row_waits_on_the_product
+🟡 Active: watching 1257 checks (clusters/ + platform/ change → founder's merge word, never an agent deploy)
+🔴 Blocked: directive item 3 (remove the 15 git router rows) waits on proof the console holds them: no vault-seed run exists since 2026-08-30, so the founder has not run entry router-rows yet; the pasted 'gh workflow run vault-seed.yml' would run entry all, which excludes router-rows
+⚪ Pending: external-secrets→edge is a real order (cert-manager signs the ESO sdk-server cert); cert-manager into its own row is the named follow-up on his word
+🔧 TOUCHES: $S/wt-blueprint (clusters/oke/edge.yaml, clusters/oke/platform.yaml, platform/dns/*, platform/prospector/kustomization.yaml, 4 workload files, 2 test files); PR 1257
+🔀 OVERLAP: 54539261 holds the code lane (PR 1248); a14fc078 merged 1249 (llm cache exception); no branch of theirs touched
+📎 FACTS: nothing depends on the dns, keda or science rows, so their waits stalled only themselves; K8s default terminationGracePeriodSeconds is 30s so an explicit 30 is a no-op
+📍 State: https://github.com/chidionyema/idp/pull/1257
+
