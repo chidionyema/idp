@@ -1,14 +1,4 @@
-# LATEST — session a0d64ea4 (crew#66 founder lane)
-
-## RESUME HERE
-
-Branch `feat/crew66-root-trust` (from crew459-portal-polish worktree): root-trust gate PR
-for crew#66 ruling 5453747447 / crew#580. Files: bin/idp-root-trust (+ test
-tests/test_incident_crew66_root_trust_register.py, 5 passed), docs/reference/policy/root-trust.md
-(register, 33 entries, MEETS 11 / PARTIAL 1 / MISS 19), bin/idp-bootstrap-tailscale (written,
-not run end to end), security-policy row, idp-ci + verify-drill rows, stale comments fixed,
-vault-seed tailscale entry refused. Next: commit, push, bin/pr-report, PR (Tracked: crew#66,
-Drill: root-trust), then tell the founder `bin/idp-bootstrap-tailscale` is ready to run.
-Then the bootstrappers PR (#575–#579): bin/idp-estate-seed, router keys, github-app tokens,
-bin/idp-bootstrap-cloudflare, bin/idp-bootstrap-vendors, umbrella bin/idp-bootstrap-estate.
-Founder plan recorded crew#66 5453918598 (one-shot, "just you").
+## RESUME HERE (2026-09-02 ~00:3xZ, session a2aed3c9, founder GO wave)
+DONE this wave: hermes-v2#64 MERGED (image main-58-0b9c2416 green, run 33573433757); idp#1122 MERGED (dagster daemon probe fix on main, Flux applies on the founder's deploy).
+OPEN: idp#1123 red on tests/bdd/test_gate_front_door_login.py — platform/otto-staging/httproute.yaml has no idp.estate/auth annotation. The honest fix first: otto.boot must validate X-Telegram-Bot-Api-Secret-Token (it does not today; hermes-agent's route annotation telegram-webhook-secret-token is backed by real validation, GHSA-3vpc-7q5r-276h). Plan: (1) hermes-v2 branch otto/webhook-secret off merged main — derive the secret in otto.boot as sha256(bot_token + salt), reject non-matching POSTs 403, send secret_token in --set-webhook; tests; push; land under GO; image 59 builds. (2) idp feat/otto-staging: add annotation idp.estate/auth: telegram-webhook-secret-token + comment, bump pin to the 59 tag, push, wave green, merge 1123 literal number --squash --admin --delete-branch. (3) Founder deploys; then --set-webhook; bot answers.
+Worktrees: $S/wt-otto-boot (hermes-v2), $S/wt-otto-staging (idp 1123 @ 65a4ae6b). Token seeded in vault otto-staging-telegram; token also sits in this transcript — offer /revoke re-seed.
