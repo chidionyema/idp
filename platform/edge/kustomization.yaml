@@ -23,6 +23,9 @@ resources:
   - tailscale-egress-exception.yaml
   - external-dns-exception.yaml
   - protect-namespaces.yaml
+  # Founder lockdown 2026-09-03: git is the only writer; any OCI user principal is refused on a
+  # write, the oke-check apply service user (estate-config ESTATE_BREAK_GLASS_USER) excepted.
+  - flux-only-writes.yaml
   # crew#341, wired 2026-08-28 (crew#488 CP5): the file sat here unreferenced since PR #259, so
   # the cluster never held it. Audit mode until bin/idp-ci's kyverno row reports zero violations.
   - kyverno-secrets-policy.yaml

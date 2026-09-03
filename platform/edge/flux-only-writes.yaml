@@ -1,0 +1,58 @@
+# Founder lockdown, 2026-09-03 ("if you dont cone up with solutin then lockdown is happening",
+# ~/.claude/docs/founder/2026-09-03T1234Z-if-you-dont-cone-up-with-solutin-then-3aefc8e6.md):
+# git is the only writer of this cluster. Flux applies what main says; nothing else changes an
+# object. On OKE every person, laptop key and agent presents to Kubernetes as the OCI user it
+# signed with (username ocid1.user.<ocid>, group system:masters when its IAM policy says
+# "manage clusters"), so the fence is that identity class, not a name list: any ocid1.user.*
+# principal is refused on CREATE, UPDATE and DELETE. Every controller in the cluster (Flux,
+# helm-controller, Kyverno, cert-manager, the kubelets) presents as system:* and is untouched.
+# One break-glass identity is excused: ${ESTATE_BREAK_GLASS_USER}, the GitHub Actions service
+# user estate-ci that the oke-check apply workflow signs with (bin/idp-oci-bootstrap makes it).
+# That workflow is the founder's deploy button; a person runs nothing else against the cluster.
+# The value lives in clusters/oke/estate-config.yaml (LAW 46, R70: one place for every name)
+# and Flux postBuild substitutes it on the edge row.
+# Proof it refuses and passes: tests/test_incident_founder_lockdown_flux_only_writes.py.
+# What this does not cover, on purpose: kube-system and the kyverno namespace (the chart's
+# webhook excludes them, so the control plane's own addons keep working) and reads.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: flux-only-writes
+  annotations:
+    policies.kyverno.io/title: Only Flux and the deploy workflow may change the cluster
+    policies.kyverno.io/category: founder lockdown 2026-09-03
+    policies.kyverno.io/severity: critical
+    policies.kyverno.io/subject: All
+    policies.kyverno.io/description: >-
+      A CREATE, UPDATE or DELETE from an OCI user principal (a laptop key, an agent, a person)
+      is refused at admission. Flux and the in-cluster controllers write as system:* and pass;
+      the oke-check apply workflow's service user is the one excused identity. Change git.
+spec:
+  background: false
+  rules:
+    - name: refuse-writes-from-user-principals
+      match:
+        any:
+          - resources:
+              kinds: ["*"]
+              operations: [CREATE, UPDATE, DELETE]
+      preconditions:
+        all:
+          # kyverno apply in bin/idp-kyverno-render carries no admission identity; that render
+          # is a policy check on manifests, not a write, and this rule stays out of its way.
+          - key: "{{ request.userInfo.username || '' }}"
+            operator: Equals
+            value: "ocid1.user.*"
+      validate:
+        failureAction: Enforce
+        message: >-
+          Founder lockdown 2026-09-03: {{ request.userInfo.username }} may not
+          {{ request.operation }} {{ request.kind.kind }} {{ request.namespace }}/{{ request.name }}.
+          Git is the only writer of this cluster; change the file on main and Flux applies it.
+          The only excused identity is the oke-check apply workflow's service user.
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.userInfo.username }}"
+                operator: NotEquals
+                value: "${ESTATE_BREAK_GLASS_USER}"

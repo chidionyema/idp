@@ -36,6 +36,13 @@ data:
   # crew reads its board and its law files under this owner (platform/infra-crew). Flux envsubst
   # is strict and takes no shell modifiers, so the owner cannot be cut from the line above.
   ESTATE_GITHUB_OWNER: chidionyema
+  # Founder lockdown 2026-09-03 (platform/edge/flux-only-writes.yaml): the one identity besides
+  # Flux and the in-cluster controllers that may change an object, the GitHub Actions service
+  # user estate-ci that the oke-check apply workflow signs with (bin/idp-oci-bootstrap makes it,
+  # a token exchange from the run's OIDC token). A user OCID is an identifier, not a secret; it
+  # is the username OKE hands Kubernetes for that user. Measured 2026-09-03 with the OCI API
+  # (iam user list, name estate-ci, state ACTIVE). Every laptop key, agent and person is refused.
+  ESTATE_BREAK_GLASS_USER: "ocid1.user.oc1..aaaaaaaaorwkemualmpcvtnculbqqh7p5kml5wccrdxrtszgmnej4rg5tmra"
   # crew#516 CP5, founder's locked spec (crew#66 5451926212): the founder's Mac, reached by mac-run
   # (platform/hermes-agent/mac-run.tpl) over the Tailscale sidecar's SOCKS5 proxy, and named in
   # platform/tailscale/policy.hujson's ssh rule (bin/idp-tailscale-policy reads FOUNDER_MAC_USER

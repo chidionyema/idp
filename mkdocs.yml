@@ -79,6 +79,7 @@ nav:
       - Recovering the old dashboards after the swap: explanation/metabase-recovery.md
       - A lower tier never waits on a higher one (pull request 1257): explanation/flux-tiers-never-wait-upward.md
       - The secret bridge's certificate deadlock (decision 0017): explanation/sdk-server-certificate-deadlock.md
+      - Git is the only writer of the cluster (founder lockdown 2026-09-03): explanation/flux-only-writes.md
   - Demo:
       - The Demo Standard: demo/demo-standard.md
       - Buyer sandbox (one hour): demo/demo-sandbox.md
