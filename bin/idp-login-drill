@@ -429,7 +429,7 @@ with sync_playwright() as p:
         ("visualizer", "text=Visualizer"),
         # crew#684 CP0: the sentence only the Tools page says once the catalogue answered. Keep the
         # last row comment-free: tests slice this tuple by text and a trailing comment eats the ")".
-        ("tools", "text=Every tool we use"),
+        ("tools", "text=Each opens on your estate login"),
         ("ops", "text=The cluster right now"),
         ("reports", "text=produced on a clock"),
         ("pair", "text=Type the PIN Moonlight shows you"),
