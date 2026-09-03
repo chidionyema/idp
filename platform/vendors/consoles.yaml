@@ -214,19 +214,15 @@ vendors:
     targets:
       - { entry: litellm-upstream, field: MOONSHOT_API_KEY }
       - { entry: litellm-upstream, field: MOONSHOT_API_BASE, derived: base }
-    router:
-      lanes: |
-        # Kimi (Moonshot) -- the founder's primary for both Ottos (2026-09-02). First-class LiteLLM
-        # provider prefix `moonshot/`; kimi-k3 is the flagship (1M-token window, platform.kimi.ai/docs/models
-        # read 2026-09-02). The key arrives as MOONSHOT_API_KEY, the name LiteLLM's moonshot adapter reads.
-        - model_name: kimi
-          litellm_params:
-            model: moonshot/kimi-k3
-            api_key: os.environ/MOONSHOT_API_KEY
-            timeout: 300
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 1000000
+    # NO router block, on purpose (R75, founder 2026-09-03). The kimi lane is console-owned:
+    # the key is brought through the router's own console (LLM Credentials -> Add Credential,
+    # then Models -> Add Model, stored encrypted in litellm-db) -- the enterprise intake, no
+    # terminal, no repository secret. A git-rendered row here locks the name `kimi` in the
+    # config file and the console then refuses to attach a key to it ("defined in config",
+    # hit by the founder 2026-09-03), so the row that pointed at env keys the vault never
+    # held was removed. The seed road above (SEED_KIMI_API_KEY -> MOONSHOT_API_KEY/BASE)
+    # remains the automated alternative and re-adding a lane here is one block, but only
+    # WITH the vault key, never before it.
   gemini:
     # Google can mint keys with gcloud, but that road needed the founder's laptop SSO every time the
     # session lapsed (a wrong root, crew#66 comment 5461144560). One key made once is the root (R52).

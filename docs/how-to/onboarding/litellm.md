@@ -27,13 +27,43 @@ router serves right now, including anything added in the console.
    `founder_emails` in `platform/oci/identity` (app `estate-router-console`), applied by
    `bin/idp-identity-apply`.
 3. Models → Add Model. Pick the provider, type the public model name, and for the credential
-   reference the key the pod already holds: `os.environ/MINIMAX_API_KEY`,
+   either pick one from the **Existing Credentials** dropdown (see the next section) or
+   reference a key the pod already holds: `os.environ/MINIMAX_API_KEY`,
    `os.environ/DEEPSEEK_API_KEY`, `os.environ/OPENROUTER_API_KEY`, `os.environ/GEMINI_API_KEY`.
-   A provider the vault does not hold a key for needs the key added to the vault entry
-   `litellm-upstream` first (`bin/idp-vault-put --merge`, run by the `oke-check` apply step from
-   whichever `SEED_*` repository secrets are set, never from a laptop; one new key, no re-seed).
 4. Save. `store_model_in_db: true` in `general_settings` means the row is in `litellm-db` and
    survives a pod restart; `platform/llm/config.yaml` is never edited for this.
+
+## Bringing a new provider's key (the console, nothing else)
+
+This is the credential intake an enterprise operator gets, and so it is the one the founder
+gets ([the founder is enterprise client zero](../../reference/policy/enterprise-client-zero.md),
+across the board, not only here): no terminal, no repository secret, no fresh key when one
+exists. Steps read from LiteLLM's own model-management page
+(docs.litellm.ai/docs/proxy/model_management, read 2026-09-03):
+
+1. In the console, open the **LLM Credentials** tab and click **Add Credential**. Pick the
+   provider, paste the key, give the credential a name. The form's fields adapt to the
+   provider picked.
+2. Models → Add Model: pick the model, and choose that credential from the **Existing
+   Credentials** dropdown instead of typing a key.
+3. Done. The model row and the credential persist in `litellm-db` and survive pod restarts.
+   Credentials are encrypted at rest; no `LITELLM_SALT_KEY` is set today, so LiteLLM
+   encrypts with `LITELLM_MASTER_KEY`, which only the vault holds.
+
+Two rules the console enforces that are easy to trip over:
+
+- **A model name that `platform/llm/config.yaml` already defines is owned by git**, and the
+  console refuses to edit it or attach a key to it ("defined in config"). If a lane should
+  be console-owned, its git row is removed first — that is a platform change, not an
+  operator step (the `kimi` lane moved to console-owned this way on 2026-09-03).
+- **A Kimi (Moonshot) key answers only at its home host** (see the section below). The
+  console cannot probe the three hosts, so if the model's test call fails with an
+  incorrect-key answer, set the row's API Base to the next host on the list and test again.
+
+The automated alternative stays available: a `SEED_*` repository secret feeds the vault
+entry `litellm-upstream` through the `oke-check` apply step (never from a laptop; one new
+key, no re-seed), and git-rendered rows reference it as `os.environ/...`. That road suits
+keys minted by code; the console road suits a key a person already holds.
 
 Keys, Teams and Spend are the other tabs of the same console: a product gets its own virtual key
 with a daily budget there (the kernel's is alias `sovereign-kernel`, $5/day).

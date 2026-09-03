@@ -107,7 +107,8 @@ def test_every_writer_of_the_router_entry_merges_and_no_seed_secret_remains() ->
 def test_the_groq_lane_is_gone_everywhere_and_the_merge_road_survives() -> None:
     """2026-09-02: the founder removed the vendor ("get rid of Groq"). The lane, its key reference
     and its chains must be out of both rendered configs, and the --merge road this incident proved
-    stays documented on the surviving kimi example."""
+    stays documented (as the one-name example; the kimi lane moved console-owned under R75,
+    2026-09-03, so its key no longer rides this entry)."""
     for cfg in CONFIGS:
         doc = yaml.safe_load(cfg.read_text())
         assert not [m for m in doc["model_list"] if "groq" in str(m).lower()], cfg
@@ -118,5 +119,8 @@ def test_the_groq_lane_is_gone_everywhere_and_the_merge_road_survives() -> None:
         assert not [t for v in chains.values() for t in v if "groq" in t], cfg
         assert "GROQ" not in cfg.read_text(), cfg
     es = (ROOT / "platform" / "llm" / "external-secret.yaml").read_text()
-    assert re.search(r"MOONSHOT_API_KEY=MOONSHOT_API_KEY", es) and "--merge" in es
+    assert (
+        re.search(r"--merge litellm-upstream <NAME>=<NAME>", es)
+        and "never means re-seeding" in es
+    )
     assert "GROQ" not in es
