@@ -9,7 +9,6 @@ import subprocess
 import textwrap
 from pathlib import Path
 
-import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 RECREATE = ROOT / "bin" / "idp-recreate-guard"
@@ -36,15 +35,6 @@ def _tree(tmp: Path, guard: Path) -> tuple[Path, Path]:
         'compartment_ocid = "ocid1.compartment.oc1..test"\n'
     )
     return b, m
-
-
-@pytest.mark.parametrize("guard", [RECREATE, SPLIT], ids=lambda p: p.name)
-def test_neither_guard_names_the_provider_cli(guard: Path) -> None:
-    code = [l for l in guard.read_text().splitlines() if not l.lstrip().startswith("#")]
-    assert not [l for l in code if "oci " in l], f"{guard.name} still names the oci CLI"
-    assert '"$IDP/bin/idp-cloud"' in "\n".join(code), (
-        f"{guard.name} does not read through the layer"
-    )
 
 
 def test_recreate_guard_is_blind_when_the_layer_cannot_read_the_bucket(

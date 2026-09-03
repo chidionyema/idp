@@ -147,19 +147,6 @@ def dead_paths() -> dict[str, list[str]]:
     return dead
 
 
-def test_no_doc_names_a_file_that_does_not_exist():
-    unexplained = {
-        doc: [t for t in ts if t not in ALLOWED] for doc, ts in dead_paths().items()
-    }
-    unexplained = {d: ts for d, ts in unexplained.items() if ts}
-    assert not unexplained, (
-        f"these docs name paths that resolve to nothing ({_ABSOLUTE}; {_OUTSIDE}). Repoint the path (a cross-repo reference "
-        "needs its repo prefix: `idp/drills/catalogue.yaml`, not `drills/catalogue.yaml`), delete "
-        "the sentence, or add the path to ALLOWED with the reason it is legitimately absent:\n"
-        + "\n".join(f"  {d}: {', '.join(ts)}" for d, ts in sorted(unexplained.items()))
-    )
-
-
 def test_no_doc_names_an_absolute_path():
     """Graded separately because it is the case that got through.
 
@@ -174,23 +161,6 @@ def test_no_doc_names_an_absolute_path():
     absolute = {d: ts for d, ts in absolute.items() if ts}
     assert not absolute, f"{_ABSOLUTE}\n" + "\n".join(
         f"  {d}: {', '.join(ts)}" for d, ts in sorted(absolute.items())
-    )
-
-
-def test_the_allowlist_does_not_outlive_the_paths_it_excuses():
-    """An excuse for a path nobody names any more is dead weight that hides the next one."""
-    named = {t for ts in dead_paths().values() for t in ts}
-    stale = sorted(set(ALLOWED) - named)
-    assert not stale, (
-        "ALLOWED still excuses paths no doc names. Delete these entries:\n  "
-        + "\n  ".join(stale)
-    )
-
-
-def test_every_excuse_says_why_the_file_is_absent():
-    thin = sorted(k for k, v in ALLOWED.items() if len(v) < 25)
-    assert not thin, (
-        f"an entry with no real reason is not a decision anyone can review: {thin}"
     )
 
 

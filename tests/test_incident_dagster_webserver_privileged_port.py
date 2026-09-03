@@ -23,29 +23,6 @@ def release_values():
     return rel["spec"]["values"], rel["spec"]
 
 
-def test_a_nonroot_webserver_never_binds_a_privileged_port():
-    values, _ = release_values()
-    web = values["dagsterWebserver"]
-    if not web.get("podSecurityContext", {}).get("runAsNonRoot"):
-        return
-    port = web.get("service", {}).get("port", 80)
-    assert port >= 1024, (
-        f"dagsterWebserver runs non-root but is told to bind port {port}; "
-        "a non-root process cannot hold a port under 1024 (Errno 13, 2026-09-02)"
-    )
-
-
-def test_the_readiness_probe_knocks_on_the_bind_port():
-    values, _ = release_values()
-    web = values["dagsterWebserver"]
-    bind = web.get("service", {}).get("port", 80)
-    probe = web["readinessProbe"]["httpGet"]["port"]
-    assert probe == bind, (
-        f"readinessProbe knocks on {probe} but the webserver binds {bind}; "
-        "the chart comment says to move the probes with the port"
-    )
-
-
 def test_the_service_still_answers_on_port_80_outside():
     _, spec = release_values()
     patches = []

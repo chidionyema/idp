@@ -3,6 +3,7 @@ platform/<module>/backend_override.tf, a file bin/idp-oci-login renders for a lo
 object-storage endpoint and credentials inside. It was never tracked and never shipped; the gate
 graded the founder's laptop, not the platform. Rule: a file git does not hold is not scanned when the
 root is a checkout; a plain directory (the fixtures) is scanned whole. Rung 4, incident test."""
+
 import os
 import subprocess
 from pathlib import Path
@@ -14,8 +15,10 @@ LEAK = 'endpoints = { s3 = "https://x.compat.objectstorage.uk-london-1.oracleclo
 
 def _gate(root: Path) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [str(GATE)], env={**os.environ, "CLOUD_AGNOSTIC_ROOT": str(root)},
-        capture_output=True, text=True,
+        [str(GATE)],
+        env={**os.environ, "CLOUD_AGNOSTIC_ROOT": str(root)},
+        capture_output=True,
+        text=True,
     )
 
 
@@ -41,7 +44,3 @@ def test_a_plain_directory_is_scanned_whole(tmp_path):
     assert r.returncode == 1, r.stdout
     assert "platform/langfuse/backend_override.tf:1" in r.stdout, r.stdout
     assert "platform/tracked.yaml:1" in r.stdout
-
-
-def test_the_rendered_override_is_gitignored():
-    assert "platform/**/backend_override.tf" in (ROOT / ".gitignore").read_text()

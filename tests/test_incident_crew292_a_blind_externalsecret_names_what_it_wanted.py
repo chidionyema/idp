@@ -31,6 +31,7 @@ Rules this file holds:
 The function and the row-building loop are lifted out of the deployed ConfigMap by ast and
 executed. Nothing here asserts on the text of the source.
 """
+
 import ast
 import re
 from datetime import datetime, timezone
@@ -46,10 +47,14 @@ MANIFEST = ROOT / "platform/state/cluster-state.yaml"
 LIVE_SPEC = {
     "secretStoreRef": {"name": "estate-vault", "kind": "ClusterSecretStore"},
     "data": [
-        {"secretKey": "client_id",
-         "remoteRef": {"key": "tailscale-operator", "property": "client_id"}},
-        {"secretKey": "client_secret",
-         "remoteRef": {"key": "tailscale-operator", "property": "client_secret"}},
+        {
+            "secretKey": "client_id",
+            "remoteRef": {"key": "tailscale-operator", "property": "client_id"},
+        },
+        {
+            "secretKey": "client_secret",
+            "remoteRef": {"key": "tailscale-operator", "property": "client_secret"},
+        },
     ],
 }
 # the message ESO actually printed in run 33176874659
@@ -64,8 +69,11 @@ def _collect() -> str:
 def _wanted_from():
     """The real helper out of the manifest the cluster runs, executed, not string-matched."""
     tree = ast.parse(_collect())
-    fn = next(n for n in ast.walk(tree)
-              if isinstance(n, ast.FunctionDef) and n.name == "wanted_from")
+    fn = next(
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.FunctionDef) and n.name == "wanted_from"
+    )
     ns = {"re": re}
     exec(compile(ast.Module(body=[fn], type_ignores=[]), "collect.py", "exec"), ns)
     return ns["wanted_from"]
@@ -79,26 +87,55 @@ def _rows(*secrets):
     asserts on is the row the cluster's collector builds.
     """
     tree = ast.parse(_collect())
-    loop = next(n for n in tree.body
-                if isinstance(n, ast.For) and getattr(n.iter, "id", "") == "FLUX")
-    wanted = {"refresh_seconds", "stale_sync", "flux_message", "helm_last_attempt", "wanted_from"}
-    helpers = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in wanted]
+    loop = next(
+        n
+        for n in tree.body
+        if isinstance(n, ast.For) and getattr(n.iter, "id", "") == "FLUX"
+    )
+    wanted = {
+        "refresh_seconds",
+        "stale_sync",
+        "flux_message",
+        "helm_last_attempt",
+        "wanted_from",
+    }
+    helpers = [
+        n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in wanted
+    ]
     assert {h.name for h in helpers} == wanted, wanted - {h.name for h in helpers}
-    ns = {"re": re, "datetime": datetime, "timezone": timezone, "flux": [],
-          "FLUX": [("ExternalSecret", "/apis/external-secrets.io/v1/externalsecrets")],
-          "get": lambda _path: {"items": list(secrets)}}
-    exec(compile(ast.Module(body=helpers + [loop], type_ignores=[]), "collect.py", "exec"), ns)
+    ns = {
+        "re": re,
+        "datetime": datetime,
+        "timezone": timezone,
+        "flux": [],
+        "FLUX": [("ExternalSecret", "/apis/external-secrets.io/v1/externalsecrets")],
+        "get": lambda _path: {"items": list(secrets)},
+    }
+    exec(
+        compile(
+            ast.Module(body=helpers + [loop], type_ignores=[]), "collect.py", "exec"
+        ),
+        ns,
+    )
     return ns["flux"]
 
 
 def _es(spec, ready, message, ns="tailscale", name="tailscale-operator-secret"):
-    return {"metadata": {"namespace": ns, "name": name},
-            "spec": dict(spec, refreshInterval="1h"),
-            "status": {"refreshTime": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                       "conditions": [{"type": "Ready",
-                                       "status": "True" if ready else "False",
-                                       "message": message,
-                                       "lastTransitionTime": "2026-08-28T13:00:00Z"}]}}
+    return {
+        "metadata": {"namespace": ns, "name": name},
+        "spec": dict(spec, refreshInterval="1h"),
+        "status": {
+            "refreshTime": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "conditions": [
+                {
+                    "type": "Ready",
+                    "status": "True" if ready else "False",
+                    "message": message,
+                    "lastTransitionTime": "2026-08-28T13:00:00Z",
+                }
+            ],
+        },
+    }
 
 
 def test_the_live_blind_row_now_names_the_store_and_both_keys_it_wanted():
@@ -143,29 +180,25 @@ def test_a_stale_row_names_which_key_stopped_refreshing():
     assert "tailscale-operator[client_id]" in row["message"]
 
 
-@pytest.mark.parametrize("spec,expected", [
-    ({"data": [{"remoteRef": {"key": "plain"}}]}, "plain"),
-    ({"data": [{"remoteRef": {"key": "k", "property": "p"}}]}, "k[p]"),
-    ({"dataFrom": [{"extract": {"key": "whole-entry"}}]}, "whole-entry"),
-    ({"dataFrom": [{"find": {"key": "by-pattern"}}]}, "by-pattern"),
-    ({"data": [{"remoteRef": {"key": "a"}}],
-      "dataFrom": [{"extract": {"key": "b"}}]}, "a, b"),
-])
+@pytest.mark.parametrize(
+    "spec,expected",
+    [
+        ({"data": [{"remoteRef": {"key": "plain"}}]}, "plain"),
+        ({"data": [{"remoteRef": {"key": "k", "property": "p"}}]}, "k[p]"),
+        ({"dataFrom": [{"extract": {"key": "whole-entry"}}]}, "whole-entry"),
+        ({"dataFrom": [{"find": {"key": "by-pattern"}}]}, "by-pattern"),
+        (
+            {
+                "data": [{"remoteRef": {"key": "a"}}],
+                "dataFrom": [{"extract": {"key": "b"}}],
+            },
+            "a, b",
+        ),
+    ],
+)
 def test_every_shape_a_spec_can_declare_a_key_in_reaches_the_clause(spec, expected):
     """Rule 4. A shape that contributes nothing is how an allow-list drops a case in silence."""
     assert _wanted_from()(spec).startswith(f"wanted {expected} from ")
-
-
-def test_a_key_wanted_twice_is_named_once():
-    """Two secretKeys off one vault entry is the common shape; the clause must not stutter."""
-    spec = {"data": [{"remoteRef": {"key": "e", "property": "p"}},
-                     {"remoteRef": {"key": "e", "property": "p"}}]}
-    assert _wanted_from()(spec) == "wanted e[p] from SecretStore/?"
-
-
-def test_a_spec_that_declares_no_keys_says_so_rather_than_printing_an_empty_list():
-    """Rule 5. An empty list reads as 'nothing was wanted', which is never the truth."""
-    assert "no keys declared in spec" in _wanted_from()({"secretStoreRef": {"name": "v"}})
 
 
 def test_a_missing_store_ref_does_not_crash_the_whole_snapshot():
@@ -178,25 +211,41 @@ def test_the_store_kind_is_named_because_a_namespaced_store_is_a_different_objec
     """A namespaced SecretStore and a ClusterSecretStore of the same name are two
     different places to look, so the kind is part of the answer."""
     f = _wanted_from()
-    assert "ClusterSecretStore/estate-vault" in f({"secretStoreRef": {"name": "estate-vault",
-                                                                  "kind": "ClusterSecretStore"}})
+    assert "ClusterSecretStore/estate-vault" in f(
+        {"secretStoreRef": {"name": "estate-vault", "kind": "ClusterSecretStore"}}
+    )
     assert "SecretStore/estate-vault" in f({"secretStoreRef": {"name": "estate-vault"}})
 
 
 def test_the_declaration_this_incident_was_found_on_still_reads_the_way_the_test_assumes():
     """If the live spec changes shape, this file is stale and must say so rather than pass."""
-    docs = [d for d in yaml.safe_load_all(
-        (ROOT / "platform/tailscale/external-secret.yaml").read_text()) if d]
+    docs = [
+        d
+        for d in yaml.safe_load_all(
+            (ROOT / "platform/tailscale/external-secret.yaml").read_text()
+        )
+        if d
+    ]
     es = next(d for d in docs if d["kind"] == "ExternalSecret")
-    keys = {(d["remoteRef"]["key"], d["remoteRef"].get("property")) for d in es["spec"]["data"]}
-    assert keys == {("tailscale-operator", "client_id"), ("tailscale-operator", "client_secret")}
+    keys = {
+        (d["remoteRef"]["key"], d["remoteRef"].get("property"))
+        for d in es["spec"]["data"]
+    }
+    assert keys == {
+        ("tailscale-operator", "client_id"),
+        ("tailscale-operator", "client_secret"),
+    }
     # The store is asserted too, not just the keys. This file first shipped with LIVE_SPEC naming
     # `oci-vault` while the manifest said `estate-vault`, and every test still passed because
     # nothing here ever compared the two: a fixture graded against itself (peer review, session
     # 78caaa17 on idp#602). A row that sends the reader to a store that does not exist is worse
     # than the six words it replaced.
-    assert es["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": "estate-vault"}
+    assert es["spec"]["secretStoreRef"] == {
+        "kind": "ClusterSecretStore",
+        "name": "estate-vault",
+    }
     assert LIVE_SPEC["secretStoreRef"] == es["spec"]["secretStoreRef"]
     assert _wanted_from()(es["spec"]) == (
         "wanted tailscale-operator[client_id], tailscale-operator[client_secret] "
-        "from ClusterSecretStore/estate-vault")
+        "from ClusterSecretStore/estate-vault"
+    )

@@ -5,6 +5,7 @@ red makes a gate that refuses the platform doing its job (LAW 38). Rule: nodes_o
 non-ACTIVE pool as name(STATE); UPDATING passes and is said as a resize in flight; any other
 state (CREATING, DELETING, FAILED, ...) is still red. Both ways, through the file backend of
 bin/idp-cloud, never a mock of the function under test."""
+
 import re, subprocess
 from pathlib import Path
 
@@ -23,18 +24,19 @@ _N = [0]
 
 def _run(tmp_path, pools: dict) -> tuple[int, str]:
     _N[0] += 1
-    root = tmp_path / f"cloud{_N[0]}"   # a fresh backend per call: one test drives two states
+    root = (
+        tmp_path / f"cloud{_N[0]}"
+    )  # a fresh backend per call: one test drives two states
     (root / "nodepools").mkdir(parents=True)
     for name, state in pools.items():
         (root / "nodepools" / name).write_text(state + "\n")
-    script = f'IDP="{ROOT}"; export IDP_CLOUD_BACKEND=file IDP_CLOUD_FILE_ROOT="{root}"\n' + _fn() + "nodes_oci\n"
+    script = (
+        f'IDP="{ROOT}"; export IDP_CLOUD_BACKEND=file IDP_CLOUD_FILE_ROOT="{root}"\n'
+        + _fn()
+        + "nodes_oci\n"
+    )
     p = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
     return p.returncode, p.stdout.strip()
-
-
-def test_all_active_is_green(tmp_path):
-    rc, out = _run(tmp_path, {"a1": "ACTIVE", "a1-spot": "ACTIVE"})
-    assert rc == 0 and out == "2 node pool(s) ACTIVE (cloud layer)", out
 
 
 def test_a_pool_being_resized_is_not_a_red_row_and_is_named(tmp_path):

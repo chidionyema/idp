@@ -5,6 +5,7 @@ oke-check installation step found no `github-app` secret (run 33092297081).
 
 The test sources the real whoami under a fake HOME with one session profile and
 a stub `oci` on PATH, then reads back the caller's variables. No socket."""
+
 import os
 import pathlib
 import subprocess
@@ -25,11 +26,17 @@ def _source_and_echo(tmp_path, assignments, echo):
     env = dict(os.environ, HOME=str(home), PATH=f"{stub}:{os.environ['PATH']}")
     env.pop("OCI_CLI_PROFILE", None)
     script = assignments + f'\nsource "{WHOAMI}" >/dev/null 2>&1\necho "{echo}"'
-    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, env=env).stdout.strip()
+    return subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, env=env
+    ).stdout.strip()
 
 
 def test_callers_name_survives_sourcing_whoami(tmp_path):
-    out = _source_and_echo(tmp_path, 'name=github-app; mtime=7; newest_mtime=9', "$name $mtime $newest_mtime")
+    out = _source_and_echo(
+        tmp_path,
+        "name=github-app; mtime=7; newest_mtime=9",
+        "$name $mtime $newest_mtime",
+    )
     assert out == "github-app 7 9"
 
 
@@ -41,13 +48,10 @@ def test_whoami_declares_no_bare_lowercase_temporaries():
     """Everything whoami assigns besides its exports must carry the _ow_ prefix
     or be one of the two documented outputs (live, SESSIONS_DIR)."""
     import re
-    assigned = set(re.findall(r"^\s*([A-Za-z_][A-Za-z0-9_]*)=", WHOAMI.read_text(), re.M))
+
+    assigned = set(
+        re.findall(r"^\s*([A-Za-z_][A-Za-z0-9_]*)=", WHOAMI.read_text(), re.M)
+    )
     allowed = {"SESSIONS_DIR", "live", "OCI_CLI_PROFILE"}
     bare = {v for v in assigned if not v.startswith("_ow_")} - allowed
     assert not bare, bare
-
-
-def test_vault_put_reads_the_secret_name_into_a_distinct_variable():
-    body = VAULT_PUT.read_text()
-    assert "SECRET_NAME=$1" in body
-    assert "\nname=$1" not in body

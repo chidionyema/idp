@@ -19,7 +19,6 @@ Rules (rung 2 over the files, rung 4 for the dispatcher's own program):
 from __future__ import annotations
 
 import pathlib
-import re
 from datetime import datetime, timezone
 
 import yaml
@@ -84,21 +83,3 @@ def test_the_dispatcher_covers_the_hour_list_once_per_period_after_its_minute() 
 
     with pytest.raises(ValueError):
         period("58 1,7,13 * * *")
-
-
-def test_a_dispatch_with_no_inputs_publishes() -> None:
-    text = WORKFLOW.read_text()
-    wf = yaml.safe_load(text)
-    mode = wf[True]["workflow_dispatch"]["inputs"]["mode"]
-    assert "default" not in mode, (
-        "a default of dry-run made the App's input-less dispatch push nothing (05:06Z run 33293939687)"
-    )
-    assert re.search(r"MODE: \$\{\{ inputs\.mode \|\| 'commit' \}\}", text)
-    assert "(inputs.mode || 'commit') == 'commit'" in text
-    assert "'dry-run') == 'commit'" not in text
-    button = (
-        ROOT / "backstage/templates/founder-actions/catalog-render/template.yaml"
-    ).read_text()
-    assert re.search(r"mode: \$\{\{ parameters\.mode \}\}", button), (
-        "the portal button chooses the mode explicitly"
-    )

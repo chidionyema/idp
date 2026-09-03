@@ -37,15 +37,6 @@ def test_the_drill_prints_a_build_row_from_the_served_manifest_and_icon():
     )
 
 
-def test_a_vendor_manifest_is_red_not_a_note():
-    src = _src()
-    m = re.search(r'if mf_name == "Backstage":\s*\n\s*fail\("build"', src)
-    assert m, (
-        "the vendor manifest name must call fail(), a printed row alone is silent green"
-    )
-    assert re.search(r'if ic_status != 200:\s*\n\s*fail\("build"', src)
-
-
 def test_the_branded_build_on_main_is_what_the_fence_expects():
     name = json.loads(MANIFEST.read_text())["name"]
     assert name != "Backstage", (

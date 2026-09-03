@@ -24,25 +24,10 @@ def nav_items():
     return [{"title": t, "to": to, "icon": icon} for t, to, icon in rows]
 
 
-def test_the_menu_never_says_scaffolder_or_techdocs():
-    src = NAV.read_text() + WORDS.read_text()
-    for banned in ("Scaffolder", "TechDocs", "Software Catalog"):
-        assert banned not in src, banned
-
-
 def test_a_visitor_sees_catalogue_health_docs_and_you_first():
     titles = [i["title"] for i in nav_items()]
     assert titles[:5] == ["Home", "Catalogue", "Health", "Docs", "You"], titles
     assert "Create" in titles and "Find" in titles
-
-
-def test_operator_doors_sit_below_the_divider_one_click_each():
-    # Founder, 2026-09-03: a hover group that expands into a second click is an
-    # "outdated interaction". Operator doors sit under a divider, never a submenu.
-    src = NAV.read_text()
-    assert "SidebarSubmenu" not in src
-    assert "SidebarDivider" in src
-    assert "NAV.slice(0, BUYER_COUNT)" in src and "NAV.slice(BUYER_COUNT)" in src
 
 
 def test_the_toolkit_matches_the_menu():

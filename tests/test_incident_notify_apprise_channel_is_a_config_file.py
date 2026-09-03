@@ -23,35 +23,12 @@ def _apprise_pod_spec():
     return dep["spec"]["template"]["spec"]
 
 
-def test_no_shell_sits_between_the_secret_and_apprise():
-    container = _apprise_pod_spec()["containers"][0]
-    assert "command" not in container and "args" not in container, (
-        "the apprise container must run the image's own entrypoint: a shell that expands "
-        "mounted secret files can print their values into the pod log, and did on 2026-09-02"
-    )
-
-
 def test_simple_mode_reads_exactly_the_secret_mount():
     container = _apprise_pod_spec()["containers"][0]
     env = {e["name"]: e.get("value") for e in container.get("env", [])}
     assert env.get("APPRISE_STATEFUL_MODE") == "simple", env
     mounts = {m["name"]: m["mountPath"] for m in container["volumeMounts"]}
     assert env.get("APPRISE_CONFIG_DIR") == mounts["channels"], (env, mounts)
-
-
-def test_channel_key_is_the_cfg_file_simple_mode_serves():
-    docs = yaml.safe_load_all(
-        (ROOT / "platform/notify/external-secret.yaml").read_text()
-    )
-    es = next(d for d in docs if d)
-    data = es["spec"]["target"]["template"]["data"]
-    assert list(data) == ["founder-telegram.cfg"], (
-        "simple mode serves /notify/<name> from <name>.cfg; a key without .cfg is a "
-        "channel apprise cannot find, and a dash-named env var was the 2026-09-02 crash"
-    )
-    assert data["founder-telegram.cfg"].startswith("tgram://"), (
-        "no store holds a half-URL"
-    )
 
 
 # Ratchet, not amnesty: these three predate the incident and their secret keys happen to be

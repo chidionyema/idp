@@ -45,11 +45,3 @@ def test_the_registry_credential_is_the_actions_token_not_the_app_token():
     assert cred and names.index(cred[0]["name"]) < names.index("render"), names
     assert "secrets.GITHUB_TOKEN" in yaml.safe_dump(cred[0]["env"])
     assert "ghcr.token" in cred[0]["run"]
-
-
-def test_the_push_reads_ghcr_token_before_gh_auth_token():
-    body = PUSH.read_text()
-    assert 'GHCR_TOKEN="${GHCR_TOKEN:-$(gh auth token)}"' in body
-    assert 'GHCR_TOKEN=$(cat "$GHCR_TOKEN_FILE")' in body
-    assert "printf '%s' \"$GHCR_TOKEN\" | flux push artifact" in body
-    assert "gh auth token | flux push" not in body

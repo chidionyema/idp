@@ -38,7 +38,6 @@ by these tests rather than a paraphrase of it.
 """
 
 import pathlib
-import re
 import subprocess
 
 import pytest
@@ -79,10 +78,6 @@ def run(kyv):
     return r.stdout
 
 
-def test_the_headline_still_names_the_rung():
-    assert HEAD in run("FAIL  plain    platform/state: pass: 3, fail: 1")
-
-
 def test_a_tool_error_that_names_no_policy_reaches_the_log():
     """Rule 2: the exact shape that left run 33173089759 with a bare underline."""
     err = "error: must build at directory: not a valid directory: evalsymlink failure on 'platform/state'"
@@ -100,17 +95,6 @@ def test_a_tool_error_that_names_no_policy_reaches_the_log():
 )
 def test_a_failure_the_judge_did_not_shape_as_a_verdict_still_travels(line):
     assert line in run(line)
-
-
-def test_the_verdict_lines_that_always_survived_still_survive():
-    """Rule 3: fixing the drop must not lose what the old grep did catch."""
-    out = run(
-        "ok    render   external-dns (edge, 0 patches): pass: 32, fail: 0\n"
-        "FAIL  plain    platform/state: pass: 30, fail: 1, warn: 0, error: 0, skip: 1\n"
-        "      policy require-run-as-nonroot -> state-collector failed"
-    )
-    assert "FAIL  plain    platform/state:" in out
-    assert "policy require-run-as-nonroot -> state-collector failed" in out
 
 
 def test_the_clean_dirs_do_not_bury_the_failing_one():
@@ -133,22 +117,6 @@ def test_a_judge_that_floods_cannot_flood_the_receipt():
     assert "error: line 199" in out, (
         "the cap kept the head and threw away the last thing said"
     )
-
-
-def test_the_rung_that_calls_this_arm_is_the_one_that_captured_the_judge():
-    """The arm is reached from the real capture, not from a branch nothing runs.
-
-    Graded as a shape, not as one byte string: rung 9c (idp#1046) prefixes the same command
-    with IDP_RENDER_KEEP so kubeconform can type-check the render rung 9 already paid for, and
-    a literal match refused that correct change (LAW 38). What must hold is that `kyv` and
-    `kyv_rc` come from running bin/idp-kyverno-render over $dirs with stderr folded in --
-    anything else and the failure block below is formatting output nothing produced.
-    """
-    src = CI.read_text()
-    assert re.search(
-        r'kyv=\$\( \(cd "\$IDP" && [^()]*bin/idp-kyverno-render \$dirs\) 2>&1 \); kyv_rc=\$\?',
-        src,
-    ), "rung 9 no longer captures bin/idp-kyverno-render's own output and exit code"
 
 
 # ---------------------------------------------------------------------------

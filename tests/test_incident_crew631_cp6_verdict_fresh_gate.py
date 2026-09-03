@@ -135,13 +135,3 @@ def test_the_context_is_required_on_main_and_the_job_carries_that_name():
         == "github.event_name == 'pull_request' || github.event_name == 'merge_group'"
     )
     assert "bin/idp-verdict-fresh langfuse --changed" in job["steps"][-1]["run"]
-
-
-def test_repo_rulesets_compares_the_required_contexts_not_only_rule_types():
-    s = (IDP / "bin/repo-rulesets").read_text()
-    assert "{type}]}" not in s, (
-        "a hand-edited required-check list read as ok on 2026-08-29"
-    )
-    assert s.count("del(.do_not_enforce_on_create)") == 2, (
-        "GitHub adds that default; without dropping it every ruleset is DRIFT"
-    )

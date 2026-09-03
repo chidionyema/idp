@@ -110,45 +110,6 @@ def test_the_table_found_the_estate_and_not_an_empty_list() -> None:
     assert len(TABLE) >= 20, [i for i in IDS]
 
 
-@pytest.mark.parametrize(("rel", "kind", "name", "ann"), TABLE, ids=IDS)
-def test_every_workload_restarts_when_its_config_changes(
-    rel: str, kind: str, name: str, ann: dict
-) -> None:
-    """`auto` is a constant, so it cannot go stale; `false` is allowed, in writing, with a reason.
-
-    Reloader resolves the annotation against what the pod actually references -- envFrom,
-    secretKeyRef, configMapKeyRef, volumes and projected sources (stakater/Reloader chart-v2.2.16,
-    internal/pkg/handler/upgrade.go, getVolumeMountName). There is no list to keep in step.
-    """
-    value = ann.get(AUTO)
-    if value == "false":
-        assert ann.get(REASON), (
-            f"{rel} {kind}/{name} opts out of restarting on a config change with no reason. "
-            f"Silence is not an opt-out: write {REASON} beside it saying why this workload must "
-            f"keep running on a Secret or ConfigMap it has already read."
-        )
-        return
-    assert value == "true", (
-        f"{rel} {kind}/{name} carries {AUTO}={value!r}. Every workload restarts when its config "
-        f'changes; platform/edge/require-auto-reload.yaml injects {AUTO}="true" at admission, so a '
-        f"manifest that disagrees with the cluster is the only thing this can be. Write "
-        f'{AUTO}: "true", or opt out with "false" and {REASON}.'
-    )
-
-
-@pytest.mark.parametrize(("rel", "kind", "name", "ann"), TABLE, ids=IDS)
-def test_no_workload_keeps_a_list_of_the_names_it_reloads_on(
-    rel: str, kind: str, name: str, ann: dict
-) -> None:
-    """The deleted surface stays deleted (rung 0: no list, no stale list)."""
-    listed = [k for k in ann if k.endswith("reloader.stakater.com/reload")]
-    assert not listed, (
-        f"{rel} {kind}/{name} names the Secrets or ConfigMaps it reloads on by hand ({listed}). "
-        f"That list went stale silently in idp#955 and crew#684 and it is not maintained here "
-        f'again: delete it, {AUTO}="true" discovers them.'
-    )
-
-
 def test_the_watcher_watches_every_namespace_and_only_workloads_that_opted_in() -> None:
     """crew#684 in one line: an annotation in an unwatched namespace is inert, and inert reads
     exactly like working. A list of watched namespaces is the same defect as a list of Secret

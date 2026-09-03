@@ -91,29 +91,6 @@ WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 SCRIPT = ROOT / "bin" / "idp-kubeconform"
 
 
-def test_the_type_check_runs_before_merge_on_the_render_kyverno_already_paid_for():
-    """One render, judged twice. A second render would cost the job ~160 s again (crew#584)."""
-    ci = CI.read_text()
-    assert 'IDP_RENDER_KEEP="$tmp/render" bin/idp-kyverno-render' in ci, (
-        "rung 9 does not keep its render"
-    )
-    assert 'bin/idp-kubeconform --rendered "$tmp/render"' in ci, (
-        "rung 9c does not judge that render"
-    )
-    # and it renders exactly once: the only IDP_RENDER_KEEP producer is rung 9's own call.
-    assert ci.count("IDP_RENDER_KEEP=") == 1, "more than one render is being kept"
-
-
-def test_ci_installs_the_binary_so_the_rung_is_never_blind_on_the_runner():
-    wf = WORKFLOW.read_text()
-    assert (
-        "kubeconform-linux-amd64.tar.gz" in wf
-        and "kubeconform/releases/download/v0.8.0" in wf
-    )
-    # BLIND counts as a failure in the rung, so an uninstalled binary can never read green.
-    assert 'say "BLIND types' in CI.read_text()
-
-
 def test_a_handover_that_judged_nothing_is_blind_not_a_pass(tmp_path):
     """silent-green is defect class 4 on this estate's ledger: exit 0 having measured nothing."""
     _blind()

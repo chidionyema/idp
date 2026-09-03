@@ -24,28 +24,11 @@ def test_the_exchange_answer_is_checked_before_ok():
     assert "FAIL federated" in block
 
 
-def test_the_refusal_prints_the_full_answer_and_the_expected_subject():
-    text = SCRIPT.read_text()
-    assert 'Full answer:" >&2' in text, (
-        "the full refusal body is printed, to stderr so a $(...) capture cannot swallow it"
-    )
-    assert "The runner presented: $claims" in text, (
-        "the claims come from the token itself, never guessed (run 33248046751)"
-    )
-
-
 def test_the_token_is_never_printed():
     text = SCRIPT.read_text()
     for line in text.splitlines():
         for m in re.finditer(r'(?:say|fail) +\S+ +"([^"]*)"', line):
             assert not re.search(r"\$seed_tok|\$new_sec|\$tok\b", m.group(1)), line
-
-
-def test_the_seed_failure_names_the_reason_too():
-    text = SCRIPT.read_text()
-    assert re.search(
-        r'fail seed "the seed does not exchange for a token: \$\(jq -r', text
-    )
 
 
 # --- the exchange against a fake API, both answers (founder 2026-08-29: mock success and failure) ---

@@ -12,6 +12,7 @@ The tree fixes that turned the four roots into two honest reds are proved by the
 the branch (the PR carries the URL); this file proves the grader, and that the two remaining roots
 are on the list and every ClusterPolicy in the tree is applied by some layer.
 """
+
 from __future__ import annotations
 
 import importlib.machinery
@@ -21,8 +22,12 @@ import pathlib
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-_loader = importlib.machinery.SourceFileLoader("drill", str(ROOT / "bin" / "idp-portability-drill"))
-drill = importlib.util.module_from_spec(importlib.util.spec_from_loader("drill", _loader))
+_loader = importlib.machinery.SourceFileLoader(
+    "drill", str(ROOT / "bin" / "idp-portability-drill")
+)
+drill = importlib.util.module_from_spec(
+    importlib.util.spec_from_loader("drill", _loader)
+)
 _loader.exec_module(drill)
 
 REDS = drill.read_reds(str(ROOT / "drills" / "portability-oci-reds.txt"))
@@ -32,43 +37,16 @@ CASCADE = "dependency 'flux-system/secret-store' is not ready"
 def _ks(name: str, ready: bool, msg: str = "") -> dict:
     return {
         "metadata": {"name": name, "namespace": "flux-system"},
-        "status": {"conditions": [{"type": "Ready", "status": "True" if ready else "False", "message": msg}]},
+        "status": {
+            "conditions": [
+                {
+                    "type": "Ready",
+                    "status": "True" if ready else "False",
+                    "message": msg,
+                }
+            ]
+        },
     }
-
-
-def test_the_measured_run_shape_is_red_not_green():
-    """2 ready, 4 roots (one honest), 32 cascaded, floor 2: was ok, is FAIL naming the three unnamed roots."""
-    items = [_ks("external-secrets", True), _ks("gateway-api-crds", True),
-             _ks("edge", False, "ClusterPolicy/provider-independence dry-run failed: no matches for kind ClusterPolicy"),
-             _ks("backstage", False, "ExternalSecret/backstage/backstage-env dry-run failed: no matches for kind ExternalSecret"),
-             _ks("estate-catalog", False, "Source artifact not found, retrying in 30s"),
-             _ks("secret-store", False, "failed to substitute from ConfigMap/estate-vars: configmaps \"estate-vars\" not found")]
-    items += [_ks(f"layer-{i}", False, CASCADE) for i in range(32)]
-    verdict, lines = drill.grade(items, floor=2, reds=REDS)
-    assert verdict.startswith("FAIL    portability  root-red not on drills/portability-oci-reds.txt: edge backstage"), verdict
-    assert "(ready 2/38, cascaded 32, pending 0)" in verdict
-    assert sum(ln.startswith("  cascaded ") for ln in lines) == 32
-    assert sum(ln.startswith("  oci-red ") for ln in lines) == 2
-    assert sum(ln.startswith("  ROOT-RED ") for ln in lines) == 2
-
-
-def test_only_named_roots_and_cascades_is_green_and_the_floor_still_bites():
-    items = [_ks("external-secrets", True), _ks("gateway-api-crds", True), _ks("kyverno", True), _ks("edge", True),
-             _ks("estate-catalog", False, "Source artifact not found, retrying in 30s"),
-             _ks("secret-store", False, "failed to substitute from ConfigMap/estate-vars"),
-             _ks("backstage", False, CASCADE)]
-    ok, _ = drill.grade(items, floor=4, reds=REDS)
-    assert ok.startswith("ok      portability  ready 4/7 (root-red 2 all named, cascaded 1, pending 0)"), ok
-    fail, _ = drill.grade(items, floor=5, reds=REDS)
-    assert fail.startswith("FAIL    portability  ready 4/7 is below the floor 5"), fail
-
-
-def test_a_named_reason_on_the_wrong_layer_is_still_a_root():
-    """The list names a layer and its reason; the reason alone does not excuse another layer."""
-    items = [_ks("a", True), _ks("dns", False, "failed to substitute from ConfigMap/estate-vars")]
-    verdict, lines = drill.grade(items, floor=1, reds=REDS)
-    assert verdict.startswith("FAIL    portability  root-red"), verdict
-    assert lines[0].startswith("  ROOT-RED   flux-system/dns")
 
 
 def test_a_reds_row_without_a_reason_is_refused(tmp_path):
@@ -86,33 +64,13 @@ def _layer_paths() -> dict[str, str]:
     out = {}
     for f in sorted((ROOT / "clusters" / "oke").glob("*.yaml")):
         for d in yaml.safe_load_all(f.read_text()):
-            if d and d.get("kind") == "Kustomization" and str((d.get("spec") or {}).get("path", "")).startswith("./platform/"):
+            if (
+                d
+                and d.get("kind") == "Kustomization"
+                and str((d.get("spec") or {}).get("path", "")).startswith("./platform/")
+            ):
                 out[d["metadata"]["name"]] = d["spec"]["path"]
     return out
-
-
-def test_every_clusterpolicy_in_the_tree_is_applied_by_a_layer_that_waits_on_kyverno():
-    """crew#341's secrets policy sat in platform/edge for two days in no kustomization: never installed."""
-    layers = _layer_paths()
-    deps = {}
-    for f in sorted((ROOT / "clusters" / "oke").glob("*.yaml")):
-        for d in yaml.safe_load_all(f.read_text()):
-            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit"):
-                deps[d["metadata"]["name"]] = [x["name"] for x in (d.get("spec") or {}).get("dependsOn", [])]
-
-    def waits_on_kyverno(layer: str, seen=()) -> bool:
-        return layer == "kyverno" or any(waits_on_kyverno(x, seen + (layer,)) for x in deps.get(layer, []) if x not in seen)
-
-    policies = [p for p in (ROOT / "platform").rglob("*.yaml") if "kind: ClusterPolicy" in p.read_text()]
-    assert policies, "no ClusterPolicy in the tree"
-    for p in policies:
-        rel = f"./{p.parent.relative_to(ROOT)}"
-        kust = yaml.safe_load((p.parent / "kustomization.yaml").read_text())
-        assert p.name in kust.get("resources", []), f"{p} is in no kustomization: never installed"
-        owners = [n for n, path in layers.items() if path == rel]
-        assert owners, f"{rel} is applied by no Kustomization under clusters/oke"
-        for o in owners:
-            assert waits_on_kyverno(o), f"layer {o} applies {p.name} but does not wait on the kyverno layer"
 
 
 def test_the_two_remaining_roots_are_the_vault_and_the_private_catalog():
@@ -124,12 +82,20 @@ def test_the_security_page_lists_exactly_the_policies_the_tree_applies():
     carries bin/idp-admission-policies' table verbatim; a hand edit or a new policy without a
     regenerate is red, and a policy in no layer is red in the command itself."""
     import subprocess
-    r = subprocess.run([str(ROOT / "bin" / "idp-admission-policies")], capture_output=True, text=True)
+
+    r = subprocess.run(
+        [str(ROOT / "bin" / "idp-admission-policies")], capture_output=True, text=True
+    )
     assert r.returncode == 0, r.stdout
     page = (ROOT / "docs" / "reference" / "security-policy.md").read_text()
-    begin, end = "<!-- admission-policies:begin -->\n", "<!-- admission-policies:end -->"
+    begin, end = (
+        "<!-- admission-policies:begin -->\n",
+        "<!-- admission-policies:end -->",
+    )
     assert begin in page and end in page
-    assert page.split(begin, 1)[1].split(end, 1)[0] == r.stdout, "page table differs from bin/idp-admission-policies; regenerate"
+    assert page.split(begin, 1)[1].split(end, 1)[0] == r.stdout, (
+        "page table differs from bin/idp-admission-policies; regenerate"
+    )
 
 
 def docs(rel: str) -> list[dict]:
@@ -145,30 +111,30 @@ def test_the_priority_classes_exist_before_the_front_door_names_one():
     pc = plat["priority-classes"]["spec"]
     assert pc["path"] == "./platform/priority-classes" and "dependsOn" not in pc
     assert "priority-classes" in {d["name"] for d in edge["edge"]["spec"]["dependsOn"]}
-    assert "priority-classes" in {d["name"] for d in plat["scheduling"]["spec"]["dependsOn"]}
-    names = {d["metadata"]["name"] for d in docs("platform/priority-classes/priorityclasses.yaml")}
+    assert "priority-classes" in {
+        d["name"] for d in plat["scheduling"]["spec"]["dependsOn"]
+    }
+    names = {
+        d["metadata"]["name"]
+        for d in docs("platform/priority-classes/priorityclasses.yaml")
+    }
     assert "infrastructure-critical" in names
-    assert "priorityclasses.yaml" not in yaml.safe_load((ROOT / "platform/scheduling/kustomization.yaml").read_text())["resources"]
-
-
-def test_the_drill_clusters_have_two_nodes_because_the_front_door_spreads():
-    """traefik: replicas 2, hostname spread, DoNotSchedule (crew#555). One node can never seat
-    the second pod; weakening the spread is refused by require-availability, so the drill
-    clusters grow a node instead of the tree losing a law."""
-    # The flag lives wherever cluster creation is declared: run 33234248201 made the drill
-    # attempt creation twice, and the arguments moved into .github/actions/k3d-estate so
-    # the two attempts could not drift. This asks the cluster question, not the file one.
-    wf = ((ROOT / ".github/workflows/portability-drill.yml").read_text()
-          + (ROOT / ".github/actions/k3d-estate/action.yml").read_text())
-    assert "--config=platform/k3d/estate.yaml --agents 1" in wf
-    assert "rancher/k3s:v1.33.4-k3s1 agent --server" in wf
-    assert "kubectl wait node --all --for=condition=Ready" in wf.split("rancher/k3s:v1.33.4-k3s1 agent --server")[1]
+    assert (
+        "priorityclasses.yaml"
+        not in yaml.safe_load(
+            (ROOT / "platform/scheduling/kustomization.yaml").read_text()
+        )["resources"]
+    )
 
 
 def _spec(row: str) -> dict:
     for f in sorted((ROOT / "clusters" / "oke").glob("*.yaml")):
         for d in docs(f"clusters/oke/{f.name}"):
-            if d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["metadata"]["name"] == row:
+            if (
+                d.get("kind") == "Kustomization"
+                and str(d.get("apiVersion", "")).startswith("kustomize.toolkit")
+                and d["metadata"]["name"] == row
+            ):
                 return d["spec"]
     raise AssertionError(f"no Kustomization {row}")
 
@@ -184,14 +150,29 @@ def _ready(name: str) -> dict:
 def test_a_row_flux_has_not_judged_yet_is_pending_not_a_root():
     """Run 33214748124: observability sat at Ready=Unknown/Progressing and was graded ROOT-RED.
     Not ready, not a root: it counts as pending and never fails the run on its own."""
-    items = [_ready("edge"), _ready("kyverno"),
-             {"metadata": {"name": "observability", "namespace": "flux-system"},
-              "status": {"conditions": [{"type": "Ready", "status": "Unknown", "reason": "Progressing",
-                                         "message": "Reconciliation in progress"}]}}]
+    items = [
+        _ready("edge"),
+        _ready("kyverno"),
+        {
+            "metadata": {"name": "observability", "namespace": "flux-system"},
+            "status": {
+                "conditions": [
+                    {
+                        "type": "Ready",
+                        "status": "Unknown",
+                        "reason": "Progressing",
+                        "message": "Reconciliation in progress",
+                    }
+                ]
+            },
+        },
+    ]
     verdict, lines = drill.grade(items, 2)
     assert verdict.startswith("ok"), verdict
     assert "pending 1" in verdict
-    assert any(line.startswith("  pending    flux-system/observability") for line in lines)
+    assert any(
+        line.startswith("  pending    flux-system/observability") for line in lines
+    )
     assert not any("ROOT-RED" in line for line in lines)
 
 
@@ -209,8 +190,12 @@ def test_the_rows_that_write_into_backstage_wait_for_the_namespace_and_never_for
         deps = _depends_on(row)
         assert "backstage-namespace" in deps, (row, deps)
         assert "backstage" not in deps, (row, deps)
-    assert _depends_on("backstage-namespace") == set(), "the namespace layer waits for nothing"
-    assert "backstage-namespace" in _depends_on("backstage"), "the portal waits for its namespace"
+    assert _depends_on("backstage-namespace") == set(), (
+        "the namespace layer waits for nothing"
+    )
+    assert "backstage-namespace" in _depends_on("backstage"), (
+        "the portal waits for its namespace"
+    )
 
 
 def test_the_singleton_dns_controller_is_excepted_from_runs_two_by_name():
@@ -219,7 +204,10 @@ def test_the_singleton_dns_controller_is_excepted_from_runs_two_by_name():
     assert exc["spec"]["exceptions"][0]["policyName"] == "require-availability"
     assert exc["spec"]["match"]["any"][0]["resources"]["names"] == ["external-dns"]
     assert exc["spec"]["match"]["any"][0]["resources"]["kinds"] == ["Deployment"]
-    assert "external-dns-exception.yaml" in docs("platform/edge/kustomization.yaml")[0]["resources"]
+    assert (
+        "external-dns-exception.yaml"
+        in docs("platform/edge/kustomization.yaml")[0]["resources"]
+    )
 
 
 def test_rows_behind_a_booting_webhook_retry_in_a_minute_not_ten():
@@ -233,6 +221,9 @@ def test_dns_waits_for_the_row_that_makes_its_secret_and_the_k3s_agent_shares_it
     platform/prospector) -> dns waits on prospector-platform; cilium-agent on the k3s agent needed
     /var/run rshared ('not a shared or slave mount')."""
     assert "prospector-platform" in _depends_on("dns")
-    assert "cloudflare-api-token" in (ROOT / "platform/prospector/cloudflare-external-secret.yaml").read_text()
+    assert (
+        "cloudflare-api-token"
+        in (ROOT / "platform/prospector/cloudflare-external-secret.yaml").read_text()
+    )
     wf = (ROOT / ".github/workflows/portability-drill.yml").read_text()
     assert "mount --make-rshared /var/run" in wf

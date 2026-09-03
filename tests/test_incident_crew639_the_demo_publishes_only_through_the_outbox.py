@@ -38,21 +38,6 @@ def _go_files():
                 )
 
 
-def test_the_embedded_broker_is_the_version_the_chart_runs():
-    """One broker version across the demo and platform/event-bus, read from both files."""
-    with open(
-        os.path.join(ROOT, "platform", "event-bus", "nats.yaml"), encoding="utf-8"
-    ) as fh:
-        docs = [d for d in yaml.safe_load_all(fh) if d]
-    chart = next(d for d in docs if d.get("kind") == "HelmRelease")["spec"]["chart"][
-        "spec"
-    ]["version"]
-    gomod = re.search(
-        r"github.com/nats-io/nats-server/v2 v(\S+)", _read("go.mod")
-    ).group(1)
-    assert gomod == chart, f"demo embeds nats-server {gomod}, the chart runs {chart}"
-
-
 def test_the_stream_carries_the_locked_values():
     """D8 and the CP3 scenario: orders.event.>, file store, limits, 30 days, 15 minutes, deny delete and purge, R1."""
     src = _read("cmd", "demo", "main.go")
@@ -98,23 +83,6 @@ def test_every_subject_the_demo_uses_passes_the_grammar():
     # nats.Msg{Subject: "..."} is a wire subject; FilterSubject and stream Subjects are patterns and may hold >.
     raw = re.findall(r'(?<!Filter)Subject:\s*"([a-z.>]+)"', main)
     assert raw == [], f"raw subject strings on the wire: {raw}"
-
-
-def test_the_headers_are_cloudevents_binary_mode():
-    """D2: ce-specversion 1.0, ce-id, ce-type, ce-source, ce-time, and Nats-Msg-Id = ce-id for the duplicate window."""
-    src = _read("cloudevent", "cloudevent.go")
-    for h in [
-        "ce-specversion",
-        "ce-id",
-        "ce-type",
-        "ce-source",
-        "ce-time",
-        "ce-datacontenttype",
-        "traceparent",
-        "nats.MsgIdHdr",
-    ]:
-        assert h in src, h
-    assert 'Spec = "1.0"' in src
 
 
 def test_no_path_is_hardcoded():

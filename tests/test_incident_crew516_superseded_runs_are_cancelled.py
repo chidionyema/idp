@@ -3,6 +3,7 @@ workflow on the same ref (the flux/image-updates branch spawns four per push, ev
 one-line oke-check dispatch waited 19 minutes for a runner (crew#516). Every per-ref workflow declares a
 concurrency group keyed on workflow, event and ref with cancel-in-progress, so a newer push supersedes
 the older run instead of queueing behind it."""
+
 import os
 
 import yaml
@@ -30,9 +31,6 @@ def test_every_per_ref_workflow_supersedes_its_older_run():
 
 def test_a_workflow_without_a_group_or_without_cancel_is_refused():
     assert not supersedes_on_the_same_ref("on: push\njobs: {}\n")
-    assert not supersedes_on_the_same_ref("concurrency:\n  group: x-${{ github.ref }}\n  cancel-in-progress: false\njobs: {}\n")
-
-
-def test_the_group_is_per_event_so_a_pull_request_run_never_cancels_the_push_run():
     assert not supersedes_on_the_same_ref(
-        "concurrency:\n  group: ${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: true\njobs: {}\n")
+        "concurrency:\n  group: x-${{ github.ref }}\n  cancel-in-progress: false\njobs: {}\n"
+    )

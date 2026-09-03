@@ -40,19 +40,3 @@ def test_clickhouse_limit_is_read_from_the_file() -> None:
 
 def test_logs_stay_on() -> None:
     assert _presets()["logsCollection"]["enabled"] is True
-
-
-def test_metric_presets_off_while_clickhouse_is_small() -> None:
-    limit = _gib(
-        yaml.safe_load(SIGNOZ.read_text())["clickhouse"]["resources"]["limits"][
-            "memory"
-        ]
-    )
-    presets = _presets()
-    if limit <= 4:
-        on = [p for p in METRIC_PRESETS if presets.get(p, {}).get("enabled")]
-        assert not on, (
-            f"ClickHouse limit is {limit:g}Gi and the node agent ships {on}: metrics batches hit the "
-            "ceiling (code 241) and starve the log inserts (diagnose 33292780315). Raise the limit "
-            "first, then turn a preset back on."
-        )

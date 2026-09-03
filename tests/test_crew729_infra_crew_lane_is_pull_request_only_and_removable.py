@@ -54,15 +54,6 @@ def test_the_lane_exists_and_is_pull_request_only():
     assert lane.get("actions") != "write" and "workflows" not in lane
 
 
-def test_the_lane_is_named_in_the_comment_as_never_merging_dispatching_or_reaching_a_cluster():
-    comment = _lanes()["_comment"]
-    assert LANE in comment, (
-        "the _comment must explain the infra-crew lane in one sentence"
-    )
-    for word in ("merge", "dispatch", "cluster"):
-        assert word in comment, f"the _comment must say the lane can never {word}"
-
-
 def _token_with_lanes(
     lanes_file: pathlib.Path, tmp_path: pathlib.Path
 ) -> subprocess.CompletedProcess:

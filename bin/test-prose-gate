@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""R76 (founder 2026-09-03): a test grades behavior or parsed structure, never prose.
+
+Refuses (exit 1, naming the functions) any Python test file containing a test function
+whose every assert is a string-pin: a sentence-like string constant (3+ spaces) in the
+assert, or an in/not-in membership whose container is file text (a .read_text() call or a
+local name assigned from one). A function that runs a subprocess executes behavior and is
+never refused. This is the same classifier the 2026-09-03 purge ran; the fixtures under
+tests/fixtures/prose-pin/ prove it both ways on every CI run (AGENTS.md row).
+"""
+
+from __future__ import annotations
+
+import ast
+import pathlib
+import sys
+
+
+def _read_text_names(body: list[ast.stmt]) -> set[str]:
+    names: set[str] = set()
+    for node in body:
+        for n in ast.walk(node):
+            if (
+                isinstance(n, ast.Assign)
+                and len(n.targets) == 1
+                and isinstance(n.targets[0], ast.Name)
+            ):
+                for c in ast.walk(n.value):
+                    if (
+                        isinstance(c, ast.Call)
+                        and isinstance(c.func, ast.Attribute)
+                        and c.func.attr == "read_text"
+                    ):
+                        names.add(n.targets[0].id)
+    return names
+
+
+def _is_pin(a: ast.Assert, text_names: set[str]) -> bool:
+    for n in ast.walk(a):
+        if (
+            isinstance(n, ast.Constant)
+            and isinstance(n.value, str)
+            and n.value.count(" ") >= 3
+        ):
+            return True
+        if isinstance(n, ast.Compare) and any(
+            isinstance(op, (ast.In, ast.NotIn)) for op in n.ops
+        ):
+            container = n.comparators[-1]
+            if isinstance(container, ast.Name) and container.id in text_names:
+                return True
+            for c in ast.walk(container):
+                if (
+                    isinstance(c, ast.Call)
+                    and isinstance(c.func, ast.Attribute)
+                    and c.func.attr == "read_text"
+                ):
+                    return True
+    return False
+
+
+def _runs_subprocess(fn: ast.FunctionDef) -> bool:
+    return any(
+        isinstance(n, ast.Attribute)
+        and n.attr in {"run", "Popen", "check_output", "returncode"}
+        for n in ast.walk(fn)
+    )
+
+
+def theatre_functions(path: pathlib.Path) -> list[str]:
+    tree = ast.parse(path.read_text())
+    module_names = _read_text_names(tree.body)
+    out: list[str] = []
+    for fn in tree.body:
+        if not (isinstance(fn, ast.FunctionDef) and fn.name.startswith("test_")):
+            continue
+        asserts = [n for n in ast.walk(fn) if isinstance(n, ast.Assert)]
+        if not asserts or _runs_subprocess(fn):
+            continue
+        if all(_is_pin(a, module_names | _read_text_names(fn.body)) for a in asserts):
+            out.append(fn.name)
+    return out
+
+
+def main() -> int:
+    bad = 0
+    for arg in sys.argv[1:]:
+        path = pathlib.Path(arg)
+        hits = theatre_functions(path)
+        for name in hits:
+            print(
+                f"{path}: {name} only asserts prose/string membership in file text (R76)"
+            )
+        bad += len(hits)
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

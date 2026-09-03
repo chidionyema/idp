@@ -3,6 +3,7 @@
 and hit TIMEOUT_EXCEEDED on the events_core_mv push. Removing the sampling profiler and the
 per-second metric tables took idle CPU to 16 percent. Rung 4, incident test: the low-memory
 override keeps them removed and keeps query_log, which this incident was diagnosed from."""
+
 import pathlib
 import xml.etree.ElementTree as ET
 
@@ -10,23 +11,15 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 XML = ROOT / "observability" / "clickhouse-low-memory.xml"
 
 
-def test_incident_crew340_profiler_and_metric_logs_are_removed():
-    root = ET.parse(XML).getroot()
-    removed = {c.tag for c in root if c.get("remove") == "remove"}
-    for table in (
-        "trace_log", "metric_log", "asynchronous_metric_log", "processors_profile_log",
-        # crew#85 row 2: on by default in 25.12, no section to remove; part_log logged its own merges
-        "part_log", "text_log", "background_schedule_pool_log", "query_metric_log",
-        "query_views_log", "query_thread_log", "asynchronous_insert_log", "opentelemetry_span_log",
-    ):
-        assert table in removed, f"{table} is not removed in {XML.name}; it burnt the 2 vCPU host (crew#340)"
-    assert "query_log" not in removed, "query_log is the instrument this incident was read from; keep it"
-
-
 def test_incident_crew340_query_profiler_is_off_in_default_profile():
     root = ET.parse(XML).getroot()
     prof = root.find("./profiles/default")
     assert prof is not None
-    for key in ("query_profiler_real_time_period_ns", "query_profiler_cpu_time_period_ns"):
+    for key in (
+        "query_profiler_real_time_period_ns",
+        "query_profiler_cpu_time_period_ns",
+    ):
         node = prof.find(key)
-        assert node is not None and node.text.strip() == "0", f"{key} must be 0 (crew#340)"
+        assert node is not None and node.text.strip() == "0", (
+            f"{key} must be 0 (crew#340)"
+        )

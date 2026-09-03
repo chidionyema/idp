@@ -52,11 +52,3 @@ def test_the_portal_service_account_may_proxy_to_a_service():
     proxy = [r for r in rules if "services/proxy" in r.get("resources", [])]
     assert proxy, "rbac.yaml must grant services/proxy, or Alertmanager answers 403"
     assert all(set(r["verbs"]) <= {"get"} for r in proxy), "read only"
-
-
-def test_a_source_that_cannot_be_read_is_said_never_counted_as_zero():
-    ops = OPS.read_text()
-    assert "ops-reds-unread" in ops
-    hook = HOOK.read_text()
-    assert "Promise.allSettled" in hook, "one source down must not hide the other"
-    assert "unread" in hook

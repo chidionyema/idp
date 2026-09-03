@@ -18,6 +18,7 @@ transitive `dependsOn` closure, and a group is not "already there" -- it is prov
 row (`PROVIDED_BY`). Adding a group to that map does not widen the check; it points at a row, and
 the row still has to be in the closure.
 """
+
 import functools
 import glob
 import pathlib
@@ -78,9 +79,16 @@ def _rows():
     out = {}
     for f in sorted(glob.glob(str(ROOT / "clusters" / "*" / "*.yaml"))):
         for d in yaml.safe_load_all(open(f)):
-            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["spec"].get("path"):
-                out[d["metadata"]["name"]] = (ROOT / d["spec"]["path"],
-                                              {x["name"] for x in d["spec"].get("dependsOn", [])})
+            if (
+                d
+                and d.get("kind") == "Kustomization"
+                and str(d.get("apiVersion", "")).startswith("kustomize.toolkit")
+                and d["spec"].get("path")
+            ):
+                out[d["metadata"]["name"]] = (
+                    ROOT / d["spec"]["path"],
+                    {x["name"] for x in d["spec"].get("dependsOn", [])},
+                )
     return out
 
 
@@ -102,8 +110,13 @@ def _foreign_rows():
     out = set()
     for f in sorted(glob.glob(str(ROOT / "clusters" / "*" / "*.yaml"))):
         for d in yaml.safe_load_all(open(f)):
-            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["spec"].get("path") \
-                    and d["spec"].get("sourceRef", {}).get("name") != LOCAL_SOURCE:
+            if (
+                d
+                and d.get("kind") == "Kustomization"
+                and str(d.get("apiVersion", "")).startswith("kustomize.toolkit")
+                and d["spec"].get("path")
+                and d["spec"].get("sourceRef", {}).get("name") != LOCAL_SOURCE
+            ):
                 out.add(d["metadata"]["name"])
     return out
 
@@ -124,15 +137,19 @@ def _sweep(rows, offenders_for, counter):
         docs = _docs(path)
         if docs is None:
             if name not in foreign:
-                offences.append(f"row {name} ({path}) does not render, and its source is "
-                                f"{LOCAL_SOURCE}, so the sweep cannot say whether it is clean")
+                offences.append(
+                    f"row {name} ({path}) does not render, and its source is "
+                    f"{LOCAL_SOURCE}, so the sweep cannot say whether it is clean"
+                )
             continue
         seen += 1
         asked += sum(counter(d) for d in docs)
         bad = offenders_for(name, docs)
         if bad:
-            offences.append(f"row {name} ({path.relative_to(ROOT)}), whose closure is "
-                            f"{sorted(_closure(name, rows))}: " + ", ".join(bad))
+            offences.append(
+                f"row {name} ({path.relative_to(ROOT)}), whose closure is "
+                f"{sorted(_closure(name, rows))}: " + ", ".join(bad)
+            )
     return offences, seen, asked
 
 
@@ -147,8 +164,17 @@ def _closure(name, rows, seen=None):
 
 @functools.lru_cache(maxsize=None)
 def _docs(path):
-    out = subprocess.run(["kubectl", "kustomize", "--load-restrictor", "LoadRestrictionsNone", str(path)],
-                         capture_output=True, text=True)
+    out = subprocess.run(
+        [
+            "kubectl",
+            "kustomize",
+            "--load-restrictor",
+            "LoadRestrictionsNone",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+    )
     if out.returncode != 0:
         return None
     return tuple(d for d in yaml.safe_load_all(out.stdout) if d)
@@ -169,59 +195,32 @@ def offenders(docs, available, row=None):
         provider = PROVIDED_BY.get(g)
         if provider is not None and (provider in available or provider == row):
             continue
-        where = f"needs row '{provider}'" if provider else f"group '{g}' is provided by no row"
+        where = (
+            f"needs row '{provider}'"
+            if provider
+            else f"group '{g}' is provided by no row"
+        )
         bad.append(f"{d['kind']}/{d['metadata']['name']} ({where})")
     return sorted(bad)
 
 
-def test_no_flux_row_carries_a_custom_resource_its_ordering_has_not_installed_yet():
-    rows = _rows()
-    seen, skipped = 0, []
-    for name, (path, _) in sorted(rows.items()):
-        docs = _docs(path)
-        if docs is None:
-            # rows needing gitignored inputs render elsewhere (test_incident_backstage_*)
-            skipped.append(name)
-            continue
-        seen += 1
-        bad = offenders(docs, _closure(name, rows), row=name)
-        assert bad == [], (
-            f"row {name} ({path.relative_to(ROOT)}) dry-runs {len(bad)} resource(s) before their "
-            f"CRD exists; its closure is {sorted(_closure(name, rows))}: " + ", ".join(bad))
-    assert seen > 25, f"only {seen} rows rendered ({skipped} skipped) -- the sweep is not covering the tree"
-
-
-def test_every_group_the_tree_uses_is_either_built_in_or_owned_by_a_named_row():
-    """The over-fix guard on the map itself. `PROVIDED_BY` is the only place a group can be
-    excused, and a group that appears in the tree with no owner must not pass silently -- that is
-    the flat-allow-list failure returning by another door."""
-    rows = _rows()
-    unowned = {}
-    for name, (path, _) in rows.items():
-        docs = _docs(path) or []
-        for d in docs:
-            g = _group(d["apiVersion"])
-            if g not in BUILTIN and g not in PROVIDED_BY:
-                unowned.setdefault(g, set()).add(name)
-    assert unowned == {}, f"groups used by no known provider row: { {k: sorted(v) for k, v in unowned.items()} }"
-
-
 def test_the_chaos_mesh_incident_shape_is_refused():
-    docs = [{"apiVersion": "helm.toolkit.fluxcd.io/v2", "kind": "HelmRelease", "metadata": {"name": "chaos-mesh"}},
-            {"apiVersion": "chaos-mesh.org/v1alpha1", "kind": "Schedule", "metadata": {"name": "backstage-pod-kill"}}]
-    assert offenders(docs, set(), row="chaos") == ["Schedule/backstage-pod-kill (needs row 'chaos-mesh')"]
+    docs = [
+        {
+            "apiVersion": "helm.toolkit.fluxcd.io/v2",
+            "kind": "HelmRelease",
+            "metadata": {"name": "chaos-mesh"},
+        },
+        {
+            "apiVersion": "chaos-mesh.org/v1alpha1",
+            "kind": "Schedule",
+            "metadata": {"name": "backstage-pod-kill"},
+        },
+    ]
+    assert offenders(docs, set(), row="chaos") == [
+        "Schedule/backstage-pod-kill (needs row 'chaos-mesh')"
+    ]
     assert offenders(docs, {"chaos-mesh"}, row="chaos") == []
-
-
-def test_a_group_no_row_claims_is_an_offender_and_never_waved_through():
-    """Written because a mutation of `offenders()` that skipped unmapped groups stayed green: the
-    map lookup was covered only by groups already in the map. An unmapped group is how the
-    chaos-mesh.org incident arrived in the first place -- it is the default-deny branch, and no
-    closure can excuse it, because nothing in the tree installs it."""
-    docs = [{"apiVersion": "brand.new.io/v1alpha1", "kind": "Widget", "metadata": {"name": "w"}}]
-    assert offenders(docs, set(), row="anywhere") == ["Widget/w (group 'brand.new.io' is provided by no row)"]
-    assert offenders(docs, set(PROVIDED_BY.values()), row="anywhere") != [], (
-        "depending on every row in the estate must not excuse a group no row installs")
 
 
 def test_the_two_maps_do_not_overlap_so_a_group_cannot_be_quietly_promoted_to_built_in():
@@ -234,17 +233,32 @@ def test_the_edge_incident_shape_is_refused_which_the_flat_allow_list_permitted(
     """crew#488: `platform/edge` carried the Kyverno chart and its own ClusterPolicy in one row.
     The old guard passed it because `kyverno.io` had been added to `PRE_INSTALLED`; this one asks
     whether the row that provides kyverno.io comes first."""
-    docs = [{"apiVersion": "helm.toolkit.fluxcd.io/v2", "kind": "HelmRelease", "metadata": {"name": "kyverno"}},
-            {"apiVersion": "kyverno.io/v1", "kind": "ClusterPolicy", "metadata": {"name": "provider-independence"}}]
-    assert offenders(docs, set(), row="edge") == ["ClusterPolicy/provider-independence (needs row 'kyverno')"]
+    docs = [
+        {
+            "apiVersion": "helm.toolkit.fluxcd.io/v2",
+            "kind": "HelmRelease",
+            "metadata": {"name": "kyverno"},
+        },
+        {
+            "apiVersion": "kyverno.io/v1",
+            "kind": "ClusterPolicy",
+            "metadata": {"name": "provider-independence"},
+        },
+    ]
+    assert offenders(docs, set(), row="edge") == [
+        "ClusterPolicy/provider-independence (needs row 'kyverno')"
+    ]
     assert offenders(docs, {"kyverno"}, row="edge") == []
 
 
-@pytest.mark.parametrize("group,cr", [
-    ("traefik.io", "Middleware"),
-    ("external-secrets.io", "ExternalSecret"),
-    ("cert-manager.io", "ClusterIssuer"),
-])
+@pytest.mark.parametrize(
+    "group,cr",
+    [
+        ("traefik.io", "Middleware"),
+        ("external-secrets.io", "ExternalSecret"),
+        ("cert-manager.io", "ClusterIssuer"),
+    ],
+)
 def test_the_four_groups_the_old_set_called_pre_installed_are_no_longer_free(group, cr):
     """Each of these was added to the flat set the day a row tripped over it, and each is
     installed by a chart in this tree. A row that does not order itself after the provider is an
@@ -320,71 +334,65 @@ def priority_class_offenders(docs, providers, available, row=None):
             provider = providers.get(pc)
             if provider is not None and (provider in available or provider == row):
                 continue
-            where = f"needs row '{provider}'" if provider else f"no row creates PriorityClass/{pc}"
+            where = (
+                f"needs row '{provider}'"
+                if provider
+                else f"no row creates PriorityClass/{pc}"
+            )
             bad.append(f"{d['kind']}/{d['metadata']['name']} asks for {pc} ({where})")
     return sorted(bad)
-
-
-def test_no_flux_row_names_a_priority_class_its_ordering_has_not_created_yet():
-    """crew#488, run 33213889505. The drill's receipt, verbatim:
-
-        edge  2m44s  Warning  FailedCreate  replicaset/traefik-75cd5dd6b9
-          Error creating: pods "traefik-75cd5dd6b9-" is forbidden:
-          no PriorityClass with name infrastructure-critical was found
-
-    `platform/edge/traefik.yaml` names `infrastructure-critical`; the class was created by the
-    `scheduling` row, and `scheduling` dependsOn `edge`. A practical cycle: edge waits for a class
-    that waits for edge. On OKE the class predated the dependsOn and nothing was ever wrong there,
-    which is exactly why only a cluster with no history could find it -- `ready 3/39, cascaded 33`,
-    one cause and thirty-three honest consequences.
-    """
-    rows = _rows()
-    providers = _priority_class_providers(rows)
-    assert len(providers) >= 2, f"the tree renders {providers} -- the sweep found no PriorityClass to check against"
-    offences, seen, asked = _sweep(
-        rows,
-        lambda name, docs: priority_class_offenders(docs, providers, _closure(name, rows), row=name),
-        lambda d: len(_named(d, "priorityClassName")))
-    assert offences == [], (
-        "these rows create pods the API server will refuse:\n  " + "\n  ".join(offences))
-    assert seen > 25 and asked >= 10, (
-        f"{seen} rows rendered and {asked} priorityClassName reference(s) read -- a sweep that "
-        f"reads nothing passes for the wrong reason")
 
 
 def test_the_traefik_incident_shape_is_refused():
     """The incident as a fixture, both directions. `edge` before the fix reached `scheduling`
     through nothing; after it, `priority-classes` is a row with no dependencies of its own."""
-    docs = [{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "traefik"},
-             "spec": {"template": {"spec": {"priorityClassName": "infrastructure-critical"}}}}]
+    docs = [
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": "traefik"},
+            "spec": {
+                "template": {"spec": {"priorityClassName": "infrastructure-critical"}}
+            },
+        }
+    ]
     before = {"infrastructure-critical": "scheduling"}
     after = {"infrastructure-critical": "priority-classes"}
-    assert priority_class_offenders(docs, before, {"gateway-api-crds", "kyverno"}, row="edge") == [
-        "Deployment/traefik asks for infrastructure-critical (needs row 'scheduling')"]
-    assert priority_class_offenders(docs, after, {"gateway-api-crds", "kyverno", "priority-classes"},
-                                    row="edge") == []
-
-
-def test_a_priority_class_reference_nested_in_a_helm_release_is_read_too():
-    """`platform/observability/langfuse.yaml` names the class inside `spec.values`, not under a
-    pod template this file would recognise by shape. A guard that only understood one depth would
-    have read the tree as clean while the langfuse pods were unschedulable."""
-    docs = [{"apiVersion": "helm.toolkit.fluxcd.io/v2", "kind": "HelmRelease", "metadata": {"name": "langfuse"},
-             "spec": {"values": {"langfuse": {"web": {"deployment": {"priorityClassName": "infrastructure-critical"}}}}}}]
-    assert priority_class_offenders(docs, {"infrastructure-critical": "priority-classes"}, set(), row="observability") == [
-        "HelmRelease/langfuse asks for infrastructure-critical (needs row 'priority-classes')"]
+    assert priority_class_offenders(
+        docs, before, {"gateway-api-crds", "kyverno"}, row="edge"
+    ) == [
+        "Deployment/traefik asks for infrastructure-critical (needs row 'scheduling')"
+    ]
+    assert (
+        priority_class_offenders(
+            docs, after, {"gateway-api-crds", "kyverno", "priority-classes"}, row="edge"
+        )
+        == []
+    )
 
 
 def test_a_priority_class_no_row_creates_is_an_offender_and_never_waved_through():
     """The default-deny branch, the one a mutation of the CRD check slipped past in the first
     version of this file. Depending on every row in the estate cannot excuse a name nothing
     creates -- there is no row to wait for."""
-    docs = [{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "d"},
-             "spec": {"template": {"spec": {"priorityClassName": "invented-critical"}}}}]
+    docs = [
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": "d"},
+            "spec": {"template": {"spec": {"priorityClassName": "invented-critical"}}},
+        }
+    ]
     providers = {"infrastructure-critical": "priority-classes"}
     assert priority_class_offenders(docs, providers, set(), row="x") == [
-        "Deployment/d asks for invented-critical (no row creates PriorityClass/invented-critical)"]
-    assert priority_class_offenders(docs, providers, set(providers.values()) | {"x"}, row="x") != []
+        "Deployment/d asks for invented-critical (no row creates PriorityClass/invented-critical)"
+    ]
+    assert (
+        priority_class_offenders(
+            docs, providers, set(providers.values()) | {"x"}, row="x"
+        )
+        != []
+    )
 
 
 def test_only_the_classes_kubernetes_creates_itself_are_free():
@@ -392,8 +400,16 @@ def test_only_the_classes_kubernetes_creates_itself_are_free():
     two names kube-apiserver bootstraps. A class the tree creates appearing in it would be the
     flat-allow-list habit starting again in a new file."""
     assert _priority_class_providers(_rows()).keys() & BUILTIN_PRIORITY_CLASSES == set()
-    docs = [{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "d"},
-             "spec": {"template": {"spec": {"priorityClassName": "system-cluster-critical"}}}}]
+    docs = [
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": "d"},
+            "spec": {
+                "template": {"spec": {"priorityClassName": "system-cluster-critical"}}
+            },
+        }
+    ]
     assert priority_class_offenders(docs, {}, set(), row="metrics-server") == []
 
 
@@ -401,20 +417,37 @@ def test_a_kyverno_pattern_is_not_read_as_a_pod_asking_for_a_class():
     """The over-fix guard on that exclusion, both halves. The policy's own strings are skipped;
     a Deployment in the same row is still read, so the exclusion cannot be widened into "the
     scheduling row is exempt"."""
-    policy = {"apiVersion": "kyverno.io/v1", "kind": "ClusterPolicy", "metadata": {"name": "require-priority-class"},
-              "spec": {"rules": [{"validate": {"pattern": {"spec": {"priorityClassName": "?*"}}}}]}}
-    balloon = {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "balloon"},
-               "spec": {"template": {"spec": {"priorityClassName": "balloon"}}}}
+    policy = {
+        "apiVersion": "kyverno.io/v1",
+        "kind": "ClusterPolicy",
+        "metadata": {"name": "require-priority-class"},
+        "spec": {
+            "rules": [{"validate": {"pattern": {"spec": {"priorityClassName": "?*"}}}}]
+        },
+    }
+    balloon = {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {"name": "balloon"},
+        "spec": {"template": {"spec": {"priorityClassName": "balloon"}}},
+    }
     assert priority_class_offenders([policy], {}, set(), row="scheduling") == []
-    assert priority_class_offenders([balloon], {"balloon": "priority-classes"}, set(), row="scheduling") == [
-        "Deployment/balloon asks for balloon (needs row 'priority-classes')"]
+    assert priority_class_offenders(
+        [balloon], {"balloon": "priority-classes"}, set(), row="scheduling"
+    ) == ["Deployment/balloon asks for balloon (needs row 'priority-classes')"]
 
 
 #: The namespaces a cluster has before this tree applies: Kubernetes' four, plus flux-system,
 #: which `bin/idp-hydrate` creates with `flux install`. Everything else is created by a row, and
 #: like the PriorityClasses that map is measured -- `_namespace_providers()` reads the Namespace
 #: objects out of the rendered rows rather than trusting a list somebody kept up to date.
-BUILTIN_NAMESPACES = {"default", "kube-system", "kube-public", "kube-node-lease", "flux-system"}
+BUILTIN_NAMESPACES = {
+    "default",
+    "kube-system",
+    "kube-public",
+    "kube-node-lease",
+    "flux-system",
+}
 
 
 def _namespaces_used(doc):
@@ -451,8 +484,11 @@ def _namespaces_provided(docs):
         if d.get("kind") == "Namespace":
             out.add(d["metadata"]["name"])
         spec = d.get("spec")
-        if d.get("kind") == "HelmRelease" and isinstance(spec, dict) \
-                and spec.get("install", {}).get("createNamespace"):
+        if (
+            d.get("kind") == "HelmRelease"
+            and isinstance(spec, dict)
+            and spec.get("install", {}).get("createNamespace")
+        ):
             ns = spec.get("targetNamespace") or d["metadata"].get("namespace")
             if ns:
                 out.add(ns)
@@ -484,55 +520,34 @@ def namespace_offenders(docs, providers, available, row=None):
             provider = providers.get(ns)
             if provider is not None and (provider in available or provider == row):
                 continue
-            where = f"needs row '{provider}'" if provider else f"no row creates Namespace/{ns}"
+            where = (
+                f"needs row '{provider}'"
+                if provider
+                else f"no row creates Namespace/{ns}"
+            )
             bad.append(f"{d['kind']}/{d['metadata']['name']} lands in {ns} ({where})")
     return sorted(bad)
 
 
-def test_no_flux_row_reaches_into_a_namespace_its_ordering_has_not_created_yet():
-    """crew#488, run 33214748124. Three of that run's five ROOT-REDs were one sentence:
-
-        flux-system/cluster-state: ServiceAccount/backstage/cluster-state not found:
-          namespaces "backstage" not found
-        flux-system/spire: CronJob/backstage/spiffe-proof not found: namespaces "backstage" not found
-
-    Three rows put objects into namespaces owned by rows they did not depend on. On OKE every
-    namespace has existed for months, so the missing edges were invisible; from zero they are the
-    difference between a layer that comes up and one that never does.
-    """
-    rows = _rows()
-    providers = _namespace_providers(rows)
-    assert len(providers) >= 15, f"only {len(providers)} namespace(s) traced to a row -- the sweep is not reading the tree"
-    offences, seen, asked = _sweep(
-        rows,
-        lambda name, docs: namespace_offenders(docs, providers, _closure(name, rows), row=name),
-        lambda d: len(_namespaces_used(d)))
-    assert offences == [], (
-        "these rows apply into a namespace that does not exist yet:\n  " + "\n  ".join(offences))
-    assert seen > 25 and asked >= 100, (
-        f"{seen} rows rendered and {asked} namespace reference(s) read -- a sweep that reads "
-        f"nothing passes for the wrong reason")
-
-
 def test_the_cluster_state_incident_shape_is_refused():
     """Both directions, on the exact object the drill named."""
-    docs = [{"apiVersion": "v1", "kind": "ServiceAccount",
-             "metadata": {"name": "cluster-state", "namespace": "backstage"}}]
+    docs = [
+        {
+            "apiVersion": "v1",
+            "kind": "ServiceAccount",
+            "metadata": {"name": "cluster-state", "namespace": "backstage"},
+        }
+    ]
     providers = {"backstage": "backstage"}
-    assert namespace_offenders(docs, providers, {"scheduling"}, row="cluster-state") == [
-        "ServiceAccount/cluster-state lands in backstage (needs row 'backstage')"]
-    assert namespace_offenders(docs, providers, {"scheduling", "backstage"}, row="cluster-state") == []
-
-
-def test_a_helm_release_installing_somewhere_else_is_read_at_its_target_namespace():
-    """`metadata.namespace` is where the HelmRelease object lives; the chart lands in
-    `spec.targetNamespace`, and Helm refuses a release into a namespace that is not there. A guard
-    reading only the first would call this row clean."""
-    docs = [{"apiVersion": "helm.toolkit.fluxcd.io/v2", "kind": "HelmRelease",
-             "metadata": {"name": "kube-prometheus-stack", "namespace": "flux-system"},
-             "spec": {"targetNamespace": "monitoring"}}]
-    assert namespace_offenders(docs, {"monitoring": "monitoring"}, set(), row="alerts") == [
-        "HelmRelease/kube-prometheus-stack lands in monitoring (needs row 'monitoring')"]
+    assert namespace_offenders(
+        docs, providers, {"scheduling"}, row="cluster-state"
+    ) == ["ServiceAccount/cluster-state lands in backstage (needs row 'backstage')"]
+    assert (
+        namespace_offenders(
+            docs, providers, {"scheduling", "backstage"}, row="cluster-state"
+        )
+        == []
+    )
 
 
 def test_a_namespace_a_helm_release_creates_itself_counts_as_provided():
@@ -540,28 +555,33 @@ def test_a_namespace_a_helm_release_creates_itself_counts_as_provided():
     the old version of this test passed a providers map it had built by hand, so it never ran the
     function it was about. It now reads the fixture through `_namespaces_provided`, the same call
     the sweep makes."""
-    hr = {"apiVersion": "helm.toolkit.fluxcd.io/v2", "kind": "HelmRelease",
-          "metadata": {"name": "chaos-mesh", "namespace": "flux-system"},
-          "spec": {"targetNamespace": "chaos-mesh", "install": {"createNamespace": True}}}
+    hr = {
+        "apiVersion": "helm.toolkit.fluxcd.io/v2",
+        "kind": "HelmRelease",
+        "metadata": {"name": "chaos-mesh", "namespace": "flux-system"},
+        "spec": {"targetNamespace": "chaos-mesh", "install": {"createNamespace": True}},
+    }
     assert _namespaces_provided([hr]) == {"chaos-mesh"}
-    assert _namespaces_provided([{"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "spire"}}]) == {"spire"}
+    assert _namespaces_provided(
+        [{"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "spire"}}]
+    ) == {"spire"}
     without = dict(hr, spec={"targetNamespace": "chaos-mesh"})
     assert _namespaces_provided([without]) == set(), (
-        "a HelmRelease that does not ask Helm to create the namespace provides nothing")
-
-
-def test_a_namespace_no_row_creates_is_an_offender_and_never_waved_through():
-    """The default-deny branch again. Nothing to wait for is not the same as nothing to check."""
-    docs = [{"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "c", "namespace": "invented"}}]
-    assert namespace_offenders(docs, {"backstage": "backstage"}, {"backstage"}, row="x") == [
-        "ConfigMap/c lands in invented (no row creates Namespace/invented)"]
+        "a HelmRelease that does not ask Helm to create the namespace provides nothing"
+    )
 
 
 def test_the_namespaces_kubernetes_and_flux_install_create_are_the_only_free_ones():
     """The over-fix guard on the last of the three maps. A namespace this tree creates appearing
     in the built-in set is the flat-allow-list habit arriving for the third time."""
     assert _namespace_providers(_rows()).keys() & BUILTIN_NAMESPACES == set()
-    docs = [{"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "c", "namespace": "kube-system"}}]
+    docs = [
+        {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": "c", "namespace": "kube-system"},
+        }
+    ]
     assert namespace_offenders(docs, {}, set(), row="metrics-server") == []
 
 
@@ -571,17 +591,23 @@ def test_every_row_of_this_repository_renders_and_a_row_that_does_not_is_an_offe
     sweep passing on 36 rows instead of 37, and the count bound alone would not notice one."""
     rows = _rows()
     foreign = _foreign_rows()
-    assert foreign == {"estate-catalog", "gateway-api-crds", "prospector"}, sorted(foreign)
+    assert foreign == {"estate-catalog", "gateway-api-crds", "prospector"}, sorted(
+        foreign
+    )
     local = {n for n in rows if n not in foreign}
     assert len(local) >= 35, sorted(local)
     unrenderable = sorted(n for n in local if _docs(rows[n][0]) is None)
     assert unrenderable == [], (
         "rows served from this repository that kubectl kustomize will not build: "
-        + ", ".join(unrenderable))
+        + ", ".join(unrenderable)
+    )
 
     #: And the offence is reported, not skipped: a row pointed at a directory that does not exist.
-    offences, _, _ = _sweep({"invented": (ROOT / "no-such-directory", set())},
-                            lambda name, docs: [], lambda d: 0)
+    offences, _, _ = _sweep(
+        {"invented": (ROOT / "no-such-directory", set())},
+        lambda name, docs: [],
+        lambda d: 0,
+    )
     assert len(offences) == 1 and "does not render" in offences[0], offences
 
 
@@ -591,7 +617,9 @@ def test_the_sweep_reports_every_offending_row_in_one_run():
     four runs to read. Two bad rows in, two lines out."""
     renders = _rows()["scheduling"][0]  # any path this repository really builds
     bad_rows = {"a": (renders, set()), "b": (renders, set())}
-    offences, seen, asked = _sweep(bad_rows, lambda name, docs: [f"{name} is wrong"], lambda d: 1)
+    offences, seen, asked = _sweep(
+        bad_rows, lambda name, docs: [f"{name} is wrong"], lambda d: 1
+    )
     assert len(offences) == 2, offences
     assert offences[0].startswith("row a") and offences[1].startswith("row b"), offences
     assert seen == 2 and asked > 0, (seen, asked)

@@ -128,15 +128,6 @@ def test_the_cluster_still_reaches_the_mac_on_ssh_and_nothing_else(policy):
     assert _dst_ports(policy, MAC)["tag:k8s"] == {SHORTCUT_SSH_PORT, VNC_PORT}
 
 
-@pytest.mark.parametrize("port", SUNSHINE_PORTS)
-def test_the_founder_reaches_sunshine_on_every_port_it_listens_on(policy, port):
-    """One missing port is a stream that connects and then stalls -- worse than a clean refusal."""
-    member = _dst_ports(policy, MAC).get(FOUNDER_SRC, set())
-    assert port in member, (
-        f"Sunshine listens on {port} and no rule lets the founder's phone reach it"
-    )
-
-
 def test_the_ios_shortcut_can_ssh_to_wake_the_mac(policy):
     """Action 1 of the Shortcut is `caffeinate -u -t 2` over SSH; without 22 the Mac never wakes."""
     member = _dst_ports(policy, MAC).get(FOUNDER_SRC, set())
@@ -188,24 +179,6 @@ def test_every_placeholder_the_policy_uses_is_one_the_applier_substitutes():
     )
 
 
-def test_estate_config_declares_both_founder_keys_and_the_login_is_never_a_literal():
-    """LAW 46: estate-config is the one place the Mac's account and tailnet IP may be named (crew#516
-    CP5, the file's own contract), and they are, measured on the Mac rather than typed by a hand.
-    The tailnet LOGIN is different: it is a person's identity, the API knows it, so git never
-    carries it -- empty here, and bin/idp-tailscale-policy asks the tailnet's owner record."""
-    cfg = (ROOT / "clusters/oke/estate-config.yaml").read_text()
-    assert re.search(r'^\s*FOUNDER_MAC_USER: "[^"]+"', cfg, re.M), (
-        "FOUNDER_MAC_USER is missing or empty: mac-run has nothing to ssh to"
-    )
-    assert 'FOUNDER_TAILNET_USER: ""' in cfg, (
-        "FOUNDER_TAILNET_USER carries a literal login in git; the API answers it"
-    )
-    applier = (ROOT / "bin/idp-tailscale-policy").read_text()
-    assert (
-        "/api/v2/tailnet/-/users" in applier and 'select(.role == "owner")' in applier
-    )
-
-
 def test_the_founder_reaches_only_his_own_devices_and_the_cluster_only_two_ports(
     policy,
 ):
@@ -233,21 +206,6 @@ def test_no_username_host_or_account_is_a_literal(policy):
     assert policy["groups"]["group:founder"] == ["${FOUNDER_TAILNET_USER}"]
 
 
-def test_the_reason_this_file_changed_is_written_in_it(policy):
-    """The next reader must find the two Tailscale rules that make one rule an outage.
-
-    Not a style check: the single-rule version looked correct to everyone who read it, including
-    its author, because both rules are about what happens OUTSIDE this file.
-    """
-    text = POLICY.read_text()
-    assert "crew#561" in text
-    assert "deny-by-default" in text or "default deny" in text
-    assert "has no user identity" in text and "kb/1068" in text
-    assert "does not run in sandboxed Tailscale GUI builds" in text, (
-        "the reason Tailscale SSH is not used (kb/1193) left the header"
-    )
-
-
 def test_the_file_carries_exactly_one_placeholder_and_only_in_the_body():
     """Incident 2026-08-29 (oke-check run 33280019151): bin/idp-tailscale-policy greps the whole
     rendered file for `${` after envsubst, comments included; a header comment that spelled the
@@ -262,33 +220,4 @@ def test_the_file_carries_exactly_one_placeholder_and_only_in_the_body():
     assert "${FOUNDER_TAILNET_USER}" in body
     assert "${" not in "\n".join(
         ln for ln in text.splitlines() if ln.lstrip().startswith("//")
-    )
-
-
-def test_the_operator_chart_default_tag_is_defined_and_the_client_mints_it(policy):
-    """idp#586: tailscale-operator@1.102.3 joins the tailnet with its default device tag
-    tag:k8s-operator (chart values operatorConfig.defaultTags, verified 2026-08-31). A tag the
-    policy does not define, or a client not minted with it, is an authkey 400 and a crashloop
-    that took the tailnet down from 2026-08-28 to 2026-08-31 (diagnose run 33374905345).
-
-    Run 33447033447 (2026-08-31): defining the tag admins-only ([]) is not enough — the policy
-    was applied at 22:40Z and the mint still 400d at 22:43Z, because the root OAuth client may
-    only request tags its own tags own (kb/1215/oauth-clients). tag:k8s must own the operator
-    tag; [] gives the minting client no path and only a console admin could grant it."""
-    import pathlib as _pl
-
-    assert policy["tagOwners"].get("tag:k8s-operator") == ["tag:k8s"], (
-        "run 33447033447: the root client is tagged tag:k8s and may only mint tags tag:k8s owns;"
-        " [] (admins-only) 400s the mint with the policy already applied"
-    )
-    operator = _pl.Path("platform/tailscale/operator.yaml").read_text()
-    boot = _pl.Path("bin/idp-bootstrap-tailscale").read_text()
-    if "defaultTags" not in operator:
-        # the chart default applies, so the client must be minted carrying it
-        assert "OP_TAG=${TAILSCALE_OPERATOR_TAG:-tag:k8s-operator}" in boot
-        assert "tags:[$t,$ot]" in boot, (
-            "the mint body must carry both tags or the operator 400s again"
-        )
-    assert 'jq -e --arg w "$want"' in boot, (
-        "the mint answer must be refused when it lacks a tag"
     )

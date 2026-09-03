@@ -8,6 +8,7 @@ GitHub runner over the exchanged OIDC session, mints a read-only App token, and 
 These tests pin the shape that made it deliverable with no founder hand: no static credential in
 the workflow, a read-only lane, BLIND (never a call to the world) without the exchanged session,
 the catalogue row copied from the cron, and the Mac's bundles/ prefix never written."""
+
 import json
 import os
 import re
@@ -30,7 +31,11 @@ def _workflow() -> dict:
 
 def _cron() -> str:
     wf = _workflow()
-    return wf[True]["schedule"][0]["cron"] if True in wf else wf["on"]["schedule"][0]["cron"]
+    return (
+        wf[True]["schedule"][0]["cron"]
+        if True in wf
+        else wf["on"]["schedule"][0]["cron"]
+    )
 
 
 def test_script_is_executable_and_parses():
@@ -49,7 +54,9 @@ def test_catalogue_row_copies_the_workflow_cron():
 
 def test_workflow_carries_no_static_credential_and_only_asks_for_an_oidc_token():
     text = WORKFLOW.read_text()
-    assert not re.search(r"OCI_(API|PRIVATE)_KEY|FINGERPRINT|PASSWORD|R2_|RCLONE_", text), text
+    assert not re.search(
+        r"OCI_(API|PRIVATE)_KEY|FINGERPRINT|PASSWORD|R2_|RCLONE_", text
+    ), text
     wf = _workflow()
     assert wf["permissions"] == {"id-token": "write", "contents": "read"}
     steps = wf["jobs"]["escrow"]["steps"]
@@ -68,14 +75,9 @@ def test_script_never_names_an_ocid_or_a_bucket_literal_and_never_touches_mac_bu
     text = SCRIPT.read_text()
     assert not re.search(r"ocid1\.[a-z]+\.oc1\.", text)
     assert "ESCROW_PREFIX:-mirrors" in text
-    assert 'bundles/' not in re.sub(r"^#.*$", "", text, flags=re.M)  # only the header may mention the Mac prefix
-
-
-def test_readback_is_two_angles():
-    text = SCRIPT.read_text()
-    assert "rclone hashsum md5" in text
-    assert "bundle verify" in text
-    assert "RCLONE_S3_SECRET_ACCESS_KEY=" in text and "--s3-secret" not in text  # env, never argv
+    assert "bundles/" not in re.sub(
+        r"^#.*$", "", text, flags=re.M
+    )  # only the header may mention the Mac prefix
 
 
 def test_blind_without_exchanged_session_makes_no_call_to_the_world(tmp_path):
@@ -85,8 +87,13 @@ def test_blind_without_exchanged_session_makes_no_call_to_the_world(tmp_path):
     for tool in ("oci", "rclone", "curl", "git"):
         (b / tool).write_text(f"#!/bin/sh\necho {tool} \"$@\" >> '{log}'\nexit 1\n")
         (b / tool).chmod(0o755)
-    env = {**os.environ, "PATH": f"{b}:{os.environ['PATH']}", "OCI_COMPARTMENT_OCID": "x",
-           "ESCROW_WORK": str(tmp_path / "w"), "ESCROW_RECEIPT_DIR": str(tmp_path / "r")}
+    env = {
+        **os.environ,
+        "PATH": f"{b}:{os.environ['PATH']}",
+        "OCI_COMPARTMENT_OCID": "x",
+        "ESCROW_WORK": str(tmp_path / "w"),
+        "ESCROW_RECEIPT_DIR": str(tmp_path / "r"),
+    }
     env.pop("OCI_CLI_AUTH", None)
     (tmp_path / "w").mkdir()
     p = subprocess.run([str(SCRIPT)], env=env, capture_output=True, text=True)
@@ -104,9 +111,14 @@ def test_blind_when_vault_is_absent_before_any_github_or_r2_call(tmp_path):
         (b / tool).write_text(f"#!/bin/sh\necho {tool} >> '{log}'\nexit 1\n")
     for f in b.iterdir():
         f.chmod(0o755)
-    env = {**os.environ, "PATH": f"{b}:{os.environ['PATH']}", "OCI_COMPARTMENT_OCID": "x",
-           "OCI_CLI_AUTH": "security_token", "ESCROW_WORK": str(tmp_path / "w"),
-           "ESCROW_RECEIPT_DIR": str(tmp_path / "r")}
+    env = {
+        **os.environ,
+        "PATH": f"{b}:{os.environ['PATH']}",
+        "OCI_COMPARTMENT_OCID": "x",
+        "OCI_CLI_AUTH": "security_token",
+        "ESCROW_WORK": str(tmp_path / "w"),
+        "ESCROW_RECEIPT_DIR": str(tmp_path / "r"),
+    }
     (tmp_path / "w").mkdir()
     p = subprocess.run([str(SCRIPT)], env=env, capture_output=True, text=True)
     assert p.returncode == 2

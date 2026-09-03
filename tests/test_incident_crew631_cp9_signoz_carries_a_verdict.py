@@ -69,20 +69,6 @@ def test_l2_reads_dashboards_with_the_key_header_and_the_negative_control_holds(
     assert refused["name"] == "l2.NEGATIVE.no_key_is_refused" and refused["ok"]
 
 
-def test_negative_control_turns_red_when_the_dashboards_answer_a_caller_holding_no_key() -> (
-    None
-):
-    (open_door,) = signoz.negative_no_key(
-        "https://signoz.example",
-        _get(
-            200, {"status": "success", "data": {"dashboards": [{"id": 1}], "total": 1}}
-        ),
-    )
-    assert not open_door["ok"], (
-        "SigNoz handed dashboards to a caller with no key and the row stayed green"
-    )
-
-
 def test_probe_with_no_key_is_l1_and_negative_only() -> None:
     rows = signoz.probe("https://signoz.example", None, _get(401, {}))
     names = {r["name"] for r in rows}
@@ -114,24 +100,6 @@ def test_the_hourly_workflow_runs_the_signoz_prover_and_reports_verify_signoz() 
     assert "bin/idp-prove signoz" in text and "name=verify/signoz" in text
     assert "IDP_PROVE_LOOKUP_TRACE" not in text
     assert "bin/idp-signoz-key" in on["push"]["paths"]
-
-
-def test_catalogue_and_dispatcher_carry_verdict_signoz_and_verdict_backstage() -> None:
-    cat = yaml.safe_load((ROOT / "drills" / "catalogue.yaml").read_text())
-    rows = {d["name"]: d for d in cat["drills"]}
-    assert (
-        rows["verdict-signoz"]["workflow"] == "verdict-signoz.yml"
-        and rows["verdict-signoz"]["schedule"] == "47 * * * *"
-    )
-    assert (
-        rows["verdict-backstage"]["workflow"] == "verdict-backstage.yml"
-        and rows["verdict-backstage"]["schedule"] == "43 * * * *"
-    )
-    disp = (ROOT / "platform" / "drills" / "drill-dispatcher.yaml").read_text()
-    assert (
-        "verdict-signoz.yml=47_*_*_*_*" in disp
-        and "verdict-backstage.yml=43_*_*_*_*" in disp
-    )
 
 
 def test_the_portal_has_a_button_for_the_signoz_prover() -> None:

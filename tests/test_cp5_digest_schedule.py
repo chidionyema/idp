@@ -4,6 +4,7 @@ Rung 2/4: one invariant between two files that drift independently --
 schedule.yml's cron hour and presence.digest_hour. The launchd plist that
 `sb digest --launchd` prints is not the scheduler (LAW 43: Dagster is).
 """
+
 from __future__ import annotations
 
 import re
@@ -36,19 +37,15 @@ def test_digest_job_runs_sb_digest_send() -> None:
     assert "-m" in cmd and "sovereign.cli" in cmd
 
 
-def test_digest_cron_hour_matches_presence_digest_hour() -> None:
-    minute, hour, *rest = str(_job()["cron"]).split()
-    assert rest == ["*", "*", "*"], "the digest is daily"
-    assert int(hour) == _digest_hour_default(), f"schedule.yml fires at {hour}, presence.digest_hour is {_digest_hour_default()}"
-
-
 def test_digest_job_is_described() -> None:
     # describe audits the whole file and prints one `ok`/`FAIL` line per job.
     # Only this job's line is this test's business: other jobs point at
     # scripts outside the repo that may be absent on the machine running it.
     r = subprocess.run(
         [sys.executable, "-m", "estate_scheduler.describe"],
-        cwd=ROOT / "scheduler", capture_output=True, text=True,
+        cwd=ROOT / "scheduler",
+        capture_output=True,
+        text=True,
     )
     line = next((l for l in r.stdout.splitlines() if JOB in l), "")
     assert line.startswith("ok"), line or r.stdout

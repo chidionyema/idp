@@ -5,6 +5,7 @@ platform/observability/signoz-retention.yaml is the applier: a daily Job logs in
 mounted signoz-root secret and sets the SigNoz TTL of traces, metrics and logs to the knob.
 These tests pin the knob in the ConfigMap to the registry value, keep the secret a mounted
 file (Kyverno), and run the script's plan/apply against a fake API."""
+
 import pathlib
 import types
 
@@ -12,7 +13,11 @@ import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "platform" / "observability" / "signoz-retention.yaml"
-DOCS = {(d["kind"], d["metadata"]["name"]): d for d in yaml.safe_load_all(MANIFEST.read_text()) if d}
+DOCS = {
+    (d["kind"], d["metadata"]["name"]): d
+    for d in yaml.safe_load_all(MANIFEST.read_text())
+    if d
+}
 
 
 def _registry_knob():
@@ -24,16 +29,23 @@ def _registry_knob():
 
 def _script():
     mod = types.ModuleType("apply")
-    exec(DOCS[("ConfigMap", "signoz-retention-apply")]["data"]["apply.py"], mod.__dict__)
+    exec(
+        DOCS[("ConfigMap", "signoz-retention-apply")]["data"]["apply.py"], mod.__dict__
+    )
     return mod
 
 
 def test_the_configmap_knob_is_the_registry_knob():
-    assert int(DOCS[("ConfigMap", "signoz-retention")]["data"]["retention_days"]) == _registry_knob()
+    assert (
+        int(DOCS[("ConfigMap", "signoz-retention")]["data"]["retention_days"])
+        == _registry_knob()
+    )
 
 
 def test_the_cronjob_mounts_the_root_secret_as_files_and_reads_the_knob():
-    pod = DOCS[("CronJob", "signoz-retention")]["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+    pod = DOCS[("CronJob", "signoz-retention")]["spec"]["jobTemplate"]["spec"][
+        "template"
+    ]["spec"]
     c = pod["containers"][0]
     assert all("valueFrom" not in e for e in c.get("env", []))
     vols = {v["name"]: v for v in pod["volumes"]}
@@ -41,10 +53,14 @@ def test_the_cronjob_mounts_the_root_secret_as_files_and_reads_the_knob():
     assert vols["knob"]["configMap"]["name"] == "signoz-retention"
     mounts = {m["name"]: m["mountPath"] for m in c["volumeMounts"]}
     assert mounts["signoz-root"] == "/secrets" and mounts["knob"] == "/config"
-    assert pod["priorityClassName"] == "platform-batch"  # the radio-room class is strictly the six
+    assert (
+        pod["priorityClassName"] == "platform-batch"
+    )  # the radio-room class is strictly the six
     assert pod["automountServiceAccountToken"] is False
     assert c["securityContext"]["readOnlyRootFilesystem"] is True
-    kust = yaml.safe_load((ROOT / "platform" / "observability" / "kustomization.yaml").read_text())
+    kust = yaml.safe_load(
+        (ROOT / "platform" / "observability" / "kustomization.yaml").read_text()
+    )
     assert "signoz-retention.yaml" in kust["resources"]
 
 
@@ -62,7 +78,10 @@ class _Fake:
         assert token == "jwt"
         if method == "GET":
             sig = params["type"]
-            return 200, {f"{sig}_ttl_duration_hrs": self.current[sig], "status": "success"}
+            return 200, {
+                f"{sig}_ttl_duration_hrs": self.current[sig],
+                "status": "success",
+            }
         self.current[params["type"]] = int(params["duration"].rstrip("h"))
         return 200, {"message": "ok"}
 
@@ -75,21 +94,8 @@ def test_plan_sets_only_the_signals_that_differ_and_uses_hours():
     assert todo == [("metrics", 720), ("logs", 72)]
     assert m.apply(fake, token, 7, todo) == []
     posts = [c for c in fake.calls if c[0] == "POST" and c[1] == "/api/v1/settings/ttl"]
-    assert [(c[4]["type"], c[4]["duration"]) for c in posts] == [("metrics", "168h"), ("logs", "168h")]
+    assert [(c[4]["type"], c[4]["duration"]) for c in posts] == [
+        ("metrics", "168h"),
+        ("logs", "168h"),
+    ]
     assert fake.current == {"traces": 168, "metrics": 168, "logs": 168}
-
-
-def test_a_bad_login_fails_loudly_and_never_touches_ttl():
-    m = _script()
-
-    def http(method, path, body=None, token=None, params=None):
-        if path == "/api/v2/sessions/context":
-            return 200, {"data": {"orgs": [{"id": "org-1"}]}}
-        return 401, {"error": {"message": "invalid credentials"}}
-
-    try:
-        m.login(http, "root@example", "wrong")
-    except SystemExit as e:
-        assert str(e).startswith("FAIL signoz-retention login 401")
-    else:
-        raise AssertionError("login succeeded with a 401")

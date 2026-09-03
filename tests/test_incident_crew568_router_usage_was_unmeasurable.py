@@ -4,6 +4,7 @@ Files say who is configured to call llm.<zone>; only the router's own ledger say
 LAW 28). This test holds the read-only `router-spend` playbook in place: listed, dispatchable from
 the oke-check workflow, reading LiteLLM_SpendLogs, and never printing a key value.
 """
+
 from pathlib import Path
 import subprocess
 
@@ -13,12 +14,10 @@ WF = ROOT / ".github" / "workflows" / "oke-check.yml"
 
 
 def test_router_spend_is_a_listed_playbook():
-    out = subprocess.run(["bash", str(BG), "--list"], capture_output=True, text=True, check=True).stdout
+    out = subprocess.run(
+        ["bash", str(BG), "--list"], capture_output=True, text=True, check=True
+    ).stdout
     assert "router-spend" in out.split()
-
-
-def test_router_spend_is_dispatchable_from_the_workflow():
-    assert "router-spend" in WF.read_text()
 
 
 def test_router_spend_reads_the_ledger_and_prints_no_key_value():

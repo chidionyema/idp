@@ -14,6 +14,7 @@ text and so proves only that the call is gone. These tests drive the real script
 comes from, and what it says when there is no clock to be had. All three are red against
 `bin/estate-next` as it stands on origin/main.
 """
+
 from __future__ import annotations
 
 import importlib.machinery
@@ -29,7 +30,9 @@ NEXT = ROOT / "bin" / "estate-next"
 
 def _load():
     spec = importlib.util.spec_from_loader(
-        "estate_next_crew583", importlib.machinery.SourceFileLoader("estate_next_crew583", str(NEXT)))
+        "estate_next_crew583",
+        importlib.machinery.SourceFileLoader("estate_next_crew583", str(NEXT)),
+    )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -51,17 +54,34 @@ FEED = """## 2026-01-02T09:00Z · aaaa · code
 🟡 Active: crew#900 CP1
 """
 
-ISSUES = [{"number": 900, "title": "a lane that stopped writing months ago", "url": "",
-           "body": "- [ ] CP1: the thing\n      Expect: 2026-01-03\n"}]
+ISSUES = [
+    {
+        "number": 900,
+        "title": "a lane that stopped writing months ago",
+        "url": "",
+        "body": "- [ ] CP1: the thing\n      Expect: 2026-01-03\n",
+    }
+]
 
 
 def _render(tmp_path, feed_text):
     (tmp_path / "issues.json").write_text(json.dumps(ISSUES))
     (tmp_path / "feed.md").write_text(feed_text)
     out = tmp_path / "NEXT.md"
-    r = subprocess.run([sys.executable, str(NEXT), "--issues", str(tmp_path / "issues.json"),
-                        "--feed", str(tmp_path / "feed.md"), "--out", str(out)],
-                       capture_output=True, text=True)
+    r = subprocess.run(
+        [
+            sys.executable,
+            str(NEXT),
+            "--issues",
+            str(tmp_path / "issues.json"),
+            "--feed",
+            str(tmp_path / "feed.md"),
+            "--out",
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+    )
     assert r.returncode == 0, r.stdout + r.stderr
     return out.read_text()
 
@@ -86,10 +106,3 @@ def test_the_page_header_is_dated_by_the_feed_it_rendered_not_by_this_machine(tm
     dated 1970 over rows aged correctly off the feed is the reset-RTC failure printing itself."""
     header = _generated_line(_render(tmp_path, FEED))
     assert "2026-01-02T10:30Z" in header, header
-
-
-def test_a_feed_with_no_dated_handoff_says_so_in_the_header(tmp_path):
-    """No stamp anywhere means no clock anywhere. The header says it does not know rather than
-    reaching for the one clock this file is not allowed to trust."""
-    header = _generated_line(_render(tmp_path, "no handoff headings here at all\n"))
-    assert "an unknown time (no dated handoff in the feed)" in header, header

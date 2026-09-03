@@ -38,16 +38,6 @@ def _suspend_branch(collect):
     return m
 
 
-def test_the_suspend_branch_exists_after_grading_and_before_append():
-    collect = _collect()
-    m = _suspend_branch(collect)
-    row_built = collect.index('"ready": c.get("status") == "True"')
-    appended = collect.index("flux.append(row)", row_built)
-    assert row_built < m.start() < appended, (
-        "suspend wins after the condition is read, before the row lands"
-    )
-
-
 def _run_branch(snippet, o, row, tmp_path):
     """Run the shipped branch verbatim as a throwaway module: the estate Python standard
     (crew#620, ruff S102) bans exec, and runpy gives the same globals-in, mutation-out."""

@@ -10,7 +10,6 @@ and helm-retry recreates a pod whose sandbox never started before it reconciles.
 
 from pathlib import Path
 
-import yaml
 
 IDP = Path(__file__).resolve().parents[1]
 FENCE_MILLICPU = (
@@ -20,34 +19,6 @@ FENCE_MILLICPU = (
 
 def _millicpu(q: str) -> int:
     return int(q[:-1]) if q.endswith("m") else int(float(q) * 1000)
-
-
-def test_langfuse_web_and_worker_keep_a_boot_sized_guaranteed_cpu():
-    v = yaml.safe_load(
-        (IDP / "platform/observability/langfuse-values.yaml").read_text()
-    )
-    for key in ("web", "worker"):
-        r = v["langfuse"][key]["resources"]
-        assert r["requests"]["cpu"] == r["limits"]["cpu"], (
-            f"langfuse-{key} must stay Guaranteed (crew#539 CP9)"
-        )
-        assert _millicpu(r["limits"]["cpu"]) >= FENCE_MILLICPU, (
-            f"langfuse-{key} at {r['limits']['cpu']} cannot boot inside the liveness window (crew#626 CP15)"
-        )
-
-
-def test_helm_retry_recreates_a_pod_whose_sandbox_never_started():
-    src = (IDP / "bin/idp-oke-break-glass").read_text()
-    body = src.split("pb_helm_retry() {", 1)[1].split("\n}\n", 1)[0]
-    assert "PodReadyToStartContainers" in body, (
-        "helm-retry must look for a sandbox that never started"
-    )
-    assert "delete pod" in body, (
-        "helm-retry must recreate the stuck pod before it reconciles"
-    )
-    assert body.index("delete pod") < body.index("flux reconcile helmrelease"), (
-        "the recreate runs before the retry"
-    )
 
 
 def test_diagnose_prints_langfuse_auth_env_and_log():

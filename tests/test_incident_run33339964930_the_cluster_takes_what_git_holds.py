@@ -45,17 +45,6 @@ def test_the_generators_substitute_the_quoted_keys() -> None:
         assert gen["spec"]["installID"] == "${githubAppInstallationIDQuoted}", path
 
 
-def test_the_secret_template_carries_the_quotes_in_the_value() -> None:
-    es = next(
-        d
-        for d in _docs("platform/alerts-github/github-app.yaml")
-        if d.get("kind") == "ExternalSecret" and d["metadata"]["name"] == "github-app"
-    )
-    data = es["spec"]["target"]["template"]["data"]
-    assert data["githubAppIDQuoted"] == "{{ .app_id | quote }}"
-    assert data["githubAppInstallationIDQuoted"] == "{{ .installation_id | quote }}"
-
-
 def test_a_quoted_value_survives_the_pipeline_as_a_string_and_a_bare_one_does_not() -> (
     None
 ):

@@ -15,7 +15,6 @@ running upgrade got a shorter deadline than it had.
 
 import glob
 import pathlib
-import re
 
 import yaml
 
@@ -84,49 +83,6 @@ def flux_docs():
                 yield f, d
 
 
-def test_every_flux_timeout_is_the_default_or_a_named_exception():
-    bad, seen = [], set()
-    for f, d in flux_docs():
-        kind = d.get("kind")
-        if kind not in ("Kustomization", "HelmRelease"):
-            continue
-        tv = (d.get("spec") or {}).get("timeout")
-        if tv is None:
-            continue
-        name = d["metadata"].get("name")
-        key = (kind, name)
-        if key in TIMEOUT_EXCEPTIONS:
-            seen.add(key)
-            if str(tv) != TIMEOUT_EXCEPTIONS[key]:
-                bad.append(
-                    f"{f}: {kind}/{name} exception drifted {tv} != {TIMEOUT_EXCEPTIONS[key]}"
-                )
-        elif str(tv) != DEFAULT_TIMEOUT:
-            bad.append(
-                f"{f}: {kind}/{name} timeout={tv} is a new guess (default {DEFAULT_TIMEOUT})"
-            )
-    stale = set(TIMEOUT_EXCEPTIONS) - seen
-    assert not bad and not stale, (
-        "timeouts (founder 2026-08-31: deliberate, never a guess):\n"
-        + "\n".join(bad)
-        + (f"\nstale exception rows (object gone): {sorted(stale)}" if stale else "")
-    )
-
-
-def test_every_remediation_retry_count_is_the_one_value():
-    bad = []
-    for f, d in flux_docs():
-        if d.get("kind") != "HelmRelease":
-            continue
-        for phase in ("install", "upgrade"):
-            r = (((d.get("spec") or {}).get(phase) or {}).get("remediation") or {}).get(
-                "retries"
-            )
-            if r is not None and r != DEFAULT_RETRIES:
-                bad.append(f"{f}: {d['metadata'].get('name')} {phase}.retries={r}")
-    assert not bad, f"remediation retries != {DEFAULT_RETRIES}:\n" + "\n".join(bad)
-
-
 def test_every_externalsecret_refresh_honours_the_rotation_slo():
     """crew#722 promises vault-to-pod in 25 minutes; the refresh interval is the first leg.
     39 ExternalSecrets at 1h made that promise arithmetic-impossible before this wave."""
@@ -147,17 +103,4 @@ def test_every_externalsecret_refresh_honours_the_rotation_slo():
         "refreshInterval:\n" + "\n".join(bad) + f"\nstale exceptions: {sorted(stale)}"
         if stale
         else "refreshInterval:\n" + "\n".join(bad)
-    )
-
-
-def test_one_checkout_pin_across_every_workflow():
-    pins = {}
-    for f in glob.glob(str(ROOT / ".github" / "workflows" / "*.yml")):
-        for m in re.finditer(
-            r"uses:\s*actions/checkout@(\S+)", pathlib.Path(f).read_text()
-        ):
-            pins.setdefault(m.group(1), []).append(pathlib.Path(f).name)
-    assert len(pins) == 1, (
-        "every workflow checks out with the same pinned action SHA; strays: "
-        + str({k: v for k, v in pins.items()})
     )

@@ -51,13 +51,3 @@ def test_a_sign_in_page_or_empty_list_fails_l2():
 def test_a_dead_host_fails_l1():
     got = _outcomes(B.l1_liveness("https://c", get=lambda *a, **k: (0, "refused")))
     assert got["l1.catalogue.answers"] is False
-
-
-def test_the_machine_door_is_minted_and_read_from_the_secret_volume():
-    seed = (IDP / "bin/idp-estate-seed").read_text()
-    assert "backstage-env             PROVER_TOKEN                urlsafe32" in seed
-    cfg = (IDP / "backstage/app-config.container.yaml").read_text()
-    assert (
-        "externalAccess" in cfg and "$file: /run/secrets/backstage/PROVER_TOKEN" in cfg
-    )
-    assert "PROVER_TOKEN: ${" not in cfg  # never from the environment

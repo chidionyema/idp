@@ -4,6 +4,7 @@ spec said which jobs belong on the cluster, which wait on a ticket, and which ex
 the estate sits on a laptop. Rule: every job in scheduler/schedule.yml carries `runs_on` in
 {cluster, mac, retire} and a `runs_on_ref` crew item; a `cluster` job's command, cwd and env
 never name a Mac-only path or tool. Rung 4, incident test."""
+
 import re
 from pathlib import Path
 
@@ -15,7 +16,9 @@ SPEC = ROOT / "scheduler/schedule.yml"
 # this list: the CronJob renderer (slice 2) substitutes the image's python; the rule here is
 # what no image can carry. It reads the command line only: a script that opens ~/.estate
 # inside passes it, which is why 7 rows were graded cluster on 2026-08-27 before anyone read them.
-MAC_ONLY = re.compile(r"~/Documents/|~/Library/|launchctl|launchd|colima|docker|pmset|brew ")
+MAC_ONLY = re.compile(
+    r"~/Documents/|~/Library/|launchctl|launchd|colima|docker|pmset|brew "
+)
 REF = re.compile(r"^crew#\d+( CP\d+)?$")
 
 
@@ -24,26 +27,34 @@ def _jobs(text=None):
 
 
 def _flat(v):
-    return " ".join(map(str, v.get("command", []))) + " " + str(v.get("cwd", "")) + " " + " ".join(f"{k}={x}" for k, x in (v.get("env") or {}).items())
+    return (
+        " ".join(map(str, v.get("command", [])))
+        + " "
+        + str(v.get("cwd", ""))
+        + " "
+        + " ".join(f"{k}={x}" for k, x in (v.get("env") or {}).items())
+    )
 
-
-def test_every_job_names_where_it_runs_and_a_cluster_job_names_no_mac_path():
-    jobs = _jobs()
-    bad = {k: v.get("runs_on") for k, v in jobs.items() if v.get("runs_on") not in ("cluster", "mac", "retire")}
-    assert not bad, f"jobs without runs_on: {bad}"
-    noref = [k for k, v in jobs.items() if not REF.match(str(v.get("runs_on_ref", "")))]
-    assert not noref, f"jobs without a crew item in runs_on_ref: {noref}"
-    leaks = {k: MAC_ONLY.search(_flat(v)).group(0) for k, v in jobs.items()
-             if v["runs_on"] == "cluster" and MAC_ONLY.search(_flat(v))}
-    assert not leaks, f"cluster jobs that name a Mac-only path or tool: {leaks}"
     # No floor on the cluster count: on 2026-08-27 the honest number was 0 of 43 (every row reads or
     # writes Mac state), and a floor would have forced a lie to keep the suite green (LAW 38).
 
 
 def test_the_rule_refuses_a_job_without_runs_on_and_a_cluster_job_with_a_mac_path():
     """The other way: a spec missing the field and a cluster job that runs docker both fail."""
-    missing = yaml.safe_dump({"jobs": {"x": {"command": ["true"], "cron": "* * * * *"}}})
-    assert [k for k, v in _jobs(missing).items() if v.get("runs_on") not in ("cluster", "mac", "retire")] == ["x"]
-    leaky = {"runs_on": "cluster", "runs_on_ref": "crew#516 CP2", "command": ["docker", "ps"]}
+    missing = yaml.safe_dump(
+        {"jobs": {"x": {"command": ["true"], "cron": "* * * * *"}}}
+    )
+    assert [
+        k
+        for k, v in _jobs(missing).items()
+        if v.get("runs_on") not in ("cluster", "mac", "retire")
+    ] == ["x"]
+    leaky = {
+        "runs_on": "cluster",
+        "runs_on_ref": "crew#516 CP2",
+        "command": ["docker", "ps"],
+    }
     assert MAC_ONLY.search(_flat(leaky)).group(0) == "docker"
-    assert not MAC_ONLY.search(_flat({"command": ["python3", "$IDP/bin/idp-catalog-push"]}))
+    assert not MAC_ONLY.search(
+        _flat({"command": ["python3", "$IDP/bin/idp-catalog-push"]})
+    )

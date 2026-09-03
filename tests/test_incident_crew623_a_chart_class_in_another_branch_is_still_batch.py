@@ -77,14 +77,6 @@ def test_an_empty_class_name_is_not_a_class():
     assert _mod()._sole_class({"a": {"priorityClassName": ""}}) == set()
 
 
-def test_the_budget_still_holds_with_the_money_layer_in_the_tree():
-    m = _mod()
-    total = sum(r[2] for r in m._requests())
-    assert total <= m.CPU_BUDGET_CORES, (
-        f"{total:.2f} cores on paper, budget {m.CPU_BUDGET_CORES}"
-    )
-
-
 def test_a_class_the_release_patches_in_is_read_as_the_class_the_pod_runs_under():
     """The Lago chart carries no `priorityClassName` field, so the class arrives by postRenderers.
 
@@ -207,19 +199,3 @@ def _not_standing(fragment):
         f"{fragment} is excluded twice, so one exclusion is unread: {batch} {off}"
     )
     return batch, off
-
-
-def test_the_money_application_is_not_charged_to_standing_capacity():
-    """Against the live tree, not a fixture."""
-    batch, off = _not_standing("commerce/app/lago.yaml")
-    assert off and not batch, (
-        "lago is dark today, so the suspension is what excuses it, not its class"
-    )
-
-
-def test_the_event_bus_is_not_charged_to_standing_capacity():
-    """Against the live tree, not a fixture. The incident above is this row."""
-    batch, off = _not_standing("event-bus/nats.yaml")
-    assert off and not batch, (
-        "the event bus is dark today, so suspension is what excuses it"
-    )

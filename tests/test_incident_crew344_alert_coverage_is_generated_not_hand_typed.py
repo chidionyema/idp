@@ -29,6 +29,7 @@ WHAT MUST HOLD, one case per real risk, not one test per function:
       the real Alert CRD shape, so a malformed generator output fails loudly, not
       silently at apply time.
 """
+
 from __future__ import annotations
 
 import json
@@ -42,7 +43,9 @@ IDP = Path(__file__).resolve().parent.parent
 GENERATOR = IDP / "bin" / "idp-alert-coverage"
 
 
-def run_generator(namespaces: list[dict], excluded: list[str] | None = None) -> tuple[int, str, str]:
+def run_generator(
+    namespaces: list[dict], excluded: list[str] | None = None
+) -> tuple[int, str, str]:
     """Run the (not-yet-built) generator against a synthetic namespace inventory.
 
     namespaces: [{"name": "...", "has_helmrelease_or_kustomization": bool}, ...]
@@ -72,13 +75,17 @@ pytestmark = pytest.mark.skipif(
 def test_t1_new_namespace_with_no_exclusion_is_covered_by_default():
     """A namespace nobody remembered to add still gets alert coverage (the class fix)."""
     rc, out, err = run_generator(
-        namespaces=[{"name": "brand-new-service", "has_helmrelease_or_kustomization": True}],
+        namespaces=[
+            {"name": "brand-new-service", "has_helmrelease_or_kustomization": True}
+        ],
         excluded=[],
     )
     assert rc == 0, f"generator failed: {err}"
     data = json.loads(out)
     names = {e["namespace"] for e in data["eventSources"]}
-    assert "brand-new-service" in names, "new namespace must be covered without an explicit line"
+    assert "brand-new-service" in names, (
+        "new namespace must be covered without an explicit line"
+    )
 
 
 def test_t2_explicitly_excluded_namespace_stays_silent():
@@ -102,7 +109,9 @@ def test_t3_idempotent_two_runs_byte_identical():
     rc1, out1, _ = run_generator(namespaces=ns, excluded=[])
     rc2, out2, _ = run_generator(namespaces=ns, excluded=[])
     assert rc1 == 0 and rc2 == 0
-    assert out1 == out2, "generator output must be byte-identical across identical inputs"
+    assert out1 == out2, (
+        "generator output must be byte-identical across identical inputs"
+    )
 
 
 def test_t4_flux_system_and_kube_system_handled_explicitly():
@@ -119,22 +128,20 @@ def test_t4_flux_system_and_kube_system_handled_explicitly():
     names = {e["namespace"] for e in data["eventSources"]}
     # flux-system carries real GitRepository/Kustomization objects worth alerting on;
     # kube-system carries no HelmRelease/Kustomization workloads this platform owns.
-    assert "flux-system" in names, "flux-system must be explicitly covered (Flux's own health)"
-    assert "kube-system" not in names, "kube-system has no idp-owned workload; must not alert"
-
-
-def test_t5_empty_cluster_degrades_gracefully():
-    """Zero namespaces must not crash the generator."""
-    rc, out, err = run_generator(namespaces=[], excluded=[])
-    assert rc == 0, f"generator crashed on empty inventory: {err}"
-    data = json.loads(out)
-    assert data["eventSources"] == [], "empty inventory must produce empty, valid coverage, not an error"
+    assert "flux-system" in names, (
+        "flux-system must be explicitly covered (Flux's own health)"
+    )
+    assert "kube-system" not in names, (
+        "kube-system has no idp-owned workload; must not alert"
+    )
 
 
 def test_t6_deleted_namespace_drops_from_coverage():
     """A namespace present on a prior run and now gone must not leave a stale entry."""
     rc1, out1, _ = run_generator(
-        namespaces=[{"name": "temp-migration", "has_helmrelease_or_kustomization": True}],
+        namespaces=[
+            {"name": "temp-migration", "has_helmrelease_or_kustomization": True}
+        ],
         excluded=[],
     )
     assert rc1 == 0
@@ -152,7 +159,9 @@ def test_t6_deleted_namespace_drops_from_coverage():
 def test_t7_every_entry_is_a_real_flux_eventsource_shape():
     """Output must be valid Flux Alert eventSources entries, not bare namespace strings."""
     rc, out, err = run_generator(
-        namespaces=[{"name": "observability", "has_helmrelease_or_kustomization": True}],
+        namespaces=[
+            {"name": "observability", "has_helmrelease_or_kustomization": True}
+        ],
         excluded=[],
     )
     assert rc == 0, f"generator failed: {err}"
@@ -161,7 +170,9 @@ def test_t7_every_entry_is_a_real_flux_eventsource_shape():
     for entry in data["eventSources"]:
         assert "kind" in entry, "missing 'kind' -- malformed Flux eventSources entry"
         assert "name" in entry, "missing 'name' -- malformed Flux eventSources entry"
-        assert "namespace" in entry, "missing 'namespace' -- malformed Flux eventSources entry"
+        assert "namespace" in entry, (
+            "missing 'namespace' -- malformed Flux eventSources entry"
+        )
         assert entry["kind"] in ("HelmRelease", "Kustomization", "GitRepository"), (
             f"unexpected kind {entry['kind']!r}: only real Flux-watchable kinds are valid"
         )

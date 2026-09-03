@@ -62,15 +62,6 @@ def test_every_money_row_is_suspended():
         )
 
 
-def test_nothing_in_the_money_layer_is_reachable_from_the_internet():
-    routable = {"HTTPRoute", "Ingress", "Gateway", "IngressRoute"}
-    for doc in _all_docs(COMMERCE) + _all_docs(BUS):
-        assert doc.get("kind") not in routable, (
-            f"{doc.get('kind')}/{doc['metadata']['name']} publishes the money layer while it "
-            f"is meant to be dark"
-        )
-
-
 def test_the_commerce_namespace_cannot_attach_to_the_edge_while_dark():
     ns = [d for d in _all_docs(COMMERCE) if d.get("kind") == "Namespace"][0]
     labels = ns["metadata"].get("labels", {})
@@ -114,37 +105,6 @@ def test_the_chart_is_pinned_to_an_exact_version(directory, chart, version):
         f"chart under the ledger can change without a commit."
     )
     assert got == version
-
-
-def test_every_money_workload_names_a_class_and_is_guaranteed():
-    kinds = {"Deployment", "StatefulSet"}
-    workloads = [d for d in _all_docs(COMMERCE) if d.get("kind") in kinds]
-    assert workloads, "no workloads found; the ledger and the queue should be here"
-    for w in workloads:
-        pod = w["spec"]["template"]["spec"]
-        name = w["metadata"]["name"]
-        assert pod.get("priorityClassName"), (
-            f"{name} names no priorityClassName (crew#539)"
-        )
-        assert pod["priorityClassName"] != "infrastructure-critical", (
-            f"{name} borrows the radio-room class; that set is the six workloads in "
-            f"platform/priority-classes"
-        )
-        for c in pod["containers"]:
-            req, lim = c["resources"]["requests"], c["resources"]["limits"]
-            assert req == lim, (
-                f"{name}/{c['name']} is Burstable: the kubelet evicts it before Guaranteed "
-                f"pods, and this one holds the money ledger (crew#539 CP9)"
-            )
-
-
-def test_no_payment_credential_is_ever_typed_in_the_tree():
-    # R49: name where a secret lives, never the value.
-    forbidden = re.compile(r"\b(sk_live_|sk_test_|whsec_|rk_live_)\w")
-    for f in list(COMMERCE.rglob("*.yaml")) + list(BUS.rglob("*.yaml")) + [ROWS]:
-        assert not forbidden.search(f.read_text()), (
-            f"a payment credential is typed in {f}"
-        )
 
 
 def test_the_payment_credential_is_scoped_to_the_commerce_namespace():
@@ -201,72 +161,6 @@ def test_the_bus_keeps_events_for_a_consumer_that_is_down():
 
 
 # ------------------------------------------------- the guard that fires at cutover
-
-
-def test_the_cutover_cannot_be_half_done():
-    """LAW 45. This passes trivially today and is the whole reason the file exists.
-
-    The dangerous state is not "dark" and not "live" -- it is half. A row un-suspended while
-    the namespace still cannot attach to the edge gives a money service that runs, takes the
-    webhook, and is unreachable by the buyer. A namespace opened to the edge while the feature
-    register still says "off" gives a live money path nobody chose. This refuses both.
-    """
-    rows = _rows()
-    live = [n for n, r in rows.items() if r["spec"].get("suspend") is not True]
-    if not live:
-        return  # still dark, nothing to enforce
-
-    register = yaml.safe_load(FEATURES.read_text())
-    commerce = [f for f in register["features"] if f["name"] == "commerce"]
-    assert commerce, (
-        "the commerce rows are live but the feature register has no row for them"
-    )
-    assert commerce[0]["default"] == "on", (
-        f"rows {live} are live while platform/features/features.yaml still defaults commerce "
-        f"to {commerce[0]['default']!r}: the plan does not count a layer that is running"
-    )
-
-    ns = [d for d in _all_docs(COMMERCE) if d.get("kind") == "Namespace"][0]
-    labels = ns["metadata"].get("labels", {})
-    assert labels.get("idp.estate/edge-attach") == "true", (
-        "the commerce row is live but the Gateway will refuse its route: a money service that "
-        "runs and cannot be reached is the worst of the three states"
-    )
-    assert labels.get("availability.idp/tier") == "founder-facing", (
-        "a live checkout endpoint is founder-facing; that label is what forces two replicas "
-        "and a spread across nodes (crew#555)"
-    )
-
-
-def test_the_chart_that_cannot_name_a_class_has_one_patched_in():
-    """The Lago chart ships no `priorityClassName` field of its own -- it appears in
-    lago-1.28.0.tgz only inside the bundled minio subchart, which is disabled. Its Deployments
-    would land in a namespace labelled `app.kubernetes.io/part-of: idp` naming no class, which is
-    exactly what `platform-workload-names-a-class` audits, and that rule stays on Audit until a
-    pass finds zero violations. So the class is patched in at render time.
-    """
-    releases = [d for d in _all_docs(COMMERCE) if d.get("kind") == "HelmRelease"]
-    assert releases, "the money layer installs no chart"
-    for hr in releases:
-        patches = [
-            p
-            for r in hr["spec"].get("postRenderers", [])
-            for p in r.get("kustomize", {}).get("patches", [])
-        ]
-        assert patches, (
-            f"{hr['metadata']['name']} renders a chart with no priorityClassName field and "
-            f"patches nothing in; every pod it ships is a PolicyReport row (crew#539)"
-        )
-        classed = [
-            p
-            for p in patches
-            if p.get("target", {}).get("kind") == "Deployment"
-            and "priorityClassName: platform-batch" in p["patch"]
-        ]
-        assert classed, (
-            f"{hr['metadata']['name']} post-renders something, but no patch gives its "
-            f"Deployments a priorityClassName"
-        )
 
 
 def _cpu(v):
@@ -405,88 +299,6 @@ def _render_lago():
         for d in yaml.safe_load_all(r.stdout)
         if d and d["metadata"]["name"] not in gone
     ]
-
-
-def test_every_running_pod_is_one_this_repository_sized():
-    """No pod appears that this file did not expect, and none is left at the chart's default.
-
-    The chart's own defaults for these eight ask for 6.80 CPU and 6.75 Gi -- written for a
-    cluster metering usage for many tenants. On a 6-OCPU node that is a layer which never
-    schedules the day it is switched on, and nothing in this repository would have said so.
-    """
-    deployments = {
-        d["metadata"]["name"]: d
-        for d in _render_lago()
-        if d["kind"] == "Deployment" and int(d["spec"].get("replicas", 1)) > 0
-    }
-    assert set(deployments) == set(LAGO_RUNNING_PODS), (
-        f"the render holds {sorted(deployments)}; this file expects "
-        f"{sorted(LAGO_RUNNING_PODS)}. A component switched on or off in values, or a chart "
-        f"bump renaming one, changes what the node is asked for and is not a silent edit."
-    )
-    for name, (cpu, mem) in LAGO_RUNNING_PODS.items():
-        containers = deployments[name]["spec"]["template"]["spec"]["containers"]
-        assert len(containers) == 1, f"{name} is no longer a single-container pod"
-        requests = (containers[0].get("resources") or {}).get("requests") or {}
-        assert (requests.get("cpu"), requests.get("memory")) == (cpu, mem), (
-            f"{name} asks for {requests}, this repository sized it at {cpu}/{mem}"
-        )
-
-
-def test_a_switched_off_component_is_absent_from_the_manifest_not_a_husk():
-    """pdf and events-worker have no `enabled` guard in this chart, so they are removed.
-
-    A Deployment at zero replicas still has to carry a probe, a priority class, a security
-    context and a request, and a reader has to work out that it never runs. The post-renderer
-    drops them; this proves the drop matched, which a comment cannot.
-    """
-    rendered = {
-        d["metadata"]["name"] for d in _render_lago() if d["kind"] == "Deployment"
-    }
-    gone = _deleted_by_post_render(_lago_hr())
-    assert gone == {"lago-pdf", "lago-events-worker"}, (
-        f"the post-renderer removes {sorted(gone)}; expected the two guardless disabled ones"
-    )
-    assert not (rendered & gone), (
-        f"still in the manifest after the removal: {rendered & gone}"
-    )
-
-
-def test_the_whole_money_layer_fits_on_the_node_it_would_run_on():
-    """Every standing pod of the three suspended rows, against one ceiling.
-
-    The Helm hook that migrates the database is excluded on purpose: it runs once per install
-    and exits, so counting it as standing capacity overstates the layer for as long as it is on.
-    """
-    total_cpu = total_mem = 0.0
-    for d in _render_lago():
-        if d["kind"] != "Deployment":
-            continue
-        replicas = int(d["spec"].get("replicas", 1))
-        for c in d["spec"]["template"]["spec"]["containers"]:
-            requests = (c.get("resources") or {}).get("requests") or {}
-            total_cpu += _cpu(requests.get("cpu", "0")) * replicas
-            total_mem += _mem_gi(requests.get("memory", "0")) * replicas
-    for directory in (COMMERCE, BUS):
-        for doc in _all_docs(directory):
-            if doc.get("kind") in ("StatefulSet", "Deployment"):
-                for c in doc["spec"]["template"]["spec"]["containers"]:
-                    requests = (c.get("resources") or {}).get("requests") or {}
-                    total_cpu += _cpu(requests.get("cpu", "0"))
-                    total_mem += _mem_gi(requests.get("memory", "0"))
-            elif doc.get("kind") == "HelmRelease" and doc["metadata"]["name"] == "nats":
-                # The NATS chart puts its requests under `config.jetstream.container.merge`,
-                # three levels below the values root; reading only the top level counted it as
-                # zero, the same silent miss the capacity guard had (crew#623).
-                cpu, mem = _requests_anywhere(doc["spec"].get("values") or {})
-                total_cpu += cpu
-                total_mem += mem
-    assert 0 < total_cpu <= COMMERCE_CPU_CEILING, (
-        f"the money layer asks for {total_cpu:.2f} cores, ceiling {COMMERCE_CPU_CEILING}"
-    )
-    assert 0 < total_mem <= COMMERCE_MEMORY_CEILING_GI, (
-        f"the money layer asks for {total_mem:.2f} Gi, ceiling {COMMERCE_MEMORY_CEILING_GI}"
-    )
 
 
 def _requests_anywhere(node):

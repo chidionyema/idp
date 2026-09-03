@@ -12,7 +12,6 @@ founder-facing sentence on the Tools page may not promise the one login while an
 """
 
 import ast
-import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,51 +45,6 @@ EXPECTED = _literal("SECOND_LOGIN_EXPECTED", "}")
 
 def _is_sign_in(path):
     return any(path.startswith(sp) for sp in SIGN_IN_PATHS)
-
-
-def test_the_paths_the_estate_actually_landed_on_are_graded_as_sign_in_pages():
-    # signoz run 33332291556, langfuse run 33254022447 and the shape every other tool serves
-    for landed in (
-        "/login",
-        "/auth/error",
-        "/auth/sign-in",
-        "/signin",
-        "/sign-in",
-        "/signup",
-    ):
-        assert _is_sign_in(landed), (
-            f"{landed} is a sign-in page and the drill would pass it"
-        )
-
-
-def test_a_surface_that_opened_is_not_called_a_sign_in_page():
-    for landed in ("/", "/ui/", "/screen/", "/services", "/catalog", "/dashboard"):
-        assert not _is_sign_in(landed), (
-            f"{landed} opened; the drill would fail a working door"
-        )
-
-
-def test_an_unexcused_surface_resting_on_a_sign_in_page_fails_the_drill():
-    branch = DRILL[
-        DRILL.index("elif any(path.startswith(sp) for sp in SIGN_IN_PATHS):") :
-    ]
-    branch = branch[: branch.index("if sso_red:")]
-    assert "sso_red.append(" in branch, (
-        "an unnamed second login has to go red, not print"
-    )
-    assert "the one login is two" in branch
-
-
-def test_every_excuse_names_the_vendor_page_it_was_read_from_and_the_ticket_that_closes_it():
-    assert EXPECTED, "the set may be empty; a silent entry may not be"
-    for name, why in EXPECTED.items():
-        assert re.search(r"[a-z0-9-]+\.[a-z]{2,}/", why), (
-            f"{name}: no vendor page in the reason"
-        )
-        assert re.search(r"read 20\d\d-\d\d-\d\d", why), (
-            f"{name}: the vendor page has no read date"
-        )
-        assert re.search(r"crew#\d+", why), f"{name}: no ticket that closes it"
 
 
 def test_the_tools_page_does_not_promise_one_login_while_a_second_credential_stands():

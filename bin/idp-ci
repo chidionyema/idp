@@ -463,6 +463,7 @@ job_described() { ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe 
 # it any other way here would grade a proxy: on 2026-08-25 definitions.py imported a
 # sibling with `from .describe import`, passed every offline check, and put the live
 # code location in PythonError the moment it reloaded. So: load it the way it runs.
+prose_pin_scan() { python3 "$IDP/bin/test-prose-gate" "$1" >/dev/null 2>&1; }
 defs_validate() { ( cd "$(dirname "$1")" && DAGSTER_HOME="$(mktemp -d)" "$MPY" -m dagster definitions validate -f "$(basename "$1")" ) >/dev/null 2>&1; }
 rows=0
 while IFS='|' read -r _ rule gate bad good _; do
@@ -480,6 +481,15 @@ while IFS='|' read -r _ rule gate bad good _; do
   else say "FAIL  agents   row '$rule': refused=$refused passed=$passed"; fail=1; fi
 done < <(grep -E '^\| .* \| .* \| .* \| .* \|$' "$IDP/AGENTS.md" | grep -vE '^\| (rule|---)')
 [ "$rows" -ge 1 ] && say "ok    agents   AGENTS.md: $rows rule rows, each proved both ways" || { say "FAIL  agents   AGENTS.md has no rule rows"; fail=1; }
+
+# 6b. R76 (founder 2026-09-03): the no-prose rule holds over the whole test tree, not just
+#     the fixtures. A test function that only asserts wording is refused here by name.
+if out=$(python3 "$IDP/bin/test-prose-gate" "$IDP"/tests/test_*.py); then
+  say "ok    prose    no test function only asserts prose (R76)"
+else
+  say "FAIL  prose    a test function only asserts prose/string membership in file text (R76)"
+  printf '%s\n' "$out" | sed 's/^/      /'; fail=1
+fi
 
 # 7. The bind audit proves itself both ways with no machine under it. R20: the
 #    gateway is the only process that may bind a non-loopback address. The AGENTS.md

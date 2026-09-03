@@ -116,11 +116,3 @@ def test_incident_crew66_a_root_from_the_environment_mints_the_children_and_driv
     assert "cf-root-secret" not in p.stdout and "cf-child-secret" not in p.stdout, (
         "a secret reached stdout"
     )
-
-
-def test_incident_crew66_oke_check_apply_hands_the_root_in_and_is_blind_without_it():
-    wf = (ROOT / ".github" / "workflows" / "oke-check.yml").read_text()
-    step = wf[wf.index("bin/idp-bootstrap-cloudflare (crew#66") :]
-    step = step[: step.index("\n      - name:")]
-    assert "CLOUDFLARE_ROOT_TOKEN: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}" in step
-    assert "BLIND   cloudflare-api-token" in step and "inputs.mode == 'apply'" in step

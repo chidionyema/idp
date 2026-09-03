@@ -60,12 +60,6 @@ def test_delivery_is_sops_to_estate_secrets_and_the_runner_decrypts_nothing():
     assert lanes["vault-writer"] == {"metadata": "read", "contents": "write"}
 
 
-def test_the_value_never_lands_on_disk_or_in_the_log():
-    _, run, _ = _seed_step()
-    line = next(l for l in run.splitlines() if "secret get laptop" in l)
-    assert "| jq -r .key |" in line and ">" not in line.split("secret-add")[0]
-
-
 def test_litellm_status_fails_on_a_vendor_key_left_on_the_mac(tmp_path):
     home = tmp_path
     (home / ".pi").mkdir()
@@ -113,13 +107,6 @@ def test_the_hermes_key_is_a_router_key_with_claude_first():
     cfg = yaml.safe_load((ROOT / "platform" / "llm" / "config.yaml").read_text())
     assert lanes[0] == "claude"
     assert set(lanes) <= {m["model_name"] for m in cfg["model_list"]}
-
-
-def test_hermes_delivery_is_the_laptop_road():
-    _, run, _ = _seed_step()
-    assert 'secret-add" dev LITELLM_HERMES_KEY LITELLM_API_KEY' in run
-    line = next(l for l in run.splitlines() if "secret get hermes" in l)
-    assert "| jq -r .key |" in line and ">" not in line.split("secret-add")[0]
 
 
 def test_a_new_key_file_is_added_by_name_before_the_commit():

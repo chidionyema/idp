@@ -5,6 +5,7 @@ test): the collector in platform/observability/telemetry-coverage.yaml marks a p
 longer than the grace period and absent from both ClickHouse tables as missing (FAIL); a pod
 either table has seen is covered (ok); and a backend that answers neither query is BLIND,
 never ok. The three verdicts come from the same function over the same pod list."""
+
 import pathlib
 import types
 from datetime import datetime, timedelta, timezone
@@ -26,11 +27,20 @@ def _collector():
 
 def _pod(ns, name, minutes_old, phase="Running"):
     start = (NOW - timedelta(minutes=minutes_old)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    return {"metadata": {"namespace": ns, "name": name}, "status": {"phase": phase, "startTime": start}}
+    return {
+        "metadata": {"namespace": ns, "name": name},
+        "status": {"phase": phase, "startTime": start},
+    }
 
 
-PODS = {"items": [_pod("kini", "kini-worker-1", 30), _pod("llm", "litellm-router-1", 30),
-                  _pod("llm", "just-started", 2), _pod("backstage", "done-job", 30, phase="Succeeded")]}
+PODS = {
+    "items": [
+        _pod("kini", "kini-worker-1", 30),
+        _pod("llm", "litellm-router-1", 30),
+        _pod("llm", "just-started", 2),
+        _pod("backstage", "done-job", 30, phase="Succeeded"),
+    ]
+}
 
 
 def test_incident_crew320_backend_query_grades_both_ways():
@@ -39,21 +49,41 @@ def test_incident_crew320_backend_query_grades_both_ways():
 
     # ok: the logs table saw one pod, the metrics table the other; the young pod and the finished job are not graded.
     # crew#539 CP12: the same run counts Hubble series naming a radio-room workload (a TSV count row).
-    seen = {"logs": {("kini", "kini-worker-1")}, "metrics": {("llm", "litellm-router-1")}, "hubble": {("7",)}}
-    route = lambda sql: seen["hubble" if "hubble" in sql else "logs" if "logs" in sql else "metrics"]  # noqa: E731
+    seen = {
+        "logs": {("kini", "kini-worker-1")},
+        "metrics": {("llm", "litellm-router-1")},
+        "hubble": {("7",)},
+    }
+    route = lambda sql: seen[
+        "hubble" if "hubble" in sql else "logs" if "logs" in sql else "metrics"
+    ]  # noqa: E731
     head, body = mod.main(kube=kube, clickhouse=route, now=NOW)
-    assert head.startswith("ok telemetry-coverage") and "pods=2 seen=2 missing=0" in head, head
+    assert (
+        head.startswith("ok telemetry-coverage") and "pods=2 seen=2 missing=0" in head
+    ), head
     assert "hubble_radio_flows=7" in head, head
     # crew#718 CP8: line 1 names each table on its own, so a switched-off preset reads differently
     # from a broken pipeline. A table that did not answer prints "-"; one that answered and knew
     # nothing prints 0. The union alone hid a receipt of seen=3 of 103 while three metric presets
     # were disabled and nobody could tell whether logs were still landing.
     assert "[logs=1 metrics=1 traces=1]" in head, head
-    assert body["seen_by_table"] == {"logs": 1, "metrics": 1, "traces": 1}, body["seen_by_table"]
-    assert body["missing"] == [] and body["backend_errors"] == {} and body["hubble_radio_flows"] == 7
+    assert body["seen_by_table"] == {"logs": 1, "metrics": 1, "traces": 1}, body[
+        "seen_by_table"
+    ]
+    assert (
+        body["missing"] == []
+        and body["backend_errors"] == {}
+        and body["hubble_radio_flows"] == 7
+    )
 
     # FAIL: neither table has heard from the router in the window, and the receipt names it.
-    head, body = mod.main(kube=kube, clickhouse=lambda sql: {("7",)} if "hubble" in sql else {("kini", "kini-worker-1")}, now=NOW)
+    head, body = mod.main(
+        kube=kube,
+        clickhouse=lambda sql: (
+            {("7",)} if "hubble" in sql else {("kini", "kini-worker-1")}
+        ),
+        now=NOW,
+    )
     assert head.startswith("FAIL telemetry-coverage") and "missing=1" in head, head
     assert body["missing"] == [{"ns": "llm", "pod": "litellm-router-1"}]
 
@@ -81,11 +111,6 @@ def test_incident_crew320_backend_query_grades_both_ways():
         return {("kini", "kini-worker-1"), ("llm", "litellm-router-1")}
 
     head, body = mod.main(kube=kube, clickhouse=half, now=NOW)
-    assert head.startswith("ok telemetry-coverage") and body["backend_errors"] == {"logs": "logs table missing"}
-
-
-def test_incident_crew320_reader_grades_missing_not_nodes():
-    text = (ROOT / "bin" / "idp-telemetry-coverage").read_text()
-    assert 'kv.get("missing") != "0"' in text
-    assert "state/telemetry-coverage" in text
-    assert 'line1.startswith("BLIND ")' in text
+    assert head.startswith("ok telemetry-coverage") and body["backend_errors"] == {
+        "logs": "logs table missing"
+    }

@@ -72,18 +72,6 @@ def test_every_portal_route_is_a_door_a_drill_row_and_a_probe_target():
     assert not any(missing.values()), missing
 
 
-def test_the_ops_page_reads_the_cluster_through_the_kubernetes_plugin_never_a_script():
-    hook = (HOME / "useClusterHealth.ts").read_text()
-    assert "kubernetesApiRef" in hook and "kubernetesApi.proxy" in hook
-    for path in (
-        "/api/v1/nodes",
-        "/api/v1/pods",
-        "/apis/kustomize.toolkit.fluxcd.io/v1/kustomizations",
-        "/apis/helm.toolkit.fluxcd.io/v2/helmreleases",
-    ):
-        assert path in hook, path
-
-
 def test_the_matrix_carries_the_decision_and_it_is_the_kubernetes_plugin():
     matrix = yaml.safe_load(MATRIX.read_text())
     (row,) = [

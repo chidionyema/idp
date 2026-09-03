@@ -11,6 +11,7 @@ The store is read before its dependents on purpose: one unready ClusterSecretSto
 ExternalSecret behind it, and a reader who starts at the dependents starts at the wrong end
 (LAW 29, attribute before you repair).
 """
+
 import os
 import stat
 import subprocess
@@ -26,10 +27,14 @@ def _run_diagnose(tmp_path: Path) -> list[str]:
     bin_dir.mkdir()
     for tool in ("kubectl", "flux", "helm"):
         f = bin_dir / tool
-        f.write_text(f'#!/bin/sh\nprintf \'%s %s\\n\' "{tool}" "$*" >> "{log}"\ncat >/dev/null 2>&1 || true\necho ok\n')
+        f.write_text(
+            f'#!/bin/sh\nprintf \'%s %s\\n\' "{tool}" "$*" >> "{log}"\ncat >/dev/null 2>&1 || true\necho ok\n'
+        )
         f.chmod(f.stat().st_mode | stat.S_IEXEC)
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
-    p = subprocess.run([str(PLAYBOOK), "diagnose"], capture_output=True, text=True, env=env)
+    p = subprocess.run(
+        [str(PLAYBOOK), "diagnose"], capture_output=True, text=True, env=env
+    )
     assert p.returncode == 0, p.stdout + p.stderr
     return log.read_text().splitlines() if log.exists() else []
 
@@ -41,23 +46,13 @@ def _index_of(calls: list[str], needle: str) -> int:
     return -1
 
 
-def test_the_incident_diagnose_reads_externalsecret_conditions(tmp_path):
-    """The object idp#685 and idp#697 both timed out on is read, with its Ready reason."""
-    calls = _run_diagnose(tmp_path)
-    hits = [c for c in calls if "externalsecrets.external-secrets.io" in c]
-    assert hits, "diagnose never read an ExternalSecret; the break in idp#685/idp#697 stays invisible"
-    assert any("-A" in c for c in hits), "the read must cover every namespace, not one"
-    assert any(".reason" in c and ".message" in c for c in hits), (
-        "an ExternalSecret row without its Ready reason and message repeats what the "
-        f"Kustomization already said and explains nothing: {hits}"
-    )
-
-
 def test_the_incident_diagnose_reads_the_store_the_secrets_come_through(tmp_path):
     """One unready store is every ExternalSecret behind it; naming it is the attribution."""
     calls = _run_diagnose(tmp_path)
     hits = [c for c in calls if "clustersecretstores.external-secrets.io" in c]
-    assert hits, "diagnose never read a ClusterSecretStore; a dead vault door reads as N broken secrets"
+    assert hits, (
+        "diagnose never read a ClusterSecretStore; a dead vault door reads as N broken secrets"
+    )
     assert any(".reason" in c and ".message" in c for c in hits), hits
 
 
@@ -82,8 +77,12 @@ def test_the_guard_would_catch_the_rows_being_dropped_again(tmp_path):
     """
     stripped = tmp_path / "playbook"
     text = PLAYBOOK.read_text()
-    kept = [ln for ln in text.splitlines(keepends=True) if "external-secrets.io" not in ln]
-    assert len(kept) < len(text.splitlines()), "no external-secrets row to strip; the guard has nothing to prove"
+    kept = [
+        ln for ln in text.splitlines(keepends=True) if "external-secrets.io" not in ln
+    ]
+    assert len(kept) < len(text.splitlines()), (
+        "no external-secrets row to strip; the guard has nothing to prove"
+    )
     stripped.write_text("".join(kept))
     stripped.chmod(stripped.stat().st_mode | stat.S_IEXEC)
 
@@ -92,7 +91,9 @@ def test_the_guard_would_catch_the_rows_being_dropped_again(tmp_path):
     bin_dir.mkdir()
     for tool in ("kubectl", "flux", "helm"):
         f = bin_dir / tool
-        f.write_text(f'#!/bin/sh\nprintf \'%s %s\\n\' "{tool}" "$*" >> "{log}"\ncat >/dev/null 2>&1 || true\necho ok\n')
+        f.write_text(
+            f'#!/bin/sh\nprintf \'%s %s\\n\' "{tool}" "$*" >> "{log}"\ncat >/dev/null 2>&1 || true\necho ok\n'
+        )
         f.chmod(f.stat().st_mode | stat.S_IEXEC)
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
     subprocess.run([str(stripped), "diagnose"], capture_output=True, text=True, env=env)

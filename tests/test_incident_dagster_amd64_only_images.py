@@ -31,16 +31,6 @@ def _helm_release() -> dict:
     raise AssertionError(f"no dagster HelmRelease in {VALUES_FILE}")
 
 
-def test_webserver_and_daemon_run_the_estate_built_image() -> None:
-    values = _helm_release()["spec"]["values"]
-    for key in ("dagsterWebserver", "dagsterDaemon"):
-        repo = values[key]["image"]["repository"]
-        assert repo == ESTATE_IMAGE, (
-            f"{key} points at {repo}; the vendor images have no arm64 build "
-            "and every node is arm64 — keep the estate-built image"
-        )
-
-
 def test_no_vendor_dagster_image_anywhere_in_the_release() -> None:
     dumped = yaml.safe_dump(_helm_release())
     assert "docker.io/dagster" not in dumped

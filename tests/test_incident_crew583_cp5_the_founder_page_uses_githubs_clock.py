@@ -21,6 +21,7 @@ Rung 4, incident test, both directions plus the honest case. The fix is not a si
 that `now` comes from the `Date` header of the response GitHub served, so the subtraction is one
 clock minus itself and this machine's opinion cannot change the answer.
 """
+
 import importlib.machinery
 import importlib.util
 import json
@@ -32,7 +33,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 BIN = ROOT / "bin" / "estate-founder"
-spec = importlib.util.spec_from_loader("estate_founder", importlib.machinery.SourceFileLoader("estate_founder", str(BIN)))
+spec = importlib.util.spec_from_loader(
+    "estate_founder", importlib.machinery.SourceFileLoader("estate_founder", str(BIN))
+)
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
@@ -42,29 +45,63 @@ OPENED = "2026-08-28T02:00:00Z"
 MERGED = "2026-08-28T05:10:00Z"
 HONEST_NOW = "2026-08-28T06:30Z"
 
-MERGED_PRS = [{"repo": "chidionyema/idp", "number": 529, "title": "crew#554: drills run on the estate's clock",
-               "body": "Use: `bin/idp-drills-row` shows the rows", "created_at": "2026-08-28T01:00:00Z",
-               "url": "https://github.com/chidionyema/idp/pull/529", "merged_at": MERGED}]
-OPEN_PRS = [{"repo": "chidionyema/idp", "number": 527, "title": "crew#554: schedule row counts firings",
-             "body": "", "url": "https://github.com/chidionyema/idp/pull/527", "merged_at": "",
-             "created_at": OPENED, "verdict": ""}]
+MERGED_PRS = [
+    {
+        "repo": "chidionyema/idp",
+        "number": 529,
+        "title": "crew#554: drills run on the estate's clock",
+        "body": "Use: `bin/idp-drills-row` shows the rows",
+        "created_at": "2026-08-28T01:00:00Z",
+        "url": "https://github.com/chidionyema/idp/pull/529",
+        "merged_at": MERGED,
+    }
+]
+OPEN_PRS = [
+    {
+        "repo": "chidionyema/idp",
+        "number": 527,
+        "title": "crew#554: schedule row counts firings",
+        "body": "",
+        "url": "https://github.com/chidionyema/idp/pull/527",
+        "merged_at": "",
+        "created_at": OPENED,
+        "verdict": "",
+    }
+]
 
 
 def _page(tmp: Path, now: str) -> str:
     for name, rows in (("merged", MERGED_PRS), ("open", OPEN_PRS), ("issues", [])):
         (tmp / f"{name}.json").write_text(json.dumps(rows))
     out = tmp / "FOUNDER.md"
-    rc = mod.main(["--merged", str(tmp / "merged.json"), "--open", str(tmp / "open.json"),
-                   "--issues", str(tmp / "issues.json"), "--out", str(out), "--now", now])
+    rc = mod.main(
+        [
+            "--merged",
+            str(tmp / "merged.json"),
+            "--open",
+            str(tmp / "open.json"),
+            "--issues",
+            str(tmp / "issues.json"),
+            "--out",
+            str(out),
+            "--now",
+            now,
+        ]
+    )
     assert rc == 0
     return out.read_text()
 
 
-@pytest.mark.parametrize("dead_clock,label", [
-    ("1970-01-01T00:00Z", "battery_died_rtc_at_the_epoch"),
-    ("2025-07-25T06:30Z", "clock_400d_behind_the_stamps"),
-])
-def test_a_clock_behind_githubs_stamps_never_says_nothing_is_stuck(tmp_path, dead_clock, label):
+@pytest.mark.parametrize(
+    "dead_clock,label",
+    [
+        ("1970-01-01T00:00Z", "battery_died_rtc_at_the_epoch"),
+        ("2025-07-25T06:30Z", "clock_400d_behind_the_stamps"),
+    ],
+)
+def test_a_clock_behind_githubs_stamps_never_says_nothing_is_stuck(
+    tmp_path, dead_clock, label
+):
     """The incident. Before the fix these ages were negative, the `>= REVIEW_H` filter dropped the
     row, and the page told the founder every pull request had a verdict."""
     page = _page(tmp_path, dead_clock)
@@ -113,42 +150,51 @@ def test_the_clock_comes_from_the_date_header_of_githubs_own_response():
 
     def fake(cmd, **kw):
         assert cmd[:3] == ["gh", "api", "-i"], cmd
-        return subprocess.CompletedProcess(cmd, 0, stdout=f"HTTP/2.0 200 OK\r\nDate: {served}\r\n\r\n{{}}\n", stderr="")
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout=f"HTTP/2.0 200 OK\r\nDate: {served}\r\n\r\n{{}}\n", stderr=""
+        )
 
     got = mod.served_now(run=fake)
     assert got == datetime(2026, 8, 28, 6, 30, tzinfo=timezone.utc), got
 
 
-@pytest.mark.parametrize("stdout,label", [
-    ("HTTP/2.0 200 OK\r\nETag: x\r\n\r\n{}\n", "no_date_header"),
-    ("HTTP/2.0 200 OK\r\nDate: not a date\r\n\r\n{}\n", "unreadable_date_header"),
-])
+@pytest.mark.parametrize(
+    "stdout,label",
+    [
+        ("HTTP/2.0 200 OK\r\nETag: x\r\n\r\n{}\n", "no_date_header"),
+        ("HTTP/2.0 200 OK\r\nDate: not a date\r\n\r\n{}\n", "unreadable_date_header"),
+    ],
+)
 def test_a_response_with_no_usable_clock_is_none_and_never_this_machines(stdout, label):
     """None, not a fallback. Falling back to the local clock here is the defect with a longer code
     path, and the page refuses to build rather than print ages nobody can trust."""
-    fake = lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+    fake = lambda cmd, **kw: subprocess.CompletedProcess(
+        cmd, 0, stdout=stdout, stderr=""
+    )
     assert mod.served_now(run=fake) is None
 
 
-def test_the_page_refuses_rather_than_falling_back_when_github_sends_no_clock(tmp_path, monkeypatch, capsys):
+def test_the_page_refuses_rather_than_falling_back_when_github_sends_no_clock(
+    tmp_path, monkeypatch, capsys
+):
     """End to end: no clock, no page. The window itself is `now - 24h`, so there is nothing honest
     to print, and writing yesterday's file over again would be worse than an exit."""
     monkeypatch.setattr(mod, "served_now", lambda *a, **k: None)
     out = tmp_path / "FOUNDER.md"
     for name in ("merged", "open", "issues"):
         (tmp_path / f"{name}.json").write_text("[]")
-    rc = mod.main(["--merged", str(tmp_path / "merged.json"), "--open", str(tmp_path / "open.json"),
-                   "--issues", str(tmp_path / "issues.json"), "--out", str(out)])
+    rc = mod.main(
+        [
+            "--merged",
+            str(tmp_path / "merged.json"),
+            "--open",
+            str(tmp_path / "open.json"),
+            "--issues",
+            str(tmp_path / "issues.json"),
+            "--out",
+            str(out),
+        ]
+    )
     assert rc == 2
     assert not out.exists()
     assert "BLIND" in capsys.readouterr().err
-
-
-def test_this_file_no_longer_asks_the_machine_what_time_it_is():
-    """The guard in test_guard_freshness_is_never_measured_against_this_machines_clock.py holds
-    every script; this says it about the one this incident is in, so the name can leave
-    NOT_YET_MIGRATED and stay gone."""
-    code = "\n".join(l for l in BIN.read_text(encoding="utf-8").splitlines() if not l.lstrip().startswith("#"))
-    body = code.split('"""')
-    code = "".join(body[::2])  # drop docstrings: the prose quotes the defect on purpose
-    assert "datetime.now(" not in code, code

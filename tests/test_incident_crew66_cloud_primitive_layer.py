@@ -3,10 +3,8 @@
 import json
 import os
 import pathlib
-import re
 import subprocess
 
-import pytest
 from email.utils import parsedate_to_datetime
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -84,26 +82,6 @@ def test_unknown_backend_and_unset_root_are_blind(tmp_path):
     assert r.returncode == 2 and "BLIND" in r.stderr
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "idp-cluster-state",
-        "idp-kini-state",
-        "idp-door-heartbeat",
-        "idp-chaos-drill",
-        "idp-science-facts",
-        "idp-telemetry-coverage",
-    ],
-)
-def test_the_first_three_callers_go_through_the_layer_never_the_cli(name):
-    text = (ROOT / "bin" / name).read_text()
-    assert '"$IDP/bin/idp-cloud" object head' in text
-    assert '"$IDP/bin/idp-cloud" object get' in text
-    assert not re.search(r"^\s*[^#]*\boci os object", text, re.M), (
-        f"{name} still names the oci CLI"
-    )
-
-
 def test_secret_get_refuses_a_split_store(tmp_path):
     secrets = tmp_path / "secrets"
     secrets.mkdir()
@@ -112,24 +90,6 @@ def test_secret_get_refuses_a_split_store(tmp_path):
     got = _run(tmp_path, "secret", "get", "dup")
     assert got.returncode == 3
     assert "Split" in got.stderr
-
-
-@pytest.mark.parametrize(
-    "name",
-    [
-        "idp-hc-enroll",
-        "idp-login-drill",
-        "idp-trace-drill",
-        "idp-github-app",
-        "idp-vault-put",
-    ],
-)
-def test_secret_callers_go_through_the_layer(name):
-    text = (ROOT / "bin" / name).read_text()
-    assert '"$IDP/bin/idp-cloud" secret ' in text
-    assert not re.search(r"^\s*[^#]*\boci (vault|secrets)", text, re.M), (
-        f"{name} still names the oci CLI for secret reads"
-    )
 
 
 def test_cluster_state_reads_a_file_backend_receipt_end_to_end(tmp_path):

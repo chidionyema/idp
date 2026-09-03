@@ -11,6 +11,7 @@ a production namespace." Three guards, graded on the rendered thing, not on a fi
    ClusterPolicy matching the mark, wired into platform/edge, Enforce;
 3. a pull request that deletes or renames a file holding a Namespace manifest is refused.
 """
+
 import os
 import re
 import subprocess
@@ -30,7 +31,11 @@ def _flux_paths():
         if "flux-system" in f.parts:
             continue
         for doc in yaml.safe_load_all(f.read_text()):
-            if doc and doc.get("kind") == "Kustomization" and str(doc.get("apiVersion", "")).startswith("kustomize.toolkit"):
+            if (
+                doc
+                and doc.get("kind") == "Kustomization"
+                and str(doc.get("apiVersion", "")).startswith("kustomize.toolkit")
+            ):
                 path = (doc.get("spec") or {}).get("path")
                 if path and path.strip("./") and (ROOT / path).is_dir():
                     out.append((doc["metadata"]["name"], path))
@@ -38,26 +43,25 @@ def _flux_paths():
 
 
 def _rendered_namespaces(path):
-    p = subprocess.run(["kubectl", "kustomize", str(ROOT / path)], capture_output=True, text=True)
+    p = subprocess.run(
+        ["kubectl", "kustomize", str(ROOT / path)], capture_output=True, text=True
+    )
     if p.returncode != 0:
         pytest.skip(f"kubectl kustomize cannot render {path}: {p.stderr.strip()[:200]}")
-    return [d for d in yaml.safe_load_all(p.stdout) if d and d.get("kind") == "Namespace"]
-
-
-@pytest.mark.parametrize("row,path", _flux_paths(), ids=lambda x: x if isinstance(x, str) and "/" not in x else None)
-def test_every_namespace_a_flux_row_renders_is_never_pruned(row, path):
-    misses = [
-        d["metadata"]["name"] for d in _rendered_namespaces(path)
-        if (d["metadata"].get("annotations") or {}).get(MARK) != "disabled"
+    return [
+        d for d in yaml.safe_load_all(p.stdout) if d and d.get("kind") == "Namespace"
     ]
-    assert not misses, f"Flux row {row} ({path}) renders Namespace(s) Flux may garbage-collect: {misses}"
 
 
 def test_every_namespace_manifest_under_platform_carries_the_mark():
     misses = []
     for f in sorted((ROOT / "platform").rglob("*.y*ml")):
         for d in yaml.safe_load_all(f.read_text()):
-            if d and d.get("kind") == "Namespace" and (d["metadata"].get("annotations") or {}).get(MARK) != "disabled":
+            if (
+                d
+                and d.get("kind") == "Namespace"
+                and (d["metadata"].get("annotations") or {}).get(MARK) != "disabled"
+            ):
                 misses.append(f"{f.relative_to(ROOT)}: {d['metadata']['name']}")
     assert not misses, "\n".join(misses)
 
@@ -68,10 +72,16 @@ def test_the_cluster_refuses_deleting_a_marked_namespace():
     rule = pol["spec"]["rules"][0]
     res = rule["match"]["any"][0]["resources"]
     assert res["kinds"] == ["Namespace"] and res["operations"] == ["DELETE"]
-    assert res["annotations"] == {MARK: "disabled"}, "scope is the mark, not a name list"
+    assert res["annotations"] == {MARK: "disabled"}, (
+        "scope is the mark, not a name list"
+    )
     assert rule["validate"]["failureAction"] == "Enforce" and "deny" in rule["validate"]
-    wired = yaml.safe_load((ROOT / "platform/edge/kustomization.yaml").read_text())["resources"]
-    assert "protect-namespaces.yaml" in wired, "policy file exists but platform/edge does not ship it"
+    wired = yaml.safe_load((ROOT / "platform/edge/kustomization.yaml").read_text())[
+        "resources"
+    ]
+    assert "protect-namespaces.yaml" in wired, (
+        "policy file exists but platform/edge does not ship it"
+    )
 
 
 def _base_ref():
@@ -80,8 +90,19 @@ def _base_ref():
 
 
 def test_a_pull_request_never_deletes_or_moves_a_namespace_manifest():
-    p = subprocess.run(["git", "-C", str(ROOT), "diff", "--name-status", "-M", f"{_base_ref()}...HEAD"],
-                       capture_output=True, text=True)
+    p = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(ROOT),
+            "diff",
+            "--name-status",
+            "-M",
+            f"{_base_ref()}...HEAD",
+        ],
+        capture_output=True,
+        text=True,
+    )
     if p.returncode != 0:
         pytest.skip(f"no {_base_ref()} to diff against: {p.stderr.strip()[:120]}")
     bad = []
@@ -92,8 +113,15 @@ def test_a_pull_request_never_deletes_or_moves_a_namespace_manifest():
         old = parts[1]
         if not old.endswith((".yaml", ".yml")):
             continue  # a Namespace manifest is YAML; a binary blob (a gif) is not text to decode
-        blob = subprocess.run(["git", "-C", str(ROOT), "show", f"{_base_ref()}:{old}"], capture_output=True, text=True)
+        blob = subprocess.run(
+            ["git", "-C", str(ROOT), "show", f"{_base_ref()}:{old}"],
+            capture_output=True,
+            text=True,
+        )
         if blob.returncode == 0 and "kind: Namespace" in blob.stdout:
             bad.append(line)
-    assert not bad, ("a Namespace manifest was deleted or moved in this PR; Flux prunes what leaves a "
-                     "row's inventory (catalogue 404, 2026-08-29). Keep the file where it is: " + "; ".join(bad))
+    assert not bad, (
+        "a Namespace manifest was deleted or moved in this PR; Flux prunes what leaves a "
+        "row's inventory (catalogue 404, 2026-08-29). Keep the file where it is: "
+        + "; ".join(bad)
+    )

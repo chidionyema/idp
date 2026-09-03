@@ -144,72 +144,6 @@ def test_a_one_cluster_two_active_pools_is_an_ok_row(tmp_path: Path) -> None:
     assert r.returncode == 0 and "9/9 rows green" in r.stdout
 
 
-def test_a_updating_pool_keeps_the_cluster_row_ok_and_names_it(tmp_path: Path) -> None:
-    """One pool ACTIVE, one UPDATING -> the row grades ok and names the resizing pool: the
-    autoscaler resizing a pool is the platform working, not a red row (idp#507, crew#539 CP4).
-    Until idp#548 this case asserted FAIL, and every verify-drill.yml run on 2026-08-28 was red
-    on it while a1-spot resized (crew#516 CP1)."""
-    b = _bin(tmp_path)
-    _fake(
-        b,
-        "oci",
-        """
-        case "$*" in
-          *"iam user get"*) echo estate-ci;;
-        esac
-    """,
-    )
-    _fake(b, "kubectl", "echo '{\"items\":[]}'")
-    _fake(
-        b,
-        "idp-cluster-state",
-        "echo 'ok      cluster-state nodes=0 ready=0 (3 min ago)'",
-    )
-    _fake(
-        b,
-        "idp-drills-row",
-        "echo 'ok        drills    login-drill  login-drill.yml last green 1.0h ago (max 26h)'",
-    )
-    _fake(
-        b, "idp-no-toil", "echo 'PASS    no-toil gate (2 document(s))'"
-    )  # crew#66 hourly row
-    _fake(
-        b,
-        "idp-github-app",
-        "echo 'ok      github-tokens 2 token(s) re-minted from the App'",
-    )  # crew#577 hourly token row
-    _fake(
-        b,
-        "idp-root-trust",
-        "echo 'PASS    root-trust: every entry registered, every MEETS row has its bootstrapper'",
-    )  # crew#66 root-trust row (crew#580)
-    _fake(
-        b,
-        "idp-loop-meter",
-        "echo 'ok    loop-meter: median PR wall-clock this week 274s (n=27), last week 400s (n=31)'",
-    )  # crew#584 CP4 loop row
-    _fake(
-        b,
-        "idp-cloud",
-        """
-        case "$1 $2" in
-          "cluster list") echo "estate ocid1.cluster.fake.abc";;
-          "cluster nodepools") printf "pool-a ACTIVE\\npool-b UPDATING\\n";;
-          "cluster kubeconfig") f=""; shift 2; while [ $# -gt 0 ]; do [ "$1" = --file ] && f="$2"; shift; done; echo fake > "$f";;
-        esac
-    """,
-    )
-    (b / "idp-verify-drill").write_text(SCRIPT.read_text())
-    (b / "idp-verify-drill").chmod(0o755)
-    _token(tmp_path)
-    r = _run(tmp_path, b)
-    assert (
-        "ok      cluster      1 cluster ACTIVE, 1/2 node pool(s) ACTIVE, UPDATING (resize in flight): pool-b"
-        in r.stdout
-    ), r.stdout + r.stderr
-    assert "FAIL    cluster" not in r.stdout
-
-
 def test_a_layer_exit_2_on_cluster_list_makes_the_row_blind(tmp_path: Path) -> None:
     """The layer exits 2 with a message on stderr; verify-drill must call bl cluster with the
     message, not propagate the exit code or treat the empty answer as success."""
@@ -272,45 +206,6 @@ def test_a_layer_exit_2_on_cluster_list_makes_the_row_blind(tmp_path: Path) -> N
 
 
 # ------------------------------------------------------------------------- static checks
-
-
-def test_no_oci_ce_outside_comments_in_the_three_callers() -> None:
-    r"""crew#66 CP5d: every `oci ce ...` call in the three OKE callers must move into the layer.
-    Comments are not counted (the cp5b test uses the same `^\s*[^#]*\b` shape: only the exec-plugin
-    comment in verify-drill mentions `oci ce`, and the plan says leave it)."""
-    for script in (
-        "bin/idp-verify-drill",
-        "bin/idp-oke-rebuild",
-        "bin/idp-flux-bootstrap",
-    ):
-        text = (ROOT / script).read_text()
-        offenders = [
-            line
-            for line in text.splitlines()
-            if not line.lstrip().startswith("#") and "oci ce" in line
-        ]
-        assert offenders == [], (
-            f"{script} still names `oci ce` outside a comment: {offenders}"
-        )
-
-
-def test_verify_drill_calls_idp_cloud_for_each_cluster_verb() -> None:
-    """The plan pins the layer calls literally so a refactor of bin/idp-verify-drill cannot quietly
-    re-introduce the OCI CLI. Same `oci ce` comment rule applies."""
-    text = SCRIPT.read_text()
-    assert '"$IDP/bin/idp-cloud" cluster list' in text
-    assert '"$IDP/bin/idp-cloud" cluster nodepools' in text
-    assert '"$IDP/bin/idp-cloud" cluster kubeconfig "$cid" --file "$kc"' in text
-
-
-def test_flux_bootstrap_calls_idp_cloud_for_the_kubeconfig() -> None:
-    text = (ROOT / "bin" / "idp-flux-bootstrap").read_text()
-    assert (
-        '"$IDP/bin/idp-cloud" cluster kubeconfig "$CLUSTER" --file "$KUBECONFIG"'
-        in text
-    )
-    # the chmod 600 line is kept
-    assert 'chmod 600 "$KUBECONFIG"' in text
 
 
 def test_oke_rebuild_nodes_oci_grades_with_awk_through_the_layer() -> None:

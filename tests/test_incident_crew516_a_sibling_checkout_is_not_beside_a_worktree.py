@@ -23,9 +23,16 @@ REPO_ROOT = IDP / "bin" / "idp-repo-root"
 def _git(cwd, *args):
     return subprocess.run(
         ["git", "-C", str(cwd), *args],
-        capture_output=True, text=True, check=True,
-        env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-             "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"},
+        capture_output=True,
+        text=True,
+        check=True,
+        env={
+            **os.environ,
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@t",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@t",
+        },
     ).stdout.strip()
 
 
@@ -59,7 +66,7 @@ def test_the_sibling_of_a_worktree_is_not_the_sibling_of_the_repository(tmp_path
     primary, linked = _repo_with_a_worktree(tmp_path)
     sibling = primary.parent / "prospector-main"
     sibling.mkdir()
-    assert not (linked.parent / "prospector-main").exists()          # what "$IDP/.." asked for
+    assert not (linked.parent / "prospector-main").exists()  # what "$IDP/.." asked for
     assert (pathlib.Path(_root_of(linked)).parent / "prospector-main").is_dir()
 
 
@@ -73,12 +80,3 @@ def test_a_directory_that_is_not_a_checkout_degrades_to_itself(tmp_path):
     plain = tmp_path / "tarball"
     plain.mkdir()
     assert _root_of(plain) == str(plain.resolve())
-
-
-def test_both_scripts_that_had_the_bug_now_ask_for_the_primary_checkout():
-    """LAW 45: the mistake is not closed until every instance of it is."""
-    for name, sibling in (("idp-kyverno-render", "prospector-main"), ("scheduler-up", "crew")):
-        text = (IDP / "bin" / name).read_text()
-        assert f'/../{sibling}' in text, name
-        assert "idp-repo-root" in text, name
-        assert '"$IDP/../' not in text, f"{name} still looks beside the worktree"

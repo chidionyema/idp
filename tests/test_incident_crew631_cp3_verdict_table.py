@@ -5,27 +5,12 @@ import importlib.machinery
 import importlib.util
 import json
 import os
-import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 IDP = os.path.dirname(HERE)
 sys.path.insert(0, IDP)
 from probes import store as S  # noqa: E402
-
-
-def test_schema_grants_insert_to_prover_select_to_agent_and_refuses_update_delete():
-    sql = S.SCHEMA_SQL
-    assert re.search(r"GRANT INSERT, SELECT ON verdicts TO prover", sql)
-    assert re.search(r"GRANT SELECT ON verdicts TO agent_role", sql)
-    assert (
-        "UPDATE"
-        not in sql.split("GRANT SELECT ON verdicts TO agent_role")[0].split(
-            "REVOKE ALL"
-        )[1]
-    )
-    assert "BEFORE UPDATE OR DELETE OR TRUNCATE" in sql and "append-only" in sql
-    assert "CHECK (outcome IN ('PASS','FAIL','BLOCKED','ERROR'))" in sql
 
 
 def test_insert_runs_as_prover_never_updates_and_quotes():

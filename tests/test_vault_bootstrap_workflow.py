@@ -55,9 +55,3 @@ def test_the_token_is_never_printed():
             assert "echo" not in line, line
             if "printf" in line:
                 assert "|" in line, line
-
-
-def test_the_keys_the_run_fills_exist():
-    cfg = open(os.path.join(ROOT, "clusters", "oke", "estate-config.yaml")).read()
-    assert re.search(r"(?m)^  BITWARDEN_ORG_ID: ", cfg)
-    assert re.search(r"(?m)^  BITWARDEN_PROJECT_ID: ", cfg)

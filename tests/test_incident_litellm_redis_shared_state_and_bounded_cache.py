@@ -38,16 +38,3 @@ def test_answer_cache_is_on_and_bounded():
     assert isinstance(cp["ttl"], int) and 0 < cp["ttl"] <= 600, (
         "a reused answer must die within ten minutes"
     )
-
-
-def test_cache_service_ships_with_a_minted_password_and_no_literal():
-    text = (LLM / "redis.yaml").read_text()
-    assert "kind: Password" in text, "the password is minted in-cluster, no vault hand"
-    assert 'requirepass "$(cat /run/secrets/litellm/cache/REDIS_PASSWORD)"' in text
-    assert "redis.yaml" in (LLM / "kustomization.yaml").read_text()
-
-
-def test_router_pod_mounts_the_cache_secret():
-    text = (LLM / "litellm.yaml").read_text()
-    assert "/run/secrets/litellm/cache" in text
-    assert "secretName: litellm-cache" in text

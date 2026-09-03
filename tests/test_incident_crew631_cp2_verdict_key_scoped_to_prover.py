@@ -53,40 +53,6 @@ def _compartment_lines(statements):
     ]
 
 
-def test_operators_and_workers_are_refused_the_signing_key_by_name() -> None:
-    statements = json.loads(JSON.read_text())
-    assert SCOPED in statements
-    assert not any(
-        s.endswith("manage secret-family in compartment estate") for s in statements
-    )
-    vault = (ROOT / "platform/oci/vault.tf").read_text()
-    assert (
-        "read secret-family in compartment id ${var.compartment_ocid} where target.secret.name != 'verdict-hmac-key'"
-        in vault
-    )
-
-
-def test_the_prover_group_reads_that_one_secret_and_waits_for_the_bootstrap() -> None:
-    tf = (ROOT / "platform/oci/provers.tf").read_text()
-    assert (
-        "Allow group estate-provers to read secret-family in compartment id ${var.compartment_ocid} where target.secret.name = 'verdict-hmac-key'"
-        in tf
-    )
-    assert (
-        "count          = length(data.oci_identity_groups.provers.groups) > 0 ? 1 : 0"
-        in tf
-    )
-    boot = (ROOT / "bin/idp-oci-bootstrap").read_text()
-    assert (
-        "ensure group estate-provers" in boot
-        and 'displayName eq "estate-provers"' in boot
-    )
-    assert (
-        'can(regex(" in compartment estate( where .*)?$", s))'
-        in (ROOT / "platform/oci/iam.tf").read_text()
-    )
-
-
 def test_drift_grader_matches_the_scoped_line_and_refuses_the_unscoped_one(
     tmp_path: Path,
 ) -> None:

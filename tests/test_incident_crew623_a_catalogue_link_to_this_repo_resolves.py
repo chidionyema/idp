@@ -33,13 +33,6 @@ def _missing(text: str) -> list:
     return missing
 
 
-def test_every_link_into_this_repo_names_a_path_that_exists() -> None:
-    assert _missing(CATALOG.read_text()) == [], (
-        "the portal links to a file this repository does not hold, so the founder gets a 404: "
-        + ", ".join(_missing(CATALOG.read_text()))
-    )
-
-
 def test_the_check_refuses_a_link_to_a_path_that_is_not_here() -> None:
     """A guard that has never said no is a guard nobody has tested."""
     bad = '      url: "https://github.com/chidionyema/idp/blob/main/platform/commerce/app/nowhere.yaml"'

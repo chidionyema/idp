@@ -112,14 +112,6 @@ def test_both_paths_through_the_judge_synthesise_the_pod():
     assert RENDER.count("docs += pods_for(docs)") == 2
 
 
-def test_the_judge_exports_the_repo_root_its_heredocs_read():
-    """The synthesis runs inside `python3 - <<PY` children, which do not inherit a shell local.
-    The export is its own statement, not `export IDP=$(...)`, which shellcheck refuses as SC2155."""
-    assert "\nexport IDP\n" in RENDER, (
-        "IDP is not exported; the heredocs cannot find bin/lib"
-    )
-
-
 def test_the_helper_is_importable_from_a_bare_interpreter():
     """The judge adds bin/lib to sys.path and imports it with no package installed; an import that
     only works under pytest would go BLIND in CI and, before crew#539, BLIND read as a pass."""
