@@ -1,14 +1,7 @@
-# LATEST — session a0d64ea4 (crew#66 founder lane)
-
-## RESUME HERE
-
-Branch `feat/crew66-root-trust` (from crew459-portal-polish worktree): root-trust gate PR
-for crew#66 ruling 5453747447 / crew#580. Files: bin/idp-root-trust (+ test
-tests/test_incident_crew66_root_trust_register.py, 5 passed), docs/reference/policy/root-trust.md
-(register, 33 entries, MEETS 11 / PARTIAL 1 / MISS 19), bin/idp-bootstrap-tailscale (written,
-not run end to end), security-policy row, idp-ci + verify-drill rows, stale comments fixed,
-vault-seed tailscale entry refused. Next: commit, push, bin/pr-report, PR (Tracked: crew#66,
-Drill: root-trust), then tell the founder `bin/idp-bootstrap-tailscale` is ready to run.
-Then the bootstrappers PR (#575–#579): bin/idp-estate-seed, router keys, github-app tokens,
-bin/idp-bootstrap-cloudflare, bin/idp-bootstrap-vendors, umbrella bin/idp-bootstrap-estate.
-Founder plan recorded crew#66 5453918598 (one-shot, "just you").
+## RESUME HERE (2026-09-03T02:0xZ, session a14fc078)
+Fires out: PR 1192 merged 467d2ca6 (revert of #1182 cache + reports ignore-rule root fix,
+both branches, -f patches gone, guards grade the property). Waiver idp#1184 closed. Ruling
++ push-race rows on crew#816. estate-state publishes bare and green.
+NOW: branch fix/render-push-race — retry-on-lease-refusal in bin/catalog-render's push
+(founder: "you should have done it already"). Then: PR, green, merge, confirm llm
+Kustomization Ready on merged revision (watcher b03w2zjlz polling flux-state.md).
