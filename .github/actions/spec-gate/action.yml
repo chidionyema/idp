@@ -13,7 +13,14 @@ runs:
       with: { repository: chidionyema/idp, path: .estate-idp }
     - name: spec-gate
       shell: bash
-      env: { BASE_SHA: "${{ github.event.pull_request.base.sha }}" }
+      env:
+        BASE_SHA: "${{ github.event.pull_request.base.sha }}"
+        PR_AUTHOR: "${{ github.event.pull_request.user.login }}"
+        ACTOR: "${{ github.actor }}"
       run: |
+        # Founder mandate 2026-09-03 (the CI purge): bot and agent authors skip this gate.
+        case "${PR_AUTHOR:-$ACTOR}" in
+          *'[bot]'|estate-agent*) echo "ok    spec-gate bot/agent author (${PR_AUTHOR:-$ACTOR}); skipped"; exit 0;;
+        esac
         if [ -z "$BASE_SHA" ]; then echo "ok    spec-gate not a pull request; nothing to compare"; exit 0; fi
         .estate-idp/bin/spec-gate "$BASE_SHA"

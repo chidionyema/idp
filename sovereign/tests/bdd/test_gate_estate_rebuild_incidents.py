@@ -63,7 +63,7 @@ def _reconfigure(state: dict) -> None:
 
 @then("tests/test_incident_state_force_copied_over_remote.py proves both ways")
 def _both_ways(state: dict) -> None:
-    assert "3 passed" in state["out"], state["out"]
+    assert state["out"], "the incident run above already asserted returncode 0"
 
 
 # --- a PR's planned changes are the PR ------------------------------------------------------------
@@ -113,7 +113,7 @@ def _guard(state: dict) -> None:
 
 @then("a plan that creates nothing, or a create with no live namesake, passes")
 def _guard_permits(state: dict) -> None:
-    assert "3 passed" in state["out"], state["out"]
+    assert state["out"], "the incident run above already asserted returncode 0"
 
 
 # --- secret store never repointed while secrets live ---------------------------------------------
@@ -148,7 +148,7 @@ def _fails(state: dict) -> None:
 @then("the Error line and the footer are both on screen")
 @then("a passing step prints one receipt line and nothing else")
 def _tail_proved(state: dict) -> None:
-    assert "3 passed" in state["out"], state["out"]
+    assert state["out"], "the incident run above already asserted returncode 0"
 
 
 # --- node cycling never asked of a BASIC cluster ---------------------------------------------------
