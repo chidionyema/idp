@@ -58,8 +58,43 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 USER node
 WORKDIR /app
 COPY --from=packages --chown=node:node /app .
+# NO NATIVE MODULE MAY FAIL TO BUILD AND STILL SHIP.
+#
+# Until 2026-08-25 this install ended `Done with warnings`, and the warning was
+# `YN0009: keytar@npm:7.9.0 couldn't be built successfully (exit code 1)`. It was
+# printed on every build for as long as this image has existed. Nobody acted on
+# it, because acting on it took a dependency trace to find out whether it
+# mattered -- so the finding was that it was harmless, and the next session paid
+# for the same trace again. A warning that recurs and is always dismissed is not
+# an instrument, it is a cost with a habit attached.
+#
+# It is closed at the source instead: root package.json declares
+# `dependenciesMeta.keytar.built: false`, so yarn does not attempt the build and
+# emits nothing. That leaves this grep with exactly one job -- catching the NEXT
+# native module that fails, which today would have been lost in the noise of a
+# warning everyone had learned to skip past.
+#
+# It also prints the failing module's own compiler output, not just the YN0009
+# line. Yarn reports `logs can be found here: /tmp/xfs-.../build.log` -- a path
+# inside a container that no longer exists by the time anyone reads the failure,
+# so the one thing needed to act on it was the one thing thrown away. Three
+# attempts to reproduce it outside the build failed on environment differences
+# before this was added.
+#
+# `yarn install` exits 0 on YN0009, by design: a failed postinstall is not a
+# failed resolution. So the exit status cannot be the gate and the log has to be.
+# The log goes to a file rather than through `tee`, because RUN uses /bin/sh and
+# the base image's sh is dash: PIPESTATUS is a bashism and $? after a pipe is
+# tee's status, so a piped form would report success for a failed install.
 RUN --mount=type=cache,target=/home/node/.cache/yarn,sharing=locked,uid=1000,gid=1000 \
-    yarn install --immutable
+    yarn install --immutable >/tmp/yarn.log 2>&1; s=$?; cat /tmp/yarn.log; [ "$s" -eq 0 ] || exit "$s"; \
+    if grep -q 'YN0009' /tmp/yarn.log; then \
+      echo "FATAL: a native module failed to build." >&2; \
+      for f in /tmp/xfs-*/build.log; do \
+        [ -f "$f" ] || continue; echo "--- $f ---" >&2; tail -40 "$f" >&2; \
+      done; \
+      exit 1; \
+    fi
 COPY --chown=node:node . .
 RUN yarn tsc
 RUN yarn build:all
@@ -88,8 +123,23 @@ COPY --from=build --chown=node:node /app/.yarn ./.yarn
 COPY --from=build --chown=node:node /app/.yarnrc.yml ./
 COPY --from=build --chown=node:node /app/backstage.json ./
 COPY --from=build --chown=node:node /app/yarn.lock /app/package.json /app/packages/backend/dist/skeleton/ ./
+# The same gate, and this is the one that mattered. `--production` does not drop
+# keytar: it arrives through @backstage/backend-defaults -> @backstage/cli-node,
+# a real runtime dependency of packages/backend, not a dev one. Measured
+# 2026-08-25 inside the shipped image: /app/node_modules/keytar is PRESENT and
+# build/Release holds no .node binary at all. The catalogue serves 297 entities
+# regardless, because nothing in the backend calls it -- but "ships a broken
+# native module and gets away with it" is not a property to rely on quietly.
 RUN --mount=type=cache,target=/home/node/.cache/yarn,sharing=locked,uid=1000,gid=1000 \
-    yarn workspaces focus --all --production && rm -rf "$(yarn cache clean)"
+    yarn workspaces focus --all --production >/tmp/yarn.log 2>&1; s=$?; cat /tmp/yarn.log; [ "$s" -eq 0 ] || exit "$s"; \
+    if grep -q 'YN0009' /tmp/yarn.log; then \
+      echo "FATAL: a native module failed to build." >&2; \
+      for f in /tmp/xfs-*/build.log; do \
+        [ -f "$f" ] || continue; echo "--- $f ---" >&2; tail -40 "$f" >&2; \
+      done; \
+      exit 1; \
+    fi; \
+    rm -rf "$(yarn cache clean)"
 
 # --- stage 4: the runtime image -----------------------------------------------
 FROM node:24-trixie-slim
