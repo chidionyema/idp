@@ -28,6 +28,7 @@ spec:
     spec:
       automountServiceAccountToken: false
       restartPolicy: Never
+      priorityClassName: platform-batch   # batch bucket: seated by preempting the balloon, never standing capacity
       securityContext:
         runAsNonRoot: true
         runAsUser: 70   # postgres uid in the alpine image, matching the old server exactly
