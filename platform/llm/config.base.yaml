@@ -24,6 +24,12 @@ router_settings:
   num_retries: 2
   allowed_fails: 3
   cooldown_time: 60
+  # One memory for the two router pods (founder 2026-09-03): cooldowns, rate counts and spend
+  # windows live in the shared cache, so what one pod learns the other honours. The password
+  # is exported by the pod from the litellm-cache mount (litellm.yaml), never typed here.
+  redis_host: litellm-cache.llm.svc
+  redis_port: 6379
+  redis_password: os.environ/REDIS_PASSWORD
 
 litellm_settings:
   callbacks: ["otel"]
@@ -34,6 +40,16 @@ litellm_settings:
   failure_callback: ["langfuse"]
   drop_params: true
   turn_off_message_logging: true
+  # Bounded answer reuse (the containment set the founder approved 2026-09-03): exact-match
+  # only, a five-minute life, per-call opt-out honoured ({"cache": {"no-cache": true}}), and
+  # every reuse is marked in the trace, never silent.
+  cache: true
+  cache_params:
+    type: redis
+    host: litellm-cache.llm.svc
+    port: 6379
+    password: os.environ/REDIS_PASSWORD
+    ttl: 300
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

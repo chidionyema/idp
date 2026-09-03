@@ -92,6 +92,7 @@ spec:
             - { name: upstream, mountPath: /run/secrets/litellm/upstream, readOnly: true }
             - { name: langfuse, mountPath: /run/secrets/litellm/langfuse, readOnly: true }
             - { name: sso, mountPath: /run/secrets/litellm/sso, readOnly: true }
+            - { name: cache, mountPath: /run/secrets/litellm/cache, readOnly: true }
             - { name: tmp, mountPath: /tmp }
           resources:
             # OOMKilled at 1Gi within 19s of start on the -database image (Prisma engine plus the
@@ -127,6 +128,8 @@ spec:
           secret: { secretName: litellm-langfuse }
         - name: sso
           secret: { secretName: litellm-sso }   # crew#408: OIDC client for llm.<zone>/ui, written by tofu
+        - name: cache
+          secret: { secretName: litellm-cache }   # REDIS_PASSWORD, minted in-cluster (redis.yaml)
         - name: tmp
           emptyDir: { sizeLimit: 256Mi }
 ---

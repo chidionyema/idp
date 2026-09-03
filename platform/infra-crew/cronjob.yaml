@@ -164,7 +164,7 @@ spec:
                 - { name: secrets, mountPath: /run/secrets/infra-crew, readOnly: true }
                 - { name: tmp, mountPath: /tmp }
               resources:
-                requests: { cpu: 250m, memory: 768Mi }
+                requests: { cpu: 225m, memory: 768Mi }  # 2026-09-03: fits one balloon pod (crew#584 CP-I); limit stays "1", runtime unchanged
                 limits: { cpu: "1", memory: 1536Mi }
               securityContext:
                 runAsNonRoot: true
