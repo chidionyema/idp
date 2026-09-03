@@ -4673,3 +4673,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: the 42 never-PRed idp branches are NOT squash ghosts (audit joined full PR history) and are excluded from any purge; purge set = merged-PR heads whose tip SHA equals the PR head SHA (recoverable at refs/pull/N/head forever)
 📍 State: https://github.com/chidionyema/crew/pull/821
 
+
+## 2026-09-03T10:49:27Z · session 2c88870e · lane code
+🟢 Done: post-merge pipelines measured: prospector container images run 115 green (store web+api main-115-b6ce2fc6 in ghcr 10:43Z); idp build produced backstage main-3684-44e74276. Flux image automation opened idp image-update PR 1243 (auto-merge armed) carrying backstage 3684 + store-api 115; store-web pin follows on the next 5-minute policy scan
+🟡 Active: watcher bwain0wme on the two pins on main; answering founder 'how to change a provider key in LiteLLM' from docs/how-to/onboarding/litellm.md (console LLM Credentials tab; config-defined rows refuse, repo-secret road) — no values in chat
+🔴 Blocked: none
+⚪ Pending: 1243 merges → Flux rolls portal + store → tell the founder what he can open. prospector main CI red on dep_advisory: nltk 3.10.3 PYSEC-2026-3740, no fix version, red since run 1956 (pre-merge) — release does not gate on it; needs a decision, not a silent ignore
+🔧 TOUCHES: nothing (reads only)
+🔀 OVERLAP: session 54539261 owns the LiteLLM console-intake doc change (kimi row → console-owned); I quote it, do not touch it
+📎 FACTS: image-update PR carries every changed pin in one PR; ghcr web tag landed 3 min after api, so the first PR revision can miss one image
+📍 State: https://github.com/chidionyema/idp/pull/1243
+
