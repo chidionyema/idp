@@ -5,15 +5,19 @@
 # (receipt: langfuse-values.yaml clickhouse block; langfuse's own migration files 0001_traces,
 # 0002_observations). This one-shot job renders a Superset import bundle at run time — the
 # ClickHouse connection, two datasets over traces and observations, six charts and the
-# "Boardroom" dashboard — and loads it with the tool's own importer (`superset import-assets`).
+# "Boardroom" dashboard — and loads it with the tool's own importer (ImportDashboardsCommand,
+# the class behind `superset import-dashboards`; 6.1 has no assets importer command).
 # Idempotent: every object carries a fixed uuid, so a re-run overwrites the same rows.
 # The ClickHouse password is read from the mounted secret in the pod and never leaves it.
-# Jobs are immutable: to change the seed, bump the job name (…-v2) in this file and the test.
+# Jobs are immutable, so the Flux force annotation below lets a changed seed be recreated in
+# place instead of failing the row with "field is immutable".
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: superset-boardroom-seed
   namespace: observability
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: Enabled
 spec:
   backoffLimit: 1
   activeDeadlineSeconds: 900
@@ -301,7 +305,34 @@ spec:
               print("BUNDLE-RENDERED", len(files), "files")
               RENDER
 
-              superset import-assets --path /tmp/boardroom-assets.zip
+              # Superset 6.1 has no assets importer command (the seed's first run: "No such command",
+              # Job BackoffLimitExceeded). `import-dashboards` exists but demands a username, so this
+              # calls the class that command wraps, ImportDashboardsCommand, and owns the result with
+              # the first active Admin when one exists (no username typed into the manifest).
+              python3 - <<'IMPORT'
+              from zipfile import ZipFile
+
+              from flask import g
+
+              from superset.app import create_app
+
+              app = create_app()
+              with app.app_context():
+                  from superset import security_manager
+                  from superset.commands.dashboard.importers.dispatcher import (
+                      ImportDashboardsCommand,
+                  )
+                  from superset.commands.importers.v1.utils import get_contents_from_bundle
+
+                  admin = security_manager.find_role("Admin")
+                  owners = [u for u in (admin.user if admin else []) if u.active]
+                  g.user = owners[0] if owners else None
+                  with ZipFile("/tmp/boardroom-assets.zip") as bundle:
+                      contents = get_contents_from_bundle(bundle)
+                  ImportDashboardsCommand(contents, overwrite=True).run()
+                  print("BUNDLE-IMPORTED", len(contents), "files, owner:",
+                        g.user.username if g.user else "none")
+              IMPORT
 
               # Receipt: prove the rows landed by reading them back from the metadata store.
               python3 - <<'VERIFY'
