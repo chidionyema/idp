@@ -44,6 +44,7 @@ spec:
         - https://llm.${ESTATE_ZONE}/
         - https://llm.${ESTATE_ZONE}/ui
         - https://mcp.${ESTATE_ZONE}/github/mcp
+        - https://otto.${ESTATE_ZONE}/healthz
         - https://signoz.${ESTATE_ZONE}
         - https://superset.${ESTATE_ZONE}
         - https://superset.${ESTATE_ZONE}/health
