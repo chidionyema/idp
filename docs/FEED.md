@@ -4813,3 +4813,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: platform/ paper CPU budget is full to the last 0.0 core — ANY new standing cpu request under platform/ reds crew584/crew623; one-shot jobs belong in the batch bucket via priorityClassName platform-batch (bounded by balloon 225m per pod). ALSO: `pytest ... | tail -2` can swallow the verdict line behind cleanup warnings — grep 'passed|failed', never tail
 📍 State: https://github.com/chidionyema/idp/pull/1256
 
+
+## 2026-09-03T12:27:26Z · session a14fc078 · lane .wt-reports
+🟢 Done: idp#1256 MERGED (main ed1fdb92, 21 checks 0 red); Flux ran Job metabase-recovery-dump SUCCEEDED; full dump captured (52KB, scratchpad/metabase-dump.log). VERDICT, proven two angles: the old Metabase held ZERO founder-built content — all 39 questions query database id 1 (the vendor's bundled Sample Database), 0 native SQL, all in the shipped "Examples" collection; the 1 dashboard is the vendor's "E-commerce Insights" example on toy retail data. Nothing real was ever lost in the 0018 swap; superset is empty because nothing real existed to migrate
+🟡 Active: reporting the verdict to the founder; next move on his word = build real boardroom dashboards in Superset on estate data (spend, store, estate health)
+🔴 Blocked: none
+⚪ Pending: volume pgdata-metabase-db-0 (50Gi) now provably holds only vendor samples — deletable on founder word; recovery job self-deletes in 7 days
+🔧 TOUCHES: none this window (merge + read-only capture only)
+🔀 OVERLAP: none
+📎 FACTS: Metabase auto-ships "Examples"/"E-commerce Insights" sample content on fresh install — a remembered rich dashboard may be vendor samples; check dataset_query database ids before promising recovery
+📍 State: https://github.com/chidionyema/idp/commit/ed1fdb924736704e316c69cc2bdffedb4b7ed3d9
+
