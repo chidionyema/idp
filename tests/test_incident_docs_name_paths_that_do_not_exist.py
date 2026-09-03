@@ -60,6 +60,8 @@ ALLOWED = {
     "docs/inventory.json": "written by the estate-inventory workflow onto the state/live-diagram branch only "
     "(crew#740); the Ops tile reads it there through the /estate-state proxy, never from main",
     "docs/inventory.md": "the same table as text, on the state/live-diagram branch only (crew#740)",
+    "docs/reports/index.json": "written by estate-state.yml onto the state/live-diagram branch only (crew#684); "
+    "visible to this check since the founder ruling of 2026-09-03 removed the ignore rule that hid it",
     "claude-guards/laws/AGENTS.md": "the laws file in the claude-guards repository, which is checked out under the home "
     "directory (not as a sibling of this one); named by the Langfuse incident report",
     ".github/workflows/security-scan.yml": "the copy bin/estate-security-rollout installs in every OTHER repository; idp's own copy "
