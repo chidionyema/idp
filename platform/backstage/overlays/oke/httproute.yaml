@@ -15,6 +15,25 @@ spec:
     trustForwardHeader: true
     authResponseHeaders: [X-Auth-Request-User, X-Auth-Request-Email, X-Auth-Request-Preferred-Username]
 ---
+# 2026-09-03 incident (founder: "Last executed flow is not valid" on the identity domain's
+# sign-in page): with an expired session, the catalogue page's background call to
+# /api/auth/oauth2Proxy/refresh followed the login 302 cross-origin; the callback arrived
+# cookie-less (oauth2-proxy log: "No cookies were found in OAuth callback", 403) and the detour
+# started a fresh authorize flow at the identity domain, invalidating the sign-in the founder
+# was typing into. An API call is never a browser navigation, so it must get a status code,
+# never a redirect. oauth2-proxy's /oauth2/auth endpoint answers exactly 202 (with the identity
+# headers) or 401 (oauth2-proxy docs, features/endpoints) -- no Location, no new flow.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: login-forward-auth-api
+  namespace: backstage
+spec:
+  forwardAuth:
+    address: http://oauth2-proxy.identity.svc.cluster.local/oauth2/auth
+    trustForwardHeader: true
+    authResponseHeaders: [X-Auth-Request-User, X-Auth-Request-Email, X-Auth-Request-Preferred-Username]
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -58,6 +77,32 @@ spec:
           headers:
             - { type: RegularExpression, name: Authorization, value: "^Bearer .+" }
       filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
+        - name: catalogue
+          port: 3100
+    # 2026-09-03: API calls take the auth-only door (Middleware above). Signed in: 202 plus the
+    # identity headers, same as before. Session expired: a plain 401 the Backstage frontend
+    # understands, instead of a login redirect no XHR can complete -- the redirect chain is what
+    # broke the founder's interactive sign-in. Gateway API precedence: /api/catalog/ with a
+    # Bearer header still wins above; the catch-all below keeps the browser login for pages.
+    - matches:
+        - path: { type: PathPrefix, value: /api/ }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: login-forward-auth-api
         - type: ExtensionRef
           extensionRef:
             group: traefik.io
