@@ -447,7 +447,7 @@ spec:
   system: edge
   dependsOn:
     - component:default/layer-edge
-    - component:default/layer-prospector-platform
+    - component:default/layer-secret-store
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -919,7 +919,7 @@ spec:
   owner: group:default/platform
   system: scheduling
   dependsOn:
-    - component:default/layer-observability
+    - component:default/layer-scheduling
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
