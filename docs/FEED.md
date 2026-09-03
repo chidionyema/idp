@@ -4552,3 +4552,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: 1206 merge went over REST PUT with # merge-red-intended because the GraphQL bucket for user 377396 is rate-limited; checks were proved green over REST check-runs first
 📍 State: https://github.com/chidionyema/idp/pull/1234
 
+
+## 2026-09-03T10:04:18Z · session a14fc078 · lane .wt-reports
+🟢 Done: founder "look not working" re-measured — the gateway fixes HOLD (his 10:00Z requests reach superset authenticated, API door answers 401 not 302); the remaining defect is one layer down and ROOT-CAUSED from pod source: Superset 6.1 registers its own SPA login view on /login/ regardless of AUTH_TYPE (security/manager.py:3183, views/auth.py:38 renders only, never reads REMOTE_USER) so the signed-in visitor loops on the login screen
+🟡 Active: fix built on the vendor's own override point (register_superset_auth_view=False via CUSTOM_SECURITY_MANAGER subclass) in platform/observability/superset.yaml estate_identity block; FAB 5.0.2 then registers AuthRemoteUserView which logs REMOTE_USER in and auto-registers — branching + PR next, work to green silently
+🔴 Blocked: none
+⚪ Pending: PR green → founder word → merge → Flux rolls → replay probe must show /login/ 302-with-user not 200-anon
+🔧 TOUCHES: platform/observability/superset.yaml (working tree, branch next)
+🔀 OVERLAP: none known
+📎 FACTS: the 10:00Z "Failed to add user to db session: LocalProxy not mapped" warning is anonymous event-logging (superset/utils/log.py:200), a red herring, not the login defect
+📍 State: platform/observability/superset.yaml estate_identity block
+
