@@ -88,18 +88,6 @@ COCKPIT_KEYS: dict[str, tuple[Any, type, str, str]] = {
         "COCKPIT_ROUTE_SIGNAL_PATTERN",
         "Regex matching POST /api/sessions/<id>/{stop,approve,deny,steer}",
     ),
-    "cockpit.start_runner": (
-        "claude", str, "COCKPIT_START_RUNNER",
-        "Runner used by POST /api/sessions (the Start form); the founder never picks one",
-    ),
-    "cockpit.start_budget_default": (
-        50000, int, "COCKPIT_START_BUDGET_DEFAULT",
-        "Budget the Start form pre-fills when the founder leaves it blank (tokens)",
-    ),
-    "cockpit.start_task_max_chars": (
-        4000, int, "COCKPIT_START_TASK_MAX_CHARS",
-        "Longest task text POST /api/sessions accepts; longer is a 400",
-    ),
     "cockpit.route_page_pattern": (
         r"^/s/([A-Za-z0-9_-]+)/?$", str, "COCKPIT_ROUTE_PAGE_PATTERN",
         "Regex matching GET /s/<id> (serves the same index.html shell)",
@@ -152,10 +140,6 @@ COCKPIT_KEYS: dict[str, tuple[Any, type, str, str]] = {
     "cockpit.http_status_ok": (
         200, int, "COCKPIT_HTTP_STATUS_OK",
         "HTTP status for a successful response (RFC 9110)",
-    ),
-    "cockpit.http_status_created": (
-        201, int, "COCKPIT_HTTP_STATUS_CREATED",
-        "HTTP status POST /api/sessions answers with when a session started",
     ),
     "cockpit.http_status_unauthorized": (
         401, int, "COCKPIT_HTTP_STATUS_UNAUTHORIZED",

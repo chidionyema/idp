@@ -7,4 +7,3 @@ metadata:
     # run privileged, as root, or with a host namespace. Same class of fence as
     # the caps allow-list in bin/idp-apply.
     pod-security.kubernetes.io/enforce: restricted
-    idp.estate/edge-attach: "true"   # the shared Gateway selects route namespaces by this label

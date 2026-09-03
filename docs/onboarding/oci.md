@@ -97,14 +97,12 @@ Where each piece lives:
 |---|---|---|
 | Edge charts (Traefik, cert-manager, external-dns, Kyverno) | `platform/edge/` | idp |
 | Flux chain: CRDs -> edge -> prospector-platform -> prospector | `clusters/oke/edge.yaml` | idp |
-| Namespace, `ghcr-pull`, API secret files (OCI Vault via ExternalSecret) | `platform/prospector/`, `bin/idp-flux-bootstrap` | idp |
+| Namespace, `ghcr-pull`, API secret files (sops) | `platform/prospector/`, `bin/idp-flux-bootstrap` | idp |
 | Deployments, Gateway, HTTPRoutes, ClusterIssuer, policies | `prospector/deploy/k8s/overlays/oke` | prospector |
 
 The API reads its secrets as files under `/var/run/secrets/prospector`, one file per key, from
-Secret `prospector-store-api-env`, which External Secrets writes from the OCI Vault secret
-`prospector-store-api-env` (one JSON object, one key per file). To change one: update that vault
-secret (`oci vault secret update-base64`); the ExternalSecret refreshes it within an hour, or
-`kubectl -n prospector annotate externalsecret prospector-store-api-env force-sync=$(date +%s)` now.
+Secret `prospector-store-api-env`. To change one: `sops platform/prospector/store-api-env.sops.yaml`
+with `SOPS_AGE_KEY_FILE` pointing at the cluster key, then push; Flux applies it.
 
 DNS. The zone is on Cloudflare (123-reg holds only the registration). external-dns writes A
 records for the HTTPRoute hostnames from the Traefik load balancer address, with a TXT registry and

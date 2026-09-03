@@ -19,16 +19,8 @@ oci ce cluster create-kubeconfig --cluster-id "$CLUSTER" --file "$KUBECONFIG" --
 chmod 600 "$KUBECONFIG"
 kubectl get --raw /readyz >/dev/null && echo "ok      apiserver ready"
 kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-# crew#227 CP3, 2026-08-25: the last sops file left platform/ (idp#120); workload secrets come from
-# OCI Vault through External Secrets. The age key never enters the cluster again.
-kubectl -n flux-system delete secret sops-age --ignore-not-found >/dev/null && echo "ok      no sops-age secret in flux-system (secrets come from OCI Vault)"
-# crew#227 CP3: the ClusterSecretStore (platform/secret-store) reads the vault OCID and region from
-# this ConfigMap through Flux postBuild substitution, so no tenancy identifier is typed in git.
-VAULT_ID=$(cd "$IDP/platform/oci" && tofu output -raw vault_id 2>/dev/null || true)
-if [ -n "$VAULT_ID" ]; then
-  kubectl -n flux-system create configmap estate-vars --from-literal=OCI_VAULT_ID="$VAULT_ID" --from-literal=OCI_REGION="$(vget OCI_REGION)" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-  echo "ok      estate-vars configmap in flux-system (vault id, region)"
-else echo "n/a     estate-vars: no vault_id in tofu outputs yet; secret-store row stays pending"; fi
+kubectl -n flux-system create secret generic sops-age --from-file=age.agekey="$SOPS_AGE_KEY_FILE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+echo "ok      sops-age secret in flux-system"
 # ghcr packages are private; the OCIRepository (flux-system) and the catalogue pod (backstage)
 # both pull with this. Token needs read:packages; write:packages for bin/idp-catalog-push.
 for ns in flux-system backstage prospector edge; do

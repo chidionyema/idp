@@ -49,26 +49,3 @@ variable "control_plane_allowed_cidrs" {
   description = "CIDRs admitted to the Kubernetes API endpoint. Written by bin/idp-oci-login from the measured egress IP."
   default     = []
 }
-
-# crew#220 hand step 2: the name was the literal "estate", so a second cluster (a drill target,
-# a blue/green move) could not exist. Pass -var cluster_name=estate-drill from bin/idp-oke-rebuild.
-variable "cluster_name" {
-  type    = string
-  default = "estate"
-}
-
-variable "oci_auth" {
-  description = "Provider auth: APIKey on a laptop (bin/idp-oci-login), SecurityToken under GitHub OIDC."
-  type        = string
-  default     = "APIKey"
-  validation {
-    condition     = contains(["APIKey", "SecurityToken"], var.oci_auth)
-    error_message = "oci_auth is APIKey or SecurityToken."
-  }
-}
-
-variable "oci_profile" {
-  description = "Profile in ~/.oci/config that holds the credential."
-  type        = string
-  default     = "DEFAULT"
-}

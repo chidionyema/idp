@@ -1,8 +1,6 @@
 # 0003. Identity is OIDC, the gateway enforces it, and Authelia implements both
 
-- Status: SUPERSEDED 2026-08-26 by ADR 0007 for the implementation: federated GitHub login through
-  oauth2-proxy, no local user database. The standard (OIDC, enforced at the gateway) stands.
-  Was: DECIDED 2026-08-24 on the founder's instruction ("final decision"). Only the founder
+- Status: DECIDED 2026-08-24 on the founder's instruction ("final decision"). Only the founder
   moves a thing to live (ruling R16), so this records the choice; it does not claim it runs.
 - Date: 2026-08-24
 - Deciders: founder

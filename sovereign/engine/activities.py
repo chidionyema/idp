@@ -24,9 +24,6 @@ from typing import Any
 from temporalio import activity
 
 from sovereign import config
-from sovereign.engine import budget
-from sovereign.engine import gitops
-from sovereign.engine import interventions as interventions_mod
 from sovereign.engine import receipts as receipts_mod
 from sovereign.engine import runners
 from sovereign.engine import tracing
@@ -34,43 +31,9 @@ from sovereign.engine import tracing
 
 @activity.defn
 async def run_step(inp: dict[str, Any]) -> dict[str, Any]:
-    """Runs the step, then records the git commit the step left behind.
-
-    cp24 requires the receipt to carry "a git commit hash that exists in
-    the repo", and R7's undo reverts to that commit's parent. The HEAD is
-    read here, after the runner, rather than reported by the runner
-    itself: a runner is a vendor CLI (LAW 34) and must not be trusted to
-    tell the truth about the repository. `commit` is None when the step
-    changed nothing, so a receipt never claims a commit that a later step
-    actually produced."""
-    repo = inp.get("repo")
-    before = await asyncio.to_thread(gitops.head, repo) if gitops.is_repo(repo) else None
-    result = await runners.run(
-        inp["runner"], inp["task"], repo, inp["step"], inp.get("steer") or []
+    return await runners.run(
+        inp["runner"], inp["task"], inp.get("repo"), inp["step"], inp.get("steer") or []
     )
-    after = await asyncio.to_thread(gitops.head, repo) if gitops.is_repo(repo) else None
-    result = dict(result)
-    result["commit"] = after if after and after != before else None
-    return result
-
-
-@activity.defn
-async def budget_op(inp: dict[str, Any]) -> dict[str, Any]:
-    """The one door to the versioned budget row (R29). sqlite here, never
-    in workflow.py: a workflow may not touch disk, and the whole point of
-    the row is that two concurrent activities contend for it."""
-    op = inp["op"]
-    session_id = inp["session_id"]
-    tokens = int(inp.get("tokens", 0))
-    if op == "allocate":
-        result = await asyncio.to_thread(budget.allocate, session_id, tokens)
-    elif op == "refill":
-        result = await asyncio.to_thread(budget.refill, session_id, tokens)
-    elif op == "read":
-        result = await asyncio.to_thread(budget.read, session_id)
-    else:
-        result = await asyncio.to_thread(budget.spend, session_id, tokens)
-    return budget.as_dict(result)
 
 
 @activity.defn
@@ -84,16 +47,7 @@ async def append_receipt(record: dict[str, Any]) -> dict[str, Any]:
     state = record.pop("state", None)
     if state is not None:
         record["state_hash"] = hashlib.sha256(config.canonical_json(state)).hexdigest()
-    line = await asyncio.to_thread(receipts_mod.append, record)
-    # R17: a founder intervention also lands in the append-only
-    # transparency log the spec's topology names. The chain is written
-    # first and is the source of truth; the mirror failing must never
-    # fail the step that produced it.
-    try:
-        await asyncio.to_thread(interventions_mod.mirror, line)
-    except (OSError, interventions_mod.NotAppendOnly) as exc:
-        activity.logger.warning(f"append_receipt: intervention mirror failed: {exc}")
-    return line
+    return await asyncio.to_thread(receipts_mod.append, record)
 
 
 @activity.defn

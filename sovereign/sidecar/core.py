@@ -47,7 +47,6 @@ from pathlib import Path
 from typing import Any
 
 from sovereign import config
-from sovereign.engine import dag as dag_mod
 from sovereign.engine import receipts as receipts_mod
 from sovereign.engine import shadow_root
 
@@ -201,16 +200,6 @@ class DBSidecar:
         # drain()'s except OSError.
         try:
             shadow_root.update_head(node_hash, self._dag_dir)
-        except dag_mod.HeadOutsideDagRootError as exc:
-            # R15: this sidecar's DAG directory is not under the
-            # configured DAG root, so advancing the estate's shared head
-            # to it would leave a pointer that dangles the moment this
-            # directory goes away. Refusing is correct; refusing SILENTLY
-            # is how the original defect survived, so the refusal is a
-            # line in the signed chain.
-            receipts_mod.append(
-                {"kind": "head_refused", "table": self._table, "node_hash": node_hash, "text": str(exc)}
-            )
         except OSError:
             pass
 
