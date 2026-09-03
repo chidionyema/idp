@@ -417,26 +417,26 @@ with sync_playwright() as p:
     # Every path the sidebar publishes, graded on a string only that page renders. A path that
     # is not in this table is not published; adding a plugin means adding its row here.
     UNREAD = "could not be read"  # crew#684 CP6: the Ops page's error tiles all say this
+    # Founder 2026-09-03: never grade a page by its wording -- copy moves all the time and a
+    # checker pinning it broke a working page (#1191). A path is graded on answering only.
     PUBLISHED = (
-        ("catalog", "text=Owner"),
-        ("catalog-graph", "text=Catalog Graph"),
-        ("catalog-import", "text=Register an existing component"),
-        ("api-docs", "text=APIs"),
-        ("docs", "text=Owned"),  # the TechDocs index heading is "Docs" (shell text too); "Owned" is its ownership picker, "Documentation" was Backstage 1.x
-        ("create", "text=Templates"),  # the scaffolder page heading is "Templates"; "Create a new component" was Backstage 1.x
-        ("search", "text=Search"),
-        ("settings", "text=Settings"),
-        ("visualizer", "text=Visualizer"),
-        # crew#684 CP0: the sentence only the Tools page says once the catalogue answered. Keep the
-        # last row comment-free: tests slice this tuple by text and a trailing comment eats the ")".
-        ("tools", "text=Every tool we use"),
-        ("ops", "text=The cluster right now"),
-        ("reports", "text=produced on a clock"),
-        ("pair", "text=Type the PIN Moonlight shows you"),
-        ("estate", "text=to find · Enter opens the first"),
+        "catalog",
+        "catalog-graph",
+        "catalog-import",
+        "api-docs",
+        "docs",
+        "create",
+        "search",
+        "settings",
+        "visualizer",
+        "tools",
+        "ops",
+        "reports",
+        "pair",
+        "estate",
     )
     broken = []
-    for path, must_see in PUBLISHED:
+    for path in PUBLISHED:
         before = len(page_errors)
         try:
             r = page.goto(f"{HOME}{path}", wait_until="domcontentloaded")
@@ -444,37 +444,34 @@ with sync_playwright() as p:
             broken.append(f"{path}: did not load ({str(e)[:60]})"); continue
         if r is None or r.status != 200:
             broken.append(f"{path}: answered {getattr(r, 'status', 'no response')}"); continue
-        body = page.locator("body").inner_text()
+        try:
+            page.wait_for_load_state("networkidle", timeout=TIMEOUT)
+        except PWError:
+            pass  # a page that streams forever is graded on what it has answered with
+        try:
+            body = page.locator("body").inner_text(timeout=3000)
+        except PWError:
+            body = ""
         if "PAGE NOT FOUND" in body or "ERROR 404" in body:
             broken.append(f"{path}: client-side 404 inside the shell"); continue
-        try:
-            page.locator(must_see).first.wait_for(state="visible", timeout=TIMEOUT)
-        except PWError:
-            # Say what the page did render, so a broken row can be graded from the log alone
-            # (LAW 28): a locator that drifted reads differently from a plugin that never loaded.
-            try:
-                seen = " ".join(page.locator("body").inner_text(timeout=3000).split())[:400]
-            except PWError:
-                seen = ""
-            # A plugin's error boundary prints "Error in catalog" and swallows the stack; the
-            # JavaScript error itself is what names the bug (run 33000031203 showed "TypeEr").
-            errs = "; ".join(e[:300] for e in page_errors[before:]) or "none"
-            broken.append(f"{path}: rendered but not its own content ({must_see} never appeared); "
+        # A plugin's error boundary prints "Error in catalog" and swallows the stack; the
+        # JavaScript error itself is what names the bug (run 33000031203 showed "TypeEr").
+        # Say what the page did render, so a broken row can be graded from the log alone (LAW 28).
+        errs = "; ".join(e[:300] for e in page_errors[before:])
+        if errs:
+            seen = " ".join(body.split())[:400]
+            broken.append(f"{path}: answered but threw; "
                           f"page says: {seen}; js errors: {errs}")
             continue
         # crew#684 CP6: a page whose tile says its source could not be read is not doing its
-        # job, and it read green here for as long as the heading alone was graded. The phrase
-        # is the one the page prints to a person (R53: the sentence, never a selector); the
-        # test pins it to every error tile in the Ops module.
-        try:
-            shown = " ".join(page.locator("body").inner_text(timeout=3000).split())
-        except PWError:
-            shown = ""
+        # job. An error sentence is not page copy -- it fires only when something is already
+        # broken, so grading it does not pin wording a redesign may move.
+        shown = " ".join(body.split())
         if UNREAD in shown.lower():
             at = shown.lower().find(UNREAD)
             broken.append(f"{path}: a tile could not read its source: "
                           f"...{shown[max(0, at - 80):at + 120]}...")
-    print(f"paths   login-drill  {len(PUBLISHED) - len(broken)}/{len(PUBLISHED)} published paths render their own content")
+    print(f"paths   login-drill  {len(PUBLISHED) - len(broken)}/{len(PUBLISHED)} published paths answer")
     if broken:
         # One line per path: fail() caps its detail at 200 chars, which hid the third
         # broken path on run 32991079528.

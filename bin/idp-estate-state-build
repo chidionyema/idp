@@ -200,7 +200,7 @@ def parse_drill_surfaces(log: str, checked_at: str) -> list[dict]:
                 "name": "published-paths",
                 "verdict": "ok" if m.group("n") == m.group("of") else "FAIL",
                 "checked_at": checked_at,
-                "detail": f"{m.group('n')}/{m.group('of')} published paths render their own content",
+                "detail": f"{m.group('n')}/{m.group('of')} published paths answer",
             }
         )
     for m in DRILL_FAIL.finditer(log):

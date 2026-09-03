@@ -11,18 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 DRILL = ROOT / "bin" / "idp-login-drill"
 PROBE = ROOT / "platform" / "monitoring" / "rules" / "founder-surfaces-probe.yaml"
-PAGE = (
-    ROOT / "backstage" / "packages" / "app" / "src" / "modules" / "home" / "Reports.tsx"
-)
-
-MARKER = "produced on a clock"
-
-
-def test_login_drill_publishes_the_reports_row():
-    text = DRILL.read_text()
-    assert '("reports", "text=produced on a clock")' in text, (
-        "bin/idp-login-drill has no PUBLISHED row for the reports route"
-    )
 
 
 def test_founder_surfaces_probe_targets_the_reports_page():
@@ -30,15 +18,6 @@ def test_founder_surfaces_probe_targets_the_reports_page():
     assert "/reports" in text, (
         "founder-surfaces-probe.yaml has no blackbox target for /reports"
     )
-
-
-def test_drill_marker_is_the_pages_own_lead_sentence():
-    # Two angles: the string the drill waits for must be text the page renders,
-    # so a rewrite of the lead that breaks the drill fails here first.
-    assert MARKER in PAGE.read_text(), (
-        "Reports.tsx no longer renders the sentence the login drill waits for"
-    )
-    assert MARKER in DRILL.read_text()
 
 
 def test_probe_target_is_not_a_selector():

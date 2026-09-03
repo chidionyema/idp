@@ -22,9 +22,7 @@ def test_the_drill_fails_a_page_whose_tile_could_not_read_its_source():
     src = DRILL.read_text()
     assert f'UNREAD = "{UNREAD}"' in src
     loop = src[
-        src.index("for path, must_see in PUBLISHED:") : src.index(
-            "published paths render their own content"
-        )
+        src.index("for path in PUBLISHED:") : src.index("published paths answer")
     ]
     assert "if UNREAD in shown.lower():" in loop
     assert "a tile could not read its source" in loop
@@ -41,9 +39,9 @@ def test_every_error_tile_on_the_ops_page_says_the_phrase_the_drill_grades():
 
 
 def test_no_drill_row_grades_a_selector_or_a_test_id():
+    """Founder 2026-09-03: and never wording either -- rows are bare paths only."""
     src = DRILL.read_text()
     table = src[src.index("PUBLISHED = (") : src.index("broken = []")]
-    for path, must_see in re.findall(r'\("([^"]+)",\s*"([^"]+)"\)', table):
-        assert must_see.startswith("text="), (
-            f"{path}: {must_see} is a selector, not a sentence (R53)"
-        )
+    assert "text=" not in table and "must_see" not in src
+    for path in re.findall(r'"([^"]+)"', table):
+        assert re.fullmatch(r"[a-z][a-z-]*", path), f"{path}: not a bare path"
