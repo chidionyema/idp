@@ -4732,3 +4732,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: none
 📍 State: /Users/chidionyema/dev/code/.wt-portal-today-layout @ 765d740f; fix still uncommitted in /Users/chidionyema/dev/code/idp
 
+
+## 2026-09-03T11:37:25Z · session 54539261 · lane .wt-purge
+🟢 Done: idp PR 1248 reds root-caused and fixed in one wave: verify gate wants Verify: commands in backticks (VERIFY regex in bin/idp-verify-claims), docs gate wanted an architectural record — docs/reference/policy/test-strategy.md + mkdocs nav row pushed (58a5fbce), PR body re-edited with backticked Verify lines; bdd red was derivative (suites skipped behind the docs gate). Laws PR claude-guards#241 and idp#1242 merged earlier
+🟡 Active: watcher bcd6865q9 on 58a5fbce (settle = total>3 && pending==0); merge over REST on the standing "the prs need nerge" word when green
+🔴 Blocked: none
+⚪ Pending: Otto: OTTO_ROUTER_LANE_JUDGMENT_MODEL=kimi already on main (platform/otto-golden/deployment.yaml); needs the console-owned kimi alias answering through the router + founder deploy — no agent deploy ever
+🔧 TOUCHES: idp .wt-purge (docs commit 58a5fbce pushed); PR 1248 body via gh pr edit
+🔀 OVERLAP: none; no other session's branch moved
+📎 FACTS: bin/idp-verify-claims accepts only ^Verify: `cmd` — backticks mandatory, bare Verify: lines read as absent; the bdd job's final assert fails when suites are skipped by an earlier gate in the same workflow
+📍 State: https://github.com/chidionyema/idp/pull/1248
+
