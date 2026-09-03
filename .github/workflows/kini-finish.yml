@@ -59,8 +59,10 @@ jobs:
           git push -q "git@github.com:${GITHUB_REPOSITORY}.git" "$b"
           gh pr create --head "$b" --base main \
             --title "kini: FINISH request $REQUEST (crew#396)" \
-            --body "$(printf '%s\n\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n\n%s\n' \
+            --body "$(printf '%s\n\n%s\n%s\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n\n%s\n' \
               "Board word FINISH: KINI (${{ github.event_name }}, run $REQUEST). Flux applies the renamed Job; it starts KiniFinishWorkflow and waits. Receipt: state/kini via bin/idp-kini-state." \
+              "Optimised: 1 -> 1 steps (rename the Job, let Flux apply it), 1 -> 1 round trips (one push, one pull request); cut: nothing, a board word triggers one rename and there is no plan to shrink (operating-model-gate rule optimised_plan, LAW 51)" \
+              "Control: none: this renames a Job so Flux re-applies it and ships no code a test could fence; what judges it is the kini-finish drill named below and bin/idp-kini-state, both already on main" \
               "Spec: features/sovereign-bus/cp0d_kini_finish_trigger.feature" \
               "Drill: kini-finish" \
               "Cost-delta-usd-month: 0" \
