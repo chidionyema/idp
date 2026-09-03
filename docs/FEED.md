@@ -4662,3 +4662,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: the merge guard refuses when it cannot read checks; the REST merge endpoint with the stated override, after REST check-runs proof, is the road
 📍 State: https://github.com/chidionyema/idp/commit/44e74276 + https://github.com/chidionyema/prospector/commit/b6ce2fc6
 
+
+## 2026-09-03T10:43:53Z · session a14fc078 · lane .wt-reports
+🟢 Done: founder's one-shot strike underway per his 10:40Z doc (~/.claude/docs/founder/2026-09-03T1040Z-na-tactical-developer-looks-at-that-1-6mb-d6900a47.md) + his "ensure we dont lose any work": (1) company-root-vault private repo created, ~/dev/code root checkout pushed (17 files, no secrets); (2) delete_branch_on_merge=true set on ALL 11 repos by API; (3) 58 local idp branch copies (in-sync with live remotes) deleted
+🟡 Active: two background waves: backup/20260903/* push of every local branch (idp/crew/hermes-v2) and rescue/* snapshot push of all 19 dirty worktrees via git stash create (working trees untouched); AFTER both land: remote squash-ghost purge (merged-PR heads only, SHA-matched so refs/pull keeps every commit), fetch --prune, then feat/litellm-redis rebase + PR
+🔴 Blocked: none
+⚪ Pending: superset PR 1238 watcher bc8tri70v; crew audit PR 821 rides merge-when-green
+🔧 TOUCHES: remote refs backup/20260903/* and rescue/* in idp/crew/hermes-v2; repo settings (all repos); NO working tree of any other session touched
+🔀 OVERLAP: rescue snapshots read other sessions' worktrees read-only (stash create); their branches and files unchanged
+📎 FACTS: the 42 never-PRed idp branches are NOT squash ghosts (audit joined full PR history) and are excluded from any purge; purge set = merged-PR heads whose tip SHA equals the PR head SHA (recoverable at refs/pull/N/head forever)
+📍 State: https://github.com/chidionyema/crew/pull/821
+
