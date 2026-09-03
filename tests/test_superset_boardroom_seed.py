@@ -90,6 +90,10 @@ def test_seed_script_is_strict_pinned_and_write_free_on_the_source():
         "Superset 6.1 has no import-assets command; the seed calls the importer class"
     )
     assert "import-assets" not in script
+    assert '"type": "Dashboard"' in script, (
+        "the importer class validates the bundle's metadata type as Dashboard"
+    )
+    assert '"type": "assets"' not in script
     upper = script.upper()
     for verb in ("DROP TABLE", "DELETE FROM", "TRUNCATE", "ALTER TABLE"):
         assert verb not in upper, "the seed never writes to the trace store"
