@@ -688,10 +688,26 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: agents
+  providesApis:
+    - api:default/hermes-agent-api
   dependsOn:
     - component:default/layer-scheduling
     - component:default/layer-secret-store
     - component:default/layer-alerts-github
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: hermes-agent-api
+  description: 'Hermes: the HTTP interface, answering at otto.${ESTATE_ZONE}.'
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/agents
+  definition: |
+    # Not published. hermes-agent answers at otto.${ESTATE_ZONE}; this entity
+    # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -780,6 +796,34 @@ spec:
   dependsOn:
     - component:default/layer-secret-store
     - component:default/layer-backstage-namespace
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-infra-crew
+  title: 'Infrastructure crew'
+  description: 'The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=infra-crew'
+    estate/flux-kustomization: 'infra-crew'
+    estate/path: './platform/infra-crew'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+    - url: https://langfuse.${ESTATE_ZONE}
+      title: 'Model traces'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+    - component:default/layer-alerts-github
+    - component:default/layer-llm
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component

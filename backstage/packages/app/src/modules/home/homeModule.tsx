@@ -1,15 +1,23 @@
-// The home plugin's own page is replaced: a module for `home` that makes a page
-// extension with the default name yields the id `page:home`, which overrides the
-// plugin's page at "/". The widget grid (and the toolkit whose links pointed at
-// 127.0.0.1) goes with it; the front page is the founder god view (crew#459).
-import {
-  createFrontendModule,
-  PageBlueprint,
-} from '@backstage/frontend-plugin-api';
+// The front page at "/" is still Backstage's home plugin (page:home, widgets from
+// app-config.yaml). The drag-and-resize board is gone: HomePageLayoutBlueprint lets
+// us arrange those same widgets in a fixed layout (founder 2026-09-03: outdated look
+// and outdated interactions). The god view from crew#459 stays at /estate.
+import { createFrontendModule, PageBlueprint } from '@backstage/frontend-plugin-api';
+import { HomePageLayoutBlueprint } from '@backstage/plugin-home-react/alpha';
+import { EstateHomeLayout } from './homeLayout';
 
-const estateHomePage = PageBlueprint.make({
+const homeLayout = HomePageLayoutBlueprint.make({
   params: {
-    path: '/',
+    loader: async () => EstateHomeLayout,
+  },
+});
+
+// /estate: the crew#459 god view, one card per founder-surface entity, kept off the front
+// page and off the menu. Graded by bin/idp-login-drill like every other published path.
+const estatePage = PageBlueprint.make({
+  name: 'estate',
+  params: {
+    path: '/estate',
     loader: () => import('./EstateHome').then(m => <m.EstateHome />),
   },
 });
@@ -48,5 +56,5 @@ const opsPage = PageBlueprint.make({
 
 export const homeModule = createFrontendModule({
   pluginId: 'home',
-  extensions: [estateHomePage, pairPhonePage, toolsPage, opsPage],
+  extensions: [homeLayout, estatePage, pairPhonePage, toolsPage, opsPage],
 });

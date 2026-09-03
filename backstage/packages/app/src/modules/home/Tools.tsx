@@ -4,145 +4,136 @@
 // founder-surface entity, its `links:` as buttons, its probe state as the pill the front page
 // uses. Nothing here names a tool; the catalogue is the list (LAW 46).
 import { Entity } from '@backstage/catalog-model';
-import { Content, Link, LinkButton, Page } from '@backstage/core-components';
-import { Typography, makeStyles } from '@material-ui/core';
+import { Content, Link, Page } from '@backstage/core-components';
+import {
+  ButtonLink,
+  Card,
+  CardBody,
+  CardFooter,
+  CardHeader,
+  Flex,
+  Grid,
+  Header,
+  Text,
+} from '@backstage/ui';
 import { doorState, entityPath } from './estate';
 import { useDoors } from './useDoors';
 import { ToolGroup, groupTools, toolsSentence } from './toolGroups';
 import { Pill } from './EstateHome';
-import { monoFamily } from '../theme/tokens';
-
-const useStyles = makeStyles(theme => ({
-  header: { marginBottom: theme.spacing(3) },
-  lead: { fontSize: 17, margin: theme.spacing(1, 0, 0) },
-  group: { marginBottom: theme.spacing(4) },
-  groupTitle: { fontSize: 20, fontWeight: 600, margin: theme.spacing(0, 0, 1.5) },
-  grid: {
-    display: 'grid',
-    gap: theme.spacing(1.5),
-    gridTemplateColumns: 'repeat(auto-fill, minmax(18em, 1fr))',
-  },
-  tile: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: theme.spacing(1),
-    padding: theme.spacing(2),
-    borderRadius: 12,
-    border: `1px solid ${theme.palette.divider}`,
-    background: theme.palette.background.paper,
-    minWidth: 0,
-  },
-  tileTop: { display: 'flex', alignItems: 'center', gap: theme.spacing(1), flexWrap: 'wrap' },
-  tileTitle: { fontWeight: 500, flex: '1 1 10em', minWidth: 0, overflowWrap: 'anywhere' },
-  tileDesc: {
-    fontSize: 13,
-    color: theme.palette.text.secondary,
-    margin: 0,
-    display: '-webkit-box',
-    WebkitLineClamp: 3,
-    WebkitBoxOrient: 'vertical',
-    overflow: 'hidden',
-  },
-  links: { display: 'flex', gap: theme.spacing(0.5), flexWrap: 'wrap' },
-  door: {
-    maxWidth: '100%',
-    '& .MuiButton-label': { whiteSpace: 'normal', overflowWrap: 'anywhere' },
-  },
-  mono: { fontFamily: monoFamily, fontSize: 12, overflowWrap: 'anywhere' },
-}));
 
 export const TITLE = 'Tools';
 
 /** One tile per door: state, name, what it is for, and every link it publishes. */
 const Tile = ({ entity }: { entity: Entity }) => {
-  const classes = useStyles();
   const s = doorState(entity);
   const links = entity.metadata.links ?? [];
+  const title = entity.metadata.title ?? entity.metadata.name;
   return (
-    <div
-      className={classes.tile}
+    <Card
       data-testid={`tool-${entity.metadata.name}`}
       data-state={s.state}
     >
-      <div className={classes.tileTop}>
-        <Pill state={s.state} why={s.why} testId={`tool-health-${entity.metadata.name}`} />
-        <Link to={entityPath(entity)} className={classes.tileTitle}>
-          {entity.metadata.title ?? entity.metadata.name}
-        </Link>
-      </div>
+      <CardHeader>
+        <Flex align="center" gap="2">
+          <Pill
+            state={s.state}
+            why={s.why}
+            testId={`tool-health-${entity.metadata.name}`}
+          />
+          <Link to={entityPath(entity)}>{title}</Link>
+        </Flex>
+      </CardHeader>
       {entity.metadata.description && (
-        <p className={classes.tileDesc} title={entity.metadata.description}>
-          {entity.metadata.description}
-        </p>
+        <CardBody>
+          <Text variant="body-small" color="secondary">
+            {entity.metadata.description}
+          </Text>
+        </CardBody>
       )}
-      <div className={classes.links}>
-        {links.map((link, i) => (
-          <LinkButton
-            key={link.url}
-            to={link.url}
-            color="primary"
-            variant={i === 0 ? 'contained' : 'outlined'}
-            size="small"
-            className={classes.door}
-          >
-            {link.title ?? link.url}
-          </LinkButton>
-        ))}
-      </div>
-    </div>
+      {links.length > 0 && (
+        <CardFooter>
+          <Flex gap="2">
+            {links.map((link, i) => (
+              <ButtonLink
+                key={link.url}
+                href={link.url}
+                variant={i === 0 ? 'primary' : 'secondary'}
+                size="small"
+              >
+                {link.title ?? link.url}
+              </ButtonLink>
+            ))}
+          </Flex>
+        </CardFooter>
+      )}
+    </Card>
   );
 };
 
-const Group = ({ group }: { group: ToolGroup }) => {
-  const classes = useStyles();
-  return (
-    <section className={classes.group} data-testid={`tools-group-${group.name}`}>
-      <h2 className={classes.groupTitle}>
+const Group = ({ group }: { group: ToolGroup }) => (
+  <section data-testid={`tools-group-${group.name}`}>
+    <Flex direction="column" gap="3">
+      <Text as="h2" variant="title-small" weight="bold">
         {group.name}{' '}
-        <Typography component="span" color="textSecondary">
+        <Text as="span" variant="body-small" color="secondary">
           {group.tools.length}
-        </Typography>
-      </h2>
-      <div className={classes.grid}>
+        </Text>
+      </Text>
+      <Grid.Root columns={{ initial: '1', md: '2', lg: '3' }} gap="3">
         {group.tools.map(e => (
           <Tile key={e.metadata.name} entity={e} />
         ))}
-      </div>
-    </section>
-  );
-};
+      </Grid.Root>
+    </Flex>
+  </section>
+);
 
 export const Tools = () => {
-  const classes = useStyles();
   const doors = useDoors();
   const groups = doors.state === 'ready' ? groupTools(doors.doors) : [];
+  const sentence =
+    doors.state === 'loading'
+      ? 'Reading the catalogue.'
+      : doors.state === 'error'
+        ? `The catalogue did not answer, so nothing can be listed. ${doors.error.message}`
+        : toolsSentence(groups);
+
   return (
     <Page themeId="home">
+      <Header title={TITLE} description={sentence} />
       <Content>
-        <header className={classes.header}>
-          <Typography variant="h1" component="h1">
-            {TITLE}
-          </Typography>
-          {doors.state === 'loading' && (
-            <p className={classes.lead} data-testid="tools-loading">
-              Reading the catalogue.
-            </p>
-          )}
-          {doors.state === 'error' && (
-            <p className={classes.lead} data-testid="tools-error">
-              The catalogue did not answer, so nothing can be listed.{' '}
-              <span className={classes.mono}>{doors.error.message}</span>
-            </p>
-          )}
-          {doors.state === 'ready' && (
-            <p className={classes.lead} data-testid="tools-sentence">
-              {toolsSentence(groups)}
-            </p>
-          )}
-        </header>
-        {groups.map(g => (
-          <Group key={g.name} group={g} />
-        ))}
+        {doors.state === 'loading' && (
+          <Text
+            variant="body-large"
+            color="secondary"
+            data-testid="tools-loading"
+          >
+            {sentence}
+          </Text>
+        )}
+        {doors.state === 'error' && (
+          <Text
+            variant="body-large"
+            color="secondary"
+            data-testid="tools-error"
+          >
+            {sentence}
+          </Text>
+        )}
+        {doors.state === 'ready' && (
+          <Flex direction="column" gap="6">
+            <Text
+              variant="body-large"
+              color="secondary"
+              data-testid="tools-sentence"
+            >
+              {sentence}
+            </Text>
+            {groups.map(g => (
+              <Group key={g.name} group={g} />
+            ))}
+          </Flex>
+        )}
       </Content>
     </Page>
   );

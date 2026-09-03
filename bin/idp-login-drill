@@ -295,13 +295,87 @@ with sync_playwright() as p:
         fail("home", f"{HOME} did not reload for the home-page check: {e}")
     # Founder, 2026-08-29: the look and feel is being iterated on and the drill grades none of it.
     # The home page is graded by the founder path only: it answered, and it threw no error.
+    def painted_words(pg):
+        # R66 (crew#764): run 33427731536 shipped a blank grey rectangle as its photograph --
+        # the shot fired before the page painted. A photograph is taken only after words drew.
+        # Settled, not merely started: the first Hermes photograph met a bare word-count
+        # threshold on the header alone while the overview cards were still loading, and the
+        # capability under proof was invisible. Words must exist AND stop growing.
+        w, prev = "", None
+        for _ in range(int(TIMEOUT / 1000)):
+            try:
+                w = " ".join(pg.locator("body").inner_text(timeout=1000).split())
+            except PWError:
+                w = ""
+            if len(w) > 40 and w == prev:
+                return w
+            prev = w
+            time.sleep(1)
+        return w
+
     shot = os.environ.get("DRILL_SHOT")
     if shot:
+        painted_words(page)
         try:
             page.screenshot(path=shot, full_page=True)
         except PWError:
             pass
     print(f"home    login-drill  {n_surfaces} founder-surface entities in the catalogue, {expected} declared in the repository")
+
+    # 6c. The phone, and the Create page. Founder, 2026-09-01, on his phone: "where the fuck is
+    # the menu" -- Backstage had folded the sidebar into a bottom bar and five review rounds had
+    # only ever looked at desktop screenshots. The drill now reads the page at a phone width,
+    # opens the menu by its spoken name (what a screen reader says, never a selector, R53),
+    # grades that every door is on screen, and photographs both states plus the Create page.
+    # The Create page is graded on what it lists: a Template count of zero means the scaffolder
+    # templates never reached the catalogue, whatever the door says.
+    shot_dir = os.environ.get("DRILL_SHOT_DIR") or os.path.dirname(shot or ".") or "."
+    os.makedirs(shot_dir, exist_ok=True)
+    try:
+        tpl = page.request.get(f"{HOME}api/catalog/entities?filter=kind=template&fields=metadata.name,metadata.title",
+                               headers={"Authorization": f"Bearer {token}"})
+        n_templates = len(tpl.json()) if tpl.status == 200 else -1
+    except (PWError, ValueError):
+        n_templates = -1
+    print(f"create  login-drill  {n_templates} templates in the catalogue")
+    if n_templates <= 0:
+        fail("create", f"the catalogue holds {n_templates} Template entities; the Create page lists nothing")
+    PHONE = {"width": 390, "height": 844}
+    DESKTOP = page.viewport_size or {"width": 1280, "height": 720}
+    page.set_viewport_size(PHONE)
+    try:
+        page.goto(HOME, wait_until="domcontentloaded")
+    except PWError as e:
+        fail("phone", f"{HOME} did not load at a phone width: {e}")
+    painted_words(page)
+    page.screenshot(path=os.path.join(shot_dir, "home-phone.png"), full_page=True)
+    menu_btn = page.get_by_role("button", name=re.compile(r"^open menu$", re.I))
+    if menu_btn.count() == 0:
+        fail("phone", "no 'Open menu' button on the phone view; the founder has no menu")
+    menu_btn.first.click()
+    page.wait_for_timeout(800)
+    on_screen = " ".join(page.locator("body").inner_text().split())
+    DOORS = ("Today", "Kubernetes", "What we run", "Create", "Map", "Tools", "Ops", "Find", "How-to", "You")
+    missing = [d for d in DOORS if d not in on_screen]
+    page.screenshot(path=os.path.join(shot_dir, "home-phone-menu.png"))
+    if missing:
+        fail("phone", f"the phone menu opened without these doors: {missing}")
+    page.keyboard.press("Escape")
+    for name, path in (("create-phone", "create"),):
+        try:
+            page.goto(f"{HOME}{path}", wait_until="domcontentloaded")
+        except PWError as e:
+            fail("phone", f"{HOME}{path} did not load at a phone width: {e}")
+        painted_words(page)
+        page.screenshot(path=os.path.join(shot_dir, f"{name}.png"), full_page=True)
+    page.set_viewport_size(DESKTOP)
+    try:
+        page.goto(f"{HOME}create", wait_until="domcontentloaded")
+        painted_words(page)
+        page.screenshot(path=os.path.join(shot_dir, "create.png"), full_page=True)
+    except PWError as e:
+        fail("create", f"{HOME}create did not load: {e}")
+    print(f"phone   login-drill  menu opens from the left with all {len(DOORS)} doors at {PHONE['width']}px; photographs in {shot_dir}")
     # A missing surface is one of two different outages and the founder cannot tell them apart from
     # a count. Backstage keeps every configured location as a Location entity and hangs the read
     # error off its status, so the catalogue itself says which: a location that is absent means the
@@ -350,6 +424,7 @@ with sync_playwright() as p:
         ("tools", "text=Every tool we use"),
         ("ops", "text=The cluster right now"),
         ("pair", "text=Type the PIN Moonlight shows you"),
+        ("estate", "text=to find · Enter opens the first"),
     )
     broken = []
     for path, must_see in PUBLISHED:
@@ -585,6 +660,29 @@ with sync_playwright() as p:
         fail("identity", f"the gate is open: a context with no credentials got a Langfuse session: {l3[1]['actual']}")
     if not l3[0]["ok"] and os.environ.get("DRILL_STRICT_IDENTITY") == "1":
         fail("identity", f"langfuse session is not {USER}@{ZONE}: {l3[0]['actual']}")
+
+    # 10. R66 (crew#764): picture evidence for UI work. DRILL_EVIDENCE_PATHS is a comma-separated
+    # list of portal paths; each is walked with the signed-in session and photographed only after
+    # words drew on it. A page that never answers or never paints is a red drill, never a grey
+    # rectangle handed to the founder as proof.
+    ev_paths = [p.strip() for p in os.environ.get("DRILL_EVIDENCE_PATHS", "").split(",") if p.strip()]
+    if ev_paths:
+        shot_dir = os.environ.get("DRILL_SHOT_DIR") or os.path.dirname(os.environ.get("DRILL_SHOT") or ".") or "."
+        os.makedirs(shot_dir, exist_ok=True)
+        for ev in ev_paths:
+            try:
+                r = page.goto(f"{HOME}{ev.lstrip('/')}", wait_until="domcontentloaded", timeout=TIMEOUT)
+            except PWError as e:
+                fail("evidence", f"{ev} never loaded: {e}")
+            if r and r.status >= 400:
+                fail("evidence", f"{ev} answered {r.status}")
+            words = painted_words(page)
+            if len(words) <= 40:
+                fail("evidence", f"{ev} answered but never painted words; a blank photograph is not evidence")
+            slug = re.sub(r"[^a-z0-9]+", "-", ev.lower()).strip("-") or "root"
+            dest = os.path.join(shot_dir, f"{slug}.png")
+            page.screenshot(path=dest, full_page=True)
+            print(f"shot    login-drill  {ev} painted {len(words)} chars, photographed to {dest}")
 
     ctx.close()
     browser.close()

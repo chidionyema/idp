@@ -1,0 +1,78 @@
+/* Landing page only. Do not restyle every BUI header and card in the portal. */
+
+.estate-today .bui-HeaderTop,
+.estate-today .bui-HeaderContent,
+.estate-today .bui-HeaderBottom,
+.estate-today .bui-HeaderTop.bui-Container,
+.estate-today .bui-HeaderContent.bui-Container,
+.estate-today .bui-HeaderBottom.bui-Container {
+  padding-left: 0;
+  padding-right: 0;
+  max-width: none;
+  width: 100%;
+}
+
+.estate-today .bui-HeaderTitle {
+  font-size: clamp(1.75rem, 3vw, 2.25rem);
+  letter-spacing: -0.03em;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.estate-today .bui-HeaderDescription {
+  font-size: 1rem;
+  line-height: 1.5;
+  max-width: 36rem;
+}
+
+.estate-today-doors .bui-Card {
+  min-height: 7.5rem;
+}
+
+.estate-today-doors .bui-CardHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* The home plugin's search bar, made into a single find field. */
+.estate-today-search .MuiCardHeader-root,
+.estate-today-search .MuiCardHeader-root + hr,
+.estate-today-search header {
+  display: none;
+}
+
+.estate-today-search .MuiCard-root,
+.estate-today-search .MuiPaper-root {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  transform: none;
+}
+
+.estate-today-search .MuiCardContent-root {
+  padding: 0;
+}
+
+.estate-today-search .MuiOutlinedInput-root {
+  min-height: 48px;
+  border-radius: var(--bui-radius-4, 1rem);
+  background: var(--bui-bg-neutral-1);
+  font-size: 1rem;
+}
+
+.estate-today-search .MuiOutlinedInput-input {
+  padding: 12px 16px;
+  font-size: 1rem;
+}
+
+.estate-today-aside .MuiCard-root {
+  border-radius: var(--bui-radius-4, 1rem);
+  background: var(--bui-bg-neutral-1);
+  border-color: var(--bui-border-2);
+  height: 100%;
+}
+
+.estate-today-aside .MuiCard-root:hover {
+  transform: none;
+}
