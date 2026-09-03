@@ -1,6 +1,6 @@
 # The Reports page
 
-The founder asked for every report to be produced by the estate, on a clock, and shown on one page in the portal. This feature adds that page at `/reports`. Two reports ship with it: **Flux: what is applied** (every 15 minutes, from the cluster receipt: every Kustomization and HelmRelease with its state and the revision Flux last applied, suspended rows shown as their own state) and **Delivery: right first time** (once a day, from GitHub: how many merged pull requests were green on the first push and how many runs on main passed at the first attempt).
+The founder asked for every report to be produced by the estate, on a clock, and shown on one page in the portal. This feature adds that page at `/reports`. Two reports ship with it: **Flux: what is applied** (every 15 minutes, from the cluster receipt: every folder of manifests and chart install with its state and the revision Flux last applied, suspended rows shown as their own state) and **Delivery: right first time** (once a day, from GitHub: how many merged pull requests were green on the first push and how many runs on main passed at the first attempt).
 
 Each tile shows when the report was produced and how often it is written. A report older than twice its schedule turns red. A report whose source could not be read says so instead of showing an empty table.
 
