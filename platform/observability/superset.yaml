@@ -203,6 +203,18 @@ spec:
                     environ["REMOTE_USER"] = email
                 return self.wsgi_app(environ, start_response)
         ADDITIONAL_MIDDLEWARE = [EstateGatewayIdentity]
+        # Pod source 2026-09-03 10:0xZ: Superset 6.1 registers its own SPA login view on
+        # /login/ whatever AUTH_TYPE says (superset/security/manager.py:3183 SupersetAuthView,
+        # views/auth.py:38 -- it only renders a template, never reads REMOTE_USER), so the
+        # gateway-authenticated visitor looped on the login screen forever. The vendor's own
+        # override point (manager.py:262 docstring: "Set to False in subclasses that provide
+        # their own auth view") hands /login/ back to Flask-AppBuilder's remote-user view,
+        # which logs REMOTE_USER in, auto-registers on first visit and redirects (FAB 5.0.2
+        # security/manager.py:807-810).
+        from superset.security import SupersetSecurityManager
+        class EstateSecurityManager(SupersetSecurityManager):
+            register_superset_auth_view = False
+        CUSTOM_SECURITY_MANAGER = EstateSecurityManager
         # Run 33713430188 + pod logs 04:04Z: with AUTH_USER_REGISTRATION on, this Superset
         # build reads RECAPTCHA_PUBLIC_KEY unguarded on every /login/ render (KeyError ->
         # 500 for every signed-in visitor; /health never renders it, so the probe stayed
