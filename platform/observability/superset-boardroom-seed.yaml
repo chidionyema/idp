@@ -73,7 +73,8 @@ spec:
               # bootstrapScript in superset.yaml.
               export PYTHONUSERBASE=/app/superset_home/.pyuser
               pip install --no-cache-dir --user psycopg2-binary==2.9.9 clickhouse-connect==0.8.18
-              export PYTHONPATH=/app/pythonpath:/app/superset_home/.pyuser/lib/python3.10/site-packages:${PYTHONPATH:-}
+              # No dollar-variable here: Flux's strict envsubst would demand a source for it (crew#284).
+              export PYTHONPATH=/app/pythonpath:/app/superset_home/.pyuser/lib/python3.10/site-packages
 
               python3 - <<'RENDER'
               import datetime

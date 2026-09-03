@@ -7,6 +7,7 @@ only, pins its drivers, and can be re-run without doubling anything (fixed
 uuids overwrite in place).
 """
 
+import re
 from pathlib import Path
 
 import yaml
@@ -36,7 +37,8 @@ def _script():
 
 
 def test_seed_is_wired_into_the_kustomization():
-    assert "- superset-boardroom-seed.yaml" in KUSTOMIZATION.read_text()
+    doc = yaml.safe_load(KUSTOMIZATION.read_text())
+    assert "superset-boardroom-seed.yaml" in doc["resources"]
 
 
 def test_seed_rides_the_batch_bucket_not_standing_capacity():
@@ -99,7 +101,14 @@ def test_seed_is_idempotent_via_fixed_uuids_and_proves_the_result():
 
 
 def test_web_pods_get_the_clickhouse_driver_too():
-    values = SUPERSET_VALUES.read_text()
-    assert "clickhouse-connect==" in values, (
+    docs = [d for d in yaml.safe_load_all(SUPERSET_VALUES.read_text()) if d]
+    release = next(
+        d
+        for d in docs
+        if d.get("kind") == "HelmRelease" and d["metadata"]["name"] == "superset"
+    )
+    script = release["spec"]["values"]["bootstrapScript"]
+    pinned = dict(re.findall(r"(\S+)==(\S+)", script))
+    assert "clickhouse-connect" in pinned, (
         "bootstrapScript must pin the driver the seeded connection needs"
     )
