@@ -259,7 +259,10 @@ def test_a_built_document_validates_and_a_missing_source_is_blind(tmp_path):
         )(),
         dt.datetime(2026, 8, 30, 9, 0, tzinfo=dt.timezone.utc),
     )
-    assert len(blind) == 6, blind
+    # six version-1 sources plus eight version-2 ones (vendor registry, secret ages, last apply
+    # run, router lanes, pull requests, incidents, decision commits, merges): each missing
+    # source is its own BLIND line, never a quiet green row
+    assert len(blind) == 14, blind
 
 
 def test_incident_crew648_a_bare_main_sha_is_refused_in_a_sentence_and_the_workflow_passes_repo_equals_sha():

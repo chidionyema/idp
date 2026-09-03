@@ -16,6 +16,7 @@ resources:
   - httproute.yaml
   - edge-manners.yaml
   - availability.yaml
+  - registration-reconciler.yaml
 images:
   - name: ghcr.io/chidionyema/hermes-agent
     newTag: main-65-3c2b68b9faf88f27fb5160bf6283e326c6c91d22 # {"$imagepolicy": "flux-system:hermes-agent:tag"}
