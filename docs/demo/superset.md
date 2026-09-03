@@ -5,8 +5,8 @@ Superset reads Langfuse data and lets the founder build dashboards and explore t
 ## See it work
 
 1. Sign in to Superset at https://superset.${ESTATE_ZONE} with your estate login — no second prompt, the gateway's word is the account.
-2. Open "Settings" → "Database Connections" → "+ Database" the first time: PostgreSQL, host langfuse-postgresql.observability.svc.cluster.local, database langfuse, user langfuse, password in the vault under `langfuse-db-password`.
-3. Open "SQL Lab" and pick the Langfuse database to query traces directly — the events table holds individual calls, observations holds spans.
+2. The "Langfuse (ClickHouse)" connection and the "Boardroom" dashboard are seeded automatically (job `superset-boardroom-seed`): trace data lives in ClickHouse at signoz-clickhouse.observability.svc.cluster.local, database `langfuse` — Langfuse's postgres holds app metadata only, no traces.
+3. Open "SQL Lab" and pick "Langfuse (ClickHouse)" to query traces directly — `traces` holds one row per traced request, `observations` one row per span or model call (cost, model, latency).
 4. Filter by date, model or cost, then "Create chart" from the result grid.
 5. Save the chart and add it to a dashboard.
 

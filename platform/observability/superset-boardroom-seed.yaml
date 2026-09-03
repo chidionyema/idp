@@ -1,0 +1,336 @@
+# Seed the boardroom dashboard into Superset (decision 0018). The swap to Superset shipped an
+# empty tool and docs that told the founder to click a database connection together by hand —
+# and pointed at the wrong store: Langfuse 4.x keeps traces and observations in ClickHouse
+# (signoz-clickhouse, database `langfuse`), not in its postgres, which holds app metadata only
+# (receipt: langfuse-values.yaml clickhouse block; langfuse's own migration files 0001_traces,
+# 0002_observations). This one-shot job renders a Superset import bundle at run time — the
+# ClickHouse connection, two datasets over traces and observations, six charts and the
+# "Boardroom" dashboard — and loads it with the tool's own importer (`superset import-assets`).
+# Idempotent: every object carries a fixed uuid, so a re-run overwrites the same rows.
+# The ClickHouse password is read from the mounted secret in the pod and never leaves it.
+# Jobs are immutable: to change the seed, bump the job name (…-v2) in this file and the test.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: superset-boardroom-seed
+  namespace: observability
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: superset-boardroom-seed
+    spec:
+      restartPolicy: Never
+      priorityClassName: platform-batch   # batch bucket: seated by preempting the balloon, never standing capacity
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: seed
+          # Same image and config surface as the running superset web pods.
+          image: apachesuperset.docker.scarf.sh/apache/superset:6.1.0
+          envFrom:
+            - secretRef:
+                name: superset-env
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: superset-config
+              mountPath: /app/pythonpath
+              readOnly: true
+            - name: superset-secrets
+              mountPath: /run/secrets/superset
+              readOnly: true
+            - name: clickhouse-auth
+              mountPath: /secrets/clickhouse
+              readOnly: true
+            - name: superset-home
+              mountPath: /app/superset_home
+            - name: tmp
+              mountPath: /tmp
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              # The image ships neither driver; install both pinned, into the writable home
+              # (root filesystem is read-only by policy) — same pattern as the web pods'
+              # bootstrapScript in superset.yaml.
+              export PYTHONUSERBASE=/app/superset_home/.pyuser
+              pip install --no-cache-dir --user psycopg2-binary==2.9.9 clickhouse-connect==0.8.18
+              # No dollar-variable here: Flux's strict envsubst would demand a source for it (crew#284).
+              export PYTHONPATH=/app/pythonpath:/app/superset_home/.pyuser/lib/python3.10/site-packages
+
+              python3 - <<'RENDER'
+              import datetime
+              import urllib.parse
+              import zipfile
+
+              import yaml
+
+              with open("/secrets/clickhouse/password", encoding="utf-8") as f:
+                  password = f.read().strip()
+              uri = (
+                  "clickhousedb+connect://admin:"
+                  + urllib.parse.quote(password, safe="")
+                  + "@signoz-clickhouse.observability.svc.cluster.local:8123/langfuse"
+              )
+
+              DB = "5f2e77a0-91c4-4d0e-8e30-2b6c5d9e0001"
+              DS_CALLS = "5f2e77a0-91c4-4d0e-8e30-2b6c5d9e0002"
+              DS_TRACES = "5f2e77a0-91c4-4d0e-8e30-2b6c5d9e0003"
+              C_SPEND_DAY = "5f2e77a0-91c4-4d0e-8e30-2b6c5d9e0004"
+              C_SPEND_MODEL = "5f2e77a0-91c4-4d0e-8e30-2b6c5d9e0005"
+              C_CALLS_DAY = "5f2e77a0-91c4-4d0e-8e30-2b6c5d9e0006"
+              C_LATENCY = "5f2e77a0-91c4-4d0e-8e30-2b6c5d9e0007"
+              C_PROMPTS = "5f2e77a0-91c4-4d0e-8e30-2b6c5d9e0008"
+              C_TRACES_DAY = "5f2e77a0-91c4-4d0e-8e30-2b6c5d9e0009"
+              DASH = "5f2e77a0-91c4-4d0e-8e30-2b6c5d9e0010"
+
+              def sql_metric(expression, label):
+                  return {
+                      "expressionType": "SQL",
+                      "sqlExpression": expression,
+                      "label": label,
+                      "aggregate": None,
+                      "column": None,
+                      "hasCustomLabel": True,
+                  }
+
+              def col(name, kind, dttm=False):
+                  return {
+                      "column_name": name,
+                      "verbose_name": None,
+                      "is_dttm": dttm,
+                      "is_active": True,
+                      "type": kind,
+                      "groupby": True,
+                      "filterable": True,
+                      "expression": None,
+                      "description": None,
+                      "python_date_format": None,
+                  }
+
+              count_metric = {
+                  "metric_name": "count",
+                  "verbose_name": "COUNT(*)",
+                  "metric_type": "count",
+                  "expression": "COUNT(*)",
+                  "description": None,
+              }
+
+              files = {}
+              files["metadata.yaml"] = {
+                  "version": "1.0.0",
+                  "type": "assets",
+                  "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              }
+              files["databases/langfuse_clickhouse.yaml"] = {
+                  "database_name": "Langfuse (ClickHouse)",
+                  "sqlalchemy_uri": uri,
+                  "expose_in_sqllab": True,
+                  "uuid": DB,
+                  "version": "1.0.0",
+              }
+              files["datasets/langfuse_clickhouse/model_calls.yaml"] = {
+                  "table_name": "model_calls",
+                  "main_dttm_col": "start_time",
+                  "schema": "langfuse",
+                  "sql": (
+                      "SELECT start_time,\n"
+                      "       provided_model_name AS model,\n"
+                      "       prompt_name,\n"
+                      "       total_cost,\n"
+                      "       if(end_time IS NULL, NULL,"
+                      " dateDiff('millisecond', start_time, end_time)) AS latency_ms\n"
+                      "FROM observations\n"
+                      "WHERE type = 'GENERATION' AND is_deleted = 0"
+                  ),
+                  "filter_select_enabled": True,
+                  "columns": [
+                      col("start_time", "DateTime", dttm=True),
+                      col("model", "String"),
+                      col("prompt_name", "String"),
+                      col("total_cost", "Numeric"),
+                      col("latency_ms", "Numeric"),
+                  ],
+                  "metrics": [count_metric],
+                  "uuid": DS_CALLS,
+                  "version": "1.0.0",
+                  "database_uuid": DB,
+              }
+              files["datasets/langfuse_clickhouse/trace_activity.yaml"] = {
+                  "table_name": "trace_activity",
+                  "main_dttm_col": "timestamp",
+                  "schema": "langfuse",
+                  "sql": (
+                      "SELECT timestamp, name, user_id, session_id\n"
+                      "FROM traces\nWHERE is_deleted = 0"
+                  ),
+                  "filter_select_enabled": True,
+                  "columns": [
+                      col("timestamp", "DateTime", dttm=True),
+                      col("name", "String"),
+                      col("user_id", "String"),
+                      col("session_id", "String"),
+                  ],
+                  "metrics": [count_metric],
+                  "uuid": DS_TRACES,
+                  "version": "1.0.0",
+                  "database_uuid": DB,
+              }
+
+              def chart(uuid_, name, viz, params, dataset):
+                  params = dict(params)
+                  params["viz_type"] = viz
+                  params["adhoc_filters"] = params.get("adhoc_filters", [])
+                  params["time_range"] = params.get("time_range", "No filter")
+                  return {
+                      "slice_name": name,
+                      "viz_type": viz,
+                      "params": params,
+                      "uuid": uuid_,
+                      "version": "1.0.0",
+                      "dataset_uuid": dataset,
+                  }
+
+              spend = sql_metric("SUM(total_cost)", "Spend (USD)")
+              files["charts/model_spend_per_day.yaml"] = chart(
+                  C_SPEND_DAY, "Model spend per day", "echarts_timeseries_bar",
+                  {"x_axis": "start_time", "time_grain_sqla": "P1D",
+                   "metrics": [spend], "groupby": [], "row_limit": 10000},
+                  DS_CALLS)
+              files["charts/spend_by_model.yaml"] = chart(
+                  C_SPEND_MODEL, "Spend by model", "pie",
+                  {"groupby": ["model"], "metric": spend, "row_limit": 25},
+                  DS_CALLS)
+              files["charts/calls_per_day_by_model.yaml"] = chart(
+                  C_CALLS_DAY, "Calls per day by model", "echarts_timeseries_line",
+                  {"x_axis": "start_time", "time_grain_sqla": "P1D",
+                   "metrics": [sql_metric("COUNT(*)", "Calls")],
+                   "groupby": ["model"], "row_limit": 10000},
+                  DS_CALLS)
+              files["charts/latency_by_model.yaml"] = chart(
+                  C_LATENCY, "Latency by model", "echarts_timeseries_bar",
+                  {"x_axis": "model",
+                   "metrics": [sql_metric("avg(latency_ms)", "Avg latency (ms)"),
+                               sql_metric("quantile(0.95)(latency_ms)", "p95 latency (ms)")],
+                   "groupby": [], "row_limit": 100},
+                  DS_CALLS)
+              files["charts/spend_by_prompt.yaml"] = chart(
+                  C_PROMPTS, "Spend by prompt", "table",
+                  {"query_mode": "aggregate", "groupby": ["prompt_name"],
+                   "metrics": [spend, sql_metric("COUNT(*)", "Calls")],
+                   "row_limit": 50, "order_desc": True},
+                  DS_CALLS)
+              files["charts/traces_per_day.yaml"] = chart(
+                  C_TRACES_DAY, "Traces per day", "echarts_timeseries_bar",
+                  {"x_axis": "timestamp", "time_grain_sqla": "P1D",
+                   "metrics": [sql_metric("COUNT(*)", "Traces")],
+                   "groupby": [], "row_limit": 10000},
+                  DS_TRACES)
+
+              chart_names = {
+                  C_SPEND_DAY: "Model spend per day",
+                  C_SPEND_MODEL: "Spend by model",
+                  C_CALLS_DAY: "Calls per day by model",
+                  C_LATENCY: "Latency by model",
+                  C_PROMPTS: "Spend by prompt",
+                  C_TRACES_DAY: "Traces per day",
+              }
+              order = [C_SPEND_DAY, C_SPEND_MODEL, C_CALLS_DAY,
+                       C_LATENCY, C_PROMPTS, C_TRACES_DAY]
+              position = {
+                  "DASHBOARD_VERSION_KEY": "v2",
+                  "ROOT_ID": {"type": "ROOT", "id": "ROOT_ID", "children": ["GRID_ID"]},
+                  "GRID_ID": {"type": "GRID", "id": "GRID_ID",
+                              "children": ["ROW-1", "ROW-2", "ROW-3"],
+                              "parents": ["ROOT_ID"]},
+                  "HEADER_ID": {"id": "HEADER_ID", "type": "HEADER",
+                                "meta": {"text": "Boardroom"}},
+              }
+              for r in range(3):
+                  row_id = "ROW-" + str(r + 1)
+                  kids = []
+                  for c in range(2):
+                      i = r * 2 + c
+                      node = "CHART-" + str(i + 1)
+                      kids.append(node)
+                      position[node] = {
+                          "type": "CHART", "id": node, "children": [],
+                          "parents": ["ROOT_ID", "GRID_ID", row_id],
+                          "meta": {"uuid": order[i], "width": 6, "height": 50,
+                                   "sliceName": chart_names[order[i]]},
+                      }
+                  position[row_id] = {"type": "ROW", "id": row_id, "children": kids,
+                                      "parents": ["ROOT_ID", "GRID_ID"],
+                                      "meta": {"background": "BACKGROUND_TRANSPARENT"}}
+
+              files["dashboards/boardroom.yaml"] = {
+                  "dashboard_title": "Boardroom",
+                  "description": "Model spend, call volume and latency from live traces.",
+                  "css": "",
+                  "slug": "boardroom",
+                  "uuid": DASH,
+                  "position": position,
+                  "metadata": {"color_scheme": "supersetColors",
+                               "native_filter_configuration": []},
+                  "version": "1.0.0",
+                  "published": True,
+              }
+
+              with zipfile.ZipFile("/tmp/boardroom-assets.zip", "w") as bundle:
+                  for path, doc in files.items():
+                      bundle.writestr("boardroom_seed/" + path,
+                                      yaml.safe_dump(doc, sort_keys=False))
+              print("BUNDLE-RENDERED", len(files), "files")
+              RENDER
+
+              superset import-assets --path /tmp/boardroom-assets.zip
+
+              # Receipt: prove the rows landed by reading them back from the metadata store.
+              python3 - <<'VERIFY'
+              from superset.app import create_app
+
+              app = create_app()
+              with app.app_context():
+                  from superset import db
+                  from superset.models.dashboard import Dashboard
+
+                  dash = (
+                      db.session.query(Dashboard)
+                      .filter_by(uuid="5f2e77a0-91c4-4d0e-8e30-2b6c5d9e0010")
+                      .one()
+                  )
+                  print("BOARDROOM-SEEDED", dash.dashboard_title, "charts:", len(dash.slices))
+                  assert len(dash.slices) == 6, "expected 6 charts on the boardroom dashboard"
+              VERIFY
+      volumes:
+        - name: superset-config
+          secret:
+            secretName: superset-config
+        - name: superset-secrets
+          secret:
+            secretName: superset
+        - name: clickhouse-auth
+          secret:
+            secretName: clickhouse-auth
+        - name: superset-home
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
