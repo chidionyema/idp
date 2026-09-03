@@ -89,18 +89,6 @@ model_list:
       api_key: os.environ/MINIMAX_API_KEY
       timeout: 300
 
-  # Kimi (Moonshot) -- the founder's primary for both Ottos (2026-09-02). First-class LiteLLM
-  # provider prefix `moonshot/`; kimi-k3 is the flagship (1M-token window, platform.kimi.ai/docs/models
-  # read 2026-09-02). The key arrives as MOONSHOT_API_KEY, the name LiteLLM's moonshot adapter reads.
-  - model_name: kimi
-    litellm_params:
-      model: moonshot/kimi-k3
-      api_key: os.environ/MOONSHOT_API_KEY
-      timeout: 300
-      max_tokens: 8192
-    model_info:
-      max_input_tokens: 1000000
-
   - model_name: gemini
     litellm_params:
       model: gemini/gemini-2.5-flash
