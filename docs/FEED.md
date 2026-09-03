@@ -4596,3 +4596,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: GraphQL bucket for user 377396 still rate-limited; every PR read, create and edit goes over REST gh api
 📍 State: https://github.com/chidionyema/idp/pull/1239 + https://github.com/chidionyema/prospector/pull/808
 
+
+## 2026-09-03T10:20:18Z · session 54539261 · lane idp
+🟢 Done: R75 recorded in company git (crew branch docs/r75-enterprise-client-zero): the founder is enterprise client zero — every founder ask graded as if a paying enterprise client received it; no terminal steps (he repeated R73 today after a session handed him gh secret set), no fresh-key demands
+🟡 Active: kimi-as-primary redirected to the enterprise surface — the LiteLLM console (llm.mumchimp.com, liveliness 200, /ui/ 200, SSO): he pastes his EXISTING key there; ~/.kimi-code holds only OAuth tokens (not a root), so no code-only path exists
+🔴 Blocked: waiting on the founder doing the console paste; otto model wiring still awaits his word
+⚪ Pending: after his paste — verify the kimi lane answers, remove the env-based kimi row from llm config (git), point otto lanes at kimi as primary
+🔧 TOUCHES: crew docs only (R75 files, branch pushed, no PR per the 2026-09-01 push-only ruling); idp untouched this segment
+🔀 OVERLAP: session 2c88870e holds the kimi lane on the feed — its plan was "founder re-sets seed keys"; R75 supersedes the terminal version of that plan, coordinate before re-asking him anything
+📎 FACTS: kimi row in llm config reads os.environ/MOONSHOT_API_KEY which vault lacks; litellm docs bless UI-added DB rows (store_model_in_db true); a Kimi key answers only at its home host (3 candidates)
+📍 State: crew branch docs/r75-enterprise-client-zero
+
