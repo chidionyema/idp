@@ -4629,3 +4629,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: a pytest piped into tail loses its exit code — one commit went out red before the pipefail fix; GraphQL bucket still rate-limited, everything over REST
 📍 State: https://github.com/chidionyema/idp/pull/1239 + https://github.com/chidionyema/prospector/pull/808
 
+
+## 2026-09-03T10:34:39Z · session a14fc078 · lane .wt-reports
+🟢 Done: founder's 7-day unshipped audit MEASURED across GitHub (15 repos, full PR-history join per branch) and the MacBook (every checkout/worktree swept). Redis answer: shipped 01:28Z as idp#1182, REVERTED 01:59Z by the founder's own order (#1192, Kyverno one-replica refusal wedged llm + 20 dependents), then REBUILT today as unpushed local branch feat/litellm-redis (5 commits, waiver design, 57 behind main)
+🟡 Active: audit doc committed to crew (docs/audits/2026-09-03-unshipped-7day.md, branch audit/unshipped-7day-20260903, pushed to main if fast-forward allowed); superset login PR 1238 watcher bc8tri70v still running
+🔴 Blocked: three founder words queued: REDIS (ship the rebuild), SPECS (land crew spec/ruling branches), TRIAGE (42 never-PRed idp branches)
+⚪ Pending: 1238 green → merge word → Flux roll → login replay probe
+🔧 TOUCHES: crew docs/audits/ (new file only); no idp changes this turn
+🔀 OVERLAP: audit names branches owned by other sessions (portal, store, otto) — read-only, nothing touched
+📎 FACTS: ~/dev/code root is a git repo with NO remote (checkpoint commits die with the Mac, LAW 24); 20 worktrees carry dirty tracked edits (.wt-kini-spec 293 files since 08-26)
+📍 State: crew docs/audits/2026-09-03-unshipped-7day.md
+
