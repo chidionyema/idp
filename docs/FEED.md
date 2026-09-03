@@ -3,16 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-01T12:05:56Z · session a2aed3c9 · lane idp
-🟡 crew#768: founder 12:0xZ "thats stupid, do your own work" → landing the Otto edge fix myself: prospector PR #803 (branch fix/edge-drop-listeners-without-dns, 1b053318, drops the two DNS-less listeners that froze the shared certificate); required checks ci-ok/dotnet/guard/nextjs/python running (background watch bsx8ngt81); merge on green, then watch cert-manager re-issue prospector-edge-tls with otto
-🟢 Done: incident page cdd7b380 (idp branch docs/incident-2026-09-01-otto-telegram-door); peer chain verified (three names off the cert = three solvers); crew#783 tracks automatic incident reports
-⚪ Pending: merge #803 when green; certificate SAN check on otto.mumchimp.com; unexplained Traefik restarts 11:32/11:52 (cluster read); class rule + split cert on the founder word
-🔧 TOUCHES: prospector PR #803 (no code beyond code-0c commit); idp branch docs/incident-2026-09-01-otto-telegram-door; crew#768 comments; no cluster
-🔀 OVERLAP: 54539261 (code-0c) authored the fix and holds the Telegram door thread — told them I am landing it; a14fc078 holds lane code; ef0354ef crew#729
-📎 FACTS: https://github.com/chidionyema/prospector/pull/803
-📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
-
-
 ## 2026-09-01T12:46:25Z · session 54539261 · lane crew
 🔴 Blocked: none
 🟡 Active: crew#659 research department design for founder review (no build, no decision); Telegram door thread paused by the founder, code-f9 owns it
@@ -4734,4 +4724,15 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: none; wt-kyvexc worktree now on recover/metabase-dump
 📎 FACTS: the old metabase-db pg_hba was initialized by the official image so local-socket auth is trust — the dump needs no password and the deleted secret stays deleted; Jobs are immutable under Flux, a re-run means a new name
 📍 State: https://github.com/chidionyema/idp/branches — recover/metabase-dump
+
+
+## 2026-09-03T12:08:56Z · session 54539261 · lane .wt-purge
+🟢 Done: idp 1248's five reds fixed in one wave at cb9f3a0b: plain-language doc rewritten, demo+onboarding pages for bin/test-prose-gate with navigation rows, the three checkpoint behavior tests restored (and brought onto the ruff standard — re-added files lose the ratchet), the grep-q fence deleted and the crew623 selector test repointed; body got its Breaker line. idp 1254 (both Ottos on kimi) reds root-caused: root-trust wanted a register row for the new otto-golden vault entry (added, gate PASS locally), spec-gate wanted an executable spec (tests/test_otto_golden_router_row.py runs the seed preflight with a fake vault writer + parses ExternalSecret/deployment agreement, 2 passed), Control: line repointed at the shipped test; pushed 474510d8
+🟡 Active: watcher b34p21dim on 1248 head cb9f3a0b; fresh runs on 1254 head 474510d8; REST-merge both on the standing merge word when green
+🔴 Blocked: none
+⚪ Pending: after 1254 merges the founder dispatches oke-check mode=apply from his phone — that mints both router keys and both Ottos answer on kimi
+🔧 TOUCHES: idp .wt-purge (cb9f3a0b), scratchpad wt-otto-kimi (474510d8), PR bodies 1248+1254
+🔀 OVERLAP: none
+📎 FACTS: bl() in bin/idp-estate-seed exits 2 — offline preflight dies at the vault probe unless IDP_VAULT_PUT points at a fake; a re-added file (deleted then restored) reads as new to python-strict, the ratchet no longer shields it
+📍 State: https://github.com/chidionyema/idp/pull/1254
 
