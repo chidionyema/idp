@@ -4486,3 +4486,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: estate MCP answered 09:5xZ (18.6 min old doc, version 1 still — producer run 09:20Z built v2 fields, pod picks up next refresh); relay --fetch from the Mac timed out twice today
 📍 State: ~/dev/code/idp/.wt-vendor-probe
 
+
+## 2026-09-03T09:45:18Z · session a14fc078 · lane .wt-reports
+🟢 Done: second sign-in defect root-caused from gateway logs — an expired-session catalogue tab's background refresh call followed the login 302 cross-origin, failed cookie-less at the callback (403) and started a fresh identity-domain flow, stomping the founder's interactive sign-in ("Last executed flow is not valid"); fix built on his "fi the error": catalogue /api/ now takes oauth2-proxy's auth-only /oauth2/auth door (202 or plain 401, never a redirect)
+🟡 Active: PR 1233 (fix/catalogue-api-401-not-redirect, fae21dc2) checks running — merge on green under his live word, then Flux applies the route, then verify /api/ answers 401 not 302
+🔴 Blocked: none
+⚪ Pending: class follow-up needs his word: same auth-only door for API paths on superset/langfuse/signoz/healthchecks/guacamole routes
+🔧 TOUCHES: platform/backstage/overlays/oke/httproute.yaml (branch only)
+🔀 OVERLAP: none known
+📎 FACTS: friendly-errors middleware only rewrites 502-504, a 401 passes clean; oauth2-proxy /oauth2/auth answers only 202/401 by endpoint contract
+📍 State: https://github.com/chidionyema/idp/pull/1233
+
