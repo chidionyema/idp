@@ -4607,3 +4607,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: kimi row in llm config reads os.environ/MOONSHOT_API_KEY which vault lacks; litellm docs bless UI-added DB rows (store_model_in_db true); a Kimi key answers only at its home host (3 candidates)
 📍 State: crew branch docs/r75-enterprise-client-zero
 
+
+## 2026-09-03T10:26:04Z · session a14fc078 · lane .wt-reports
+🟢 Done: superset login fix pushed and PR 1238 open (fix/superset-remote-user-login, 7ff4d88b): CUSTOM_SECURITY_MANAGER subclass flips register_superset_auth_view=False so FAB's AuthRemoteUserView takes /login/ and logs REMOTE_USER in — the vendor's documented switch, 3 config lines
+🟡 Active: REST watcher bc8tri70v polling check-runs on 7ff4d88b; founder gets one word when green (no PR mention until then). NEW founder ask this turn: "is thr redic stuff shipped" (LiteLLM Redis banner) — measuring repo + live pod now
+🔴 Blocked: none
+⚪ Pending: 1238 green → founder word → merge → Flux rolls superset → replay probe must show /login/ 302-with-user; docs-404 architecture fix still awaits his word
+🔧 TOUCHES: platform/observability/superset.yaml (branch fix/superset-remote-user-login only)
+🔀 OVERLAP: none known; llm lane read-only this turn
+📎 FACTS: litellm runs 2 replicas in ns llm; only redis pod in the estate is langfuse-redis (observability) — LiteLLM redis state being measured from the deployment env + logs
+📍 State: https://github.com/chidionyema/idp/pull/1238
+
