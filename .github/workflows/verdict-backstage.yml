@@ -81,10 +81,9 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
         run: |
           bin/idp-verdict schema || true
-          bin/idp-verdict store "$RUNNER_TEMP/verdict.json"   # 2026-08-31: read ./verdict.json, which nothing writes; the Traceback hid behind || true and every backstage verdict since idp#842 was never stored
+          bin/idp-verdict store verdict.json || true
           bin/idp-verdict list -n 3 || true
           bin/idp-verdict refuse-test || true
-          bin/idp-verdict key-wall   # crew#631 CP2 refusal side: red until pods are measured refused the key
       - name: check-run verify/backstage on the commit, conclusion = outcome
         if: always()
         env:

@@ -14,15 +14,11 @@ metadata:
   name: litellm
   namespace: llm
   labels: { app.kubernetes.io/name: litellm, app.kubernetes.io/part-of: idp }
-  # The command below exports the upstream keys once, at start, so a rotated key is invisible to
-  # a running pod (crew#506 CP4: a rotated GROQ_API_KEY sat in the Secret while the pod answered
-  # `Invalid API Key`).
-  # Founder blueprint 2026-08-30 (4ca529a0.md): no hand-kept list of Secret names. Reloader
-  # discovers every Secret and ConfigMap this pod references, and
-  # platform/edge/require-auto-reload.yaml injects this annotation at admission, so git and the
-  # cluster say the same thing.
+  # Reloader (platform/reloader) rolls this Deployment when the named Secret changes, because the
+  # command below exports the keys once at start (crew#506 CP4: a rotated GROQ_API_KEY sat in the
+  # Secret while the pod answered `Invalid API Key`).
   annotations:
-    reloader.stakater.com/auto: "true"
+    secret.reloader.stakater.com/reload: "litellm-upstream"
 spec:
   strategy:
     type: RollingUpdate

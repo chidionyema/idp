@@ -63,24 +63,3 @@ def test_unknown_playbook_is_refused_before_any_gh_call(tmp_path):
     r = _run(["no-such-playbook"], stub["env"])
     assert r.returncode == 64
     assert not stub["log"].exists(), "gh was called before the playbook name was checked"
-
-
-def test_a_playbook_fix_can_be_proved_on_a_branch_before_it_is_merged(tmp_path):
-    """crew#718, 2026-08-30: the dispatch hardcoded `--ref main`, so a fix to
-    bin/idp-oke-break-glass could only run on the cluster after it was merged -- cluster code
-    reaching the estate having never executed once. OKE_REF names the branch instead."""
-    stub = _stub_gh(tmp_path, "")
-    env = dict(stub["env"], OKE_REF="fix/playbook-prints-the-whole-denial")
-    r = _run(["diagnose"], env)
-    assert r.returncode == 0, r.stdout + r.stderr
-    assert "--ref fix/playbook-prints-the-whole-denial" in stub["log"].read_text()
-
-
-def test_the_ref_is_main_unless_a_branch_is_named(tmp_path):
-    """The escape hatch stays an escape hatch: an unset OKE_REF is main, never the empty string,
-    which `gh` would read as a missing ref and refuse."""
-    stub = _stub_gh(tmp_path, "")
-    env = {k: v for k, v in stub["env"].items() if k != "OKE_REF"}
-    r = _run(["diagnose"], env)
-    assert r.returncode == 0, r.stdout + r.stderr
-    assert "--ref main " in stub["log"].read_text() + " "

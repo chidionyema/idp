@@ -16,10 +16,8 @@ def test_the_render_reads_the_draft_state_and_readies_its_pr_before_auto_merge()
     src = RENDER.read_text()
     view = src.index('"--json", "isDraft"')
     ready = src.index('["gh", "pr", "ready", existing]')
-    # idp#1046: the arming step is bin/idp-pr-arm, not `gh pr merge --auto` -- auto-merge is off on
-    # this repository, so the raw call exits 1 and the render's run ends red for no defect.
-    merge = src.index('["bin/idp-pr-arm", existing, "--squash"]')
+    merge = src.index('["gh", "pr", "merge", existing, "--auto", "--squash"]')
     assert view < ready < merge, (
-        "the draft check and gh pr ready must run before the arming step"
+        "the draft check and gh pr ready must run before the auto-merge step"
     )
     assert 'if draft == "true":' in src

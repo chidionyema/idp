@@ -106,8 +106,14 @@ def test_the_rendered_deployment_mounts_the_hashed_name() -> None:
     assert vols["mac-run"]["configMap"]["name"] == hashed[0]
 
 
-# idp#955's annotation naming mac-run was asserted absent here, on this one Deployment. No
-# workload in the estate may carry an enumerated reload list at all now -- refused at admission by
-# platform/edge/require-auto-reload.yaml and over the whole tree by
-# tests/test_incident_crew684_every_workload_restarts_when_its_config_changes.py
-# -- so the narrower assertion is deleted rather than kept beside the wider one.
+def test_a_reloader_annotation_is_not_the_guard_for_mac_run() -> None:
+    """idp#955's annotation is removed on purpose: a hashed name can never match a static one."""
+    ann = (
+        _deployment()["metadata"]
+        .get("annotations", {})
+        .get("configmap.reloader.stakater.com/reload", "")
+    )
+    assert "hermes-agent-mac-run" not in ann, (
+        "a Reloader annotation naming mac-run is dead weight once the name carries a hash, and it "
+        "reads as a guard while guarding nothing (crew#561, otto-parity 33297784151)"
+    )

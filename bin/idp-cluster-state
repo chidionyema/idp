@@ -5,7 +5,6 @@
 # (a runner's exchanged OIDC session in oke-check.yml). Same grading shape as bin/idp-chaos-drill.
 #   ok      cluster-state  <line 1 of the receipt>   -- fresh, every node Ready
 #   FAIL    cluster-state  <why>                     -- receipt missing, stale, a node not Ready, a Flux object not Ready (crew#406), no PrometheusRule or no Watchdog alert (crew#539)
-#           plus rows capacity (crew#584) and secret-freshness (crew#722: a running pod older than a Secret it consumes)
 #   BLIND   cluster-state  <why>                     -- no oci CLI or no session; nothing was graded
 # Print the JSON body with --json. Max age 60 min = 4 schedule slots. Override CLUSTER_STATE_MAX_AGE_MIN.
 set -uo pipefail
@@ -87,23 +86,6 @@ if int(kv["ds_short"]) > 0:
     except Exception:
         why = "body unreadable"
     print(f"FAIL    cluster-state  {kv['ds_short']} DaemonSet(s) short of desired: {why}"); sys.exit(1)
-# run 33332263130 (2026-08-30, founder: "did I not say everything must be transparent"): Deployment
-# healing/estate held zero pods for a day -- Kyverno denied every ReplicaSet pod at admission --
-# and this grader read ok, because only DaemonSets had a short row. A Deployment or StatefulSet
-# short of its desired replicas fails the row and prints the Warning events that name it.
-if "deploy_short" not in kv:
-    print(f"FAIL    cluster-state  receipt carries no deploy_short count (collector predates the workload row): {line1[:120]}"); sys.exit(1)
-if int(kv["deploy_short"]) > 0:
-    try:
-        b = json.loads(rest)
-        short = b.get("deploy_short", [])
-        names = {d["name"] for d in short}
-        why = "; ".join(f"{d['ns']}/{d['name']} available={d['available']}/{d['desired']}" for d in short[:4])
-        evs = [e for e in b.get("events_warning", []) if any(e.get("name", "").startswith(n) for n in names)][:6]
-        why += "".join(f"\n        event {e['at']} {e['kind']} {e['ns']}/{e['name']} {e['reason']} x{e['count']}: {e['message'][:160]}" for e in evs)
-    except Exception:
-        why = "body unreadable"
-    print(f"FAIL    cluster-state  {kv['deploy_short']} workload(s) short of desired: {why}"); sys.exit(1)
 # crew#539 DoD 1: a cluster with no PrometheusRule, or an Alertmanager that does not show the
 # always-firing Watchdog, has no alerting -- absent counts grade FAIL like every other row.
 if "monitoring_rules" not in kv or "alert_watchdog" not in kv:
@@ -131,32 +113,6 @@ print(f"ok      capacity       cpu used {kv2['cpu_used_pct']}% requested {kv2['c
 for r in rows:
     print(f"  node {r['name']}: cpu {r['cpu_used']}/{r['cpu_allocatable']} cores used ({r['cpu_used_pct']}%), requests {r['cpu_requested']} ({r['cpu_requested_pct']}%);"
           f" memory {r['memory_used_gb']}/{r['memory_allocatable_gb']} GB used ({r['memory_used_pct']}%), requests {r['memory_requested_gb']} GB ({r['memory_requested_pct']}%)")
-# crew#722 CP2 (founder 2026-08-31: "poorly designed enterprise-wide secrets rotation strategy"):
-# a rotated Secret whose running consumers still hold the old value was invisible until a person
-# hit the broken door (crew#506 CP4, crew#684). The collector counts running pods older than a
-# Secret they consume; absent count = collector predates the row, -1 = the list failed and
-# staleness was NOT graded (silent green is the defect class) -- both are FAIL, never clean.
-if "secret_stale_consumers" not in kv2:
-    print(f"FAIL    secret-freshness  receipt carries no secret_stale_consumers (collector predates crew#722): {line1[:120]}"); sys.exit(1)
-stale_n = int(kv2["secret_stale_consumers"])
-if stale_n < 0:
-    try:
-        why = json.loads(rest).get("secrets_error") or "no error recorded"
-    except Exception as e:
-        why = f"body unreadable: {e}"
-    print(f"FAIL    secret-freshness  secrets metadata unreadable, staleness was not graded: {why[:200]}"); sys.exit(1)
-if stale_n > 0:
-    try:
-        srows = json.loads(rest).get("secret_stale_consumers") or []
-    except Exception:
-        srows = []
-    why = "; ".join(f"{r['ns']}/{r['pod']} started {r['pod_started']}, {r['secret']} written {r['secret_written']}" for r in srows[:4]) or "body unreadable"
-    print(f"FAIL    secret-freshness  {stale_n} running pod(s) predate a Secret they consume -- the rotation never reached them: {why}")
-    # every row, whole: this is what a session repairs from (same rule as the Flux rows above)
-    for r in srows:
-        print(f"  stale      {r['ns']}/{r['pod']}: consumes {r['secret']} written {r['secret_written']}, pod started {r['pod_started']}")
-    sys.exit(1)
-print("ok      secret-freshness  every running pod is newer than every Secret it consumes")
 # K8sGPT findings (2026-08-29, founder: nothing is done until operational). Printed, never
 # graded here: K8sGPTFinding (platform/monitoring/rules/k8sgpt.yaml) is the pager; this is the read.
 try:

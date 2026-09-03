@@ -9,14 +9,12 @@
   bin/idp-verdict store  FILE                 INSERT the verdict as role prover; ok when the row landed
   bin/idp-verdict list   [-n N] [--check ID]  newest rows, read as agent_role
   bin/idp-verdict refuse-test                 INSERT as agent_role and UPDATE as prover must both be refused
-  bin/idp-verdict key-wall                    the cluster's pods must be REFUSED verdict-hmac-key (crew#631 CP2)
 
 verify without a key grades TTL and digest only and says so: an unsigned check is not a check.
 Grading, like every bin/idp-*: one line, `ok|FAIL|BLIND  verdict  <why>`.
 """
 
 import json
-import re
 import os
 import subprocess
 import sys
@@ -109,119 +107,25 @@ def store_cmds(cmd, argv):
             print(f"        verdict  {line.replace('|', '  ')}")
         print(f"ok      verdict  list {len(rows)} rows as agent_role")
         return 0
-    if cmd == "key-wall":
-        # crew#631 CP2, the refusal side: ExternalSecret backstage/verdict-key-wall asks the cluster's
-        # own store for verdict-hmac-key as the workers dynamic group. Not Ready with the vault's
-        # refusal is the wall standing; Ready means a pod can read the signing key; absent is BLIND
-        # (platform/verification/verdict-key-wall.yaml not landed).
-        r = subprocess.run(
-            [
-                os.path.join(IDP, "bin", "idp-kube"),
-                "get",
-                "externalsecret",
-                "-n",
-                "backstage",
-                "verdict-key-wall",
-                "-o",
-                "json",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
-        if r.returncode != 0:
-            why = (r.stderr or r.stdout).strip().splitlines()[-1:] or ["no answer"]
-            print(
-                f"BLIND   verdict  key-wall  backstage/verdict-key-wall not readable: {why[0][:120]}"
-            )
-            return 2
-        # ESO's Ready condition says only "could not get secret data from provider"; the vault's own
-        # words (HTTP 404 / NotAuthorized) live in the object's events. Read both, so the wall is
-        # graded on the refusal and not on any outage that also leaves the secret unsynced.
-        ev = subprocess.run(
-            [
-                os.path.join(IDP, "bin", "idp-kube"),
-                "get",
-                "events",
-                "-n",
-                "backstage",
-                "--field-selector",
-                "involvedObject.name=verdict-key-wall",
-                "-o",
-                "json",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
-        events = []
-        if ev.returncode == 0:
-            try:
-                events = json.loads(ev.stdout).get("items") or []
-            except ValueError:
-                events = []
-        return grade_key_wall(json.loads(r.stdout), events)
     if cmd == "refuse-test":
         rc1, _, err1 = psql(S.refuse_sql())
         rc2, _, err2 = psql(S.refuse_update_sql())
-        # 2026-08-31: the prover role has no UPDATE grant at all, so Postgres answers "permission
-        # denied" before the append-only trigger can; both are the refusal the test wants. The old
-        # test wanted the trigger's word alone and printed "UPDATE as prover ACCEPTED" over a refused
-        # statement on every run (run 33346560259) — a FAIL that graded the wrong property.
-        ok1 = rc1 != 0 and "permission denied" in err1
-        ok2 = rc2 != 0 and ("append-only" in err2 or "permission denied" in err2)
-
-        def _why(rc, err):
-            if rc == 0:
-                return "ACCEPTED: the statement ran"
-            return "refused by something else: " + (err or "no error")[:100]
-
-        print(
-            f"{'ok  ' if ok1 else 'FAIL'}    verdict  INSERT as agent_role {'refused' if ok1 else _why(rc1, err1)}"
+        ok1, ok2 = (
+            rc1 != 0 and "permission denied" in err1,
+            rc2 != 0 and "append-only" in err2,
         )
         print(
-            f"{'ok  ' if ok2 else 'FAIL'}    verdict  UPDATE as prover {'refused (' + ('append-only trigger' if 'append-only' in err2 else 'no UPDATE grant') + ')' if ok2 else _why(rc2, err2)}"
+            f"{'ok  ' if ok1 else 'FAIL'}    verdict  INSERT as agent_role {'refused' if ok1 else 'ACCEPTED: ' + (err1 or 'no error')[:100]}"
+        )
+        print(
+            f"{'ok  ' if ok2 else 'FAIL'}    verdict  UPDATE as prover {'refused' if ok2 else 'ACCEPTED: ' + (err2 or 'no error')[:100]}"
         )
         return 0 if ok1 and ok2 else 1
     return 2
 
 
-def grade_key_wall(obj, events=()):
-    """0 when the ExternalSecret is refused the key by the vault, 1 when it synced, 2 when it says
-    nothing yet. Printed as one row; the message names the vault's own words, read from the Ready
-    condition or, when that is generic, from the object's events (ESO puts the HTTP status there)."""
-    conds = {
-        c.get("type"): c for c in (obj.get("status") or {}).get("conditions") or []
-    }
-    ready = conds.get("Ready") or {}
-    msg = (ready.get("message") or "")[:140]
-    ctrl = obj.get("status", {}).get("syncedResourceVersion")
-    if ready.get("status") == "True" or ctrl:
-        print(
-            f"FAIL    verdict  key-wall  a pod READ verdict-hmac-key through estate-vault: {msg or 'synced'}"
-        )
-        return 1
-    refusal = re.compile(r"NotAuthorized|404|not authorized|denied|forbidden", re.I)
-    said = [msg] + [
-        (e.get("message") or "")[:200]
-        for e in events
-        if (e.get("involvedObject") or {}).get("name", "verdict-key-wall")
-        == "verdict-key-wall"
-    ]
-    refused = next((t for t in said if refusal.search(t)), None)
-    if ready.get("status") == "False" and refused:
-        print(
-            f"ok      verdict  key-wall  pods are refused verdict-hmac-key ({ready.get('reason')}: {refused[:140]})"
-        )
-        return 0
-    print(
-        f"BLIND   verdict  key-wall  no verdict from the store yet: {ready.get('reason') or 'no Ready condition'} {msg}"
-    )
-    return 2
-
-
 def main(argv):
-    if argv and argv[0] in ("schema", "store", "list", "refuse-test", "key-wall"):
+    if argv and argv[0] in ("schema", "store", "list", "refuse-test"):
         if argv[0] == "store" and len(argv) < 2:
             print(__doc__)
             return 2

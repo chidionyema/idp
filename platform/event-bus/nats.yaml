@@ -40,22 +40,6 @@ spec:
   install: { remediation: { retries: 3 } }
   upgrade: { remediation: { retries: 3 } }
   values:
-    # Every image this chart runs names its registry. The nodes run cri-o with short-name mode
-    # enforcing: a reference whose first path segment carries no registry host is admitted and
-    # then fails to pull with "returns ambiguous list" (crew#284 postgres 2026-08-26, crew#325
-    # seaweedfs 2026-08-26, crew#396 temporal 2026-08-27, crew#539 robusta 2026-08-28,
-    # tailscale-operator run 33341390235 2026-08-30 -- five in five days).
-    # The chart's own defaults are short (`nats`, `natsio/...`, values.yaml lines 329/414/441/636
-    # of chart 2.14.6). A chart default is invisible to any check that reads this repository's
-    # files, which is why the control now sits on the rendered pod
-    # (platform/edge/require-registry-host.yaml) and the file-scanning guard is deleted.
-    # The whole path still goes in `repository` rather than split across the chart's `registry`
-    # key, because the reference in git should be the reference the node pulls. Two images, because
-    # two containers render: the server and the promExporter sidecar. reloader and natsBox are off
-    # below -- removed from the manifest, not excused -- so naming a registry for them would be
-    # configuration for a container that does not exist. The render is what settled which is which
-    # (`helm template` with these values printed exactly these two, 2026-08-31); the first draft
-    # here trusted the chart's `enabled:` defaults instead and missed the exporter.
     config:
       # JetStream is what makes this a bus and not a fire-and-forget socket: a consumer that
       # is down when order_paid fires still gets it. A payment event that is only delivered
@@ -72,10 +56,6 @@ spec:
         # availability gate (bin/idp-availability-gate) is what will force that, not a comment.
         enabled: false
     container:
-      # docker.io/nats resolves, but only because the runtime rewrites a single-segment Docker Hub
-      # path to library/. Writing it out means the reference in git is the reference the node pulls.
-      image:
-        repository: docker.io/library/nats
       merge:
         # Guaranteed QoS: requests == limits. The kubelet evicts BestEffort, then Burstable,
         # then Guaranteed (crew#539 CP9). The bus holding the money events is not evicted first.
@@ -132,8 +112,6 @@ spec:
     promExporter:
       # LAW 50: the bus emits, or it is not admitted. Scraped into the estate collector.
       enabled: true
-      image:
-        repository: docker.io/natsio/prometheus-nats-exporter
       merge:
         # A sidecar is a container: the same requests, limits, probes and profile the policies
         # ask of every other one. Its own /metrics is the health endpoint.

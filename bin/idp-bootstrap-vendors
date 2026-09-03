@@ -13,9 +13,6 @@
 # kept, so the repository secret may be deleted after the first green run. No secret is ever on argv or
 # printed; nothing but vendor and key NAMES reach stdout. A vendor whose secret is absent and whose
 # vault key does not verify is BLIND, listed, and the exit is 2 after every other vendor is handled.
-# A vendor marked `pair` in the registry has two halves that the vendor can only grade together (the
-# store's Google OAuth client): both roots are read, both shapes are checked, one verify call grades
-# the pair, and both fields are written or neither is.
 # The browser console driver, the Google SSO road and the laptop OCI sign-in this replaced were the
 # wrong roots (crew#66 comment 5461144560); none of them may come back.
 set -euo pipefail
@@ -46,7 +43,7 @@ VAULT_PUT_PREFLIGHT=1 "$IDP/bin/idp-vault-put" vendors --preflight | sed 's/^/  
 
 export IDP REG MODE ONLY ROTATE
 exec python3 - <<'PY'
-import os, re, sys, glob, json, functools, subprocess, tempfile, urllib.error, urllib.request
+import os, re, sys, json, subprocess, tempfile, urllib.request
 import yaml
 IDP, REG, MODE, ONLY, ROTATE = (os.environ[k] for k in ("IDP", "REG", "MODE", "ONLY", "ROTATE"))
 reg = yaml.safe_load(open(REG))["vendors"]
@@ -68,62 +65,14 @@ def vault_put(entry, field, value):
         os.unlink(path)
     if r.returncode != 0: say("FAIL", entry, f"vault write of {field} refused: {r.stderr.strip()[:120]}"); sys.exit(1)
 
-@functools.lru_cache(maxsize=1)
-def zone():
-    """The estate's DNS zone is written once, in clusters/<cluster>/estate-config.yaml, and every
-    other platform file says ${ESTATE_ZONE} (founder 2026-08-26, crew#269: "as always
-    configurable"; bin/estate-zone-gate refuses a literal anywhere under platform/)."""
-    for p in sorted(glob.glob(f"{IDP}/clusters/*/estate-config.yaml")):
-        m = re.search(r"^\s*ESTATE_ZONE:\s*(\S+)", open(p).read(), re.M)
-        if m: return m.group(1)
-    return ""
-
-def verify(v, subs):
-    """subs maps a placeholder to its value: {"key": k} for a single root, one entry per target
-    FIELD for a pair. Everything is substituted in-process; no value reaches argv."""
-    spec = v["verify"]
-    def fill(s):
-        for ph, val in subs.items(): s = s.replace("{" + ph + "}", val)
-        if "${ESTATE_ZONE}" in s:
-            z = zone()
-            if not z:
-                # BLIND, never a quiet https://api./... probe: a half-built URL would be refused by
-                # the vendor and read as a bad credential, which is the wrong thing to tell anyone.
-                say("BLIND", "registry", "no ESTATE_ZONE in clusters/*/estate-config.yaml; the probe URL cannot be built")
-                sys.exit(2)
-            s = s.replace("${ESTATE_ZONE}", z)
-        if "${" in s:
-            say("FAIL", "registry", f"unresolved placeholder in {spec['url']}; every substitution is named here")
-            sys.exit(1)
-        return s
-    headers = {k: fill(val) for k, val in (spec.get("headers") or {}).items()}
-    data = fill(spec["body"]).encode() if spec.get("body") else None
-    req = urllib.request.Request(fill(spec["url"]), data=data, method=spec["method"], headers=headers)
-    refuse = spec.get("refuse_when")
+def verify(v, key):
+    spec = v["verify"]; url = spec["url"].replace("{key}", key)
+    headers = {k: val.replace("{key}", key) for k, val in (spec.get("headers") or {}).items()}
+    data = spec.get("body", "").encode() if spec.get("body") else None
+    req = urllib.request.Request(url, data=data, method=spec["method"], headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            if refuse: return not re.search(refuse, resp.read(65536).decode("utf-8", "replace"))
-            return 200 <= resp.status < 300
-    except urllib.error.HTTPError as e:
-        # An HTTPError IS the response, and a `refuse_when` vendor answers on a 4xx on purpose: the
-        # Google token endpoint will not confirm an OAuth client, it will only refuse one it does
-        # not know. Reading that body is the whole check. Without refuse_when a 4xx is still a FAIL.
-        return bool(refuse) and not re.search(refuse, e.read(65536).decode("utf-8", "replace"))
+        with urllib.request.urlopen(req, timeout=30) as resp: return 200 <= resp.status < 300
     except Exception: return False
-
-
-def sec(v, t):
-    """The repository secret this target's root comes from. A target may carry its own (Telegram's
-    two bots; each half of an OAuth pair); otherwise the vendor's one secret serves every target."""
-    return t.get("secret") or v["secret"]
-
-
-def holds(v, targets, values):
-    """Does what we have verify? A pair is graded ONCE with every half substituted by its field
-    name, because neither half means anything to the vendor alone. Everything else is graded once
-    per distinct value as {key}, exactly as before."""
-    if v.get("pair"): return verify(v, {t["field"]: values[t["field"]] for t in targets})
-    return all(verify(v, {"key": k}) for k in {values[t["field"]] for t in targets})
 
 def root(name, secret):
     """The root from the environment, consumed once; never on argv, never printed."""
@@ -134,40 +83,25 @@ written = kept = 0; blind = []
 for name, v in reg.items():
     if ONLY and name != ONLY: continue
     if v["kind"] != "secret": say("FAIL", name, f"kind {v['kind']!r} is not a road (R52: every vendor is kind: secret)"); sys.exit(1)
-    # one root per (vendor, secret); a target with its own `secret` is its own root (Telegram bots).
-    # `pair: true` is the exception and the reason this loop is shaped this way: the targets are two
-    # halves of ONE credential that the vendor can only grade together, so they stay in one group.
-    pair = bool(v.get("pair"))
+    # one root per (vendor, secret); a target with its own `secret` is its own root (Telegram bots)
     groups = {}
     for t in v["targets"]:
-        groups.setdefault("" if pair else sec(v, t), []).append(t)
-    for targets in groups.values():
+        groups.setdefault(t.get("secret") or v["secret"], []).append(t)
+    for secret, targets in groups.items():
         who = name if len(groups) == 1 else f"{name}/{targets[0]['field']}"
-        names = sorted({sec(v, t) for t in targets})
         if MODE == "preflight":
-            say("", who, " + ".join(names) + " -> " + ", ".join(f"{t['entry']}.{t['field']}" for t in targets)); continue
-        have = {t["field"]: vault_get(t["entry"]).get(t["field"], "") for t in targets}
-        if not ROTATE and all(have.values()) and holds(v, targets, have):
+            say("", who, f"{secret} -> " + ", ".join(f"{t['entry']}.{t['field']}" for t in targets)); continue
+        have = [vault_get(t["entry"]).get(t["field"], "") for t in targets]
+        if not ROTATE and all(have) and all(verify(v, k) for k in set(have)):
             say("ok", who, "every target verifies; kept"); kept += 1; del have; continue
         del have
-        # One pop per SECRET, not per target: root() consumes the environment variable, so several
-        # targets sharing one root must read it once between them.
-        roots = {}
-        for t in targets: roots.setdefault(sec(v, t), root(name, sec(v, t)))
-        keys = {t["field"]: roots[sec(v, t)] for t in targets}
-        del roots
-        blank = sorted({sec(v, t) for t in targets if not keys[t["field"]]})
-        if blank:
-            blind.append(who); del keys
-            say("BLIND", who, f"no {' or '.join(blank)} in the environment and the vault does not verify; the root is made once at {v['page']} and set with gh secret set {' '.join(blank)} (R52)"); continue
-        for t in targets:
-            shape = t.get("shape") or v.get("shape")
-            if not shape: say("FAIL", who, f"{t['field']} has no shape in the registry; every root is anchored"); del keys; sys.exit(1)
-            if not re.fullmatch(shape, keys[t["field"]]): say("FAIL", who, f"{sec(v, t)} does not match the registry shape"); del keys; sys.exit(1)
-        if not holds(v, targets, keys):
-            say("FAIL", who, f"{' + '.join(names)} refused by {v['verify']['url'].split('{')[0]}; revoke it and make one that works"); del keys; sys.exit(1)
-        for t in targets: vault_put(t["entry"], t["field"], keys[t["field"]])
-        del keys; written += 1
+        key = root(name, secret)
+        if not key:
+            blind.append(who); say("BLIND", who, f"no {secret} in the environment and the vault key does not verify; the root is one key made once at {v['page']} and set with gh secret set {secret} (R52)"); continue
+        if not re.fullmatch(v["shape"], key): say("FAIL", who, f"{secret} does not match the registry shape"); del key; sys.exit(1)
+        if not verify(v, key): say("FAIL", who, f"{secret} is refused by {v['verify']['url'].split('{')[0]}; revoke it and make one that works"); del key; sys.exit(1)
+        for t in targets: vault_put(t["entry"], t["field"], key)
+        del key; written += 1
         say("ok", who, "verified, written to " + ", ".join(f"{t['entry']}.{t['field']}" for t in targets))
 if MODE == "preflight": say("ok", "preflight", f"{len(reg)} vendors registered; nothing written")
 else:

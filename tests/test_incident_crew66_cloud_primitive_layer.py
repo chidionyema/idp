@@ -101,9 +101,9 @@ def test_cluster_state_reads_a_file_backend_receipt_end_to_end(tmp_path):
     receipt_dir.mkdir(parents=True)
     head_line = (
         "ok cluster-state at 2026-08-27T00:00:00Z nodes=1 ready=1 pods=0 pods_not_ready=0"
-        " flux=0 flux_not_ready=0 ds=0 ds_short=0 deploy_short=0 events_warning=0"
+        " flux=0 flux_not_ready=0 ds=0 ds_short=0 events_warning=0"
         " hostnames=0 spiffe_ids=0 spiffe_workloads=0 svids=0 spire_agents=0"
-        " oci_pods=0 oci_static_key_pods=0 policy_exceptions=0 monitoring_rules=1 alert_watchdog=1 cpu_used_pct=12 cpu_req_pct=45 mem_used_pct=30 mem_req_pct=50 secret_stale_consumers=0"
+        " oci_pods=0 oci_static_key_pods=0 policy_exceptions=0 monitoring_rules=1 alert_watchdog=1 cpu_used_pct=12 cpu_req_pct=45 mem_used_pct=30 mem_req_pct=50"
     )
     body = {
         "at": "2026-08-27T00:00:00Z",

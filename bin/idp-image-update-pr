@@ -6,21 +6,13 @@
 # carries the required checks (a push made with GITHUB_TOKEN fires no workflow). Anything else exits 1.
 set -euo pipefail
 branch=${IMAGE_UPDATE_BRANCH:-flux/image-updates}
-# idp#1046: `bin/idp-verify-claims` refuses a pull request that touches platform/ with no
-# `Verify:` line, and that gate landed after this script. Every controller push since has been red
-# on `verify` for a body a robot wrote, so idp#1011 -- the catalogue's own deploy -- sat unmergeable
-# from 2026-08-30T14:45Z. The command below is the claim this pull request actually makes: these are
-# the tag lines the image-automation-controller wrote, and nothing else in the diff.
-# shellcheck disable=SC2016  # backticks are the gate's own syntax, not a substitution
-VERIFY='Verify: `grep -rn imagepolicy platform/ clusters/ --include=*.yaml`'
 OPTIMISED="Optimised: 1 -> 1 steps (a newTag line written by the image controller), 1 -> 1 round trips (one push, one pull request); cut: nothing, a machine-written tag bump has no plan to shrink (operating-model-gate rule optimised_plan, LAW 51)"
 n=$(gh pr list --head "$branch" --base main --state open --json number -q '.[0].number')
 if [ -z "$n" ]; then
   gh pr create --head "$branch" --base main \
     --title "$(git log -1 --format=%s)" \
-    --body "$(printf '%s\n\n%s\n%s\n%s\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n' \
+    --body "$(printf '%s\n\n%s\n%s\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n' \
       "$(git log -1 --format=%b)" \
-      "$VERIFY" \
       "$OPTIMISED" \
       "Spec: tests/test_incident_catalogue_image_never_repulled.py" \
       "Drill: login-drill" \
@@ -42,16 +34,6 @@ case "$body" in
   *)
     gh pr edit "$n" --body "$(printf '%s\n\n%s\n' "$body" "$OPTIMISED")"
     echo "refresh image-update-pr #$n body gained the Optimised line (LAW 51)"
-    ;;
-esac
-# The same backfill as above: idp#1011 was opened before this line existed and keeps its old body
-# on every controller push, so `verify` would stay red on it forever without this.
-case "$body" in
-  *"Verify: "*) ;;
-  *)
-    gh pr edit "$n" --body "$(printf '%s\n\n%s\n' "$(gh pr view "$n" --json body -q .body)" "$VERIFY")"
-    # A note about the body, not the verdict: the last line of stdout is what the caller reads.
-    echo "refresh image-update-pr #$n body gained the Verify line (idp#1046)" >&2
     ;;
 esac
 m=UNKNOWN
@@ -77,24 +59,5 @@ case "$m" in
     exit 1
     ;;
 esac
-# idp#1046: this was `gh pr merge --auto --squash`, which the repository has refused since
-# `allow_auto_merge` was set to false beside the founder-only-releases ruleset on 2026-08-30. The
-# step exited 1 on every controller push and no deploy reached the cluster for thirteen hours.
-# bin/idp-pr-arm reports the true state instead: armed if the repository allows it, waiting on the
-# founder if it does not. The branch is an old fork of main, so main's copy of the tool is used --
-# the same reason this script is itself run from origin/main (.github/workflows/image-update-pr.yml).
-# Three places to look, in order, because none of them is guaranteed. The two tools ship in the same
-# bin/ directory, so the copy beside this script is the one that matches it -- and it is the only one
-# that exists when the workflow runs this script from main against a checkout of the deploy branch.
-# Then this checkout, for a run started from the branch itself. Then neither, which is not a failure
-# of the deploy: it is this change on its way to main, so it says the true thing and exits 0 rather
-# than killing the run with git's exit 128.
-arm=$(cd "$(dirname "$0")" && pwd)/idp-pr-arm
-if [ ! -x "$arm" ]; then
-  arm=bin/idp-pr-arm
-fi
-if [ ! -x "$arm" ]; then
-  echo "waiting image-update-pr #$n is open; bin/idp-pr-arm is not in this checkout, so the merge is the founder's: https://github.com/${GH_REPO:-chidionyema/idp}/pull/$n"
-  exit 0
-fi
-bash "$arm" "$n" --squash
+gh pr merge "$n" --auto --squash
+echo "ok      image-update-pr #$n auto-merge armed"

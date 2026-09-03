@@ -23,13 +23,10 @@ metadata:
   name: healthchecks
   namespace: healthchecks
   # crew#684: enrol.py runs at pod start, so a rotated vault key (the 32-character read-only key,
-  # platform/oci/healthchecks.tf) reaches the database only if the pod rolls.
-  # Founder blueprint 2026-08-30 (4ca529a0.md): no hand-kept list of Secret names. Reloader
-  # discovers every Secret and ConfigMap this pod references, and
-  # platform/edge/require-auto-reload.yaml injects this annotation at admission, so git and the
-  # cluster say the same thing.
+  # platform/oci/healthchecks.tf) reaches the database only if the pod rolls. Reloader
+  # (platform/reloader) rolls it when the Secret changes; healthchecks is in its namespace list.
   annotations:
-    reloader.stakater.com/auto: "true"
+    secret.reloader.stakater.com/reload: "healthchecks"
   labels: { app.kubernetes.io/name: healthchecks, app.kubernetes.io/part-of: idp }
 spec:
   replicas: 2   # crew#539: one pod is one node event away from a 503

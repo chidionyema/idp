@@ -2,14 +2,6 @@ import { createApp } from '@backstage/frontend-defaults';
 import catalogPlugin from '@backstage/plugin-catalog/alpha';
 // The Kubernetes plugin's API is what the front page reads the cluster through (crew#459).
 import kubernetesPlugin from '@backstage/plugin-kubernetes/alpha';
-// Declared in package.json and wired in the backend since crew#459, but never added here, so
-// /search, /docs, /create, /api-docs and /settings answered 404. The nav has linked to them
-// the whole time.
-import searchPlugin from '@backstage/plugin-search/alpha';
-import techdocsPlugin from '@backstage/plugin-techdocs/alpha';
-import scaffolderPlugin from '@backstage/plugin-scaffolder/alpha';
-import userSettingsPlugin from '@backstage/plugin-user-settings/alpha';
-import apiDocsPlugin from '@backstage/plugin-api-docs/alpha';
 import { navModule } from './modules/nav';
 import { homeModule } from './modules/home';
 import { signInModule } from './modules/signin';
@@ -21,11 +13,6 @@ export default createApp({
   features: [
     catalogPlugin,
     kubernetesPlugin,
-    searchPlugin,
-    techdocsPlugin,
-    scaffolderPlugin,
-    apiDocsPlugin,
-    userSettingsPlugin,
     navModule,
     homeModule,
     signInModule,

@@ -109,15 +109,6 @@ if [ -z "$sel" ]; then echo "ok    tests-for: $(printf '%s\n' "$changed" | wc -l
 n=$(printf '%s\n' "$sel" | wc -l | tr -d ' ')
 echo "tests-for: $n test file(s) read the changed files"
 if [ "$list" = 1 ]; then printf '%s\n' "$sel"; exit 0; fi
-# R58 (founder 2026-08-31, fast-gates blueprint, crew#726): a laptop never runs a test suite in
-# a git hook. Four sessions each ran this rung's ~13-52 minute suite at once on 2026-08-31; load
-# hit 530 and pushes were refused on TimeoutExpired reds with zero real failures. Locally this
-# rung now prints the selection for the record and defers to CI on the pull request, which runs
-# on a clean runner. TESTS_FOR_RUN=1 runs the selection here anyway (a hand debug, never a gate).
-if [ -z "${CI:-}" ] && [ "${TESTS_FOR_RUN:-0}" != 1 ]; then
-  echo "ok    tests-for: local run skipped (R58 fast-gates); CI runs the suite for these $n file(s) on the PR"
-  exit 0
-fi
 # The venv lives beside the main checkout; a worktree has none of its own (LAW 46: resolved, never typed).
 main="$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)/.."
 py="${IDP_PY:-}"

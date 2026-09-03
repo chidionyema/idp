@@ -156,9 +156,8 @@ def main(argv: list[str]) -> int:
     if draft == "true":
         step("ready", ["gh", "pr", "ready", existing], WT)
 
-    # idp#1046: auto-merge is off on this repository (allow_auto_merge=false, set beside the founder-only-releases ruleset on 2026-08-30), so `gh pr merge --auto` answers `enablePullRequestAutoMerge` and exits 1. bin/idp-pr-arm arms it where the repository allows it and names the founder's merge where it does not.
-    step("arm", ["bin/idp-pr-arm", existing, "--squash"], WT)
-    print(f"catalog-render: {PAGE} pushed to {BRANCH}, PR #{existing} armed or waiting on the founder")
+    step("auto-merge", ["gh", "pr", "merge", existing, "--auto", "--squash"], WT)
+    print(f"catalog-render: {PAGE} pushed to {BRANCH}, PR #{existing} set to auto-merge")
     return 0
 
 

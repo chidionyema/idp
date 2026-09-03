@@ -15,7 +15,7 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 HEAD = json.dumps({"last-modified": "Thu, 27 Aug 2026 19:00:03 GMT", "date": "Thu, 27 Aug 2026 19:00:05 GMT", "content-length": "10"})
 MANIFEST = ROOT / "platform" / "state" / "cluster-state.yaml"
-GREEN = ("nodes=1 ready=1 pods=3 pods_not_ready=0 flux=1 flux_not_ready=0 ds=1 ds_short=0 deploy_short=0 events_warning=0"
+GREEN = ("nodes=1 ready=1 pods=3 pods_not_ready=0 flux=1 flux_not_ready=0 ds=1 ds_short=0 events_warning=0"
          " monitoring_rules=3 alert_watchdog=1")
 
 
@@ -90,7 +90,7 @@ def test_reader_prints_the_capacity_row_in_plain_words(tmp_path):
     body = {"capacity": [{"name": "n1", "cpu_allocatable": 4.0, "memory_allocatable_gb": 24.0, "cpu_requested": 0.5, "memory_requested_gb": 1.0,
                           "cpu_used": 1.2, "memory_used_gb": 6.0, "cpu_used_pct": 30, "memory_used_pct": 25, "cpu_requested_pct": 12, "memory_requested_pct": 4}],
             "capacity_error": ""}
-    line1 = f"ok cluster-state at 2026-08-29T02:00:03Z {GREEN} cpu_used_pct=30 mem_used_pct=25 cpu_req_pct=12 mem_req_pct=4 secret_stale_consumers=0"
+    line1 = f"ok cluster-state at 2026-08-29T02:00:03Z {GREEN} cpu_used_pct=30 mem_used_pct=25 cpu_req_pct=12 mem_req_pct=4"
     r = _grade(_tree(tmp_path, line1 + "\n" + json.dumps(body) + "\n"))
     assert r.returncode == 0, r.stdout + r.stderr
     assert "ok      capacity       cpu used 30% requested 12%, memory used 25% requested 4% of what is paid for" in r.stdout, r.stdout
@@ -101,7 +101,7 @@ def test_reader_fails_a_receipt_without_capacity_or_with_unreadable_metrics(tmp_
     old = f"ok cluster-state at 2026-08-29T02:00:03Z {GREEN}\n{{}}\n"
     r = _grade(_tree(tmp_path, old))
     assert r.returncode == 1 and "FAIL    capacity       receipt carries no cpu_used_pct" in r.stdout, r.stdout + r.stderr
-    blind = (f"ok cluster-state at 2026-08-29T02:00:03Z {GREEN} cpu_used_pct=-1 mem_used_pct=-1 cpu_req_pct=12 mem_req_pct=4 secret_stale_consumers=0\n"
+    blind = (f"ok cluster-state at 2026-08-29T02:00:03Z {GREEN} cpu_used_pct=-1 mem_used_pct=-1 cpu_req_pct=12 mem_req_pct=4\n"
              + json.dumps({"capacity": [], "capacity_error": "metrics.k8s.io nodes: 403 forbidden"}) + "\n")
     r = _grade(_tree(tmp_path, blind, "idp2"))
     assert r.returncode == 1 and "FAIL    capacity       usage unreadable: metrics.k8s.io nodes: 403 forbidden" in r.stdout, r.stdout + r.stderr

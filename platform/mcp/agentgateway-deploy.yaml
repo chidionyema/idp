@@ -1,12 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  # Founder blueprint 2026-08-30 (4ca529a0.md): no hand-kept list of Secret names. Reloader
-  # discovers every Secret and ConfigMap this pod references, and
-  # platform/edge/require-auto-reload.yaml injects this annotation at admission, so git and the
-  # cluster say the same thing.
-  annotations:
-    reloader.stakater.com/auto: "true"
   name: agentgateway
   namespace: mcp
   labels: { app.kubernetes.io/name: agentgateway, app.kubernetes.io/part-of: idp }

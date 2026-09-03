@@ -14,11 +14,9 @@ Age is measured against GitHub's clock (bin/lib/ledger_fresh.authority_now), nev
 (crew#583: a dead battery stamps 1970). No API clock -> BLIND, exit 2.
 
 With `--act` (crew#607 CP2/CP3) the table is acted on, never only printed: a `green` row gets
-`bin/idp-pr-arm` so it merges the moment nothing holds it where the repository allows auto-merge,
-and reads `waiting-on-founder` where it does not (idp#1046). A row over the bound gets one
+`gh pr merge --auto --merge` so it merges the moment nothing holds it, and a row over the bound gets one
 `PR AGE:` comment on its own thread naming the reason (never repeated while the reason is unchanged).
-A red or conflicting row is made a draft at the bound and closed at six bounds (CP4, the red clock)
--- except a PR from the deploy branch, which is never drafted or closed at any age (idp#1046).
+A red or conflicting row is made a draft at the bound and closed at six bounds (CP4, the red clock).
 
 Usage: bin/idp-pr-age [--repos idp,crew,claude-guards] [--act] [--json FILE ...]   (--json: test injection)
 """
@@ -37,12 +35,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "lib"))
 from ledger_fresh import authority_now  # noqa: E402
 
 OWNER = os.environ.get("ESTATE_GITHUB_OWNER", "chidionyema")
-FIELDS = "number,title,body,createdAt,mergeable,mergeStateStatus,isDraft,statusCheckRollup,headRefName"
-# The branch the image-automation controller writes and the deploy PR is opened from. A PR from it
-# IS the estate's deploy: drafting it stops the deploy, closing it throws the deploy away. idp#1046,
-# 2026-08-31: this robot drafted PR 1011 -- the portal the founder was waiting on -- because a
-# separate fault had made it red, and the red clock would have closed it at six bounds.
-DEPLOY_BRANCH = os.environ.get("ESTATE_DEPLOY_BRANCH", "flux/image-updates")
+FIELDS = "number,title,body,createdAt,mergeable,mergeStateStatus,isDraft,statusCheckRollup"
 STACKED = re.compile(r"[Ss]tacked on (?:([\w-]+))?#(\d+)")
 
 
@@ -71,12 +64,12 @@ def reason(pr: dict) -> str:
     return "green"
 
 
-def rows(prs: list[dict], now: dt.datetime) -> list[tuple[str, int, float, str, str, str]]:
+def rows(prs: list[dict], now: dt.datetime) -> list[tuple[str, int, float, str, str]]:
     out = []
     for pr in prs:
         created = dt.datetime.fromisoformat(pr["createdAt"].replace("Z", "+00:00"))
         age_h = (now - created).total_seconds() / 3600.0
-        out.append((pr["repo"], pr["number"], age_h, reason(pr), pr["title"][:60], pr.get("headRefName") or ""))
+        out.append((pr["repo"], pr["number"], age_h, reason(pr), pr["title"][:60]))
     return sorted(out, key=lambda r: -r[2])
 
 
@@ -84,26 +77,12 @@ def gh(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["gh", *args], capture_output=True, text=True, timeout=60)
 
 
-def arm(slug: str, n: int) -> subprocess.CompletedProcess:
-    """idp#1046: auto-merge is off on this repository (allow_auto_merge=false, set beside the founder-only-releases ruleset on 2026-08-30), so `gh pr merge --auto` answers `enablePullRequestAutoMerge` and exits 1. bin/idp-pr-arm arms it where the repository allows it and names the founder's merge where it does not."""
-    tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), "idp-pr-arm")
-    return subprocess.run([tool, str(n), "--merge"], capture_output=True, text=True,
-                          timeout=60, env={**os.environ, "GH_REPO": slug})
-
-
-def act(repo: str, n: int, age_h: float, why: str, max_h: float, head: str = "") -> str:
+def act(repo: str, n: int, age_h: float, why: str, max_h: float) -> str:
     """One action per row, returned as a word for the table: auto-merge | commented | quiet | -."""
     slug = f"{OWNER}/{repo}"
-    if head == DEPLOY_BRANCH:
-        # Hygiene never touches the deploy. This row is the running estate waiting to catch up with
-        # main; a draft or a close here is an outage, not tidiness (idp#1046). It is still printed,
-        # and bin/idp-deploy-lag is the instrument that grades how far behind it has fallen.
-        return "deploy-untouched"
     if why == "green":
-        p = arm(slug, n)
-        if p.returncode != 0:
-            return f"auto-merge-refused:{(p.stderr or p.stdout).strip()[:80]}"
-        return "auto-merge" if p.stdout.startswith("ok") else "waiting-on-founder"
+        p = gh("pr", "merge", str(n), "-R", slug, "--auto", "--merge")
+        return "auto-merge" if p.returncode == 0 else f"auto-merge-refused:{(p.stderr or p.stdout).strip()[:80]}"
     if age_h <= max_h:
         return "-"
     if why.startswith("red:") or why == "conflict":
@@ -143,10 +122,10 @@ def main() -> int:
         return 2
     over = 0
     print(f"{'repo':<14}{'pr':>6}  {'age_h':>7}  {'reason':<34} title")
-    for repo, n, age, why, title, head in rows(prs, now):
+    for repo, n, age, why, title in rows(prs, now):
         flag = "OVER" if age > max_h else "    "
         over += age > max_h
-        did = f"  {act(repo, n, age, why, max_h, head)}" if a.act else ""
+        did = f"  {act(repo, n, age, why, max_h)}" if a.act else ""
         print(f"{repo:<14}{n:>6}  {age:>7.1f}  {why:<34} {title}  {flag}{did}".rstrip())
     verdict = "FAIL" if over else "ok  "
     print(f"{verdict}    pr-age  {len(prs)} open, {over} over {max_h:g}h (founder 2026-08-28: 4 maximum)")

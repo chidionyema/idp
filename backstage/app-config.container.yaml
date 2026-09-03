@@ -131,17 +131,6 @@ backend:
 
 catalog:
   locations:
-    # The org, hand-written in git and rendered by Flux from backstage/org/catalog-info.yaml.
-    # It is first because every other location's entities name group:default/platform as their
-    # owner: the Groups have to exist for those ownedBy relations to resolve to anything.
-    - type: file
-      target: /estate/org/catalog-info.yaml
-      rules:
-        # Group only. crew#307: exactly one location may create User entities
-        # (/app/examples/org.yaml), or the founder and the login drill resolve to
-        # different User entities. This file holds four Groups and no user.
-        - allow: [Group]
-
     # The estate. Generated on the host by bin/catalog-gen from the LAW 39
     # inventory, and bind-mounted read-only at /estate. It is deliberately not
     # baked into the image: the image is a build artefact that Phase 2 ships to
@@ -165,7 +154,7 @@ catalog:
     - type: file
       target: /estate/platform/catalog-info.yaml
       rules:
-        - allow: [Component, System, API]
+        - allow: [Component, System]
 
     # Products are onboarded, never copied in (crew#282). Each product repo carries its own
     # catalog-info.yaml naming its UIs and their URLs; the platform reads it by URL. The repo is

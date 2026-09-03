@@ -100,60 +100,18 @@ func Start() (*Env, error) {
 	if err != nil {
 		cache = dir
 	}
-	binaries := filepath.Join(cache, "idp-messaging-demo", "postgres-16")
-	pg, err := startPostgres(binaries, filepath.Join(dir, "pg"), port)
-	if err != nil {
+	pg := embeddedpostgres.NewDatabase(embeddedpostgres.DefaultConfig().
+		Version(embeddedpostgres.V16).Port(uint32(port)).
+		BinariesPath(filepath.Join(cache, "idp-messaging-demo", "postgres-16")).
+		RuntimePath(filepath.Join(dir, "pg")).DataPath(filepath.Join(dir, "pg", "data")).
+		Logger(io.Discard))
+	if err := pg.Start(); err != nil {
 		e.Stop()
 		return nil, fmt.Errorf("embedded postgres: %w", err)
 	}
 	e.stop = append(e.stop, func() { _ = pg.Stop() })
 	e.DatabaseURL = fmt.Sprintf("postgres://postgres:postgres@127.0.0.1:%d/postgres?sslmode=disable", port)
 	return e, nil
-}
-
-// pgAttempts and pgBackoff bound the retry below. Bounded on purpose: an
-// unbounded retry against a down mirror is a hang, not a fix (crew#678, a
-// self-healing loop needs a limit and a visible open state).
-const (
-	pgAttempts = 3
-	pgBackoff  = 2 * time.Second
-)
-
-// startPostgres brings up the embedded Postgres, retrying a cold-cache fetch.
-//
-// crew#639, 2026-08-31: main went red on `no version found matching 16.9.0`
-// while that exact artefact answered 200 on Maven Central and the same demo
-// was green on two branches minutes earlier -- a transient download, graded as
-// a code failure. The binaries are fetched over the network the first time
-// they are needed, and this was the only download in the job with no retry:
-// every curl in the same workflow already carries --retry 5
-// --retry-all-errors. A test that reaches the network without a retry is a
-// flake by construction, and a retry is not a cure for a real break -- once
-// the binaries are unpacked under BinariesPath no attempt touches the network
-// at all, so a genuinely broken build still fails, three times, and fast.
-//
-// Each attempt takes a fresh port: a failed Start can leave the previous one
-// held, and reusing it would report a port clash instead of the real error.
-func startPostgres(binariesPath, runtimePath string, port int) (*embeddedpostgres.EmbeddedPostgres, error) {
-	var err error
-	for attempt := 1; ; attempt++ {
-		pg := embeddedpostgres.NewDatabase(embeddedpostgres.DefaultConfig().
-			Version(embeddedpostgres.V16).Port(uint32(port)).
-			BinariesPath(binariesPath).
-			RuntimePath(runtimePath).DataPath(filepath.Join(runtimePath, "data")).
-			Logger(io.Discard))
-		if err = pg.Start(); err == nil {
-			return pg, nil
-		}
-		if attempt == pgAttempts {
-			return nil, fmt.Errorf("after %d attempts: %w", pgAttempts, err)
-		}
-		_ = pg.Stop()
-		time.Sleep(time.Duration(attempt) * pgBackoff)
-		if next, perr := freePort(); perr == nil {
-			port = next
-		}
-	}
 }
 
 // Stop tears down in reverse order.

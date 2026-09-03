@@ -289,8 +289,8 @@ def grade(line1, body="{}"):
 
 BASE = (
     "ok cluster-state at 2026-08-27T23:00:00Z nodes=2 ready=2 pods=60 pods_not_ready=0 flux=40 flux_not_ready=0"
-    " ds=6 ds_short=0 deploy_short=0 events_warning=0 hostnames=9 spiffe_ids=3 spiffe_workloads=3 svids=3 spire_agents=2"
-    " oci_pods=2 oci_static_key_pods=0 policy_exceptions=9 cpu_used_pct=12 cpu_req_pct=45 mem_used_pct=30 mem_req_pct=50 secret_stale_consumers=0"
+    " ds=6 ds_short=0 events_warning=0 hostnames=9 spiffe_ids=3 spiffe_workloads=3 svids=3 spire_agents=2"
+    " oci_pods=2 oci_static_key_pods=0 policy_exceptions=9 cpu_used_pct=12 cpu_req_pct=45 mem_used_pct=30 mem_req_pct=50"
 )
 
 
