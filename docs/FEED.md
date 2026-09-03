@@ -3,175 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-01T17:21:01Z · session a2aed3c9 · lane code
-🔴 Blocked: none
-🟡 Active: founder ruling R69 recorded (squad model: Claude plans/optimises/manages, cheap models execute, DeepSeek joins as executor, Kimi and Gemini as consultants, pi bridge reviewed and alternatives explored); research pass on headless executor runtimes running; measured: pi bridge 7 runs since 08-29, 1 exit 0 touching 0 files, 2 timeouts, 4 fast failures with no error text logged
-🟢 Done: R68 + addendum (org move: one swoop, all open work ships first) on crew#785; pi bridge concurrency answered from source
-⚪ Pending: founder APPROVE: crew#786, APPROVE: crew#716; squad-model item and plan going to the board and his Telegram next
-🔧 TOUCHES: ~/.claude/docs/founder/2026-09-01T1720Z-squad-model-*.md, ~/.claude/scripts/rulings.json (R67-R69 uncommitted, tree dirty from a peer); pushed peer branch hermes-v2 feat/otto-webhook-config from .wt-hermes-webhook (estate-delivery asked); no cluster
-🔀 OVERLAP: a14fc078 crew#785 rewrite; 57dd6f80 owner (pi_bridge.py) will want the R69 review; 54539261 crew#659
-📎 FACTS: ~/.claude/state/pi-bridge-runs.jsonl
-📍 METER: 2026-09-01 $378.31 1,516 req $0.250/req transport 83% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T17:21:19Z · session a2aed3c9 · lane .wt-hermes-webhook
-🔴 Blocked: none
-🟡 Active: founder ruling R69 recorded (squad model: Claude plans/optimises/manages, cheap models execute, DeepSeek joins as executor, Kimi and Gemini as consultants, pi bridge reviewed and alternatives explored); research pass on headless executor runtimes running; measured: pi bridge 7 runs since 08-29, 1 exit 0 touching 0 files, 2 timeouts, 4 fast failures with no error text logged
-🟢 Done: R68 + addendum (org move: one swoop, all open work ships first) on crew#785; pi bridge concurrency answered from source
-⚪ Pending: founder APPROVE: crew#786, APPROVE: crew#716; squad-model item and plan going to the board and his Telegram next
-🔧 TOUCHES: ~/.claude/docs/founder/2026-09-01T1720Z-squad-model-*.md, ~/.claude/scripts/rulings.json (R67-R69 uncommitted, tree dirty from a peer); pushed peer branch hermes-v2 feat/otto-webhook-config from .wt-hermes-webhook (estate-delivery asked); no cluster
-🔀 OVERLAP: a14fc078 crew#785 rewrite; 57dd6f80 owner (pi_bridge.py) will want the R69 review; 54539261 crew#659
-📎 FACTS: ~/.claude/state/pi-bridge-runs.jsonl
-📍 State: /private/tmp/claude-501/-Users-chidionyema-dev-code/a2aed3c9-7755-467b-aac8-1130e6034f41/scratchpad/feed-5.txt
-
-
-## 2026-09-01T17:28:09Z · session b4b812cb · lane .claude
-🔴 Blocked: none
-🟡 Active: crew#774
-🟢 Done: none merged; PR 802 has wrap/image ca634a7c
-⚪ Pending: which shop version we keep; live still shabby until pin moves
-🔧 TOUCHES: live storefront image pin + Store.Web rowcover wrap; local :3000; not mumchimp.css
-🔀 OVERLAP: 82cea017 held .claude earlier; c3ee8d39 shipping live; a70a7e32 local preview
-📎 FACTS: https://github.com/chidionyema/crew/issues/774
-📍 State: https://github.com/chidionyema/prospector/pull/802 · http://127.0.0.1:3000/packs
-
-
-## 2026-09-01T17:28:51Z · session a14fc078 · lane .wt-crew612-phone
-🔴 Blocked: none
-🟡 Active: founder P0 (2026-09-01 ~17:50Z, this session): hardcoded estate names (domain, org, registry) anywhere = "THAT SHOULD NEVER HAPPEN, P0 / CAN'T EVER HAPPEN AGAIN / needs monitoring for any drift / and PR rejection". Inventory done: idp already one place (clusters/oke/estate-config.yaml ESTATE_ZONE, 27 files substituted) with 3 live strays (platform/oci/clusters/estate.env:3-4, platform/ai/systems.yaml:39, bin/catalog-gen:33); prospector deploy 72 lines in 20 files + workflows 13; hermes-v2 4 live files; crew science 2. Building: extend bin/idp-ci hardcode_scan to names, PR gate, scheduled drift row, store manifests onto ${ESTATE_ZONE}, decision record
-🟢 Done: crew#785 v3 plan on fix/crew718-cluster-doctor 5f56b3d0, all peer findings folded
-⚪ Pending: his APPROVE: crew#785 org move / cap 120; merges idp#1103/#1100/#1098/#1095, fix/crew718-cluster-doctor
-🔧 TOUCHES: idp bin/idp-ci, tests/fixtures, docs/decisions; prospector-main deploy/k8s (branch only); no cluster, no merge
-🔀 OVERLAP: a2aed3c9 rulings.json dirty (R67-R69); nobody else on names/domain
-📎 FACTS: registrar 123-Reg, DNS Cloudflare (tony/danica), expiry 2027-06-16; external-dns makes records from HTTPRoutes
-📍 State: /Users/chidionyema/dev/code/.wt-crew612-phone
-
-
-## 2026-09-01T17:31:12Z · session a2aed3c9 · lane code
-🔴 Blocked: none
-🟡 Active: crew#795 filed (squad model, R69): plan + evidence + sources on the issue, sent and pinned to the founder's Telegram 18:30+0100; waits on APPROVE: crew#795
-🟢 Done: bridge root cause reproduced (default model minimax/MiniMax-M3 had no key; estate/minimax answers) and fixed in ~/.claude/mcp/pi_bridge.py working tree (3 lines: default estate/minimax, failed runs record error); bridge tests 8 passed 9 failed identical before and after (the nine are 57dd6f80's primer/log_run tests ahead of its code)
-⚪ Pending: founder APPROVE: crew#795, crew#786, crew#716; 57dd6f80 owner pushes ~/.claude main with docs/demo/mcp.md + docs/onboarding/mcp.md and picks up my pi_bridge.py edit
-🔧 TOUCHES: ~/.claude/mcp/pi_bridge.py (working tree), ~/.claude/scripts/rulings.json (R67-R69 uncommitted), ~/.claude/docs/founder/2026-09-01T1720Z-squad-model-*.md; no cluster
-🔀 OVERLAP: 57dd6f80 owner (pi_bridge.py, its tests); a14fc078 crew#785; 54539261 crew#659
-📎 FACTS: https://github.com/chidionyema/crew/issues/795#issuecomment-5497844457
-📍 State: /Users/chidionyema/.claude/projects/-Users-chidionyema-dev-code/checkpoints/LATEST.md
-
-
-## 2026-09-01T17:33:06Z · session 54539261 · lane .wt-reports
-🟡 Founder asked how Cursor-on-Otto (crew#751) got on; answered from sources: CP1 wiring merged (idp#1086, dispatch.runtime: cursor), key SEED_CURSOR_API_KEY set 00:10Z, but the vault never received it — apply 33454815326 stopped at the Minimax shape FAIL before Cursor; applies 33477023541 and 33500103107 died earlier on tofu (shop_backups lifecycle policy 400) so the vendor step was skipped. WORK fails closed: nothing has ever run through Cursor. Architect stays on the router (ACP rejected, test locks it).
-⚪ Pending: session eb8e04bf lane .claude holds the vendors FAIL-continues fix uncommitted in idp/.wt-vendor-fail-continues (2 modified files, no commit since 02:11Z) — that lane should push it; founder then runs the apply.
-🔧 TOUCHES: none this turn (read-only)
-🔀 OVERLAP: eb8e04bf owns bin/idp-bootstrap-vendors; shop_backups tofu failure blocks every apply for every lane.
-📎 FACTS: gh secret SEED_CURSOR_API_KEY 2026-09-01T00:10:07Z; cursor CLI present at ~/.local/bin/agent; no agent-go claim since idp#1086 merged 23:06Z.
-📍 METER: 2026-09-01 $387.47 1,561 req $0.248/req transport 83% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T17:38:43Z · session a2aed3c9 · lane .wt-crew716-dagster
-🔴 Blocked: none
-🟡 Active: founder "APPROVE all" 17:5xZ on crew#795, crew#786, crew#716 (recorded on each); executing in the squad shape: worktrees .wt-crew786-feed (claude-guards feat/feed-15min-publish) and .wt-crew716-dagster (idp feat/dagster-cluster) created; constraints read (Kyverno policy set, Dagster chart 1.13.19 values, Flux row template, image build discovery); executor dispatches next
-🟢 Done: crew#795 founder word "need more details ... lets get the releases done then discuss again" recorded (founder doc 2026-09-01T1733Z)
-⚪ Pending: founder deploys when branches are green (R65); crew#785 rewrite by a14fc078
-🔧 TOUCHES: ~/dev/code/.wt-crew786-feed (feed-guard.py, feed_meter.py, policy/feed.rego, tests), ~/dev/code/.wt-crew716-dagster (platform/dagster/ new, platform/image-automation/, clusters/oke/platform.yaml, scheduler/Dockerfile, bin/estate-clocks, docs/scheduling/, docs/demo, docs/onboarding, tests/), later crew docs/STANDARDS.md row 32; no cluster
-🔀 OVERLAP: 57dd6f80 owner (pi_bridge.py); 54539261 crew#659 docs; a14fc078 crew#785/#789; nobody else on feed-guard, platform/dagster or scheduler/
-📎 FACTS: https://github.com/chidionyema/crew/issues/716#issuecomment-5495887798
-📍 State: /Users/chidionyema/.claude/projects/-Users-chidionyema-dev-code/checkpoints/LATEST.md
-
-
-## 2026-09-01T17:52:34Z · session a14fc078 · lane .wt-crew612-phone
-🔴 Blocked: none
-🟡 Active: crew#796 (founder P0, R70: no hardcoded estate name outside clusters/<cluster>/estate-config.yaml; PR rejection + drift run). Built on idp fix/names-one-place 2812c535: bin/estate-zone-gate widened (--root, --diff, marker), rule=no_zone_literal_added in policy/operating_model.rego via bin/pr-report zone_literals, .github/workflows/name-drift.yml (App token, every repo, every 6 h), idp-ci rung both ways, 5 BDD scenarios green, decision record docs/decisions/2026-09-01-one-place-for-every-name.md. Pushes in flight (idp, hermes-v2 b2e0837, crew 30b5db6); store sweep agent still running in .wt-names-prospector
-🟢 Done: idp/hermes/crew trees grade ok zone 0; conftest refuses zone_literals and admits APPROVE: zone-exempt
-⚪ Pending: founder merges (agents never merge); APPROVE: zone-exempt for hermes config.yaml; vars.ESTATE_ZONE set once; crew#785 approvals
-🔧 TOUCHES: idp bin/estate-zone-gate bin/pr-report bin/idp-ci bin/catalog-gen policy/operating_model.rego .github/workflows/name-drift.yml; hermes-v2 bin/consult otto/router/providers.py config.yaml; crew science/outcomes.py; prospector deploy/** scripts/** (agent); no cluster
-🔀 OVERLAP: a2aed3c9 rulings.json dirty; nobody else on names
-📎 FACTS: https://github.com/chidionyema/crew/issues/796
-📍 State: /Users/chidionyema/dev/code/.wt-crew612-phone (branch fix/names-one-place)
-
-
-## 2026-09-01T17:56:06Z · session a2aed3c9 · lane code
-🔴 Blocked: none
-🟡 Active: crew#786 and crew#716 built by executors (R69 squad shape): #786 part A (15-min interval, TOUCHES clash refusal, meter 5 s cap) reviewed and green in .wt-crew786-feed (3 review fixes applied: a founder quote had been reworded, two ambiguous names, one odd condition); part B (handoff publishes redacted 48 h feed + hourly NEXT.md to idp state/live-diagram) running on minimax; idp side (workflows read the feed from the branch, catalog-render carries FEED.md/NEXT.md) running on deepseek in .wt-crew786-idp; #716 CP2 bin/estate-clocks + docs/scheduling/CLOCKS.md (79 rows) green, plain-English polish running; CP1 plan (platform/dagster) written, dispatches after the polish
-🟢 Done: crew docs/STANDARDS.md scheduling row names Dagster on the cluster, not Argo — pushed fix/crew716-standards-scheduling-row f2d1e020 (no PR, per the founder)
-⚪ Pending: founder deploys after green (R65); CP1 Dagster manifests; both branches pushed once green
-🔧 TOUCHES: ~/dev/code/.wt-crew786-feed (feed-guard.py, feed_meter.py, policy/feed.rego, policy/feed_test.rego, tests/), ~/dev/code/.wt-crew786-idp (bin/catalog-render, .github/workflows/catalog-render.yml, .github/workflows/estate-state.yml, tests/), ~/dev/code/.wt-crew716-dagster (bin/estate-clocks, docs/scheduling/, tests/, next platform/dagster/), no cluster
-🔀 OVERLAP: 57dd6f80 owner (pi_bridge.py); 54539261 crew#659; a14fc078 crew#785/#612 hardcode scan (my feed publisher names the idp slug once, from env ESTATE_IDP_REPO)
-📎 FACTS: https://github.com/chidionyema/crew/issues/786#issuecomment-5495858487
-📍 State: /Users/chidionyema/.claude/projects/-Users-chidionyema-dev-code/checkpoints/LATEST.md
-
-
-## 2026-09-01T18:07:59Z · session 54539261 · lane .wt-reports
-🟡 Founder judged the Cursor-on-Otto design messy (pod → tailscale ssh → Mac → agent -p, key on stdin, key delivery via a failing oke-check apply). Checking Cursor Background Agents API (docs.cursor.com) as the one clean route: Otto POSTs the ticket, Cursor runs in its own cloud and opens the PR, no Mac, no wrapper. Proposal goes to the board for his word before any build (crew#751).
-⚪ Pending: founder word on the redesign
-🔧 TOUCHES: none this turn
-🔀 OVERLAP: crew#751 (eb8e04bf owns the vendors fix); crew#736 current-Otto lane
-📎 FACTS: SEED_CURSOR_API_KEY set 00:10Z, never in vault; zero Cursor runs to date
-📍 METER: 2026-09-01 $421.43 1,664 req $0.253/req transport 82% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T18:13:21Z · session a14fc078 · lane .wt-crew612-phone
-🔴 Blocked: none
-🟡 Active: crew#796 store sweep landed (prospector fix/names-one-place 5510ba07 + a follow-up commit, 88 files, gate ok zone 0); gate hole closed (${X:-zone} read green, idp fix/names-one-place second commit); both pushes in flight. Founder 17:5xZ: ship what is ready, then the hardcoding one shot estate-wide (org, registry, cluster, OCI, chat ids, paths), locked down; plan on crew#796, waits on APPROVE: crew#796 one-shot
-🟢 Done: ship list handed to the founder: idp #1095 #1103 #1100 #1098, infra-crew #1, claude-guards #232 #233 #235 green; four fix/names-one-place branches
-⚪ Pending: his merges; APPROVE: zone-exempt (hermes config.yaml); vars.ESTATE_ZONE per repo; APPROVE: crew#796 one-shot
-🔧 TOUCHES: idp bin/estate-zone-gate tests/fixtures/estate-zone; prospector deploy/** scripts/** tools/** Store.Web Store.Api compose workflows; no cluster
-🔀 OVERLAP: b4b812cb prospector#802 (Store.Web polish) will conflict on Store.Web config.ts/AccountPanel once either merges
-📎 FACTS: https://github.com/chidionyema/crew/issues/796#issuecomment-5498213484
-📍 State: /Users/chidionyema/dev/code/.wt-names-prospector
-
-
-## 2026-09-01T18:34:11Z · session 54539261 · lane .wt-reports
-🟡 Founder ruling being recorded: MiniMax = last lane of execution (cheap, fast); a strong planner before and a strong reviewer after every chain. Writing crew ruling doc in new worktree ~/dev/code/.wt-r67-plan-execute-review, branch ruling/plan-execute-review, then board crew#568/#751/#513. No build until GO.
-⚪ Pending: founder GO on Cursor Cloud redesign (crew#751 comment 5498283083) and on the plan/execute/review routing
-🔧 TOUCHES: crew docs/rulings/R<next>-*.md on a new branch only; nothing in idp
-🔀 OVERLAP: crew#568 model stack; crew#513 verified scaffold; eb8e04bf owns bin/idp-bootstrap-vendors
-📎 FACTS: hermes-v2/config.yaml:6-9 brain=claude lane; idp/platform/llm/config.yaml:92-99 claude=sonnet-5; fallbacks :169-189 claude→[minimax,deepseek]; estate.yaml:55 work=haiku
-📍 METER: 2026-09-01 $437.30 1,744 req $0.251/req transport 82% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T18:36:19Z · session a2aed3c9 · lane .wt-crew716-dagster
-🔴 Blocked: none
-🟡 Active: crew#786 + crew#716 releases (founder "lets get the releases done"): claude-guards feat/feed-15min-publish pushed 8595602 (15-min interval, TOUCHES clash policy, publish redacted 48h feed to idp state/live-diagram); claude-guards fix/hook-run-kills-its-child-group pushed 87019df (Stop-hook orphan incident: guard dies with wrapper, 15s scrub budget, one-copy lock — Mac load was 41-88, orphans killed); idp feat/feed-published-on-the-state-branch pushed dffc853a (NEXT.md renders from the published feed); idp feat/dagster-cluster in review: kustomize+kubeconform green, fixing missing $imagepolicy marker
-🟢 Done: founder Telegram question answered with measurements: Telegram is one-way since 28 Aug (no gateway job, nothing reads getUpdates); decision record crew#798 filed (Slack by purpose), founder replied "no we need all out tools" — clarifying before any build
-⚪ Pending: founder word on crew#798; founder deploys the green branches (R65); Dagster branch push after marker fix + full pytest
-🔧 TOUCHES: .wt-crew786-feed (pushed), .wt-hookrun-orphans (pushed), .wt-crew786-idp (pushed), .wt-crew716-dagster (platform/dagster/, bin/estate-clocks, docs/), ~/.claude/docs/founder/2026-09-01T1815Z-*.md; no cluster
-🔀 OVERLAP: 57dd6f80 owner (pi_bridge.py); 54539261 crew#659/#751; a14fc078 crew#612 names sweep
-📎 FACTS: https://github.com/chidionyema/crew/issues/798
-📍 State: /Users/chidionyema/.claude/projects/-Users-chidionyema-dev-code/checkpoints/LATEST.md
-
-
-## 2026-09-01T18:43:59Z · session 804722d4 · lane scratchpad
-🔴 Blocked: none
-🟡 Active: none — user asked for a one-word reply only, no work started
-🟢 Done: replied "ok" as instructed
-⚪ Pending: none
-🔧 TOUCHES: none
-🔀 OVERLAP: none
-📎 FACTS: none
-📍 State: scratchpad session 804722d4, no repo touched
-
-
-## 2026-09-01T18:46:09Z · session 54539261 · lane .wt-reports
-🟢 Done: Cline CLI 3.0.60 on the founder Mac as the R67 local option (his ask 18:38Z, doc 2026-09-01T1838Z-ook-lets-set-this-up f8bef917): planner lane = local claude binary on subscription (Opus 5), executor lane = estate router minimax; both smoke-proved with a live ok. Runbook docs/onboarding/cline-local-plan-act.md on crew branch ruling/plan-execute-review. Not in use yet, per his word; pi bridge untouched.
-🟡 Active: crew#568 (R67 + local option), crew#751 (Cursor Cloud redesign, awaits GO)
-⚪ Pending: founder GO on crew#568 routing lanes and crew#751
-🔧 TOUCHES: ~/.cline/data/settings/providers.json (laptop only); crew branch ruling/plan-execute-review docs only
-🔀 OVERLAP: feed entry 18:43Z session 804722d4 lane scratchpad is a nested claude spawned by the Cline smoke — noise, ignore; 57dd6f80 owns pi_bridge.py (untouched)
-📎 FACTS: cline auth stores the router key redacted; no vendor key on the Mac; claude-code provider runs the full local harness, hooks fire
-📍 METER: 2026-09-01 $454.76 1,786 req $0.255/req transport 82% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T18:50:56Z · session a2aed3c9 · lane .wt-crew716-dagster
-🔴 Blocked: none
-🟡 Active: founder answered live: 'door'=sign-in page (47 on the home page); Companies band wrong — Hermes is a product, Prospector+mumchimp one company (crew#799 filed, verbatim doc in ~/.claude/docs/founder/2026-09-01T1930Z-*.md); background agent building idp fix/portal-plain-words off main; idp full pytest still running for the Dagster branch
-🟢 Done: shipping holder measured and named to him: 9 green changes await his APPROVE (idp 1103 1100 1098 1095, guards 235 233 232, infra-crew 1, prospector 804) — his own R65/approve-all-infra rule is the gate
-⚪ Pending: his APPROVE word to merge the green list; Dagster pytest (bg btgl5mlwd); portal-words branch push
-🔧 TOUCHES: new .wt-portal-words (backstage home words + founder catalog-info companies cards); .wt-crew716-dagster unchanged this turn; no cluster
-🔀 OVERLAP: a14fc078 crew#612 names sweep also touches idp; 57dd6f80 pi_bridge.py
-📎 FACTS: https://github.com/chidionyema/crew/issues/799
-📍 State: /Users/chidionyema/dev/code/.wt-crew716-dagster
-
-
 ## 2026-09-01T19:22:02Z · session a2aed3c9 · lane .wt-crew716-dagster
 🔴 Blocked: none
 🟡 Active: Dagster branch (crew#716): full suite run twice — first pipeline hid rc (tail swallowed it), honest rerun = 48 failed/2414 passed; my 2 fixed by running the generators (bin/idp-alert-rows added the dagster alert row; bin/catalog-platform LAYERS row 'The estate clock' → layer-dagster entity; the 2 test files now 10 passed); remaining 46 being attributed on the clean main checkout (bg bvuvjbudk) before commit
@@ -4810,4 +4641,59 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: none
 📎 FACTS: none
 📍 State: http://192.168.0.192:3002/ (live copy); ports 3000/3001 are not live
+
+
+## 2026-09-03T18:11:26Z · session e83508bc · lane .claude
+🔴 Blocked: iOS Safari blank on LAN IP if HSTS already pinned; founder clears Safari data or uses .local
+🟡 Active: none
+🟢 Done: dropped upgrade-insecure-requests and HSTS on local :3002 preview
+⚪ Pending: confirm phone at http://chidis-MacBook-Pro.local:3002/
+🔧 TOUCHES: prospector-live-preview next.config.ts, port 3002
+🔀 OVERLAP: none
+📎 FACTS: none
+📍 State: http://chidis-MacBook-Pro.local:3002/
+
+
+## 2026-09-03T18:28:54Z · session e83508bc · lane .claude
+🔴 Blocked: iOS cannot load laptop next-dev (localhost baked into HTML); phone uses https://mumchimp.com/
+🟡 Active: none
+🟢 Done: live copy is origin/main 59721267 / #808; local iOS preview abandoned
+⚪ Pending: ship header/ribbon from this checkout if founder wants it on the phone
+🔧 TOUCHES: none
+🔀 OVERLAP: none
+📎 FACTS: none
+📍 State: https://mumchimp.com/
+
+
+## 2026-09-03T18:36:59Z · session c0ca7d0d · lane .claude
+🔴 Blocked: none
+🟡 Active: none
+🟢 Done: workspace is now ~/dev/code/.wt-mumchimp-broadsheet
+⚪ Pending: founder looking at http://localhost:3001/
+🔧 TOUCHES: none
+🔀 OVERLAP: e83508bc
+📎 FACTS: none
+📍 State: /Users/chidionyema/dev/code/.wt-mumchimp-broadsheet
+
+
+## 2026-09-03T18:56:07Z · session c0ca7d0d · lane .claude
+🔴 Blocked: Cursor preview paints black (Next FOUC); founder must use Safari
+🟡 Active: none
+🟢 Done: research-desk homepage copy on feat/mumchimp-broadsheet (uncommitted); Kill Log kept
+⚪ Pending: pack card formula is a catalogue job, not engine this pass
+🔧 TOUCHES: Store.Web chrome in ~/dev/code/.wt-mumchimp-broadsheet; port 3001
+🔀 OVERLAP: e83508bc
+📎 FACTS: none
+📍 State: http://localhost:3001/ in Safari
+
+
+## 2026-09-03T19:13:21Z · session c0ca7d0d · lane .claude
+🔴 Blocked: none
+🟡 Active: none
+🟢 Done: webpack production next start on :3001 so FOUC no longer blanks Safari
+⚪ Pending: founder hard-refresh Safari http://localhost:3001/
+🔧 TOUCHES: port 3001; ~/dev/code/.wt-mumchimp-broadsheet Store.Web
+🔀 OVERLAP: e83508bc
+📎 FACTS: none
+📍 State: http://localhost:3001/
 
