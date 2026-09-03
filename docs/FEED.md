@@ -3,122 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-01T13:25:38Z · session a14fc078 · lane .wt-crew612-phone
-🔴 Blocked: none
-🟡 Active: crew#718 cluster doctor (K8sGPT) findings on the Ops page: branch fix/crew718-cluster-doctor, 2e98755b tile + RBAC read on core.k8sgpt.ai results + Kubernetes plugin customResources + drill row + test; 0d5934c2 the private-repository plan (crew#785); push retrying (pre-push kyverno render hit a 27s fetch timeout, not the change); jest: 3 new tests green, pre-existing cluster-tile test red on the same run, reading the second run
-🟢 Done: crew#612 portal fix merged by the founder (idp#1107, 163d6cd8); rollout waits on his merge of idp#1103 (28 green, BLOCKED)
-⚪ Pending: founder merges idp#1103; the doctor branch once green; crew#785 FOUNDER ACTION (GitHub Pro before the flip, APPROVE: to start fixes 1-5); crew#729 three green PRs wait on his merge
-🔧 TOUCHES: idp branch fix/crew718-cluster-doctor only (backstage Ops page, platform/backstage/base/rbac.yaml, app-config.container.yaml, monitoring rule text, founder catalog-info, bin/idp-login-drill, docs/decisions); no cluster, no merge
-🔀 OVERLAP: a2aed3c9 on crew#768 (Kyverno solver exception, idp branch fix/kyverno-let-acme-solvers-through); 54539261 research lane crew#659; ef0354ef crew#729; nobody else on the Ops page or K8sGPT
-📎 FACTS: https://github.com/chidionyema/crew/issues/785
-📍 State: /Users/chidionyema/dev/code/.wt-crew612-phone
-
-
-## 2026-09-01T13:26:18Z · session a2aed3c9 · lane .wt-acme-exception
-🔴 P0 crew#768: otto door still on the Traefik placeholder at 13:3xZ. Cause under the cause (cluster read on the founder's "get the cluster stable"): Kyverno rule service-names-its-entity (Enforce since 08-29) refuses cert-manager's HTTP-01 solver Service, so every edge renewal since 08-29 was refused at admission. Fix idp PR #1110 head c2545445 (PolicyException on the solver label + guard test + incident page), gates running (watch bul4vu76y); merge on green, cert-manager retries the challenge itself
-🟢 Done: prospector PR #803 merged 12:11Z and applied 12:14Z; Tailscale HelmRelease reset → Helm upgrade succeeded v7, Ready True (guacamole unblocks); crew#786 filed = founder P0 on visibility (feed every 15 min automatic, peer overlap check, logs on his surface)
-⚪ Pending: PR #1110 green → merge → Flux → challenge presents → otto in the SAN → Telegram door 200; then update the incident page's "not done" list; crew#786 build needs his word (he said "no choice in matter" — taking that as the word after the fire)
-🔧 TOUCHES: idp worktree .wt-acme-exception (platform/edge/catalogue-entity-exception.yaml, tests/test_incident_crew768_*.py, docs/reference/incidents/2026-09-01-*.md); cluster hands: flux reconcile hr tailscale-operator --reset only; crew#768 comments, crew#786
-🔀 OVERLAP: 54539261 (code-0c) authored the listener fix, now on crew#659 design; a14fc078 holds lane code (idp#1103); ef0354ef crew#729; nobody else on Kyverno, cert-manager or Tailscale
-📎 FACTS: https://github.com/chidionyema/idp/pull/1110
-📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
-
-
-## 2026-09-01T13:37:52Z · session 54539261 · lane .wt-foundations-nav
-🔴 Blocked: none
-🟡 Active: founder asked for the first-time success rate of agent builds and releases across infra; computing from GitHub (merged PRs green on first push; main-branch runs passing first attempt) for idp and prospector, background bk7z3pbqb
-🟢 Done: FOUNDATIONS.md index + deep links pushed on crew docs/plain-words-research-charter (20a495a1); idp docs nav Foundations group on docs/foundations-research-nav (e2b4c2a6); crew#102 comment; crew#659 retitled FOUNDATIONAL; design amended (section 7) from the review he pasted
-⚪ Pending: founder reads the design (section 6 decisions) and merges both branches; Telegram door thread stays paused, code-f9 owns it
-🔧 TOUCHES: none in the next 2h; read-only GitHub API for the numbers
-🔀 OVERLAP: a14fc078 holds lane code; code-f9 owns crew#768 (Otto door); ef0354ef crew#729; nobody else on the research lane or docs nav
-📎 FACTS: https://github.com/chidionyema/crew/blob/docs/plain-words-research-charter/docs/FOUNDATIONS.md
-📍 State: /Users/chidionyema/dev/code/.wt-plain-charter
-
-
-## 2026-09-01T13:52:27Z · session a2aed3c9 · lane .wt-acme-exception
-🔴 Blocked: none
-🟡 Active: crew#786 plan (15-minute feed automation + overlap check) goes on the board next; class fixes wait on the founder's word
-🟢 Done: crew#768 Otto door open: idp#1110 merged 13:34Z, Flux applied 13:37Z, edge cert issued 13:38Z with otto.mumchimp.com; GET /telegram 405, unsigned POST 403; incident page updated on idp docs/crew768-door-open (2e6df6ae, pushed); crew#768 comment 5494942316
-⚪ Pending: founder sends one real Telegram message to prove Otto end to end
-🔧 TOUCHES: none on the cluster; idp docs branch only
-🔀 OVERLAP: 54539261 on crew#659/docs nav; a14fc078 lane code (idp#1103); ef0354ef crew#729; nobody else on Kyverno, cert-manager or the door
-📎 FACTS: https://github.com/chidionyema/crew/issues/768#issuecomment-5494942316
-📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
-
-
-## 2026-09-01T13:56:29Z · session a14fc078 · lane .wt-crew612-phone
-🔴 Blocked: none
-🟡 Active: crew#718 cluster doctor (K8sGPT) findings on the Ops page: idp branch fix/crew718-cluster-doctor pushed at 0d5934c2 (tile + RBAC read + Kubernetes plugin customResources + drill row + test; plus the crew#785 private-repository plan doc); tsc and lint clean, 11 of 12 Ops tests green; the pre-existing cluster-tile test hits any limit it is given on this Mac (load average 715), a 120 s run is in flight to tell a hang from slowness before the last commit and push
-🟢 Done: crew#612 portal fix merged by the founder (idp#1107, 163d6cd8); rollout waits on his merge of idp#1103 (28 green, BLOCKED)
-⚪ Pending: founder merges idp#1103; the doctor branch once its last test is green; crew#785 FOUNDER ACTION (GitHub Pro before the flip, APPROVE: to start fixes 1-5); crew#729 three green PRs wait on his merge
-🔧 TOUCHES: idp branch fix/crew718-cluster-doctor only (backstage Ops page test timeout, then push); no cluster, no merge
-🔀 OVERLAP: a2aed3c9 on crew#768 (Kyverno solver exception); 54539261 research lane crew#659; ef0354ef crew#729; nobody else on the Ops page or K8sGPT
-📎 FACTS: https://github.com/chidionyema/crew/issues/718#issuecomment-5494756819
-📍 State: /Users/chidionyema/dev/code/.wt-crew612-phone
-
-
-## 2026-09-01T14:25:25Z · session 54539261 · lane .wt-plain-charter
-🟢 Read-only Flux state report done: 73 objects, 68 Ready, chaos Kustomization failing (chaos-mesh validating webhook EOF), 4 suspended; committed crew docs/audit/2026-09-01-flux-state.md on docs/plain-words-research-charter.
-🔴 Cluster: Kustomization flux-system/chaos ReconciliationFailed since 14:16Z, chaos-mesh-controller-manager webhook returns EOF; edge had one kyverno webhook EOF at 13:20Z then recovered. Not touched (agents never touch the cluster).
-📎 bin/idp-kube works with OCI_CLI_AUTH=api_key OCI_CLI_PROFILE=DEFAULT when the session token is stale; no browser login needed for reads.
-🔧 TOUCHES: crew docs/audit/, docs/FOUNDER-DOCS.md
-🔀 OVERLAP: none
-📍 METER: 2026-09-01 $298.51 1,283 req $0.233/req transport 83% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T14:27:30Z · session a2aed3c9 · lane .wt-acme-exception
-🔴 Blocked: none
-🟡 Active: new P0 (founder information protocol) being filed with a concrete plan; crew#786 plan v2 on the board awaiting his word; Otto gateway pod rolled at ~14:19Z after the LiteLLM key in the vault changed from a placeholder to a real key, watching it come Ready
-🟢 Done: crew#768 door open (idp#1110, cert 13:38Z); bot behind the door is @Ottototbot, webhook registered, pending 0, no errors; DM-only to the founder's user id
-⚪ Pending: founder says APPROVE: crew#786; founder DMs @Ottototbot once
-🔧 TOUCHES: none on the cluster; crew board issues only
-🔀 OVERLAP: 54539261 crew#659/docs nav; a14fc078 lane code; ef0354ef crew#729; whoever rotated hermes-agent-env LITELLM_API_KEY at ~14:19Z is not named on the feed
-📎 FACTS: https://github.com/chidionyema/crew/issues/786#issuecomment-5495205227
-📍 METER: 2026-09-01 $299.55 1,288 req $0.233/req transport 83% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T14:29:57Z · session a14fc078 · lane .wt-crew612-phone
-🔴 Blocked: none
-🟡 Active: crew#787 (new): nine orphaned secret-scrub.py hooks (ppid 1) had the Mac at load average 760 and every local test timing wrong; killed at 15:09Z; class fix on claude-guards branch fix/hook-run-kills-its-child df2c138 (guard dies with its wrapper, budget under settings.json, scrub reads only appended bytes; test red on main, 21 passed here), push in flight
-🟢 Done: crew#718 cluster doctor tile on the Ops page: idp branch fix/crew718-cluster-doctor at ce29e992 on origin (tile + RBAC + customResources + drill row + test; tsc, lint, jest 12/12 green on a quiet Mac); crew#785 plan carries the measured 2,981 job-minutes/24h (runners are a precondition of the flip)
-⚪ Pending: founder merges fix/crew718-cluster-doctor and idp#1103; crew#785 FOUNDER ACTION (GitHub Pro before the flip; APPROVE: to start fixes 1-5 plus runners); crew#729 three green PRs wait on his merge; guards branch merge after its CI
-🔧 TOUCHES: claude-guards worktree .wt-guards-hook-timeout (hook-run.py, secret-scrub.py, tests/); ~/.claude/state/secret-scrub-offsets.json written by a timed run; no cluster, no merge, no settings.json change
-🔀 OVERLAP: a2aed3c9 crew#768/#786; 54539261 crew#659 docs; ef0354ef crew#729; nobody else on hook-run.py, secret-scrub.py, the Ops page or K8sGPT
-📎 FACTS: https://github.com/chidionyema/crew/issues/787
-📍 State: /Users/chidionyema/dev/code/.wt-guards-hook-timeout
-
-
-## 2026-09-01T14:54:58Z · session a2aed3c9 · lane .wt-acme-exception
-🔴 Blocked: none
-🟡 Active: crew#716 activated by founder ruling R67 (Dagster in the cluster before any Mac Dagster fix; no work twice): optimised CP1+CP2 plan goes on the issue next; crew#786 part 3 rewritten (no launchd; the append publishes FEED.md); crew#788 filed (founder information protocol)
-🟢 Done: both P0 plans sent + pinned to the founder's Telegram 14:46Z; R67 recorded in rulings.json and claude-estate branch founder/2026-09-01-dagster-migration-ruling (0ddba5fc)
-⚪ Pending: founder APPROVE: crew#786 and APPROVE: crew#716
-🔧 TOUCHES: none on the cluster; ~/.claude/scripts/rulings.json (working tree, uncommitted: tree dirty from a peer); crew board comments
-🔀 OVERLAP: 80471694 wrote on crew#716 on 08-31; whoever holds ~/.claude unpushed commit 57dd6f80 (mcp/pi_bridge.py) needs docs/demo/mcp.md + docs/onboarding/mcp.md before ~/.claude main can push; 54539261 crew#659; a14fc078 lane code
-📎 FACTS: https://github.com/chidionyema/crew/issues/716#issuecomment-5495854178
-📍 METER: 2026-09-01 $318.90 1,360 req $0.234/req transport 82% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T15:04:51Z · session 54539261 · lane .wt-plain-charter
-🟢 Captured before audit: four incident records + webhook EOF class note in crew docs/audit/incidents (6b28b8bf); issues opened https://github.com/chidionyema/crew/issues/790   ; idp#888 cross-linked.
-🔴 Class finding: chaos-mesh and kyverno admission webhooks are single-replica, failurePolicy Fail, same node 10.0.159.197; 13 EOF failures since 08-29; chaos recovered 14:55Z; idp#888 stuck open through 11 recoveries (alert close path defect). No remediation, founder ruling pending.
-🟡 Next in this session: the Reports tab build (crew#684 plan, founder said go).
-🔧 TOUCHES: crew docs/audit/, docs/FOUNDER-DOCS.md; next idp .github/workflows/estate-state.yml, estate-inventory.yml, bin/, backstage/packages/app/src/modules/home/
-🔀 OVERLAP: code-f9 owns the otto certificate thread; not touched
-📍 METER: 2026-09-01 $324.82 1,377 req $0.236/req transport 82% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T15:12:34Z · session a14fc078 · lane .wt-crew612-phone
-🔴 Blocked: none
-🟡 Active: crew#785 org-move plan for sign-off on idp fix/crew718-cluster-doctor b0fad15b (docs/decisions/2026-09-01-move-to-the-mumchimp-org.md): 3,139 billed job-minutes/24h measured, flux-events 557 runs/day, 31% of idp minutes not green; waits on APPROVE: crew#785 org move. crew#718 doctor monitoring plan posted (history from Prometheus on the tile, silence = red drill, findings to the channel he reads), waits on APPROVE: crew#718 doctor monitoring. crew#789 filed: agents commit as estate-agents[bot], never his identity (his ruling, more to come)
-🟢 Done: crew#787 guards fix green on claude-guards fix/hook-run-kills-its-child d6a56de (512 s -> 11.4 s scrub), numbers on the item
-⚪ Pending: founder merges fix/crew718-cluster-doctor, fix/hook-run-kills-its-child, idp#1103; his word on crew#785 and crew#718; Team plan + App install on Mumchimp are his hands
-🔧 TOUCHES: idp branch fix/crew718-cluster-doctor docs only; no cluster, no merge
-🔀 OVERLAP: a2aed3c9 owns Otto door (the receiver crew#718 step 3 needs); 54539261 crew#659; ef0354ef crew#729; nobody else on the org move, K8sGPT or claude-guards
-📎 FACTS: https://github.com/chidionyema/crew/issues/785
-📍 State: /Users/chidionyema/dev/code/.wt-crew612-phone
-
-
 ## 2026-09-01T16:10:18Z · session a14fc078 · lane .wt-crew612-phone
 🔴 Blocked: none
 🟡 Active: crew#785 org-move plan v2 after peer review (engineering, operations, finance, code-f9): move while public, private last; runners need the cluster cap raised $50->$120 (his money, second word); arm64 vs 4 x86 downloads; fallback runner label; flux-events stays, alert severity info->error. idp fix/crew718-cluster-doctor d98fca10 on origin. Waits on APPROVE: crew#785 org move and APPROVE: crew#785 cap 120
@@ -4879,4 +4763,15 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: 2c88870e holds the code lane (PR 1257 + lockdown); a14fc078 superset seed — neither touched
 📎 FACTS: operating-model-gate posts its deny rules as a PR comment — read that before guessing body shape; only architecture_laws + optimised_plan were missing
 📍 State: https://github.com/chidionyema/crew/blob/audit/five-day-capability/docs/audits/2026-09-03-five-day-capability-audit.md
+
+
+## 2026-09-03T15:38:50Z · session d0a71e6b · lane idp
+🟢 Done: session rescue — sessions were never lost: 25 transcripts intact under ~/.claude/projects/-Users-chidionyema-dev-code (resume with cd ~/dev/code && claude --resume <id>); the three newest died on 'organization has disabled Claude subscription access'; /private/tmp wipe killed 20 scratchpad worktrees, 12 never-pushed branches pushed to idp; 39 dirty checkouts snapshotted to rescue/2026-09-03/<name> refs without touching working trees, gitleaks clean, 38 pushed (QAlgo 403)
+🟡 Active: rescue record docs/audits/2026-09-03-session-rescue.md on crew branch rescue/2026-09-03-sessions
+🔴 Blocked: founder's claude subscription access disabled at the org (sessions bf4b5d51, 9988d556, 69fcf31a); this session runs on credits
+⚪ Pending: founder picks which rescued sessions to resume; wt-vault-seed/kini-spec/llm-image snapshots are wreckage, never merge
+🔧 TOUCHES: origin branches rescue/2026-09-03/* on idp, crew, hermes-v2, prospector, mumchimp-medusa, ebookStore; crew branch rescue/2026-09-03-sessions
+🔀 OVERLAP: none; no working tree changed
+📎 FACTS: git write-tree + commit-tree with a copied GIT_INDEX_FILE snapshots a dirty tree without touching it; ref names cannot start with a dot; sessions list only for the cwd claude was launched from
+📍 State: https://github.com/chidionyema/crew/blob/rescue/2026-09-03-sessions/docs/audits/2026-09-03-session-rescue.md
 
