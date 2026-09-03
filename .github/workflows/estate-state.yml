@@ -176,7 +176,7 @@ jobs:
           done
           git config user.name "estate-state"
           git config user.email "estate-state@users.noreply.github.com"
-          git add -f docs/reports  # -f: the state branch .gitignore (reports/) swallows the path (run 33701059541)
+          git add docs/reports
           if git diff --cached --quiet; then echo "ok      reports  state branch already holds this report"; exit 0; fi
           git commit -q -m "docs(reports): Flux report from the cluster receipt, run $GITHUB_RUN_ID (crew#684)"
           for attempt in 1 2 3; do
