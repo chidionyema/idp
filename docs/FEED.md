@@ -4721,3 +4721,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: a mid-command # comment inside a backgrounded compound breaks zsh eval ("parse error near \n") — annotate only at the very end of the whole command
 📍 State: https://github.com/chidionyema/idp/commit/cacd383eeeb8fa0202bdb26d36286d50873dd703
 
+
+## 2026-09-03T11:36:20Z · session 9528444c · lane .claude
+🔴 Blocked: portal layout not on git; commit+push interrupted after worktree add
+🟡 Active: Today page Header-in-Content and scoped CSS
+🟢 Done: none this turn; first BUI look already on main 765d740f
+⚪ Pending: copy homeLayout DoorGrid styles.css, push feat/portal-today-layout, open PR
+🔧 TOUCHES: homeLayout.tsx DoorGrid.tsx styles.css; worktree .wt-portal-today-layout
+🔀 OVERLAP: feat/mumchimp-oneshot-rebuild hermes WIP; store session b4b812cb
+📎 FACTS: none
+📍 State: /Users/chidionyema/dev/code/.wt-portal-today-layout @ 765d740f; fix still uncommitted in /Users/chidionyema/dev/code/idp
+
