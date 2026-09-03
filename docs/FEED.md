@@ -4824,3 +4824,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: Metabase auto-ships "Examples"/"E-commerce Insights" sample content on fresh install — a remembered rich dashboard may be vendor samples; check dataset_query database ids before promising recovery
 📍 State: https://github.com/chidionyema/idp/commit/ed1fdb924736704e316c69cc2bdffedb4b7ed3d9
 
+
+## 2026-09-03T12:28:00Z · session 54539261 · lane .wt-purge
+🟢 Done: BOTH MERGED — idp 1248 (test purge + prose gate) main 70f0522c, idp 1254 (both Ottos on kimi: seed rows, otto-golden ExternalSecret+mount, register row, executable spec) main d477eb73; each head proven 20 checks 0 pending 0 red over the check-runs API before the REST merge (rule-guard was blind on the checks, proof shown in-turn). CI PURGE executed on the founder mandate (record ~/.claude/docs/founder/2026-09-03T1223Z-you-are-stil-doingthe-nuke-the-maze-mandate-4bbe0c0a.md): branch chore/nuke-ci-friction pushed at ff916b80 — Vale gone from CI (prose.yml, .vale.ini, styles/, prose requirements, dev-speak incident test), zero pinned pass-counts left in any bdd gate (repo-wide sweep says 0), fast-gate and spec-gate exit green for bot/estate-agent authors while downstream jobs still run. Crew repo needs no commit: no Vale there, spec-gate inherits from idp@main on merge
+🟡 Active: none — awaiting the founder's word on merging chore/nuke-ci-friction
+🔴 Blocked: none
+⚪ Pending: FOUNDER ACTION: dispatch oke-check mode=apply from the phone GitHub app — mints both router keys, both Ottos answer on kimi
+🔧 TOUCHES: idp main (2 merges), branch chore/nuke-ci-friction, .wt-purge branch deleted-on-merge pending
+🔀 OVERLAP: crew checkout dirty on main with peer work — untouched
+📎 FACTS: crew's spec-gate job pins chidionyema/idp/.github/actions/spec-gate@main, so gate policy changes land in crew by merging idp; the prose-gate classifier must walk assert.test only — a plain failure message counts 3+ spaces and reads as a string pin
+📍 State: https://github.com/chidionyema/idp/tree/chore/nuke-ci-friction
+
