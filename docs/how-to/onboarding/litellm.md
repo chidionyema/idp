@@ -50,6 +50,20 @@ Nothing is seeded by hand and no value is ever sent to a person (crew#407). Brea
 form at `/ui/login` accepts the master key, which only the vault holds (`litellm-upstream`); it
 is read by a pod, never by a chat.
 
+## A Kimi key has one of three homes
+
+Kimi (Moonshot) sells the same models from three hosts, and a key answers only at the host it was
+made for: the open platform's global host, the Kimi Code membership host, and the open platform's
+China host. The vendor's own FAQ says the key and the base URL must match. Nobody has to know or
+say where a key was made: the apply step probes each host in turn with the one root
+(`SEED_KIMI_API_KEY`), and the host that accepts the key is written to the vault beside it as
+`MOONSHOT_API_BASE`. The router pod exports that file with the key, and LiteLLM's moonshot adapter
+reads it, so the `kimi` lane calls the right host. A key refused at every host shows a line naming
+each host's answer, never one word.
+
+The list of hosts lives in `platform/vendors/consoles.yaml` under `kimi.bases`; the router row is
+rendered from the same file.
+
 ## Checking it
 
 - `curl -s -o /dev/null -w '%{http_code}\n' https://llm.<zone>/health/liveliness` → `200`

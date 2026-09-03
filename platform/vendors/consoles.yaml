@@ -198,9 +198,22 @@ vendors:
     secret: SEED_KIMI_API_KEY
     page: https://platform.kimi.ai/console/api-keys
     shape: "[A-Za-z0-9_.-]{20,}"
-    verify: { method: GET, url: https://api.moonshot.ai/v1/models, headers: { Authorization: "Bearer {key}" } }
+    # A Kimi key has one of three homes and answers only there (kimi.com/code FAQ, read 2026-09-03:
+    # "Kimi Code membership benefits and the Kimi Platform have different Base URLs"): the open
+    # platform's global host, the Kimi Code membership host, the open platform's China host. The
+    # apply run on 2026-09-02 (job 100467823768) probed only the first and read the founder's key as
+    # "Incorrect API key" without ever asking the other two. Now the probe walks the list; the host
+    # that accepts the key is written as MOONSHOT_API_BASE, which LiteLLM's moonshot adapter reads
+    # from the environment beside the key (docs.litellm.ai/docs/providers/moonshot), so the router
+    # calls the home the key belongs to. Nobody is asked where the key was made.
+    bases:
+      - https://api.moonshot.ai/v1
+      - https://api.kimi.com/coding/v1
+      - https://api.moonshot.cn/v1
+    verify: { method: GET, url: "{base}/models", headers: { Authorization: "Bearer {key}" } }
     targets:
       - { entry: litellm-upstream, field: MOONSHOT_API_KEY }
+      - { entry: litellm-upstream, field: MOONSHOT_API_BASE, derived: base }
     router:
       lanes: |
         # Kimi (Moonshot) -- the founder's primary for both Ottos (2026-09-02). First-class LiteLLM

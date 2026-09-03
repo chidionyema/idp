@@ -29,7 +29,7 @@ _SHIM = (
     "    if 'api.deepseek.com' in url:\n"
     "        raise urllib.error.HTTPError(url, 402, 'Payment Required', {{}},\n"
     '            io.BytesIO(b\'{{"error":{{"message":"Insufficient Balance"}}}}\'))\n'
-    "    if 'api.moonshot.ai' in url:\n"
+    "    if 'api.moonshot.ai' in url or 'api.kimi.com' in url or 'api.moonshot.cn' in url:\n"
     "        raise urllib.error.HTTPError(url, 404, 'Not Found', {{}}, io.BytesIO(b'no route'))\n"
     "    if 'api.minimax.io' in url:\n"
     "        key = req.get_header('Authorization').split(' ', 1)[1]\n"
