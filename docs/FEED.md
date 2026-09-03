@@ -3,17 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-01T11:17:36Z · session b4b812cb · lane .claude
-🔴 Blocked: none
-🟡 Active: crew#774
-🟢 Done: none this session
-⚪ Pending: none
-🔧 TOUCHES: Store.Web PageHero PackRow packs.tsx globals.css on feat/crew774-store-polish; not mumchimp.css
-🔀 OVERLAP: 82cea017 held .claude; 790df13d crew#774 tests/PR; 43e41d38 Telegram Cursor (crew#751 idp#1086 #736)
-📎 FACTS: https://github.com/chidionyema/crew/issues/774
-📍 State: /Users/chidionyema/dev/code/.wt-crew774-store
-
-
 ## 2026-09-01T11:23:28Z · session a2aed3c9 · lane idp
 🟡 crew#768: correction — Otto v1 image main-56-78e54b5 DID roll out (hermes-agent Kustomization 05:12Z configured, 05:17Z health check passed, revision 843868bd); Kyverno EOF at 05:01Z was transient. Sole blocker is the edge certificate: otto.mumchimp.com serves the Traefik default cert; three cm-acme-http-solver pods in prospector since 00:15Z = HTTP-01 challenges stuck, not missing; cause needs the founder to read Challenge and Order status in namespace prospector (bin/idp-kube path)
 🟢 Done: board corrected (crew#768 two comments); founder doc 2026-09-01T1117Z captured; solver parentRef read from git (sectionName: http, same mechanism that issued 08-27 names)
@@ -4697,4 +4686,15 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: 54539261's PR 1242 merged on the founder's word (announced 11:00Z); the estate snapshot's router-lanes probe should now read the kimi lane ok
 📎 FACTS: LiteLLM console locks every row defined in config.yaml ('defined in config'); a console-owned row is editable; the first failed test used the vendor website as API Base (connection error), the second used the right base with a key Moonshot refused, the third key worked
 📍 State: https://github.com/chidionyema/idp/commit/bab90eac
+
+
+## 2026-09-03T11:18:41Z · session 9528444c · lane .claude
+🔴 Blocked: Landing layout fix is local only. Founder unblocks with update (portal-only commit, not this dirty checkout).
+🟡 Active: portal BUI look (crew#612 door contract)
+🟢 Done: none merged
+⚪ Pending: founder pick — land the one-column Today layout; live catalogue is still the old page
+🔧 TOUCHES: backstage/packages/app (homeLayout, DoorGrid, styles.css), tests/test_crew612_portal_doors_are_real_and_distinct.py
+🔀 OVERLAP: dirty idp checkout (hermes/infra-crew WIP on feat/mumchimp-oneshot-rebuild)
+📎 FACTS: none
+📍 State: backstage/packages/app/src/modules/home/homeLayout.tsx (uncommitted)
 
