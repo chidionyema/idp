@@ -153,3 +153,78 @@ def test_an_identity_that_exchanges_but_carries_no_tags_is_re_registered_with_th
     assert mint and "at-fed" in mint[0] and "at-notag" not in mint[0], (
         "the operator is minted with the re-registered identity, never the tagless one"
     )
+
+
+def test_a_tagless_identity_with_no_seed_re_registers_itself_on_the_runner(tmp_path):
+    """Run 33780730463 (2026-09-03 16:53Z): the drift check found the identity carried no tag,
+    fell to road b, and road b died on 'no seed exists to register the identity from code' (the
+    seed was retired once the identity answered). The identity holds oauth_keys itself, so on
+    the runner it registers its tagged replacement with its own token and retires itself; no
+    hand."""
+    env, log, vault = _runner(tmp_path, seed_env=False, old="kFEDNOTAG333")
+    sh = pathlib.Path(env["IDP_VAULT_PUT"]).parent
+    shim = (sh / "curl").read_text()
+    refused = [l for l in shim.splitlines() if "*token-exchange*)" in l]
+    assert len(refused) == 1, shim
+    shim = shim.replace(
+        refused[0],
+        '  *client_id=kFEDNOTAG333*) echo \'{"access_token":"at-notag","scope":'
+        '"auth_keys devices:core policy_file users:read oauth_keys"}\' | body 200;;\n'
+        '  *-/keys/kFEDNOTAG333*) echo \'{"id":"kFEDNOTAG333","keyType":"federated","tags":[]}\';;\n'
+        + refused[0],
+    )
+    (sh / "curl").write_text(shim)
+    p = _run(env)
+    out = p.stdout + p.stderr
+    assert p.returncode == 0, out
+    assert "re-registers itself" in out, out
+    calls = log.read_text()
+    reg = [l for l in calls.splitlines() if '"keyType":"federated"' in l]
+    assert len(reg) == 1 and "Bearer at-notag" in reg[0], (
+        "the registration is made with the identity's own token, no seed",
+        calls,
+    )
+    assert '"tags":["tag:k8s","tag:k8s-operator"]' in reg[0], reg
+    gone = [l for l in calls.splitlines() if "DELETE" in l and "kFEDNOTAG333" in l]
+    assert gone and "Bearer at-notag" in gone[0], (
+        "the tagless identity retires itself",
+        calls,
+    )
+    assert json.load(open(vault))["tailscale-federated"]["client_id"] == "kFEDNEW222"
+    mint = [l for l in calls.splitlines() if '"keyType":"client"' in l]
+    assert mint and "at-fed" in mint[0] and "at-notag" not in mint[0], calls
+
+
+def test_a_tagless_identity_whose_self_registration_is_refused_names_the_one_hand(
+    tmp_path,
+):
+    """If Tailscale refuses the tagless identity's tagged registration, the failure names the
+    vendor's answer and the one hand; nothing is retired."""
+    env, log, vault = _runner(tmp_path, seed_env=False, old="kFEDNOTAG333")
+    sh = pathlib.Path(env["IDP_VAULT_PUT"]).parent
+    shim = (sh / "curl").read_text()
+    refused = [l for l in shim.splitlines() if "*token-exchange*)" in l]
+    shim = shim.replace(
+        refused[0],
+        '  *client_id=kFEDNOTAG333*) echo \'{"access_token":"at-notag","scope":'
+        '"auth_keys devices:core policy_file users:read oauth_keys"}\' | body 200;;\n'
+        '  *-/keys/kFEDNOTAG333*) echo \'{"id":"kFEDNOTAG333","keyType":"federated","tags":[]}\';;\n'
+        + refused[0],
+    )
+    reg_line = [l for l in shim.splitlines() if "keyType" in l and "federated*)" in l]
+    assert len(reg_line) == 1, shim
+    shim = shim.replace(
+        reg_line[0],
+        reg_line[0].split(" echo ")[0]
+        + ' echo \'{"message":"requested tags are invalid or not permitted"}\';;',
+    )
+    (sh / "curl").write_text(shim)
+    p = _run(env)
+    out = p.stdout + p.stderr
+    assert p.returncode == 1, out
+    assert "not permitted" in out and "bin/idp-set-root tailscale" in out, out
+    calls = log.read_text()
+    assert not [l for l in calls.splitlines() if "DELETE" in l], calls
+    assert "tailscale-federated" not in json.load(open(vault)), (
+        "nothing vaulted on a refusal"
+    )
