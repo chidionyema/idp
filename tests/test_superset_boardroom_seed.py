@@ -50,6 +50,13 @@ def test_seed_rides_the_batch_bucket_not_standing_capacity():
     )
 
 
+def test_seed_can_be_changed_in_place():
+    annotations = _job()["metadata"].get("annotations", {})
+    assert annotations.get("kustomize.toolkit.fluxcd.io/force") == "Enabled", (
+        "Jobs are immutable; Flux recreates the seed only with the force annotation"
+    )
+
+
 def test_seed_is_bounded_and_self_deleting():
     spec = _job()["spec"]
     assert spec["backoffLimit"] <= 1
@@ -79,7 +86,10 @@ def test_seed_script_is_strict_pinned_and_write_free_on_the_source():
     assert "psycopg2-binary==" in script and "clickhouse-connect==" in script, (
         "both drivers pinned"
     )
-    assert "import-assets" in script
+    assert "ImportDashboardsCommand" in script, (
+        "Superset 6.1 has no import-assets command; the seed calls the importer class"
+    )
+    assert "import-assets" not in script
     upper = script.upper()
     for verb in ("DROP TABLE", "DELETE FROM", "TRUNCATE", "ALTER TABLE"):
         assert verb not in upper, "the seed never writes to the trace store"
