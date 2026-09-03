@@ -164,15 +164,24 @@ def test_resources_fit_the_namespaces_existing_quota_headroom():
     """otto-golden-ceiling (quota.yaml) already reserves requests.cpu=200m/requests.memory=384Mi
     against the two-replica Deployment (50m/256Mi requested, 400m/512Mi limited at most three
     pods during a rollout); this job must fit the remaining headroom without a quota bump, so it
-    ships with no increase to a recurring bill."""
+    ships with no increase to a recurring bill.
+
+    crew#584: a job that wakes for one HTTP call every 5 minutes reserves no standing CPU
+    (requests.cpu is an honest "0", never an unset field the namespace's LimitRange would
+    silently default to 50m). memory keeps requests == limits -- Guaranteed for memory, since an
+    OOM here is a false FAIL on a fact-finding check, not a real saving."""
     container = _container()
     req = container["resources"]["requests"]
     lim = container["resources"]["limits"]
-    assert req["cpu"] == lim["cpu"], "Guaranteed QoS: requests == limits"
-    assert req["memory"] == lim["memory"]
-    cpu_millis = int(req["cpu"].rstrip("m"))
+    assert req["cpu"] == "0", (
+        "no standing CPU reservation for a job idle 299 of every 300 seconds"
+    )
+    assert req["memory"] == lim["memory"], "Guaranteed QoS for memory"
+    cpu_limit_millis = int(str(lim["cpu"]).rstrip("m"))
     mem_mi = int(req["memory"].rstrip("Mi"))
-    assert cpu_millis <= 100, "must fit the ~150m of headroom left under requests.cpu"
+    assert cpu_limit_millis <= 100, (
+        "must fit the ~150m of headroom left under requests.cpu"
+    )
     assert mem_mi <= 100, "must fit the ~128Mi of headroom left under requests.memory"
 
 

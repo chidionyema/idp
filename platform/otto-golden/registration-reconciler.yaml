@@ -209,8 +209,14 @@ spec:
                 capabilities: { drop: ["ALL"] }
                 seccompProfile: { type: RuntimeDefault }
               resources:
-                # crew#539 CP9 / crew#584: requests == limits -> Guaranteed QoS.
-                requests: { cpu: 25m, memory: 64Mi }
+                # crew#584: this job wakes for one HTTP call every 5 minutes and sleeps the rest
+                # of the time, so reserving standing CPU for it around the clock would be the
+                # paper-vs-real gap crew#584 exists to close. cpu carries no request (an honest
+                # zero, not a gap the namespace's LimitRange would silently fill with its 50m
+                # default -- explicit "0" beats an implicit default) and a small burst limit
+                # caps a single run. memory keeps requests == limits (Guaranteed for memory,
+                # since an OOM here is a false FAIL on a fact-finding check, not a saving).
+                requests: { cpu: "0", memory: 64Mi }
                 limits: { cpu: 25m, memory: 64Mi }
           volumes:
             - name: scripts
