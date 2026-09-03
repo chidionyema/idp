@@ -3,38 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-01T11:59:31Z · session a14fc078 · lane .wt-crew612-phone
-🟢 crew#612: founder merged idp#1107 at 11:41Z (phone menu, Backstage-own front page); image main-3190-163d6cd8 built 11:49Z; the rollout waits in the image-update PR idp#1103, now 28 checks green after I added the missing Control: none line (same class as idp#1099 this morning) and reran the gate; live site is still the old build (login drill 11:43Z FAIL "no 'Open menu' button on the phone view")
-🟡 Active: nothing; founder merges idp#1103, Flux rolls the image, the next hourly login drill is the proof
-⚪ Pending: on his word: class fix bin/idp-image-update-pr (write the Control: none line so every automated bump passes); K8sGPT findings on the Ops page + a drill (crew#707) — he has never seen a finding; real golden-path templates on /create; delete or widgetise /estate
-🔧 TOUCHES: idp#1103 body (Control line added, gate rerun 33504487755); crew#612 comment 5493325444; no git, no cluster
-🔀 OVERLAP: a2aed3c9 holds lane code (crew#768, patched idp#1099 the same way); 54539261 on the Otto edge certificate (I agreed with code-0c's root cause from outside probes at 11:40Z); ef0354ef on crew#729; nobody else on the portal
-📎 FACTS: https://github.com/chidionyema/idp/pull/1103
-📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
-
-
-## 2026-09-01T12:01:51Z · session 54539261 · lane .wt-edge-dead-listeners
-🟡 Telegram (Otto) door: paused on the founder's word; code-f9 investigates; prospector branch fix/edge-drop-listeners-without-dns 1b053318 waits on his merge; class rule (no listener without a route, split edge certificate) waits on his word
-🟢 Research lane read for the founder from the generated pages: RESEARCH-GRADE.md both directions GAP (self scoring banned, no outside receipt); ideas 1 on ledger 0 scored; intake last pull 2026-08-30 RED; crew#659 CP1-CP5 unticked; crew#701 CP0 unapproved; last science-research.yml run 2026-08-30T12:06Z
-⚪ Pending: founder merges the edge branch; his word on the class fix and on crew#701 CP0
-🔧 TOUCHES: nothing this half hour; read only (board, crew origin/main docs, idp origin/main)
-🔀 OVERLAP: a14fc078 holds lane code; a2aed3c9 and code-f9 own crew#768 investigation; ef0354ef crew#729; nobody on the research lane
-📎 FACTS: https://github.com/chidionyema/crew/blob/main/docs/science/RESEARCH-GRADE.md
-📍 State: /Users/chidionyema/dev/code/.wt-edge-dead-listeners
-📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
-
-
-## 2026-09-01T12:01:53Z · session 54539261 · lane crew
-🔴 Blocked: none
-🟡 Active: Telegram (Otto) door paused on the founder's word; code-f9 investigates crew#768; prospector branch fix/edge-drop-listeners-without-dns 1b053318 waits on his merge
-🟢 Done: research lane read for the founder from the generated pages: RESEARCH-GRADE.md both directions GAP, crew#659 CP1-CP5 unticked, crew#701 CP0 unapproved, last science-research.yml run 2026-08-30T12:06Z
-⚪ Pending: founder merges the edge branch; his word on the class rule (no listener without a route, split edge certificate) and on crew#701 CP0
-🔧 TOUCHES: none; read only (board, crew origin/main docs, idp origin/main)
-🔀 OVERLAP: a14fc078 holds lane code; a2aed3c9 and code-f9 own crew#768; ef0354ef crew#729; nobody on the research lane
-📎 FACTS: https://github.com/chidionyema/crew/blob/main/docs/science/RESEARCH-GRADE.md
-📍 State: /Users/chidionyema/dev/code/.wt-edge-dead-listeners
-
-
 ## 2026-09-01T12:05:56Z · session a2aed3c9 · lane idp
 🟡 crew#768: founder 12:0xZ "thats stupid, do your own work" → landing the Otto edge fix myself: prospector PR #803 (branch fix/edge-drop-listeners-without-dns, 1b053318, drops the two DNS-less listeners that froze the shared certificate); required checks ci-ok/dotnet/guard/nextjs/python running (background watch bsx8ngt81); merge on green, then watch cert-manager re-issue prospector-edge-tls with otto
 🟢 Done: incident page cdd7b380 (idp branch docs/incident-2026-09-01-otto-telegram-door); peer chain verified (three names off the cert = three solvers); crew#783 tracks automatic incident reports
@@ -4755,4 +4723,15 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: store session b4b812cb; idp portal still dirty on feat/mumchimp-oneshot-rebuild
 📎 FACTS: none
 📍 State: /Users/chidionyema/.claude/docs/founder/2026-09-03T1150Z-can-you-create-new-branch-annd-workong-tis-38cf2f2f.md ; worktree /Users/chidionyema/dev/code/.wt-mumchimp-broadsheet
+
+
+## 2026-09-03T12:03:43Z · session a14fc078 · lane .wt-reports
+🟢 Done: idp#1253 MERGED (main 0a6e7b72, 20 checks 0 red) — spend digest silent-pip fix lands with the next hourly run. Superset-empty question ANSWERED with the measured cause: decision 0018 swapped Metabase→Superset migrating no content; the old 50Gi volume pgdata-metabase-db-0 SURVIVED in observability with every question/chart/dashboard. Founder said "recover": built recover/metabase-dump — one-shot read-only Job (same postgres:17.6-alpine, uid 70, exact old data path from dbdbb85a^) dumps collections/questions/dashboards/layout as JSON to its log (7-day ttl, collector receipt); + tests/test_metabase_recovery_dump.py (2 passed), architectural record docs/explanation/metabase-recovery.md + nav row, all ONE commit (ladder lesson applied); admission pre-read: Jobs need no priority class, CPU ≤250m, registry named in full
+🟡 Active: recovery PR to green then REST-merge on the founder's "recover" word; after Flux runs the Job, read its log and rebuild the content in Superset from the dump
+🔴 Blocked: none
+⚪ Pending: phase 2 = Superset rebuild script from the dump; volume deletion is a founder decision after he confirms the rebuild; rotation-canary.yaml:86 receipt-swallow lead still ungraded
+🔧 TOUCHES: branch recover/metabase-dump (metabase-recovery-dump.yaml, observability kustomization, test, doc, mkdocs nav)
+🔀 OVERLAP: none; wt-kyvexc worktree now on recover/metabase-dump
+📎 FACTS: the old metabase-db pg_hba was initialized by the official image so local-socket auth is trust — the dump needs no password and the deleted secret stays deleted; Jobs are immutable under Flux, a re-run means a new name
+📍 State: https://github.com/chidionyema/idp/branches — recover/metabase-dump
 
