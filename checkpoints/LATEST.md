@@ -1,14 +1,8 @@
-# LATEST — session a0d64ea4 (crew#66 founder lane)
+# Lane .wt-reports — checkpoint
 
-## RESUME HERE
+## RESUME HERE (2026-09-03T02:31Z)
+Lane CLEAN. Render push race closed: PR 1195 merged 9eeb8aeb, live proof run 33707671398 green (render + estate-db pushed at 9eeb8aeb). Estate un-wedged (llm/edge/kyverno Ready main@c4f41a8). Closure rows on crew#816. No open work in this lane.
 
-Branch `feat/crew66-root-trust` (from crew459-portal-polish worktree): root-trust gate PR
-for crew#66 ruling 5453747447 / crew#580. Files: bin/idp-root-trust (+ test
-tests/test_incident_crew66_root_trust_register.py, 5 passed), docs/reference/policy/root-trust.md
-(register, 33 entries, MEETS 11 / PARTIAL 1 / MISS 19), bin/idp-bootstrap-tailscale (written,
-not run end to end), security-policy row, idp-ci + verify-drill rows, stale comments fixed,
-vault-seed tailscale entry refused. Next: commit, push, bin/pr-report, PR (Tracked: crew#66,
-Drill: root-trust), then tell the founder `bin/idp-bootstrap-tailscale` is ready to run.
-Then the bootstrappers PR (#575–#579): bin/idp-estate-seed, router keys, github-app tokens,
-bin/idp-bootstrap-cloudflare, bin/idp-bootstrap-vendors, umbrella bin/idp-bootstrap-estate.
-Founder plan recorded crew#66 5453918598 (one-shot, "just you").
+Open elsewhere: estate MCP endpoint timing out; pod /data freshness lands on the founder's next pod roll (his action, stated).
+
+Fact that bites: never ruff-format bin/catalog-render — text-grading suites pin main's exact source lines.
