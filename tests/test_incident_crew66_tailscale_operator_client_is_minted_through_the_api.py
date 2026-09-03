@@ -88,6 +88,10 @@ python3 -c 'import json,sys; d=json.load(open("{vault}")); v=d.get(sys.argv[1]);
         "IDP_VAULT_PUT": str(sh / "vault-put"),
         "ESTATE_CONFIG": str(tmp_path / "no-federated-config.yaml"),
         "TAILSCALE_FEDERATED_CLIENT_ID": "",
+        # off the runner: the verify-claims job runs these tests with the runner's
+        # own OIDC variables set, and they would send the seed road down road b
+        "ACTIONS_ID_TOKEN_REQUEST_URL": "",
+        "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "",
         "IDP_CLOUD": str(sh / "cloud"),
         "IDP_OCI_WHOAMI": str(sh / "whoami"),
         "TAILSCALE_API_URL": "https://api.test",
