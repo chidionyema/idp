@@ -3,36 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-01T10:58:54Z · session a2aed3c9 · lane idp
-🔴 crew#768: Otto v1 NOT live. idp#1099 merged 843868bd (hermes-agent → main-56-78e54b5) but the hermes-agent Kustomization sits at DependencyNotReady: its dependency scheduling reported ReconciliationFailed at 05:01:50Z; also otto.mumchimp.com serves the TRAEFIK DEFAULT CERT — the shared prospector-edge-tls certificate (issued 08-27) was never re-issued with the otto, alertmanager, prometheus SANs (pre-existing since 08-30)
-🟢 Done: hermes-v2#62 merged → main 78e54b5, image built; idp#1099 green and merged by the founder
-⚪ Pending: founder holds cluster access; diagnosis continues read-only; class fix bin/idp-image-update-pr:28 Control line waits on his word
-🔧 TOUCHES: idp#1099 body (Control line); crew#768 comments; no git, no cluster
-🔀 OVERLAP: a14fc078 holds lane code; ef0354ef holds crew#729; nobody else on crew#768
-📎 FACTS: https://github.com/chidionyema/idp/actions/workflows/flux-events.yml
-📍 METER: 2026-09-01 $182.12 805 req $0.226/req transport 84% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T10:58:54Z · session a14fc078 · lane .wt-crew612-phone
-🟢 crew#612: branch fix/crew612-phone-menu pushed at 34cb9167 (phone Drawer menu, "/" = Backstage's own home page from plugin-home 0.9.9, god view parked at /estate, drill phone rows + Template count); founder acknowledged "ok"; local proof tsc 0, jest 82 passed, pytest green, shellcheck clean
-🟡 Active: nothing; waiting on the founder's deploy of the branch
-⚪ Pending: founder deploys; on his word next: real golden-path templates on /create, delete or widgetise /estate; agents open no pull request, never deploy
-🔧 TOUCHES: nothing further this turn; earlier idp branch fix/crew612-phone-menu (App.tsx, EstateNav.tsx, homeModule.tsx, app-config.yaml, bin/idp-login-drill, crew612 test, decision record)
-🔀 OVERLAP: a2aed3c9 holds lane code (crew#768, idp#1099); ef0354ef on crew#729; eb8e04bf/82cea017 on crew#774 storefront; nobody else on the portal
-📎 FACTS: https://github.com/chidionyema/idp/commit/34cb9167
-📍 METER: 2026-09-01 $182.12 805 req $0.226/req transport 84% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T10:59:37Z · session 54539261 · lane code
-🟡 Telegram outage (Otto webhook door otto.mumchimp.com: placeholder certificate + 503): founder said "can u do it", so on his word the read-only architect-doctor check is running: https://github.com/chidionyema/idp/actions/runs/33500103107 (mode=break-glass playbook=architect-doctor, reads logs only)
-🔴 New evidence from his 06:18Z run 33477023541: Kyverno admission webhook failing (Post https://kyverno-svc.kyverno.svc:443/validate/fail EOF), tailscale-operator HelmRelease Failed, hermes-agent Kustomization "Reconciliation in progress", three cm-acme-http-solver pods in prospector since 00:15Z (certificate reissue for otto stuck)
-⚪ Pending: read gateway-log from the doctor run; then the fix is either a cert-manager/Kyverno recovery (founder's deploy) or reverting idp#1078 back to polling
-🔧 TOUCHES: nothing in git; one workflow_dispatch of oke-check.yml on the founder's explicit word this turn
-🔀 OVERLAP: a14fc078 holds lane code; a2aed3c9 (crew#768); ef0354ef (crew#729); nobody else on the Telegram door
-📎 FACTS: https://github.com/chidionyema/idp/actions/runs/33500103107
-📍 METER: 2026-09-01 $183.17 810 req $0.226/req transport 84% | fable-5 100%, opus-5 0% (crew#26)
-
-
 ## 2026-09-01T11:02:19Z · session 82cea017 · lane .claude
 🔴 Blocked: none; polish plan confirmed, first rebase aborted mid-turn
 🟡 Active: crew#774
@@ -4715,4 +4685,15 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔧 TOUCHES: ~/.claude/scripts laws/AGENTS.md + laws/AGENTS-FULL.md (branch only, local main reset to origin); idp .wt-purge uncommitted
 🔀 OVERLAP: LAW 54/55 bind every session once 241 lands; nobody else owns .wt-purge
 📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
+
+
+## 2026-09-03T11:00:26Z · session 2c88870e · lane code
+🟢 Done: founder 10:5xZ 'enable the thing' (console Update API Key greyed out on the git-owned kimi row) → idp PR 1242 (session 54539261's, fully green: 0 pending 0 failed on f043b5cc) merged over REST → main bab90eac; kimi row leaves platform/llm/config.yaml so the console owns its credential. Pin change PR 1243 auto-merged 10:58Z: backstage main-3684-44e74276 + store web/api main-115-b6ce2fc6 on main; Flux rolling
+🟡 Active: measuring the roll (live storefront copy + deployment images via the founder's temporary read kubeconfig); then telling the founder what he can open, and that kimi is now Add Model + credential in the console
+🔴 Blocked: none
+⚪ Pending: image-update body template lacks Control: line → operating-model gate red on every pin PR (not required, merges unaffected); prospector main CI red on nltk PYSEC-2026-3740 pre-existing, needs the founder's word
+🔧 TOUCHES: nothing in any tree (REST merges only)
+🔀 OVERLAP: 54539261 owned PR 1242 — merged on the founder's direct word, announced here
+📎 FACTS: the operating-model gate is not in the main ruleset's required checks; auto-merge lands pin PRs while it is red
+📍 State: https://github.com/chidionyema/idp/commit/bab90eac
 
