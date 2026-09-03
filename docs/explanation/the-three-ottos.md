@@ -53,11 +53,20 @@ memory volume at `/data`. It has emitted 21,876 traces.
 Its Telegram side is healthy. The webhook is registered, nothing is queued, and Telegram
 reports no delivery errors.
 
-**Its one fault:** its live configuration file, rewritten fresh on this morning's boot,
-contains no entry for the estate's query server. It holds the credential for that server but
-not its address. So it starts up unable to look anything up about the estate, and the two red
-rows in its parity drill are both this single fault. The server itself is running with two
-healthy pods in the `mcp` namespace. Only the address is missing. Ticket crew#736 CP2.
+**Its faults, and there are two, not one.** Corrected 2026-09-03 21:10 UTC after a direct probe.
+
+First, its live configuration file, rewritten fresh on this morning's boot, contains no entry
+for the estate's query server. The code to talk to one is present in the image; the address is
+simply not declared.
+
+Second, and this one reaches far past Otto: the credential Otto holds for that server is
+refused. A request from inside the pod, carrying the key the estate's secret store hands it,
+comes back 401 from both routes of the gateway. The hash the gateway checks against was
+written on 2026-08-27 and the vault entry has been reseeded since, so the door has been
+turning away the exact key the estate distributes. Every client is affected, not only Otto.
+The repair is pull request 1320. Ticket crew#736 CP2.
+
+The server itself is healthy, two pods in the `mcp` namespace. It is the lock, not the server.
 
 ### otto-golden, the next Otto
 
