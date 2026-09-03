@@ -1,0 +1,63 @@
+/* Estate chrome on top of Backstage UI. Colours stay in tokens.ts / buiVars.
+   Class names here are BUI's own, or a wrapper we own. */
+
+[data-theme-mode] .bui-HeaderTitle {
+  font-size: clamp(2rem, 4.2vw, 2.75rem);
+  letter-spacing: -0.03em;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+[data-theme-mode] .bui-HeaderDescription {
+  font-size: 1.0625rem;
+  line-height: 1.5;
+  max-width: 36rem;
+}
+
+[data-theme-mode] .bui-Card {
+  min-height: 8.5rem;
+}
+
+[data-theme-mode] .bui-Card .bui-CardHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* The home plugin's search bar, made into a single find field. */
+.estate-today-search .MuiCardHeader-root,
+.estate-today-search .MuiCardHeader-root + hr,
+.estate-today-search header {
+  display: none;
+}
+
+.estate-today-search .MuiCard-root,
+.estate-today-search .MuiPaper-root {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  transform: none;
+}
+
+.estate-today-search .MuiOutlinedInput-root {
+  min-height: 52px;
+  border-radius: var(--bui-radius-4, 1rem);
+  background: var(--bui-bg-neutral-1);
+  font-size: 1rem;
+}
+
+.estate-today-search .MuiOutlinedInput-input {
+  padding: 14px 16px;
+  font-size: 1rem;
+}
+
+/* Visit widgets: quieter cards, same radius as BUI. */
+.estate-today-aside .MuiCard-root {
+  border-radius: var(--bui-radius-4, 1rem);
+  background: var(--bui-bg-neutral-1);
+  border-color: var(--bui-border-2);
+}
+
+.estate-today-aside .MuiCard-root:hover {
+  transform: none;
+}

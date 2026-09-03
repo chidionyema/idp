@@ -26,9 +26,12 @@ import {
   light,
   phone,
   reducedMotion,
+  stateDark,
+  stateLight,
   statusDark,
   statusLight,
 } from './tokens';
+import { buiVars } from './buiVars';
 
 export * from './tokens';
 
@@ -65,13 +68,16 @@ const pageThemesFor = (t: Tone) => {
   };
 };
 
-const componentsFor = (t: Tone) => ({
+const componentsFor = (t: Tone, states: typeof stateDark) => ({
   MuiCssBaseline: {
     styleOverrides: {
       html: {
         WebkitFontSmoothing: 'antialiased',
         MozOsxFontSmoothing: 'grayscale',
       },
+      // BUI reads [data-theme-mode]. Override its defaults with the estate palette
+      // so Header, Card and Button speak the same colours as the rest of the portal.
+      '[data-theme-mode]': buiVars(t, states),
       body: { overscrollBehaviorY: 'none', backgroundColor: t.canvas },
       '*::-webkit-scrollbar': { width: 10, height: 10 },
       '*::-webkit-scrollbar-thumb': {
@@ -98,7 +104,7 @@ const componentsFor = (t: Tone) => ({
         backgroundImage: 'none',
         backgroundColor: t.canvas,
         boxShadow: 'none',
-        padding: '20px 24px 16px',
+        padding: '16px 24px 12px',
         minHeight: 0,
         borderBottom: `1px solid ${t.borderSubtle}`,
         [phone]: { flexWrap: 'wrap', padding: '12px 16px', rowGap: 8 },
@@ -134,7 +140,7 @@ const componentsFor = (t: Tone) => ({
   BackstageContent: {
     styleOverrides: {
       root: {
-        maxWidth: 1120,
+        maxWidth: 1280,
         width: '100%',
         marginLeft: 'auto',
         marginRight: 'auto',
@@ -148,8 +154,8 @@ const componentsFor = (t: Tone) => ({
   },
   BackstageInfoCard: {
     styleOverrides: {
-      header: { padding: '16px 20px 8px' },
-      headerTitle: { fontSize: 16, fontWeight: 600 },
+      header: { padding: '20px 24px 12px' },
+      headerTitle: { fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' },
       headerSubheader: { fontSize: 13, fontWeight: 400, color: t.textSecondary },
     },
   },
@@ -181,10 +187,16 @@ const componentsFor = (t: Tone) => ({
   MuiCard: {
     styleOverrides: {
       root: {
-        borderRadius: 12,
+        borderRadius: 16,
         boxShadow: 'none',
         border: `1px solid ${t.border}`,
         backgroundColor: t.surface1,
+        transition: `border-color 160ms ${ease}, transform 160ms ${ease}, box-shadow 160ms ${ease}`,
+        '&:hover': {
+          borderColor: t.borderStrong,
+          transform: 'translateY(-1px)',
+          boxShadow: `0 8px 24px ${t.canvas === '#ffffff' ? 'rgba(15,23,42,.06)' : 'rgba(0,0,0,.35)'}`,
+        },
       },
     },
   },
@@ -192,10 +204,12 @@ const componentsFor = (t: Tone) => ({
     styleOverrides: {
       root: {
         textTransform: 'none',
-        borderRadius: 8,
+        borderRadius: 10,
         fontWeight: 600,
         letterSpacing: 0,
-        transition: `background-color 120ms ${ease}, color 120ms ${ease}`,
+        minHeight: 40,
+        padding: '8px 16px',
+        transition: `background-color 120ms ${ease}, color 120ms ${ease}, border-color 120ms ${ease}`,
       },
       contained: { boxShadow: 'none', '&:hover': { boxShadow: 'none' } },
       outlined: { borderColor: t.border },
@@ -214,7 +228,7 @@ const componentsFor = (t: Tone) => ({
   },
   MuiOutlinedInput: {
     styleOverrides: {
-      root: { borderRadius: 8, backgroundColor: t.surface1 },
+      root: { borderRadius: 12, backgroundColor: t.surface1, minHeight: 44 },
       notchedOutline: { borderColor: t.border },
     },
   },
@@ -275,7 +289,7 @@ export const estateLightTheme = createUnifiedTheme({
   }),
   defaultPageTheme: 'home',
   pageTheme: pageThemesFor(light),
-  components: componentsFor(light),
+  components: componentsFor(light, stateLight),
 });
 
 export const estateDarkTheme = createUnifiedTheme({
@@ -294,7 +308,7 @@ export const estateDarkTheme = createUnifiedTheme({
   }),
   defaultPageTheme: 'home',
   pageTheme: pageThemesFor(dark),
-  components: componentsFor(dark),
+  components: componentsFor(dark, stateDark),
 });
 
 const lightTheme = ThemeBlueprint.make({
