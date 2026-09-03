@@ -14,7 +14,7 @@ on:
     - cron: "*/15 * * * *"
   workflow_dispatch:
   pull_request:
-    paths: [".github/workflows/estate-state.yml", "bin/idp-estate-state-build", "bin/idp-reports-render", "platform/estate-state/**"]
+    paths: [".github/workflows/estate-state.yml", "bin/idp-estate-state-build", "bin/idp-router-lanes", "bin/idp-reports-render", "platform/estate-state/**"]
 permissions:
   contents: read
   id-token: write   # traded for the OCI session that reads the receipts bucket and the App key
@@ -100,20 +100,68 @@ jobs:
           : > "$RUNNER_TEMP/issues.ndjson"
           for repo in chidionyema/idp chidionyema/crew; do
             gh issue list -R "$repo" --state open -L 200 --json number,title,labels,createdAt,url \
-              --jq --arg repo "${repo#chidionyema/}" '.[]|{repo:$repo,number,title,labels:[.labels[].name],created_at:.createdAt,url}' >> "$RUNNER_TEMP/issues.ndjson" || echo "BLIND issues of $repo not read"
+              | jq -c --arg repo "${repo#chidionyema/}" '.[]|{repo:$repo,number,title,labels:[.labels[].name],created_at:.createdAt,url}' >> "$RUNNER_TEMP/issues.ndjson" || echo "BLIND issues of $repo not read"
           done
           jq -s . "$RUNNER_TEMP/issues.ndjson" > "$RUNNER_TEMP/issues.json"
           since=$(date -u -d '6 hours ago' +%Y-%m-%dT%H:%M:%SZ)
           : > "$RUNNER_TEMP/runs.ndjson"
           for repo in chidionyema/idp chidionyema/crew chidionyema/prospector; do
             gh run list -R "$repo" -L 200 --created ">=$since" --json workflowName,conclusion,createdAt \
-              --jq --arg repo "${repo#chidionyema/}" '.[]|{repo:$repo,workflow:.workflowName,conclusion,created_at:.createdAt}' >> "$RUNNER_TEMP/runs.ndjson" || echo "BLIND runs of $repo not read"
+              | jq -c --arg repo "${repo#chidionyema/}" '.[]|{repo:$repo,workflow:.workflowName,conclusion,created_at:.createdAt}' >> "$RUNNER_TEMP/runs.ndjson" || echo "BLIND runs of $repo not read"
           done
           jq -s . "$RUNNER_TEMP/runs.ndjson" > "$RUNNER_TEMP/runs.json"
           drill=$(gh run list -R chidionyema/idp -w login-drill.yml -L 1 --status completed --json databaseId,updatedAt --jq '.[0]')
           echo "$drill" | jq -r .updatedAt > "$RUNNER_TEMP/drill.at"
           gh run view "$(echo "$drill" | jq -r .databaseId)" -R chidionyema/idp --log 2>/dev/null | grep -E "(sso|paths|FAIL) +login-drill" | sed -E 's/^[^Z]*Z //' > "$RUNNER_TEMP/drill.log" || echo "BLIND drill log not read"
           echo "issues $(jq length "$RUNNER_TEMP/issues.json") runs $(jq length "$RUNNER_TEMP/runs.json") drill rows $(wc -l < "$RUNNER_TEMP/drill.log")"
+      # version 2 (founder 2026-09-03, docs/founder/estate-snapshot-is-mandatory.md): what moved and
+      # what waits. Every source is a file; a source that cannot be read is a BLIND line and an
+      # empty or UNKNOWN field, never a green row.
+      - name: pull requests, merges, decision records, incidents, secret ages, last apply run (App token)
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -uo pipefail
+          since=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          gh secret list -R chidionyema/idp --json name,updatedAt > "$RUNNER_TEMP/secrets.json" 2>/dev/null \
+            || { echo "BLIND secret last-set times not readable with this token"; : > "$RUNNER_TEMP/secrets.json"; }
+          : > "$RUNNER_TEMP/prs.ndjson"; : > "$RUNNER_TEMP/changes.ndjson"; : > "$RUNNER_TEMP/decisions.ndjson"
+          for repo in chidionyema/idp chidionyema/crew chidionyema/prospector chidionyema/hermes-v2 chidionyema/claude-guards; do
+            gh pr list -R "$repo" --state open -L 50 --json number,title,headRefName,updatedAt,mergeStateStatus,isDraft,url,statusCheckRollup \
+              | jq -c --arg repo "${repo#chidionyema/}" '.[]|. + {repo:$repo}' >> "$RUNNER_TEMP/prs.ndjson" || echo "BLIND pull requests of $repo not read"
+            gh api "repos/$repo/commits?sha=main&since=$since&per_page=100" \
+              | jq -c --arg repo "${repo#chidionyema/}" '.[]|{repo:$repo,sha:.sha,title:(.commit.message|split("\n")[0]),at:.commit.committer.date}' >> "$RUNNER_TEMP/changes.ndjson" || echo "BLIND merges of $repo not read"
+          done
+          for repo in chidionyema/idp chidionyema/crew; do for path in docs/decisions docs/founder; do
+            gh api "repos/$repo/commits?sha=main&path=$path&since=$since&per_page=50" \
+              | jq -c --arg repo "${repo#chidionyema/}" '.[]|{repo:$repo,sha:.sha,title:(.commit.message|split("\n")[0]),at:.commit.committer.date}' >> "$RUNNER_TEMP/decisions.ndjson" || echo "BLIND decision records of $repo/$path not read"
+          done; done
+          jq -s . "$RUNNER_TEMP/prs.ndjson" > "$RUNNER_TEMP/prs.json"
+          jq -s 'unique_by(.repo,.sha)' "$RUNNER_TEMP/changes.ndjson" > "$RUNNER_TEMP/changes.json"
+          jq -s 'unique_by(.repo,.sha)' "$RUNNER_TEMP/decisions.ndjson" > "$RUNNER_TEMP/decisions.json"
+          gh api -H "Accept: application/vnd.github.raw" repos/chidionyema/crew/contents/incidents/LEDGER.jsonl 2>/dev/null | jq -s . > "$RUNNER_TEMP/incidents.json" \
+            || { echo "BLIND incident ledger not read"; : > "$RUNNER_TEMP/incidents.json"; }
+          # the newest oke-check run that ran the vendor seeder (mode apply; inputs are not in the runs API)
+          apply=""
+          for id in $(gh run list -R chidionyema/idp -w oke-check.yml -e workflow_dispatch --status completed -L 40 --json databaseId --jq '.[].databaseId'); do
+            n=$(gh run view "$id" -R chidionyema/idp --json jobs --jq '[.jobs[].steps[]|select(.name|startswith("bin/idp-bootstrap-vendors"))|select(.conclusion!="skipped")]|length' 2>/dev/null || echo 0)
+            if [ "$n" != "0" ]; then apply=$id; break; fi
+          done
+          if [ -n "$apply" ]; then
+            gh run view "$apply" -R chidionyema/idp --json databaseId,url,status,conclusion,createdAt,jobs > "$RUNNER_TEMP/apply-run.json"
+            gh run view "$apply" -R chidionyema/idp --log 2>/dev/null | sed -E $'s/^[^\t]*\t([^\t]*)\t[^ ]+ /\\1: /' \
+              | grep -E '^[^:]+: (ok|FAIL|BLIND|skip) ' > "$RUNNER_TEMP/apply.log" || echo "BLIND apply log of run $apply has no verdict lines"
+            echo "last apply run $apply, $(wc -l < "$RUNNER_TEMP/apply.log") verdict lines"
+          else
+            echo "BLIND no completed apply run among the last 40 oke-check dispatches"; : > "$RUNNER_TEMP/apply-run.json"; : > "$RUNNER_TEMP/apply.log"
+          fi
+          echo "prs $(jq length "$RUNNER_TEMP/prs.json") changes $(jq length "$RUNNER_TEMP/changes.json") decisions $(jq length "$RUNNER_TEMP/decisions.json") incidents $(jq length "$RUNNER_TEMP/incidents.json" 2>/dev/null || echo 0)"
+      - name: router lanes, one measured call of one token per lane (bin/idp-router-lanes)
+        env:
+          LITELLM_API_KEY: ${{ secrets.SEED_HERMES_LITELLM_API_KEY }}   # the virtual key conscience-ask.yml already uses
+        run: |
+          set -uo pipefail
+          bin/idp-router-lanes --config platform/llm/config.yaml --zone-from clusters/oke/estate-config.yaml --out "$RUNNER_TEMP/lanes.json" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: build and validate against platform/estate-state/schema.json
         env:
           GH_TOKEN: ${{ github.token }} # the document's clock is GitHub's Date header (crew#583)
@@ -123,6 +171,10 @@ jobs:
           bin/idp-estate-state-build --cluster-receipt "$RUNNER_TEMP/cluster.txt" --feed "$RUNNER_TEMP/feed.md" \
             --rulings "$RUNNER_TEMP/rulings.json" --drill-log "$RUNNER_TEMP/drill.log" --drill-at "$(cat "$RUNNER_TEMP/drill.at")" \
             --issues "$RUNNER_TEMP/issues.json" --runs "$RUNNER_TEMP/runs.json" --window-hours 6 \
+            --registry platform/vendors/consoles.yaml --secrets "$RUNNER_TEMP/secrets.json" \
+            --apply-run "$RUNNER_TEMP/apply-run.json" --apply-log "$RUNNER_TEMP/apply.log" --lanes "$RUNNER_TEMP/lanes.json" \
+            --prs "$RUNNER_TEMP/prs.json" --incidents "$RUNNER_TEMP/incidents.json" \
+            --decision-commits "$RUNNER_TEMP/decisions.json" --changes "$RUNNER_TEMP/changes.json" \
             --main-sha "idp=$GITHUB_SHA" --out "$RUNNER_TEMP/out/estate-state.json" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: render the Flux report for the portal's Reports page (crew#684, founder 2026-09-01)
         run: |

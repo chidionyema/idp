@@ -41,6 +41,20 @@ DRILL_SSO = re.compile(
 DRILL_PATHS = re.compile(r"paths\s+login-drill\s+(?P<n>\d+)/(?P<of>\d+)")
 DRILL_FAIL = re.compile(r"FAIL\s+login-drill\s+(?P<detail>.+)$")
 SESSION_ACTIVE_MINUTES = 90
+# version 2 (founder 2026-09-03, docs/founder/estate-snapshot-is-mandatory.md): "it could contain
+# more useful info ... and any recent decision or changes". Seven more fields, each parsed here from
+# a file the workflow fetched; the shapes are platform/estate-state/schema.json.
+DECISION_WINDOW_HOURS = 24
+# a session's Blocked line that names the founder is a founder blocker
+FOUNDER_WAIT = re.compile(
+    r"\b(founder|his word|his go|say go|founder action|approve:)\b|waiting on (him|the founder)",
+    re.IGNORECASE,
+)
+# `<step>: <verdict> <who> <detail>` -- what the workflow keeps of an oke-check run log
+APPLY_LINE = re.compile(
+    r"^(?P<step>[^:]+): (?P<verdict>ok|FAIL|BLIND|skip)\s+(?P<who>\S+)\s*(?P<detail>.*)$"
+)
+SEEDER_STEP = "bin/idp-bootstrap-vendors"
 
 
 def now_utc(given: str | None = None) -> dt.datetime | None:
@@ -283,6 +297,278 @@ def parse_runs(rows: list[dict], window_hours: int) -> list[dict]:
     return sorted(agg.values(), key=lambda r: (r["repo"], r["workflow"]))
 
 
+def parse_vendor_roots(
+    registry: dict, secrets: list[dict], apply_log: str, measured_at: str | None
+) -> list[dict]:
+    """One row per vendor whose root is a SEED secret (platform/vendors/consoles.yaml): when the
+    secret was last set (`gh secret list`, or absent when the token may not list secrets) and the
+    last apply run's seeder verdict on it, in the vendor's words (crew#579 ok/FAIL lines). A vendor
+    the seeder did not name is UNKNOWN, never ok (founder 2026-09-03: "this information is supposed
+    to be known")."""
+    set_at = {
+        str(s.get("name")): str(s.get("updatedAt") or s.get("updated_at") or "")
+        for s in secrets or []
+        if s.get("name")
+    }
+    verdicts: dict[str, tuple[str, str]] = {}
+    for line in apply_log.splitlines():
+        m = APPLY_LINE.match(line.strip())
+        if not m or not m.group("step").startswith(SEEDER_STEP):
+            continue
+        if m.group("verdict") in ("ok", "FAIL"):
+            verdicts[m.group("who")] = (m.group("verdict"), m.group("detail")[:300])
+    out = []
+    vendors = registry.get("vendors") or {}
+    for name, v in sorted(vendors.items()):
+        secret = (v or {}).get("secret") if isinstance(v, dict) else None
+        if not secret or not str(secret).startswith("SEED_"):
+            continue
+        verdict, detail = verdicts.get(
+            name, ("UNKNOWN", "the last apply run did not name this vendor")
+        )
+        row = {
+            "vendor": name,
+            "secret": str(secret),
+            "verdict": verdict,
+            "detail": detail,
+        }
+        if set_at.get(str(secret)):
+            row["set_at"] = set_at[str(secret)]
+        if verdict != "UNKNOWN" and measured_at:
+            row["measured_at"] = measured_at
+        out.append(row)
+    return out
+
+
+def parse_router_lanes(rows: list[dict]) -> list[dict]:
+    """bin/idp-router-lanes wrote these; keep the schema's keys and nothing a probe might leak."""
+    out = []
+    for r in rows or []:
+        if not isinstance(r, dict) or not r.get("lane"):
+            continue
+        row = {
+            "lane": str(r["lane"]),
+            "verdict": r.get("verdict")
+            if r.get("verdict") in ("ok", "FAIL", "UNKNOWN")
+            else "UNKNOWN",
+            "detail": str(r.get("detail") or "")[:200],
+            "measured_at": str(r.get("measured_at") or ""),
+        }
+        if isinstance(r.get("status"), int) or r.get("status") is None:
+            row["status"] = r.get("status")
+        if isinstance(r.get("ms"), int):
+            row["ms"] = r["ms"]
+        out.append(row)
+    return sorted(out, key=lambda r: r["lane"])
+
+
+def _check_counts(rollup: list[dict]) -> dict:
+    """statusCheckRollup keeps a CANCELLED entry per superseded run (memory: one entry per RUN);
+    the newest entry per check name is the one graded."""
+    latest: dict[str, dict] = {}
+    for c in rollup or []:
+        name = str(c.get("name") or c.get("context") or "")
+        key = str(c.get("startedAt") or c.get("createdAt") or "")
+        if name not in latest or key >= latest[name]["_k"]:
+            latest[name] = {**c, "_k": key}
+    counts = {"ok": 0, "fail": 0, "pending": 0}
+    for c in latest.values():
+        state = str(c.get("conclusion") or c.get("state") or "").upper()
+        status = str(c.get("status") or "").upper()
+        if status and status != "COMPLETED" and not c.get("state"):
+            counts["pending"] += 1
+        elif state in ("SUCCESS", "NEUTRAL", "SKIPPED"):
+            counts["ok"] += 1
+        elif state in ("", "PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS"):
+            counts["pending"] += 1
+        else:
+            counts["fail"] += 1
+    return counts
+
+
+def parse_open_prs(rows: list[dict]) -> list[dict]:
+    """rows: `gh pr list --json number,title,headRefName,updatedAt,mergeStateStatus,isDraft,url,statusCheckRollup` plus repo."""
+    out = []
+    for r in rows or []:
+        if not isinstance(r, dict) or "number" not in r:
+            continue
+        out.append(
+            {
+                "repo": str(r.get("repo", "")),
+                "number": int(r["number"]),
+                "title": str(r.get("title", ""))[:200],
+                "branch": str(r.get("headRefName", "")),
+                "draft": bool(r.get("isDraft", False)),
+                "url": str(r.get("url", "")),
+                "checks": _check_counts(r.get("statusCheckRollup") or []),
+                "merge_state": str(r.get("mergeStateStatus") or "UNKNOWN"),
+                "updated_at": str(r.get("updatedAt", "")),
+            }
+        )
+    return sorted(out, key=lambda r: (r["repo"], r["number"]))
+
+
+def parse_founder_blockers(sessions: list[dict], issues: list[dict]) -> list[dict]:
+    """Everything waiting on the founder: a live session's Blocked line that names him, and every
+    open issue labelled founder-request."""
+    out = []
+    for s in sessions or []:
+        text = str(s.get("blocked") or "")
+        if (
+            text
+            and FOUNDER_WAIT.search(text)
+            and not str(s.get("active", "")).startswith("parked")
+        ):
+            out.append(
+                {
+                    "source": "session",
+                    "session": s["id"],
+                    "lane": s.get("lane", ""),
+                    "since": s.get("last_handoff_at", ""),
+                    "waits_for": text[:300],
+                }
+            )
+    for r in issues or []:
+        labels = {str(x).lower() for x in r.get("labels") or []}
+        if "founder-request" in labels:
+            out.append(
+                {
+                    "source": "issue",
+                    "repo": str(r.get("repo", "")),
+                    "number": int(r.get("number", 0)),
+                    "since": str(r.get("created_at", "")),
+                    "waits_for": str(r.get("title", ""))[:300],
+                }
+            )
+    return out
+
+
+def parse_last_apply(run: dict | None, log: str) -> dict:
+    """run: `gh run view --json databaseId,url,status,conclusion,createdAt,jobs` of the newest
+    oke-check run that ran the vendor seeder; log: its `<step>: <verdict> ...` lines. No run is
+    UNKNOWN, never a green field."""
+    if not run or not isinstance(run, dict) or not run.get("databaseId"):
+        return {"conclusion": "UNKNOWN", "failed_steps": [], "lines": []}
+    failed = [
+        {"job": str(j.get("name", "")), "step": str(st.get("name", ""))}
+        for j in run.get("jobs") or []
+        for st in j.get("steps") or []
+        if st.get("conclusion") == "failure"
+    ]
+    lines = []
+    for line in log.splitlines():
+        m = APPLY_LINE.match(line.strip())
+        if m and m.group("verdict") in ("FAIL", "BLIND"):
+            lines.append(line.strip()[:300])
+    return {
+        "run": int(run["databaseId"]),
+        "url": str(run.get("url", "")),
+        "at": str(run.get("createdAt", "")),
+        "conclusion": str(run.get("conclusion") or run.get("status") or "UNKNOWN"),
+        "failed_steps": failed,
+        "lines": lines[:40],
+    }
+
+
+def _loose_ts(value) -> dt.datetime | None:
+    """Ledger stamps come as 2026-08-29T23:36Z or with seconds; a date alone is midnight UTC."""
+    text = str(value or "").strip()
+    for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%MZ", "%Y-%m-%d"):
+        try:
+            return dt.datetime.strptime(text, fmt).replace(tzinfo=dt.timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def parse_incidents(
+    rows: list[dict], now: dt.datetime, window_hours: int
+) -> list[dict]:
+    """crew incidents/LEDGER.jsonl rows that are open, or were detected inside the window."""
+    out = []
+    edge = now - dt.timedelta(hours=window_hours)
+    for r in rows or []:
+        if not isinstance(r, dict) or not r.get("id"):
+            continue
+        detected = _loose_ts(r.get("detected"))
+        if r.get("resolved") and (detected is None or detected < edge):
+            continue
+        row = {
+            "id": str(r["id"]),
+            "title": str(r.get("title", ""))[:200],
+            "surface": str(r.get("surface", ""))[:120],
+            "detected": str(r.get("detected", "")),
+            "classes": [str(c) for c in (r.get("classes") or [])][:8],
+        }
+        if r.get("resolved"):
+            row["resolved"] = str(r["resolved"])
+        out.append(row)
+    return sorted(out, key=lambda r: r["detected"], reverse=True)
+
+
+def parse_decisions(
+    rulings: list[dict], record_commits: list[dict], now: dt.datetime, window_hours: int
+) -> list[dict]:
+    """Recent decisions: rulings dated inside the window (a ruling carries a date, not a time, so
+    the day counts whole) and every commit that touched docs/decisions or docs/founder."""
+    edge = (now - dt.timedelta(hours=window_hours)).date()
+    out = []
+    for r in rulings or []:
+        d = _loose_ts(r.get("date"))
+        if d is None or d.date() < edge:
+            continue
+        row = {
+            "kind": "ruling",
+            "id": r["id"],
+            "at": r.get("date", ""),
+            "title": r.get("text", "")[:200],
+        }
+        if r.get("record"):
+            row["record"] = r["record"]
+        out.append(row)
+    for c in record_commits or []:
+        if not isinstance(c, dict) or not c.get("sha"):
+            continue
+        out.append(
+            {
+                "kind": "record",
+                "repo": str(c.get("repo", "")),
+                "sha": str(c["sha"])[:8],
+                "at": str(c.get("at", "")),
+                "title": str(c.get("title", ""))[:200],
+            }
+        )
+    return sorted(out, key=lambda r: r["at"], reverse=True)
+
+
+def parse_changes(rows: list[dict]) -> list[dict]:
+    """Every commit that reached main inside the window: repo, short sha, title, time."""
+    out = [
+        {
+            "repo": str(c.get("repo", "")),
+            "sha": str(c["sha"])[:8],
+            "title": str(c.get("title", ""))[:200],
+            "at": str(c.get("at", "")),
+        }
+        for c in rows or []
+        if isinstance(c, dict) and c.get("sha")
+    ]
+    return sorted(out, key=lambda r: r["at"], reverse=True)[:300]
+
+
+def read_yaml(path: str | None) -> dict | None:
+    t = read(path)
+    if t is None:
+        return None
+    try:
+        import yaml
+
+        doc = yaml.safe_load(t)
+    except Exception:  # noqa: BLE001 - an unreadable registry is BLIND, not a traceback
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
 def read(path: str | None) -> str | None:
     if not path:
         return None
@@ -324,18 +610,54 @@ def build(a, now: dt.datetime) -> dict:
     if runs is None:
         blind.append("workflow runs not read")
     freeze, board, p0, findings = parse_issues(issues or [])
+    # version 2 inputs; each missing one is a BLIND line, never a green row
+    registry = read_yaml(getattr(a, "registry", None))
+    if registry is None:
+        blind.append("vendor registry (platform/vendors/consoles.yaml) not read")
+    secrets = read_json(getattr(a, "secrets", None))
+    if secrets is None:
+        blind.append("secret last-set times (gh secret list) not read")
+    apply_run = read_json(getattr(a, "apply_run", None))
+    apply_log = read(getattr(a, "apply_log", None))
+    if apply_run is None:
+        blind.append("last apply run (oke-check with the vendor seeder) not read")
+    lanes = read_json(getattr(a, "lanes", None))
+    if lanes is None:
+        blind.append("router lanes (bin/idp-router-lanes) not read")
+    prs = read_json(getattr(a, "prs", None))
+    if prs is None:
+        blind.append("open pull requests not read")
+    incidents = read_json(getattr(a, "incidents", None))
+    if incidents is None:
+        blind.append("incident ledger (crew incidents/LEDGER.jsonl) not read")
+    decision_commits = read_json(getattr(a, "decision_commits", None))
+    if decision_commits is None:
+        blind.append("decision-record commits not read")
+    changes = read_json(getattr(a, "changes", None))
+    if changes is None:
+        blind.append("merges to main not read")
+    sessions = parse_feed_sessions(feed or "", now)
+    rulings = parse_rulings(rulings_doc or {})
+    last_apply = parse_last_apply(apply_run, apply_log or "")
     doc = {
         "version": 1,
         "generated_at": stamp(now),
         "overview": {
             "freeze": freeze,
-            "rulings": parse_rulings(rulings_doc or {}),
-            "sessions": parse_feed_sessions(feed or "", now),
+            "rulings": rulings,
+            "sessions": sessions,
             "board": board,
+            "decisions": parse_decisions(
+                rulings, decision_commits or [], now, DECISION_WINDOW_HOURS
+            ),
+            "founder_blockers": parse_founder_blockers(sessions, issues or []),
         },
         "delivery": {
             "open_p0": p0,
             "failed_runs": parse_runs(runs or [], a.window_hours),
+            "open_prs": parse_open_prs(prs or []),
+            "last_apply": last_apply,
+            "changes": parse_changes(changes or []),
             **(
                 {
                     "main_sha": dict(
@@ -349,13 +671,20 @@ def build(a, now: dt.datetime) -> dict:
         "runtime": {
             "clusters": [cluster],
             "surfaces": parse_drill_surfaces(drill or "", a.drill_at or stamp(now)),
+            "router_lanes": parse_router_lanes(lanes or []),
+            "incidents": parse_incidents(incidents or [], now, DECISION_WINDOW_HOURS),
         },
         "docs_apis": {
             "standards_page": "crew/docs/STANDARDS.md",
             "diagrams": [],
             "runbooks_index": "idp/docs/runbooks/index.md",
         },
-        "security": {"open_findings": findings},
+        "security": {
+            "open_findings": findings,
+            "vendor_roots": parse_vendor_roots(
+                registry or {}, secrets or [], apply_log or "", last_apply.get("at")
+            ),
+        },
     }
     return doc, blind
 
@@ -393,6 +722,24 @@ def main(argv=None) -> int:
     p.add_argument(
         "--main-sha", action="append", type=_repo_sha, help="repo=sha, repeatable"
     )
+    # version 2 inputs (founder 2026-09-03); every one optional, a missing one is a BLIND line
+    p.add_argument("--registry", help="platform/vendors/consoles.yaml")
+    p.add_argument("--secrets", help="JSON from `gh secret list --json name,updatedAt`")
+    p.add_argument(
+        "--apply-run",
+        help="JSON from `gh run view --json databaseId,url,status,conclusion,createdAt,jobs`",
+    )
+    p.add_argument(
+        "--apply-log", help="that run's `<step>: <verdict> <who> <detail>` lines"
+    )
+    p.add_argument("--lanes", help="JSON written by bin/idp-router-lanes")
+    p.add_argument("--prs", help="JSON list of open pull requests, see the workflow")
+    p.add_argument("--incidents", help="JSON list: crew incidents/LEDGER.jsonl rows")
+    p.add_argument(
+        "--decision-commits",
+        help="JSON list of commits touching docs/decisions or docs/founder",
+    )
+    p.add_argument("--changes", help="JSON list of commits on main inside the window")
     p.add_argument("--out", required=True)
     a = p.parse_args(argv)
     now = now_utc(a.now)
@@ -408,7 +755,10 @@ def main(argv=None) -> int:
     print(
         f"{'BLIND' if blind else 'ok':<6}estate-state at {doc['generated_at']} cluster={c['state']} flux_not_ready={len(c['flux_rows'])} "
         f"surfaces={len(doc['runtime']['surfaces'])} sessions={len(doc['overview']['sessions'])} rulings={len(doc['overview']['rulings'])} "
-        f"open_p0={len(doc['delivery']['open_p0'])} failed_runs={len(doc['delivery']['failed_runs'])} freeze={doc['overview']['freeze']['active']}"
+        f"open_p0={len(doc['delivery']['open_p0'])} failed_runs={len(doc['delivery']['failed_runs'])} freeze={doc['overview']['freeze']['active']} "
+        f"lanes={len(doc['runtime']['router_lanes'])} prs={len(doc['delivery']['open_prs'])} roots={len(doc['security']['vendor_roots'])} "
+        f"last_apply={doc['delivery']['last_apply']['conclusion']} decisions={len(doc['overview']['decisions'])} changes={len(doc['delivery']['changes'])} "
+        f"blockers={len(doc['overview']['founder_blockers'])} incidents={len(doc['runtime']['incidents'])}"
     )
     for b in blind:
         print(f"BLIND {b}")

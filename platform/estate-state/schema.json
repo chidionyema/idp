@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://idp.bytesync.dev/estate-state/1.json",
   "title": "estate-state",
-  "description": "The one structured document every session ingests at start (crew#648). Five sections, the same five the Backstage entity page uses (crew#627, founder 2026-08-30: adopt the categorisation so it is intuitive what belongs where): overview, delivery, runtime, docs_apis, security.",
+  "description": "The one structured document every session ingests at start (crew#648). Five sections, the same five the Backstage entity page uses (crew#627, founder 2026-08-30: adopt the categorisation so it is intuitive what belongs where): overview, delivery, runtime, docs_apis, security. Version 2 fields (founder 2026-09-03, docs/founder/estate-snapshot-is-mandatory.md) sit inside those five: decisions, founder_blockers, open_prs, last_apply, changes, router_lanes, incidents, vendor_roots.",
   "type": "object",
   "required": [
     "version",
@@ -34,7 +34,9 @@
         "freeze",
         "rulings",
         "sessions",
-        "board"
+        "board",
+        "decisions",
+        "founder_blockers"
       ],
       "additionalProperties": false,
       "properties": {
@@ -149,6 +151,86 @@
               }
             }
           }
+        },
+        "decisions": {
+          "type": "array",
+          "description": "recent decisions and changes of direction (founder 2026-09-03): rulings dated inside the window and commits that touched a decision or founder record",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "at",
+              "title"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ruling",
+                  "record"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "repo": {
+                "type": "string"
+              },
+              "sha": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "record": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "founder_blockers": {
+          "type": "array",
+          "description": "everything waiting on the founder: a session's Blocked line that names him, or an open issue labelled founder-request",
+          "items": {
+            "type": "object",
+            "required": [
+              "source",
+              "since",
+              "waits_for"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": [
+                  "session",
+                  "issue"
+                ]
+              },
+              "session": {
+                "type": "string"
+              },
+              "lane": {
+                "type": "string"
+              },
+              "repo": {
+                "type": "string"
+              },
+              "number": {
+                "type": "integer"
+              },
+              "since": {
+                "type": "string"
+              },
+              "waits_for": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     },
@@ -156,7 +238,10 @@
       "type": "object",
       "required": [
         "open_p0",
-        "failed_runs"
+        "failed_runs",
+        "open_prs",
+        "last_apply",
+        "changes"
       ],
       "additionalProperties": false,
       "properties": {
@@ -225,6 +310,147 @@
             "type": "string"
           },
           "description": "repo -> head sha of main at generation"
+        },
+        "open_prs": {
+          "type": "array",
+          "description": "open pull requests per repo with their check counts and merge state",
+          "items": {
+            "type": "object",
+            "required": [
+              "repo",
+              "number",
+              "title",
+              "branch",
+              "checks",
+              "merge_state",
+              "updated_at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "repo": {
+                "type": "string"
+              },
+              "number": {
+                "type": "integer"
+              },
+              "title": {
+                "type": "string"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "draft": {
+                "type": "boolean"
+              },
+              "url": {
+                "type": "string"
+              },
+              "checks": {
+                "type": "object",
+                "required": [
+                  "ok",
+                  "fail",
+                  "pending"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "ok": {
+                    "type": "integer"
+                  },
+                  "fail": {
+                    "type": "integer"
+                  },
+                  "pending": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "merge_state": {
+                "type": "string"
+              },
+              "updated_at": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "last_apply": {
+          "type": "object",
+          "description": "the newest oke-check run that ran the vendor seeder (mode apply): its verdict, the steps that failed and every FAIL or BLIND line it printed",
+          "required": [
+            "conclusion",
+            "failed_steps",
+            "lines"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "run": {
+              "type": "integer"
+            },
+            "url": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string"
+            },
+            "conclusion": {
+              "type": "string"
+            },
+            "failed_steps": {
+              "type": "array",
+              "description": "job and step that failed",
+              "items": {
+                "type": "object",
+                "required": [
+                  "job",
+                  "step"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "job": {
+                    "type": "string"
+                  },
+                  "step": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "lines": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "changes": {
+          "type": "array",
+          "description": "every commit that reached main inside the window, per repo",
+          "items": {
+            "type": "object",
+            "required": [
+              "repo",
+              "sha",
+              "title",
+              "at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "repo": {
+                "type": "string"
+              },
+              "sha": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     },
@@ -232,7 +458,9 @@
       "type": "object",
       "required": [
         "clusters",
-        "surfaces"
+        "surfaces",
+        "router_lanes",
+        "incidents"
       ],
       "additionalProperties": false,
       "properties": {
@@ -376,6 +604,84 @@
               }
             }
           }
+        },
+        "router_lanes": {
+          "type": "array",
+          "description": "each lane of the estate router with its last measured answer (one call, one token)",
+          "items": {
+            "type": "object",
+            "required": [
+              "lane",
+              "verdict",
+              "detail",
+              "measured_at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "lane": {
+                "type": "string"
+              },
+              "verdict": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "FAIL",
+                  "UNKNOWN"
+                ]
+              },
+              "status": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              },
+              "measured_at": {
+                "type": "string"
+              },
+              "ms": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "incidents": {
+          "type": "array",
+          "description": "incidents from the ledger that are open or were detected inside the window, with their classes so a repeat is matched before anyone investigates",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "title",
+              "detected"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "surface": {
+                "type": "string"
+              },
+              "detected": {
+                "type": "string"
+              },
+              "resolved": {
+                "type": "string"
+              },
+              "classes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -422,7 +728,8 @@
     "security": {
       "type": "object",
       "required": [
-        "open_findings"
+        "open_findings",
+        "vendor_roots"
       ],
       "additionalProperties": false,
       "properties": {
@@ -461,6 +768,45 @@
         "secrets_in_git": {
           "type": "integer",
           "description": "open gitleaks findings (crew#240)"
+        },
+        "vendor_roots": {
+          "type": "array",
+          "description": "each vendor root (SEED secret): when it was last set and the last apply run's verdict on it, in the vendor's own words",
+          "items": {
+            "type": "object",
+            "required": [
+              "vendor",
+              "secret",
+              "verdict",
+              "detail"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "vendor": {
+                "type": "string"
+              },
+              "secret": {
+                "type": "string"
+              },
+              "set_at": {
+                "type": "string"
+              },
+              "verdict": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "FAIL",
+                  "UNKNOWN"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              },
+              "measured_at": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     }
