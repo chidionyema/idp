@@ -3,113 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-01T19:22:02Z · session a2aed3c9 · lane .wt-crew716-dagster
-🔴 Blocked: none
-🟡 Active: Dagster branch (crew#716): full suite run twice — first pipeline hid rc (tail swallowed it), honest rerun = 48 failed/2414 passed; my 2 fixed by running the generators (bin/idp-alert-rows added the dagster alert row; bin/catalog-platform LAYERS row 'The estate clock' → layer-dagster entity; the 2 test files now 10 passed); remaining 46 being attributed on the clean main checkout (bg bvuvjbudk) before commit
-🟢 Done: idp fix/portal-plain-words pushed 96207ff5 (doors→sign-in pages everywhere incl LAW 45 sweep; Hermes+Prospector to Products, mumchimp the one company) — crew#799 comment carries the proof; founder blocker pinned (msg 21263) with the APPROVE line for the 9 green PRs
-⚪ Pending: his APPROVE word; bvuvjbudk attribution; Dagster commit+push
-🔧 TOUCHES: .wt-crew716-dagster (bin/catalog-platform, platform/alerts/alert.yaml, backstage/platform/catalog-info.yaml regenerated), .wt-portal-words pushed; no cluster
-🔀 OVERLAP: a14fc078 crew#612 names sweep; 57dd6f80 pi_bridge.py
-📎 FACTS: https://github.com/chidionyema/crew/issues/799#issuecomment-5498891228
-📍 State: /Users/chidionyema/dev/code/.wt-crew716-dagster
-
-
-## 2026-09-01T19:37:48Z · session 54539261 · lane .wt-r67-plan-execute-review
-🟡 Active: founder judged the Cline two-command setup too much friction ("we can do much better ... building on top of tools ... Let me speak to my consultants"); convening the consultant agents (ceo, engineering, inventor) on the low-friction shape for the R67 plan/execute/review pattern before anything is built
-⚪ Pending: consultant reports this turn, then his word; GO still open on crew#568 and crew#751
-🔧 TOUCHES: none this turn — no code until his GO
-🔀 OVERLAP: crew#568 model stack; crew#751 Cursor Cloud; 57dd6f80 owns pi_bridge.py
-📎 FACTS: friction named: per-run flags, two commands, no per-mode binding (docs/onboarding/cline-local-plan-act.md caveats)
-📍 State: ~/dev/code/.wt-r67-plan-execute-review branch ruling/plan-execute-review
-📍 METER: 2026-09-01 $470.64 1,848 req $0.255/req transport 82% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T19:55:43Z · session a2aed3c9 · lane .wt-crew716-dagster
-🔴 Blocked: none
-🟡 Active: crew#716 done locally: idp feat/dagster-cluster pushed 6850f44d — full-suite parity proven (41=41 vs main bee102db), kyverno pass:302 fail:0 (was 26: postgres non-root for real, init resources, daemon probe, celery secret non-optional; ro-rootfs excused with receipts, commerce shape), python-strict clean
-🟢 Done: crew#716 comment carries branch+sha+proof; founder INVENTORY reply sent naming all five ready branches
-⚪ Pending: founder APPROVE (pinned Telegram msg 21263) for the 9 green PRs; founder deploys the five branches (R65); crew#798 CP1 plan after releases; crew#799 domain ruling
-🔧 TOUCHES: .wt-crew716-dagster (committed+pushed; platform/dagster, platform/edge/dagster-exception.yaml, tests, bin, docs); no cluster
-🔀 OVERLAP: 57dd6f80 pi_bridge.py; a14fc078 crew#612 names sweep; 54539261 crew#568/#751
-📍 METER: 2026-09-01 $477.45 1,876 req $0.255/req transport 82% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T20:10:29Z · session 54539261 · lane .wt-r67-plan-execute-review
-🟡 Active: founder word 20:07Z recorded as R71 (CEO charter: daily proof-of-achievement, consultant rounds standing, fractal decisions, P0 = research/science/ML/data-science nothing to show) and R72 (adopt BOTH Goose and own `verified` router harness, measured bake-off); ruling docs pushed 51cfc6f on ruling/plan-execute-review; charter issue crew#800 filed with CP1-CP6 plan
-⚪ Pending: founder approve/comment on crew#800 CP1 — build of daily CEO loop, Goose config and `verified` model starts on that word
-🔧 TOUCHES: crew docs/rulings/R71,R72 (pushed); board crew#800, crew#568 comment 5499774133; no code, no cluster
-🔀 OVERLAP: crew#568 model stack; crew#751 Cursor Cloud (CEO consult says STOP, awaiting his word); crew#513 verified scaffold = CP4 substrate
-📎 FACTS: founder doc ~/.claude/docs/founder/2026-09-01T2007Z-first-of-all-this-is-what-we-have-c88b745c.md; SHOWCASE.md all lanes GAP 0 showcased confirms his P0
-📍 State: ~/dev/code/.wt-r67-plan-execute-review branch ruling/plan-execute-review @ 51cfc6f
-📍 METER: 2026-09-01 $478.89 1,881 req $0.255/req transport 82% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T20:25:42Z · session 54539261 · lane .wt-r67-plan-execute-review
-🔴 Blocked: none — founder red line executed this turn
-🟡 Active: founder ~20:40Z ruled the ~/.claude capture folder THE VOID (red line, dismissal-grade) after the charter lived there; his verbatim docs (charter 2007Z, red-line 2040Z, cline 1838Z) now committed INTO crew docs/founder/ @ 7aecc69; R71 amended (red line, serve humans+agents simultaneously, mistakes fixed on the spot, anthropic-bias concern); CEO agent served the rebuke, owes recognition + first daily report + drastic corrections in one unedited reply
-⚪ Pending: CEO reply (goes to founder unedited); founder word on crew#800
-🔧 TOUCHES: crew docs/founder/ + docs/rulings/R71 (pushed 7aecc69); board crew#800; memory red-line file; no cluster
-🔀 OVERLAP: every session — founder docs must be committed to crew same turn from now on, ~/.claude path is never the cited record
-📎 FACTS: crew#800 comment thread; showcase all-GAP is the P0 evidence
-📍 State: ~/dev/code/.wt-r67-plan-execute-review @ 7aecc69
-📍 METER: 2026-09-01 $488.91 1,911 req $0.256/req transport 82% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T20:38:48Z · session a2aed3c9 · lane .wt-crew716-dagster
-🔴 Blocked: none
-🟡 Active: release wave (his do-it-this-time order): guards#236 pushed — publish stack moved to the feed_publish library, ceiling entry carries the precedent comment; idp 1112/1113 decision records written and Vale-clean, local push refused by the operating-model rung, reading it now
-🟢 Done: guards#236 branch tests 8 passed + rego 118 passed + selftest ok; guards#237 conflict resolved and pushed earlier
-⚪ Pending: idp 1112/1113 push and merge, dagster 1114 rebase after, guards 236/237 merge when green
-🔧 TOUCHES: .wt-crew786-feed (pushed), .wt-portal-words docs/decisions, .wt-crew786-idp docs/decisions; no cluster
-🔀 OVERLAP: none
-📍 State: /Users/chidionyema/dev/code/.wt-crew786-feed
-📍 METER: 2026-09-01 $500.63 1,948 req $0.257/req transport 82% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T20:41:29Z · session 54539261 · lane .wt-r67-plan-execute-review
-🔴 Blocked: none
-🟡 Active: founder ~21:00Z ruled R73 (eject him from the terminal; visual/voice/chat interfaces; plain business English always) — verbatim doc + ruling committed to crew docs/ same turn; CEO delivered the one-page eject strategy (Today page in the portal, Telegram two-way, voice later, language gate in front of him); first edition of the daily brief built as a page (docs/interfaces/founders-daily-brief.html) and published to him
-🟢 Done: PR 801 last red check fixed — the dora incident test read the wall clock over frozen fixtures (time bomb, failing every PR since today); clock frozen in the test, 6/6 pass locally, pushed
-⚪ Pending: founder words: Approve 800 (build the loop), APPROVE (nine green releases), Stop 751; PR 801 poller merge
-🔧 TOUCHES: crew tests/test_incident_crew368*.py, docs/founder/, docs/rulings/R73, docs/interfaces/; board crew#800; no cluster
-🔀 OVERLAP: every session: the dora test fix unblocks all crew PRs; founder replies now expected via Telegram words
-📍 State: ~/dev/code/.wt-r67-plan-execute-review branch ruling/plan-execute-review
-📍 METER: 2026-09-01 $504.06 1,959 req $0.257/req transport 81% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T20:54:47Z · session a2aed3c9 · lane .wt-crew786-idp
-🔴 Blocked: none
-🟡 Active: release wave — all four remaining branches fixed and pushed: guards#236 (evidence attached, scanner stub), guards#237 (lock refusal speaks on both streams its tests read), idp#1112 (ticket code out of the founder description, refreshed on main), idp#1113 (render workflow carries main's pinned phrases); CI watcher armed, merge on green
-🟢 Done: local greens on all four before push — 4/4 publish suite, 4/4 scrub suite, 37/37 portal words, 21/21 render/inventory
-⚪ Pending: merge the four when green, then rebase idp#1114 (dagster) on main after #1112 lands
-🔧 TOUCHES: .wt-crew786-feed, scratchpad wt237, .wt-portal-words, .wt-crew786-idp; no cluster
-🔀 OVERLAP: none
-📍 State: watching checks on guards 236/237 and idp 1112/1113
-📍 METER: 2026-09-01 $514.71 1,987 req $0.259/req transport 82% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T20:56:38Z · session 54539261 · lane .wt-r67-plan-execute-review
-🔴 Blocked: none
-🟡 Active: founder (via external consultant, approved YES) ruled R74 All-Seeing Eye: boardroom observability, Telegram approve/deny buttons, spend circuit breaker, durable agents, training corpus; then "voice also" (Whisper+Piper on the gateway, no vendor); engineering agent building CP1 Metabase in .wt-all-seeing-eye off idp main (branch feat/all-seeing-eye-metabase, push only, NO deploy/PR)
-🟢 Done: R73+R74+amendment+4 founder verbatim docs committed to crew docs/ (branch ruling/plan-execute-review, PR 801 all checks green after my dora clock fix); /today page live on founder board (board_serve.py /today route, scripts commit 6eb6c80 local — push blocked by another session's dirty rulings.json)
-⚪ Pending: PR 801 merge (REVIEW_REQUIRED; will try --admin per idp precedent); founder words Approve 800 / APPROVE / Stop 751; CP2 buttons, CP3 breaker, CP4 voice unassigned
-🔧 TOUCHES: crew docs+tests (pushed); ~/.claude/scripts/board_serve.py (+/today); ~/.claude/state/founder-today.html; NEW .wt-all-seeing-eye (idp, agent-owned)
-🔀 OVERLAP: dora test fix unblocks every crew PR; idp shared checkout untouched
-📎 FACTS: crew#800 comment 5500152648; docs/rulings/R74-*.md
-📍 State: ~/dev/code/.wt-r67-plan-execute-review @ pushed
-
-
-## 2026-09-01T20:57:18Z · session a14fc078 · lane .wt-names-prospector
-🔴 Blocked: none
-🟡 Active: founder asked what else fits the one-place pattern and floated full self-service platform limiting agent damage to standards; filed the inventory + lock-down plan as a crew item (declarations founder-only via GitHub push rulesets, every standards row gets gate+fixtures on three planes, Backstage scaffolder as the paved road); waits on his APPROVE
-🟢 Done: crew#796 four branches pushed and clean (prospector 42f568f3 91 files, idp fddb6731, hermes-v2 b2e0837, crew 30b5db6); gate hole ${X:-zone} closed; ship list handed over (idp #1095 #1103 #1100 #1098, infra-crew #1, claude-guards #232 #233 #235)
-⚪ Pending: his merges of the ship list; vars.ESTATE_ZONE per repo; APPROVE: zone-exempt; APPROVE: crew#796 one-shot; APPROVE on the new lockdown item
-🔧 TOUCHES: nothing this turn beyond the crew issue; no cluster
-🔀 OVERLAP: a2aed3c9 rulings.json dirty (named in the lockdown item as the live LAW 24 breach); b4b812cb prospector#802 conflicts with 42f568f3 on Store.Web
-📎 FACTS: https://github.com/chidionyema/crew/issues/796
-📍 State: /Users/chidionyema/dev/code/.wt-names-prospector
-
-
 ## 2026-09-01T21:09:00Z · session a2aed3c9 · lane .wt-crew716-dagster
 🔴 Blocked: none
 🟡 Active: release wave — guards#236, guards#237, idp#1112 and idp#1113 are MERGED on main (API-verified). idp#1114 refreshed on main: the platform.yaml conflict kept both the scheduler and infra-crew rows; the new description gate's five lines (control, drill, matrix, breaker, plan counts) written honestly — dagster drill row pending the deploy, estate-scheduler scored 405 v windmill 365 v temporal 325 under the founder's weights; pushed a247cc33, watcher armed, merges on green
@@ -4696,4 +4589,81 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: e83508bc
 📎 FACTS: none
 📍 State: http://localhost:3001/
+
+
+## 2026-09-03T20:16:21Z · session c0ca7d0d · lane .claude
+🔴 Blocked: none
+🟡 Active: none
+🟢 Done: live hero Skip 6 months + Rejected terms on :3001/?variant=a
+⚪ Pending: verify one-shot brief not regressed
+🔧 TOUCHES: ~/dev/code/.wt-mumchimp-broadsheet Store.Web; port 3001
+🔀 OVERLAP: e83508bc
+📎 FACTS: /Users/chidionyema/.claude/docs/founder/2026-09-03T2015Z-i-belive-this-was-worked-on-verify-you-9fb8046a.md
+📍 State: http://localhost:3001/?variant=a
+
+
+## 2026-09-03T20:24:04Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: measured otto-golden and otto-gateway against the cluster for the founder
+🟢 Done: none merged this session (read-only measurement)
+⚪ Pending: founder decides whether to wake otto-gateway (needs 0.10 cores and the event-bus row)
+🔧 TOUCHES: none
+🔀 OVERLAP: session d0a71e6b holds the idp lane; this session only reads
+📎 FACTS: none
+📍 State: https://github.com/chidionyema/idp/blob/main/clusters/oke/platform.yaml
+
+
+## 2026-09-03T20:25:05Z · session d0a71e6b · lane idp
+🟢 Done: PR 1287 (Tailscale self road: the identity re-registers its tagged replacement with its own token when no seed exists) MERGED b974eb32 on a REST verdict of zero non-green checks; apply run 33801849436 dispatched on the new main; fourth seed run failed on KeyError extra in import_database, root-caused from the pod (the database importer serialises extra with no default), fixed as PR 1315 (extra: {} in the database yaml, guard test pins it, 12 tests green); every other key the four importers read was checked against the pod source so no further missing-key run is expected
+🟡 Active: PR 1315 checks then merge on green and the fifth seed run receipt; apply run 33801849436 tailscale step watched; the three workers (portal wave, Superset features, hermes-v2 Flux road) died on the session usage limit at ~20:00Z and are being resumed now that it reset
+🔴 Blocked: kimi/deepseek vendor keys 401-dead (founder-held keys)
+⚪ Pending: Otto verification after the apply; lockdown controls 2 and 3; 67-branch triage; six read-only probe steps fail on every apply run (pre-existing); Flux cascade drain stalled at 13 not-ready rows at 17:28Z (secret-store True, observability False) and must be re-read
+🔧 TOUCHES: idp branch fix/boardroom-seed-dbextra (PR 1315); cluster reads only (one kubectl exec sed/grep read of Superset source in the web pod)
+🔀 OVERLAP: session 85f840c5 is read-only on this lane (research engine spec search, touches nothing); three subagents of this session on feat/portal-wave-land, fix/superset-features, feat/hermes-v2-flux-road
+📎 FACTS: Superset 6.1 import_database does json.dumps(config["extra"]) unconditionally, so a bundle's database yaml must carry extra; the session usage limit kills subagents mid-task with HTTP 429 and they resume from their transcript by SendMessage
+📍 State: https://github.com/chidionyema/idp/pull/1315
+
+
+## 2026-09-03T20:29:25Z · session 85f840c5 · lane idp
+🔴 Blocked: founder rulings R1 one bot, R2 Crossplane, R3 capacity, in the Golden Goose spec section 9
+🟡 Active: Golden Goose spec v1 pushed on branch spec/golden-goose-v1 for DeepSeek to build
+🟢 Done: spec commit 99017818 on the remote
+⚪ Pending: original Otto parity is red on two rows, estate-state-read-at-start and estate-mcp-answers, crew#736 CP2
+🔧 TOUCHES: docs/specs/golden-goose-SPEC-v1.md on a new branch only
+🔀 OVERLAP: session d0a71e6b holds the idp lane; this branch touches one new doc and nothing it owns
+📎 FACTS: none
+📍 State: https://github.com/chidionyema/idp/blob/spec/golden-goose-v1/docs/specs/golden-goose-SPEC-v1.md
+
+
+## 2026-09-03T20:32:10Z · session c0ca7d0d · lane .claude
+🔴 Blocked: none
+🟡 Active: feat/mumchimp-broadsheet commit+push+PR in flight
+🟢 Done: none merged this session
+⚪ Pending: PR URL after push
+🔧 TOUCHES: Store.Web copy/payback; port 3001
+🔀 OVERLAP: e83508bc
+📎 FACTS: /Users/chidionyema/.claude/docs/founder/2026-09-03T2015Z-i-belive-this-was-worked-on-verify-you-9fb8046a.md
+📍 State: http://127.0.0.1:3001/?variant=a
+
+
+## 2026-09-03T20:44:05Z · session 85f840c5 · lane idp
+🔴 Blocked: founder rulings R1 one bot, R2 Crossplane, R3 capacity for waking otto-gateway
+🟡 Active: Otto architecture mapped; spec corrected because otto-gateway already holds the binding store
+🟢 Done: commit 788389aa on branch spec/golden-goose-v1, confirmed on the remote
+⚪ Pending: put the estate query server address into the hermes-agent manifest, crew#736 CP2
+🔧 TOUCHES: docs/explanation/the-three-ottos.md and docs/specs/golden-goose-SPEC-v1.md on that branch only
+🔀 OVERLAP: session d0a71e6b holds the idp lane; this branch touches two new docs and nothing it owns
+📎 FACTS: none
+📍 State: https://github.com/chidionyema/idp/blob/spec/golden-goose-v1/docs/explanation/the-three-ottos.md
+
+
+## 2026-09-03T20:57:19Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: answering the founder on the two specs, the old Otto's fault and otto-golden
+🟢 Done: PR 1320 opened, the estate MCP gateway's key hash now matches the key the vault hands out; doc correction 5bf5f6af
+⚪ Pending: merge 1320, then give hermes-agent an mcp_servers entry naming the estate route (crew#736 CP2)
+🔧 TOUCHES: platform/mcp/agentgateway.yaml on branch fix/mcp-gateway-keyhash; docs on spec/golden-goose-v1
+🔀 OVERLAP: session d0a71e6b holds the idp lane; these two branches touch one manifest and two docs it does not own
+📎 FACTS: both estate gateway routes answer 401 to the distributed key; sha256 of the live key is a4f5939a, git and the live configmap carry 24a593ed
+📍 State: https://github.com/chidionyema/idp/pull/1320
 
