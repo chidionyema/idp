@@ -280,7 +280,9 @@ spec:
                       position[node] = {
                           "type": "CHART", "id": node, "children": [],
                           "parents": ["ROOT_ID", "GRID_ID", row_id],
-                          "meta": {"uuid": order[i], "width": 6, "height": 50,
+                          # chartId is the exporting instance's chart id; the importer maps
+                          # it to the imported chart by uuid and fails without it
+                          "meta": {"uuid": order[i], "chartId": i + 1, "width": 6, "height": 50,
                                    "sliceName": chart_names[order[i]]},
                       }
                   position[row_id] = {"type": "ROW", "id": row_id, "children": kids,
