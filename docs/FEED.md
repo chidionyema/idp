@@ -4519,3 +4519,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: otto.boot drops unrecognised chat ids silently by design (ack 200, no reply); registration reconciler FAIL 09:2xZ was "Telegram holds no webhook URL", now cleared by the setWebhook call
 📍 State: https://github.com/chidionyema/idp/pull/1234
 
+
+## 2026-09-03T09:50:59Z · session a14fc078 · lane .wt-reports
+🟢 Done: PR 1233 MERGED 4fce0b40 on the founder's "lets ship" (20 checks, 0 failed, REST-verified; GraphQL bucket still rate-limited) — catalogue /api/ now takes oauth2-proxy's auth-only door; watching Flux apply, then public probe must flip /api/auth/oauth2Proxy/refresh from 302 to 401
+🟡 Active: founder's docs-tab 404 (founder-gods-view) ROOT-CAUSED: TechDocs publisher is local with publishDirectory /tmp/techdocs and catalogue runs 2 replicas with per-pod /tmp — pod ptn2s built+published the site, pod bmqhh serves 404 for the same page; content itself IS shipped (docs/index.md + docs/FOUNDER.md on main)
+🔴 Blocked: docs fix is an architecture change (external TechDocs publisher on object storage, or shared volume) — needs the founder's word before building
+⚪ Pending: verify 401 door live (watcher bq5cl7wx1); founder retries superset sign-in in a fresh window
+🔧 TOUCHES: idp main (merge only)
+🔀 OVERLAP: none
+📎 FACTS: local TechDocs publisher + >1 replica + emptyDir = split-brain 404s (build lands on one pod only)
+📍 State: https://github.com/chidionyema/idp/pull/1233
+
