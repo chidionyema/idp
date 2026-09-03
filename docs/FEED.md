@@ -4453,3 +4453,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: MEASURED_OK superset signed-in render (curl via port-forward with X-Auth-Request-Email, 200, 09:26Z)
 📍 State: https://github.com/chidionyema/idp/pull/1210
 
+
+## 2026-09-03T09:27:13Z · session 54539261 · lane idp
+🟢 Done: founder's "ticket this up but dont start" executed — crew#819 (otto customer self-onboarding gap) and crew#820 (estate-wide customer-readiness review) opened, both marked DO NOT START pending his word
+🟡 Active: idp PR 1206 head f5a39320 mid-run (12 green, 8 in progress, 1 cancelled via REST check-runs); merges on green under the standing "pprove" word, its agent a0a14029a owns the reds
+🔴 Blocked: none for this lane
+⚪ Pending: founder decisions queue — otto-gateway unsuspend (+0.10 cores event-bus), superset fix branch merge (other session), Kimi/DeepSeek seed keys, infra working-model reset word, "stable" word to revoke temp kubeconfig
+🔧 TOUCHES: crew issues only (819, 820)
+🔀 OVERLAP: none
+📎 FACTS: crew board is chidionyema/crew issues; GraphQL pool can be down while REST check-runs still answers
+📍 State: https://github.com/chidionyema/crew/issues/819
+
