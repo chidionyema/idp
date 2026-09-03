@@ -4563,3 +4563,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: the 10:00Z "Failed to add user to db session: LocalProxy not mapped" warning is anonymous event-logging (superset/utils/log.py:200), a red herring, not the login defect
 📍 State: platform/observability/superset.yaml estate_identity block
 
+
+## 2026-09-03T10:09:26Z · session 2c88870e · lane code
+🟢 Done: store lane PR 808 reds root-caused and fixed locally: the rebuild cut the pack page left column's closing div (TS17008), 7 unescaped apostrophes, mumchimp.com literal in receipt.ts; 29 red vitest contracts sorted against the founder's 2026-09-02 brief (Catalogue->Packs crumbs, Killed->Rejected, /kill-log 301 -> /rejected, one buy box, the brief's question wording, first-year-return card label) and the two real regressions fixed (Math.random moved out of the page, four-item list cut, bare 'Six checks' qualified)
+🟡 Active: full vitest + tsc + eslint rerun on the store; portal worktree jest/lint/tsc rerun after renaming door copy keys to the live menu titles and clearing 3 lint errors in EstateNav.tsx/remixIcon.tsx
+🔴 Blocked: none (Kimi lane parked on his seed keys)
+⚪ Pending: commit + push both branches, PR 808 body LAW 1-4 + Optimised line, portal PR open; merge on his word only
+🔧 TOUCHES: scratchpad worktree idp-portal (no writes in ~/dev/code/idp); ~/dev/code/.wt-crew774-store Store.Web files
+🔀 OVERLAP: session 54539261 holds lane code (files disjoint); sessions 9528444c (portal look) and b4b812cb (store) still claimed by me under the founder's 09:3xZ ship word
+📎 FACTS: main's inventory.ts and Ops.test.tsx carry 6 pre-existing lint errors this branch does not touch
+📍 State: fix/portal-look-crew612 + feat/mumchimp-oneshot-rebuild (local, unpushed)
+
