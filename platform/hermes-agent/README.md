@@ -37,3 +37,21 @@ built from `hermes-v2`) carries `ssh` and `nc`, mac-run's two binaries (hermes-v
 and not restarting, key mounted, tailnet up, `mac-run hostname` answers with the Mac's name, the
 memory service answers, the cron lanes are installed, and the model lane is printed. A red step is
 the finding. This is the from-scratch proof; nothing here is claimed from a laptop.
+
+## hermes-v2 is this workload
+
+The product repository `chidionyema/hermes-v2` is the source: its Dockerfile and
+`.github/workflows/build-agent-image.yml` push `ghcr.io/chidionyema/hermes-agent` on every merge
+to its main, `platform/image-automation/hermes-agent.yaml` moves the tag in `kustomization.yaml`,
+and the `hermes-agent` row in `clusters/oke/platform.yaml` is the one road it rides to OKE. The
+catalogue holds it three ways: the platform layer `layer-hermes-agent`, the founder card
+`founder-otto`, and the Hermes company domain `bin/catalog-gen` builds. Traces: model calls go
+through the router (traced there, STANDARDS observability row) and the agent's own go to the
+in-cluster Langfuse with keys from the vault (`langfuse-key.yaml`); logs and metrics ride the
+SigNoz k8s-infra collector like every pod.
+
+There is no `platform/hermes-v2/` and there must never be one: a second Deployment of one
+Telegram poller on one token is 409s on both. The five-day audit of 2026-09-03 (section 5) listed
+"onboard hermes-v2 onto the Flux road" as open; it was already this row, and
+`tests/test_hermes_v2_rides_the_hermes_agent_row.py` now refuses a second row, another image,
+a catalogue that forgets it, or a trace key typed into the env.
