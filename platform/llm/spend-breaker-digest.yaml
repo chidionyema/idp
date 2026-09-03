@@ -294,8 +294,9 @@ spec:
               command: ["/bin/sh", "-c"]
               args:
                 - |
-                  pip install psycopg2-binary >/dev/null 2>&1
-                  cp -r /usr/local/lib/python3.11/site-packages /shared/
+                  set -e
+                  mkdir -p /shared/site-packages
+                  pip install --no-cache-dir --target /shared/site-packages psycopg2-binary
               volumeMounts:
                 - name: shared
                   mountPath: /shared
