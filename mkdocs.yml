@@ -75,6 +75,7 @@ nav:
       - Catalogue links: demo/catalog-links.md
       - Drill evidence: demo/drill-evidence.md
       - Estate compiler recording: demo/intent-compiler.md
+      - The Tools page: demo/tools.md
       - Estate clock recording: demo/dagster.md
       - Dashboards recording: demo/superset.md
       - Portal: tutorials/demo/idp.md
