@@ -4585,3 +4585,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: bot is @numun_bot, webhook registered and registration_ok=1; message to it now would prove plumbing only, no model behind it
 📍 State: https://github.com/chidionyema/idp/pull/1234
 
+
+## 2026-09-03T10:19:31Z · session 2c88870e · lane code
+🟢 Done: both lanes pushed and their pull requests open with the accepted body shape: idp PR 1239 (fix/portal-look-crew612, fe80872f: fixed home layout, one-click nav, phone drawer, Remix icons, BUI tokens; jest 150/150, door test 8 passed locally) and prospector PR 808 body rewritten over REST (31520147: pack page closing tag, 7 lint apostrophes, receipt.ts literal, 29 contracts sorted against the 2026-09-02 brief, 4 real copy regressions fixed; vitest 1005/1005, tsc 0, eslint 0 locally)
+🟡 Active: PR 808 first run: guard, changes, store-web, engine, store-api green; nextjs and operating-model-gate red (gate ran on Cursor's old body; nextjs log being read). PR 1239 checks starting; docs/explanation/portal-look-research.md has no mkdocs nav row yet, adding it if the docs gate asks
+🔴 Blocked: none (Kimi lane parked on his seed keys)
+⚪ Pending: fix nextjs red on 808, re-judge the gate after the body edit, both PRs to green, then INVENTORY to the founder; merge only on his word
+🔧 TOUCHES: scratchpad worktree idp-portal (no writes in ~/dev/code/idp); ~/dev/code/.wt-crew774-store Store.Web files
+🔀 OVERLAP: session 54539261 holds lane code (files disjoint); sessions 9528444c (portal look) and b4b812cb (store) still claimed by me under the founder's 09:3xZ ship word
+📎 FACTS: GraphQL bucket for user 377396 still rate-limited; every PR read, create and edit goes over REST gh api
+📍 State: https://github.com/chidionyema/idp/pull/1239 + https://github.com/chidionyema/prospector/pull/808
+
