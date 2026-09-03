@@ -59,9 +59,9 @@ Two rules the console enforces that are easy to trip over:
 
 ## Moving every git lane to the console (the founder, one run)
 
-The founder's ruling of 2026-09-03 ("enable the thing", on the greyed-out Update API Key
-button) makes every lane console-owned, not only Kimi. The move is one run of the
-`vault-seed` workflow on the repository's Actions page: choose "Run workflow", pick the entry
+The founder's ruling of 2026-09-03, that the greyed-out Update API Key button be enabled,
+makes every lane console-owned, not only Kimi. The move is one run of the `vault-seed`
+workflow on the repository's Actions page: choose **Run workflow**, pick the entry
 `router-rows`, and run it. The run copies each lane of `platform/llm/config.yaml` into the
 console with the vendor key the vault already holds, prints one line per lane (`ok`, `kept`
 or `FAIL` naming the key it could not find) and never prints a value. A lane the console
