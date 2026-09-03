@@ -160,6 +160,21 @@ def test_a_missing_root_is_blind_for_that_vendor_only_and_the_exit_is_two(tmp_pa
     )
 
 
+def test_a_wrong_shape_fails_that_vendor_only_and_later_seeds_still_write(tmp_path):
+    """Apply 33454815326: Minimax shape failed and the process exited before Cursor was reached.
+    A bad seed is refused and never written; every later vendor still runs."""
+    idp, log, site = _tree(tmp_path)
+    env = {**FAKE, "SEED_MINIMAX_API_KEY": "not-a-jwt"}
+    r = _run(idp, site, env)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "FAIL    minimax" in r.stdout and "does not match the registry shape" in r.stdout
+    assert "1 failed" in r.stdout
+    puts = log.read_text()
+    assert "MINIMAX_API_KEY" not in puts
+    assert "CURSOR_API_KEY" in puts
+    assert "ANTHROPIC_API_KEY" in puts
+
+
 def test_the_apply_step_tolerates_blind_and_the_hermes_env_step_carries_no_vendor_key():
     step = WF[WF.index("bin/idp-bootstrap-vendors (crew#579, R52)") :]
     step = step[: step.index("\n\n")]

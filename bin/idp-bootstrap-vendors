@@ -13,6 +13,9 @@
 # kept, so the repository secret may be deleted after the first green run. No secret is ever on argv or
 # printed; nothing but vendor and key NAMES reach stdout. A vendor whose secret is absent and whose
 # vault key does not verify is BLIND, listed, and the exit is 2 after every other vendor is handled.
+# A seed that is the wrong shape or that the vendor refuses is FAIL, listed, never written, and the
+# exit is 1 after every other vendor is handled. One bad seed must not skip a later one (apply
+# 33454815326: Minimax shape failed and Cursor was never reached).
 # A vendor marked `pair` in the registry has two halves that the vendor can only grade together (the
 # store's Google OAuth client): both roots are read, both shapes are checked, one verify call grades
 # the pair, and both fields are written or neither is.
@@ -130,10 +133,10 @@ def root(name, secret):
     key = os.environ.pop(secret, "")
     return key.strip()
 
-written = kept = 0; blind = []
+written = kept = 0; blind = []; failed = []
 for name, v in reg.items():
     if ONLY and name != ONLY: continue
-    if v["kind"] != "secret": say("FAIL", name, f"kind {v['kind']!r} is not a road (R52: every vendor is kind: secret)"); sys.exit(1)
+    if v["kind"] != "secret": say("FAIL", name, f"kind {v['kind']!r} is not a road (R52: every vendor is kind: secret)"); failed.append(name); continue
     # one root per (vendor, secret); a target with its own `secret` is its own root (Telegram bots).
     # `pair: true` is the exception and the reason this loop is shaped this way: the targets are two
     # halves of ONE credential that the vendor can only grade together, so they stay in one group.
@@ -160,17 +163,23 @@ for name, v in reg.items():
         if blank:
             blind.append(who); del keys
             say("BLIND", who, f"no {' or '.join(blank)} in the environment and the vault does not verify; the root is made once at {v['page']} and set with gh secret set {' '.join(blank)} (R52)"); continue
+        bad = False
         for t in targets:
             shape = t.get("shape") or v.get("shape")
-            if not shape: say("FAIL", who, f"{t['field']} has no shape in the registry; every root is anchored"); del keys; sys.exit(1)
-            if not re.fullmatch(shape, keys[t["field"]]): say("FAIL", who, f"{sec(v, t)} does not match the registry shape"); del keys; sys.exit(1)
+            if not shape:
+                say("FAIL", who, f"{t['field']} has no shape in the registry; every root is anchored"); failed.append(who); del keys; bad = True; break
+            if not re.fullmatch(shape, keys[t["field"]]):
+                say("FAIL", who, f"{sec(v, t)} does not match the registry shape"); failed.append(who); del keys; bad = True; break
+        if bad: continue
         if not holds(v, targets, keys):
-            say("FAIL", who, f"{' + '.join(names)} refused by {v['verify']['url'].split('{')[0]}; revoke it and make one that works"); del keys; sys.exit(1)
+            say("FAIL", who, f"{' + '.join(names)} refused by {v['verify']['url'].split('{')[0]}; revoke it and make one that works"); failed.append(who); del keys; continue
         for t in targets: vault_put(t["entry"], t["field"], keys[t["field"]])
         del keys; written += 1
         say("ok", who, "verified, written to " + ", ".join(f"{t['entry']}.{t['field']}" for t in targets))
 if MODE == "preflight": say("ok", "preflight", f"{len(reg)} vendors registered; nothing written")
 else:
-    say("ok" if not blind else "BLIND", "vendors", f"{written} written, {kept} kept, {len(blind)} blind; ExternalSecrets refresh within 1h")
+    grade = "FAIL" if failed else ("BLIND" if blind else "ok")
+    say(grade, "vendors", f"{written} written, {kept} kept, {len(blind)} blind, {len(failed)} failed; ExternalSecrets refresh within 1h")
+    if failed: sys.exit(1)
     if blind: sys.exit(2)
 PY
