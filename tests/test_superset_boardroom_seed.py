@@ -97,6 +97,10 @@ def test_seed_script_is_strict_pinned_and_write_free_on_the_source():
     assert '"chartId": i + 1' in script, (
         "every CHART node in the position carries the chartId the importer maps by uuid"
     )
+    # fourth run (pod 17:05Z): import_database does json.dumps(config["extra"]) unconditionally
+    assert '"extra": {},' in script, (
+        "the database yaml carries extra: the importer serialises it without a default"
+    )
     assert '"type": "assets"' not in script
     upper = script.upper()
     for verb in ("DROP TABLE", "DELETE FROM", "TRUNCATE", "ALTER TABLE"):
