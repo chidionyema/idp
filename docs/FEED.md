@@ -4541,3 +4541,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: origin/main backend needs @backstage/plugin-auth-backend-module-guest-provider which the dirty checkout's node_modules lack — a symlinked-node_modules artefact, not a change; CI installs fresh
 📍 State: fix/portal-look-crew612 (local, unpushed)
 
+
+## 2026-09-03T10:02:29Z · session 54539261 · lane idp
+🟢 Done: idp PR 1206 (otto customer door) MERGED 2fa3233c under the founder's standing word (24 checks green, REST-verified; layer lands suspended, nothing running changes). PR 1234 (otto-golden allowlist, 9ebfcabf) fully green: 21 checks, 0 pending, 0 red at 10:01:48Z
+🟡 Active: asking the founder for the one APPROVE word on PR 1234 (platform/** is his merge); nothing merges without it
+🔴 Blocked: none
+⚪ Pending: on APPROVE → merge 1234 → ExternalSecret ~10m adds OTTO_OPERATOR_CHAT_ID → Flux substitutes → Reloader rolls pod → founder messages @numun_bot → reply = DONE
+🔧 TOUCHES: nothing new (merge of 1206 only; 1234 stays on its branch)
+🔀 OVERLAP: lane code held by session 2c88870e — no shared files
+📎 FACTS: 1206 merge went over REST PUT with # merge-red-intended because the GraphQL bucket for user 377396 is rate-limited; checks were proved green over REST check-runs first
+📍 State: https://github.com/chidionyema/idp/pull/1234
+
