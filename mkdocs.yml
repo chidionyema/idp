@@ -213,6 +213,7 @@ nav:
       - DB gen: how-to/onboarding/db-gen.md
       - Dockerfiles: how-to/onboarding/dockerfiles.md
       - LiteLLM: how-to/onboarding/litellm.md
+      - DeepSeek build lane: how-to/onboarding/deepseek-build-lane.md
       - Router image lanes: how-to/onboarding/llm-images.md
       - KINI: how-to/onboarding/kini.md
       - Otto (the founder's agent): how-to/onboarding/otto.md

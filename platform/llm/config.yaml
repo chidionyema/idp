@@ -64,6 +64,29 @@ model_list:
       api_key: os.environ/DEEPSEEK_API_KEY
       timeout: 300
 
+  # Founder, 2026-09-03 tonight, verbatim: "use deepseek for cheap build". deepseek-reasoner
+  # is the same account's thinking-mode model (api-docs.deepseek.com/updates/, read
+  # 2026-09-03: both deepseek-chat and deepseek-reasoner are live model ids on the DeepSeek
+  # API today, aliased onto DeepSeek-V3.1-Terminus/V4-Flash upstream; a legacy-name
+  # discontinuation was announced for 2026-07-24 and has not happened as of that same page's
+  # 2026-08-21 entry, so both names still resolve and this row uses the same id family the
+  # `deepseek` row above already runs in production).
+  - model_name: deepseek-reasoner
+    litellm_params:
+      model: deepseek/deepseek-reasoner
+      api_key: os.environ/DEEPSEEK_API_KEY
+      timeout: 300
+
+  # `build` is a capability alias, not a vendor (same grammar as `vision` on the gemini row
+  # below): an executor lane asks the router for "build" and gets the estate's cheap
+  # build/executor model, without naming DeepSeek. Same account, same key, same model
+  # string as the `deepseek` row above.
+  - model_name: build
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+      timeout: 300
+
   # --- the moat's cheap primary --------------------------------------------------------
   # MiniMax has no first-class LiteLLM provider; it is OpenAI-compatible, so it is declared
   # with an explicit api_base rather than a provider prefix.
@@ -182,6 +205,9 @@ router_settings:
     - openrouter: [minimax, deepseek]
 
     - deepseek: [minimax]
+    # A "build" turn that meets a DeepSeek 4xx/5xx falls to the other funded cheap lane
+    # (minimax) rather than failing an executor's whole turn.
+    - build: [minimax]
 
     - minimax: [deepseek]
 

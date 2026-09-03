@@ -51,6 +51,32 @@ def test_vision_alias_names_a_capability() -> None:
     assert cluster["vision"]["model"] == cluster["gemini"]["model"]
 
 
+def test_build_alias_names_the_cheap_build_lane() -> None:
+    """Founder, 2026-09-03: "use deepseek for cheap build". `build` is a capability alias
+    (same grammar as `vision` above), never a vendor name in a caller's config (LAW 34)."""
+    for cfg in (LAPTOP_CFG, CLUSTER_CFG):
+        models = _models(cfg)
+        assert models["build"]["model"] == models["deepseek"]["model"]
+        assert models["build"]["api_key"] == "os.environ/DEEPSEEK_API_KEY"
+
+
+def test_build_alias_falls_back_to_the_other_funded_cheap_lane() -> None:
+    for cfg in (LAPTOP_CFG, CLUSTER_CFG):
+        chains = {
+            src: targets
+            for entry in cfg["router_settings"]["fallbacks"]
+            for src, targets in entry.items()
+        }
+        assert chains["build"] == ["minimax"]
+
+
+def test_deepseek_reasoner_row_shares_the_deepseek_account() -> None:
+    for cfg in (LAPTOP_CFG, CLUSTER_CFG):
+        models = _models(cfg)
+        assert models["deepseek-reasoner"]["model"] == "deepseek/deepseek-reasoner"
+        assert models["deepseek-reasoner"]["api_key"] == "os.environ/DEEPSEEK_API_KEY"
+
+
 def test_image_version_matches_laptop_compose() -> None:
     laptop = re.search(
         r"image:\s*ghcr\.io/berriai/litellm-database:(\S+)",
