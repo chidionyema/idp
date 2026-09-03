@@ -1,4 +1,4 @@
-# Onboarding: the prose-pin gate
+# Onboarding: The prose-pin gate
 
 What the gate is, where it runs, and how to write a test that passes it.
 

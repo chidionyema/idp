@@ -1,4 +1,4 @@
-# Demo: the prose-pin gate refuses a theatre test
+# Demo: The prose-pin gate refuses a theatre test
 
 The gate that keeps string-pinning tests out of the suite, shown refusing one and passing
 one in under a minute.

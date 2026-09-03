@@ -1,4 +1,4 @@
-# Test strategy: tests grade behavior, never prose
+# Test strategy: Tests grade behavior, never prose
 
 Founder mandate, 2026-09-03: the test architect owns test strategy, and the
 fire-to-test reflex is over. A test asserts what the system does, never what a file says.

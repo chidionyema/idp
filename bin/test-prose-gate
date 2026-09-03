@@ -36,7 +36,8 @@ def _read_text_names(body: list[ast.stmt]) -> set[str]:
 
 
 def _is_pin(a: ast.Assert, text_names: set[str]) -> bool:
-    for n in ast.walk(a):
+    # only the tested expression counts: the assert's message is reporting, not grading
+    for n in ast.walk(a.test):
         if (
             isinstance(n, ast.Constant)
             and isinstance(n.value, str)
