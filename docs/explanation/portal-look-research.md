@@ -68,7 +68,7 @@ for anything we draw, and the existing Unified Theme only for plugins that are s
    `packages/app/src`, 2026-09-03).
    https://backstage.io/docs/releases/v1.44.0/ ·
    `backstage/packages/app/src/index.tsx` · `@backstage/ui` 0.17.1 in
-   `packages/app/package.json`
+   `backstage/packages/app/package.json`
 
 9. **What we actually paint today.** `modules/theme` is `createUnifiedTheme` plus
    MUI `styleOverrides` (the theme change of 2026-08-29): near-black canvas `#0b0c0e`,
@@ -96,7 +96,7 @@ for anything we draw, and the existing Unified Theme only for plugins that are s
 ## The one path
 
 1. Add `packages/app/src/styles.css` that sets `[data-theme-mode='dark']` and
-   `light` `--bui-*` to the same numbers as `modules/theme/tokens.ts` (canvas
+   `light` `--bui-*` to the same numbers as `backstage/packages/app/src/modules/theme/tokens.ts` (canvas
    `#0b0c0e`, accent `#4c8dff`, surfaces `#121316` / `#17191d`). Import it from
    `index.tsx` after `@backstage/ui/css/styles.css`.
 2. Rebuild **Today** (`homeLayout.tsx`) with BUI `Box`, `Flex`, `Grid`, `Card`,

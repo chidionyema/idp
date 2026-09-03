@@ -1,5 +1,6 @@
-// The front page layout. Backstage still supplies search and the visit widgets;
-// the ten doors are drawn here as Backstage UI cards. The plugin's stamp-sized
+// The front page layout. Backstage supplies search; the ten doors are drawn here as
+// Backstage UI cards. The visit and starred cards are empty for a visitor and are not
+// placed (app-config.yaml); the layout still seats them if a config ever adds them. The plugin's stamp-sized
 // toolkit is the 2020 look and is not placed (the widget stays installed).
 import { useMemo } from 'react';
 import type { ReactElement } from 'react';

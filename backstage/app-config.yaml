@@ -35,34 +35,10 @@ app:
               deletable: false
               movable: false
               resizable: false
-            - component: HomePageStarredEntities
-              column: 6
-              row: 2
-              width: 6
-              height: 4
-              deletable: false
-              movable: false
-              resizable: false
-            - component: HomePageRecentlyVisited
-              column: 6
-              row: 6
-              width: 6
-              height: 4
-              deletable: false
-              movable: false
-              resizable: false
-            - component: HomePageMostVisited
-              column: 0
-              row: 8
-              width: 6
-              height: 4
-              deletable: false
-              movable: false
-              resizable: false
-    # Visit tracking feeds the "Recently visited" and "Most visited" widgets; it is off in the
-    # plugin until switched on here, and it stores visits in the browser.
-    - api:home/visits: true
-    - app-root-element:home/visit-listener: true
+    # Visit tracking fed the "Recently visited" and "Most visited" cards. Those cards, and
+    # "Starred", are empty for a visitor and are not placed on the page, so tracking stays off.
+    - api:home/visits: false
+    - app-root-element:home/visit-listener: false
     # A joke widget and world clocks. Off. The page is not a rearrangeable dashboard.
     - home-page-widget:home/random-joke: false
     - home-page-widget:home/world-clock: false
