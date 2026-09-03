@@ -7,12 +7,12 @@ every other platform layer is — its own area, fences, deployment, route and ca
 git, all applied by Flux, nothing typed by hand into a cluster.
 
 ## What to look at
-- `platform/otto-staging/` in the `idp` repository carries every manifest: the area of the cluster it owns and its
+- `platform/otto-golden/` in the `idp` repository carries every manifest: the area of the cluster it owns and its
   fences (a quota, a limit range, a default-deny network policy with the four narrow holes the
   pod actually needs), the deployment running the new process, the service, and the route that
   exposes exactly two paths on the shared `otto.<zone>` host — the health check and the Telegram
   webhook. Nothing else on that host is touched.
-- The Flux row in `clusters/oke/platform.yaml` (named `otto-staging`) is what makes the pod real:
+- The Flux row in `clusters/oke/platform.yaml` (named `otto-golden`) is what makes the pod real:
   once the branch merges to `main`, the cluster's own Flux controller applies these manifests on
   its normal ten-minute cycle where it applies the declared state, the same way every other
   platform layer arrives — no deploy
@@ -24,7 +24,7 @@ git, all applied by Flux, nothing typed by hand into a cluster.
 ## Watch it work
 The pod answers `GET /healthz` and `POST /telegram-webhook` on the shared edge host once Flux has
 applied the manifests and the founder has completed the one physical step this lane waits on — see
-[the runbook](../../runbooks/otto-staging.md) for exactly that step, the BotFather flow and the
+[the runbook](../../runbooks/otto-golden.md) for exactly that step, the BotFather flow and the
 vault command, quoted in full. Until that step runs, the deployment still comes up (a staging pod
 can boot and answer `/healthz` with no bot token at all); only the Telegram side is silent.
 

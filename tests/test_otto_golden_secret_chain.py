@@ -1,4 +1,4 @@
-"""The otto-staging token chain holds end to end (control for platform/otto-staging).
+"""The otto-golden token chain holds end to end (control for platform/otto-golden).
 
 The vault entry name, the ExternalSecret mapping and the pod's file-reading wrapper
 must agree; if any link drifts, the pod boots with no token and the bot goes silent
@@ -20,7 +20,7 @@ def _docs(rel: str):
 def test_external_secret_maps_the_vault_token_to_the_env_key() -> None:
     kinds = [
         d
-        for d in _docs("platform/otto-staging/telegram-secret.yaml")
+        for d in _docs("platform/otto-golden/telegram-secret.yaml")
         if d.get("kind") == "ExternalSecret"
     ]
     assert kinds, "telegram-secret.yaml lost its ExternalSecret document"
@@ -41,7 +41,7 @@ def test_external_secret_maps_the_vault_token_to_the_env_key() -> None:
 
 
 def test_the_pod_reads_the_mounted_file_and_boots_otto() -> None:
-    rel = "platform/otto-staging/deployment.yaml"
+    rel = "platform/otto-golden/deployment.yaml"
     text = (ROOT / rel).read_text()
     assert "/run/secrets/otto-staging-telegram/OTTO_TELEGRAM_BOT_TOKEN" in text, (
         "the wrapper no longer reads the mounted token file"
@@ -58,8 +58,8 @@ def test_the_pod_reads_the_mounted_file_and_boots_otto() -> None:
 
 def test_the_drill_catalogue_carries_the_otto_staging_row() -> None:
     text = (ROOT / "drills/catalogue.yaml").read_text()
-    assert "name: otto-staging" in text, (
-        "drills/catalogue.yaml lost the otto-staging row"
+    assert "name: otto-golden" in text, (
+        "drills/catalogue.yaml lost the otto-golden row"
     )
 
 
@@ -70,7 +70,7 @@ def test_the_webhook_door_is_locked_at_the_gateway_not_in_the_pod() -> None:
     (loud) -- never an open door."""
     routes = [
         d
-        for d in _docs("platform/otto-staging/httproute.yaml")
+        for d in _docs("platform/otto-golden/httproute.yaml")
         if d.get("kind") == "HTTPRoute"
     ]
     assert routes, "httproute.yaml lost its HTTPRoute document"
@@ -96,7 +96,7 @@ def test_the_webhook_door_is_locked_at_the_gateway_not_in_the_pod() -> None:
 
     ext = [
         d
-        for d in _docs("platform/otto-staging-secret/webhook-substitution.yaml")
+        for d in _docs("platform/otto-golden-secret/webhook-substitution.yaml")
         if d.get("kind") == "ExternalSecret"
     ]
     assert ext, "webhook-substitution.yaml lost its ExternalSecret"
@@ -108,8 +108,8 @@ def test_the_webhook_door_is_locked_at_the_gateway_not_in_the_pod() -> None:
 
     clusters = (ROOT / "clusters/oke/platform.yaml").read_text()
     assert "name: otto-webhook" in clusters, (
-        "the otto-staging row no longer substitutes from the otto-webhook Secret"
+        "the otto-golden row no longer substitutes from the otto-webhook Secret"
     )
-    assert "name: otto-staging-secret" in clusters, (
-        "the otto-staging-secret row left clusters/oke/platform.yaml"
+    assert "name: otto-golden-secret" in clusters, (
+        "the otto-golden-secret row left clusters/oke/platform.yaml"
     )

@@ -284,12 +284,12 @@ LAYERS = {
         "Hermes",
         "The agent that acts for the founder from anywhere: a message in, a pull request out.",
     ),
-    "otto-staging": (
+    "otto-golden": (
         "agents",
         "Otto (staging)",
         "The new agent's own webhook and health door, running its own pod ahead of production.",
     ),
-    "otto-staging-secret": (
+    "otto-golden-secret": (
         "agents",
         "Otto (staging) webhook secret",
         "Feeds the secret word Telegram must echo from the vault into the gateway rule on Otto's door.",

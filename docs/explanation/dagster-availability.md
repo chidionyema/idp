@@ -10,7 +10,7 @@ estate-scheduler Deployment. dagster runs in a founder-facing area of the cluste
 [the rollout-headroom rule](https://github.com/chidionyema/crew/issues/307)) says a founder-facing Deployment runs two
 replicas spread across nodes, so one node dying never takes the surface down. The
 scheduler ran one replica with no spread, so admission said no, and the whole
-upgrade — dagster, then notify and otto-staging behind it — wedged. The refusal is
+upgrade — dagster, then notify and otto-golden behind it — wedged. The refusal is
 recorded in [the cluster check run that caught it](https://github.com/chidionyema/idp/actions/runs/33618879684).
 
 ## Why the gate said it was fine

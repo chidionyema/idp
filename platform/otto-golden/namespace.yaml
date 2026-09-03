@@ -21,7 +21,7 @@ metadata:
     # Never garbage-collected by Flux: a namespace moved between Kustomization rows or
     # dropped from git stays, with everything in it (portal 404, 2026-08-29 01:05Z, idp#648).
     kustomize.toolkit.fluxcd.io/prune: disabled
-  name: otto-staging
+  name: otto-golden
   labels:
     # crew#539 admission arm: Kyverno require-availability grades this namespace in the cluster too.
     availability.idp/tier: founder-facing

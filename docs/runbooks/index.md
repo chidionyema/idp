@@ -2,5 +2,5 @@
 - [Dagster scheduler](dagster.md) — the estate scheduler on the cluster: verifying the rollout, handling Kyverno rejections.
 - [The one-hour buyer sandbox](demo-sandbox.md) — launch a throwaway cluster-in-a-cluster for a buyer's engineer with one command; it expires by itself.
 - [The merge queue](merge-queue.md) — green pull requests land themselves; how to watch it, pause it, and roll it back.
-- [Otto staging, the bot token](otto-staging.md) — the one founder step (BotFather, then the vault) that the new staging pod waits on.
+- [Otto staging, the bot token](otto-golden.md) — the one founder step (BotFather, then the vault) that the new staging pod waits on.
 - [Superset dashboards](superset-dashboards.md) — the boardroom dashboards behind the one login: what watches them, where the release and its database live, the one leftover Metabase volume to delete.

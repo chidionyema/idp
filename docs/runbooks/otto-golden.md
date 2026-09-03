@@ -1,17 +1,17 @@
 # Otto staging, the bot token
 
-Otto staging (`platform/otto-staging/`) is a second, separate pod from the production Architect
+Otto staging (`platform/otto-golden/`) is a second, separate pod from the production Architect
 gateway. It has its own area of the cluster and its own webhook path, running the new boot process
 ahead of production. It needs one thing only a person can give it: a Telegram bot token.
 Everything else in this lane — its own area, the fences, the route, the deployment — ships from
 git and needs no hand.
 
 ## What runs today
-The Deployment (`platform/otto-staging/deployment.yaml`) runs one pod, one replica, listening on
+The Deployment (`platform/otto-golden/deployment.yaml`) runs one pod, one replica, listening on
 port 8080 for `GET /healthz` and `POST /telegram-webhook`. The route
-(`platform/otto-staging/httproute.yaml`) exposes exactly those two paths on the shared
+(`platform/otto-golden/httproute.yaml`) exposes exactly those two paths on the shared
 `otto.<zone>` host, next to the production gateway's own `/telegram` path. The bot token arrives
-as a vault-fed secret (`platform/otto-staging/telegram-secret.yaml`), mounted as a file, never as
+as a vault-fed secret (`platform/otto-golden/telegram-secret.yaml`), mounted as a file, never as
 a pod environment variable — the cluster's own admission policy refuses the latter.
 
 ## Founder action — create the bot and hand over its token
@@ -46,10 +46,10 @@ token value ever appears in that status, in a log, or on this page.
 
 The pod never sees an unauthenticated webhook and holds no auth code at all (founder edict,
 2026-09-02: auth is infrastructure physics). The route
-(`platform/otto-staging/httproute.yaml`) forwards `POST /telegram-webhook` only when the
+(`platform/otto-golden/httproute.yaml`) forwards `POST /telegram-webhook` only when the
 request carries `X-Telegram-Bot-Api-Secret-Token` exactly equal to the vault value
 (`otto-staging-telegram`, property `webhook_secret`, rendered for substitution by
-`platform/otto-staging-secret/webhook-substitution.yaml`). A missing or wrong header is
+`platform/otto-golden-secret/webhook-substitution.yaml`). A missing or wrong header is
 dropped at the edge and never reaches the pod.
 
 The webhook secret is machine-born, unlike the token: code minted it into the estate vault
@@ -67,10 +67,10 @@ delivery. Rotating the secret is the same two steps in the same order: vault fir
 Read the pod's own health first: `GET https://otto.<zone>/healthz` answers from the edge whether
 or not Telegram can reach it. If `/healthz` answers but updates stop arriving, the fault is
 between Telegram and the edge (the route, the listener, or the token in step 2 above going stale);
-if `/healthz` itself stops answering, the fault is the pod, and `kubectl -n otto-staging get pods`
+if `/healthz` itself stops answering, the fault is the pod, and `kubectl -n otto-golden get pods`
 is the next read.
 
 ## Rollback
 This is a staging lane behind its own area of the cluster and its own path. Reverting the pull
-request that added `platform/otto-staging/` removes that area, the route and the pod together, and
+request that added `platform/otto-golden/` removes that area, the route and the pod together, and
 touches nothing the production Architect gateway (`platform/hermes-agent/`) depends on.
