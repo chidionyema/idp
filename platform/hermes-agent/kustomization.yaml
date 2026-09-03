@@ -12,4 +12,4 @@ resources:
   - tailscale.yaml
 images:
   - name: ghcr.io/chidionyema/hermes-agent
-    newTag: main-38-eb48806d3dba8626d5815614e657071eb7103ae0 # {"$imagepolicy": "flux-system:hermes-agent:tag"}
+    newTag: main-45-d2bf529645209a80f80a61319c87d8c283726b05 # {"$imagepolicy": "flux-system:hermes-agent:tag"}
