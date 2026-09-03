@@ -35,3 +35,13 @@ pvc pgdata-metabase-db-0`. Nothing references it after the swap.
 
 None in normal operation. The one hand ever needed was the founder's merge of the change that
 installed it; accounts appear on first sign-in with no invitation step.
+
+## The seeded boardroom dashboard
+
+The "Boardroom" dashboard (model spend per day, spend by model and by prompt, call
+volume, latency, trace volume) is not hand-built: the one-shot job
+`superset-boardroom-seed` (platform/observability/superset-boardroom-seed.yaml)
+renders a Superset import bundle against the live ClickHouse trace store and loads
+it with `superset import-assets`. Every object carries a fixed uuid, so re-running
+the job overwrites the same rows — it never doubles charts. Jobs are immutable: to
+change the seed, edit the manifest and bump the job name; Flux runs the new one.

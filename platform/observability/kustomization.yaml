@@ -16,6 +16,7 @@ resources:
   - superset-availability.yaml
   - superset-httproute.yaml
   - metabase-recovery-dump.yaml
+  - superset-boardroom-seed.yaml
 configMapGenerator:
   - name: signoz-values
     files:

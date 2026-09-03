@@ -41,7 +41,7 @@ spec:
     bootstrapScript: |
       #!/bin/bash
       export PYTHONUSERBASE=/app/superset_home/.pyuser
-      pip install --no-cache-dir --user psycopg2-binary==2.9.9
+      pip install --no-cache-dir --user psycopg2-binary==2.9.9 clickhouse-connect==0.8.18
       export PYTHONPATH=/app/superset_home/.pyuser/lib/python3.10/site-packages:$PYTHONPATH
     # Values for the superset HelmRelease (superset.yaml, decision 0018). Receipts, all read 2026-09-02:
     # config.py 6.1.0 defines ADDITIONAL_MIDDLEWARE, ENABLE_PROXY_FIX and reads SUPERSET_SECRET_KEY;
