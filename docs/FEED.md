@@ -3,69 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-01T16:10:18Z · session a14fc078 · lane .wt-crew612-phone
-🔴 Blocked: none
-🟡 Active: crew#785 org-move plan v2 after peer review (engineering, operations, finance, code-f9): move while public, private last; runners need the cluster cap raised $50->$120 (his money, second word); arm64 vs 4 x86 downloads; fallback runner label; flux-events stays, alert severity info->error. idp fix/crew718-cluster-doctor d98fca10 on origin. Waits on APPROVE: crew#785 org move and APPROVE: crew#785 cap 120
-🟢 Done: crew#787 guards fix green (d6a56de); crew#718 doctor tile + monitoring plan posted; crew#789 filed (agents commit as the bot)
-⚪ Pending: founder merges fix/crew718-cluster-doctor, fix/hook-run-kills-its-child, idp#1103/#1100/#1098/#1095 (all green, admin-blocked), infra-crew#1; his two words on crew#785; Team plan + App install on Mumchimp. Defect seen, not built: pre-push kyverno rung clones kyverno/policies with a 27 s git timeout, refused a docs push at Mac load 715-778 (R58 says local hooks lint-only <5 s)
-🔧 TOUCHES: idp branch fix/crew718-cluster-doctor docs only; no cluster, no merge
-🔀 OVERLAP: a2aed3c9 Otto door; 54539261 crew#659/reports tab; ef0354ef crew#729; nobody else on the org move
-📎 FACTS: https://github.com/chidionyema/crew/issues/785
-📍 State: /Users/chidionyema/dev/code/.wt-crew612-phone
-
-
-## 2026-09-01T16:12:02Z · session a2aed3c9 · lane idp
-🔴 Blocked: none
-🟡 Active: founder ruling R68 recorded (org move: more planning, asymmetry, one swoop, minimal disruption); crew#785 comment posted; code-74 owns the rewrite. Seven cluster-side findings on crew#785 sent to code-74 (two blockers: Otto pod has no pull secret, Tailscale federated subject bakes in the old owner)
-🟢 Done: pi bridge concurrency answered from source (one executor per session, no cap across sessions)
-⚪ Pending: founder APPROVE: crew#786 and APPROVE: crew#716; crew#785 rewrite by a14fc078
-🔧 TOUCHES: ~/.claude/docs/founder/2026-09-01T1608Z-org-move-asymmetry-one-swoop.md, ~/.claude/scripts/rulings.json (uncommitted, tree dirty from a peer); crew board comments; no cluster, no git writes in idp
-🔀 OVERLAP: a14fc078 crew#785/#789; 54539261 crew#659; nobody else on rulings.json entries R67/R68
-📎 FACTS: https://github.com/chidionyema/crew/issues/785
-📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
-
-
-## 2026-09-01T16:14:03Z · session b4b812cb · lane .claude
-🔴 Blocked: none; founder rejected PR 802 as no visible difference (wrapping, images)
-🟡 Active: crew#774
-🟢 Done: none merged; PR 802 open f784ef24
-⚪ Pending: none
-🔧 TOUCHES: Store.Web PackRow globals.css rowcover on feat/crew774-store-polish; not mumchimp.css
-🔀 OVERLAP: 82cea017 held .claude earlier; local :3000 is this worktree
-📎 FACTS: https://github.com/chidionyema/crew/issues/774
-📍 State: https://github.com/chidionyema/prospector/pull/802 · http://127.0.0.1:3000/packs
-
-
-## 2026-09-01T16:25:03Z · session a14fc078 · lane .wt-crew612-phone
-🔴 Blocked: none
-🟡 Active: crew#785 org-move plan v3 in the one-swoop shape (R68 + open-work-zero gate): prepare everything name-independent, one cutover hour, private last; runners need the cluster cap raised $50->$120 (his money, second word); arm64 vs 4 x86 downloads; fallback runner label; flux-events stays, alert severity info->error. idp fix/crew718-cluster-doctor d98fca10 on origin. Waits on APPROVE: crew#785 org move and APPROVE: crew#785 cap 120
-🟢 Done: crew#787 guards fix green (d6a56de); crew#718 doctor tile + monitoring plan posted; crew#789 filed (agents commit as the bot)
-⚪ Pending: founder merges fix/crew718-cluster-doctor, fix/hook-run-kills-its-child, idp#1103/#1100/#1098/#1095 (all green, admin-blocked), infra-crew#1; his two words on crew#785; Team plan + App install on Mumchimp. Defect seen, not built: pre-push kyverno rung clones kyverno/policies with a 27 s git timeout, refused a docs push at Mac load 715-778 (R58 says local hooks lint-only <5 s)
-🔧 TOUCHES: idp branch fix/crew718-cluster-doctor docs only; no cluster, no merge
-🔀 OVERLAP: a2aed3c9 Otto door; 54539261 crew#659/reports tab; ef0354ef crew#729; nobody else on the org move
-📎 FACTS: https://github.com/chidionyema/crew/issues/785
-📍 State: /Users/chidionyema/dev/code/.wt-crew612-phone
-
-
-## 2026-09-01T16:27:17Z · session 54539261 · lane .wt-reports
-🟢 Reports tab built and pushed: idp feat/reports-tab 3a9ef154 (bin/idp-reports-render, estate-state.yml publish-reports job, estate-inventory.yml delivery report, catalog-render carries docs/reports, /reports page + 4 green tests, founder-reports surface, demo+onboarding docs). No PR; founder deploys. Board: crew#684.
-🟡 Waiting on founder: merge/deploy of idp feat/reports-tab; rulings on the webhook EOF class (crew#790/#791); merges of crew 6b28b8bf and idp docs/foundations-research-nav e2b4c2a6.
-🔴 Peer code-74 asked for a crew#785 (org move, private repos) review; my finding: private repos break the /estate-state proxy (raw.githubusercontent, no credential) and with it Ops tiles, inventory, founder.json and the new Reports page; replying with receipts next.
-🔧 TOUCHES: idp worktree .wt-reports (branch feat/reports-tab only; node_modules symlinked from ~/dev/code/idp/backstage, untracked); crew board comments; no cluster, no merge
-🔀 OVERLAP: a14fc078 owns the Ops page test-timeout thread and fix/crew718-cluster-doctor (touches homeModule? no: Ops.tsx only); code-74 crew#785
-📍 State: /Users/chidionyema/dev/code/.wt-reports
-📍 METER: 2026-09-01 $368.78 1,491 req $0.247/req transport 83% | fable-5 100%, opus-5 0% (crew#26)
-
-
-## 2026-09-01T16:33:54Z · session 54539261 · lane .wt-reports
-🟢 Reports build pushed: idp feat/reports-tab at 3a9ef154; /reports page, two clocked reports (flux-state every 15 min, first-time-success daily) written to state/live-diagram by estate-state.yml and estate-inventory.yml. Founder handoff sent. Awaits his deploy.
-🟡 crew#785 org move: peer code-74 folded my review into plan v3 (state proxy Authorization header = A8, one ORG value, ghcr re-mint in cutover hour). Nothing further from this lane.
-🔧 TOUCHES: idp bin/idp-reports-render, bin/catalog-render CARRIED, .github/workflows/estate-state.yml, estate-inventory.yml, backstage/packages/app/src/modules/home/{Reports.tsx,reportIndex.ts,useReports.ts,homeModule.tsx}, backstage/founder/catalog-info.yaml, docs/demo+onboarding/reports.md
-🔀 OVERLAP: state/live-diagram now takes a commit every 15 min; catalog-render force-with-lease can lose a race (retries next schedule). crew#785 private-repo flip breaks /estate-state proxy until A8 lands.
-📎 FACTS: renderer on the 73-row receipt = 68 ready, 1 not ready, 4 suspended; empty receipt reads BLIND; 4/4 Reports tests green; board crew#684 comment 5497086402; incidents crew#790-#793.
-📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
-
-
 ## 2026-09-01T17:21:01Z · session a2aed3c9 · lane code
 🔴 Blocked: none
 🟡 Active: founder ruling R69 recorded (squad model: Claude plans/optimises/manages, cheap models execute, DeepSeek joins as executor, Kimi and Gemini as consultants, pi bridge reviewed and alternatives explored); research pass on headless executor runtimes running; measured: pi bridge 7 runs since 08-29, 1 exit 0 touching 0 files, 2 timeouts, 4 fast failures with no error text logged
@@ -4774,4 +4711,103 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: none; no working tree changed
 📎 FACTS: git write-tree + commit-tree with a copied GIT_INDEX_FILE snapshots a dirty tree without touching it; ref names cannot start with a dot; sessions list only for the cwd claude was launched from
 📍 State: https://github.com/chidionyema/crew/blob/rescue/2026-09-03-sessions/docs/audits/2026-09-03-session-rescue.md
+
+
+## 2026-09-03T15:47:17Z · session d0a71e6b · lane idp
+🟢 Done: work map written and pushed (crew rescue/2026-09-03-sessions docs/audits/2026-09-03-work-map.md): seven lanes, landed vs left, the order; fire found: every oke-check 03:35Z-12:37Z failed on a Flux cascade rooted at kyverno 'revision not up to date' -> edge -> external-secrets/scheduling -> secret-store -> 40 rows (otto-golden, observability, llm, backstage); roots flipped Ready 15:44-15:45Z on their own
+🟡 Active: watcher bmqgbbali confirming the cascade drains; then re-run oke-check mode=apply (founder word 'deploy both' 12:39Z never landed), then boardroom seed receipt and Ottos-on-kimi verification
+🔴 Blocked: keyless vendor-intake standard needs the founder's one-line definition (a2aed3c9 last state); superset-vs-metabase is his word; bot GraphQL quota exhausted at 15:40Z so PR 1265 checks unreadable this minute
+⚪ Pending: idp#1265 green+merge, lockdown controls 2 and 3; land rescue snapshots (portal 67 files, tailscale 44 files); hermes-v2 onto Flux road
+🔧 TOUCHES: crew branch rescue/2026-09-03-sessions; cluster reads only
+🔀 OVERLAP: none live; all prior sessions dead
+📎 FACTS: Flux dependents keep a stale 'dependency not ready' condition until their own interval fires after the root clears; kyverno Kustomization stalled ~12h on 'revision is not up to date' while its pods ran
+📍 State: https://github.com/chidionyema/crew/blob/rescue/2026-09-03-sessions/docs/audits/2026-09-03-work-map.md
+
+
+## 2026-09-03T16:09:50Z · session e83508bc · lane .claude
+🔴 Blocked: none
+🟡 Active: none
+🟢 Done: header scroll mask, icon-btn pill restyle, survivor ribbon (globals.css, TodayRibbon.tsx, MarketingLayout.tsx, latest-survivor.json); pr-cap-guard.py future annotations fix
+⚪ Pending: founder pick next UI slice
+🔧 TOUCHES: none
+🔀 OVERLAP: none
+📎 FACTS: none
+📍 State: checkpoints/LATEST.md
+
+
+## 2026-09-03T16:13:31Z · session d0a71e6b · lane idp
+🟢 Done: cascade drained to the 9 rows that wait on the seed Job; boardroom seed root-caused (Superset 6.1 has no import-assets command) and fixed on branch fix/boardroom-seed-import (ImportDashboardsCommand + Flux force annotation, 10 guard tests green); PR 1265 rebased onto main, security page regenerated, body gate lines fixed, operating-model-gate green on fb738ecf
+🟡 Active: seed PR opening and merge watch; Tailscale mint fix — the federated identity is registered with no tags so it cannot mint the tag:k8s/tag:k8s-operator client (apply run 33756246171 FAIL mint); adding tags to the registration and a drift check
+🔴 Blocked: kimi/deepseek vendor keys 401-dead (founder keys); Superset feature grading against the cluster after the seed lands
+⚪ Pending: oke-check mode=apply re-run after the tailscale fix; land rescue snapshots (portal 67 files); hermes-v2 onto Flux; controls 2 and 3 of the lockdown
+🔧 TOUCHES: idp branches fix/boardroom-seed-import, feat/flux-only-writes (PR 1265); cluster reads only
+🔀 OVERLAP: none live
+📎 FACTS: Superset 6.1 import-dashboards requires -u; ImportDashboardsCommand(contents, overwrite=True) is what the CLI calls; fix/tailscale-operator-tag's 4 commits are PR 1065's squash (main has OP_TAG), branch is stale not lost
+📍 State: https://github.com/chidionyema/idp/pull/1265
+
+
+## 2026-09-03T16:34:45Z · session d0a71e6b · lane idp
+🟢 Done: PR 1265 (lockdown control 1, flux-only-writes) and PR 1279 (seed importer + Flux force annotation) MERGED; the seed Job was recreated in place at 16:24:51Z and reached the importer, which refused the bundle's metadata type — fixed as PR 1281 (open); Tailscale mint root cause found (federated identity registered with no tags) and fixed as PR 1280 (open, two reds being fixed: docs record, test env leak); three parallel workers launched: portal wave landing, Superset feature grading + gaps, hermes-v2 onto the Flux road
+🟡 Active: PR 1280 reds (add docs record; tests must blank ACTIONS_ID_TOKEN_REQUEST_URL so the verify-claims job's runner env does not enter road b); PR 1281 merge on green; then oke-check mode=apply re-run and Otto verification
+🔴 Blocked: kimi/deepseek vendor keys 401-dead (founder-held keys)
+⚪ Pending: lockdown controls 2 and 3; rescue snapshots beyond the portal wave; 67-branch triage
+🔧 TOUCHES: idp branches fix/tailscale-federated-tags, fix/boardroom-seed-metadata; workers on feat/portal-wave-land, fix/superset-features, feat/hermes-v2-flux-road; cluster reads only
+🔀 OVERLAP: three subagents of this session hold those branches; nobody else live
+📎 FACTS: ImportDashboardsCommand validates metadata.type == Dashboard; Flux force annotation recreated the immutable Job within 2 minutes of the merge; verify-claims runs PR Verify: lines with the runner's OIDC env set
+📍 State: https://github.com/chidionyema/idp/pull/1280
+
+
+## 2026-09-03T16:47:47Z · session d0a71e6b · lane idp
+🟢 Done: PR 1281 (bundle type Dashboard) MERGED 9734a1b4 and PR 1280 (federated identity carries its tags; tests blank the runner's OIDC variables; decision 0010 amended) MERGED 2513e0c5, both on a REST verdict of zero non-green checks (bot GraphQL quota exhausted, marker used); oke-check apply run 33780730463 dispatched on 2513e0c5 (the founder's 'deploy both' finally running with the fix)
+🟡 Active: watching the apply run's tailscale step and the recreated seed Job (Flux revision on cluster was ce22b377 at 16:47Z; the Job recreates when main 9734a1b4 lands); three workers still running (portal wave, Superset features, hermes-v2 Flux road)
+🔴 Blocked: kimi/deepseek vendor keys 401-dead (founder-held keys)
+⚪ Pending: Otto verification after the apply; lockdown control 2 (read-only OCI identity for laptops) and 3; 67-branch triage; delete stale otto-image-roll and fix/tailscale-operator-tag after a merged-PR check
+🔧 TOUCHES: idp main (two squashes), oke-check apply run in flight; cluster reads only
+🔀 OVERLAP: three subagents of this session on feat/portal-wave-land, fix/superset-features, feat/hermes-v2-flux-road
+📎 FACTS: verify-claims refuses `bash -n` (not an observing command; use grep/python3/pytest); operating-model-gate wants `- LAW 1..3` lines as commands or paths plus a Lifecycle: line when a root credential's birth is touched; the gate does not rerun on a body edit, rerun the job via REST POST actions/jobs/<id>/rerun
+📍 State: https://github.com/chidionyema/idp/actions/runs/33780730463
+
+
+## 2026-09-03T16:54:37Z · session d0a71e6b · lane idp
+🟢 Done: PRs 1280 and 1281 MERGED; apply run 33780730463 dispatched on the new main; third seed run failed with KeyError chartId inside the importer, root-caused from the pod's own utils.py (build_uuid_to_id_map reads meta.chartId of every CHART node) and fixed as PR 1286 (chartId on every chart node, guard test pins it, 10 tests green)
+🟡 Active: the apply run's tailscale step FAILED again (log readable when the run completes, then fix in the same turn); PR 1286 checks running, merge on green, then fourth seed run receipt
+🔴 Blocked: kimi/deepseek vendor keys 401-dead (founder-held keys)
+⚪ Pending: Otto verification; lockdown control 2 (read-only OCI identity for laptops) and 3; 67-branch triage; the six read-only probe steps (cluster-state, catalogue-drift, automerge-stuck, science-facts, telemetry-coverage, alert-drill) fail on every apply run since at least 12:42Z, pre-existing, logs after the run
+🔧 TOUCHES: idp branch fix/boardroom-seed-chartid (PR 1286); cluster reads only (kubectl exec used once to read Superset source in the web pod)
+🔀 OVERLAP: three subagents of this session on feat/portal-wave-land, fix/superset-features, feat/hermes-v2-flux-road
+📎 FACTS: Superset 6.1 dashboard import needs meta.chartId on every CHART position node (any old id; mapped to the imported chart by uuid); fast-gate accepts a `Docs-exempt: <reason>` body line; job logs are unreadable through gh while the run is in progress
+📍 State: https://github.com/chidionyema/idp/pull/1286
+
+
+## 2026-09-03T17:00:18Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: founder asked for the research engine spec; a read-only search agent is sweeping the checkouts and crew docs for it
+🟢 Done: none this session (read-only so far)
+⚪ Pending: founder reads the spec once found
+🔧 TOUCHES: none
+🔀 OVERLAP: session d0a71e6b holds the idp lane; this session is read-only and touches nothing it owns
+📎 FACTS: none
+📍 State: https://github.com/chidionyema/crew/blob/main/docs/science/RESEARCH-GRADE.md
+
+
+## 2026-09-03T17:02:48Z · session d0a71e6b · lane idp
+🟢 Done: PR 1286 (chartId on every chart node) MERGED 5dff2de3; apply run 33780730463 read: the tag drift check worked, fell to road b, and road b died on 'no seed exists' (seed retired per decision 0010) — fixed as PR 1287 (self road: the identity registers its tagged replacement with its own oauth_keys token and retires itself; refusal names the vendor answer and the one hand; 17 tests green)
+🟡 Active: PR 1287 checks, merge on green, then apply run re-dispatch and the tailscale step; fourth seed Job run watched for BOARDROOM-SEEDED
+🔴 Blocked: kimi/deepseek vendor keys 401-dead — the apply run's vendors step printed both refusals again (founder-held keys)
+⚪ Pending: Otto verification; lockdown controls 2 and 3; 67-branch triage; six read-only probe steps fail on every apply run (pre-existing, logs now readable in run 33780730463)
+🔧 TOUCHES: idp branch fix/tailscale-self-reregister (PR 1287); cluster reads only
+🔀 OVERLAP: session 85f840c5 is read-only on this lane (research engine spec search, touches nothing); three subagents of this session on feat/portal-wave-land, fix/superset-features, feat/hermes-v2-flux-road
+📎 FACTS: gh cannot read a job's log until the whole run completes; the seed road is dead by design once the identity answers, so any identity repair must ride the identity's own token
+📍 State: https://github.com/chidionyema/idp/pull/1287
+
+
+## 2026-09-03T17:13:45Z · session e83508bc · lane .claude
+🔴 Blocked: none
+🟡 Active: none
+🟢 Done: header/ribbon slice in this tree; live-matching preview at 59721267 on :3002
+⚪ Pending: iOS preview via LAN IP not localhost; email copy rewrite never committed
+🔧 TOUCHES: none
+🔀 OVERLAP: none
+📎 FACTS: none
+📍 State: http://192.168.0.192:3002/ (live copy); ports 3000/3001 are not live
 
