@@ -4640,3 +4640,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: ~/dev/code root is a git repo with NO remote (checkpoint commits die with the Mac, LAW 24); 20 worktrees carry dirty tracked edits (.wt-kini-spec 293 files since 08-26)
 📍 State: crew docs/audits/2026-09-03-unshipped-7day.md
 
+
+## 2026-09-03T10:36:52Z · session 54539261 · lane idp
+🟢 Done: founder ruling R76 captured + pushed (crew docs/r76-test-architect, 6e76562): tests are theatre, test architect owns strategy, fire-to-test reflex over; measured audit in the branch (idp tests/: 482 files, 2143 tests, 434 incident-reflex files = 90%, 1939 prose-pinning asserts). Also idp PR 1242 open (docs/provider-key-console-intake, 332b7d11): kimi git row removed so the console accepts his existing key, console intake documented (R75)
+🟡 Active: watching PR 1242 checks over REST; prune plan for the test estate WAITS on the founder's COMMIT — nothing deleted
+🔴 Blocked: none
+⚪ Pending: 1242 green → founder APPROVE (platform/**); R76 prune on his word; otto model wiring on his word
+🔧 TOUCHES: idp .wt-docs-keyintake (committed, pushed); crew docs branch pushed, worktree removed
+🔀 OVERLAP: R76 amends the LAW 45 reflex for every session — read docs/rulings/R76-test-architect-owns-test-strategy.md before writing any new test
+📎 FACTS: LiteLLM console refuses key-attach on config-defined rows ("defined in config"); a test per fire built 90% of idp tests/
+📍 State: https://github.com/chidionyema/idp/pull/1242 + crew branch docs/r76-test-architect
+
