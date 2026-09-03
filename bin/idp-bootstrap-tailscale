@@ -163,6 +163,9 @@ if [ -n "$fed_id" ] && seed_json=$(federated_exchange "$fed_id") && federated_ca
 else
   # outside the runner a refused identity cannot be repaired (the claims live on the runner); the refusal is printed above
   [ -z "$fed_id" ] || [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || exit 1
+  # an identity that exchanges but lacks a tag (drift, run 33780730463) holds oauth_keys itself: on the runner it
+  # re-registers itself with its own token when no seed exists, so the repair needs no hand (self road)
+  self_tok=$(jq -r '.access_token // empty' <<<"${seed_json:-}" 2>/dev/null || true); self_road=
   #    c) the seed pair handed in by the environment (oke-check apply reads repository secrets
   #       SEED_TAILSCALE_CLIENT_ID / SEED_TAILSCALE_CLIENT_SECRET, set once by bin/idp-set-root tailscale:
   #       one OAuth client with the single scope oauth_keys write); it is vaulted as `tailscale-seed`
@@ -173,9 +176,12 @@ else
     vault_pair "$SEED" || { vault_write "$SEED" "$cid" "$csec"; say ok "$SEED" "written from the environment; the repository secrets SEED_TAILSCALE_* may be deleted"; }
     cid=$TAILSCALE_SEED_CLIENT_ID; csec=$TAILSCALE_SEED_CLIENT_SECRET
   else
-    vault_pair "$SEED" || fail seed "${fed_id:+the federated identity $fed_id was refused (answer above) and }no seed exists to register the identity from code: the one hand, once, is bin/idp-set-root tailscale (or $0 --seed on a laptop)"
+    if ! vault_pair "$SEED"; then
+      [ -n "$self_tok" ] && [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || fail seed "${fed_id:+the federated identity $fed_id was refused (answer above) and }no seed exists to register the identity from code: the one hand, once, is bin/idp-set-root tailscale (or $0 --seed on a laptop)"
+      self_road=1; say "" federated "no seed in the vault; identity $fed_id re-registers itself with its own token (it holds oauth_keys)"
+    fi
   fi
-  seed_json=$(token_for "$cid" "$csec"); unset cid csec TAILSCALE_SEED_CLIENT_SECRET
+  [ -n "$self_road" ] || seed_json=$(token_for "$cid" "$csec"); unset cid csec TAILSCALE_SEED_CLIENT_SECRET self_tok
   if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
     # road b: register the federated identity from the runner's own claims, vault its id, exchange again
     stok=$(jq -r '.access_token // empty' <<<"$seed_json"); [ -n "$stok" ] || fail seed "the seed does not exchange for a token: $(jq -r '.message // .error // "no message"' <<<"$seed_json" | cut -c1-200)"
@@ -189,7 +195,7 @@ else
     body=$(jq -cn --arg i "$iss" --arg s "$subj" --arg d "estate-github-${GITHUB_REPOSITORY:-idp}" --argjson sc "$SCOPES" --arg t "$TAG" --arg ot "$OP_TAG" '{keyType:"federated",description:$d,scopes:($sc+["oauth_keys"]),tags:[$t,$ot],issuer:$i,subject:$s}')
     resp=$(curl -sS -H "Authorization: Bearer $stok" -H 'Content-Type: application/json' -d "$body" "$API/api/v2/tailnet/-/keys")
     new_fid=$(jq -r '.id // empty' <<<"$resp")
-    [ -n "$new_fid" ] || fail federated "POST /keys keyType=federated answered no id: $(jq -r '.message // .error // "no message"' <<<"$resp" | cut -c1-160)"
+    [ -n "$new_fid" ] || fail federated "POST /keys keyType=federated answered no id: $(jq -r '.message // .error // "no message"' <<<"$resp" | cut -c1-160)${self_road:+; the tagless identity may not register a tagged one itself: the one hand, once, is bin/idp-set-root tailscale}"
     vault_write tailscale-federated "$new_fid" none
     say ok federated "identity $new_fid registered from code: issuer $iss subject $subj scopes $(jq -r "join(\" \")" <<<"$SCOPES") oauth_keys tags $TAG $OP_TAG; vaulted as tailscale-federated"
     if [ -n "$fed_id" ] && [ "$fed_id" != "$new_fid" ]; then
