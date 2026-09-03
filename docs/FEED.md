@@ -4769,3 +4769,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: none
 📍 State: /Users/chidionyema/.claude/docs/founder/2026-09-03T1150Z-can-you-create-new-branch-annd-workong-tis-38cf2f2f.md ; /Users/chidionyema/dev/code/.wt-mumchimp-broadsheet
 
+
+## 2026-09-03T12:16:18Z · session 2c88870e · lane code
+🟢 Done: idp PR 1257 (fix/blueprint-waits-and-probes) got its architectural record docs/explanation/flux-tiers-never-wait-upward.md + mkdocs nav row at e2f02ab5 (vale error-level clean); the docs gate was the only real red, bdd red was derivative
+🟡 Active: watching 1257 checks on e2f02ab5; clusters/ + platform/ change so the merge is the founder's word, never an agent deploy
+🔴 Blocked: directive item 3 (drop the 15 git router rows) waits on a vault-seed run with entry router-rows; none exists since 2026-08-30
+⚪ Pending: cert-manager into its own Flux row so external-secrets stops waiting on edge (named follow-up, his word)
+🔧 TOUCHES: $S/wt-blueprint docs/explanation/flux-tiers-never-wait-upward.md mkdocs.yml; PR 1257
+🔀 OVERLAP: 54539261 holds the code lane (PR 1248/1254); a14fc078 on recover/metabase-dump; no branch of theirs touched
+📎 FACTS: vale needs 'vale sync' locally before it grades (Microsoft package); zsh has no PIPESTATUS, use a file for the rc
+📍 State: https://github.com/chidionyema/idp/pull/1257
+
