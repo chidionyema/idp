@@ -3,9 +3,10 @@ login drill graded the shell, not the page.
 
 Rule 1: no dynamic-plugin page override may put another page at "/catalog" or move the
 catalog off it (the 2026-08-26 override served the catalog at "/", so /catalog 404'd).
-Rule 2: the drill grades every published path on text of its own, so a rendered shell
-cannot pass for a page. Executes docs/prose/front-door-login-drill-live.feature scenario
-"Every published path renders its own content, not the shell around it (crew#307)".
+Rule 2: the drill grades every published path on answering: it loads, is not a client-side
+404 inside the shell, and throws no error (founder 2026-09-03: never on wording). Executes
+docs/prose/front-door-login-drill-live.feature scenario
+"Every published path answers (crew#307)".
 """
 import ast
 import pathlib
@@ -36,9 +37,9 @@ def test_incident_crew307_drill_grades_every_published_path():
     assert block, "drill lost its PUBLISHED table"
     published = ast.literal_eval("(" + block.group(1) + ")")
     assert len(published) >= 9
-    for path, must_see in published:
-        assert must_see.startswith("text=") and len(must_see) > len("text=x"), path
-    assert "catalog" in dict(published)
+    for path in published:
+        assert isinstance(path, str) and re.fullmatch(r"[a-z][a-z-]*", path), path
+    assert "catalog" in published
     assert "published paths broken" in src
 
 
@@ -87,15 +88,11 @@ def test_incident_crew307_material_table_keeps_its_own_uuid():
     assert '"uuid@npm:^3.4.0":' in lock
 
 
-def test_incident_crew307_no_drill_row_expects_a_backstage_1x_heading():
-    """crew#307: docs was graded on 'Documentation' and create on 'Create a new component',
-    both Backstage 1.x headings the new frontend no longer renders. Run 33010230737 read
-    8/9 with only docs red for that reason."""
-    import ast
+def test_incident_crew307_no_drill_row_grades_wording():
+    """Founder 2026-09-03: copy moves all the time and a checker pinning it broke a working
+    page (#1191). The drill grades a path on answering; no row carries expected text."""
     src = (ROOT / "bin" / "idp-login-drill").read_text()
     block = re.search(r"PUBLISHED = (\((?:.|\n)*?\n    \))", src)
     assert block, "PUBLISHED tuple not found"
-    rows = dict(ast.literal_eval(block.group(1)))
-    retired_1x = {"text=Documentation", "text=Create a new component"}
-    assert not retired_1x & set(rows.values()), rows
-    assert rows["docs"] == "text=Owned"
+    assert "text=" not in block.group(1)
+    assert "must_see" not in src
