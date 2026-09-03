@@ -41,3 +41,18 @@ The session's restart hook printed `[estate-state] BLIND: get_estate_state could
 (TimeoutError)` and the session carried on from a cached copy. Under this ruling that is a stop,
 not a warning. The gate is the relay itself: when the read fails, the relay must refuse the
 session, not print a line nobody reads (LAW 28, LAW 44).
+
+## Next version, planned 2026-09-03 04:2xZ, awaiting the founder's go
+
+Founder: "it could contain more useful info" and "and any recent decision or changes". Seven
+additions to the same document, same tool:
+
+1. Vendor roots: each SEED secret's last-set time and the last apply run's verdict per vendor, in the vendor's words.
+2. Router lanes: each model alias with its last measured answer and time.
+3. Open pull requests per repo, with check state and merge state.
+4. The founder's open blockers: every action sent to him and not yet answered, and the word each waits for.
+5. Last apply run: the failing step and its line.
+6. Incidents in the last 24 hours, with their signature.
+7. Recent decisions and changes: founder rulings and decision records made in the last 24 hours, and every merge to main in that window (repo, commit, title), so a session knows what moved since the last time anyone looked.
+
+Gate: the start-up relay refuses a blind session. Budget: the producer run stays under two minutes.
