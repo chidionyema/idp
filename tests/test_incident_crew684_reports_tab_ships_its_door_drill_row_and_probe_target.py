@@ -50,12 +50,29 @@ def test_probe_target_is_not_a_selector():
         assert banned not in drill_line
 
 
-def test_publish_jobs_force_the_add_past_the_state_branch_ignore():
-    """Run 33701059541 (2026-09-03): the first real publish on main died at `git add
-    docs/reports` because the STATE BRANCH's .gitignore holds `reports/` -- a rule written for
-    locally rendered reports that also swallows the published ones. The job checkouts
-    state/live-diagram, so main's .gitignore never applies; only a forced add lands the report.
-    The class (LAW 45): a writer graded green on a branch whose ignore rules it never met."""
+def test_no_ignore_rule_reaches_the_published_reports():
+    """Founder ruling 2026-09-03: production publishing must never depend on a repo hygiene
+    file. Runs 33701059541 and 33704425141 died at `git add docs/reports` because an
+    UNANCHORED `reports/` rule (written for bin/supply-chain SBOM output at the repo root)
+    also matched the published Reports pages -- on main and on the state branch's own copy.
+    The first fix (-f at each call site) was refused as a future headache: every new
+    publisher forgets it. The property graded here is the root one: no ignore rule may
+    match the published path, and no publisher may need force to land it."""
+    rules = [
+        ln.strip()
+        for ln in (ROOT / ".gitignore").read_text().splitlines()
+        if ln.strip() and not ln.strip().startswith("#")
+    ]
+    # the SBOM rule stays, anchored to the root so it can never swallow docs/reports
+    assert "/reports/" in rules
+    matching = [
+        r
+        for r in rules
+        if r.rstrip("/").lstrip("/") == "reports" and not r.startswith("/")
+    ]
+    assert not matching, (
+        f"unanchored rule(s) {matching} would swallow docs/reports again"
+    )
     for wf in ("estate-state.yml", "estate-inventory.yml"):
         text = (ROOT / ".github" / "workflows" / wf).read_text()
         adds = [
@@ -65,4 +82,12 @@ def test_publish_jobs_force_the_add_past_the_state_branch_ignore():
             f"{wf} no longer publishes docs/reports; update this test with the mover"
         )
         for ln in adds:
-            assert "git add -f docs/reports" in ln, (wf, ln)
+            assert "add -f" not in ln, (
+                wf,
+                "a forced add hides an ignore rule instead of removing it",
+                ln,
+            )
+    render = (ROOT / "bin" / "catalog-render").read_text()
+    assert '"add", "-f"' not in render, (
+        "a forced add hides an ignore rule instead of removing it"
+    )

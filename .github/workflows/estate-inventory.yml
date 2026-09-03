@@ -198,7 +198,7 @@ jobs:
               jq --slurpfile e "$frag" '.reports = (((.reports // []) | map(select(.id != $e[0].id))) + $e | sort_by(.id)) | .updated_at = (now | todate)' docs/reports/index.json > docs/reports/index.json.new
               mv docs/reports/index.json.new docs/reports/index.json
             done
-            git add -f docs/reports  # -f: the state branch .gitignore (reports/) swallows the path (run 33701059541)
+            git add docs/reports
           fi
           if git diff --cached --quiet; then echo "ok      inventory  state branch already holds this table"; exit 0; fi
           git commit -q -m "docs(inventory): estate inventory from the control planes, run $GITHUB_RUN_ID (crew#740)"

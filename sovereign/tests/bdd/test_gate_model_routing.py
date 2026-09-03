@@ -103,10 +103,6 @@ def env_refs(secret_name: str) -> None:
     assert "envFrom" not in spec["containers"][0]
     refs = set(re.findall(r"os\.environ/([A-Z_]+)", (CLUSTER / "config.yaml").read_text()))
     documented = set(re.findall(r"([A-Z_]+_KEY)=\1", (CLUSTER / "external-secret.yaml").read_text()))
-    # Secrets minted in-cluster, never held upstream (redis.yaml): the rewrite template names
-    # the env the pod reads, so the template set is that documentation — the same rule
-    # tests/test_llm_row.py grades from the platform side.
-    documented |= set(re.findall(r'transform:\s*\{\s*template:\s*"([A-Z_]+)"', (CLUSTER / "redis.yaml").read_text()))
     assert refs == documented, refs ^ documented
 
 

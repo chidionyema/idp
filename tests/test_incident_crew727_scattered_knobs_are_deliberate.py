@@ -62,10 +62,6 @@ TIMEOUT_EXCEPTIONS = {
 # hermes-agent-webhook: the Telegram webhook secret token, generated once like the a2a bearer;
 # a rotation under a running gateway is a deliberate change (gateway.yaml, crew#736).
 REFRESH_EXCEPTIONS = {
-    # litellm-cache: the value is MINTED by a Password generator, not read from the vault; a
-    # refresh mints a NEW password and strands the running Redis on the old one. 0h = once,
-    # stable, rotated only by deleting the Secret (docs/onboarding/litellm-redis.md).
-    "litellm-cache": "0h",
     "hermes-agent-a2a": "0",
     "hermes-agent-env": "45m",
     "hermes-agent-webhook": "0",
