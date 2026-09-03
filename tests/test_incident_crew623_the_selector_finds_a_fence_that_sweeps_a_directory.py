@@ -18,7 +18,9 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-GREP_Q_FENCE = "tests/test_incident_a_script_under_bin_pipes_into_grep_q.py"
+# The grep -q fence this file originally proved against was deleted under R76 (its asserts
+# were pure string pins; the pipe-exit-code class is guarded by shell-strict hooks now).
+# The sweeper-selection property is proved against the surviving directory-sweeping fence.
 TMP_FENCE = "tests/test_incident_crew458_readonly_root_needs_a_writable_tmp.py"
 
 
@@ -32,10 +34,6 @@ def _selection(path: str) -> list:
     )
     assert out.returncode == 0, out.stdout + out.stderr
     return [line for line in out.stdout.splitlines() if line.endswith(".py")]
-
-
-def test_a_change_under_bin_selects_the_fence_that_sweeps_bin() -> None:
-    assert GREP_Q_FENCE in _selection("bin/idp-kyverno-dirs")
 
 
 def test_a_change_to_a_workload_selects_the_fence_that_sweeps_platform() -> None:
