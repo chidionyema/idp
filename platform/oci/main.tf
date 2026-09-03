@@ -9,7 +9,7 @@ module "oke" {
   region         = var.region
 
   # Basic cluster: no control-plane charge (ADR 0004 decision 1).
-  cluster_name       = var.cluster_name # crew#220 hand step 2: a drill cluster is the same module under another name
+  cluster_name       = "estate"
   cluster_type       = "basic"
   kubernetes_version = var.kubernetes_version
   cni_type           = "flannel"

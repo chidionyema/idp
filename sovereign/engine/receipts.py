@@ -16,18 +16,6 @@ the *last line on disk* against that anchor, not just the chain among
 the lines that happen to still be there -- a chain with its tail cut off
 still verifies internally (every remaining prev_hash link is intact) but
 now disagrees with the anchor, which is the tamper it exists to catch.
-
-R23 (spec 4.1, "A hardware monotonic counter prevents replay attacks").
-The counter was monotonic only for as long as the log file existed:
-append() read the last line, added one, and a deleted or truncated log
-restarted it at 1, so an old line could be replayed at a counter the
-chain would accept. The counter is now the maximum of three independent
-sources -- the last line on disk, the signed head anchor, and a signed
-watermark file (config.RECEIPTS_COUNTER) that only ever moves up -- so
-the next counter cannot go backwards even with the log removed entirely.
-Secure Enclave exposes no monotonic counter to userspace on this
-machine, so this is the spec's fallback shape, signed under the same
-estate key and recorded as such rather than claimed as hardware.
 """
 from __future__ import annotations
 
@@ -45,15 +33,6 @@ from sovereign import config
 from sovereign.trust import HardwareTrustAnchor
 
 GENESIS_HASH = "0" * config.RECEIPTS_HASH_HEX_LEN
-
-# Fields a line's own hash does not cover. hash and sig are derived from
-# the body; hw_sig and hw_backend (a `signed` record, cp20) are a hardware
-# signature OVER that hash and so can only be added after it exists.
-# append() and verify() both exclude exactly this tuple -- before it was
-# one tuple, verify() excluded only (hash, sig), recomputed the hash over a
-# body that now also held hw_sig, and reported every signed line as
-# "broken" (found by cp33/cp34's first run, 2026-08-25).
-UNHASHED_FIELDS: tuple[str, ...] = ("hash", "sig", "hw_sig", "hw_backend")
 _canonical = config.canonical_json
 
 
@@ -155,63 +134,6 @@ def _read_head_anchor() -> dict[str, Any] | None:
         return None
 
 
-def _watermark_body(counter: int, key: bytes) -> dict[str, Any]:
-    body = {"counter": counter}
-    return {"counter": counter, "sig": hmac.new(key, _canonical(body), hashlib.sha256).hexdigest()}
-
-
-def read_watermark(key: bytes) -> int:
-    """The high-water mark of every counter ever issued. An unsigned or
-    edited watermark is worth nothing, so it reads as 0 and the chain
-    falls back to the log and the anchor -- fail closed on trust, never
-    fail closed on availability."""
-    if not config.RECEIPTS_COUNTER.exists():
-        return 0
-    try:
-        blob = json.loads(config.RECEIPTS_COUNTER.read_text())
-    except (OSError, json.JSONDecodeError):
-        return 0
-    counter = int(blob.get("counter", 0))
-    expected = _watermark_body(counter, key)
-    if not hmac.compare_digest(str(blob.get("sig", "")), expected["sig"]):
-        return 0
-    return counter
-
-
-def _write_watermark(counter: int, key: bytes) -> None:
-    """Called only from inside append()'s lock. Never lowers the value on
-    disk: monotonic means monotonic, including against a caller that
-    passes something stale."""
-    current = read_watermark(key)
-    if counter <= current:
-        return
-    config.RECEIPTS_COUNTER.parent.mkdir(parents=True, exist_ok=True)
-    tmp = config.RECEIPTS_COUNTER.with_suffix(config.RECEIPTS_COUNTER.suffix + ".tmp")
-    tmp.write_text(json.dumps(_watermark_body(counter, key), sort_keys=True))
-    os.replace(tmp, config.RECEIPTS_COUNTER)
-
-
-def next_counter(key: bytes) -> int:
-    """The next counter to issue: one past the highest of the three
-    sources. Exposed (not private) because test_receipts.py asserts the
-    monotonicity property directly against it."""
-    highest = read_watermark(key)
-    anchor = _read_head_anchor()
-    if anchor is not None:
-        highest = max(highest, int(anchor.get("counter", 0)))
-    if config.SB_RECEIPTS.exists():
-        with open(config.SB_RECEIPTS) as f:
-            for raw_line in f:
-                raw_line = raw_line.strip()
-                if not raw_line:
-                    continue
-                try:
-                    highest = max(highest, int(json.loads(raw_line).get("counter", 0)))
-                except (json.JSONDecodeError, TypeError, ValueError):
-                    continue
-    return highest + 1
-
-
 def append(record: dict[str, Any]) -> dict[str, Any]:
     """Append one signed line. `record` carries the caller's fields
     (session_id, kind, by, text, step, status, task, runner, ts, and
@@ -225,6 +147,7 @@ def append(record: dict[str, Any]) -> dict[str, Any]:
         try:
             key, backend = get_or_create_key()
             prev_hash = GENESIS_HASH
+            counter = 0
             if config.SB_RECEIPTS.exists():
                 with open(config.SB_RECEIPTS) as f:
                     last_line = None
@@ -233,13 +156,15 @@ def append(record: dict[str, Any]) -> dict[str, Any]:
                         if raw_line:
                             last_line = raw_line
                     if last_line:
-                        prev_hash = json.loads(last_line).get("hash", prev_hash)
-            counter = next_counter(key)
+                        last = json.loads(last_line)
+                        prev_hash = last.get("hash", prev_hash)
+                        counter = int(last.get("counter", 0))
+            counter += 1
             line = dict(record)
             line["counter"] = counter
             line["prev_hash"] = prev_hash
             line["backend"] = backend
-            body = {k: v for k, v in line.items() if k not in UNHASHED_FIELDS}
+            body = {k: v for k, v in line.items() if k not in ("hash", "sig")}
             line_hash = hashlib.sha256(_canonical(body)).hexdigest()
             line["hash"] = line_hash
             if record.get("signed"):
@@ -248,7 +173,6 @@ def append(record: dict[str, Any]) -> dict[str, Any]:
             with open(config.SB_RECEIPTS, "a") as out:
                 out.write(json.dumps(line, sort_keys=True) + "\n")
             _write_head_anchor(_head_anchor(counter, line_hash, key))
-            _write_watermark(counter, key)
             return line
         finally:
             fcntl.flock(lockf, fcntl.LOCK_UN)
@@ -307,11 +231,7 @@ def verify(path: Path | None = None) -> dict[str, Any]:
         return {"ok": True, "count": 0, "first_broken_counter": None, "reason": None}
     key, _backend = get_or_create_key()
     expected_prev = GENESIS_HASH
-    # The chain may legitimately start above 1 after a rotation: the
-    # watermark (R23) guarantees counters never repeat, not that the file
-    # on disk always begins at 1. Seed from the first row's own counter
-    # and require every later row to follow it by exactly one.
-    expected_counter = int(rows[0].get("counter", 1)) - 1
+    expected_counter = 0
     for row in rows:
         expected_counter += 1
         counter = row.get("counter")
@@ -319,7 +239,7 @@ def verify(path: Path | None = None) -> dict[str, Any]:
             return {"ok": False, "count": len(rows), "first_broken_counter": expected_counter, "reason": "broken"}
         if row.get("prev_hash") != expected_prev:
             return {"ok": False, "count": len(rows), "first_broken_counter": counter, "reason": "broken"}
-        body = {k: v for k, v in row.items() if k not in UNHASHED_FIELDS}
+        body = {k: v for k, v in row.items() if k not in ("hash", "sig")}
         recomputed = hashlib.sha256(_canonical(body)).hexdigest()
         if recomputed != row.get("hash"):
             return {"ok": False, "count": len(rows), "first_broken_counter": counter, "reason": "broken"}

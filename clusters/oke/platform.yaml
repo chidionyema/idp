@@ -1,6 +1,6 @@
 # ADR 0004 step 3. `flux bootstrap github --path clusters/oke` writes flux-system/ beside this
-# file; everything below is what Flux then reconciles. Secrets reach the
-# cluster from OCI Vault through External Secrets (platform/secret-store); no sops key in cluster.
+# file; everything below is what Flux then reconciles. Secrets are sops+age files decrypted in
+# cluster by the `sops-age` Secret that bin/idp-flux-bootstrap creates from the vault key.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -13,14 +13,12 @@ spec:
     name: flux-system
   path: ./platform/backstage/overlays/oke
   prune: true
-  postBuild:
-    substituteFrom:
-      # ESTATE_ZONE (idp#140): the zone is one value in clusters/oke/estate-config.yaml; not
-      # optional, a missing ConfigMap must fail the row rather than publish '${ESTATE_ZONE}'.
-      - kind: ConfigMap
-        name: estate-config
   wait: true
   timeout: 5m
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -30,100 +28,14 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: chaos-mesh
-  namespace: flux-system
-spec:
-  interval: 10m
-  dependsOn:
-    - name: backstage
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-  path: ./platform/chaos/mesh
-  prune: true
-  wait: true
-  timeout: 10m
-  healthChecks:
-    - apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      name: chaos-mesh
-      namespace: chaos-mesh
----
-# The schedules. Split from the install (incident 2026-08-25): Flux dry-runs a row as one
-# unit, and a Schedule cannot be dry-run before chaos-mesh.org CRDs exist.
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: chaos
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 1h
   dependsOn:
-    - name: chaos-mesh
+    - name: backstage
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/chaos
   prune: true
----
-# crew#258 CP2: SigNoz, the one metrics/traces/logs store (crew/docs/STANDARDS.md "Observability").
-# Ordered after backstage so the portal keeps first claim on the single node's CPU.
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: observability
-  namespace: flux-system
-spec:
-  # Suspended on 2026-08-25: the canary ran (clickhouse, signoz, operator Ready) and took the node
-  # from 1270m to 1830m requested, which left Backstage postgres Pending on CPU. It comes back when
-  # the node pool grows (platform/oci, founder decision R14, code-c1) by flipping this one line.
-  suspend: true
-  # 10m so a broken workload is reported within ten minutes (tests/test_incident_backstage_17h_unreported.py).
-  # After unsuspend the HelmRelease has a 15m timeout, so a cold ClickHouse shows "not ready" for the
-  # first two ticks; that is the install, not an incident (code-37, 2026-08-25).
-  interval: 10m
-  dependsOn:
-    - name: backstage
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-  path: ./platform/observability
-  prune: true
-  wait: true
-  timeout: 20m
-  healthChecks:
-    - apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      name: signoz
-      namespace: observability
----
-# The estate's one login (ADR 0007, crew#269). After edge (Gateway, cert-manager, Traefik CRD
-# provider) and secret-store (the vault). Health-checked at 10m like every other row.
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: identity
-  namespace: flux-system
-spec:
-  interval: 10m
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-  path: ./platform/identity
-  prune: true
-  dependsOn:
-    - name: edge
-    - name: secret-store
-  wait: true
-  timeout: 10m
-  healthChecks:
-    - apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      name: oauth2-proxy
-      namespace: identity
-  postBuild:
-    substituteFrom:
-      # ESTATE_ZONE (idp#140): the zone is one value in clusters/oke/estate-config.yaml; not
-      # optional, a missing ConfigMap must fail the row rather than publish '${ESTATE_ZONE}'.
-      - kind: ConfigMap
-        name: estate-config

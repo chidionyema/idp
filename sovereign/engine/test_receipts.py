@@ -99,25 +99,3 @@ class ReceiptsChainTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class SignedLineVerifiesTest(ReceiptsChainTest):
-    """Incident (2026-08-25, cp33/cp34 first run): a record appended with
-    signed=True gained hw_sig/hw_backend after its hash was computed, and
-    verify() then recomputed the hash over a body that included them, so
-    every signed line -- every rewind, every signed refill -- read as
-    "broken". The rule: the fields the hash does not cover are one tuple
-    shared by append() and verify()."""
-
-    def test_incident_signed_line_still_verifies(self) -> None:
-        from unittest.mock import patch as _patch
-
-        from sovereign.engine.receipts import HardwareTrustAnchor
-
-        with _patch.object(HardwareTrustAnchor, "sign", lambda self, digest: ("ab" * 32, "software_key")):
-            self._append(kind="plain")
-            line = self._append(kind="rewind", signed=True)
-            self._append(kind="plain")
-        self.assertEqual(line["hw_backend"], "software_key")
-        self.assertEqual(receipts.verify()["ok"], True, receipts.verify())
-

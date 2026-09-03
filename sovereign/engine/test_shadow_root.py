@@ -31,12 +31,7 @@ class ShadowRootTestBase(unittest.TestCase):
         for name, val in (
             ("SB_RECEIPTS", root / "receipts.jsonl"),
             ("RECEIPTS_HEAD", root / "receipts.head"),
-            ("RECEIPTS_COUNTER", root / "receipts.counter"),
             ("SHADOW_HEADS_DIR", self.heads_dir),
-            # R15: the DAG root moves with the heads dir or dag.write_head
-            # refuses the head, which is the guard doing its job.
-            ("SIDECAR_DAG_DIR", self.dag_dir),
-            ("INTERVENTIONS_DIR", root / "interventions"),
         ):
             p = patch.object(config, name, val)
             p.start()

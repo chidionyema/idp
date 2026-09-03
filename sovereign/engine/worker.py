@@ -1,5 +1,5 @@
 """The sovereign worker: one Temporal Worker process, polling the sovereign
-task queue for SessionWorkflow tasks and its activities. Restarting
+task queue for SessionWorkflow tasks and its three activities. Restarting
 this process (or SIGKILL-ing it) never loses a session -- cp1, cp2.
 """
 from __future__ import annotations
@@ -57,7 +57,7 @@ async def run_worker() -> None:
         client,
         task_queue=config.TEMPORAL_TASK_QUEUE,
         workflows=[SessionWorkflow],
-        activities=[activities.run_step, activities.append_receipt, activities.notify_change, activities.budget_op],
+        activities=[activities.run_step, activities.append_receipt, activities.notify_change],
     )
     log.info(
         "sovereign worker starting: address=%s namespace=%s task_queue=%s",
