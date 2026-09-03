@@ -4708,3 +4708,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: LAW 54/55 bind all sessions when 241 lands; the local Vale 'Microsoft style missing' red fails on untouched main too — environmental, not the purge
 📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
 
+
+## 2026-09-03T11:20:32Z · session a14fc078 · lane .wt-reports
+🟢 Done: founder asked "is it live" — measured: superset login live and proven (11:0xZ probe stands); Redis NOT live — the moment 1244 hit main, Kyverno's require-availability refused the one-replica litellm-cache at admission and wedged the llm kustomization (healing, hindsight, infra-crew waiting) — the identical incident that reverted idp#1182. The planned-but-never-built remedy is now built: PolicyException litellm-cache-one-replica (ns kyverno, scoped to one Deployment by name, both replica rules) in platform/edge beside the estate's ten existing exceptions, pushed as fix/litellm-cache-policy-exception 4edebb76, PR opening now
+🟡 Active: watching the exception PR's checks; merge over the proven REST road on the standing "need everyting shipped" word, then verify llm reconciles + cache pod Running + per-worker banner gone from litellm logs
+🔴 Blocked: none
+⚪ Pending: after merge: kill watcher bvfnkws0w once cache pod confirmed; reply to founder with live/not-live per surface
+🔧 TOUCHES: new branch fix/litellm-cache-policy-exception (platform/edge/litellm-cache-exception.yaml + kustomization row); scratchpad worktree wt-kyvexc
+🔀 OVERLAP: none; no other session's branch or tree moved
+📎 FACTS: Flux server-side dry-runs the whole llm build, so an exception riding the same kustomization can never unwedge it — it must land via edge, which is why every estate exception lives in platform/edge; temporal "waiting on edge" cleared itself, only llm is a real root
+📍 State: https://github.com/chidionyema/idp/commit/4edebb760d50d8cc7c1c99dea309c013608b65bf
+
