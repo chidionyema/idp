@@ -48,3 +48,21 @@ def test_probe_target_is_not_a_selector():
     )
     for banned in ("data-testid", "css=", "xpath", "#", ".Mui"):
         assert banned not in drill_line
+
+
+def test_publish_jobs_force_the_add_past_the_state_branch_ignore():
+    """Run 33701059541 (2026-09-03): the first real publish on main died at `git add
+    docs/reports` because the STATE BRANCH's .gitignore holds `reports/` -- a rule written for
+    locally rendered reports that also swallows the published ones. The job checkouts
+    state/live-diagram, so main's .gitignore never applies; only a forced add lands the report.
+    The class (LAW 45): a writer graded green on a branch whose ignore rules it never met."""
+    for wf in ("estate-state.yml", "estate-inventory.yml"):
+        text = (ROOT / ".github" / "workflows" / wf).read_text()
+        adds = [
+            ln for ln in text.splitlines() if "git add" in ln and "docs/reports" in ln
+        ]
+        assert adds, (
+            f"{wf} no longer publishes docs/reports; update this test with the mover"
+        )
+        for ln in adds:
+            assert "git add -f docs/reports" in ln, (wf, ln)
