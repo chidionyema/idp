@@ -1,6 +1,0 @@
-# prose.yml grades the human fields of the YAML surfaces with pytest.
-# pytest-xdist because pyproject.toml sets addopts = "-n auto": pytest reads that in every
-# environment, and an environment without the plugin dies at argument parsing.
-pytest
-pytest-xdist
-pyyaml

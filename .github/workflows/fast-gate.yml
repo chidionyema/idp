@@ -11,17 +11,36 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # Founder mandate 2026-09-03 (the CI purge): a commit authored by a bot or an
+      # estate agent skips this gate whole — the job still reports green so every
+      # `needs: fast-gate` job downstream runs.
+      - name: bot exemption
+        id: actor
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          case "${PR_AUTHOR:-$ACTOR}" in
+            *'[bot]'|estate-agent*) echo "bot=1" >> "$GITHUB_OUTPUT"; echo "bot/agent author (${PR_AUTHOR:-$ACTOR}): fast-gate skipped";;
+            *) echo "bot=0" >> "$GITHUB_OUTPUT";;
+          esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.actor.outputs.bot != '1'
         with: { fetch-depth: 0 }   # python-strict grades the range base...HEAD
       # The estate Python standard (crew#620 CP4, founder 2026-08-29 "platform wide"): the SAME file
       # every Mac runs as a commit hook, so CI and the hook can never disagree (one copy, LAW 43).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.actor.outputs.bot != '1'
         with: { repository: chidionyema/estate, path: .estate-hooks }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: steps.actor.outputs.bot != '1'
         with: { python-version: "3.12", cache: pip, cache-dependency-path: sovereign/requirements*.txt }
-      - run: pip install -q ruff==0.15.18 pyyaml   # pyyaml: the hardcode and pipeverdict rungs; ruff: the pin ci.yml's bdd job uses; shellcheck ships on ubuntu-latest
-      - run: IDP_CI_FAST=1 bin/idp-ci
+      - if: steps.actor.outputs.bot != '1'
+        run: pip install -q ruff==0.15.18 pyyaml   # pyyaml: the hardcode and pipeverdict rungs; ruff: the pin ci.yml's bdd job uses; shellcheck ships on ubuntu-latest
+      - if: steps.actor.outputs.bot != '1'
+        run: IDP_CI_FAST=1 bin/idp-ci
       - name: python-strict (estate standard, one copy)
+        if: steps.actor.outputs.bot != '1'
         run: |
           base=$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse HEAD~1)
           PYTHON_STRICT_RANGE="${base}...HEAD" .estate-hooks/guards/hooks/python-strict-default
@@ -32,7 +51,7 @@ jobs:
       # PRs opened before 2026-09-01 warn only; bot PRs (image updates, dependabot) are exempt;
       # a PR body line "Docs-exempt: <reason>" is the LAW 38 escape valve and is printed loud.
       - name: no docs, no merge
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.actor.outputs.bot != '1'
         env:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           PR_CREATED: ${{ github.event.pull_request.created_at }}
