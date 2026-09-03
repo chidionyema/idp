@@ -3,26 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-01T11:23:28Z · session a2aed3c9 · lane idp
-🟡 crew#768: correction — Otto v1 image main-56-78e54b5 DID roll out (hermes-agent Kustomization 05:12Z configured, 05:17Z health check passed, revision 843868bd); Kyverno EOF at 05:01Z was transient. Sole blocker is the edge certificate: otto.mumchimp.com serves the Traefik default cert; three cm-acme-http-solver pods in prospector since 00:15Z = HTTP-01 challenges stuck, not missing; cause needs the founder to read Challenge and Order status in namespace prospector (bin/idp-kube path)
-🟢 Done: board corrected (crew#768 two comments); founder doc 2026-09-01T1117Z captured; solver parentRef read from git (sectionName: http, same mechanism that issued 08-27 names)
-⚪ Pending: founder reads challenge status and restarts Kyverno if it is the refuser; session 54539261 owns the Telegram door thread; class fix bin/idp-image-update-pr:28 Control line waits on his word
-🔧 TOUCHES: crew#768 comments only; no git, no cluster, no dispatch
-🔀 OVERLAP: a14fc078 holds lane code; 54539261 on the Telegram door (run 33500103107); ef0354ef holds crew#729
-📎 FACTS: https://github.com/chidionyema/idp/actions/runs/33472999435
-📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
-
-
-## 2026-09-01T11:24:23Z · session 54539261 · lane code
-🟢 Telegram (Otto) outage root cause found and fix pushed: prospector branch fix/edge-drop-listeners-without-dns at 1b053318 removes the https-alertmanager and https-prometheus listeners (crew#684, 08-30) whose idp HTTPRoutes never merged, so external-dns published no DNS for them and the one shared certificate prospector-edge-tls (all listeners in one cert-manager order) has failed HTTP-01 since 08-30; otto.mumchimp.com therefore serves the Traefik placeholder certificate and Telegram delivers nothing; the webhook server itself is up (GET /telegram 405, POST 403 through the edge)
-🟡 Active: founder merges the branch (his deploy; agents never deploy); after Flux applies, cert-manager re-orders with 11 resolvable names and Telegram resumes; FOUNDER ACTION pinned on Telegram
-⚪ Pending: the two listeners return with their routes (idp branch feat/crew684-alertmanager-and-prometheus-have-a-door); follow-up class guard: one certificate per listener hostname so one dead name can never block the rest; catalog gap: estate MCP has no hermes-agent entity
-🔧 TOUCHES: prospector deploy/k8s/base/edge.yaml, tests/unit/test_edge_platform_listeners.py on branch fix/edge-drop-listeners-without-dns (worktree .wt-edge-dead-listeners); checkpoints/LATEST.md; nothing on main, nothing on the cluster
-🔀 OVERLAP: a14fc078 holds lane code; a2aed3c9 (crew#768) found the same placeholder certificate, told on the issue; ef0354ef (crew#729); nobody else on prospector edge.yaml
-📎 FACTS: https://github.com/chidionyema/prospector/compare/main...fix/edge-drop-listeners-without-dns
-📍 METER: 2026-09-01 $197.26 880 req $0.224/req transport 83% | fable-5 100%, opus-5 0% (crew#26)
-
-
 ## 2026-09-01T11:38:13Z · session a14fc078 · lane .wt-crew612-phone
 🟢 crew#612: idp#1107 is green (23 checks passed, 0 failed, pr-evidence check passes) at 0fe6c896: phone menu slides in from the left (Material Drawer), "/" is Backstage's own home page (plugin-home 0.9.9, ten doors as the toolkit), god view parked at /estate and registered as founder-surface link + probe target, drill photographs the phone every hour and counts Templates
 🟡 Active: nothing; the founder merges and deploys (agents never merge or deploy); the hourly login drill's phone photographs are the proof after deploy
@@ -4718,4 +4698,15 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: none; no other session's branch or tree moved
 📎 FACTS: Flux server-side dry-runs the whole llm build, so an exception riding the same kustomization can never unwedge it — it must land via edge, which is why every estate exception lives in platform/edge; temporal "waiting on edge" cleared itself, only llm is a real root
 📍 State: https://github.com/chidionyema/idp/commit/4edebb760d50d8cc7c1c99dea309c013608b65bf
+
+
+## 2026-09-03T11:35:05Z · session 2c88870e · lane code
+🟢 Done: founder "yes"+"both quickly" → (b) prospector PR 812 (fix/nltk-advisory-scope 5f84fcad): the dependency scan ignores GHSA-8mgp-746c-j5xp only while the frozen line is exactly nltk==3.10.3 (PorterStemmer only), ignore retires itself; CI running. (a) idp branch feat/router-rows-console-owned in scratchpad worktree: bin/idp-router-rows-to-console (copies every git lane into the LiteLLM console via /model/new with the vault key, idempotent, prints no value) + vault-seed entry router-rows + 4-test suite green + doc section
+🟡 Active: vault-seed-grading suites running (task bi6p5uen0), then commit, push, PR; founder runs vault-seed entry router-rows; follow-up change removes the git rows
+🔴 Blocked: none
+⚪ Pending: llm Kustomization wedged by litellm-cache Kyverno refusal (a14fc078 owns the fix); nothing in llm applies until it clears
+🔧 TOUCHES: $S/idp-router (bin/idp-router-rows-to-console, tests/test_router_rows_to_console.py, .github/workflows/vault-seed.yml, docs/how-to/onboarding/litellm.md); prospector .wt-crew774-store branch fix/nltk-advisory-scope
+🔀 OVERLAP: 54539261 holds the code lane (PR 1248 purge, PR 1242 merged on the founder word 11:00Z); no branch of theirs touched
+📎 FACTS: LiteLLM v1.98.0 resolves litellm_credential_name once at row add (router.py _create_deployment) and a credential PATCH only refreshes the in-memory list, so a git row naming a console credential keeps its old key until a restart; console-owned rows are the only live-editable road
+📍 State: https://github.com/chidionyema/prospector/pull/812
 
