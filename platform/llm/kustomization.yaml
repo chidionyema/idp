@@ -5,6 +5,7 @@ resources:
   - namespace.yaml
   - external-secret.yaml
   - postgres.yaml
+  - redis.yaml
   - litellm.yaml
   - availability.yaml
   - httproute.yaml
