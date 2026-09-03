@@ -36,7 +36,8 @@ router serves right now, including anything added in the console.
 ## Bringing a new provider's key (the console, nothing else)
 
 This is the credential intake an enterprise operator gets, and so it is the one the founder
-gets (ruling R75, 2026-09-03): no terminal, no repository secret, no fresh key when one
+gets ([the founder is enterprise client zero](../../reference/policy/enterprise-client-zero.md),
+across the board, not only here): no terminal, no repository secret, no fresh key when one
 exists. Steps read from LiteLLM's own model-management page
 (docs.litellm.ai/docs/proxy/model_management, read 2026-09-03):
 

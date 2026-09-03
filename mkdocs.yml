@@ -9,6 +9,7 @@ hooks:
 nav:
   - Home: index.md
   - Definition of Done: reference/policy/definition-of-done.md
+  - The founder is enterprise client zero: reference/policy/enterprise-client-zero.md
   - Notification channels: reference/policy/notification-channels.md
   - Incident register: reference/incident-register.md
   - Documentation policy: reference/policy/documentation.md
