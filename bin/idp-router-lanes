@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""One measured call per lane of the estate router, for the estate-state document (founder
+2026-09-03: the snapshot names each lane's last answer, so a dead lane is on the board before a
+person hits it).
+
+    LITELLM_API_KEY=... bin/idp-router-lanes --config platform/llm/config.yaml \\
+        --zone-from clusters/oke/estate-config.yaml --out lanes.json
+
+The mature tool rejected: LiteLLM's own `/health` does exactly this per model, but it answers only
+to the master key, which lives in the vault the cluster reads and no CI run holds (crew#579).
+A virtual key and one chat call of one token per lane is the same measurement from outside.
+Every lane is called in parallel with one timeout; the key is read from the environment and
+never printed; a run with no key writes every lane as UNKNOWN, never ok.
+"""
+
+from __future__ import annotations
+
+import argparse
+import concurrent.futures
+import datetime as dt
+import json
+import os
+import pathlib
+import sys
+import time
+import urllib.error
+import urllib.request
+
+KEY_ENV = "LITELLM_API_KEY"
+
+
+def lanes(config_path: str) -> list[str]:
+    import yaml
+
+    doc = yaml.safe_load(pathlib.Path(config_path).read_text()) or {}
+    return [
+        str(m["model_name"])
+        for m in doc.get("model_list") or []
+        if isinstance(m, dict) and m.get("model_name")
+    ]
+
+
+def zone(estate_config: str) -> str:
+    """`ESTATE_ZONE: <zone>` in clusters/oke/estate-config.yaml (R70: the one place a hostname
+    comes from; the same read .github/workflows/conscience-ask.yml does)."""
+    for line in pathlib.Path(estate_config).read_text().splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] == "ESTATE_ZONE:":
+            return parts[1]
+    raise SystemExit(f"BLIND router-lanes: no ESTATE_ZONE: line in {estate_config}")
+
+
+def call(url: str, key: str, lane: str, timeout: int) -> dict:
+    body = json.dumps(
+        {"model": lane, "max_tokens": 1, "messages": [{"role": "user", "content": "1"}]}
+    ).encode()
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
+    )
+    t0 = time.monotonic()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            r.read(4096)
+            ms = int((time.monotonic() - t0) * 1000)
+            return {
+                "lane": lane,
+                "verdict": "ok",
+                "status": r.status,
+                "detail": f"{r.status} in {ms} ms",
+                "ms": ms,
+            }
+    except urllib.error.HTTPError as e:
+        ms = int((time.monotonic() - t0) * 1000)
+        text = e.read(600).decode(errors="replace").replace("\n", " ")
+        # a 403 naming the probe key's own model list is the key's scope, not the lane's
+        # answer (measured 2026-09-03: a kimi-only key read 403 on fourteen live lanes)
+        if e.code == 403 and "key_model_access_denied" in text:
+            return {
+                "lane": lane,
+                "verdict": "UNKNOWN",
+                "status": e.code,
+                "detail": "probe key not allowed on this lane (403); unmeasured, not down",
+                "ms": ms,
+            }
+        return {
+            "lane": lane,
+            "verdict": "FAIL",
+            "status": e.code,
+            "detail": f"HTTP {e.code} {text}"[:200],
+            "ms": ms,
+        }
+    except Exception as e:  # noqa: BLE001 - the answer is the row, never a traceback
+        ms = int((time.monotonic() - t0) * 1000)
+        return {
+            "lane": lane,
+            "verdict": "FAIL",
+            "status": None,
+            "detail": f"{type(e).__name__}: {str(e)[:150]}",
+            "ms": ms,
+        }
+
+
+def main(argv=None) -> int:
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--config", required=True, help="the router config with model_list")
+    p.add_argument("--zone-from", required=True, help="clusters/oke/estate-config.yaml")
+    p.add_argument("--timeout", type=int, default=25)
+    p.add_argument("--out", required=True)
+    a = p.parse_args(argv)
+    names = lanes(a.config)
+    url = f"https://llm.{zone(a.zone_from)}/v1/chat/completions"
+    now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    key = os.environ.get(KEY_ENV, "")
+    if not key:
+        rows = [
+            {
+                "lane": n,
+                "verdict": "UNKNOWN",
+                "status": None,
+                "detail": f"no {KEY_ENV} in this run",
+            }
+            for n in names
+        ]
+        print(
+            f"BLIND router-lanes: {KEY_ENV} unset; {len(names)} lanes written UNKNOWN"
+        )
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+            rows = list(ex.map(lambda n: call(url, key, n, a.timeout), names))
+    for r in rows:
+        r["measured_at"] = now
+    pathlib.Path(a.out).write_text(json.dumps(rows, indent=1, sort_keys=True) + "\n")
+    ok = sum(r["verdict"] == "ok" for r in rows)
+    fail = sum(r["verdict"] == "FAIL" for r in rows)
+    head = "FAIL" if fail else ("ok" if ok == len(rows) else "BLIND")
+    print(
+        f"{head:<8}router-lanes {ok} ok, {fail} FAIL, {len(rows) - ok - fail} unmeasured "
+        f"of {len(rows)} lanes at {now}"
+    )
+    for r in rows:
+        if r["verdict"] != "ok":
+            print(f"{r['verdict']:<8}lane {r['lane']}: {r['detail']}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

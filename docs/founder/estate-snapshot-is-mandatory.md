@@ -42,17 +42,35 @@ The session's restart hook printed `[estate-state] BLIND: get_estate_state could
 not a warning. The gate is the relay itself: when the read fails, the relay must refuse the
 session, not print a line nobody reads (LAW 28, LAW 44).
 
-## Next version, planned 2026-09-03 04:2xZ, awaiting the founder's go
+## Version 2, built 2026-09-03 on the founder's "ok" (04:2xZ)
 
 Founder: "it could contain more useful info" and "and any recent decision or changes". Seven
-additions to the same document, same tool:
+additions inside the same five tabs, served by the same `get_estate_state` tool of the same estate
+MCP server; nothing about how a session fetches it changed. Every new field comes from a file the
+producer workflow fetched; a source it could not read is a `BLIND` line in the run and an empty or
+`UNKNOWN` field in the document, never a green row.
 
-1. Vendor roots: each SEED secret's last-set time and the last apply run's verdict per vendor, in the vendor's words.
-2. Router lanes: each model alias with its last measured answer and time.
-3. Open pull requests per repo, with check state and merge state.
-4. The founder's open blockers: every action sent to him and not yet answered, and the word each waits for.
-5. Last apply run: the failing step and its line.
-6. Incidents in the last 24 hours, with their signature.
-7. Recent decisions and changes: founder rulings and decision records made in the last 24 hours, and every merge to main in that window (repo, commit, title), so a session knows what moved since the last time anyone looked.
+| Section | Field | What it holds |
+|---|---|---|
+| security | `vendor_roots` | each vendor with a SEED secret: the secret's name, when it was last set, and the last apply run's verdict for that vendor in the vendor's own words (`ok`, `FAIL` with the refusing URL and HTTP answer, or `UNKNOWN` when the seeder did not name it) |
+| runtime | `router_lanes` | every model alias in the router config with one measured call of one token: `ok`, `FAIL` with the HTTP answer, or `UNKNOWN` when the probe key is not allowed on that lane; each with its time and duration |
+| delivery | `open_prs` | open pull requests across idp, crew, prospector, hermes-v2 and claude-guards: number, title, branch, draft, check counts (ok, fail, pending, newest run per check), merge state, last update |
+| overview | `founder_blockers` | every live session whose Blocked line waits on the founder, with the words it waits for; and every open `founder-request` issue |
+| delivery | `last_apply` | the newest oke-check run that ran the vendor seeder: run id, URL, time, conclusion, every failed step by job, and every `FAIL` or `BLIND` verdict line of its log |
+| runtime | `incidents` | rows of the crew incident ledger that are open or were detected or resolved in the last 24 hours, with their classes |
+| overview | `decisions` | founder rulings dated in the last 24 hours and every commit to `docs/decisions` or `docs/founder` in idp and crew in that window |
+| delivery | `changes` | every merge to main across the five repos in the last 24 hours: repo, short sha, title, time, newest first |
 
-Gate: the start-up relay refuses a blind session. Budget: the producer run stays under two minutes.
+Measured on the first local build, 2026-09-03 04:44Z: the two refused vendor roots (deepseek set
+20:38Z, kimi set 21:20Z, both `FAIL` with the vendor's 401 in the row) and the dead `kimi` router
+lane (`FAIL` 500, the same words the founder's aider session saw) are named in the document
+without anyone re-running apply. That is the field test the ruling asked for.
+
+Producer: `.github/workflows/estate-state.yml`, one App-token fetch step and one router probe
+step (`bin/idp-router-lanes`), parsed by `bin/idp-estate-state-build`; shapes in
+`platform/estate-state/schema.json`; graded by
+`tests/test_incident_estate_snapshot_names_what_moved_and_what_waits.py`. The fetch step ran in
+12 seconds locally and the probe in under a minute, inside the two-minute budget.
+
+Gate, next: the start-up relay refuses a blind session instead of printing a line (claude-guards
+`opa-hook.py`, separate change).

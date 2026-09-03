@@ -3,21 +3,200 @@
   "generated_at": "2026-08-30T00:00:00Z",
   "generated_by": "https://github.com/chidionyema/idp/actions/runs/0",
   "overview": {
-    "freeze": {"active": true, "since": "2026-08-29T20:37:00Z", "reason": "founder freeze until the reds are green", "record": "https://github.com/chidionyema/crew/issues/645"},
-    "rulings": [{"id": "R52", "date": "2026-08-29", "text": "One root per provider, set once; code mints the rest"}],
-    "sessions": [{"id": "a7b41022", "lane": "science", "last_handoff_at": "2026-08-30T00:05:00Z", "active": "crew#648 CP1+CP3"}],
-    "board": [{"repo": "crew", "number": 648, "title": "Every session starts with the state of the estate", "owner": "41fd24d8"}]
+    "freeze": {
+      "active": true,
+      "since": "2026-08-29T20:37:00Z",
+      "reason": "founder freeze until the reds are green",
+      "record": "https://github.com/chidionyema/crew/issues/645"
+    },
+    "rulings": [
+      {
+        "id": "R52",
+        "date": "2026-08-29",
+        "text": "One root per provider, set once; code mints the rest"
+      }
+    ],
+    "sessions": [
+      {
+        "id": "a7b41022",
+        "lane": "science",
+        "last_handoff_at": "2026-08-30T00:05:00Z",
+        "active": "crew#648 CP1+CP3"
+      }
+    ],
+    "board": [
+      {
+        "repo": "crew",
+        "number": 648,
+        "title": "Every session starts with the state of the estate",
+        "owner": "41fd24d8"
+      }
+    ],
+    "decisions": [
+      {
+        "kind": "ruling",
+        "id": "R52",
+        "at": "2026-08-29",
+        "title": "One root per provider, set once; code mints the rest"
+      },
+      {
+        "kind": "record",
+        "repo": "idp",
+        "sha": "04c78f5d",
+        "at": "2026-09-02T12:22:45Z",
+        "title": "docs: decision 0019 — credentials federate, a human pastes at most one seed"
+      }
+    ],
+    "founder_blockers": [
+      {
+        "source": "session",
+        "session": "2c88870e",
+        "lane": ".wt-vendor-probe",
+        "since": "2026-09-03T04:07:00Z",
+        "waits_for": "the founder re-sets SEED_KIMI_API_KEY from his own tab and says go"
+      }
+    ]
   },
   "delivery": {
-    "open_p0": [{"repo": "idp", "number": 873, "title": "Flux cannot reconcile Kustomization/mcp.flux-system", "opened_at": "2026-08-29T20:26:09Z"}],
-    "failed_runs": [{"repo": "idp", "workflow": "flux-events", "failed": 81, "window_hours": 6}],
-    "main_sha": {"idp": "3096eb1a"}
+    "open_p0": [
+      {
+        "repo": "idp",
+        "number": 873,
+        "title": "Flux cannot reconcile Kustomization/mcp.flux-system",
+        "opened_at": "2026-08-29T20:26:09Z"
+      }
+    ],
+    "failed_runs": [
+      {
+        "repo": "idp",
+        "workflow": "flux-events",
+        "failed": 81,
+        "window_hours": 6
+      }
+    ],
+    "main_sha": {
+      "idp": "3096eb1a"
+    },
+    "open_prs": [
+      {
+        "repo": "idp",
+        "number": 1206,
+        "title": "otto gateway manifests",
+        "branch": "otto/gateway",
+        "draft": false,
+        "checks": {
+          "ok": 9,
+          "fail": 0,
+          "pending": 4
+        },
+        "merge_state": "BLOCKED",
+        "updated_at": "2026-09-03T03:50:00Z"
+      }
+    ],
+    "last_apply": {
+      "run": 33711941272,
+      "url": "https://github.com/chidionyema/idp/actions/runs/33711941272",
+      "at": "2026-09-03T03:29:00Z",
+      "conclusion": "failure",
+      "failed_steps": [
+        {
+          "job": "check",
+          "step": "bin/idp-bootstrap-vendors (crew#579, R52)"
+        }
+      ],
+      "lines": [
+        "bin/idp-bootstrap-vendors (crew#579, R52): FAIL kimi SEED_KIMI_API_KEY refused by https://api.moonshot.ai/v1/models: HTTP 401"
+      ]
+    },
+    "changes": [
+      {
+        "repo": "idp",
+        "sha": "723a239c",
+        "title": "platform(otto): registration reconciler asks Telegram every five minutes (#1200)",
+        "at": "2026-09-03T04:23:54Z"
+      }
+    ]
   },
   "runtime": {
-    "clusters": [{"name": "oke", "role": "production", "state": "FAIL", "revision": "main@sha1:dd5d4a28",
-      "flux_rows": [{"kind": "Kustomization", "namespace": "flux-system", "name": "mcp", "ready": false, "message": "kyverno mutate webhook EOF"}]}],
-    "surfaces": [{"name": "backstage", "verdict": "ok", "checked_at": "2026-08-29T23:00:00Z"}]
+    "clusters": [
+      {
+        "name": "oke",
+        "role": "production",
+        "state": "FAIL",
+        "revision": "main@sha1:dd5d4a28",
+        "flux_rows": [
+          {
+            "kind": "Kustomization",
+            "namespace": "flux-system",
+            "name": "mcp",
+            "ready": false,
+            "message": "kyverno mutate webhook EOF"
+          }
+        ]
+      }
+    ],
+    "surfaces": [
+      {
+        "name": "backstage",
+        "verdict": "ok",
+        "checked_at": "2026-08-29T23:00:00Z"
+      }
+    ],
+    "router_lanes": [
+      {
+        "lane": "deepseek",
+        "verdict": "ok",
+        "status": 200,
+        "detail": "200 in 812 ms",
+        "measured_at": "2026-09-03T04:30:00Z",
+        "ms": 812
+      },
+      {
+        "lane": "kimi",
+        "verdict": "FAIL",
+        "status": 500,
+        "detail": "HTTP 500 litellm.AuthenticationError: MoonshotException",
+        "measured_at": "2026-09-03T04:30:00Z",
+        "ms": 300
+      }
+    ],
+    "incidents": [
+      {
+        "id": "I1",
+        "title": "Otto crash-looped through two copy-flag fixes",
+        "surface": "hermes-agent gateway, Telegram",
+        "detected": "2026-08-29T23:36Z",
+        "resolved": "2026-08-30T01:26Z",
+        "classes": [
+          "fix-proved-on-the-wrong-surface"
+        ]
+      }
+    ]
   },
-  "docs_apis": {"standards_page": "crew/docs/STANDARDS.md", "diagrams": []},
-  "security": {"open_findings": [], "secrets_in_git": 0}
+  "docs_apis": {
+    "standards_page": "crew/docs/STANDARDS.md",
+    "diagrams": []
+  },
+  "security": {
+    "open_findings": [],
+    "secrets_in_git": 0,
+    "vendor_roots": [
+      {
+        "vendor": "kimi",
+        "secret": "SEED_KIMI_API_KEY",
+        "set_at": "2026-09-02T21:20:53Z",
+        "verdict": "FAIL",
+        "detail": "refused by https://api.moonshot.ai/v1/models, https://api.kimi.com/coding/v1/models, https://api.moonshot.cn/v1/models: HTTP 401",
+        "measured_at": "2026-09-03T03:42:52Z"
+      },
+      {
+        "vendor": "anthropic",
+        "secret": "SEED_ANTHROPIC_API_KEY",
+        "set_at": "2026-08-26T20:09:07Z",
+        "verdict": "ok",
+        "detail": "kept",
+        "measured_at": "2026-09-03T03:42:52Z"
+      }
+    ]
+  }
 }
