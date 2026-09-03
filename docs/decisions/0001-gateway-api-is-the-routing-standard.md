@@ -41,7 +41,7 @@ backup environment and as a Gateway API controller on the cluster, reading the s
 HTTPRoute resources.
 
 **Agent-to-tool traffic: agentgateway, and it is not the same layer.** Apache-2.0, on the
-conformance list at v1.6.0, and already named in `idp/docs/reference/specs/fortress-stack.md` and
+conformance list at v1.6.0, and already named in `idp/docs/specs/fortress-stack.md` and
 crew#180. It routes MCP, A2A and LLM calls, which is a different concern from a front door
 for human-facing pages. It is deliberately not proposed as the front door: created
 2025-03-18, 4,511 stars, 335 open issues, latest release v1.4.1 on 2026-07-29. That is a

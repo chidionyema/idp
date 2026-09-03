@@ -2,7 +2,7 @@
 """catalog-render: put the live architecture page on main on a schedule, through a pull request.
 
 crew#236 row 2, second half. bin/catalog-gen and bin/estate-diagram already turn the inventory
-into catalog/catalog-info.yaml and docs/explanation/architecture/live.md; this job runs them after every
+into catalog/catalog-info.yaml and docs/architecture/live.md; this job runs them after every
 inventory run (scheduler/schedule.yml: com.estate.catalog-render, after: com.estate.inventory)
 and lands the page on main. Nothing here is a new collector or renderer.
 
@@ -30,58 +30,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 WT = Path(os.environ.get("IDP_STATE_WORKTREE") or ROOT.parent / ".idp-state")
 BRANCH = "state/live-diagram"
-PAGE = "docs/explanation/architecture/live.md"
-SHOWCASE = "docs/SHOWCASE.md"
-TRACE = "docs/TRACE-MATRIX.md"          # crew#495 CP1
-NEXT = "docs/NEXT.md"                   # crew#403 CP6
-FOUNDER = "docs/FOUNDER.md"             # crew#412 R38
-FOUNDER_JSON = "docs/founder.json"      # crew#684 CP4: the Ops page's founder tiles read this
-TRACE_JSON = "docs/trace-matrix.json"
-# crew#740: the estate-inventory workflow writes these two onto the same branch. This render
-# force-pushes the branch from origin/main, so they are checked out from origin first and staged
-# with the rest; otherwise every render would drop the Ops tile's data.
-# crew#786: the Mac sessions publish docs/FEED.md (and an hourly docs/NEXT.md) from feed-guard;
-# the render carries both across renders, reads FEED.md as estate-next's input, and re-renders
-# NEXT.md from it, so a published page is never older than the last render.
-CARRIED = ["docs/inventory.json", "docs/inventory.md"]
-CARRIED += ["docs/FEED.md", "docs/NEXT.md"]  # the feed and its answer ride the same carry (crew#786)
+PAGE = "docs/architecture/live.md"
 INV = Path(os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json"))
 
 
-def driver_is_stale(driver: Path, on_main: Path) -> bool:
-    """crew#474, 2026-08-27: the scheduler runs $IDP/bin/catalog-render from the shared checkout,
-    and that checkout was on a peer's feature branch (feat/crew290), so the driver that ran was
-    a copy without the estate-showcase step while its own worktree sat on main. The inner steps
-    were current; the script driving them was not. Stale means: this file is not the worktree's
-    copy and its bytes differ from the worktree's copy at origin/main.
-    """
-    try:
-        if driver.resolve() == on_main.resolve():
-            return False
-        return driver.read_bytes() != on_main.read_bytes()
-    except OSError:
-        return False
-
-
-def should_hand_over(driver: Path, on_main: Path, argv: list[str], env: dict) -> bool:
-    """Only the scheduled run hands over. A branch run of a PR that edits this driver must
-    execute its own copy (code-2f, idp#377 review 5437850580)."""
-    if "--scheduled" not in argv or env.get("CATALOG_RENDER_REEXEC"):
-        return False
-    return driver_is_stale(driver, on_main)
-
-
-def reexec_from_worktree(driver: Path, on_main: Path, argv: list[str]) -> None:
-    """Hand over to the origin/main copy of this script, once, and never loop."""
-    if not should_hand_over(driver, on_main, argv, dict(os.environ)):
-        return
-    print(f"catalog-render: driver {driver} differs from origin/main; re-running {on_main}")
-    os.environ["CATALOG_RENDER_REEXEC"] = "1"
-    os.execv(sys.executable, [sys.executable, str(on_main), *argv])
-
-
-def sh(cmd: list[str], cwd: Path, timeout: int = 120, env: dict | None = None) -> tuple[int, str]:
-    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env)
+def sh(cmd: list[str], cwd: Path, timeout: int = 120) -> tuple[int, str]:
+    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
     return p.returncode, (p.stdout + p.stderr).strip()
 
 
@@ -98,54 +52,20 @@ def main(argv: list[str]) -> int:
     if not INV.is_file():
         print(f"BLIND catalog-render: no inventory at {INV}; com.estate.inventory has not run", file=sys.stderr)
         return 3
-    # --prune: after the render PR merges with delete-branch, origin/state/live-diagram is gone but
-    # the local remote-ref still holds it, and --force-with-lease refuses with "stale info" (12:20Z).
-    step("fetch origin, prune", ["git", "fetch", "-q", "--prune", "origin"], ROOT)
+    step("fetch origin main", ["git", "fetch", "-q", "origin", "main"], ROOT)
     if not (WT / ".git").exists():
         sh(["git", "worktree", "prune"], ROOT)
         step("create worktree", ["git", "worktree", "add", "--detach", "-q", str(WT), "origin/main"], ROOT)
     step("move worktree to origin/main", ["git", "checkout", "-q", "--detach", "origin/main"], WT)
-    reexec_from_worktree(Path(__file__), WT / "bin" / "catalog-render", sys.argv[1:])
-    # crew#401 CP5: the founder-surface cards carry a live health stamp on the scheduled render only.
-    os.environ["CATALOG_GEN_PROBE"] = "1"
     step("catalog-gen", [sys.executable, str(WT / "bin" / "catalog-gen")], WT, 300)
     # crew#401 CP4: the cluster's catalogue is this file as an OCI artifact (clusters/oke/catalog.yaml).
     # Until 2026-08-27 nothing pushed it on a schedule; the artifact on ghcr was 24 hours behind the
     # inventory and the portal showed a stale estate. Idempotent: same content, same digest. BLIND
     # (no flux/sops/token on this machine) is reported, never hidden, and does not stop the page.
-    # crew#516 CP3: dry-run 33106556071 pushed the artifact; --dry-run means nothing leaves this machine.
-    if not dry:
-        rc, out = sh([str(WT / "bin" / "idp-catalog-push")], WT, 300)
-        print(("ok    " if rc == 0 else "BLIND ") + f"catalog-render: catalogue push: {out[-200:]}")
-    else:
-        print("skip  catalog-render: catalogue push skipped in --dry-run (crew#516 CP3)")
+    rc, out = sh([str(WT / "bin" / "idp-catalog-push")], WT, 300)
+    print(("ok    " if rc == 0 else "BLIND ") + f"catalog-render: catalogue push: {out[-200:]}")
     step("estate-diagram", [sys.executable, str(WT / "bin" / "estate-diagram")], WT)
-    # crew#474: the graded page, red rows first, from the same catalogue in the same run.
-    # crew#403 CP6: planned / blocking / when, before the showcase so its bar can quote it.
-    # crew#786: the Mac sessions publish docs/FEED.md and docs/NEXT.md from feed-guard. The render
-    # carries them. Before calling estate-next, check out the carried files from the previous branch
-    # and use the carried FEED.md as input if it exists and is non-empty (fall back to bucket copy).
-    carried_feed = WT / "docs" / "FEED.md"
-    # the Mac sessions publish docs/FEED.md (and an hourly docs/NEXT.md as a stop-gap) to the
-    # state branch; the render never overwrites FEED.md and always re-renders NEXT.md from it,
-    # so the page is at least as fresh as the newest handoff plus the newest issue state.
-    sh(["git", "checkout", "-q", f"origin/{BRANCH}", "--", "docs/FEED.md"], WT)
-    feed_arg: list[str] = []
-    if carried_feed.is_file() and carried_feed.stat().st_size > 0:
-        feed_arg = ["--feed", str(carried_feed)]
-        print(f"catalog-render: estate-next reads the feed from the state branch ({carried_feed})")
-    else:
-        print("catalog-render: no published feed on the state branch yet; estate-next reads its default")
-    step("estate-next", [sys.executable, str(WT / "bin" / "estate-next"), *feed_arg], WT)
-    # crew#412 (R38): the founder's three questions, from GitHub, on the same schedule.
-    # crew#596: the same goal block is the pinned GOAL message in the home channel (Otto's), refreshed here;
-    # --dry-run and a runner with no token leave the pin alone.
-    telegram = ["--telegram"] if not dry and os.environ.get("TELEGRAM_BOT_TOKEN") else []
-    step("estate-founder", [sys.executable, str(WT / "bin" / "estate-founder"), *telegram], WT, 300)
-    step("estate-showcase", [sys.executable, str(WT / "bin" / "estate-showcase")], WT)
-    # crew#495 CP1: the trace matrix is rendered from the same worktree, on the same schedule.
-    step("trace-matrix", [sys.executable, str(WT / "bin" / "trace-matrix")], WT)
-    rc, diff = sh(["git", "diff", "--stat", "--", PAGE, SHOWCASE, TRACE, TRACE_JSON, NEXT, FOUNDER, FOUNDER_JSON], WT)
+    rc, diff = sh(["git", "diff", "--stat", "--", PAGE], WT)
     if not diff:
         print("catalog-render: page unchanged since the last render; nothing to commit")
         return 0
@@ -153,47 +73,20 @@ def main(argv: list[str]) -> int:
         print(f"catalog-render --dry-run: would commit\n{diff}")
         return 0
     taken = step("inventory time", ["sed", "-n", "s/^# inventory taken: //p", "catalog/catalog-info.yaml"], WT)
-    carried = [f for f in CARRIED if sh(["git", "checkout", "-q", f"origin/{BRANCH}", "--", f], WT)[0] == 0]
-    step("stage", ["git", "add", PAGE, SHOWCASE, TRACE, TRACE_JSON, NEXT, FOUNDER, FOUNDER_JSON], WT)
-    if carried:
-        step("stage the inventory the workflow put on the branch", ["git", "add", *carried], WT)
-    step("commit", ["git", "commit", "-q", "-m", f"docs(architecture): live estate page, inventory taken {taken} (crew#401)\n\nAuthor-session: com.estate.catalog-render"], WT)
+    step("stage", ["git", "add", PAGE], WT)
+    step("commit", ["git", "commit", "-q", "-m", f"docs(architecture): live estate page, inventory taken {taken}\n\nAuthor-session: com.estate.catalog-render"], WT)
     step("push", ["git", "push", "-q", "--force-with-lease", "origin", f"HEAD:refs/heads/{BRANCH}"], WT)
-    # crew#584 / idp#719: a body written before LAW 51 keeps its old text on every scheduled
-    # push, so operating-model-gate rule optimised_plan refused idp#726 render after render.
-    # Same two-part fix as bin/idp-image-update-pr: the create path writes the line, and an
-    # existing body that lacks it gains it.
-    OPTIMISED = ("Optimised: 1 -> 1 steps (one render of the catalogue), 1 -> 1 round trips (one push, one pull request); cut: nothing, a scheduled render has no plan to shrink (operating-model-gate rule optimised_plan, LAW 51)")
     rc, existing = sh(["gh", "pr", "list", "--head", BRANCH, "--state", "open", "--json", "number", "--jq", ".[0].number"], WT)
     if not existing:
         step("open PR", ["gh", "pr", "create", "--base", "main", "--head", BRANCH,
-                         "--title", "docs(architecture): live estate page from the scheduled render (crew#401)",
+                         "--title", "docs(architecture): live estate page from the scheduled render",
                          "--body", f"No-Issue: scheduled render of {PAGE} from the catalogue (crew#236 row 2).\n\n"
                                    f"Author-session: com.estate.catalog-render\nStandard: Service catalog row, docs/STANDARDS.md\n\n"
                                    "Generated by bin/catalog-render after com.estate.inventory. Auto-merge is on; "
-                                   "it lands when security-scan and spec-gate pass.\n\n"
-                                   # crew#474: the operating-model gate refuses a body with no laws section
-                                   # (idp#376 sat BLOCKED for a day), so the generated body carries one.
-                                   f"{OPTIMISED}\n\n"
-                                   "## Architecture laws\n"
-                                   f"- LAW 1 zero-gravity: n/a: generated pages only, {PAGE} and {SHOWCASE}\n"
-                                   "- LAW 2 fractal: bin/catalog-render -> bin/estate-showcase -> bin/trace-matrix\n"
-                                   f"- LAW 3 nervous system: scheduler/schedule.yml com.estate.catalog-render -> {BRANCH}\n"
-                                   "- LAW 4 calibration: n/a: no prediction made\n"], WT)
+                                   "it lands when security-scan and spec-gate pass."], WT)
         rc, existing = sh(["gh", "pr", "list", "--head", BRANCH, "--state", "open", "--json", "number", "--jq", ".[0].number"], WT)
-    rc, body = sh(["gh", "pr", "view", existing, "--json", "body", "--jq", ".body"], WT)
-    if not any(l.startswith("Optimised: ") for l in body.splitlines()):
-        step("refresh body", ["gh", "pr", "edit", existing, "--body", body + "\n\n" + OPTIMISED + "\n"], WT)
-
-    # crew#684: bin/idp-pr-age drafts a conflicting PR at 4h; a fresh render clears the conflict
-    # but `gh pr merge --auto` refuses a draft (runs 33278169055, 33294242647). Un-draft first.
-    rc, draft = sh(["gh", "pr", "view", existing, "--json", "isDraft", "--jq", ".isDraft"], WT)
-    if draft == "true":
-        step("ready", ["gh", "pr", "ready", existing], WT)
-
-    # idp#1046: auto-merge is off on this repository (allow_auto_merge=false, set beside the founder-only-releases ruleset on 2026-08-30), so `gh pr merge --auto` answers `enablePullRequestAutoMerge` and exits 1. bin/idp-pr-arm arms it where the repository allows it and names the founder's merge where it does not.
-    step("arm", ["bin/idp-pr-arm", existing, "--squash"], WT)
-    print(f"catalog-render: {PAGE} pushed to {BRANCH}, PR #{existing} armed or waiting on the founder")
+    step("auto-merge", ["gh", "pr", "merge", existing, "--auto", "--squash"], WT)
+    print(f"catalog-render: {PAGE} pushed to {BRANCH}, PR #{existing} set to auto-merge")
     return 0
 
 

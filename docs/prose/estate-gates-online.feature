@@ -27,7 +27,7 @@ Feature: Every active estate repository runs the same merge-blocking gates
   Scenario: The architecture diagram is drawn from the catalogue, never by hand
     Given catalog/catalog-info.yaml written by bin/catalog-gen from the inventory
     When bin/estate-diagram runs
-    Then docs/explanation/architecture/live.md names every repository, listening port and scheduled job in the catalogue
+    Then docs/architecture/live.md names every repository, listening port and scheduled job in the catalogue
     And the counts on each repository node equal the dependsOn edges pointing at it
     And rendering the same catalogue twice gives the same bytes
     And bin/estate-diagram --check exits 1 while the page on disk differs from the catalogue and 0 after a render

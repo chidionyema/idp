@@ -5,7 +5,7 @@ Master Spec v1.0 sections 2.4, 3.2, 3.3, 3.4. Three parts, one package.
 | file | what |
 |---|---|
 | `preauth.py` | R10/R21. Predicts the next `shadow.horizon_steps` steps' spend, surfaces one card, and lets the shadow-founder answer it above `shadow.min_confidence`. `ShadowAuth.op` is typed `NonDestructiveOp`; a destructive op cannot be auto-authorized because no value of that type exists for one. |
-| `workflow.py`, `activities.py`, `branching.py` | R19. `BranchParentWorkflow` forks `branch.count` `BranchChildWorkflow` children (Temporal child workflows), each on its own git branch and worktree, each capped at `branch.budget_pct` of the parent budget through `sovereign/engine/budget.py` (crew#213). Winner fast-forwards into `branch.main_branch`; losers stay as refs; exactly one `branch_merge` receipt. |
+| `workflow.py`, `activities.py`, `branching.py` | R19. `BranchParentWorkflow` forks `branch.count` `BranchChildWorkflow` children (Temporal child workflows), each on its own git branch and worktree, each capped at `branch.budget_pct` of the parent budget through `engine/budget.py` (crew#213). Winner fast-forwards into `branch.main_branch`; losers stay as refs; exactly one `branch_merge` receipt. |
 | `distill.py` | R18/R20. Frontier successes -> queue + Langfuse dataset (local mirror always) -> LoRA job through `distill.trainer` (ollama or axolotl, subprocess) -> deterministic grade -> route flip at `distill.route_accuracy`, as a `distill` receipt. |
 | `cli.py` | `sb branch`, `sb distill`, `sb preauth`; `sb start --branches N` delegates here. |
 | `config_keys.py` | every tunable above, merged into `sovereign/config.py` KEYS. |
@@ -28,4 +28,4 @@ cp27 starts a real Temporal dev server from the `temporal` CLI on PATH
 
 The engine's `SessionWorkflow` does not yet call `preauth` before a
 transition; the planner is driven by `sb preauth` and the cp26 suite.
-Wiring it as an activity in `sovereign/engine/workflow.py` is W1's file.
+Wiring it as an activity in `engine/workflow.py` is W1's file.

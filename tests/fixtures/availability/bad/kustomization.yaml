@@ -1,6 +1,0 @@
-# The manifest the catalogue actually carried into the 2026-08-28 06:20Z drain.
-# spread, both probes. bin/idp-availability-gate must pass this and refuse ../bad.
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - surface.yaml

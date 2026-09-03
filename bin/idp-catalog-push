@@ -1,28 +1,22 @@
 #!/usr/bin/env bash
 # Publish catalog/catalog-info.yaml to the cluster as an OCI artifact (ADR 0004 step 3).
 # Wraps `flux push artifact` (rejected: committing a 6,900-line generated file to git and
-# kubectl-applying a ConfigMap by hand, which has no reconciler). The token is the one gh holds:
-# on Actions (catalog-render.yml) that is GITHUB_TOKEN with packages: write; there is no vault
-# copy any more (crew#227 CP3: the sops GITHUB_TOKEN answered UNAUTHORIZED on 2026-08-27 and a
-# static token in a file is the thing the gate counts). Idempotent: same content pushes the same digest.
+# kubectl-applying a ConfigMap by hand, which has no reconciler). Needs GITHUB_TOKEN in the vault
+# with write:packages. Idempotent: same content pushes the same digest.
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-for t in flux kubectl git; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
-# run 33102084969 demanded sops before asking gh; crew#227 CP3 removed the vault copy altogether
-gh auth token >/dev/null 2>&1 || { echo "BLIND gh holds no token; the push runs on Actions (catalog-render.yml, packages: write)"; exit 2; }
+VAULT="${ESTATE_SECRETS:-$(dirname "$IDP")/estate-secrets}"
+export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
+ENV_NAME="${OCI_ENV:-dev}"
+for t in flux kubectl sops git; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
 SRC="$IDP/catalog/catalog-info.yaml"
 [ -s "$SRC" ] || { echo "BLIND $SRC missing; run bin/catalog-gen"; exit 2; }
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 kubectl create configmap estate-catalog --from-file=catalog-info.yaml="$SRC" --dry-run=client -o yaml > "$T/estate-catalog.yaml"
 REV="$(git -C "$IDP" rev-parse --short HEAD)@$(date -u +%Y%m%dT%H%M%SZ)"
-# idp#776 handed the render step a GitHub App token as GH_TOKEN (to arm auto-merge as an App
-# push); that token carries no packages scope, so `gh auth token` answered 403 on every blob from
-# 12:54Z on 2026-08-29 (runs 33253658000, 33254290214) and the portal kept the 06:07Z catalogue
-# (crew#624). The registry credential is its own input: GHCR_TOKEN, or the file GHCR_TOKEN_FILE
-# (the workflow writes GITHUB_TOKEN there, packages: write, so the arming step's env never names
-# the bot token, idp#769); `gh auth token` remains the fallback for a laptop run.
-if [ -z "${GHCR_TOKEN:-}" ] && [ -n "${GHCR_TOKEN_FILE:-}" ] && [ -s "$GHCR_TOKEN_FILE" ]; then GHCR_TOKEN=$(cat "$GHCR_TOKEN_FILE"); fi
-GHCR_TOKEN="${GHCR_TOKEN:-$(gh auth token)}"
-printf '%s' "$GHCR_TOKEN" | flux push artifact "oci://ghcr.io/chidionyema/idp/estate-catalog:latest" \
+# crew#401 CP4: the vault copy of GITHUB_TOKEN answered UNAUTHORIZED on 2026-08-27 (no write:packages).
+# gh on the machine that runs the schedule is the founder's account and carries it: gh first, vault second.
+token() { gh auth token 2>/dev/null || sops -d --extract '["GITHUB_TOKEN"]' "$VAULT/secrets/$ENV_NAME/GITHUB_TOKEN.yaml"; }
+token | flux push artifact "oci://ghcr.io/chidionyema/idp/estate-catalog:latest" \
   --path="$T" --source="https://github.com/chidionyema/idp" --revision="$REV" --creds "chidionyema:$(cat)" >/dev/null
 echo "ok      estate-catalog pushed, revision $REV"

@@ -6,9 +6,7 @@
 set -euo pipefail
 export SUPPRESS_LABEL_WARNING=True
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-# estate-secrets sits beside the main checkout, even when this runs from a worktree under .claude/worktrees (crew#408)
-MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
-VAULT="${ESTATE_SECRETS:-$(dirname "$MAIN")/estate-secrets}"
+VAULT="${ESTATE_SECRETS:-$(dirname "$IDP")/estate-secrets}"
 export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
 ENV_NAME="${OCI_ENV:-dev}"
 for t in flux oci kubectl tofu sops; do command -v "$t" >/dev/null || { echo "BLIND $t missing"; exit 2; }; done
@@ -17,7 +15,7 @@ vget() { sops -d --extract "[\"$1\"]" "$VAULT/secrets/$ENV_NAME/$1.yaml" 2>/dev/
 CLUSTER=$(cd "$IDP/platform/oci" && tofu output -raw cluster_id 2>/dev/null || true)
 [ -n "$CLUSTER" ] || { echo "BLIND no OKE cluster id in platform/oci state; run tofu apply first"; exit 2; }
 export KUBECONFIG="$HOME/.kube/oke-estate"
-"$IDP/bin/idp-cloud" cluster kubeconfig "$CLUSTER" --file "$KUBECONFIG" --region "$(vget OCI_REGION)" || { echo "BLIND   flux  cluster kubeconfig failed for ...${CLUSTER: -6}"; exit 2; }
+oci ce cluster create-kubeconfig --cluster-id "$CLUSTER" --file "$KUBECONFIG" --region "$(vget OCI_REGION)" --token-version 2.0.0 --kube-endpoint PUBLIC_ENDPOINT >/dev/null
 chmod 600 "$KUBECONFIG"
 kubectl get --raw /readyz >/dev/null && echo "ok      apiserver ready"
 kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f - >/dev/null
@@ -32,16 +30,9 @@ VAULT_ID=$(cd "$IDP/platform/oci" && tofu output -raw vault_id 2>/dev/null || tr
 # the old vault is refused here (bin/idp-recreate-guard refuses the create on the tofu side).
 CUR=$(kubectl -n flux-system get configmap estate-vars -o jsonpath='{.data.OCI_VAULT_ID}' 2>/dev/null || true)
 if [ -n "$VAULT_ID" ] && [ -n "$CUR" ] && [ "$CUR" != "$VAULT_ID" ]; then
-  # crew#66 CP5b: vault reads go through bin/idp-cloud (one primitive layer). A non-zero layer exit is
-  # BLIND here (exit 2), never a count of 0 (which would silently switch to an empty old vault).
-  err="${TMPDIR:-/tmp}/flux.err"; : > "$err"
-  if list=$("$IDP/bin/idp-cloud" secret list --vault "$CUR" 2>"$err"); then
-    left=$(printf '%s\n' "$list" | grep -c .)
-  else
-    echo "BLIND   flux $(head -1 "$err")"
-    exit 2
-  fi
-  if [ "$left" != 0 ]; then echo "REFUSE  estate-vars: tofu vault_id changed but $left ACTIVE secret(s) still live in the current vault; import the old vault into state instead (incident 2026-08-26 02:26Z)"; exit 3
+  left=$(oci vault secret list --compartment-id "$(grep -o 'ocid1\.compartment[^" ]*' "$IDP/platform/oci/terraform.tfvars" | head -1)" --vault-id "$CUR" --all --query 'length(data[?"lifecycle-state"==`ACTIVE`])' --raw-output 2>/dev/null || echo BLIND)
+  if [ "$left" = BLIND ]; then echo "BLIND   estate-vars: vault changed but the old vault's secret count is unreadable; not switching"; VAULT_ID=
+  elif [ "$left" != 0 ]; then echo "REFUSE  estate-vars: tofu vault_id changed but $left ACTIVE secret(s) still live in the current vault; import the old vault into state instead (incident 2026-08-26 02:26Z)"; exit 3
   else echo "ok      estate-vars: vault changed and the old vault is empty; switching"; fi
 fi
 if [ -n "$VAULT_ID" ]; then

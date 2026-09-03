@@ -1,5 +1,3 @@
-# button: Test the front-door sign-in
-# founder: Signs in at the front door the way a person does and walks to every surface behind it; reports where it landed.
 # crew#292 CP1, rewritten under crew#307. A drill is an adversary, not a downstream step: it runs
 # on its own clock whether the platform pipeline is green, red or absent, because as a `needs:`
 # of the tofu check it was skipped on every check red and the skip read as green while the
@@ -9,13 +7,8 @@
 name: login-drill
 on:
   schedule:
-    - cron: "7 * * * *"   # hourly full sign-in; the five-minute pulse is platform/identity/front-door-heartbeat.yaml (idp#229: GitHub dropped the */5 cron)
-  workflow_dispatch:
-    inputs:
-      evidence_paths:
-        description: "Portal pages to photograph signed in, separated by commas; leave empty for the home page only"
-        required: false
-        default: ""
+    - cron: "*/5 * * * *"   # every 5 minutes, the smallest clock GitHub schedules; public repo, minutes are free
+  workflow_dispatch: {}
   push:
     branches: [main]
     paths:
@@ -37,20 +30,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          # Both files, because login-drill.txt starts with `-r oci-cli.txt`: a key that hashed only
-          # the referring file would keep restoring a stale cache after oci-cli.txt changed,
-          # while reading exactly like a key that tracked the install (crew#488 CP6).
-          cache-dependency-path: |
-            .github/requirements/login-drill.txt
-            .github/requirements/oci-cli.txt
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: "3.12" }
       - name: oci cli and a headless browser
         run: |
-          pip install -q -r .github/requirements/login-drill.txt
+          pip install -q oci-cli playwright
           playwright install --with-deps chromium
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
@@ -67,28 +52,14 @@ jobs:
           OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
           OCI_REGION: ${{ vars.OCI_REGION }}
-          DRILL_SHOT: ${{ runner.temp }}/login-drill-home.png
-          DRILL_SHOT_DIR: ${{ runner.temp }}/shots
-          DRILL_EVIDENCE_PATHS: ${{ inputs.evidence_paths }}
         run: |
           set -o pipefail
           bin/idp-login-drill 2>&1 | tee drill.out
-      - name: the picture of the page it graded, red or green
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: login-drill-home
-          path: |
-            ${{ runner.temp }}/login-drill-home.png
-            ${{ runner.temp }}/shots/
-          if-no-files-found: warn
-          retention-days: 14
       - name: the verdict is on the run summary, pass or fail
         if: always()
         run: |
           line=$(grep -E '^(ok|FAIL) +login-drill' drill.out | tail -1 || true)
-          home=$(grep -E '^(home|loc|paths) +login-drill' drill.out || true)
-          printf '### login-drill\n```\n%s\n%s\n```\n' "${home:-no home row}" "${line:-no verdict line: the drill died before printing one}" >> "$GITHUB_STEP_SUMMARY"
+          printf '### login-drill\n```\n%s\n```\n' "${line:-no verdict line: the drill died before printing one}" >> "$GITHUB_STEP_SUMMARY"
       - name: a failed drill is an open P0 on this repository, never a badge nobody reads
         if: failure()
         env:
@@ -99,13 +70,3 @@ jobs:
           body=$(printf '%s\nrun: %s/%s/actions/runs/%s\nboard: https://github.com/chidionyema/crew/issues/307\n' "$line" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
           n=$(gh issue list --state open --search 'in:title "P0: login drill failed"' --json number -q '.[0].number')
           if [ -n "$n" ]; then gh issue comment "$n" --body "$body"; else gh label create P0 --color B60205 --description "service down for the founder" --force >/dev/null; gh issue create --title "P0: login drill failed" --label P0 --body "$body"; fi
-      # crew#301: a green run closes the P0 it opened. idp#379 stood open with 37 red comments while
-      # the drill had been green for hours; an issue that never closes is an instrument nobody reads.
-      - name: a green drill closes the open P0, with the run as the receipt
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          n=$(gh issue list --state open --search 'in:title "P0: login drill failed"' --json number -q '.[0].number')
-          [ -z "$n" ] && exit 0
-          gh issue close "$n" --reason completed --comment "$(printf 'green: the founder path signed in and rendered the catalogue.\nrun: %s/%s/actions/runs/%s' "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")"

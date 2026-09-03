@@ -1,16 +1,4 @@
-# The one scheduler's code locations. Paths are relative to this directory, so
-# nothing here names where a checkout lives (LAW 46): `..` is the idp checkout
-# and `../..` is the directory that holds every checkout ($CODE).
 load_from:
   - python_file:
       relative_path: estate_scheduler/definitions.py
       attribute: defs
-      location_name: estate-scheduler
-  # crew#140: every source in crew/science/sources.json as an asset with its own
-  # freshness window. The crew checkout sits beside this one; the package lives
-  # beside the file, hence the working directory.
-  - python_file:
-      relative_path: ../../crew/science/scheduler/estate_dagster/facts.py
-      working_directory: ../../crew/science/scheduler
-      attribute: defs
-      location_name: estate-facts

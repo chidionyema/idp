@@ -8,8 +8,6 @@
 #
 #   --check              zero-downtime drill (daily): no drift in tofu, cluster serving. Default.
 #   --apply              one-shot bring-up or converge: login, tofu apply, flux bootstrap, verify.
-#   --surge-node         apply, then replace the one node by a surge (new boot volume / shape reach new nodes only).
-#   --surge-finish       second half of a surge whose Ready gate went blind (run 33101801971): delete the old node once the new one is Ready.
 #   --teardown-rebuild   the full drill: tofu destroy, then --apply. Downtime for the whole run.
 #                        Run against a second cluster with OCI_CLUSTER_NAME=estate-drill; the
 #                        Always Free A1 allowance is one node, so a parallel drill cluster needs
@@ -99,17 +97,11 @@ VS=$("$IDP/bin/idp-vault-split-guard" "$TF" 2>&1); vsrc=$?
 printf '%-5s %-18s rc=%-3s %4ss  %s\n' "$([ $vsrc -eq 0 ] && echo ok || echo FAIL)" vault-split "$vsrc" 0 "$(printf '%s\n' "$VS" | grep -cE '^(ok|REFUSE|BLIND)') vault row(s) below"
 printf '%s\n' "$VS" | sed 's/^/      | /'
 [ $vsrc -eq 0 ] || [ "${OKE_CHECK_EXPECT_CHANGES:-0}" = "1" ] || FAILED="$FAILED vault-split"
-# crew#307: a drill that never runs looks like one that passes. idp#229: GitHub drops a */5 cron
-# (3 of the last 30 login-drill runs came from it), so the five-minute pulse is the cluster's
-# CronJob platform/identity/front-door-heartbeat.yaml and its bucket receipt; the GitHub run is
-# the full hourly sign-in, graded at the catalogue's max_age_hours (26h = 1560 min). On a
-# pull_request an absence is not the PR's fault (same rule as iam-policy above): shown, not counted.
-if ! step door-heartbeat "$IDP/bin/idp-door-heartbeat" && [ "${OKE_CHECK_EXPECT_CHANGES:-0}" = "1" ]; then
-  FAILED="${FAILED% door-heartbeat}"
-  printf '%-5s %-18s rc=%-3s %4ss  %s\n' ok door-heartbeat 0 0 "pull_request: the receipt absence above is the cluster's clock, not this PR"
-fi
+# crew#307: a drill that never runs looks like one that passes. The newest successful login-drill
+# run must be under 20 minutes old. On a pull_request an absence is not the PR's fault (same rule
+# as iam-policy above): shown, not counted.
 [ -n "${GH_REPO:-}" ] || export GH_REPO="${GITHUB_REPOSITORY:-}"
-if ! step drill-heartbeat "$IDP/bin/idp-drill-heartbeat" login-drill.yml 1560 && [ "${OKE_CHECK_EXPECT_CHANGES:-0}" = "1" ]; then
+if ! step drill-heartbeat "$IDP/bin/idp-drill-heartbeat" login-drill.yml 20 && [ "${OKE_CHECK_EXPECT_CHANGES:-0}" = "1" ]; then
   FAILED="${FAILED% drill-heartbeat}"
   printf '%-5s %-18s rc=%-3s %4ss  %s\n' ok drill-heartbeat 0 0 "pull_request: the drill absence above is the schedule, not this PR"
 fi
@@ -137,55 +129,12 @@ case "$MODE" in
     # no Flux bootstrap: Flux is already on the cluster and reconciles the new node itself (crew#289).
     if [ -n "${OCI_CI:-}" ]; then echo "n/a   flux-bootstrap     no kube path from a runner; Flux already bootstrapped, a node-pool change needs none"
     else step flux-bootstrap "$IDP/bin/idp-flux-bootstrap"; fi ;;
-  --surge-node)
-    # crew#516 CP4 (2026-08-27): the pool's new boot_volume_size reaches new nodes only, so apply,
-    # then replace the one node by a surge (bin/idp-oke-surge-node). Every pod restarts once.
-    step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" || { echo "exit 3: recreate-guard refused; import the live resource"; exit 3; }
-    step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
-    step surge-node "$IDP/bin/idp-oke-surge-node" ;;
-  --surge-finish)
-    step surge-finish "$IDP/bin/idp-oke-surge-node" --finish ;;
-  --break-glass)
-    # crew#539 (2026-08-28): the runner is admitted to the API endpoint for this job only. The
-    # runner's egress /32 is appended to the applied list, tofu applies it (one NSG rule), the
-    # kubeconfig is minted on the same one-hour session token, ONE named playbook from
-    # bin/idp-oke-break-glass runs, and the original list is applied again on every exit path
-    # (trap): a failed playbook never leaves the door open. Never from a laptop (crew#345).
-    [ -n "${OCI_CI:-}" ] || { echo "exit 3: --break-glass runs from Actions only (gh workflow run oke-check.yml -f mode=break-glass -f playbook=diagnose)"; exit 3; }
-    PLAYBOOK="${BREAK_GLASS_PLAYBOOK:-diagnose}"
-    "$IDP/bin/idp-oke-break-glass" --list | tr ' ' '\n' | grep -x "$PLAYBOOK" >/dev/null || { echo "exit 64: unknown playbook '$PLAYBOOK'; known: $("$IDP/bin/idp-oke-break-glass" --list)"; exit 64; }
-    ORIG_CIDRS="$OKE_ALLOWED_CIDRS"
-    EGRESS="$(curl -fsS --max-time 10 https://api.ipify.org)"
-    [[ "$EGRESS" =~ ^[0-9.]+$ ]] || { echo "exit 2: could not measure the runner's egress IP"; exit 2; }
-    bg_revoke() {
-      export OKE_ALLOWED_CIDRS="$ORIG_CIDRS"
-      step revoke-login "$IDP/bin/idp-oci-login"
-      # guard-before-every-apply (test_incident_vault_recreated_after_state_loss); a refusal here
-      # is printed, never obeyed: the original list goes back whatever the plan says
-      step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" || echo "      | revoke: the guard refused; the original list is applied regardless"
-      step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
-      rm -f "$KUBECONFIG"
-      echo "ok    break-glass        runner $EGRESS/32 removed from control_plane_allowed_cidrs (trap)"
-    }
-    trap bg_revoke EXIT
-    export OKE_ALLOWED_CIDRS="$ORIG_CIDRS, \"$EGRESS/32\""
-    step admit-login "$IDP/bin/idp-oci-login"
-    step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" || { echo "exit 3: recreate-guard refused; import the live resource"; exit 3; }
-    step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
-    CID=$(tofu output -raw cluster_id 2>/dev/null); [ -n "$CID" ] || { blind kubeconfig "no cluster_id output"; exit 2; }
-    step kubeconfig "$IDP/bin/idp-cloud" cluster kubeconfig "$CID" --file "$KUBECONFIG" --region "$OCI_REGION"
-    step api-answers kubectl --request-timeout=30s get --raw /version
-    echo "--- playbook $PLAYBOOK (bin/idp-oke-break-glass)"
-    "$IDP/bin/idp-oke-break-glass" "$PLAYBOOK"; prc=$?
-    printf '%-5s %-18s rc=%-3s %4ss  %s\n' "$([ $prc -eq 0 ] && echo ok || echo FAIL)" "playbook" "$prc" 0 "$PLAYBOOK"
-    [ $prc -eq 0 ] || FAILED="$FAILED playbook"
-    bg_revoke; trap - EXIT ;;
   --teardown-rebuild)
     step tofu-destroy tofu destroy -auto-approve "${TFVARS[@]}"
     step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" || { echo "exit 3: recreate-guard refused; import the live resource"; exit 3; }
     step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
     step flux-bootstrap "$IDP/bin/idp-flux-bootstrap" ;;
-  *) echo "usage: $0 [--check|--apply|--surge-node|--surge-finish|--break-glass|--teardown-rebuild|--plan-pool]"; exit 64 ;;
+  *) echo "usage: $0 [--check|--apply|--teardown-rebuild|--plan-pool]"; exit 64 ;;
 esac
 
 # --- verify: the platform answers, measured from outside ---------------------------------------
@@ -196,27 +145,16 @@ packs()     { local n; n=$(curl -sS -m 20 "https://$API/catalog" | python3 -c 'i
 # A GitHub runner is outside control_plane_allowed_cidrs, so it has no kube path. Nodes are then
 # measured through the OCI API (same fact, other door); Flux state is not reachable from there
 # and the site and catalog rows stand in for it. Said as n/a, never as ok (crew#227 CP2).
-# A pool the autoscaler is resizing is UPDATING for a few minutes; that is the platform working,
-# not a red row (crew#539 CP4, run 33125334695: main went red on "not ACTIVE: a1-spot" with no
-# state named). Every non-ACTIVE pool is printed as name(STATE); only UPDATING passes.
-nodes_oci() { local o n bad busy; o=$("$IDP/bin/idp-cloud" cluster nodepools) || return 1
-  n=$(printf '%s\n' "$o" | grep -c .)
-  bad=$(printf '%s\n' "$o" | awk '$2!="ACTIVE" && $2!="UPDATING"{print $1"("$2")"}' | tr '\n' ' ')
-  busy=$(printf '%s\n' "$o" | awk '$2=="UPDATING"{print $1}' | tr '\n' ' ')
-  bad=${bad%% }; busy=${busy%% }
-  if [ "$n" -lt 1 ]; then echo "no node pools"; return 1
-  elif [ -n "$bad" ]; then echo "node pools not ACTIVE: $bad${busy:+; UPDATING: $busy}"; return 1
-  elif [ -n "$busy" ]; then echo "$n node pool(s), UPDATING (resize in flight): $busy (cloud layer)"
-  else echo "$n node pool(s) ACTIVE (cloud layer)"; fi; }
+nodes_oci() { local o; o=$(oci ce node-pool list --compartment-id "$(awk -F'"' '/^compartment_ocid/{print $2}' terraform.tfvars)" --query 'data[].{n:name,s:"lifecycle-state"}' --output json) || return 1
+  jq -er 'if length==0 then "no node pools" | halt_error(1) else (map(select(.s!="ACTIVE")) as $bad | if ($bad|length)>0 then "node pools not ACTIVE: \($bad|map(.n)|join(" "))" | halt_error(1) else "\(length) node pool(s) ACTIVE (OCI API)" end) end' <<<"$o"; }
 if [ -f "$KUBECONFIG" ]; then
   step nodes nodes_ready
   step flux flux_ready
 else
   step nodes nodes_oci
   printf 'n/a   %-18s %s\n' flux "no kube path from this host (outside control_plane_allowed_cidrs); site and catalog rows stand in"
-  # crew#584, founder 2026-08-29: the vault audit (bin/idp-vault-reads, crew#325) is out of this check.
-  # It paged 90 min of OCI Audit for 352-433s on every run, 7 of the job's 9 minutes, and grades
-  # nothing about the code. Monitoring never blocks a pull request.
+  # the vault's own door: OCI Audit shows whether external-secrets reads it (crew#325)
+  OCI_COMPARTMENT_OCID="$(awk -F'"' '/^compartment_ocid/{print $2}' terraform.tfvars)" step vault-reads "$IDP/bin/idp-vault-reads"
 fi
 if [ -n "$HOST" ] && [ -n "$API" ] && [ -n "$WANT_PACKS" ]; then step site site_200; step catalog packs
 else blind site "no OKE_HOST/OKE_API_HOST/WANT_PACKS for cluster $OCI_CLUSTER_NAME: add $TF/clusters/$OCI_CLUSTER_NAME.env"; blind catalog "same"; fi

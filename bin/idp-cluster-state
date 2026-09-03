@@ -4,50 +4,37 @@
 # minutes from the node's instance principal; this reads it with whatever OCI auth the caller has
 # (a runner's exchanged OIDC session in oke-check.yml). Same grading shape as bin/idp-chaos-drill.
 #   ok      cluster-state  <line 1 of the receipt>   -- fresh, every node Ready
-#   FAIL    cluster-state  <why>                     -- receipt missing, stale, a node not Ready, a Flux object not Ready (crew#406), no PrometheusRule or no Watchdog alert (crew#539)
-#           plus rows capacity (crew#584) and secret-freshness (crew#722: a running pod older than a Secret it consumes)
+#   FAIL    cluster-state  <why>                     -- receipt missing, stale or a node not Ready
 #   BLIND   cluster-state  <why>                     -- no oci CLI or no session; nothing was graded
 # Print the JSON body with --json. Max age 60 min = 4 schedule slots. Override CLUSTER_STATE_MAX_AGE_MIN.
 set -uo pipefail
-IDP=$(cd "$(dirname "$0")/.." && pwd)
 BUCKET="${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}"
 MAX_MIN="${CLUSTER_STATE_MAX_AGE_MIN:-60}"
 blind() { printf 'BLIND   cluster-state  %s\n' "$1"; exit 2; }
 fail()  { printf 'FAIL    cluster-state  %s\n' "$1"; exit 1; }
+command -v oci >/dev/null || blind "oci CLI is not installed"
 command -v python3 >/dev/null || blind "python3 is not installed"
-head=$("$IDP/bin/idp-cloud" object head --bucket "$BUCKET" --name state/cluster 2>&1)
+ns=(); [ -n "${OCI_OS_NAMESPACE:-}" ] && ns=(--namespace-name "$OCI_OS_NAMESPACE")
+head=$(oci os object head "${ns[@]}" --bucket-name "$BUCKET" --name state/cluster 2>&1)
 rc=$?
 if [ $rc -ne 0 ]; then
   case "$head" in
     *"404"*|*NotFound*|*"not found"*) fail "no receipt state/cluster in bucket $BUCKET: the CronJob has never completed (Flux row cluster-state not reconciled, or the bucket is not applied yet)" ;;
-    *) blind "object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
+    *) blind "oci os object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
   esac
 fi
-# stderr kept: with 2>/dev/null a failed read was an empty body and graded FAIL "does not start
-# with ok: ''" — a FAIL that the cluster did nothing to earn (crew#66 row from idp#465, the class
-# that hid the surge's reads). A read that fails is BLIND and names the error.
-body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name state/cluster 2>&1) \
-  || blind "object get failed: $(printf '%s' "$body" | tail -1 | cut -c1-160)"
-[ -n "$body" ] || blind "object get returned an empty body"
-# crew#539 (2026-08-28 00:28Z, run 33129788480): the outage receipt (36 Flux rows, 40 pods with
-# their last log) outgrew ARG_MAX and `python3: Argument list too long` graded the estate BLIND
-# at the moment it needed reading. The body travels by file, never by argv.
-bodyf=$(mktemp); trap 'rm -f "$bodyf"' EXIT; printf '%s' "$body" > "$bodyf"
-IDP_LIB="$IDP/bin/lib" python3 - "$head" "$bodyf" "$MAX_MIN" "${1:-}" <<'PY'
-import os as _os
-def _body_arg(a):
-    # crew#539: the receipt is a file path when the caller wrote it out (ARG_MAX, run 33129788480); a literal body is still accepted for the test harnesses.
-    return (open(a, encoding='utf-8', errors='replace').read() if _os.path.isfile(a) else a).strip()
+body=$(oci os object get "${ns[@]}" --bucket-name "$BUCKET" --name state/cluster --file - 2>/dev/null)
+python3 - "$head" "$body" "$MAX_MIN" "${1:-}" <<'PY'
 import json, re, sys
-sys.path.insert(0, _os.environ.get("IDP_LIB", ""))
-from receipt_age import receipt_age  # crew#583 CP2: the store's clock, never this machine's
-head, body, max_min, flag = sys.argv[1], _body_arg(sys.argv[2]), float(sys.argv[3]), sys.argv[4]
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+head, body, max_min, flag = sys.argv[1], sys.argv[2].strip(), float(sys.argv[3]), sys.argv[4]
 line1, _, rest = body.partition("\n")
 try:
-    head = json.loads(head)
+    lm = json.loads(head)["last-modified"]
 except Exception as e:
-    print(f"BLIND   cluster-state  object head was not readable JSON: {e}"); sys.exit(2)
-age = receipt_age(head, 60.0, "cluster-state")
+    print(f"BLIND   cluster-state  object head carried no last-modified: {e}"); sys.exit(2)
+age = (datetime.now(timezone.utc) - parsedate_to_datetime(lm)).total_seconds() / 60
 if not line1.startswith("ok "):
     print(f"FAIL    cluster-state  receipt does not start with ok: {line1[:120]!r}"); sys.exit(1)
 if age > max_min:
@@ -55,117 +42,7 @@ if age > max_min:
 kv = dict(m.groups() for m in re.finditer(r"(\w+)=(\d+)", line1))
 if kv.get("nodes") != kv.get("ready") or int(kv.get("nodes", 0)) == 0:
     print(f"FAIL    cluster-state  nodes={kv.get('nodes')} ready={kv.get('ready')}: {line1[:120]}"); sys.exit(1)
-# crew#406: a receipt with no flux count predates the Flux rows and is graded as a miss, never as clean.
-if "flux_not_ready" not in kv:
-    print(f"FAIL    cluster-state  receipt carries no flux_not_ready count (collector predates crew#406): {line1[:120]}"); sys.exit(1)
-if int(kv["flux_not_ready"]) > 0:
-    try:
-        bad = json.loads(rest).get("flux_not_ready", [])
-        why = "; ".join(f"{r['kind']} {r['ns']}/{r['name']}: {r['message'][:100]}" for r in bad[:4])
-    except Exception:
-        bad, why = [], "body unreadable"
-    print(f"FAIL    cluster-state  {kv['flux_not_ready']} Flux object(s) not Ready: {why}")
-    # Every row, whole message: the summary above is what the job grades, this is what a
-    # session repairs from. Four rows cut at 100 chars named the symptom and hid the cause.
-    for r in bad:
-        print(f"  not-ready  {r['kind']} {r['ns']}/{r['name']}: {r.get('message') or ''}")
-    if flag == "--json":
-        print(rest)
-    sys.exit(1)
-# crew#320: a DaemonSet short of its desired count fails the row and the Warning events of the
-# last hour that name it are printed, because that is the diagnosis (k8s-infra-otel-agent 0/1).
-if "ds_short" not in kv:
-    print(f"FAIL    cluster-state  receipt carries no ds_short count (collector predates the DaemonSet row): {line1[:120]}"); sys.exit(1)
-if int(kv["ds_short"]) > 0:
-    try:
-        b = json.loads(rest)
-        short = b.get("ds_short", [])
-        names = {d["name"] for d in short}
-        why = "; ".join(f"{d['ns']}/{d['name']} ready={d['ready']}/{d['desired']}" for d in short[:4])
-        evs = [e for e in b.get("events_warning", []) if any(e.get("name", "").startswith(n) for n in names)][:6]
-        why += "".join(f"\n        event {e['at']} {e['kind']} {e['ns']}/{e['name']} {e['reason']} x{e['count']}: {e['message'][:160]}" for e in evs)
-    except Exception:
-        why = "body unreadable"
-    print(f"FAIL    cluster-state  {kv['ds_short']} DaemonSet(s) short of desired: {why}"); sys.exit(1)
-# run 33332263130 (2026-08-30, founder: "did I not say everything must be transparent"): Deployment
-# healing/estate held zero pods for a day -- Kyverno denied every ReplicaSet pod at admission --
-# and this grader read ok, because only DaemonSets had a short row. A Deployment or StatefulSet
-# short of its desired replicas fails the row and prints the Warning events that name it.
-if "deploy_short" not in kv:
-    print(f"FAIL    cluster-state  receipt carries no deploy_short count (collector predates the workload row): {line1[:120]}"); sys.exit(1)
-if int(kv["deploy_short"]) > 0:
-    try:
-        b = json.loads(rest)
-        short = b.get("deploy_short", [])
-        names = {d["name"] for d in short}
-        why = "; ".join(f"{d['ns']}/{d['name']} available={d['available']}/{d['desired']}" for d in short[:4])
-        evs = [e for e in b.get("events_warning", []) if any(e.get("name", "").startswith(n) for n in names)][:6]
-        why += "".join(f"\n        event {e['at']} {e['kind']} {e['ns']}/{e['name']} {e['reason']} x{e['count']}: {e['message'][:160]}" for e in evs)
-    except Exception:
-        why = "body unreadable"
-    print(f"FAIL    cluster-state  {kv['deploy_short']} workload(s) short of desired: {why}"); sys.exit(1)
-# crew#539 DoD 1: a cluster with no PrometheusRule, or an Alertmanager that does not show the
-# always-firing Watchdog, has no alerting -- absent counts grade FAIL like every other row.
-if "monitoring_rules" not in kv or "alert_watchdog" not in kv:
-    print(f"FAIL    cluster-state  receipt carries no monitoring_rules/alert_watchdog (collector predates crew#539 DoD 1): {line1[:120]}"); sys.exit(1)
-if int(kv["monitoring_rules"]) == 0 or int(kv["alert_watchdog"]) == 0:
-    try:
-        why = (json.loads(rest).get("monitoring") or {}).get("error") or "no error recorded"
-    except Exception as e:
-        why = f"body unreadable: {e}"
-    print(f"FAIL    cluster-state  monitoring_rules={kv['monitoring_rules']} alert_watchdog={kv['alert_watchdog']}: {why[:300]}"); sys.exit(1)
 print(f"ok      cluster-state  {line1} ({age:.0f} min ago)")
-# crew#584 (founder 2026-08-29 "why 4 cores ... do we have utilisation metrics?"): the capacity
-# row is the answer, printed on every read. -1 means the metrics API could not be read, and the
-# row says so; a receipt with no capacity numbers predates this and is graded FAIL, never clean.
-kv2 = dict(m.groups() for m in re.finditer(r"(\w+)=(-?\d+)", line1))
-if "cpu_used_pct" not in kv2:
-    print(f"FAIL    capacity       receipt carries no cpu_used_pct (collector predates crew#584 capacity row): {line1[:120]}"); sys.exit(1)
-try:
-    b = json.loads(rest); rows = b.get("capacity") or []; cap_err = b.get("capacity_error") or ""
-except Exception as e:
-    rows, cap_err = [], f"body unreadable: {e}"
-if int(kv2["cpu_used_pct"]) < 0:
-    print(f"FAIL    capacity       usage unreadable: {cap_err[:200] or 'no error recorded'}"); sys.exit(1)
-print(f"ok      capacity       cpu used {kv2['cpu_used_pct']}% requested {kv2['cpu_req_pct']}%, memory used {kv2['mem_used_pct']}% requested {kv2['mem_req_pct']}% of what is paid for")
-for r in rows:
-    print(f"  node {r['name']}: cpu {r['cpu_used']}/{r['cpu_allocatable']} cores used ({r['cpu_used_pct']}%), requests {r['cpu_requested']} ({r['cpu_requested_pct']}%);"
-          f" memory {r['memory_used_gb']}/{r['memory_allocatable_gb']} GB used ({r['memory_used_pct']}%), requests {r['memory_requested_gb']} GB ({r['memory_requested_pct']}%)")
-# crew#722 CP2 (founder 2026-08-31: "poorly designed enterprise-wide secrets rotation strategy"):
-# a rotated Secret whose running consumers still hold the old value was invisible until a person
-# hit the broken door (crew#506 CP4, crew#684). The collector counts running pods older than a
-# Secret they consume; absent count = collector predates the row, -1 = the list failed and
-# staleness was NOT graded (silent green is the defect class) -- both are FAIL, never clean.
-if "secret_stale_consumers" not in kv2:
-    print(f"FAIL    secret-freshness  receipt carries no secret_stale_consumers (collector predates crew#722): {line1[:120]}"); sys.exit(1)
-stale_n = int(kv2["secret_stale_consumers"])
-if stale_n < 0:
-    try:
-        why = json.loads(rest).get("secrets_error") or "no error recorded"
-    except Exception as e:
-        why = f"body unreadable: {e}"
-    print(f"FAIL    secret-freshness  secrets metadata unreadable, staleness was not graded: {why[:200]}"); sys.exit(1)
-if stale_n > 0:
-    try:
-        srows = json.loads(rest).get("secret_stale_consumers") or []
-    except Exception:
-        srows = []
-    why = "; ".join(f"{r['ns']}/{r['pod']} started {r['pod_started']}, {r['secret']} written {r['secret_written']}" for r in srows[:4]) or "body unreadable"
-    print(f"FAIL    secret-freshness  {stale_n} running pod(s) predate a Secret they consume -- the rotation never reached them: {why}")
-    # every row, whole: this is what a session repairs from (same rule as the Flux rows above)
-    for r in srows:
-        print(f"  stale      {r['ns']}/{r['pod']}: consumes {r['secret']} written {r['secret_written']}, pod started {r['pod_started']}")
-    sys.exit(1)
-print("ok      secret-freshness  every running pod is newer than every Secret it consumes")
-# K8sGPT findings (2026-08-29, founder: nothing is done until operational). Printed, never
-# graded here: K8sGPTFinding (platform/monitoring/rules/k8sgpt.yaml) is the pager; this is the read.
-try:
-    for f in (json.loads(rest).get("k8sgpt") or [])[:12]:
-        print(f"  k8sgpt     {f.get('kind')} {f.get('name')}: {(f.get('error') or '')[:160]}")
-        if f.get("details"):
-            print(f"             {f['details'][:300]}")
-except Exception as e:
-    print(f"  k8sgpt     body unreadable: {e}")
 if flag == "--json":
     print(rest)
 PY

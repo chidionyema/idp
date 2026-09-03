@@ -8,7 +8,7 @@ bin/catalog-gen turns that into catalog/catalog-info.yaml with its dependsOn edg
 file is the third renderer of the same inventory: it reads the catalogue and writes one
 Mermaid page. It collects nothing, so it can never disagree with the catalogue.
 
-    estate-diagram                      render catalog/catalog-info.yaml -> docs/explanation/architecture/live.md
+    estate-diagram                      render catalog/catalog-info.yaml -> docs/architecture/live.md
     estate-diagram --catalog F --out G  other paths (the tests use a fixture)
     estate-diagram --check              exit 1 when the page on disk is not what the catalogue says
 

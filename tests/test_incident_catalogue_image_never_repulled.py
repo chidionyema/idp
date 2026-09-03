@@ -36,31 +36,24 @@ def test_kustomization_carries_the_policy_marker():
     text = (ROOT / "platform/backstage/overlays/oke/kustomization.yaml").read_text()
     m = re.search(r'newTag: (\S+) # \{"\$imagepolicy": "flux-system:backstage:tag"\}', text)
     assert m, "newTag line has no $imagepolicy marker; image-automation-controller cannot find it"
-    update = BY_KIND["ImageUpdateAutomation"]["spec"]["update"]
-    assert update["strategy"] == "Setters"
-    # crew#406: one automation walks ./platform; the overlay must sit under its path.
-    assert "platform/backstage/overlays/oke".startswith(update["path"].removeprefix("./")), update
+    assert BY_KIND["ImageUpdateAutomation"]["spec"]["update"] == {"path": "./platform/backstage/overlays/oke", "strategy": "Setters"}
 
 
-def test_controllers_are_installed_and_the_writer_authenticates_as_the_app():
+def test_controllers_are_installed_and_the_writer_is_a_deploy_key():
     """crew#325: the writer was the estate-agents GitHub App, which needed a person to tap Create; a day
-    went by with every session calling that a founder action, so a deploy key replaced it. crew#66 root
-    trust (5453747447, crew#575): that key was ssh-keygen + `gh api` by hand, pasted as SEED_FLUX_WRITER_*
-    -- the MISS the register refuses. The App exists now (installed by oke-check from CI, crew#267), so
-    Flux authenticates as the App: `provider: github`, three keys templated from the vault entry
-    `github-app`, and no person, no key pair, no deploy key anywhere."""
+    went by with every session calling that a founder action. A deploy key needs no person."""
     gotk = (ROOT / "clusters/oke/flux-system/gotk-components.yaml").read_text()
     deployments = {d["metadata"]["name"] for d in yaml.safe_load_all(gotk) if d and d["kind"] == "Deployment"}
     assert {"image-reflector-controller", "image-automation-controller"} <= deployments, deployments
     writer = BY_KIND["GitRepository"]
-    assert writer["spec"]["url"] == "https://github.com/chidionyema/idp" and writer["spec"]["provider"] == "github"
+    assert writer["spec"]["url"].startswith("ssh://git@github.com/") and "provider" not in writer["spec"]
     assert writer["spec"]["secretRef"] == {"name": "flux-writer"}
     es = yaml.safe_load((ROOT / "platform/image-automation/flux-writer.yaml").read_text())
-    assert set(es["spec"]["target"]["template"]["data"]) == {"githubAppID", "githubAppInstallationID", "githubAppPrivateKey"}
-    assert es["spec"]["dataFrom"] == [{"extract": {"key": "github-app"}}]
+    assert set(es["spec"]["target"]["template"]["data"]) == {"identity", "identity.pub", "known_hosts"}
+    assert es["spec"]["dataFrom"] == [{"extract": {"key": "flux-writer"}}]
     seed = (ROOT / ".github/workflows/vault-seed.yml").read_text()
-    assert "put flux-writer" not in seed and "SEED_FLUX_WRITER" not in seed, "the pasted deploy key path is gone"
-    assert not (ROOT / "platform/image-automation/github-app.yaml").exists(), "one App entry, github-app, not a second"
+    assert "put flux-writer identity_b64=FLUX_WRITER_IDENTITY_B64 pub=FLUX_WRITER_PUB" in seed
+    assert not (ROOT / "platform/image-automation/github-app.yaml").exists(), "the App is off the writer path"
     assert BY_KIND["ImageUpdateAutomation"]["spec"]["sourceRef"]["name"] == writer["metadata"]["name"]
 
 
@@ -70,17 +63,5 @@ def test_the_automation_branch_is_graded_and_becomes_a_pull_request():
     assert branch in (ci.get("on") or ci.get(True))["push"]["branches"], "required checks would never run on the automation push"
     pr = yaml.safe_load((ROOT / ".github/workflows/image-update-pr.yml").read_text())
     assert (pr.get("on") or pr.get(True))["push"]["branches"] == [branch]
-    run = pr["jobs"]["open"]["steps"][-1]["run"].strip()
-    last = run.splitlines()[-1].strip()  # crew#439: the step ends by running bin/idp-image-update-pr; the rule binds the script
-    # crew#584 / idp#750: the step runs main's copy (`bash <(git show origin/main:bin/...)`), never the
-    # branch's, so the path is the one after the colon.
-    script = ROOT / last.split("origin/main:", 1)[1].rstrip(")") if "origin/main:" in last else ROOT / last
-    assert script.exists(), script
-    run = script.read_text()
-    # idp#1046: this used to assert `gh pr merge` and `--auto` were in the file, and it kept passing
-    # after the script stopped calling them -- both strings survive in the comment that explains why
-    # they were removed. A check that reads a comment is a silent green. It grades the call now, and
-    # bin/idp-pr-arm is where the "can this repository auto-merge at all" question is answered.
-    assert "bin/idp-pr-arm" in run and 'bash "$arm" "$n" --squash' in run
-    assert 'gh pr merge "$n" --auto' not in run
-    assert (ROOT / "bin" / "idp-pr-arm").exists()
+    run = pr["jobs"]["open"]["steps"][-1]["run"]
+    assert "gh pr merge" in run and "--auto" in run

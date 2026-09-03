@@ -16,21 +16,7 @@ metadata:
   name: cert-manager
   namespace: cert-manager
 spec:
-  # Bounded remediation, and the last failure is remediated too, so a wedged release is not left
-  # Failed for a person to untangle: helm-controller spends its retries once and then waits forever
-  # for a spec change (tailscale-operator sat Failed blocking guacamole, idp#1027).
-  # NOT `strategy: uninstall`, which idp#1027 set here and this row takes back out. Founder,
-  # 2026-08-30 (~/.claude/docs/founder/2026-08-30T2332Z-yes-and-the-pattern-is-sound-but-two
-  # -c08d08d9.md): uninstalling a wedged release turns a degraded service into a deleted one --
-  # the PVCs, PDBs and Secrets the release made go with it -- and it erases the state that says
-  # which invariant was violated, which is the state an incident is converted into a control from.
-  # The default strategy is rollback: the previous revision is restored and the failed one is
-  # readable. Repaving stays a hand after capture: `bin/idp-oke-break-glass helm-retry`.
-  install:
-    remediation: { retries: 3 }
-  upgrade:
-    remediation: { retries: 3, remediateLastFailure: true }
-  interval: 10m
+  interval: 1h
   chart:
     spec:
       chart: cert-manager
@@ -84,7 +70,7 @@ spec:
 # cainjector is the one cert-manager container the chart renders with no probe (helm template
 # cert-manager v1.21.1: probes on controller and webhook only, none under cainjector), so Kyverno
 # require-pod-probes refuses it. The exception covers that one rule for that one workload and
-# lives in namespace kyverno, the only namespace platform/kyverno/kyverno.yaml honours exceptions from.
+# lives in namespace kyverno, the only namespace platform/edge/kyverno.yaml honours exceptions from.
 apiVersion: kyverno.io/v2
 kind: PolicyException
 metadata:

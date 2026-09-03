@@ -14,7 +14,7 @@ data "oci_objectstorage_namespace" "estate" {
 # bin/idp-oci-bootstrap had no `manage buckets` statement. That statement is the fix, not an import.
 resource "oci_objectstorage_bucket" "drill_receipts" {
   # crew#310: the bucket grant lives in the compartment policy CI applies; create that first.
-  depends_on     = [oci_identity_policy.operators_compartment]
+  depends_on = [oci_identity_policy.operators_compartment]
   compartment_id = var.compartment_ocid
   namespace      = data.oci_objectstorage_namespace.estate.namespace
   name           = "${var.cluster_name}-drill-receipts"

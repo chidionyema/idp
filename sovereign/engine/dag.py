@@ -197,8 +197,7 @@ def _is_inside(child: Path, parent: Path) -> bool:
         return False
 
 
-def write_head(name: str, node_hash: str, dag_dir: Path | None = None,
-               extra: dict[str, Any] | None = None) -> Path:
+def write_head(name: str, node_hash: str, dag_dir: Path | None = None) -> Path:
     """The only writer of a branch pointer in this estate.
 
     Refuses a dag_dir that is neither the configured DAG root nor under
@@ -214,10 +213,7 @@ def write_head(name: str, node_hash: str, dag_dir: Path | None = None,
     hp = head_path(name)
     hp.parent.mkdir(parents=True, exist_ok=True)
     tmp = hp.with_suffix(hp.suffix + ".tmp")
-    body: dict[str, Any] = {"root": node_hash, "dag_dir": str(target)}
-    if extra:
-        body.update(extra)
-    tmp.write_text(json.dumps(body, sort_keys=True))
+    tmp.write_text(json.dumps({"root": node_hash, "dag_dir": str(target)}, sort_keys=True))
     os.replace(tmp, hp)
     return hp
 

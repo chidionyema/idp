@@ -34,17 +34,12 @@ def _policy_test(state: dict) -> None:
     state["rows"] = rows
 
 
-@then("every opmodel-* row that expects 0 gets 0 and at least five rows expect and get 1")
+@then("the opmodel-ok row is 0 and every other opmodel-* row is 1")
 def _rows(state: dict) -> None:
-    # crew#473: the no-word and unanswered-word fixtures expect 0 since 2026-08-27; the
-    # expectation column of bin/policy-test is the spec, and the DENY row must stay a refusal.
     rows = state["rows"]
     assert rows.get("opmodel-ok.json", (None, None))[1] == 0, state["run"].stdout
-    allows = {k: v for k, v in rows.items() if v[0] == 0}
-    refusals = {k: v for k, v in rows.items() if v[0] == 1}
-    assert all(v[1] == 0 for v in allows.values()), rows
+    refusals = {k: v for k, v in rows.items() if k not in ("opmodel-ok.json", "opmodel-drill-added-in-pr.json")}
     assert len(refusals) >= 5 and all(v[1] == 1 for v in refusals.values()), rows
-    assert rows["opmodel-denied.json"] == (1, 1), rows
 
 
 @then("no row's exit code differs from the one it expects")

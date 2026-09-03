@@ -5,8 +5,6 @@
 apiVersion: v1
 kind: Service
 metadata:
-  labels:
-    backstage.io/kubernetes-id: founder-catalogue
   name: catalogue
 spec:
   type: ClusterIP
@@ -21,14 +19,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: catalogue
-  # crew#684: app-config reads `$file` values once at start (the Healthchecks read-only key,
-  # /run/secrets/healthchecks-ro). A rotated key is a 401 on the Ops tile until the pod rolls.
-  # Founder blueprint 2026-08-30 (4ca529a0.md): no hand-kept list of Secret names. Reloader
-  # discovers every Secret and ConfigMap this pod references, and
-  # platform/edge/require-auto-reload.yaml injects this annotation at admission, so git and the
-  # cluster say the same thing.
-  annotations:
-    reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
   strategy:
@@ -41,9 +31,6 @@ spec:
       labels:
         app.kubernetes.io/name: catalogue
     spec:
-      # rbac.yaml: read-only cluster view for the Kubernetes tab (crew#412 row 2).
-      serviceAccountName: catalogue
-      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000   # `USER node` in backstage/Dockerfile
@@ -51,11 +38,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: catalogue
-          # The registry is written out here, not left to the overlay: on cri-o with
-          # short-name mode enforcing, `idp/backstage:local` is admitted and then fails to
-          # pull with "returns ambiguous list". The overlay still moves the tag to the sha
-          # image-automation ordered; only the host stops depending on being overlaid.
-          image: ghcr.io/chidionyema/backstage:local
+          image: idp/backstage:local
           imagePullPolicy: Never   # built locally, imported with `k3d image import`; a pull would fetch a stranger's image of the same name
           env:
             - name: POSTGRES_HOST
@@ -94,8 +77,8 @@ spec:
             httpGet: { path: /.backstage/health/v1/liveness, port: http }
             periodSeconds: 30
           resources:
-            requests: { cpu: 50m, memory: 512Mi }   # crew#584 zealot rule 1: micro CPU request, burst limit; the memory floor stays (incident-set)
-            limits: { cpu: 1000m, memory: 1Gi }
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { memory: 1Gi }
           volumeMounts:
             - name: estate
               mountPath: /estate

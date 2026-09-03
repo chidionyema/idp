@@ -16,7 +16,7 @@ locals {
   operator_compartment_statements = [
     for s in local.operator_statements :
     replace(s, " in compartment estate", " in compartment id ${var.compartment_ocid}")
-    if can(regex(" in compartment estate( where .*)?$", s)) # crew#631 CP2: a where clause may follow the scope
+    if endswith(s, " in compartment estate")
   ]
 }
 

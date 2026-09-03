@@ -82,9 +82,7 @@ def _refused(state: dict) -> None:
 @given(parsers.parse('a receipt "{line}" written {minutes:d} minutes ago'))
 def _receipt(state: dict, tmp_path: Path, line: str, minutes: int) -> None:
     when_ = datetime.now(timezone.utc) - timedelta(minutes=minutes)
-    # crew#583 CP2: the row reads the store's own clock (`date`) beside the stamp, never this Mac's
-    (tmp_path / "head.json").write_text(json.dumps({"last-modified": format_datetime(when_),
-                                                    "date": format_datetime(datetime.now(timezone.utc))}))
+    (tmp_path / "head.json").write_text(json.dumps({"last-modified": format_datetime(when_)}))
     (tmp_path / "body.txt").write_text(line + "\n" + json.dumps({"nodes": []}) + "\n")
     fake = tmp_path / "bin" / "oci"
     fake.parent.mkdir()

@@ -3,12 +3,8 @@
 Each entry in schedule.yml becomes one Dagster job (one op that runs the
 command) and one cron schedule. What the plists could not do lives here:
 
-  load gate        the schedule skips, with a reason, while the 1-minute load
-                   average is above max_load_per_core x cores (default 2.0;
-                   2026-08-24: load 30 froze the Dock). Per core, because a bare
-                   number describes one machine: a flat 6.0 on this 12-core Mac
-                   skipped 3836 ticks in 24h and ran nothing for 16 hours
-                   (crew#85, 2026-08-27). An explicit max_load still wins.
+  max_load         the schedule skips, with a reason, while the 1-minute load
+                   average is above it (2026-08-24: load 30 froze the Dock)
   skip_on_battery  the schedule skips while the Mac is discharging
   after            a run_status_sensor starts this job when the named job
                    succeeds; the cron on such a job is optional
@@ -33,19 +29,17 @@ import time
 from pathlib import Path
 
 import yaml
-
-try:
-    from .load_gate import CORES, load_ceiling, load_verdict
-except ImportError:  # loaded as a bare file, not a package (dagster -f definitions.py)
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from load_gate import CORES, load_ceiling, load_verdict  # type: ignore[no-redef]
 from dagster import (
     DagsterRunStatus,
     DefaultScheduleStatus,
     DefaultSensorStatus,
     Definitions,
     Failure,
+    OpExecutionContext,
+    RunFailureSensorContext,
     RunRequest,
+    RunStatusSensorContext,
+    ScheduleEvaluationContext,
     SkipReason,
     job,
     op,
@@ -100,11 +94,6 @@ def load1() -> float:
     return os.getloadavg()[0]
 
 
-def load_gate(label: str, spec: dict, current: float, cores: int = CORES) -> SkipReason | None:
-    why = load_verdict(label, spec, current, cores)
-    return SkipReason(why) if why else None
-
-
 def on_battery() -> bool:
     try:
         out = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True, timeout=5).stdout
@@ -113,49 +102,16 @@ def on_battery() -> bool:
     return "discharging" in out
 
 
-SPEC_HASH_TAG = "estate/spec-hash"
-
-
-def spec_hash(spec: dict) -> str:
-    """Twelve hex chars over the row as schedule.yml states it, so a run carries which
-    version of the row it executed."""
-    import hashlib
-
-    return hashlib.sha256(json.dumps(spec, sort_keys=True, default=str).encode()).hexdigest()[:12]
-
-
-def _recent_statuses(instance, job_name: str, n: int, tags: dict | None = None) -> list[DagsterRunStatus]:
+def _recent_statuses(instance, job_name: str, n: int) -> list[DagsterRunStatus]:
     from dagster import RunsFilter
 
-    records = instance.get_run_records(RunsFilter(job_name=job_name, tags=tags or None), limit=n)
+    records = instance.get_run_records(RunsFilter(job_name=job_name), limit=n)
     return [r.dagster_run.status for r in records]
 
 
-def circuit_open(instance, job_name: str, current_hash: str | None = None) -> bool:
-    """Three consecutive failures of the row AS IT NOW STANDS open the breaker.
-
-    crew#539 (2026-08-28, 09cd04a6 measured from run/dagster/schedules/schedules.db): 24 jobs
-    sat circuit-open, some since 2026-08-25 02:30. com.estate.costsentinel tripped on exit 1
-    before ok_exit [1] landed (crew#85); the fix landed, the breaker never re-closed, and the
-    row stayed dark for 18 hours until a person launched it by hand. A run records the
-    spec_hash of the row it executed; failures under an older hash belong to a row that no
-    longer exists and do not count. Editing the row in schedule.yml is the reset.
-    """
-    tags = {SPEC_HASH_TAG: current_hash} if current_hash else None
-    recent = _recent_statuses(instance, job_name, BREAKER_TRIP, tags)
+def circuit_open(instance, job_name: str) -> bool:
+    recent = _recent_statuses(instance, job_name, BREAKER_TRIP)
     return len(recent) == BREAKER_TRIP and all(s == DagsterRunStatus.FAILURE for s in recent)
-
-
-def exit_is_ok(spec: dict, returncode: int) -> bool:
-    """0, or a code the job declares in ``ok_exit`` as "ran fine, found something".
-
-    crew#85 (2026-08-27): com.estate.costsentinel exits 1 to say "spend warning" and
-    ai.estate.sovereign-self-check exits 1 to say "enforced an action". Three of those in a
-    row opened the circuit breaker, so each sentinel went silent exactly when it had
-    something to say. Same split as hc-wrap.sh HC_FINDINGS_EXIT: a crash is any code not
-    declared here and still trips the breaker.
-    """
-    return returncode == 0 or returncode in set(spec.get("ok_exit") or [])
 
 
 def make_op(label: str, spec: dict):
@@ -180,9 +136,9 @@ def make_op(label: str, spec: dict):
             context.log.info(proc.stdout[-20000:])
         if proc.stderr:
             context.log.warning(proc.stderr[-20000:])
-        if not exit_is_ok(spec, proc.returncode):
+        if proc.returncode != 0:
             raise Failure(f"{label}: exit {proc.returncode} after {took}s")
-        context.log.info("%s: exit %s after %ss", label, proc.returncode, took)
+        context.log.info("%s: exit 0 after %ss", label, took)
 
     return _run
 
@@ -210,7 +166,7 @@ def _job_metadata(label: str, spec: dict, source: str) -> dict:
 
 
 def _skip_note(spec: dict) -> str:
-    parts = [f"1-minute load average is above {load_ceiling(spec):.1f} ({CORES} cores)"]
+    parts = [f"1-minute load average is above {float(spec.get('max_load', 6.0)):.1f}"]
     if spec.get("skip_on_battery"):
         parts.append("the laptop is on battery")
     parts.append(f"the breaker is open after {BREAKER_TRIP} consecutive failures")
@@ -233,7 +189,6 @@ def make_job(label: str, spec: dict):
             "estate/owner": label.split(".")[1] if label.count(".") >= 2 else label.split(".")[0],
             "dagster/max_runtime": str(int(spec.get("timeout_s", 1800)) + 60),
             "dagster/priority": str(int(spec.get("priority", 0))),
-            SPEC_HASH_TAG: spec_hash(spec),
         },
     )
     def _job():
@@ -243,6 +198,7 @@ def make_job(label: str, spec: dict):
 
 
 def make_schedule(label: str, spec: dict, the_job):
+    max_load = float(spec.get("max_load", 6.0))
     battery = bool(spec.get("skip_on_battery", False))
 
     text, _ = describe_job(label, spec)
@@ -257,13 +213,13 @@ def make_schedule(label: str, spec: dict, the_job):
         default_status=DefaultScheduleStatus.RUNNING,
     )
     def _sched(context):
-        skip = load_gate(label, spec, load1())
-        if skip is not None:
-            return skip
+        current = load1()
+        if current > max_load:
+            return SkipReason(f"{label}: load {current:.1f} > max_load {max_load}")
         if battery and on_battery():
             return SkipReason(f"{label}: on battery")
-        if circuit_open(context.instance, the_job.name, spec_hash(spec)):
-            return SkipReason(f"{label}: circuit open after {BREAKER_TRIP} failures of this row; edit the row or run it by hand to reset")
+        if circuit_open(context.instance, the_job.name):
+            return SkipReason(f"{label}: circuit open after {BREAKER_TRIP} failures; run it by hand to reset")
         return RunRequest(run_key=None)
 
     return _sched
@@ -278,7 +234,7 @@ def make_dependency_sensor(label: str, spec: dict, the_job, upstream_job):
         default_status=DefaultSensorStatus.RUNNING,
     )
     def _after(context):
-        if circuit_open(context.instance, the_job.name, spec_hash(spec)):
+        if circuit_open(context.instance, the_job.name):
             return SkipReason(f"{label}: circuit open")
         return RunRequest(run_key=context.dagster_run.run_id)
 
@@ -301,9 +257,6 @@ def estate_failure_log(context):
 def build() -> Definitions:
     spec = load_spec()
     jobs, schedules, sensors = {}, [], [estate_failure_log]
-    # A row graded `runs_on: retire` (crew#516) has left the Mac; it gets no job and no
-    # schedule. crew#539: ai.idp.reconcile kept ticking retired and failing exit 2.
-    spec = {label: s for label, s in spec.items() if s.get("runs_on") != "retire"}
     for label, s in spec.items():
         jobs[label] = make_job(label, s)
     for label, s in spec.items():

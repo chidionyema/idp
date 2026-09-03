@@ -18,9 +18,9 @@ import os
 import socket
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 try:
     import tomllib  # py311+
@@ -252,12 +252,6 @@ KEYS: dict[str, KeySpec] = {
     "dualread.latency_round_ndigits": KeySpec(4, "int", None, "cp10: decimal places dual-read latencies are rounded to before entering a receipt"),
     "time.ms_per_second": KeySpec(1000, "int", None, "milliseconds per second, for every perf_counter() duration reported in ms"),
 
-    "fork.dir": KeySpec(str(_estate_home() / "sovereign" / "forks"), "path", "SB_FORK_DIR", "cp12: disk-backed fork state/dag/receipts root, used once fork.max_parallel is exceeded"),
-    "fork.max_ms": KeySpec(1000, "int", "SB_FORK_MAX_MS", "cp12: budget for `sb fork`'s elapsed_ms -- a fork is one pointer-file copy, never a data copy, so this is a correctness bound, not a target to tune toward"),
-    "fork.max_parallel": KeySpec(3, "int", "SB_FORK_MAX_PARALLEL", "cp12: in-memory forks allowed open at once before a new fork spills to fork.dir on disk"),
-    "fork.working_pointer_filename": KeySpec("working_branch", "str", None, "cp12: file under sovereign/ naming the branch `sb switch` last pointed at"),
-    "fork.memory_dsn": KeySpec(":memory:", "str", None, "cp12: sqlite3.connect() DSN for an in-memory fork, below fork.max_parallel"),
-
     "telegram.bot_token": KeySpec(_ENV_FILE_VALUES.get("TELEGRAM_BOT_TOKEN"), "str", "TELEGRAM_BOT_TOKEN", "", secret=True),
     "telegram.home_channel": KeySpec(_ENV_FILE_VALUES.get("TELEGRAM_HOME_CHANNEL"), "str", "TELEGRAM_HOME_CHANNEL", ""),
 
@@ -318,15 +312,6 @@ KEYS: dict[str, KeySpec] = {
     "cli.exit_usage_error": KeySpec(2, "int", "SB_EXIT_USAGE_ERROR", "exit code for a refused command, e.g. missing budget"),
     "client.query_timeout_s": KeySpec(5, "float", "SB_QUERY_TIMEOUT_S", "client-side timeout on a single workflow query, so one stuck session never hangs `sb list`"),
     "log.bot_token_redact_pattern": KeySpec(r"bot\d+:[A-Za-z0-9_-]+", "str", None, "regex matching a Telegram bot token as it appears in a URL (LAW 21)"),
-    "flip.readonly_mode": KeySpec(0o444, "int", None, "cp13: filesystem mode `sb flip` chmods the legacy DB file to"),
-    "flip.writable_mode": KeySpec(0o644, "int", None, "cp13: filesystem mode `sb flip --rollback` restores"),
-    "flip.max_downtime_ms": KeySpec(250, "int", "SB_FLIP_MAX_DOWNTIME_MS", "cp13: budget for the chmod + one shadow-root verify() a flip takes; reads are never blocked, this bounds the window before the flip is durable"),
-    "flip.receipt_template": KeySpec("[✓] FLIP | root:{root} | legacy:readonly", "str", "SB_FLIP_RECEIPT_TEMPLATE", "cp13 receipt line, exact format"),
-    "flip.rollback_receipt_template": KeySpec("[✓] FLIP_ROLLBACK | root:{root} | legacy:writable", "str", "SB_FLIP_ROLLBACK_RECEIPT_TEMPLATE", "cp13 receipt line, exact format"),
-    "flip.hash_chunk_bytes": KeySpec(65536, "int", None, "cp13: read chunk size for the legacy DB's sha256 in flip.py -- a lint-exempt literal would trip config.py's own numeric-literal rule"),
-    "projection.store_path": KeySpec(str(_estate_home() / "sovereign" / "projection.json"), "path", "SB_PROJECTION_STORE_PATH", "cp14: the hot store rebuilt from the DAG, one JSON file keyed by table then rowid"),
-    "rebuild.receipt_template": KeySpec("[✓] REBUILD | root:{root}", "str", "SB_REBUILD_RECEIPT_TEMPLATE", "cp14 receipt line, exact format from features/sovereign-bus/cp14_projection_views.feature"),
-    "cross_stack.git_timeout_s": KeySpec(5, "int", "SB_CROSS_STACK_GIT_TIMEOUT_S", "cp15: timeout for the `git rev-parse HEAD` subprocess call that produces code_root"),
 }
 
 # ---------------------------------------------------------------------------
@@ -680,11 +665,6 @@ VIEWS_MAIN_FILENAME: str = _R["views.main_filename"].value
 DUALREAD_MAX_OVERHEAD_MS: int = _R["dualread.max_overhead_ms"].value
 DUALREAD_LATENCY_ROUND_NDIGITS: int = _R["dualread.latency_round_ndigits"].value
 MS_PER_SECOND: int = _R["time.ms_per_second"].value
-FORK_DIR: Path = Path(_R["fork.dir"].value)
-FORK_MAX_MS: int = _R["fork.max_ms"].value
-FORK_MAX_PARALLEL: int = _R["fork.max_parallel"].value
-FORK_WORKING_POINTER: Path = SOVEREIGN_HOME / _R["fork.working_pointer_filename"].value
-FORK_MEMORY_DSN: str = _R["fork.memory_dsn"].value
 RECEIPTS_KEYCHAIN_SERVICE: str = _R["receipts.keychain_service"].value
 RECEIPTS_KEYCHAIN_ACCOUNT: str = _R["receipts.keychain_account"].value
 RECEIPTS_KEYCHAIN_TIMEOUT_S: int = _R["receipts.keychain_timeout_s"].value
@@ -766,15 +746,6 @@ REQUIRE_SIGNED_APPROVAL: bool = _R["trust.require_signed_approval"].value
 CLI_EXIT_USAGE_ERROR: int = _R["cli.exit_usage_error"].value
 CLIENT_QUERY_TIMEOUT_S: float = _R["client.query_timeout_s"].value
 LOG_BOT_TOKEN_REDACT_PATTERN: str = _R["log.bot_token_redact_pattern"].value
-FLIP_READONLY_MODE: int = _R["flip.readonly_mode"].value
-FLIP_WRITABLE_MODE: int = _R["flip.writable_mode"].value
-FLIP_MAX_DOWNTIME_MS: int = _R["flip.max_downtime_ms"].value
-FLIP_RECEIPT_TEMPLATE: str = _R["flip.receipt_template"].value
-FLIP_ROLLBACK_RECEIPT_TEMPLATE: str = _R["flip.rollback_receipt_template"].value
-FLIP_HASH_CHUNK_BYTES: int = _R["flip.hash_chunk_bytes"].value
-PROJECTION_STORE_PATH: Path = Path(_R["projection.store_path"].value)
-REBUILD_RECEIPT_TEMPLATE: str = _R["rebuild.receipt_template"].value,
-CROSS_STACK_GIT_TIMEOUT_S: int = _R["cross_stack.git_timeout_s"].value
 
 TEMPORAL_PID_FILE: Path = ESTATE_HOME / "temporal" / "dev-server.pid"
 WORKER_PID_FILE: Path = SOVEREIGN_HOME / "worker.pid"

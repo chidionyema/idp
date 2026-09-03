@@ -1,5 +1,3 @@
-# button: Check or apply the cluster
-# founder: Compares the cluster with what is declared, or applies the declared state and seeds the vault; runs under the machine identity.
 # crew#227 CP2: the platform is checked by a machine identity, not by a key on a laptop.
 # The job's GitHub OIDC token is exchanged for a one-hour OCI session token that impersonates the
 # service user estate-ci (identity propagation trust `github-actions-estate`, created by
@@ -14,26 +12,16 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "check (compare and report drift) or apply (apply the declared state and seed the vault)"
+        description: "check (plan, drift = FAIL) or apply (crew#289: the STAGED node-pool change, refused by main.tf above node_pool.budget_monthly_usd). Never from a laptop (crew#247)."
         type: choice
-        options: [check, apply, surge-node, surge-finish, break-glass]
+        options: [check, apply]
         default: check
-      playbook:
-        description: "Break-glass only: runs the one named recovery playbook while the runner is admitted to the cluster; diagnose and architect-doctor are read-only"
-        type: choice
-        options: [diagnose, architect-doctor, otto-parity, otto-lockdown, otto-restore, healthchecks-door, cilium-unchain, cilium-replace, helm-retry, namespace-unstick, ghcr-pull-restore, k8sgpt-analyze, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll, router-spend, registries-conf]
-        default: diagnose
   pull_request:
-    paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
+    paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/observability/telemetry-coverage.yaml"]
 permissions:
   id-token: write   # the OIDC token this job trades for OCI access
   contents: read
-# crew#516 CP4: one group per event. GitHub keeps one PENDING run per group, so every pull_request
-# push displaced the queued apply dispatch (33089051005, 33091098027 both cancelled, never ran).
-# check runs are read-only plans; the apply dispatch serialises only against other dispatches.
-concurrency:
-  group: "oke-check-${{ github.event_name }}"
-  cancel-in-progress: false
+concurrency: { group: oke-check, cancel-in-progress: false }
 jobs:
   check:
     # A dependabot pull request gets no repository secrets, so OIDC_CLIENT_IDENTIFIER is empty and
@@ -41,26 +29,22 @@ jobs:
     # next human pull request; the scheduled run grades drift either way.
     if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
-    # 25 for check/apply; surge-node waits up to ~65 min for the new node to be ACTIVE then Ready in the receipt (crew#516)
-    timeout-minutes: ${{ inputs.mode == 'surge-node' && 90 || inputs.mode == 'break-glass' && 45 || 25 }}
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
-      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: "3.12" }
+      - uses: opentofu/setup-opentofu@592200bd4b9bbf4772ace78f887668b1aee8f716 # v1.0.5
         with: { tofu_version: "1.12.6", tofu_wrapper: false }
       - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
       - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
+        run: pip install -q oci-cli
       - name: token exchange receipt (claims of the job token, and the domain's answer; never the tokens)
         env:
           OIDC: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
           EP: ${{ vars.DOMAIN_BASE_URL }}
         run: |
-          JWT=$(curl -sS --retry 5 --retry-all-errors --retry-delay 2 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://cloud.oracle.com" | jq -r .value)
+          JWT=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://cloud.oracle.com" | jq -r .value)
           printf '%s' "$JWT" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null | jq -c '{iss,aud,sub,repository,ref,event_name}'
           PUB=$(openssl genrsa 2048 2>/dev/null | openssl rsa -pubout -outform DER 2>/dev/null | base64 -w0)
           curl -sS -o /tmp/x.json -w 'exchange http %{http_code}\n' -u "$OIDC" "$EP/oauth2/v1/token" \
@@ -87,7 +71,6 @@ jobs:
           OCI_S3_SECRET_KEY: ${{ secrets.OCI_S3_SECRET_KEY }}
           OKE_SSH_PUBKEY_TEXT: ${{ vars.OKE_SSH_PUBKEY }}
           OKE_ALLOWED_CIDRS: ${{ vars.OKE_ALLOWED_CIDRS }}
-          BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}   # crew#539: read by --break-glass only
           ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}   # platform/oci/langfuse.tf seeds the Langfuse login
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # bin/idp-drill-heartbeat reads login-drill runs; without it the row is BLIND (run 32988930880)
         run: bin/idp-oke-rebuild --${{ inputs.mode || 'check' }}
@@ -105,183 +88,27 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bin/idp-github-app installation || { rc=$?; [ "$rc" = 2 ] && echo "BLIND   github-app has no installation yet; install the App on chidionyema and re-run apply" || exit "$rc"; }
-      # crew#66 root trust (crew#577): the GitHub tokens workloads read (platform/github-app/token-consumers.json)
-      # are installation tokens of the App, narrowed to a lane, re-minted here and hourly by
-      # bin/idp-verify-drill; no PAT is ever pasted. Exit 2 is BLIND (App not installed yet).
-      - name: bin/idp-github-app refresh (crew#577)
-        if: ${{ always() && inputs.mode == 'apply' }}
-        timeout-minutes: 5   # run 33223929243 hung here 20 min and, through the concurrency group, held every break-glass run behind it (2026-08-29)
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          bin/idp-github-app refresh || { rc=$?; [ "$rc" = 2 ] && echo "BLIND   github-app tokens not refreshed: no installation yet" || exit "$rc"; }
-      # crew#516 CP5, founder's locked spec (crew#66 5451926212, Phase 2): platform/tailscale/policy.hujson
-      # is git-tracked, applied here (no admin-console edit -- the no-toil rule). Exit 2 is BLIND
-      # (vault entry or FOUNDER_MAC_USER not seeded yet).
-      - name: bin/idp-tailscale-policy apply (crew#516 CP5)
+      # crew#325: the model-routing row reads one JSON vault secret, litellm-upstream. trace-drill run
+      # 33007689530 found the ACTIVE secret holding a raw value, not the envelope, so ExternalSecret
+      # llm/litellm-upstream cannot extract it. The values live only on the operator's laptop, which
+      # has no OCI identity (crew#227), so they travel once as SEED_* GitHub secrets, the same machine
+      # identity puts them, and the SEED_* secrets are deleted after the put. With none set: n/a.
+      - name: bin/idp-vault-put litellm-upstream (crew#325)
         if: ${{ always() && inputs.mode == 'apply' }}
         env:
           OCI_CLI_AUTH: security_token
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
+          LITELLM_MASTER_KEY: ${{ secrets.SEED_LITELLM_MASTER_KEY }}
         run: |
-          bin/idp-tailscale-policy apply || { rc=$?; [ "$rc" = 2 ] && echo "BLIND   tailscale-policy has nothing to apply yet (see the line above)" || exit "$rc"; }
-      # crew#163 residual / crew#345 box 3: a Mac has no OCI identity, so the job monitor's ping key
-      # reaches it through the receipts bucket, encrypted to the Mac's age recipient, refreshed hourly.
-      - name: bin/idp-hc-publish (crew#163)
-        if: ${{ always() }}
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
-        run: |
-          sudo apt-get install -y -q age >/dev/null
-          bin/idp-hc-publish
-      # crew#408: the identity domain's OIDC clients (front door, router console) and their vault
-      # secrets are platform/oci/identity. Until this step it had no CI caller: bin/idp-identity-apply
-      # ran from a laptop whose OCI session expires (crew#247, R26). The same machine identity plans
-      # it on every check and applies it on apply; the rebuild step above rendered its remote state.
-      - name: bin/idp-identity-apply ${{ inputs.mode == 'apply' && 'apply' || 'plan' }} (crew#408)
-        if: ${{ always() }}
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_REGION: ${{ vars.OCI_REGION }}
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-          DOMAIN_BASE_URL: ${{ vars.DOMAIN_BASE_URL }}
-          ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}
-        run: |
-          if [ "${{ inputs.mode }}" = apply ]; then bin/idp-identity-apply apply -auto-approve; else bin/idp-identity-apply plan; fi
-      # crew#66 root trust (5453747447; crew#575, crew#576): every estate-born entry -- the router
-      # master key, the Postgres passwords, the store's JWT signing key and internal keys, the MCP
-      # gateway key, the cookie secret, Backstage's env, and the router keys hindsight and hermes
-      # hold -- is minted here by the machine identity and kept when the vault already holds a
-      # well-formed value. Vendor keys are bin/idp-bootstrap-vendors' (crew#579): one SEED_<VENDOR>_API_KEY
-      # root each, set once by the founder (R52), read by that step below and never by this one.
-      - name: bin/idp-estate-seed (crew#66 root trust)
-        if: ${{ always() && inputs.mode == 'apply' }}
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-        run: bin/idp-estate-seed
-
-      # crew#516 CP4: the same door for The Architect's env (platform/hermes-agent). One vault entry,
-      # hermes-agent-env, the env names the gateway reads; SEED_HERMES_* travel once and are deleted
-      # after the put. crew#66 root trust: only configuration rides here (allowed users, home channel,
-      # the auth store); the bot token, vendor keys, router key and GitHub token are born by
-      # bin/idp-bootstrap-vendors, bin/idp-estate-seed and bin/idp-github-app refresh (crew#576, #577, #579).
-      - name: bin/idp-vault-put hermes-agent-env (crew#516 CP4)
-        if: ${{ always() && inputs.mode == 'apply' }}
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-          TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS }}
-          # crew#516 CP4 (receipt 33116314460, "Unauthorized user ... on telegram"): hermes-agent reads
-          # TELEGRAM_ALLOWED_USERS (gateway/run.py); the cockpit reads TELEGRAM_ALLOWED_USER_IDS. Both carry the one value.
-          TELEGRAM_ALLOWED_USERS: ${{ secrets.SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS }}
-          TELEGRAM_HOME_CHANNEL: ${{ secrets.SEED_HERMES_TELEGRAM_HOME_CHANNEL }}
-          HERMES_AUTH_JSON: ${{ secrets.SEED_HERMES_AUTH_JSON }}
-        run: |
-          keys=TELEGRAM_ALLOWED_USER_IDS,TELEGRAM_ALLOWED_USERS,TELEGRAM_HOME_CHANNEL,HERMES_AUTH_JSON
-          any=0; for k in ${keys//,/ }; do [ -n "${!k:-}" ] && any=1; done
-          [ "$any" = 1 ] || { echo "n/a     hermes-agent-env   no SEED_HERMES_* secrets set; the vault keeps what it holds"; exit 0; }
+          [ -n "$LITELLM_MASTER_KEY" ] || { echo "n/a     litellm-upstream   no SEED_* secrets set; the vault keeps what it holds"; exit 0; }
           umask 077; f=$(mktemp)
-          env | grep -E "^(${keys//,/|})=" > "$f"
-          args=""; for k in ${keys//,/ }; do args="$args $k=$k"; done
-          ESTATE_ENV_FILE="$f" bin/idp-vault-put --merge hermes-agent-env $args
+          env | grep -E '^(MINIMAX_API_KEY|DEEPSEEK_API_KEY|OPENROUTER_API_KEY|GEMINI_API_KEY|LITELLM_MASTER_KEY)=' > "$f"
+          ESTATE_ENV_FILE="$f" bin/idp-vault-put litellm-upstream MINIMAX_API_KEY=MINIMAX_API_KEY DEEPSEEK_API_KEY=DEEPSEEK_API_KEY OPENROUTER_API_KEY=OPENROUTER_API_KEY GEMINI_API_KEY=GEMINI_API_KEY LITELLM_MASTER_KEY=LITELLM_MASTER_KEY
           rm -f "$f"
-
-      # crew#562 path 1: the Basic-auth credential the portal's /pair proxy sends to Sunshine on the
-      # estate Mac, born on this runner and written to vault `sunshine-auth`; a complete entry is
-      # kept. The Mac adopts it over the tailnet from the hermes-agent pod (bin/idp-bootstrap-sunshine
-      # header), never from a paste.
-      - name: bin/idp-bootstrap-sunshine (crew#562)
-        if: ${{ always() && inputs.mode == 'apply' }}
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-        run: bin/idp-bootstrap-sunshine
-
-      # crew#66 phase 1, zero-human secrets: the Tailscale operator client is minted here from the
-      # runner's OIDC token (tailscale.com/kb/1581, TAILSCALE_FEDERATED_CLIENT_ID in estate-config),
-      # written to vault `tailscale-operator`, read by ESO for the operator and the hermes-agent
-      # sidecar. A working entry is kept. No identity registered yet = BLIND, never a paste.
-      - name: bin/idp-bootstrap-tailscale (crew#66 phase 1)
-        if: ${{ always() && inputs.mode == 'apply' }}
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-          OCI_REGION: ${{ vars.OCI_REGION }}
-          # crew#66: the other one-time root: an OAuth client with the single scope oauth_keys write,
-          # set once as two repository secrets; the bootstrapper vaults it as tailscale-seed and they may go.
-          TAILSCALE_SEED_CLIENT_ID: ${{ secrets.SEED_TAILSCALE_CLIENT_ID }}
-          TAILSCALE_SEED_CLIENT_SECRET: ${{ secrets.SEED_TAILSCALE_CLIENT_SECRET }}
-        run: |
-          fed=$(awk '$1=="TAILSCALE_FEDERATED_CLIENT_ID:"{gsub(/"/,"",$2);print $2}' clusters/oke/estate-config.yaml)
-          [ -n "$fed" ] || [ -n "$TAILSCALE_SEED_CLIENT_ID" ] || { echo "BLIND   tailscale-operator   no federated identity in estate-config (TAILSCALE_FEDERATED_CLIENT_ID) and no SEED_TAILSCALE_CLIENT_ID repository secret; one of them is the one manual step, kb/1581 or kb/1215"; exit 0; }
-          bin/idp-bootstrap-tailscale
-
-      # crew#561: Otto's key to the founder's Mac sshd, minted here (Tailscale SSH cannot run on his
-      # GUI Tailscale build, platform/tailscale/policy.hujson header). Kept once minted; the public
-      # half is printed for bin/idp-mac-adopt-otto to read from this log. Never a paste.
-      - name: bin/idp-bootstrap-macrun (crew#561)
-        if: ${{ always() && inputs.mode == 'apply' }}
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-          OCI_REGION: ${{ vars.OCI_REGION }}
-        run: bin/idp-bootstrap-macrun
-
-      # R52 (founder 2026-08-29): the Cloudflare root is one token set once as a repository secret; the
-      # DNS token and the R2 credential are minted from it here, never in a browser. No root = BLIND.
-      - name: bin/idp-bootstrap-cloudflare (crew#66, R52)
-        if: ${{ always() && inputs.mode == 'apply' }}
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-          OCI_REGION: ${{ vars.OCI_REGION }}
-          CLOUDFLARE_ROOT_TOKEN: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
-        run: |
-          [ -n "$CLOUDFLARE_ROOT_TOKEN" ] || { echo "BLIND   cloudflare-api-token   no SEED_CLOUDFLARE_ROOT_TOKEN repository secret; one token with 'User API Tokens: Edit', set once, is the root (R52)"; exit 0; }
-          bin/idp-bootstrap-cloudflare
-
-      # crew#539 CP4: the Cluster Autoscaler's node pool id, found by name after the apply, so the
-      # row platform/oci/autoscaler never carries an OCID. Exit 2 is BLIND (no ACTIVE pool yet).
-      - name: bin/idp-autoscaler-seed (crew#539 CP4)
-        if: ${{ always() && inputs.mode == 'apply' }}
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-          OCI_REGION: ${{ vars.OCI_REGION }}
-          OCI_CLUSTER_NAME: ${{ vars.OCI_CLUSTER_NAME || 'estate' }}
-        run: |
-          bin/idp-autoscaler-seed || { rc=$?; [ "$rc" = 2 ] && echo "BLIND   oke-autoscaler   no ACTIVE pool yet; the vault keeps what it holds" || exit "$rc"; }
-
-      # R52 (founder 2026-08-29): every vendor key is one root made once and set as a named repository
-      # secret; this step proves each against the vendor's API and writes the vault. A vendor with no
-      # secret whose vault key does not verify is BLIND, never a paste and never a browser.
-      - name: bin/idp-bootstrap-vendors (crew#579, R52)
-        if: ${{ always() && inputs.mode == 'apply' }}
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-          OCI_REGION: ${{ vars.OCI_REGION }}
-          SEED_ANTHROPIC_API_KEY: ${{ secrets.SEED_ANTHROPIC_API_KEY }}
-          SEED_OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
-          SEED_DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
-          SEED_MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
-          SEED_GROQ_API_KEY: ${{ secrets.SEED_GROQ_API_KEY }}
-          SEED_GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
-          SEED_EXA_API_KEY: ${{ secrets.SEED_EXA_API_KEY }}
-          SEED_CURSOR_API_KEY: ${{ secrets.SEED_CURSOR_API_KEY }}
-          SEED_TELEGRAM_HERMES_BOT_TOKEN: ${{ secrets.SEED_TELEGRAM_HERMES_BOT_TOKEN }}
-          SEED_TELEGRAM_ALERTS_BOT_TOKEN: ${{ secrets.SEED_TELEGRAM_ALERTS_BOT_TOKEN }}
-          SEED_TELEGRAM_ALERTS_CHAT_ID: ${{ secrets.SEED_TELEGRAM_ALERTS_CHAT_ID }}
-          SEED_STRIPE_SECRET_KEY: ${{ secrets.SEED_STRIPE_SECRET_KEY }}
-          SEED_GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.SEED_GOOGLE_OAUTH_CLIENT_ID }}
-          SEED_GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.SEED_GOOGLE_OAUTH_CLIENT_SECRET }}
-        run: |
-          bin/idp-bootstrap-vendors || { rc=$?; [ "$rc" = 2 ] || exit "$rc"; }
 
   # crew#292 CP4: the in-cluster chaos experiment leaves a receipt in Object Storage; this reads
   # it with the same machine identity and grades its age. A runner has no kube path, so the
@@ -293,14 +120,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: "3.12" }
       - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
+        run: pip install -q oci-cli
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -316,159 +140,6 @@ jobs:
           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
         run: bin/idp-chaos-drill
 
-  # crew#539 DoD 2: the in-cluster page drill (platform/chaos/langfuse-alert-drill.yaml) fails
-  # langfuse-web for 8 minutes and writes whether FounderSurfaceDown fired and Telegram was sent.
-  # Same door as chaos-drill: the receipt, read with the machine identity, never a kube path.
-  alert-drill:
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
-      - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
-      - name: OCI session token from the GitHub OIDC token
-        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
-        with:
-          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
-          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
-          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
-          oci_region: ${{ vars.OCI_REGION }}
-      - name: bin/idp-chaos-drill langfuse-alert-drill alert-drill
-        env:
-          OCI_CLI_AUTH: security_token   # every oci call in the run uses the exchanged session token
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_REGION: ${{ vars.OCI_REGION }}
-          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
-        run: bin/idp-chaos-drill langfuse-alert-drill alert-drill
-
-  rotation-drill:
-    # crew#722 CP3: the rotation road, exercised end to end every day. Writes a fresh random
-    # value to the vault entry rotation-canary (guards nothing; its only job is to change), then
-    # polls the receipt the canary consumer publishes (platform/state/rotation-canary.yaml) until
-    # the RUNNING pod answers with the new value's sha: vault -> ESO (10m refresh) -> Secret ->
-    # Reloader roll -> pod start capture -> bucket. SLO 25 minutes, no hand. A rotation "done"
-    # because the vault write succeeded is the class both crew#506 CP4 and crew#684 shipped.
-    # Never on pull_request: a PR must not rotate anything, and the drill row grades the
-    # scheduled run (drills/catalogue.yaml rotation-canary).
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
-      - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
-      - name: OCI session token from the GitHub OIDC token
-        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
-        with:
-          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
-          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
-          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
-          oci_region: ${{ vars.OCI_REGION }}
-      - name: rotate rotation-canary and wait for the running pod (crew#722 CP3)
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_REGION: ${{ vars.OCI_REGION }}
-          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-        run: |
-          set -euo pipefail
-          umask 077
-          val=$(python3 -c "import secrets; print(secrets.token_hex(24))")
-          want=$(printf '%s' "$val" | python3 -c "import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:12])")
-          f=$(mktemp)
-          printf 'CANARY_VALUE=%s\n' "$val" > "$f"
-          unset val
-          ESTATE_ENV_FILE="$f" bin/idp-vault-put rotation-canary value=CANARY_VALUE
-          rm -f "$f"
-          wrote=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          echo "rotated at $wrote; waiting for a running pod to answer sha256=$want"
-          deadline=$((SECONDS + 1500))   # 25m: 10m ESO refresh + roll + 2m receipt loop + slack
-          while [ "$SECONDS" -lt "$deadline" ]; do
-            line=$(bin/idp-cloud object get --bucket estate-drill-receipts --name state/rotation-canary 2>/dev/null | head -1) || true
-            case "$line" in
-              *"sha256=$want"*)
-                echo "ok rotation-canary the running pod answered with the rotated value after ${SECONDS}s: $line"
-                exit 0 ;;
-            esac
-            echo "  waiting ${SECONDS}s: ${line:-no receipt yet}"
-            sleep 60
-          done
-          echo "FAIL rotation-canary no running pod answered sha256=$want within 25m of the vault write at $wrote"
-          exit 1
-
-  free-tier:
-    # crew#488 CP3: the Always Free allowance, asked of the limits API every day and graded
-    # against platform/oci/variables.tf. OCI halved it once (ADR 0004); this is where the next
-    # cut shows first. Never waits on check, like every drill (crew#307).
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
-      - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
-      - name: OCI session token from the GitHub OIDC token
-        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
-        with:
-          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
-          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
-          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
-          oci_region: ${{ vars.OCI_REGION }}
-      - name: bin/idp-free-tier --json
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_REGION: ${{ vars.OCI_REGION }}
-        run: bin/idp-free-tier --json
-
-  shop-backup:
-    # crew#713 CP3: the shop database is one SQLite file, and a backup nobody reads is a claim.
-    # Its own job rather than a step inside cluster-state, so a stale copy is its own red row and
-    # does not hide behind, or take down, the cluster's. Never waits on check.
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
-      - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
-      - name: OCI session token from the GitHub OIDC token
-        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
-        with:
-          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
-          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
-          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
-          oci_region: ${{ vars.OCI_REGION }}
-      - name: bin/idp-shop-backup
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_REGION: ${{ vars.OCI_REGION }}
-          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
-        run: bin/idp-shop-backup
-
   cluster-state:
     # crew#345: the cluster's own state receipt (platform/state), read with the runner's OIDC
     # session. This is the substitute for `oci session authenticate` on a laptop: any session that
@@ -477,14 +148,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: "3.12" }
       - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
+        run: pip install -q oci-cli
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -499,163 +167,6 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
         run: bin/idp-cluster-state --json
-      # crew#401 CP4: the hostnames the cluster publishes (HTTPRoute, from the same receipt) diffed
-      # against backstage/**/catalog-info.yaml. 0 unregistered is the only green.
-      - name: bin/idp-catalogue-drift
-        if: ${{ always() }}
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_REGION: ${{ vars.OCI_REGION }}
-          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
-        run: bin/idp-catalogue-drift
-      # crew#439: an open pull request armed for auto-merge that will never merge on its own is a
-      # red row, so a stuck flux/image-updates PR never sits silent again. crew#516 widened it from
-      # `mergeable` to the blocking reason: idp#486 was armed and MERGEABLE for twelve hours behind
-      # a security-scan that had already concluded red, and every estate image stayed frozen.
-      - name: bin/idp-automerge-stuck
-        if: ${{ always() }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bin/idp-automerge-stuck
-
-  founder-links:
-    # crew#503 / LAW 43: every link the portal home shows (backstage/founder/catalog-info.yaml,
-    # zone substituted the way bin/catalog-gen does it) is probed by lychee, the mature link
-    # checker, on every run. 302 to IDCS, 401 (mcp, key-gated) and 405 (POST-only chat endpoint)
-    # are the surfaces answering as designed; anything else is a red row within one schedule tick.
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: urls with the zone substituted
-        env:
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
-          zone=$(awk '$1=="ESTATE_ZONE:"{print $2}' clusters/oke/estate-config.yaml)
-          test -n "$zone"
-          grep -oE 'url: "https?://[^"]+"' backstage/founder/catalog-info.yaml \
-            | sed -E 's/^url: "(.*)"$/\1/' | sed "s/\${ESTATE_ZONE}/$zone/g" | sort -u > founder-links.txt
-          if grep -q '\${' founder-links.txt; then echo "unsubstituted placeholder"; cat founder-links.txt; exit 1; fi
-          # A catalogue entry for a file this pull request ADDS points at blob/main, which is where
-          # the founder will read it and where it does not exist yet -- so every such pull request
-          # went red on a link that is correct. Grade the proposed tree, not the old one: on a
-          # pull_request the blob ref becomes this branch's head sha, everywhere else it stays main.
-          # Found 2026-08-29 by platform/commerce/app/lago.yaml, run 33260499807.
-          if [ "${GITHUB_EVENT_NAME:-}" = pull_request ] && [ -n "${HEAD_SHA:-}" ]; then
-            # Only THIS repository's links. The first version of this rewrote every `/blob/main/`
-            # it saw, so five catalogue links into chidionyema/crew were asked for an idp commit
-            # sha and came back 404 -- the fix graded the string instead of the repository it
-            # belongs to (oke-check 33262262675). The repo is named, never assumed.
-            sed -i "s#github.com/${GITHUB_REPOSITORY}/blob/main/#github.com/${GITHUB_REPOSITORY}/blob/${HEAD_SHA}/#g" founder-links.txt
-            echo "pull request: blob links graded at ${HEAD_SHA}"
-          fi
-          # A cluster surface this pull request ADDS to the portal cannot answer yet: agents never
-          # deploy (founder, 2026-09-01), so the surface goes live only after the founder applies
-          # the merged state. Grading it before that refused every new-surface pull request
-          # (metabase, run 33568385208). On a pull_request, a URL whose catalogue row is new in
-          # this diff is skipped with a printed "pending deploy" line; the schedule and every
-          # main run still probe it, so a dead surface pages within one tick of going live.
-          if [ "${GITHUB_EVENT_NAME:-}" = pull_request ] && [ -n "${BASE_SHA:-}" ]; then
-            git fetch --quiet --depth=1 origin "$BASE_SHA"
-            git diff "$BASE_SHA" HEAD -- backstage/founder/catalog-info.yaml \
-              | grep -oE '^\+.*url: "https?://[^"]+"' | grep -oE 'https?://[^"]+' \
-              | sed "s/\${ESTATE_ZONE}/$zone/g" | sort -u > added-links.txt || true
-            if [ -s added-links.txt ]; then
-              while read -r u; do
-                if grep -qxF "$u" founder-links.txt; then
-                  grep -vxF "$u" founder-links.txt > founder-links.tmp && mv founder-links.tmp founder-links.txt
-                  echo "pending deploy (added by this pull request, probed on main): $u"
-                fi
-              done < added-links.txt
-            fi
-          fi
-          echo "$(wc -l < founder-links.txt) links"
-      - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
-        with:
-          args: --no-progress --max-redirects 5 --accept '200..=399,401,403,405' --timeout 20 --retry-wait-time 5 --max-retries 2 --exclude 'github.com/chidionyema/mumchimp-medusa' founder-links.txt
-          # mumchimp-medusa is private; this repo's token cannot read it, the founder's browser can.
-          fail: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-      # the default GITHUB_TOKEN reads Actions runs of public estate repos; private ones need the estate token, crew#535 CP2b
-      - name: actions-refused (crew#535)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 bin/idp-actions-refused --limit 5 | tee -a "$GITHUB_STEP_SUMMARY" || true
-
-  kini-state:
-    # crew#396 step 4: the KINI run's receipt (platform/temporal/kini-state.yaml), read the same
-    # way cluster-state is. Green while the last run is green, running, or never started; red when
-    # a checkpoint is red or the receipt is stale. Never waits on check.
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
-      - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
-      - name: OCI session token from the GitHub OIDC token
-        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
-        with:
-          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
-          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
-          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
-          oci_region: ${{ vars.OCI_REGION }}
-      - name: bin/idp-kini-state --json
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_REGION: ${{ vars.OCI_REGION }}
-          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
-        run: bin/idp-kini-state --json
-
-  infra-crew:
-    # crew#729 step 3: is the infrastructure crew taking its queue? Read from outside the cluster:
-    # the board through the estate App's ticket-verifier lane (issues), and Langfuse through the
-    # project keys in the vault. bin/idp-infra-crew-drill; drills/catalogue.yaml row infra-crew.
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
-      - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
-      - name: OCI session token from the GitHub OIDC token
-        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
-        with:
-          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
-          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
-          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
-          oci_region: ${{ vars.OCI_REGION }}
-      - name: bin/idp-infra-crew-drill
-        env:
-          OCI_CI: "1"
-          OCI_CLI_AUTH: security_token
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
-          OCI_REGION: ${{ vars.OCI_REGION }}
-          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
-        run: |
-          set -o pipefail
-          tok=$(bin/idp-github-app token ticket-verifier 2>&1) || { echo "BLIND   infra-crew  no App token: ${tok:0:160}"; exit 2; }
-          echo "::add-mask::$tok"
-          pk=$(bin/idp-cloud secret get langfuse-init-public-key 2>/dev/null || true)
-          sk=$(bin/idp-cloud secret get langfuse-init-secret-key 2>/dev/null || true)
-          [ -n "$sk" ] && echo "::add-mask::$sk"
-          GH_TOKEN="$tok" LANGFUSE_PUBLIC_KEY="$pk" LANGFUSE_SECRET_KEY="$sk" bin/idp-infra-crew-drill 2>&1 | tee drill.out
-          printf '### infra-crew\n```\n%s\n```\n' "$(cat drill.out)" >> "$GITHUB_STEP_SUMMARY"
 
   telemetry-coverage:
     # crew#320 / LAW 50: coverage is a backend query, never a file scan. The cluster diffs Running
@@ -665,14 +176,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: "3.12" }
       - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
+        run: pip install -q oci-cli
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -687,34 +195,3 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
         run: bin/idp-telemetry-coverage --json
-
-  science-facts:
-    # crew#516 CP5 / LAW 50: the science lane is graded by querying the collector's backend from
-    # inside the cluster (platform/science/science-facts.yaml); this reads the receipt the way
-    # telemetry-coverage does. At least one source in the 24h window is the only green.
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
-      - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
-      - name: OCI session token from the GitHub OIDC token
-        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
-        with:
-          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
-          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
-          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
-          oci_region: ${{ vars.OCI_REGION }}
-      - name: bin/idp-science-facts --json
-        env:
-          OCI_CLI_AUTH: security_token
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_REGION: ${{ vars.OCI_REGION }}
-          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
-        run: bin/idp-science-facts --json

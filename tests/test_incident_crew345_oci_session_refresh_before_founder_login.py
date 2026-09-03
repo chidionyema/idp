@@ -51,6 +51,7 @@ def test_t2_refresh_is_attempted_per_profile_not_just_first():
     # The refresh fallback must live inside a loop over $SESSIONS_DIR/*/, the
     # same pattern the primary validate() loop already uses -- confirms it is
     # not special-cased to one profile name.
+    refresh_section = text[text.index("oci session refresh"):]
     preceding = text[:text.index("oci session refresh")]
     assert 'for d in "$SESSIONS_DIR"' in preceding or 'for d in "$SESSIONS_DIR"' in text, (
         "refresh fallback must iterate every profile, matching the primary "

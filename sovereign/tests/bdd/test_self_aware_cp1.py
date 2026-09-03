@@ -115,6 +115,7 @@ def _marked(ctx):
 
 @then("no field is silently dropped to hide the staleness")
 def _no_drop(ctx):
+    fresh_ctx = dict(ctx)
     sa.write_state_md(ctx["state_md"], sa.NOW - dt.timedelta(minutes=5))
     fresh = ei.build_inventory(ctx["cfg"], now=sa.NOW)
     assert set(fresh) == set(ctx["resp"]), set(fresh) ^ set(ctx["resp"])

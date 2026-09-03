@@ -13,7 +13,7 @@ metadata:
   namespace: flux-system
 spec:
   image: ghcr.io/chidionyema/backstage
-  interval: 1m
+  interval: 5m
   # ghcr packages under this account are private; bin/idp-flux-bootstrap writes ghcr-pull here.
   secretRef:
     name: ghcr-pull
@@ -36,17 +36,15 @@ spec:
 ---
 # A second GitRepository for the same repo because the bootstrap one (flux-system) holds a
 # read-only deploy key (bin/idp-flux-bootstrap: --read-write-key=false). This one authenticates
-# as the estate-agents GitHub App (`provider: github`; platform/image-automation/flux-writer.yaml
-# renders the App's id, installation id and key from vault entry github-app; crew#66 root trust).
+# with the read-write deploy key `flux-writer` (platform/image-automation/flux-writer.yaml, crew#325).
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
   name: idp-writer
   namespace: flux-system
 spec:
-  interval: 1m
-  url: https://github.com/chidionyema/idp
-  provider: github   # the estate-agents App (flux-writer.yaml renders githubApp* from vault entry github-app)
+  interval: 10m
+  url: ssh://git@github.com/chidionyema/idp
   ref:
     branch: main
   secretRef:
@@ -58,7 +56,7 @@ metadata:
   name: backstage
   namespace: flux-system
 spec:
-  interval: 1m
+  interval: 10m
   sourceRef:
     kind: GitRepository
     name: idp-writer
@@ -71,15 +69,11 @@ spec:
         name: estate-agents
         email: estate-agents[bot]@users.noreply.github.com
       messageTemplate: |
-        platform: image update {{ range $resource, $changes := .Changed.Objects }}{{ range $_, $change := $changes }}{{ $resource.Name }} -> {{ $change.NewValue }} {{ end }}{{ end }}(crew#267)
+        platform/backstage/oke: catalogue image {{ range .Changed.Objects }}{{ range .Changes }}{{ .NewValue }}{{ end }}{{ end }} (crew#267)
 
-        Written by image-automation-controller. One automation walks the whole repository for
-        every ImagePolicy marker; two automations on one push branch collide (crew#406).
+        Written by image-automation-controller from ImagePolicy flux-system/backstage.
     push:
       branch: flux/image-updates
   update:
-    # The whole checkout, not ./platform: the prospector images: override lives on its Flux
-    # Kustomization in clusters/oke/edge.yaml (crew#693). Only lines carrying a $imagepolicy
-    # marker are ever rewritten.
-    path: ./
+    path: ./platform/backstage/overlays/oke
     strategy: Setters

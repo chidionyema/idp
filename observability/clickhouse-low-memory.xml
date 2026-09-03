@@ -81,23 +81,6 @@
     <processors_profile_log remove="remove"/>
     <latency_log remove="remove"/>
     <error_log remove="remove"/>
-    <!--
-      crew#85 row 2: ClickHouse 25.12 also creates part_log, text_log,
-      background_schedule_pool_log, query_metric_log, query_views_log,
-      query_thread_log, asynchronous_insert_log and opentelemetry_span_log by
-      default, with no config section to remove. Measured 2026-08-27 06:10Z on
-      the laptop: 0 queries, metric_log merging 81 times in 2 minutes, part_log
-      logging its own merges, the container at 67-75 percent of a core. Dropping
-      the removed tables took it to 35 percent; the rest is this list.
-    -->
-    <part_log remove="remove"/>
-    <text_log remove="remove"/>
-    <background_schedule_pool_log remove="remove"/>
-    <query_metric_log remove="remove"/>
-    <query_views_log remove="remove"/>
-    <query_thread_log remove="remove"/>
-    <asynchronous_insert_log remove="remove"/>
-    <opentelemetry_span_log remove="remove"/>
 
     <profiles>
         <default>

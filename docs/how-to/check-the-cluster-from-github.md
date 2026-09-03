@@ -25,34 +25,3 @@ What a runner cannot see: it is outside `control_plane_allowed_cidrs`, so the `f
 
 Residual static credentials on this path: the OIDC client secret and the S3 key pair, both GitHub
 repository secrets. `bin/static-secret-gate` counts them (idp#102).
-
-## Hourly, with nobody logged in (crew#345)
-
-Demo: `gh workflow run verify-drill.yml -R chidionyema/idp && gh run watch -R chidionyema/idp`
-
-A laptop's OCI browser session is a 60-minute JWT, refreshable to 24 h from the login and then
-dead; a `--no-browser` token-exchange session cannot be refreshed at all (measured 2026-08-26,
-crew#345). So no scheduled verification runs from a laptop. `verify-drill.yml` runs every hour
-on the same `estate-ci` identity as above and `bin/idp-verify-drill` prints three rows: the
-session subject is `estate-ci` and a token exchange (a person's OCID or a browser login is a
-red row), the cluster and node pools are ACTIVE, and the cluster's own receipt `state/cluster`
-grades green through `bin/idp-cluster-state` (fresh, every node Ready). That receipt is written
-from inside every 15 minutes by the CronJob `cluster-state` (`platform/state/`, idp#267) on the
-worker node's instance principal. The proof of the ticket is 24 consecutive green scheduled
-runs, counted by crew's estate snapshot.
-
-## Break-glass: a hand into the cluster from the same machine identity (crew#539)
-
-When the cluster cannot heal itself (2026-08-28: coredns dead behind the Cilium chain, so Flux
-could not fetch the merged revert idp#514) no session has a kube path: runners are outside
-`control_plane_allowed_cidrs` and the laptop session token is retired (crew#345). The door is:
-
-    gh workflow run oke-check.yml -f mode=break-glass -f playbook=diagnose
-
-`bin/idp-oke-rebuild --break-glass` appends the runner's egress `/32` to the applied list, applies it
-through tofu (one NSG rule), mints a kubeconfig on the same one-hour session token, runs ONE named
-playbook from `bin/idp-oke-break-glass` (`diagnose` is read-only; `cilium-unchain` executes
-idp#514 by hand; `helm-retry` resets every Failed HelmRelease with `flux reconcile --reset`; `dns-per-node` runs an in-cluster and an external nslookup pinned to every node; `dns-per-namespace` resolves every headless Service of each not-Ready namespace from a probe inside it and lists its EndpointSlices; `tcp-per-node` connects from a probe inside each not-Ready namespace, pinned to every node, to every ClusterIP Service port of that namespace and prints the reachable matrix; `node-drain` cordons and drains the Ready node carrying the most not-Running pods so the autoscaler replaces it, `node-uncordon` is its undo — the drain refuses before it cordons anything when a PodDisruptionBudget would deadlock the eviction (including one whose selector it cannot evaluate, in a namespace that is losing pods), when the remaining Ready nodes cannot hold what would leave, or when no single one of them has room for a pod that is leaving, and it opens an Alertmanager silence per namespace losing a pod for the window so a planned drain does not page; `chi-resize` patches the ClickHouseInstallation to the resources the signoz values ConfigMap declares when a Helm upgrade is deadlocked behind a pre-upgrade hook that waits for a ClickHouse the old limit keeps killing (Helm converges on the same value, so there is nothing to undo)), and applies the original list again from an `EXIT` trap, so a failed playbook
-never leaves the door open. The job log is the receipt: `admit-apply`, the playbook's step lines,
-`revoke-apply`. Nothing is typed ad hoc: a new playbook is a reviewed function in the script and a
-name in the workflow's `playbook` choice.

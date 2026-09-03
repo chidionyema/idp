@@ -1,0 +1,64 @@
+# crew#325 showcase: one call through llm.<zone>, its trace read back from langfuse.<zone>.
+# Same shape as login-drill: its own clock, the machine identity (GitHub OIDC exchanged for a
+# one-hour OCI session), keys read from the vault by name and never printed.
+name: trace-drill
+on:
+  schedule:
+    - cron: "23 * * * *"   # hourly; each run is one 8-token completion on the cheapest upstream
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - platform/llm/**
+      - platform/observability/**
+      - bin/idp-trace-drill
+      - .github/workflows/trace-drill.yml
+permissions:
+  id-token: write
+  contents: read
+  issues: write
+concurrency:
+  group: trace-drill
+  cancel-in-progress: false
+jobs:
+  trace-drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: "3.12" }
+      - name: oci cli
+        run: pip install -q oci-cli
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: bin/idp-trace-drill
+        env:
+          OCI_CI: "1"
+          OCI_CLI_AUTH: security_token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+        run: |
+          set -o pipefail
+          bin/idp-trace-drill 2>&1 | tee drill.out
+      - name: the verdict is on the run summary, pass or fail
+        if: always()
+        run: |
+          line=$(grep -E '^(ok|FAIL) +trace-drill' drill.out | tail -1 || true)
+          printf '### trace-drill\n```\n%s\n```\n' "${line:-no verdict line: the drill died before printing one}" >> "$GITHUB_STEP_SUMMARY"
+      - name: a failed drill is an open P1 on this repository, never a badge nobody reads
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          line=$(grep -E '^FAIL +trace-drill' drill.out | tail -1 || true)
+          line=${line:-"trace-drill died before printing a verdict"}
+          body=$(printf '%s\nrun: %s/%s/actions/runs/%s\nboard: https://github.com/chidionyema/crew/issues/325\n' "$line" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
+          n=$(gh issue list --state open --search 'in:title "P1: trace drill failed"' --json number -q '.[0].number')
+          if [ -n "$n" ]; then gh issue comment "$n" --body "$body"; else gh label create P1 --color D93F0B --description "a platform row is not proving itself" --force >/dev/null; gh issue create --title "P1: trace drill failed" --label P1 --body "$body"; fi

@@ -19,7 +19,7 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ESTATE_CODE = pathlib.Path(os.environ.get("ESTATE_CODE", ROOT.parent))
 POLICIES = ESTATE_CODE / "prospector-main" / "deploy" / "k8s" / "policies"
-OBS = ROOT / "platform" / "observability-collector"  # crew#584: the node agent has its own row
+OBS = ROOT / "platform" / "observability"
 EXCEPTION = ROOT / "platform" / "edge" / "k8s-infra-exception.yaml"
 
 
@@ -37,16 +37,12 @@ def _docs(path):
 
 def _render_chart(tmp_path):
     hr = next(d for d in _docs(OBS / "k8s-infra.yaml") if d["kind"] == "HelmRelease")
-    repo = next(d for d in _docs(OBS / "helmrepository.yaml") if d["kind"] == "HelmRepository")
+    repo = next(d for d in _docs(OBS / "signoz.yaml") if d["kind"] == "HelmRepository")
     spec = hr["spec"]["chart"]["spec"]
     values = tmp_path / "values.yaml"
     values.write_text(yaml.safe_dump(hr["spec"].get("values", {})))
-    ns = hr["spec"].get("targetNamespace") or "observability"
-    # the release name the way helm-controller derives it (crew#483): releaseName, else
-    # <targetNamespace>-<name> when targetNamespace is set, else name
-    release = hr["spec"].get("releaseName") or (f"{ns}-{hr['metadata']['name']}" if hr["spec"].get("targetNamespace") else hr["metadata"]["name"])
-    r = subprocess.run(["helm", "template", release, spec["chart"], "--repo", repo["spec"]["url"],
-                        "--version", spec["version"], "-n", ns, "-f", str(values)],
+    r = subprocess.run(["helm", "template", hr["metadata"]["name"], spec["chart"], "--repo", repo["spec"]["url"],
+                        "--version", spec["version"], "-n", "observability", "-f", str(values)],
                        capture_output=True, text=True)
     if r.returncode:
         pytest.skip(f"BLIND: helm template failed (offline?): {r.stderr[-300:]}")

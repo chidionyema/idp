@@ -1,6 +1,6 @@
 {
-  "short_name": "Estate",
-  "name": "Mumchimp estate",
+  "short_name": "Backstage",
+  "name": "Backstage",
   "icons": [
     {
       "src": "favicon.ico",
@@ -10,6 +10,6 @@
   ],
   "start_url": "./index.html",
   "display": "standalone",
-  "theme_color": "#141a26",
-  "background_color": "#141a26"
+  "theme_color": "#000000",
+  "background_color": "#ffffff"
 }

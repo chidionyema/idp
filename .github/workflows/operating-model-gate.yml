@@ -49,51 +49,23 @@ permissions:
   pull-requests: write
 
 jobs:
-  # crew#227 CP5: a check on a PR can only be re-run by a workflow on that PR's head, so the
-  # founder's `APPROVE: <word>` comment (issue_comment event, default-branch checkout) reruns
-  # the gate run that judged the head instead of judging here. Only the repository owner's
-  # login triggers it; anyone else's comment is ignored.
-  rejudge-on-founder-word:
-    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.user.login == github.repository_owner && (startsWith(github.event.comment.body, 'APPROVE:') || startsWith(github.event.comment.body, 'DENY:'))
-    # no job permissions here: a called workflow may not ask for more than its caller grants, and
-    # ci.yml grants contents+pull-requests only. founder-word.yml (the caller that fires this job)
-    # grants actions: write at the top level.
-    runs-on: ubuntu-latest
-    steps:
-      - name: rerun the gate on the pull request head
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.issue.number }}
-        run: |
-          sha=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json headRefOid -q .headRefOid)
-          run=$(gh run list --repo "$GITHUB_REPOSITORY" --commit "$sha" --event pull_request --json databaseId,name -q '.[] | select(.name == "ci" or (.name | test("operating-model"))) | .databaseId' | head -1)
-          [ -n "$run" ] || { echo "BLIND no pull_request run found for $sha"; exit 0; }
-          gh run rerun "$run" --repo "$GITHUB_REPOSITORY" --failed && echo "rerun $run for #$PR at $sha"
   operating-model-gate:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions: { contents: read, pull-requests: write }
     steps:
       - name: the caller repo, so gh reads the caller's pull request
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: idp, so the policy and the budget have one copy
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: chidionyema/idp
           ref: ${{ inputs.idp_ref }}
           path: .idp
 
       - name: conftest
-        run: curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
-
-      # bin/pr-report runs gitleaks over the added lines (LAW 45, crew#539); same pinned build
-      # as .github/actions/security-scan/action.yml, so laptop and CI read one detector.
-      - name: gitleaks 8.30.1
-        run: |
-          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 -o "$RUNNER_TEMP/gitleaks.tgz" https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
-          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tgz" | sha256sum -c -
-          sudo tar -xz -C /usr/local/bin -f "$RUNNER_TEMP/gitleaks.tgz" gitleaks
+        run: curl -sSL https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
 
       - name: gate
         env:
@@ -102,12 +74,6 @@ jobs:
           PR_REPORT_DIR: ${{ runner.temp }}/pr-report
           PR_NUMBER: ${{ inputs.pr_number != '' && inputs.pr_number || github.event.pull_request.number }}
           COMMENT: ${{ inputs.comment && '--comment' || '' }}
-        # No actions/setup-python and no `cache: pip` here, and that is deliberate (crew#488 CP6,
-        # named in tests/test_incident_crew488_cp6_pip_resolves_from_the_index_every_run.py): this
-        # workflow checks the CALLER out to `.`, so any cache-dependency-path it names is hashed
-        # inside hermes-v2 or crew, where .github/requirements/ does not exist. A key that matches
-        # no file never hits while reading as though it does, and one pyyaml wheel is cheaper than
-        # the setup-python step that would carry it.
         run: |
           pip install -q pyyaml
           "$IDP_ROOT/bin/pr-report" "$PR_NUMBER" $COMMENT

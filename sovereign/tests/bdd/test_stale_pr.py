@@ -1,11 +1,10 @@
-"""Binds features/stale_pr.feature (crew#299, crew#504). actions/stale owns the clock; the estate owns
-its inputs, so the steps read .github/workflows/stale.yml for real and grade what the action is told.
-actions/stale v11 parses days-before-pr-close with parseInt, so a same-run close is 0, never 0.5."""
+"""Binds features/stale_pr.feature (crew#299, crew#297). actions/stale owns the clock; the estate owns
+its inputs, so the steps read .github/workflows/stale.yml for real and grade what the action is told."""
 from pathlib import Path
 
 import pytest
 import yaml
-from pytest_bdd import given, scenarios, then, when
+from pytest_bdd import given, parsers, scenarios, then, when
 
 scenarios("features/stale_pr.feature")
 
@@ -13,12 +12,8 @@ IDP = Path(__file__).resolve().parents[3]
 WF = IDP / ".github" / "workflows" / "stale.yml"
 
 
-def _workflow() -> dict:
-    return yaml.safe_load(WF.read_text())
-
-
 def _inputs() -> dict:
-    wf = _workflow()
+    wf = yaml.safe_load(WF.read_text())
     steps = [s for j in wf["jobs"].values() for s in j["steps"] if str(s.get("uses", "")).startswith("actions/stale@")]
     assert len(steps) == 1, "stale.yml must run actions/stale exactly once"
     return steps[0]["with"]
@@ -29,9 +24,9 @@ def state() -> dict:
     return {"with": _inputs()}
 
 
-@given("a pull request with no push, comment or label change for 1 day")
+@given("a pull request with no push, comment or label change for 7 days")
 def _idle(state: dict) -> None:
-    state["idle_days"] = 1
+    state["idle_days"] = 7
 
 
 @given('it does not carry the label "keep-open"')
@@ -39,9 +34,9 @@ def _not_exempt(state: dict) -> None:
     assert "keep-open" in str(state["with"]["exempt-pr-labels"]).split(",")
 
 
-@given("a pull request closed by the stale workflow")
-def _closed_pr(state: dict) -> None:
-    assert int(state["with"]["days-before-pr-close"]) >= 0
+@given('a pull request labelled "stale" with no activity for a further 7 days')
+def _warned_idle(state: dict) -> None:
+    state["idle_days_after_warning"] = 7
 
 
 @given('a pull request labelled "stale"')
@@ -56,16 +51,8 @@ def _issue(state: dict) -> None:
 
 @when("the stale workflow runs")
 def _runs(state: dict) -> None:
-    wf = _workflow()
-    schedule = (wf.get("on") or wf.get(True))["schedule"]  # YAML 1.1 reads `on` as True
-    assert schedule, "stale.yml has no schedule"
-    # Hourly: a 24-hour window checked once a day would let a PR sit up to 48 hours.
-    assert schedule[0]["cron"].split()[1] == "*", schedule
-
-
-@when("its author reads the close message")
-def _reads(state: dict) -> None:
-    state["message"] = state["with"]["close-pr-message"]
+    wf = yaml.safe_load(WF.read_text())
+    assert (wf.get("on") or wf.get(True))["schedule"], "stale.yml has no schedule"  # YAML 1.1 reads `on` as True
 
 
 @when('someone pushes, comments, or adds the label "keep-open"')
@@ -75,22 +62,22 @@ def _activity(state: dict) -> None:
     assert "keep-open" in str(state["with"]["exempt-pr-labels"]).split(",")
 
 
-@then('the pull request is labelled "stale" and closed in the same run')
-def _labelled_and_closed(state: dict) -> None:
-    assert float(state["with"]["days-before-pr-stale"]) == state["idle_days"]
-    assert int(state["with"]["days-before-pr-close"]) == 0
+@then('the pull request is labelled "stale"')
+def _labelled(state: dict) -> None:
+    assert int(state["with"]["days-before-pr-stale"]) == state["idle_days"]
     assert state["with"]["stale-pr-label"] == "stale"
 
 
-@then("the branch is kept")
-def _branch_kept(state: dict) -> None:
-    assert state["with"]["delete-branch"] is False
+@then("a comment says it closes in 7 more days")
+def _warns(state: dict) -> None:
+    assert "7 more days" in state["with"]["stale-pr-message"]
+    assert int(state["with"]["days-before-pr-close"]) == 7
 
 
-@then('it names "gh pr reopen" and "Blocked-by"')
-def _ways_back(state: dict) -> None:
-    assert "gh pr reopen" in state["message"]
-    assert "Blocked-by:" in state["message"]
+@then("the pull request is closed and its branch deleted")
+def _closed(state: dict) -> None:
+    assert int(state["with"]["days-before-pr-close"]) == state["idle_days_after_warning"]
+    assert state["with"]["delete-branch"] is True
 
 
 @then('the "stale" label is removed and the pull request stays open')

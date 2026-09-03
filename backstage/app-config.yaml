@@ -1,5 +1,5 @@
 app:
-  title: Bytesync
+  title: Estate catalogue
   baseUrl: http://localhost:3100
 
   # Enable all packages by default, this will discover packages from packages/app/package.json
@@ -10,13 +10,35 @@ app:
     # serve "/", which made /catalog (the path in Backstage's own links and the founder's
     # bookmark) a client-side ERROR 404 while the login drill, visiting "/", stayed green.
     # crew#307. The Home page takes "/".
-    #
-    # The front page is Backstage's own home page (founder, 2026-09-01: "use Backstage
-    # templates"). The grid below is the plugin's `defaultConfig` (plugin-home 0.9.9): a search
-    # bar, then the ten doors as the toolkit, starred entities, and the pages the person visited.
-    # A person can move, resize and add widgets on the page itself. Between 2026-08-29 (crew#459)
-    # and today packages/app/src/modules/home overrode this page with a hand-drawn god view;
-    # that page is kept at /estate.
+    # Visit tracking records which pages users navigate to and is disabled by default.
+    # Enable it to populate the Most Visited and Recently Visited widgets on the Home page.
+    # Visit data is stored via UserSettings storage if available, otherwise browser localStorage.
+    # - api:home/visits: true
+    # - app-root-element:home/visit-listener: true
+    - home-page-widget:home/toolkit:
+        config:
+          # The estate's own doors, not Backstage's. A portal whose toolkit
+          # links to the vendor's docs is a portal nobody has moved into.
+          tools:
+            - url: http://127.0.0.1:3200/
+              label: Traces (Langfuse)
+              icon: dashboard
+            - url: http://127.0.0.1:4000/
+              label: Model routing (LiteLLM)
+              icon: dashboard
+            - url: https://github.com/chidionyema/crew/blob/main/docs/STANDARDS.md
+              label: Standards
+              icon: docs
+            - url: https://github.com/chidionyema/crew/issues
+              label: Crew board
+              icon: github
+    - home-page-widget:home/world-clock:
+        config:
+          clockConfigs:
+            - label: LON
+              timeZone: Europe/London
+            - label: UTC
+              timeZone: UTC
     - page:home:
         config:
           path: /
@@ -27,70 +49,39 @@ app:
               width: 12
               height: 2
               deletable: false
-            - component: HomePageToolkit
+            - component: GettingStarted
               column: 0
-              row: 2
-              width: 6
-              height: 6
+              row: 1
+              width: 4
+              height: 11
             - component: HomePageStarredEntities
-              column: 6
+              column: 4
               row: 2
-              width: 6
+              width: 4
+              height: 4
+            - component: HomePageToolkit
+              column: 4
+              row: 6
+              width: 4
+              height: 3
+            - component: HomePageWorldClock
+              column: 8
+              row: 6
+              width: 4
+              height: 3
+            - component: HomePageMostVisited
+              column: 4
+              row: 9
+              width: 4
               height: 4
             - component: HomePageRecentlyVisited
-              column: 6
-              row: 6
-              width: 6
+              column: 8
+              row: 9
+              width: 4
               height: 4
-            - component: HomePageMostVisited
-              column: 0
-              row: 8
-              width: 6
-              height: 4
-    # Visit tracking feeds the "Recently visited" and "Most visited" widgets; it is off in the
-    # plugin until switched on here, and it stores visits in the browser.
-    - api:home/visits: true
-    - app-root-element:home/visit-listener: true
-    # A joke widget and world clocks in the "Add widget" dialog of a platform that is for sale.
-    - home-page-widget:home/random-joke: false
-    - home-page-widget:home/world-clock: false
-    # The toolkit is the same ten doors as the menu, in the same order
-    # (packages/app/src/modules/nav/EstateNav.tsx); a test holds the two lists equal.
-    - home-page-widget:home/toolkit:
-        config:
-          tools:
-            - { url: /, label: Today, icon: dashboard }
-            - { url: '/catalog?filters%5Bkind%5D=Component', label: Kubernetes, icon: 'kind:resource' }
-            - { url: /catalog, label: What we run, icon: catalog }
-            - { url: /create, label: Create, icon: scaffolder }
-            - { url: /catalog-graph, label: Map, icon: 'kind:system' }
-            - { url: /tools, label: Tools, icon: 'kind:component' }
-            - { url: /ops, label: Ops, icon: warning }
-            - { url: /search, label: Find, icon: search }
-            - { url: /docs, label: How-to, icon: docs }
-            - { url: /settings, label: You, icon: user }
-
-    # crew#612 CP5: no empty tab on an entity page. The TechDocs content ships with no filter,
-    # so every one of the 338 entities grew a "TechDocs" tab and 334 of them opened on an
-    # error; the api-docs "APIs" content shows on every Component and none provides an API.
-    # Each tab now appears only where it has something to show, and the Docs tab says "Docs".
-    - entity-content:techdocs:
-        config:
-          title: Docs
-          filter:
-            metadata.annotations.backstage.io/techdocs-ref: { $exists: true }
-    - entity-content:api-docs/apis:
-        config:
-          filter:
-            # config.filter replaces the plugin's own filter (kind: component), so it is kept here.
-            $all:
-              - kind: component
-              - $any:
-                  - relations: { $contains: { type: providesApi } }
-                  - relations: { $contains: { type: consumesApi } }
 
 organization:
-  name: Bytesync
+  name: Estate
 
 backend:
   # Used for enabling authentication, secret is shared by all backend plugins
@@ -146,15 +137,12 @@ integrations:
     #   token: ${GHE_TOKEN}
 
 proxy:
-  endpoints:
-    # crew#684 CP4: the Ops page's founder tiles read docs/founder.json from the rendered state
-    # branch (bin/catalog-render writes it on the estate-founder schedule). The repository is
-    # public, so no credential; GET only. The mature door is the proxy plugin the backend already
-    # runs, never a fetch to a host typed in the page.
-    '/estate-state':
-      target: 'https://raw.githubusercontent.com/chidionyema/idp/state/live-diagram'
-      changeOrigin: true
-      allowedMethods: ['GET']
+  ### Example for how to add a proxy endpoint for the frontend.
+  ### A typical reason to do this is to handle HTTPS and CORS for internal services.
+  # endpoints:
+  #   '/test':
+  #     target: 'https://example.com'
+  #     changeOrigin: true
 
 # Reference documentation http://backstage.io/docs/features/techdocs/configuration
 # Note: After experimenting with basic setup, use CI/CD to generate docs
@@ -163,9 +151,7 @@ proxy:
 techdocs:
   builder: 'local' # Alternatives - 'external'
   generator:
-    # 'local': mkdocs-techdocs-core is in the image (backstage/Dockerfile); the pod has no docker
-    # socket, and must not (crew#412 row 1).
-    runIn: 'local'
+    runIn: 'docker' # Alternatives - 'local'
   publisher:
     type: 'local' # Alternatives - 'googleGcs' or 'awsS3'. Read documentation for using alternatives.
 
@@ -197,34 +183,7 @@ catalog:
     pullRequestBranchName: backstage-integration
   rules:
     - allow: [Component, System, API, Resource, Location, Domain, Group, User, Template]
-  providers:
-    # Every Dagster asset, job and schedule becomes a catalogue entity through
-    # catalog-backend-module-dagster-entity-provider (crew#468), polled on `schedule` rather than
-    # hand-written into catalog/catalog-info.yaml. The module treats this whole block as optional
-    # (backstage/plugins/catalog-backend-module-dagster-entity-provider/src/index.ts) so a
-    # Backstage with no DAGSTER_GRAPHQL_URL still starts.
-    #
-    # `url` is a Service-DNS reference: DAGSTER_GRAPHQL_URL is unset in-cluster today because
-    # Dagster runs only on the founder's laptop (bin/scheduler-up, no platform/ manifest yet), so
-    # this default is the local one bin/scheduler-up starts on 127.0.0.1:3210. The day Dagster
-    # gets a platform/ Deployment and Service, that Service's in-cluster DNS name goes into
-    # DAGSTER_GRAPHQL_URL as a cluster env var (idp#248 pattern), never as a literal here (LAW 46).
-    dagster:
-      url: ${DAGSTER_GRAPHQL_URL:-http://127.0.0.1:3210/graphql}
-      schedule:
-        frequency: { minutes: 30 }
-        timeout: { minutes: 10 }
   locations:
-    # The org. bin/catalog-gen stamps `group:default/platform` on every entity it emits; until
-    # this file existed that owner reference resolved to nothing. Hand-written, in git.
-    - type: file
-      target: ../org/catalog-info.yaml
-      rules:
-        # Group only. crew#307: exactly one location may create User entities
-        # (/app/examples/org.yaml), or the founder and the login drill resolve to
-        # different User entities. This file holds four Groups and no user.
-        - allow: [Group]
-
     # The estate itself. Generated by idp/bin/catalog-gen from the LAW 39
     # inventory; never hand-edited. Paths are relative to packages/backend.
     - type: file
@@ -232,44 +191,11 @@ catalog:
       rules:
         - allow: [Component, Resource, Domain, System, Group]
 
-    # Every layer the cluster runs (crew#459), generated by bin/catalog-platform from the Flux
-    # Kustomizations. The front page is this file plus the live Ready state of each layer.
-    - type: file
-      target: ../platform/catalog-info.yaml
-      rules:
-        - allow: [Component, System, API]
-
-    # The founder's surfaces (crew#401) are hand-written in backstage/founder/catalog-info.yaml
-    # but reach the portal only through the generated estate catalogue above: bin/catalog-gen
-    # substitutes ${ESTATE_ZONE} (Backstage does not) and stamps each card with its health.
-
     # Templates the scaffolder actually offers. One real one beats the
     # create-app example, which advertised "Example Node.js Template" to
     # anyone who clicked Create.
     - type: file
       target: ../../templates/estate-component/template.yaml
-      rules:
-        - allow: [Template]
-
-    # crew#66: the Day-0 shape for a third-party connection. It exists so an agent asked to
-    # add a new tool cannot invent a credential-carrying step -- the template offers no such
-    # option, and the pull request that lands its output is graded by the same rule.
-    - type: file
-      target: ../../templates/external-integration/template.yaml
-      rules:
-        - allow: [Template]
-
-    # crew#66: one button per dispatchable workflow, generated by bin/idp-portal-buttons from
-    # .github/workflows (a workflow with no button fails CI). The founder taps Create; nothing is typed.
-    - type: file
-      target: ../../templates/founder-actions/*/template.yaml
-      rules:
-        - allow: [Template]
-
-    # crew#584: requests a tier from platform/features/features.yaml by opening a reviewed
-    # pull request, never by running bin/idp-features enable from the scaffolder itself.
-    - type: file
-      target: ../../templates/enable-platform-feature/template.yaml
       rules:
         - allow: [Template]
 

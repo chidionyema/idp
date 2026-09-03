@@ -31,15 +31,11 @@ from sovereign.engine import dag as dag_mod
 GENESIS_NODE_HASH = "0" * config.RECEIPTS_HASH_HEX_LEN
 
 
-def head_path(name: str | None = None) -> Path:
-    """`name` defaults to production's own shadow_main. cp12: a fork is a
-    second file under this same shadow.heads_dir, so head_path("staging")
-    is that fork's head pointer -- the identical file shape, in the
-    identical directory, at a different name."""
-    return dag_mod.head_path(name or config.SHADOW_HEAD_FILENAME)
+def head_path() -> Path:
+    return dag_mod.head_path(config.SHADOW_HEAD_FILENAME)
 
 
-def update_head(node_hash: str, dag_dir: Path, head_path_override: Path | None = None) -> None:
+def update_head(node_hash: str, dag_dir: Path) -> None:
     """Called by cp8's DBSidecar right after it writes a DAG node --
     the same "never blocks the legacy write" contract applies here: this
     runs during drain(), after the legacy write already committed, so a
@@ -52,23 +48,16 @@ def update_head(node_hash: str, dag_dir: Path, head_path_override: Path | None =
     wrote whatever directory it was handed, which is how the founder's
     real .estate/heads/shadow_main came to name a reaped unittest
     temporary directory -- see sovereign/engine/dag.py's module docstring
-    for the class and the sweep.
-
-    head_path_override defaults to production's own head_path() --
-    every existing caller is unaffected. cp12 passes a fork's own head
-    file (a sibling of shadow_main under shadow.heads_dir) so a fork's
-    writes advance that fork's root, never shadow_main's. The write still
-    goes through dag.write_head() by name, so the R15 guard covers forks."""
-    name = head_path_override.name if head_path_override is not None else config.SHADOW_HEAD_FILENAME
-    dag_mod.write_head(name, node_hash, dag_dir)
+    for the class and the sweep."""
+    dag_mod.write_head(config.SHADOW_HEAD_FILENAME, node_hash, dag_dir)
 
 
-def verify(head_path_override: Path | None = None) -> dict[str, Any]:
+def verify() -> dict[str, Any]:
     """Returns {root, parent, nodes, verified} -- the exact shape
     `bin/sb root --json` reports. `nodes` counts every node walked from
     the head back to (but not including) genesis; `parent` is the root
     node's own prev_node_hash."""
-    hp = head_path_override or head_path()
+    hp = head_path()
     if not hp.exists():
         return {"root": None, "parent": None, "nodes": 0, "verified": False}
     try:

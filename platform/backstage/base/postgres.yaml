@@ -5,8 +5,6 @@
 apiVersion: v1
 kind: Service
 metadata:
-  labels:
-    backstage.io/kubernetes-id: founder-catalogue
   name: postgres
 spec:
   type: ClusterIP
@@ -21,12 +19,6 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  # Founder blueprint 2026-08-30 (4ca529a0.md): no hand-kept list of Secret names. Reloader
-  # discovers every Secret and ConfigMap this pod references, and
-  # platform/edge/require-auto-reload.yaml injects this annotation at admission, so git and the
-  # cluster say the same thing.
-  annotations:
-    reloader.stakater.com/auto: "true"
   name: postgres
 spec:
   serviceName: postgres
@@ -47,10 +39,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: postgres
-          # crew#284, 2026-08-26: `postgres:17.6-alpine` here is the exact reference the OKE
-          # node refused with "short name mode is enforcing ... returns ambiguous list". It
-          # was fixed in the oke overlay only, so the base kept the name that caused it.
-          image: docker.io/library/postgres:17.6-alpine
+          image: postgres:17.6-alpine
           env:
             - name: POSTGRES_USER
               value: backstage
@@ -75,9 +64,8 @@ spec:
               command: ["pg_isready", "-U", "backstage", "-d", "backstage"]
             periodSeconds: 10
           resources:
-            # crew#539 CP9: requests == limits -> Guaranteed QoS
-            requests: { cpu: 50m, memory: 512Mi }
-            limits: { cpu: 100m, memory: 512Mi }
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
           volumeMounts:
             - name: pgdata
               mountPath: /var/lib/postgresql/data

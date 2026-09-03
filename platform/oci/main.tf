@@ -26,23 +26,12 @@ module "oke" {
 
   worker_pools = {
     a1 = {
-      description = "one A1 node: the Always Free allowance plus paid growth under the estate-defaults cap"
-      # crew#539 CP10: the capacity class a pod's affinity reads (platform/scheduling/capacity-affinity.yaml).
-      # initial_node_labels reach NEW nodes only; the running node carries no label, which is why the
-      # radio-room rule is NotIn [preemptible], never In [on-demand].
-      node_labels = { "estate.io/capacity" = "on-demand" }
-      shape       = "VM.Standard.A1.Flex"
-      ocpus       = var.worker_ocpus
-      memory      = var.worker_memory_gb
-      size        = 1
-      # crew#539 CP4 (2026-08-27): the Cluster Autoscaler (platform/oci/autoscaler) owns the size between
-      # 1 and estate-defaults node_pool.max_nodes; the module then ignores `size` (autoscaler.tf).
-      autoscale                = true
-      ignore_initial_pool_size = true
-      # 100, not 50 (crew#516 CP4, 2026-08-27): at 50 GB the node evicted hermes-agent-gateway with
-      # 5.9 GB free under the 6.25 GB threshold (87 pods' images; oke-check 33096065995). Block storage
-      # is 200 GB Always Free and the PVCs claim 21 GB. Reaches a NEW node only: oke-check mode=surge-node.
-      boot_volume_size = 100
+      description      = "one A1 node: the Always Free allowance plus paid growth under the estate-defaults cap"
+      shape            = "VM.Standard.A1.Flex"
+      ocpus            = var.worker_ocpus
+      memory           = var.worker_memory_gb
+      size             = 1
+      boot_volume_size = 50
       # crew#289 (2026-08-26): a shape change reaches only new nodes; the running node stayed at
       # 2 OCPU / 12 GB after the pool moved to 4 / 24. node_cycling_* was tried and UpdateNodePool
       # refused it in run 32930359052: the cluster is BASIC_CLUSTER (`oci ce cluster get`), and OKE
@@ -56,26 +45,6 @@ module "oke" {
       # "Node shape is unavailable in subnet availability domain(s)" failure was AD-3. The module
       # ignores changes to this after creation, so it binds fresh creates (--teardown-rebuild) only.
       placement_ads = [1]
-    }
-    # crew#539 CP10 (2026-08-27): preemptible capacity, the same shape at half the price, size 0 until
-    # the Cluster Autoscaler wants it (--nodes=0:<spot_max_nodes>). Oracle reclaims a preemptible node
-    # with 30 s notice and TERMINATE is the only action OKE offers
-    # (docs.oracle.com/en-us/iaas/Content/ContEng/Tasks/contengusingpreemptiblecapacity.htm, read
-    # 2026-08-27), so nothing in the radio-room set may land here: platform/scheduling/capacity-affinity.yaml
-    # keeps infrastructure-critical pods off the label, and prefers it for everything else. Preemptible
-    # is set at pool create (module: preemptible_config), so this is a second pool, never a flag on a1.
-    a1-spot = {
-      description              = "preemptible A1 burst: stateless and runner pods prefer it; reclaimed with 30 s notice"
-      shape                    = "VM.Standard.A1.Flex"
-      ocpus                    = var.worker_ocpus
-      memory                   = var.worker_memory_gb
-      size                     = 0
-      autoscale                = true
-      ignore_initial_pool_size = true
-      boot_volume_size         = 100
-      placement_ads            = [1]
-      preemptible_config       = { enable = true, is_preserve_boot_volume = false }
-      node_labels              = { "estate.io/capacity" = "preemptible" }
     }
   }
 }
@@ -105,18 +74,6 @@ locals {
     monthly_cap_usd = local.monthly_cap_usd
     monthly_usd     = local.capacity_monthly_usd
     prefer_free     = local.estate_defaults.node_pool.prefer_free
-    burst = {
-      max_nodes     = local.burst_max_nodes
-      hours_monthly = local.burst_hours_monthly
-      node_usd_hr   = local.burst_node_usd_hr
-      monthly_usd   = local.burst_monthly_usd
-    }
-    spot = {
-      max_nodes     = local.spot_max_nodes
-      hours_monthly = local.spot_hours_monthly
-      node_usd_hr   = local.spot_node_usd_hr
-      monthly_usd   = local.spot_monthly_usd
-    }
   }
 }
 

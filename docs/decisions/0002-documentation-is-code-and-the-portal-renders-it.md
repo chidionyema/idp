@@ -56,7 +56,7 @@ second doc site.
 **4. Architecture diagrams: C4, modelled in Structurizr DSL, rendered to Mermaid.**
 `architecture/workspace.dsl` is the model; every diagram is a view of it. `architecture/render`
 runs the model through the `structurizr/structurizr` container and writes
-`docs/explanation/architecture/index.md` with the views as Mermaid fences, which GitHub and TechDocs both
+`docs/architecture/index.md` with the views as Mermaid fences, which GitHub and TechDocs both
 render with nothing installed. The model is committed, the render is committed, and the render is
 regenerable, so a diagram cannot quietly disagree with the model.
 

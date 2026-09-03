@@ -57,17 +57,11 @@ def _ensure_swift_helper_compiled() -> Path | None:
     Returns None (never raises) if swiftc is unavailable, the source is
     missing, or compilation fails -- callers fall back to software_key."""
     out = _swift_helper_path()
+    if out.exists():
+        return out
     src = _swift_source_path()
     if not src.exists():
-        return out if out.exists() else None
-    # crew#227 CP5 incident: the binary was cached on first use and never rebuilt, so a706e26's
-    # --pubkey / --verify-sig never reached the founder's Mac and enroll() failed closed for a
-    # day. The source's digest sits beside the binary; a different digest rebuilds. mtime is not
-    # used because a git checkout rewrites it without changing the content.
-    digest = hashlib.sha256(src.read_bytes()).hexdigest()
-    stamp = out.with_suffix(".sha256")
-    if out.exists() and stamp.exists() and stamp.read_text().strip() == digest:
-        return out
+        return None
     out.parent.mkdir(parents=True, exist_ok=True)
     try:
         result = subprocess.run(
@@ -77,9 +71,8 @@ def _ensure_swift_helper_compiled() -> Path | None:
     except (OSError, subprocess.SubprocessError):
         return None
     if result.returncode != 0 or not out.exists():
-        return out if out.exists() else None  # a stale helper beats no helper; the stamp stays unset
+        return None
     out.chmod(ck.get("trust.helper_file_mode"))
-    stamp.write_text(digest)
     return out
 
 
@@ -88,8 +81,7 @@ def _run_helper(args: list[str], timeout: float) -> dict[str, Any] | None:
     if helper is None:
         return None
     try:
-        env = {**os.environ, "SOVEREIGN_ENCLAVE_KEY_FILE": str(_enclave_key_path())}
-        result = subprocess.run([str(helper), *args], capture_output=True, text=True, timeout=timeout, env=env)
+        result = subprocess.run([str(helper), *args], capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.SubprocessError):
         return None
     try:
@@ -142,11 +134,6 @@ def _detect_backend() -> str:
         backend = _detect_windows_backend()
         return backend if backend != "software_key" else _detect_fido2_backend()
     return _detect_fido2_backend()
-
-
-def _enclave_key_path() -> Path:
-    """Where the helper keeps the Secure Enclave key handle; see presence_helper.swift keyFile."""
-    return _estate_home() / ck.get("trust.sovereign_dirname") / ck.get("trust.enclave_key_filename")
 
 
 def _software_key_path() -> Path:

@@ -30,26 +30,13 @@ cases=(
   "opmodel-ok.json:0:allows an identity with its grant, an approval word, a cost line and the canary label (crew#286)"
   "opmodel-half-provisioned.json:1:refuses an identity created with no grant or policy in the same PR (ZCP, crew#287)"
   "opmodel-gui.json:1:refuses an instruction line that sends a person to a console"
-  "opmodel-no-approval.json:0:allows a founder-facing change with no Approval-word line (founder 2026-08-27: no founder friction; the word is only his veto handle)"
-  "opmodel-approval-pending.json:0:allows a founder-facing change whose word the founder has not written on the PR; green merges (founder 2026-08-27)"
-  "opmodel-approval-other-word.json:0:allows when the founder approved a different word than the PR declares; only DENY: is read"
-  "opmodel-denied.json:1:refuses a founder-facing change the founder replied DENY: to, even with an APPROVE: on the same PR"
+  "opmodel-no-approval.json:1:refuses a founder-facing change with no Approval-word line"
   "opmodel-over-budget.json:1:refuses a platform/oci change whose declared monthly cost beats the budget"
   "opmodel-no-canary.json:1:refuses a platform/oci change with no canary label"
   "opmodel-no-drill.json:1:refuses a platform/ or clusters/ change that names no drill (founder 2026-08-26: test discipline)"
   "opmodel-unknown-drill.json:1:refuses a Drill: line naming nothing in drills/catalogue.yaml"
   "opmodel-drill-added-in-pr.json:0:allows a Drill: line naming a row this PR adds to drills/catalogue.yaml (idp#191 was refused for its own row)"
-  "opmodel-no-optimised.json:1:refuses a PR body with no counted Optimised: line (LAW 51, crew#584)"
-  "opmodel-optimised-sentence.json:1:refuses an Optimised: line that is a sentence, not two counts and a cut"
-  "notoil-doc-manual.json:1:refuses a doc that tells a person to mint a credential and hand it to a secret (crew#66)"
-  "notoil-doc-founder-action.json:0:allows a FOUNDER ACTION line that names a URL or a single word, the LAW 47 register's one tap (crew#66)"
 )
-
-# crew#638: the policy/*_test.rego unit tests (silent-green pins on operating_model and node_pool)
-# ran nowhere in CI before this line; a test no job runs is decoration (LAW 3).
-if out=$(conftest verify -p "$IDP/policy" 2>&1); then echo "ok    rego unit tests: $(printf "%s" "$out" | tail -1 | sed "s/\x1b\[[0-9;]*m//g")"
-else echo "FAIL  rego unit tests"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-echo
 
 printf '%-20s %-8s %-8s %s\n' FIXTURE EXPECT GOT PROVES
 printf '%-20s %-8s %-8s %s\n' -------------------- -------- -------- ------

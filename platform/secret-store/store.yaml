@@ -6,10 +6,6 @@ apiVersion: external-secrets.io/v1
 kind: ClusterSecretStore
 metadata:
   name: estate-vault
-  labels:
-    # The one cloud secret door (R43, crew#66): platform/edge/provider-independence.yaml refuses
-    # any other SecretStore or ClusterSecretStore whose provider is a cloud vault.
-    idp.platform/provider-door: "true"
 spec:
   provider:
     oracle:

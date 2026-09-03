@@ -5,7 +5,7 @@
    "docs/runbook.md"
   ],
   "added": "+text\n",
-  "body": "FOUNDER ACTION: sign in to the OCI console and add estate-tofu to Administrators\n\n## Architecture laws\n- LAW 1 zero-gravity: bin/cloud-agnostic-gate -> 0\n- LAW 2 fractal: n/a: no service boundary changes\n- LAW 3 nervous system: n/a: no workload changes\n- LAW 4 calibration: n/a: no prediction made\n\nOptimised: 3 steps -> 2, 1 round trip -> 1; cut: the second fixture pass, it proved nothing new\n",
+  "body": "FOUNDER ACTION: sign in to the OCI console and add estate-tofu to Administrators\n\n## Architecture laws\n- LAW 1 zero-gravity: bin/cloud-agnostic-gate -> 0\n- LAW 2 fractal: n/a: no service boundary changes\n- LAW 3 nervous system: n/a: no workload changes\n- LAW 4 calibration: n/a: no prediction made\n",
   "labels": []
  },
  "budget_monthly_usd": 50,

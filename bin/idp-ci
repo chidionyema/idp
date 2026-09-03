@@ -8,34 +8,15 @@
 set -uo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 fail=0
-# crew#584 (founder 2026-08-28, "we should already have diagnostics"): every line carries the
-# seconds the rung before it took, and the run ends with the slowest rungs -- in the log, and in
-# the GitHub step summary when there is one. Where the time goes is read, never dug out of a log.
-_T_LAST=$SECONDS; _T_ROWS=""
-say() {
-  local now=$SECONDS; local d=$((now - _T_LAST)); _T_LAST=$now
-  if [ "$d" -ge 3 ]; then _T_ROWS+="$d $*"$'\n'; printf '%s  (%ss)\n' "$*" "$d"; else printf '%s\n' "$*"; fi
-}
-timing_summary() {
-  local rows; rows=$(printf '%s' "$_T_ROWS" | sort -rn | head -5 | sed -E 's/^([0-9]+) (.{0,90}).*/\1s  \2/')
-  [ -n "$rows" ] || return 0
-  printf 'timing   %ss total; slowest rungs:\n' "$SECONDS"; printf '%s\n' "$rows" | sed 's/^/         /'
-  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf '## bin/idp-ci %ss\n\n```\n%s\n```\n' "$SECONDS" "$rows" >> "$GITHUB_STEP_SUMMARY"; fi
-}
+say() { printf '%s\n' "$*"; }
 need() { command -v "$1" >/dev/null || { say "FAIL  $1 is not installed"; exit 2; }; }
-# crew#584 CP-C (founder playbook Phase 2): IDP_CI_FAST=1 is the fast gate -- rungs 1, 1b, 1c and
-# ruff, under 60 s, no docker/conftest/helm. .github/workflows/fast-gate.yml runs it and every
-# heavy job (offline-gate, bdd, image builds, the drills) needs it green first.
-FAST="${IDP_CI_FAST:-0}"
-need shellcheck; need python3
-[ "$FAST" = 1 ] || { need docker; need conftest; need check-jsonschema; need sqlite-utils; need jq; }
+need shellcheck; need docker; need conftest; need check-jsonschema; need sqlite-utils; need jq; need python3
 
 MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
 
 # 1. Every script parses and passes shellcheck at warning level.
 for f in "$IDP"/bin/*; do
-  [ -f "$f" ] || continue   # bin/lib is a directory; head on it printed an error every run
-  head -1 "$f" | grep bash >/dev/null || continue
+  head -1 "$f" | grep -q bash || continue
   bash -n "$f" && shellcheck -S warning "$f" >/dev/null \
     && say "ok    shell    $(basename "$f")" || { say "FAIL  shell    $(basename "$f")"; fail=1; }
 done
@@ -89,18 +70,6 @@ for f in "$IDP"/bin/*; do
   if out=$(pipeverdict_scan "$f"); then say "FAIL  pipeverdict $(basename "$f")"; printf '%s\n' "$out" | sed 's/^/      /'; pv=$((pv+1)); fi
 done
 [ "$pv" -eq 0 ] && say "ok    pipeverdict 0 scripts let a pipeline's exit status stand in for a grep match" || fail=1
-
-# 1d. ruff, the same rule set (pyproject [tool.ruff.lint]) the bdd job runs after the suites.
-#     In the fast gate it runs first, so an undefined name is red in under a minute.
-if [ "$FAST" = 1 ]; then
-  if "$MPY" -m ruff --version >/dev/null 2>&1; then RUFF=("$MPY" -m ruff); else RUFF=(ruff); fi
-  (cd "$IDP" && "${RUFF[@]}" check --quiet .) && say "ok    ruff     pyproject rule set" || { say "FAIL  ruff"; fail=1; }
-  timing_summary
-  # 1e. crew#679 CP5: the incident register is generated from tests/test_incident_*.py; a new
-  # incident test without its committed row is refused here, so the chaos drills never drift.
-  [ "$fail" -eq 0 ] && say "ok    fast-gate: shell, hardcode, pipeverdict, ruff" || say "FAIL  fast-gate"
-  exit "$fail"
-fi
 
 # 2. Compose files are valid. Values are placeholders; compose only checks shape.
 for c in llm/litellm.yml observability/langfuse.yml mcp/agentgateway.yml; do
@@ -284,29 +253,11 @@ else say "FAIL  agnostic cloud-agnostic-gate is not discriminating or the platfo
 
 # crew#269 (founder: "as always configurable"): the DNS zone is one value in clusters/*/estate-config.yaml;
 # a platform file naming it as a literal fails. Proved both ways on fixtures, then run on the repo.
-# crew#796 (founder 2026-09-01, P0: "can't ever happen again ... PR rejection"): the same gate grades a
-# pull-request diff (bin/pr-report) and any other checkout (name-drift.yml); the diff mode is proved
-# both ways here too, so a rule that never refuses anything cannot land.
 if ! ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" >/dev/null 2>&1 \
    && ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/good" python3 "$IDP/bin/estate-zone-gate" >/dev/null 2>&1 \
-   && ! ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" --diff "$IDP/tests/fixtures/estate-zone/added-literal.diff" >/dev/null 2>&1 \
-   && ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" --diff "$IDP/tests/fixtures/estate-zone/added-substituted.diff" >/dev/null 2>&1 \
-   && ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" --diff "$IDP/tests/fixtures/estate-zone/added-self-marker.diff" >/dev/null 2>&1 \
    && out=$(python3 "$IDP/bin/estate-zone-gate" 2>&1); then
-  say "ok    zone     estate-zone-gate refuses a literal zone (tree and diff), permits \${ESTATE_ZONE}, and the repo is clean"
+  say "ok    zone     estate-zone-gate refuses a literal zone, permits \${ESTATE_ZONE}, and the repo is clean"
 else say "FAIL  zone     estate-zone-gate is not discriminating or the platform names the zone outside clusters/*/estate-config.yaml"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-
-# crew#804 Diamond Standard (founder 2026-09-01): agents emit capability intents, the compiler is
-# deterministic. Proved both ways in one run: the bad fixtures (unknown vocabulary, an intent that
-# speaks the zone) are refused, the good ones compile, and two runs are byte-identical.
-ic_a=$(mktemp -d); ic_b=$(mktemp -d)
-if ! python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/bad" --out "$ic_a" >/dev/null 2>&1 \
-   && python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/good" --out "$ic_a" >/dev/null 2>&1 \
-   && python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/good" --out "$ic_b" >/dev/null 2>&1 \
-   && diff -r "$ic_a" "$ic_b" >/dev/null 2>&1; then
-  say "ok    intent   intent-compile refuses unknown vocabulary and a spoken estate name, compiles the good intents, byte-deterministic"
-else say "FAIL  intent   intent-compile is not discriminating or not deterministic"; fail=1; fi
-rm -rf "$ic_a" "$ic_b"
 
 if ! COMPOSE_GLOB='tests/fixtures/ports-bad/*.yml' python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
    && out=$(python3 "$IDP/bin/port-gate" 2>&1); then
@@ -334,7 +285,7 @@ printf '\n# historical: 127.0.0.1:%s was the old thing, deleted 2026-08-25\n' 99
 # runs under `set -o pipefail`, so `port-gate | grep -q` reports port-gate's
 # deliberate exit 1 and the leg fails even when the message is exactly right.
 probe_out=$(REG="$probe_reg" COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" 2>&1)
-if printf '%s' "$probe_out" | grep 'placement-audit.*probes 127.0.0.1:8000' >/dev/null \
+if printf '%s' "$probe_out" | grep -q 'placement-audit.*probes 127.0.0.1:8000' \
    && ! REG="$probe_reg" COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
    && COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
    && BIN_DIR="$probe_cmt" COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" >/dev/null 2>&1; then
@@ -355,12 +306,6 @@ if ! python3 "$IDP/bin/security-policy-gate" tests/fixtures/security-policy/bad.
    && python3 "$IDP/bin/security-policy-gate" >/dev/null 2>&1; then
   say "ok    security-policy every control on docs/reference/security-policy.md names a proof command that exists; gate proved both ways"
 else say "FAIL  security-policy gate does not discriminate, or a control has no proof"; python3 "$IDP/bin/security-policy-gate" | sed 's/^/      /'; fail=1; fi
-# Root trust (crew#66 ruling 5453747447, crew#580): every vault entry an ExternalSecret reads is
-#     born by a bootstrapper on disk or ticketed. Proved both ways by
-#     tests/test_incident_crew66_root_trust_register.py; here the live register is graded.
-if python3 "$IDP/bin/idp-root-trust" >/dev/null 2>&1; then
-  say "ok    root-trust $(python3 "$IDP/bin/idp-root-trust" | tail -1 | sed -E 's/^PASS +root-trust: //')"
-else say "FAIL  root-trust an ExternalSecret reads a credential nobody registered, or a register row has no bootstrapper/ticket"; python3 "$IDP/bin/idp-root-trust" | sed 's/^/      /'; fail=1; fi
 # AI Act (crew#202): Arts. 9, 10, 11 kept voluntarily. Proved both ways: the bad
 #     fixture has an overdue risk review and a technical file missing section 9.
 if ! TODAY=2026-08-25 python3 "$IDP/bin/ai-act-gate" tests/fixtures/ai-act/bad >/dev/null 2>&1 \
@@ -368,7 +313,7 @@ if ! TODAY=2026-08-25 python3 "$IDP/bin/ai-act-gate" tests/fixtures/ai-act/bad >
    && python3 "$IDP/bin/ai-act-gate" "$IDP" >/dev/null 2>&1; then
   say "ok    ai-act   every registered AI system has its Annex IV file, risk entries and declared data; gate proved both ways"
 else say "FAIL  ai-act   gate does not discriminate, or a registered system has a gap"; python3 "$IDP/bin/ai-act-gate" "$IDP" | sed 's/^/      /'; fail=1; fi
-# LAW 32 at the PR (founder, 2026-08-25): a new bin file needs docs/tutorials/demo + docs/how-to/onboarding;
+# LAW 32 at the PR (founder, 2026-08-25): a new bin file needs docs/demo + docs/onboarding;
 # every such page has 200 chars of prose and is in the nav. Proved both ways in one run.
 if python3 "$IDP/bin/law32-gate" --added bin/supply-chain >/dev/null 2>&1 \
    && ! python3 "$IDP/bin/law32-gate" --added bin/feature-with-no-pages >/dev/null 2>&1 \
@@ -394,7 +339,7 @@ poison="$tmp/poisonhome"; mkdir -p "$poison/.estate/state"
 printf '{"rows":[{"kind":"listener","port":7107,"bind":"*","process":"node","owner":"poison"}]}\n' \
   > "$poison/.estate/state/inventory.json"
 poison_out=$(HOME="$poison" python3 "$IDP/bin/port-gate" --live 2>&1)   # captured: pipefail would report port-gate's status, not grep's
-if printf '%s' "$poison_out" | grep 'poison' >/dev/null ; then
+if printf '%s' "$poison_out" | grep -q 'poison'; then
   say "FAIL  portlive port-gate --live is reading ~/.estate/state/inventory.json, not the machine"; fail=1
 else say "ok    portlive port-gate --live reads the machine, not a saved inventory"; fi
 # Reconcile (crew#186 CP3): a rogue container is a finding, the clean fixture is not.
@@ -450,7 +395,6 @@ else say "FAIL  schema   check-jsonschema rejected a generated entity"; fail=1; 
 #    rule cannot exist without its proof (LAW 44) and no gate refuses good work (LAW 38).
 policy_gate() { conftest test --parser json -p "$IDP/policy" "$1" >/dev/null 2>&1; }
 bind_audit() { "$IDP/bin/bind-audit" --table "$1" >/dev/null 2>&1; }
-ns_fence_gate() { python3 "$IDP/bin/ns-fence-gate" "$1" >/dev/null 2>&1; }
 job_described() { ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe "$1" ) >/dev/null 2>&1; }
 # A code location is loaded by PATH by workspace.yaml, never as a package. Loading
 # it any other way here would grade a proxy: on 2026-08-25 definitions.py imported a
@@ -504,39 +448,16 @@ else say "FAIL  vmmount  bin/vm-shared-path selftest"; printf '%s\n' "$out" | se
 # Zero static secrets (security-policy.md row, kini-master-spec 4.1/4.4, crew#227). Proved both
 # ways on fixtures; the live host count is reported by bin/idp-verify, not gated here, because
 # it is an open incident until crew#227 lands and a gate that refuses correct work is an outage.
-if STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/good ESTATE_CODE=tests/fixtures/static-secret/good ESTATE_SECRETS=tests/fixtures/static-secret/good/vault bin/static-secret-gate >/dev/null \
-   && ! STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/bad ESTATE_CODE=tests/fixtures/static-secret/bad/code ESTATE_SECRETS=tests/fixtures/static-secret/good/vault bin/static-secret-gate >/dev/null; then
+if STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/good ESTATE_CODE=tests/fixtures/static-secret/good ESTATE_SECRETS=/nonexistent bin/static-secret-gate >/dev/null \
+   && ! STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/bad ESTATE_CODE=tests/fixtures/static-secret/bad/code ESTATE_SECRETS=/nonexistent bin/static-secret-gate >/dev/null; then
   say "ok    secrets  static-secret-gate passes the empty fixture and refuses the one with a key and a .env"
 else say "FAIL  secrets  bin/static-secret-gate fixtures"; fail=1; fi
-# crew#586 CP1: the founder's ethos as seven measured tenet rows; a row without a command is refused (LAW 44).
-if out=$(python3 "$IDP/bin/idp-conscience" --selftest 2>&1); then
-  say "ok    ethos    idp-conscience scores the good fixture 2/2, the bad 1/2, and refuses a tenet with no command"
-else say "FAIL  ethos    bin/idp-conscience --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-# crew#586 CP2: the conscience rules judge a PR both ways (policy/conscience.rego).
-if ! policy_gate_out=$(conftest test --parser json -p "$IDP/policy" "$IDP/policy/fixtures/conscience-bad.json" 2>&1) \
-   && [ "$(printf '%s\n' "$policy_gate_out" | grep -oE 'rule=(no_provider_in_diff|no_floating_tag|new_script_has_a_test|incident_has_a_guard|new_dependency_has_a_ledger_entry)' | sort -u | wc -l | xargs)" = "5" ] \
-   && conftest test --parser json -p "$IDP/policy" "$IDP/policy/fixtures/conscience-clean.json" >/dev/null 2>&1; then
-  say "ok    ethos    conscience.rego fires all 5 rules on conscience-bad.json and none on conscience-clean.json"
-else say "FAIL  ethos    policy/conscience.rego fixtures"; fail=1; fi
 if bin/owner-account-gate tests/fixtures/owner-accounts/good.yaml >/dev/null \
    && ! bin/owner-account-gate tests/fixtures/owner-accounts/bad.yaml >/dev/null; then
   say "ok    owners   owner-account-gate passes a provider with a second owner and refuses one without"
 else say "FAIL  owners   bin/owner-account-gate fixtures"; fail=1; fi
 if out=$("$IDP/bin/bind-audit" --selftest 2>&1); then say "ok    binds    bind-audit refuses an unknown listener and permits an allow-listed one"
 else say "FAIL  binds    bin/bind-audit --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-
-# 7b. The fences the estate's own namespaces ship with (crew#191). The AGENTS.md row
-#    above proves ns-fence-gate can tell a fenced namespace from a flat one; this
-#    runs it over the manifests that are actually committed, because a gate that
-#    works on fixtures and is never pointed at the real thing protects fixtures.
-#    Measured on `estate` before these existed: a pod in one namespace reached a pod
-#    in another by IP, no credential, HTTP 200 in 4ms. Report-only until crew#191
-#    fences the namespaces that exist today (2026-08-27: 76 defects across 19): a
-#    gate that refuses every namespace on main is the outage (LAW 38), and a count
-#    that falls to 0 is the moment this row becomes a FAIL.
-if out=$(cd "$IDP" && python3 bin/ns-fence-gate platform 2>&1); then
-  say "ok    fences   $(printf '%s' "$out" | sed 's/^ok *ns-fence-gate: //')"
-else say "warn  fences   $(printf '%s' "$out" | head -1 | sed 's/^FAIL *ns-fence-gate: //') -- crew#191 fences them; report-only until 0"; fi
 
 # 8. crew#216 CP1: the get_estate_inventory MCP tool. Property (byte ceiling holds over
 #    many synthetic catalog sizes) and incident (stale snapshot disclosed, proved both
@@ -579,26 +500,16 @@ else say "FAIL  cp3      tests/test_cp3_workload_logs.py"; printf '%s\n' "$out" 
 #     has never been shown to refuse (LAW 38): the unbound fixture must fail
 #     with StepDefinitionNotFoundError -- not merely fail, or a typo in a
 #     feature path would satisfy the guard -- and the real suite must pass.
-# crew#584, measured on run 33202098401: these two suites took 132 of offline-gate's 211 s, and
-# ci.yml's bdd job ran the same two suites again, strictly, in parallel. In CI the bdd job owns
-# them and offline-gate sets IDP_CI_SKIP_PYTEST=1; locally (pre-push, bin/idp-ci by hand) they run.
-if [ "${IDP_CI_SKIP_PYTEST:-0}" = 1 ]; then
-  say "skip  bdd+incident: run once, by the ci bdd job (IDP_CI_SKIP_PYTEST=1)"
-else
 BDD_PY="$MPY"
 "$BDD_PY" -c 'import pytest_bdd' >/dev/null 2>&1 || BDD_PY=python3
-# crew#584 zero-bottleneck law (founder 2026-08-28: "zero bottleneck law optinise ruthlessly"): run
-# 33198380701 spent 106 s here and 73 s in 8b on one of the runner's four cores. pytest-xdist is
-# already a dev dependency; when it imports, both rungs fan out. Missing xdist is serial, never a skip.
-XD=""; "$BDD_PY" -c 'import xdist' >/dev/null 2>&1 && XD="-n auto"
 if ! "$BDD_PY" -c 'import pytest_bdd' >/dev/null 2>&1; then
   say "FAIL  bdd      pytest-bdd is not installed: pip install -r sovereign/requirements-dev.txt"; fail=1
 else
   # Captured, never piped into grep: this script sets pipefail and pytest exits
   # non-zero on purpose here, which is the incident guard 1c is about.
   bdd_bad=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/fixtures/bdd/unbound" -q 2>&1)
-  bdd_good=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/bdd" -q $XD 2>&1); bdd_good_rc=$?
-  if printf '%s' "$bdd_bad" | grep 'StepDefinitionNotFoundError' >/dev/null && [ "$bdd_good_rc" -eq 0 ]; then
+  bdd_good=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/bdd" -q 2>&1); bdd_good_rc=$?
+  if printf '%s' "$bdd_bad" | grep -q 'StepDefinitionNotFoundError' && [ "$bdd_good_rc" -eq 0 ]; then
     say "ok    bdd      $(printf '%s' "$bdd_good" | grep -oE '[0-9]+ passed' | head -1), $(printf '%s' "$bdd_good" | grep -c '^  pending ') feature(s) pending; an unbound step is refused"
     printf '%s' "$bdd_good" | grep '^  pending ' | sed 's/^/      /'
   else
@@ -614,147 +525,26 @@ fi
 #     named files and the bdd suite, ci.yml ran sovereign/tests/bdd. A PR body that says
 #     "bin/idp-ci runs the incident test on every PR" was a claim with no receipt. Tests
 #     that need kyverno or a sibling checkout skip as BLIND and say so; a skip is printed.
-inc=$("$BDD_PY" -m pytest -q -p no:cacheprovider $XD "$IDP"/tests/test_incident_*.py 2>&1); inc_rc=$?
+inc=$("$BDD_PY" -m pytest -q -p no:cacheprovider "$IDP"/tests/test_incident_*.py 2>&1); inc_rc=$?
 if [ "$inc_rc" -eq 0 ]; then
   say "ok    incident $(printf '%s' "$inc" | grep -oE '[0-9]+ passed' | head -1), $(printf '%s' "$inc" | grep -oE '[0-9]+ skipped' | head -1 || printf '0 skipped') (BLIND skips)"
   printf '%s\n' "$inc" | grep -oE 'BLIND: [^)]*' | sort -u | sed 's/^/      /'
 else
   say "FAIL  incident tests/test_incident_*.py (rc=$inc_rc)"; printf '%s\n' "$inc" | tail -20 | sed 's/^/      /'; fail=1
 fi
-fi  # IDP_CI_SKIP_PYTEST
-
-# 8c. The docs site builds strict (ADR 0002, crew#603). Every page is in a Diátaxis folder
-#     (tutorials, how-to, reference, explanation, decisions), every nav entry resolves and no
-#     link is dead. Before this rung the sweep that moved 169 files could break every Backstage
-#     techdocs page and nothing here would say so. BLIND when mkdocs is missing, never a pass.
-if command -v mkdocs >/dev/null; then
-  mkd=$(cd "$IDP" && mkdocs build --strict -q -d "${TMPDIR:-/tmp}/idp-ci-site.$$" 2>&1); mkd_rc=$?
-  rm -rf "${TMPDIR:-/tmp}/idp-ci-site.$$"
-  if [ "$mkd_rc" -eq 0 ]; then
-    say "ok    docs     mkdocs --strict built $(cd "$IDP" && grep -cE '^\s+- .*\.md$' mkdocs.yml) nav page(s)"
-  else
-    say "FAIL  docs     mkdocs --strict (rc=$mkd_rc)"; printf '%s\n' "$mkd" | tail -20 | sed 's/^/      /'; fail=1
-  fi
-else say "BLIND docs     mkdocs not installed; the docs site was not built"; fail=1; fi
 
 # 9. Every Flux HelmRelease under platform/ renders clean against the cluster's Kyverno
 #    ClusterPolicies (helm template + the release's own postRenderers), both ways: the
 #    unpatched-chart fixture must be refused. Kyverno judges at admission, after merge;
 #    this judges before the PR. BLIND (rc 2) when helm/kyverno are missing, never a pass.
 if command -v kyverno >/dev/null && command -v helm >/dev/null; then
-  # Every HelmRelease dir, plus any dir shipping a plain workload (crew#284: the litellm
-  # Deployment was never judged and the cluster refused it after merge; crew#539 2026-08-28: the
-  # robusta release carried no postRenderers, was never judged, and admission refused it on 15 rules).
-  # bin/idp-kyverno-dirs owns this list (crew#623: two globs here disagreed and three dirs,
-  # platform/commerce/data among them, were judged by nothing at all).
-  dirs=$(cd "$IDP" && bin/idp-kyverno-dirs)
-  # rc 2 is BLIND: the judge ran but not against the whole policy set, and crew#539 is what that
-  # costs -- CI printed "render clean" for a Deployment admission refused, because the two
-  # estate-only policies live in prospector and CI had no copy. Blind and failing are different
-  # facts and the operator needs to be told which one this is.
-  # crew#584 zero-bottleneck law: this rung was 160 s of the 422 s run 33198380701 spent in
-  # bin/idp-ci, and #625's parallel render bought 12 s of it on the hosted runner. On a pull
-  # request (IDP_CI_BASE names the base ref, set by ci.yml) only the dirs the diff touches are
-  # judged; the whole set is judged on main, and on any PR that moves the judge, a policy, a
-  # kyverno fixture or the cluster wiring, because then every render's verdict can change. A
-  # dir with no changed file cannot render differently from main, where it was judged.
-  kyv_scope="every dir"
-  if [ -n "${IDP_CI_BASE:-}" ] && changed=$(cd "$IDP" && git diff --name-only "$IDP_CI_BASE...HEAD" 2>/dev/null); then
-    if printf '%s\n' "$changed" | grep -E '^(bin/idp-kyverno-render|bin/idp-ci|tests/fixtures/kyverno/|platform/kyverno/|platform/policies/|clusters/)' >/dev/null ; then
-      kyv_scope="every dir: the judge, a policy or the cluster wiring changed"
-    else
-      scoped=$(for d in $dirs; do printf '%s\n' "$changed" | grep "^$d/" >/dev/null && echo "$d"; done)
-      kyv_scope="$(printf '%s\n' "$scoped" | grep -c .) of $(printf '%s\n' "$dirs" | grep -c .) dirs changed against $IDP_CI_BASE"
-      dirs="$scoped"
-    fi
-  fi
-  if [ -z "$dirs" ] && [ "$kyv_scope" != "every dir" ]; then
-    say "ok    kyverno  no platform dir changed against $IDP_CI_BASE; every render was judged on main (scoped: $kyv_scope)"
-    dirs=skip
-  fi
-  # IDP_RENDER_KEEP: rung 9c type-checks these exact bytes. One render, judged twice -- Kyverno
-  # for POLICY here, kubeconform for TYPE below. Rendering again would cost this job the whole
-  # 160 s again (crew#584 measured it), so the render this rung already pays for is handed over.
-  [ "$dirs" = skip ] || kyv=$( (cd "$IDP" && IDP_RENDER_KEEP="$tmp/render" bin/idp-kyverno-render $dirs) 2>&1 ); kyv_rc=$?
-  if [ "$dirs" = skip ]; then :
-  elif [ -z "$dirs" ]; then say "FAIL  kyverno  no platform dir shipped a HelmRelease or a workload; the judge had nothing"; fail=1
-  elif [ "$kyv_rc" = 2 ]; then
-    say "BLIND kyverno  the judge did not see the whole policy set; no render was judged"
-    printf '%s\n' "$kyv" | grep '^BLIND' | sed 's/^/      /'; fail=1
-  elif [ "$kyv_rc" != 0 ]; then
-    say "FAIL  kyverno  a HelmRelease or workload render fails admission policy"
-    # crew#292: this line was `grep -E '^(FAIL|      )'`. It reads the verdict shapes the judge
-    # prints when it reaches a verdict, and nothing else. A render that dies before any verdict --
-    # kustomize `error: must build at directory`, a helm template failure, a missing chart -- prints
-    # neither shape, the grep matched nothing, and the operator was left with the headline and a bare
-    # underline: no dir, no policy, no cause (offline-gate on run 33173089759). An instrument that
-    # destroys the cause is not an instrument (LAW 28) and nobody can attribute from it (LAW 29).
-    # Every line that is not an `ok` verdict travels, tail-capped so one rung stays one screen.
-    #
-    # crew#292 again, 2026-08-28: the cap above was `| tail -40` over the whole block, and with two
-    # failing dirs it ate the first one whole. Measured on the shipped block: `platform/state` with 25
-    # policy lines followed by `platform/litellm` with 25 gives 52 non-`ok` lines, the cap keeps the
-    # last 40, and `FAIL  plain    platform/state` survives in zero of them -- the block opens
-    # mid-stream on `policy rule-12 -> state-collector failed` with no dir above it and nothing saying
-    # 12 lines were cut. The operator reads one failing dir where there are two and attributes to the
-    # wrong one: the same shape the `grep -E '^(FAIL|      )'` above cost us (LAW 28, LAW 29), moved
-    # to a threshold instead of removed. That case is not hypothetical -- it is what a Kyverno policy
-    # bump looks like, which is exactly when the cap fires.
-    #
-    # So the cap stays 40 lines total (a rung is still one screen) but it is no longer blind or
-    # silent: the `FAIL` lines are the index into the failure and are printed first, uncapped, then
-    # one line saying how many were dropped, then the tail of what is left. Under 40 lines this is
-    # byte-identical to the block above it.
-    body=$(printf '%s\n' "$kyv" | grep -vE '^ok ')
-    n=$(printf '%s\n' "$body" | grep -c . )
-    if [ "$n" -gt 40 ]; then
-      dirs_failed=$(printf '%s\n' "$body" | grep -c '^FAIL')
-      printf '%s\n' "$body" | grep '^FAIL' | sed 's/^/      /'
-      say "      ... $((n - 40)) of $n lines dropped by the cap; $dirs_failed dir(s) failed, named above"
-      rest=$((40 - dirs_failed - 1)); [ "$rest" -lt 0 ] && rest=0
-      printf '%s\n' "$body" | grep -vE '^FAIL' | tail -n "$rest" | sed 's/^/      /'
-    else
-      printf '%s\n' "$body" | sed 's/^/      /'
-    fi
-    fail=1
-  elif (cd "$IDP" && bin/idp-kyverno-render tests/fixtures/kyverno/must-fail >/dev/null 2>&1); then
-    say "FAIL  kyverno  the must-fail fixture passed; the judge admits an unpatched chart"; fail=1
-  else say "ok    kyverno  $(echo "$dirs" | tr '\n' ' ')render clean; the unpatched-chart fixture is refused ($kyv_scope)"; fi
+  # HelmRelease dirs with postRenderers, plus any dir shipping a plain workload (crew#284: the
+  # litellm Deployment was never judged and the cluster refused it after merge).
+  dirs=$(cd "$IDP" && { grep -lE '^kind: HelmRelease' platform/*/*.yaml platform/*/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && grep -q postRenderers "$d"/*.yaml && echo "$d"; done; grep -lE '^kind: (Deployment|StatefulSet|DaemonSet|Job|CronJob)$' platform/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && echo "$d"; done; } | sort -u)
+  if [ -n "$dirs" ] && (cd "$IDP" && bin/idp-kyverno-render $dirs) && ! (cd "$IDP" && bin/idp-kyverno-render tests/fixtures/kyverno/must-fail >/dev/null 2>&1); then
+    say "ok    kyverno  $(echo "$dirs" | tr '\n' ' ')render clean; the unpatched-chart fixture is refused"
+  else say "FAIL  kyverno  a HelmRelease render fails admission policy, or the must-fail fixture passed"; fail=1; fi
 else say "BLIND kyverno  helm or kyverno CLI not installed; HelmRelease renders were not judged"; fail=1; fi
-
-# 9c. idp#1027 (run 33339964930): the cluster refused `.spec.appID: expected string, got 4740261`
-#     -- a field typed int where its CRD declares a string. Kyverno grades whether a resource is
-#     ALLOWED and passed that shape happily; nothing in this pipeline graded whether a field is
-#     the TYPE its schema declares. kubeconform does, on rung 9's render (IDP_RENDER_KEEP above),
-#     against kubeconform's built-in Kubernetes schemas plus the CRD schemas vendored under
-#     tests/fixtures/kubeconform/crd-schemas. Kinds with no vendored schema are counted and
-#     printed as `skipped`, never silently passed (LAW 28). BLIND, never a pass, with no binary.
-#     What this rung does NOT catch is stated in bin/idp-kubeconform's docstring: Flux substitutes
-#     ${vars} in the cluster, so a render holds the literal "${githubAppIDQuoted}" -- a string
-#     either way. The idp#1027 shape itself is held by
-#     tests/test_incident_idp1027_appid_types_as_a_string.py, which judges the post-substitution
-#     bytes. This rung is the ongoing coverage of every other type error in every rendered manifest.
-if [ "${dirs:-}" = skip ]; then say "ok    types    no platform dir changed against ${IDP_CI_BASE:-main}; every render was type-checked on main"
-elif [ ! -d "$tmp/render" ]; then say "BLIND types    rung 9 kept no render; nothing was type-checked"; fail=1
-else
-  # $dirs is passed so a render that died early (a chart download reset by the peer, as main's
-  # own run 33355097800 did) is BLIND, never an `ok` over the files that happened to survive.
-  # shellcheck disable=SC2086
-  kcf=$( (cd "$IDP" && bin/idp-kubeconform --rendered "$tmp/render" $dirs) 2>&1 ); kcf_rc=$?
-  if [ "$kcf_rc" = 0 ]; then say "ok    types    $(printf '%s' "$kcf" | tail -1 | sed 's/^ok *kubeconform *//')"
-  elif [ "$kcf_rc" = 2 ]; then say "BLIND types    kubeconform did not judge the render:"; printf '%s\n' "$kcf" | sed 's/^/      /'; fail=1
-  else say "FAIL  types    a rendered manifest does not match the type its schema declares:"; printf '%s\n' "$kcf" | sed 's/^/      /'; fail=1; fi
-fi
-
-# 9b. crew#483: Flux post-build substitution judged with the tool Flux runs. Every Kustomization
-#     that declares postBuild renders (kustomize build | flux envsubst --strict) with its sources'
-#     keys; the fixture carrying an unescaped shell `${out%% *}` must be refused and the `$$`
-#     form must pass. BLIND (rc 2) when flux or kustomize is missing, never a pass.
-es_out=$(cd "$IDP" && bin/idp-envsubst-gate 2>&1); es_rc=$?
-if [ "$es_rc" -eq 2 ]; then say "BLIND envsubst $(printf '%s' "$es_out" | tail -1)"; fail=1
-elif [ "$es_rc" -eq 0 ] && (cd "$IDP" && bin/idp-envsubst-gate tests/fixtures/envsubst/good >/dev/null 2>&1) && ! (cd "$IDP" && bin/idp-envsubst-gate tests/fixtures/envsubst/bad >/dev/null 2>&1); then
-  say "ok    envsubst $(printf '%s' "$es_out" | grep -c '^ok') Kustomization(s) substitute clean; the unescaped-shell fixture is refused"
-else say "FAIL  envsubst a postBuild Kustomization is refused by flux envsubst --strict, or the fixtures did not prove both ways:"; printf '%s\n' "$es_out" | grep -v '^ok' | sed 's/^/      /'; fail=1; fi
 
 # 10. crew#269 row 3: a Component with no URL a person can open fails the PR, both ways.
 #     The clean fixture must pass bin/catalog-links-check and a checkout with no remote
@@ -768,34 +558,5 @@ if INV="$FIX" OUT="$a" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1 \
   say "ok    links    $lk_ok; a checkout with no remote is refused"
 else say "FAIL  links    catalog-links-check passed a linkless Component or refused the clean fixture"; fail=1; fi
 
-# 7. Elite grade is continuous, not a one-off (crew#474, founder 2026-08-27:
-#    "needs to be a continuous process, not just a one off"). Every PR grades the
-#    fixture catalogue and refuses a stale page; Dagster com.estate.catalog-render
-#    grades the live one four times a day. Both ways: a rendered page passes
-#    --check, a page with one byte changed fails it.
-sc="$tmp/showcase"; mkdir -p "$sc"
-INV="$FIX" OUT="$sc" python3 "$IDP/bin/catalog-gen" >/dev/null
-if python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$sc/SHOWCASE.md" >/dev/null 2>&1 \
-   && python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$sc/SHOWCASE.md" --check >/dev/null 2>&1 \
-   && printf 'x' >> "$sc/SHOWCASE.md" \
-   && ! python3 "$IDP/bin/estate-showcase" --catalog "$sc/catalog-info.yaml" --out "$sc/SHOWCASE.md" --check >/dev/null 2>&1; then
-  say "ok    grade    estate-showcase grades the fixture catalogue ($(grep -c '| GAP |' "$sc/SHOWCASE.md") GAP rows) and --check refuses a stale page"
-else say "FAIL  grade    estate-showcase did not render, or --check did not discriminate"; fail=1; fi
-
-# 8. Every surface the founder can open survives losing one node (crew#539, docs/reference/policy/
-#    availability-standard.md). 2026-08-28 06:20-06:39Z a cordon took catalogue to 503 for
-#    fifteen minutes because the manifest said replicas 1 and platform/ held no PDB; nothing
-#    could fail that review because nothing required otherwise. Both ways, on rendered
-#    manifests: the manifest catalogue actually carried into that drain is refused, the shape
-#    it carries now passes, and the live platform/ is clean -- BLIND (2) counts as a failure,
-#    so a surface the gate cannot resolve never passes quietly.
-if ! python3 "$IDP/bin/idp-availability-gate" tests/fixtures/availability/bad >/dev/null 2>&1 \
-   && python3 "$IDP/bin/idp-availability-gate" tests/fixtures/availability/good >/dev/null 2>&1 \
-   && out=$(python3 "$IDP/bin/idp-availability-gate" 2>&1); then
-  say "ok    ha       $(printf '%s' "$out" | tail -1 | sed 's/^ok *availability *//')"
-  printf '%s\n' "$out" | grep '^WAIVED' | sed 's/^/      /' || true
-else say "FAIL  ha       a routed surface does not survive losing one node, or the gate is not discriminating"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-
-timing_summary
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"

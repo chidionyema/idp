@@ -99,7 +99,7 @@ def read(session_id: str, *, _conn: sqlite3.Connection | None = None) -> Spend:
         ).fetchone()
         if row is None:
             return Spend(session_id, 0, 0, 0, 0, True, 0)
-        _total, remaining, version = int(row[0]), int(row[1]), int(row[2])
+        total, remaining, version = int(row[0]), int(row[1]), int(row[2])
         return Spend(session_id, 0, 0, remaining, version, remaining <= 0, 0)
     finally:
         if _conn is None:
@@ -123,7 +123,7 @@ def spend(session_id: str, tokens: int) -> Spend:
             ).fetchone()
             if row is None:
                 return Spend(session_id, want, 0, 0, 0, True, attempt)
-            _total, remaining, version = int(row[0]), int(row[1]), int(row[2])
+            total, remaining, version = int(row[0]), int(row[1]), int(row[2])
             taken = min(want, remaining)
             new_remaining = remaining - taken
             cur = conn.execute(

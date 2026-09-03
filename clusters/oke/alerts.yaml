@@ -15,7 +15,7 @@ spec:
   path: ./platform/alerts
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 5m
   postBuild:
     substituteFrom:
       - kind: Secret
@@ -37,25 +37,4 @@ spec:
   path: ./platform/alerts-secret
   prune: true
   wait: true
-  timeout: 10m
----
-# crew#406 row 4: the GitHub App (vault key github-app) was never created, so the github-app
-# ExternalSecret never became Ready, alerts-secret (wait: true) never became Ready, and `alerts`
-# was never applied: the Telegram channel was dead behind a credential it does not use. The
-# githubdispatch ledger has its own Kustomization; it waits on the App, nothing else waits on it.
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: alerts-github
-  namespace: flux-system
-spec:
-  interval: 10m
-  dependsOn:
-    - name: secret-store
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-  path: ./platform/alerts-github
-  prune: true
-  wait: true
-  timeout: 10m
+  timeout: 5m

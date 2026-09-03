@@ -3,7 +3,6 @@
 # reaches main as a pull request with auto-merge. ci.yml runs the required checks on the push to
 # this branch; a pull request opened with GITHUB_TOKEN fires no pull_request run, and does not
 # need to, because the ruleset grades check runs on the head commit.
-# crew#439: a CONFLICTING pull request is refreshed by bin/idp-image-update-pr, never reported ok.
 name: image-update-pr
 on:
   push:
@@ -11,45 +10,33 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  id-token: write   # traded for the OCI session that reads the App key (.github/actions/github-app-token)
-# A newer run on the same ref supersedes the older one: on 2026-08-27 20:23Z idp had 9 running and
-# 20 queued runs, 12 of them stale duplicates, and a one-line oke-check waited 19 min (crew#516).
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
 jobs:
   open:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { fetch-depth: 0 }  # crew#439: the refresh merges origin/main
-      # idp#769: auto-merge armed under GITHUB_TOKEN merges as github-actions[bot] and starts no
-      # workflow on main; the App's token arms it as an App push. The action checks out main's
-      # copy of the tool itself (this branch is an old fork of main).
-      - id: app
-        uses: ./.github/actions/github-app-token
-        with:
-          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
-          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
-          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
-          oci_region: ${{ vars.OCI_REGION }}
-          oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: open or refresh the pull request, auto-merge on green
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          WRITER_KEY_B64: ${{ secrets.SEED_FLUX_WRITER_IDENTITY_B64 }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # crew#439: the refresh push must fire ci.yml, and a GITHUB_TOKEN push fires nothing;
-          # push with the flux-writer deploy key as kini-finish.yml does.
-          test -n "$WRITER_KEY_B64" || { echo "FAIL    image-update-pr  SEED_FLUX_WRITER_IDENTITY_B64 is not set (capabilities register: flux-writer)"; exit 1; }
-          umask 077; mkdir -p ~/.ssh; printf '%s' "$WRITER_KEY_B64" | base64 -d > ~/.ssh/flux-writer
-          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
-          export GIT_SSH_COMMAND="ssh -i ~/.ssh/flux-writer -o IdentitiesOnly=yes"
-          export PUSH_URL="git@github.com:${GITHUB_REPOSITORY}.git"
-          # crew#584 / idp#750: this job checks out flux/image-updates, a branch the controller forked
-          # from an old main, so `bin/idp-image-update-pr` here was the crew#439 copy and #750 was
-          # opened without the LAW 51 line idp#744 added. The script that opens the pull request is
-          # always main's copy; the branch carries only the controller's newTag lines.
-          bash <(git show origin/main:bin/idp-image-update-pr)
+          n=$(gh pr list --head flux/image-updates --base main --state open --json number -q '.[0].number')
+          if [ -z "$n" ]; then
+            gh pr create --head flux/image-updates --base main \
+              --title "$(git log -1 --format=%s)" \
+              --body "$(printf '%s\n\n%s\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n' \
+                "$(git log -1 --format=%b)" \
+                "Spec: tests/test_incident_catalogue_image_never_repulled.py" \
+                "Drill: login-drill" \
+                "Cost-delta-usd-month: 0" \
+                "Rung 7: production oracle, the backstage row health check rolls the Deployment on merge" \
+                "## Architecture laws" \
+                "- LAW 1 zero-gravity: n/a: image tag only, bin/cloud-agnostic-gate unchanged" \
+                "- LAW 2 fractal: n/a: same container, new build" \
+                "- LAW 3 nervous system: n/a: Deployment env unchanged" \
+                "- LAW 4 calibration: n/a: no prediction made")"
+            n=$(gh pr list --head flux/image-updates --base main --state open --json number -q '.[0].number')
+          fi
+          gh pr merge "$n" --auto --squash
+          echo "ok      image-update-pr #$n auto-merge armed"

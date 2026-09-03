@@ -18,17 +18,10 @@ Feature: The operating model is a gate on every pull request
     When bin/pr-report runs
     Then it exits 1 with rule=no_gui_actions
 
-  # crew#473, founder 2026-08-27: "you need to approve all / no founder friction if can be avoided".
-  # Nothing waits for APPROVE: any more; DENY: on the declared word is his veto and still refuses.
-  Scenario: A founder-facing change with no approval word merges on green
+  Scenario: A founder-facing change names the word he replies with
     Given a PR touching backstage/ or platform/identity/ with no "Approval-word:" line
     When bin/pr-report runs
-    Then the founder-facing change passes with no founder word
-
-  Scenario: A DENY from the founder on the declared word refuses the PR
-    Given a PR whose "Approval-word:" the founder answered with DENY: from his GitHub login
-    When bin/pr-report runs
-    Then it exits 1 with rule=founder_denied
+    Then it exits 1 with rule=founder_approval_required
 
   Scenario: Cost and canary are declared for every platform/oci change
     Given a PR touching platform/oci/ whose Cost-delta-usd-month beats estate-defaults.yaml infrastructure.monthly_cap_usd, or with no canary label
@@ -44,11 +37,8 @@ Feature: The operating model is a gate on every pull request
     And the gate passes
 
   # crew#254: the four Living Estate laws (crew/docs/ARCHITECTURE_LAWS.md) on every PR body.
-  # PAUSED by the founder 2026-08-28 (crew#254 5456132029): "lets pause this for now", "agents dont
-  # undertnd the languae used", "needs nore precision". The section is graded as a warning that
-  # never blocks a merge, until the laws are rewritten as one plain command each.
   Scenario: Every pull request answers the four architecture laws
     Given a PR body with no "## Architecture laws" section, or one whose law line is a sentence
     When bin/pr-report runs
-    Then it exits 0 and prints rule=architecture_laws as a warning, never a refusal
+    Then it exits 1 with rule=architecture_laws
     And a body whose four law lines are commands, paths or n/a with a reason passes

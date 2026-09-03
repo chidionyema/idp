@@ -12,30 +12,41 @@ func jprint(_ d: [String: Any]) {
     }
 }
 
-// The Secure Enclave key handle (dataRepresentation) is an opaque blob only this chip can use,
-// so it lives in a file the Python side names via SOVEREIGN_ENCLAVE_KEY_FILE. It used to live in
-// the login keychain; every rebuilt (ad hoc) binary was a new identity to the keychain ACL and the
-// consent dialog blocked --pubkey until someone clicked (crew#227 CP5, 2026-08-27).
-let keyFile: String = ProcessInfo.processInfo.environment["SOVEREIGN_ENCLAVE_KEY_FILE"] ?? ""
+let keychainService = "sovereign-trust-enclave"
+let keychainAccount = "estate"
 
-func keyLoad() -> Data? {
-    guard !keyFile.isEmpty else { return nil }
-    return FileManager.default.contents(atPath: keyFile)
+func keychainLoad() -> Data? {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: keychainService,
+        kSecAttrAccount as String: keychainAccount,
+        kSecReturnData as String: true,
+    ]
+    var item: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &item)
+    guard status == errSecSuccess, let data = item as? Data else { return nil }
+    return data
 }
 
-func keySave(_ data: Data) -> Bool {
-    guard !keyFile.isEmpty else { return false }
-    let dir = (keyFile as NSString).deletingLastPathComponent
-    try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-    return FileManager.default.createFile(atPath: keyFile, contents: data, attributes: [.posixPermissions: 0o600])
+func keychainSave(_ data: Data) -> Bool {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: keychainService,
+        kSecAttrAccount as String: keychainAccount,
+    ]
+    SecItemDelete(query as CFDictionary)
+    var add = query
+    add[kSecValueData as String] = data
+    let status = SecItemAdd(add as CFDictionary, nil)
+    return status == errSecSuccess
 }
 
 func loadOrCreateKey() -> SecureEnclave.P256.Signing.PrivateKey? {
-    if let existing = keyLoad() {
+    if let existing = keychainLoad() {
         return try? SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: existing)
     }
     guard let key = try? SecureEnclave.P256.Signing.PrivateKey() else { return nil }
-    _ = keySave(key.dataRepresentation)
+    _ = keychainSave(key.dataRepresentation)
     return key
 }
 

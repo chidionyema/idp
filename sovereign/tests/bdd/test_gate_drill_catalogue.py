@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from pytest_bdd import given, scenarios, then, when
+from pytest_bdd import given, parsers, scenarios, then, when
 
 scenarios("features/drills/drill-catalogue.feature")
 

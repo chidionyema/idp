@@ -8,7 +8,7 @@ kind: PolicyException
 metadata:
   name: langfuse-secrets-from-env
   # Incident 2026-08-26 (crew#325): Kyverno honours exceptions from namespace kyverno only
-  # (platform/kyverno/kyverno.yaml). This object first lived in langfuse.yaml, whose kustomization
+  # (platform/edge/kyverno.yaml). This object first lived in langfuse.yaml, whose kustomization
   # sets `namespace: observability` and rewrote it, so langfuse-web stayed refused for 3 hours.
   # It lives here because platform/edge has no namespace transformer.
   namespace: kyverno

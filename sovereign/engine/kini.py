@@ -208,26 +208,5 @@ async def cluster_ready(inp: dict[str, Any]) -> dict[str, Any]:
             return {**state, "blind": False, "waited_s": waited}
 
 
-def receipt_head(status: dict[str, Any], now: str | None = None) -> str:
-    """Line 1 of the state/kini receipt, in the shape bin/idp-kini-state grades. Total: every
-    status the CLI can report maps to exactly one of ok / FAIL, never a bare return."""
-    from datetime import datetime, timezone
-
-    at = now or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    st = str(status.get("status") or "UNKNOWN")
-    result = status.get("result") or {}
-    green = len(result.get("green") or [])
-    red = len(result.get("red") or [])
-    finished = status.get("close_time") or "-"
-    if st == "NONE":
-        return f"ok kini-finish at {at} status=NONE green=0 red=0 finished=- (never started)"
-    if st == "RUNNING":
-        done = status.get("progress") or {}
-        return f"ok kini-finish at {at} status=RUNNING green={sum(1 for v in done.values() if v == PASS)} red={sum(1 for v in done.values() if v != PASS)} finished=-"
-    if st == "COMPLETED" and result.get("ok"):
-        return f"ok kini-finish at {at} status=COMPLETED green={green} red={red} finished={finished}"
-    return f"FAIL kini-finish at {at} status={st} green={green} red={red} finished={finished} red_checkpoints={','.join(result.get('red') or [])}"
-
-
 WORKFLOWS = [KiniFinishWorkflow]
 ACTIVITIES = [run_checkpoint, cluster_ready]

@@ -13,12 +13,7 @@ XML = ROOT / "observability" / "clickhouse-low-memory.xml"
 def test_incident_crew340_profiler_and_metric_logs_are_removed():
     root = ET.parse(XML).getroot()
     removed = {c.tag for c in root if c.get("remove") == "remove"}
-    for table in (
-        "trace_log", "metric_log", "asynchronous_metric_log", "processors_profile_log",
-        # crew#85 row 2: on by default in 25.12, no section to remove; part_log logged its own merges
-        "part_log", "text_log", "background_schedule_pool_log", "query_metric_log",
-        "query_views_log", "query_thread_log", "asynchronous_insert_log", "opentelemetry_span_log",
-    ):
+    for table in ("trace_log", "metric_log", "asynchronous_metric_log", "processors_profile_log"):
         assert table in removed, f"{table} is not removed in {XML.name}; it burnt the 2 vCPU host (crew#340)"
     assert "query_log" not in removed, "query_log is the instrument this incident was read from; keep it"
 

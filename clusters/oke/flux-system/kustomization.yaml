@@ -3,19 +3,3 @@ kind: Kustomization
 resources:
 - gotk-components.yaml
 - gotk-sync.yaml
-patches:
-# Founder, 2026-08-28: "ur drowning my telegram channel with repeated". Measured: the Flux Alert
-# broken-workload (platform/alerts/alert.yaml) re-sent HealthCheckFailed for the same two stalled
-# kustomizations every reconcile (~10 min) for hours, while the state had not changed and the one
-# hand that changes it was already pinned in the channel. notification-controller's own
-# rate-limit-interval (default 5m, flux docs: "Interval in which rate limit has effect") dedups an
-# identical event; one hour is the estate's repeat rate for an unchanged failure. Same as
-# alertmanager-config.yaml's repeat_interval: 4h in spirit; 1h keeps a page per hour per fault.
-- target:
-    kind: Deployment
-    name: notification-controller
-    namespace: flux-system
-  patch: |
-    - op: add
-      path: /spec/template/spec/containers/0/args/-
-      value: --rate-limit-interval=1h

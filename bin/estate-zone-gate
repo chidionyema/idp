@@ -1,245 +1,59 @@
 #!/usr/bin/env python3
 """The estate's DNS zone is written once, in clusters/<cluster>/estate-config.yaml (ESTATE_ZONE).
-Founder, 2026-08-26 (crew#269): "as always configurable". Founder, 2026-09-01 (crew#796), on the
-store still carrying 61 live lines of the zone name: "THAT SHOULD NEVER HAPPEN, P0 ... CAN'T EVER
-HAPPEN AGAIN ... needs monitoring for any drift ... and PR rejection". Every other file refers to
-the zone as ${ESTATE_ZONE}: Flux postBuild substitutes it on the cluster, compose and shell read it
-from the environment, workflows read it from the repository variable of the same name. A zone
-migration is then one value and a reconcile, in any repository.
-
-Three ways to run it, one set of exemptions:
-  estate-zone-gate                      grade this repository (the tree the gate lives in)
-  estate-zone-gate --root DIR           grade another checkout (the store, hermes, crew); the zone
-                                        still comes from ESTATE_ZONE_ROOT (the idp checkout)
-  estate-zone-gate --diff FILE          grade only the lines a unified diff adds (bin/pr-report,
-                                        so a pull request that adds a literal is refused)
-  estate-zone-gate --zone               print the zone(s) and exit 0
-Spec: features/gates/estate-zone.feature. Proved both ways in bin/idp-ci on
-tests/fixtures/estate-zone/{good,bad} and {added-literal,added-substituted}.diff.
-
-Exempt, and why (the only list; bin/pr-report and name-drift.yml reuse it by calling this file):
-  clusters/                 where the value lives
-  platform/oci/             the compute provisioner records the host it measured
-  platform/ai/              the AI Act register is data read by ai-act-gate, never substituted
-  tests/, test_*            a fixture pins what it grades
-  docs/, *.md               prose and decision records
-  *.zone                    the DNS record the drift drill copies from the live zone
-  science/verdicts.json, *_receipts.json, .dependencies.json
-                            records: what a run measured or depends on, not configuration
-  .git/, node_modules/, .wt-*/, .claude/worktrees/   never configuration
-  a comment line            (#, //, ;, --, <!--)
-  a declaration line        ESTATE_ZONE=<zone> or ESTATE_ZONE: <zone>, the one shape that may
-                            carry the value in a file that is itself a source (stack.env)
-  a marked file             one of its first three lines reads `estate-zone-gate: exempt (<why>)`;
-                            adding that marker is itself reported by --diff, and the policy
-                            accepts it only with the founder's `APPROVE: zone-exempt` on the PR
-                            (one exception: this gate's own file defines the marker, so its own
-                            lines are never graded as adding one)
-Exit 0 clean, 1 with each literal printed, 2 (BLIND) when no config declares a zone or the root
-cannot be read: a gate that lost its evidence reports BLIND, never a verdict.
+Founder, 2026-08-26 (crew#269): "as always configurable". Every other platform file refers to it
+as ${ESTATE_ZONE}, substituted by Flux postBuild, so a zone migration is one value and a reconcile.
+Spec: features/gates/estate-zone.feature.
+Scanned: platform/** (same suffixes as cloud-agnostic-gate). Exempt: platform/oci (the compute
+provisioner records the host it measured), clusters/* (where the value lives) and platform/ai (the AI Act
+register is data read by bin/ai-act-gate and bin/conformity-report, never substituted by Flux). Comment lines are
+not counted. Exit 0 clean, 1 with each literal printed, 2 (BLIND) when no config declares a zone
+or the root cannot be read: a gate that lost its evidence reports BLIND, never a verdict.
+Proved both ways in bin/idp-ci on tests/fixtures/estate-zone/{good,bad}.
 """
-
-import argparse
 import os
 import pathlib
 import re
 import sys
 
-HERE = pathlib.Path(__file__).resolve().parents[1]
+ROOT = pathlib.Path(os.environ.get("ESTATE_ZONE_ROOT") or pathlib.Path(__file__).resolve().parents[1])
+SCAN = ["platform"]
+EXEMPT = ("platform/oci/", "clusters/", "platform/ai/")  # platform/ai: the AI Act register, read as data by ai-act-gate and conformity-report, never templated by Flux; it records the URL of a live system
+SUFFIXES = {".yaml", ".yml", ".py", ".ts", ".tf", ".sh", ".json", ".env"}
 ZONE_KEY = re.compile(r"^\s*ESTATE_ZONE:\s*['\"]?([A-Za-z0-9.-]+)['\"]?\s*$", re.M)
-SUFFIXES = {
-    ".yaml",
-    ".yml",
-    ".py",
-    ".ts",
-    ".tsx",
-    ".js",
-    ".mjs",
-    ".cjs",
-    ".tf",
-    ".sh",
-    ".json",
-    ".env",
-    ".toml",
-    ".conf",
-    ".ini",
-    ".cfg",
-    ".rego",
-    ".sql",
-    ".example",
-    ".hcl",
-    ".cs",
-    ".go",
-    ".rs",
-}
-BARE_NAMES = {"Caddyfile", "Dockerfile", "Makefile", "Procfile"}
-EXEMPT_PREFIX = ("clusters/", "platform/oci/", "platform/ai/", "tests/", "docs/")
-EXEMPT_PART = ("/tests/", "/.git/", "/node_modules/", "/.claude/worktrees/", "/docs/")
-EXEMPT_SUFFIX = (
-    ".md",
-    ".zone",
-    "science/verdicts.json",
-    ".dependencies.json",
-    "_receipts.json",
-)
-COMMENT = re.compile(r"^\s*(#|//|;|--|<!--|\*)")
-DECLARATION = re.compile(r"^\s*(export\s+)?ESTATE_ZONE\s*[:=]")
-MARKER = "estate-zone-gate: exempt ("
-SELF = "bin/estate-zone-gate"  # the file that defines the marker must spell it; never a marker *addition*
 
 
-def zones(zone_root: pathlib.Path) -> set[str]:
-    found: set[str] = set()
-    for f in sorted((zone_root / "clusters").rglob("estate-config.yaml")):
+def zones() -> set[str]:
+    found = set()
+    for f in sorted((ROOT / "clusters").rglob("estate-config.yaml")):
         found.update(ZONE_KEY.findall(f.read_text()))
     return found
 
 
-def exempt_path(rel: str) -> bool:
-    if rel.startswith(EXEMPT_PREFIX) or rel.endswith(EXEMPT_SUFFIX):
-        return True
-    if any(p in "/" + rel for p in EXEMPT_PART):
-        return True
-    parts = rel.split("/")
-    if any(p.startswith(".wt-") for p in parts):
-        return True
-    return parts[-1].startswith("test_")
-
-
-def scannable(rel: str) -> bool:
-    p = pathlib.PurePosixPath(rel)
-    if p.name in BARE_NAMES or p.suffix in SUFFIXES:
-        return True
-    return "bin" in p.parts[:-1]  # scripts under any bin/ carry no suffix
-
-
-def graded(line: str) -> bool:
-    return not (COMMENT.match(line) or DECLARATION.match(line))
-
-
-PRUNE_DIRS = {
-    ".git",
-    "node_modules",
-    ".claude",
-    ".venv",
-    "venv",
-    "__pycache__",
-    "dist",
-    "build",
-    ".next",
-    ".terraform",
-    "tests",
-    "docs",
-}
-
-
-def scan_tree(root: pathlib.Path, pat: re.Pattern) -> list[str]:
-    hits = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        # Prune while walking: node_modules alone is hundreds of thousands of files, and a
-        # gate that takes a minute is a gate nobody runs (R58: local rungs under five seconds).
-        rel_dir = pathlib.Path(dirpath).relative_to(root).as_posix()
-        dirnames[:] = sorted(
-            d
-            for d in dirnames
-            if d not in PRUNE_DIRS
-            and not d.startswith(".wt-")
-            and not exempt_path((rel_dir + "/" + d + "/").lstrip("/"))
-        )
-        for name in sorted(filenames):
-            f = pathlib.Path(dirpath) / name
-            if f.is_symlink() or not f.is_file():
-                continue
-            rel = f.relative_to(root).as_posix()
-            if exempt_path(rel) or not scannable(rel):
-                continue
-            try:
-                text = f.read_text(errors="replace")
-            except OSError:
-                continue
-            if any(MARKER in l for l in text.splitlines()[:3]):
-                continue
-            for n, line in enumerate(text.splitlines(), 1):
-                if graded(line) and pat.search(line):
-                    hits.append(f"{rel}:{n}: {line.strip()}")
-    return hits
-
-
-def scan_diff(diff: str, pat: re.Pattern) -> list[str]:
-    hits, path, n = [], "", 0
-    for line in diff.splitlines():
-        if line.startswith("+++ "):
-            path = re.sub(r"^\+\+\+ (b/)?", "", line).strip()
-            continue
-        if line.startswith("--- "):
-            continue
-        m = re.match(r"^@@ -\d+(?:,\d+)? \+(\d+)", line)
-        if m:
-            n = int(m.group(1)) - 1
-            continue
-        if line.startswith("+"):
-            n += 1
-            body = line[1:]
-            if path == "/dev/null" or exempt_path(path) or not scannable(path):
-                continue
-            if MARKER in body and path != SELF:
-                hits.append(
-                    f"{path}:{n}: adds an exemption marker; needs the founder's APPROVE: zone-exempt"
-                )
-            elif graded(body) and pat.search(body):
-                hits.append(f"{path}:{n}: {body.strip()}")
-        elif not line.startswith("-"):
-            n += 1
-    return hits
-
-
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument(
-        "--root", help="checkout to grade (default: where the zone is declared)"
-    )
-    ap.add_argument("--diff", help="unified diff: grade only the lines it adds")
-    ap.add_argument(
-        "--zone", action="store_true", help="print the declared zone(s) and exit"
-    )
-    a = ap.parse_args()
-    zone_root = pathlib.Path(os.environ.get("ESTATE_ZONE_ROOT") or HERE)
-    if not zone_root.is_dir():
-        print(f"BLIND: {zone_root} is not a directory")
+    if not ROOT.is_dir():
+        print(f"BLIND: {ROOT} is not a directory")
         return 2
-    zs = zones(zone_root)
+    zs = zones()
     if not zs:
         print("BLIND: no clusters/*/estate-config.yaml declares ESTATE_ZONE")
         return 2
-    if a.zone:
-        print("\n".join(sorted(zs)))
-        return 0
-    # The left boundary admits "-" on purpose: a shell default `${X:-zone}` is the commonest way
-    # a literal hides (the store's verify_store.sh:24 read green until crew#796).
-    pat = re.compile(
-        r"(?<![A-Za-z0-9])("
-        + "|".join(re.escape(z) for z in sorted(zs))
-        + r")(?![A-Za-z0-9-])"
-    )
-    if a.diff:
-        try:
-            diff = pathlib.Path(a.diff).read_text(errors="replace")
-        except OSError as e:
-            print(f"BLIND: cannot read diff {a.diff}: {e}")
-            return 2
-        hits, where = scan_diff(diff, pat), "added by this diff"
-    else:
-        root = pathlib.Path(a.root) if a.root else zone_root
-        if not root.is_dir():
-            print(f"BLIND: {root} is not a directory")
-            return 2
-        hits, where = scan_tree(root, pat), f"in {root.name}"
+    pat = re.compile(r"(?<![A-Za-z0-9-])(" + "|".join(re.escape(z) for z in sorted(zs)) + r")(?![A-Za-z0-9-])")
+    hits = []
+    for top in SCAN:
+        for f in sorted((ROOT / top).rglob("*")):
+            if not f.is_file() or f.suffix not in SUFFIXES:
+                continue
+            rel = f.relative_to(ROOT).as_posix()
+            if rel.startswith(EXEMPT):
+                continue
+            for n, line in enumerate(f.read_text(errors="replace").splitlines(), 1):
+                if line.lstrip().startswith("#"):
+                    continue
+                if pat.search(line):
+                    hits.append(f"{rel}:{n}: {line.strip()}")
     for h in hits:
         print(h)
-    print(
-        f"{'FAIL' if hits else 'ok'}    zone     {len(hits)} literal zone name(s) {where} outside "
-        f"clusters/*/estate-config.yaml; zone(s): {', '.join(sorted(zs))}"
-    )
+    print(f"{'FAIL' if hits else 'ok'}    zone     {len(hits)} literal zone name(s) outside clusters/*/estate-config.yaml; zone(s): {', '.join(sorted(zs))}")
     return 1 if hits else 0
 
 

@@ -192,17 +192,14 @@ def cmd_recover(args: argparse.Namespace) -> int:
 
 
 def cmd_root(args: argparse.Namespace) -> int:
-    """cp9/cp15: `sb root --json` reports the cross-stack composite root
-    -- {root, code_root, db_root, policy_root, ai_policy_root} -- plus
-    cp9's own DB-chain diagnostics (db_nodes, db_parent, db_verified).
-    db_root IS .estate/heads/shadow_main, the branch pointer cp8's
-    sidecar advances once per write; the other three children are cp15's
-    (git HEAD, the attach policy config, the trust/presence config)."""
-    from sovereign.engine import cross_stack
+    """cp9: `sb root --json` reports {root, parent, nodes, verified} for
+    .estate/heads/shadow_main -- the branch pointer cp8's sidecar advances
+    once per write."""
+    from sovereign.engine import shadow_root
 
-    res = cross_stack.root()
+    res = shadow_root.verify()
     _emit(res, args.json)
-    return 0 if res.get("db_verified") else 1
+    return 0 if res.get("verified") else 1
 
 
 def cmd_consensus(args: argparse.Namespace) -> int:
@@ -212,68 +209,6 @@ def cmd_consensus(args: argparse.Namespace) -> int:
 
     _emit(dualread.summary(), args.json)
     return 0
-
-
-def cmd_fork(args: argparse.Namespace) -> int:
-    """cp12: `sb fork <name> --json` -- a zero-cost, copy-on-write branch
-    pointer under .estate/heads/<name>, created in under fork.max_ms with
-    no row of the legacy DB touched."""
-    from sovereign.engine import fork
-
-    _emit(fork.create(args.name), args.json)
-    return 0
-
-
-def cmd_switch(args: argparse.Namespace) -> int:
-    """cp12: `sb switch <name>` -- moves the one working-branch pointer to
-    an existing fork or back to production (shadow_main)."""
-    from sovereign.engine import fork
-
-    try:
-        _emit(fork.switch(args.name), args.json)
-        return 0
-    except fork.UnknownForkError as exc:
-        print(f"no such branch: {exc}", file=sys.stderr)
-        return config.CLI_EXIT_USAGE_ERROR
-
-
-def cmd_drop(args: argparse.Namespace) -> int:
-    """cp12: `sb drop <name>` -- removes a fork's head pointer only; its
-    DAG nodes and receipts remain on disk, archived, never deleted."""
-    from sovereign.engine import fork
-
-    try:
-        _emit(fork.drop(args.name), args.json)
-        return 0
-    except fork.UnknownForkError as exc:
-        print(f"no such branch: {exc}", file=sys.stderr)
-        return config.CLI_EXIT_USAGE_ERROR
-
-def cmd_flip(args: argparse.Namespace) -> int:
-    """cp13: `sb flip --by <who> --signed` sets the legacy DB read-only
-    and signs one "flip" receipt; `sb flip --rollback --by <who> --signed`
-    restores write access if nothing wrote to the file while flipped."""
-    from sovereign.engine import flip
-
-    try:
-        if args.rollback:
-            _emit(flip.rollback(by=args.by, signed=args.signed), args.json)
-        else:
-            _emit(flip.flip(by=args.by, signed=args.signed), args.json)
-        return 0
-    except flip.FlipError as exc:
-        print(f"flip refused: {exc}", file=sys.stderr)
-        return config.CLI_EXIT_USAGE_ERROR
-
-def cmd_rebuild(args: argparse.Namespace) -> int:
-    """cp14: `sb rebuild --json` replays the whole DAG from genesis and
-    rewrites the projection store; verified=False means the DAG chain
-    itself did not check out and the store on disk was left untouched."""
-    from sovereign.engine import projection
-
-    result = projection.rebuild(by=args.by)
-    _emit(result, args.json)
-    return 0 if result["verified"] else 1
 
 
 def cmd_list(args: argparse.Namespace) -> int:
@@ -519,17 +454,7 @@ def _spawn(cmd: list[str], log_path: Path, pid_path: Path) -> int:
 
 def cmd_up(args: argparse.Namespace) -> int:
     config.ensure_dirs()
-
-    # cp14 boot check: "when the kernel boots and the view hash differs
-    # from heads/main, it rebuilds automatically and writes a receipt."
-    # Runs before temporal/the worker start, since neither depends on the
-    # projection store and a stale store should never be served even for
-    # the brief window before the worker comes up.
-    from sovereign.engine import projection
-
-    boot_check = projection.ensure_fresh(by="boot")
-
-    result = {"temporal": "already-running", "worker": "already-running", "projection": boot_check}
+    result = {"temporal": "already-running", "worker": "already-running"}
 
     if _alive(_read_pid(config.TEMPORAL_PID_FILE)) or _port_open(
         config.TEMPORAL_ADDRESS, config.CLI_PORT_PROBE_TIMEOUT_S
@@ -624,7 +549,6 @@ def cmd_kini(args: argparse.Namespace) -> int:
     its result. Both talk to the engine the worker polls; nothing here runs a test locally."""
     from temporalio.client import Client, WorkflowFailureError
     from temporalio.exceptions import WorkflowAlreadyStartedError
-    from temporalio.service import RPCError, RPCStatusCode
 
     from sovereign.engine import kini
 
@@ -648,14 +572,8 @@ def cmd_kini(args: argparse.Namespace) -> int:
                     out.update(ok=False, error=str(e))
             return out
         handle = client.get_workflow_handle(config.KINI_WORKFLOW_ID)
-        try:
-            desc = await handle.describe()
-        except RPCError as e:
-            if e.status != RPCStatusCode.NOT_FOUND:
-                raise
-            return {"ok": True, "workflow_id": handle.id, "status": "NONE", "never_started": True}
+        desc = await handle.describe()
         out: dict[str, Any] = {"ok": True, "workflow_id": handle.id, "status": desc.status.name if desc.status else None}
-        out["close_time"] = desc.close_time.isoformat() if desc.close_time else None
         if desc.status is not None and desc.status.name == "RUNNING":
             out["progress"] = await handle.query("progress")
         else:
@@ -667,11 +585,6 @@ def cmd_kini(args: argparse.Namespace) -> int:
         return out
 
     res = asyncio.run(go())
-    if args.kini_command == "receipt":
-        # The receipt platform/temporal/kini-state.yaml publishes as state/kini and
-        # bin/idp-kini-state grades: line 1 is the verdict, the rest is the JSON body.
-        sys.stdout.write(kini.receipt_head(res) + "\n" + json.dumps(res, sort_keys=True, default=str) + "\n")
-        return 0
     _emit(res, args.json)
     return 0 if res.get("ok") else 1
 
@@ -746,33 +659,6 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("consensus", help="cp11 -- legacy versus DAG dual-read match rate")
     _add_json(p)
     p.set_defaults(func=cmd_consensus)
-
-    p = sub.add_parser("fork", help="cp12 -- create a zero-cost, copy-on-write branch off production")
-    p.add_argument("name")
-    _add_json(p)
-    p.set_defaults(func=cmd_fork)
-
-    p = sub.add_parser("switch", help="cp12 -- move the working branch pointer to an existing fork or production")
-    p.add_argument("name")
-    _add_json(p)
-    p.set_defaults(func=cmd_switch)
-
-    p = sub.add_parser("drop", help="cp12 -- remove a fork's pointer; its DAG nodes and receipts stay archived")
-    p.add_argument("name")
-    _add_json(p)
-    p.set_defaults(func=cmd_drop)
-
-    p = sub.add_parser("flip", help="cp13 -- flip the DAG to primary, legacy DB to read-only (or --rollback)")
-    p.add_argument("--rollback", action="store_true")
-    p.add_argument("--by", required=True)
-    p.add_argument("--signed", action="store_true")
-    _add_json(p)
-    p.set_defaults(func=cmd_flip)
-
-    p = sub.add_parser("rebuild", help="cp14 -- replay the DAG from genesis and rewrite the projection store")
-    p.add_argument("--by", default="operator")
-    _add_json(p)
-    p.set_defaults(func=cmd_rebuild)
 
     p = sub.add_parser("list", help="list sessions")
     _add_json(p)
@@ -889,8 +775,6 @@ def main(argv: list[str] | None = None) -> int:
         pst = ks.add_parser("status", help="progress of the running (or last) KiniFinishWorkflow")
         _add_json(pst)
         pst.set_defaults(func=cmd_kini)
-        prc = ks.add_parser("receipt", help="the state/kini receipt: verdict line then JSON (kini-state CronJob)")
-        prc.set_defaults(func=cmd_kini, json=True)
 
     args = parser.parse_args(argv)
     return args.func(args)

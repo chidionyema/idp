@@ -6,8 +6,7 @@
 # Only the policies bin/idp-kyverno-render shows failing are listed; the incident test refuses
 # a waiver for a policy the chart already passes. It lives in platform/edge because Kyverno
 # honours exceptions from namespace kyverno only (crew#325) and this directory has no
-# namespace transformer. The DaemonSet lives in observability-agent (the HelmRelease's
-# targetNamespace), whose PSA label admits hostPath; see platform/observability/platform/edge/k8s-infra-namespace.yaml.
+# namespace transformer.
 apiVersion: kyverno.io/v2
 kind: PolicyException
 metadata:
@@ -23,6 +22,5 @@ spec:
     any:
       - resources:
           kinds: [DaemonSet, Pod]
-          namespaces: [observability-agent]
-          # the release is observability-agent-k8s-infra (helm-controller: <targetNamespace>-<name>), crew#483
-          names: [observability-agent-k8s-infra-otel-agent*]
+          namespaces: [observability]
+          names: [k8s-infra-otel-agent*]

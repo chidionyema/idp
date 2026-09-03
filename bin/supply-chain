@@ -15,7 +15,7 @@
 # is already installed and already enforcing the risk register, so the licence
 # question gets answered with two tools that are here rather than one that is
 # not. ORT stays the upgrade path if the answer ever needs to be richer --
-# curations, attribution documents, source scanning. See docs/how-to/onboarding.
+# curations, attribution documents, source scanning. See docs/onboarding.
 #
 #   supply-chain            write reports to reports/
 #   supply-chain --quiet    same, no per-step chatter

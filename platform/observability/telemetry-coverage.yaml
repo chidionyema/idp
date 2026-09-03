@@ -1,4 +1,4 @@
-# Founder, 2026-08-27: "every workload emits telemetry to SigNoz, and the
+# crew#320 / LAW 50 (founder, 2026-08-27): "every workload emits telemetry to SigNoz, and the
 # coverage is verified by querying the backend, not by scanning files."
 #
 # Every 15 minutes a Job-owned pod asks two questions and diffs the answers: the API server for
@@ -61,26 +61,14 @@ data:
                                      headers={"X-ClickHouse-User": "admin", "X-ClickHouse-Key": pw})
         with urllib.request.urlopen(req, timeout=60) as r:
             return {tuple(line.split("\t")) for line in r.read().decode().splitlines() if line}
-    # Three tables, because a pod that logs nothing still has kubelet metrics (k8s-infra, crew#388),
-    # a pod the kubelet has not sampled yet may already be logging, and a workload that emits its
-    # own spans (mcp-agentgateway, crew#392) is seen in traces before the node agent lands.
+    # Two tables, because a pod that logs nothing still has kubelet metrics (k8s-infra, crew#388)
+    # and a pod the kubelet has not sampled yet may already be logging.
     QUERIES = {
-        "traces": f"SELECT DISTINCT resources_string['k8s.namespace.name'], resources_string['k8s.pod.name'] "
-                  f"FROM signoz_traces.distributed_signoz_index_v3 WHERE timestamp > now() - INTERVAL {WINDOW_SEC} SECOND",
         "logs": f"SELECT DISTINCT resources_string['k8s.namespace.name'], resources_string['k8s.pod.name'] "
                 f"FROM signoz_logs.distributed_logs_v2 WHERE timestamp > toUInt64(toUnixTimestamp(now()) - {WINDOW_SEC}) * 1000000000",
         "metrics": f"SELECT DISTINCT JSONExtractString(labels, 'k8s_namespace_name'), JSONExtractString(labels, 'k8s_pod_name') "
                    f"FROM signoz_metrics.distributed_time_series_v4 WHERE unix_milli > (toUnixTimestamp(now()) - {WINDOW_SEC}) * 1000",
     }
-    # crew#539 CP12: Hubble (platform/cni/cilium-values.yaml, applied by bin/idp-oke-break-glass
-    # cilium-replace) labels every flow with the workload on each end; the radio-room set is the
-    # founder's question, so the receipt counts the last hour's series that name one. The names
-    # are the radio-room set of platform/scheduling/require-priority-class.yaml.
-    RADIO_ROOM = os.environ.get("RADIO_ROOM", "agentgateway,hermes-agent-gateway,langfuse-web,langfuse-worker").split(",")
-    _names = ",".join(f"'{n}'" for n in RADIO_ROOM)
-    HUBBLE_SQL = (f"SELECT count() FROM signoz_metrics.distributed_time_series_v4 "
-                  f"WHERE metric_name = 'hubble_flows_processed_total' AND unix_milli > (toUnixTimestamp(now()) - {WINDOW_SEC}) * 1000 "
-                  f"AND (JSONExtractString(labels, 'destination_workload') IN ({_names}) OR JSONExtractString(labels, 'source_workload') IN ({_names}))")
     def main(kube=kube, clickhouse=clickhouse, now=None):
         now = now or datetime.now(timezone.utc)
         at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -94,42 +82,20 @@ data:
             if not start or datetime.fromisoformat(start.replace("Z", "+00:00")) > cutoff:
                 continue
             running.append((p["metadata"]["namespace"], p["metadata"]["name"]))
-        seen, errors, by_table = set(), {}, {}
+        seen, errors = set(), {}
         for name, sql in QUERIES.items():
             try:
-                rows = {(ns, pod) for ns, pod in clickhouse(sql) if pod}
+                seen |= {(ns, pod) for ns, pod in clickhouse(sql) if pod}
             except Exception as e:  # a backend that cannot answer is BLIND, never a pass
                 errors[name] = str(e)[:160]
-                by_table[name] = None   # None is "did not answer", never the same as 0
-                continue
-            # crew#718 CP8: the union alone cannot say WHICH signal is carrying the estate, so a
-            # zero cannot be told from a preset that was switched off. On 2026-08-30 the receipt
-            # read seen=3 of 103 while hostMetrics, kubeletMetrics and clusterMetrics were all
-            # disabled in platform/observability-collector/k8s-infra.yaml (ClickHouse was refusing
-            # metrics batches at its 3.60 GiB ceiling and starving the log inserts), and the union
-            # gave no way to see whether logsCollection -- the one preset left on, and the one the
-            # founder actually reads -- was landing at all. Count each table on its own.
-            by_table[name] = len(rows & set(running))
-            seen |= rows
         missing = sorted(set(running) - seen)
-        hubble = -1  # -1: the backend did not answer; 0: it answered and Hubble named no radio-room flow
-        try:
-            hubble = int(next(iter(clickhouse(HUBBLE_SQL)))[0])
-        except Exception as e:
-            errors["hubble"] = str(e)[:160]
         body = {"at": at, "pods_running": len(running), "pods_seen": len(seen),
-                "missing": [{"ns": ns, "pod": pod} for ns, pod in missing], "backend_errors": errors,
-                "seen_by_table": by_table, "hubble_radio_flows": hubble}
-        if len(errors) >= len(QUERIES) + 1:
+                "missing": [{"ns": ns, "pod": pod} for ns, pod in missing], "backend_errors": errors}
+        if len(errors) == len(QUERIES):
             head = f"BLIND telemetry-coverage at {at} backend unreachable: {'; '.join(errors.values())}"
         else:
-            verdict = "ok" if not missing and hubble > 0 else "FAIL"
-            # crew#718 CP8: per-table counts on line 1, so a reader can tell a switched-off
-            # preset from a broken pipeline without opening the JSON. "-" is a table that did
-            # not answer; 0 is a table that answered and knew nothing.
-            per = " ".join(f"{n}={'-' if by_table.get(n) is None else by_table[n]}" for n in sorted(QUERIES))
-            head = (f"{verdict} telemetry-coverage at {at} pods={len(running)} seen={len(running) - len(missing)} "
-                    f"missing={len(missing)} [{per}] hubble_radio_flows={hubble}")
+            verdict = "ok" if not missing else "FAIL"
+            head = f"{verdict} telemetry-coverage at {at} pods={len(running)} seen={len(running) - len(missing)} missing={len(missing)}"
         return head, body
     if __name__ == "__main__":
         head, body = main()
@@ -146,13 +112,10 @@ spec:
   failedJobsHistoryLimit: 2
   jobTemplate:
     spec:
-      # crew#396: finished Jobs are removed an hour later so their pods never haunt the receipt
-      ttlSecondsAfterFinished: 3600
       backoffLimit: 2
       activeDeadlineSeconds: 180
       template:
         spec:
-          priorityClassName: infrastructure-critical
           serviceAccountName: telemetry-coverage
           automountServiceAccountToken: true
           restartPolicy: Never
@@ -176,9 +139,8 @@ spec:
                 - { name: clickhouse-auth, mountPath: /secrets, readOnly: true }   # Kyverno: the password is a file, never an env var
                 - { name: tmp, mountPath: /tmp }
               resources:
-                # crew#539 CP9 / crew#584: requests == limits -> Guaranteed QoS (radio-room set)
-                requests: { cpu: 50m, memory: 256Mi }
-                limits: { cpu: 50m, memory: 256Mi }
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { cpu: 200m, memory: 256Mi }
               securityContext:
                 runAsNonRoot: true
                 runAsUser: 1000

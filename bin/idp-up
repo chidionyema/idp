@@ -63,7 +63,7 @@ if command -v tailscale >/dev/null; then
   # Captured, not piped: this script runs under `set -o pipefail`, so a failing
   # `tailscale serve status` would decide the branch instead of the match.
   serve_status=$(tailscale serve status 2>/dev/null || true)
-  if printf '%s' "$serve_status" | grep ':8443' >/dev/null ; then
+  if printf '%s' "$serve_status" | grep -q ':8443'; then
     log "publish   8443 already points somewhere -- left alone"
   else
     tailscale serve --bg --http=8443 "http://127.0.0.1:$PORT_PRIMARY" >/dev/null 2>&1 || true

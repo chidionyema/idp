@@ -1,6 +1,6 @@
 # Agentgateway in front of the estate's two MCP servers -- the crew board and estate.db.
 #
-# Standard: docs/reference/specs/fortress-stack.md CP5. Every MCP call passes through one auditable,
+# Standard: docs/specs/fortress-stack.md CP5. Every MCP call passes through one auditable,
 # authenticated proxy instead of none. The gateway is the only thing published to the host;
 # neither MCP server has a port on 127.0.0.1, so no agent reaches either by any other path.
 #

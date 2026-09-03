@@ -19,19 +19,6 @@ global:
       create: true
 
 spire-server:
-  # The one short image name in this umbrella. Every other image the chart runs already names a
-  # host (ghcr.io/spiffe/*, registry.k8s.io/*, cgr.dev/chainguard/*, read from the render, not
-  # assumed); the StatefulSet's chown init container did not -- chart 0.30.1 ships it with an
-  # empty registry and the bare name (charts/spire-server/values.yaml:1584-1593). On cri-o with
-  # short-name mode enforcing that is admitted and then fails to pull with "returns ambiguous
-  # list" (crew#284, crew#396, crew#325, tailscale-operator run 33341390235). The whole path goes
-  # in `repository` rather than being split across the chart's `registry` key, because the
-  # file-scanning guard reads `repository:` values and a name split over two keys reads short to
-  # it. Not global.spire.image.registry: that key would move the ghcr.io images to docker.io too
-  # (charts/spire-lib/_helpers.tpl:43-49).
-  chown:
-    image:
-      repository: docker.io/library/busybox
   # One replica; the k3d cluster is one node.
   replicaCount: 1
   # SVIDs are short-lived on purpose: an hour, so a stolen identity dies fast.
@@ -63,22 +50,6 @@ spire-server:
     limits: { memory: 512Mi }
 
 spire-agent:
-  # Off the host network. Incident 2026-08-27 (crew#227 CP4, oke-check 33035070500): the chart
-  # default is hostNetwork: true, the API server then defaults every containerPort to a hostPort,
-  # and Kyverno's disallow-host-ports refused all eight spire-agent pods (FailedCreate). The
-  # offline render in bin/idp-kyverno-render never sees that defaulting, so the exception could
-  # not have listed it. The agent serves the Workload API on a hostPath socket, so the host
-  # network buys nothing there.
-  hostNetwork: false
-  # Incident 2026-08-27 (crew#227 CP4, cluster-state receipt 07:00:02Z): with the agent off the
-  # host network, every spiffe-proof pod failed with "workload attestation failed" although the
-  # CSI socket was mounted and the ClusterSPIFFEID held 67 entries. The chart's kubeletAddress
-  # default is "auto", which is 127.0.0.1:10250 outside OpenShift; inside a pod network that is
-  # the agent itself, not the kubelet. hostip puts the node's status.hostIP in KUBELET_ADDR
-  # (downward API) and the k8s workload attestor reads pods from the real kubelet. Verification
-  # stays at the chart default (skip), so the IP needs no certificate name.
-  kubeletAddress:
-    mode: hostip
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { memory: 256Mi }

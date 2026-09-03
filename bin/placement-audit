@@ -79,7 +79,7 @@ for f in "$AGENTS"/*.plist; do
                    else "manual" end),
         period_seconds: $period,
         hours: $hours,
-        # Hours the lid is realistically shut. Not a guess: see docs/how-to/onboarding/placement.md.
+        # Hours the lid is realistically shut. Not a guess: see docs/onboarding/placement.md.
         asleep_hours: [$hours[] | select(. >= 0 and . < 8)],
         command: $cmd,
         check: ($hc[0][$slug // "__none__"] // null)
@@ -119,6 +119,6 @@ if [ "$rc" -eq 0 ]; then
   echo "PASS       nothing is scheduled on this laptop that needs a machine that stays awake"
 else
   echo "FAIL       jobs are placed on hardware that cannot honour their schedule -- see above"
-  echo "           docs/how-to/onboarding/placement.md says where each class belongs and why"
+  echo "           docs/onboarding/placement.md says where each class belongs and why"
 fi
 exit "$rc"

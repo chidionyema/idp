@@ -13,11 +13,6 @@ model_list:
       api_key: os.environ/MINIMAX_API_KEY
       timeout: 300
       max_tokens: 8192
-    model_info:
-      # crew#506 CP1: the router refuses an oversized turn before it leaves the estate.
-      # MiniMax-M2 context window is 204,800 tokens; a turn above it 400s here instead of
-      # walking the fallback chain into unfunded lanes (the 2026-08-27 Telegram outage).
-      max_input_tokens: 204800
 
   - model_name: minimax_m27
     litellm_params:
@@ -59,53 +54,11 @@ model_list:
       api_key: os.environ/OPENROUTER_API_KEY
       timeout: 300
 
-  # --- crew#506 CP4: the free tier (2026-08-27) ----------------------------------------
-  # Groq's free plan answers openai/gpt-oss-120b at 131k context with no card on file, so it
-  # is the first free hop for every job that is not the moat's paid MiniMax lane. Model ids
-  # are the ones the key lists at api.groq.com/openai/v1/models on 2026-08-27; llama-3.3-70b
-  # is not on the plan. Rate limits are per minute, so the chain drops to a paid direct lane
-  # rather than retrying (allowed_fails 3, cooldown 60).
-  - model_name: groq
-    litellm_params:
-      model: groq/openai/gpt-oss-120b
-      api_key: os.environ/GROQ_API_KEY
-      timeout: 120
-    model_info:
-      max_input_tokens: 131072
-  - model_name: groq-fast
-    litellm_params:
-      model: groq/openai/gpt-oss-20b
-      api_key: os.environ/GROQ_API_KEY
-      timeout: 60
-    model_info:
-      max_input_tokens: 131072
   - model_name: gemini
     litellm_params:
       model: gemini/gemini-2.5-flash
       api_key: os.environ/GEMINI_API_KEY
       timeout: 300
-
-  # crew#568 phase 1 (ADR 0011): Claude is a lane on the router, not a key on the Mac. Every
-  # caller that wants Claude asks the router by name; the key lives in litellm-upstream and is
-  # born by bin/idp-bootstrap-vendors from SEED_ANTHROPIC_API_KEY (R52), never pasted anywhere.
-  # Model ids from https://docs.anthropic.com/en/docs/about-claude/models (read 2026-08-29).
-  - model_name: claude
-    litellm_params:
-      model: anthropic/claude-sonnet-5
-      api_key: os.environ/ANTHROPIC_API_KEY
-      timeout: 300
-      max_tokens: 8192
-    model_info:
-      max_input_tokens: 200000
-
-  - model_name: claude-fast
-    litellm_params:
-      model: anthropic/claude-haiku-4-5-20251001
-      api_key: os.environ/ANTHROPIC_API_KEY
-      timeout: 300
-      max_tokens: 8192
-    model_info:
-      max_input_tokens: 200000
 
   - model_name: vision
     litellm_params:
@@ -113,84 +66,12 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       timeout: 300
 
-  # crew#659 CP3 (founder 2026-08-30, "GPT Researcher is the worker"): the research worker ranks
-  # what it scraped with an embedding model, and the router is the only door to a model (LAW 34).
-  # Served through OpenRouter, the one account that answered on 2026-08-30 05:3xZ when Google's
-  # prepaid credit was depleted (embed answered 429 RESOURCE_EXHAUSTED and had no fallback group).
-  # Endpoint and model id from https://openrouter.ai/docs/api-reference/embeddings (read
-  # 2026-08-30): POST /api/v1/embeddings, model openai/text-embedding-3-small. Callers ask for "embed".
-  - model_name: embed
-    litellm_params:
-      model: openai/openai/text-embedding-3-small
-      api_base: https://openrouter.ai/api/v1
-      api_key: os.environ/OPENROUTER_API_KEY
-      timeout: 120
-    model_info:
-      mode: embedding
-
-  # Founder 2026-08-30, verbatim: "we test with MiniMax see what the image quality is like, then
-  # we use Gemini for the ones that will ship to production". So there are two image lanes, and
-  # the reason they are shaped differently is a vendor fact, not a preference:
-  #
-  #   image           this row. Gemini is a first-class LiteLLM lane, so callers ask the router
-  #                   for "image" by capability and never name Google.
-  #   /minimax/image  a pass-through in general_settings below. LiteLLM v1.98.0 has no MiniMax
-  #                   image provider (docs.litellm.ai/docs/image_generation lists OpenAI, Azure,
-  #                   Google AI Studio, Vertex, Bedrock, Recraft, OpenRouter, Nscale, Xinference,
-  #                   read 2026-08-30), and OpenRouter does not resell it either: every
-  #                   minimax/* row on openrouter.ai/api/v1/models is output_modalities ["text"]
-  #                   (measured 2026-08-30). MiniMax's own /v1/image_generation is the only door.
-  #
-  # Model id from https://ai.google.dev/gemini-api/docs/image-generation (read 2026-08-30), where
-  # gemini-2.5-flash-image is marked legacy. It is newer than this LiteLLM's price map, so a call
-  # on this lane traces with a zero cost until the image ships and the map catches up; spend is
-  # still capped by general_settings.max_budget like every other lane.
-  - model_name: image
-    litellm_params:
-      model: gemini/gemini-3.1-flash-image
-      api_key: os.environ/GEMINI_API_KEY
-      timeout: 300
-
-  # The same Google model bought through OpenRouter, and it exists for the reason `embed` moved
-  # there on 2026-08-30: one empty account must not take a capability off the estate. Both routes
-  # to this model were measured empty on 2026-08-30 -- Google answered 429 RESOURCE_EXHAUSTED
-  # "Your prepayment credits are depleted" on every image model, and /api/v1/credits returned
-  # total_credits 10 against total_usage 10.17171079 -- so this pair is what makes funding EITHER
-  # one enough. Model id and its presence as an image-output model read from
-  # openrouter.ai/api/v1/models on 2026-08-30, where it is one of eleven rows whose
-  # architecture.output_modalities contains "image".
-  - model_name: image-or
-    litellm_params:
-      model: openrouter/google/gemini-3.1-flash-image
-      api_key: os.environ/OPENROUTER_API_KEY
-      timeout: 300
-
 router_settings:
   fallbacks:
-    # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat
-    # at ~2,400 tokens of credit and Google prepaid was empty, so the crew#284 order (OpenRouter
-    # first) walked every turn through 402/429 before reaching a lane that answers. Consensus
-    # still survives any one account dry. Every chain not headed by the cheap model ends in it
-    # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
-    # job aliases) but sit in no chain while the account is unfunded: a hop that always
-    # answers 402 is latency, not redundancy.
-    - minimax: [deepseek]
-    - deepseek: [minimax]
+    - minimax: [minimax-or, minimax_m27, deepseek]
+    - deepseek: [deepseek-or, minimax]
     - openrouter: [minimax, deepseek]
-    - gemini: [minimax, deepseek]
-    # crew#506 CP4: a free lane that rate-limits falls to the paid direct lanes, never to
-    # another free lane first; the chain still ends in the cheap model (cp30).
-    - groq: [minimax, deepseek]
-    - groq-fast: [groq, deepseek]
-    # crew#568 phase 1: a Claude turn that 4xx/5xxs falls to the funded direct lanes and ends
-    # in the cheap model (cp30), like every other chain; claude-fast tries claude first.
-    - claude: [minimax, deepseek]
-    - claude-fast: [claude, deepseek]
-    # An image chain may only contain image models. Every other chain here ends in the cheap
-    # text model (cp30) and that is right for text; landing a picture request on a chat model
-    # would answer a caller waiting for bytes with prose, which is worse than a clean failure.
-    # So this chain is two ways to buy one Google model and stops there.
-    - image: [image-or]
+    - gemini: [gemini-or, minimax, deepseek]
   num_retries: 2
   allowed_fails: 3
   cooldown_time: 60
@@ -207,34 +88,6 @@ litellm_settings:
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
-  # crew#400: the founder picks and adds models in the Admin UI at llm.<zone>/ui, not by PR (LAW 31).
-  # Models added there are rows in litellm-db and survive a restart; this model_list stays the floor.
-  # The console signs in through the estate identity domain (GENERIC_* env from the litellm-sso
-  # mount, external-secret.yaml); no console password exists (crew#408, ADR 0007).
-  store_model_in_db: true
   max_budget: 5.0
   budget_duration: 1d
   background_health_checks: false
-  # The MiniMax half of the founder's 2026-08-30 ruling. MiniMax's image API is not
-  # OpenAI-shaped -- POST https://api.minimax.io/v1/image_generation, body {model, prompt,
-  # aspect_ratio, n, response_format}, answer data.image_base64
-  # (https://platform.minimax.io/docs/guides/image-generation, read 2026-08-30) -- so it cannot
-  # be a model_list row. A pass-through forwards the vendor's own shape and puts the key in the
-  # header from the mounted secret, which keeps LAW 34 whole: the caller holds a router virtual
-  # key, never MINIMAX_API_KEY.
-  #
-  # `auth: true` is what makes that true, and it is free on this version. It used to be an
-  # enterprise flag; in v1.98.0 _register_pass_through_endpoint attaches Depends(user_api_key_auth)
-  # and adds the path to LiteLLMRoutes.openai_routes for everyone
-  # (litellm/proxy/pass_through_endpoints/pass_through_endpoints.py:2802-2812 at tag v1.98.0).
-  # Without it this path would forward anything the internet sent to llm.<zone>, spending the
-  # MiniMax account with no key at all, so the flag is load-bearing and not a default.
-  pass_through_endpoints:
-    - path: /minimax/image
-      target: https://api.minimax.io/v1/image_generation
-      auth: true
-      methods: ["POST"]
-      headers:
-        Authorization: Bearer os.environ/MINIMAX_API_KEY
-        content-type: application/json
-      timeout: 120

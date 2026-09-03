@@ -1,5 +1,0 @@
-# login-drill.yml installs playwright alongside the OCI CLI, so it gets its own file rather than
-# a bare package name appended to a -r line -- the cache key hashes .github/requirements/*.txt,
-# and a package that is not in a hashed file is a package the key cannot see.
--r oci-cli.txt
-playwright

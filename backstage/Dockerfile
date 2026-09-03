@@ -96,12 +96,8 @@ FROM node:24-trixie-slim
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
-    apt-get install -y --no-install-recommends libsqlite3-dev python3 python3-pip && \
+    apt-get install -y --no-install-recommends libsqlite3-dev && \
     rm -rf /var/lib/apt/lists/*
-# TechDocs builds run in this process (techdocs.generator.runIn: local): a pod has no
-# Docker socket, and with runIn: docker every build failed and the docs section was
-# empty (crew#459). One pinned package brings mkdocs and the techdocs-core plugin.
-RUN pip3 install --no-cache-dir --break-system-packages mkdocs-techdocs-core==1.7.1
 # The runtime never runs npm, and the npm the base image bundles carries its own
 # node-tar. Incident 2026-08-25 (idp#125): Trivy failed the build on
 # CVE-2026-59873 in three copies of tar 6.2.1, one of them
@@ -110,6 +106,8 @@ RUN pip3 install --no-cache-dir --break-system-packages mkdocs-techdocs-core==1.
 # removed with the tool that owns it. A CVE in a tool the image never runs is
 # still a red gate and a finding in diligence.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+# Least privilege. `node` is uid 1000 in this image and owns nothing it does not
+# need; the catalogue file is mounted read-only from the host.
 USER node
 WORKDIR /app
 # The whole of /app from deps: that stage's working directory holds exactly the
@@ -119,8 +117,7 @@ COPY --from=deps --chown=node:node /app ./
 COPY --from=build --chown=node:node /app/packages/backend/dist/bundle/ ./
 COPY --chown=node:node app-config*.yaml ./
 # templates/ and examples/ are catalog locations, not decoration:
-# templates/estate-component and templates/external-integration are the scaffolder
-# templates the portal offers (the second is the crew#66 Day-0 integration shape),
+# templates/estate-component is the only scaffolder template the portal offers,
 # and examples/org.yaml carries user:default/guest, which the guest auth
 # provider resolves through the catalog. Drop it and sign-in breaks.
 COPY --chown=node:node templates ./templates

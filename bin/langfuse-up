@@ -67,8 +67,7 @@ if [ ! -f "$ENVF" ]; then
     echo "ENCRYPTION_KEY=$(openssl rand -hex 32)"
     echo "LANGFUSE_INIT_PROJECT_PUBLIC_KEY=pk-lf-$(uuidgen | tr 'A-Z' 'a-z')"
     echo "LANGFUSE_INIT_PROJECT_SECRET_KEY=sk-lf-$(uuidgen | tr 'A-Z' 'a-z')"
-    # ESTATE_EMAIL is DNA (clusters/oke/estate-config.yaml, founder 2026-09-02): one place, never a literal.
-    echo "LANGFUSE_INIT_USER_EMAIL=$(python3 -c "import yaml,pathlib; print(yaml.safe_load(pathlib.Path('$IDP/clusters/oke/estate-config.yaml').read_text())['data']['ESTATE_EMAIL'])")"
+    echo "LANGFUSE_INIT_USER_EMAIL=chidionyema@gmail.com"
     echo "LANGFUSE_INIT_USER_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=' )aA1"
   } > "$ENVF"
   chmod 600 "$ENVF"

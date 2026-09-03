@@ -21,28 +21,8 @@ metadata:
   name: oauth2-proxy
   namespace: identity
 spec:
-  # docs/policy/every-interface-is-a-door.md: the chart's Services name their door.
-  postRenderers:
-    - kustomize:
-        patches:
-          - target: { kind: Service }
-            patch: |
-              apiVersion: v1
-              kind: Service
-              metadata:
-                name: every-interface-is-a-door
-                labels:
-                  backstage.io/kubernetes-id: founder-login
-          - target: { kind: HTTPRoute }
-            patch: |
-              apiVersion: v1
-              kind: HTTPRoute
-              metadata:
-                name: every-interface-is-a-door
-                labels:
-                  backstage.io/kubernetes-id: founder-login
   interval: 10m
-  timeout: 10m
+  timeout: 5m
   chart:
     spec:
       chart: oauth2-proxy
@@ -57,23 +37,6 @@ spec:
     remediation:
       retries: 3
   values:
-    # crew#539: oauth2-proxy sits in front of catalogue, hc, langfuse and signoz, so its chart
-    # default of replicaCount 1 made every one of those surfaces one node event from a 503 no
-    # matter how many replicas they ran. 2026-08-28 06:20-06:39Z proved it. Value names checked
-    # against `helm show values oauth2-proxy/oauth2-proxy --version 10.7.0` (lines 450, 501, 509),
-    # not assumed. The chart requires exactly one of minAvailable / maxUnavailable to be null.
-    replicaCount: 2
-    podDisruptionBudget:
-      enabled: true
-      minAvailable: 1
-      maxUnavailable: null
-    topologySpreadConstraints:
-      - maxSkew: 1
-        topologyKey: kubernetes.io/hostname
-        whenUnsatisfiable: DoNotSchedule
-        labelSelector:
-          matchLabels:
-            app.kubernetes.io/name: oauth2-proxy
     # Incident 2026-08-26 (idp#146 live): the chart's default wiring hands the three secrets to the
     # pod as environment variables from secretKeyRef, and the cluster policy
     # secrets-not-from-env-vars refused the Deployment; the catalogue answered 500 until this.

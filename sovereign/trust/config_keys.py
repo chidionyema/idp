@@ -48,9 +48,6 @@ TRUST_KEYS: dict[str, tuple[Any, type, str, str]] = {
     "trust.software_key_filename": (
         "trust.key", str, "SB_TRUST_SOFTWARE_KEY_FILENAME",
         "software_key fallback key filename under $ESTATE_HOME/sovereign"),
-    "trust.enclave_key_filename": (
-        "enclave.key", str, "SB_TRUST_SOFTWARE_KEY_FILENAME",
-        "software_key fallback key filename under $ESTATE_HOME/sovereign"),
     "trust.reason_default": (
         "estate action", str, "SB_TRUST_REASON_DEFAULT",
         "Default reason string shown in the presence prompt"),

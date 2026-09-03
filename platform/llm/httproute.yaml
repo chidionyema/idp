@@ -4,8 +4,6 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  labels:
-    backstage.io/kubernetes-id: founder-model-router
   name: litellm
   namespace: llm
   annotations:
@@ -19,29 +17,6 @@ spec:
   hostnames:
     - "llm.${ESTATE_ZONE}"
   rules:
-    # crew#503: LiteLLM's own /ui -> /ui/ redirect is built from the plaintext Traefik->pod hop, so
-    # a browser on https://llm.<zone>/ui is sent to http://llm.<zone>/ui/ (upstream BerriAI/litellm
-    # #19663, not fixed in the pinned image). The Gateway answers the exact path first, on https,
-    # so the router never emits that redirect. /ui/ and every other path go to the router as before.
-    - matches:
-        - path: { type: Exact, value: /ui }
-      filters:
-        - type: RequestRedirect
-          requestRedirect:
-            scheme: https
-            path: { type: ReplaceFullPath, replaceFullPath: /ui/ }
-            statusCode: 301
-    - filters:
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: friendly-errors
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: edge-headers
-      backendRefs:
+    - backendRefs:
         - name: litellm
           port: 4000

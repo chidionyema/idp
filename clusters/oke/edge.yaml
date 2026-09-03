@@ -31,28 +31,6 @@ spec:
   prune: false
   wait: true
 ---
-# crew#488 CP5: the policy engine before the policies. platform/edge and platform/scheduling carry
-# ClusterPolicies; Flux dry-runs them against the CRD this chart installs, so they wait on it.
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: kyverno
-  namespace: flux-system
-spec:
-  interval: 10m
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-  path: ./platform/kyverno
-  prune: true
-  wait: true
-  timeout: 10m
-  healthChecks:
-    - apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      name: kyverno
-      namespace: kyverno
----
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -62,8 +40,6 @@ spec:
   interval: 10m
   dependsOn:
     - name: gateway-api-crds
-    - name: kyverno
-    - name: priority-classes
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -73,7 +49,7 @@ spec:
   timeout: 10m
   # The only place OKE's load balancer is named (R36): platform/edge stays provider-free.
   patches:
-    - target: {kind: HelmRelease, name: traefik, namespace: edge}
+    - target: { kind: HelmRelease, name: traefik, namespace: edge }
       patch: |
         apiVersion: helm.toolkit.fluxcd.io/v2
         kind: HelmRelease
@@ -94,14 +70,8 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  # crew#488 CP5: an admission webhook that is still booting (ESO 'ca cert not yet ready') fails the
-  # first apply; without this the next try is the 10m interval and a fresh cluster reads red for it.
-  retryInterval: 1m
   dependsOn:
     - name: edge
-    # Three ExternalSecrets (cloudflare-api-token, prospector-engine-env, prospector-store-api-env)
-    # are in this row and dry-ran before the ESO CRDs existed on an empty cluster (crew#488).
-    - name: external-secrets
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -138,31 +108,7 @@ spec:
   path: ./deploy/k8s/overlays/oke
   prune: true
   wait: true
-  timeout: 10m
-  # Which build runs is decided here, not in prospector's overlay (crew#693): the markers below are
-  # written by the image-automation-controller from platform/image-automation/prospector.yaml, and
-  # this override is applied after kustomize renders the overlay, so the hand-pinned tags there are
-  # inert. A merge to prospector main becomes a pull request here and a RollingUpdate on merge.
-  #
-  # THE SEED IS A DEPLOY. This override wins over the overlay the moment it merges, before the
-  # automation has written anything, so whatever is typed here is what production runs for the
-  # next few minutes. The first draft of this file carried 99cdc96a, the 25 August build: merging
-  # it would have rolled the shop BACK off the storefront the founder released by hand at
-  # 2026-08-30T17:01:51Z (prospector#792, merge commit 7489661f). The seed is therefore the newest
-  # tag the policy itself would pick, and a test pins that it always is.
-  #
-  # Moved main-73 -> main-85 by hand on 2026-08-30. The controller cannot do it: it pushes to
-  # flux/image-updates and .github/workflows/image-update-pr.yml then calls `gh pr merge --auto`,
-  # which the repository refuses -- `allow_auto_merge` is false, so every run since 20:45Z ends
-  # `GraphQL: Auto merge is not allowed for this repository (enablePullRequestAutoMerge)` (run
-  # 33336842115). Meanwhile prospector#793 built main-85-0299e2c4 at 2026-08-30T21:01:04Z and
-  # mumchimp.com kept serving main-73: every /pack/<id>.jpg returned 404 an hour later. Both
-  # images carry main-85 in ghcr, listed 2026-08-30T22:0xZ.
-  images:
-    - name: ghcr.io/chidionyema/prospector-store-web
-      newTag: main-96-b658a1a8eda1700b3787c4005cd5660e8cab09bf # {"$imagepolicy": "flux-system:prospector-store-web:tag"}
-    - name: ghcr.io/chidionyema/prospector-store-api
-      newTag: main-96-b658a1a8eda1700b3787c4005cd5660e8cab09bf # {"$imagepolicy": "flux-system:prospector-store-api:tag"}
+  timeout: 5m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -177,6 +123,7 @@ spec:
       # The Gateway's catalogue and auth listeners name the zone as ${ESTATE_ZONE} (prospector#734).
       - kind: ConfigMap
         name: estate-config
+
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -185,22 +132,15 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  # crew#488 CP5: an admission webhook that is still booting (ESO 'ca cert not yet ready') fails the
-  # first apply; without this the next try is the 10m interval and a fresh cluster reads red for it.
-  retryInterval: 1m
   dependsOn:
     - name: edge
-    # crew#488 CP5, run 33216301296: external-dns mounts secret cloudflare-api-token, which the
-    # prospector-platform row's ExternalSecret creates; with no vault the pod never starts and dns read
-    # as a root break instead of the cascade it is.
-    - name: prospector-platform
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/dns
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 5m
   postBuild:
     substituteFrom:
       - kind: ConfigMap

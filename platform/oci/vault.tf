@@ -34,9 +34,9 @@ resource "oci_identity_policy" "workers_read_secrets" {
   provider       = oci.home
   compartment_id = var.compartment_ocid
   name           = "${var.cluster_name}-workers-read-secrets"
-  description    = "worker nodes may read secret bundles in this compartment, never the verdict signing key (crew#631 CP2)"
+  description    = "worker nodes may read secret bundles in this compartment, nothing else"
   statements = [
-    "Allow dynamic-group ${oci_identity_dynamic_group.workers.name} to read secret-family in compartment id ${var.compartment_ocid} where target.secret.name != 'verdict-hmac-key'",
+    "Allow dynamic-group ${oci_identity_dynamic_group.workers.name} to read secret-family in compartment id ${var.compartment_ocid}",
   ]
 }
 

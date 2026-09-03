@@ -21,41 +21,7 @@ metadata:
   name: traefik
   namespace: edge
 spec:
-  # Bounded remediation, and the last failure is remediated too, so a wedged release is not left
-  # Failed for a person to untangle: helm-controller spends its retries once and then waits forever
-  # for a spec change (tailscale-operator sat Failed blocking guacamole, idp#1027).
-  # NOT `strategy: uninstall`, which idp#1027 set here and this row takes back out. Founder,
-  # 2026-08-30 (~/.claude/docs/founder/2026-08-30T2332Z-yes-and-the-pattern-is-sound-but-two
-  # -c08d08d9.md): uninstalling a wedged release turns a degraded service into a deleted one --
-  # the PVCs, PDBs and Secrets the release made go with it -- and it erases the state that says
-  # which invariant was violated, which is the state an incident is converted into a control from.
-  # The default strategy is rollback: the previous revision is restored and the failed one is
-  # readable. Repaving stays a hand after capture: `bin/idp-oke-break-glass helm-retry`.
-  install:
-    remediation: { retries: 3 }
-  upgrade:
-    remediation: { retries: 3, remediateLastFailure: true }
-  # docs/policy/every-interface-is-a-door.md: the chart's Services name their door.
-  postRenderers:
-    - kustomize:
-        patches:
-          - target: { kind: Service }
-            patch: |
-              apiVersion: v1
-              kind: Service
-              metadata:
-                name: every-interface-is-a-door
-                labels:
-                  backstage.io/kubernetes-id: founder-status-page
-          - target: { kind: HTTPRoute }
-            patch: |
-              apiVersion: v1
-              kind: HTTPRoute
-              metadata:
-                name: every-interface-is-a-door
-                labels:
-                  backstage.io/kubernetes-id: founder-status-page
-  interval: 10m
+  interval: 1h
   chart:
     spec:
       chart: traefik
@@ -65,27 +31,7 @@ spec:
         name: traefik
   values:
     deployment:
-      # Two, on two nodes. Everything the founder can open enters through this pod: at replicas 1
-      # the seven surfaces behind it that survive a node drain (bin/idp-availability-gate) are
-      # decorative, because the front door dies with the node it happens to sit on.
-      replicas: 2
-    # Named in the PriorityClass description as routing: the front door is seated on a node before
-    # anything else, and evicts the balloon rather than queueing behind it.
-    priorityClassName: infrastructure-critical
-    podDisruptionBudget:
-      enabled: true
-      # minAvailable, not maxUnavailable: with 2 replicas both leave the drain exactly one move,
-      # and minAvailable states the floor the front door must keep rather than the ceiling it may
-      # lose. Never raise it to 2 -- minAvailable == replicas is the shape that refused every
-      # drain on the clickhouse PDB at 06:30:43Z.
-      minAvailable: 1
-    topologySpreadConstraints:
-      - maxSkew: 1
-        topologyKey: kubernetes.io/hostname
-        whenUnsatisfiable: DoNotSchedule
-        labelSelector:
-          matchLabels:
-            app.kubernetes.io/name: traefik
+      replicas: 1
     providers:
       kubernetesGateway:
         enabled: true
@@ -95,53 +41,18 @@ spec:
         # Middleware CRs (ForwardAuth, ADR 0003) are ExtensionRef filters on HTTPRoutes and
         # need this provider on; IngressRoute stays unused (ADR 0001: Gateway API only).
         enabled: true
-        # friendly-errors (every route namespace) answers with edge/status-page: a Middleware
-        # may only name a Service in another namespace when this is on.
-        allowCrossNamespace: true
     gateway:
       enabled: false
     ingressRoute:
       dashboard:
         enabled: false
-    # The front door writes one JSON line per request to stdout, where the estate collector reads
-    # it (LAW 50). Without it, "the store was slow at 14:02" has no evidence at the edge.
-    accessLog:
-      enabled: true
-      format: json
-      fields:
-        headers:
-          defaultMode: drop
-          names: { User-Agent: keep, Referer: keep }
     service:
-      # `spec:`, not `type:` at this level. The chart passes this map straight into the Service
-      # spec (values.yaml: "Additional entries here will be added to the Service spec"); a bare
-      # `service.type` is not a key the chart reads, so the LoadBalancer this estate has always
-      # had came from the chart's own default and nothing here decided it. Proved by
-      # `helm template ... | grep externalTrafficPolicy` returning nothing until this moved.
-      spec:
-        type: LoadBalancer
-        # Local, not Cluster: the load balancer sends traffic only to nodes running a healthy
-        # Traefik pod (no second hop through a node that has none) and the client IP survives to
-        # oauth2-proxy and the access log. Safe because the spread constraint above puts one pod
-        # on each node; a node without one is health-checked out of the backend set rather than
-        # blackholing.
-        externalTrafficPolicy: Local
+      type: LoadBalancer
       # No provider annotations here (R36): the cluster row (clusters/<cluster>/edge.yaml)
       # patches in the load-balancer shape its cloud needs.
-    # Guaranteed QoS: requests == limits on cpu AND memory, because the front door joined the
-    # radio-room set on crew#555 and crew#539 CP9 is that the set the kubelet must evict last is
-    # Guaranteed. It was Burstable (50m request, no cpu limit, a 256Mi ceiling four times its
-    # request), which is the class the kubelet reaches for second under memory pressure.
-    # 300m is a ceiling, not a reservation: this edge carries a handful of internal hostnames at
-    # single-digit requests per second, and 300m x 2 replicas is 15% of one 4-OCPU node. Raise
-    # both numbers together if that ever stops being true -- raising only the limit silently
-    # demotes it back to Burstable, and require-priority-class refuses that at admission.
     resources:
-      # crew#584: radio-room set, Guaranteed QoS required (require-priority-class) -- request cut
-      # to 50m, limit held equal, never widened alone (see note above).
       requests:
         cpu: 50m
-        memory: 256Mi
+        memory: 64Mi
       limits:
-        cpu: 50m
         memory: 256Mi

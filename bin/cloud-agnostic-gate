@@ -10,24 +10,14 @@ the one ClusterSecretStore (platform/secret-store) and the per-cluster rows (clu
 are the three places a cloud is allowed to be named. Comment lines are not counted.
 Exit 0 at zero, 1 with each offending line printed, 2 when the root cannot be read (BLIND).
 Proved both ways: CLOUD_AGNOSTIC_ROOT=<dir> scans that tree; tests/fixtures/cloud-agnostic/{good,bad}.
-Untracked files are skipped when the root is a git checkout (crew#516 CP6): bin/idp-oci-login renders
-platform/<module>/backend_override.tf with the object-storage endpoint and credentials for a session,
-and the gate graded that rendered file as a leak. A file git does not hold cannot ship.
-
-crew#66 CP5e: a file under bin/ may declare itself the provider adapter (the one that signs in
-or reads the tenancy-root IAM) with `# provider-adapter: <provider>` in its first three lines;
-its provider-specific lines are then skipped, and the prefix `bin/idp-oci-` / `bin/idp-iam-` is
-the only path allowed to carry that marker (a declaration anywhere else is itself a finding:
-a caller hiding behind the marker).
 """
 import os
 import pathlib
 import re
-import subprocess
 import sys
 
 ROOT = pathlib.Path(os.environ.get("CLOUD_AGNOSTIC_ROOT") or pathlib.Path(__file__).resolve().parents[1])
-SCAN = ["platform", "bin"]
+SCAN = ["platform"]
 EXEMPT = ("platform/oci/", "platform/secret-store/", "clusters/")
 SUFFIXES = {".yaml", ".yml", ".py", ".ts", ".tf", ".sh", ".json"}
 PATTERN = re.compile(
@@ -36,53 +26,6 @@ PATTERN = re.compile(
     r"cloud\.google\.com/|pubsub\.googleapis|"
     r"^\s*(oracle|aws|gcpsm|azurekv):\s*$"  # ExternalSecrets provider blocks outside the store
 )
-# crew#66 CP5e: a file that IS the provider door (signs in / reads the tenancy-root IAM) declares
-# itself with this marker on line 1-3; the marker is honoured only when the path starts with one
-# of ADAPTER_ALLOWED_PREFIXES.
-ADAPTER_MARK = re.compile(r"^# provider-adapter: (oci|aws|gcp|azure)\b")
-ADAPTER_ALLOWED_PREFIXES = ("bin/idp-oci-", "bin/idp-iam-")
-
-
-def _untracked(root: pathlib.Path) -> set[str]:
-    """Paths git does not track under root, relative to root; empty when root is not a checkout."""
-    try:
-        out = subprocess.run(
-            ["git", "-C", str(root), "ls-files", "--others", "-z"],
-            capture_output=True, text=True, check=True,
-        ).stdout
-    except (OSError, subprocess.CalledProcessError):
-        return set()
-    return {p for p in out.split("\0") if p}
-
-
-def declared_adapter(path: pathlib.Path) -> str | None:
-    """Provider name when `path`'s first three lines declare an adapter, else None (crew#66 CP5e)."""
-    try:
-        with path.open() as fp:
-            for _ in range(3):
-                line = fp.readline()
-                if not line:
-                    return None
-                m = ADAPTER_MARK.match(line)
-                if m:
-                    return m.group(1)
-    except OSError:
-        return None
-    return None
-
-
-def _adapter_marker_line(path: pathlib.Path) -> int:
-    """Line number (1-indexed) of the first ADAPTER_MARK in `path`'s first three lines, else 1."""
-    try:
-        with path.open() as fp:
-            for n, line in enumerate(fp, 1):
-                if n > 3:
-                    break
-                if ADAPTER_MARK.match(line):
-                    return n
-    except OSError:
-        pass
-    return 1
 
 
 def main() -> int:
@@ -90,25 +33,12 @@ def main() -> int:
         print(f"BLIND: {ROOT} is not a directory")
         return 2
     hits = []
-    adapters = []
-    untracked = _untracked(ROOT)
     for top in SCAN:
         for f in sorted((ROOT / top).rglob("*")):
-            # crew#66 CP5e: the operator scripts under bin/ carry no extension; a tracked, extensionless
-            # bin/ file is scanned too, or the adapter marker is never read where it is actually placed.
-            if not f.is_file() or (f.suffix not in SUFFIXES and not (top == "bin" and f.suffix == "")):
+            if not f.is_file() or f.suffix not in SUFFIXES:
                 continue
             rel = f.relative_to(ROOT).as_posix()
-            if f.resolve() == pathlib.Path(__file__).resolve():
-                continue  # the gate names the patterns it hunts; it is not a finding against itself
-            if rel.startswith(EXEMPT) or "/.terraform/" in rel or rel in untracked:
-                continue
-            provider = declared_adapter(f)
-            if provider is not None:
-                if not rel.startswith(ADAPTER_ALLOWED_PREFIXES):
-                    hits.append(f"{rel}:{_adapter_marker_line(f)}: provider-adapter declared outside {ADAPTER_ALLOWED_PREFIXES}")
-                    continue
-                adapters.append((provider, rel))
+            if rel.startswith(EXEMPT) or "/.terraform/" in rel:
                 continue
             for n, line in enumerate(f.read_text(errors="replace").splitlines(), 1):
                 if line.lstrip().startswith("#"):
@@ -117,47 +47,8 @@ def main() -> int:
                     hits.append(f"{rel}:{n}: {line.strip()}")
     for h in hits:
         print(h)
-    for provider, rel in adapters:
-        print(f"adapter {provider}  {rel}")
     print(f"cloud-agnostic-gate: {len(hits)} provider-specific line(s) outside the provisioner")
-    print(f"cloud-agnostic-gate: {len(adapters)} declared adapter file(s)")
-    callers = _oci_cli_callers(ROOT, untracked)
-    print(f"cloud-agnostic-gate: {len(callers)} operator file(s) bound to the oci CLI (bin/, .github/workflows; crew#309 ratchet, crew#66)")
     return 1 if hits else 0
-
-
-# Any `oci <service> <verb>` invocation, optional leading flags (`oci --profile x os ...`). Not a verb allow-list:
-# bin/idp-vault-reads calls `oci audit event list`, which a list of the usual services silently missed.
-# Shell: `oci <service> <verb>`; Python: subprocess argv starting ["oci", ...] (bin/idp-free-tier).
-OCI_CLI = re.compile(r"(^|[\s$(`|;&])oci(\s+--?[a-z-]+(\s+\S+)?)*\s+[a-z][a-z-]*\s+[a-z][a-z-]*|\[\s*[\"']oci[\"']\s*,")
-# A workflow step's `name:` is prose ("oci cli and a headless browser"), not a call.
-PROSE = re.compile(r"^\s*-?\s*name:")
-
-
-def _oci_cli_callers(root: pathlib.Path, untracked: set[str]) -> list[str]:
-    """Tracked files under bin/ and .github/workflows that invoke the oci CLI. Measured 2026-08-27
-    (crew#309) by this function on main: 25 = 23 scripts + 2 workflows (a grep for files merely
-    naming OCI said 36; env names and step titles are not calls). The platform manifests name no
-    cloud; the operator tooling
-    does, through three primitives (object storage, secret read/write, IAM read). This number is
-    printed so the vendor-agnostic lane (crew#66) has a floor it can watch go down; it does not fail
-    the gate until it is wired to a threshold. Comment lines are not counted."""
-    out = []
-    for top in ("bin", ".github/workflows"):
-        d = root / top
-        if not d.is_dir():
-            continue
-        for f in sorted(d.rglob("*")):
-            rel = f.relative_to(root).as_posix()
-            if not f.is_file() or rel in untracked:
-                continue
-            try:
-                lines = f.read_text(errors="replace").splitlines()
-            except OSError:
-                continue
-            if any(OCI_CLI.search(l) and not l.lstrip().startswith("#") and not PROSE.match(l) for l in lines):
-                out.append(rel)
-    return out
 
 
 if __name__ == "__main__":

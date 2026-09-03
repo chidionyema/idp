@@ -5,36 +5,9 @@
 global:
   storageClass: oci-bv
 clickhouse:
-  podLabels: { idp.platform/capacity-approved: "true" }   # 1000m Guaranteed, measured (crew#539 CP9, run 33140351385)
-  # crew#539 (2026-08-28, diagnose run 33140351385): with a 2Gi limit ClickHouse 25.12 sets its
-  # server ceiling at 1.80 GiB (90% of the cgroup) and the merge of one signoz_traces part
-  # (20260827_658_11785_163) needs 1.39 GiB on top of table loading, so every start ends in
-  # `MEMORY_LIMIT_EXCEEDED`, AsyncLoader stalls (22.1%), :8123 never opens, the startup probe
-  # kills it (x301 in 63m, exit 137) and the "ZooKeeper ... Temporary DNS error" is the starved
-  # process failing getaddrinfo — dns-per-namespace run 33142680663 resolved every name from
-  # inside the namespace. 4Gi is the smallest limit above the measured 1.80 + 1.39 GiB; 1 CPU
-  # is what it had before abdcced halved it, so loading finishes inside the probe window.
-  # crew#584 (founder 2026-08-29, request inflation): the 1000m CPU *request* was 13 % of the
-  # node reserved for an idle database; the request is now micro and the limit doubled, so loading
-  # still finishes inside the probe window and the memory floor above stays as measured.
   resources:
-    requests: { cpu: 1000m, memory: 4Gi }
-    limits: { cpu: 1000m, memory: 4Gi }
-  # crew#483 (2026-08-28, diagnose run 33172481714): once the node agents reached the collector
-  # (c03fb77), signoz-otel-collector logged `code: 241 ... (total) memory limit exceeded: would use
-  # 3.61 GiB ... current RSS: 1.87 GiB, maximum: 3.60 GiB` on every batch of spans, logs and
-  # metric metadata, and coverage stayed at 7/95 pods. The ceiling is 90% of the 4Gi cgroup; the
-  # 1.7 GiB gap between RSS and "would use" is what ClickHouse's tracker counts on top of the
-  # process: its mark cache defaults to 5 GiB (clickhouse.com/docs/operations/server-configuration-
-  # parameters/settings, mark_cache_size), larger than the whole pod, and background merges may
-  # take half the ceiling (merges_mutations_memory_usage_to_ram_ratio 0.5). These are server
-  # settings the chart renders into config.d (chart 0.138.0 `clickhouse.settings`), so the caches
-  # are bounded to fit the pod instead of the pod grown to fit the defaults: 512 MiB of marks and
-  # 30% of the ceiling for merges leaves the inserts their memory.
-  settings:
-    mark_cache_size: "536870912"
-    index_mark_cache_size: "134217728"
-    merges_mutations_memory_usage_to_ram_ratio: "0.3"
+    requests: { cpu: 150m, memory: 512Mi }
+    limits: { cpu: 1000m, memory: 2Gi }
   persistence:
     size: 20Gi
   zookeeper:
@@ -50,11 +23,6 @@ clickhouse:
       size: 2Gi
 signoz:
   replicaCount: 1
-  # crew#495 CP8: SigNoz (>= v0.112) provisions one admin at startup from these. Email and password
-  # come from the vault through signoz.yaml valuesFrom (ExternalSecret signoz-root), never from here.
-  env:
-    SIGNOZ_USER_ROOT_ENABLED: "true"
-    SIGNOZ_USER_ROOT_ORG_NAME: "Bytesync estate"
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { cpu: 500m, memory: 1Gi }
@@ -63,26 +31,6 @@ signoz:
   ingress:
     enabled: false
 otelCollector:
-  # crew#392: the collector stamps k8s.namespace.name and k8s.pod.name on every span and log line
-  # it receives, keyed by the sender's pod IP (k8sattributes, the upstream processor; the chart's
-  # clusterRole already grants pods/replicasets for it). Without it a workload that emits on its
-  # own (mcp-agentgateway, mcp-github) reaches ClickHouse with only service.name, and the coverage
-  # query in telemetry-coverage.yaml, which keys on the pod, counts it as never seen. Existing
-  # attributes are kept: k8s-infra's agent already names its pods and the processor does not
-  # overwrite. The metrics pipeline is left as shipped: every metric sample comes through the agent.
-  config:
-    processors:
-      k8sattributes:
-        auth_type: serviceAccount
-        passthrough: false
-        extract:
-          metadata: [k8s.namespace.name, k8s.pod.name, k8s.deployment.name, k8s.node.name]
-        pod_association:
-          - sources: [{ from: connection }]
-    service:
-      pipelines:
-        traces: { processors: [k8sattributes, signozspanmetrics/delta, batch] }
-        logs: { processors: [k8sattributes, batch] }
   replicaCount: 1
   resources:
     requests: { cpu: 100m, memory: 200Mi }

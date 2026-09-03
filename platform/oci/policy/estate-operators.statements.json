@@ -19,8 +19,7 @@
   "Allow group estate-operators to manage policies in compartment estate",
   "Allow group estate-operators to manage vaults in compartment estate",
   "Allow group estate-operators to manage keys in compartment estate",
-  "Allow group estate-operators to manage secret-family in compartment estate where target.secret.name != 'verdict-hmac-key'",
+  "Allow group estate-operators to manage secret-family in compartment estate",
   "Allow group estate-operators to manage domains in tenancy",
-  "Allow group estate-operators to read audit-events in compartment estate",
-  "Allow service objectstorage-uk-london-1 to manage object-family in compartment estate where any {request.permission='BUCKET_INSPECT', request.permission='BUCKET_READ', request.permission='OBJECT_INSPECT', request.permission='OBJECT_DELETE', request.permission='OBJECT_VERSION_DELETE'}"
+  "Allow group estate-operators to read audit-events in compartment estate"
 ]

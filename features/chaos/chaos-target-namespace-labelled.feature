@@ -9,5 +9,5 @@ Feature: A chaos experiment targets a namespace Chaos Mesh is allowed to inject 
   Scenario: The backstage namespace is labelled for injection
     Given platform/chaos/mesh/helmrelease.yaml sets enableFilterNamespace true
     And platform/chaos/backstage-pod-kill.yaml selects namespace backstage
-    Then the Namespace backstage declared under platform/ carries chaos-mesh.org/inject: enabled
+    Then platform/backstage/base/namespace.yaml carries chaos-mesh.org/inject: enabled
     And tests/test_incident_chaos_target_namespace_unlabelled.py refuses a target namespace without it

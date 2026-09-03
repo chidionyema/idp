@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # estate-security-scan: the "Security passes" evidence named by the Definition
-# of Done v2.1 (docs/reference/policy/definition-of-done.md, Gate 3 and section 3.3).
+# of Done v2.1 (docs/policy/definition-of-done.md, Gate 3 and section 3.3).
 #
 # Three questions, each answered by a mature tool rather than by this file:
 #
@@ -46,13 +46,9 @@ say() { printf '%s\n' "$*"; }
 
 say "SECURITY-SCAN $(date -u +%Y-%m-%dT%H:%M:%SZ) commit=$(git rev-parse HEAD) tree=$(git status --porcelain | grep -vc '^?? .estate-idp/')-dirty-paths"
 
-# 1. secrets, over git history: every tracked byte in every commit REACHABLE FROM
-# HEAD. Without --log-opts gitleaks walks every fetched ref, and CI checks out with
-# fetch-depth 0, so one literal on an unmerged peer branch reddened every open PR
-# (2026-08-27 21:00Z, idp#479 #486-#492; crew#539 branch commit 3bf04ab). A branch
-# may only fail its own PR; a leak reaches main only through a PR whose HEAD holds it.
+# 1. secrets, over git history: every tracked byte in every commit.
 if command -v gitleaks >/dev/null; then
-  if out=$(gitleaks detect --source . --log-opts=HEAD --redact --no-banner --exit-code 1 2>&1); then
+  if out=$(gitleaks detect --source . --redact --no-banner --exit-code 1 2>&1); then
     say "ok    secrets   gitleaks $(gitleaks version): no leaks in git history"
   else
     say "FAIL  secrets   gitleaks found leaks in git history"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -20 | sed 's/^/      /'; fail=1
@@ -66,24 +62,6 @@ PA=""
 if command -v pip-audit >/dev/null; then PA="pip-audit";
 elif command -v uvx >/dev/null; then PA="uvx pip-audit"; fi
 reqs=$(git ls-files | grep -E '(^|/)requirements[^/]*\.txt$')
-# Recorded dismissals: a TRACKED .pip-audit-ignores file in the scanned repository,
-# one advisory per line: "<ID> <reason>". The reason is mandatory: an unexplained
-# dismissal is an unaudited dependency and fails the scan. Each ID rides pip-audit's
-# own --ignore-vuln flag, and every dismissal is printed in the receipt, so nothing
-# is silenced invisibly. An untracked file is not the codebase and is not read.
-ig=()
-if git ls-files --error-unmatch .pip-audit-ignores >/dev/null 2>&1; then
-  while IFS= read -r iline; do
-    case "$iline" in ''|'#'*) continue ;; esac
-    iid=${iline%% *}; ireason=${iline#* }
-    if [ "$ireason" = "$iline" ] || [ -z "$(printf '%s' "$ireason" | tr -d '[:space:]')" ]; then
-      say "FAIL  deps      .pip-audit-ignores entry $iid has no reason; an unexplained dismissal is refused"; fail=1
-      continue
-    fi
-    ig+=(--ignore-vuln "$iid")
-    say "note  deps      dismissed $iid: $(printf '%s' "$ireason" | cut -c1-160)"
-  done < .pip-audit-ignores
-fi
 if [ -z "$PA" ]; then
   say "BLIND deps      pip-audit not on PATH (pipx install pip-audit, or uv)"; blind=1
 elif [ -z "$reqs" ]; then
@@ -93,52 +71,27 @@ else
   # and the three together exceeded five minutes on the founder machine.
   args=(); for r in $reqs; do args+=(-r "$r"); done
   # shellcheck disable=SC2086  # $PA is "pip-audit" or "uvx pip-audit": two words on purpose
-  out=$(timeout 240 $PA "${args[@]}" ${ig[@]+"${ig[@]}"} --progress-spinner off 2>&1); rc=$?
+  out=$(timeout 240 $PA "${args[@]}" --progress-spinner off 2>&1); rc=$?
   if [ $rc = 0 ]; then
     say "ok    deps      pip-audit over $(( ${#args[@]} / 2 )) requirements files: no known vulnerabilities"
   elif [ $rc = 124 ]; then
     say "BLIND deps      pip-audit exceeded 240s (network); rerun"; blind=1
-  elif printf '%s' "$out" | grep 'Failed to install packages' >/dev/null ; then
-    # The joint environment could not be built. Before giving up on resolution, try each
-    # file on its own: two files may pin the same package apart ON PURPOSE because they
-    # feed two interpreters (crew#712, 2026-08-30: requirements-research.txt openai<3 for
-    # litellm, requirements-grade.txt openai>=3.1 for Inspect). Each file still resolves
-    # and is fully audited; only their union is impossible.
-    perfile_rc=0; perfile_out=""; perfile_install=0
-    for r in $reqs; do
-      # shellcheck disable=SC2086
-      o=$(timeout 240 $PA -r "$r" ${ig[@]+"${ig[@]}"} --progress-spinner off 2>&1); c=$?
-      if [ $c = 124 ]; then perfile_rc=124; break; fi
-      if [ $c != 0 ]; then
-        if printf '%s' "$o" | grep 'Failed to install packages' >/dev/null; then perfile_install=1; else perfile_rc=1; perfile_out="$perfile_out
-$r:
-$o"; fi
-      fi
-    done
-    if [ $perfile_rc = 124 ]; then
-      say "BLIND deps      pip-audit exceeded 240s (network); rerun"; blind=1
-    elif [ $perfile_install = 0 ] && [ $perfile_rc = 0 ]; then
-      say "ok    deps      pip-audit over $(( ${#args[@]} / 2 )) requirements files, resolved one file at a time (their union does not install): no known vulnerabilities"
-    elif [ $perfile_install = 0 ]; then
-      say "FAIL  deps      pip-audit (resolved one file at a time)"; [ $quiet = 1 ] || printf '%s\n' "$perfile_out" | tail -15 | sed 's/^/      /'; fail=1
-    else
+  elif printf '%s' "$out" | grep -q 'Failed to install packages'; then
     # pip-audit could not build the environment (a package with no wheel and no build
     # deps, or a pin that is not on the index). That is not an advisory, so it is not a
     # FAIL: audit the pins as written, without resolving or installing anything.
     why=$(printf '%s' "$out" | grep -m1 -oE 'No matching distribution found for [^ ]+|No module named [^ ]+' || echo "see pip-audit output")
-    # shellcheck disable=SC2086
-    out2=$(timeout 240 $PA "${args[@]}" ${ig[@]+"${ig[@]}"} --no-deps --disable-pip --progress-spinner off 2>&1); rc2=$?
+    out2=$(timeout 240 $PA "${args[@]}" --no-deps --disable-pip --progress-spinner off 2>&1); rc2=$?
     if [ $rc2 = 0 ]; then
       say "ok    deps      pip-audit over $(( ${#args[@]} / 2 )) requirements files: no known vulnerabilities (pins audited without resolution; install failed: $why)"
     elif [ $rc2 = 124 ]; then
       say "BLIND deps      pip-audit exceeded 240s (network); rerun"; blind=1
-    elif printf '%s' "$out2" | grep -iE 'not pinned|must be pinned|pinned to an exact' >/dev/null ; then
+    elif printf '%s' "$out2" | grep -qiE 'not pinned|must be pinned|pinned to an exact'; then
       say "BLIND deps      pip-audit could not install ($why) and a requirements file is not fully pinned, so nothing was measured"
       [ $quiet = 1 ] || printf '%s\n' "$out2" | tail -5 | sed 's/^/      /'; blind=1
     else
       say "FAIL  deps      pip-audit (pins audited without resolution; install failed: $why)"
       [ $quiet = 1 ] || printf '%s\n' "$out2" | tail -15 | sed 's/^/      /'; fail=1
-    fi
     fi
   else
     say "FAIL  deps      pip-audit"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'; fail=1

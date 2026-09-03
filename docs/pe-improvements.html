@@ -372,7 +372,7 @@ footer p { margin-bottom: 0.8rem; }
     <div class="row"><dt>Was</dt><dd>"Missed schedule" covered both <em>never ran</em> and <em>ran and failed</em>. They need opposite repairs — one is a hosting problem, the other is a bug in the job — so conflating them meant neither got fixed.</dd></div>
     <div class="row"><dt>Now</dt><dd>Counted and reported separately, and the distinction is written into the audit's output rather than left to whoever reads it. Eleven never ran. Ten ran and failed.</dd></div>
     <div class="row"><dt>Expect</dt><dd>Two lists that shrink independently, instead of one number that never moves.</dd></div>
-    <div class="row"><dt>Check</dt><dd><code>docs/how-to/onboarding/placement.md</code> holds both lists and the reasoning.</dd></div>
+    <div class="row"><dt>Check</dt><dd><code>docs/onboarding/placement.md</code> holds both lists and the reasoning.</dd></div>
   </dl>
 </div>
 
@@ -451,7 +451,7 @@ PASS      every policy allows its good case and refuses its bad ones</code></pre
 
 <p class="prose"><strong>Onboarded: not fully, and here is the actual gap.</strong> Four features carry the demo and onboarding pair the rules require — the IDP itself, supply chain, placement, and Langfuse. The catalogue's 194 contents do not. Onboarding covers the platform's own features, not yet the assets inside it. There is also one fact with two implementations: <code>catalog-gen</code> and <code>db-gen</code> each compute whether a repo has a licence file by checking the same five filenames, because the inventory does not record it. They agree today only because both were written on the same day.</p>
 
-<p class="prose">The architecture is drawn, verified and in the repo at <code>docs/explanation/architecture-overview.md</code> — one source, two adapters, two swappable renderers, and where each guard sits in the flow. It did not exist until today, which is its own finding: the platform had six proven improvements and no picture of itself.</p>
+<p class="prose">The architecture is drawn, verified and in the repo at <code>docs/architecture.md</code> — one source, two adapters, two swappable renderers, and where each guard sits in the flow. It did not exist until today, which is its own finding: the platform had six proven improvements and no picture of itself.</p>
 
 <h2>Check any of it yourself</h2>
 

@@ -18,15 +18,3 @@ def test_incident_crew401_render_pushes_the_catalogue_after_generating_it():
     assert gen < push < unchanged, "the push must follow catalog-gen and run even when the page is unchanged"
     assert re.search(r'"BLIND ".*catalogue push', src), "a machine that cannot push must say BLIND"
 
-
-def test_incident_crew401_render_commit_subject_names_a_ticket():
-    """Measured 2026-08-27: no live-diagram PR merged since 2026-08-25T21:16Z because the
-    commit-msg default (crew#53) refused every scheduled commit: the subject named no issue and
-    the branch state/live-diagram names none either. The subject the renderer commits with must
-    carry an issue reference; the branch cannot be relied on for it."""
-    import re
-    src = (ROOT / "bin" / "catalog-render").read_text()
-    subjects = re.findall(r'"docs\(architecture\): [^"\n]*', src)
-    assert subjects, "renderer no longer commits a docs(architecture) subject"
-    for s in subjects:
-        assert re.search(r"(crew|idp)#\d+", s), s

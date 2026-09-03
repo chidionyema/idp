@@ -6,12 +6,12 @@ datasette-mcp's own extension point, `register_mcp_tools(datasette, mcp)`
 (github.com/datasette/datasette-mcp). Not a second server -- ADR 0006 and the headline
 both require one voice.
 
-Founder's pasted design (crew/docs/reference/specs/issue-216.md): "get_workload_state(app)
+Founder's pasted design (crew/docs/specs/issue-216.md): "get_workload_state(app)
 returns catalog + metrics + desired state in one payload." Failure named: payload
 bloat -- raw logs and raw timeseries kill the context. Fix named: summarize by
 default; drilling is a separate tool (CP3, `get_workload_logs`).
 
-WHERE EACH PART COMES FROM (crew/docs/reference/specs/issue-216.md, "Design substance"):
+WHERE EACH PART COMES FROM (crew/docs/specs/issue-216.md, "Design substance"):
   catalog          Backstage catalog/catalog-info.yaml (bin/catalog-gen). One entity's
                     kind, owner, repo, and its spec.dependsOn edges.
   desired vs actual "Flux/k8s is desired vs actual state... on the laptop substrate
@@ -23,7 +23,7 @@ WHERE EACH PART COMES FROM (crew/docs/reference/specs/issue-216.md, "Design subs
                     key the estate already computed, never re-derive
                     catalog-gen's slug()/collision handling here.
   metrics          "the vitals come from OTel/Prometheus per the fortress stack
-                    (crew#180)". crew#180 is not live: grep of docs/reference/specs/
+                    (crew#180)". crew#180 is not live: grep of docs/specs/
                     fortress-stack.md and observability/ (langfuse.yml,
                     otel-fallback.yaml, clickhouse-low-memory.xml) turns up traces
                     only, zero Prometheus references. collect_metric_samples() below

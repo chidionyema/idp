@@ -6,6 +6,7 @@ nothing halted. The thresholds are read from config, never typed here.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from sovereign import config

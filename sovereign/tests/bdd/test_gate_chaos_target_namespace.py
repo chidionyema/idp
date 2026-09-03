@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from pytest_bdd import given, scenarios, then
+from pytest_bdd import given, scenarios, then, when
 
 scenarios("features/chaos/chaos-target-namespace-labelled.feature")
 
@@ -40,15 +40,10 @@ def _schedule(state: dict) -> None:
     assert '"namespaces": ["backstage"]' in ns, found[0]["spec"]
 
 
-@then("the Namespace backstage declared under platform/ carries chaos-mesh.org/inject: enabled")
+@then("platform/backstage/base/namespace.yaml carries chaos-mesh.org/inject: enabled")
 def _label(state: dict) -> None:
-    """Found by globbing, not at a literal path: crew#488 moved the manifest to
-    platform/backstage/namespace/base/namespace.yaml so OKE could order the namespace as its own
-    Flux row, and a gate that names a path grades where a file sits instead of what it says."""
-    ns = [d for f in sorted((IDP / "platform").rglob("*.yaml")) for d in _docs(f)
-          if d.get("kind") == "Namespace" and d["metadata"].get("name") == "backstage"]
-    assert ns, "no Namespace backstage declared anywhere under platform/"
-    assert [d for d in ns if d["metadata"].get("labels", {}).get(INJECT) == "enabled"], ns
+    ns = [d for d in _docs(IDP / "platform/backstage/base/namespace.yaml") if d.get("kind") == "Namespace"]
+    assert ns and ns[0]["metadata"].get("labels", {}).get(INJECT) == "enabled", ns
 
 
 @then("tests/test_incident_chaos_target_namespace_unlabelled.py refuses a target namespace without it")

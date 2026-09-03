@@ -76,7 +76,7 @@ def _gui_refused(state: dict) -> None:
     _refused_with(state, "opmodel-gui.json", "no_gui_actions")
 
 
-# --- founder_denied (crew#473: no APPROVE: wait, DENY: still refuses) -----------------------------------------------------------------
+# --- founder_approval_required -----------------------------------------------------------------
 
 @given('a PR touching backstage/ or platform/identity/ with no "Approval-word:" line')
 def _no_approval(state: dict) -> None:
@@ -86,23 +86,9 @@ def _no_approval(state: dict) -> None:
     state["fixtures"].append("opmodel-no-approval.json")
 
 
-@then("the founder-facing change passes with no founder word")
-def _no_approval_passes(state: dict) -> None:
-    r = state["runs"]["opmodel-no-approval.json"]
-    assert r.returncode == 0, r.stdout + r.stderr
-
-
-@given('a PR whose "Approval-word:" the founder answered with DENY: from his GitHub login')
-def _denied(state: dict) -> None:
-    fx = _fx("opmodel-denied.json")
-    word = next(l.split(":", 1)[1].strip() for l in fx["pr"]["body"].splitlines() if l.startswith("Approval-word:"))
-    assert word in fx["pr"]["denials"], (word, fx["pr"]["denials"])
-    state["fixtures"].append("opmodel-denied.json")
-
-
-@then("it exits 1 with rule=founder_denied")
-def _denied_refused(state: dict) -> None:
-    _refused_with(state, "opmodel-denied.json", "founder_denied")
+@then("it exits 1 with rule=founder_approval_required")
+def _no_approval_refused(state: dict) -> None:
+    _refused_with(state, "opmodel-no-approval.json", "founder_approval_required")
 
 
 # --- cost_budget / canary ----------------------------------------------------------------------
@@ -164,13 +150,10 @@ def _laws_bad(state: dict) -> None:
     state["fixtures"] += ["opmodel-no-laws.json", "opmodel-laws-sentence.json", "opmodel-ok.json"]
 
 
-@then("it exits 0 and prints rule=architecture_laws as a warning, never a refusal")
-def _laws_warned(state: dict) -> None:
-    # founder 2026-08-28 (crew#254 5456132029): paused -- the gate refused idp#625 twice on wording
-    for name in ("opmodel-no-laws.json", "opmodel-laws-sentence.json"):
-        r = state["runs"][name]
-        assert r.returncode == 0, name + " refused: " + r.stdout
-        assert "rule=architecture_laws" in r.stdout and "WARN" in r.stdout, (name, r.stdout)
+@then("it exits 1 with rule=architecture_laws")
+def _laws_refused(state: dict) -> None:
+    _refused_with(state, "opmodel-no-laws.json", "architecture_laws")
+    _refused_with(state, "opmodel-laws-sentence.json", "architecture_laws")
 
 
 @then("a body whose four law lines are commands, paths or n/a with a reason passes")

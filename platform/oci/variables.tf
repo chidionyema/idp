@@ -27,7 +27,7 @@ variable "ssh_public_key" {
 # the same rule over `tofu output -json capacity`.
 variable "worker_ocpus" {
   type    = number
-  default = 6
+  default = 4
 }
 
 variable "worker_memory_gb" {
@@ -78,14 +78,6 @@ variable "cluster_name" {
   default = "estate"
 }
 
-# crew#713 CP1: how long a daily copy of the shop database is kept. A number, not a constant, so
-# the retention story can be answered with a value rather than a rebuild (founder 2026-08-31,
-# "configurable obvs"). 90 days of 5.3 MB is 480 MB against a 20 GB always-free allowance.
-variable "shop_backup_retention_days" {
-  type    = number
-  default = 90
-}
-
 variable "oci_auth" {
   description = "Provider auth: APIKey on a laptop (bin/idp-oci-login), SecurityToken under GitHub OIDC."
   type        = string
@@ -105,12 +97,4 @@ variable "oci_profile" {
 variable "founder_email" {
   description = "Login for Langfuse's seeded user (platform/oci/langfuse.tf). Rendered into terraform.tfvars by bin/idp-oci-login from ESTATE_FOUNDER_EMAIL (repo variable in CI); never a literal here (LAW 46)."
   type        = string
-}
-
-# crew#539 CP10: preemptible capacity is billed at 50% of the on-demand price for the same shape
-# (docs.oracle.com/en-us/iaas/Content/Compute/Concepts/preemptible.htm "Preemptible instances
-# cost 50% less", read 2026-08-27). A discount, not a price: the price rows above stay the one source.
-variable "a1_preemptible_discount" {
-  type    = number
-  default = 0.5
 }

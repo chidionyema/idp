@@ -5,7 +5,7 @@ Feature: The operating-model policy is proved both ways before it gates a pull r
   Scenario: Correct work passes and every refusal fixture is refused
     Given policy/fixtures/opmodel-ok.json
     When bin/policy-test runs
-    Then every opmodel-* row that expects 0 gets 0 and at least five rows expect and get 1
+    Then the opmodel-ok row is 0 and every other opmodel-* row is 1
     And no row's exit code differs from the one it expects
 
   Scenario: The gate runs only where a pull request exists

@@ -10,7 +10,7 @@
 # with another namespace still refuses all 22 (tests/test_incident_chaos_mesh_refused_by_kyverno.py).
 # Only the policies the rendered chart fails are listed; the incident test refuses a waiver
 # for a policy the chart already passes.
-# It lives in namespace kyverno because platform/kyverno/kyverno.yaml restricts exceptions to that
+# It lives in namespace kyverno because platform/edge/kyverno.yaml restricts exceptions to that
 # namespace; an exception a workload namespace could write for itself would not be a guard.
 apiVersion: kyverno.io/v2
 kind: PolicyException

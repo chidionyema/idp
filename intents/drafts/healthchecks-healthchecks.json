@@ -1,9 +1,0 @@
-{
-  "capability": "workload",
-  "component": "healthchecks",
-  "name": "healthchecks",
-  "port": 8000,
-  "public_host": "hc",
-  "purpose": "hydrated from the live tree; was healthchecks/healthchecks",
-  "replicas": 2
-}

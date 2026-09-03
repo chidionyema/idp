@@ -5,9 +5,6 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  # The one place a name lives (crew#269, crew#796). Every other file in every estate repository
-  # says ${ESTATE_ZONE}; bin/estate-zone-gate refuses a literal, bin/pr-report refuses a PR that
-  # adds one, name-drift.yml grades every repository's main on the estate clock.
   name: estate-config
   namespace: flux-system
 data:
@@ -17,62 +14,3 @@ data:
   ESTATE_OIDC_DOMAIN_URL: https://idcs-e664824341af437895312af8a61882b1.identity.oraclecloud.com
   # The iss claim that domain writes into every id_token; not the same host as the URL above.
   ESTATE_OIDC_ISSUER_URL: https://identity.oraclecloud.com/
-  # The repository the estate's GitHub App acts on (crew#554): platform/drills/drill-dispatcher.yaml
-  # dispatches the hourly drills here. Same repo as clusters/oke/flux-system/gotk-sync.yaml; one value.
-  ESTATE_GITHUB_REPO: chidionyema/idp
-  # crew#804 Diamond Standard (founder 2026-09-01): DNA the intent compiler reads. The agents'
-  # intent vocabulary (schema/intent/) has no field for these; bin/intent-compile injects them
-  # and refuses any intent that speaks a value from this data: block. Change a value here and
-  # recompile: every compiled workload follows, the agents never notice.
-  ESTATE_REGISTRY: "ghcr.io/chidionyema"
-  ESTATE_STORAGE_PROVIDER: "oci"
-  # Founder 2026-09-02: "estate dna is missing email address, basically core company info that
-  # can change". The estate's contact address — ACME/cert contact, catalog owner mail, anywhere a
-  # surface needs "who runs this" — is referenced as ${ESTATE_EMAIL}, never a literal. Same rule
-  # as every key here: change it once, recompile/reconcile, everything follows; bin/intent-compile
-  # refuses any intent that speaks it.
-  ESTATE_EMAIL: "chidionyema@gmail.com"
-  # The GitHub account that owns the estate repositories (crew#729 step 3): the infrastructure
-  # crew reads its board and its law files under this owner (platform/infra-crew). Flux envsubst
-  # is strict and takes no shell modifiers, so the owner cannot be cut from the line above.
-  ESTATE_GITHUB_OWNER: chidionyema
-  # crew#516 CP5, founder's locked spec (crew#66 5451926212): the founder's Mac, reached by mac-run
-  # (platform/hermes-agent/mac-run.tpl) over the Tailscale sidecar's SOCKS5 proxy, and named in
-  # platform/tailscale/policy.hujson's ssh rule (bin/idp-tailscale-policy reads FOUNDER_MAC_USER
-  # from here, the same source Flux postBuild substitutes into the manifests). Both are LAW 46: the
-  # one place this estate is allowed to name the Mac's tailnet IP and login user, never a literal
-  # in a Deployment, a script or the tailnet policy. Empty until the founder fills them
-  # (platform/hermes-agent/README.md, "Founder hand"); mac-run fails closed (ssh has nothing to
-  # connect to) until then, same as the tailscale sidecar's own health check waits on the vault
-  # secret below.
-  # Filled 2026-08-28 by measurement on the founder's Mac (`whoami`, `tailscale ip -4`), not by a
-  # hand (founder: "seamless security, no founder friction"). This file is the one place they may be.
-  FOUNDER_MAC_USER: "chidionyema"
-  FOUNDER_MAC_TS_IP: "100.93.240.113"
-  # crew#66 phase 1: the Tailscale federated identity (tailscale.com/kb/1581) that lets a GitHub
-  # Actions run on this repo's main mint the operator OAuth client with no secret held anywhere.
-  # A client id is public. Empty = not registered yet; bin/idp-bootstrap-tailscale then reads the
-  # seed from the vault and the oke-check apply step reports BLIND.
-  # Registering it: console Trust credentials -> Add -> Federated identity, issuer
-  # https://token.actions.githubusercontent.com, subject repo:chidionyema@377396/idp@1344360654:* (GitHub immutable subject, repo created after 2026-07-15; source https://docs.github.com/en/actions/reference/security/oidc ; Tailscale matching https://tailscale.com/kb/1581/workload-identity-federation),
-  # scope OAuth keys (write), tag tag:k8s. Paste the client id here, nothing else exists to paste.
-  # Registered by the founder 2026-08-29 (description "estate", OIDC, scope oauth_keys, subject
-  # repo:chidionyema@377396/idp@1344360654:ref:refs/heads/main). A client id, not a secret.
-  TAILSCALE_FEDERATED_CLIENT_ID: "T8XvMsM4vA11CNTRL-kmgFbQMnqn11CNTRL"
-  # crew#562: the founder's tailnet LOGIN, which is not the same thing as FOUNDER_MAC_USER above --
-  # that one is the Unix account on the Mac. platform/tailscale/policy.hujson names this one as the
-  # only member of group:founder, the rule that lets his iPhone reach his own tagged Mac (Moonlight
-  # to Sunshine, and the Shortcut's SSH). Deliberately a named login rather than autogroup:member:
-  # membership is dynamic, so the first person added to the tailnet later would inherit streaming of
-  # his desktop with nothing red. Empty means: bin/idp-tailscale-policy asks the tailnet itself
-  # (GET /tailnet/-/users, the single "owner"); no owner answer is BLIND, never a PUT naming nobody.
-  # A value here overrides the API answer. Nobody's hand is needed.
-  FOUNDER_TAILNET_USER: ""
-  # crew#584 traces/lean (idp#702): where the node agent (platform/observability-collector,
-  # SigNoz k8s-infra) ships every log, metric and trace. Enterprise leaves it at the in-cluster
-  # store; the lean tier, which installs no store, points it at a remote OTLP receiver (a hosted
-  # SigNoz, Langfuse's OTLP endpoint, or another estate). Substituted by Flux postBuild on the
-  # observability-collector row; the http(s):// scheme and the 4318 HTTP port are load-bearing
-  # (crew#483: the otlphttp exporter takes this value verbatim and a bare host:4317 exports
-  # nothing). tests/test_incident_crew483_k8s_infra_endpoint_scheme.py judges the value here.
-  OTLP_ENDPOINT: "http://signoz-otel-collector.observability.svc:4318"

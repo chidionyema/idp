@@ -6,7 +6,7 @@
  * now and you do not redraw the existing ones.
  *
  * Render:  make -C .. diagrams        (structurizr/cli in docker, no local install)
- * Output:  ../docs/explanation/architecture/*.mmd, committed, so GitHub and TechDocs render them
+ * Output:  ../docs/architecture/*.mmd, committed, so GitHub and TechDocs render them
  *          without anyone installing anything.
  *
  * Decision: ../docs/decisions/0002-documentation-is-code-and-the-portal-renders-it.md

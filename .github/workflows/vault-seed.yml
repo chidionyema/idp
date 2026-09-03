@@ -1,12 +1,9 @@
-# button: Write or remove a vault entry
-# founder: Writes one named entry into the vault under the machine identity, or schedules one for deletion.
-# crew#284 CP1/CP2, crew#248: the estate vault is written by the machine identity, never a laptop
-# (crew#227 deleted the OCI API key; crew#247: infra is never Mac-bound). crew#66 root trust
-# (5453747447, docs/reference/policy/root-trust.md): an entry a bootstrapper births is never seeded from a
-# pasted GitHub secret; this workflow now carries only github-app (the four keys bin/idp-github-app
-# convert produces when no OCI session is live) and k8sgpt (a router key minted here, never pasted).
-# Every other entry chosen by name is refused with the command that owns it. Values travel from the
-# secret store to the runner's process to the vault and are never printed.
+# crew#284 CP1/CP2, crew#248: the estate vault is seeded from GitHub secrets by the machine identity.
+# The laptop path is closed (crew#227 deleted the OCI API key; crew#247: infra is never Mac-bound),
+# so the two vault entries the platform waits on (litellm-upstream, prospector-engine-env) are
+# written here from repository secrets named SEED_<KEY>. litellm-upstream is written by the oke-check apply
+# step (idp#241); this workflow carries the entries oke-check does not: prospector-engine-env and github-app. Values travel from the secret store to
+# the runner's process to the vault and are never printed; bin/idp-vault-put reads them in-process.
 # Runs from the phone: gh workflow run vault-seed.yml -f entry=all
 name: vault-seed
 on:
@@ -15,12 +12,8 @@ on:
       entry:
         description: "which vault entry to write"
         type: choice
-        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, tailscale-operator, laptop, hermes, science]
+        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db]
         default: all
-      delete:
-        description: "schedule deletion of one vault entry by name (for a mis-named entry); the entry field is ignored when this is set"
-        type: string
-        default: ""
 permissions:
   id-token: write   # the OIDC token this job trades for OCI access
   contents: read
@@ -30,18 +23,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/requirements/oci-cli.txt
-      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: "3.12" }
+      - uses: opentofu/setup-opentofu@592200bd4b9bbf4772ace78f887668b1aee8f716 # v1.0.5
         with: { tofu_version: "1.12.6", tofu_wrapper: false }
-      - uses: nhedger/setup-sops@18e52f363488ed469d2e1855e542a1c651743bba # v3.0.0
-        with: { version: "3.10.2" }
       - name: oci cli
-        run: pip install -q -r .github/requirements/oci-cli.txt
+        run: pip install -q oci-cli
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -63,10 +51,24 @@ jobs:
           OKE_SSH_PUBKEY_TEXT: ${{ vars.OKE_SSH_PUBKEY }}
           OKE_ALLOWED_CIDRS: ${{ vars.OKE_ALLOWED_CIDRS }}
           ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}
+          SEED_MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
+          SEED_DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
+          SEED_OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
+          SEED_ANTHROPIC_API_KEY: ${{ secrets.SEED_ANTHROPIC_API_KEY }}
+          SEED_EXA_API_KEY: ${{ secrets.SEED_EXA_API_KEY }}
+          SEED_STORE_API_URL: ${{ secrets.SEED_STORE_API_URL }}
+          SEED_STORE_INTERNAL_API_KEY: ${{ secrets.SEED_STORE_INTERNAL_API_KEY }}
+          SEED_R2_ACCESS_KEY_ID: ${{ secrets.SEED_R2_ACCESS_KEY_ID }}
+          SEED_R2_ACCOUNT_ID: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+          SEED_R2_BUCKET: ${{ secrets.SEED_R2_BUCKET }}
+          SEED_R2_SECRET_ACCESS_KEY: ${{ secrets.SEED_R2_SECRET_ACCESS_KEY }}
           SEED_GITHUB_APP_ID: ${{ secrets.SEED_GITHUB_APP_ID }}
           SEED_GITHUB_APP_SLUG: ${{ secrets.SEED_GITHUB_APP_SLUG }}
           SEED_GITHUB_APP_CLIENT_ID: ${{ secrets.SEED_GITHUB_APP_CLIENT_ID }}
           SEED_GITHUB_APP_PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
+          SEED_FLUX_WRITER_IDENTITY_B64: ${{ secrets.SEED_FLUX_WRITER_IDENTITY_B64 }}
+          SEED_FLUX_WRITER_PUB: ${{ secrets.SEED_FLUX_WRITER_PUB }}
+          SEED_TEMPORAL_DB_PASSWORD: ${{ secrets.SEED_TEMPORAL_DB_PASSWORD }}
         run: |
           set -euo pipefail
           bin/idp-oci-login --check
@@ -75,101 +77,22 @@ jobs:
           export ESTATE_ENV_FILE="$RUNNER_TEMP/seed.env"; umask 077
           env | sed -n 's/^SEED_//p' > "$ESTATE_ENV_FILE"
           put() { bin/idp-vault-put "$@"; }
-          if [ -n "${{ inputs.delete }}" ]; then bin/idp-vault-put --delete "${{ inputs.delete }}"; exit; fi
-          # crew#66 root trust (5453747447, docs/reference/policy/root-trust.md): an entry a bootstrapper births is
-          # never seeded from a pasted secret. Chosen by name it is refused with the command that owns it;
-          # under `all` those entries are skipped, so `all` still writes what this workflow owns.
-          #   tailscale-operator: born by bin/idp-bootstrap-tailscale, never seeded by hand (crew#576)
-          #   flux-writer: retired; Flux authenticates as the App (bin/idp-github-app), no deploy key (crew#575)
-          retired() {
-            case "$1" in
-              prospector-engine-env|temporal-db|hindsight|mcp-gateway|backstage-env|oauth2-proxy-cookie-secret|prospector-store-api-env)
-                echo "bin/idp-estate-seed (estate keys), bin/idp-bootstrap-vendors (vendor keys), bin/idp-bootstrap-cloudflare (R2), bin/idp-github-app refresh (GitHub tokens)";;
-              flux-writer) echo "bin/idp-github-app (Flux authenticates as the App; the deploy key is retired)";;
-              tailscale-operator) echo "bin/idp-bootstrap-tailscale";;
-              *) return 1;;
-            esac
-          }
-          if owner=$(retired "$ENTRY"); then echo "FAIL    $ENTRY is born by $owner, never seeded by hand (crew#66 root trust)"; exit 1; fi
+          if [ "$ENTRY" = all ] || [ "$ENTRY" = prospector-engine-env ]; then
+            put prospector-engine-env MINIMAX_API_KEY=MINIMAX_API_KEY DEEPSEEK_API_KEY=DEEPSEEK_API_KEY EXA_API_KEY=EXA_API_KEY \
+              OPENROUTER_API_KEY=OPENROUTER_API_KEY ANTHROPIC_API_KEY=ANTHROPIC_API_KEY \
+              STORE_API_URL=STORE_API_URL STORE_INTERNAL_API_KEY=STORE_INTERNAL_API_KEY \
+              R2_ACCESS_KEY_ID=R2_ACCESS_KEY_ID R2_ACCOUNT_ID=R2_ACCOUNT_ID R2_BUCKET=R2_BUCKET R2_SECRET_ACCESS_KEY=R2_SECRET_ACCESS_KEY
+          fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = github-app ]; then
             # the four keys bin/idp-github-app convert writes; installation_id is added by the oke-check installation step
             put github-app app_id=GITHUB_APP_ID slug=GITHUB_APP_SLUG client_id=GITHUB_APP_CLIENT_ID pem_b64=GITHUB_APP_PEM_B64
           fi
-          if [ "$ENTRY" = all ] || [ "$ENTRY" = k8sgpt ]; then
-            # K8sGPT's LiteLLM virtual key, a router key never a vendor key (platform/healing/external-secret.yaml, crew#539 CP7).
-            # Minted here from the vault's master key, never seeded by a person (LAW 27, R5).
-            bin/idp-router-key k8sgpt minimax
+          if [ "$ENTRY" = all ] || [ "$ENTRY" = flux-writer ]; then
+            # the read-write deploy key Flux's idp-writer GitRepository uses (platform/image-automation/flux-writer.yaml, crew#325)
+            put flux-writer identity_b64=FLUX_WRITER_IDENTITY_B64 pub=FLUX_WRITER_PUB
           fi
-          if [ "$ENTRY" = all ] || [ "$ENTRY" = laptop ]; then
-            # The founder's Mac (pi, every CLI, the consult path) calls the router with ONE virtual key
-            # and holds no vendor key (crew#568, LAW 34). Minted here; delivered through the estate's
-            # sops vault: sops encrypts to the age recipient estate-secrets/.sops.yaml names (the public
-            # half), so this runner decrypts nothing, and the Mac reads it with scripts/secret-load.
-            bin/idp-router-key laptop minimax,minimax_m27,deepseek,openrouter,minimax-or,deepseek-or,gemini-or,groq,groq-fast,gemini,claude,claude-fast,vision,embed,image,image-or
-            tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
-            git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
-            bin/idp-cloud secret get laptop | jq -r .key | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LITELLM_LAPTOP_KEY LITELLM_API_KEY
-            # `commit -am` never stages a NEW file: the first delivery of LITELLM_LAPTOP_KEY.yaml printed
-            # "unchanged" and pushed nothing (run 33257838162). Add the file by name, then commit.
-            git -C "$RUNNER_TEMP/estate-secrets" add secrets/dev/LITELLM_LAPTOP_KEY.yaml
-            # Run 33258762617: the commit was made, estate-secrets' pre-push hook asked gh whether the repo is
-            # still private, gh had no token, the hook refused, and `|| echo unchanged` turned that into a green
-            # run. The hook gets the token so it can answer; a refused push is an error, never "unchanged".
-            if git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
-                 commit -q -m "laptop router key (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null; then
-              GH_TOKEN="$tok" git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || { echo "error   laptop key written but the push to estate-secrets was refused"; exit 1; }
-              echo "ok      laptop key delivered to estate-secrets as LITELLM_LAPTOP_KEY"
-            else
-              echo "info    laptop key unchanged in estate-secrets"
-            fi
-            rm -rf "$RUNNER_TEMP/estate-secrets"
-          fi
-          if [ "$ENTRY" = all ] || [ "$ENTRY" = hermes ]; then
-            # Hermes (the founder's Telegram agent, hermes-v2/config.yaml) calls the router on its own
-            # virtual key, lane claude first, never a vendor key (crew#568 Phase 5, LAW 34). Same road as
-            # the laptop: minted here, delivered through the sops vault, read by scripts/secret-load.
-            bin/idp-router-key hermes claude,claude-fast,minimax,deepseek
-            tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
-            git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
-            bin/idp-cloud secret get hermes | jq -r .key | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LITELLM_HERMES_KEY LITELLM_API_KEY
-            # `commit -am` never stages a NEW file: the first delivery of LITELLM_HERMES_KEY.yaml printed
-            # "unchanged" and pushed nothing (run 33257838162). Add the file by name, then commit.
-            git -C "$RUNNER_TEMP/estate-secrets" add secrets/dev/LITELLM_HERMES_KEY.yaml
-            # Run 33258762617: the commit was made, estate-secrets' pre-push hook asked gh whether the repo is
-            # still private, gh had no token, the hook refused, and `|| echo unchanged` turned that into a green
-            # run. The hook gets the token so it can answer; a refused push is an error, never "unchanged".
-            if git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
-                 commit -q -m "hermes router key (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null; then
-              GH_TOKEN="$tok" git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || { echo "error   hermes key written but the push to estate-secrets was refused"; exit 1; }
-              echo "ok      hermes key delivered to estate-secrets as LITELLM_HERMES_KEY"
-            else
-              echo "info    hermes key unchanged in estate-secrets"
-            fi
-            rm -rf "$RUNNER_TEMP/estate-secrets"
-          fi
-          if [ "$ENTRY" = all ] || [ "$ENTRY" = science ]; then
-            # The research worker (crew science/research_worker.py, crew#659 CP3) calls the router on its
-            # own virtual key. The lanes ARE the edge the founder asked for on 2026-08-30 ("run them against
-            # a frontier API rather than a local model"): claude and gemini for the worker and the grader,
-            # embed for ranking what it scraped; a local or small lane is not on the key, so no env var can
-            # reach one. Same road as the laptop: minted here, delivered through the sops vault.
-            bin/idp-router-key science claude,claude-fast,gemini,gemini-or,minimax,minimax_m27,groq,embed
-            tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
-            git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
-            bin/idp-cloud secret get science | jq -r .key | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LITELLM_SCIENCE_KEY LITELLM_API_KEY
-            # `commit -am` never stages a NEW file: the first delivery of LITELLM_SCIENCE_KEY.yaml printed
-            # "unchanged" and pushed nothing (run 33257838162). Add the file by name, then commit.
-            git -C "$RUNNER_TEMP/estate-secrets" add secrets/dev/LITELLM_SCIENCE_KEY.yaml
-            # Run 33258762617: the commit was made, estate-secrets' pre-push hook asked gh whether the repo is
-            # still private, gh had no token, the hook refused, and `|| echo unchanged` turned that into a green
-            # run. The hook gets the token so it can answer; a refused push is an error, never "unchanged".
-            if git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
-                 commit -q -m "science router key (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null; then
-              GH_TOKEN="$tok" git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || { echo "error   science key written but the push to estate-secrets was refused"; exit 1; }
-              echo "ok      science key delivered to estate-secrets as LITELLM_SCIENCE_KEY"
-            else
-              echo "info    science key unchanged in estate-secrets"
-            fi
-            rm -rf "$RUNNER_TEMP/estate-secrets"
+          if [ "$ENTRY" = all ] || [ "$ENTRY" = temporal-db ]; then
+            # Temporal's Postgres password (platform/temporal/external-secret.yaml, crew#396)
+            put temporal-db password=TEMPORAL_DB_PASSWORD
           fi
           rm -f "$ESTATE_ENV_FILE"
