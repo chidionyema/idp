@@ -67,3 +67,21 @@ only. Two defects, one fix each, no design of our own:
 
 Test: `tests/test_crew612_portal_doors_are_real_and_distinct.py` (phone menu, front page,
 toolkit equals menu). Founder receipt: none yet; he sees it on his phone after his deploy.
+
+## 2026-09-03: The stock home looked and behaved old
+
+Founder: the portal needs better UX and a modern look; it looks outdated and the
+interactions feel outdated. The cause was the plugin's drag-and-resize widget board
+(`CustomHomepageGrid`) and a sidebar where every door was a `SidebarGroup` of one, so
+hover opened a second click. Widgets stay; the board does not.
+
+8. **Fixed home layout.** `HomePageLayoutBlueprint` still renders Backstage's search,
+   toolkit, starred and visited widgets. `homeLayout.tsx` pins them. Create and Find
+   sit in the header. The joke/clock add-widget dialog stays off.
+9. **One-click nav.** Desktop doors are `SidebarItem`. Find is Backstage's
+   `SidebarSearchModal` plus Cmd/Ctrl+K. The phone menu closes with a Close control
+   and has Find in the top bar.
+10. **Chrome.** Cards lift on hover, buttons are 40px, content is 1280px, headers are
+    tighter. Still Material through Backstage's theme, not a second design system.
+
+Test: the portal-doors test (`tests/test_crew612_portal_doors_are_real_and_distinct.py`) plus `homeLayout.test.ts`.

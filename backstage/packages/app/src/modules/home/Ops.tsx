@@ -3,7 +3,8 @@
 // plugin. CP2 adds the open-reds table: every firing alert, red drill and door down, with its
 // owner, since when, the next action and the board link; a red with no owner is itself a red.
 import { Content, Link, Page } from '@backstage/core-components';
-import { Typography, makeStyles } from '@material-ui/core';
+import { Header, Text } from '@backstage/ui';
+import { makeStyles } from '@material-ui/core';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import { Pill } from './EstateHome';
 import { ClusterHealth, healthSentence } from './clusterHealth';
@@ -27,7 +28,6 @@ import { ago } from './estate';
 import { monoFamily } from '../theme/tokens';
 
 const useStyles = makeStyles(theme => ({
-  header: { marginBottom: theme.spacing(3) },
   lead: { fontSize: 17, margin: theme.spacing(1, 0, 0) },
   grid: {
     display: 'grid',
@@ -38,11 +38,12 @@ const useStyles = makeStyles(theme => ({
     display: 'flex',
     flexDirection: 'column',
     gap: theme.spacing(1),
-    padding: theme.spacing(2),
-    borderRadius: 12,
-    border: `1px solid ${theme.palette.divider}`,
-    background: theme.palette.background.paper,
+    padding: theme.spacing(2.5),
+    borderRadius: 'var(--bui-radius-4, 1rem)',
+    border: '1px solid var(--bui-border-2)',
+    background: 'var(--bui-bg-neutral-1)',
     minWidth: 0,
+    minHeight: 8.5 * 16,
   },
   tileTop: {
     display: 'flex',
@@ -342,31 +343,31 @@ export const Ops = () => {
   const now = Date.now();
   return (
     <Page themeId="home">
+      <Header title={TITLE} description={LEAD} />
       <Content>
-        <header className={classes.header}>
-          <Typography variant="h1" component="h1">
-            {TITLE}
-          </Typography>
-          <p className={classes.lead} data-testid="ops-lead">
-            {LEAD}
+        <Text
+          variant="body-large"
+          color="secondary"
+          data-testid="ops-lead"
+        >
+          {LEAD}
+        </Text>
+        {loaded.state === 'loading' && (
+          <p className={classes.lead} data-testid="ops-loading">
+            Reading the cluster.
           </p>
-          {loaded.state === 'loading' && (
-            <p className={classes.lead} data-testid="ops-loading">
-              Reading the cluster.
-            </p>
-          )}
-          {loaded.state === 'error' && (
-            <p className={classes.lead} data-testid="ops-error">
-              The cluster could not be read, so nothing below is known.{' '}
-              <span className={classes.mono}>{loaded.error}</span>
-            </p>
-          )}
-          {loaded.state === 'ready' && (
-            <p className={classes.lead} data-testid="ops-sentence">
-              {healthSentence(loaded.health)}
-            </p>
-          )}
-        </header>
+        )}
+        {loaded.state === 'error' && (
+          <p className={classes.lead} data-testid="ops-error">
+            The cluster could not be read, so nothing below is known.{' '}
+            <span className={classes.mono}>{loaded.error}</span>
+          </p>
+        )}
+        {loaded.state === 'ready' && (
+          <p className={classes.lead} data-testid="ops-sentence">
+            {healthSentence(loaded.health)}
+          </p>
+        )}
         <div className={classes.grid}>
           {loaded.state === 'ready' && <ClusterTile health={loaded.health} />}
           {founder.state === 'ready' && (

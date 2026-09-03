@@ -105,10 +105,8 @@ HOME_MODULE = ROOT / "backstage/packages/app/src/modules/home/homeModule.tsx"
 
 
 def test_the_front_page_is_backstage_own_home_page_and_its_toolkit_is_the_menu():
-    """Founder, 2026-09-01: "use Backstage templates", "our UI and design skills are shit", "so
-    don't bother". "/" is @backstage/plugin-home's own page: the app loads the plugin, this
-    repository defines no page at "/", the grid is seeded from app-config.yaml with the search
-    bar and the toolkit, and the toolkit is the ten menu doors in the same order."""
+    """ "/" is @backstage/plugin-home's own page. Widgets come from the plugin; the drag board
+    does not (founder 2026-09-03). The toolkit is the ten menu doors in the same order."""
     import yaml
 
     app = APP.read_text()
@@ -116,15 +114,30 @@ def test_the_front_page_is_backstage_own_home_page_and_its_toolkit_is_the_menu()
         r"^\s+homePlugin,$", app, re.M
     ), "App.tsx does not load Backstage's home plugin; page:home would be undefined"
     module = HOME_MODULE.read_text()
+    layout = (
+        ROOT / "backstage/packages/app/src/modules/home/homeLayout.tsx"
+    ).read_text()
+    code = lambda src: re.sub(r"//.*", "", src)
     assert not re.search(r"path:\s*'/'", module), (
         "modules/home still defines a page at '/', which overrides page:home"
     )
-    assert (
-        "HomePageLayoutBlueprint.make(" in module
-        and "CustomHomepageGrid" in module
-        and "<Header " in module
-    ), (
-        "the home layout is not the documented Page/Header/Content/CustomHomepageGrid template"
+    assert "HomePageLayoutBlueprint.make(" in module, (
+        "the home plugin has no custom layout wired"
+    )
+    assert "CustomHomepageGrid" not in code(
+        module
+    ) and "CustomHomepageGrid" not in code(layout), (
+        "the drag-and-resize board is back on the front page"
+    )
+    assert "<Header" in layout and (
+        'to="/create"' in layout or 'href="/create"' in layout
+    ), "Today has no header and no Create action"
+    nav = NAV.read_text()
+    assert "SidebarGroup" not in code(nav), (
+        "a SidebarGroup of one door makes hover a second click"
+    )
+    assert "SidebarSearchModal" in nav and "keydown" in nav, (
+        "Find is not Backstage's search modal, or Cmd+K is missing"
     )
     ext = {}
     for row in yaml.safe_load(APP_CONFIG.read_text())["app"]["extensions"]:
@@ -144,12 +157,19 @@ def test_the_front_page_is_backstage_own_home_page_and_its_toolkit_is_the_menu()
     ], (
         "the toolkit on the front page and the menu list different doors or a different order"
     )
-    assert (
+    visit_cards = {"HomePageRecentlyVisited", "HomePageMostVisited"} & set(components)
+    tracking = (
         ext.get("api:home/visits") is True
         and ext.get("app-root-element:home/visit-listener") is True
-    ), (
-        "Recently visited and Most visited are on the grid with visit tracking switched off"
     )
+    if visit_cards:
+        assert tracking, (
+            "Recently visited and Most visited are on the grid with visit tracking switched off"
+        )
+    else:
+        assert not tracking, (
+            "visit tracking stores every visit in the browser and no card on the page reads it"
+        )
 
 
 def test_the_portal_is_not_branded_as_the_store():

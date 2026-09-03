@@ -1,7 +1,7 @@
 """A visitor must operate the portal without a Backstage glossary.
 
 The menu, the home toolkit and the English overlay never lead with Scaffolder,
-TechDocs or Software Catalog. Buyer doors come first; operator doors sit under More.
+TechDocs or Software Catalog. Buyer doors come first; operator doors sit below the divider, one click each.
 """
 
 import re
@@ -36,10 +36,13 @@ def test_a_visitor_sees_catalogue_health_docs_and_you_first():
     assert "Create" in titles and "Find" in titles
 
 
-def test_operator_doors_live_under_the_submenu():
+def test_operator_doors_sit_below_the_divider_one_click_each():
+    # Founder, 2026-09-03: a hover group that expands into a second click is an
+    # "outdated interaction". Operator doors sit under a divider, never a submenu.
     src = NAV.read_text()
-    assert "SidebarSubmenu" in src and 'text="More"' in src
-    assert "NAV.slice(BUYER_COUNT)" in src
+    assert "SidebarSubmenu" not in src
+    assert "SidebarDivider" in src
+    assert "NAV.slice(0, BUYER_COUNT)" in src and "NAV.slice(BUYER_COUNT)" in src
 
 
 def test_the_toolkit_matches_the_menu():

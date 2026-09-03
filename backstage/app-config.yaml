@@ -11,12 +11,10 @@ app:
     # bookmark) a client-side ERROR 404 while the login drill, visiting "/", stayed green.
     # crew#307. The Home page takes "/".
     #
-    # The front page is Backstage's own home page (founder, 2026-09-01: "use Backstage
-    # templates"). The grid below is the plugin's `defaultConfig` (plugin-home 0.9.9): a search
-    # bar, then the ten doors as the toolkit, starred entities, and the pages the person visited.
-    # A person can move, resize and add widgets on the page itself. Between 2026-08-29 (crew#459)
-    # and today packages/app/src/modules/home overrode this page with a hand-drawn god view;
-    # that page is kept at /estate.
+    # The front page is Backstage's home plugin. Widgets stay; the drag-and-resize
+    # board does not (founder 2026-09-03: outdated look and outdated interactions).
+    # packages/app/src/modules/home/homeLayout.tsx pins them. The crew#459 god view
+    # stays at /estate.
     - page:home:
         config:
           path: /
@@ -27,16 +25,21 @@ app:
               width: 12
               height: 2
               deletable: false
+              movable: false
+              resizable: false
             - component: HomePageToolkit
               column: 0
               row: 2
-              width: 12
-              height: 8
-    # Visit tracking feeds the "Recently visited" and "Most visited" widgets; it is off in the
-    # plugin until switched on here, and it stores visits in the browser.
-    - api:home/visits: true
-    - app-root-element:home/visit-listener: true
-    # A joke widget and world clocks in the "Add widget" dialog of a platform that is for sale.
+              width: 6
+              height: 6
+              deletable: false
+              movable: false
+              resizable: false
+    # Visit tracking fed the "Recently visited" and "Most visited" cards. Those cards, and
+    # "Starred", are empty for a visitor and are not placed on the page, so tracking stays off.
+    - api:home/visits: false
+    - app-root-element:home/visit-listener: false
+    # A joke widget and world clocks. Off. The page is not a rearrangeable dashboard.
     - home-page-widget:home/random-joke: false
     - home-page-widget:home/world-clock: false
     # The toolkit is the same ten doors as the menu, in the same order
