@@ -13,6 +13,7 @@ nav:
   - Notification channels: reference/policy/notification-channels.md
   - Incident register: reference/incident-register.md
   - Documentation policy: reference/policy/documentation.md
+  - Test strategy, no prose pinning: reference/policy/test-strategy.md
   - Tailscale egress proxy exception: reference/policy/tailscale-egress-exception.md
   - Tailscale pod-security level: reference/policy/tailscale-pod-security.md
   - Tailscale images come from GitHub registry: reference/policy/tailscale-ghcr-images.md
