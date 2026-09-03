@@ -416,7 +416,6 @@ with sync_playwright() as p:
     # Every published path is visited and graded on its own content, not on the shell.
     # Every path the sidebar publishes, graded on a string only that page renders. A path that
     # is not in this table is not published; adding a plugin means adding its row here.
-    UNREAD = "could not be read"  # crew#684 CP6: the Ops page's error tiles all say this
     # Founder 2026-09-03: never grade a page by its wording -- copy moves all the time and a
     # checker pinning it broke a working page (#1191). A path is graded on answering only.
     PUBLISHED = (
@@ -463,14 +462,6 @@ with sync_playwright() as p:
             broken.append(f"{path}: answered but threw; "
                           f"page says: {seen}; js errors: {errs}")
             continue
-        # crew#684 CP6: a page whose tile says its source could not be read is not doing its
-        # job. An error sentence is not page copy -- it fires only when something is already
-        # broken, so grading it does not pin wording a redesign may move.
-        shown = " ".join(body.split())
-        if UNREAD in shown.lower():
-            at = shown.lower().find(UNREAD)
-            broken.append(f"{path}: a tile could not read its source: "
-                          f"...{shown[max(0, at - 80):at + 120]}...")
     print(f"paths   login-drill  {len(PUBLISHED) - len(broken)}/{len(PUBLISHED)} published paths answer")
     if broken:
         # One line per path: fail() caps its detail at 200 chars, which hid the third
