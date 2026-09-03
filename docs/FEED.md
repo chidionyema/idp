@@ -4706,3 +4706,13 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: statusCheckRollup keeps CANCELLED rows from superseded runs — grade check-runs on the head SHA; crew main security-scan red since 05:05Z on the same nltk finding, the dismissal file fixes main's scan too once 821 merges
 📍 State: https://github.com/chidionyema/idp/pull/1244
 
+
+## 2026-09-03T10:58:39Z · session 54539261 · lane .wt-docs-keyintake
+🟢 Done: R75+crash-pathology became laws: LAW 54 (founder is enterprise client zero, estate-wide) + LAW 55 (pipefail, summary-only bulk runs, atomic commands) on claude-guards PR 241 (branch laws/54-client-zero-55-shell-discipline, commit 16ab28a); founder record cited: docs/founder/2026-09-03T1054Z-the-pathology-of-the-crash-c2f2179f.md
+🟡 Active: R76 purge branch idp .wt-purge test/r76-purge-prose-pinning (48 files deleted, 214 trimmed, No-Prose gate + AGENTS.md row) — proof suite rerunning per LAW 55 (--tb=no -q, task b2sf5y007); idp PR 1242 head f043b5cc: no reds, 3 checks still running
+🔴 Blocked: none
+⚪ Pending: b2sf5y007 green → commit+push purge branch + PR (founder mandate); PR 1242 green → APPROVE ask (platform/**); claude-guards 241 rides merge-when-green
+🔧 TOUCHES: ~/.claude/scripts laws/AGENTS.md + laws/AGENTS-FULL.md (branch only, local main reset to origin); idp .wt-purge uncommitted
+🔀 OVERLAP: LAW 54/55 bind every session once 241 lands; nobody else owns .wt-purge
+📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
+
