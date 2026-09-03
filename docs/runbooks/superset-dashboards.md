@@ -20,16 +20,25 @@ creates the account from that header; it holds no password for anyone.
 ## If sign-in misbehaves
 
 Superset never shows its own login. If it does, the gateway header is not arriving: check the
-`login-forward-auth` filter (`platform/observability/httproute.yaml`) and the login proxy in
-the identity area of the cluster. Identity questions are gateway questions
-(`docs/policy/auth-is-infrastructure.md`).
+`login-forward-auth` filter (`platform/observability/superset-httproute.yaml`) and the login proxy in
+the identity area of the cluster. The hourly login drill (`bin/idp-login-drill`, door `superset`)
+grades this road from a runner that holds no password, so a red here is an alert, not a
+discovery. Identity questions are gateway questions (`docs/policy/auth-is-infrastructure.md`).
 
 ## One-time cleanup after the swap lands
 
 The evicted Metabase leaves one thing behind (prune is off in this directory): the
 PersistentVolumeClaim `pgdata-metabase-db-0` in observability, holding the dead Metabase
-database. The founder deletes it when he applies the change: `kubectl -n observability delete
-pvc pgdata-metabase-db-0`. Nothing references it after the swap.
+database. The recovery dump (`metabase-recovery-dump`, docs/explanation/metabase-recovery.md)
+read it on 2026-09-03: 39 saved questions and 1 dashboard, every one of them Metabase's own
+"Sample Database" demo content ("Aerodynamic Copper Knife trend", "Checkout funnel", ...) and
+nothing of the founder's. Nothing references the volume after the swap.
+
+The founder never types a cluster command (LAW 31): the volume is retired by the one-shot job
+`metabase-volume-retire` (platform/observability/metabase-volume-retire.yaml), declared in git
+with a role that may delete that one claim and nothing else. Deleting a volume cannot be
+undone, so the job is wired into the observability kustomization by a change only the
+founder merges; Flux runs it once and the job's log is the receipt.
 
 ## Human step
 
@@ -42,6 +51,9 @@ The "Boardroom" dashboard (model spend per day, spend by model and by prompt, ca
 volume, latency, trace volume) is not hand-built: the one-shot job
 `superset-boardroom-seed` (platform/observability/superset-boardroom-seed.yaml)
 renders a Superset import bundle against the live ClickHouse trace store and loads
-it with Superset's own importer class, `ImportDashboardsCommand` (6.1 ships no `import-assets` command). Every object carries a fixed uuid, so re-running
-the job overwrites the same rows — it never doubles charts. Jobs are immutable: to
-change the seed, edit the manifest and bump the job name; Flux runs the new one.
+it with Superset's own importer class, `ImportDashboardsCommand` (6.1 ships no `import-assets` command);
+the bundle's `metadata.yaml` says `type: Dashboard`, the one type that importer accepts. Every object carries a fixed uuid, so re-running
+the job overwrites the same rows — it never doubles charts. Jobs are immutable, so the Job carries
+the Flux force annotation (`kustomize.toolkit.fluxcd.io/force: Enabled`): edit the manifest and
+Flux recreates the Job in place; no name bump. Its log ends `BUNDLE-IMPORTED` then
+`BOARDROOM-SEEDED Boardroom charts: 6`; anything else is a failed seed.

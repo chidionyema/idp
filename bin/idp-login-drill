@@ -514,6 +514,9 @@ with sync_playwright() as p:
         "healthchecks": f"https://hc.{ZONE}/",
         "llm": f"https://llm.{ZONE}/ui/",
         "screen": f"https://catalogue.{ZONE}/screen/",
+        # decision 0018: Superset takes the gateway's word (remote-user header) and must land
+        # on its own host with no login of its own; the door was missing here until 2026-09-03.
+        "superset": f"https://superset.{ZONE}/",
     }
     # crew#718 (founder 2026-08-30): counting password fields is not enough to know a person got
     # in. SigNoz renders its sign-in as a React form whose password input only appears after an

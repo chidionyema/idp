@@ -17,7 +17,7 @@ The dashboard connects to the live Langfuse database and reads trace data withou
 ## Watch it
 
 The machines record the dashboard layer from the real manifests on every relevant
-push (`demos/superset.tape`): the five declared files, the public door on the shared
+push (`demos/superset.tape`): every declared file of the layer, the public door on the shared
 edge, and the availability declaration. The recording appears after the first green
 render and refreshes itself:
 

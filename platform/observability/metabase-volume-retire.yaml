@@ -1,0 +1,92 @@
+# Retire the evicted dashboard server's volume (decision 0018, one-time cleanup). Metabase came
+# out by the roots on 2026-09-02, but prune is off in this directory, so its 50Gi claim
+# pgdata-metabase-db-0 stayed Bound with nothing mounting it. The recovery dump
+# (metabase-recovery-dump.yaml) read it on 2026-09-03: 39 saved questions and 1 dashboard, all
+# of them Metabase's own "Sample Database" demo content, nothing of the founder's.
+#
+# The founder never types a cluster command (LAW 31): this one-shot job deletes that one claim
+# with a role that can delete nothing else. Deleting a volume cannot be undone (LAW 11), so the
+# job is wired into kustomization.yaml only by a change the founder merges; until then this
+# file is declared and inert. The job's log is the receipt: "persistentvolumeclaim ... deleted".
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: metabase-volume-retire
+  namespace: observability
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: metabase-volume-retire
+  namespace: observability
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    resourceNames: ["pgdata-metabase-db-0"]
+    verbs: ["get", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: metabase-volume-retire
+  namespace: observability
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: metabase-volume-retire
+subjects:
+  - kind: ServiceAccount
+    name: metabase-volume-retire
+    namespace: observability
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: metabase-volume-retire
+  namespace: observability
+  labels: { app.kubernetes.io/name: metabase-volume-retire, app.kubernetes.io/part-of: idp }
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: Enabled
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 604800   # keep the pod and its receipt a week
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: metabase-volume-retire, app.kubernetes.io/part-of: idp }
+    spec:
+      restartPolicy: Never
+      priorityClassName: platform-batch   # batch bucket: seated by preempting the balloon, never standing capacity
+      serviceAccountName: metabase-volume-retire
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: retire
+          # kubectl matching the cluster's server minor (v1.35, read 2026-09-03), registry named in full.
+          image: docker.io/alpine/k8s:1.35.2
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              echo "METABASE-RETIRE: the claim before"
+              kubectl -n observability get pvc pgdata-metabase-db-0
+              kubectl -n observability delete pvc pgdata-metabase-db-0 --wait=true --timeout=300s
+              echo "METABASE-RETIRE: done, the evicted dashboard server holds no volume"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { memory: 128Mi }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}

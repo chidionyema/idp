@@ -8,7 +8,7 @@ Set Width 1200
 Set Height 720
 Set Padding 20
 Set Theme "Catppuccin Mocha"
-Type "# The dashboard layer is five declared files, no console steps"
+Type "# The dashboard layer is declared files in git, no console steps"
 Enter
 Type "ls platform/observability/ | grep superset"
 Enter
