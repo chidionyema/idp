@@ -19,6 +19,12 @@ from):
 - `telegram-secret.yaml` — the vault-fed secret naming the vault key the bot token lives in. The
   Kubernetes Secret it produces is mounted as a file, never as a pod environment variable, because
   the cluster's own admission policy refuses the latter.
+- `router-key.yaml` — the vault-fed secret carrying Otto's own model-router virtual key
+  (`LITELLM_API_KEY`), minted by `bin/idp-estate-seed` (vault entry `otto-golden`, lanes
+  `kimi,minimax,deepseek` — Kimi is the primary, founder 2026-09-03) and mounted the same way as
+  the bot token. Without it the pod can acknowledge a message but never answer one: the router
+  client refuses every model call when no key is present. No person ever holds the value; rotation
+  is `ROUTER_ROTATE=1` on the seed run.
 - `config.yaml` — a `ConfigMap` for the one file the new process reads its own configuration from.
 - `deployment.yaml` — the pod itself: one replica, the same container image the production
   Architect gateway runs, only the command different.

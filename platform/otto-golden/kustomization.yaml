@@ -11,6 +11,7 @@ resources:
   - quota.yaml
   - network-policy.yaml
   - telegram-secret.yaml
+  - router-key.yaml
   - config.yaml
   - deployment.yaml
   - httproute.yaml
