@@ -98,7 +98,7 @@ const componentsFor = (t: Tone) => ({
         backgroundImage: 'none',
         backgroundColor: t.canvas,
         boxShadow: 'none',
-        padding: '20px 24px 16px',
+        padding: '16px 24px 12px',
         minHeight: 0,
         borderBottom: `1px solid ${t.borderSubtle}`,
         [phone]: { flexWrap: 'wrap', padding: '12px 16px', rowGap: 8 },
@@ -134,7 +134,7 @@ const componentsFor = (t: Tone) => ({
   BackstageContent: {
     styleOverrides: {
       root: {
-        maxWidth: 1120,
+        maxWidth: 1280,
         width: '100%',
         marginLeft: 'auto',
         marginRight: 'auto',
@@ -181,10 +181,16 @@ const componentsFor = (t: Tone) => ({
   MuiCard: {
     styleOverrides: {
       root: {
-        borderRadius: 12,
+        borderRadius: 14,
         boxShadow: 'none',
         border: `1px solid ${t.border}`,
         backgroundColor: t.surface1,
+        transition: `border-color 160ms ${ease}, transform 160ms ${ease}, box-shadow 160ms ${ease}`,
+        '&:hover': {
+          borderColor: t.borderStrong,
+          transform: 'translateY(-1px)',
+          boxShadow: `0 8px 24px ${t.canvas === '#ffffff' ? 'rgba(15,23,42,.06)' : 'rgba(0,0,0,.35)'}`,
+        },
       },
     },
   },
@@ -192,10 +198,12 @@ const componentsFor = (t: Tone) => ({
     styleOverrides: {
       root: {
         textTransform: 'none',
-        borderRadius: 8,
+        borderRadius: 10,
         fontWeight: 600,
         letterSpacing: 0,
-        transition: `background-color 120ms ${ease}, color 120ms ${ease}`,
+        minHeight: 40,
+        padding: '8px 16px',
+        transition: `background-color 120ms ${ease}, color 120ms ${ease}, border-color 120ms ${ease}`,
       },
       contained: { boxShadow: 'none', '&:hover': { boxShadow: 'none' } },
       outlined: { borderColor: t.border },
@@ -214,7 +222,7 @@ const componentsFor = (t: Tone) => ({
   },
   MuiOutlinedInput: {
     styleOverrides: {
-      root: { borderRadius: 8, backgroundColor: t.surface1 },
+      root: { borderRadius: 10, backgroundColor: t.surface1, minHeight: 40 },
       notchedOutline: { borderColor: t.border },
     },
   },

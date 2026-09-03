@@ -1,7 +1,11 @@
-// Buyer first, operator in a submenu (founder 2026-09-02: catalogue, health, docs, login
-// first; the content pane scrolls, the nav stays). Backstage's own Sidebar and
-// SidebarSubmenu are the chrome (LAW 43). Every page it hides is still published at its
-// path and still graded by bin/idp-login-drill.
+// Ten doors and nothing else (crew#459 redesign, 2026-08-29). The vendor sidebar carried a
+// search modal, a notifications bell, a visualizer and every plugin's page; the founder
+// reads it on a phone. On a desktop Backstage's own Sidebar stays underneath: it handles
+// focus, keyboard and the collapsed rail, so the desktop nav is a list, not a component
+// (LAW 43). Each door is a SidebarItem, not a SidebarGroup of one — a group made hover
+// expand into a second click (founder 2026-09-03). Find is Backstage's own search modal
+// (Cmd/Ctrl+K). Every page it hides is still published at its path and still graded by
+// bin/idp-login-drill.
 //
 // On a phone (founder, 2026-09-01: "I am the one using it and I don't like it") the menu
 // slides in from the left behind a menu button in the top-left corner. Backstage's Sidebar
@@ -14,18 +18,20 @@
 // removed. Screens section is visible on Today (/). Kubernetes is in the catalog.
 // crew#612 item 1: /create added; scaffolderPlugin registered in App.tsx.
 // crew#612 item 3: DnsIcon for Kubernetes so Ops keeps the single gear icon.
-import { Fragment, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Link,
   Sidebar,
   SidebarDivider,
-  SidebarGroup,
   SidebarItem,
   SidebarSpace,
-  SidebarSubmenu,
-  SidebarSubmenuItem,
 } from '@backstage/core-components';
 import { NavContentBlueprint } from '@backstage/plugin-app-react';
+import {
+  SearchModalProvider,
+  SidebarSearchModal,
+  useSearchModal,
+} from '@backstage/plugin-search';
 import Drawer from '@material-ui/core/Drawer';
 import IconButton from '@material-ui/core/IconButton';
 import List from '@material-ui/core/List';
@@ -36,6 +42,7 @@ import Typography from '@material-ui/core/Typography';
 import { makeStyles, useTheme } from '@material-ui/core/styles';
 import useMediaQuery from '@material-ui/core/useMediaQuery';
 import MenuIcon from '@material-ui/icons/Menu';
+import CloseIcon from '@material-ui/icons/Close';
 import TodayIcon from '@material-ui/icons/Today';
 import LayersIcon from '@material-ui/icons/Layers';
 import DnsIcon from '@material-ui/icons/Dns';
@@ -46,26 +53,25 @@ import SearchIcon from '@material-ui/icons/Search';
 import MenuBookIcon from '@material-ui/icons/MenuBook';
 import AccountCircleIcon from '@material-ui/icons/AccountCircle';
 import BuildIcon from '@material-ui/icons/Build';
-import MoreHorizIcon from '@material-ui/icons/MoreHoriz';
 import { SidebarLogo } from './SidebarLogo';
 import { LogoIcon } from './LogoIcon';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 
 export const NAV = [
-  { title: 'Home', to: '/', icon: TodayIcon },
-  { title: 'Catalogue', to: '/catalog', icon: LayersIcon },
-  { title: 'Health', to: '/ops', icon: TimelineIcon },
-  { title: 'Docs', to: '/docs', icon: MenuBookIcon },
-  { title: 'You', to: '/settings', icon: AccountCircleIcon },
-  { title: 'Create', to: '/create', icon: AddCircleOutlineIcon },
-  { title: 'Map', to: '/catalog-graph', icon: AccountTreeIcon },
+  { title: 'Today', to: '/', icon: TodayIcon },
+  // crew#612: /#kubernetes was a hash-jump; catalog is the real route for cluster entities.
   { title: 'Kubernetes', to: '/catalog?filters%5Bkind%5D=Component', icon: DnsIcon },
+  { title: 'What we run', to: '/catalog', icon: LayersIcon },
+  // crew#612 item 1: templates on /create are the self-service menu.
+  { title: 'Create', to: '/create', icon: AddCircleOutlineIcon },
+  // Visual estate map: every system and its relations as a navigable graph (crew#612 10x).
+  { title: 'Map', to: '/catalog-graph', icon: AccountTreeIcon },
   { title: 'Tools', to: '/tools', icon: BuildIcon },
+  { title: 'Ops', to: '/ops', icon: TimelineIcon },
   { title: 'Find', to: '/search', icon: SearchIcon },
+  { title: 'How-to', to: '/docs', icon: MenuBookIcon },
+  { title: 'You', to: '/settings', icon: AccountCircleIcon },
 ] as const;
-
-/** The first doors a visitor sees; the rest live under More. */
-export const BUYER_COUNT = 5;
 
 // The words a person reads on the phone menu. bin/idp-login-drill grades the phone view on
 // these words, never on a selector (R53).
@@ -85,9 +91,11 @@ const usePhoneStyles = makeStyles(theme => ({
     alignItems: 'center',
     gap: theme.spacing(1),
     paddingLeft: theme.spacing(1),
+    paddingRight: theme.spacing(1),
     background: theme.palette.background.paper,
     borderBottom: `1px solid ${theme.palette.divider}`,
   },
+  grow: { flex: 1, minWidth: 0 },
   spacer: { height: 56 },
   brand: { display: 'flex', alignItems: 'center', gap: theme.spacing(1) },
   word: { fontWeight: 600, color: theme.palette.text.primary },
@@ -100,20 +108,29 @@ const usePhoneStyles = makeStyles(theme => ({
     borderBottom: `1px solid ${theme.palette.divider}`,
   },
   item: { minHeight: 48 },
-  section: {
-    padding: theme.spacing(2, 2, 0.5, 2),
-    fontSize: 11,
-    fontWeight: 700,
-    letterSpacing: '0.04em',
-    textTransform: 'uppercase',
-    color: theme.palette.text.secondary,
-  },
 }));
 
 // The phone nav: a menu button, and the ten doors in a drawer that slides in from the left.
+const FindShortcut = () => {
+  const { toggleModal } = useSearchModal();
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k') {
+        return;
+      }
+      event.preventDefault();
+      toggleModal();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggleModal]);
+  return null;
+};
+
 const PhoneNav = () => {
   const classes = usePhoneStyles();
   const [open, setOpen] = useState(false);
+  const { toggleModal } = useSearchModal();
   // The wordmark in the bar is the estate's name from app.title (LAW 46), in the page's own
   // ink: LogoFull is drawn for the navy sidebar and would vanish on the phone bar.
   const title = useApi(configApiRef).getOptionalString('app.title') ?? 'Estate';
@@ -133,6 +150,10 @@ const PhoneNav = () => {
             {title}
           </Typography>
         </Link>
+        <span className={classes.grow} />
+        <IconButton aria-label="Find" onClick={() => toggleModal()}>
+          <SearchIcon />
+        </IconButton>
       </div>
       <div className={classes.spacer} />
       <Drawer
@@ -144,31 +165,24 @@ const PhoneNav = () => {
         <div className={classes.head}>
           <Typography variant="h6">{PHONE_MENU_LABEL}</Typography>
           <IconButton aria-label="Close menu" onClick={() => setOpen(false)}>
-            <MenuIcon />
+            <CloseIcon />
           </IconButton>
         </div>
         <List component="nav" aria-label={PHONE_MENU_LABEL}>
-          {NAV.map(({ title, to, icon: Icon }, i) => (
-            <Fragment key={to}>
-              {i === 0 && (
-                <Typography className={classes.section}>Start here</Typography>
-              )}
-              {i === BUYER_COUNT && (
-                <Typography className={classes.section}>More</Typography>
-              )}
-              <ListItem
-                button
-                component={Link}
-                to={to}
-                className={classes.item}
-                onClick={() => setOpen(false)}
-              >
-                <ListItemIcon>
-                  <Icon />
-                </ListItemIcon>
-                <ListItemText primary={title} />
-              </ListItem>
-            </Fragment>
+          {NAV.map(({ title, to, icon: Icon }) => (
+            <ListItem
+              key={to}
+              button
+              component={Link}
+              to={to}
+              className={classes.item}
+              onClick={() => setOpen(false)}
+            >
+              <ListItemIcon>
+                <Icon />
+              </ListItemIcon>
+              <ListItemText primary={title} />
+            </ListItem>
           ))}
         </List>
       </Drawer>
@@ -176,25 +190,16 @@ const PhoneNav = () => {
   );
 };
 
-// The desktop nav: Backstage's own Sidebar, the ten doors as a rail that opens on hover.
+// The desktop nav: Backstage's own Sidebar. One click per door.
 const DesktopNav = () => (
   <div data-testid="estate-nav">
     <Sidebar>
       <SidebarLogo />
+      <SidebarSearchModal />
       <SidebarDivider />
-      {NAV.slice(0, BUYER_COUNT).map(({ title, to, icon: Icon }) => (
-        <SidebarGroup key={to} label={title} icon={<Icon />} to={to}>
-          <SidebarItem icon={Icon} to={to} text={title} />
-        </SidebarGroup>
+      {NAV.map(({ title, to, icon: Icon }) => (
+        <SidebarItem key={to} icon={Icon} to={to} text={title} />
       ))}
-      <SidebarDivider />
-      <SidebarItem icon={MoreHorizIcon} text="More">
-        <SidebarSubmenu title="More">
-          {NAV.slice(BUYER_COUNT).map(({ title, to, icon: Icon }) => (
-            <SidebarSubmenuItem key={to} title={title} to={to} icon={Icon} />
-          ))}
-        </SidebarSubmenu>
-      </SidebarItem>
       <SidebarSpace />
     </Sidebar>
   </div>
@@ -209,7 +214,12 @@ export const EstateNav = NavContentBlueprint.make({
       // Backstage's own breakpoint for its bottom bar is 'xs' (under 600px); the phone menu
       // takes over at exactly the width the bottom bar would have appeared.
       const phone = useMediaQuery(theme.breakpoints.down('xs'));
-      return phone ? <PhoneNav /> : <DesktopNav />;
+      return (
+        <SearchModalProvider>
+          <FindShortcut />
+          {phone ? <PhoneNav /> : <DesktopNav />}
+        </SearchModalProvider>
+      );
     },
   },
 });

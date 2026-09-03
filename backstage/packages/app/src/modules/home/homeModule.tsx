@@ -1,60 +1,10 @@
-// The front page at "/" is Backstage's own home page: `page:home` from @backstage/plugin-home,
-// laid out from app-config.yaml (founder, 2026-09-01: "use Backstage templates", "so don't
-// bother"). Until then a module page with the default name overrode `page:home` with the god
-// view (crew#459), 1,200 lines of this repository's own design in one long scroll. That page
-// is kept at /estate, unlinked, until its numbers become widgets; nothing at "/" is ours.
-//
-// The layout is the one Backstage documents for a custom home page layout
-// (https://backstage.io/docs/getting-started/homepage/): Page, Header, Content and the
-// plugin's CustomHomepageGrid, with the grid seeded from `page:home`'s `defaultConfig` exactly
-// as the plugin's own DefaultHomePageLayout seeds it. The only addition is the Header, so the
-// page carries the estate's name (app.title) like every other Backstage page.
-import { Fragment, useMemo } from 'react';
-import {
-  configApiRef,
-  createFrontendModule,
-  PageBlueprint,
-  useApi,
-} from '@backstage/frontend-plugin-api';
-import {
-  HomePageLayoutBlueprint,
-  type HomePageLayoutProps,
-} from '@backstage/plugin-home-react/alpha';
-import { CustomHomepageGrid } from '@backstage/plugin-home';
-import { Content, Header, Page } from '@backstage/core-components';
-
-export function EstateHomeLayout({
-  widgets,
-  defaultConfig,
-}: HomePageLayoutProps) {
-  const brand = useApi(configApiRef).getOptionalString('app.title') ?? 'Estate';
-  const gridConfig = useMemo(
-    () =>
-      defaultConfig?.map(item => ({
-        component: item.component,
-        x: item.column,
-        y: item.row,
-        width: item.width,
-        height: item.height,
-        movable: item.movable,
-        deletable: item.deletable,
-        resizable: item.resizable,
-      })),
-    [defaultConfig],
-  );
-  return (
-    <Page themeId="home">
-      <Header title={brand} />
-      <Content>
-        <CustomHomepageGrid config={gridConfig}>
-          {widgets.map((widget, index) => (
-            <Fragment key={widget.name ?? index}>{widget.component}</Fragment>
-          ))}
-        </CustomHomepageGrid>
-      </Content>
-    </Page>
-  );
-}
+// The front page at "/" is still Backstage's home plugin (page:home, widgets from
+// app-config.yaml). The drag-and-resize board is gone: HomePageLayoutBlueprint lets
+// us arrange those same widgets in a fixed layout (founder 2026-09-03: outdated look
+// and outdated interactions). The god view from crew#459 stays at /estate.
+import { createFrontendModule, PageBlueprint } from '@backstage/frontend-plugin-api';
+import { HomePageLayoutBlueprint } from '@backstage/plugin-home-react/alpha';
+import { EstateHomeLayout } from './homeLayout';
 
 const homeLayout = HomePageLayoutBlueprint.make({
   params: {
@@ -104,27 +54,7 @@ const opsPage = PageBlueprint.make({
   },
 });
 
-// /reports (crew#684, founder 2026-09-01: "can we automate all reports, need report tab in
-// Backstage"): every report the estate writes on a clock, read from docs/reports/index.json on
-// the state branch through the /estate-state proxy, red when older than twice its schedule.
-// Listed as a founder surface in backstage/founder/catalog-info.yaml so the crew#401 gate and
-// the login drill carry it.
-const reportsPage = PageBlueprint.make({
-  name: 'reports',
-  params: {
-    path: '/reports',
-    loader: () => import('./Reports').then(m => <m.Reports />),
-  },
-});
-
 export const homeModule = createFrontendModule({
   pluginId: 'home',
-  extensions: [
-    homeLayout,
-    estatePage,
-    pairPhonePage,
-    toolsPage,
-    opsPage,
-    reportsPage,
-  ],
+  extensions: [homeLayout, estatePage, pairPhonePage, toolsPage, opsPage],
 });

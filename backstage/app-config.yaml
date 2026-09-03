@@ -11,12 +11,10 @@ app:
     # bookmark) a client-side ERROR 404 while the login drill, visiting "/", stayed green.
     # crew#307. The Home page takes "/".
     #
-    # The front page is Backstage's own home page (founder, 2026-09-01: "use Backstage
-    # templates"). The grid below is the plugin's `defaultConfig` (plugin-home 0.9.9): a search
-    # bar, then the ten doors as the toolkit, starred entities, and the pages the person visited.
-    # A person can move, resize and add widgets on the page itself. Between 2026-08-29 (crew#459)
-    # and today packages/app/src/modules/home overrode this page with a hand-drawn god view;
-    # that page is kept at /estate.
+    # The front page is Backstage's home plugin. Widgets stay; the drag-and-resize
+    # board does not (founder 2026-09-03: outdated look and outdated interactions).
+    # packages/app/src/modules/home/homeLayout.tsx pins them. The crew#459 god view
+    # stays at /estate.
     - page:home:
         config:
           path: /
@@ -27,16 +25,45 @@ app:
               width: 12
               height: 2
               deletable: false
+              movable: false
+              resizable: false
             - component: HomePageToolkit
               column: 0
               row: 2
-              width: 12
-              height: 8
+              width: 6
+              height: 6
+              deletable: false
+              movable: false
+              resizable: false
+            - component: HomePageStarredEntities
+              column: 6
+              row: 2
+              width: 6
+              height: 4
+              deletable: false
+              movable: false
+              resizable: false
+            - component: HomePageRecentlyVisited
+              column: 6
+              row: 6
+              width: 6
+              height: 4
+              deletable: false
+              movable: false
+              resizable: false
+            - component: HomePageMostVisited
+              column: 0
+              row: 8
+              width: 6
+              height: 4
+              deletable: false
+              movable: false
+              resizable: false
     # Visit tracking feeds the "Recently visited" and "Most visited" widgets; it is off in the
     # plugin until switched on here, and it stores visits in the browser.
     - api:home/visits: true
     - app-root-element:home/visit-listener: true
-    # A joke widget and world clocks in the "Add widget" dialog of a platform that is for sale.
+    # A joke widget and world clocks. Off. The page is not a rearrangeable dashboard.
     - home-page-widget:home/random-joke: false
     - home-page-widget:home/world-clock: false
     # The toolkit is the same ten doors as the menu, in the same order
@@ -44,34 +71,16 @@ app:
     - home-page-widget:home/toolkit:
         config:
           tools:
-            - { url: /, label: Home, icon: dashboard }
-            - { url: /catalog, label: Catalogue, icon: catalog }
-            - { url: /ops, label: Health, icon: warning }
-            - { url: /docs, label: Docs, icon: docs }
-            - { url: /settings, label: You, icon: user }
+            - { url: /, label: Today, icon: dashboard }
+            - { url: '/catalog?filters%5Bkind%5D=Component', label: Kubernetes, icon: 'kind:resource' }
+            - { url: /catalog, label: What we run, icon: catalog }
             - { url: /create, label: Create, icon: scaffolder }
             - { url: /catalog-graph, label: Map, icon: 'kind:system' }
-            - { url: '/catalog?filters%5Bkind%5D=Component', label: Kubernetes, icon: 'kind:resource' }
             - { url: /tools, label: Tools, icon: 'kind:component' }
+            - { url: /ops, label: Ops, icon: warning }
             - { url: /search, label: Find, icon: search }
-
-
-    # The catalogue index defaults to kind=component and list=owned, so 391 of 587
-    # git entities never appear and a first paint of the rest flashes then vanishes
-    # (plugin-catalog 2.0.8 CatalogFilterBlueprint). Official NFS config, not a
-    # second feed: cursor pagination pages /api/catalog/entities/query; the sidebar stays.
-    # page:catalog is configured here without moving its path (crew#307).
-    - page:catalog:
-        config:
-          pagination:
-            mode: cursor
-            limit: 50
-    - catalog-filter:catalog/list:
-        config:
-          initialFilter: all
-    - catalog-filter:catalog/kind:
-        config:
-          initialFilter: ""
+            - { url: /docs, label: How-to, icon: docs }
+            - { url: /settings, label: You, icon: user }
 
     # crew#612 CP5: no empty tab on an entity page. The TechDocs content ships with no filter,
     # so every one of the 338 entities grew a "TechDocs" tab and 334 of them opened on an
@@ -171,13 +180,6 @@ techdocs:
     runIn: 'local'
   publisher:
     type: 'local' # Alternatives - 'googleGcs' or 'awsS3'. Read documentation for using alternatives.
-    local:
-      # Catalogue pods run with a read-only root filesystem and a writable /tmp emptyDir
-      # (platform/backstage/base/catalogue.yaml). The local publisher's default is
-      # node_modules/@backstage/plugin-techdocs-backend/static/docs, which mkdir cannot
-      # create there. 2026-09-02: every Docs tab 404'd; the builder error was ENOENT on
-      # founder-gods-view. Keep this path under /tmp.
-      publishDirectory: /tmp/techdocs
 
 auth:
   # see https://backstage.io/docs/auth/ to learn about auth providers
@@ -185,11 +187,6 @@ auth:
     # Local dev only: the proxied provider needs the front door's headers, so run
     # behind it or set them by hand. Production config is app-config.production.yaml.
     oauth2Proxy: {}
-    # Official guest provider for `yarn start` (NODE_ENV=development). The
-    # production image does not register the guest module. Do not set
-    # dangerouslyAllowOutsideDevelopment: that flag is what would weaken live.
-    guest:
-      userEntityRef: user:default/guest
   # see https://backstage.io/docs/ai/mcp-actions#client-id-metadata-documents
   # to learn more about client id metadata documents
   clientIdMetadataDocuments:
@@ -233,7 +230,7 @@ catalog:
     # The org. bin/catalog-gen stamps `group:default/platform` on every entity it emits; until
     # this file existed that owner reference resolved to nothing. Hand-written, in git.
     - type: file
-      target: ../../org/catalog-info.yaml
+      target: ../org/catalog-info.yaml
       rules:
         # Group only. crew#307: exactly one location may create User entities
         # (/app/examples/org.yaml), or the founder and the login drill resolve to
@@ -250,7 +247,7 @@ catalog:
     # Every layer the cluster runs (crew#459), generated by bin/catalog-platform from the Flux
     # Kustomizations. The front page is this file plus the live Ready state of each layer.
     - type: file
-      target: ../../platform/catalog-info.yaml
+      target: ../platform/catalog-info.yaml
       rules:
         - allow: [Component, System, API]
 
