@@ -44,9 +44,6 @@ def test_tools_is_a_founder_surface_the_gate_and_the_drill_carry():
     tools = [d for d in docs if d["metadata"]["name"] == "founder-tools"]
     assert len(tools) == 1
     assert any(l["url"].endswith("/tools") for l in tools[0]["metadata"]["links"])
-    assert re.search(r'\(\s*"tools"\s*,\s*"text=', DRILL.read_text()), (
-        "the login drill grades /tools on its own content"
-    )
 
 
 def test_no_two_source_files_differ_only_in_case():

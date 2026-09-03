@@ -601,7 +601,7 @@
    "The refresh endpoint is asked at Backstage's real path",
    "The drill reads the catalogue and sees no error, not only a shell",
    "A door request with a user name and no email still signs in",
-   "Every published path answers (crew#307)"
+   "Every published path renders its own content, not the shell around it (crew#307)"
   ],
   "bound_by": [],
   "status": "PROSE",
@@ -653,78 +653,6 @@
   "added_in": "397e4a52",
   "pr": 211,
   "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/golden-path-cp2a-python-golden-path.feature",
-  "title": "Python golden path scaffolding",
-  "scenarios": [
-   "Provisioning a Python service produces a compliant repo"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "805afb0e",
-  "pr": 930,
-  "ticket": "crew#627"
- },
- {
-  "feature": "docs/prose/golden-path-cp2b-dotnet-golden-path.feature",
-  "title": ".NET golden path scaffolding",
-  "scenarios": [
-   "Provisioning a .NET service produces a compliant repo"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "805afb0e",
-  "pr": 930,
-  "ticket": "crew#627"
- },
- {
-  "feature": "docs/prose/golden-path-cp2c-node-golden-path.feature",
-  "title": "Node golden path scaffolding",
-  "scenarios": [
-   "Provisioning a Node service produces a compliant repo"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "805afb0e",
-  "pr": 930,
-  "ticket": "crew#627"
- },
- {
-  "feature": "docs/prose/golden-path-cp2d-template-opens-infra-pr.feature",
-  "title": "Template opens the platform infra pull request",
-  "scenarios": [
-   "A scaffolder run opens a pull request touching only the new service's platform folder"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "805afb0e",
-  "pr": 930,
-  "ticket": "crew#627"
- },
- {
-  "feature": "docs/prose/golden-path-cp2e-flux-reconciles-service.feature",
-  "title": "Flux reconciles a template-created service",
-  "scenarios": [
-   "Merging the platform pull request brings the service up"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "805afb0e",
-  "pr": 930,
-  "ticket": "crew#627"
- },
- {
-  "feature": "docs/prose/golden-path-cp2f-proof-drill.feature",
-  "title": "End-to-end proof drill for self-service golden paths",
-  "scenarios": [
-   "Provision, sign in, and tear down a throwaway service"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "805afb0e",
-  "pr": 930,
-  "ticket": "crew#627"
  },
  {
   "feature": "docs/prose/icm-cp1_gateway_auth.feature",
@@ -834,142 +762,6 @@
   "added_in": "535b6e3e",
   "pr": 220,
   "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/messaging-cp1.feature",
-  "title": "the messaging day-0 design is accepted before any code",
-  "scenarios": [
-   "the specification is the founder's document, saved to the estate standard",
-   "MiniMax builds only against a scenario, never against prose"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp10.feature",
-  "title": "the founder used it",
-  "scenarios": [
-   "one button on the portal runs the demo"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp2.feature",
-  "title": "the broker is on and admitted",
-  "scenarios": [
-   "JetStream answers from inside the cluster",
-   "every pod passes admission before it is applied",
-   "R3 is one values change when the pool has three nodes"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp3.feature",
-  "title": "the contracts are gated, not reviewed",
-  "scenarios": [
-   "a subject that breaks the grammar cannot be published",
-   "a breaking schema change fails CI (\u00a711 test 7)",
-   "the first stream exists with the locked values"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp4.feature",
-  "title": "the relay is the only writer and it never duplicates",
-  "scenarios": [
-   "the outbox row and the state change are one transaction (\u00a711 test 1)",
-   "a relay crash mid-batch leaves no duplicates and no gaps (\u00a711 test 2)",
-   "the relay is measurable"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp5.feature",
-  "title": "a consumer has exactly-once effect",
-  "scenarios": [
-   "a consumer killed between commit and ack does not repeat its effect (\u00a711 test 4)",
-   "long work heartbeats and permanent failure terminates",
-   "the library defaults are the spec's"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp6.feature",
-  "title": "permissions make the outbox the only path",
-  "scenarios": [
-   "an app credential cannot publish a business event (\u00a711 test 6)",
-   "the relay credential is narrow"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp7.feature",
-  "title": "dead letters are captured, alerted and replayed by hand",
-  "scenarios": [
-   "a poison message lands in DLQ with its headers (\u00a711 test 5)",
-   "replay is a manual audited action"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp8.feature",
-  "title": "the bus is observed in the estate collector, never by scanning files",
-  "scenarios": [
-   "every messaging workload is seen by the backend (LAW 50)",
-   "one trace spans request, commit, publish and consumer",
-   "the seven alerts route to alertmanager"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
- },
- {
-  "feature": "docs/prose/messaging-cp9.feature",
-  "title": "the platform is accepted, backed up and demoed",
-  "scenarios": [
-   "the eight acceptance tests are green on the throwaway cluster",
-   "node loss is survived and two-node loss halts cleanly (\u00a711 test 3)",
-   "a stream backup restores and replays with correct dedupe (\u00a711 test 8)",
-   "the demo and the onboarding exist"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "dda3f64a",
-  "pr": 838,
-  "ticket": "crew#639"
  },
  {
   "feature": "docs/prose/operating-model-gate-callers.feature",
@@ -1411,8 +1203,6 @@
   "scenarios": [
    "A platform manifest names the zone as a literal",
    "A platform manifest refers to the zone by substitution",
-   "A pull request adds a line that spells the zone",
-   "A pull request adds a line that refers to the zone by substitution",
    "No cluster declares a zone"
   ],
   "bound_by": [
