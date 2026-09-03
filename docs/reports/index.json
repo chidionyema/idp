@@ -11,7 +11,7 @@
     },
     {
       "file": "docs/reports/flux-state.md",
-      "generated_at": "2026-09-03T09:45:10Z",
+      "generated_at": "2026-09-03T10:00:10Z",
       "id": "flux-state",
       "schedule_minutes": 15,
       "source": "the cluster receipt platform/state/cluster-state.yaml writes to the receipts bucket every 15 minutes",
@@ -19,5 +19,5 @@
       "title": "Flux: what is applied"
     }
   ],
-  "updated_at": "2026-09-03T09:50:11Z"
+  "updated_at": "2026-09-03T10:05:40Z"
 }
