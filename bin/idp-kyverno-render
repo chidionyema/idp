@@ -13,29 +13,9 @@
 # dir), else prospector's deploy/k8s/policies when that checkout sits beside this one, else the
 # same pinned upstream set (public, no token; the two estate-only policies are absent and the
 # verdict says so).
-#
-# IDP_RENDER_KEEP=<dir>: Kyverno judges POLICY on this render; bin/idp-kubeconform judges TYPE on
-# the same bytes (crew#584 comment above: a second renderer would duplicate ~4 minutes of CI).
-# Set this to a directory and every kz-*.yaml (raw kustomize build: the Flux control objects --
-# HelmRelease, Kustomization, ExternalSecret, the GithubAccessToken generator -- and every plain
-# workload) and *.final.yaml (the Helm chart's own render, post postRenderers: the exact bytes
-# admission sees for that release) is copied out before the trap below deletes the scratch
-# directory. plain-*.yaml is deliberately not copied: it is a filtered subset of its kz-*.yaml
-# plus bin/lib/kyverno_pods.py's synthetic Pod stand-ins (ownerReferences[].uid: "offline"), built
-# so Kyverno sees the Pod a controller would create -- real for a policy verdict, not a real
-# object a type-checker should grade twice. One render, judged twice.
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-export IDP
-S="$(mktemp -d)"
-save_render() {  # copies whatever this run produced, even a partial render on an early failure
-	local dir="$1" f
-	mkdir -p "$dir"
-	for f in "$S"/kz-*.yaml "$S"/*.final.yaml; do
-		[ -f "$f" ] && cp -p "$f" "$dir/"
-	done
-}
-trap '[ -n "${IDP_RENDER_KEEP:-}" ] && save_render "$IDP_RENDER_KEEP"; rm -rf "$S"' EXIT
+S="$(mktemp -d)"; trap 'rm -rf "$S"' EXIT
 for t in helm kubectl kyverno python3; do command -v "$t" >/dev/null || { echo "BLIND  $t is not installed; nothing was judged"; exit 2; }; done
 
 # Beside the PRIMARY checkout, not beside this one. This said "$IDP/.." until 2026-08-28, and
@@ -159,13 +139,6 @@ for hr in (d for d in docs if d["kind"] == "HelmRelease"):
     render.write_text(out[out.index("\n---\n") + 1:] if out.startswith(("Pulled:", "Digest:")) else out)
     kz = S / f"{name}.kz"; kz.mkdir(); (kz / "render.yaml").write_text(render.read_text())
     patches = [p for pr in hr["spec"].get("postRenderers", []) for p in pr.get("kustomize", {}).get("patches", [])]
-    # Flux's post-renderer takes `images:` as well as `patches:` (helm-controller v2 Kustomize
-    # spec), and this judge read only the patches. A chart that hardcodes a short image name in
-    # its templates -- lago writes `image: getlago/api:v{{ .Values.version }}` with no values key
-    # for the registry -- can only be qualified by that transformer, so leaving it out made the
-    # judge disagree with the cluster in the one direction that matters: it would call a
-    # correctly-qualified release unqualified. run 33341390235, 2026-08-30.
-    images = [i for pr in hr["spec"].get("postRenderers", []) for i in pr.get("kustomize", {}).get("images", [])]
     # helm-controller semantics (crew#227, SPIRE): an object that names no namespace lands in the
     # release namespace; one that names its own keeps it, and a Namespace the chart creates keeps
     # its name. The plain `namespace:` field renames chart-made Namespaces to the release namespace
@@ -173,19 +146,16 @@ for hr in (d for d in docs if d["kind"] == "HelmRelease"):
     (kz / "ns.yaml").write_text(yaml.safe_dump({"apiVersion": "builtin", "kind": "NamespaceTransformer",
         "metadata": {"name": "release-namespace", "namespace": ns}, "unsetOnly": True}))
     (kz / "kustomization.yaml").write_text(yaml.safe_dump({"apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization",
-        "transformers": ["ns.yaml"], "resources": ["render.yaml"], "patches": patches, "images": images}))
+        "transformers": ["ns.yaml"], "resources": ["render.yaml"], "patches": patches}))
     print(f"{name} {ns} {len(patches)}")
 PY
   # Plain workloads in the same kustomize output, judged as they are. Services, Ingresses, claims
   # and secret stores too (crew#66, R43): provider-independence refuses those, not only pods.
   python3 - "$S/kz-$slug.yaml" "$S/plain-$slug.yaml" <<'PY2'
-import sys, os, yaml
+import sys, yaml
 kinds = {"Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Pod",
          "Service", "Ingress", "PersistentVolumeClaim", "ClusterSecretStore", "SecretStore"}
 docs = [d for d in yaml.safe_load_all(open(sys.argv[1])) if d and d.get("kind") in kinds]
-sys.path.insert(0, os.environ["IDP"] + "/bin/lib")
-from kyverno_pods import pods_for
-docs += pods_for(docs)
 open(sys.argv[2], "w").write(yaml.safe_dump_all(docs) if docs else "")
 PY2
 }
@@ -229,7 +199,7 @@ prepare_release() {  # kustomize the post-rendered chart and shape it the way ad
   # judged. Until 2026-08-26 this dropped all hooks, and the langfuse s3 post-upgrade bucket hook
   # merged with no securityContext; Kyverno then refused every Helm upgrade of the release (crew#325).
   python3 - "$S/$name.final.yaml" <<'PY'
-import sys, os, yaml
+import sys, yaml
 def _is_test_hook(d):
     hooks = (d["metadata"].get("annotations") or {}).get("helm.sh/hook", "")
     return hooks and all(h.strip().startswith("test") for h in hooks.split(","))
@@ -242,13 +212,13 @@ def _drop_null(x):
     if isinstance(x, list): return [_drop_null(v) for v in x]
     return x
 docs = [_drop_null(d) for d in docs]
-# Judge the Pod each workload would create, as admission does. Autogen covers Deployment,
-# StatefulSet and DaemonSet, so only Job and CronJob were synthesised here until 2026-08-30 --
-# but autogen covers the POLICY, never the EXCEPTION, and an exception excusing only the autogen
-# rule passed this judge and lost at admission (bin/lib/kyverno_pods.py).
-sys.path.insert(0, os.environ["IDP"] + "/bin/lib")
-from kyverno_pods import pods_for
-docs += pods_for(docs)
+# Kyverno autogen covers Deployment/StatefulSet/DaemonSet but not Job/CronJob, so the CLI passed a
+# migrator Job whose Pod admission then refused (2026-08-25, require-pod-probes). Judge the Pod
+# a Job or CronJob would create, with the ownerReference admission would see.
+for d in list(docs):
+    tpl = d["spec"]["template"] if d["kind"] == "Job" else d["spec"]["jobTemplate"]["spec"]["template"] if d["kind"] == "CronJob" else None
+    if tpl: docs.append({"apiVersion": "v1", "kind": "Pod", "metadata": {"name": d["metadata"]["name"] + "-pod", "namespace": d["metadata"].get("namespace"),
+        "labels": (tpl.get("metadata") or {}).get("labels") or {}, "ownerReferences": [{"apiVersion": "batch/v1", "kind": "Job", "name": d["metadata"]["name"], "uid": "offline"}]}, "spec": tpl["spec"]})
 open(p, "w").write(yaml.safe_dump_all(docs))
 PY
 }

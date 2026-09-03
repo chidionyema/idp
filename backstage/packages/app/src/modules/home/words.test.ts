@@ -84,30 +84,6 @@ describe('verdictSentence', () => {
     expect(sentence).not.toMatch(/^\d+\s+(Red|Good|Stale|Running)\b/);
     expect(sentence.endsWith('.')).toBe(true);
   });
-
-  it('appends blind count when worst is not blind', () => {
-    const result = verdictSentence(counts({ red: 3, blind: 9 }), 40);
-    expect(result.endsWith('We cannot check 9 more.')).toBe(true);
-    expect(result.startsWith('3 of 40 services are failing right now.')).toBe(true);
-  });
-
-  it('does not append blind clause when blind is zero', () => {
-    const result = verdictSentence(counts({ red: 3, blind: 0 }), 40);
-    expect(result).not.toContain('We cannot check');
-  });
-
-  // When 'blind' is itself the worst state the base sentence is already about the unreadable
-  // ones, so the clause must not be bolted on after it and say the same thing twice.
-  it('does not append the clause when blind is already the subject', () => {
-    const result = verdictSentence(counts({ blind: 5 }), 40);
-    expect(result).not.toContain('We cannot check');
-    expect(result).toContain('cannot be read at all');
-  });
-
-  it('all good with blind zero does not change', () => {
-    const result = verdictSentence(counts({ good: 40, blind: 0 }), 40);
-    expect(result).toBe('Everything we run is working.');
-  });
 });
 
 describe('STATE_MEANING', () => {

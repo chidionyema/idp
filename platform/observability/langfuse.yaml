@@ -75,13 +75,6 @@ spec:
         AUTH_CUSTOM_NAME: "Bytesync estate"
         AUTH_CUSTOM_SCOPE: "openid email profile"
         AUTH_CUSTOM_ID_TOKEN: "true"
-        # crew#623 class receipt, break-glass run 33331157383 (2026-08-30): every SSO sign-in
-        # ended at /auth/error?error=No%20email%20found%20in%20user%20object because the IDCS
-        # id_token carries no email claim. AUTH_CUSTOM_FETCH_USERINFO merges the userinfo
-        # endpoint (which does carry email, scope "openid email profile" above) into the user
-        # object. The variable exists from app 4.21.0 (langfuse repo web/src/env.mjs: absent at
-        # v4.17.0, present at v4.21.0+), hence the image pin in langfuse-values.yaml.
-        AUTH_CUSTOM_FETCH_USERINFO: "true"
         AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING: "true"
         AUTH_DISABLE_USERNAME_PASSWORD: "true"
   data:
@@ -200,15 +193,6 @@ spec:
                     containers:
                       - name: langfuse-web
                         securityContext: { readOnlyRootFilesystem: true }
-                        env:
-                          # langfuse chart 2.0.2 renders its own default for this key through Helm's
-                          # float marshalling, so the manifest carries `value: 1e+09` -- unquoted
-                          # scientific notation, which every YAML 1.2 reader (the API server's
-                          # included) types as a NUMBER where core/v1 EnvVar.value declares a string.
-                          # Found by bin/idp-ci rung 9c on its first run against the live tree
-                          # (idp#1046), the same class as idp#1027. Restated here as a string.
-                          - name: LANGFUSE_S3_MEDIA_UPLOAD_MAX_CONTENT_LENGTH
-                            value: "1000000000"
                         volumeMounts:
                           - { name: tmp, mountPath: /tmp }
                           - { name: next-cache, mountPath: /app/web/.next/cache }
@@ -227,15 +211,6 @@ spec:
                     containers:
                       - name: langfuse-worker
                         securityContext: { readOnlyRootFilesystem: true }
-                        env:
-                          # langfuse chart 2.0.2 renders its own default for this key through Helm's
-                          # float marshalling, so the manifest carries `value: 1e+09` -- unquoted
-                          # scientific notation, which every YAML 1.2 reader (the API server's
-                          # included) types as a NUMBER where core/v1 EnvVar.value declares a string.
-                          # Found by bin/idp-ci rung 9c on its first run against the live tree
-                          # (idp#1046), the same class as idp#1027. Restated here as a string.
-                          - name: LANGFUSE_S3_MEDIA_UPLOAD_MAX_CONTENT_LENGTH
-                            value: "1000000000"
                         volumeMounts:
                           - { name: tmp, mountPath: /tmp }
                     volumes:

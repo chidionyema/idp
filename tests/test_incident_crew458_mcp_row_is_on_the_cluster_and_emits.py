@@ -9,7 +9,6 @@ is a Flux health check, every container names the estate collector (LAW 50), no 
 secret in env or in a `${...}` Flux would substitute, and the vault-seed workflow can write the entry the ExternalSecret reads.
 """
 
-import json
 import pathlib
 
 import yaml
@@ -98,20 +97,17 @@ def test_incident_crew458_the_vault_entry_the_row_reads_can_be_seeded():
     key = es["spec"]["dataFrom"][0]["extract"]["key"]
     seed = (ROOT / ".github" / "workflows" / "vault-seed.yml").read_text()
     # crew#66 root trust (crew#575, #577): the entry is born by bin/idp-estate-seed (MCP_GATEWAY_KEY) and
-    # the in-cluster GithubAccessToken generator (GITHUB_MCP_TOKEN, idp#852); vault-seed refuses it by name.
+    # bin/idp-github-app refresh (GITHUB_MCP_TOKEN, an hourly App token); vault-seed refuses it by name.
     assert (
         f"{key}|" in seed
         and f"put {key} " not in seed
         and "SEED_MCP_GATEWAY_KEY" not in seed
     )
     assert "MCP_GATEWAY_KEY" in (ROOT / "bin/idp-estate-seed").read_text()
-    # idp#852 killed the off-cluster re-mint; the token is minted in-cluster beside the gateway.
-    assert not json.loads(
-        (ROOT / "platform/github-app/token-consumers.json").read_text()
-    )["consumers"]
-    row = (ROW / "external-secret.yaml").read_text()
-    assert "kind: GithubAccessToken" in row
-    assert 'template: "GITHUB_MCP_TOKEN"' in row
+    assert (
+        "GITHUB_MCP_TOKEN"
+        in (ROOT / "platform/github-app/token-consumers.json").read_text()
+    )
 
 
 def test_incident_crew458_api_key_marker_needs_a_strict_hashed_policy_both_ways():

@@ -198,27 +198,11 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: delivery
-  providesApis:
-    - api:default/backstage-api
   dependsOn:
     - component:default/layer-backstage-namespace
     - component:default/layer-external-secrets
     - component:default/layer-secret-store
     - component:default/layer-edge
----
-apiVersion: backstage.io/v1alpha1
-kind: API
-metadata:
-  name: backstage-api
-  description: 'The portal: the HTTP interface, answering at catalogue.${ESTATE_ZONE}.'
-spec:
-  type: openapi
-  lifecycle: production
-  owner: group:default/platform
-  system: system:default/delivery
-  definition: |
-    # Not published. backstage answers at catalogue.${ESTATE_ZONE}; this entity
-    # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -301,7 +285,6 @@ spec:
   dependsOn:
     - component:default/layer-scheduling
     - component:default/layer-backstage-namespace
-    - component:default/layer-external-secrets
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -500,26 +483,10 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: identity
-  providesApis:
-    - api:default/guacamole-api
   dependsOn:
     - component:default/layer-identity
     - component:default/layer-secret-store
     - component:default/layer-tailscale
----
-apiVersion: backstage.io/v1alpha1
-kind: API
-metadata:
-  name: guacamole-api
-  description: 'Remote hands: the HTTP interface, answering at catalogue.${ESTATE_ZONE}.'
-spec:
-  type: openapi
-  lifecycle: production
-  owner: group:default/platform
-  system: system:default/identity
-  definition: |
-    # Not published. guacamole answers at catalogue.${ESTATE_ZONE}; this entity
-    # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -580,25 +547,9 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: resilience
-  providesApis:
-    - api:default/healthchecks-api
   dependsOn:
     - component:default/layer-identity
     - component:default/layer-secret-store
----
-apiVersion: backstage.io/v1alpha1
-kind: API
-metadata:
-  name: healthchecks-api
-  description: 'Health checks: the HTTP interface, answering at hc.${ESTATE_ZONE}.'
-spec:
-  type: openapi
-  lifecycle: production
-  owner: group:default/platform
-  system: system:default/resilience
-  definition: |
-    # Not published. healthchecks answers at hc.${ESTATE_ZONE}; this entity
-    # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -620,7 +571,6 @@ spec:
   dependsOn:
     - component:default/layer-scheduling
     - component:default/layer-secret-store
-    - component:default/layer-alerts-github
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -660,25 +610,9 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: identity
-  providesApis:
-    - api:default/identity-api
   dependsOn:
     - component:default/layer-edge
     - component:default/layer-secret-store
----
-apiVersion: backstage.io/v1alpha1
-kind: API
-metadata:
-  name: identity-api
-  description: 'Single sign-on: the HTTP interface, answering at auth.${ESTATE_ZONE}.'
-spec:
-  type: openapi
-  lifecycle: production
-  owner: group:default/platform
-  system: system:default/identity
-  definition: |
-    # Not published. identity answers at auth.${ESTATE_ZONE}; this entity
-    # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -756,25 +690,9 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: agents
-  providesApis:
-    - api:default/llm-api
   dependsOn:
     - component:default/layer-edge
     - component:default/layer-secret-store
----
-apiVersion: backstage.io/v1alpha1
-kind: API
-metadata:
-  name: llm-api
-  description: 'Model router: the HTTP interface, answering at llm.${ESTATE_ZONE}.'
-spec:
-  type: openapi
-  lifecycle: production
-  owner: group:default/platform
-  system: system:default/agents
-  definition: |
-    # Not published. llm answers at llm.${ESTATE_ZONE}; this entity
-    # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -793,27 +711,10 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: agents
-  providesApis:
-    - api:default/mcp-api
   dependsOn:
     - component:default/layer-scheduling
     - component:default/layer-edge
     - component:default/layer-secret-store
-    - component:default/layer-alerts-github
----
-apiVersion: backstage.io/v1alpha1
-kind: API
-metadata:
-  name: mcp-api
-  description: 'Agent tools: the HTTP interface, answering at mcp.${ESTATE_ZONE}.'
-spec:
-  type: openapi
-  lifecycle: production
-  owner: group:default/platform
-  system: system:default/agents
-  definition: |
-    # Not published. mcp answers at mcp.${ESTATE_ZONE}; this entity
-    # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -893,26 +794,10 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: observability
-  providesApis:
-    - api:default/observability-api
   dependsOn:
     - component:default/layer-scheduling
     - component:default/layer-observability-collector
     - component:default/layer-external-secrets
----
-apiVersion: backstage.io/v1alpha1
-kind: API
-metadata:
-  name: observability-api
-  description: 'Traces and model calls: the HTTP interface, answering at langfuse.${ESTATE_ZONE} and signoz.${ESTATE_ZONE}.'
-spec:
-  type: openapi
-  lifecycle: production
-  owner: group:default/platform
-  system: system:default/observability
-  definition: |
-    # Not published. observability answers at langfuse.${ESTATE_ZONE} and signoz.${ESTATE_ZONE}; this entity
-    # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -1175,25 +1060,3 @@ spec:
     - component:default/layer-edge
     - component:default/layer-secret-store
     - component:default/layer-image-automation
----
-apiVersion: backstage.io/v1alpha1
-kind: Component
-metadata:
-  name: layer-verification
-  title: 'Verification wall'
-  description: 'Proves, on every run, that the cluster''s pods are refused the key that signs a verdict; the probe is meant to stay refused.'
-  annotations:
-    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=verification'
-    estate/flux-kustomization: 'verification'
-    estate/path: './platform/verification'
-    estate/cluster: 'oke'
-  tags: [platform, identity]
-spec:
-  type: platform-layer
-  lifecycle: production
-  owner: group:default/platform
-  system: identity
-  dependsOn:
-    - component:default/layer-backstage-namespace
-    - component:default/layer-external-secrets
-    - component:default/layer-secret-store

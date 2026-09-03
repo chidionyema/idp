@@ -147,28 +147,6 @@ spec:
   # something off, decided by a person looking at the number rather than by a comment here.
   postRenderers:
     - kustomize:
-        # EVERY IMAGE NAMES ITS REGISTRY. The nodes run cri-o with short-name mode enforcing: a
-        # reference whose first path segment carries no registry host is admitted and then fails
-        # to pull with "returns ambiguous list" (crew#284 postgres, crew#396 temporal, crew#325
-        # seaweedfs, tailscale-operator run 33341390235 2026-08-30 -- four times in five days).
-        # This chart is the worst case of that class: it writes `image: getlago/api:v{{ .Values
-        # .version }}` straight into its templates (lago-1.28.0/templates/api-deployment.yaml:244
-        # and eleven more) and offers no values key for a registry, so the post-renderer is the
-        # only place the host can be written. Every path answers 200 on registry-1.docker.io,
-        # measured 2026-08-31, not assumed. The layer is suspended at replicas 0, so nothing has
-        # ever tried to pull these -- which is exactly why it would have failed on the day it was
-        # switched on rather than today.
-        images:
-          - name: getlago/api
-            newName: docker.io/getlago/api
-          - name: getlago/front
-            newName: docker.io/getlago/front
-          - name: getlago/lago-events-processor
-            newName: docker.io/getlago/lago-events-processor
-          - name: getlago/lago-gotenberg
-            newName: docker.io/getlago/lago-gotenberg
-          - name: alpine
-            newName: docker.io/library/alpine
         patches:
           # SWITCHED OFF MEANS ABSENT. Neither of these two templates carries an `enabled`
           # guard, so helm renders them however they are configured. Removing them here is the

@@ -41,22 +41,6 @@ const DEPLOYMENTS = '/apis/apps/v1/deployments';
 /** The cluster is re-read this often while the page is open; the catalogue is not. */
 export const REFRESH_MS = 60_000;
 
-/** Count entities by kind and spec.type, biggest group first. */
-export const countInventory = (items: Entity[]): InventoryRow[] => {
-  const m = new Map<string, InventoryRow>();
-  for (const e of items) {
-    const type = (e.spec as { type?: unknown } | undefined)?.type;
-    const t = typeof type === 'string' ? type : undefined;
-    const key = `${e.kind}/${t ?? ''}`;
-    const row = m.get(key) ?? { kind: e.kind, type: t, count: 0 };
-    row.count += 1;
-    m.set(key, row);
-  }
-  return [...m.values()].sort(
-    (a, b) => b.count - a.count || a.kind.localeCompare(b.kind),
-  );
-};
-
 export const useEstate = () => {
   const catalogApi = useApi(catalogApiRef);
   const kubernetesApi = useApi(kubernetesApiRef);
@@ -160,3 +144,18 @@ export const useEstate = () => {
   return { loaded, retry };
 };
 
+/** Count entities by kind and spec.type, biggest group first. */
+export const countInventory = (items: Entity[]): InventoryRow[] => {
+  const m = new Map<string, InventoryRow>();
+  for (const e of items) {
+    const type = (e.spec as { type?: unknown } | undefined)?.type;
+    const t = typeof type === 'string' ? type : undefined;
+    const key = `${e.kind}/${t ?? ''}`;
+    const row = m.get(key) ?? { kind: e.kind, type: t, count: 0 };
+    row.count += 1;
+    m.set(key, row);
+  }
+  return [...m.values()].sort(
+    (a, b) => b.count - a.count || a.kind.localeCompare(b.kind),
+  );
+};

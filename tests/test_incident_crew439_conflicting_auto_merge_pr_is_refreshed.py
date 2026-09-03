@@ -43,10 +43,7 @@ def make_repos(tmp_path: Path) -> tuple[Path, Path]:
     return origin, work
 
 
-def fake_gh(tmp_path: Path, mergeable: str, auto_merge: str = "false") -> tuple[Path, Path]:
-    """`auto_merge` is what `gh api repos/<slug> --jq .allow_auto_merge` answers. It is false on
-    every repository in this estate since 2026-08-30, which is the whole of idp#1046: the script
-    used to end in `gh pr merge --auto` and GitHub refused it, so both values are exercised."""
+def fake_gh(tmp_path: Path, mergeable: str) -> tuple[Path, Path]:
     log = tmp_path / "gh.log"
     d = tmp_path / "bin"
     d.mkdir(exist_ok=True)
@@ -54,7 +51,6 @@ def fake_gh(tmp_path: Path, mergeable: str, auto_merge: str = "false") -> tuple[
     gh.write_text(f"""#!/bin/sh
 echo "$*" >> {log}
 case "$1 $2" in
-  "api repos/chidionyema/idp") echo {auto_merge} ;;
   "pr list") echo 5 ;;
   "pr view") case "$*" in *body*) echo "Optimised: 1 -> 1 steps, 1 -> 1 round trips; cut: nothing" ;; *) echo {mergeable} ;; esac ;;
 esac
@@ -70,40 +66,26 @@ def run(work: Path, bindir: Path) -> subprocess.CompletedProcess:
 
 def test_a_conflicting_pr_gets_main_merged_and_pushed_before_it_is_armed(tmp_path):
     origin, work = make_repos(tmp_path)
-    bindir, log = fake_gh(tmp_path, "CONFLICTING", auto_merge="true")
+    bindir, log = fake_gh(tmp_path, "CONFLICTING")
     r = run(work, bindir)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "was CONFLICTING, merged main" in r.stdout and "pushed with the writer key" in r.stdout
-    assert r.stdout.strip().endswith("auto-merge armed (--squash)")
+    assert r.stdout.strip().endswith("auto-merge armed")
     pushed = git(tmp_path, "--git-dir", str(origin), "show", "flux/image-updates:k.yaml")
     assert pushed == "newTag: main-783\n#\n#\n#\nother: 2", pushed  # the controller's line won, main's change came along
     calls = log.read_text()
     assert "workflow run" not in calls  # a GITHUB_TOKEN dispatch is not the path; the writer-key push fires ci
-    assert calls.strip().endswith("pr merge 5 --auto --squash -R chidionyema/idp")
+    assert calls.strip().endswith("pr merge 5 --auto --squash")
 
 
 def test_a_mergeable_pr_is_armed_and_nothing_is_pushed(tmp_path):
     origin, work = make_repos(tmp_path)
     before = git(tmp_path, "--git-dir", str(origin), "rev-parse", "flux/image-updates")
-    bindir, log = fake_gh(tmp_path, "MERGEABLE", auto_merge="true")
+    bindir, log = fake_gh(tmp_path, "MERGEABLE")
     r = run(work, bindir)
-    assert r.returncode == 0 and r.stdout.strip().endswith("#5 auto-merge armed (--squash)"), r.stdout + r.stderr
+    assert r.returncode == 0 and r.stdout.strip() == "ok      image-update-pr #5 auto-merge armed", r.stdout + r.stderr
     assert git(tmp_path, "--git-dir", str(origin), "rev-parse", "flux/image-updates") == before
     assert "workflow run" not in log.read_text()
-
-
-def test_a_repository_that_refuses_auto_merge_says_so_and_does_not_go_red(tmp_path):
-    """idp#1046, the incident itself. allow_auto_merge has been false on idp, crew and prospector
-    since 2026-08-30, so `gh pr merge --auto` answers `Auto merge is not allowed for this
-    repository` and the step exits 1. It did that on every controller push while idp#1011 -- the
-    portal -- sat unmerged for thirteen hours. The run must end 0 and name the one action."""
-    _origin, work = make_repos(tmp_path)
-    bindir, log = fake_gh(tmp_path, "MERGEABLE", auto_merge="false")
-    r = run(work, bindir)
-    assert r.returncode == 0, r.stdout + r.stderr
-    assert r.stdout.strip().startswith("waiting pr-arm  #5 is open"), r.stdout
-    assert "the merge is the founder's" in r.stdout
-    assert "pr merge" not in log.read_text()  # never call the thing the repository refuses
 
 
 def test_an_unknown_mergeable_state_is_never_reported_ok(tmp_path):

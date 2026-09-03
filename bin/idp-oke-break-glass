@@ -261,17 +261,7 @@ pb_diagnose() {
   # denied the request: ...` for replicaset tailscale/operator -- the column cut the policy name and
   # the rule off, and bin/idp-kyverno-render passes the same manifest locally, so the row that names
   # the policy the cluster holds is the only way to see the drift. Full messages, admission only.
-  # crew#718 CP7, 2026-08-30: the line above was written for exactly this and STILL lost the answer.
-  # A Kyverno denial message is multi-line -- the policy and rule names are on the lines AFTER the
-  # one carrying `admission webhook`, so a plain grep keeps the useless half and drops the half that
-  # names the policy. Runs 33332291556 and 33333488911 both printed
-  # `tailscale/operator-56cf79864d: Error creating: admission webhook "validate.kyverno.svc-fail"
-  # denied the request:` and then nothing, for the second time in two days, while
-  # bin/idp-kyverno-render passes the same manifest locally. -A keeps the continuation lines.
-  show admission-denials sh -c "$K get events -A --field-selector reason=FailedCreate -o jsonpath='{range .items[*]}{.lastTimestamp} {.involvedObject.namespace}/{.involvedObject.name}: {.message}{\"\\n\"}{end}' 2>/dev/null | grep -i -A 6 'admission webhook' | tail -60; true"
-  # The policy report is the authority when the event is truncated anyway: Kyverno records every
-  # failed rule by name against the resource, and it survives the event's one-hour TTL.
-  show policy-reports sh -c "$K get policyreport,clusterpolicyreport -A -o jsonpath='{range .items[*]}{range .results[?(@.result==\"fail\")]}{.policy}/{.rule}: {.message}{\"\\n\"}{end}{end}' 2>/dev/null | sort -u | tail -40; true"
+  show admission-denials sh -c "$K get events -A --field-selector reason=FailedCreate -o jsonpath='{range .items[*]}{.lastTimestamp} {.involvedObject.namespace}/{.involvedObject.name}: {.message}{\"\\n\"}{end}' 2>/dev/null | grep -i 'admission webhook' | tail -12; true"
   # 2026-08-29 (run 33229461240): a claim that names no class gets the cluster default injected
   # before Kyverno sees it; a provider-named default made every new claim fail. Both facts are
   # read here so the next such outage is one diagnose run, not ninety minutes.
@@ -549,81 +539,9 @@ pb_otto_parity() {
   show tmp-owner $K exec "$d" -n "$ns" -c gateway -- sh -c 'id; ls -land /tmp; ls -lan /tmp | head -6'
   step tailnet-up $K exec "$d" -n "$ns" -c tailscale -- tailscale --socket=/tmp/tailscaled.sock status --json --peers=false
   step mac-run-hostname $K exec "$d" -n "$ns" -c gateway -- mac-run hostname
-  # crew#561 row 4 class: the plumbing was green while Otto believed it had no GitHub. The row
-  # runs the shipped doors from inside the pod: the git binary answers and gh holds a live login.
-  # Two defects, both found on run 33347928190 (2026-08-31). First it ended in a pipe:
-  # `gh auth status 2>&1 | tail -3` returns tail's status, so the row printed "You are not logged
-  # into any GitHub hosts" and still reported rc=0 -- the silent-green class this row exists to
-  # catch. Second, and why the first went unnoticed, it graded a process Otto never uses: the
-  # credential is a file under HERMES_ENV_DIR (Kyverno secrets-not-from-env-vars refuses pod env,
-  # crew#341) and deploy/k8s/entrypoint.sh exports it for the agent, so a bare `kubectl exec` shell
-  # inherits nothing. Fixing only the pipe would have turned a false green into a false red on a pod
-  # where Otto's own gh works (LAW 38). The row now exports the env dir first, exactly as
-  # repo-workspace below does, and then keeps gh's own exit code.
-  step git-in-pod $K exec "$d" -n "$ns" -c gateway -- sh -c 'for f in "$HERMES_ENV_DIR"/*; do n=$(basename "$f"); case "$n" in [A-Z_][A-Z0-9_]*) export "$n=$(cat "$f")";; esac; done; git --version && { s=$(gh auth status 2>&1); rc=$?; printf "%s\n" "$s" | tail -3; exit $rc; }'
   step hindsight-answers $K exec "$d" -n "$ns" -c gateway -- python3 -c 'import os,urllib.request; u=os.environ["HINDSIGHT_API_URL"]; print(u, urllib.request.urlopen(u+"/health", timeout=5).status)'
   step cron-lanes-installed sh -c "$K exec $d -n $ns -c gateway -- python3 -c 'import json; j=json.load(open(\"/data/cron/jobs.json\")); n=len(j.get(\"jobs\", j) if isinstance(j, dict) else j); print(\"jobs=%d\" % n); raise SystemExit(0 if n else 1)'"
-  # crew#561 CP5 as a row, not a listing: the primary lane is the estate router, read from the
-  # pod's own rendered config, and no vendor key decides a turn.
-  step model-lane-is-router $K exec "$d" -n "$ns" -c gateway -- sh -c 'python3 -c "import yaml; c=yaml.safe_load(open(\"/data/config.yaml\")); m=c[\"model\"]; u=m[\"base_url\"]; assert m[\"provider\"]==\"custom\" and u.endswith(\"/v1\") and \"llm.\" in u, m; print(\"primary\", u)"'
-  # crew#561 CP1: repos as a workspace on the pod's own volume, cloned with the pod's own token.
-  # The push is a dry run: it proves the credential writes without leaving a branch behind.
-  step repo-workspace $K exec "$d" -n "$ns" -c gateway -- sh -c 'for f in /run/secrets/hermes-agent-env/*; do n=$(basename "$f"); case "$n" in [A-Z_][A-Z0-9_]*) export "$n=$(cat "$f")";; esac; done; test -n "${GITHUB_TOKEN:-}" || { echo "no GITHUB_TOKEN in the env dir"; exit 1; }; rm -rf /data/workspace/idp; git clone -q --depth 1 "https://x-access-token:${GITHUB_TOKEN}@github.com/chidionyema/idp" /data/workspace/idp && cd /data/workspace/idp && git checkout -q -b otto/parity-probe && git push -q --dry-run origin otto/parity-probe && echo "clone, branch and push (dry run) ok from $(git rev-parse --short HEAD)"'
-  # crew#561 CP2: the ServiceAccount reads its own namespace and nothing else. Both halves are
-  # graded: a yes inside the namespace and a no outside it (a role that reads everything is red).
-  step sa-reads-own-namespace $K auth can-i list pods -n "$ns" --as="system:serviceaccount:$ns:hermes-agent"
-  step sa-blind-elsewhere sh -c "a=\$($K auth can-i list secrets -n kube-system --as=system:serviceaccount:$ns:hermes-agent 2>/dev/null); [ \"\$a\" = no ] && echo 'kube-system secrets: no'"
-  # crew#561 CP3: the estate MCP answers the pod with the pod's own key, at the URL the pod's
-  # config names (never typed here, LAW 46). Only the status is printed, never the key.
-  # crew#717 wave 1 (founder 2026-08-30 "i need otto sorted once and for all"): memory, voice
-  # and observability graded from inside the pod. toolsets-available is the inventory receipt:
-  # what the runtime says is on, and the env each dark toolset still needs.
-  show toolsets-available $K exec "$d" -n "$ns" -c gateway -- sh -c 'python3 -c "
-from tools.registry import registry
-a = registry.get_available_toolsets()
-want = (\"web\", \"browser\", \"vision\", \"image_gen\", \"tts\", \"cronjob\", \"delegation\", \"code_execution\", \"memory\", \"session_search\", \"computer_use\")
-for ts in sorted(set(a) & set(want)):
-    print(ts, a[ts][\"available\"], \",\".join(a[ts][\"requirements\"]) or \"-\")
-"'
-  step memory-survives-restart $K exec "$d" -n "$ns" -c gateway -- sh -c 'test -s /data/state.db && ls -l /data/state.db'
-  step memory-volume-bound sh -c "$K get pvc -n $ns | grep Bound"
-  step memory-hindsight-answers $K exec "$d" -n "$ns" -c gateway -- sh -c 'python3 -c "
-import os, urllib.request
-u = os.environ[\"HINDSIGHT_API_URL\"]
-err = None
-for path in (\"/health\", \"/\"):
-    try:
-        print(path, urllib.request.urlopen(u + path, timeout=10).status)
-        break
-    except Exception as e:
-        err = e
-else:
-    raise SystemExit(str(err))
-"'
-  step langfuse-key-mounted $K exec "$d" -n "$ns" -c gateway -- sh -c 'for f in LANGFUSE_PUBLIC_KEY LANGFUSE_SECRET_KEY; do test -s "/run/secrets/hermes-agent-env/$f" || exit 1; printf "%s bytes=%s\n" "$f" "$(wc -c < /run/secrets/hermes-agent-env/$f)"; done'
-  step otto-emits-traces $K exec "$d" -n "$ns" -c gateway -- sh -c 'python3 -c "
-import base64, json, os, urllib.request
-u = os.environ[\"LANGFUSE_BASE_URL\"]
-pk = open(\"/run/secrets/hermes-agent-env/LANGFUSE_PUBLIC_KEY\").read().strip()
-sk = open(\"/run/secrets/hermes-agent-env/LANGFUSE_SECRET_KEY\").read().strip()
-tok = base64.b64encode((pk + \":\" + sk).encode()).decode()
-r = urllib.request.urlopen(urllib.request.Request(u + \"/api/public/traces?limit=1\", headers={\"Authorization\": \"Basic \" + tok}), timeout=15)
-d = json.loads(r.read().decode())
-print(r.status, \"traces_total\", d.get(\"meta\", {}).get(\"totalItems\"))
-"'
-  step tts-edge-answers $K exec "$d" -n "$ns" -c gateway -- sh -c 'python3 -c "import edge_tts; print(\"edge-tts importable\")"'
-  # crew#561, founder 2026-08-30 "Otto need to be mandated also else may forget": the entrypoint reads
-  # estate state at boot and logs READ or BLIND; a boot with neither line is a boot that forgot.
-  step estate-state-read-at-start sh -c "$K logs $d -n $ns -c gateway | grep -m1 '^estate-state: READ '"
-  step estate-mcp-answers $K exec "$d" -n "$ns" -c gateway -- sh -c 'python3 -c "
-import json, os, sys, urllib.request, yaml
-c = yaml.safe_load(open(\"/data/config.yaml\"))
-url = c[\"mcp_servers\"][\"estate\"][\"url\"]
-key = open(\"/run/secrets/hermes-agent-env/ESTATE_MCP_KEY\").read().strip()
-body = json.dumps({\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"initialize\", \"params\": {\"protocolVersion\": \"2025-03-26\", \"capabilities\": {}, \"clientInfo\": {\"name\": \"otto-parity\", \"version\": \"0\"}}}).encode()
-r = urllib.request.urlopen(urllib.request.Request(url, body, {\"Authorization\": \"Bearer \" + key, \"Content-Type\": \"application/json\", \"Accept\": \"application/json, text/event-stream\"}), timeout=15)
-print(url, r.status, \"session\" if r.headers.get(\"Mcp-Session-Id\") else \"no-session\")
-"'
+  show model-lane sh -c "$K exec $d -n $ns -c gateway -- sh -c 'grep -E \"^(model|provider|base_url|  provider|  base_url)\" /data/config.yaml | head -8'"
 }
 
 # healthchecks-door: crew#684, 2026-08-30 07:0xZ. Read-only. idp#957 (Host header) and idp#962 (enrol
@@ -1058,62 +976,8 @@ pb_chi_resize() {
   show chi-after chi_links
 }
 
-# registries-conf: READ-ONLY. What the container runtime on each node is actually configured to do
-# with an unqualified image name. Founder 2026-08-31, doc
-# ~/.claude/docs/founder/2026-08-31T0243Z-one-your-nodes-are-configured-to-reject-what-5434b31f.md:
-# "your nodes are configured to reject what the world ships. short-name-mode = enforcing with no
-# unqualified-search-registries means every third-party chart default fails on arrival. That's not
-# an incident stream, it's a setting." He is right that it is a setting and that six file edits were
-# never the answer to a node-level policy. This playbook is the read that has to come before the
-# write: the kubelet Event on 2026-08-31 said `returns ambiguous list`, and containers/image emits
-# that text when short-name-mode is enforcing AND the search list has MORE THAN ONE entry -- it is
-# the ambiguity that is refused, not the emptiness. An empty list gives different text. So the fix
-# he names (set the list to exactly ["docker.io"]) and the fix the message implies are different
-# edits, and which one is correct is a fact on the node, not a choice. Read it, then change it.
-#
-# hostPath, mounted read-only, on /etc/containers -- the file the runtime reads, not a manifest that
-# claims what it says. Nothing here writes.
-pb_registries_conf() {
-  local node i=0
-  for node in $($K get nodes -o jsonpath='{.items[*].metadata.name}'); do
-    i=$((i+1))
-    echo "--- node $node"
-    local name="registries-read-$i"
-    step "$name-clear" $K delete pod/"$name" -n kube-system --ignore-not-found --wait=true --timeout=60s
-    step "$name-apply" $K apply -f - <<YAML
-apiVersion: v1
-kind: Pod
-metadata: { name: $name, namespace: kube-system, labels: { app: registries-read } }
-spec:
-  restartPolicy: Never
-  priorityClassName: system-cluster-critical
-  tolerations: [{ operator: Exists }]
-  nodeName: $node
-  securityContext: { runAsNonRoot: true, runAsUser: 65534, seccompProfile: { type: RuntimeDefault } }
-  volumes:
-    - name: etc-containers
-      hostPath: { path: /etc/containers, type: Directory }
-  containers:
-    - name: read
-      image: public.ecr.aws/docker/library/busybox:1.36
-      # No shell variable in this string: it sits inside an unquoted heredoc, so the OUTER shell
-      # would expand anything with a $ before the pod ever saw it. `grep -r . dir/` prints
-      # file:line and needs no loop variable. shellcheck SC2154 caught exactly that.
-      command: ["sh", "-c", "echo '== registries.conf'; cat /host/registries.conf 2>&1; echo; echo '== registries.conf.d, as file:line'; grep -r . /host/registries.conf.d/ 2>&1"]
-      volumeMounts: [{ name: etc-containers, mountPath: /host, readOnly: true }]
-      resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { cpu: 100m, memory: 32Mi } }
-      readinessProbe: { exec: { command: ["true"] } }
-      livenessProbe: { exec: { command: ["true"] } }
-      securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
-YAML
-    step "$name-answers" $K wait pod/"$name" -n kube-system --for=jsonpath='{.status.phase}'=Succeeded --timeout=180s
-    show "$name-log" $K logs pod/"$name" -n kube-system
-    step "$name-remove" $K delete pod/"$name" -n kube-system --ignore-not-found --wait=false
-  done
-}
-
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor otto-parity healthchecks-door cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-parity healthchecks-door cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   otto-parity) pb_otto_parity ;;
@@ -1132,7 +996,6 @@ case "${1:-}" in
   chi-resize) pb_chi_resize ;;
   namespace-unstick) pb_namespace_unstick ;;
   ghcr-pull-restore) pb_ghcr_pull_restore ;;
-  registries-conf) pb_registries_conf ;;
   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
 esac
 [ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }

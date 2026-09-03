@@ -45,78 +45,11 @@ metadata:
   name: hermes-agent-env
   namespace: hermes-agent
 spec:
-  # 45m keeps every mint inside the token's 60-minute life (vendor page, generator/github: "Github
-  # tokens expire after 60 minutes ... choose a refreshInterval that is below this number").
-  refreshInterval: 45m
+  refreshInterval: 15m   # holds a 1h GitHub App installation token re-minted hourly (crew#577)
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
   target: { name: hermes-agent-env, creationPolicy: Owner }
   dataFrom:
-    # Merged in the order listed (ExternalSecret API: "If multiple dataFrom are specified, secrets
-    # are merged in the specified order"), so the token minted below always wins over the stale
-    # GITHUB_TOKEN field the vault entry still carries from the retired refresh lane (idp#852).
     - extract: { key: hermes-agent-env }
-    - sourceRef:
-        generatorRef:
-          apiVersion: generators.external-secrets.io/v1alpha1
-          kind: GithubAccessToken
-          name: hermes-agent-github
-      rewrite:
-        - transform: { template: "GITHUB_TOKEN" }
----
-# Otto's GitHub credential, day 0 (founder 2026-08-30: "otto is infra ... not afterthought").
-# idp#852 deleted verify-drill.yml and the hourly `bin/idp-github-app refresh` re-mint rode inside
-# it, so the 1h installation token in the vault died within the hour and the gateway lost GitHub.
-# The mint now lives where the consumer lives: external-secrets' GithubAccessToken generator mints
-# a fresh installation token of the estate-agents App on every refresh of the ExternalSecret above,
-# narrowed to the same application-engineer lane as platform/github-app/lanes.json. No workflow,
-# no script, no vault hop: freshness is a property of the platform layer, never of a drill.
-# ${githubAppIDQuoted} / ${githubAppInstallationIDQuoted} are substituted by Flux from the
-# flux-system/github-app Secret; the Quoted variants carry their own double quotes because
-# kustomize build re-emits every scalar plain (incident run 33339964930: a bare numeral
-# parses as int and the API server refuses spec.appID). Source of the keys:
-# flux-system/github-app Secret (platform/alerts-github/github-app.yaml; this row's substituteFrom
-# in clusters/oke/platform.yaml) -- account identifiers never typed in git (LAW 46).
-apiVersion: generators.external-secrets.io/v1alpha1
-kind: GithubAccessToken
-metadata:
-  name: hermes-agent-github
-  namespace: hermes-agent
-spec:
-  appID: ${githubAppIDQuoted}
-  installID: ${githubAppInstallationIDQuoted}
-  permissions:
-    metadata: read
-    contents: write
-    pull_requests: write
-    issues: write
-    checks: read
-  auth:
-    privateKey:
-      secretRef:
-        name: github-app-pem
-        key: key
----
-# The App's private key for the generator, rendered the way flux-writer renders it
-# (platform/image-automation/flux-writer.yaml): from the one vault entry `github-app` that
-# bin/idp-github-app writes. ESO rewrites the Secret only when the value changes, so a stable key
-# never rolls the pod through the Reloader annotation; a rotated App key rolls it, which is right.
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: hermes-agent-github-app-pem
-  namespace: hermes-agent
-spec:
-  refreshInterval: 1h
-  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
-  target:
-    name: github-app-pem
-    creationPolicy: Owner
-    template:
-      engineVersion: v2
-      data:
-        key: "{{ .pem_b64 | b64dec }}"
-  dataFrom:
-    - extract: { key: github-app }
 ---
 # crew#516 CP4 (2026-08-27, receipt 33116314460): the a2a adapter binds 127.0.0.1 unless a bearer
 # token is configured (hermes-agent plugins/platforms/a2a/security.py resolve_bind_host), so the
@@ -187,13 +120,10 @@ metadata:
   name: hermes-agent-gateway
   namespace: hermes-agent
   annotations:
-    # Reloader (platform/reloader) rolls the pod when a vault entry lands through ESO (1h refresh).
-    # Founder blueprint 2026-08-30 (~/.claude/docs/founder/2026-08-30T2326Z-*-4ca529a0.md): the
-    # enumerated reload list is deleted, not maintained -- it silently omitted hermes-agent-langfuse
-    # the day the Secret was added (this PR), the same class as idp#955. `auto` discovers every
-    # Secret/ConfigMap this pod consumes (projected sources included: getVolumeMountName,
-    # stakater/Reloader tag chart-v2.2.16, internal/pkg/handler/upgrade.go). No list, no stale list.
-    reloader.stakater.com/auto: "true"
+    # Reloader (platform/reloader) rolls the pod when the vault entry lands through ESO (1h refresh),
+    # the same way litellm picks up litellm-upstream: the swap seeds TELEGRAM_BOT_TOKEN and the pod restarts.
+    # crew#516 CP5: hermes-agent-tailscale added so the sidecar re-authenticates on a key rotation.
+    secret.reloader.stakater.com/reload: "hermes-agent-env,hermes-agent-a2a,hermes-agent-tailscale"
     # crew#561: mac-run has NO Reloader annotation, deliberately. It is a subPath mount, and a
     # subPath never sees a ConfigMap update, so idp#955 named the ConfigMap here. That could not
     # work: the script had already changed in idp#949 at 05:45Z, Reloader only acts on a change it
@@ -220,8 +150,7 @@ spec:
         app.kubernetes.io/name: hermes-agent-gateway
     spec:
       priorityClassName: infrastructure-critical
-      serviceAccountName: hermes-agent   # crew#561 CP2: rbac.yaml, reads its own namespace only
-      automountServiceAccountToken: true
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -249,12 +178,6 @@ spec:
               value: /etc/hermes/estate.yaml
             - name: HINDSIGHT_API_URL
               value: http://hindsight-api.hindsight.svc:8888
-            # crew#717 wave 1: where the observability plugin sends Otto's traces (LAW 50). The keys
-            # arrive in the env dir from langfuse-key.yaml; a URL with no keys is inert.
-            - name: LANGFUSE_BASE_URL
-              value: http://langfuse-web.observability.svc:3000
-            - name: HERMES_LANGFUSE_ENV
-              value: production
             - name: PYTHONUNBUFFERED
               value: "1"
             # crew#516 CP4: bind a2a on the pod IP so the probes below reach it; A2A_BEARER_TOKEN
@@ -414,8 +337,6 @@ spec:
             sources:
               - secret: { name: hermes-agent-env }
               - secret: { name: hermes-agent-a2a }   # crew#516 CP4: A2A_BEARER_TOKEN
-              - secret: { name: hermes-agent-mcp, optional: true }   # crew#561 CP3: ESTATE_MCP_KEY (mcp-key.yaml)
-              - secret: { name: hermes-agent-langfuse, optional: true }   # crew#717 wave 1: LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY (langfuse-key.yaml)
         - name: estate
           configMap: { name: hermes-agent-estate }
         - name: mac-run

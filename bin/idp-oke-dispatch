@@ -14,11 +14,6 @@
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 WORKFLOW="${OKE_WORKFLOW:-oke-check.yml}"
-# The ref the workflow reads its playbooks from. main is right for every ordinary run, but a
-# fix to bin/idp-oke-break-glass itself cannot be proved on the cluster before it is merged
-# unless the dispatch can name the branch that carries it, and merging cluster code that has
-# never run is how a playbook reaches the estate untested (crew#718, 2026-08-30).
-OKE_REF="${OKE_REF:-main}"
 REPO_ARGS=(); [ -n "${IDP_REPO:-}" ] && REPO_ARGS=(--repo "$IDP_REPO")
 [ $# -eq 1 ] || { echo "usage: idp-oke-dispatch <playbook> | --check"; exit 64; }
 if [ "$1" = --check ]; then
@@ -34,4 +29,4 @@ if [ -n "$pending" ]; then
   echo "exit 75: $WORKFLOW already has a pending workflow_dispatch run ($(echo "$pending" | tr '\n' ' ')); a second dispatch would cancel it (GitHub keeps one pending run per concurrency group). Wait for it to start, then dispatch."
   exit 75
 fi
-gh workflow run "$WORKFLOW" "${REPO_ARGS[@]}" --ref "$OKE_REF" "${INPUTS[@]}"
+gh workflow run "$WORKFLOW" "${REPO_ARGS[@]}" --ref main "${INPUTS[@]}"

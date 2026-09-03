@@ -20,12 +20,6 @@ spec:
       data:
         githubAppID: "{{ .app_id }}"
         githubAppInstallationID: "{{ .installation_id }}"
-        # Incident run 33339964930: kustomize build drops YAML quotes around ${githubAppID}, and
-        # Flux envsubst then types the bare numeral as an int -- the API server refuses the
-        # GithubAccessToken (spec.appID expected string). The quotes must ride IN the value:
-        # these keys carry the id already double-quoted, so the substituted text parses as a string.
-        githubAppIDQuoted: '{{ .app_id | quote }}'
-        githubAppInstallationIDQuoted: '{{ .installation_id | quote }}'
         githubAppPrivateKey: "{{ .pem_b64 | b64dec }}"
   dataFrom:
     - extract: { key: github-app }

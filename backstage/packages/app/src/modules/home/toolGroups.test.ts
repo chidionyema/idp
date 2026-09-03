@@ -42,9 +42,4 @@ describe('the Tools page groups every door from the catalogue', () => {
       /2 doors in 2 groups/,
     );
   });
-
-  it('does not promise the one login while a door asks for a second credential', () => {
-    // crew#718: SigNoz community has no OIDC, so "opens on your estate login" was false for it
-    expect(toolsSentence(groupTools([door('w', 'Watch')]))).toMatch(/second credential/);
-  });
 });

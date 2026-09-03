@@ -197,18 +197,6 @@ drills:
       01:58Z schedule never fired, the Ops page read "What waits on you could not be read" and the
       founder saw the portal as down; GitHub's cron is best effort, this row is the estate's promise.
 
-  - name: otto-parity
-    owner: science
-    workflow: otto-parity.yml
-    job: parity
-    schedule: "41 * * * *"
-    max_age_hours: 3
-    proves: >-
-      Otto in the cluster has every capability crew#561 names, graded from inside the running
-      pod by the otto-parity playbook: gateway up, the Mac reachable through the tailnet, memory
-      answering, the model lane on the estate router, a repo workspace it can clone and push, a
-      ServiceAccount that reads its own namespace and nothing else, and the estate MCP answering
-      its key.
   - name: estate-state
     owner: science
     workflow: estate-state.yml
@@ -221,31 +209,3 @@ drills:
       pulls, so the MCP answers stale:false. 2026-08-30: GitHub never fired this cron once in the
       first three hours it existed, and the founder's MCP read stale:true; the dispatcher covers it
       four times an hour and this row is the estate's promise, not GitHub's.
-
-  - name: rotation-canary
-    owner: idp
-    workflow: oke-check.yml
-    job: rotation-drill
-    schedule: "17 6 * * *"
-    max_age_hours: 26
-    proves: >-
-      A secret rotation travels the whole road with no hand: a fresh value written to the vault
-      entry rotation-canary reaches the cluster copy (ESO, 10m refresh), Reloader restarts the
-      canary consumer, and the restarted pod publishes the sha of the value it is actually
-      running with -- within 25 minutes of the vault write. crew#722: both rotation incidents of
-      the week (crew#506 CP4, crew#684) were invisible because nothing exercised this road; a
-      vault write that succeeds is not a rotation until the running program answers with it.
-  - name: storefront-smoke
-    owner: idp
-    workflow: storefront-drill.yml
-    job: storefront-drill
-    schedule: "23 * * * *"
-    max_age_hours: 3
-    proves: >-
-      The shop a stranger opens is serving what the last merge built: mumchimp answers with HTML,
-      a pack page the home page links to answers, and every pack picture the home page references
-      loads as an image. Zero pictures referenced is a FAIL, never a pass on an empty list.
-      2026-08-30: the pack pictures were built, merged and in the registry while the cluster served
-      the 17:01 build for eight hours; the login drill, flux and the front door all read green
-      because no drill in this estate ever opened the shop, and the founder found it by looking at
-      the site (crew#693).

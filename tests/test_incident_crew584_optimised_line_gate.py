@@ -152,27 +152,10 @@ def test_incident_idp719_an_old_body_gains_the_line_on_the_next_push(tmp_path):
     assert "body gained the Optimised line" in r.stdout
 
 
-VERIFY = "Verify: `grep -rn imagepolicy platform/ clusters/ --include=*.yaml`"
-
-
-def test_a_body_that_already_carries_both_lines_is_left_alone(tmp_path):
-    """Two backfills now run on every controller push, `Optimised:` and `Verify:` (idp#1046, the
-    same class one gate later), so "left alone" means neither of them found anything to add."""
-    r = _fake_gh(tmp_path, "Written by image-automation-controller.\n\nOptimised: 1 -> 1 steps, 1 -> 1 round trips; cut: nothing\n" + VERIFY + "\n")
-    assert r.returncode == 0, r.stdout + r.stderr
-    assert not (tmp_path / "edits.txt").exists()
-
-
-def test_an_old_body_gains_the_verify_line_too(tmp_path):
-    """Same incident shape as idp#719 one gate later: verify-claims.yml refuses a pull request
-    touching platform/ or clusters/ with no `Verify:` line, and the deploy pull request touches
-    both. A body opened before that gate keeps failing it on every controller push unless the
-    script backfills, and the notice goes to stderr because the last line of stdout is the verdict
-    the workflow reads."""
+def test_a_body_that_already_carries_the_line_is_left_alone(tmp_path):
     r = _fake_gh(tmp_path, "Written by image-automation-controller.\n\nOptimised: 1 -> 1 steps, 1 -> 1 round trips; cut: nothing\n")
     assert r.returncode == 0, r.stdout + r.stderr
-    assert VERIFY in (tmp_path / "edits.txt").read_text()
-    assert "body gained the Verify line" in r.stderr
+    assert not (tmp_path / "edits.txt").exists()
 
 
 def test_incident_idp750_the_workflow_runs_mains_copy_of_the_script():

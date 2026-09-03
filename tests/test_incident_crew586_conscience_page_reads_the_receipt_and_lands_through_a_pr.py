@@ -52,18 +52,14 @@ def test_page_without_a_receipt_is_blind(tmp_path):
     assert p.returncode == 2 and "BLIND" in p.stderr
 
 
-def test_daily_run_lands_the_page_through_a_pull_request_and_the_portal_lists_it():
+def test_daily_run_lands_the_page_through_an_auto_merge_pr_and_the_portal_lists_it():
     wf = yaml.safe_load(WF.read_text())
     steps = {s.get("name"): s for s in wf["jobs"]["grade"]["steps"]}
     run = steps["portal page"]["run"]
     assert "23 7 * * *" in steps["portal page"]["if"]
     assert "bin/idp-conscience --page" in run
     assert '--force-with-lease origin "HEAD:refs/heads/$BRANCH"' in run
-    # idp#1046: this was `gh pr merge "$n" --auto --squash`. allow_auto_merge has been false on
-    # this repository since 2026-08-30, so that call answers `enablePullRequestAutoMerge` and the
-    # step exits 1. bin/idp-pr-arm arms it where the repository allows it and says plainly that the
-    # merge is the founder's where it does not, either way ending 0.
-    assert 'bin/idp-pr-arm "$n" --squash' in run
+    assert 'gh pr merge "$n" --auto --squash' in run
     assert "push origin main" not in run and "HEAD:main" not in run
     assert wf["permissions"]["contents"] == "write" and wf["permissions"]["pull-requests"] == "write"
     nav = yaml.safe_load((IDP / "mkdocs.yml").read_text())["nav"]
