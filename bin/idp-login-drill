@@ -431,6 +431,7 @@ with sync_playwright() as p:
         # last row comment-free: tests slice this tuple by text and a trailing comment eats the ")".
         ("tools", "text=Every tool we use"),
         ("ops", "text=The cluster right now"),
+        ("reports", "text=produced on a clock"),
         ("pair", "text=Type the PIN Moonlight shows you"),
         ("estate", "text=to find · Enter opens the first"),
     )
