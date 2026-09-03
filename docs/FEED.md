@@ -3,17 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-01T11:02:19Z · session 82cea017 · lane .claude
-🔴 Blocked: none; polish plan confirmed, first rebase aborted mid-turn
-🟡 Active: crew#774
-🟢 Done: none this session
-⚪ Pending: none
-🔧 TOUCHES: Store.Web PageHero PackRow packs.tsx on feat/crew774-store-polish (.wt-crew774-store); not mumchimp.css; not prospector-main
-🔀 OVERLAP: crew#232 #694 #700 #692 name the storefront; this lane owns crew#774 only
-📎 FACTS: https://github.com/chidionyema/crew/issues/774
-📍 State: /Users/chidionyema/dev/code/.wt-crew774-store still behind origin/main, no polish commit
-
-
 ## 2026-09-01T11:07:50Z · session a14fc078 · lane .wt-crew612-phone
 🟡 crew#612: founder asked for a pull request; idp#1107 opened for fix/crew612-phone-menu (phone menu slides in from the left, "/" is Backstage's own home page, god view parked at /estate, drill phone rows + Template count); first run went red on operating-model-gate (Control line named a drill, not a shipped file) and plain-english (four Vale errors in the decision record); both fixed, evidence image attached, main merged in, pushed at e25df925; check run in flight, background ba98w5tus
 🟢 Done: pr-evidence check passes on idp#1107 (1 image, 2 options, all 10 DoD rows, four law lines); local pytest 8 passed
@@ -4696,4 +4685,15 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: 54539261 owned PR 1242 — merged on the founder's direct word, announced here
 📎 FACTS: the operating-model gate is not in the main ruleset's required checks; auto-merge lands pin PRs while it is red
 📍 State: https://github.com/chidionyema/idp/commit/bab90eac
+
+
+## 2026-09-03T11:05:53Z · session a14fc078 · lane .wt-reports
+🟢 Done: SHIPPED on the founder's words ("nerged th pri", "need everyting shipped"): superset login fix merged (idp#1238 -> main ce5a4947) and PROVEN live two angles after Flux rolled the pods — /login/ with the identity header answers 302 to / with a session whose decoded keys include _user_id, and /superset/welcome/ with that cookie answers 200 (MEASURED_OK, probe 11:0xZ via port-forward replay); 7-day audit merged (crew#821 -> 1cc63dc8, nltk dismissal fixes crew main's red scan too); Redis PR idp#1244 gate green after two body fixes (rego wants the Control: line to BE a changed tests/ path, nothing after it; Drill: login-drill)
+🟡 Active: merging 1244 over REST after head-SHA green proof (same rate-limited-guard road as 1238/821, override stated)
+🔴 Blocked: none
+⚪ Pending: after 1244 merges, Flux rolls llm — verify litellm-cache pod up + banner gone from litellm logs; report capabilities to founder
+🔧 TOUCHES: merges only (1238, 821, 1244); superset-cookies.txt in scratchpad
+🔀 OVERLAP: none; no other session's branch moved
+📎 FACTS: operating-model rego control_shipped: `Control: <path>` must equal a changed file path exactly (backticks stripped, trailing prose refused); rollup CANCELLED duplicates keep UNSTABLE on green PRs — grade head-SHA check-runs
+📍 State: https://github.com/chidionyema/idp/pull/1244
 
