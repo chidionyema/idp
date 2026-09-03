@@ -1,0 +1,28 @@
+# Half of the crew#191 fence (network-policy.yaml is the other half). Sized for what this
+# area actually runs: two door pods, one surge pod during a rolling update, and one database
+# pod. A runaway process still cannot starve the node, and a rollout is never forbidden by
+# its own ceiling -- the main-62 roll wedged on exactly that.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: otto-gateway-defaults
+  namespace: otto-gateway
+spec:
+  limits:
+    - type: Container
+      default: { cpu: 200m, memory: 256Mi }
+      defaultRequest: { cpu: 50m, memory: 128Mi }
+      max: { cpu: 500m, memory: 512Mi }
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: otto-gateway-ceiling
+  namespace: otto-gateway
+spec:
+  hard:
+    requests.cpu: 300m
+    requests.memory: 640Mi
+    limits.cpu: 1200m
+    limits.memory: 1536Mi
+    pods: "6"

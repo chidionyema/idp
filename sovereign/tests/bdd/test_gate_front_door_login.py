@@ -1,6 +1,7 @@
 """Binds features/gates/front-door-login.feature (ADR 0007, crew#269, crew#297). The step parses every
 YAML document under platform/ for real: no user database, no Authelia, oauth2-proxy in front of every route."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -176,6 +177,46 @@ def _oauth2_proxy_in_front(state: dict) -> None:
                 in (p.parent / "enrol.py").read_text()
             ), (
                 f"{p}: the row never pins the ping key (idp#962: the enrol script is enrol.py)"
+            )
+            continue
+        if auth == "channel-binding-registry":
+            # The customer event door: it carries every channel, and each channel presents a
+            # different credential in a different header, so no single edge rule can match one
+            # value without going back to one route per channel. The check moved one hop, into
+            # the door's first step, which reads the binding table. The proof behind the label:
+            # one path only, the credentials come from the estate vault, the seeded row stores a
+            # one-way fingerprint and a vault reference rather than a credential, and the
+            # deployment provides the exact variable that row's reference resolves to -- without
+            # that last link every event on this door is refused.
+            layer = p.parent
+            paths = [
+                m.get("path", {})
+                for r in d["spec"]["rules"]
+                for m in r.get("matches", [])
+            ]
+            assert paths and all(
+                x == {"type": "PathPrefix", "value": "/webhook/"} for x in paths
+            ), f"{p}: channel-binding-registry route exposes {paths}"
+
+            secrets = (layer / "external-secret.yaml").read_text()
+            assert "estate-vault" in secrets, (
+                f"{p}: annotated channel-binding-registry but no ExternalSecret beside it "
+                "pulls a channel credential from the estate vault"
+            )
+
+            seed = (layer / "binding-seed.yaml").read_text()
+            assert ":'fingerprint'" in seed and "vault://" in seed, (
+                f"{p}: the seeded binding row stores no fingerprint and no vault reference"
+            )
+
+            reference = re.search(r"'(vault://[^']+)'", seed).group(1)
+            resolver_key = (
+                "OTTO_CHANNEL_SECRET_"
+                + re.sub(r"[^A-Za-z0-9]+", "_", reference).strip("_").upper()
+            )
+            assert resolver_key in (layer / "deployment.yaml").read_text(), (
+                f"{p}: the row points at {reference}, which the door resolves through "
+                f"{resolver_key}; nothing in deployment.yaml provides it"
             )
             continue
         if auth == "edge-basic-auth":

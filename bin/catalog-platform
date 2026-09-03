@@ -289,6 +289,11 @@ LAYERS = {
         "Otto (golden)",
         "The new agent's own webhook and health door, running its own pod ahead of production.",
     ),
+    "otto-gateway": (
+        "agents",
+        "Customer event door",
+        "One door for every chat channel and every customer; adding a customer is a row in a table, not a release.",
+    ),
     "otto-golden-secret": (
         "agents",
         "Otto (golden) webhook secret",

@@ -1,0 +1,21 @@
+# The Universal Event Gateway. Same image as platform/hermes-agent and platform/otto-golden
+# -- one build, several commands -- and the tag below carries the same $imagepolicy marker,
+# so the estate's one ImageUpdateAutomation bumps all three together on every build. No new
+# automation object: two automations on one push branch collide (crew#406).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: otto-gateway
+resources:
+  - namespace.yaml
+  - quota.yaml
+  - network-policy.yaml
+  - external-secret.yaml
+  - postgres.yaml
+  - binding-seed.yaml
+  - deployment.yaml
+  - httproute.yaml
+  - edge-manners.yaml
+  - availability.yaml
+images:
+  - name: ghcr.io/chidionyema/hermes-agent
+    newTag: main-65-3c2b68b9faf88f27fb5160bf6283e326c6c91d22 # {"$imagepolicy": "flux-system:hermes-agent:tag"}

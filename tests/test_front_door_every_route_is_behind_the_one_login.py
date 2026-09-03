@@ -324,6 +324,64 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
             f"{f}: annotated telegram-webhook-secret-token but gateway.yaml mints no webhook secret or sets no webhook URL"
         )
         return
+    # The customer event door (founder directive 2026-09-03). Every customer's chat channel
+    # arrives here, and each one presents a different credential in a different header, so
+    # there is no single header value an edge rule could match without going back to one
+    # route per channel -- which is the arrangement this door exists to remove. The check
+    # therefore sits one hop in, against the binding table, and the label says so.
+    #
+    # A label alone proves nothing, so this road carries the same two-part obligation the
+    # four above it carry. The route must expose nothing but the one webhook prefix, and the
+    # layer beside it must prove the door has something to check a credential AGAINST:
+    #   * the channel credential is pulled from the estate vault, so the door can resolve a
+    #     binding row's reference to a real value at request time;
+    #   * the seeded row stores a one-way fingerprint and a vault reference, never the
+    #     credential itself, so a dumped table cannot be replayed;
+    #   * the pod exports the resolver key that reference maps to, or resolution finds
+    #     nothing and every event is refused.
+    # Drop any one of those and the door cannot verify anything, which is the fail-open case
+    # this whole test exists to catch.
+    if (route["metadata"].get("annotations") or {}).get(
+        "idp.estate/auth"
+    ) == "channel-binding-registry":
+        layer = pathlib.Path(f).parent
+        paths = [
+            m.get("path", {})
+            for rule in route["spec"]["rules"]
+            for m in rule.get("matches", [])
+        ]
+        assert paths and all(
+            p == {"type": "PathPrefix", "value": "/webhook/"} for p in paths
+        ), (
+            f"{f}: annotated channel-binding-registry but exposes a path other than "
+            f"/webhook/: {paths}"
+        )
+
+        secrets = (layer / "external-secret.yaml").read_text()
+        assert "estate-vault" in secrets, (
+            f"{f}: annotated channel-binding-registry but no ExternalSecret beside it "
+            "pulls a channel credential from the estate vault, so the door has nothing "
+            "to check an arriving credential against"
+        )
+
+        seed = (layer / "binding-seed.yaml").read_text()
+        assert ":'fingerprint'" in seed and "vault://" in seed, (
+            f"{f}: annotated channel-binding-registry but the seeded binding row does not "
+            "store a one-way fingerprint and a vault reference"
+        )
+
+        deployment = (layer / "deployment.yaml").read_text()
+        reference = re.search(r"'(vault://[^']+)'", seed).group(1)
+        resolver_key = (
+            "OTTO_CHANNEL_SECRET_"
+            + re.sub(r"[^A-Za-z0-9]+", "_", reference).strip("_").upper()
+        )
+        assert resolver_key in deployment, (
+            f"{f}: the binding row points at {reference}, which the door resolves through "
+            f"{resolver_key}; nothing in deployment.yaml provides it, so every event on "
+            "this door would be refused"
+        )
+        return
     if (route["metadata"].get("annotations") or {}).get(
         "idp.estate/auth"
     ) == "edge-basic-auth":

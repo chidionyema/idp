@@ -407,6 +407,61 @@ spec:
       name: otto-golden
       namespace: otto-golden
 ---
+# The Universal Event Gateway row (founder directive 2026-09-03). One door for every channel
+# and every customer, answering /webhook/<channel> on the same otto.${ESTATE_ZONE} host the
+# staging row above answers on. It runs alongside otto-golden rather than replacing it: the
+# old exact path keeps working until the cutover, which is its own small change.
+#
+# Needs edge for the shared Gateway and its https-otto listener, secret-store for the two
+# ExternalSecrets, event-bus because the door's whole output is a task on the bus, and
+# scheduling like every other row. It substitutes only ESTATE_ZONE: unlike otto-golden there
+# is no secret in the route, because this door checks credentials against the binding table
+# rather than at the edge.
+#
+# It lands dark, `suspend: true`, the estate's own switch (platform/features/features.yaml:
+# "`suspend:` is the switch -- nothing is ever deleted"), for two measured reasons:
+#
+#   1. The bus it publishes to is dark. event-bus carries `suspend: true` at
+#      clusters/oke/commerce.yaml:67, "a bus with no publisher is a workload nobody reads".
+#      This door is that publisher, so the two rows wake together or neither does.
+#   2. The standing CPU budget has no headroom. platform/ asks for exactly 6.90 cores against
+#      the 6.9 the guard allows (tests/test_incident_crew584_capacity_requests_need_proof.py:15);
+#      this layer asks for 0.10 more. A suspended layer is listed in the `off` bucket and not
+#      charged, and the cutover moves every one of its rows into the standing total in the same
+#      commit -- which is a capacity decision, and so the founder's, not this branch's.
+#
+# The cutover is one small change: `suspend: false` here and on the event-bus row, with the
+# 0.10 cores accounted for. Until then this branch changes nothing that runs.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: otto-gateway
+  namespace: flux-system
+spec:
+  suspend: true
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/otto-gateway
+  prune: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+  dependsOn:
+    - name: scheduling
+    - name: secret-store
+    - name: edge
+    - name: event-bus
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: otto-gateway
+      namespace: otto-gateway
+---
 # The otto-webhook ExternalSecret, its own row like alerts-secret (crew#284 shape): a failing
 # secret sync holds only otto-golden, and the substitution Secret exists before the row
 # that substitutes from it is built.

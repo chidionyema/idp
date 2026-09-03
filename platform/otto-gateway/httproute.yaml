@@ -1,0 +1,54 @@
+# One path for every channel: /webhook/<channel>.
+#
+# This route is added alongside the existing otto-golden route, not in place of it. The old
+# exact path /telegram-webhook keeps working and keeps its own edge header match while the
+# new door is proved on the same host; two routes on one host with different paths is what
+# makes the cutover a small, reversible change of its own.
+#
+# Where the credential is checked, and why it is not checked here. The otto-golden route
+# matches an exact secret-token header at the edge, which works because that door carries one
+# channel for one customer. This door carries every channel and every customer, and each one
+# presents a different credential in a different header -- there is no single header value an
+# edge rule could match without going back to one route per channel, which is the thing the
+# door exists to remove. The check moved one hop, into the door's first pipeline step: the
+# credential is looked up in the binding table, and an event whose credential matches no
+# active row is refused with the same answer as an event whose credential is wrong, so a
+# stranger cannot probe for which customers exist. `idp.estate/auth` below names that.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: otto-gateway
+  namespace: otto-gateway
+  labels:
+    backstage.io/kubernetes-id: otto-gateway
+  annotations:
+    idp.estate/auth: channel-binding-registry
+spec:
+  parentRefs:
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-otto
+  hostnames:
+    - "otto.${ESTATE_ZONE}"
+  rules:
+    # Every inbound event, from every channel, for every customer. A prefix and not a list of
+    # exact paths: carrying a channel this estate has never carried before must not require
+    # editing this file.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /webhook/
+          method: POST
+      filters:
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: friendly-errors }
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: edge-headers }
+      backendRefs:
+        - name: otto-gateway
+          port: 8080
+    # There is deliberately no public health path here. otto-golden already answers the exact
+    # path /healthz on this same host, and two routes claiming one exact path on one host is
+    # a precedence puzzle nobody should have to reason about during an incident. This door's
+    # health is graded where health belongs: the kubelet's three probes in deployment.yaml,
+    # and the Flux row's own health check on the Deployment.
