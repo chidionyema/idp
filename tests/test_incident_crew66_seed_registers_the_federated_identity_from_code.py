@@ -34,6 +34,7 @@ case "$*" in
   *oauth/token*) pair=$(cat); case "$pair" in *SEED*) echo '{{"access_token":"at-seed","scope":"oauth_keys"}}';; *) echo '{{"access_token":"at-1","scope":"auth_keys devices:core policy_file users:read"}}';; esac;;
   *DELETE*) printf '204';;
   *keyType\\":\\"federated*) echo '{{"id":"kFEDNEW222","keyType":"federated"}}';;
+  *-/keys/kFEDNEW222*) echo '{{"id":"kFEDNEW222","keyType":"federated","tags":["tag:k8s","tag:k8s-operator"]}}';;
   *tailnet/-/keys*) echo '{{"id":"kNEW987654","key":"tskey-client-new-1","keyType":"client","tags":["tag:k8s","tag:k8s-operator"]}}';;
   *) echo '{{}}';;
 esac
@@ -77,6 +78,9 @@ def test_a_refused_identity_is_re_registered_from_the_runners_claims_and_the_ope
     ), (
         "the identity holds every scope it grants the operator (Tailscale grants only what the actor holds)"
     )
+    assert '"tags":["tag:k8s","tag:k8s-operator"]' in reg[0], (
+        "the identity carries every tag it mints the operator with (an actor mints only tags its own tags own, kb/1215)"
+    )
     assert json.load(open(vault))["tailscale-federated"]["client_id"] == "kFEDNEW222"
     assert "keys/kFEDOLD111" in calls and "DELETE" in calls, (
         "the refused identity is retired"
@@ -114,3 +118,38 @@ def test_refused_and_no_seed_names_the_one_hand_and_mints_nothing(tmp_path):
     assert "bin/idp-set-root tailscale" in out
     assert '"keyType"' not in log.read_text()
     assert "tailscale-operator" not in json.load(open(vault))
+
+
+def test_an_identity_that_exchanges_but_carries_no_tags_is_re_registered_with_them(
+    tmp_path,
+):
+    """Run 33756246171 (2026-09-03): the identity exchanged fine and the operator mint answered
+    'requested tags [tag:k8s tag:k8s-operator] are invalid or not permitted' because the identity
+    itself had been registered with no tags. The script reads the identity's own key record and
+    re-registers it with both tags before minting."""
+    env, log, vault = _runner(tmp_path, old="kFEDNOTAG333")
+    sh = pathlib.Path(env["IDP_VAULT_PUT"]).parent
+    shim = (sh / "curl").read_text()
+    refused = [l for l in shim.splitlines() if "*token-exchange*)" in l]
+    assert len(refused) == 1, shim
+    shim = shim.replace(
+        refused[0],
+        '  *client_id=kFEDNOTAG333*) echo \'{"access_token":"at-notag","scope":'
+        '"auth_keys devices:core policy_file users:read oauth_keys"}\' | body 200;;\n'
+        '  *-/keys/kFEDNOTAG333*) echo \'{"id":"kFEDNOTAG333","keyType":"federated","tags":[]}\';;\n'
+        + refused[0],
+    )
+    (sh / "curl").write_text(shim)
+    p = _run(env)
+    out = p.stdout + p.stderr
+    assert p.returncode == 0, out
+    calls = log.read_text()
+    assert "keys/kFEDNOTAG333" in calls, "the identity's own key record is read"
+    reg = [l for l in calls.splitlines() if '"keyType":"federated"' in l]
+    assert len(reg) == 1 and '"tags":["tag:k8s","tag:k8s-operator"]' in reg[0], calls
+    assert "carries no tag:k8s" in out and "re-registering" in out, out
+    assert json.load(open(vault))["tailscale-federated"]["client_id"] == "kFEDNEW222"
+    mint = [l for l in calls.splitlines() if '"keyType":"client"' in l]
+    assert mint and "at-fed" in mint[0] and "at-notag" not in mint[0], (
+        "the operator is minted with the re-registered identity, never the tagless one"
+    )

@@ -63,6 +63,17 @@ federated_exchange() { # <federated client id> -> access-token JSON on stdout (k
   jq -e '.access_token' "$P/xchg" >/dev/null 2>&1 || { say FAIL federated "HTTP 200 but no access_token in the answer. Full answer:" >&2; cat "$P/xchg" >&2; echo >&2; exit 1; }
   cat "$P/xchg"
 }
+federated_carries_tags() { # <federated id> <token JSON> -> 0 when the identity's own key record carries $TAG and $OP_TAG
+  # An actor mints only the tags its own tags own (kb/1215). An identity registered with no tags exchanges
+  # fine and then the operator mint answers "requested tags [tag:k8s tag:k8s-operator] are invalid or not
+  # permitted" (run 33756246171, 2026-09-03). A miss prints the gap and returns 1 so road b re-registers it.
+  local tok ftags w
+  tok=$(jq -r '.access_token // empty' <<<"$2"); [ -n "$tok" ] || return 1
+  ftags=$(curl -sS -H "Authorization: Bearer $tok" "$API/api/v2/tailnet/-/keys/$1" | jq -c '.tags // []' 2>/dev/null || echo '[]')
+  for w in "$TAG" "$OP_TAG"; do
+    jq -e --arg w "$w" 'index($w)' <<<"$ftags" >/dev/null 2>&1 || { say "" federated "identity $1 exchanges but carries no $w (has: $ftags); an actor mints only tags its own tags own (kb/1215): re-registering it with both"; return 1; }
+  done
+}
 fed_id=${TAILSCALE_FEDERATED_CLIENT_ID:-$(awk '$1=="TAILSCALE_FEDERATED_CLIENT_ID:"{gsub(/"/,"",$2);print $2}' "${ESTATE_CONFIG:-$IDP/clusters/oke/estate-config.yaml}" 2>/dev/null || true)}
 if [ "$MODE" = --federated-check ]; then
   [ -n "$fed_id" ] || fail federated "no TAILSCALE_FEDERATED_CLIENT_ID in clusters/oke/estate-config.yaml; register one (kb/1581)"
@@ -146,7 +157,7 @@ fi
 vf=$("$CLOUD" secret get tailscale-federated 2>/dev/null | jq -r '.client_id // empty' 2>/dev/null || true)
 [ -z "$vf" ] || fed_id=$vf
 token_road=seed
-if [ -n "$fed_id" ] && seed_json=$(federated_exchange "$fed_id"); then
+if [ -n "$fed_id" ] && seed_json=$(federated_exchange "$fed_id") && federated_carries_tags "$fed_id" "$seed_json"; then
   token_road=federated
   say ok federated "OIDC token exchanged at /api/v2/oauth/token-exchange for identity $fed_id (no secret held)"
 else
@@ -174,12 +185,13 @@ else
     unset jwt
     subj="${sub%%:ref:*}:*"   # every ref of this repository (ids are immutable; the name is not), nothing else
     # the identity must hold every scope it will grant the operator (Tailscale: an actor grants only what it holds)
-    body=$(jq -cn --arg i "$iss" --arg s "$subj" --arg d "estate-github-${GITHUB_REPOSITORY:-idp}" --argjson sc "$SCOPES" '{keyType:"federated",description:$d,scopes:($sc+["oauth_keys"]),issuer:$i,subject:$s}')
+    # ... and every tag it will mint the operator with: an actor mints only tags its own tags own (kb/1215)
+    body=$(jq -cn --arg i "$iss" --arg s "$subj" --arg d "estate-github-${GITHUB_REPOSITORY:-idp}" --argjson sc "$SCOPES" --arg t "$TAG" --arg ot "$OP_TAG" '{keyType:"federated",description:$d,scopes:($sc+["oauth_keys"]),tags:[$t,$ot],issuer:$i,subject:$s}')
     resp=$(curl -sS -H "Authorization: Bearer $stok" -H 'Content-Type: application/json' -d "$body" "$API/api/v2/tailnet/-/keys")
     new_fid=$(jq -r '.id // empty' <<<"$resp")
     [ -n "$new_fid" ] || fail federated "POST /keys keyType=federated answered no id: $(jq -r '.message // .error // "no message"' <<<"$resp" | cut -c1-160)"
     vault_write tailscale-federated "$new_fid" none
-    say ok federated "identity $new_fid registered from code: issuer $iss subject $subj scopes $(jq -r "join(\" \")" <<<"$SCOPES") oauth_keys; vaulted as tailscale-federated"
+    say ok federated "identity $new_fid registered from code: issuer $iss subject $subj scopes $(jq -r "join(\" \")" <<<"$SCOPES") oauth_keys tags $TAG $OP_TAG; vaulted as tailscale-federated"
     if [ -n "$fed_id" ] && [ "$fed_id" != "$new_fid" ]; then
       code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE -H "Authorization: Bearer $stok" "$API/api/v2/tailnet/-/keys/$fed_id" || echo curl-failed)
       case "$code" in 200|204) say ok federated "refused identity $fed_id deleted";; *) say "" federated "refused identity $fed_id not deleted (DELETE answered $code); harmless, delete it later";; esac
