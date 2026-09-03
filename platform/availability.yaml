@@ -32,6 +32,13 @@ waivers:
       gateway.yaml:18-23) and HERMES_HOME is a ReadWriteOnce volume holding state.db, so
       replicas 2 here is an outage, not a fix. The remedy is a webhook or a lease, not a number.
     issue: chidionyema/idp#547
+  - surface: llm/litellm-cache
+    reason: >-
+      One Redis holds the router's answer cache and shared cooldown counters; losing it costs
+      cache hits, not answers -- the router keeps serving. Two plain replicas would split the
+      cache and the cooldown state, moving the failure rather than removing it; the remedy is
+      Sentinel or a managed Redis, not a replica count.
+    issue: chidionyema/idp#1184
 
 # ## front_doors
 # Every HTTPRoute names a Gateway in parentRefs, and something implements that Gateway. Nothing in
