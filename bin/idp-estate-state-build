@@ -611,29 +611,29 @@ def build(a, now: dt.datetime) -> dict:
         blind.append("workflow runs not read")
     freeze, board, p0, findings = parse_issues(issues or [])
     # version 2 inputs; each missing one is a BLIND line, never a green row
-    registry = read_yaml(a.registry)
+    registry = read_yaml(getattr(a, "registry", None))
     if registry is None:
         blind.append("vendor registry (platform/vendors/consoles.yaml) not read")
-    secrets = read_json(a.secrets)
+    secrets = read_json(getattr(a, "secrets", None))
     if secrets is None:
         blind.append("secret last-set times (gh secret list) not read")
-    apply_run = read_json(a.apply_run)
-    apply_log = read(a.apply_log)
+    apply_run = read_json(getattr(a, "apply_run", None))
+    apply_log = read(getattr(a, "apply_log", None))
     if apply_run is None:
         blind.append("last apply run (oke-check with the vendor seeder) not read")
-    lanes = read_json(a.lanes)
+    lanes = read_json(getattr(a, "lanes", None))
     if lanes is None:
         blind.append("router lanes (bin/idp-router-lanes) not read")
-    prs = read_json(a.prs)
+    prs = read_json(getattr(a, "prs", None))
     if prs is None:
         blind.append("open pull requests not read")
-    incidents = read_json(a.incidents)
+    incidents = read_json(getattr(a, "incidents", None))
     if incidents is None:
         blind.append("incident ledger (crew incidents/LEDGER.jsonl) not read")
-    decision_commits = read_json(a.decision_commits)
+    decision_commits = read_json(getattr(a, "decision_commits", None))
     if decision_commits is None:
         blind.append("decision-record commits not read")
-    changes = read_json(a.changes)
+    changes = read_json(getattr(a, "changes", None))
     if changes is None:
         blind.append("merges to main not read")
     sessions = parse_feed_sessions(feed or "", now)
