@@ -1,14 +1,17 @@
-# LATEST — session a0d64ea4 (crew#66 founder lane)
+## RESUME HERE (2026-09-03T01:2xZ, session a14fc078, lane idp)
 
-## RESUME HERE
+Two PRs in flight, both to be admin-merged on green under founder word "ok build it super quck" (00:39Z):
 
-Branch `feat/crew66-root-trust` (from crew459-portal-polish worktree): root-trust gate PR
-for crew#66 ruling 5453747447 / crew#580. Files: bin/idp-root-trust (+ test
-tests/test_incident_crew66_root_trust_register.py, 5 passed), docs/reference/policy/root-trust.md
-(register, 33 entries, MEETS 11 / PARTIAL 1 / MISS 19), bin/idp-bootstrap-tailscale (written,
-not run end to end), security-policy row, idp-ci + verify-drill rows, stale comments fixed,
-vault-seed tailscale entry refused. Next: commit, push, bin/pr-report, PR (Tracked: crew#66,
-Drill: root-trust), then tell the founder `bin/idp-bootstrap-tailscale` is ready to run.
-Then the bootstrappers PR (#575–#579): bin/idp-estate-seed, router keys, github-app tokens,
-bin/idp-bootstrap-cloudflare, bin/idp-bootstrap-vendors, umbrella bin/idp-bootstrap-estate.
-Founder plan recorded crew#66 5453918598 (one-shot, "just you").
+1. **PR 1182** feat/litellm-redis, head 0c76c32c. All earlier reds fixed: availability waiver
+   (issue #1184), balloon 225m + infra-crew request 225m, rotation-SLO exception row
+   `"litellm-cache": "0h"` (minted secret), acceptance twin reads redis.yaml rewrite templates.
+   Both suites green locally. Poller bb2sa5r6e.
+2. **PR 1185** fix/reports-publish, head a6caf8de. `git add -f docs/reports` in estate-state.yml +
+   estate-inventory.yml + guard test; Docs-exempt line on the body, empty commit re-fired
+   fast-gate (now SUCCESS ×2). Poller bssf4tfos.
+
+After both merge: `gh workflow run estate-state.yml` on main to write docs/reports/index.json
+(un-404s the founder's Reports tab), then plain-words report + measured fragile-points list to
+the board (promised). Gotcha on record: fast-gate PR_BODY comes from the event payload — a bare
+rerun grades the stale body; any push refreshes it. gh pr checks state IN_PROGRESS is not
+PENDING — count both when polling.
