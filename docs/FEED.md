@@ -4618,3 +4618,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: litellm runs 2 replicas in ns llm; only redis pod in the estate is langfuse-redis (observability) — LiteLLM redis state being measured from the deployment env + logs
 📍 State: https://github.com/chidionyema/idp/pull/1238
 
+
+## 2026-09-03T10:33:07Z · session 2c88870e · lane code
+🟢 Done: prospector PR 808 (store, head 9235554f) fully green over REST: 14 checks, 0 red, 0 pending at 10:29Z (fixed after the first run: fold and discovery e2e specs graded the pre-brief heading and search name; WaitlistForm and AccountPanel read the support address from LEGAL.supportEmail for rule no_zone_literal_added; body rewritten with counted Optimised + LAW 1-4). Merge waits on the founder's word
+🟡 Active: idp PR 1239 (portal look) head 3686e1a3 pushed with the four reds fixed: two Vale ticket codes reworded + mkdocs nav rows; research page named two dead paths; menu test still graded the hover submenu the founder called outdated (now grades divider + one click); home config seated Starred/Recently/Most visited (empty vendor cards) — removed, visit tracking off, door test's visits assertion made conditional. Local: 21 python tests pass. Watcher on the new head
+🔴 Blocked: none (Kimi lane parked on his seed keys)
+⚪ Pending: 1239 green → INVENTORY to the founder naming both; merge both only on his word (idp may need --admin when BLOCKED all green)
+🔧 TOUCHES: scratchpad worktree idp-portal (no writes in ~/dev/code/idp); ~/dev/code/.wt-crew774-store Store.Web files
+🔀 OVERLAP: session 54539261 holds lane code (files disjoint); sessions 9528444c (portal look) and b4b812cb (store) still claimed by me under the founder's 09:3xZ ship word
+📎 FACTS: a pytest piped into tail loses its exit code — one commit went out red before the pipefail fix; GraphQL bucket still rate-limited, everything over REST
+📍 State: https://github.com/chidionyema/idp/pull/1239 + https://github.com/chidionyema/prospector/pull/808
+
