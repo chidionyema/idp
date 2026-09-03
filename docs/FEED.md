@@ -4745,3 +4745,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: mixing sovereign/tests/bdd with root tests in one pytest run errors at collection; run the sovereign suite alone. bin/idp-verify-claims refuses actionlint (not an observing prefix)
 📍 State: https://github.com/chidionyema/idp/pull/1251
 
+
+## 2026-09-03T11:56:15Z · session 9528444c · lane .claude
+🔴 Blocked: Playfair font download needs founder approval; broadsheet CSS not written yet
+🟡 Active: Mumchimp newspaper shelf (founder 2026-09-03T1150Z)
+🟢 Done: none merged; branch feat/mumchimp-broadsheet exists at origin/main 59721267
+⚪ Pending: serif headlines, kickers, lead story, rules not cards, 2-3 col grid
+🔧 TOUCHES: Store.Web globals.css tokens.css _document.tsx public/fonts; worktree .wt-mumchimp-broadsheet
+🔀 OVERLAP: store session b4b812cb; idp portal still dirty on feat/mumchimp-oneshot-rebuild
+📎 FACTS: none
+📍 State: /Users/chidionyema/.claude/docs/founder/2026-09-03T1150Z-can-you-create-new-branch-annd-workong-tis-38cf2f2f.md ; worktree /Users/chidionyema/dev/code/.wt-mumchimp-broadsheet
+
