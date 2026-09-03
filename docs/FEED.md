@@ -4464,3 +4464,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: crew board is chidionyema/crew issues; GraphQL pool can be down while REST check-runs still answers
 📍 State: https://github.com/chidionyema/crew/issues/819
 
+
+## 2026-09-03T09:28:03Z · session 9528444c · lane .claude
+🔴 Blocked: Portal look is local only. Founder unblocks with update (commit and push on a portal-only branch, not this dirty checkout).
+🟡 Active: portal BUI look (crew#612 door contract)
+🟢 Done: none merged
+⚪ Pending: founder pick — land Today cards, Tools, Ops, Remix, accent tokens without the hermes WIP
+🔧 TOUCHES: backstage/packages/app (home, nav, theme, signin, styles.css), tests/test_crew612_portal_doors_are_real_and_distinct.py, yarn.lock
+🔀 OVERLAP: dirty idp checkout (hermes/infra-crew WIP on feat/mumchimp-oneshot-rebuild); store session b4b812cb is a different repo
+📎 FACTS: none
+📍 State: backstage/packages/app/src/modules/home/homeLayout.tsx (uncommitted)
+
