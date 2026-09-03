@@ -70,14 +70,6 @@ def test_secret_env_names_cover_every_os_environ_ref() -> None:
     documented = set(
         re.findall(r"([A-Z_]+_KEY)=\1", (CLUSTER / "external-secret.yaml").read_text())
     )
-    # Secrets minted in-cluster (redis.yaml): the rewrite template names the env the pod
-    # exports, so the file that mints the value is the file that documents it.
-    documented |= set(
-        re.findall(
-            r'transform:\s*\{\s*template:\s*"([A-Z_]+)"',
-            (CLUSTER / "redis.yaml").read_text(),
-        )
-    )
     assert refs == documented, refs ^ documented
     # The file holds two ExternalSecrets since the Langfuse callback (crew#325); this rule is about the upstream one.
     es = next(
