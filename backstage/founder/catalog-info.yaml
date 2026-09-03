@@ -558,6 +558,26 @@ spec:
   dependsOn:
     - resource:default/vendor-cursor
 ---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-otto-door
+  title: "Otto (golden), the door"
+  description: "The health door of the new Otto's own pod, running ahead of production. The founder-surfaces probe watches it every minute and FounderSurfaceDown pages when it dies; the catalogue-drift check reads this url as the hostname's registration."
+  annotations:
+    estate/group: "Run"
+    backstage.io/kubernetes-namespace: otto-golden
+    idp/updated-by: "Flux from platform/otto-golden on every main merge"
+  tags: [founder]
+  links:
+    - title: "Health"
+      url: "https://otto.${ESTATE_ZONE}/healthz"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+---
 # crew#751: Cursor is the Hermes WORK harness. It is not a LiteLLM lane and it is
 # not a second login. The Resource vendor-cursor is generated from the vendor
 # registry; this card is the door a person opens. Mint the key once at Console;

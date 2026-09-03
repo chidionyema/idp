@@ -286,12 +286,12 @@ LAYERS = {
     ),
     "otto-golden": (
         "agents",
-        "Otto (staging)",
+        "Otto (golden)",
         "The new agent's own webhook and health door, running its own pod ahead of production.",
     ),
     "otto-golden-secret": (
         "agents",
-        "Otto (staging) webhook secret",
+        "Otto (golden) webhook secret",
         "Feeds the secret word Telegram must echo from the vault into the gateway rule on Otto's door.",
     ),
     "mcp": (

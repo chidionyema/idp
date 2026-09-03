@@ -1191,7 +1191,7 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: layer-otto-golden
-  title: 'Otto (staging)'
+  title: 'Otto (golden)'
   description: 'The new agent''s own webhook and health door, running its own pod ahead of production.'
   annotations:
     backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=otto-golden'
@@ -1219,7 +1219,7 @@ apiVersion: backstage.io/v1alpha1
 kind: API
 metadata:
   name: otto-golden-api
-  description: 'Otto (staging): the HTTP interface, answering at otto.${ESTATE_ZONE}.'
+  description: 'Otto (golden): the HTTP interface, answering at otto.${ESTATE_ZONE}.'
 spec:
   type: openapi
   lifecycle: production
@@ -1233,7 +1233,7 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: layer-otto-golden-secret
-  title: 'Otto (staging) webhook secret'
+  title: 'Otto (golden) webhook secret'
   description: 'Feeds the secret word Telegram must echo from the vault into the gateway rule on Otto''s door.'
   annotations:
     backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=otto-golden-secret'
