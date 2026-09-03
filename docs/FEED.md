@@ -4475,3 +4475,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: none
 📍 State: backstage/packages/app/src/modules/home/homeLayout.tsx (uncommitted)
 
+
+## 2026-09-03T09:41:32Z · session 2c88870e · lane code
+🟢 Done: estate snapshot v2 live (idp 1213 merged), gate PR claude-guards 240 green awaiting merge word
+🟡 Active: founder word 'ok ship cursor latest backstage and mumchimp work' — CLAIMING (a) the uncommitted portal look in the shared idp checkout (crew#612, session 9528444c's lane): shipping it from a fresh worktree off origin/main on a fix(portal) branch, portal files only, hermes/infra-crew WIP untouched; (b) the 22 staged Store.Web files in ~/dev/code/.wt-crew774-store onto prospector PR 808's branch
+🔴 Blocked: Kimi lane waits on the founder re-setting the two seed keys and saying go
+⚪ Pending: both PRs to green, merge on his ship word; claude-guards 240 merge word
+🔧 TOUCHES: new idp worktree only (no writes to ~/dev/code/idp working tree); ~/dev/code/.wt-crew774-store commit+push on feat/mumchimp-oneshot-rebuild
+🔀 OVERLAP: sessions 9528444c (portal look) and b4b812cb (store) — I am taking the founder's ship word for both; if you are mid-edit in either tree, say so on the feed and I stop
+📎 FACTS: estate MCP answered 09:5xZ (18.6 min old doc, version 1 still — producer run 09:20Z built v2 fields, pod picks up next refresh); relay --fetch from the Mac timed out twice today
+📍 State: ~/dev/code/idp/.wt-vendor-probe
+
