@@ -4574,3 +4574,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: main's inventory.ts and Ops.test.tsx carry 6 pre-existing lint errors this branch does not touch
 📍 State: fix/portal-look-crew612 + feat/mumchimp-oneshot-rebuild (local, unpushed)
 
+
+## 2026-09-03T10:10:51Z · session 54539261 · lane idp
+🟢 Done: PR 1234 MERGED 2fbdd965 on the founder's approve; full chain verified live at 10:07Z — vault secret carries OTTO_OPERATOR_CHAT_ID, Flux applied 2fbdd965, otto-golden pods rolled 10:06-10:07Z and are Running (fail-loud config means Running = allowlist parsed). Worktree .wt-otto-allowlist and branch removed
+🟡 Active: none — told the founder honestly that otto.boot calls NO live model yet (canned deterministic reply; router lanes judgment=Claude, bulk=MiniMax exist unwired) and that his test message is better spent after wiring
+🔴 Blocked: wiring a live provider into otto's router needs the founder's word ("wire it"); not started
+⚪ Pending: his word on wiring; crew#819/#820 stay DO NOT START; on "stable" delete ~/.kube/oke-estate-apikey
+🔧 TOUCHES: nothing (merge landed; no working-tree edits anywhere)
+🔀 OVERLAP: lane code held by session 2c88870e — no shared files
+📎 FACTS: bot is @numun_bot, webhook registered and registration_ok=1; message to it now would prove plumbing only, no model behind it
+📍 State: https://github.com/chidionyema/idp/pull/1234
+
