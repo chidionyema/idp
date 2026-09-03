@@ -3,26 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-01T11:38:13Z · session a14fc078 · lane .wt-crew612-phone
-🟢 crew#612: idp#1107 is green (23 checks passed, 0 failed, pr-evidence check passes) at 0fe6c896: phone menu slides in from the left (Material Drawer), "/" is Backstage's own home page (plugin-home 0.9.9, ten doors as the toolkit), god view parked at /estate and registered as founder-surface link + probe target, drill photographs the phone every hour and counts Templates
-🟡 Active: nothing; the founder merges and deploys (agents never merge or deploy); the hourly login drill's phone photographs are the proof after deploy
-⚪ Pending: on his word: real golden-path templates on /create; delete or widgetise /estate; crew#707 a page for K8sGPT Result objects (he asked "where is the k8s bot" — answered: namespace healing, no screen, alerts only)
-🔧 TOUCHES: idp branch fix/crew612-phone-menu commits 59d1c88f, 9f2e41bd, e25df925, 0fe6c896 (decision record wording, evidence image, merge of main, /estate in founder catalogue + probe, entity-tab test helper); crew#612 comment 5493325444
-🔀 OVERLAP: a2aed3c9 holds lane code (crew#768); ef0354ef on crew#729; 54539261 on the Otto edge certificate (prospector fix/edge-drop-listeners-without-dns); nobody else on the portal
-📎 FACTS: https://github.com/chidionyema/idp/pull/1107
-📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
-
-
-## 2026-09-01T11:38:22Z · session a2aed3c9 · lane idp
-🟡 crew#768 + new item https://github.com/chidionyema/crew/issues/783: founder 11:30Z 'incident report should be auto, should not need to remind any agent'. Report written and pushed (idp branch docs/incident-2026-09-01-otto-telegram-door, 8c1f7003, no PR). Finding: flux-events already opens P0 issues (five open, four stale — close rule keys on one message; scheduling recovered with no event) and nothing detects a door serving a placeholder cert
-🟢 Done: Otto v1 image main-56 confirmed rolled at 05:17Z; correction posted; incident page passes the Vale prose gate (0 errors); plan with commands on the new crew item
-⚪ Pending: founder word on the three rows (door probe + cert rule, P0 auto-close on any info event + Ready sweep, register from closed P0s); door still closed pending his cluster read; class fix bin/idp-image-update-pr:28
-🔧 TOUCHES: idp worktree .wt-incident-0901 (docs page only); crew#768 comments; one new crew issue; no cluster
-🔀 OVERLAP: a14fc078 holds lane code; 54539261 on the Telegram door (idp run 33500103107); ef0354ef holds crew#729
-📎 FACTS: https://github.com/chidionyema/idp/commit/8c1f7003
-📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
-
-
 ## 2026-09-01T11:59:31Z · session a14fc078 · lane .wt-crew612-phone
 🟢 crew#612: founder merged idp#1107 at 11:41Z (phone menu, Backstage-own front page); image main-3190-163d6cd8 built 11:49Z; the rollout waits in the image-update PR idp#1103, now 28 checks green after I added the missing Control: none line (same class as idp#1099 this morning) and reran the gate; live site is still the old build (login drill 11:43Z FAIL "no 'Open menu' button on the phone view")
 🟡 Active: nothing; founder merges idp#1103, Flux rolls the image, the next hourly login drill is the proof
@@ -4742,4 +4722,26 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: none; no other session's branch moved
 📎 FACTS: bin/idp-verify-claims accepts only ^Verify: `cmd` — backticks mandatory, bare Verify: lines read as absent; the bdd job's final assert fails when suites are skipped by an earlier gate in the same workflow
 📍 State: https://github.com/chidionyema/idp/pull/1248
+
+
+## 2026-09-03T11:51:06Z · session a14fc078 · lane .wt-reports
+🟢 Done: REDIS IS LIVE, proven two angles at 11:4xZ: the "per worker without Redis" banner is GONE from both fresh router pods (0 matches; both rolled at 11:38Z on the new config) and the cache answers — litellm-cache pod Running, redis log "Ready to accept connections tcp", live Service endpoint on 6379, zero redis errors in router logs. llm kustomization Ready=True at main cacd383e; healing/hindsight/infra-crew unblocked with it. LAW 48 catch while verifying: spend digest (idp#1117) has failed EVERY run since 09-02 — init ran pip install into root-owned /usr/local/lib as uid 10001 with stderr swallowed and no set -e; init read green, digest died ModuleNotFoundError (silent-green class). Fixed: --target into the writable emptyDir, loud output, set -e + incident test (2 passed), pushed acfa9c8e, PR opening
+🟡 Active: watching the spend-digest PR to green then REST-merge on the standing shipped word
+🔴 Blocked: none
+⚪ Pending: lead not touched: platform/state/rotation-canary.yaml:86 uploads its drill receipt with >/dev/null || true then touches ok — receipt can silently never land; needs grading before edit
+🔧 TOUCHES: branch fix/spend-digest-silent-pip (spend-breaker-digest.yaml + tests/test_incident_spend_digest_silent_pip.py)
+🔀 OVERLAP: none
+📎 FACTS: cache pods carry app.kubernetes.io/name labels, not app= — watcher grepped the wrong label and read none while the pod ran; store-db-backup's output-swallow is commented-deliberate, not the class
+📍 State: https://github.com/chidionyema/idp/commit/acfa9c8e63399838af1fefcdf3b840264db163a3
+
+
+## 2026-09-03T11:51:07Z · session 2c88870e · lane code
+🟢 Done: prospector main CI green on 5972126 (nltk advisory scoped, PR 812 merged). idp PR 1251 (feat/router-rows-console-owned) reds root-caused and fixed in one wave at 2b91d4d1: verify gate refused the actionlint Verify line (dropped), the sovereign vault-seed gate and the generated founder-action button both pin the entry list (router-rows added via bin/idp-portal-buttons), LAW 4 body line set to n/a
+🟡 Active: watching 2b91d4d1 checks; founder asked how close the estate is to the pasted elite-cluster blueprint (record: ~/.claude/docs/founder/2026-09-03T1145Z-pkhopw-close-are-we-to-thi-you-are-21463de7.md); a read-only measurement of idp against its five parts is running, answer goes to him from the files, never memory
+🔴 Blocked: none
+⚪ Pending: 1251 green → founder word (platform/ change) → he runs vault-seed entry router-rows; follow-up change removes the 15 git rows from the cluster render
+🔧 TOUCHES: $S/idp-router (sovereign/tests/bdd/test_gate_vault_seed.py, backstage/templates/founder-actions/vault-seed/template.yaml); PR 1251 body over REST
+🔀 OVERLAP: 54539261 holds the code lane (PR 1248); no branch of theirs touched; a14fc078 merged 1249 (litellm-cache exception), llm kustomization should be unwedging
+📎 FACTS: mixing sovereign/tests/bdd with root tests in one pytest run errors at collection; run the sovereign suite alone. bin/idp-verify-claims refuses actionlint (not an observing prefix)
+📍 State: https://github.com/chidionyema/idp/pull/1251
 
