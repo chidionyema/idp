@@ -3,257 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-02T20:15:35Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: otto-staging root cause fixed on a branch — MEASURED: OCI estate-vault entry otto-staging-telegram already holds fields token+webhook_secret (names-only read via laptop DEFAULT api-key profile), while the Bitwarden project holds nothing and the ExternalSecret never synced under either store; branch fix/otto-telegram-store (252b4a24) reverts #1127's store flip for this one entry (estate-vault, property token) + aligns the chain test, 4/4 green locally
-🟡 Active: founder's apply run 33677001751 in_progress (his own dispatch; seeds notify-apprise-founder-telegram via bootstrap-vendors); watcher bgvfoxllw follows it to ExternalSecret sync
-🔴 Blocked: founder's word to land fix/otto-telegram-store on main (platform file)
-⚪ Pending: after both: notify + otto-staging kustomizations go True on their own; login-drill greens accumulating crew#516 CP1
-🔧 TOUCHES: idp branch fix/otto-telegram-store; cluster reads only
-🔀 OVERLAP: none
-📎 FACTS: laptop DEFAULT profile is api-key and reads the OCI vault via bin/idp-cloud with OCI_CLI_PROFILE=DEFAULT OCI_CLI_AUTH=api_key — sessions are not the only local road
-📍 State: notify mid-apply; otto fix one word from main
-
-
-## 2026-09-02T20:16:40Z · session b4b812cb · lane .claude
-🔴 Blocked: prospector#802 merge (founder Chidi, Cursor co-author); TechDocs 404 uncommitted in worktree (next session)
-🟡 Active: crew#412 crew#774
-🟢 Done: wrap prospector#804 bcaa5fb2; catalogue idp#1130 dfc1f1cf; closed duplicate idp#1145
-⚪ Pending: merge 802; open TechDocs /tmp publish PR
-🔧 TOUCHES: idp backstage/app-config.yaml; platform/backstage/overlays/oke/kustomization.yaml APP_CONFIG publishDirectory /tmp/techdocs; catalogue pods; no secrets
-🔀 OVERLAP: none
-📎 FACTS: none
-📍 State: /Users/chidionyema/dev/code/idp/.wt-techdocs-tmp feat/techdocs-publish-under-tmp (uncommitted); https://github.com/chidionyema/prospector/pull/802
-
-
-## 2026-09-02T20:17:34Z · session b4b812cb · lane .claude
-🔴 Blocked: prospector#802 merge (founder Chidi, Cursor co-author); TechDocs 404 uncommitted in worktree (next session)
-🟡 Active: crew#412 crew#774
-🟢 Done: wrap prospector#804 bcaa5fb2; catalogue idp#1130 dfc1f1cf; closed duplicate idp#1145
-⚪ Pending: merge 802; open TechDocs /tmp publish PR
-🔧 TOUCHES: idp backstage/app-config.yaml; platform/backstage/overlays/oke/kustomization.yaml APP_CONFIG publishDirectory /tmp/techdocs; catalogue pods; no secrets
-🔀 OVERLAP: none
-📎 FACTS: none
-📍 State: /Users/chidionyema/dev/code/idp/.wt-techdocs-tmp feat/techdocs-publish-under-tmp (uncommitted); https://github.com/chidionyema/prospector/pull/802
-
-
-## 2026-09-02T20:23:09Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: vendors-loop incident fixed and shipped as PR idp#1164 — MEASURED on the founder's apply run 33677001751: the refused deepseek key aborted bin/idp-bootstrap-vendors mid-loop, so the apprise telegram pair five vendors later (the notify entry) was never seeded; the loop now records each FAIL, finishes every vendor, still exits 1 with the count; new incident test proves one dead key + the pair behind it still written, 5/5 green locally
-🟡 Active: PR #1163 (otto store revert, founder "ok" on record) cycling — 16 SUCCESS, 1 pending, mss BLOCKED; PR #1164 checks starting
-🔴 Blocked: none for me; founder items queued: revoke/replace SEED_DEEPSEEK_API_KEY, then one fresh oke-check mode=apply dispatch after #1164 merges to seed notify
-⚪ Pending: merge #1163 --admin on green (word already given); #1164 to green then founder word; login-drill greens accumulating crew#516 CP1
-🔧 TOUCHES: idp branches fix/otto-telegram-store (PR 1163), fix/vendors-fail-continue (PR 1164); cluster reads only
-🔀 OVERLAP: none
-📎 FACTS: bootstrap-vendors runs only in oke-check mode=apply; a mid-loop sys.exit(1) was the notify red's real cause
-📍 State: two PRs cycling; notify seeding one founder dispatch away after #1164 lands
-
-
-## 2026-09-02T20:30:33Z · session a2aed3c9 · lane idp
-🟡 Active: answered founder on adding Kimi/DeepSeek/MiniMax keys — read bin/idp-set-root, platform/llm/config.yaml, external-secret.yaml, docs/how-to/onboarding/litellm.md at origin/main
-🟢 Done: earlier — drill-doors fix pushed (2e29c635, branch fix/login-drill-doors, awaiting his word); idp#1144 landed c7e413ad, Bitwarden chain green
-🔴 Blocked: none
-⚪ Pending: Kimi is NOT a router provider (only the laptop browser-scrape bridge, retired by model-stack.md phase 2) — offered to add it as a provider row on his word
-🔧 TOUCHES: read-only this turn
-🔀 OVERLAP: none — llm lane reads only
-📎 FACTS: DeepSeek+MiniMax lanes exist (deepseek, minimax, minimax_m27, *-or); one root per provider = bin/idp-set-root; vault entry litellm-upstream; console = llm.mumchimp.com/ui
-📍 State: reply sent
-
-
-## 2026-09-02T20:32:10Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: PR idp#1164 (vendors loop survives one refused key) GREEN — gate wanted a Lifecycle: line for the deepseek root (added, row 38 of credential-lifecycle.md), two bdd reds were GitHub CDN transients, rerun cleared them; PR idp#1163 (otto store revert) also all-green
-🟡 Active: both merges blocked by rule-guard until main's own last CI is green — offline-gate on main failed on a GitHub 500 fetching external-secrets-2.9.0.tgz (transient, run 33675997229); rerun in flight, watcher bpkmfm19f
-🔴 Blocked: none on me; founder items queued: revoke/replace SEED_DEEPSEEK_API_KEY, then one oke-check mode=apply after #1164 merges
-⚪ Pending: main rerun green -> merge #1163 (founder "ok" on record) and #1164 (his force-it-through instruction) --admin; login-drill greens accumulating crew#516 CP1
-🔧 TOUCHES: idp PRs 1163/1164; cluster reads only
-🔀 OVERLAP: none
-📎 FACTS: rule-guard refuses any merge while main's last CI run is red; GitHub release-asset CDN threw 500s across three separate runs tonight
-📍 State: two green PRs parked behind one transient-red main rerun
-
-
-## 2026-09-02T20:34:05Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: BOTH PRs MERGED on a re-proved green main — idp#1163 (otto ExternalSecret back on estate-vault entry otto-staging-telegram property token) merge f0b54a0f; idp#1164 (vendors loop survives one refused key, exits 1 loud) merge edd1771e; main's earlier red was a GitHub CDN 500, rerun of run 33675997229 completed success
-🟡 Active: watcher bec9m208h armed for the founder's fresh oke-check mode=apply, then polls notify ExternalSecret+kustomization to green; otto-staging ES should sync estate-vault within its refresh window without any dispatch
-🔴 Blocked: FOUNDER ACTION (push sent 20:4xZ): gh workflow run oke-check.yml -f mode=apply — seeds notify-apprise-founder-telegram even with the dead deepseek key; SEED_DEEPSEEK_API_KEY revoke/replace when convenient
-⚪ Pending: notify + otto-staging kustomizations True after his dispatch; login-drill greens accumulating crew#516 CP1
-🔧 TOUCHES: idp main via merged PRs 1163/1164; cluster reads only
-🔀 OVERLAP: none
-📎 FACTS: three separate GitHub release-CDN failures tonight (external-secrets tgz 500 twice, temporal tgz, kyverno raw reset) — transient class, reruns cleared all
-📍 State: everything code-side landed; one founder dispatch from notify green
-
-
-## 2026-09-02T20:43:47Z · session a2aed3c9 · lane idp
-🟢 Done: Kimi (Moonshot) built end to end on the founder's word, three branches pushed — idp feat/kimi-provider 18242ed6 (consoles.yaml kimi row verify GET api.moonshot.ai/v1/models, bin/idp-set-root kimi, litellm kimi lane moonshot/kimi-k3 in both configs, otto-staging OTTO_ROUTER_LANE_JUDGMENT_MODEL=kimi), hermes-v2 feat/kimi-primary (config.yaml model.default claude→kimi), hermes-v2 otto/kimi-primary (router family map + kimi/moonshot)
-🟡 Active: finishing local vendor-test proof; then INVENTORY to founder — his part is one paste: bin/idp-set-root kimi
-🔴 Blocked: none
-⚪ Pending: founder merges the three branches (no-PR ruling), runs bin/idp-set-root kimi; fix/login-drill-doors 2e29c635 still awaiting his word
-🔧 TOUCHES: idp branch feat/kimi-provider; hermes-v2 branches feat/kimi-primary + otto/kimi-primary; zero cluster touches, no secrets
-🔀 OVERLAP: otto/boot-surface lane — my otto/kimi-primary is one additive commit on top of it, nobody rebase it away
-📎 FACTS: proofs green — test_llm_row 7/7, crew278 fallback 2/2, otto cp5 18 passed; kimi-k3 = flagship, 1M window (platform.kimi.ai/docs/models read 2026-09-02); vendor documents no key shape, verify probe is the proof
-📍 State: three branches on origin, founder's paste away from live
-
-
-## 2026-09-02T20:45:56Z · session a2aed3c9 · lane idp
-🟢 Done: kimi branch amended — idp feat/kimi-provider is now 6f368384 (adds the SEED_KIMI_API_KEY fake to the vendor-roots test and the oke-check.yml apply-step secret mapping the test requires); vendor suites 10/10 green locally
-🟡 Active: INVENTORY to founder
-🔴 Blocked: none
-⚪ Pending: founder merges feat/kimi-provider (idp), feat/kimi-primary + otto/kimi-primary (hermes-v2), then pastes bin/idp-set-root kimi once
-🔧 TOUCHES: idp branch feat/kimi-provider only; no cluster, no secrets
-🔀 OVERLAP: none new
-📎 FACTS: supersedes sha 18242ed6 in my 20:43 entry — 6f368384 is the branch head
-📍 State: three branches on origin, proofs green
-
-
-## 2026-09-02T20:50:36Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: founder saved the new deepseek key (SEED_DEEPSEEK_API_KEY updated 2026-09-02T20:38:17Z, timestamp only, no value seen); apply run 33680244584 dispatched on his word and in flight with the merged loop fix
-🟡 Active: watcher be451mlce follows run 33680244584 to completion, prints the vendors step lines, then polls notify ExternalSecret+kustomization; watcher b5yn1dscp polls otto-staging ES converging off merge f0b54a0f
-🔴 Blocked: none — founder present in chat and acked
-⚪ Pending: if the run's vendors step read the old deepseek key (raced the 20:38 save), one more apply dispatch after completion (one concurrency group, never during); login-drill greens accumulating crew#516 CP1
-🔧 TOUCHES: idp workflow dispatches on founder word; cluster reads only
-🔀 OVERLAP: none
-📎 FACTS: vendors step runs ~2 min into apply, so run 33680244584 (created 20:35:58Z) hit deepseek within seconds of the key save — outcome in the step log at completion
-📍 State: one in-flight apply from notify green; otto-staging converging on its own
-
-
-## 2026-09-02T20:51:08Z · session a2aed3c9 · lane idp
-🟢 Done: founder said merge — hermes-v2 otto/boot-surface fast-forwarded to the kimi family-map commit; hermes-v2 PR 65 (model.default→kimi) all checks green, merging with --admin; idp branch amended a44f83ad (SEED_KIMI_API_KEY lifecycle row + workflow secret mapping + test fake), PR idp#1165 opened on the rule-guard road (direct push to main is blocked by design)
-🟡 Active: watcher bwif5ffez polls idp#1165 to settled; merge --admin on green (founder word on record: "nerge it")
-🔴 Blocked: none
-⚪ Pending: after idp#1165 lands, founder pastes bin/idp-set-root kimi once; fix/login-drill-doors still awaits his word
-🔧 TOUCHES: idp PR 1165; hermes-v2 main + otto/boot-surface; zero cluster touches, no secrets
-🔀 OVERLAP: otto/boot-surface moved — otto lane sessions rebase on it
-📎 FACTS: vendor suites 10/10, crew618 3/3, llm-row 7/7 local; drill named oke-check (catalogued)
-📍 State: two of three landed or landing; idp#1165 cycling
-
-
-## 2026-09-02T20:58:13Z · session a2aed3c9 · lane idp
-🟢 Done: idp#1165 two CI reds attributed and fixed at the source — crew568 laptop-key test pins the router lane list (vault-seed.yml idp-router-key laptop line now carries kimi) and crew618 set-root test pins the SEED order (kimi inserted); both green locally (14 passed), branch amended to 8b51d9e0 and force-pushed with lease
-🟡 Active: watcher bvsgdrckl polls idp#1165 checks on the new head; merge --admin on green (founder word on record)
-🔴 Blocked: none
-⚪ Pending: after #1165 lands, founder pastes bin/idp-set-root kimi once; hermes-v2 side is DONE (main 922fbc6a + otto/boot-surface)
-🔧 TOUCHES: idp PR 1165 only
-🔀 OVERLAP: none new
-📎 FACTS: class = a new router lane touches THREE pins (llm configs pair, vault-seed laptop lane list, set-root SEED order) plus consoles/workflow/lifecycle — future vendor adds hit all six in one commit
-📍 State: one green run from done
-
-
-## 2026-09-02T21:00:27Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: silent-green caught — notify + otto-staging kustomizations True while EVERY pod CrashLoopBackOff; both roots measured. apprise: manifest export loop chokes on secret filename `founder-telegram` (dash = invalid shell identifier) AND bash's error printed the full tgram URL token into the pod log (rotation needed); the exec'd `apprise-api` binary doesn't even exist — image CMD is supervisord-startup (vendor Dockerfile read). otto-staging: image lacks jsonschema — otto/requirements.txt pins it but hermes-v2 Dockerfile never installs that file into the uv venv (class: all otto runtime pins missing)
-🟡 Active: fixing both — idp platform/notify (ES template key → founder-telegram.cfg, APPRISE_STATEFUL_MODE=simple, APPRISE_CONFIG_DIR=/run/secrets/notify, delete the export loop, image default CMD; all vendor write-paths are /tmp = already emptyDir); hermes-v2 Dockerfile installs otto runtime requirements into the venv
-🔴 Blocked: none; founder items queued: rotate the leaked notify telegram bot token via BotFather after fix lands, replace SEED_MINIMAX_API_KEY + SEED_GROQ_API_KEY
-⚪ Pending: watcher b9c14c543 on apply run 33681830297 tells whether the NEW deepseek key verifies
-🔧 TOUCHES: idp platform/notify/*; hermes-v2 Dockerfile (branch push only, no merge without his word — merge = image build = Flux rollout)
-🔀 OVERLAP: hermes-v2 main — otto lane sessions active tonight
-📎 FACTS: apprise-api simple mode reads {KEY}.cfg from APPRISE_CONFIG_DIR (vendor README); notify pod log now contains the live telegram bot token value — treat as leaked
-📍 State: two measured crash roots, both fixes in flight
-
-
-## 2026-09-02T21:04:52Z · session a2aed3c9 · lane .wt-kimi
-🟢 Done: idp#1165 landed — squash 84260b86 on main at 21:04Z (kimi vendor row, bin/idp-set-root kimi, litellm moonshot/kimi-k3 lane in both configs, otto-staging judgment-lane override, lifecycle row, all six vendor-add pins). All 33 checks green, zero failures. Kimi is now fully in: hermes-v2 main 922fbc6a (model.default kimi) + otto/boot-surface family map + idp main 84260b86
-🟡 Active: telling the founder his one paste — bin/idp-set-root kimi
-🔴 Blocked: none
-⚪ Pending: founder pastes bin/idp-set-root kimi (opens console page, hidden input, saves SEED_KIMI_API_KEY, dispatches apply which proves the key against api.moonshot.ai/v1/models); litellm picks it up within the 10m ExternalSecret refresh; fix/login-drill-doors 2e29c635 still awaits his word
-🔧 TOUCHES: idp main via PR 1165 only; no cluster, no secrets
-🔀 OVERLAP: sessions with idp checkouts rebase past 84260b86; vault-seed laptop router-key lane list now includes kimi
-📎 FACTS: vendor-add class = six pins in one commit (consoles.yaml, set-root lists, llm config pair, oke-check SEED mapping + test fake, lifecycle doc, vault-seed lane list + SEED-order test) — recorded 20:58, held true
-📍 State: kimi live everywhere but the key; founder's paste away
-
-
-## 2026-09-02T21:13:11Z · session a14fc078 · lane crew
-🟡 Active: founder pasted an outside tool's (aider + deepseek) confused review of the research-engine spec — it was pointed at a repo with sovereign/ (that is idp) and correctly reported no research-engine/, contract/v1 or profiles/ anywhere; captured at ~/.claude/docs/founder/2026-09-02T2112Z-o-summary-no-r2-could-be-not-in-8009bba9.md; answering him from the generated science pages, never memory
-🟢 Done earlier this session: 3 idp branches pushed awaiting his word (kyverno-judge 2ab48a44, priority-class de9c77a7, phone-drill d7059582 — phone FAIL was a stale drill grading renamed doors); crew branch audit/rulings-implementation-gaps (gap audit: 7 of 70+ rulings in git, R51/R60/R63/R64/R67/R70/R72 zero artifacts)
-🔴 Blocked: none
-⚪ Pending: founder merge words ×4 + oke-check apply (seeds telegram secrets); dagster kyverno denial UNCLAIMED; rulings-ledger migration awaits his word
-🔧 TOUCHES: git only; zero cluster
-🔀 OVERLAP: code-0c superset psycopg2 fix; code-f9 vault/otto chain
-📎 FACTS: research-engine spec has NO implementation anywhere (no contract/, no research-engine/ dir under ~/dev/code); its record = crew/docs/research-engine/ (CHARTER, BASELINE, SCALE docs) + rulings R31-R37; science pages say all lanes GAP on showcase, research-grade ELITE/ELITE
-📍 State: composing the founder answer
-
-
-## 2026-09-02T21:18:19Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: both crash fixes built and proven. Notify: idp#1167 (ES template writes founder-telegram.cfg, apprise simple mode reads the mount, export-loop shell deleted; 4-test suite green). Otto: hermes#66 build PASS — rebuilt image imports otto's chain and still secretless-boots; spec-gate + operating-model reds answered on new head 2818287
-🟡 Active: watcher on idp#1167 (4 pending) — merge --admin on green per his standing word, then verify apprise pods actually Running (kustomization True was the silent-green); watcher on hermes#66 new head
-🔴 Blocked: founder items — NEW deepseek key STILL refused (run 33681830297 at 20:58Z, after his 20:38 save); minimax wrong shape; groq refused; telegram alerts bot token rotation via BotFather AFTER notify lands; hermes#66 merge + otto-staging newTag bump are his deploy words
-⚪ Pending: stripe + google_oauth BLIND; litellm/healthchecks/guacamole share the export-loop class, queued in #1167 Cleanup
-🔧 TOUCHES: idp PR 1167, hermes-v2 PR 66 (branch only, no merge)
-🔀 OVERLAP: hermes-v2 main — otto lane sessions active tonight
-📎 FACTS: apprise pod log leaked the live tgram token value — treat as leaked until rotated
-📍 State: two PRs cycling; cluster untouched
-
-
-## 2026-09-02T21:20:37Z · session a2aed3c9 · lane .wt-kimi
-🟢 Done: idp#1165 squash-landed as 84260b86 (33/33 green). Key hand-off unblocked: set-root's hidden prompt cannot run in chat; founder's pbpaste pipe silently wrote nothing because the clipboard held a command, not the key (caught by a shape-check that prints length only, never the value). Bitwarden CLI installed for future provider adds
-🟡 Active: founder re-copied the key from Bitwarden; writing SEED_KIMI_API_KEY from the shared clipboard via gh secret set (value never displayed), then he dispatches oke-check mode=apply (R65 — his button)
-🔴 Blocked: none
-⚪ Pending: apply run proves the key against api.moonshot.ai/v1/models; litellm picks it up inside the 10m ExternalSecret refresh; fix/login-drill-doors still awaits his word
-🔧 TOUCHES: idp repo secret SEED_KIMI_API_KEY (name only, no value anywhere); no cluster
-🔀 OVERLAP: none new
-📎 FACTS: clipboard is machine-wide — a session can pipe pbpaste into gh secret set without the value touching the transcript; shape gate first ([A-Za-z0-9_.-]{20,}, single token) or you write garbage into a secret
-📍 State: one founder dispatch from a proven key
-
-
-## 2026-09-02T21:34:24Z · session a2aed3c9 · lane .wt-kimi
-🟢 Done: apply run 33685104831 (founder word "get it done") completed — the vendors step is the verdict: SEED_KIMI_API_KEY REFUSED by api.moonshot.ai/v1/models, so no vault write (R52 probe held). Founder's Bitwarden kimi key is dead for this endpoint — likely minted on the Chinese console (moonshot.cn) or revoked
-🟡 Active: founder mints a fresh key at platform.kimi.ai/console/api-keys, copies it, says "copied"; I shape-check the clipboard, gh secret set, re-dispatch on his standing word
-🔴 Blocked: on that one founder step only
-⚪ Pending: same run also shows FAIL deepseek (refused), FAIL minimax (wrong shape), FAIL groq (refused) — .wt-dagster-port lane already has minimax+groq queued with the founder; deepseek's NEW 20:38 key is refused too, that lane should see this run. gemini/exa/cursor all ok/kept
-🔧 TOUCHES: none this entry — run read only
-🔀 OVERLAP: .wt-dagster-port deepseek/minimax/groq lane — run 33685104831 log is their freshest evidence
-📎 FACTS: bootstrap prints per-vendor verdicts at ~2min; kimi consoles.yaml page platform.kimi.ai/console/api-keys confirmed live (docs re-read 21:35Z, moonshot.ai 301s to kimi.ai)
-📍 State: kimi wiring all merged; key alone outstanding
-
-
-## 2026-09-02T21:37:56Z · session 54539261 · lane .wt-groq-rm
-🟢 Done: hermes#66 GREEN (7 pass, watcher b7c9t2tq7) — his merge word is the next step there; vendor-registry design approved ("go"), measurement finished (config pair diff, consoles.yaml schema, set-root awk road, idp-ci idempotency pattern)
-🟡 Active: building the one-vendor-registry in .wt-groq-rm — consoles.yaml grows router lane blocks, bin/idp-vendor-render generates both litellm configs, set-root + vault-seed lane lists derive from the registry; deleting groq's row is the proof run
-🔴 Blocked: founder items unchanged — deepseek key refused (run 33681830297), minimax wrong shape, telegram alerts rotation after notify lands
-⚪ Pending: idp#1167 watcher verdict being read this turn; merge --admin on green per his standing word, then measure apprise pods
-🔧 TOUCHES: .wt-groq-rm branch chore/remove-groq only; no cluster
-🔀 OVERLAP: any session editing llm/config.yaml, platform/llm/config.yaml or platform/vendors/consoles.yaml — the config pair becomes generated output after this lands
-📎 FACTS: run 33681830297 shows groq's own key refused upstream — the lane was already dead
-📍 State: build starting, one push wave at the end (R57)
-
-
-## 2026-09-02T21:41:58Z · session a14fc078 · lane crew
-🟡 Active: answered the founder — Cursor's storefront work (prospector feat/crew774-store-polish, PR #802, head cc1a6941, 8 commits of shop/hero polish) is NOT released; prospector main is e8b8558b (11:25Z) and the live mumchimp.com smoke ran on that
-🟢 Done earlier: DeepSeek CP1 build prompt committed+pushed (crew docs/research-engine-spec-v1, 52cbd9d) and handed to him paste-ready; spec verbatim at e606468
-🔴 Blocked: none
-⚪ Pending: his merge word on prospector#802 (green: 8 success, 0 fail) + 4 idp/crew branches + oke-check apply + APPROVE: spec-v1 §15
-🔧 TOUCHES: git reads only this stretch; zero cluster
-🔀 OVERLAP: .wt-crew774-store lane owns the polish branch; mumchimp-medusa repo has 19 uncommitted prototype files from 08-25, unrelated
-📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
-
-
-## 2026-09-02T21:52:24Z · session 54539261 · lane .wt-groq-rm
-🟢 Done: idp#1167 dev-speak red fixed (notify drill proves line reworded, 36 passed locally) pushed as aff93dbc; hermes#66 GREEN (7 pass) awaiting his merge word; bin/idp-vendor-render written — renders both litellm configs from consoles.yaml router blocks, --check gates drift
-🟡 Active: one-pass registry builder running in .wt-groq-rm — consoles.yaml grows router blocks, base files cut from HEAD configs, groq rows deleted, parsed-equality proof vs HEAD minus groq; then the enumerated test/doc/workflow/set-root sweep, one push wave (R57)
-🔴 Blocked: founder items unchanged — deepseek key refused, minimax wrong shape, kimi key refused (run 33685104831), telegram alerts rotation after notify lands
-⚪ Pending: idp#1167 watcher on new head aff93dbc; merge --admin on green per his standing word, then measure apprise pods actually Running
-🔧 TOUCHES: idp PR 1167 branch; .wt-groq-rm chore/remove-groq; no cluster
-🔀 OVERLAP: any session editing llm/config.yaml, platform/llm/config.yaml or platform/vendors/consoles.yaml — the pair becomes generated output when this lands
-📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
-
-
-## 2026-09-02T21:54:32Z · session a14fc078 · lane crew
-🟢 Done: Cursor's storefront polish RELEASED — prospector#802 squash-merged on the founder's word (main 3da7ac78); live smoke run 33687066911 SUCCESS (smoke+a11y+lighthouse) on that head, so mumchimp.com serves it
-🟡 Active: main CI red attributed + fixed on a branch — pip-audit PYSEC-2026-3740 (nltk, high, every release affected, no patch exists); repo only imports PorterStemmer so the vulnerable API is unreachable; scoped --ignore-vuln pushed as fix/nltk-advisory-unaffected-path 5a5c83a9
-🔴 Blocked: none
-⚪ Pending: founder's word on the nltk branch; every prospector push run stays red on dep_advisory until it lands
-🔧 TOUCHES: prospector main (merge #802, his word), branch fix/nltk-advisory-unaffected-path; zero cluster
-🔀 OVERLAP: any prospector lane seeing CI red on main — it is the nltk advisory, not your change; fix branch exists, do not duplicate
-📎 FACTS: GHSA-8mgp-746c-j5xp range <=3.10.3, first_patched_version null (gh api /advisories, 21:50Z); pip-audit red/green verified locally both sides of the flag
-📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
-
-
-## 2026-09-02T22:03:03Z · session b4b812cb · lane .claude
-🔴 Blocked: live shop still on e8b8558b; Flux image pin after 802 (image-automation, not founder)
-🟡 Active: crew#774 crew#412
-🟢 Done: storefront prospector#802 squash 3da7ac78; wrap #804 bcaa5fb2; catalogue idp#1130 dfc1f1cf
-⚪ Pending: Flux prospector-store-web pin past 3da7ac78; TechDocs /tmp publish PR unopened
-🔧 TOUCHES: none this turn (802 merged, worktree clean); TechDocs still uncommitted in idp/.wt-techdocs-tmp
-🔀 OVERLAP: none
-📎 FACTS: none
-📍 State: https://github.com/chidionyema/prospector/pull/802 3da7ac78; live pin main-102-e8b8558b
-
-
 ## 2026-09-02T22:05:29Z · session a14fc078 · lane crew
 🟡 Active: founder said "check properly" — he was right: my "released" claim was one hop early. mumchimp.com still runs main-102-e8b8558b (idp clusters/oke/edge.yaml:163); the smoke graded the OLD build with new test code (release-lag job is schedule-only, skipped). Corrected on the record
 🟢 Done: full sweep for newer Cursor work — none: Cursor's dirty-buffer registry empty (backupWorkspaces: no folders), local history nothing after 14:13, both crew774 worktrees clean; his own Cursor agent (transcript 22:01Z) reached the same verdict
@@ -3436,4 +3185,125 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: session 5f6f4e72 holds commerce and estate-db
 📎 FACTS: laptop OCI profile 'otto' is gone from ~/.oci/config so no direct cluster read; prospector calls MiniMax directly from its own .env, outside the router's accounting; on origin/main every lane falls back to minimax
 📍 State: https://github.com/chidionyema/idp/actions/runs/33914769721
+
+
+## 2026-09-04T20:27:55Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1589 -- the cluster in a native phone app, no browser
+🟢 Done: the Mac now serves the cluster API on the tailnet under launchd; a kubeconfig with no credential in it went to his phone for InKuber
+⚪ Pending: idp#1577 (commerce) still needs one word from him -- which payment provider
+🔧 TOUCHES: idp bin/idp-kubeapi-mac, bin/idp-phone-kubeconfig, launchd/ai.estate.kubeapi.plist.tmpl, docs/founder/debug-the-cluster-from-your-phone.md; Mac port 8001 on the tailnet address only
+🔀 OVERLAP: none -- session 85f840c5 holds crew#839/#840, deepseek holds crew#819/#838
+📎 FACTS: Oracle's control plane admits one source CIDR so no phone can reach :6443 directly; measured at 21:2xZ the Mac bridge returned /version 200 and both nodes; Taildrop cannot send from a tagged Mac to a user-owned phone, so the file goes by AirDrop
+📍 State: https://github.com/chidionyema/idp/pull/1589
+
+
+## 2026-09-04T20:48:57Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on him
+🟡 Active: the MiniMax spend cap and Otto's one door are both open with auto-merge armed
+🟢 Done: proved the leak was zero-priced MiniMax lanes (176M tokens billed at $0.00) and a breaker reading a table that does not exist; wrote and shipped all four Otto checkpoints myself after DeepSeek never started
+⚪ Pending: four pull requests land — idp#1590, idp#1596, hermes-v2#75, idp#1587
+🔧 TOUCHES: idp platform/otto-gateway, platform/otto-golden, platform/ns-fences, platform/llm; hermes-v2 otto/ingress, otto/boot, otto/worker
+🔀 OVERLAP: session 5f6f4e72 holds the idp lane, commerce and estate-db; I own crew#768 and the spend work
+📎 FACTS: the seeded binding row had no outbound_secret_ref, so the answering lane would have terminated every task with "no outbound binding"; neither otto-gateway nor llm declared internet egress, which Calico would have turned into a silent gag
+📍 State: https://github.com/chidionyema/idp/pull/1596
+
+
+## 2026-09-04T20:57:38Z · session 5f6f4e72 · lane idp
+🔴 Blocked: idp#1577 (commerce) still needs one word from him -- which payment provider
+🟡 Active: crew#841 -- the break-glass bridge moves off the laptop onto an Oracle machine, spec written for DeepSeek
+🟢 Done: idp#1589 merged; the cluster is in a native phone app (InKuber) with no browser and no credential on the phone
+⚪ Pending: DeepSeek picks up crew#841 CP1
+🔧 TOUCHES: crew#841; idp platform/oci/, platform/tailscale/policy.hujson, bin/idp-phone-kubeconfig
+🔀 OVERLAP: none -- session 85f840c5 holds crew#839/#840, deepseek holds crew#819/#838
+📎 FACTS: measured 20:5xZ, OKE has public endpoint 141.147.80.229:6443 and private 10.0.0.11:6443; control_plane_allowed_cidrs is one /32, which is why his Oracle login alone cannot read pod logs; the OCI Console shows cluster health but has no pod log view
+📍 State: https://github.com/chidionyema/crew/issues/841
+
+
+## 2026-09-04T21:06:53Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on him
+🟡 Active: the spend ledger has been unreadable since the database consolidation; fixing the break-glass playbook that reads it
+🟢 Done: the two Otto pull requests landed or are clean; found that pb_router_spend exec's into litellm-db-0, a pod that no longer exists
+⚪ Pending: read the ledger and name the consumer of the MiniMax plan
+🔧 TOUCHES: idp bin/idp-oke-break-glass; read-only in platform/llm and platform/research-engine
+🔀 OVERLAP: session 5f6f4e72 holds the idp lane, commerce and estate-db
+📎 FACTS: LiteLLM now runs on estate-rw.estate-db database litellm; the research-engine CronJob was created 12:37Z today and its single job failed on DeadlineExceeded with no successful run; the router served 395 chat completions in 164 minutes, all arriving through Traefik from outside the cluster
+📍 State: https://github.com/chidionyema/idp/pull/1596
+
+
+## 2026-09-04T21:08:03Z · session 5f6f4e72 · lane idp
+🔴 Blocked: idp#1577 (commerce) still needs one word from him -- which payment provider
+🟡 Active: idp#1600 -- the break-glass bridge moves off his laptop onto an Always Free Oracle instance
+🟢 Done: built crew#841 in this session rather than estimating it, since DeepSeek is inactive; corrected the spec after reading the VCN -- no public IP and no allowlist change are needed
+⚪ Pending: the tofu apply is his to run; after it, one line fills the instance OCID into platform/rbac/bridge.yaml
+🔧 TOUCHES: idp platform/oci/bridge.tf, platform/oci/cloud-init/bridge.yaml, platform/rbac/, platform/tailscale/policy.hujson, clusters/oke/platform.yaml, bin/idp-phone-kubeconfig
+🔀 OVERLAP: none -- session 85f840c5 holds crew#839/#840
+📎 FACTS: measured 21:0xZ, the cluster has a private control-plane endpoint 10.0.0.11:6443 and the workers subnet is private with a NAT route, so the bridge needs no public IP; VM.Standard.E2.1.Micro is offered in this compartment so the machine is EUR 0; tofu validate passed
+📍 State: https://github.com/chidionyema/idp/pull/1600
+
+
+## 2026-09-04T21:22:17Z · session 5f6f4e72 · lane oci
+🔴 Blocked: idp#1577 (commerce) still needs one word from him -- which payment provider
+🟡 Active: idp#1604 -- the two defects the first apply exposed, in one pull request
+🟢 Done: the off-laptop bridge exists -- estate-bridge is RUNNING on an Always Free machine in Oracle, no public IP, inside the VCN
+⚪ Pending: the bridge finishes cloud-init and joins the tailnet, then the phone reads the cluster without his Mac
+🔧 TOUCHES: idp platform/oci/bridge.tf, platform/rbac/bridge.yaml
+🔀 OVERLAP: none -- session 85f840c5 holds crew#839/#840
+📎 FACTS: the first apply died 404 on LaunchInstance because Oracle offers VM.Standard.E2.1.Micro in UK-LONDON-1-AD-2 only (AD-1 0, AD-2 1, AD-3 0) and the file took the first domain; instance ocid1...zo55iobkfwmsq now holds view in the cluster
+📍 State: https://github.com/chidionyema/idp/pull/1604
+
+
+## 2026-09-04T21:25:31Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on him
+🟡 Active: cutting the k8sgpt healing loop's token burn — it re-explains the same 52 findings ~77 times a day
+🟢 Done: named every consumer of the 176M MiniMax tokens per day from the ledger; the laptop key is opencode on his Mac, sovereign-kernel is KINI, and 39.3M output tokens were k8sgpt essays
+⚪ Pending: PR setting spec.analysis.interval and spec.filters on the K8sGPT CR
+🔧 TOUCHES: idp platform/healing/analyzer/k8sgpt.yaml
+🔀 OVERLAP: session 5f6f4e72 holds the idp lane, commerce and estate-db
+📎 FACTS: k8sgpt has 52 Result objects of which 25 are ConfigMap "is empty" noise; spec.analysis is unset so the operator re-analyses on its default cadence, 4,004 calls a day; the hermes-agent gateway pod fails its startup probe with connection refused on 9900, which is why the agent has been down
+📍 State: https://github.com/chidionyema/idp/blob/main/platform/healing/analyzer/k8sgpt.yaml
+
+
+## 2026-09-04T21:41:53Z · session 1790f775 · lane idp
+🔴 Blocked: nothing on him
+🟡 Active: nothing -- the k8sgpt cut is the last of the spend work and it is armed
+🟢 Done: idp#1609 opened with auto-merge -- K8sGPT stops re-explaining the same 52 findings; the sovereign kernel, its cockpit and Maestro are stopped and launchctl-disabled on his Mac
+⚪ Pending: idp#1609 merges and Flux reconciles the K8sGPT CR
+🔧 TOUCHES: idp platform/healing/analyzer/k8sgpt.yaml
+🔀 OVERLAP: this session continues session 85f840c5's spend work after a context reset -- same lane idp and same file platform/healing/analyzer/k8sgpt.yaml, no second owner; session 5f6f4e72 holds commerce and the OCI bridge
+📎 FACTS: k8sgpt-operator v0.2.29 ReconcileSuccessInterval is 30s (internal/controller/k8sgpt/k8sgpt_controller.go:42), which is why an unset spec.analysis requeued ~77 passes a day over 52 findings = 4,004 calls; both spec.analysis and spec.filters exist on K8sGPTSpec in that pinned chart, so neither is pruned; Aiden and Maestro make no model calls and appear nowhere in the router ledger
+📍 State: https://github.com/chidionyema/idp/pull/1609
+
+
+## 2026-09-04T21:42:52Z · session 5f6f4e72 · lane oci
+🔴 Blocked: idp#1577 (commerce) still needs one word from him -- which payment provider
+🟡 Active: the bridge is being rebuilt with its own network security group; the first one could reach nothing
+🟢 Done: idp#1604 merged (availability-domain fix + the instance bound to read-only view); found and fixed the real reason the bridge was silent
+⚪ Pending: the rebuilt machine joins the tailnet, then the phone reads the cluster with his Mac switched off
+🔧 TOUCHES: idp platform/oci/bridge.tf, platform/rbac/bridge.yaml
+🔀 OVERLAP: none -- session 85f840c5 holds crew#839/#840
+📎 FACTS: the VCN security list carries ZERO egress rules and every subnet's reachability comes from a network security group instead, so an instance in no group reaches nothing -- the console showed pkgs.tailscale.com:443 timing out and tailscaled never installing; the bridge now has its own group, egress only, HTTPS + UDP + 6443 to the control-plane subnet + instance metadata
+📍 State: https://github.com/chidionyema/idp/pull/1604
+
+
+## 2026-09-04T21:58:29Z · session 1790f775 · lane idp
+🔴 Blocked: the MiniMax and DeepSeek accounts both refuse our keys -- only he can re-up or re-issue them
+🟡 Active: idp#1580 -- Gemini goes ahead of the dead pair in every fallback chain so Otto answers again
+🟢 Done: idp#1609 merged (k8sgpt stops re-explaining its 52 findings); idp#1611 merged 21:50Z (dagster copy Job unwedged, which frees otto-gateway)
+⚪ Pending: idp#1580 goes green and merges, then Flux carries otto-gateway to the one-door revision
+🔧 TOUCHES: idp platform/llm/config.yaml; read-only in platform/otto-gateway, platform/hermes-agent, platform/estate-db
+🔀 OVERLAP: this session continues 85f840c5's spend work after a context reset -- same idp lane, same files, no second owner; session 5f6f4e72 holds commerce and the OCI bridge
+📎 FACTS: measured 21:5xZ from inside the router pod -- MiniMax answers 401 "invalid api key (2049)" on /v1/chat/completions and HTTP 200 carrying status_code 2049 on its native path, DeepSeek answers 401, Gemini answers; router throughput fell 5.85M tokens at 16:00Z to 24 tokens across 32 calls at 21:00Z; otto-gateway was stuck at revision 9d9d3f9a because estate-db-copy-dagster-r2 sat 148 minutes on a missing dagster-postgresql-secret
+📍 State: https://github.com/chidionyema/idp/pull/1580
+
+
+## 2026-09-04T22:05:15Z · session 5f6f4e72 · lane idp
+🔴 Blocked: nothing on him -- the portal is recovering on its own now the gate cleared
+🟡 Active: the portal outage -- both catalogue pods were dead, in two different ways
+🟢 Done: idp#1613 merged 22:03Z (bridge egress + terraform->vault->Flux identity, no hand-copied OCID); root-caused the portal
+⚪ Pending: catalogue-f6c5bdd88 comes up on main-4351 in schema mode and re-ingests the catalogue from files
+🔧 TOUCHES: idp read-only in platform/estate-db, platform/backstage, clusters/oke/platform.yaml
+🔀 OVERLAP: sessions 85f840c5 and 1790f775 hold the idp model-lane work in platform/llm; this session touches no file they hold -- it is read-only on the portal and owns the OCI bridge
+📎 FACTS: measured 22:0xZ -- the estate-db cutover deleted the old backstage Postgres, so the 4h-old pod answers ENOTFOUND postgres on every request, and the newer pod (main-4168) predates the pluginDivisionMode:schema fix so it tried CREATE DATABASE per plugin and the backstage role has rolcreatedb=false; the fixed image main-4351 could not reach the cluster because all nine consumer rows dependOn estate-db-migrate, which sat on the dagster and otto-gateway copy jobs
+📍 State: https://github.com/chidionyema/idp/pull/1613
 
