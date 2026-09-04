@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # estate-security-rollout [--apply] [--merge]: every repository pushed in the
 # last ACTIVE_DAYS (30) days carries .github/workflows/security-scan.yml, the
-# caller for the two idp composite actions (security-scan, spec-gate). Report
+# caller for the idp composite action security-scan. spec-gate was dropped on
+# 2026-09-04: the CI purge (b3affcc8) deleted the action it called, so the job
+# failed in every repository on every pull request. Report
 # mode by default. --apply opens one pull request per repository that lacks
 # the file or carries a different one; --merge squash-merges those pull
 # requests whose checks are green. After that, `repo-rulesets --apply` makes
-# both checks required (platform/github/ruleset.@active.security-scan.json).
+# the check required (platform/github/ruleset.@active.security-scan.json).
 #
 # The mature tool for fleet-wide file sync is a GitHub App such as
 # repo-file-sync-action; it needs an App or PAT with contents:write on every
@@ -43,12 +45,12 @@ while read -r repo pushed; do
   sha="$(gh api "/repos/$OWNER/$repo/git/ref/heads/$default" -q .object.sha)"
   gh api -X POST "/repos/$OWNER/$repo/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$sha" >/dev/null 2>&1 || true
   existing="$(gh api "/repos/$OWNER/$repo/contents/$DEST?ref=$BRANCH" -q .sha 2>/dev/null || true)"
-  args=(-f message="ci: estate security-scan and spec-gate (chidionyema/idp actions)" -f content="$want" -f branch="$BRANCH")
+  args=(-f message="ci: estate security-scan (chidionyema/idp action)" -f content="$want" -f branch="$BRANCH")
   [ -n "$existing" ] && args+=(-f sha="$existing")
   gh api -X PUT "/repos/$OWNER/$repo/contents/$DEST" "${args[@]}" >/dev/null || { echo "BLOCKED $repo: could not write $DEST on $BRANCH"; blocked=$((blocked+1)); continue; }
   url="$(gh pr create --repo "$OWNER/$repo" --base "$default" --head "$BRANCH" \
-    --title "ci: estate security-scan and spec-gate" \
-    --body "$(printf 'Installs the two estate gates as one job each, calling the composite actions in chidionyema/idp: security-scan (gitleaks over history, pip-audit, npm audit, policy gate) and spec-gate (a code change must carry a *.feature, test or diagram-generator change; founder ruling R29, 2026-08-25). Opened by bin/estate-security-rollout from idp; tracked on crew#236 and crew#229.\n\nAuthor-session: estate-security-rollout\nNo-Issue: fleet rollout tracked on crew#236')" 2>&1 | tail -1)"
+    --title "ci: estate security-scan" \
+    --body "$(printf 'Installs the estate security gate as one job, calling the composite action in chidionyema/idp: security-scan (gitleaks over history, pip-audit, npm audit, policy gate). Opened by bin/estate-security-rollout from idp; tracked on crew#236 and crew#229.\n\nAuthor-session: estate-security-rollout\nNo-Issue: fleet rollout tracked on crew#236')" 2>&1 | tail -1)"
   echo "OPENED  $repo: $url"; opened=$((opened+1))
 done < <(gh repo list "$OWNER" --limit 200 --no-archived --json name,pushedAt -q '.[] | .name+" "+.pushedAt[:10]' | sort)
 echo "$([ $todo = 0 ] && [ $blocked = 0 ] && echo 'ok  ' || echo FAIL)  rollout $ok in place, $opened opened, $merged merged, $todo open or missing, $blocked blocked"
