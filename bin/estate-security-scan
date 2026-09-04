@@ -169,6 +169,23 @@ else
       # flake protocol an unrelated infrastructure timeout must not hold a correct change, so this
       # reports and does not gate; a real advisory still prints its report and still fails.
       if [ $rc = 124 ]; then say "WARN  npm       $d: npm audit exceeded 300s (registry unreachable); dependencies unmeasured, not gating"
+      elif printf '%s' "$out" | grep -qiE 'severity vulnerabilit|npm audit report'; then
+        # POSITIVE EVIDENCE OF A FINDING, and the only branch that gates. npm prints one of
+        # these two whenever it actually measured something: the report header, or the
+        # "N high severity vulnerabilities" summary. Judging the report rather than the exit
+        # code is the whole fix -- `npm audit` exits non-zero for a registry that refused to
+        # answer just as readily as for a real advisory, and on 2026-09-04 hermes-v2#72 was
+        # refused by "npm warn audit 503 Service Unavailable" reported as
+        # "high or critical advisories in shipped dependencies" with a 503 as its evidence.
+        say "FAIL  npm       $d: high or critical advisories in shipped dependencies"
+        [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'
+        nfail=1
+      elif printf '%s' "$out" | grep -qiE '5[0-9][0-9] |429 |service unavailable|econnreset|etimedout|eai_again|enotfound|socket hang up|audit endpoint'; then
+        # A registry that answered with an HTTP error or dropped the socket measured nothing.
+        # Under the flake protocol an unrelated infrastructure failure must not hold a correct
+        # change, so this reports and does not gate.
+        say "WARN  npm       $d: npm audit could not reach the registry (exit $rc); dependencies unmeasured, not gating"
+        [ $quiet = 1 ] || printf '%s\n' "$out" | tail -3 | sed 's/^/      /'
       elif [ -z "$(printf '%s' "$out" | tr -d '[:space:]')" ]; then
         # A real advisory always prints its report. A non-zero exit with nothing on stdout or
         # stderr is a broken probe, not a finding, and reporting it as FAIL blocks correct work
@@ -176,7 +193,13 @@ else
         # refused this way twice on 2026-09-04 while the identical command answered "found 0
         # vulnerabilities" outside CI. BLIND says what actually happened: nothing was measured.
         say "BLIND npm       $d: npm audit exited $rc and printed nothing; nothing was measured"; blind=1
-      else say "FAIL  npm       $d: high or critical advisories in shipped dependencies"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'; nfail=1; fi
+      else
+        # Non-zero, output that is neither a report nor a recognised transport failure. Nothing
+        # was measured and nothing is claimed: BLIND, with the output so a person can read it.
+        say "BLIND npm       $d: npm audit exited $rc with no advisory report; nothing was measured"
+        [ $quiet = 1 ] || printf '%s\n' "$out" | tail -5 | sed 's/^/      /'
+        blind=1
+      fi
     else
       (cd "$d" && timeout 300 npm audit --package-lock-only --audit-level=high >/dev/null 2>&1); rc=$?
       if [ $rc = 124 ]; then say "WARN  npm       $d: all-deps npm audit exceeded 300s (registry unreachable); dev advisories unmeasured"

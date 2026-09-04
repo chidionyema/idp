@@ -70,3 +70,51 @@ def test_a_registry_timeout_is_a_warning_and_does_not_gate(tmp_path: Path) -> No
     assert "WARN  npm" in out, out
     assert "FAIL  npm" not in out, out
     assert "BLIND npm" not in out, out
+
+
+def test_a_registry_that_answered_with_an_http_error_is_a_warning(
+    tmp_path: Path,
+) -> None:
+    """hermes-v2#72, 2026-09-04: `npm warn audit 503 Service Unavailable - POST
+    https://registry.npmjs.org/-/npm/v1/security/audits/quick` was reported as
+    `high or critical advisories in shipped dependencies`, with the 503 itself
+    printed underneath as the evidence. A registry that refused to answer
+    measured nothing, so it may not gate."""
+    out = _repo_with_fake_npm(
+        tmp_path,
+        exit_code=1,
+        output=(
+            "npm warn audit 503 Service Unavailable - POST "
+            "https://registry.npmjs.org/-/npm/v1/security/audits/quick\n"
+        ),
+    )
+    assert "WARN  npm" in out, out
+    assert "FAIL  npm" not in out, out
+    assert "BLIND npm" not in out, out
+
+
+def test_a_dropped_socket_is_a_warning_too(tmp_path: Path) -> None:
+    out = _repo_with_fake_npm(
+        tmp_path, exit_code=1, output="npm error network ECONNRESET\n"
+    )
+    assert "WARN  npm" in out, out
+    assert "FAIL  npm" not in out, out
+
+
+def test_an_advisory_report_still_fails_however_it_is_headed(tmp_path: Path) -> None:
+    """The report header is the other half of the positive-evidence rule: a
+    report that lists advisories without the summary line still gates."""
+    out = _repo_with_fake_npm(
+        tmp_path, exit_code=1, output="# npm audit report\n\nminimist  <1.2.6\n"
+    )
+    assert "FAIL  npm" in out, out
+
+
+def test_output_that_is_neither_a_report_nor_a_network_error_is_blind(
+    tmp_path: Path,
+) -> None:
+    out = _repo_with_fake_npm(
+        tmp_path, exit_code=1, output="npm error code EUSAGE\nunknown command\n"
+    )
+    assert "BLIND npm" in out, out
+    assert "FAIL  npm" not in out, out
