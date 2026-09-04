@@ -67,7 +67,10 @@ def test_nothing_that_runs_reads_an_anthropic_key():
 
 
 def test_the_agent_names_a_lane_and_not_a_vendors_model_id():
-    est = yaml.safe_load((IDP / "platform/hermes-agent/estate.yaml").read_text())
+    # The file is a ConfigMap and the estate is a block scalar inside it, so the
+    # document the agent reads is one level in from the manifest Flux applies.
+    cm = yaml.safe_load((IDP / "platform/hermes-agent/estate.yaml").read_text())
+    est = yaml.safe_load(cm["data"]["estate.yaml"])
 
     def models(node):
         if isinstance(node, dict):
