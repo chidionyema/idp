@@ -25,6 +25,21 @@ kind: ConfigMap
 metadata:
   name: spend-check-scripts
   namespace: llm
+  annotations:
+    # This ConfigMap is a shell script, not a template. Flux runs envsubst over every resource
+    # in the llm Kustomization, and envsubst cannot tell `${CALLS}` -- a variable the script
+    # assigns to itself on the line above -- from a cluster value someone forgot to define. In
+    # strict mode it does not shrug: it fails the whole build, so from the moment this file
+    # landed on 2026-09-04 the ENTIRE llm namespace stopped reconciling with
+    # `envsubst error: variable substitution failed: variable not set (strict mode): "CALLS"`,
+    # and with it the model router's own config. Two more rows fell over behind it, hindsight
+    # and research-engine, both on `dependency 'flux-system/llm' is not ready`.
+    #
+    # This annotation is Flux's documented answer for exactly this case -- a resource that owns
+    # its dollar signs -- and it covers every variable in the script rather than the one that
+    # happened to be alphabetically unlucky, so escaping `$${...}` one at a time is not needed
+    # and cannot regress.
+    kustomize.toolkit.fluxcd.io/substitute: disabled
 data:
   check_velocity.sh: |
     #!/bin/sh
