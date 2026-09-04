@@ -832,6 +832,26 @@ pb_namespace_unstick() {
   show pods $K get pods -n backstage -o wide
 }
 
+pb_webhooks_restart() {
+  # run 33857758131 (2026-09-04): Kustomization flux-system/edge failed its dry-run with
+  #   failed calling webhook "mutate-policy.kyverno.svc" ... policymutate?timeout=10s: EOF
+  # and identity, weave-gitops and 42 more sat behind it as unready dependencies, so the deploy
+  # button at catalogue.${ESTATE_ZONE}/deploy drew an empty Applications list. The kyverno and
+  # external-secrets pods were Running; their admission endpoints were not answering, which is the
+  # same dead-sandbox shape recorded on run 33133317589 inside cilium-unchain. That playbook also
+  # deletes the CNI config, which is far more than this needs, so the two restarts are their own
+  # playbook: nothing here touches a node, a file or a policy.
+  step webhooks-restart $K rollout restart deploy -n external-secrets
+  step kyverno-restart $K rollout restart deploy -n kyverno
+  step webhooks-ready $K rollout status deploy -n external-secrets --timeout=180s
+  step kyverno-ready $K rollout status deploy -n kyverno --timeout=180s
+  # With the webhooks answering again, the blocked branch of the dependency tree is reconciled at
+  # its root rather than waited on: edge is what dry-ran against kyverno, and everything under it
+  # follows on its own interval.
+  step edge flux reconcile kustomization edge -n flux-system --timeout=10m
+  show kustomizations $K get kustomizations -A
+}
+
 pb_helm_retry() {
   local failed
   failed=$($K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{" "}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null | awk '$1=="False"{print $2" "$3}')
@@ -1189,7 +1209,7 @@ YAML
 }
 
 case "${1:-}" in
-  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   otto-parity) pb_otto_parity ;;
@@ -1203,6 +1223,7 @@ case "${1:-}" in
   cilium-unchain) pb_cilium_unchain ;;
   cilium-replace) pb_cilium_replace ;;
   helm-retry) pb_helm_retry ;;
+  webhooks-restart) pb_webhooks_restart ;;
   k8sgpt-analyze) pb_k8sgpt_analyze ;;
   catalogue-roll) pb_catalogue_roll ;;
   node-drain) pb_node_drain ;;
