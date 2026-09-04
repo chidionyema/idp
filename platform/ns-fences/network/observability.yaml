@@ -47,6 +47,9 @@ spec:
   - to:
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: estate-db
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: identity
     - namespaceSelector:
         matchLabels:

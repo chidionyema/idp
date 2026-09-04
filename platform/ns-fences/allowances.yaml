@@ -111,7 +111,7 @@ flows:
     egress: [guacamole, robusta]
     ingress_from: [observability, edge]
   observability:
-    egress: [monitoring, identity]
+    egress: [monitoring, identity, estate-db]
     ingress_from: [edge, monitoring]
   observability-agent:
     egress: [observability]
