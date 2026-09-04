@@ -1,124 +1,139 @@
-# One database per consumer, declared. This is the whole reason for an operator rather than a
-# StatefulSet: onboarding the eleventh consumer is a block in this file, not another server.
-#
-# Nothing is repointed by this file. Every consumer still talks to its own Postgres until the
-# migration pass moves it; these databases start empty and wait.
-# the service catalogue and the portal
+# One database per consumer, named the way that consumer already names it, so nothing in the
+# application changes when its address does. CloudNativePG creates and owns these; a Database
+# resource removed from git leaves the data alone (ensure: present never drops).
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:
   name: backstage
   namespace: estate-db
 spec:
-  cluster: { name: estate }
+  cluster:
+    name: estate
   name: backstage
   owner: backstage
   ensure: present
 ---
-# the scheduler's run and event storage
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:
-  name: dagster
+  name: hc
   namespace: estate-db
 spec:
-  cluster: { name: estate }
-  name: dagster
-  owner: dagster
+  cluster:
+    name: estate
+  name: hc
+  owner: hc
   ensure: present
 ---
-# screen access: connections and their history
-apiVersion: postgresql.cnpg.io/v1
-kind: Database
-metadata:
-  name: guacamole
-  namespace: estate-db
-spec:
-  cluster: { name: estate }
-  name: guacamole
-  owner: guacamole
-  ensure: present
----
-# the dead-man switches every scheduled job pings
-apiVersion: postgresql.cnpg.io/v1
-kind: Database
-metadata:
-  name: healthchecks
-  namespace: estate-db
-spec:
-  cluster: { name: estate }
-  name: healthchecks
-  owner: healthchecks
-  ensure: present
----
-# the estate's memory; needs the vector and pg_trgm extensions
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:
   name: hindsight
   namespace: estate-db
 spec:
-  cluster: { name: estate }
+  cluster:
+    name: estate
   name: hindsight
   owner: hindsight
   ensure: present
+  extensions:
+    - name: vector
+      ensure: present
+    - name: pg_trgm
+      ensure: present
 ---
-# traces and spend for every model call
-apiVersion: postgresql.cnpg.io/v1
-kind: Database
-metadata:
-  name: langfuse
-  namespace: estate-db
-spec:
-  cluster: { name: estate }
-  name: langfuse
-  owner: langfuse
-  ensure: present
----
-# the router's keys, lanes and spend ledger
-apiVersion: postgresql.cnpg.io/v1
-kind: Database
-metadata:
-  name: litellm
-  namespace: estate-db
-spec:
-  cluster: { name: estate }
-  name: litellm
-  owner: litellm
-  ensure: present
----
-# the research engine's claim ledger
-apiVersion: postgresql.cnpg.io/v1
-kind: Database
-metadata:
-  name: research
-  namespace: estate-db
-spec:
-  cluster: { name: estate }
-  name: research
-  owner: research
-  ensure: present
----
-# the metadata database behind the charts
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:
   name: superset
   namespace: estate-db
 spec:
-  cluster: { name: estate }
+  cluster:
+    name: estate
   name: superset
   owner: superset
   ensure: present
 ---
-# workflow history for the durable scheduler
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: litellm
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: litellm
+  owner: litellm
+  ensure: present
+---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:
   name: temporal
   namespace: estate-db
 spec:
-  cluster: { name: estate }
+  cluster:
+    name: estate
   name: temporal
   owner: temporal
+  ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: temporal-visibility
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: temporal_visibility
+  owner: temporal
+  ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: guacamole
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: guacamole
+  owner: guacamole
+  ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: dagster
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: dagster
+  owner: dagster
+  ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: langfuse
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: langfuse
+  owner: langfuse
+  ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: research
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: research
+  owner: research
   ensure: present

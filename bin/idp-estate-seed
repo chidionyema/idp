@@ -54,20 +54,14 @@ temporal-db               password                    hex32
 otto-gateway-db           password                    hex32
 guacamole                 postgres-password           hex32
 hindsight                 postgres-password           hex32
-# the one Postgres (platform/estate-db): the superuser and one login role per consumer. Every
-# consumer's password is a field of this single entry, so the cluster and the consumer read the
-# same value and can never drift.
-estate-db                 superuser-password          hex32
-estate-db                 backstage-password         hex32
+# the one Postgres (platform/estate-db). Seven of its ten roles keep the password their
+# consumer already holds, read straight from that consumer's own vault entry, so nothing is
+# minted for them here. These four are the exceptions: the superuser, and the three roles whose
+# consumer never had a vault entry of its own.
+estate-db                 superuser-password         hex32
 estate-db                 dagster-password           hex32
-estate-db                 guacamole-password         hex32
-estate-db                 healthchecks-password      hex32
-estate-db                 hindsight-password         hex32
 estate-db                 langfuse-password          hex32
-estate-db                 litellm-password           hex32
 estate-db                 research-password          hex32
-estate-db                 superset-password          hex32
-estate-db                 temporal-password          hex32
 hindsight                 HINDSIGHT_API_LLM_BASE_URL  const:https://llm.$ZONE
 mcp-gateway               MCP_GATEWAY_KEY             hex32
 backstage-env             BACKEND_SECRET              urlsafe32
