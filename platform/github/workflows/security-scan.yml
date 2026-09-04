@@ -1,6 +1,9 @@
 # Copied verbatim into .github/workflows/security-scan.yml of every active
 # estate repository by bin/estate-security-rollout. The job name is the
 # required status check named in platform/github/ruleset.@active.security-scan.json.
+# The spec-gate job was removed on 2026-09-04: idp's CI purge (b3affcc8) deleted
+# .github/actions/spec-gate, so every repository carrying this file failed that job
+# with "Can't find action.yml" on every pull request, and the check was required.
 # `@main` on a same-owner action is the stated deviation from bin/actions-pinned:
 # a SHA would need re-pinning in every repository on every idp change.
 name: security-scan
@@ -13,7 +16,3 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: chidionyema/idp/.github/actions/security-scan@main
-  spec-gate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: chidionyema/idp/.github/actions/spec-gate@main
