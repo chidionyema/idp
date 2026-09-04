@@ -320,8 +320,20 @@ jobs:
     steps:
       - name: every bdd suite passed
         run: |
-          echo "bdd-suites: ${{ needs.bdd-suites.result }}"
-          test "${{ needs.bdd-suites.result }}" = success
+          set -euo pipefail
+          result='${{ needs.bdd-suites.result }}'
+          echo "bdd-suites: $result"
+          # `skipped` is a pass. The leg only runs when a pull request touches
+          # something a bdd suite covers, so a change that touches none of them
+          # skips it -- and this gate used to read that skip as a failure and
+          # refuse the pull request. Every change outside the bdd surface was
+          # red for a reason that had nothing to do with the change. LAW 38: a
+          # guard that refuses correct work is an outage. `failure` and
+          # `cancelled` are still red.
+          case "$result" in
+            success|skipped) echo "bdd: pass" ;;
+            *) echo "bdd: FAIL ($result)"; exit 1 ;;
+          esac
 
   # crew#584 PR B: the "Enable platform feature" Backstage template opens a pull request that
   # adds one row to platform/features/requests.yaml; it never runs `bin/idp-features enable`
