@@ -51,6 +51,36 @@ except ImportError:
 
 SYSTEM_NAMESPACES = {"kube-system", "kube-public", "kube-node-lease", "default"}
 
+# The record bin/idp-ns-fence-gen keeps of what the cluster actually holds. That generator refuses
+# to write a quota for a namespace the cluster does not have, because a ResourceQuota addressed to
+# a namespace that does not exist fails the whole Kustomization and takes every other fence with
+# it (idp#1558). This gate has to draw the same line or the two halves disagree: measured
+# 2026-09-05, main's offline-gate failed on commerce, demo-sandbox and tigera-operator -- three
+# namespaces declared in git, all of them merged deliberately switched off, none of them on the
+# cluster, and every one of them correctly skipped by the generator. A namespace listed here and
+# unfenced is still a defect; a namespace not listed here has nothing to fence yet, and is fenced
+# on the generator's next run once whatever owns it has created it.
+LIVE_RECORD = "platform/ns-fences/live-namespaces.txt"
+
+
+def grading_the_estate(path: str) -> bool:
+    """True when the path being read is this repository's own platform/ tree, not a fixture."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    target = os.path.abspath(path)
+    platform = os.path.join(root, "platform")
+    return target == platform or target.startswith(platform + os.sep)
+
+
+def live_namespaces() -> set[str] | None:
+    """What the cluster holds, per the generator's record, or None when there is no record."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(root, LIVE_RECORD)
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as fh:
+        names = {n.strip() for n in fh if n.strip() and not n.lstrip().startswith("#")}
+    return names or None
+
 
 def load_manifests(path: str) -> list[dict]:
     """Every YAML document under `path`, whether it is a file or a directory."""
@@ -120,8 +150,13 @@ def allows_dns(np: dict) -> bool:
     return False
 
 
-def check(docs: list[dict], source: str) -> list[str]:
-    """Every defect, as a sentence naming the namespace and what is missing."""
+def check(docs: list[dict], source: str, live: set[str] | None = None) -> list[str]:
+    """Every defect, as a sentence naming the namespace and what is missing.
+
+    `live` is the set of namespaces the cluster holds. When it is given, a namespace declared in
+    git and absent from the cluster is skipped rather than failed -- see LIVE_RECORD above. It is
+    never given in --live mode, where every namespace read is by definition on the cluster.
+    """
     namespaces = {
         d["metadata"]["name"]: d
         for d in docs
@@ -140,6 +175,8 @@ def check(docs: list[dict], source: str) -> list[str]:
     problems: list[str] = []
     for ns in sorted(namespaces):
         if ns in SYSTEM_NAMESPACES:
+            continue
+        if live is not None and ns not in live:
             continue
         kinds = [d.get("kind") for d in by_ns[ns]]
         nps = [d for d in by_ns[ns] if d.get("kind") == "NetworkPolicy"]
@@ -232,7 +269,11 @@ def main() -> int:
     else:
         docs, source = load_manifests(args.path), args.path
 
-    problems = check(docs, source)
+    # Only the estate's own manifest tree is graded against the estate's cluster. A fixture
+    # directory names namespaces no cluster has, and skipping those would stop this gate proving
+    # anything -- the bad fixture would pass by being unknown rather than by being fenced.
+    live = None if (args.live or not grading_the_estate(args.path)) else live_namespaces()
+    problems = check(docs, source, live)
     if problems:
         holed = len({p.split(":")[0] for p in problems})
         print(f"FAIL   ns-fence-gate: {len(problems)} defect(s) across {holed} "
@@ -241,10 +282,16 @@ def main() -> int:
             print(f"       - {p}")
         return 1
 
-    fenced = sorted(
+    declared = sorted(
         d["metadata"]["name"] for d in docs
         if d.get("kind") == "Namespace"
         and d.get("metadata", {}).get("name") not in SYSTEM_NAMESPACES)
+    fenced = [n for n in declared if live is None or n in live]
+    for n in declared:
+        if live is not None and n not in live:
+            print(f"skip   {n}: declared in git, not on the cluster ({LIVE_RECORD}), so there is "
+                  "nothing to fence yet; bin/idp-ns-fence-gen writes its fence on the first run "
+                  "after it appears")
     if args.live:
         print(f"ok     ns-fence-gate: {len(fenced)} namespace(s) in {source} carry a quota, a "
               f"LimitRange, a both-ways default deny and a DNS exception, and {cni} is on the "
