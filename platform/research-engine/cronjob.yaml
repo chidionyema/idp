@@ -53,6 +53,11 @@ spec:
         spec:
           serviceAccountName: research-engine
           automountServiceAccountToken: false
+          # ghcr.io is private, so the pod needs the estate's pull credential by name. Measured
+          # 2026-09-04: without it every hourly job died in ErrImagePull, "unable to retrieve
+          # auth token: invalid username/password: unauthorized".
+          imagePullSecrets:
+            - name: ghcr-pull
           restartPolicy: Never
           priorityClassName: platform-batch
           securityContext:

@@ -8,4 +8,5 @@ namespace: research
 resources:
   - namespace.yaml
   - secrets.yaml
+  - pull-secret.yaml
   - cronjob.yaml
