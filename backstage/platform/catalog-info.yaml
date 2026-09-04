@@ -1536,7 +1536,7 @@ spec:
     - component:default/layer-secret-store
     - component:default/layer-llm
     - component:default/layer-searxng
-    - component:default/layer-hindsight
+    - component:default/layer-estate-db
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
