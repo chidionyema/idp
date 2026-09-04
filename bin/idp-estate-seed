@@ -86,16 +86,15 @@ ROUTER_PLAN=$(cat <<EOF
 hindsight         HINDSIGHT_API_LLM_API_KEY  minimax
 hermes-agent-env  LITELLM_API_KEY            kimi,minimax,deepseek
 otto-golden       LITELLM_API_KEY            kimi,minimax,deepseek
-infra-crew        LITELLM_API_KEY            minimax,deepseek,embed
 EOF
 )
 
 if [ "$MODE" = --preflight ]; then
   VAULT_PUT_PREFLIGHT=1 "$VAULT_PUT" estate-seed --preflight | sed 's/^/        /' || bl vault "not reachable"
   n=0
-  while read -r e k g; do [ -n "$e" ] || continue; say "" "$e" "$k <- ${g%%:*}"; n=$((n+1)); done <<<"$PLAN"
-  while read -r e g; do [ -n "$e" ] || continue; say "" "$e" "(raw) <- $g"; n=$((n+1)); done <<<"$RAW_PLAN"
-  while read -r e k m; do [ -n "$e" ] || continue; say "" "$e" "$k <- router key ($m)"; n=$((n+1)); done <<<"$ROUTER_PLAN"
+  while read -r e k g; do case "$e" in ""|"#"*) continue ;; esac; say "" "$e" "$k <- ${g%%:*}"; n=$((n+1)); done <<<"$PLAN"
+  while read -r e g; do case "$e" in ""|"#"*) continue ;; esac; say "" "$e" "(raw) <- $g"; n=$((n+1)); done <<<"$RAW_PLAN"
+  while read -r e k m; do case "$e" in ""|"#"*) continue ;; esac; say "" "$e" "$k <- router key ($m)"; n=$((n+1)); done <<<"$ROUTER_PLAN"
   say "" signoz-prover "key <- SigNoz service-account key (bin/idp-signoz-key, from the root login the vault holds)"; n=$((n+1))
   say ok preflight "$n keys would be minted or kept; nothing written"
   exit 0
@@ -161,12 +160,12 @@ put_raw() { # <entry> <generator>: the whole secret is the value
 VAULT_PUT_PREFLIGHT=1 "$VAULT_PUT" estate-seed --preflight >/dev/null || bl vault "not reachable (no OCI session?)"
 
 # --- 2. estate-born values ---------------------------------------------------------------------
-while read -r e k g; do [ -n "$e" ] || continue; put_key "$e" "$k" "$g"; done <<<"$PLAN"
-while read -r e g; do [ -n "$e" ] || continue; put_raw "$e" "$g"; done <<<"$RAW_PLAN"
+while read -r e k g; do case "$e" in ""|"#"*) continue ;; esac; put_key "$e" "$k" "$g"; done <<<"$PLAN"
+while read -r e g; do case "$e" in ""|"#"*) continue ;; esac; put_raw "$e" "$g"; done <<<"$RAW_PLAN"
 
 # --- 3. router keys, from the master key just proven present -------------------------------------
 while read -r e k m; do
-  [ -n "$e" ] || continue
+  case "$e" in ""|"#"*) continue ;; esac
   if [ "$ROTATE" = "$e" ]; then ROUTER_ROTATE=1; else ROUTER_ROTATE=""; fi
   ROUTER_ROTATE=$ROUTER_ROTATE "$ROUTER_KEY" "$e" "$m" --entry "$e" --field "$k" | sed 's/^/        /' || fail "$e" "router key $k not minted"
 done <<<"$ROUTER_PLAN"
