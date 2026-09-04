@@ -1,0 +1,22 @@
+# crew#841: what the break-glass bridge is allowed to do inside the cluster.
+#
+# The bridge authenticates as an OCI instance principal, and the subject OKE presents for one is
+# the instance's OCID -- which terraform prints as `bridge_instance_ocid` after the apply. That
+# OCID is an identifier, not a secret.
+#
+# view, not cluster-admin: this exists to read a pod log during an outage, and a debugger that
+# can delete things is a debugger that can cause one. `view` excludes secrets by design.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: estate-bridge-read
+  annotations:
+    estate.io/why: "the founder reads pods and logs from his phone without his laptop (crew#841)"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - kind: User
+    apiGroup: rbac.authorization.k8s.io
+    name: ocid1.instance.oc1.uk-london-1.anwgiljtpixfknicz2iqsyh7joynf2qrda4w3m6m66llreozo55iobkfwmsq

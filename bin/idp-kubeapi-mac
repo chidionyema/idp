@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# The cluster's API, reachable from the founder's phone, without a browser.
+#
+# Founder, 2026-09-04: "better to just use the app directly, using a briwser
+# sucks", "this is clunnky", "dont like it". A native phone app (InKuber, K8Z,
+# Kuber) speaks to a Kubernetes API server directly -- but Oracle's control
+# plane at the estate's endpoint admits exactly one source address
+# (control_plane_allowed_cidrs in platform/oci/terraform.tfvars), so a phone off
+# the home network cannot reach it, whatever app is installed. This is the
+# blocking fact and it is not negotiable from our side: opening that allowlist
+# to the world is the thing the allowlist exists to prevent.
+#
+# So the phone talks to this Mac, and this Mac talks to Oracle. The Mac is
+# already inside the allowlist, already holds the estate's cloud API key, and
+# already sits outside the cluster -- which is the whole point (see
+# bin/idp-headlamp-mac and the failure-domain rule it records).
+#
+# Nothing on the phone holds a cluster credential. Authentication happens here,
+# per request, from the estate's API key; the tailnet policy
+# (platform/tailscale/policy.hujson) is what decides who may reach this port,
+# and it grants group:founder only. A lost phone leaks nothing and is cut off
+# by removing the device from the tailnet.
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+PORT="${IDP_KUBEAPI_PORT:-8001}"
+
+trap 'echo "FAIL  kubeapi  exit $? at line $LINENO" >&2' ERR
+
+die() {
+	printf 'BLIND   kubeapi  %s\n' "$1" >&2
+	exit 2
+}
+
+TS="$(command -v tailscale || true)"
+[ -n "$TS" ] || TS="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+[ -x "$TS" ] || die "no tailscale command; the phone reaches this Mac over the tailnet only"
+ADDR="$("$TS" ip -4 2>/dev/null | head -1 || true)"
+[ -n "$ADDR" ] || die "this Mac has no tailnet address; open Tailscale and sign in"
+
+command -v kubectl >/dev/null || die "no kubectl on PATH"
+
+KC="${IDP_KUBECONFIG:-${XDG_STATE_HOME:-$HOME/.local/state}/idp/kubeconfig}"
+"$IDP/bin/idp-kube" >/dev/null 2>&1 ||
+	printf 'warn    kubeapi  bin/idp-kube could not refresh the kubeconfig; using the cached one\n' >&2
+[ -f "$KC" ] || die "no kubeconfig at $KC -- run bin/idp-oci-login then bin/idp-kube"
+
+export OCI_CLI_PROFILE="${OCI_CLI_PROFILE:-DEFAULT}" OCI_CLI_AUTH="${OCI_CLI_AUTH:-api_key}"
+export SUPPRESS_LABEL_WARNING=True
+
+printf 'ok      kubeapi  http://%s:%s  (tailnet only)\n' "$ADDR" "$PORT"
+exec kubectl proxy --kubeconfig "$KC" \
+	--address="$ADDR" --accept-hosts='.*' --port="$PORT"
