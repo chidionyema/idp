@@ -59,6 +59,33 @@ def agents_md_path() -> Path:
     return Path(__file__).resolve().parent.parent / AGENTS_MD_FILENAME
 
 
+def console_lanes(repo_root: Path | None = None) -> set[str]:
+    """Model groups the LiteLLM console serves that the rendered config does not.
+
+    A model row declared in `llm/config.yaml` is read-only in the LiteLLM admin
+    console -- it shows as "defined in config" and its key cannot be replaced
+    there. The founder rotates the vendor keys himself (2026-09-04: "i can
+    change the keys nyself, i eed to be ble to delete the esting keys set in
+    config"), so a lane whose key he owns is declared in
+    `platform/vendors/consoles.yaml` under `router.console_lanes` and is
+    rendered into no config file. The router serves it all the same, so the
+    question "does this alias exist" is answered by the union of the two files.
+
+    Read as text, like the config check beside it: this carries no yaml parser.
+    """
+    root = repo_root or agents_md_path().parent
+    consoles = root / "platform" / "vendors" / "consoles.yaml"
+    if not consoles.is_file():
+        return set()
+    names: set[str] = set()
+    for line in consoles.read_text().splitlines():
+        head, sep, tail = line.partition("console_lanes:")
+        if not sep or head.strip().startswith("#"):
+            continue
+        names |= {n.strip() for n in tail.strip().strip("[]").split(",") if n.strip()}
+    return names
+
+
 def fenced_toml(text: str) -> str:
     """The body of the first ```toml fence in a Markdown document."""
     inside = False

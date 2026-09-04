@@ -24,6 +24,7 @@ import yaml
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from sovereign import config as config_mod
+from sovereign import policy as policy_mod
 from sovereign.consensus import config_keys as ck
 decide_mod = importlib.import_module("sovereign.consensus.decide")  # the package exports a function named decide
 from sovereign.consensus import models as models_mod
@@ -249,8 +250,11 @@ def _served_by_proxy(voters: list[str]) -> None:
     root = Path(__file__).resolve().parents[3]
     text = (root / "llm" / "config.yaml").read_text()
     served = set(re.findall(r"^\s*- model_name:\s*(\S+)", text, re.M))
+    # A lane the founder keys himself is declared in the console, not in this file
+    # (platform/vendors/consoles.yaml `console_lanes`); the proxy serves it either way.
+    served |= policy_mod.console_lanes(root)
     missing = [v for v in voters if v not in served]
-    assert not missing, f"not in llm/config.yaml model_list: {missing}"
+    assert not missing, f"served by neither llm/config.yaml nor the console: {missing}"
 
 
 # Incident 2026-08-26: `sb model-consensus` raised AttributeError before any
