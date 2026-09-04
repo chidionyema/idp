@@ -10,8 +10,6 @@ systems:
     purpose: B2B lead research and outreach drafting for UK/EU sales prospecting
     technical_file: docs/ai-systems/prospector/technical-file.md
     models:
-      - provider: anthropic
-        ids: [claude-opus-5, claude-sonnet-5, claude-opus-4-8]
       - provider: deepseek
         ids: [deepseek-chat]
       - provider: minimax

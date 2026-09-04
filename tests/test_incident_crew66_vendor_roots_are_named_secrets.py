@@ -21,7 +21,6 @@ WF = (ROOT / ".github/workflows/oke-check.yml").read_text()
 
 # well-formed, fake keys; a verify shim answers 2xx to any of them, so nothing here reaches a vendor
 FAKE = {
-    "SEED_ANTHROPIC_API_KEY": "sk-ant-" + "a" * 64,
     "SEED_OPENROUTER_API_KEY": "sk-or-v1-" + "0" * 64,
     "SEED_DEEPSEEK_API_KEY": "sk-" + "1" * 32,
     "SEED_MINIMAX_API_KEY": "mm-" + "m" * 30,
@@ -144,7 +143,10 @@ def test_roots_from_the_environment_are_verified_then_written_and_never_printed(
         "ok      vendors" in r.stdout and f"{len(REG) + 1} written" in r.stdout
     )  # telegram = two roots
     verified = (tmp_path / "verify.log").read_text()
-    assert "api.anthropic.com" in verified and "api.telegram.org" in verified
+    assert (
+        "generativelanguage.googleapis.com" in verified
+        and "api.telegram.org" in verified
+    )
     for value in FAKE.values():
         assert value not in r.stdout and value not in r.stderr, "a root reached stdout"
 
@@ -158,9 +160,11 @@ def test_a_missing_root_is_blind_for_that_vendor_only_and_the_exit_is_two(tmp_pa
         "BLIND   gemini" in r.stdout and "gh secret set SEED_GEMINI_API_KEY" in r.stdout
     )
     assert "1 blind" in r.stdout
+    # blind for that vendor only: gemini is missing from the vault writes, the other roots
+    # in the same run still land.
     assert (
         "GEMINI_API_KEY" not in log.read_text()
-        and "ANTHROPIC_API_KEY" in log.read_text()
+        and "OPENROUTER_API_KEY" in log.read_text()
     )
 
 

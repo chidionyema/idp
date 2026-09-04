@@ -9,28 +9,6 @@
 # `vision` is an alias so photo intake names a capability, not a vendor (crew#284 CP1).
 
 model_list:
-  # crew#568 phase 1 (ADR 0011): Claude is a lane on the router, not a key on the Mac. Every
-  # caller that wants Claude asks the router by name; the key lives in litellm-upstream and is
-  # born by bin/idp-bootstrap-vendors from SEED_ANTHROPIC_API_KEY (R52), never pasted anywhere.
-  # Model ids from https://docs.anthropic.com/en/docs/about-claude/models (read 2026-08-29).
-  - model_name: claude
-    litellm_params:
-      model: anthropic/claude-sonnet-5
-      api_key: os.environ/ANTHROPIC_API_KEY
-      timeout: 300
-      max_tokens: 8192
-    model_info:
-      max_input_tokens: 200000
-
-  - model_name: claude-fast
-    litellm_params:
-      model: anthropic/claude-haiku-4-5-20251001
-      api_key: os.environ/ANTHROPIC_API_KEY
-      timeout: 300
-      max_tokens: 8192
-    model_info:
-      max_input_tokens: 200000
-
   - model_name: openrouter
     litellm_params:
       model: openrouter/deepseek/deepseek-chat
@@ -94,6 +72,30 @@ model_list:
       model: gemini/gemini-2.5-flash
       api_key: os.environ/GEMINI_API_KEY
       timeout: 300
+
+  # The two neutral lane names. They used to be declared on the anthropic row, which is
+  # gone, and a caller must be able to ask for a capable model or a cheap one without
+  # naming a vendor (LAW 34, founder 2026-09-04: "we supposoed to be provider agnostic").
+  # They sit on Gemini because that account is bought direct and verified in the
+  # 2026-09-04 09:48Z apply run; the fallback chains below take them off Google the
+  # moment it refuses. Model ids from https://ai.google.dev/gemini-api/docs/models.
+  - model_name: default
+    litellm_params:
+      model: gemini/gemini-2.5-pro
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 300
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 1048576
+
+  - model_name: fast
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 300
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 1048576
 
   # crew#659 CP3 (founder 2026-08-30, "GPT Researcher is the worker"): the research worker ranks
   # what it scraped with an embedding model, and the router is the only door to a model (LAW 34).
@@ -162,11 +164,6 @@ router_settings:
     # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
     # job aliases) but sit in no chain while the account is unfunded: a hop that always
     # answers 402 is latency, not redundancy.
-    # crew#568 phase 1: a Claude turn that 4xx/5xxs falls to the funded direct lanes and ends
-    # in the cheap model (cp30), like every other chain; claude-fast tries claude first.
-    - claude: [minimax, deepseek]
-    - claude-fast: [claude, deepseek]
-
     - openrouter: [minimax, deepseek]
 
     - deepseek: [minimax]
@@ -174,6 +171,8 @@ router_settings:
     - minimax: [deepseek]
 
     - gemini: [minimax, deepseek]
+    - default: [minimax, deepseek]
+    - fast: [minimax, deepseek]
     # An image chain may only contain image models. Every other chain here ends in the cheap
     # text model (cp30) and that is right for text; landing a picture request on a chat model
     # would answer a caller waiting for bytes with prose, which is worse than a clean failure.

@@ -57,3 +57,18 @@ other chain (crew#506 CP1), ending in the cheap model (sovereign cp30). A Claude
   lane name.
 
 Matrix: claude-on-the-router (`docs/decisions/decision-matrix.yaml`).
+
+## Overturned 2026-09-04
+
+The founder closed this road: "estate will never use antropic api keys ... final and end of",
+after `api.anthropic.com` answered `400 Your credit balance is too low to access the Anthropic
+API` on every call the `claude` lane made. Anthropic is a flat monthly subscription here, not a
+metered API account, so the balance was never going to be topped up.
+
+What stands in its place: the `claude` and `claude-fast` lanes are deleted, and the two neutral
+lane names `default` and `fast` replace them, served today by Gemini and falling back to MiniMax
+then DeepSeek. A component names a lane, never a vendor's model id (LAW 34). Claude itself
+reaches the estate through the Claude Max monthly subscription, by `claude -p` on the hermes
+agent's `claude` runtime — no API key anywhere in the estate. Removed with it: the `anthropic`
+row in `platform/vendors/consoles.yaml`, `SEED_ANTHROPIC_API_KEY`, and the `claude-on-the-router`
+entry in `docs/decisions/decision-matrix.yaml` (idp#1426).

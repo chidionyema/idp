@@ -51,8 +51,15 @@ data:
       cli: kubectl
 
     models:
-      watch: claude-haiku-4-5
-      work: claude-haiku-4-5
+      # These are LANE names on the estate router (platform/llm/config.yaml), never a vendor's
+      # model id (LAW 34, founder 2026-09-04). Measured that day against the running ConfigMap
+      # litellm-config-244dm67c88: this file asked for `claude-haiku-4-5`, which is not one of
+      # the router's lanes, so every call the agent made was refused as an unknown model
+      # (idp#1435 named `gemini`). `fast` is the neutral cheap lane and is served by
+      # gemini-2.5-flash today -- the same model idp#1435 measured -- so the lane can move to
+      # another vendor without this file changing.
+      watch: fast
+      work: fast
 
     dispatch:
       board: chidionyema/crew

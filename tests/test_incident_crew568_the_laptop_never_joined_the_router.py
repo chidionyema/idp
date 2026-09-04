@@ -103,12 +103,14 @@ def test_hermes_is_a_seedable_entry_and_all_covers_it():
     assert '[ "$ENTRY" = all ] || [ "$ENTRY" = hermes ]' in run
 
 
-def test_the_hermes_key_is_a_router_key_with_claude_first():
+def test_the_hermes_key_is_a_router_key_with_the_capable_lane_first():
     _, run, _ = _seed_step()
     line = next(l for l in run.splitlines() if "idp-router-key hermes" in l)
     lanes = line.split()[-1].split(",")
     cfg = yaml.safe_load((ROOT / "platform" / "llm" / "config.yaml").read_text())
-    assert lanes[0] == "claude"
+    # `default` is the capable lane, first so hermes gets it before the cheaper ones. It was
+    # `claude` until 2026-09-04; a key names lanes, never a vendor (LAW 34).
+    assert lanes[0] == "default"
     assert set(lanes) <= {m["model_name"] for m in cfg["model_list"]}
 
 
