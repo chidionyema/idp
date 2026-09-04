@@ -105,8 +105,14 @@ spec:
             # Founder 2026-09-02: Kimi is Otto's primary. The judgment lane is the default
             # lane (otto/router/config.py default_lane="judgment"); this override points it at
             # the router's kimi alias (platform/llm/config.yaml) once otto.router serves boot.
+            # minimax, not kimi. The estate router lists kimi at /v1/models but
+            # refuses it at /v1/chat/completions with 400 "Invalid model name
+            # passed in model=kimi"; minimax and deepseek answer 200 to the same
+            # request with this pod's own key. Measured from inside this pod on
+            # 2026-09-04. otto/router/config.py already calls minimax the
+            # founder-verified lane.
             - name: OTTO_ROUTER_LANE_JUDGMENT_MODEL
-              value: kimi
+              value: minimax
             # LAW 50: every workload emits to the central collector. Same endpoint and mode as
             # platform/llm/litellm.yaml; otto/obs/config.py reads OTEL_EXPORTER_OTLP_ENDPOINT
             # directly and refuses to start in otlp mode without it.
