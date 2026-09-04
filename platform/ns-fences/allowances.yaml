@@ -105,7 +105,7 @@ flows:
     egress_internet: [443]
     ingress_from: [edge, healing, infra-crew, mcp]
   mcp:
-    egress: [observability]
+    egress: [observability, hindsight]
     ingress_from: [edge]
   monitoring:
     egress: [guacamole, robusta]
@@ -116,10 +116,10 @@ flows:
   observability-agent:
     egress: [observability]
   otto-golden:
-    egress: [observability]
+    egress: [observability, hindsight]
     ingress_from: [edge]
   otto-gateway:
-    egress: [observability, event-bus, estate-db]
+    egress: [observability, event-bus, estate-db, hindsight]
     # The answering lane calls api.telegram.org to deliver a reply, and the registration
     # reconciler calls the same host to keep the webhook pointed at this namespace's door.
     # Without this the fence is a silent gag on every answer Otto sends.
@@ -130,7 +130,10 @@ flows:
   dagster:
     ingress_from: [edge, backstage]
   hindsight:
-    ingress_from: [hermes-agent, edge]
+    # Every surface that remembers: both Otto doors write from the answering lane
+    # (hermes-v2 otto/memory/hindsight.py) and estate-mcp serves the same bank to crew, the
+    # agent classes and k8sgpt over the remember/recall tools.
+    ingress_from: [hermes-agent, edge, otto-gateway, otto-golden, mcp]
   robusta:
     ingress_from: [monitoring]
   event-bus:

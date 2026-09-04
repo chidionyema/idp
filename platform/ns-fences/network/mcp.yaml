@@ -47,6 +47,9 @@ spec:
   - to:
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: hindsight
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: observability
 ---
 apiVersion: networking.k8s.io/v1
