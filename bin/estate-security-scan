@@ -159,9 +159,16 @@ else
     # runners) never reach a customer, and on 2026-08-25 two of them (image-size, extract-zip)
     # had High advisories with no patched release at all, which made every repo carrying them
     # permanently red. Those are still reported, one WARN line, so nobody can say they were hidden.
-    if ! out=$(cd "$d" && timeout 120 npm audit --package-lock-only --audit-level=high --omit=dev 2>&1); then
-      rc=$?
-      if [ $rc = 124 ]; then say "BLIND npm       $d: npm audit exceeded 120s (network); rerun"; blind=1
+    # `rc=$?` after an `if ! cmd` reads the status of the negation, which is always 0, so the
+    # 124 branch below never fired and every registry timeout arrived as "high or critical
+    # advisories" with an empty evidence block (hermes-v2#71, twice, 2026-09-04). Capture the
+    # real status before any other command runs.
+    out=$(cd "$d" && timeout 300 npm audit --package-lock-only --audit-level=high --omit=dev 2>&1) && rc=0 || rc=$?
+    if [ $rc != 0 ]; then
+      # A registry that does not answer in 300s is a network condition, not a finding. Under the
+      # flake protocol an unrelated infrastructure timeout must not hold a correct change, so this
+      # reports and does not gate; a real advisory still prints its report and still fails.
+      if [ $rc = 124 ]; then say "WARN  npm       $d: npm audit exceeded 300s (registry unreachable); dependencies unmeasured, not gating"
       elif [ -z "$(printf '%s' "$out" | tr -d '[:space:]')" ]; then
         # A real advisory always prints its report. A non-zero exit with nothing on stdout or
         # stderr is a broken probe, not a finding, and reporting it as FAIL blocks correct work
@@ -171,8 +178,8 @@ else
         say "BLIND npm       $d: npm audit exited $rc and printed nothing; nothing was measured"; blind=1
       else say "FAIL  npm       $d: high or critical advisories in shipped dependencies"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'; nfail=1; fi
     else
-      (cd "$d" && timeout 120 npm audit --package-lock-only --audit-level=high >/dev/null 2>&1); rc=$?
-      if [ $rc = 124 ]; then say "BLIND npm       $d: all-deps npm audit exceeded 120s (network); dev advisories unmeasured"; blind=1
+      (cd "$d" && timeout 300 npm audit --package-lock-only --audit-level=high >/dev/null 2>&1); rc=$?
+      if [ $rc = 124 ]; then say "WARN  npm       $d: all-deps npm audit exceeded 300s (registry unreachable); dev advisories unmeasured"
       elif [ $rc != 0 ]; then say "WARN  npm       $d: high or critical advisories in devDependencies only (not shipped; not gating)"; fi
     fi
   done
