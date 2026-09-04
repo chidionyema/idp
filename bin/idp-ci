@@ -535,35 +535,12 @@ if out=$(cd "$IDP" && python3 bin/ns-fence-gate platform 2>&1); then
   say "ok    fences   $(printf '%s' "$out" | sed 's/^ok *ns-fence-gate: //')"
 else say "warn  fences   $(printf '%s' "$out" | head -1 | sed 's/^FAIL *ns-fence-gate: //') -- crew#191 fences them; report-only until 0"; fi
 
-# 8. crew#216 CP1: the get_estate_inventory MCP tool. Property (byte ceiling holds over
-#    many synthetic catalog sizes) and incident (stale snapshot disclosed, proved both
-#    ways) tests against the plugin's pure functions -- offline, no docker daemon needed.
-#    Live round-trip through the gateway is bin/mcp-status, which idp-verify runs.
-if out=$("$MPY" "$IDP/tests/test_cp1_estate_inventory.py" 2>&1); then
-  say "ok    cp1      $(printf '%s' "$out" | grep -c '^ok    ') property/incident checks pass (crew#216)"
-else say "FAIL  cp1      tests/test_cp1_estate_inventory.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+# 8. The estate diagram renders from the inventory it claims to draw. The three MCP
+#    rungs that stood here (crew#216 CP1-CP3) ran test files #1451 deleted, so they
+#    failed on every run without judging anything; the live round-trip through the
+#    gateway is bin/mcp-status, which idp-verify runs.
 if out=$("$MPY" "$IDP/tests/test_estate_diagram.py" 2>&1); then say "ok    diagram  tests/test_estate_diagram.py"
 else say "FAIL  diagram  tests/test_estate_diagram.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-
-# 9. crew#216 CP2: the get_workload_state(app) MCP tool. Property (byte ceiling holds
-#    over >=500 (dependency-count x metric-sample-count x ceiling) combinations) and
-#    incident (no raw log/timeseries array ever leaves the payload, an unknown app
-#    degrades rather than raises) tests against the plugin's pure functions -- offline,
-#    no docker daemon needed. Live round-trip through the gateway is bin/mcp-status.
-if out=$("$MPY" "$IDP/tests/test_cp2_workload_state.py" 2>&1); then
-  say "ok    cp2      $(printf '%s' "$out" | grep -c '^ok    ') property/incident checks pass (crew#216)"
-else say "FAIL  cp2      tests/test_cp2_workload_state.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-
-# 10. crew#216 CP3: the get_workload_logs(app, tail=50) MCP tool, the separate
-#     drill-down get_workload_state's docstring names. Differential (tail_lines vs
-#     a naive whole-file reference), property (tail bound holds over line-count x
-#     requested-tail combinations, including a 1,000,000-line request) and incident
-#     (a scheduled_job's own plist resolves to its log in one call; a non-job asset
-#     degrades; the two tools are registered separately) tests -- offline, no
-#     docker daemon needed. Live round-trip through the gateway is bin/mcp-status.
-if out=$("$MPY" "$IDP/tests/test_cp3_workload_logs.py" 2>&1); then
-  say "ok    cp3      $(printf '%s' "$out" | grep -c '^ok    ') property/incident checks pass (crew#216)"
-else say "FAIL  cp3      tests/test_cp3_workload_logs.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
 
 # 11. crew#219 R39: the acceptance suite is executable. The 35 Gherkin files in
