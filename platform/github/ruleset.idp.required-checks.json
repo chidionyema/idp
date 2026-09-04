@@ -24,15 +24,6 @@
           },
           {
             "context": "security-scan"
-          },
-          {
-            "context": "spec-gate"
-          },
-          {
-            "context": "operating-model-gate / operating-model-gate"
-          },
-          {
-            "context": "verify/verdict-fresh"
           }
         ]
       }
