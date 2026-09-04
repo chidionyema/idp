@@ -1349,3 +1349,21 @@ spec:
   prune: false
   wait: false
   timeout: 15m
+---
+# crew#841: the break-glass bridge's read access. Cluster-scoped RBAC only -- no workload, no
+# namespace, nothing to fence. The bridge itself runs on an Oracle instance outside the cluster
+# on purpose, so that a node event or a bad reconcile does not take the debugger with it.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: rbac
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/rbac
+  prune: true
+  wait: true
+  timeout: 5m

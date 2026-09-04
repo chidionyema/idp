@@ -55,11 +55,19 @@
     // mint 400d again with the policy already applied (run 33447033447, 22:43Z vs apply 22:40Z).
     "tag:k8s-operator": ["tag:k8s"],
     "tag:founder-mac": [],
+    // crew#841: the break-glass bridge instance, so debugging does not depend on the founder's
+    // laptop being awake. Owned by tag:k8s for the same reason tag:k8s-operator is: the root
+    // OAuth client carries tag:k8s, and a client may only request tags its own tags own
+    // (kb/1215). [] here would 400 the join exactly as it did for the operator.
+    "tag:estate-bridge": ["tag:k8s"],
   },
   "acls": [
     {"action": "accept", "src": ["tag:k8s"],
      "dst":    ["tag:founder-mac:22", "tag:founder-mac:5900"]},
     {"action": "accept", "src": ["group:founder"],
      "dst":    ["tag:founder-mac:*", "autogroup:self:*"]},
+    // His phone reads the cluster through the bridge, and only the one port the bridge serves.
+    {"action": "accept", "src": ["group:founder"],
+     "dst":    ["tag:estate-bridge:8001"]},
   ],
 }

@@ -1,0 +1,68 @@
+#cloud-config
+# crew#841: what the break-glass bridge runs. Nothing here holds a credential -- the instance
+# authenticates to Oracle as itself (instance principal) and reads the tailnet join credential
+# out of the estate vault at boot.
+write_files:
+  - path: /etc/estate/bridge-up
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      trap 'echo "FAIL bridge-up exit $? at line $LINENO" >&2' ERR
+      export OCI_CLI_AUTH=instance_principal SUPPRESS_LABEL_WARNING=True
+
+      # Join the tailnet with the OAuth client the operator already uses. The secret never
+      # touches disk: it is read into a variable and passed on tailscale's stdin-free flag,
+      # and the process is the only place it exists.
+      if ! tailscale status >/dev/null 2>&1; then
+        client_secret="$(oci secrets secret-bundle get \
+          --secret-id '${tailscale_secret_id}' --region '${region}' \
+          --query 'data."secret-bundle-content".content' --raw-output |
+          base64 -d | python3 -c 'import json,sys; print(json.load(sys.stdin)["client_secret"])')"
+        tailscale up --authkey="$client_secret?ephemeral=false&preauthorized=true" \
+          --advertise-tags=tag:estate-bridge --hostname=estate-bridge --ssh=false
+        unset client_secret
+      fi
+
+      # A kubeconfig against the PRIVATE endpoint: this instance is inside the VCN, so it never
+      # needs the public one and no allowlist has to know it exists.
+      mkdir -p /etc/estate
+      oci ce cluster create-kubeconfig \
+        --cluster-id '${cluster_id}' --region '${region}' \
+        --kube-endpoint PRIVATE_ENDPOINT \
+        --file /etc/estate/kubeconfig --overwrite
+      chmod 0600 /etc/estate/kubeconfig
+
+      addr="$(tailscale ip -4 | head -1)"
+      [ -n "$addr" ] || { echo "BLIND bridge-up: no tailnet address" >&2; exit 2; }
+      exec kubectl proxy --kubeconfig /etc/estate/kubeconfig \
+        --address="$addr" --accept-hosts='.*' --port=8001
+
+  - path: /etc/systemd/system/estate-bridge.service
+    content: |
+      [Unit]
+      Description=The estate cluster's API on the tailnet (crew#841)
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Environment=OCI_CLI_AUTH=instance_principal
+      ExecStart=/etc/estate/bridge-up
+      Restart=always
+      RestartSec=15
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - dnf install -y oraclelinux-developer-release-el9
+  - dnf install -y python3-oci-cli
+  - dnf config-manager --add-repo https://pkgs.tailscale.com/stable/oracle/9/tailscale.repo
+  - dnf install -y tailscale
+  - systemctl enable --now tailscaled
+  - |
+    v=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+    curl -fsSLo /usr/local/bin/kubectl "https://dl.k8s.io/release/$v/bin/linux/amd64/kubectl"
+    chmod 0755 /usr/local/bin/kubectl
+  - systemctl daemon-reload
+  - systemctl enable --now estate-bridge
