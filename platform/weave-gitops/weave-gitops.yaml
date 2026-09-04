@@ -43,6 +43,17 @@ spec:
                 value: founder-deploy-button
   values:
     fullnameOverride: weave-gitops
+    # Two replicas kept off one node: the deploy button is a routed founder surface, and
+    # bin/idp-ci grades every routed surface on surviving the loss of a node. The page holds
+    # no state -- it reads Flux objects -- so a second replica is a plain availability win.
+    replicaCount: 2
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: weave-gitops
+            topologyKey: kubernetes.io/hostname
     image:
       repository: ghcr.io/weaveworks/wego-app
       tag: v0.38.0
