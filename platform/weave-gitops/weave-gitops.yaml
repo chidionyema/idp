@@ -36,6 +36,19 @@ spec:
   postRenderers:
     - kustomize:
         patches:
+          # crew#307: a required hostname podAntiAffinity plus an unset rolling update is the
+          # deadlock require-availability refuses -- apps/v1 defaults maxUnavailable to 25%, which
+          # rounds down to 0 at two replicas, so the surge pod waits for a node that never comes.
+          # The chart has no strategy values key, so the shape is set here.
+          - target: { kind: Deployment, name: weave-gitops }
+            patch: |
+              - op: add
+                path: /spec/strategy
+                value:
+                  type: RollingUpdate
+                  rollingUpdate:
+                    maxUnavailable: 1
+                    maxSurge: 0
           - target: { kind: Service, name: weave-gitops }
             patch: |
               - op: add
