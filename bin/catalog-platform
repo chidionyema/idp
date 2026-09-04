@@ -336,6 +336,16 @@ LAYERS = {
         "Agent memory",
         "What the agents learned, kept between sessions.",
     ),
+    "estate-db-operator": (
+        "data",
+        "Database operator",
+        "Runs the estate's databases: failover, backups and a database per team without anyone touching a server.",
+    ),
+    "estate-db": (
+        "data",
+        "The estate database",
+        "One PostgreSQL for the whole estate. Every service that needs a database gets one here instead of running its own.",
+    ),
     "healing": (
         "resilience",
         "Self-healing",

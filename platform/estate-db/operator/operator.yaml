@@ -1,0 +1,56 @@
+# Chart 0.29.0 carries operator 1.30.0, the latest on 2026-09-04
+# (cloudnative-pg.github.io/charts/index.yaml, read the same day). Pinned: an operator that
+# upgrades itself under a database is how a consolidation becomes an incident.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: cloudnative-pg
+  namespace: estate-db
+spec:
+  interval: 24h
+  url: https://cloudnative-pg.github.io/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cloudnative-pg
+  namespace: estate-db
+spec:
+  # Bounded remediation with the default rollback strategy, the same shape as every other
+  # release here: a wedged operator is left readable, never uninstalled underneath its clusters.
+  install:
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3, remediateLastFailure: true }
+  interval: 10m
+  chart:
+    spec:
+      chart: cloudnative-pg
+      version: 0.29.0
+      sourceRef:
+        kind: HelmRepository
+        name: cloudnative-pg
+  # The chart's webhook Service carries no catalogue label, and this estate's admission policy
+  # refuses a Service that does not name the entity it belongs to. A post-render patch is the
+  # supported way to add one to a chart's own object without forking the chart.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target: { version: v1, kind: Service, name: cnpg-webhook-service }
+            patch: |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: cnpg-webhook-service
+                labels:
+                  app.kubernetes.io/part-of: idp
+                  backstage.io/kubernetes-id: layer-estate-db-operator
+  values:
+    fullnameOverride: cnpg-controller
+    # One 1.8-core node holds the estate; Kyverno refuses a pod with no limits.
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+    priorityClassName: infrastructure-critical
+    monitoring:
+      podMonitorEnabled: false

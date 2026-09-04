@@ -521,6 +521,51 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-estate-db
+  title: 'The estate database'
+  description: 'One PostgreSQL for the whole estate. Every service that needs a database gets one here instead of running its own.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=estate-db'
+    estate/flux-kustomization: 'estate-db'
+    estate/path: './platform/estate-db/cluster'
+    estate/cluster: 'oke'
+  tags: [platform, data]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: data
+  dependsOn:
+    - component:default/layer-estate-db-operator
+    - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-estate-db-operator
+  title: 'Database operator'
+  description: 'Runs the estate''s databases: failover, backups and a database per team without anyone touching a server.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=estate-db-operator'
+    estate/flux-kustomization: 'estate-db-operator'
+    estate/path: './platform/estate-db/operator'
+    estate/cluster: 'oke'
+  tags: [platform, data]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: data
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-event-bus
   title: 'Event bus'
   description: 'Carries ''this customer paid'' to whatever needs to know, so nothing waits on the payment provider to answer. Not switched on yet.'

@@ -1153,11 +1153,12 @@ spec:
 # takes one question from platform/research-engine/cronjob.yaml, has GPT Researcher retrieve and
 # snapshot the sources through the estate's SearXNG, extracts candidate claims on one router
 # lane, has a lane from a DIFFERENT provider check each one against the document it cites, and
-# writes the result -- admitted and rejected alike -- to its own Postgres.
+# writes the result -- admitted and rejected alike -- to the estate database.
 #
-# It depends on three things and says so: secret-store for the two credentials, llm because
-# both model lanes are the estate router, and searxng because a run with no search backend
-# retrieves nothing and the engine stops rather than writing an essay with invented citations.
+# It depends on four things and says so: secret-store for the two credentials, llm because
+# both model lanes are the estate router, searxng because a run with no search backend
+# retrieves nothing and the engine stops rather than writing an essay with invented citations,
+# and estate-db because its `research` database and role live on the one Postgres.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -1169,9 +1170,7 @@ spec:
     - name: secret-store
     - name: llm
     - name: searxng
-    # The engine brings no database server. It gets a database on the Postgres that already
-    # runs beside Hindsight, so that layer has to be up before this one is applied.
-    - name: hindsight
+    - name: estate-db
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -1179,3 +1178,53 @@ spec:
   prune: true
   wait: true
   timeout: 10m
+---
+# The one database platform, part 1: the operator and its CRDs. Founder, 2026-09-04, on the ten
+# Postgres servers this estate ran: "we need urgent consolidtion to one in few steps as possible
+# fast, this is a crazy situation". Split in two rows because the cluster below is a custom
+# resource the operator defines, and a Kustomization cannot apply a CR whose CRD it is installing
+# in the same pass.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: estate-db-operator
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/estate-db/operator
+  prune: true
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: cloudnative-pg
+      namespace: estate-db
+---
+# Part 2: the cluster itself, its twelve databases and their roles. Depends on secret-store
+# because every password comes from the vault entry `estate-db`.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: estate-db
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: estate-db-operator
+    - name: secret-store
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/estate-db/cluster
+  prune: true
+  wait: true
+  timeout: 15m
+  healthChecks:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: estate
+      namespace: estate-db

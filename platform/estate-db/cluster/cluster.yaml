@@ -1,0 +1,89 @@
+# The one Postgres. Two instances, so the consolidation does not trade nine single points of
+# failure for one: CNPG runs a synchronous-capable replica and promotes it without a person.
+#
+# Image: the CNPG "standard" build rather than "minimal", because Hindsight's database carries
+# the `vector` and `pg_trgm` extensions (measured in hindsight-db-0 on 2026-09-04: plpgsql,
+# vector, pg_trgm), and a consolidation that cannot hold the estate's memory is not one.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: estate
+  namespace: estate-db
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6-standard-bookworm
+  primaryUpdateStrategy: unsupervised
+  priorityClassName: infrastructure-critical
+  # Every object CNPG creates for this cluster -- pods, volumes and the read/write Service --
+  # inherits these, which is what satisfies the estate's require-catalogue-entity policy: a
+  # Service in this estate names the catalogue entity it belongs to.
+  inheritedMetadata:
+    labels:
+      app.kubernetes.io/part-of: idp
+      backstage.io/kubernetes-id: layer-estate-db
+  # The superuser password is not minted here and not typed by anyone: it is a field of the
+  # vault entry `estate-db`, born by bin/idp-estate-seed like every other estate credential.
+  enableSuperuserAccess: true
+  superuserSecret:
+    name: estate-db-superuser
+  bootstrap:
+    initdb:
+      database: estate
+      owner: estate
+  storage:
+    size: 40Gi
+    storageClass: oci-bv
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: "1", memory: 2Gi }
+  postgresql:
+    parameters:
+      # Nine servers each defaulted to 100 connections. One server serves all of them, so the
+      # ceiling is the sum with room, not the default.
+      max_connections: "400"
+  managed:
+    roles:
+      # One login role per consumer. Each owns exactly its own database and nothing else, so
+      # consolidation onto one server does not become one shared account.
+      - name: estate
+        login: false
+      # the service catalogue and the portal
+      - name: backstage
+        login: true
+        passwordSecret: { name: estate-db-role-backstage }
+      # the scheduler's run and event storage
+      - name: dagster
+        login: true
+        passwordSecret: { name: estate-db-role-dagster }
+      # screen access: connections and their history
+      - name: guacamole
+        login: true
+        passwordSecret: { name: estate-db-role-guacamole }
+      # the dead-man switches every scheduled job pings
+      - name: healthchecks
+        login: true
+        passwordSecret: { name: estate-db-role-healthchecks }
+      # the estate's memory; needs the vector and pg_trgm extensions
+      - name: hindsight
+        login: true
+        passwordSecret: { name: estate-db-role-hindsight }
+      # traces and spend for every model call
+      - name: langfuse
+        login: true
+        passwordSecret: { name: estate-db-role-langfuse }
+      # the router's keys, lanes and spend ledger
+      - name: litellm
+        login: true
+        passwordSecret: { name: estate-db-role-litellm }
+      # the research engine's claim ledger
+      - name: research
+        login: true
+        passwordSecret: { name: estate-db-role-research }
+      # the metadata database behind the charts
+      - name: superset
+        login: true
+        passwordSecret: { name: estate-db-role-superset }
+      # workflow history for the durable scheduler
+      - name: temporal
+        login: true
+        passwordSecret: { name: estate-db-role-temporal }
