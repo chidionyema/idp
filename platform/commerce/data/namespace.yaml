@@ -1,10 +1,13 @@
 # The commerce primitive (founder 2026-08-29: "we ban money from the application logic
 # entirely ... a firewall between the internet's money and your application's logic").
 #
-# No idp.estate/edge-attach label and no availability.idp/tier label while this layer is dark:
-# the Gateway in prospector will not accept an HTTPRoute from this namespace, so there is no
-# path from the internet to it even if a route were added by mistake. Both labels go on at
-# cutover, in the PR that moves the live money path, on the founder's word (LAW 11).
+# The layer was switched on on 2026-09-04 and this namespace still carries no
+# idp.estate/edge-attach label and no availability.idp/tier label -- deliberately. Running is not
+# the same as reachable: the Gateway in prospector accepts an HTTPRoute only from a labelled
+# namespace, so there is no path from the internet to the ledger even if a route were added by
+# mistake. Lago is driven from inside the cluster until it has a hostname of its own, which needs
+# a listener and a certificate on that Gateway and is a change in prospector, not here. Both
+# labels go on in that change, with the payment provider, on the founder's word (LAW 11).
 apiVersion: v1
 kind: Namespace
 metadata:

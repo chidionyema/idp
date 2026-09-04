@@ -1,21 +1,34 @@
 # The money layer (founder 2026-08-29): "we ban money from the application logic entirely ...
 # deploy a Universal Commerce Primitive as a firewall between the internet's money and your
-# application's logic". Two rows, both SUSPENDED. Flux reads them and applies nothing.
+# application's logic".
 #
-# `suspend: true` is the estate's dark switch (platform/features/features.yaml: "`suspend:` is
-# the switch -- nothing is ever deleted"). The founder's word on the cutover flips it to false
-# in its own PR, together with the prospector PR that removes the Stripe SDK from Store.Api.
-# Until then this branch changes nothing that runs.
+# SWITCHED ON on 2026-09-04, on the founder's word: "need ithis fiilly enabled JetStream/Lago
+# suspension". `suspend: true` was the estate's dark switch (platform/features/features.yaml:
+# "`suspend:` is the switch -- nothing is ever deleted"); both rows now read false and Flux
+# applies them. What that does and does not turn on:
+#   ON   the ledger: Lago's API, front, clock and four Sidekiq workers, its database on the
+#        estate Postgres, and its durable Valkey queue. The bus was already on.
+#   OFF  the money itself. global.signup.enabled stays false, no payment provider is configured
+#        (commerce-payment-provider holds no keys until a provider is chosen), and this namespace
+#        still carries no idp.estate/edge-attach label, so the Gateway refuses a route from it.
+#        The layer can be driven from inside the cluster and takes no card until it has both.
 #
-# Two rows and not one: the ledger and the queue are stateful and must be Ready before Lago
-# runs its migrations against them. A single row would race its own database.
+# Two rows and not one: the queue is stateful and the ledger is a database on the estate's one
+# Postgres, and both must be Ready before Lago runs its migrations against them. A single row
+# would race its own storage.
+#
+# The ledger stopped being a StatefulSet in this layer on 2026-09-04: it was the estate's
+# seventh Postgres and the founder's ruling that day was that a new layer never brings its own
+# database. It is now database `lago` on the estate cluster, owned by a role nothing else holds
+# a grant from, which is the isolation the money firewall actually needs -- prospector cannot
+# read the ledger, and that was never a property of the server it sat on.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: commerce-data
   namespace: flux-system
 spec:
-  suspend: true
+  suspend: false
   interval: 10m
   sourceRef:
     kind: GitRepository
@@ -30,10 +43,13 @@ spec:
     # Both StatefulSets name platform-batch. A pod that names a PriorityClass the cluster has
     # not created yet is refused by the API server and never schedules (crew#488 rung 4).
     - name: priority-classes
+    # The ledger lives on the estate's one Postgres, so this row waits on that cluster rather
+    # than standing up a database of its own (founder 2026-09-04). Lago's migrations run against
+    # database `lago` there on first boot.
+    - name: estate-db
   wait: true
   timeout: 10m
   healthChecks:
-    - { apiVersion: apps/v1, kind: StatefulSet, name: commerce-db, namespace: commerce }
     - { apiVersion: apps/v1, kind: StatefulSet, name: commerce-redis, namespace: commerce }
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -42,7 +58,7 @@ metadata:
   name: commerce
   namespace: flux-system
 spec:
-  suspend: true
+  suspend: false
   interval: 10m
   sourceRef:
     kind: GitRepository

@@ -4,6 +4,5 @@ namespace: commerce
 resources:
   - namespace.yaml
   - external-secret.yaml
-  - postgres.yaml
   - redis.yaml
   - availability.yaml
