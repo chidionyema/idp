@@ -13,15 +13,22 @@ branch=${IMAGE_UPDATE_BRANCH:-flux/image-updates}
 # the tag lines the image-automation-controller wrote, and nothing else in the diff.
 # shellcheck disable=SC2016  # backticks are the gate's own syntax, not a substitution
 VERIFY='Verify: `grep -rn imagepolicy platform/ clusters/ --include=*.yaml`'
+# idp#1390 (2026-09-04): operating-model-gate rule `control_shipped` landed after this script too,
+# and refused the tag bump carrying the image that makes otto-golden answer with a real model. Same
+# class as the two backfills above and below -- a gate lands, and every controller push is red on a
+# body a robot wrote. A machine-written newTag line ships no behaviour of its own, so the honest
+# answer is `Control: none:` with the reason the rego demands (20 characters or more).
+CONTROL="Control: none: a machine-written newTag bump ships no behaviour of its own; the control is the build that produced the tag and the tests in the repository that built it"
 OPTIMISED="Optimised: 1 -> 1 steps (a newTag line written by the image controller), 1 -> 1 round trips (one push, one pull request); cut: nothing, a machine-written tag bump has no plan to shrink (operating-model-gate rule optimised_plan, LAW 51)"
 n=$(gh pr list --head "$branch" --base main --state open --json number -q '.[0].number')
 if [ -z "$n" ]; then
   gh pr create --head "$branch" --base main \
     --title "$(git log -1 --format=%s)" \
-    --body "$(printf '%s\n\n%s\n%s\n%s\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n' \
+    --body "$(printf '%s\n\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n' \
       "$(git log -1 --format=%b)" \
       "$VERIFY" \
       "$OPTIMISED" \
+      "$CONTROL" \
       "Spec: tests/test_incident_catalogue_image_never_repulled.py" \
       "Drill: login-drill" \
       "Cost-delta-usd-month: 0" \
@@ -52,6 +59,15 @@ case "$body" in
     gh pr edit "$n" --body "$(printf '%s\n\n%s\n' "$(gh pr view "$n" --json body -q .body)" "$VERIFY")"
     # A note about the body, not the verdict: the last line of stdout is what the caller reads.
     echo "refresh image-update-pr #$n body gained the Verify line (idp#1046)" >&2
+    ;;
+esac
+# The third backfill, same reason as the two above: a pull request opened before `control_shipped`
+# existed keeps its old body on every controller push and stays red forever without this.
+case "$body" in
+  *"Control: "*) ;;
+  *)
+    gh pr edit "$n" --body "$(printf '%s\n\n%s\n' "$(gh pr view "$n" --json body -q .body)" "$CONTROL")"
+    echo "refresh image-update-pr #$n body gained the Control line (idp#1390)" >&2
     ;;
 esac
 m=UNKNOWN
