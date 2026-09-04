@@ -1,14 +1,21 @@
-# LATEST — session 2c88870e (.wt-vendor-probe, Kimi/aider lane)
-
 ## RESUME HERE
 
-Kimi lane is blocked on the root itself: apply run 33711941272 (2026-09-03 03:42Z) proved
-SEED_KIMI_API_KEY refused at all three Kimi homes and SEED_DEEPSEEK_API_KEY refused by DeepSeek.
-PR 1201 (e7d2e684) merged: the seeder probes every Kimi home and writes MOONSHOT_API_BASE.
-Waiting on the founder to re-set both repo secrets from his own tab (Telegram 21834) and say
-"go"; then: gh workflow run oke-check.yml --ref main -f mode=apply, read the kimi seeder line,
-wait ~10 min for the ExternalSecret, one router call with model kimi, report MEASURED.
+**Lane:** idp — one Postgres for the estate (idp#1450) and the default-account token rule (idp#1467).
 
-Switching now (2026-09-03 04:1xZ) to record the founder's ruling "no agent can proceed without
-the estate snapshot" as docs/founder/estate-snapshot-is-mandatory.md on branch
-docs/founder-estate-snapshot-mandatory, then back to the Kimi wait.
+**idp#1450 `feat/one-estate-postgres`** — rebased onto main at a3b60464. One merge replaces ten
+Postgres servers with one CloudNativePG cluster, copies every database onto it and deletes the old
+servers, with each consumer's Flux row waiting on `estate-db-migrate` so nothing is pruned before it
+is copied. Four checks that graded the estate as it was are fixed: the platform catalogue gained a
+`data` system, `platform/alerts/alert.yaml` covers namespace `estate-db`, the Temporal acceptance
+test reads the estate address, and the research engine moved off `hindsight-db` onto
+`estate-rw.estate-db.svc.cluster.local`. Also registered `flux-webhook-token`, which reached main
+unregistered with idp#1463. Local: every changed kustomize dir builds, `bin/idp-root-trust` PASS.
+Next: push and watch the run.
+
+**idp#1467 `fix/no-kube-token-by-default`** — Kyverno mutates `automountServiceAccountToken: false`
+onto pods running as the `default` service account. Red on
+`tests/test_incident_crew488_cp5_root_reds_are_never_green.py`: the security page table must be
+regenerated with `bin/idp-admission-policies` now that a policy was added. Next: regenerate, commit,
+push.
+
+**Then:** back to the research engine (founder's standing instruction).
