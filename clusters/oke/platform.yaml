@@ -1293,3 +1293,26 @@ spec:
   prune: true
   wait: true
   timeout: 20m
+---
+# crew#839: every namespace's request defaults and its ceiling, generated in one pass by
+# bin/idp-ns-fence-gen from platform/ns-fences/allowances.yaml. A LimitRange lands beside every
+# quota in the same file, because a quota that counts requests.cpu refuses every pod that declares
+# none -- a fence that refuses correct work is an outage. Sized from what each namespace actually
+# asked for on 2026-09-04 (platform/ns-fences/measured.json), not from a guess.
+# The matching NetworkPolicies are generated too and are deliberately NOT applied: this cluster
+# runs flannel, which enforces none of them. platform/ns-fences/network/README.md says what has to
+# be true before that directory gets a row here.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ns-fences
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/ns-fences
+  prune: true
+  wait: true
+  timeout: 10m

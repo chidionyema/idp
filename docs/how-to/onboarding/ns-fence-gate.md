@@ -6,9 +6,13 @@
 NetworkPolicy under `path` (a file or a directory of manifests) and refuses any
 namespace that lacks a quota, a LimitRange, a both-ways default-deny
 NetworkPolicy selecting all pods, or a DNS exception when egress is denied.
-`bin/ns-fence-gate --live` grades the running cluster through `kubectl` and
-prints BLIND when no cluster is reachable. Exit 0 is a pass, 1 is a defect list
-naming the namespace and the missing fence.
+Exit 0 is a pass, 1 is a defect list naming the namespace and the missing fence.
+
+`bin/ns-fence-gate --live` grades the running cluster through `kubectl`. It
+prints BLIND when no cluster is reachable, and — since crew#839 — it refuses to
+report a pass at all when no CNI in `kube-system` enforces NetworkPolicy, because
+on such a cluster the policy objects are stored and never read, and calling the
+namespaces fenced would be a claim the cluster cannot support.
 
 ## Why it exists
 
@@ -23,18 +27,33 @@ correct work (LAW 38).
 
 ## When it runs
 
-`bin/idp-ci` runs the manifest mode on every push: the fixture pair
-`tests/fixtures/ns-fence/{good,bad}.yaml` proves it both ways, and the run over
-`platform/` is report-only while crew#191 fences the 19 namespaces it names
-today. `tests/test_incident_crew191_ns_fence_gate_proves_both_ways.py` pins the
-fixture verdicts. The live mode runs when a cluster is reachable, after an
-apply.
+`bin/idp-ci` runs it over `platform/` on every push, and since crew#839 that run
+is blocking rather than report-only.
+
+It was report-only from 2026-08-27, when it found 76 defects across 19
+namespaces, on the correct reasoning that a gate refusing every namespace on
+main is itself the outage (LAW 38). The consequence was that it printed a `warn`
+line every run for a week and nothing changed: thirty-eight namespaces had no
+quota, no request defaults and no policy, and every pull request was green.
+crew#839 generated the missing fences in one pass, which is what made turning
+the row into a `FAIL` possible.
+
+The live mode runs after an apply, when a cluster is reachable.
 
 ## Adding a namespace
 
-Ship the four objects with it in the same directory: a ResourceQuota, a
-LimitRange with default requests and limits, one NetworkPolicy with
-`podSelector: {}` and `policyTypes: [Ingress, Egress]`, and an egress rule to
-port 53. `tests/fixtures/ns-fence/good.yaml` is the copyable example. Run
-`bin/ns-fence-gate <dir>` before opening the pull request; `bin/idp-ci` runs
-the same command.
+Do not write the four objects by hand and do not put them beside the namespace.
+Add the namespace's name to `platform/ns-fences/allowances.yaml` — its declared
+traffic under `flows`, and a deliberate ceiling under `overrides` only if the
+derived one is wrong — then run:
+
+```
+python3 bin/idp-ns-fence-gen
+```
+
+It writes every namespace's fence in one pass and is idempotent: a second run
+over unchanged input produces byte-identical files. The quota and the LimitRange
+land in `platform/ns-fences/` and are applied by Flux. The NetworkPolicies land
+in `platform/ns-fences/network/` and are deliberately not applied; that
+directory's README says what has to be true about the cluster's CNI before they
+are.
