@@ -138,7 +138,9 @@ spec:
                 # never grades with the builder's brain. `embed` is the router's embedding row.
                 - { name: LITELLM_BASE_URL, value: "http://litellm.llm.svc:4000" }
                 - { name: INFRA_CREW_MODEL, value: "minimax" }
-                - { name: INFRA_CREW_VERIFIER_MODEL, value: "deepseek" }
+                # `fast` since 2026-09-04: the deepseek lane answers 401 at the vendor and its row
+                # has left platform/llm/config.yaml, so this verifier had no model at all.
+                - { name: INFRA_CREW_VERIFIER_MODEL, value: "fast" }
                 - { name: INFRA_CREW_EMBED_MODEL, value: "embed" }
                 # The estate collector (LAW 50): one value in clusters/oke/estate-config.yaml.
                 - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "${OTLP_ENDPOINT}" }
