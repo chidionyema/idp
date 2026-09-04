@@ -3,28 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-02T17:21:09Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: #1134 (the web-page tag's delivery PR) root-caused and repaired — the automation's newTag-keeping merge dropped the GLOBAL celery blank while keeping the subchart one, so the render gate and my own incident guard went red on that branch exactly as designed; restored with the why in the file, guard test 3/3 locally, pushed; broken background poller (quoting bug printed empty statuses) rewritten as a python file and relaunched over all three PRs
-🟡 Active: poller bq1n8viak on #1155 #1156 #1134 check rollups; merge in-turn on settled green under the standing word (the merge guard rightly refuses scripted merges while checks run)
-🔴 Blocked: none
-⚪ Pending: merge order indifferent — #1155 heals dagster admission+daemon, #1156 ends the sunshine proxy loop (founder-mac already 1/1 Running 13+ min), #1134 delivers the web-page binary tag
-🔧 TOUCHES: idp branches fix/dagster-runtime-security, fix/tailscale-reload-loop, flux/image-updates (one restore commit); cluster reads only
-🔀 OVERLAP: shared ~/dev/code/idp checkout detached+dirty — untouched
-📎 FACTS: my guards caught a real regression on a branch nobody was watching — the incident-test class works; flux/image-updates head now carries both celery blanks AND all three ghcr tag stamps
-📍 State: three PRs cycling on sound trees, two battlefronts one merge each from measured-healed
-
-
-## 2026-09-02T17:26:49Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: #1155 and #1156 MERGED on settled green; measured on cluster: dagster daemon 1/1 Running (telemetry write fix live), all three tailscale pods Running, edge policy revision on main head ff850c4e (the reload-loop fix); #1134's three reds diagnosed — one deterministic (the gate's control_shipped rule: the automation writes no Control: line in its PR body — appended one naming the diff class), two transient (temporal chart pull off GitHub's release CDN died mid-fixture; the bdd job is only an aggregator echoing it) — body fixed, both runs rerun
-🟡 Active: poller on #1134 checks (merge on settled green under the standing word); 8-minute sunshine STS generation stability watch (start gen 2332)
-🔴 Blocked: none
-⚪ Pending: #1134 merge delivers tag main-3349 → webserver gets its binary, user-deployments converge; final MEASURED sweep after
-🔧 TOUCHES: idp PR #1134 body append + check reruns; cluster reads only
-🔀 OVERLAP: shared ~/dev/code/idp checkout detached+dirty — untouched
-📎 FACTS: both dagster deployments measured still on main-3226 (the tag without the webserver binary); webserver crash-loops exactly as predicted until #1134; gate rule text verbatim: "the PR changes platform/, clusters/ or bin/idp-* and names no control"
-📍 State: two battlefronts measured-healing, one PR from fully closed
-
-
 ## 2026-09-02T17:37:56Z · session 54539261 · lane .wt-eye-breaker
 🟢 Done: tailscale battlefront MEASURED CLOSED — sunshine StatefulSet generation frozen at 2332 for a full 8-minute watch, pod 13+ min old, all three pods Running; dagster daemon Running live; caught and fixed a serious regression on #1134's branch: the tag-keeping merge (second offence) replaced dagster.yaml with an old copy, reverting main's telemetry-off block AND the crew#555 availability block (2 replicas, anti-affinity, roll strategy) — file rebuilt as main plus only the three stamped tag lines, and a new incident test pins both blocks so the class is closed (LAW 45)
 🟡 Active: poller on #1134 checks over new head cc71803b; merge on settled green under the standing word — it delivers tag main-3357 (built from post-fix main, carries the webserver binary)
@@ -3458,4 +3436,15 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: session 5f6f4e72 owns prospector and estate-db; deepseek owns fix/crew832-cp3-warden-job
 📎 FACTS: ai.google.dev/gemini-api/docs/rate-limits read 2026-09-04 — allowance is set by the Cloud project's billing tier, Free to Tier 1 by linking billing, instant; AI Pro's expanded AI Studio limits are the web app, not the API key; consoles.yaml line 142 records the Gemini key but not the account that owns it
 📍 State: https://github.com/chidionyema/crew/issues/835#issuecomment-5543876266
+
+
+## 2026-09-04T17:27:55Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1537 merged — waiting on Flux to run the last two copy jobs (hindsight -r4, otto-gateway -r3) and take estate-db-migrate Ready
+🟢 Done: hindsight's restore was still colliding with its own functions, so the copy job now drops routines and types too, skipping anything an extension owns; otto-gateway never got a pod because three crash-looping gateway ReplicaSets hold the namespace quota, so its job now fits in what is left
+⚪ Pending: after estate-db-migrate goes Ready, llm and research-engine reconcile, ghcr-pull lands in the research namespace and the :23 job writes the schema
+🔧 TOUCHES: idp platform/estate-db/migrate/jobs.yaml
+🔀 OVERLAP: none seen; session 85f840c5 is on the company-identity and domain path
+📎 FACTS: 'function "banks_needing_consolidation" already exists with same argument types'; 'pods estate-db-copy-otto-gateway-r2-cxl97 is forbidden: exceeded quota' repeated for 43 minutes; otto-gateway pods crash on 'no pq wrapper available ... libpq library not found'
+📍 State: https://github.com/chidionyema/idp/pull/1537
 
