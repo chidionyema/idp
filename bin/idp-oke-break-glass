@@ -497,12 +497,21 @@ redact() {
 # a file scan says who is CONFIGURED to call it, never who did (LAW 50). Read-only: psql over the
 # pod's unix socket (trust auth, no password handled), aliases and totals only, never a key value.
 pb_router_spend() {
-  local ns=llm pod=litellm-db-0
-  local q='psql -U litellm -d litellm -At -F "|" -c'
+  local ns=llm dbns=estate-db pod
+  # The ledger moved onto the shared estate-db: platform/llm/litellm.yaml composes DATABASE_URL
+  # against estate-rw.estate-db.svc.cluster.local. The pod this read used to exec into, litellm-db-0,
+  # no longer exists, so every run since the consolidation answered "pods litellm-db-0 not found"
+  # and the router's spend was unreadable -- an accounting blind spot, not an empty ledger
+  # (run 33914769721, 2026-09-04). The primary is found by label so a failover does not break it.
+  pod=$($K get pods -n "$dbns" -l 'cnpg.io/cluster=estate,role=primary' -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+  [ -n "$pod" ] || { echo "FAIL  no primary pod for cnpg cluster 'estate' in $dbns"; return 1; }
+  local q='psql -U postgres -d litellm -At -F "|" -c'
   show router-pods $K get pods -n "$ns" -o wide
-  show_redacted spend-by-consumer-and-lane sh -c "$K exec -n $ns $pod -c postgres -- $q \"select coalesce(v.key_alias, 'no-alias:' || left(s.api_key, 8)) as consumer, s.model, count(*) as calls, round(sum(s.spend)::numeric, 4) as usd, sum(s.total_tokens) as tokens, min(s.\\\"startTime\\\")::date as first, max(s.\\\"startTime\\\")::date as last from \\\"LiteLLM_SpendLogs\\\" s left join \\\"LiteLLM_VerificationToken\\\" v on v.token = s.api_key group by 1, 2 order by 3 desc limit 40\" 2>&1"
-  show_redacted spend-per-day-14d sh -c "$K exec -n $ns $pod -c postgres -- $q \"select \\\"startTime\\\"::date as day, count(*) as calls, round(sum(spend)::numeric, 4) as usd from \\\"LiteLLM_SpendLogs\\\" where \\\"startTime\\\" > now() - interval '14 days' group by 1 order by 1\" 2>&1"
-  show_redacted virtual-keys sh -c "$K exec -n $ns $pod -c postgres -- $q \"select coalesce(key_alias, '(none)') as alias, round(spend::numeric, 4) as usd, max_budget, budget_duration, created_at::date, expires::date from \\\"LiteLLM_VerificationToken\\\" order by spend desc limit 40\" 2>&1"
+  show db-primary sh -c "echo $dbns/$pod"
+  show_redacted spend-by-consumer-and-lane sh -c "$K exec -n $dbns $pod -c postgres -- $q \"select coalesce(v.key_alias, 'no-alias:' || left(s.api_key, 8)) as consumer, s.model, count(*) as calls, round(sum(s.spend)::numeric, 4) as usd, sum(s.total_tokens) as tokens, min(s.\\\"startTime\\\")::date as first, max(s.\\\"startTime\\\")::date as last from \\\"LiteLLM_SpendLogs\\\" s left join \\\"LiteLLM_VerificationToken\\\" v on v.token = s.api_key group by 1, 2 order by 3 desc limit 40\" 2>&1"
+  show_redacted spend-per-day-14d sh -c "$K exec -n $dbns $pod -c postgres -- $q \"select \\\"startTime\\\"::date as day, count(*) as calls, round(sum(spend)::numeric, 4) as usd from \\\"LiteLLM_SpendLogs\\\" where \\\"startTime\\\" > now() - interval '14 days' group by 1 order by 1\" 2>&1"
+  show_redacted spend-today-by-hour-and-consumer sh -c "$K exec -n $dbns $pod -c postgres -- $q \"select date_trunc('hour', s.\\\"startTime\\\") as hour, coalesce(v.key_alias, 'no-alias:' || left(s.api_key, 8)) as consumer, s.model, count(*) as calls, sum(s.total_tokens) as tokens from \\\"LiteLLM_SpendLogs\\\" s left join \\\"LiteLLM_VerificationToken\\\" v on v.token = s.api_key where s.\\\"startTime\\\" > now() - interval '36 hours' group by 1,2,3 order by 1 desc, 5 desc limit 60\" 2>&1"
+  show_redacted virtual-keys sh -c "$K exec -n $dbns $pod -c postgres -- $q \"select coalesce(key_alias, '(none)') as alias, round(spend::numeric, 4) as usd, max_budget, budget_duration, created_at::date, expires::date from \\\"LiteLLM_VerificationToken\\\" order by spend desc limit 40\" 2>&1"
 }
 
 pb_architect_doctor() {
