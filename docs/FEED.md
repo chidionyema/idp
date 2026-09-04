@@ -3426,3 +3426,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: measured from the Mac's tailnet address at 21:05Z: UI 200, /api/v1/nodes returned both nodes, kube-system 16 pods; tailnet policy already grants group:founder -> tag:founder-mac:* so no new ACL was needed
 📍 State: https://github.com/chidionyema/idp/pull/1583
 
+
+## 2026-09-04T20:08:39Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on him
+🟡 Active: finding what consumed the MiniMax token plan — router-spend break-glass dispatched (run 33914769721)
+🟢 Done: eliminated prospector's scheduler by measurement — its launchd daemon is alive (pid 67329, interval 7200s) but every tick today skipped with "daily cap reached: $0.0000 >= $0.00"
+⚪ Pending: LiteLLM_SpendLogs answer — consumer × lane × tokens × day
+🔧 TOUCHES: read-only; no repo change this turn
+🔀 OVERLAP: session 5f6f4e72 holds commerce and estate-db
+📎 FACTS: laptop OCI profile 'otto' is gone from ~/.oci/config so no direct cluster read; prospector calls MiniMax directly from its own .env, outside the router's accounting; on origin/main every lane falls back to minimax
+📍 State: https://github.com/chidionyema/idp/actions/runs/33914769721
+
