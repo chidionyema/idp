@@ -126,6 +126,11 @@ spec:
             # different model family from minimax, which is what the refusal above is about.
             - name: OTTO_ROUTER_LANE_BULK_MODEL
               value: fast
+            # The estate's memory (platform/hindsight), one bank for every surface, so a
+            # person remembered from Telegram is remembered on the next channel too.
+            # otto/memory/hindsight.py: unset is a no-op, unreachable never costs an answer.
+            - { name: OTTO_MEMORY_HINDSIGHT_URL, value: "http://hindsight-api.hindsight.svc:8888" }
+            - { name: OTTO_MEMORY_BANK, value: "hermes" }
             # LAW 50: every workload emits to the central collector. Same endpoint and mode as
             # platform/llm/litellm.yaml; otto/obs/config.py reads OTEL_EXPORTER_OTLP_ENDPOINT
             # directly and refuses to start in otlp mode without it.
