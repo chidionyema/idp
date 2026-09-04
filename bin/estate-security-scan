@@ -162,6 +162,13 @@ else
     if ! out=$(cd "$d" && timeout 120 npm audit --package-lock-only --audit-level=high --omit=dev 2>&1); then
       rc=$?
       if [ $rc = 124 ]; then say "BLIND npm       $d: npm audit exceeded 120s (network); rerun"; blind=1
+      elif [ -z "$(printf '%s' "$out" | tr -d '[:space:]')" ]; then
+        # A real advisory always prints its report. A non-zero exit with nothing on stdout or
+        # stderr is a broken probe, not a finding, and reporting it as FAIL blocks correct work
+        # with no evidence anybody can act on (LAW 38). hermes-v2#71, three Python files, was
+        # refused this way twice on 2026-09-04 while the identical command answered "found 0
+        # vulnerabilities" outside CI. BLIND says what actually happened: nothing was measured.
+        say "BLIND npm       $d: npm audit exited $rc and printed nothing; nothing was measured"; blind=1
       else say "FAIL  npm       $d: high or critical advisories in shipped dependencies"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'; nfail=1; fi
     else
       (cd "$d" && timeout 120 npm audit --package-lock-only --audit-level=high >/dev/null 2>&1); rc=$?
