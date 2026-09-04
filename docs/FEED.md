@@ -3658,3 +3658,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: https://github.com/chidionyema/prospector/pull/813
 📍 State: idp feat/mumchimp-oneshot-rebuild dirty
 
+
+## 2026-09-04T08:06:49Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1399 (deploy button) — offline-gate kyverno failure root-caused to the rollout rule; bdd has 2 mechanical failures left
+🟢 Done: idp#1402 merged 07:36Z (hermes-agent on main-69-55ec2477); operating-model-gate and verify-claims workflows deleted
+⚪ Pending: patch strategy maxUnavailable 1/maxSurge 0 into the weave-gitops render, re-stage bin/catalog-platform as 100755, restore verify/verdict-fresh to ruleset 21473806, then merge #1399
+🔧 TOUCHES: platform/weave-gitops only; nothing in the shared working tree
+🔀 OVERLAP: session d0a71e6b holds the idp lane
+📎 FACTS: require-availability rule a-rollout-can-always-free-a-node denies any Deployment with a required hostname podAntiAffinity whose rollingUpdate.maxUnavailable is 0 or unset; the weave-gitops chart has no strategy values key, so it needs a postRenderer patch
+📍 State: https://github.com/chidionyema/idp/pull/1399
+
