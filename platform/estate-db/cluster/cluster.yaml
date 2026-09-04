@@ -70,7 +70,12 @@ spec:
         ensure: present
         login: true
         passwordSecret:
-          name: estate-db-role-hc
+          # The ExternalSecret beside this file is named estate-db-role-healthchecks, after the
+          # consumer, not after the role. Naming a secret here that nothing creates left the role
+          # in cannotReconcile with "secrets estate-db-role-hc not found", and one unreconcilable
+          # role holds the whole Cluster's generation unobserved -- which is what Flux's health
+          # check waits on. Measured 2026-09-04.
+          name: estate-db-role-healthchecks
       # hindsight: the same username, and the same password, as the server it is replacing
       # (vault entry hindsight.postgres-password).
       - name: hindsight
