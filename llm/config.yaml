@@ -31,6 +31,16 @@ model_list:
       api_key: os.environ/MINIMAX_API_KEY
       timeout: 300
       max_tokens: 8192
+      # Without these two the router prices this lane at $0.0000 a call. Measured
+      # 2026-09-04 from LiteLLM_SpendLogs: 176 million MiniMax tokens across three
+      # consumers since 2026-08-27, every row recorded as zero spend, so
+      # general_settings.max_budget could never trip and the vendor's own plan ran
+      # out with nothing in the estate showing a cost. MiniMax is OpenAI-compatible
+      # rather than a first-class provider, so LiteLLM has no price for it unless
+      # the row carries one. Rates from https://platform.minimax.io/docs/pricing
+      # (MiniMax-M2: $0.30 per million in, $1.20 per million out, read 2026-09-04).
+      input_cost_per_token: 0.0000003
+      output_cost_per_token: 0.0000012
     model_info:
       # crew#506 CP1: the router refuses an oversized turn before it leaves the estate.
       # MiniMax-M2 context window is 204,800 tokens; a turn above it 400s here instead of
@@ -45,6 +55,11 @@ model_list:
       api_base: https://api.minimax.io/v1
       api_key: os.environ/MINIMAX_API_KEY
       timeout: 300
+      # Priced for the same reason as the row above; without it the failover tier is
+      # the free-looking way around a cap the primary now respects.
+      # MiniMax-Text-01: $0.20 per million in, $1.10 per million out.
+      input_cost_per_token: 0.0000002
+      output_cost_per_token: 0.0000011
 
   - model_name: gemini
     litellm_params:
