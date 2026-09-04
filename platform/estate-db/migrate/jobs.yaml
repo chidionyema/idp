@@ -205,10 +205,10 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: estate-db-copy-hindsight-r3
+  name: estate-db-copy-hindsight-r4
   namespace: hindsight
   labels:
-    app.kubernetes.io/name: estate-db-copy-hindsight-r3
+    app.kubernetes.io/name: estate-db-copy-hindsight-r4
     app.kubernetes.io/part-of: idp
     backstage.io/kubernetes-id: layer-estate-db
 spec:
@@ -216,7 +216,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: estate-db-copy-hindsight-r3
+        app.kubernetes.io/name: estate-db-copy-hindsight-r4
         app.kubernetes.io/part-of: idp
     spec:
       restartPolicy: Never
@@ -278,6 +278,22 @@ spec:
                                                       when 'm' then 'materialized view'
                                                       when 'S' then 'sequence'
                                                       else 'table' end, r.relname);
+                      end loop;
+                      for r in select p.oid::regprocedure as sig from pg_proc p
+                               join pg_namespace n on n.oid = p.pronamespace
+                               left join pg_depend d on d.objid = p.oid and d.deptype = 'e'
+                               where n.nspname = 'public' and d.objid is null
+                      loop
+                        execute format('drop routine if exists %s cascade', r.sig);
+                      end loop;
+                      for r in select t.typname from pg_type t
+                               join pg_namespace n on n.oid = t.typnamespace
+                               left join pg_depend d on d.objid = t.oid and d.deptype in ('e', 'i')
+                               where n.nspname = 'public' and d.objid is null
+                                 and t.typtype in ('e', 'd', 'c')
+                                 and not exists (select 1 from pg_class c where c.reltype = t.oid)
+                      loop
+                        execute format('drop type if exists public.%I cascade', r.typname);
                       end loop;
                     end
                     \$\$;"
@@ -661,10 +677,10 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: estate-db-copy-otto-gateway-r2
+  name: estate-db-copy-otto-gateway-r3
   namespace: otto-gateway
   labels:
-    app.kubernetes.io/name: estate-db-copy-otto-gateway-r2
+    app.kubernetes.io/name: estate-db-copy-otto-gateway-r3
     app.kubernetes.io/part-of: idp
     backstage.io/kubernetes-id: layer-estate-db
 spec:
@@ -672,7 +688,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: estate-db-copy-otto-gateway-r2
+        app.kubernetes.io/name: estate-db-copy-otto-gateway-r3
         app.kubernetes.io/part-of: idp
     spec:
       restartPolicy: Never
@@ -726,9 +742,16 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: { drop: ["ALL"] }
+          # Smaller than its siblings, and deliberately. otto-gateway's ResourceQuota
+          # (platform/otto-gateway/quota.yaml) had 100m of CPU limit and 256Mi of memory limit
+          # left, because three of the gateway's own ReplicaSets are crash-looping on a missing
+          # libpq and holding the rest, so this Job could not be created at all: "pods
+          # estate-db-copy-otto-gateway-r3-cxl97 is forbidden: exceeded quota", every minute for
+          # 43 minutes, which is enough to hold estate-db-migrate and the whole estate behind it.
+          # A dump and restore of the gateway's own small database fits in this.
           resources:
             requests: { cpu: 50m, memory: 128Mi }
-            limits: { cpu: 500m, memory: 512Mi }
+            limits: { cpu: 100m, memory: 256Mi }
           volumeMounts:
             - { name: old, mountPath: /old, readOnly: true }
             - { name: new, mountPath: /new, readOnly: true }
