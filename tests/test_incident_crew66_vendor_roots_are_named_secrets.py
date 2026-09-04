@@ -143,7 +143,10 @@ def test_roots_from_the_environment_are_verified_then_written_and_never_printed(
         "ok      vendors" in r.stdout and f"{len(REG) + 1} written" in r.stdout
     )  # telegram = two roots
     verified = (tmp_path / "verify.log").read_text()
-    assert "generativelanguage.googleapis.com" in verified and "api.telegram.org" in verified
+    assert (
+        "generativelanguage.googleapis.com" in verified
+        and "api.telegram.org" in verified
+    )
     for value in FAKE.values():
         assert value not in r.stdout and value not in r.stderr, "a root reached stdout"
 
@@ -158,8 +161,7 @@ def test_a_missing_root_is_blind_for_that_vendor_only_and_the_exit_is_two(tmp_pa
     )
     assert "1 blind" in r.stdout
     assert (
-        "GEMINI_API_KEY" not in log.read_text()
-        and "GEMINI_API_KEY" in log.read_text()
+        "GEMINI_API_KEY" not in log.read_text() and "GEMINI_API_KEY" in log.read_text()
     )
 
 

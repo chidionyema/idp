@@ -32,7 +32,9 @@ def test_no_lane_on_either_router_calls_the_anthropic_provider():
         for lane in cfg["model_list"]:
             p = lane["litellm_params"]
             assert not str(p["model"]).startswith("anthropic/"), lane["model_name"]
-            assert p.get("api_key") != "os.environ/ANTHROPIC_API_KEY", lane["model_name"]
+            assert p.get("api_key") != "os.environ/ANTHROPIC_API_KEY", lane[
+                "model_name"
+            ]
 
 
 def test_both_routers_offer_a_lane_whose_name_names_no_vendor():
@@ -40,11 +42,15 @@ def test_both_routers_offer_a_lane_whose_name_names_no_vendor():
         lanes = _lanes(cfg)
         for name in ("default", "fast"):
             assert name in lanes, (name, sorted(lanes))
-            assert not str(lanes[name]["litellm_params"]["model"]).startswith("anthropic/")
+            assert not str(lanes[name]["litellm_params"]["model"]).startswith(
+                "anthropic/"
+            )
 
 
 def test_the_vendor_register_carries_no_anthropic_root():
-    reg = yaml.safe_load((IDP / "platform/vendors/consoles.yaml").read_text())["vendors"]
+    reg = yaml.safe_load((IDP / "platform/vendors/consoles.yaml").read_text())[
+        "vendors"
+    ]
     assert "anthropic" not in reg, sorted(reg)
 
 
@@ -56,7 +62,7 @@ def test_nothing_that_runs_reads_an_anthropic_key():
     ):
         for line in (IDP / rel).read_text().splitlines():
             if line.lstrip().startswith("#"):
-                continue    # the note saying why it is gone is the point
+                continue  # the note saying why it is gone is the point
             assert "ANTHROPIC_API_KEY" not in line, (rel, line)
 
 
