@@ -1513,20 +1513,6 @@
   "ticket": "crew#297"
  },
  {
-  "feature": "features/gates/spec-gate.feature",
-  "title": "The spec gate grades executed specs, not touched files",
-  "scenarios": [
-   "The spec gate counts a feature file only when a test names it"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_spec_gate.py"
-  ],
-  "status": "BOUND",
-  "added_in": "74d0f879",
-  "pr": 203,
-  "ticket": "crew#297"
- },
- {
   "feature": "features/identity/front-door-oidc-client.feature",
   "title": "the front door's OIDC client lives in the estate's own identity domain (crew#269, crew#281)",
   "scenarios": [
@@ -1540,42 +1526,6 @@
   "added_in": "464007c4",
   "pr": 163,
   "ticket": "crew#269"
- },
- {
-  "feature": "features/policy/operating-model-gate.feature",
-  "title": "The operating model is a gate on every pull request",
-  "scenarios": [
-   "An identity created without its scope in the same PR is refused",
-   "An instruction that sends a person to a console is refused",
-   "A founder-facing change with no approval word merges on green",
-   "A DENY from the founder on the declared word refuses the PR",
-   "Cost and canary are declared for every platform/oci change",
-   "A drill added by the pull request satisfies drill_named",
-   "Every pull request answers the four architecture laws"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_policy_operating_model_gate.py"
-  ],
-  "status": "BOUND",
-  "added_in": "464007c4",
-  "pr": 163,
-  "ticket": "crew#269"
- },
- {
-  "feature": "features/policy/operating-model-offline.feature",
-  "title": "The operating-model policy is proved both ways before it gates a pull request",
-  "scenarios": [
-   "Correct work passes and every refusal fixture is refused",
-   "The gate runs only where a pull request exists",
-   "A missing policy checkout is BLIND, never a pass"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_policy_operating_model.py"
-  ],
-  "status": "BOUND",
-  "added_in": "c3b3148f",
-  "pr": 204,
-  "ticket": "crew#297"
  },
  {
   "feature": "features/self-aware-platform/cp1_inventory_tool.feature",
