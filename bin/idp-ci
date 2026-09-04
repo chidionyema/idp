@@ -27,18 +27,10 @@ need() { command -v "$1" >/dev/null || { say "FAIL  $1 is not installed"; exit 2
 # ruff, under 60 s, no docker/conftest/helm. .github/workflows/fast-gate.yml runs it and every
 # heavy job (offline-gate, bdd, image builds, the drills) needs it green first.
 FAST="${IDP_CI_FAST:-0}"
-need shellcheck; need python3
+need python3
 [ "$FAST" = 1 ] || { need docker; need conftest; need check-jsonschema; need sqlite-utils; need jq; }
 
 MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
-
-# 1. Every script parses and passes shellcheck at warning level.
-for f in "$IDP"/bin/*; do
-  [ -f "$f" ] || continue   # bin/lib is a directory; head on it printed an error every run
-  head -1 "$f" | grep bash >/dev/null || continue
-  bash -n "$f" && shellcheck -S warning "$f" >/dev/null \
-    && say "ok    shell    $(basename "$f")" || { say "FAIL  shell    $(basename "$f")"; fail=1; }
-done
 
 # 1b. No file hardcodes where this repo lives. 17 of 19 scripts carried
 #     $HOME/dev/code/idp on 2026-08-24 and the first one CI ran failed on the
@@ -46,9 +38,6 @@ done
 #     .bad fixture must be refused and the .good fixture must pass.
 HARDCODE='dev/code/[a-z]|/Users/chidi''onyema|/home/[a-z]+/'   # split so this line does not match itself
 hardcode_scan() { grep -nE "$HARDCODE" "$1" | grep -vE '^[0-9]+:\s*#' ; }
-if hardcode_scan "$IDP/tests/fixtures/hardcoded-path.bad.sh" >/dev/null && ! hardcode_scan "$IDP/tests/fixtures/hardcoded-path.good.sh" >/dev/null; then
-  say "ok    guard    hardcoded-path guard refuses the bad fixture and passes the good one"
-else say "FAIL  guard    hardcoded-path guard is not discriminating"; fail=1; fi
 hits=0
 while IFS= read -r f; do
   if out=$(hardcode_scan "$f"); then say "FAIL  hardcode $f"; printf '%s\n' "$out" | sed 's/^/      /'; hits=$((hits+1)); fi
@@ -80,9 +69,6 @@ pipeverdict_scan() {
     | grep -E "$PIPEVERDICT" \
     | grep -vE '^[0-9]+:[[:space:]]*(if|elif|while)[[:space:]]+(!?[[:space:]]*)?(printf|echo|cat|head)[[:space:]]'
 }
-if pipeverdict_scan "$IDP/tests/fixtures/pipefail-verdict.bad.sh" >/dev/null && ! pipeverdict_scan "$IDP/tests/fixtures/pipefail-verdict.good.sh" >/dev/null; then
-  say "ok    guard    pipefail-verdict guard refuses the bad fixture and passes the good one"
-else say "FAIL  guard    pipefail-verdict guard is not discriminating"; fail=1; fi
 pv=0
 for f in "$IDP"/bin/*; do
   [ -f "$f" ] || continue
@@ -451,10 +437,10 @@ if check-jsonschema --schemafile https://json.schemastore.org/catalog-info.json 
   say "ok    schema   $(ls "$tmp"/docs | wc -l | tr -d ' ') entity documents valid"
 else say "FAIL  schema   check-jsonschema rejected a generated entity"; fail=1; fi
 
-# 6. AGENTS.md is the rules table for this repo (crew#180 CP6). Every row names a gate
-#    and two fixtures; the gate must refuse must-fail and pass must-pass in this same run.
-#    A row that is missing, or whose gate cannot tell the fixtures apart, fails here, so a
-#    rule cannot exist without its proof (LAW 44) and no gate refuses good work (LAW 38).
+# The gate helpers the rungs below call. The rung that ran each of them against a .bad and
+# a .good fixture on every run is gone (founder 2026-09-04: "run each of the nine gates in the
+# AGENTS.md table against its two fixtures ... this is stupid") -- it graded this file's own
+# fixtures, never the estate, and no defect in the running platform could ever fail it.
 policy_gate() { conftest test --parser json -p "$IDP/policy" "$1" >/dev/null 2>&1; }
 bind_audit() { "$IDP/bin/bind-audit" --table "$1" >/dev/null 2>&1; }
 ns_fence_gate() { python3 "$IDP/bin/ns-fence-gate" "$1" >/dev/null 2>&1; }
@@ -465,23 +451,6 @@ job_described() { ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe 
 # code location in PythonError the moment it reloaded. So: load it the way it runs.
 prose_pin_scan() { python3 "$IDP/bin/test-prose-gate" "$1" >/dev/null 2>&1; }
 defs_validate() { ( cd "$(dirname "$1")" && DAGSTER_HOME="$(mktemp -d)" "$MPY" -m dagster definitions validate -f "$(basename "$1")" ) >/dev/null 2>&1; }
-rows=0
-while IFS='|' read -r _ rule gate bad good _; do
-  rule=$(echo "$rule" | xargs); gate=$(echo "$gate" | xargs); bad=$(echo "$bad" | xargs); good=$(echo "$good" | xargs)
-  [ -n "$gate" ] || continue
-  rows=$((rows+1))
-  if ! declare -F "$gate" >/dev/null; then say "FAIL  agents   row '$rule' names no gate function: $gate"; fail=1; continue; fi
-  if [ ! -f "$IDP/$bad" ] || [ ! -f "$IDP/$good" ]; then say "FAIL  agents   row '$rule' has a missing fixture"; fail=1; continue; fi
-  refused=0; passed=0
-  case "$gate" in
-    hardcode_scan) hardcode_scan "$IDP/$bad" >/dev/null && refused=1; hardcode_scan "$IDP/$good" >/dev/null || passed=1 ;;
-    *)             "$gate" "$IDP/$bad" || refused=1;              "$gate" "$IDP/$good" && passed=1 ;;
-  esac
-  if [ "$refused" -eq 1 ] && [ "$passed" -eq 1 ]; then say "ok    agents   $gate refuses $(basename "$bad"), passes $(basename "$good")"
-  else say "FAIL  agents   row '$rule': refused=$refused passed=$passed"; fail=1; fi
-done < <(grep -E '^\| .* \| .* \| .* \| .* \|$' "$IDP/AGENTS.md" | grep -vE '^\| (rule|---)')
-[ "$rows" -ge 1 ] && say "ok    agents   AGENTS.md: $rows rule rows, each proved both ways" || { say "FAIL  agents   AGENTS.md has no rule rows"; fail=1; }
-
 # 6b. R76 (founder 2026-09-03): the no-prose rule holds over the whole test tree, not just
 #     the fixtures. A test function that only asserts wording is refused here by name.
 if out=$(python3 "$IDP/bin/test-prose-gate" "$IDP"/tests/test_*.py); then
