@@ -144,7 +144,7 @@ export const redsFromEntities = (
           h === 'down' ? ann['estate/health'] ?? 'Down' : 'Not checked lately',
         owner,
         since: ann['estate/health-checked-at'],
-        nextAction: 'Open the door and read the probe',
+        nextAction: 'Open the sign-in page and read the probe',
         boardUrl: boardOf(e),
         link: screenUrl(e),
       });

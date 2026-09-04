@@ -199,6 +199,11 @@ LAYERS = {
         "Workload autoscaler",
         "Scales a workload on its queue or its traffic, to zero when idle.",
     ),
+    "weave-gitops": (
+        "edge",
+        "Deploy button",
+        "Flux's own dashboard: every layer, the revision it is running, and a button that applies main now.",
+    ),
     "temporal": (
         "scheduling",
         "Workflows",
@@ -268,6 +273,11 @@ LAYERS = {
         "agents",
         "Agent tools",
         "The tools an agent may use, behind one gateway with one audit log.",
+    ),
+    "infra-crew": (
+        "agents",
+        "Infrastructure crew",
+        "The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.",
     ),
     "hindsight": (
         "agents",

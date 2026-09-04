@@ -24,16 +24,9 @@
 # for a vendor that grades a credential by refusing it rather than by answering 2xx. Every vendor
 # without those three behaves exactly as before.
 vendors:
-  anthropic:
-    kind: secret
-    secret: SEED_ANTHROPIC_API_KEY
-    page: https://console.anthropic.com/settings/keys
-    shape: "sk-ant-[A-Za-z0-9_-]{60,}"
-    verify: { method: GET, url: https://api.anthropic.com/v1/models, headers: { x-api-key: "{key}", anthropic-version: "2023-06-01" } }
-    targets:
-      - { entry: prospector-engine-env, field: ANTHROPIC_API_KEY }
-      - { entry: hermes-agent-env, field: ANTHROPIC_API_KEY }
-      - { entry: litellm-upstream, field: ANTHROPIC_API_KEY }   # crew#568 phase 1: the claude lanes on the router
+  # The `anthropic` vendor row was deleted 2026-09-04 on the founder's ruling, verbatim: "estate
+  # will never use antropic api keys". The estate holds no Anthropic API credential and buys no
+  # Anthropic API credit; Claude capacity is his Pro Max subscription via `claude -p`.
   openrouter:
     kind: secret
     secret: SEED_OPENROUTER_API_KEY

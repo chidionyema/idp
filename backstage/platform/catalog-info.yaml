@@ -382,6 +382,52 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-dagster
+  title: 'The estate clock'
+  description: 'Runs the estate''s schedules from the cluster, off the Mac; every run and its logs on one screen.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=dagster'
+    estate/flux-kustomization: 'dagster'
+    estate/path: './platform/dagster'
+    estate/cluster: 'oke'
+  tags: [platform, scheduling]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: scheduling
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-edge
+    - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-demo-sandbox
+  title: 'Buyer sandbox'
+  description: 'A one-hour throwaway cluster inside the cluster for a buyer''s engineer; launched by hand from the runbook, reaped by the platform when the hour is up.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=demo-sandbox'
+    estate/flux-kustomization: 'demo-sandbox'
+    estate/path: './platform/sandbox/vcluster'
+    estate/cluster: 'oke'
+  tags: [platform, products]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: products
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-dns
   title: 'DNS'
   description: 'Every hostname the estate answers to, managed from git.'
@@ -401,7 +447,7 @@ spec:
   system: edge
   dependsOn:
     - component:default/layer-edge
-    - component:default/layer-prospector-platform
+    - component:default/layer-secret-store
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -515,6 +561,8 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: delivery
+  dependsOn:
+    - component:default/layer-edge
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -688,10 +736,26 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: agents
+  providesApis:
+    - api:default/hermes-agent-api
   dependsOn:
     - component:default/layer-scheduling
     - component:default/layer-secret-store
     - component:default/layer-alerts-github
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: hermes-agent-api
+  description: 'Hermes: the HTTP interface, answering at otto.${ESTATE_ZONE}.'
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/agents
+  definition: |
+    # Not published. hermes-agent answers at otto.${ESTATE_ZONE}; this entity
+    # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -716,6 +780,31 @@ spec:
   dependsOn:
     - component:default/layer-secret-store
     - component:default/layer-llm
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-human-vault
+  title: 'Human secret door'
+  description: 'The one place a person''s secret enters the estate: a phone browser writes it into Bitwarden and the cluster pulls it; no terminal, no file, no chat.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=human-vault'
+    estate/flux-kustomization: 'human-vault'
+    estate/path: './platform/human-vault'
+    estate/cluster: 'oke'
+  tags: [platform, delivery]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: delivery
+  dependsOn:
+    - component:default/layer-external-secrets
+    - component:default/layer-secret-store
+    - component:default/layer-edge
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -784,6 +873,34 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-infra-crew
+  title: 'Infrastructure crew'
+  description: 'The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=infra-crew'
+    estate/flux-kustomization: 'infra-crew'
+    estate/path: './platform/infra-crew'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+    - url: https://langfuse.${ESTATE_ZONE}
+      title: 'Model traces'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+    - component:default/layer-alerts-github
+    - component:default/layer-llm
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-keda
   title: 'Workload autoscaler'
   description: 'Scales a workload on its queue or its traffic, to zero when idle.'
@@ -802,7 +919,7 @@ spec:
   owner: group:default/platform
   system: scheduling
   dependsOn:
-    - component:default/layer-observability
+    - component:default/layer-scheduling
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -982,6 +1099,30 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-notify
+  title: 'Notification fan-out'
+  description: 'One place every alert goes; it delivers to the founder''s phone and any channel after it.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=notify'
+    estate/flux-kustomization: 'notify'
+    estate/path: './platform/notify'
+    estate/cluster: 'oke'
+  tags: [platform, observability]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: observability
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-observability
   title: 'Traces and model calls'
   description: 'Where every request and every model call is kept and searched.'
@@ -1012,14 +1153,14 @@ apiVersion: backstage.io/v1alpha1
 kind: API
 metadata:
   name: observability-api
-  description: 'Traces and model calls: the HTTP interface, answering at langfuse.${ESTATE_ZONE} and signoz.${ESTATE_ZONE}.'
+  description: 'Traces and model calls: the HTTP interface, answering at langfuse.${ESTATE_ZONE} and signoz.${ESTATE_ZONE} and superset.${ESTATE_ZONE}.'
 spec:
   type: openapi
   lifecycle: production
   owner: group:default/platform
   system: system:default/observability
   definition: |
-    # Not published. observability answers at langfuse.${ESTATE_ZONE} and signoz.${ESTATE_ZONE}; this entity
+    # Not published. observability answers at langfuse.${ESTATE_ZONE} and signoz.${ESTATE_ZONE} and superset.${ESTATE_ZONE}; this entity
     # exists so the catalogue records that the interface is reachable and who owns it.
 ---
 apiVersion: backstage.io/v1alpha1
@@ -1045,6 +1186,113 @@ spec:
   dependsOn:
     - component:default/layer-scheduling
     - component:default/layer-edge
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-otto-gateway
+  title: 'Customer event door'
+  description: 'One door for every chat channel and every customer; adding a customer is a row in a table, not a release.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=otto-gateway'
+    estate/flux-kustomization: 'otto-gateway'
+    estate/path: './platform/otto-gateway'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  providesApis:
+    - api:default/otto-gateway-api
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+    - component:default/layer-edge
+    - component:default/layer-event-bus
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: otto-gateway-api
+  description: 'Customer event door: the HTTP interface, answering at otto.${ESTATE_ZONE}.'
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/agents
+  definition: |
+    # Not published. otto-gateway answers at otto.${ESTATE_ZONE}; this entity
+    # exists so the catalogue records that the interface is reachable and who owns it.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-otto-golden
+  title: 'Otto (golden)'
+  description: 'The new agent''s own webhook and health door, running its own pod ahead of production.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=otto-golden'
+    estate/flux-kustomization: 'otto-golden'
+    estate/path: './platform/otto-golden'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  providesApis:
+    - api:default/otto-golden-api
+  dependsOn:
+    - component:default/layer-scheduling
+    - component:default/layer-secret-store
+    - component:default/layer-edge
+    - component:default/layer-otto-golden-secret
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: otto-golden-api
+  description: 'Otto (golden): the HTTP interface, answering at otto.${ESTATE_ZONE}.'
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/agents
+  definition: |
+    # Not published. otto-golden answers at otto.${ESTATE_ZONE}; this entity
+    # exists so the catalogue records that the interface is reachable and who owns it.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-otto-golden-secret
+  title: 'Otto (golden) webhook secret'
+  description: 'Feeds the secret word Telegram must echo from the vault into the gateway rule on Otto''s door.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=otto-golden-secret'
+    estate/flux-kustomization: 'otto-golden-secret'
+    estate/path: './platform/otto-golden-secret'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  dependsOn:
+    - component:default/layer-secret-store
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -1347,3 +1595,29 @@ spec:
     - component:default/layer-backstage-namespace
     - component:default/layer-external-secrets
     - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-deploy-button
+  title: 'Deploy button'
+  description: "Flux's own dashboard: what every layer is running, and a button that applies main now."
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=weave-gitops'
+    estate/flux-kustomization: 'weave-gitops'
+    estate/path: './platform/weave-gitops'
+    estate/cluster: 'oke'
+  tags: [platform, founder-surface]
+  links:
+    - url: https://catalogue.${ESTATE_ZONE}/deploy
+      title: 'Open the deploy button'
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: edge
+  dependsOn:
+    - component:default/layer-identity
+    - component:default/layer-edge

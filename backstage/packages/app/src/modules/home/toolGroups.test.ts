@@ -37,9 +37,9 @@ describe('the Tools page groups every door from the catalogue', () => {
 
   it('says the count inside a sentence, never a bare number', () => {
     expect(toolsSentence([])).toMatch(/No tools are registered yet/);
-    expect(toolsSentence(groupTools([door('w', 'Watch')]))).toMatch(/1 door in 1 group/);
+    expect(toolsSentence(groupTools([door('w', 'Watch')]))).toMatch(/1 sign-in page in 1 group/);
     expect(toolsSentence(groupTools([door('w', 'Watch'), door('r', 'Run')]))).toMatch(
-      /2 doors in 2 groups/,
+      /2 sign-in pages in 2 groups/,
     );
   });
 

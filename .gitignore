@@ -67,3 +67,4 @@ docs/reference/incident-register.yaml
 
 # Vale downloads the Microsoft style on `vale sync`; only the estate boundary (styles/Estate, styles/config) is ours
 styles/Microsoft/
+.aider*

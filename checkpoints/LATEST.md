@@ -32,3 +32,45 @@ R76 purge mandate (founder doc 2026-09-03T1036Z...25579e42.md + explicit "Do it 
 
 ## RESUME HERE (2026-09-03T, telemetry-coverage lane)
 Task: fix oke-check.yml telemetry-coverage failures (runs 33780730463, 33801849436; pods=124 seen=3 missing=121). Lane: worktree scratchpad/wt-telemetry, branch fix/telemetry-coverage from origin/main. Step 1: attribute via job logs + probe source (bin/, .github/workflows/oke-check.yml) + live collector reads (KUBECONFIG=~/.kube/oke-estate kubectl, reads only). Then fix real cause in git, prefer platform-wide mechanism. PR with full LAW block, push, poll REST check-runs, merge on green. Not yet started reading logs.
+
+## RESUME HERE (2026-09-03T20:3xZ, catalogue-drift lane)
+Task: fix oke-check.yml catalogue-drift failures (runs 33780730463, 33801849436, job
+cluster-state, step bin/idp-catalogue-drift): 7 live Services with no catalogue entity —
+healing/estate, monitoring/alertmanager-operated, monitoring/prometheus-operated,
+observability/chi-signoz-clickhouse-cluster-0-0, observability/signoz-clickhouse,
+tailscale/ts-founder-mac-vnc-92d4f, tailscale/ts-sunshine-mac-ql4xm. Lane: worktree
+scratchpad/wt-catalogue, branch fix/catalogue-drift-seven-services from origin/main.
+Next: read bin/idp-catalogue-drift + bin/catalog-gen conventions, cluster reads only
+(KUBECONFIG=~/.kube/oke-estate kubectl get, no writes), find each Service's owning
+workload under platform/, add catalog-info.yaml per convention, run catalogue tests,
+bin/catalog-render, PR with full LAW block, push, poll REST check-runs, merge on green.
+
+## RESUME HERE — 2026-09-04T09:00Z (session 5f6f4e72, lane idp)
+
+Founder asked whether cline's research engine uses GPT Researcher. It does not:
+`~/dev/code/research-engine` @ 9bef1c4 declares `dependencies = []` and hand-rolls
+its own crawler in `engine/retrieve.py` (SearXNG/DDG/metered tiers, two of them
+empty stubs). LAW 43 and the 2026-08-30 founder note both say GPT Researcher is
+the estate default, and `crew/science/research_worker.py:137` already drives it
+through the platform router.
+
+In flight: branch `feat/gpt-researcher-is-the-retrieval-engine` in
+`~/dev/code/research-engine` — new `engine/researcher.py` makes GPT Researcher the
+retrieval stage, keeping only the parts it lacks (provenance gate, budget halt,
+grader split). Remaining: config fields (embedding lane, retriever, report type),
+wire `engine/cli.py`, I3 draft check in `engine/synthesize.py`, tests, `make lint test`.
+
+## RESUME HERE
+2026-09-04 session 5f6f4e72: worktree scratchpad/wt-noanthropic, branch fix/no-anthropic-api —
+strips the Anthropic API road from the estate on the founder's ruling "estate will never use
+antropic api keys". Removes the claude and claude-fast router lanes, the anthropic vendor row,
+the SEED_ANTHROPIC_API_KEY workflow env and the ANTHROPIC key from bin/litellm-up. Callers
+repointed to the minimax lane (crew/science/research_worker.py, hermes-v2/config.yaml).
+
+## RESUME HERE
+2026-09-04 11:15Z session 5f6f4e72: idp#1427 closed as superseded by idp#1426 (session 85f840c5),
+which strips Anthropic more completely. #1426's fast-gate fails only on ruff format of
+tests/test_crew568_claude_is_a_lane_on_the_router.py and
+tests/test_incident_crew66_vendor_roots_are_named_secrets.py. Worktree scratchpad/wt-1426,
+branch tmp-fmt-1426, exists to push that formatting fix onto fix/no-anthropic-api-keys.
+Leftover neither PR carries: bin/litellm-up still exports ANTHROPIC_API_KEY (lines 84, 100).

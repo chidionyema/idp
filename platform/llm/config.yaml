@@ -85,27 +85,11 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       timeout: 300
 
-  # crew#568 phase 1 (ADR 0011): Claude is a lane on the router, not a key on the Mac. Every
-  # caller that wants Claude asks the router by name; the key lives in litellm-upstream and is
-  # born by bin/idp-bootstrap-vendors from SEED_ANTHROPIC_API_KEY (R52), never pasted anywhere.
-  # Model ids from https://docs.anthropic.com/en/docs/about-claude/models (read 2026-08-29).
-  - model_name: claude
-    litellm_params:
-      model: anthropic/claude-sonnet-5
-      api_key: os.environ/ANTHROPIC_API_KEY
-      timeout: 300
-      max_tokens: 8192
-    model_info:
-      max_input_tokens: 200000
-
-  - model_name: claude-fast
-    litellm_params:
-      model: anthropic/claude-haiku-4-5-20251001
-      api_key: os.environ/ANTHROPIC_API_KEY
-      timeout: 300
-      max_tokens: 8192
-    model_info:
-      max_input_tokens: 200000
+  # crew#568 phase 1 shipped `claude` and `claude-fast` as Anthropic API lanes here. Both were
+  # deleted 2026-09-04 on the founder's ruling, verbatim: "estate will never use antropic api
+  # keys" and "we dont use antropic , onlu claude -p". Claude capacity in this estate is the Pro
+  # Max monthly subscription, reached through the `claude -p` command line, not a metered API
+  # account. Callers that named the `claude` lane now name a lane the router actually funds.
 
   - model_name: vision
     litellm_params:
@@ -182,10 +166,6 @@ router_settings:
     # another free lane first; the chain still ends in the cheap model (cp30).
     - groq: [minimax, deepseek]
     - groq-fast: [groq, deepseek]
-    # crew#568 phase 1: a Claude turn that 4xx/5xxs falls to the funded direct lanes and ends
-    # in the cheap model (cp30), like every other chain; claude-fast tries claude first.
-    - claude: [minimax, deepseek]
-    - claude-fast: [claude, deepseek]
     # An image chain may only contain image models. Every other chain here ends in the cheap
     # text model (cp30) and that is right for text; landing a picture request on a chat model
     # would answer a caller waiting for bytes with prose, which is worse than a clean failure.
