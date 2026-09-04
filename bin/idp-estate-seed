@@ -62,6 +62,9 @@ estate-db                 superuser-password         hex32
 estate-db                 dagster-password           hex32
 estate-db                 langfuse-password          hex32
 estate-db                 research-password          hex32
+# the read side of the research database: one password, minted once, held by the cluster
+# (as the research_reader role) and by the consumer that reads the evidence.
+estate-db                 research-reader-password   hex32
 hindsight                 HINDSIGHT_API_LLM_BASE_URL  const:https://llm.$ZONE
 mcp-gateway               MCP_GATEWAY_KEY             hex32
 backstage-env             BACKEND_SECRET              urlsafe32
@@ -73,6 +76,7 @@ prospector-store-api-env  Store__InternalApiKey       hex32
 prospector-store-api-env  Store__EntitlementsApiKey   hex32
 prospector-engine-env     STORE_API_URL               const:http://prospector-store-api.prospector.svc:8080
 prospector-engine-env     STORE_INTERNAL_API_KEY      copy:prospector-store-api-env.Store__InternalApiKey
+prospector-engine-env     RESEARCH_PG_PASSWORD        copy:estate-db.research-reader-password
 EOF
 )
 # raw (non-JSON) entries: the ExternalSecret reads the whole secret as the value (remoteRef without property)
