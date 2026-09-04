@@ -1169,6 +1169,9 @@ spec:
     - name: secret-store
     - name: llm
     - name: searxng
+    # The engine brings no database server. It gets a database on the Postgres that already
+    # runs beside Hindsight, so that layer has to be up before this one is applied.
+    - name: hindsight
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -1176,8 +1179,3 @@ spec:
   prune: true
   wait: true
   timeout: 10m
-  healthChecks:
-    - apiVersion: apps/v1
-      kind: StatefulSet
-      name: research-db
-      namespace: research
