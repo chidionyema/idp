@@ -37,6 +37,7 @@ token_mtime() {
 
 # _ow_* prefix: this file is sourced by bin/idp-vault-put; a bare `name` clobbered its secret name (crew#503).
 live=""
+_ow_auth=security_token
 _ow_newest=0
 for d in "$SESSIONS_DIR"/*/; do
   _ow_name="$(basename "$d")"
@@ -70,8 +71,25 @@ if [ -z "$live" ]; then
   done
 fi
 
+# 2026-09-04: this laptop had a perfectly good API-key profile ([DEFAULT] with user/fingerprint/
+# key_file in ~/.oci/config, which `oci iam region list` answered on the first try) and every
+# estate script still refused to read the vault, because the search above only ever looks at
+# session-token profiles under ~/.oci/sessions. A credential that works is a credential this file
+# must find. API keys do not expire on the CLI's 1 h clock, so this is the steadier of the two;
+# a session token is still preferred when one is live, since it carries the founder's own identity.
 if [ -z "$live" ]; then
-  echo "BLIND   oci-whoami: no valid session under any profile in $SESSIONS_DIR; sessions read state through bin/idp-cluster-state or gh workflow run oke-check.yml -f mode=check (crew#345), no login"
+  for _ow_name in $(sed -n 's/^\[\(.*\)\]$/\1/p' "$HOME/.oci/config" 2>/dev/null); do
+    if oci iam region list --profile "$_ow_name" --auth api_key >/dev/null 2>&1; then
+      live="$_ow_name"
+      _ow_auth=api_key
+      echo "ok      oci-whoami: no live session; using API-key profile '$_ow_name' (no browser, no founder action)" >&2
+      break
+    fi
+  done
+fi
+
+if [ -z "$live" ]; then
+  echo "BLIND   oci-whoami: no valid session or API-key profile ($SESSIONS_DIR, $HOME/.oci/config); state also reads through bin/idp-cluster-state or gh workflow run oke-check.yml -f mode=check (crew#345), no login"
   exit 2
 fi
 
@@ -79,5 +97,5 @@ fi
 # bootstrappers capture stdout as OCI_CLI_PROFILE and every vault call failed as "ok oci-whoami: ...".
 echo "ok      oci-whoami: live profile is '$live'" >&2
 echo "$live"
-export OCI_CLI_AUTH=security_token
+export OCI_CLI_AUTH="${_ow_auth:-security_token}"
 export OCI_CLI_PROFILE="$live"
