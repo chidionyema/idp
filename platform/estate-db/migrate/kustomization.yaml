@@ -1,0 +1,7 @@
+# Applied by the estate-db-migrate row of clusters/oke/platform.yaml, which waits for the
+# estate cluster to be Ready first. No namespace: field -- every Job names its own, because each
+# one runs beside the server it is emptying.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - jobs.yaml

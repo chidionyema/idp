@@ -27,7 +27,7 @@ data:
     STATE_FILE="/tmp/spend_velocity_state"
     
     # Query LiteLLM PostgreSQL for spend in the last hour
-    HOURLY_SPEND=$(psql -h litellm-db.llm.svc -U litellm -d litellm -t -c "
+    HOURLY_SPEND=$(psql -h estate-rw.estate-db.svc.cluster.local -U litellm -d litellm -t -c "
       SELECT COALESCE(SUM(CAST(spend AS FLOAT)), 0)
       FROM litellm_logs
       WHERE startTime > NOW() - INTERVAL '1 hour'
@@ -85,7 +85,7 @@ data:
     
     # Database connection
     conn_params = {
-        "host": "litellm-db.llm.svc",
+        "host": "estate-rw.estate-db.svc.cluster.local",
         "port": 5432,
         "user": "litellm",
         "database": "litellm",

@@ -40,7 +40,7 @@ spec:
     postgresql:
       enabled: false                # platform/hindsight/postgres.yaml
       external:
-        host: hindsight-db
+        host: estate-rw.estate-db.svc.cluster.local   # the one estate Postgres (platform/estate-db)
         port: 5432
         database: hindsight
         username: hindsight

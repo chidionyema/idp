@@ -112,7 +112,7 @@ spec:
                 pluginName: postgres12_pgx
                 driverName: postgres12_pgx
                 databaseName: temporal
-                connectAddr: temporal-db.temporal.svc:5432
+                connectAddr: estate-rw.estate-db.svc.cluster.local:5432
                 connectProtocol: tcp
                 user: temporal
                 existingSecret: temporal-db
@@ -125,7 +125,7 @@ spec:
                 pluginName: postgres12_pgx
                 driverName: postgres12_pgx
                 databaseName: temporal_visibility
-                connectAddr: temporal-db.temporal.svc:5432
+                connectAddr: estate-rw.estate-db.svc.cluster.local:5432
                 connectProtocol: tcp
                 user: temporal
                 existingSecret: temporal-db

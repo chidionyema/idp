@@ -545,6 +545,29 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-estate-db-migrate
+  title: 'Database move'
+  description: 'Lifts each service''s data off the server it used to run and puts it on the one estate database.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=estate-db-migrate'
+    estate/flux-kustomization: 'estate-db-migrate'
+    estate/path: './platform/estate-db/migrate'
+    estate/cluster: 'oke'
+  tags: [platform, data]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: data
+  dependsOn:
+    - component:default/layer-estate-db
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-estate-db-operator
   title: 'Database operator'
   description: 'Runs the estate''s databases: failover, backups and a database per team without anyone touching a server.'

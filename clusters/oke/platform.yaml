@@ -1228,3 +1228,23 @@ spec:
       kind: Cluster
       name: estate
       namespace: estate-db
+---
+# Part 3: the copy. Seven Jobs, each one lifting a database off the server it is retiring and
+# putting it on the estate cluster. It waits for part 2, so it never runs before the databases
+# and the roles exist. Each Job is written to be run once and to do nothing on every run after.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: estate-db-migrate
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: estate-db
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/estate-db/migrate
+  prune: true
+  wait: true
+  timeout: 20m
