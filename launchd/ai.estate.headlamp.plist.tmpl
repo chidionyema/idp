@@ -3,7 +3,7 @@
 <!--
   The cluster's debugger, kept alive outside the cluster (bin/idp-headlamp-mac says why it
   cannot live inside it). KeepAlive because headlamp-server blocks forever serving HTTP, so
-  launchd is the only thing that brings it back after a crash, a sleep or a reboot -- the same
+  launchd is the only thing that brings it back after a crash, a sleep or a reboot: the same
   reasoning as ai.estate.cockpit. It must be up before the incident, not started during one.
 
   Install:  bin/idp-install-launchd headlamp
