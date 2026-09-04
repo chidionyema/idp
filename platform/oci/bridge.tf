@@ -32,11 +32,29 @@ data "oci_core_subnets" "workers" {
   }
 }
 
+# Always Free capacity is not offered in every availability domain, and Oracle moves it: on
+# 2026-09-04 VM.Standard.E2.1.Micro was offered in UK-LONDON-1-AD-2 only, and launching into
+# AD-1 answers 404-NotAuthorizedOrNotFound. So the domain is chosen by asking which ones carry
+# the shape today, never by taking the first one in the list.
+data "oci_core_shapes" "by_ad" {
+  for_each            = toset([for ad in data.oci_identity_availability_domains.ads.availability_domains : ad.name])
+  compartment_id      = var.compartment_ocid
+  availability_domain = each.value
+}
+
+locals {
+  bridge_shape = "VM.Standard.E2.1.Micro" # Always Free; a shape change here costs money
+  bridge_ads = sort([
+    for ad, s in data.oci_core_shapes.by_ad : ad
+    if contains([for sh in s.shapes : sh.name], local.bridge_shape)
+  ])
+}
+
 data "oci_core_images" "ol9" {
   compartment_id           = var.compartment_ocid
   operating_system         = "Oracle Linux"
   operating_system_version = "9"
-  shape                    = "VM.Standard.E2.1.Micro"
+  shape                    = local.bridge_shape
   sort_by                  = "TIMECREATED"
   sort_order               = "DESC"
 }
@@ -50,9 +68,9 @@ data "oci_vault_secrets" "tailscale" {
 
 resource "oci_core_instance" "bridge" {
   compartment_id      = var.compartment_ocid
-  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
+  availability_domain = local.bridge_ads[0]
   display_name        = "${var.cluster_name}-bridge"
-  shape               = "VM.Standard.E2.1.Micro" # Always Free; a shape change here costs money
+  shape               = local.bridge_shape
 
   create_vnic_details {
     subnet_id        = data.oci_core_subnets.workers.subnets[0].id
@@ -77,6 +95,11 @@ resource "oci_core_instance" "bridge" {
   # The image is rebuilt by Oracle constantly; a new one is not a reason to replace a working
   # bridge. Recreate deliberately with -replace when the base image should move.
   lifecycle {
+    precondition {
+      condition     = length(local.bridge_ads) > 0
+      error_message = "No availability domain in this region currently offers ${local.bridge_shape}; the bridge would cost money on any other shape (R14)."
+    }
+
     ignore_changes = [source_details[0].source_id, metadata["ssh_authorized_keys"]]
   }
 }
