@@ -333,3 +333,17 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           [ "$rc" -eq 0 ] || echo "note: bin/idp-features plan exited $rc; see the check summary"
+
+  # A test that executes nothing is not a test. 322 files that read this repository's own YAML
+  # and asserted what it said were deleted on 2026-09-04 (519d59e8); within the hour another
+  # session started writing the 323rd. Deleting the class once does not stop it coming back, so
+  # this refuses a new one at the door (LAW 45). Deliberately its own job and not a step in
+  # fast-gate, whose bot exemption skips the whole gate for agent-authored pull requests --
+  # which are exactly the pull requests that write these files.
+  executes-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - run: bin/test-executes-gate "${{ github.event.pull_request.base.sha }}"

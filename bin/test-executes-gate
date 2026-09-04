@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# A test that executes nothing is not a test.
+#
+# On 2026-09-04 the founder had 322 files deleted from tests/ in one commit (519d59e8): every
+# one of them opened this repository's own YAML, JSON or shell and asserted what it said. The
+# file it read and the expectation it held were the same statement written twice, so none of
+# them could catch a defect -- what they caught was a deliberate decision, at the cost of a red
+# run and a wait every time one was made. 169 were named test_incident_*: an incident answered
+# with a pin on the symptom instead of a fix for the cause.
+#
+# Within the hour a session opened a new one. Deleting the class once does not stop the next
+# session writing it, so this refuses a NEW test file that runs nothing (LAW 45). It grades
+# behaviour, not wording: does this file start a process, open a socket or make a request. A
+# file that already exists is never graded -- only what a change adds.
+#
+# LAW 46: the checkout is computed from this script, never named.
+set -uo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+BASE="${1:-origin/main}"
+
+# The ways a python test reaches outside its own process. A file with none of these can only be
+# reading the repository and asserting what it read.
+EXECUTES='subprocess|requests\.|httpx|socket\.|urllib\.request|os\.system|pexpect|docker|kubernetes\.client'
+
+added=$(cd "$IDP" && git diff --name-only --diff-filter=A "$BASE...HEAD" -- 'tests/*.py' 2>/dev/null)
+[ -n "$added" ] || { echo "ok    executes  no new test file in this change"; exit 0; }
+
+bad=0
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  if grep -qE "$EXECUTES" "$IDP/$f"; then
+    echo "ok    executes  $f runs something"
+  else
+    echo "FAIL  executes  $f asserts this repository's own files back at it and runs nothing."
+    echo "                Grade what the value causes -- a render admission accepts, a request the"
+    echo "                service answers, a workload that starts -- or delete the file. 322 of"
+    echo "                these were deleted on 2026-09-04 (519d59e8); do not write the 323rd."
+    bad=1
+  fi
+done <<< "$added"
+exit "$bad"
