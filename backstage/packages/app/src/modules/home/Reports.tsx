@@ -3,18 +3,26 @@
 // and red when late; the chosen report's markdown below. Nothing is computed here: the writers are
 // bin/idp-reports-render in estate-state.yml and estate-inventory.yml, the store is the state
 // branch, the door is the /estate-state proxy (backstage/app-config.yaml).
+//
+// crew#843: the page top, the tiles and the grid come from modules/shell now. The whole tile used
+// to be one button, which meant a screen reader announced the state, the title, the schedule and
+// the summary as the label of a single control; the title is the control now and the rest is text.
 import { useEffect, useState } from 'react';
-import {
-  Content,
-  Link,
-  MarkdownContent,
-  Page,
-} from '@backstage/core-components';
-import { Typography, makeStyles } from '@material-ui/core';
+import { Link, MarkdownContent } from '@backstage/core-components';
+import { Text } from '@backstage/ui';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import { Pill } from './EstateHome';
 import { ago } from './estate';
-import { monoFamily } from '../theme/tokens';
+import {
+  EstatePage,
+  Name,
+  Section,
+  Summary,
+  Tile,
+  Tiles,
+  Unread,
+  Waiting,
+} from '../shell';
 import {
   FRESHNESS_WORD,
   REPORTS_BASE,
@@ -30,65 +38,7 @@ export const TITLE = 'Reports';
 export const LEAD =
   'Every report the estate writes for you, produced on a clock, dated, and red when it is late.';
 
-const useStyles = makeStyles(theme => ({
-  header: { marginBottom: theme.spacing(3) },
-  lead: { fontSize: 17, margin: theme.spacing(1, 0, 0) },
-  grid: {
-    display: 'grid',
-    gap: theme.spacing(1.5),
-    gridTemplateColumns: 'repeat(auto-fill, minmax(22em, 1fr))',
-  },
-  tile: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'stretch',
-    textAlign: 'left',
-    gap: theme.spacing(1),
-    padding: theme.spacing(2),
-    borderRadius: 12,
-    border: `1px solid ${theme.palette.divider}`,
-    background: theme.palette.background.paper,
-    color: theme.palette.text.primary,
-    font: 'inherit',
-    cursor: 'pointer',
-    minWidth: 0,
-    '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}` },
-  },
-  chosen: { borderColor: theme.palette.primary.main },
-  tileTop: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: theme.spacing(1),
-    flexWrap: 'wrap',
-  },
-  tileTitle: { fontWeight: 600, fontSize: 18, flex: '1 1 10em' },
-  small: { fontSize: 13, color: theme.palette.text.secondary, margin: 0 },
-  mono: { fontFamily: monoFamily, fontSize: 12, overflowWrap: 'anywhere' },
-  body: {
-    marginTop: theme.spacing(3),
-    padding: theme.spacing(2),
-    borderRadius: 12,
-    border: `1px solid ${theme.palette.divider}`,
-    background: theme.palette.background.paper,
-    overflowX: 'auto',
-    '& table': { borderCollapse: 'collapse', fontSize: 13 },
-    '& th, & td': {
-      textAlign: 'left',
-      verticalAlign: 'top',
-      padding: theme.spacing(0.5, 1),
-      borderBottom: `1px solid ${theme.palette.divider}`,
-    },
-  },
-  bodyTop: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    gap: theme.spacing(1),
-    flexWrap: 'wrap',
-    marginBottom: theme.spacing(1),
-  },
-}));
-
-const Tile = ({
+const ReportTile = ({
   report,
   now,
   chosen,
@@ -99,7 +49,6 @@ const Tile = ({
   chosen: boolean;
   onChoose: () => void;
 }) => {
-  const classes = useStyles();
   const when = ago(report.generatedAt, now);
   const why = report.blind
     ? 'Blind: the source could not be read'
@@ -107,27 +56,27 @@ const Tile = ({
         when ? `, produced ${when}` : ''
       }`;
   return (
-    <button
-      type="button"
-      className={`${classes.tile} ${chosen ? classes.chosen : ''}`}
-      onClick={onChoose}
-      aria-pressed={chosen}
-      data-testid={`report-${report.id}`}
+    <Tile
+      title={report.title}
+      onChoose={onChoose}
+      chosen={chosen}
+      testId={`report-${report.id}`}
+      state={freshnessState(report, now)}
+      badge={<Pill state={freshnessState(report, now)} why={why} />}
     >
-      <div className={classes.tileTop}>
-        <span className={classes.tileTitle}>{report.title}</span>
-        <Pill state={freshnessState(report, now)} why={why} />
-      </div>
-      <p className={classes.small}>
+      <Text variant="body-small" color="secondary">
         {why}. Written {everySentence(report.scheduleMinutes)}.
-      </p>
-      {report.summary && <p className={classes.small}>{report.summary}</p>}
-    </button>
+      </Text>
+      {report.summary && (
+        <Text variant="body-small" color="secondary">
+          {report.summary}
+        </Text>
+      )}
+    </Tile>
   );
 };
 
 export const Reports = () => {
-  const classes = useStyles();
   const config = useApi(configApiRef);
   const base = config.getOptionalString('backend.baseUrl') ?? '';
   const loaded = useReports();
@@ -140,64 +89,58 @@ export const Reports = () => {
   }, [chosen, chosenId]);
   const body = useReportBody(chosen?.file, chosen?.generatedAt ?? '');
   return (
-    <Page themeId="home">
-      <Content>
-        <header className={classes.header}>
-          <Typography variant="h1" component="h1">
-            {TITLE}
-          </Typography>
-          <p className={classes.lead}>{LEAD}</p>
-          {loaded.state === 'loading' && (
-            <p className={classes.lead} data-testid="reports-loading">
-              Reading the report index.
-            </p>
-          )}
-          {loaded.state === 'error' && (
-            <p className={classes.lead} data-testid="reports-error">
-              The report index could not be read, so no report is known.{' '}
-              <span className={classes.mono}>{loaded.error}</span>
-            </p>
-          )}
-          {loaded.state === 'ready' && (
-            <p className={classes.lead} data-testid="reports-sentence">
-              {reportsSentence(reports, now)}
-            </p>
-          )}
-        </header>
-        <div className={classes.grid}>
-          {reports.map(r => (
-            <Tile
-              key={r.id}
-              report={r}
-              now={now}
-              chosen={r.id === chosen?.id}
-              onChoose={() => setChosenId(r.id)}
-            />
-          ))}
-        </div>
-        {chosen && (
-          <section className={classes.body} data-testid="report-body">
-            <div className={classes.bodyTop}>
-              <span className={classes.small}>
+    <EstatePage title={TITLE} lead={LEAD}>
+      {loaded.state === 'loading' && (
+        <Waiting testId="reports-loading">Reading the report index.</Waiting>
+      )}
+      {loaded.state === 'error' && (
+        <Unread testId="reports-error" detail={loaded.error}>
+          The report index could not be read, so no report is known.
+        </Unread>
+      )}
+      {loaded.state === 'ready' && (
+        <Summary testId="reports-sentence">
+          {reportsSentence(reports, now)}
+        </Summary>
+      )}
+      <Tiles>
+        {reports.map(r => (
+          <ReportTile
+            key={r.id}
+            report={r}
+            now={now}
+            chosen={r.id === chosen?.id}
+            onChoose={() => setChosenId(r.id)}
+          />
+        ))}
+      </Tiles>
+      {chosen && (
+        <Section title={chosen.title}>
+          <div className="estate-panel" data-testid="report-body">
+            <div className="estate-panel-top">
+              <Text variant="body-small" color="secondary">
                 {chosen.source ? `Source: ${chosen.source}.` : ''}
-              </span>
+              </Text>
               <Link to={`${base}/api/proxy${REPORTS_BASE}${chosen.file}`}>
                 The file itself
               </Link>
             </div>
             {body.state === 'loading' && (
-              <p className={classes.small}>Reading {chosen.title}.</p>
+              <Waiting>Reading {chosen.title}.</Waiting>
             )}
             {body.state === 'error' && (
-              <p className={classes.small} data-testid="report-body-error">
-                This report could not be read.{' '}
-                <span className={classes.mono}>{body.error}</span>
+              <p
+                className="estate-state-line estate-unread"
+                role="alert"
+                data-testid="report-body-error"
+              >
+                This report could not be read. <Name>{body.error}</Name>
               </p>
             )}
             {body.state === 'ready' && <MarkdownContent content={body.text} />}
-          </section>
-        )}
-      </Content>
-    </Page>
+          </div>
+        </Section>
+      )}
+    </EstatePage>
   );
 };

@@ -30,6 +30,7 @@ import {
 } from '@backstage/core-components';
 import { NavContentBlueprint } from '@backstage/plugin-app-react';
 import {
+  SearchModal,
   SearchModalProvider,
   SidebarSearchModal,
   useSearchModal,
@@ -157,7 +158,11 @@ const FindShortcut = () => {
 const PhoneNav = () => {
   const classes = usePhoneStyles();
   const [open, setOpen] = useState(false);
-  const { toggleModal } = useSearchModal();
+  // The Find button top right only toggles state; something has to draw the modal. On the
+  // desktop that is SidebarSearchModal, which is part of the sidebar and so is not rendered
+  // on a phone -- so the button toggled a modal nobody drew and searching did nothing
+  // (founder 2026-09-04, "top right search not working"). The phone draws its own.
+  const { state: searchState, toggleModal } = useSearchModal();
   // The wordmark in the bar is the estate's name from app.title (LAW 46), in the page's own
   // ink: LogoFull is drawn for the navy sidebar and would vanish on the phone bar.
   const title = useApi(configApiRef).getOptionalString('app.title') ?? 'Estate';
@@ -182,6 +187,7 @@ const PhoneNav = () => {
           <SearchIcon />
         </IconButton>
       </div>
+      <SearchModal {...searchState} toggleModal={toggleModal} />
       <div className={classes.spacer} />
       <Drawer
         anchor="left"

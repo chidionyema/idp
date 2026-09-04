@@ -10,15 +10,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Entity } from '@backstage/catalog-model';
-import { Content, Link, LinkButton, Page } from '@backstage/core-components';
+import { Link, LinkButton } from '@backstage/core-components';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
-import {
-  Button,
-  TextField,
-  Typography,
-  makeStyles,
-  useTheme,
-} from '@material-ui/core';
+import { TextField, makeStyles, useTheme } from '@material-ui/core';
+import { Button, Text } from '@backstage/ui';
+import { EstatePage } from '../shell';
 import {
   STATE_ORDER,
   STATE_WORD,
@@ -80,41 +76,8 @@ export type { Health } from './estate';
 
 const useStyles = makeStyles(theme => ({
   wrap: { display: 'flex', flexDirection: 'column', gap: theme.spacing(3) },
-  top: {
-    display: 'flex',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    gap: theme.spacing(2),
-    flexWrap: 'wrap',
-    paddingTop: theme.spacing(1),
-  },
-  brand: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: theme.palette.text.secondary,
-    letterSpacing: '0.02em',
-  },
-  when: {
-    fontSize: 12,
-    color: theme.palette.text.disabled,
-    fontVariantNumeric: 'tabular-nums',
-  },
-  // Hero: the page title is the biggest thing on the page (40px, 700); the tagline under it is
-  // body-sized and secondary; the verdict is a sentence, never a bare number beside a word.
-  title: {
-    fontSize: 'clamp(30px, 6vw, 40px)',
-    fontWeight: 700,
-    letterSpacing: '-0.02em',
-    lineHeight: 1.1,
-    margin: 0,
-  },
-  tagline: {
-    fontSize: 16,
-    lineHeight: 1.5,
-    color: theme.palette.text.secondary,
-    margin: 0,
-    maxWidth: 680,
-  },
+  // The verdict is a sentence, never a bare number beside a word. The title and the lead
+  // above it are the shared page shell's (modules/shell), the same on every page.
   verdict: {
     fontSize: 'clamp(20px, 4vw, 26px)',
     fontWeight: 600,
@@ -762,14 +725,14 @@ const CatalogueUnavailable = ({
   const classes = useStyles();
   return (
     <div className={classes.card} role="alert" data-testid="catalogue-error">
-      <Typography variant="h5" gutterBottom>
+      <Text as="h2" variant="title-small" weight="bold">
         The catalogue did not answer
-      </Typography>
-      <Typography variant="body1" gutterBottom>
+      </Text>
+      <Text variant="body-medium">
         The portal is up; the catalogue service behind it did not reply. Nothing
         on this page is proof that anything else is down.
-      </Typography>
-      <Button variant="contained" color="primary" onClick={retry}>
+      </Text>
+      <Button variant="primary" onPress={retry}>
         Try again
       </Button>
       <details className={classes.mono}>
@@ -790,7 +753,7 @@ const readView = (): View => {
   }
 };
 
-const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
+const Ready = ({ estate }: { estate: Estate }) => {
   const classes = useStyles();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
@@ -899,17 +862,6 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
 
   return (
     <div className={classes.wrap}>
-      <div className={classes.top}>
-        <span className={classes.when}>
-          {new Date().toLocaleDateString(undefined, {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long',
-          })}
-        </span>
-      </div>
-      <h1 className={classes.title}>{brand}</h1>
-      <p className={classes.tagline}>{PAGE.tagline}</p>
       <p
         className={classes.verdict}
         data-testid="verdict"
@@ -1195,14 +1147,24 @@ export const EstateHome = () => {
     };
   }, []);
   return (
-    <Page themeId="home">
-      <Content>
-        {loaded.state === 'loading' && <Loading />}
-        {loaded.state === 'error' && (
-          <CatalogueUnavailable error={loaded.error} retry={retry} />
-        )}
-        {loaded.state === 'ready' && <Ready estate={loaded} brand={brand} />}
-      </Content>
-    </Page>
+    <EstatePage
+      title={brand}
+      lead={PAGE.tagline}
+      actions={
+        <Text variant="body-small" color="secondary">
+          {new Date().toLocaleDateString(undefined, {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+          })}
+        </Text>
+      }
+    >
+      {loaded.state === 'loading' && <Loading />}
+      {loaded.state === 'error' && (
+        <CatalogueUnavailable error={loaded.error} retry={retry} />
+      )}
+      {loaded.state === 'ready' && <Ready estate={loaded} />}
+    </EstatePage>
   );
 };

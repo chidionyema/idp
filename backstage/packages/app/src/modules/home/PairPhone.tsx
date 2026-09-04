@@ -10,20 +10,21 @@
 // endpoint /sunshine) and the tailnet egress Service (platform/backstage/overlays/oke/
 // sunshine-egress.yaml). Nothing in this file names a host, a port or a credential (LAW 46):
 // the proxy holds the target and the Authorization header, read from a mounted secret file.
+//
+// The page is drawn with the estate's shell and Backstage UI, like every other page the
+// estate builds (crew#843); it used to be the only surface still built out of Material cards.
 import { useState } from 'react';
-import {
-  Content,
-  ContentHeader,
-  Header,
-  InfoCard,
-  Page,
-} from '@backstage/core-components';
 import {
   discoveryApiRef,
   fetchApiRef,
   useApi,
 } from '@backstage/frontend-plugin-api';
-import { Button, TextField, Typography } from '@material-ui/core';
+import { Button, Flex, Text, TextField } from '@backstage/ui';
+import { EstatePage, Section, Unread, Waiting } from '../shell';
+
+export const TITLE = 'Pair my phone';
+export const LEAD =
+  'Type the four digits Moonlight shows you, and the phone pairs with the Mac.';
 
 export const PairPhone = () => {
   const fetchApi = useApi(fetchApiRef);
@@ -61,54 +62,43 @@ export const PairPhone = () => {
   };
 
   return (
-    <Page themeId="home">
-      <Header
-        title="Pair my phone"
-        subtitle="Sunshine on the estate Mac · Moonlight on your phone"
-      />
-      <Content>
-        <ContentHeader title="Type the PIN Moonlight shows you" />
-        <InfoCard>
-          <Typography paragraph>
-            Open Moonlight on the phone, tap the Mac, and it shows a 4-digit
-            PIN. Type it here. The PIN reaches the Mac directly; no chat, no
-            waiting on anyone.
-          </Typography>
-          <TextField
-            label="PIN"
-            value={pin}
-            inputProps={{
-              inputMode: 'numeric',
-              pattern: '[0-9]*',
-              maxLength: 4,
-              'data-testid': 'pin',
-            }}
-            onChange={e =>
-              setPin(e.target.value.replace(/\D/g, '').slice(0, 4))
-            }
-            disabled={state === 'sending'}
-          />
-          <div style={{ marginTop: 16 }}>
+    <EstatePage title={TITLE} lead={LEAD}>
+      <Section
+        title="The PIN"
+        blurb="Open Moonlight on the phone and tap the Mac. It shows a four-digit number. The PIN goes straight to the Mac from here; nobody else has to do anything."
+      >
+        <div className="estate-panel">
+          <Flex direction="column" gap="4" align="start">
+            <TextField
+              label="PIN"
+              value={pin}
+              inputMode="numeric"
+              maxLength={4}
+              autoComplete="one-time-code"
+              isDisabled={state === 'sending'}
+              onChange={value => setPin(value.replace(/\D/g, '').slice(0, 4))}
+            />
             <Button
-              variant="contained"
-              color="primary"
-              disabled={pin.length !== 4 || state === 'sending'}
-              onClick={submit}
+              variant="primary"
+              isDisabled={pin.length !== 4 || state === 'sending'}
+              isPending={state === 'sending'}
+              onPress={submit}
               data-testid="pair"
             >
-              {state === 'sending' ? 'Pairing…' : 'Pair'}
+              Pair
             </Button>
-          </div>
-          {detail && (
-            <Typography
-              style={{ marginTop: 16 }}
-              color={state === 'failed' ? 'error' : 'textPrimary'}
-            >
-              {detail}
-            </Typography>
-          )}
-        </InfoCard>
-      </Content>
-    </Page>
+            {state === 'sending' && <Waiting>Pairing the phone…</Waiting>}
+            {state === 'paired' && (
+              <Text variant="body-medium" data-testid="pair-result">
+                {detail}
+              </Text>
+            )}
+            {state === 'failed' && (
+              <Unread testId="pair-result">{detail}</Unread>
+            )}
+          </Flex>
+        </div>
+      </Section>
+    </EstatePage>
   );
 };
