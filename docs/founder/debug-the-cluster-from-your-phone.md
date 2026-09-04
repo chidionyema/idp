@@ -19,19 +19,32 @@ nothing.
 Open the app. Nodes, pods, logs, events, restarts, describe. Nothing to sign in
 to and nothing to paste, ever.
 
-## Why it goes through the Mac
+## Where it runs
+
+An Always Free Oracle machine inside the estate's network, always on, no laptop involved. It has
+no public address at all: it reaches the cluster on Oracle's private endpoint, and your phone
+reaches it over the tailnet. Nothing new is exposed to the internet.
+
+Your Mac runs the same bridge as a second way in, for the case where that network is itself the
+problem. `bin/idp-phone-kubeconfig` picks the Oracle one when it is up and falls back to the Mac,
+and tells you which it wrote.
+
+The bridge can read and nothing else -- pods, logs, events, nodes. It cannot delete anything and
+cannot read secrets. A debugger that can cause an outage is not a debugger.
+
+## Why it does not go straight from the phone
 
 Oracle's API server admits exactly one source address -- the house -- set in
 `platform/oci/terraform.tfvars` as `control_plane_allowed_cidrs`. A phone on
 mobile data is not that address, and opening the allowlist wider is the one
-thing the allowlist exists to stop. So the phone reaches the Mac over the
-tailnet, and the Mac reaches Oracle. That holds for any phone app you pick.
+thing the allowlist exists to stop. So the phone reaches a bridge, and the
+bridge reaches Oracle. That holds for any phone app you pick.
 
-The Mac is outside the cluster on purpose. When the cluster, the gateway or the
-catalogue is the thing that is broken, this still answers, because none of them
-is in the path.
+The bridge is outside the cluster on purpose. When the cluster, the gateway or
+the catalogue is the thing that is broken, this still answers, because none of
+them is in the path.
 
-Authentication happens on the Mac, per request, from the estate's cloud API key.
+Authentication happens on the bridge, per request, from the estate's cloud API key.
 Who may reach the port is decided by the tailnet policy in
 `platform/tailscale/policy.hujson`, which grants your own devices and nothing
 else; removing a device from the tailnet cuts it off immediately.
@@ -39,7 +52,7 @@ else; removing a device from the tailnet cuts it off immediately.
 ## If the app cannot connect
 
 - Tailscale has to be on and connected on the phone.
-- The Mac has to be awake. It is the bridge.
-- Restart the bridge: `bin/idp-install-launchd kubeapi`.
+- If it fell back to the Mac, the Mac has to be awake.
+- Restart the Mac's copy: `bin/idp-install-launchd kubeapi`.
 - Regenerate the file, for example after the Mac's tailnet address changes:
   `bin/idp-phone-kubeconfig`, then AirDrop it from the Desktop.
