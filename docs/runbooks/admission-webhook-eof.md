@@ -23,8 +23,16 @@ One run, and it touches no node, no file and no policy:
 
 **oke-check → mode `break-glass` → playbook `webhooks-restart`.**
 
-It restarts the Deployments in `external-secrets` and `kyverno`, waits for both rollouts, then
-reconciles `edge` — the root of the blocked branch — and prints every Kustomization.
+It reads the cluster's own events first and **refuses to restart anything unless the webhook fault
+is there right now** — a `failed calling webhook` message, or a kyverno denial with an empty reason,
+which is the API server failing to reach the webhook rather than a policy matching. Then it restarts
+the Deployments in `external-secrets` and `kyverno`, waits for both rollouts, and reconciles the rows
+that cached the EOF in dependency order: `edge`, `secret-store`, `tailscale`, `guacamole`.
+
+A breaker bounds it: two attempts per six hours, counted on the kyverno admission Deployment itself
+(`estate.idp/webhooks-restart-attempts`). A third attempt prints `BREAKER OPEN` with the reset
+command and fails, so a cluster nobody can restart back to health is loud rather than quietly
+restarted forever.
 
 **Do not reach for `cilium-unchain`.** It contains the same two restarts, which is how this was
 recovered on run 33133317589, but it also deletes the CNI configuration from every node and rolls
