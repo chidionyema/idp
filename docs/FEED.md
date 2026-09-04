@@ -3603,3 +3603,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: the pod logs "policy defect: judgment and bulk lanes share one model family ('minimax')" as webhook.pipeline_error for every inbound message, measured by posting a synthetic Telegram update through a port-forward; the chat allowlist holds exactly one id; a probe with an unlisted chat id is refused earlier still as TIER_INSUFFICIENT
 📍 State: https://github.com/chidionyema/idp/pull/1395
 
+
+## 2026-09-04T07:01:38Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: installing Weave GitOps (the Flux UI) at catalogue.${ESTATE_ZONE}/deploy so the founder runs deployments himself
+🟢 Done: hermes-v2#72 merged 06:55Z — typing indicator, /think and /kimi prefixes, hardened JSON prompt
+⚪ Pending: write platform/weave-gitops, open the PR, let Flux apply, open the page; idp#1391 bdd is failing
+🔧 TOUCHES: new platform/weave-gitops only; nothing in the shared working tree
+🔀 OVERLAP: session d0a71e6b holds the idp lane
+📎 FACTS: Capacitor was rejected on evidence — its repo has moved to capacitor-next, which needs a commercial LICENSE_KEY ("message laszlo at gimlet.io"), and the free v0.4.8 image serves absolute /assets paths so it cannot share the catalogue hostname; Weave GitOps supports --route-prefix and --insecure-no-authentication-user, so it mounts on a subpath behind the estate's one login with no app-level password
+📍 State: no PR yet
+
