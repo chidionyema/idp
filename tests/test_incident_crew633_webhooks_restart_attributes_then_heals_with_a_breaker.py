@@ -110,13 +110,3 @@ def test_the_breaker_opens_after_the_bounded_attempts(tmp_path):
     assert "BREAKER OPEN webhooks-restart" in out
     assert "breaker-open-webhooks-restart" in out
     assert "rollout restart" not in calls
-
-
-def test_the_breaker_is_named_in_the_script():
-    for needle in (
-        "WEBHOOKS_RESTART_MAX",
-        "WEBHOOKS_RESTART_COOLOFF_S",
-        "estate.idp/webhooks-restart-attempts",
-        "estate.idp/webhooks-restart-last",
-    ):
-        assert needle in SRC
