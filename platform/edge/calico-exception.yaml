@@ -1,0 +1,48 @@
+# Calico is the cluster's network. Every pod it runs is on the host's network namespace, writes
+# the host's CNI configuration and programs the host's routes and iptables chains -- calico-node
+# and the operator's own uninstall hook cannot run as a non-root user with a read-only root
+# filesystem and no capabilities, because that is a description of a workload that is not a CNI.
+# The estate's restricted profile is the right default and stays the default; this excuses the
+# one namespace whose job is the thing the profile is protecting.
+#
+# Narrow on purpose: only the tigera-operator namespace, only the workload-hardening rules. The
+# admission rule that matters most here still applies -- flux-only-writes -- so this namespace is
+# still writable by Flux alone and by no console principal.
+#
+# Reconsider when Calico ships a rootless data plane; the eBPF data plane still needs the same
+# host access today.
+# Lives in platform/edge because Kyverno honours exceptions from namespace kyverno only (crew#325).
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: calico-is-the-network
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: require-run-as-nonroot
+      ruleNames: ["*"]
+    - policyName: require-ro-rootfs
+      ruleNames: ["*"]
+    - policyName: drop-all-capabilities
+      ruleNames: ["*"]
+    - policyName: disallow-privilege-escalation
+      ruleNames: ["*"]
+    - policyName: restrict-seccomp-strict
+      ruleNames: ["*"]
+    - policyName: require-requests-limits
+      ruleNames: ["*"]
+    - policyName: disallow-capabilities-strict
+      ruleNames: ["*"]
+    - policyName: disallow-host-namespaces
+      ruleNames: ["*"]
+    - policyName: disallow-host-path
+      ruleNames: ["*"]
+    - policyName: require-pod-probes
+      ruleNames: ["*"]
+    - policyName: restrict-volume-types
+      ruleNames: ["*"]
+  match:
+    any:
+      - resources:
+          kinds: [Pod, Deployment, DaemonSet, ReplicaSet, Job]
+          namespaces: [tigera-operator, calico-system, calico-apiserver]

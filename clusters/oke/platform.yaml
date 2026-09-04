@@ -1316,3 +1316,34 @@ spec:
   prune: true
   wait: true
   timeout: 10m
+---
+# The estate's network policy enforcement layer, merged suspended (crew#839).
+#
+# Nothing in this cluster enforces NetworkPolicy today: the CNI is flannel, which routes pods and
+# does not read policy objects, so the sixteen policies already here have never denied a packet.
+# Oracle refuses the policy-only-beside-flannel arrangement in writing, so this row REPLACES the
+# datapath, and that is why it ships suspended rather than applied.
+#
+# The cutover is platform/calico/README.md and its first step is a cluster property Flux cannot
+# set: disable Oracle's flannel add-on, or the add-on controller reinstalls flannel underneath
+# Calico. Then remove kube-flannel-ds, then `suspend: false` here.
+#
+# `wait: false` deliberately: the health of this row is the cluster's own network, and a
+# Kustomization that blocks waiting for the network it is installing has nothing left to report
+# through. `bin/ns-fence-gate --live` is the receipt instead -- it refuses to report a pass while
+# no CNI enforces policy, so a clean line from it means the cutover worked.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: calico
+  namespace: flux-system
+spec:
+  suspend: true
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/calico
+  prune: false
+  wait: false
+  timeout: 15m

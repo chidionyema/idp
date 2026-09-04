@@ -21,6 +21,7 @@ resources:
   - robusta-exception.yaml
   - litellm-cache-exception.yaml
   - tailscale-operator-exception.yaml
+  - calico-exception.yaml
   - tailscale-egress-exception.yaml
   - external-dns-exception.yaml
   - protect-namespaces.yaml
