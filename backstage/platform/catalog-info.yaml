@@ -567,6 +567,46 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-flux-webhook
+  title: 'Push-to-deploy door'
+  description: 'The door GitHub knocks on the moment a change is merged, so the estate reconciles at once instead of waiting out the one-minute poll; the knock is refused unless it carries the shared token.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=flux-webhook'
+    estate/flux-kustomization: 'flux-webhook'
+    estate/path: './platform/flux-webhook'
+    estate/cluster: 'oke'
+  tags: [platform, delivery]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: delivery
+  providesApis:
+    - api:default/flux-webhook-api
+  dependsOn:
+    - component:default/layer-edge
+    - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: flux-webhook-api
+  description: 'Push-to-deploy door: the HTTP interface, answering at hc.${ESTATE_ZONE}.'
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/delivery
+  definition: |
+    # Not published. flux-webhook answers at hc.${ESTATE_ZONE}; this entity
+    # exists so the catalogue records that the interface is reachable and who owns it.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-gateway-api-crds
   title: 'Gateway API'
   description: 'The standard the gateway speaks; installed before anything routes.'

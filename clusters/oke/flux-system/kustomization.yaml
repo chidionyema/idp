@@ -20,6 +20,18 @@ patches:
       path: /spec/template/spec/containers/0/args/-
       value: --rate-limit-interval=1h
 
+# The edge Gateway (prospector-edge) admits an HTTPRoute only from a namespace carrying this
+# label, and platform/flux-webhook puts a route in flux-system. The namespace is created by
+# gotk-components, which this build owns, so the label is patched on here rather than in the
+# platform directory the route lives in.
+- target:
+    kind: Namespace
+    name: flux-system
+  patch: |
+    - op: add
+      path: /metadata/labels/idp.estate~1edge-attach
+      value: "true"
+
 # A restart of kustomize-controller, driven from git. Founder, 2026-09-04: "If the
 # kustomize-controller itself is deadlocked and needs a restart, the GitOps way is to touch its
 # manifest in your repository." Changing this timestamp changes the pod template hash, so the
