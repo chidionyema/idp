@@ -1356,10 +1356,27 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: rbac-identity
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/rbac-identity
+  prune: true
+  wait: true
+  timeout: 5m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: rbac
   namespace: flux-system
 spec:
   interval: 10m
+  dependsOn:
+    - name: rbac-identity
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -1367,3 +1384,11 @@ spec:
   prune: true
   wait: true
   timeout: 5m
+  # The bridge's instance OCID, published to the vault by terraform and synced here by External
+  # Secrets. optional: false on purpose -- if the identity is missing this reconcile must fail
+  # loudly, because a binding rendered with an empty subject grants nothing and says nothing.
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: bridge-identity
+        optional: false

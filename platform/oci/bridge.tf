@@ -66,6 +66,73 @@ data "oci_vault_secrets" "tailscale" {
   name           = "tailscale-operator"
 }
 
+# This VCN carries no egress rules on its security list -- it is empty, and every subnet's
+# reachability comes from a network security group instead. An instance launched into none of
+# them can reach nothing: the first bridge booted cleanly and then sat there while
+# pkgs.tailscale.com:443 timed out, so Tailscale never installed. So the bridge carries its own
+# group rather than borrowing the workers', which would hand it worker-level reach it has no
+# use for. Egress only; groups are stateful, so the replies come back without an ingress rule,
+# and nothing may open a connection to this machine.
+resource "oci_core_network_security_group" "bridge" {
+  compartment_id = var.compartment_ocid
+  vcn_id         = module.oke.vcn_id
+  display_name   = "${var.cluster_name}-bridge"
+}
+
+# Packages, and Tailscale's control plane and its DERP relays, which are all HTTPS.
+resource "oci_core_network_security_group_security_rule" "bridge_https" {
+  network_security_group_id = oci_core_network_security_group.bridge.id
+  direction                 = "EGRESS"
+  protocol                  = "6" # TCP
+  destination               = "0.0.0.0/0"
+  destination_type          = "CIDR_BLOCK"
+  description               = "HTTPS out: package repositories, Tailscale control and DERP"
+  tcp_options {
+    destination_port_range {
+      min = 443
+      max = 443
+    }
+  }
+}
+
+# Tailscale negotiates a direct WireGuard path over UDP on ports it picks, and finds it with
+# STUN, so the port cannot be pinned. This is what keeps traffic off the relays.
+resource "oci_core_network_security_group_security_rule" "bridge_wireguard" {
+  network_security_group_id = oci_core_network_security_group.bridge.id
+  direction                 = "EGRESS"
+  protocol                  = "17" # UDP
+  destination               = "0.0.0.0/0"
+  destination_type          = "CIDR_BLOCK"
+  description               = "UDP out: Tailscale WireGuard and STUN, and DNS"
+}
+
+# The private control-plane endpoint. This is the whole reason the machine exists.
+resource "oci_core_network_security_group_security_rule" "bridge_kubeapi" {
+  network_security_group_id = oci_core_network_security_group.bridge.id
+  direction                 = "EGRESS"
+  protocol                  = "6" # TCP
+  destination               = module.oke.control_plane_subnet_cidr
+  destination_type          = "CIDR_BLOCK"
+  description               = "Kubernetes API: the control-plane subnet only, not the whole VCN"
+  tcp_options {
+    destination_port_range {
+      min = 6443
+      max = 6443
+    }
+  }
+}
+
+# The instance metadata service, which is how the instance principal proves who it is. Without
+# this the machine cannot read the vault or mint a kubeconfig.
+resource "oci_core_network_security_group_security_rule" "bridge_metadata" {
+  network_security_group_id = oci_core_network_security_group.bridge.id
+  direction                 = "EGRESS"
+  protocol                  = "all"
+  destination               = "169.254.0.0/16"
+  destination_type          = "CIDR_BLOCK"
+  description               = "Instance metadata: the instance principal's identity"
+}
+
 resource "oci_core_instance" "bridge" {
   compartment_id      = var.compartment_ocid
   availability_domain = local.bridge_ads[0]
@@ -75,6 +142,7 @@ resource "oci_core_instance" "bridge" {
   create_vnic_details {
     subnet_id        = data.oci_core_subnets.workers.subnets[0].id
     assign_public_ip = false # the whole point: no door on the internet
+    nsg_ids          = [oci_core_network_security_group.bridge.id]
     display_name     = "${var.cluster_name}-bridge"
   }
 
@@ -125,6 +193,24 @@ resource "oci_identity_policy" "bridge" {
 
 # The subject a ClusterRoleBinding names for an instance principal is the instance's OCID
 # (platform/rbac/bridge.yaml). Printed here so the binding can be filled in without a console.
+# The cluster has to know which instance principal to trust, and that identity changes every time
+# the machine is rebuilt. Copying the OCID into platform/rbac/bridge.yaml by hand after each apply
+# is the hacked-together version of this, and it goes stale silently -- a ClusterRoleBinding
+# naming a destroyed instance refuses nothing and grants nothing, it just quietly stops working.
+# So the identity is published here and the cluster reads it: External Secrets syncs this entry
+# into flux-system and Flux substitutes it into the binding. Nobody edits a file, and a rebuild
+# propagates on its own.
+resource "oci_vault_secret" "bridge_identity" {
+  compartment_id = var.compartment_ocid
+  vault_id       = oci_kms_vault.estate.id
+  key_id         = oci_kms_key.estate.id
+  secret_name    = "bridge-instance-ocid"
+  secret_content {
+    content_type = "BASE64"
+    content      = base64encode(oci_core_instance.bridge.id)
+  }
+}
+
 output "bridge_instance_ocid" {
   value = oci_core_instance.bridge.id
 }
