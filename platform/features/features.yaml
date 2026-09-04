@@ -80,13 +80,21 @@ features:
     why: multi-step agent work survives a restart and is replayable
     tiers:
       - name: enterprise
-        what: "Temporal on Postgres (already the light backend, no Cassandra, no Elasticsearch)"
+        what: "Temporal on Postgres: the backup, kept in the stack and offered here, not deployed"
         switches: [temporal]
         depends: [postgres]
+      # Windmill is the choice and Temporal is the backup -- founder, 2026-09-04, confirming his
+      # earlier ruling in crew#695 (carried in docs/decisions/decision-matrix.yaml:458 and :475).
+      # "Kubernetes CronJobs only" stood in this tier from 2026-08-29 (f9f96bdb, crew#584) and was
+      # never a decision anyone took: the session that wrote this register invented it, and then
+      # read it back to him as fact. Neither tier is deployed today -- the temporal Kustomization
+      # is suspended in clusters/oke/platform.yaml and there is no Windmill row on the cluster --
+      # so `switches` stays empty until one exists. This register is what the self-service template
+      # offers, never a claim about what is running.
       - name: lean
-        what: Kubernetes CronJobs only
+        what: "Windmill: scripts, flows and schedules on Postgres, the chosen durable workflow engine"
         switches: []
-    default: enterprise
+    default: lean
 
   - name: agent-memory
     title: Agent long-term memory
