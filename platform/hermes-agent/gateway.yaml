@@ -8,7 +8,8 @@
 # would be a fork feature nobody upstream maintains (LAW 43); the row states this instead.
 # The Architect (hermes-agent gateway, Telegram + a2a) on OKE: crew#516 CP4, 2026-08-27.
 #
-# What runs here is the same thing the Mac's ai.architect.gateway launchd job runs: the image
+# What runs here is what the Mac's ai.architect.gateway launchd job used to run (booted out;
+# measured 2026-09-03, `launchctl list` names no architect or hermes job on the Mac): the image
 # ghcr.io/chidionyema/hermes-agent carries the hermes-v2 repo (config.yaml, SOUL.md, skills/,
 # cron/watch.jobs, cron/work.jobs) at /app/estate and boots through deploy/k8s/entrypoint.sh,
 # which copies that build over HERMES_HOME=/data (this PVC) and leaves the state on it alone:
