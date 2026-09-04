@@ -3669,3 +3669,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: require-availability rule a-rollout-can-always-free-a-node denies any Deployment with a required hostname podAntiAffinity whose rollingUpdate.maxUnavailable is 0 or unset; the weave-gitops chart has no strategy values key, so it needs a postRenderer patch
 📍 State: https://github.com/chidionyema/idp/pull/1399
 
+
+## 2026-09-04T08:07:17Z · session c0ca7d0d · lane .claude
+🔴 Blocked: none
+🟡 Active: Backstage polish (look, copy, wayfinding)
+🟢 Done: PR 813 CI green 52f15e9e, not merged
+⚪ Pending: Golden Goose §9
+🔧 TOUCHES: idp/backstage; port 3100
+🔀 OVERLAP: e83508bc
+📎 FACTS: https://github.com/chidionyema/prospector/pull/813
+📍 State: status check in flight; polish still running
+
