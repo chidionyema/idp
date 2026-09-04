@@ -1595,3 +1595,29 @@ spec:
     - component:default/layer-backstage-namespace
     - component:default/layer-external-secrets
     - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-deploy-button
+  title: 'Deploy button'
+  description: "Flux's own dashboard: what every layer is running, and a button that applies main now."
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=weave-gitops'
+    estate/flux-kustomization: 'weave-gitops'
+    estate/path: './platform/weave-gitops'
+    estate/cluster: 'oke'
+  tags: [platform, founder-surface]
+  links:
+    - url: https://catalogue.${ESTATE_ZONE}/deploy
+      title: 'Open the deploy button'
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: edge
+  dependsOn:
+    - component:default/layer-identity
+    - component:default/layer-edge

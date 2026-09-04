@@ -1,0 +1,43 @@
+# The one login, in front of the deploy button. oauth2-proxy answers first; a request with no
+# session never reaches the dashboard, which is the condition its --insecure-no-authentication-user
+# flag is designed for (decision 0003: OIDC at the gateway, never in an app).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: login-forward-auth
+  namespace: weave-gitops
+spec:
+  forwardAuth:
+    address: http://oauth2-proxy.identity.svc.cluster.local/
+    trustForwardHeader: true
+    authResponseHeaders: [X-Auth-Request-User, X-Auth-Request-Email, X-Auth-Request-Preferred-Username]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-deploy-button
+  name: weave-gitops
+  namespace: weave-gitops
+spec:
+  parentRefs:
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-catalogue
+  hostnames:
+    - "catalogue.${ESTATE_ZONE}"
+  rules:
+    # No StripPrefix: the server is started with --route-prefix=/deploy, so it expects to see the
+    # prefix and writes its own asset URLs under it. Stripping here would serve a blank page.
+    - matches:
+        - path: { type: PathPrefix, value: /deploy }
+      filters:
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: login-forward-auth }
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: friendly-errors }
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: edge-headers }
+      backendRefs:
+        - name: weave-gitops
+          port: 9001
