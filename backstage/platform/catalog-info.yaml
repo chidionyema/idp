@@ -93,6 +93,17 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: System
 metadata:
+  name: data
+  title: 'Data'
+  description: 'Where the estate keeps its records: one PostgreSQL cluster, a database per service, backed up and failed over once for everything.'
+  tags: [platform]
+spec:
+  owner: group:default/platform
+  domain: platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
   name: commerce
   title: 'Money'
   description: 'How a customer pays and what they are owed: subscriptions, credit packs, invoices and the ledger. The products never see a card.'
@@ -220,6 +231,7 @@ spec:
     - component:default/layer-external-secrets
     - component:default/layer-secret-store
     - component:default/layer-edge
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -403,6 +415,7 @@ spec:
     - component:default/layer-scheduling
     - component:default/layer-edge
     - component:default/layer-secret-store
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -719,6 +732,7 @@ spec:
     - component:default/layer-identity
     - component:default/layer-secret-store
     - component:default/layer-tailscale
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -807,6 +821,7 @@ spec:
   dependsOn:
     - component:default/layer-identity
     - component:default/layer-secret-store
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -888,6 +903,7 @@ spec:
   dependsOn:
     - component:default/layer-secret-store
     - component:default/layer-llm
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -1077,6 +1093,7 @@ spec:
   dependsOn:
     - component:default/layer-edge
     - component:default/layer-secret-store
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -1256,6 +1273,7 @@ spec:
     - component:default/layer-scheduling
     - component:default/layer-observability-collector
     - component:default/layer-external-secrets
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -1322,6 +1340,7 @@ spec:
     - component:default/layer-secret-store
     - component:default/layer-edge
     - component:default/layer-event-bus
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -1725,6 +1744,7 @@ spec:
     - component:default/layer-edge
     - component:default/layer-secret-store
     - component:default/layer-image-automation
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
