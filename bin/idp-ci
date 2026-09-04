@@ -23,6 +23,17 @@ timing_summary() {
   if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf '## bin/idp-ci %ss\n\n```\n%s\n```\n' "$SECONDS" "$rows" >> "$GITHUB_STEP_SUMMARY"; fi
 }
 need() { command -v "$1" >/dev/null || { say "FAIL  $1 is not installed"; exit 2; }; }
+# Does this change touch any of these paths? IDP_CI_BASE is the merge base on a pull request and
+# empty on main, where the answer is always yes -- the merged state gets the full sweep, and the
+# pull request gets only the rungs its diff can actually break. The kyverno rung has scoped itself
+# this way since crew#584; this makes the same test available to every other rung.
+touched() {
+  [ -n "${IDP_CI_BASE:-}" ] || return 0
+  local changed; changed=$(cd "$IDP" && git diff --name-only "$IDP_CI_BASE...HEAD" 2>/dev/null) || return 0
+  local p
+  for p in "$@"; do printf '%s\n' "$changed" | grep -q "^$p" && return 0; done
+  return 1
+}
 # crew#584 CP-C (founder playbook Phase 2): IDP_CI_FAST=1 is the fast gate -- rungs 1, 1b, 1c and
 # ruff, under 60 s, no docker/conftest/helm. .github/workflows/fast-gate.yml runs it and every
 # heavy job (offline-gate, bdd, image builds, the drills) needs it green first.
@@ -613,7 +624,12 @@ fi  # IDP_CI_SKIP_PYTEST
 #     (tutorials, how-to, reference, explanation, decisions), every nav entry resolves and no
 #     link is dead. Before this rung the sweep that moved 169 files could break every Backstage
 #     techdocs page and nothing here would say so. BLIND when mkdocs is missing, never a pass.
-if command -v mkdocs >/dev/null; then
+#     Scoped on a pull request (2026-09-04): the site is built from docs/ and mkdocs.yml and
+#     nothing else, so a diff that touches neither cannot change the verdict this rung reached
+#     on main. Measured at 11 s on run 33868999215.
+if ! touched docs/ mkdocs.yml bin/idp-ci; then
+  say "ok    docs     no docs/ or mkdocs.yml change against $IDP_CI_BASE; the site was built on main"
+elif command -v mkdocs >/dev/null; then
   mkd=$(cd "$IDP" && mkdocs build --strict -q -d "${TMPDIR:-/tmp}/idp-ci-site.$$" 2>&1); mkd_rc=$?
   rm -rf "${TMPDIR:-/tmp}/idp-ci-site.$$"
   if [ "$mkd_rc" -eq 0 ]; then
