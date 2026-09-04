@@ -49,5 +49,40 @@ spec:
     requests: {cpu: 50m, memory: 128Mi}
     limits: {memory: 512Mi}
   noCache: true
+  # Measured 2026-09-04 from LiteLLM_SpendLogs (database `litellm` on estate-rw): this analyzer
+  # made 4,004 router calls a day, every day since 2026-08-30, for 45.7M MiniMax tokens -- 39.3M
+  # of them completion, the second largest consumer on the estate and, at MiniMax's real prices,
+  # about $49 of the ~$89 the router failed to bill while the lane was unpriced.
+  #
+  # It holds 52 Result objects and re-asks the model to explain every one of them on each pass:
+  # `spec.analysis` was unset, so the operator fell back to its own ReconcileSuccessInterval,
+  # which is 30 seconds (k8sgpt-operator v0.2.29,
+  # internal/controller/k8sgpt/k8sgpt_controller.go:42 -- the chart version pinned in
+  # ../k8sgpt.yaml). A pass over 52 findings does not finish in 30 seconds, so it requeued as
+  # fast as it could finish: ~77 passes a day, measured. `noCache: true` above means no pass can
+  # reuse the previous pass's answer, so 52 x 77 is the 4,004 calls. Nothing reads the Results,
+  # so every repeat after the first was paid for and discarded (LAW 28).
+  #
+  # Two changes, neither of which loses a finding:
+  #  - `analysis.interval` makes the cadence explicit. 1h keeps K8sGPT useful during an incident
+  #    while cutting the passes from ~77 a day to 24.
+  #  - `filters` is a whitelist of analyzers. 25 of the 52 findings were ConfigMaps reported as
+  #    "is empty", which is not a defect; the nine below are K8sGPT's own core analyzers and cover
+  #    everything that actually indicates an outage. The 4 Pod findings this analyzer already
+  #    holds include hermes-agent-gateway failing its startup probe, which is why the Telegram
+  #    agent has been down -- exactly the signal the ConfigMap noise was burying.
+  # Together: 52 findings x ~77 passes = ~4,004 calls a day -> 27 findings x 24 passes = ~650.
+  analysis:
+    interval: 1h
+  filters:
+    - Pod
+    - Deployment
+    - ReplicaSet
+    - StatefulSet
+    - CronJob
+    - Service
+    - Ingress
+    - PersistentVolumeClaim
+    - Node
   repository: ghcr.io/k8sgpt-ai/k8sgpt
   version: v0.4.37
