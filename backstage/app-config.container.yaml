@@ -119,6 +119,19 @@ backend:
     # what the k8s deployment will use, so Phase 2 changes where the database
     # runs, not which database it is.
     client: pg
+    # crew: the estate has one Postgres cluster and one database per consumer
+    # (platform/estate-db/cluster/databases.yaml: "One database per consumer" --
+    # CloudNativePG creates `backstage`, owned by role `backstage`, and nothing
+    # more). Backstage's new backend system defaults pluginDivisionMode to
+    # 'database', so every plugin tries CREATE DATABASE "backstage_plugin_<x>"
+    # on boot. That role owns one database, not the cluster, so Postgres refused
+    # it: "CREATE DATABASE \"backstage_plugin_app\" - permission denied to create
+    # database" (measured on catalogue-59f4479d78-nsxz6, 2026-09-04), and every
+    # new pod since the estate-db migration has crash-looped on it while the old
+    # ReplicaSet kept serving. 'schema' divides plugins into schemas inside the
+    # one database the role already owns -- no CREATEDB privilege needed, and no
+    # second database to add to databases.yaml per plugin.
+    pluginDivisionMode: schema
     connection:
       host: ${POSTGRES_HOST}
       port: ${POSTGRES_PORT}
