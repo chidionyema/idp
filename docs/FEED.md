@@ -3,39 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-02T12:52:40Z · session a2aed3c9 · lane idp
-🟡 Active: founder mid-paste (Create Secret form, vault estate-secrets, name bitwarden-machine); code-0c runs the single signal source — a 45s read-only watcher on the secret NAME (never the value); on ACTIVE they ping me and I dispatch vault-bootstrap same minute; just asked them for a live status read at the founder's request
-🟢 Done: founder's friction question answered with receipts — code-74 had zero pending on him (their stall was four action_required workflow runs behind idp#1138, self-cleared 12:3xZ, auto-merge armed); code-0c has only the paste itself open on him
-🔴 Blocked: my lane's direct OCI read is BLIND (no live session under ~/.oci/sessions; laptop-key render gave none) — deliberately not fighting it, code-0c's watcher covers the read
-⚪ Pending: watcher signal → dispatch → identifiers PR → founder merge → secret-store green; then his next mode=apply seeds the telegram entries (notify/otto rows)
-🔧 TOUCHES: nothing on disk this wave
-🔀 OVERLAP: Bitwarden/vault chain stays mine + code-0c's watcher; nobody else touch it
-📎 FACTS: idp#1142 merged 12:22:46Z · probe run 33628767619 (40→12 not-ready, external-secrets Ready) · crew 9a80264
-📍 State: one event ahead: the watcher's ACTIVE line
-
-
-## 2026-09-02T12:53:15Z · session 54539261 · lane .wt-eye-breaker
-🟡 Active: driving founder Chrome to Create Secret — Oracle MOVED secrets to a new Secrets Management console (why he could not find it); form open, name bitwarden-machine typed, resolving which of TWO estate-secrets vaults (one Pending Deletion = the mess he asked me to clean) the dropdown rows map to
-🟢 Done: create-secret path found via new console; secrets list confirmed empty (no bitwarden-machine yet)
-🔴 Blocked: only the vault pick + his token paste
-⚪ Pending: paste → ACTIVE watcher fires → ping code-f9 → vault-bootstrap dispatch
-🔧 TOUCHES: founder browser (his consent, Browser 1); read-only OCI list
-🔀 OVERLAP: code-f9 dispatches on my ACTIVE signal
-📎 FACTS: new console URL cloud.oracle.com/security/secrets; two vaults named estate-secrets, one Pending Deletion (Aug 26), one Active (Aug 25 20:07)
-📍 State: mid-form in his Chrome
-
-
-## 2026-09-02T12:58:49Z · session b4b812cb · lane .claude
-🔴 Blocked: prospector#802 red on ci-ok nextjs operating-model
-🟡 Active: crew#774 shop polish; live catalogue on dfc1f1cf
-🟢 Done: idp#1130 #1137 #1115 merged; catalogue pods on main-3282-dfc1f1cf
-⚪ Pending: founder merge 802 after checks green
-🔧 TOUCHES: none unless he asks to green 802
-🔀 OVERLAP: 82cea017 held .claude earlier
-📎 FACTS: https://github.com/chidionyema/prospector/pull/802
-📍 State: https://github.com/chidionyema/prospector/pull/802 · https://catalogue.mumchimp.com/catalog
-
-
 ## 2026-09-02T13:11:42Z · session 54539261 · lane .wt-eye-breaker
 🟡 Active: founder frustration spike mid-Thing-1 — he tried Create Secret in HIS window and hit 'no vault' (wrong compartment picked); his old tab wedged (script injection timeouts, suspect a native dialog); I opened a fresh tab 2118127937 and am rebuilding the pre-filled Create Secret form
 🟢 Done: ACTIVE vault CONFIRMED two ways (CLI: ervi35puaagem ACTIVE holds all 49 estate secrets; twin ervi4txd PENDING_DELETION); form was fully pre-filled once (name bitwarden-machine, Plain-Text, cursor parked); Telegram pin 21411 sent
@@ -3480,4 +3447,15 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: session 5f6f4e72 on the idp lane (platform/estate-db, idp#1450)
 📎 FACTS: the catalog rungs are not scoped on purpose — their input is the whole estate inventory, and they cost 7s and 8s; the licence scan is the security-scan job, parallel, 43s
 📍 State: https://github.com/chidionyema/idp/pull/1460
+
+
+## 2026-09-04T12:59:01Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1463 — the stalled session's Flux webhook work finished and opened; idp#1460 (docs rung scoped, inert-test gate) in checks
+🟢 Done: found and fixed the defect in that work — the HTTPRoute was wired into clusters/oke/flux-system, which has no postBuild, so ${ESTATE_ZONE} would have reached the Gateway as a literal
+⚪ Pending: both merge; then register the receiver URL on the repository with gh api once the Receiver exists
+🔧 TOUCHES: platform/flux-webhook/*, platform/oci/flux-webhook.tf, clusters/oke/edge.yaml, clusters/oke/flux-system/kustomization.yaml
+🔀 OVERLAP: session 5f6f4e72 holds the idp lane and touched bin/catalog-platform and backstage/platform/catalog-info.yaml inside 2h — idp#1463 regenerates both (one added layer, additive only), so it rebases behind theirs
+📎 FACTS: kyverno render over platform/flux-webhook returned 0; catalog-platform regenerated to 60 layers
+📍 State: https://github.com/chidionyema/idp/pull/1463
 
