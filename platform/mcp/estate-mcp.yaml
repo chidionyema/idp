@@ -74,6 +74,11 @@ spec:
             - { name: ESTATE_STATE_MD_PATH, value: /data/STATE.md }
             - { name: ESTATE_STATE_JSON_PATH, value: /data/estate-state.json }   # crew#648, written by refresh-estate-state
             - { name: ESTATE_INVENTORY_BYTE_CEILING, value: "8000" }
+            # crew#841: the same memory both Ottos write to, behind the one MCP voice, so a
+            # crew session, an agent class or k8sgpt recalls what a chat taught the estate.
+            # The self-hosted store takes no credential, so there is nothing here but a URL.
+            - { name: ESTATE_MEMORY_URL, value: "http://hindsight-api.hindsight.svc:8888" }
+            - { name: ESTATE_MEMORY_BANK, value: hermes }   # one bank, or context stops crossing surfaces
           volumeMounts:
             - { name: data, mountPath: /data, readOnly: true }
             - { name: tmp, mountPath: /tmp }   # crew#458: python tempfile needs one under readOnlyRootFilesystem
