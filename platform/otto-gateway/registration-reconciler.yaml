@@ -1,17 +1,28 @@
 # Registration reconciler (build order step 6, docs/specs/otto-platform-v1/EVENT-GATEWAY-TENANCY.md
 # receipt layer 3, "vendor registration"): every 5 minutes a Job-owned pod asks Telegram's own
-# API -- getWebhookInfo -- whether the webhook this estate registered is still the one Telegram
-# holds, and how many updates are queued behind it. That is the vendor's own truth, not a guess
-# from our side of the wire (crew#516 comment 5451926212: "so we solve the problem once" applies
-# here too -- the same otto-staging-telegram vault entry telegram-secret.yaml already mounts is
-# read again here, never a second vault entry, never a literal token in this file or in a log
-# line).
+# API -- getWebhookInfo -- where the webhook this estate registered actually points, and how many
+# updates are queued behind it. That is the vendor's own truth, not a guess from our side of the
+# wire.
+#
+# It reconciles now, rather than only reporting. Reading getWebhookInfo and printing FAIL when the
+# answer is wrong is an instrument nobody can act on without a human holding a bot token -- and
+# this estate does not ask anyone, founder or customer, to carry a credential by hand. The pod
+# already has the token mounted, so when Telegram's registered URL is not the door this estate
+# serves, the pod calls setWebhook itself and the next poll confirms it. The credential never
+# leaves the pod, never reaches a log line and never reaches a person.
+#
+# It lives beside the door it registers. It used to sit in platform/otto-golden/, pointing
+# Telegram at that namespace's own /telegram-webhook route -- which is the second door this
+# estate has now closed (crew#516 comment 5451926212: "so we solve the problem once" applies
+# here too -- the same otto-staging-telegram vault entry the door itself reads is read again
+# here, through the one otto-gateway-channels ExternalSecret, never a second vault entry and
+# never a literal token in this file or in a log line).
 #
 # The metric names and shape are locked by the spec: channel_registration_ok (0/1) and
 # channel_pending_updates (a count), each carrying tenant_id and channel attributes so a second
 # tenant or a second channel plugin adds a row, never a second file. Pushed as OTLP metrics to
 # the SAME collector every other workload in this estate already sends to (LAW 50, LAW 43 -- no
-# second metrics sink): platform/otto-golden/deployment.yaml's OTEL_EXPORTER_OTLP_ENDPOINT, over
+# second metrics sink): platform/otto-gateway/deployment.yaml's OTEL_EXPORTER_OTLP_ENDPOINT, over
 # HTTP with the JSON encoding the collector's otlphttp receiver already accepts (no SDK, no pip
 # install, no extra image -- python's standard library is enough for one POST, the same
 # stdlib-only shape as platform/observability/telemetry-coverage.yaml's collect.py).
@@ -25,7 +36,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: otto-registration-reconciler-script
-  namespace: otto-golden
+  namespace: otto-gateway
 data:
   # Line 1 is the graded receipt line (ok/FAIL/BLIND, never printed with the token); the process
   # exit code mirrors it so `kubectl get jobs` (or a Job-watching drill) can tell an outage from
@@ -43,7 +54,16 @@ data:
     CHANNEL = os.environ.get("OTTO_CHANNEL", "telegram")
     TOKEN_FILE = os.environ.get(
         "OTTO_TELEGRAM_TOKEN_FILE",
-        "/run/secrets/otto-staging-telegram/OTTO_TELEGRAM_BOT_TOKEN",
+        "/run/secrets/otto-gateway-channels/OTTO_TELEGRAM_BOT_TOKEN",
+    )
+    # The one door, as a full URL. Set by the CronJob below from ESTATE_ZONE, never a literal
+    # hostname in this script (LAW 46). An empty value means "observe only" -- the old
+    # behaviour, kept so this script is still runnable somewhere that has no opinion about
+    # where the webhook should point.
+    WANTED_URL = os.environ.get("OTTO_WEBHOOK_URL", "").strip()
+    SECRET_TOKEN_FILE = os.environ.get(
+        "OTTO_TELEGRAM_SECRET_TOKEN_FILE",
+        "/run/secrets/otto-gateway-channels/OTTO_TELEGRAM_WEBHOOK_SECRET",
     )
     OTLP_ENDPOINT = os.environ.get(
         "OTEL_EXPORTER_OTLP_ENDPOINT", "http://signoz-otel-collector.observability.svc:4318"
@@ -59,6 +79,31 @@ data:
         ctx = ssl.create_default_context()
         with urllib.request.urlopen(req, context=ctx, timeout=TIMEOUT_S) as r:
             return json.load(r)
+
+    def set_webhook(token, url, secret_token):
+        """Point Telegram at the door. The token rides the URL path exactly as the Bot API
+        requires and the shared secret rides the body; neither is logged, and neither appears
+        in an exception message this script prints."""
+        body = json.dumps(
+            {
+                "url": url,
+                "secret_token": secret_token,
+                # Telegram drops anything queued against the old URL rather than replaying
+                # it at the new door: a backlog of updates aimed at a route that no longer
+                # exists is not work, and replaying it would answer messages twice.
+                "drop_pending_updates": True,
+            }
+        ).encode()
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{token}/setWebhook",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, context=ctx, timeout=TIMEOUT_S) as r:
+            return json.load(r)
+
 
     def _gauge(name, value, at_nano):
         return {
@@ -77,7 +122,7 @@ data:
             },
         }
 
-    def push_metrics(registration_ok, pending_updates, at_nano):
+    def push_metrics(registration_ok, pending_updates, repaired, at_nano):
         body = {
             "resourceMetrics": [
                 {
@@ -95,6 +140,10 @@ data:
                             "metrics": [
                                 _gauge("channel_registration_ok", registration_ok, at_nano),
                                 _gauge("channel_pending_updates", pending_updates, at_nano),
+                                # How many times this poll had to move the registration back.
+                                # Zero on a healthy estate; a rising line means something
+                                # outside this repository keeps re-pointing the webhook.
+                                _gauge("channel_registration_repaired", repaired, at_nano),
                             ],
                         }
                     ],
@@ -114,19 +163,35 @@ data:
     def main():
         at_nano = time.time_ns()
         registration_ok = 0
+        repaired = 0
         pending_updates = -1  # -1: could not be determined this run, never confused with a real 0
         try:
             with open(TOKEN_FILE) as f:
                 token = f.read().strip()
             info = get_webhook_info(token)
             result = info.get("result", {}) if info.get("ok") else {}
-            registered = bool(result.get("url"))
-            registration_ok = 1 if info.get("ok") and registered else 0
+            registered = result.get("url") or ""
+            if WANTED_URL and registered != WANTED_URL:
+                # The registration is wrong, and this pod is the thing that can fix it.
+                # Reporting and waiting for a person would mean a human holding a bot token.
+                with open(SECRET_TOKEN_FILE) as f:
+                    secret_token = f.read().strip()
+                set_webhook(token, WANTED_URL, secret_token)
+                repaired = 1
+                info = get_webhook_info(token)
+                result = info.get("result", {}) if info.get("ok") else {}
+                registered = result.get("url") or ""
+            # Correct means pointing at the door this estate serves, not merely pointing
+            # somewhere: a webhook still registered against a route that was deleted reads
+            # as "registered" and answers nobody.
+            correct = bool(registered) and (not WANTED_URL or registered == WANTED_URL)
+            registration_ok = 1 if info.get("ok") and correct else 0
             pending_updates = result.get("pending_update_count", -1)
             verdict = "ok" if registration_ok else "FAIL"
             print(
                 f"{verdict} registration-reconciler tenant={TENANT} channel={CHANNEL} "
-                f"registration_ok={registration_ok} pending_updates={pending_updates}"
+                f"registration_ok={registration_ok} pending_updates={pending_updates} "
+                f"repaired={repaired}"
             )
         except OSError as e:
             print(
@@ -136,10 +201,10 @@ data:
         except (urllib.error.URLError, TimeoutError, ValueError) as e:
             print(
                 f"FAIL registration-reconciler tenant={TENANT} channel={CHANNEL} "
-                f"getWebhookInfo unreachable: {type(e).__name__}"
+                f"telegram unreachable: {type(e).__name__}"
             )
         try:
-            push_metrics(registration_ok, pending_updates, at_nano)
+            push_metrics(registration_ok, pending_updates, repaired, at_nano)
         except Exception as e:  # a collector that will not take the metric is BLIND, never a pass
             print(
                 f"BLIND registration-reconciler tenant={TENANT} channel={CHANNEL} "
@@ -156,7 +221,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: otto-registration-reconciler
-  namespace: otto-golden
+  namespace: otto-gateway
 spec:
   schedule: "*/5 * * * *"
   concurrencyPolicy: Forbid
@@ -188,16 +253,21 @@ spec:
                   value: "estate"
                 - name: OTTO_CHANNEL
                   value: "telegram"
+                # The one door. Flux substitutes ESTATE_ZONE here the same way it does in
+                # the HTTPRoute next to this file, so the hostname is named once in the
+                # estate config and never typed as a literal (LAW 46).
+                - name: OTTO_WEBHOOK_URL
+                  value: "https://otto.${ESTATE_ZONE}/webhook/telegram"
                 # LAW 50: every workload emits to the central collector; same endpoint as
-                # platform/otto-golden/deployment.yaml.
+                # platform/otto-gateway/deployment.yaml.
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
                   value: "http://signoz-otel-collector.observability.svc:4318"
               volumeMounts:
                 - name: scripts
                   mountPath: /scripts
                   readOnly: true
-                - name: telegram-token
-                  mountPath: /run/secrets/otto-staging-telegram
+                - name: channels
+                  mountPath: /run/secrets/otto-gateway-channels
                   readOnly: true
                 - name: tmp
                   mountPath: /tmp
@@ -223,9 +293,10 @@ spec:
               configMap:
                 name: otto-registration-reconciler-script
                 defaultMode: 0o555
-            - name: telegram-token
-              # The SAME Secret telegram-secret.yaml's ExternalSecret already renders from vault
-              # entry otto-staging-telegram -- never a second vault entry, never a literal token.
-              secret: { secretName: otto-staging-telegram }
+            - name: channels
+              # The SAME Secret the door itself mounts, rendered by
+              # platform/otto-gateway/external-secret.yaml from vault entry
+              # otto-staging-telegram -- never a second vault entry, never a literal token.
+              secret: { secretName: otto-gateway-channels }
             - name: tmp
               emptyDir: {}

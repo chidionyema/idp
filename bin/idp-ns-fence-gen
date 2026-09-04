@@ -91,6 +91,27 @@ def ns_selector(ns: str) -> dict:
     return {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": ns}}}
 
 
+# Everything that is not the internet. A namespace that declares egress_internet is asking to
+# reach a vendor's API, so the hole it gets is the public address space with every private range
+# cut out of it -- reaching MiniMax or api.telegram.org stays allowed, reaching the pod next door
+# over its address rather than its namespace label does not.
+NOT_THE_INTERNET = [
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",  # RFC 1918
+    "169.254.0.0/16",  # link-local, which is where a cloud's instance-metadata service lives
+    "100.64.0.0/10",  # RFC 6598, the carrier-grade range OKE hands to pods and services
+]
+
+
+def internet_egress_doc(ns: str, ports: list) -> dict:
+    return {
+        "apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+        "metadata": {"name": "allow-internet-egress", "namespace": ns},
+        "spec": {"podSelector": {}, "policyTypes": ["Egress"], "egress": [{
+            "to": [{"ipBlock": {"cidr": "0.0.0.0/0", "except": list(NOT_THE_INTERNET)}}],
+            "ports": [{"protocol": "TCP", "port": int(p)} for p in sorted(set(ports))]}]},
+    }
+
+
 def policy_docs(ns: str, flows: dict) -> list[dict]:
     """The floor, then the holes: DNS, the collector, and whatever the input declares."""
     docs = [{
@@ -118,6 +139,9 @@ def policy_docs(ns: str, flows: dict) -> list[dict]:
             "spec": {"podSelector": {}, "policyTypes": ["Egress"],
                      "egress": [{"to": [ns_selector(t) for t in egress]}]},
         })
+    internet = flows.get("egress_internet") or []
+    if internet:
+        docs.append(internet_egress_doc(ns, internet))
     ingress = sorted(set(flows.get("ingress_from") or []))
     if ingress:
         docs.append({

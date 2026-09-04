@@ -1,15 +1,17 @@
-# Otto staging's public door. The shared Gateway (prospector-edge, defined in the prospector-main
-# repo, out of scope here) already carries a listener named https-otto for hostname
-# otto.${ESTATE_ZONE} -- platform/hermes-agent/httproute.yaml owns the path /telegram on it today
-# for the production gateway. This route attaches to the SAME listener and hostname (no new
-# listener needed, nothing to change in prospector-main) and claims only the two paths the fixed
-# deploy contract names: POST /telegram-webhook and GET /healthz. Gateway API merges rules from
-# multiple HTTPRoutes bound to one listener/hostname pair; the paths here do not collide with
-# hermes-agent's /telegram, so both routes coexist unchanged.
+# Otto staging's public door -- health only, since crew#768. The shared Gateway
+# (prospector-edge, defined in the prospector-main repo, out of scope here) already carries a
+# listener named https-otto for hostname otto.${ESTATE_ZONE}; platform/otto-gateway/httproute.yaml
+# owns /webhook/telegram on it, and that is now the estate's one door for an inbound channel.
+#
+# This route used to claim POST /telegram-webhook as well, which made two processes able to
+# receive the same channel: two address books, two places the channel word lived, and two
+# answers possible for one message. The Universal Event Gateway is the one ingress
+# (docs/specs/otto-platform-v1/EVENT-GATEWAY-TENANCY.md), so the second door is gone and this
+# namespace keeps only the liveness path its availability probe reads.
 #
 # Nothing else on this host is exposed -- no catch-all path, so a request to any other path on
 # otto.${ESTATE_ZONE} falls through to whichever other route (or Traefik's own default) already
-# owns it; this route adds no new surface beyond the two paths the contract names.
+# owns it.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -20,12 +22,9 @@ metadata:
     # HTTPRoute that names no catalogue entity. Same entity the Service next door names.
     backstage.io/kubernetes-id: otto-golden
   annotations:
-    # The webhook door is authenticated at the gateway, not in the pod (founder edict
-    # 2026-09-02: auth is infrastructure physics; the app stays ignorant of it). The rule
-    # below forwards a POST only when X-Telegram-Bot-Api-Secret-Token exactly matches the
-    # vault-fed value; a missing or wrong header never reaches the pod (GHSA-3vpc-7q5r-276h).
-    # tests/test_front_door_every_route_is_behind_the_one_login.py holds this proof.
-    idp.estate/auth: telegram-webhook-secret-token
+    # The only path here is an unauthenticated liveness check, which is what the estate's
+    # front-door control expects to see declared rather than assumed.
+    idp.estate/auth: public-health-only
 spec:
   parentRefs:
     - name: prospector-edge
@@ -34,33 +33,6 @@ spec:
   hostnames:
     - "otto.${ESTATE_ZONE}"
   rules:
-    - matches:
-        - path:
-            type: Exact
-            value: /telegram-webhook
-          method: POST
-          # Exact header match at the edge: Telegram echoes the secret_token registered at
-          # setWebhook in this header on every delivery. The value is substituted by Flux from
-          # the otto-webhook Secret (platform/otto-golden-secret/, vault entry
-          # otto-staging-telegram property webhook_secret) -- no literal in git (LAW 46).
-          headers:
-            - type: Exact
-              name: X-Telegram-Bot-Api-Secret-Token
-              value: "${OTTO_WEBHOOK_SECRET}"
-      filters:
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: friendly-errors
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: edge-headers
-      backendRefs:
-        - name: otto-golden
-          port: 8080
     - matches:
         - path:
             type: Exact

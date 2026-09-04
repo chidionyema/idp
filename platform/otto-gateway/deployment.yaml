@@ -97,13 +97,18 @@ spec:
           # The channel credential is read from its mounted file and exported here, never
           # delivered as pod environment: Kyverno's secrets-not-from-env-vars policy refuses
           # env.valueFrom.secretKeyRef on a pod. The variable name is not a choice made here
-          # -- otto/ingress/secrets.py maps the binding row's reference
-          # `vault://otto-staging-telegram/webhook_secret` onto exactly this name.
+          # -- otto/ingress/secrets.py maps the binding row's references
+          # `vault://otto-staging-telegram/webhook_secret` and
+          # `vault://otto-staging-telegram/token` onto exactly these two names. The first
+          # is how a message is recognised on the way in; the second is how the answer is
+          # sent on the way back out.
           args:
             - |
               set -eu
               OTTO_CHANNEL_SECRET_VAULT_OTTO_STAGING_TELEGRAM_WEBHOOK_SECRET=$(cat /run/secrets/otto-gateway-channels/OTTO_TELEGRAM_WEBHOOK_SECRET)
               export OTTO_CHANNEL_SECRET_VAULT_OTTO_STAGING_TELEGRAM_WEBHOOK_SECRET
+              OTTO_CHANNEL_SECRET_VAULT_OTTO_STAGING_TELEGRAM_TOKEN=$(cat /run/secrets/otto-gateway-channels/OTTO_TELEGRAM_BOT_TOKEN)
+              export OTTO_CHANNEL_SECRET_VAULT_OTTO_STAGING_TELEGRAM_TOKEN
               exec python -m otto.ingress
           env:
             - { name: OTTO_INGRESS_PORT, value: "8080" }

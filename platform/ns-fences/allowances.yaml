@@ -100,6 +100,9 @@ flows:
     egress: [observability]
   llm:
     egress: [observability]
+    # The router's whole job is calling a model vendor's API; declared here so the fence
+    # still says yes on the day this cluster runs a CNI that enforces it.
+    egress_internet: [443]
     ingress_from: [edge, healing, infra-crew, mcp]
   mcp:
     egress: [observability]
@@ -117,6 +120,10 @@ flows:
     ingress_from: [edge]
   otto-gateway:
     egress: [observability, event-bus, estate-db]
+    # The answering lane calls api.telegram.org to deliver a reply, and the registration
+    # reconciler calls the same host to keep the webhook pointed at this namespace's door.
+    # Without this the fence is a silent gag on every answer Otto sends.
+    egress_internet: [443]
     ingress_from: [edge]
   identity:
     ingress_from: [edge, backstage, guacamole, healthchecks, observability]

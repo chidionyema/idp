@@ -32,21 +32,46 @@ data:
         token_fingerprint TEXT        NOT NULL,
         status            TEXT        NOT NULL DEFAULT 'active',
         created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+        outbound_secret_ref  TEXT,
+        principal_allowlist  JSONB      NOT NULL DEFAULT '{}'::jsonb,
         PRIMARY KEY (channel, external_id)
     );
+
+    -- For a table that already exists from an earlier release. Both are additive and
+    -- both are safe to run on every replica of every rollout; otto/ingress/store.py
+    -- carries the same two statements for the same reason.
+    ALTER TABLE channel_binding
+        ADD COLUMN IF NOT EXISTS outbound_secret_ref TEXT;
+    ALTER TABLE channel_binding
+        ADD COLUMN IF NOT EXISTS principal_allowlist JSONB NOT NULL DEFAULT '{}'::jsonb;
 
     CREATE UNIQUE INDEX IF NOT EXISTS channel_binding_lookup
         ON channel_binding (channel, token_fingerprint);
 
+    -- outbound_secret_ref is what makes this row answerable rather than merely
+    -- readable: without it the worker terminates every task with "no outbound binding"
+    -- and a message reaches the bus that nobody can reply to. It names the bot token in
+    -- the same vault entry the inbound word comes from -- one credential, two fields.
+    --
+    -- principal_allowlist is who this channel recognises. The operator's own chat is the
+    -- one named principal today; every other sender normalises to `principal:unknown`
+    -- and carries the untrusted taint, which caps the envelope's authority at T1. The
+    -- identifier is read from the vault at run time, exactly like external_id, so it
+    -- appears in neither this file nor the table's definition.
     INSERT INTO channel_binding
-        (tenant_id, channel, external_id, secret_ref, token_fingerprint, status)
+        (tenant_id, channel, external_id, secret_ref, token_fingerprint, status,
+         outbound_secret_ref, principal_allowlist)
     VALUES
         ('estate', 'telegram', :'chat_id',
-         'vault://otto-staging-telegram/webhook_secret', :'fingerprint', 'active')
+         'vault://otto-staging-telegram/webhook_secret', :'fingerprint', 'active',
+         'vault://otto-staging-telegram/token',
+         jsonb_build_object(:'chat_id', 'founder'))
     ON CONFLICT (channel, external_id) DO UPDATE SET
         tenant_id = excluded.tenant_id,
         secret_ref = excluded.secret_ref,
         token_fingerprint = excluded.token_fingerprint,
-        status = excluded.status;
+        status = excluded.status,
+        outbound_secret_ref = excluded.outbound_secret_ref,
+        principal_allowlist = excluded.principal_allowlist;
 
     SELECT pg_advisory_unlock(776003);

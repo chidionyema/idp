@@ -257,6 +257,23 @@ def _oauth2_proxy_in_front(state: dict) -> None:
                     f"{p}: the basicAuth Secret is pulled by no ExternalSecret in the file"
                 )
             continue
+        if auth == "public-health-only":
+            # A route that carries nothing but a liveness check (crew#768: otto-golden after
+            # its webhook moved to the one door). There is no login in front of it because
+            # there is nothing behind it to protect -- but that claim is only true while the
+            # route stays exactly one unauthenticated GET /healthz, so the annotation is not
+            # taken on trust: every match on the route is checked, and one extra path turns
+            # this from an exemption into a failure.
+            matches = [m for r in d["spec"]["rules"] for m in r.get("matches", [])]
+            assert matches and all(
+                m.get("path") == {"type": "Exact", "value": "/healthz"}
+                and m.get("method") == "GET"
+                for m in matches
+            ), (
+                f"{p}: route {d['metadata']['name']} claims public-health-only "
+                f"but exposes {matches}"
+            )
+            continue
         if auth == "telegram-webhook-secret-token":
             # Otto's Telegram door (crew#736): Telegram's delivery fleet cannot pass a browser
             # login. The adapter registers a secret token with setWebhook and drops any POST that

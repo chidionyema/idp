@@ -85,8 +85,8 @@ Regenerate with `bin/estate-clocks`; the test tests/test_clocks_table_matches_so
 | `science-facts` | cluster · observability | 7 * * * * | `platform/science/science-facts.yaml` | The science collector, `science-collect`, on the Mac reads 41 stores, 31 of them |
 | `signoz-retention` | cluster · observability | 17 3 * * * | `platform/observability/signoz-retention.yaml` | The feature registry (platform/features/features.yaml, logs-metrics-store/enterprise) |
 | `telemetry-coverage` | cluster · observability | */15 * * * * | `platform/observability/telemetry-coverage.yaml` | Founder, 2026-08-27: "every workload emits telemetry to SigNoz, and the |
-| `otto-registration-reconciler` | cluster · otto-golden | */5 * * * * | `platform/otto-golden/registration-reconciler.yaml` | Registration reconciler (build order step 6, docs/specs/otto-platform-v1/EVENT-GATEWAY-TENANCY.md |
+| `otto-registration-reconciler` | cluster · otto-gateway | */5 * * * * | `platform/otto-gateway/registration-reconciler.yaml` | Registration reconciler (build order step 6, docs/specs/otto-platform-v1/EVENT-GATEWAY-TENANCY.md |
 | `store-db-backup` | cluster · prospector | 17 3 * * * | `platform/prospector/store-db-backup.yaml` | A daily copy of the shop's database, off the volume, made by the cluster. |
-| `research-engine` | cluster · research | 23 * * * * | `platform/research-engine/cronjob.yaml` | The questions the engine works through, one per line, in git. This is the whole intake for |
+| `research-engine` | cluster · research | 23 * * * * | `platform/research-engine/cronjob.yaml` | The estate's intake for the research engine: one `lane: subject` per line, in git. |
 | `kini-state` | cluster · temporal | */15 * * * * | `platform/temporal/kini-state.yaml` | The receipt. Every 15 minutes the init container asks the engine where the |
 
