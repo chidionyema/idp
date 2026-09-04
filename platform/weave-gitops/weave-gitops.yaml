@@ -1,0 +1,95 @@
+# The vendor's chart, pinned. weave-gitops 4.0.36 (appVersion v0.38.0), read from the registry on
+# 2026-09-04: the chart config blob at ghcr.io/weaveworks/charts/weave-gitops:4.0.36 says
+# {"name":"weave-gitops","version":"4.0.36","appVersion":"v0.38.0"}.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: weave-gitops
+  namespace: weave-gitops
+spec:
+  type: oci
+  interval: 24h
+  url: oci://ghcr.io/weaveworks/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: weave-gitops
+  namespace: weave-gitops
+spec:
+  interval: 10m
+  timeout: 10m
+  chart:
+    spec:
+      chart: weave-gitops
+      version: 4.0.36
+      sourceRef:
+        kind: HelmRepository
+        name: weave-gitops
+  install:
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3 }
+  # The chart's Service is rendered by the helm-controller, so a kustomize label in this directory
+  # would never reach it, and platform/edge/require-catalogue-entity.yaml refuses a Service that
+  # names no catalogue entity. A post-renderer is Flux's own answer to that.
+  postRenderers:
+    - kustomize:
+        patches:
+          # crew#307: a required hostname podAntiAffinity plus an unset rolling update is the
+          # deadlock require-availability refuses -- apps/v1 defaults maxUnavailable to 25%, which
+          # rounds down to 0 at two replicas, so the surge pod waits for a node that never comes.
+          # The chart has no strategy values key, so the shape is set here.
+          - target: { kind: Deployment, name: weave-gitops }
+            patch: |
+              - op: add
+                path: /spec/strategy
+                value:
+                  type: RollingUpdate
+                  rollingUpdate:
+                    maxUnavailable: 1
+                    maxSurge: 0
+          - target: { kind: Service, name: weave-gitops }
+            patch: |
+              - op: add
+                path: /metadata/labels/backstage.io~1kubernetes-id
+                value: founder-deploy-button
+  values:
+    fullnameOverride: weave-gitops
+    # Two replicas kept off one node: the deploy button is a routed founder surface, and
+    # bin/idp-ci grades every routed surface on surviving the loss of a node. The page holds
+    # no state -- it reads Flux objects -- so a second replica is a plain availability win.
+    replicaCount: 2
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: weave-gitops
+            topologyKey: kubernetes.io/hostname
+    image:
+      repository: ghcr.io/weaveworks/wego-app
+      tag: v0.38.0
+    additionalArgs:
+      # The UI shares catalogue.${ESTATE_ZONE} with the portal, so it is served under /deploy
+      # rather than at the root (vendor guide: website/docs/guides/run-ui-subpath.mdx). The
+      # HTTPRoute does NOT strip the prefix, because the server is told to expect it.
+      - --route-prefix=/deploy
+      # No login screen and no password anywhere: the founder is already signed in at the edge,
+      # and every call the dashboard makes runs as the Kubernetes user "founder" (rbac.yaml).
+      - --insecure-no-authentication-user=founder
+    adminUser:
+      create: false          # never a second password (decision 0003, decision 0007)
+    rbac:
+      create: true
+      impersonationResources: ["users"]
+      impersonationResourceNames: ["founder"]   # it may become that one user and nobody else
+      viewSecretsEnabled: false                  # a deploy button reads no credential (LAW 21)
+    envVars:
+      - name: WEAVE_GITOPS_FEATURE_TENANCY
+        value: "false"
+      - name: WEAVE_GITOPS_FEATURE_CLUSTER
+        value: "false"
+    resources:
+      requests: { cpu: 25m, memory: 64Mi }
+      limits: { cpu: "1", memory: 512Mi }

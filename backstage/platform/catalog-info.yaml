@@ -1595,3 +1595,43 @@ spec:
     - component:default/layer-backstage-namespace
     - component:default/layer-external-secrets
     - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-weave-gitops
+  title: 'Deploy button'
+  description: 'Flux''s own dashboard: every layer, the revision it is running, and a button that applies main now.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=weave-gitops'
+    estate/flux-kustomization: 'weave-gitops'
+    estate/path: './platform/weave-gitops'
+    estate/cluster: 'oke'
+  tags: [platform, edge]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: edge
+  providesApis:
+    - api:default/weave-gitops-api
+  dependsOn:
+    - component:default/layer-identity
+    - component:default/layer-edge
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: weave-gitops-api
+  description: 'Deploy button: the HTTP interface, answering at catalogue.${ESTATE_ZONE}.'
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/edge
+  definition: |
+    # Not published. weave-gitops answers at catalogue.${ESTATE_ZONE}; this entity
+    # exists so the catalogue records that the interface is reachable and who owns it.

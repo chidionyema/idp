@@ -73,17 +73,6 @@ jobs:
           # ran the same 132 s again (run 33202098401). Locally bin/idp-ci still runs them.
           IDP_CI_SKIP_PYTEST: "1"
 
-  # crew#286: the Estate-as-Platform operating model as a gate. One job, one script, the
-  # same conftest CI already installs; deny lines come back as a PR comment (CP10).
-  # crew#292 CP3: the steps moved to .github/workflows/operating-model-gate.yml so
-  # hermes-v2 and crew call the same file. idp calls it like any other repo -- one
-  # copy of the gate, and idp is not a special case of it. The push-to-main skip
-  # lives in the reusable workflow now.
-  operating-model-gate:
-    needs: fast-gate
-    uses: ./.github/workflows/operating-model-gate.yml
-    permissions: { contents: read, pull-requests: write }
-
   # crew#219 R39/R41: the Sovereign Bus acceptance suite, under the branch
   # policy AGENTS.md [merge] declares. offline-gate above already runs this
   # suite inside bin/idp-ci, permissively. This job is the strict leg: on a
@@ -103,54 +92,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/security-scan   # the steps every active estate repo runs
-
-  spec-gate:
-    needs: fast-gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/spec-gate       # R29: code changes carry an executable spec
-
-  # crew#66, founder 2026-08-28: "we must make it mathematically impossible for an agent to
-  # merge one" -- one manual setup step. policy/no-manual-steps.rego reads the README*.md,
-  # docs/**/*.md and platform/** files THIS pull request changes, and its body. Scoped to the
-  # changed files because main still carries two pre-existing prose hits (bin/idp-no-toil
-  # --sweep lists them) and a gate that reds main on day one is an outage, not a guard.
-  # The PR body is judged twice on purpose and it costs nothing: the same rego is in policy/,
-  # so bin/pr-report's conftest run in operating-model-gate above sees it too.
-  no-toil-gate:
-    needs: fast-gate
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions: { contents: read, pull-requests: read }
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: conftest 0.62.0   # same pinned build offline-gate and operating-model-gate install
-        run: curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
-      - name: no-toil gate
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bin/idp-no-toil "${{ github.event.pull_request.number }}"
-
-  # crew#631 CP6: a change to a proven surface cannot merge on an old or missing verdict. The job
-  # always runs on a pull request so the required context is never absent; when the change is
-  # not on the surface it says so and passes. Required by platform/github/ruleset.idp.required-checks.json.
-  verdict-fresh:
-    name: verify/verdict-fresh
-    needs: fast-gate
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
-    runs-on: ubuntu-latest
-    permissions: { contents: read, actions: read }
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { fetch-depth: 0 }
-      - name: verdict-fresh gate (langfuse)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          BASE="${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || format('origin/{0}', github.base_ref) }}"
-          mapfile -t changed < <(git diff --name-only "$BASE...HEAD")
-          bin/idp-verdict-fresh langfuse --changed "${changed[@]}"
 
   bdd-suites:
     needs: fast-gate

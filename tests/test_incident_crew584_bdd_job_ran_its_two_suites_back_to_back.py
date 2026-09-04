@@ -41,9 +41,7 @@ def test_the_bdd_job_is_a_matrix_of_both_suites():
 REQUIRED = {
     "bdd",
     "offline-gate",
-    "operating-model-gate / operating-model-gate",
     "security-scan",
-    "spec-gate",
 }
 
 

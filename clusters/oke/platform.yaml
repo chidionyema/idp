@@ -1093,3 +1093,34 @@ spec:
       kind: Deployment
       name: apprise
       namespace: notify
+---
+# The deploy button (founder, 2026-09-04: "install weaveops ... so i can do the deploynents
+# nyself"). Flux's own dashboard, behind the estate's one login at catalogue.${ESTATE_ZONE}/deploy.
+# It depends on identity because the door in front of it is oauth2-proxy, and on edge because the
+# route attaches to the shared gateway.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: weave-gitops
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/weave-gitops
+  prune: true
+  dependsOn:
+    - name: identity
+    - name: edge
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: weave-gitops
+      namespace: weave-gitops
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
