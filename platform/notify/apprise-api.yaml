@@ -81,8 +81,13 @@ spec:
             periodSeconds: 30
             failureThreshold: 3
           resources:
-            requests: { cpu: 50m, memory: 128Mi }
-            limits: { memory: 256Mi }
+            # 128Mi/256Mi OOMKilled every replica within seconds of start (measured 2026-09-04:
+            # apprise-6f9bccdcf9-kgwg4, apprise-7bfc7c6756-2tkhf both OOMKilled, three ReplicaSets
+            # from repeated redeploys chasing it). supervisord + nginx + gunicorn plus apprise's
+            # eager plugin import need more headroom; request keeps the original 2:1 request:limit
+            # ratio at the new ceiling.
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { memory: 512Mi }
           volumeMounts:
             - { name: channels, mountPath: /run/secrets/notify, readOnly: true }
             - { name: tmp, mountPath: /tmp }
