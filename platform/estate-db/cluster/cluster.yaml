@@ -134,3 +134,19 @@ spec:
         login: true
         passwordSecret:
           name: estate-db-role-research
+      # research_reader: the read side of the research database, for a consumer of the
+      # research engine rather than the engine itself. It logs in, and everything it may do
+      # comes from research_consumer -- a NOLOGIN role the engine's own DDL creates and grants
+      # SELECT to (research-engine db/ddl.sql). So a consumer cannot write the evidence it
+      # reads, and the engine still names no consumer.
+      #
+      # Ordering: the cluster cannot add the membership until research_consumer exists, and
+      # the engine creates it on its next hourly run. Until then this role reconciles with an
+      # error on that one line and nothing else is affected; it heals itself within the hour.
+      - name: research_reader
+        ensure: present
+        login: true
+        inRoles:
+          - research_consumer
+        passwordSecret:
+          name: estate-db-role-research-reader
