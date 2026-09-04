@@ -91,6 +91,9 @@ spec:
       namespace: temporal
     - kind: HelmRelease
       name: "*"
+      namespace: tigera-operator
+    - kind: HelmRelease
+      name: "*"
       namespace: weave-gitops
     # --- end generated ---
     - kind: GitRepository
