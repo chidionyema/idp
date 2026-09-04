@@ -185,9 +185,13 @@ def _send(request: dict[str, Any]) -> requests.Response:
         return requests.post(url, headers=headers, timeout=_TIMEOUT_SECONDS)
     if isinstance(body, str):
         try:
-            return requests.post(url, headers=headers, json=json.loads(body), timeout=_TIMEOUT_SECONDS)
+            return requests.post(
+                url, headers=headers, json=json.loads(body), timeout=_TIMEOUT_SECONDS
+            )
         except json.JSONDecodeError:
-            return requests.post(url, headers=headers, data=body, timeout=_TIMEOUT_SECONDS)
+            return requests.post(
+                url, headers=headers, data=body, timeout=_TIMEOUT_SECONDS
+            )
     return requests.post(url, headers=headers, json=body, timeout=_TIMEOUT_SECONDS)
 
 
@@ -209,12 +213,16 @@ def prove(vendor: str, key: str | Mapping[str, str], store: str | None = None) -
     resolved_store = resolve_store(config, store)
     verify = config.get("verify")
     if not verify:
-        raise ValueError(f"Vendor {vendor} has no verify block, so no key can be proved")
+        raise ValueError(
+            f"Vendor {vendor} has no verify block, so no key can be proved"
+        )
 
     fields = _credential(key)
     missing = [name for name in required_fields(config) if not fields.get(name)]
     if missing:
-        raise ValueError(f"{vendor} is proved with {', '.join(required_fields(config))}; missing: {', '.join(missing)}")
+        raise ValueError(
+            f"{vendor} is proved with {', '.join(required_fields(config))}; missing: {', '.join(missing)}"
+        )
 
     refuse_when = verify.get("refuse_when")
     bases: list[str | None] = list(config.get("bases") or [None])
@@ -246,7 +254,9 @@ def prove(vendor: str, key: str | Mapping[str, str], store: str | None = None) -
 
         failure = ProofFailed(vendor, resolved_store, response.status_code, message)
 
-    raise failure or ProofFailed(vendor, resolved_store, 0, "the vendor row lists nowhere to ask")
+    raise failure or ProofFailed(
+        vendor, resolved_store, 0, "the vendor row lists nowhere to ask"
+    )
 
 
 def summary(proof: Proof) -> str:

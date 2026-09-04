@@ -43,7 +43,9 @@ class Transport:
         self.calls = []
 
     def __call__(self, url, headers=None, timeout=None, json=None, data=None):
-        self.calls.append({"url": url, "headers": headers or {}, "json": json, "data": data})
+        self.calls.append(
+            {"url": url, "headers": headers or {}, "json": json, "data": data}
+        )
         answer = self.answers.pop(0) if self.answers else FakeResponse()
         if isinstance(answer, Exception):
             raise answer
@@ -74,7 +76,10 @@ def test_a_vendor_with_several_bases_is_still_authorised_at_each(transport):
     proof = warden.prove("kimi", SENTINEL)
     assert proof.status_code == 200
     assert len(sender.calls) == 2
-    assert all(call["headers"].get("Authorization") == f"Bearer {SENTINEL}" for call in sender.calls)
+    assert all(
+        call["headers"].get("Authorization") == f"Bearer {SENTINEL}"
+        for call in sender.calls
+    )
     assert sender.calls[0]["url"] != sender.calls[1]["url"]
 
 
@@ -89,7 +94,9 @@ def test_a_post_body_from_the_registry_goes_out_as_an_object(transport):
 def test_a_network_failure_never_carries_the_key_out_of_the_module(transport):
     """Gemini's verify URL holds the key, so the exception text holds it too."""
     url = warden.build_request(warden.vendor_config("gemini"), SENTINEL)["url"]
-    assert SENTINEL in url, "this test is only meaningful while the key rides in the URL"
+    assert SENTINEL in url, (
+        "this test is only meaningful while the key rides in the URL"
+    )
     transport(requests.ConnectionError(f"Max retries exceeded with url: {url}"))
 
     with pytest.raises(warden.ProofFailed) as raised:
@@ -126,7 +133,11 @@ def test_only_a_2xx_returns_a_proof(transport):
 def test_a_body_the_row_calls_a_refusal_fails_even_on_a_200(transport):
     """Google answers 200 with an error object for a bad client secret."""
     vendors = warden.load_vendors()
-    named = [(name, row) for name, row in vendors.items() if (row.get("verify") or {}).get("refuse_when")]
+    named = [
+        (name, row)
+        for name, row in vendors.items()
+        if (row.get("verify") or {}).get("refuse_when")
+    ]
     if not named:
         pytest.skip("no vendor row currently declares a refusal pattern")
     name, row = named[0]
@@ -146,8 +157,14 @@ def test_the_summary_the_operator_reads_holds_no_key(transport):
 
 def test_the_store_is_the_operators_choice_then_the_rows_default(transport):
     transport(FakeResponse(200), FakeResponse(200))
-    assert warden.prove("deepseek", SENTINEL).store == warden.vendor_config("deepseek")["store_default"]
-    assert warden.prove("deepseek", SENTINEL, store="azure-key-vault").store == "azure-key-vault"
+    assert (
+        warden.prove("deepseek", SENTINEL).store
+        == warden.vendor_config("deepseek")["store_default"]
+    )
+    assert (
+        warden.prove("deepseek", SENTINEL, store="azure-key-vault").store
+        == "azure-key-vault"
+    )
 
 
 def test_a_paired_credential_puts_both_halves_where_the_row_wants_them(transport):
@@ -182,9 +199,15 @@ def test_every_vendor_row_can_build_a_request_for_its_own_check():
         base = (row.get("bases") or [None])[0]
         credential = credential_for(name)
         request = warden.build_request(row, credential, base)
-        parts = [request["url"], str(request["body"] or "")] + list(request["headers"].values())
+        parts = [request["url"], str(request["body"] or "")] + list(
+            request["headers"].values()
+        )
         assert request["url"].startswith("http"), name
-        assert not re.search(r"{[A-Za-z_]", " ".join(parts)), f"{name} left a placeholder unfilled"
+        assert not re.search(r"{[A-Za-z_]", " ".join(parts)), (
+            f"{name} left a placeholder unfilled"
+        )
         values = credential.values() if isinstance(credential, dict) else [credential]
         for value in values:
-            assert any(value in part for part in parts), f"{name} would ask without its credential"
+            assert any(value in part for part in parts), (
+                f"{name} would ask without its credential"
+            )
