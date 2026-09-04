@@ -1,18 +1,21 @@
-# The questions the engine works through, one per line, in git. This is the whole intake for
-# now: the founder or any session changes a line here and the next hour asks it. A queue, an
-# API and a priority floor are the spec's later checkpoints; a file the estate can edit is what
-# makes the engine run today rather than after them.
+# The estate's intake for the research engine: one `lane: subject` per line, in git.
+# The lane is a profile in the engine's own repository (research-engine profiles/*.yaml)
+# and it holds the questions; a line here only says which lane asks and about what. The
+# founder or any session changes a line and the next hour asks it. A queue, an API and a
+# priority floor are the spec's later checkpoints; a file the estate can edit is what makes
+# the engine run today rather than after them.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: research-questions
   namespace: research
 data:
-  questions: |
-    Which open-source service catalogue projects have shipped a release in the last ninety days, and what did each release change?
-    What do independent write-ups say about running Backstage in production at a company of fewer than ten people?
-    Which model-routing gateways support per-key lane scoping, and what does each one charge?
-    What evidence is there that self-hosted search improves retrieval coverage over hosted search APIs from a datacenter address?
+  subjects: |
+    market-demand: a hosted service catalogue for companies of fewer than ten people
+    market-demand: model-routing gateways sold with per-key lane scoping
+    market-demand: evidence-cited research delivered as a subscription
+    estate-guards: fail-closed admission policy for autonomous agent workloads
+    incident-postmortem: a required status check whose action no longer exists
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -21,9 +24,9 @@ metadata:
   namespace: research
 automountServiceAccountToken: false
 ---
-# The hourly pass. One question per run, chosen by the hour so the list rotates without a
-# scheduler holding state. `run` writes the ledger; the delivery and the row counts go to the
-# pod log, which is where the estate collector reads them.
+# The hourly pass. One lane and one subject per run, chosen by the hour so the intake
+# rotates without a scheduler holding state. `run` writes the ledger; the delivery and the
+# row counts go to the pod log, which is where the estate collector reads them.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -63,7 +66,7 @@ spec:
               # Pinned to the commit that built it, so the image the cluster runs can be read
               # in the repository it came from. Built by the research-engine repository's own
               # image workflow on a GitHub runner, never on the founder's Mac (LAW 31).
-              image: ghcr.io/chidionyema/research-engine:sha-5684f0eb82010ce4eb1f68cf57f0bbd2b53bb9b3
+              image: ghcr.io/chidionyema/research-engine:sha-35bd196255ee17e872fefadc179196fb728760ba
               command: ["/bin/sh", "-c"]
               args:
                 - |
@@ -79,12 +82,18 @@ spec:
                   PG="postgresql://research:$(cat /secrets/db/POSTGRES_PASSWORD)@estate-rw.estate-db.svc.cluster.local:5432"
                   RESEARCH_PG_DSN="${PG}/research"
                   export LITELLM_API_KEY RESEARCH_PG_DSN
-                  # One question per hour, rotating through the list in the ConfigMap.
-                  n=$(grep -c . /questions/questions)
+                  # One line per hour, rotating through the intake without a scheduler
+                  # holding state. Each line is `lane: subject`: the lane names a profile
+                  # in the engine, and the profile holds the questions it asks (SPEC-v1 §8),
+                  # so changing what a lane asks is a change in the engine's repository and
+                  # changing what it asks about is a change here.
+                  n=$(grep -c . /questions/subjects)
                   i=$(( ($(date -u +%H) % n) + 1 ))
-                  subject=$(sed -n "${i}p" /questions/questions)
-                  echo "research-engine asking question ${i} of ${n}"
-                  exec python -m engine.cli run --subject "$subject" --out /state
+                  line=$(sed -n "${i}p" /questions/subjects)
+                  lane=${line%%:*}
+                  subject=${line#*: }
+                  echo "research-engine running lane ${lane} on subject ${i} of ${n}"
+                  exec python -m engine.cli run --profile "$lane" --subject "$subject" --out /state
               env:
                 # Nothing here is a secret and nothing here is a default in the image: the
                 # engine hardcodes no host, no port and no model name (LAW 46).
