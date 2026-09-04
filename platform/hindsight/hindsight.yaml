@@ -48,7 +48,12 @@ spec:
       env:
         # An alias on the estate router (platform/llm/config.yaml), so a lane swap never touches this row.
         HINDSIGHT_API_LLM_PROVIDER: openai
-        HINDSIGHT_API_LLM_MODEL: deepseek  # was groq until that vendor was removed (2026-09-02)
+        # `fast` (gemini-2.5-flash), not deepseek: DeepSeek answers 401 from inside the router pod
+        # (measured 2026-09-04 21:5xZ) and its row has left the config, so extraction had no model.
+        # This is the estate's memory: memory_units written per day fell 268 (08-30), 154 (09-02),
+        # 14 (09-03), 1 (09-04), counted on estate-db. Extraction is many small calls, so the cheap
+        # gemini lane is the right one, and it does not wait on a key the founder rotates himself.
+        HINDSIGHT_API_LLM_MODEL: fast
       persistence:
         modelCache: { enabled: true, size: 5Gi }   # the local embedding model survives a restart
       extraVolumes: [{ name: tmp, emptyDir: {} }]  # the only writable path besides the model cache

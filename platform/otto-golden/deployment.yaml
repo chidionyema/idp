@@ -121,8 +121,11 @@ spec:
             # as webhook.pipeline_error and answered nothing. Measured from inside the pod
             # on 2026-09-04 against image main-68-ce246e2. Bulk is not on the Telegram path
             # (default_lane is judgment), so it is the lane that moves.
+            # gemini, not deepseek, since 2026-09-04: the deepseek lane answers 401 at the vendor
+            # and its row has left the rendered config, so bulk pointed at nothing. `fast` is a
+            # different model family from minimax, which is what the refusal above is about.
             - name: OTTO_ROUTER_LANE_BULK_MODEL
-              value: deepseek
+              value: fast
             # LAW 50: every workload emits to the central collector. Same endpoint and mode as
             # platform/llm/litellm.yaml; otto/obs/config.py reads OTEL_EXPORTER_OTLP_ENDPOINT
             # directly and refuses to start in otlp mode without it.
