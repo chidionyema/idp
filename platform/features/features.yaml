@@ -262,7 +262,10 @@ products:
     default: "on"
 
 shared:
-  # Dependencies the plan consolidates. Today six Postgres and two ClickHouse instances run
-  # because every chart brings its own; one of each is the target, and the plan counts the copies.
-  postgres: { instances_today: 6, target: 1 }
+  # Dependencies the plan consolidates, because every chart brings its own; one of each is the
+  # target. instances_today is a measurement, not an estimate: counted in the cluster on
+  # 2026-09-04 at 11:45Z as pods running a postgres or pgvector image, excluding the two
+  # one-shot jobs that only carry psql (spend-velocity-check, metabase-recovery-dump).
+  # backstage, dagster, guacamole, healthchecks, hindsight, litellm, langfuse, superset, temporal.
+  postgres: { instances_today: 9, target: 1 }
   clickhouse: { instances_today: 2, target: 1 }

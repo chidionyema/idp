@@ -158,6 +158,13 @@ LAYERS = {
         "Event bus",
         "Carries 'this customer paid' to whatever needs to know, so nothing waits on the payment provider to answer. Not switched on yet.",
     ),
+    "research-engine": (
+        "agents",
+        "Research department",
+        "Asks one question an hour, retrieves and snapshots the sources behind it, and keeps "
+        "only the claims a second model from a different vendor could confirm against the page "
+        "they came from. What it refused is kept too, with the reason.",
+    ),
     "searxng": (
         "agents",
         "Search backend",

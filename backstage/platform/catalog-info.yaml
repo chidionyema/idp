@@ -1388,6 +1388,32 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-research-engine
+  title: 'Research department'
+  description: 'Asks one question an hour, retrieves and snapshots the sources behind it, and keeps only the claims a second model from a different vendor could confirm against the page they came from. What it refused is kept too, with the reason.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=research-engine'
+    estate/flux-kustomization: 'research-engine'
+    estate/path: './platform/research-engine'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+  dependsOn:
+    - component:default/layer-secret-store
+    - component:default/layer-llm
+    - component:default/layer-searxng
+    - component:default/layer-hindsight
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-robusta
   title: 'Incident enrichment'
   description: 'Adds the why to every alert before a person reads it.'

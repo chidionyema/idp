@@ -1,0 +1,138 @@
+# The questions the engine works through, one per line, in git. This is the whole intake for
+# now: the founder or any session changes a line here and the next hour asks it. A queue, an
+# API and a priority floor are the spec's later checkpoints; a file the estate can edit is what
+# makes the engine run today rather than after them.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: research-questions
+  namespace: research
+data:
+  questions: |
+    Which open-source service catalogue projects have shipped a release in the last ninety days, and what did each release change?
+    What do independent write-ups say about running Backstage in production at a company of fewer than ten people?
+    Which model-routing gateways support per-key lane scoping, and what does each one charge?
+    What evidence is there that self-hosted search improves retrieval coverage over hosted search APIs from a datacenter address?
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: research-engine
+  namespace: research
+automountServiceAccountToken: false
+---
+# The hourly pass. One question per run, chosen by the hour so the list rotates without a
+# scheduler holding state. `run` writes the ledger; the delivery and the row counts go to the
+# pod log, which is where the estate collector reads them.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: research-engine
+  namespace: research
+  labels: { app.kubernetes.io/name: research-engine, app.kubernetes.io/part-of: idp }
+spec:
+  schedule: "23 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 3600
+      backoffLimit: 1
+      # The worker deadline inside the engine is 300s per question and the router lanes are
+      # given 300s each; 25 minutes is that with room for the crawl, and it is a hard stop so
+      # a run that hangs cannot hold the next hour's slot.
+      activeDeadlineSeconds: 1500
+      template:
+        metadata:
+          labels: { app.kubernetes.io/name: research-engine, app.kubernetes.io/part-of: idp }
+        spec:
+          serviceAccountName: research-engine
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          priorityClassName: platform-batch
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: engine
+              # Pinned to the commit that built it, so the image the cluster runs can be read
+              # in the repository it came from. Built by the research-engine repository's own
+              # image workflow on a GitHub runner, never on the founder's Mac (LAW 31).
+              image: ghcr.io/chidionyema/research-engine:sha-2b8d11dee68a5370bdb24bdba071f79268cf6963
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  # Both credentials arrive as FILES and are exported here. The estate's
+                  # admission policy refuses a workload that takes a secret from an env var,
+                  # and the engine reads its configuration from the environment, so this line
+                  # is the join between the two.
+                  LITELLM_API_KEY="$(cat /secrets/router/LITELLM_API_KEY)"
+                  # The estate's existing Postgres, one database on it, not a server of our
+                  # own. Everything before the database name is identical between these two
+                  # lines: the admin URL points at the maintenance database so the research
+                  # database can be created on a cluster that has never seen it.
+                  PG="postgresql://hindsight:$(cat /secrets/db/POSTGRES_PASSWORD)@hindsight-db.hindsight.svc.cluster.local:5432"
+                  RESEARCH_PG_ADMIN_DSN="${PG}/postgres"
+                  RESEARCH_PG_DSN="${PG}/research"
+                  export LITELLM_API_KEY RESEARCH_PG_DSN RESEARCH_PG_ADMIN_DSN
+                  # CREATE DATABASE cannot run inside a transaction and so cannot live in
+                  # db/ddl.sql, which the engine applies on every start. This is the one
+                  # statement that has to happen first, and it is idempotent, so no person
+                  # ever runs a migration step (LAW 31).
+                  python - <<'PY'
+                  import os, psycopg
+                  with psycopg.connect(os.environ["RESEARCH_PG_ADMIN_DSN"], autocommit=True) as conn:
+                      if conn.execute("select 1 from pg_database where datname = 'research'").fetchone() is None:
+                          conn.execute("create database research")
+                          print("created database research on the estate instance")
+                  PY
+                  # One question per hour, rotating through the list in the ConfigMap.
+                  n=$(grep -c . /questions/questions)
+                  i=$(( ($(date -u +%H) % n) + 1 ))
+                  subject=$(sed -n "${i}p" /questions/questions)
+                  echo "research-engine asking question ${i} of ${n}"
+                  exec python -m engine.cli run --subject "$subject" --out /state
+              env:
+                # Nothing here is a secret and nothing here is a default in the image: the
+                # engine hardcodes no host, no port and no model name (LAW 46).
+                - { name: LITELLM_BASE_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
+                - { name: RESEARCH_SEARXNG_URL, value: "http://searxng.searxng.svc.cluster.local:8080" }
+                # Producer and verifier must be different providers -- the engine refuses to
+                # start otherwise, and the database CHECK refuses the row. These are lane names
+                # on the estate router, never vendor model identifiers (LAW 34).
+                - { name: RESEARCH_PRODUCER_MODEL, value: "minimax" }
+                - { name: RESEARCH_VERIFIER_MODEL, value: "gemini" }
+                - { name: RESEARCH_EMBEDDING_MODEL, value: "embed" }
+                - { name: RESEARCH_RETRIEVER, value: "searx" }
+                - { name: RESEARCH_WORKER_TIMEOUT_S, value: "300" }
+                - { name: HOME, value: "/state" }
+              volumeMounts:
+                - { name: router, mountPath: /secrets/router, readOnly: true }
+                - { name: db, mountPath: /secrets/db, readOnly: true }
+                - { name: questions, mountPath: /questions, readOnly: true }
+                - { name: state, mountPath: /state }
+                - { name: tmp, mountPath: /tmp }
+              resources:
+                requests: { cpu: 200m, memory: 512Mi }
+                limits: { cpu: "1", memory: 1Gi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+          volumes:
+            - name: router
+              secret: { secretName: research-router }
+            - name: db
+              secret: { secretName: research-db }
+            - name: questions
+              configMap: { name: research-questions }
+            - name: state
+              emptyDir: {}
+            - name: tmp
+              emptyDir: {}
