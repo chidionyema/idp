@@ -1,5 +1,5 @@
 # The second declared hole in provider-independence.yaml (R43), and a temporary one. values.yaml
-# and langfuse-values.yaml pin storageClass oci-bv for the langfuse-postgresql, signoz and
+# and langfuse-values.yaml pin storageClass oci-bv for the signoz and
 # signoz-zookeeper StatefulSets; those objects already exist on the cluster, and a StatefulSet's
 # volumeClaimTemplates are immutable, so moving them onto a cluster-named StorageClass is a data
 # migration (crew#66 follow-up), not a values edit. Scoped to exactly those three names: any new
@@ -19,7 +19,7 @@ spec:
       - resources:
           kinds: [StatefulSet]
           namespaces: [observability]
-          names: [langfuse-postgresql, signoz, signoz-zookeeper]
+          names: [signoz, signoz-zookeeper]
 ---
 # The third declared hole (crew#66, R43 sweep 2026-08-28), same class of problem as the one above
 # but a plain PersistentVolumeClaim rather than a StatefulSet's volumeClaimTemplates: the seaweedfs

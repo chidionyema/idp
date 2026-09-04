@@ -161,7 +161,7 @@ spec:
     redis:
       enabled: false     # CACHE_CONFIG defaults suffice for one founder; no broker, no worker
     postgresql:
-      enabled: false     # the estate ships its own Postgres (superset-db.yaml), password from the vault
+      enabled: false     # superset runs on the one estate Postgres (platform/estate-db), password from the vault
     database:
       host: estate-rw.estate-db.svc.cluster.local   # the one estate Postgres (platform/estate-db)
       port: 5432

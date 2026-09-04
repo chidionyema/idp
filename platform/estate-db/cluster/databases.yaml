@@ -1,6 +1,7 @@
 # One database per consumer, named the way that consumer already names it, so nothing in the
 # application changes when its address does. CloudNativePG creates and owns these; a Database
 # resource removed from git leaves the data alone (ensure: present never drops).
+---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:
@@ -100,6 +101,18 @@ spec:
     name: estate
   name: guacamole
   owner: guacamole
+  ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: otto-gateway
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: otto_gateway
+  owner: otto_gateway
   ensure: present
 ---
 apiVersion: postgresql.cnpg.io/v1

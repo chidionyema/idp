@@ -12,7 +12,6 @@ resources:
   - edge-manners.yaml
   - superset.yaml
   - superset-external-secret.yaml
-  - superset-db.yaml
   - superset-availability.yaml
   - superset-httproute.yaml
   - metabase-recovery-dump.yaml

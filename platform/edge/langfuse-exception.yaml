@@ -21,4 +21,4 @@ spec:
       - resources:
           kinds: [Deployment, StatefulSet, Pod, ReplicaSet]
           namespaces: [observability]
-          names: [langfuse-web*, langfuse-worker*, langfuse-postgresql*]
+          names: [langfuse-web*, langfuse-worker*]

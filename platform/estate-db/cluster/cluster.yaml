@@ -1,14 +1,16 @@
 # One PostgreSQL for the estate, run by CloudNativePG.
 #
 # Founder, 2026-09-04: "orry we need urgent consolidtion to one in few steps as possible fast,
-# thi is a crazy situatuon". Nine Postgres servers were counted running in the cluster at
-# 11:45Z on 2026-09-04. This is the one that replaces them.
+# thi is a crazy situatuon", and then, on being told the old servers would be retired in a later
+# change: "not grdul shit, need one shot" ... "everything". Ten Postgres servers were counted
+# running in the cluster at 12:52Z on 2026-09-04. This is the one that replaces all ten, and
+# the change that adds it is the change that deletes them.
 #
 # Every role below keeps the username the consumer already connects as, and every database
 # below keeps the name that consumer already opens, so the move is a data copy and a change of
 # address -- not a rewrite of nine applications. The passwords are the same ones too: each
 # role's password is read from the very vault entry that consumer's own Secret is built from,
-# which is why seven of the ten need no new credential at all and cannot drift.
+# which is why eight of the eleven need no new credential at all and cannot drift.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -16,9 +18,16 @@ metadata:
   namespace: estate-db
 spec:
   instances: 2
+  # PostgreSQL 18, and it is not a preference. Langfuse's own server already runs postgres:18
+  # (measured on langfuse-postgresql-0, 2026-09-04) and pg_dump refuses to read a server newer
+  # than itself, so a 17 cluster here could never have taken langfuse's data. 18 reads all ten.
+  #
   # "standard" rather than "minimal": hindsight's database carries the vector and pg_trgm
-  # extensions (measured on hindsight-db-0, 2026-09-04), and only the standard image ships them.
-  imageName: ghcr.io/cloudnative-pg/postgresql:17.6-standard-bookworm
+  # extensions (measured on hindsight-db-0, 2026-09-04). The standard image is the one that
+  # ships pgvector -- it is in the image's own build definition (postgres-containers,
+  # docker-bake.hcl: extensions = pgaudit, pgvector, pg-failover-slots) -- and pg_trgm is a
+  # core contrib module present in every flavour.
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm
   primaryUpdateStrategy: unsupervised
   priorityClassName: infrastructure-critical
   inheritedMetadata:
@@ -97,6 +106,13 @@ spec:
         login: true
         passwordSecret:
           name: estate-db-role-guacamole
+      # otto_gateway: the same username, and the same password, as the server it is replacing
+      # (vault entry otto-gateway-db.password).
+      - name: otto_gateway
+        ensure: present
+        login: true
+        passwordSecret:
+          name: estate-db-role-otto-gateway
       # dagster: the same username, and the same password, as the server it is replacing
       # (vault entry estate-db.dagster-password).
       - name: dagster

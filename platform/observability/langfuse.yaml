@@ -288,15 +288,3 @@ spec:
                           - { name: tmp, mountPath: /tmp }
                     volumes:
                       - { name: tmp, emptyDir: {} }
-          - target: { kind: StatefulSet, name: langfuse-postgresql }
-            patch: |
-              apiVersion: apps/v1
-              kind: StatefulSet
-              metadata: { name: langfuse-postgresql }
-              spec:
-                template:
-                  spec:
-                    securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
-                    initContainers:
-                      - name: postgresql-init
-                        resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { cpu: 100m, memory: 64Mi } }

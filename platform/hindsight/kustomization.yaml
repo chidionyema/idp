@@ -4,5 +4,4 @@ namespace: hindsight
 resources:
   - namespace.yaml
   - external-secret.yaml
-  - postgres.yaml
   - hindsight.yaml
