@@ -60,6 +60,17 @@ router_settings:
     # job aliases) but sit in no chain while the account is unfunded: a hop that always
     # answers 402 is latency, not redundancy.
     # @vendor-fallbacks@
+  # Alias, not a model row (R75, founder 2026-09-03). The Kimi lane is console-owned: the
+  # founder brought the key through the LiteLLM console on 2026-09-04 and it is stored
+  # encrypted in litellm-db under the vendor's own name, `moonshot/kimi-k3`. Rendering a
+  # `kimi` row here would lock that name in the config file and the console would then refuse
+  # to attach a key to it ("defined in config"), which is the failure he hit the day before.
+  # An alias carries no credential and declares no model, so it cannot lock anything -- it
+  # only spares every caller from hardcoding a vendor path that changes when the vendor
+  # ships k4. Probed 2026-09-04 05:47Z from inside the litellm pod: `moonshot/kimi-k3`
+  # answers HTTP 200 in 30.5s, while `kimi` answered HTTP 400 "Invalid model name".
+  model_group_alias:
+    kimi: moonshot/kimi-k3
   num_retries: 2
   # A tier that keeps failing is taken out of the chain rather than retried into the
   # ground. This is the circuit breaker prospector/breaker.py hand-rolls.
