@@ -14,7 +14,6 @@ namespace: backstage
 # cluster-state, spire and image-automation can wait for the namespace without waiting for the
 # portal to be healthy (crew#539 forbids that edge; crew#488 needs the ordering).
 resources:
-  - postgres.yaml
   - catalogue.yaml
   - rbac.yaml
 labels:

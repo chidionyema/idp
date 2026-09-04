@@ -1,0 +1,136 @@
+# One PostgreSQL for the estate, run by CloudNativePG.
+#
+# Founder, 2026-09-04: "orry we need urgent consolidtion to one in few steps as possible fast,
+# thi is a crazy situatuon", and then, on being told the old servers would be retired in a later
+# change: "not grdul shit, need one shot" ... "everything". Ten Postgres servers were counted
+# running in the cluster at 12:52Z on 2026-09-04. This is the one that replaces all ten, and
+# the change that adds it is the change that deletes them.
+#
+# Every role below keeps the username the consumer already connects as, and every database
+# below keeps the name that consumer already opens, so the move is a data copy and a change of
+# address -- not a rewrite of nine applications. The passwords are the same ones too: each
+# role's password is read from the very vault entry that consumer's own Secret is built from,
+# which is why eight of the eleven need no new credential at all and cannot drift.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: estate
+  namespace: estate-db
+spec:
+  instances: 2
+  # PostgreSQL 18, and it is not a preference. Langfuse's own server already runs postgres:18
+  # (measured on langfuse-postgresql-0, 2026-09-04) and pg_dump refuses to read a server newer
+  # than itself, so a 17 cluster here could never have taken langfuse's data. 18 reads all ten.
+  #
+  # "standard" rather than "minimal": hindsight's database carries the vector and pg_trgm
+  # extensions (measured on hindsight-db-0, 2026-09-04). The standard image is the one that
+  # ships pgvector -- it is in the image's own build definition (postgres-containers,
+  # docker-bake.hcl: extensions = pgaudit, pgvector, pg-failover-slots) -- and pg_trgm is a
+  # core contrib module present in every flavour.
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm
+  primaryUpdateStrategy: unsupervised
+  priorityClassName: infrastructure-critical
+  inheritedMetadata:
+    labels:
+      app.kubernetes.io/part-of: idp
+      backstage.io/kubernetes-id: layer-estate-db
+  enableSuperuserAccess: true
+  superuserSecret:
+    name: estate-db-superuser
+  bootstrap:
+    initdb:
+      database: estate
+      owner: estate
+  storage:
+    size: 40Gi
+    storageClass: oci-bv
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: "1", memory: 2Gi }
+  postgresql:
+    parameters:
+      max_connections: "400"
+  managed:
+    roles:
+      # The bootstrap owner. It never logs in; it exists so the cluster's own database has an
+      # owner that is not the superuser.
+      - name: estate
+        ensure: present
+        login: false
+      # backstage: the same username, and the same password, as the server it is replacing
+      # (vault entry backstage-env.POSTGRES_PASSWORD).
+      - name: backstage
+        ensure: present
+        login: true
+        passwordSecret:
+          name: estate-db-role-backstage
+      # hc: the same username, and the same password, as the server it is replacing
+      # (vault entry healthchecks-db-password (whole entry)).
+      - name: hc
+        ensure: present
+        login: true
+        passwordSecret:
+          name: estate-db-role-hc
+      # hindsight: the same username, and the same password, as the server it is replacing
+      # (vault entry hindsight.postgres-password).
+      - name: hindsight
+        ensure: present
+        login: true
+        passwordSecret:
+          name: estate-db-role-hindsight
+      # superset: the same username, and the same password, as the server it is replacing
+      # (vault entry superset-db-password (whole entry)).
+      - name: superset
+        ensure: present
+        login: true
+        passwordSecret:
+          name: estate-db-role-superset
+      # litellm: the same username, and the same password, as the server it is replacing
+      # (vault entry litellm-upstream.LITELLM_DB_PASSWORD).
+      - name: litellm
+        ensure: present
+        login: true
+        passwordSecret:
+          name: estate-db-role-litellm
+      # temporal: the same username, and the same password, as the server it is replacing
+      # (vault entry temporal-db.password).
+      - name: temporal
+        ensure: present
+        login: true
+        passwordSecret:
+          name: estate-db-role-temporal
+      # guacamole: the same username, and the same password, as the server it is replacing
+      # (vault entry guacamole.postgres-password).
+      - name: guacamole
+        ensure: present
+        login: true
+        passwordSecret:
+          name: estate-db-role-guacamole
+      # otto_gateway: the same username, and the same password, as the server it is replacing
+      # (vault entry otto-gateway-db.password).
+      - name: otto_gateway
+        ensure: present
+        login: true
+        passwordSecret:
+          name: estate-db-role-otto-gateway
+      # dagster: the same username, and the same password, as the server it is replacing
+      # (vault entry estate-db.dagster-password).
+      - name: dagster
+        ensure: present
+        login: true
+        passwordSecret:
+          name: estate-db-role-dagster
+      # langfuse: the same username, and the same password, as the server it is replacing
+      # (vault entry estate-db.langfuse-password).
+      - name: langfuse
+        ensure: present
+        login: true
+        passwordSecret:
+          name: estate-db-role-langfuse
+      # research: the same username, and the same password, as the server it is replacing
+      # (vault entry estate-db.research-password).
+      - name: research
+        ensure: present
+        login: true
+        passwordSecret:
+          name: estate-db-role-research

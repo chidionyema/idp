@@ -83,7 +83,7 @@ jobs:
           #   flux-writer: retired; Flux authenticates as the App (bin/idp-github-app), no deploy key (crew#575)
           retired() {
             case "$1" in
-              prospector-engine-env|temporal-db|hindsight|mcp-gateway|backstage-env|oauth2-proxy-cookie-secret|prospector-store-api-env)
+              prospector-engine-env|temporal-db|hindsight|mcp-gateway|backstage-env|oauth2-proxy-cookie-secret|prospector-store-api-env|estate-db)
                 echo "bin/idp-estate-seed (estate keys), bin/idp-bootstrap-vendors (vendor keys), bin/idp-bootstrap-cloudflare (R2), bin/idp-github-app refresh (GitHub tokens)";;
               flux-writer) echo "bin/idp-github-app (Flux authenticates as the App; the deploy key is retired)";;
               tailscale-operator) echo "bin/idp-bootstrap-tailscale";;

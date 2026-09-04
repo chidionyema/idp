@@ -1,7 +1,8 @@
-# The estate scheduler (crew#716) uses Dagster's built-in postgres subchart, which reads
-# POSTGRES_PASSWORD from an environment variable sourced by secretKeyRef. The same pattern
-# appears in the dagster-webserver, dagster-daemon and every launched run pod: DAGSTER_PG_PASSWORD
-# is passed the same way from the dagster-postgresql-secret Secret.
+# The estate scheduler (crew#716) reads its database password from an environment variable
+# sourced by secretKeyRef, in the dagster-webserver, the dagster-daemon and every launched run
+# pod: DAGSTER_PG_PASSWORD is passed that way from the Secret named by global.postgresqlSecretName.
+# The chart's own postgres subchart is off (the estate has one Postgres), so this is now about
+# the application pods only.
 #
 # Verified with `helm template dagster dagster/dagster --version 1.13.19` (rendered output in
 # .wt-scratch-render.yaml):
@@ -9,8 +10,6 @@
 #   - dagster-daemon Deployment: env[].valueFrom.secretKeyRef name DAGSTER_PG_PASSWORD
 #   - dagster-user-deployments Deployment (estate-scheduler): same pattern
 #   - every launched run Job (k8sRunLauncher): same pattern
-#   - postgresql StatefulSet: env[].valueFrom.secretKeyRef name dagster-postgresql
-#     key postgresql-password (POSTGRES_PASSWORD)
 # There is no file form without a wrapper: the chart writes env.valueFrom.secretKeyRef directly
 # into its templates, and the values file offers no alternative.
 #
@@ -24,9 +23,8 @@ metadata:
 spec:
   exceptions:
     # require-ro-rootfs, measured on the 1.13.19 render (crew#716): the dagster image runs
-    # Python that writes /tmp (grpc, tempfiles) and $DAGSTER_HOME; docker.io/library/postgres
-    # writes /var/run/postgresql and its PGDATA mount. Neither image ships a read-only-root
-    # mode and the chart offers no scratch-mount values for it. Same class and same shape as
+    # Python that writes /tmp (grpc, tempfiles) and $DAGSTER_HOME. The image ships no
+    # read-only-root mode and the chart offers no scratch-mount values for it. Same class and same shape as
     # the Lago rows in commerce-exception.yaml beside this file; reconsidered when the layer
     # is retested against running pods on the drill cluster (the crew#716 CP2 item).
     - policyName: require-ro-rootfs

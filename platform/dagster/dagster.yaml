@@ -41,8 +41,9 @@ spec:
   values:
     # Internal name: dagster. The webserver Service is dagster-dagster-webserver.dagster.svc:80.
     global:
-      postgresqlSecretName: dagster-postgresql-secret
-      generatePostgresqlPasswordSecret: true
+      # The estate database's dagster password, written into this namespace by
+      # platform/estate-db/cluster/secrets.yaml so it is there before the copy job runs.
+      postgresqlSecretName: estate-db-dagster
       # Chart 1.13.19 generates the celery config Secret only under CeleryK8sRunLauncher
       # (templates/secret-celery-config.yaml), and this estate runs K8sRunLauncher, so the
       # Secret can never exist. An empty name stops every template rendering a reference to
@@ -54,35 +55,23 @@ spec:
     imagePullSecrets:
       - name: ghcr-pull
 
+    # crew: one Postgres for the estate. This chart used to bundle its own server
+    # (docker.io/library/postgres:14.6, database `test`, user `test`, and the chart's own
+    # default password) and it no longer does. The data moved with it: the copy Job in
+    # platform/estate-db/migrate/jobs.yaml lifts database `test` off that server into database
+    # `dagster` on the estate cluster before Flux is allowed to prune the StatefulSet.
     postgresql:
-      enabled: true
-      image:
-        registry: docker.io
-        repository: library/postgres
-        tag: "14.6"
-        pullPolicy: IfNotPresent
-      persistence:
-        enabled: true
-        size: 5Gi
-      resources:
-        requests:
-          cpu: 100m
-          memory: 256Mi
-        limits:
-          cpu: 250m
-          memory: 512Mi
-      podSecurityContext:
-        runAsNonRoot: true
-        runAsUser: 999
-        runAsGroup: 999
-        fsGroup: 999
-        seccompProfile:
-          type: RuntimeDefault
-      containerSecurityContext:
-        allowPrivilegeEscalation: false
-        capabilities:
-          drop:
-            - ALL
+      enabled: false
+      postgresqlHost: estate-rw.estate-db.svc.cluster.local
+      postgresqlUsername: dagster
+      postgresqlDatabase: dagster
+      service:
+        port: 5432
+
+    # The chart reads this at the top level, not under global -- it was under global here, where
+    # the chart never looked, which is why a generated Secret existed at all. Off: the password
+    # comes from the vault through external-secrets, and nothing generates one.
+    generatePostgresqlPasswordSecret: false
 
     dagsterWebserver:
       # The chart default (docker.io/dagster/dagster-celery-k8s) publishes no arm64 build and
@@ -365,29 +354,6 @@ spec:
                       seccompProfile:
                         type: RuntimeDefault
           - target:
-              kind: StatefulSet
-            patch: |
-              apiVersion: apps/v1
-              kind: StatefulSet
-              metadata:
-                name: not-used-kustomize-matches-on-target
-              spec:
-                template:
-                  spec:
-                    priorityClassName: platform-batch
-                    # The postgres subchart exposes no securityContext values at all; the whole
-                    # non-root story is written here. uid/gid 999 is the postgres user baked into
-                    # docker.io/library/postgres; fsGroup 999 overrides the chart's 1001 so the
-                    # PV is group-writable to the uid that actually runs.
-                    securityContext:
-                      seccompProfile:
-                        type: RuntimeDefault
-                      runAsNonRoot: true
-                      runAsUser: 999
-                      runAsGroup: 999
-                      fsGroup: 999
-          # Container-level security context where the chart does not set it.
-          - target:
               kind: Deployment
             patch: |
               - op: add
@@ -397,33 +363,6 @@ spec:
                   capabilities:
                     drop:
                       - ALL
-          - target:
-              kind: StatefulSet
-            patch: |
-              - op: add
-                path: /spec/template/spec/containers/0/securityContext
-                value:
-                  allowPrivilegeEscalation: false
-                  capabilities:
-                    drop:
-                      - ALL
-          # The postgres subchart hard-codes a root init container (init-chmod-data,
-          # bitnami/minideb, runAsUser 0) whose only job is chowning the data dir to 1001.
-          # fsGroup 999 in the pod securityContext does the same job without root, so the
-          # container is removed and the pod runs wholly non-root -- which is what
-          # require-run-as-nonroot, require-run-as-non-root-user, disallow-privilege-escalation,
-          # disallow-capabilities-strict and drop-all-capabilities all refused it for.
-          - target:
-              kind: StatefulSet
-              name: dagster-postgresql
-            patch: |
-              - op: remove
-                path: /spec/template/spec/initContainers
-          # crew#555 (founder order 2026-09-02): the webserver must spread across nodes and the
-          # chart offers no values key for it. DoNotSchedule, not preferred: best-effort spread
-          # collapses onto one node exactly when the cluster is tight (platform/llm/litellm.yaml).
-          # No strategy patch needed: a spread constraint at maxSkew 1 admits the surge pod
-          # (2 on one node vs 1 is skew 1), unlike hard anti-affinity.
           - target:
               kind: Deployment
               name: dagster-dagster-webserver

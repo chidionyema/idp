@@ -8,7 +8,7 @@ Feature: The workflow engine runs in the cluster, not on the Mac
     When platform/temporal is built with kustomize
     Then the HelmRelease uses chart temporal from https://go.temporal.io/helm-charts at a pinned version
     And Helm hooks are off so Flux owns the schema and namespace jobs
-    And both persistence stores point at the temporal-db Service with a password from the vault Secret
+    And both persistence stores point at the estate database with a password from the vault Secret
     And every bundled store and metrics stack is disabled
 
   Scenario: The Mac no longer owns the engine

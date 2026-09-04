@@ -1,0 +1,152 @@
+# One database per consumer, named the way that consumer already names it, so nothing in the
+# application changes when its address does. CloudNativePG creates and owns these; a Database
+# resource removed from git leaves the data alone (ensure: present never drops).
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: backstage
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: backstage
+  owner: backstage
+  ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: hc
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: hc
+  owner: hc
+  ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: hindsight
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: hindsight
+  owner: hindsight
+  ensure: present
+  extensions:
+    - name: vector
+      ensure: present
+    - name: pg_trgm
+      ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: superset
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: superset
+  owner: superset
+  ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: litellm
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: litellm
+  owner: litellm
+  ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: temporal
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: temporal
+  owner: temporal
+  ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: temporal-visibility
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: temporal_visibility
+  owner: temporal
+  ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: guacamole
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: guacamole
+  owner: guacamole
+  ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: otto-gateway
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: otto_gateway
+  owner: otto_gateway
+  ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: dagster
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: dagster
+  owner: dagster
+  ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: langfuse
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: langfuse
+  owner: langfuse
+  ensure: present
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: research
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: research
+  owner: research
+  ensure: present

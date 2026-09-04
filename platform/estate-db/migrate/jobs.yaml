@@ -1,0 +1,875 @@
+# The copy. One Job per server being retired, each one run once and never again.
+#
+# Every Job runs in the namespace of the server it is emptying and reads that server's own
+# Secret for the old end, and the estate role's Secret for the new one. For eight of the ten
+# those are the same password, because the role on the estate cluster kept the credential its
+# consumer already held; dagster and langfuse are the exceptions, and there the Job reads one
+# password and writes another.
+#
+# Every Job runs the PostgreSQL 18 image the estate cluster itself runs. That matters: langfuse
+# was already on PostgreSQL 18 and pg_dump refuses a server newer than itself, so an older
+# client could not have read it. One image reads the 14, the 17s and the 18 alike.
+#
+# The guard is a marker table, not an empty-database check, and the difference matters. Several
+# of these applications create their own schema when they start, so between the moment the
+# application is pointed at the estate cluster and the moment this Job runs, the new database
+# may already hold empty tables the application made. An emptiness check would see those and
+# decide the copy had already happened, leaving the real data behind on the old volume. So the
+# Job instead drops what is there, restores the dump over it, and writes estate_db_migration.
+# On any later run it finds that table and does nothing at all.
+#
+# Writes the application made during that window are discarded, which is the correct outcome:
+# they were made against a blank schema and the old server holds the truth.
+#
+# Nothing here deletes an old server. Flux does that, and only after this Kustomization reports
+# Ready -- every consumer's Kustomization waits on estate-db-migrate in clusters/oke/platform.yaml.
+# A Job that cannot find its old server at all exits clean rather than failing, so a cluster
+# rebuilt from scratch, where the old servers never existed, is not deadlocked by this file.
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: estate-db-copy-backstage
+  namespace: backstage
+  labels:
+    app.kubernetes.io/name: estate-db-copy-backstage
+    app.kubernetes.io/part-of: idp
+    backstage.io/kubernetes-id: layer-estate-db
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: estate-db-copy-backstage
+        app.kubernetes.io/part-of: idp
+    spec:
+      restartPolicy: Never
+      priorityClassName: platform-batch
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        fsGroup: 26
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: copy
+          # The same image the estate cluster runs, so its pg_dump is never older than either end.
+          image: ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+                set -eu
+                # the server called postgres in its own namespace. If it is not there at all there is nothing to copy, and this Job
+                # is finished rather than failed -- see the note at the top of this file.
+                i=0
+                while [ $i -lt 12 ]; do
+                  getent hosts postgres >/dev/null 2>&1 && break
+                  i=$((i + 1))
+                  sleep 10
+                done
+                if ! getent hosts postgres >/dev/null 2>&1; then
+                  echo "postgres does not resolve; there is no old server to empty"
+                  exit 0
+                fi
+                if [ "$(PGPASSWORD="$(cat /new/password)" psql -h estate-rw.estate-db.svc.cluster.local -U backstage -d backstage -tAc "select to_regclass('public.estate_db_migration') is not null")" = t ]; then
+                  echo "backstage was copied on an earlier run; leaving it alone"
+                else
+                  echo "copying backstage from postgres into backstage on the estate cluster"
+                  PGPASSWORD="$(cat /old/POSTGRES_PASSWORD)" pg_dump -h postgres -U backstage -d backstage \
+                          --no-owner --no-privileges --exclude-extension=vector --exclude-extension=pg_trgm \
+                          -Fc -f /tmp/db.dump
+                  PGPASSWORD="$(cat /new/password)"; export PGPASSWORD
+                  psql -h estate-rw.estate-db.svc.cluster.local -U backstage -d backstage -v ON_ERROR_STOP=1 \
+                       -c 'drop schema if exists public cascade' -c 'create schema public'
+                  pg_restore -h estate-rw.estate-db.svc.cluster.local -U backstage -d backstage --no-owner --no-privileges --exit-on-error /tmp/db.dump
+                  psql -h estate-rw.estate-db.svc.cluster.local -U backstage -d backstage -v ON_ERROR_STOP=1 \
+                       -c 'create table estate_db_migration (copied_at timestamptz not null default now())' \
+                       -c 'insert into estate_db_migration default values'
+                  unset PGPASSWORD
+                  rm -f /tmp/db.dump
+                  echo "backstage is on the estate cluster"
+                fi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: old, mountPath: /old, readOnly: true }
+            - { name: new, mountPath: /new, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: old
+          secret: { secretName: backstage-env }
+        - name: new
+          secret: { secretName: estate-db-role-backstage }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: estate-db-copy-healthchecks
+  namespace: healthchecks
+  labels:
+    app.kubernetes.io/name: estate-db-copy-healthchecks
+    app.kubernetes.io/part-of: idp
+    backstage.io/kubernetes-id: layer-estate-db
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: estate-db-copy-healthchecks
+        app.kubernetes.io/part-of: idp
+    spec:
+      restartPolicy: Never
+      priorityClassName: platform-batch
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        fsGroup: 26
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: copy
+          # The same image the estate cluster runs, so its pg_dump is never older than either end.
+          image: ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+                set -eu
+                # healthchecks-db. If it is not there at all there is nothing to copy, and this Job
+                # is finished rather than failed -- see the note at the top of this file.
+                i=0
+                while [ $i -lt 12 ]; do
+                  getent hosts healthchecks-db >/dev/null 2>&1 && break
+                  i=$((i + 1))
+                  sleep 10
+                done
+                if ! getent hosts healthchecks-db >/dev/null 2>&1; then
+                  echo "healthchecks-db does not resolve; there is no old server to empty"
+                  exit 0
+                fi
+                if [ "$(PGPASSWORD="$(cat /new/password)" psql -h estate-rw.estate-db.svc.cluster.local -U hc -d hc -tAc "select to_regclass('public.estate_db_migration') is not null")" = t ]; then
+                  echo "hc was copied on an earlier run; leaving it alone"
+                else
+                  echo "copying hc from healthchecks-db into hc on the estate cluster"
+                  PGPASSWORD="$(cat /old/password)" pg_dump -h healthchecks-db -U hc -d hc \
+                          --no-owner --no-privileges --exclude-extension=vector --exclude-extension=pg_trgm \
+                          -Fc -f /tmp/db.dump
+                  PGPASSWORD="$(cat /new/password)"; export PGPASSWORD
+                  psql -h estate-rw.estate-db.svc.cluster.local -U hc -d hc -v ON_ERROR_STOP=1 \
+                       -c 'drop schema if exists public cascade' -c 'create schema public'
+                  pg_restore -h estate-rw.estate-db.svc.cluster.local -U hc -d hc --no-owner --no-privileges --exit-on-error /tmp/db.dump
+                  psql -h estate-rw.estate-db.svc.cluster.local -U hc -d hc -v ON_ERROR_STOP=1 \
+                       -c 'create table estate_db_migration (copied_at timestamptz not null default now())' \
+                       -c 'insert into estate_db_migration default values'
+                  unset PGPASSWORD
+                  rm -f /tmp/db.dump
+                  echo "hc is on the estate cluster"
+                fi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: old, mountPath: /old, readOnly: true }
+            - { name: new, mountPath: /new, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: old
+          secret: { secretName: healthchecks-db }
+        - name: new
+          secret: { secretName: estate-db-role-healthchecks }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: estate-db-copy-hindsight
+  namespace: hindsight
+  labels:
+    app.kubernetes.io/name: estate-db-copy-hindsight
+    app.kubernetes.io/part-of: idp
+    backstage.io/kubernetes-id: layer-estate-db
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: estate-db-copy-hindsight
+        app.kubernetes.io/part-of: idp
+    spec:
+      restartPolicy: Never
+      priorityClassName: platform-batch
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        fsGroup: 26
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: copy
+          # The same image the estate cluster runs, so its pg_dump is never older than either end.
+          image: ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+                set -eu
+                # hindsight-db. If it is not there at all there is nothing to copy, and this Job
+                # is finished rather than failed -- see the note at the top of this file.
+                i=0
+                while [ $i -lt 12 ]; do
+                  getent hosts hindsight-db >/dev/null 2>&1 && break
+                  i=$((i + 1))
+                  sleep 10
+                done
+                if ! getent hosts hindsight-db >/dev/null 2>&1; then
+                  echo "hindsight-db does not resolve; there is no old server to empty"
+                  exit 0
+                fi
+                if [ "$(PGPASSWORD="$(cat /new/password)" psql -h estate-rw.estate-db.svc.cluster.local -U hindsight -d hindsight -tAc "select to_regclass('public.estate_db_migration') is not null")" = t ]; then
+                  echo "hindsight was copied on an earlier run; leaving it alone"
+                else
+                  echo "copying hindsight from hindsight-db into hindsight on the estate cluster"
+                  PGPASSWORD="$(cat /old/postgres-password)" pg_dump -h hindsight-db -U hindsight -d hindsight \
+                          --no-owner --no-privileges --exclude-extension=vector --exclude-extension=pg_trgm \
+                          -Fc -f /tmp/db.dump
+                  PGPASSWORD="$(cat /new/password)"; export PGPASSWORD
+                  psql -h estate-rw.estate-db.svc.cluster.local -U hindsight -d hindsight -v ON_ERROR_STOP=1 \
+                       -c 'drop schema if exists public cascade' -c 'create schema public'
+                  pg_restore -h estate-rw.estate-db.svc.cluster.local -U hindsight -d hindsight --no-owner --no-privileges --exit-on-error /tmp/db.dump
+                  psql -h estate-rw.estate-db.svc.cluster.local -U hindsight -d hindsight -v ON_ERROR_STOP=1 \
+                       -c 'create table estate_db_migration (copied_at timestamptz not null default now())' \
+                       -c 'insert into estate_db_migration default values'
+                  unset PGPASSWORD
+                  rm -f /tmp/db.dump
+                  echo "hindsight is on the estate cluster"
+                fi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: old, mountPath: /old, readOnly: true }
+            - { name: new, mountPath: /new, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: old
+          secret: { secretName: hindsight-env }
+        - name: new
+          secret: { secretName: estate-db-role-hindsight }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: estate-db-copy-superset
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: estate-db-copy-superset
+    app.kubernetes.io/part-of: idp
+    backstage.io/kubernetes-id: layer-estate-db
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: estate-db-copy-superset
+        app.kubernetes.io/part-of: idp
+    spec:
+      restartPolicy: Never
+      priorityClassName: platform-batch
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        fsGroup: 26
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: copy
+          # The same image the estate cluster runs, so its pg_dump is never older than either end.
+          image: ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+                set -eu
+                # superset-db. If it is not there at all there is nothing to copy, and this Job
+                # is finished rather than failed -- see the note at the top of this file.
+                i=0
+                while [ $i -lt 12 ]; do
+                  getent hosts superset-db >/dev/null 2>&1 && break
+                  i=$((i + 1))
+                  sleep 10
+                done
+                if ! getent hosts superset-db >/dev/null 2>&1; then
+                  echo "superset-db does not resolve; there is no old server to empty"
+                  exit 0
+                fi
+                if [ "$(PGPASSWORD="$(cat /new/password)" psql -h estate-rw.estate-db.svc.cluster.local -U superset -d superset -tAc "select to_regclass('public.estate_db_migration') is not null")" = t ]; then
+                  echo "superset was copied on an earlier run; leaving it alone"
+                else
+                  echo "copying superset from superset-db into superset on the estate cluster"
+                  PGPASSWORD="$(cat /old/password)" pg_dump -h superset-db -U superset -d superset \
+                          --no-owner --no-privileges --exclude-extension=vector --exclude-extension=pg_trgm \
+                          -Fc -f /tmp/db.dump
+                  PGPASSWORD="$(cat /new/password)"; export PGPASSWORD
+                  psql -h estate-rw.estate-db.svc.cluster.local -U superset -d superset -v ON_ERROR_STOP=1 \
+                       -c 'drop schema if exists public cascade' -c 'create schema public'
+                  pg_restore -h estate-rw.estate-db.svc.cluster.local -U superset -d superset --no-owner --no-privileges --exit-on-error /tmp/db.dump
+                  psql -h estate-rw.estate-db.svc.cluster.local -U superset -d superset -v ON_ERROR_STOP=1 \
+                       -c 'create table estate_db_migration (copied_at timestamptz not null default now())' \
+                       -c 'insert into estate_db_migration default values'
+                  unset PGPASSWORD
+                  rm -f /tmp/db.dump
+                  echo "superset is on the estate cluster"
+                fi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: old, mountPath: /old, readOnly: true }
+            - { name: new, mountPath: /new, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: old
+          secret: { secretName: superset-db }
+        - name: new
+          secret: { secretName: estate-db-role-superset }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: estate-db-copy-litellm
+  namespace: llm
+  labels:
+    app.kubernetes.io/name: estate-db-copy-litellm
+    app.kubernetes.io/part-of: idp
+    backstage.io/kubernetes-id: layer-estate-db
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: estate-db-copy-litellm
+        app.kubernetes.io/part-of: idp
+    spec:
+      restartPolicy: Never
+      priorityClassName: platform-batch
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        fsGroup: 26
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: copy
+          # The same image the estate cluster runs, so its pg_dump is never older than either end.
+          image: ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+                set -eu
+                # litellm-db. If it is not there at all there is nothing to copy, and this Job
+                # is finished rather than failed -- see the note at the top of this file.
+                i=0
+                while [ $i -lt 12 ]; do
+                  getent hosts litellm-db >/dev/null 2>&1 && break
+                  i=$((i + 1))
+                  sleep 10
+                done
+                if ! getent hosts litellm-db >/dev/null 2>&1; then
+                  echo "litellm-db does not resolve; there is no old server to empty"
+                  exit 0
+                fi
+                if [ "$(PGPASSWORD="$(cat /new/password)" psql -h estate-rw.estate-db.svc.cluster.local -U litellm -d litellm -tAc "select to_regclass('public.estate_db_migration') is not null")" = t ]; then
+                  echo "litellm was copied on an earlier run; leaving it alone"
+                else
+                  echo "copying litellm from litellm-db into litellm on the estate cluster"
+                  PGPASSWORD="$(cat /old/LITELLM_DB_PASSWORD)" pg_dump -h litellm-db -U litellm -d litellm \
+                          --no-owner --no-privileges --exclude-extension=vector --exclude-extension=pg_trgm \
+                          -Fc -f /tmp/db.dump
+                  PGPASSWORD="$(cat /new/password)"; export PGPASSWORD
+                  psql -h estate-rw.estate-db.svc.cluster.local -U litellm -d litellm -v ON_ERROR_STOP=1 \
+                       -c 'drop schema if exists public cascade' -c 'create schema public'
+                  pg_restore -h estate-rw.estate-db.svc.cluster.local -U litellm -d litellm --no-owner --no-privileges --exit-on-error /tmp/db.dump
+                  psql -h estate-rw.estate-db.svc.cluster.local -U litellm -d litellm -v ON_ERROR_STOP=1 \
+                       -c 'create table estate_db_migration (copied_at timestamptz not null default now())' \
+                       -c 'insert into estate_db_migration default values'
+                  unset PGPASSWORD
+                  rm -f /tmp/db.dump
+                  echo "litellm is on the estate cluster"
+                fi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: old, mountPath: /old, readOnly: true }
+            - { name: new, mountPath: /new, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: old
+          secret: { secretName: litellm-upstream }
+        - name: new
+          secret: { secretName: estate-db-role-litellm }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: estate-db-copy-temporal
+  namespace: temporal
+  labels:
+    app.kubernetes.io/name: estate-db-copy-temporal
+    app.kubernetes.io/part-of: idp
+    backstage.io/kubernetes-id: layer-estate-db
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: estate-db-copy-temporal
+        app.kubernetes.io/part-of: idp
+    spec:
+      restartPolicy: Never
+      priorityClassName: platform-batch
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        fsGroup: 26
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: copy
+          # The same image the estate cluster runs, so its pg_dump is never older than either end.
+          image: ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+                set -eu
+                # temporal-db. If it is not there at all there is nothing to copy, and this Job
+                # is finished rather than failed -- see the note at the top of this file.
+                i=0
+                while [ $i -lt 12 ]; do
+                  getent hosts temporal-db >/dev/null 2>&1 && break
+                  i=$((i + 1))
+                  sleep 10
+                done
+                if ! getent hosts temporal-db >/dev/null 2>&1; then
+                  echo "temporal-db does not resolve; there is no old server to empty"
+                  exit 0
+                fi
+                if [ "$(PGPASSWORD="$(cat /new/password)" psql -h estate-rw.estate-db.svc.cluster.local -U temporal -d temporal -tAc "select to_regclass('public.estate_db_migration') is not null")" = t ]; then
+                  echo "temporal was copied on an earlier run; leaving it alone"
+                else
+                  echo "copying temporal from temporal-db into temporal on the estate cluster"
+                  PGPASSWORD="$(cat /old/password)" pg_dump -h temporal-db -U temporal -d temporal \
+                          --no-owner --no-privileges --exclude-extension=vector --exclude-extension=pg_trgm \
+                          -Fc -f /tmp/db.dump
+                  PGPASSWORD="$(cat /new/password)"; export PGPASSWORD
+                  psql -h estate-rw.estate-db.svc.cluster.local -U temporal -d temporal -v ON_ERROR_STOP=1 \
+                       -c 'drop schema if exists public cascade' -c 'create schema public'
+                  pg_restore -h estate-rw.estate-db.svc.cluster.local -U temporal -d temporal --no-owner --no-privileges --exit-on-error /tmp/db.dump
+                  psql -h estate-rw.estate-db.svc.cluster.local -U temporal -d temporal -v ON_ERROR_STOP=1 \
+                       -c 'create table estate_db_migration (copied_at timestamptz not null default now())' \
+                       -c 'insert into estate_db_migration default values'
+                  unset PGPASSWORD
+                  rm -f /tmp/db.dump
+                  echo "temporal is on the estate cluster"
+                fi
+                if [ "$(PGPASSWORD="$(cat /new/password)" psql -h estate-rw.estate-db.svc.cluster.local -U temporal -d temporal_visibility -tAc "select to_regclass('public.estate_db_migration') is not null")" = t ]; then
+                  echo "temporal_visibility was copied on an earlier run; leaving it alone"
+                else
+                  echo "copying temporal_visibility from temporal-db into temporal_visibility on the estate cluster"
+                  PGPASSWORD="$(cat /old/password)" pg_dump -h temporal-db -U temporal -d temporal_visibility \
+                          --no-owner --no-privileges --exclude-extension=vector --exclude-extension=pg_trgm \
+                          -Fc -f /tmp/db.dump
+                  PGPASSWORD="$(cat /new/password)"; export PGPASSWORD
+                  psql -h estate-rw.estate-db.svc.cluster.local -U temporal -d temporal_visibility -v ON_ERROR_STOP=1 \
+                       -c 'drop schema if exists public cascade' -c 'create schema public'
+                  pg_restore -h estate-rw.estate-db.svc.cluster.local -U temporal -d temporal_visibility --no-owner --no-privileges --exit-on-error /tmp/db.dump
+                  psql -h estate-rw.estate-db.svc.cluster.local -U temporal -d temporal_visibility -v ON_ERROR_STOP=1 \
+                       -c 'create table estate_db_migration (copied_at timestamptz not null default now())' \
+                       -c 'insert into estate_db_migration default values'
+                  unset PGPASSWORD
+                  rm -f /tmp/db.dump
+                  echo "temporal_visibility is on the estate cluster"
+                fi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: old, mountPath: /old, readOnly: true }
+            - { name: new, mountPath: /new, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: old
+          secret: { secretName: temporal-db }
+        - name: new
+          secret: { secretName: estate-db-role-temporal }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: estate-db-copy-guacamole
+  namespace: guacamole
+  labels:
+    app.kubernetes.io/name: estate-db-copy-guacamole
+    app.kubernetes.io/part-of: idp
+    backstage.io/kubernetes-id: layer-estate-db
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: estate-db-copy-guacamole
+        app.kubernetes.io/part-of: idp
+    spec:
+      restartPolicy: Never
+      priorityClassName: platform-batch
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        fsGroup: 26
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: copy
+          # The same image the estate cluster runs, so its pg_dump is never older than either end.
+          image: ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+                set -eu
+                # guacamole-db. If it is not there at all there is nothing to copy, and this Job
+                # is finished rather than failed -- see the note at the top of this file.
+                i=0
+                while [ $i -lt 12 ]; do
+                  getent hosts guacamole-db >/dev/null 2>&1 && break
+                  i=$((i + 1))
+                  sleep 10
+                done
+                if ! getent hosts guacamole-db >/dev/null 2>&1; then
+                  echo "guacamole-db does not resolve; there is no old server to empty"
+                  exit 0
+                fi
+                if [ "$(PGPASSWORD="$(cat /new/password)" psql -h estate-rw.estate-db.svc.cluster.local -U guacamole -d guacamole -tAc "select to_regclass('public.estate_db_migration') is not null")" = t ]; then
+                  echo "guacamole was copied on an earlier run; leaving it alone"
+                else
+                  echo "copying guacamole from guacamole-db into guacamole on the estate cluster"
+                  PGPASSWORD="$(cat /old/password)" pg_dump -h guacamole-db -U guacamole -d guacamole \
+                          --no-owner --no-privileges --exclude-extension=vector --exclude-extension=pg_trgm \
+                          -Fc -f /tmp/db.dump
+                  PGPASSWORD="$(cat /new/password)"; export PGPASSWORD
+                  psql -h estate-rw.estate-db.svc.cluster.local -U guacamole -d guacamole -v ON_ERROR_STOP=1 \
+                       -c 'drop schema if exists public cascade' -c 'create schema public'
+                  pg_restore -h estate-rw.estate-db.svc.cluster.local -U guacamole -d guacamole --no-owner --no-privileges --exit-on-error /tmp/db.dump
+                  psql -h estate-rw.estate-db.svc.cluster.local -U guacamole -d guacamole -v ON_ERROR_STOP=1 \
+                       -c 'create table estate_db_migration (copied_at timestamptz not null default now())' \
+                       -c 'insert into estate_db_migration default values'
+                  unset PGPASSWORD
+                  rm -f /tmp/db.dump
+                  echo "guacamole is on the estate cluster"
+                fi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: old, mountPath: /old, readOnly: true }
+            - { name: new, mountPath: /new, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: old
+          secret: { secretName: guacamole-db }
+        - name: new
+          secret: { secretName: estate-db-role-guacamole }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: estate-db-copy-otto-gateway
+  namespace: otto-gateway
+  labels:
+    app.kubernetes.io/name: estate-db-copy-otto-gateway
+    app.kubernetes.io/part-of: idp
+    backstage.io/kubernetes-id: layer-estate-db
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: estate-db-copy-otto-gateway
+        app.kubernetes.io/part-of: idp
+    spec:
+      restartPolicy: Never
+      priorityClassName: platform-batch
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        fsGroup: 26
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: copy
+          # The same image the estate cluster runs, so its pg_dump is never older than either end.
+          image: ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+                set -eu
+                # otto-gateway-db. If it is not there at all there is nothing to copy, and this Job
+                # is finished rather than failed -- see the note at the top of this file.
+                i=0
+                while [ $i -lt 12 ]; do
+                  getent hosts otto-gateway-db >/dev/null 2>&1 && break
+                  i=$((i + 1))
+                  sleep 10
+                done
+                if ! getent hosts otto-gateway-db >/dev/null 2>&1; then
+                  echo "otto-gateway-db does not resolve; there is no old server to empty"
+                  exit 0
+                fi
+                if [ "$(PGPASSWORD="$(cat /new/password)" psql -h estate-rw.estate-db.svc.cluster.local -U otto_gateway -d otto_gateway -tAc "select to_regclass('public.estate_db_migration') is not null")" = t ]; then
+                  echo "otto_gateway was copied on an earlier run; leaving it alone"
+                else
+                  echo "copying otto_gateway from otto-gateway-db into otto_gateway on the estate cluster"
+                  PGPASSWORD="$(cat /old/POSTGRES_PASSWORD)" pg_dump -h otto-gateway-db -U otto_gateway -d otto_gateway \
+                          --no-owner --no-privileges --exclude-extension=vector --exclude-extension=pg_trgm \
+                          -Fc -f /tmp/db.dump
+                  PGPASSWORD="$(cat /new/password)"; export PGPASSWORD
+                  psql -h estate-rw.estate-db.svc.cluster.local -U otto_gateway -d otto_gateway -v ON_ERROR_STOP=1 \
+                       -c 'drop schema if exists public cascade' -c 'create schema public'
+                  pg_restore -h estate-rw.estate-db.svc.cluster.local -U otto_gateway -d otto_gateway --no-owner --no-privileges --exit-on-error /tmp/db.dump
+                  psql -h estate-rw.estate-db.svc.cluster.local -U otto_gateway -d otto_gateway -v ON_ERROR_STOP=1 \
+                       -c 'create table estate_db_migration (copied_at timestamptz not null default now())' \
+                       -c 'insert into estate_db_migration default values'
+                  unset PGPASSWORD
+                  rm -f /tmp/db.dump
+                  echo "otto_gateway is on the estate cluster"
+                fi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: old, mountPath: /old, readOnly: true }
+            - { name: new, mountPath: /new, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: old
+          secret: { secretName: otto-gateway-db }
+        - name: new
+          secret: { secretName: estate-db-role-otto-gateway }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: estate-db-copy-dagster
+  namespace: dagster
+  labels:
+    app.kubernetes.io/name: estate-db-copy-dagster
+    app.kubernetes.io/part-of: idp
+    backstage.io/kubernetes-id: layer-estate-db
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: estate-db-copy-dagster
+        app.kubernetes.io/part-of: idp
+    spec:
+      restartPolicy: Never
+      priorityClassName: platform-batch
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        fsGroup: 26
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: copy
+          # The same image the estate cluster runs, so its pg_dump is never older than either end.
+          image: ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+                set -eu
+                # the postgres bundled in the dagster chart. If it is not there at all there is nothing to copy, and this Job
+                # is finished rather than failed -- see the note at the top of this file.
+                i=0
+                while [ $i -lt 12 ]; do
+                  getent hosts dagster-postgresql >/dev/null 2>&1 && break
+                  i=$((i + 1))
+                  sleep 10
+                done
+                if ! getent hosts dagster-postgresql >/dev/null 2>&1; then
+                  echo "dagster-postgresql does not resolve; there is no old server to empty"
+                  exit 0
+                fi
+                if [ "$(PGPASSWORD="$(cat /new/postgresql-password)" psql -h estate-rw.estate-db.svc.cluster.local -U dagster -d dagster -tAc "select to_regclass('public.estate_db_migration') is not null")" = t ]; then
+                  echo "dagster was copied on an earlier run; leaving it alone"
+                else
+                  echo "copying test from dagster-postgresql into dagster on the estate cluster"
+                  PGPASSWORD="$(cat /old/postgresql-password)" pg_dump -h dagster-postgresql -U test -d test \
+                          --no-owner --no-privileges --exclude-extension=vector --exclude-extension=pg_trgm \
+                          -Fc -f /tmp/db.dump
+                  PGPASSWORD="$(cat /new/postgresql-password)"; export PGPASSWORD
+                  psql -h estate-rw.estate-db.svc.cluster.local -U dagster -d dagster -v ON_ERROR_STOP=1 \
+                       -c 'drop schema if exists public cascade' -c 'create schema public'
+                  pg_restore -h estate-rw.estate-db.svc.cluster.local -U dagster -d dagster --no-owner --no-privileges --exit-on-error /tmp/db.dump
+                  psql -h estate-rw.estate-db.svc.cluster.local -U dagster -d dagster -v ON_ERROR_STOP=1 \
+                       -c 'create table estate_db_migration (copied_at timestamptz not null default now())' \
+                       -c 'insert into estate_db_migration default values'
+                  unset PGPASSWORD
+                  rm -f /tmp/db.dump
+                  echo "dagster is on the estate cluster"
+                fi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: old, mountPath: /old, readOnly: true }
+            - { name: new, mountPath: /new, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: old
+          secret: { secretName: dagster-postgresql-secret }
+        - name: new
+          secret: { secretName: estate-db-dagster }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: estate-db-copy-langfuse
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: estate-db-copy-langfuse
+    app.kubernetes.io/part-of: idp
+    backstage.io/kubernetes-id: layer-estate-db
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: estate-db-copy-langfuse
+        app.kubernetes.io/part-of: idp
+    spec:
+      restartPolicy: Never
+      priorityClassName: platform-batch
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        fsGroup: 26
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: copy
+          # The same image the estate cluster runs, so its pg_dump is never older than either end.
+          image: ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+                set -eu
+                # the postgres bundled in the langfuse chart. If it is not there at all there is nothing to copy, and this Job
+                # is finished rather than failed -- see the note at the top of this file.
+                i=0
+                while [ $i -lt 12 ]; do
+                  getent hosts langfuse-postgresql >/dev/null 2>&1 && break
+                  i=$((i + 1))
+                  sleep 10
+                done
+                if ! getent hosts langfuse-postgresql >/dev/null 2>&1; then
+                  echo "langfuse-postgresql does not resolve; there is no old server to empty"
+                  exit 0
+                fi
+                if [ "$(PGPASSWORD="$(cat /new/password)" psql -h estate-rw.estate-db.svc.cluster.local -U langfuse -d langfuse -tAc "select to_regclass('public.estate_db_migration') is not null")" = t ]; then
+                  echo "langfuse was copied on an earlier run; leaving it alone"
+                else
+                  echo "copying langfuse from langfuse-postgresql into langfuse on the estate cluster"
+                  PGPASSWORD="$(cat /old/POSTGRES_PASSWORD)" pg_dump -h langfuse-postgresql -U postgres -d langfuse \
+                          --no-owner --no-privileges --exclude-extension=vector --exclude-extension=pg_trgm \
+                          -Fc -f /tmp/db.dump
+                  PGPASSWORD="$(cat /new/password)"; export PGPASSWORD
+                  psql -h estate-rw.estate-db.svc.cluster.local -U langfuse -d langfuse -v ON_ERROR_STOP=1 \
+                       -c 'drop schema if exists public cascade' -c 'create schema public'
+                  pg_restore -h estate-rw.estate-db.svc.cluster.local -U langfuse -d langfuse --no-owner --no-privileges --exit-on-error /tmp/db.dump
+                  psql -h estate-rw.estate-db.svc.cluster.local -U langfuse -d langfuse -v ON_ERROR_STOP=1 \
+                       -c 'create table estate_db_migration (copied_at timestamptz not null default now())' \
+                       -c 'insert into estate_db_migration default values'
+                  unset PGPASSWORD
+                  rm -f /tmp/db.dump
+                  echo "langfuse is on the estate cluster"
+                fi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: old, mountPath: /old, readOnly: true }
+            - { name: new, mountPath: /new, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: old
+          secret: { secretName: langfuse-postgresql-auth }
+        - name: new
+          secret: { secretName: estate-db-langfuse }
+        - name: tmp
+          emptyDir: {}

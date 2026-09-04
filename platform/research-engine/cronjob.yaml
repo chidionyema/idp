@@ -73,25 +73,12 @@ spec:
                   # and the engine reads its configuration from the environment, so this line
                   # is the join between the two.
                   LITELLM_API_KEY="$(cat /secrets/router/LITELLM_API_KEY)"
-                  # The estate's existing Postgres, one database on it, not a server of our
-                  # own. Everything before the database name is identical between these two
-                  # lines: the admin URL points at the maintenance database so the research
-                  # database can be created on a cluster that has never seen it.
-                  PG="postgresql://hindsight:$(cat /secrets/db/POSTGRES_PASSWORD)@hindsight-db.hindsight.svc.cluster.local:5432"
-                  RESEARCH_PG_ADMIN_DSN="${PG}/postgres"
+                  # The estate's one Postgres, one database on it, not a server of our own.
+                  # The database and the role are declared to the operator in
+                  # platform/estate-db/cluster/databases.yaml, so nothing here creates either.
+                  PG="postgresql://research:$(cat /secrets/db/POSTGRES_PASSWORD)@estate-rw.estate-db.svc.cluster.local:5432"
                   RESEARCH_PG_DSN="${PG}/research"
-                  export LITELLM_API_KEY RESEARCH_PG_DSN RESEARCH_PG_ADMIN_DSN
-                  # CREATE DATABASE cannot run inside a transaction and so cannot live in
-                  # db/ddl.sql, which the engine applies on every start. This is the one
-                  # statement that has to happen first, and it is idempotent, so no person
-                  # ever runs a migration step (LAW 31).
-                  python - <<'PY'
-                  import os, psycopg
-                  with psycopg.connect(os.environ["RESEARCH_PG_ADMIN_DSN"], autocommit=True) as conn:
-                      if conn.execute("select 1 from pg_database where datname = 'research'").fetchone() is None:
-                          conn.execute("create database research")
-                          print("created database research on the estate instance")
-                  PY
+                  export LITELLM_API_KEY RESEARCH_PG_DSN
                   # One question per hour, rotating through the list in the ConfigMap.
                   n=$(grep -c . /questions/questions)
                   i=$(( ($(date -u +%H) % n) + 1 ))

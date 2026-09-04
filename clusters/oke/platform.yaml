@@ -49,6 +49,11 @@ spec:
     # dry-ran those two before either existed. Found by the closure-aware CRD-before-CR guard,
     # which the flat PRE_INSTALLED set had been widened past (crew#488).
     - name: edge
+    # Its Postgres data is copied onto the estate cluster before this row is applied, and
+    # this row is what deletes the old server. estate-db-migrate is the copy (crew: one
+    # Postgres for the estate) -- it must report Ready first or the data would be pruned
+    # ahead of being moved.
+    - name: estate-db-migrate
   postBuild:
     substituteFrom:
       # ESTATE_ZONE (idp#140): the zone is one value in clusters/oke/estate-config.yaml; not
@@ -167,6 +172,11 @@ spec:
     # Four ExternalSecrets (clickhouse-auth, langfuse-init, otlp-ingest-users, signoz-root) are in
     # this row; external-secrets.io only exists once the ESO chart has landed (crew#488).
     - name: external-secrets
+    # Its Postgres data is copied onto the estate cluster before this row is applied, and
+    # this row is what deletes the old server. estate-db-migrate is the copy (crew: one
+    # Postgres for the estate) -- it must report Ready first or the data would be pruned
+    # ahead of being moved.
+    - name: estate-db-migrate
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -238,6 +248,11 @@ spec:
   dependsOn:
     - name: identity
     - name: secret-store
+    # Its Postgres data is copied onto the estate cluster before this row is applied, and
+    # this row is what deletes the old server. estate-db-migrate is the copy (crew: one
+    # Postgres for the estate) -- it must report Ready first or the data would be pruned
+    # ahead of being moved.
+    - name: estate-db-migrate
   wait: true
   timeout: 10m
   healthChecks:
@@ -315,6 +330,11 @@ spec:
   dependsOn:
     - name: edge
     - name: secret-store
+    # Its Postgres data is copied onto the estate cluster before this row is applied, and
+    # this row is what deletes the old server. estate-db-migrate is the copy (crew: one
+    # Postgres for the estate) -- it must report Ready first or the data would be pruned
+    # ahead of being moved.
+    - name: estate-db-migrate
   wait: true
   timeout: 10m
   healthChecks:
@@ -454,6 +474,11 @@ spec:
     - name: secret-store
     - name: edge
     - name: event-bus
+    # Its Postgres data is copied onto the estate cluster before this row is applied, and
+    # this row is what deletes the old server. estate-db-migrate is the copy (crew: one
+    # Postgres for the estate) -- it must report Ready first or the data would be pruned
+    # ahead of being moved.
+    - name: estate-db-migrate
   wait: true
   timeout: 10m
   healthChecks:
@@ -581,6 +606,11 @@ spec:
     - name: scheduling
     - name: edge
     - name: secret-store
+    # Its Postgres data is copied onto the estate cluster before this row is applied, and
+    # this row is what deletes the old server. estate-db-migrate is the copy (crew: one
+    # Postgres for the estate) -- it must report Ready first or the data would be pruned
+    # ahead of being moved.
+    - name: estate-db-migrate
   wait: true
   timeout: 15m
   healthChecks:
@@ -630,6 +660,11 @@ spec:
     - name: edge
     - name: secret-store
     - name: image-automation   # ClusterSecretStore ghcr-pull, mirrored into this namespace (step 2)
+    # Its Postgres data is copied onto the estate cluster before this row is applied, and
+    # this row is what deletes the old server. estate-db-migrate is the copy (crew: one
+    # Postgres for the estate) -- it must report Ready first or the data would be pruned
+    # ahead of being moved.
+    - name: estate-db-migrate
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -734,6 +769,11 @@ spec:
   dependsOn:
     - name: secret-store
     - name: llm
+    # Its Postgres data is copied onto the estate cluster before this row is applied, and
+    # this row is what deletes the old server. estate-db-migrate is the copy (crew: one
+    # Postgres for the estate) -- it must report Ready first or the data would be pruned
+    # ahead of being moved.
+    - name: estate-db-migrate
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -767,6 +807,11 @@ spec:
     - name: identity
     - name: secret-store
     - name: tailscale
+    # Its Postgres data is copied onto the estate cluster before this row is applied, and
+    # this row is what deletes the old server. estate-db-migrate is the copy (crew: one
+    # Postgres for the estate) -- it must report Ready first or the data would be pruned
+    # ahead of being moved.
+    - name: estate-db-migrate
   wait: true
   timeout: 10m
   healthChecks:
@@ -1153,11 +1198,12 @@ spec:
 # takes one question from platform/research-engine/cronjob.yaml, has GPT Researcher retrieve and
 # snapshot the sources through the estate's SearXNG, extracts candidate claims on one router
 # lane, has a lane from a DIFFERENT provider check each one against the document it cites, and
-# writes the result -- admitted and rejected alike -- to its own Postgres.
+# writes the result -- admitted and rejected alike -- to the estate database.
 #
-# It depends on three things and says so: secret-store for the two credentials, llm because
-# both model lanes are the estate router, and searxng because a run with no search backend
-# retrieves nothing and the engine stops rather than writing an essay with invented citations.
+# It depends on four things and says so: secret-store for the two credentials, llm because
+# both model lanes are the estate router, searxng because a run with no search backend
+# retrieves nothing and the engine stops rather than writing an essay with invented citations,
+# and estate-db because its `research` database and role live on the one Postgres.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -1169,9 +1215,7 @@ spec:
     - name: secret-store
     - name: llm
     - name: searxng
-    # The engine brings no database server. It gets a database on the Postgres that already
-    # runs beside Hindsight, so that layer has to be up before this one is applied.
-    - name: hindsight
+    - name: estate-db
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -1179,3 +1223,73 @@ spec:
   prune: true
   wait: true
   timeout: 10m
+---
+# The one database platform, part 1: the operator and its CRDs. Founder, 2026-09-04, on the ten
+# Postgres servers this estate ran: "we need urgent consolidtion to one in few steps as possible
+# fast, this is a crazy situation". Split in two rows because the cluster below is a custom
+# resource the operator defines, and a Kustomization cannot apply a CR whose CRD it is installing
+# in the same pass.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: estate-db-operator
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/estate-db/operator
+  prune: true
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: cloudnative-pg
+      namespace: estate-db
+---
+# Part 2: the cluster itself, its twelve databases and their roles. Depends on secret-store
+# because every password comes from the vault entry `estate-db`.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: estate-db
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: estate-db-operator
+    - name: secret-store
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/estate-db/cluster
+  prune: true
+  wait: true
+  timeout: 15m
+  healthChecks:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: estate
+      namespace: estate-db
+---
+# Part 3: the copy. Seven Jobs, each one lifting a database off the server it is retiring and
+# putting it on the estate cluster. It waits for part 2, so it never runs before the databases
+# and the roles exist. Each Job is written to be run once and to do nothing on every run after.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: estate-db-migrate
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: estate-db
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/estate-db/migrate
+  prune: true
+  wait: true
+  timeout: 20m

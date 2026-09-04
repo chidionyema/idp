@@ -4,7 +4,6 @@ namespace: temporal
 resources:
   - namespace.yaml
   - external-secret.yaml
-  - postgres.yaml
   - temporal.yaml
   - pull-secret.yaml
   - worker.yaml

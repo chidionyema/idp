@@ -81,13 +81,21 @@ langfuse:
     pod:
       labels: { idp.platform/capacity-approved: "true" }   # 1000m Guaranteed, measured (crew#626 CP15, run 33262424618)
 postgresql:
-  deploy: true
-  storage:
-    requestedSize: 5Gi
-    className: oci-bv
-  resources:
-    requests: { cpu: 50m, memory: 512Mi }   # crew#584 zealot rule 1: micro CPU request, burst limit; the memory floor stays (incident-set)
-    limits: { cpu: 1000m, memory: 512Mi }
+  # crew: one Postgres for the estate. This chart bundled its own server (docker.io/postgres:18,
+  # the only PostgreSQL 18 in the estate, which is why the estate cluster is 18 too) and it no
+  # longer does. The copy Job in platform/estate-db/migrate/jobs.yaml lifts database `langfuse`
+  # off that server before Flux is allowed to prune the StatefulSet.
+  deploy: false
+  host: estate-rw.estate-db.svc.cluster.local
+  port: 5432
+  auth:
+    username: langfuse
+    database: langfuse
+    # Written into this namespace by platform/estate-db/cluster/secrets.yaml, so it is there
+    # before the copy runs and before langfuse is asked to connect.
+    existingSecret: estate-db-langfuse
+    secretKeys:
+      userPasswordKey: password
 redis:
   deploy: true
   resources:

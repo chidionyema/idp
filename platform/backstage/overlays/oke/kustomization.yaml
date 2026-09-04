@@ -42,6 +42,24 @@ images:
   - name: docker.io/library/postgres
     newName: docker.io/library/postgres
 patches:
+  # The catalogue's database is the one estate Postgres (platform/estate-db), not the server
+  # bundled in base -- base keeps that one because compose and k3d have nothing else to talk to.
+  - target:
+      kind: Deployment
+      name: catalogue
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: catalogue
+      spec:
+        template:
+          spec:
+            containers:
+              - name: catalogue
+                env:
+                  - name: POSTGRES_HOST
+                    value: estate-rw.estate-db.svc.cluster.local
   # The availability.idp/tier label moved with the Namespace to
   # platform/backstage/namespace/overlays/oke. The object is no longer rendered here, so a patch
   # targeting it here would have no target (crew#488).

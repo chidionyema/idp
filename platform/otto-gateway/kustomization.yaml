@@ -10,7 +10,6 @@ resources:
   - quota.yaml
   - network-policy.yaml
   - external-secret.yaml
-  - postgres.yaml
   - binding-seed.yaml
   - deployment.yaml
   - httproute.yaml

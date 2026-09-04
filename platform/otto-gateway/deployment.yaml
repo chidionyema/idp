@@ -73,7 +73,7 @@ spec:
               set -eu
               PGPASSWORD=$(cat /run/secrets/otto-gateway-db/POSTGRES_PASSWORD); export PGPASSWORD
               fingerprint=$(sha256sum < /run/secrets/otto-gateway-channels/OTTO_TELEGRAM_WEBHOOK_SECRET | cut -d' ' -f1)
-              psql -h otto-gateway-db -U otto_gateway -d otto_gateway -v ON_ERROR_STOP=1 \
+              psql -h estate-rw.estate-db.svc.cluster.local -U otto_gateway -d otto_gateway -v ON_ERROR_STOP=1 \
                 -v chat_id="$(cat /run/secrets/otto-gateway-channels/TELEGRAM_CHAT_ID)" \
                 -v fingerprint="$fingerprint" \
                 -f /seed/seed.sql
@@ -107,7 +107,7 @@ spec:
               exec python -m otto.ingress
           env:
             - { name: OTTO_INGRESS_PORT, value: "8080" }
-            - { name: OTTO_INGRESS_DB_HOST, value: otto-gateway-db }
+            - { name: OTTO_INGRESS_DB_HOST, value: estate-rw.estate-db.svc.cluster.local }
             - { name: OTTO_INGRESS_DB_PORT, value: "5432" }
             - { name: OTTO_INGRESS_DB_NAME, value: otto_gateway }
             - { name: OTTO_INGRESS_DB_USER, value: otto_gateway }

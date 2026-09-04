@@ -93,6 +93,17 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: System
 metadata:
+  name: data
+  title: 'Data'
+  description: 'Where the estate keeps its records: one PostgreSQL cluster, a database per service, backed up and failed over once for everything.'
+  tags: [platform]
+spec:
+  owner: group:default/platform
+  domain: platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
   name: commerce
   title: 'Money'
   description: 'How a customer pays and what they are owed: subscriptions, credit packs, invoices and the ledger. The products never see a card.'
@@ -220,6 +231,7 @@ spec:
     - component:default/layer-external-secrets
     - component:default/layer-secret-store
     - component:default/layer-edge
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -403,6 +415,7 @@ spec:
     - component:default/layer-scheduling
     - component:default/layer-edge
     - component:default/layer-secret-store
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -517,6 +530,74 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: delivery
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-estate-db
+  title: 'The estate database'
+  description: 'One PostgreSQL for the whole estate. Every service that needs a database gets one here instead of running its own.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=estate-db'
+    estate/flux-kustomization: 'estate-db'
+    estate/path: './platform/estate-db/cluster'
+    estate/cluster: 'oke'
+  tags: [platform, data]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: data
+  dependsOn:
+    - component:default/layer-estate-db-operator
+    - component:default/layer-secret-store
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-estate-db-migrate
+  title: 'Database move'
+  description: 'Lifts each service''s data off the server it used to run and puts it on the one estate database.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=estate-db-migrate'
+    estate/flux-kustomization: 'estate-db-migrate'
+    estate/path: './platform/estate-db/migrate'
+    estate/cluster: 'oke'
+  tags: [platform, data]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: data
+  dependsOn:
+    - component:default/layer-estate-db
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-estate-db-operator
+  title: 'Database operator'
+  description: 'Runs the estate''s databases: failover, backups and a database per team without anyone touching a server.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=estate-db-operator'
+    estate/flux-kustomization: 'estate-db-operator'
+    estate/path: './platform/estate-db/operator'
+    estate/cluster: 'oke'
+  tags: [platform, data]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: data
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -651,6 +732,7 @@ spec:
     - component:default/layer-identity
     - component:default/layer-secret-store
     - component:default/layer-tailscale
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -739,6 +821,7 @@ spec:
   dependsOn:
     - component:default/layer-identity
     - component:default/layer-secret-store
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -820,6 +903,7 @@ spec:
   dependsOn:
     - component:default/layer-secret-store
     - component:default/layer-llm
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -1009,6 +1093,7 @@ spec:
   dependsOn:
     - component:default/layer-edge
     - component:default/layer-secret-store
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -1188,6 +1273,7 @@ spec:
     - component:default/layer-scheduling
     - component:default/layer-observability-collector
     - component:default/layer-external-secrets
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -1254,6 +1340,7 @@ spec:
     - component:default/layer-secret-store
     - component:default/layer-edge
     - component:default/layer-event-bus
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -1449,7 +1536,7 @@ spec:
     - component:default/layer-secret-store
     - component:default/layer-llm
     - component:default/layer-searxng
-    - component:default/layer-hindsight
+    - component:default/layer-estate-db
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component
@@ -1657,6 +1744,7 @@ spec:
     - component:default/layer-edge
     - component:default/layer-secret-store
     - component:default/layer-image-automation
+    - component:default/layer-estate-db-migrate
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Component

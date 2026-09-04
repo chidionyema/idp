@@ -54,6 +54,14 @@ temporal-db               password                    hex32
 otto-gateway-db           password                    hex32
 guacamole                 postgres-password           hex32
 hindsight                 postgres-password           hex32
+# the one Postgres (platform/estate-db). Seven of its ten roles keep the password their
+# consumer already holds, read straight from that consumer's own vault entry, so nothing is
+# minted for them here. These four are the exceptions: the superuser, and the three roles whose
+# consumer never had a vault entry of its own.
+estate-db                 superuser-password         hex32
+estate-db                 dagster-password           hex32
+estate-db                 langfuse-password          hex32
+estate-db                 research-password          hex32
 hindsight                 HINDSIGHT_API_LLM_BASE_URL  const:https://llm.$ZONE
 mcp-gateway               MCP_GATEWAY_KEY             hex32
 backstage-env             BACKEND_SECRET              urlsafe32

@@ -60,6 +60,10 @@ SYSTEMS = {
         "Products",
         "What a customer buys: the store and the prospecting product, on the platform.",
     ),
+    "data": (
+        "Data",
+        "Where the estate keeps its records: one PostgreSQL cluster, a database per service, backed up and failed over once for everything.",
+    ),
     "commerce": (
         "Money",
         "How a customer pays and what they are owed: subscriptions, credit packs, invoices and the ledger. The products never see a card.",
@@ -147,6 +151,10 @@ LAYERS = {
         "edge",
         "Gateway",
         "The one front door: TLS, routes to every surface, and the manners on every reply.",
+    ),
+    "data": (
+        "Data",
+        "Where the estate keeps its records: one PostgreSQL cluster, a database per service, backed up and failed over once for everything.",
     ),
     "commerce": (
         "commerce",
@@ -335,6 +343,21 @@ LAYERS = {
         "agents",
         "Agent memory",
         "What the agents learned, kept between sessions.",
+    ),
+    "estate-db-operator": (
+        "data",
+        "Database operator",
+        "Runs the estate's databases: failover, backups and a database per team without anyone touching a server.",
+    ),
+    "estate-db": (
+        "data",
+        "The estate database",
+        "One PostgreSQL for the whole estate. Every service that needs a database gets one here instead of running its own.",
+    ),
+    "estate-db-migrate": (
+        "data",
+        "Database move",
+        "Lifts each service's data off the server it used to run and puts it on the one estate database.",
     ),
     "healing": (
         "resilience",

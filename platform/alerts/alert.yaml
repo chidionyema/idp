@@ -40,6 +40,9 @@ spec:
       namespace: edge
     - kind: HelmRelease
       name: "*"
+      namespace: estate-db
+    - kind: HelmRelease
+      name: "*"
       namespace: event-bus
     - kind: HelmRelease
       name: "*"
