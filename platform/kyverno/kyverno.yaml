@@ -40,7 +40,16 @@ spec:
         name: kyverno
   values:
     admissionController:
-      replicas: 1
+      # 2026-09-04: the `validate.kyverno.svc-fail` webhook is registered on ['*'] ['*'] ['*'] for
+      # CREATE, UPDATE and DELETE with failurePolicy Fail and a 10 s timeout, so one
+      # admission-controller pod is a cluster-wide write lock -- while it is unreachable nothing is
+      # admitted at all. That is what happened this morning: Flux could not create
+      # Namespace/external-secrets or Namespace/scheduling ("failed calling webhook
+      # validate.kyverno.svc-fail ... context deadline exceeded"), and 33 Flux objects stalled
+      # behind those two, weave-gitops (the deploy page) and otto-golden among them. Kyverno's own
+      # production guidance is more than one admission-controller replica; this cluster has two
+      # nodes, and the chart's default anti-affinity puts one pod on each.
+      replicas: 2
       container:
         resources:
           requests:
