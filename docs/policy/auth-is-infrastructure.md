@@ -21,8 +21,9 @@ The application stays completely ignorant of it.
 The worked example: Otto's Telegram webhook. The wrong build checked the
 `X-Telegram-Bot-Api-Secret-Token` header inside the application (deleted the same
 night, 2026-09-02). The right build is an exact header match on the route
-(`platform/otto-golden/httproute.yaml`): the gateway forwards only a POST whose
-header equals the vault-fed value; the pod holds no auth code at all.
+(`platform/otto-gateway/httproute.yaml`, which since crew#768 is the estate's one
+door for an inbound channel): the gateway forwards only a POST whose header equals
+the vault-fed value; the pod holds no auth code at all.
 
 ## What review flags (the dragon classes)
 
