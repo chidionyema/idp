@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The cluster's debugger, kept alive outside the cluster (bin/idp-headlamp-mac says why it
+  cannot live inside it). KeepAlive because headlamp-server blocks forever serving HTTP, so
+  launchd is the only thing that brings it back after a crash, a sleep or a reboot -- the same
+  reasoning as ai.estate.cockpit. It must be up before the incident, not started during one.
+
+  Install:  bin/idp-install-launchd headlamp
+  Remove:   launchctl bootout gui/$(id -u)/ai.estate.headlamp
+  Open:     http://<this Mac>.<tailnet>.ts.net:4466/ with the Tailscale app on
+-->
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>${PATH}</string>
+		<key>HOME</key>
+		<string>${HOME}</string>
+	</dict>
+	<key>Label</key>
+	<string>ai.estate.headlamp</string>
+	<key>Nice</key>
+	<integer>5</integer>
+	<key>ProgramArguments</key>
+	<array>
+		<string>${IDP}/bin/idp-headlamp-mac</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+	<key>StandardErrorPath</key>
+	<string>${IDP}/run/headlamp-launchd.log</string>
+	<key>StandardOutPath</key>
+	<string>${IDP}/run/headlamp-launchd.log</string>
+	<key>WorkingDirectory</key>
+	<string>${IDP}</string>
+</dict>
+</plist>

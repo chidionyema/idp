@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Debug the cluster from a phone, from OUTSIDE the cluster.
+#
+# Founder, 2026-09-04: "you dnt install debunggin tills in the cluster itself, the whole point is
+# to be a ble to deug a cluster", and before that "no but if cataologue is down / then i need to be
+# able to debug". Both rule out the obvious build. A Headlamp deployed on the estate cluster shares
+# its failure domain twice over: it is behind the same Traefik gateway and oauth2-proxy as the
+# catalogue, so an edge fault hides it, and it runs on the same two worker nodes as everything it
+# would be used to diagnose. A debugger that dies with the patient is not a debugger.
+#
+# So the UI runs here, on the estate Mac, and talks to Oracle's managed OKE control plane directly
+# (https://141.147.80.229:6443 -- a public endpoint Oracle runs, not a pod). Nothing in the path
+# touches the cluster's own workloads: no Traefik, no oauth2-proxy, no cert-manager, no public DNS,
+# no ingress. When every pod on both nodes is gone this still answers, because the API server it
+# reads is not ours to lose.
+#
+# The door is the tailnet, not the internet. headlamp-server binds ONLY the Mac's Tailscale address
+# (100.x), so the UI exists on no other network -- not the coffee-shop wifi, not the LAN, not a
+# public port. The tailnet policy already says who may knock: platform/tailscale/policy.hujson
+# grants `group:founder` -> `tag:founder-mac:*` and nothing else, and the file is deny-by-default,
+# so the founder's own phone reaches it and no other device on the tailnet can. That is the whole
+# authentication story and it needed no new rule.
+#
+# Nobody pastes a token. The token prompt the founder hit ("Please paste your authentication
+# token") is Headlamp's in-cluster mode asking for a service account bearer token -- a credential
+# with no expiry, no person's name on it and no audit trail, which ADR 0003 and ADR 0007 refuse.
+# Out of cluster there is no prompt at all: the kubeconfig carries an exec plugin, headlamp-server
+# runs `oci ce cluster generate-token` on every request cycle, and the identity is the estate's OCI
+# API key in the vault. Short-lived, minted per use, attributable.
+#
+#   Run:      bin/idp-headlamp-mac                     (launchd keeps it alive; see launchd/)
+#   Install:  bin/idp-install-launchd headlamp
+#   Open:     http://<this Mac>.<tailnet>.ts.net:4466/ with the Tailscale app on
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+PORT="${HEADLAMP_PORT:-4466}"
+APP="${HEADLAMP_APP:-/Applications/Headlamp.app}"
+SERVER="$APP/Contents/Resources/headlamp-server"
+STATIC="$APP/Contents/Resources/frontend"
+trap 'echo "FAIL  headlamp  exit $? at line $LINENO" >&2' ERR
+die() {
+	printf 'BLIND   headlamp  %s\n' "$1" >&2
+	exit 2
+}
+
+[ -x "$SERVER" ] || die "no headlamp-server at $SERVER -- brew install --cask headlamp (set HEADLAMP_APP to override)"
+[ -d "$STATIC" ] || die "no frontend at $STATIC; the app bundle is incomplete"
+
+# The listen address is the tailnet one, resolved at start rather than written down: it is assigned
+# by Tailscale and would be a machine literal in a tracked file (LAW 46). The GUI build ships its
+# CLI inside the bundle, so both paths are tried before giving up.
+TS="$(command -v tailscale || true)"
+[ -n "$TS" ] || TS="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+ADDR="$("$TS" ip -4 2>/dev/null | head -1 || true)"
+[ -n "$ADDR" ] || die "this Mac has no tailnet address -- open the Tailscale app and sign in; binding to anything else would put a cluster-admin UI on the local network"
+
+# The kubeconfig is the one every laptop and runner uses (bin/idp-kube), cached and refreshed by
+# that script alone. A failure to refresh is not fatal here: a stale kubeconfig whose exec plugin
+# still works is better than no debugger during the incident it exists for.
+KC="${IDP_KUBECONFIG:-${XDG_STATE_HOME:-$HOME/.local/state}/idp/kubeconfig}"
+"$IDP/bin/idp-kube" >/dev/null 2>&1 || printf 'warn    headlamp  bin/idp-kube could not refresh the kubeconfig; using the cached one\n' >&2
+[ -f "$KC" ] || die "no kubeconfig at $KC -- run bin/idp-oci-login then bin/idp-kube"
+
+# The API key profile, never the session-token one: session tokens die within hours and this job is
+# meant to be there at 3am (docs/reference/oke-laptop-session.md).
+export OCI_CLI_PROFILE="${OCI_CLI_PROFILE:-DEFAULT}" OCI_CLI_AUTH="${OCI_CLI_AUTH:-api_key}" SUPPRESS_LABEL_WARNING=True
+printf 'ok      headlamp  http://%s:%s/  (tailnet only)\n' "$ADDR" "$PORT"
+exec "$SERVER" -kubeconfig "$KC" -html-static-dir "$STATIC" -listen-addr "$ADDR" -port "$PORT"
