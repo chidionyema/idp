@@ -29,4 +29,4 @@ configMapGenerator:
       - cursor-agent=cursor-agent.tpl
 images:
   - name: ghcr.io/chidionyema/hermes-agent
-    newTag: main-68-ce246e23787fe2a9b0a688dd79a19e5268f5a72b # {"$imagepolicy": "flux-system:hermes-agent:tag"}
+    newTag: main-69-55ec247708ebbfb548fd1796a123e2404726d8ae # {"$imagepolicy": "flux-system:hermes-agent:tag"}
