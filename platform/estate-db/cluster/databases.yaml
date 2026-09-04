@@ -31,24 +31,26 @@ kind: Database
 metadata:
   name: hindsight
   namespace: estate-db
-  annotations:
-    # Bumped 2026-09-04 to make CloudNativePG reconcile this Database again. The copy Job had
-    # dropped schema public, which took the vector and pg_trgm extensions with it, and the
-    # controller does not notice an extension that disappears underneath an already-applied
-    # Database. Every reconcile issues CREATE EXTENSION IF NOT EXISTS for the list below, so an
-    # annotation change is enough to put them back.
-    estate.idp/extensions-reapplied: "2026-09-04"
 spec:
   cluster:
     name: estate
   name: hindsight
   owner: hindsight
   ensure: present
+  # The schema is named here, and that is the whole point of the line. The copy Job had dropped
+  # schema public and taken both extensions with it; CloudNativePG did not put them back, because
+  # its Database controller only reconciles when .metadata.generation moves, and an annotation does
+  # not move it -- status still read observedGeneration 1, applied: true, while `select extname from
+  # pg_extension` in the database returned plpgsql alone (measured 2026-09-04). Only a change to the
+  # spec makes the controller issue CREATE EXTENSION IF NOT EXISTS again, and the role cannot do it
+  # itself because pgvector is not a trusted extension. `schema: public` is where both already live.
   extensions:
     - name: vector
       ensure: present
+      schema: public
     - name: pg_trgm
       ensure: present
+      schema: public
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
