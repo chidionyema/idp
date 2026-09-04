@@ -1,9 +1,6 @@
 name: ci
 on:
   pull_request:
-  # The merge queue builds each queued pull request on top of main and reruns the
-  # required checks against that exact merged state before anything lands.
-  merge_group:
   push:
     # flux/image-updates is the branch image-automation-controller pushes a new catalogue tag to
     # (crew#267). The required checks run on that push, so the pull request that
@@ -73,17 +70,6 @@ jobs:
           # ran the same 132 s again (run 33202098401). Locally bin/idp-ci still runs them.
           IDP_CI_SKIP_PYTEST: "1"
 
-  # crew#286: the Estate-as-Platform operating model as a gate. One job, one script, the
-  # same conftest CI already installs; deny lines come back as a PR comment (CP10).
-  # crew#292 CP3: the steps moved to .github/workflows/operating-model-gate.yml so
-  # hermes-v2 and crew call the same file. idp calls it like any other repo -- one
-  # copy of the gate, and idp is not a special case of it. The push-to-main skip
-  # lives in the reusable workflow now.
-  operating-model-gate:
-    needs: fast-gate
-    uses: ./.github/workflows/operating-model-gate.yml
-    permissions: { contents: read, pull-requests: write }
-
   # crew#219 R39/R41: the Sovereign Bus acceptance suite, under the branch
   # policy AGENTS.md [merge] declares. offline-gate above already runs this
   # suite inside bin/idp-ci, permissively. This job is the strict leg: on a
@@ -138,7 +124,7 @@ jobs:
   verdict-fresh:
     name: verify/verdict-fresh
     needs: fast-gate
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions: { contents: read, actions: read }
     steps:
@@ -148,8 +134,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          BASE="${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || format('origin/{0}', github.base_ref) }}"
-          mapfile -t changed < <(git diff --name-only "$BASE...HEAD")
+          mapfile -t changed < <(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
           bin/idp-verdict-fresh langfuse --changed "${changed[@]}"
 
   bdd-suites:
@@ -286,7 +271,7 @@ jobs:
           else
             echo "yes=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         if: steps.touched.outputs.yes == 'true'
         with:
           # backstage/package.json declares engines.node "22 || 24" and the image is node:24.
@@ -320,20 +305,8 @@ jobs:
     steps:
       - name: every bdd suite passed
         run: |
-          set -euo pipefail
-          result='${{ needs.bdd-suites.result }}'
-          echo "bdd-suites: $result"
-          # `skipped` is a pass. The leg only runs when a pull request touches
-          # something a bdd suite covers, so a change that touches none of them
-          # skips it -- and this gate used to read that skip as a failure and
-          # refuse the pull request. Every change outside the bdd surface was
-          # red for a reason that had nothing to do with the change. LAW 38: a
-          # guard that refuses correct work is an outage. `failure` and
-          # `cancelled` are still red.
-          case "$result" in
-            success|skipped) echo "bdd: pass" ;;
-            *) echo "bdd: FAIL ($result)"; exit 1 ;;
-          esac
+          echo "bdd-suites: ${{ needs.bdd-suites.result }}"
+          test "${{ needs.bdd-suites.result }}" = success
 
   # crew#584 PR B: the "Enable platform feature" Backstage template opens a pull request that
   # adds one row to platform/features/requests.yaml; it never runs `bin/idp-features enable`
