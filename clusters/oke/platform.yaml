@@ -1148,3 +1148,36 @@ spec:
       kind: Deployment
       name: searxng
       namespace: searxng
+---
+# The research engine (crew#508, SPEC-v1). The estate's own research department: on the hour it
+# takes one question from platform/research-engine/cronjob.yaml, has GPT Researcher retrieve and
+# snapshot the sources through the estate's SearXNG, extracts candidate claims on one router
+# lane, has a lane from a DIFFERENT provider check each one against the document it cites, and
+# writes the result -- admitted and rejected alike -- to its own Postgres.
+#
+# It depends on three things and says so: secret-store for the two credentials, llm because
+# both model lanes are the estate router, and searxng because a run with no search backend
+# retrieves nothing and the engine stops rather than writing an essay with invented citations.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: research-engine
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: secret-store
+    - name: llm
+    - name: searxng
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/research-engine
+  prune: true
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: StatefulSet
+      name: research-db
+      namespace: research

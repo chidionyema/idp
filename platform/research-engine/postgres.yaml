@@ -1,0 +1,100 @@
+# The research ledger. `db/ddl.sql` in the research-engine repository describes a system of
+# record -- requests, questions, snapshots, claims admitted AND rejected, artifacts, prediction
+# scores -- and the engine applies it itself on every start, so no migration step exists for a
+# person to forget (LAW 31).
+#
+# Cost note (LAW 14): this is another Postgres in an estate that already runs several, and
+# platform/features/features.yaml tracks consolidating them as its own work item. It is not
+# folded into an existing one here because db/ddl.sql creates two roles and grants column-level
+# privileges on them -- the whole no-self-certification invariant -- which means owning the
+# database, not a schema inside somebody else's.
+apiVersion: v1
+kind: Service
+metadata:
+  name: research-db
+  namespace: research
+  labels:
+    app.kubernetes.io/name: research-db
+    app.kubernetes.io/part-of: idp
+    backstage.io/kubernetes-id: layer-research-engine
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector: { app.kubernetes.io/name: research-db }
+  ports:
+    - { name: pg, port: 5432, targetPort: 5432 }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: research-db
+  namespace: research
+  annotations:
+    # Reloader discovers every Secret and ConfigMap this pod references; the estate injects
+    # this annotation at admission (platform/edge/require-auto-reload.yaml) so git and the
+    # cluster say the same thing.
+    reloader.stakater.com/auto: "true"
+  labels: { app.kubernetes.io/name: research-db, app.kubernetes.io/part-of: idp }
+spec:
+  serviceName: research-db
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: research-db }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: research-db, app.kubernetes.io/part-of: idp }
+    spec:
+      automountServiceAccountToken: false
+      priorityClassName: platform-batch
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70   # postgres uid in the alpine image
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: postgres
+          image: docker.io/library/postgres:17.6-alpine
+          env:
+            - { name: POSTGRES_USER, value: research }
+            - { name: POSTGRES_DB, value: research }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+            # The password is a FILE, never an env var: the estate's admission policy refuses
+            # a workload that reads a secret out of the environment.
+            - { name: POSTGRES_PASSWORD_FILE, value: /run/secrets/research/POSTGRES_PASSWORD }
+          ports:
+            - { containerPort: 5432, name: pg }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "research", "-d", "research"] }
+            periodSeconds: 10
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "research", "-d", "research"] }
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: pgdata, mountPath: /var/lib/postgresql/data }
+            - { name: creds, mountPath: /run/secrets/research, readOnly: true }
+            - { name: run, mountPath: /var/run/postgresql }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: creds
+          secret: { secretName: research-db }
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 8Gi

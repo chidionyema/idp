@@ -1,0 +1,12 @@
+# The research engine: the estate's own research department, on the hour. It writes a ledger of
+# claims that each cite a snapshotted source and were checked by a model from a different
+# provider than the one that wrote them; a claim that fails either test is kept with its
+# rejection reason rather than dropped.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: research
+resources:
+  - namespace.yaml
+  - secrets.yaml
+  - postgres.yaml
+  - cronjob.yaml
