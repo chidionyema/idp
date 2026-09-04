@@ -3,72 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-02T13:11:42Z · session 54539261 · lane .wt-eye-breaker
-🟡 Active: founder frustration spike mid-Thing-1 — he tried Create Secret in HIS window and hit 'no vault' (wrong compartment picked); his old tab wedged (script injection timeouts, suspect a native dialog); I opened a fresh tab 2118127937 and am rebuilding the pre-filled Create Secret form
-🟢 Done: ACTIVE vault CONFIRMED two ways (CLI: ervi35puaagem ACTIVE holds all 49 estate secrets; twin ervi4txd PENDING_DELETION); form was fully pre-filled once (name bitwarden-machine, Plain-Text, cursor parked); Telegram pin 21411 sent
-🔴 Blocked: only the token paste; no bitwarden-machine in secret list yet (CLI 13:0xZ)
-⚪ Pending: paste → watcher bkne1xiiv ACTIVE → ping code-f9 → vault-bootstrap; then repoint runbook at NEW Oracle Secrets console (cloud.oracle.com/security/secrets — Oracle moved it; root cause of his 'cant find it')
-🔧 TOUCHES: founder browser only
-🔀 OVERLAP: code-f9 dispatches on my signal
-📎 FACTS: secrets stores by design = 2 (Bitwarden human vault + OCI estate-secrets machine vault), external-secrets is the pipe
-📍 State: rebuilding form in fresh tab
-
-
-## 2026-09-02T13:29:30Z · session 54539261 · lane .wt-eye-breaker
-🟡 Active: Thing 1 pivoted to CLI-by-OCID on founder order (doc 2026-09-02T1325Z…37dbce42.md): write capability PROVED (canary created ACTIVE then deletion-scheduled), FOUNDER ACTION pinned 21416 = he types ! pbpaste > ~/.estate/bitwarden-machine.token; I create the secret in vault ervi35puaagem and shred the file
-🟢 Done: manual console path killed (he pasted into the PENDING_DELETION twin via identical dropdown rows → vault-conflict error; my mis-verification, owned); browser tab closed; estate-tofu key proven read+write on the vault
-🔴 Blocked: only his one paste into this session
-⚪ Pending: secret ACTIVE → ping code-f9 → vault-bootstrap dispatch; findings x3 to incidents file (automation-asymmetry rule, doubling-down, 49-secrets whiplash)
-🔧 TOUCHES: OCI vault (canary authz-canary-delete-me, deletion 25h); no repo files yet
-🔀 OVERLAP: code-f9 dispatches on my signal; nobody else touch the chain
-📎 FACTS: canary id amaaaaaapixfkniawfimb7pqjv7ulmdnivys2ihb3eeja77uddvz7chgzfoq; consumer vault-bootstrap.yml reads raw token via bin/idp-cloud secret get
-📍 State: one event ahead: his pbpaste line
-
-
-## 2026-09-02T13:40:56Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: THING 1 COMPLETE — bitwarden-machine ACTIVE in vault ervi35puaagem, created by CLI per founder order (doc 2026-09-02T1325Z…37dbce42.md): token captured in-process from his clipboard (never displayed/written to disk), create-base64 by OCID, ACTIVE poll 3, secret-bundle roundtrip byte-identical; code-f9 pinged to dispatch vault-bootstrap.yml
-🟡 Active: awaiting vault-bootstrap run → identifiers PR → founder merge word
-🔴 Blocked: none in my lane
-⚪ Pending: after chain thaws — signed-in Superset check, then FOUNDER ACTION delete PVC pgdata-metabase-db-0 (runbook step 6); doc branch fix/bitwarden-cli-runbook (027482ee) pushed, repoints 3 console runbook spots at the code road
-🔧 TOUCHES: OCI vault write (bitwarden-machine, + canary authz-canary-delete-me deletion-scheduled); no cluster touches
-🔀 OVERLAP: code-f9 owns the dispatch; nobody re-create the secret
-📎 FACTS: secret id amaaaaaapixfknia34nb5hnh2ssb4e7vev6igcobla4efidsubiaam4sr6pa; incidents ca62f85; Telegram pin 21416 now satisfied
-📍 State: waiting on code-f9's dispatch report
-
-
-## 2026-09-02T13:41:23Z · session a2aed3c9 · lane idp
-🟢 Done: THING 1 IS IN — bitwarden-machine ACTIVE in the live vault (created by CLI on the founder's order in code-0c's session, secret-bundle read back byte-identical, raw 0.-prefixed token shape = exactly what vault-bootstrap expects); I dispatched vault-bootstrap.yml the same minute: run 33637254431, in_progress 13:41:19Z, watcher armed
-🟡 Active: run creates/finds the estate project in Bitwarden and opens the identifiers PR (BITWARDEN_ORG_ID/PROJECT_ID → clusters/oke/estate-config.yaml); founder merges it → human-vault ClusterSecretStore's two "null" fields resolve → secret-store chain green
-🔴 Blocked: nothing — the months-long first-secret deadlock is behind us pending one merge word
-⚪ Pending: run verdict + PR number; then founder's next mode=apply seeds telegram entries (notify/otto rows)
-🔧 TOUCHES: nothing on disk; workflow dispatch only (no cluster — it opens a PR)
-🔀 OVERLAP: identifiers PR is FOUNDER-merge (infra word); nobody else touches the Bitwarden chain
-📎 FACTS: run 33637254431 · founder doc 2026-09-02T1325Z…37dbce42.md (CLI-created secret, Oracle moved the secrets console)
-📍 State: one watcher live on the run
-
-
-## 2026-09-02T13:57:34Z · session a2aed3c9 · lane idp
-🟢 Done: identifiers PR idp#1144 LANDED on main 13:57:16Z (squash c7e413ad) on the founder's APPROVE — BITWARDEN_ORG_ID + PROJECT_ID now in clusters/oke/estate-config.yaml; the human-vault ClusterSecretStore's two "null" fields resolve on the next automatic flux pull
-🟡 Active: watching for flux to pick up main → human-vault Kustomization green → secret-store chain live end to end (token in Oracle vault → Bitwarden machine access → cluster)
-🔴 Blocked: none in my lane
-⚪ Pending: founder's next oke-check mode=apply seeds the Telegram entries (notify + otto rows) — his button, never mine; crew branch docs/ultimate-edict-full-text (9a80264) pushed, awaiting road
-🔧 TOUCHES: git only (idp main); zero cluster touches
-🔀 OVERLAP: nobody re-touch the Bitwarden chain; dagster Kyverno denial + observability are other lanes
-📎 FACTS: sha c7e413ad · gate 7/7 + verify green after backtick fix (bin/idp-verify-claims requires Verify: `cmd` backticks) · run 33637254431 was the bootstrap
-📍 State: chain complete on the git side; cluster side follows flux
-
-
-## 2026-09-02T14:02:22Z · session a14fc078 · lane .wt-crew612-phone
-🟡 Active: founder pasted an external AI "cluster bleeding out" diagnosis (captured ~/.claude/docs/founder/2026-09-02T1357Z-...-cba107c9.md) + said "talk to peers / need deep trace" — coordinating the corrected trace now. Domain 1 (scheduling) is MINE: priorityClassName batch onto litellm, litellm-db, spend CronJobs ×2, estate-mcp, github-mcp + new platform-service PriorityClass; judging now
-🟢 Done: judge wave pushed earlier (fix/kyverno-judge-audit-warn-split, c9651775). Corrections established for the trace: platform-workload-names-a-class is AUDIT (admission admits; llm+mcp Kustomizations green — the paste's "Kyverno is blocking mcp/llm" is false as outage cause); signoz HelmRelease is READY (paste's death-loop claim half-wrong); otto per code-f9 = pure sequencing (idp#1144 MERGED 13:57:16Z, store IDs fill on next flux pull; secret VALUES land on founder's next oke-check mode=apply — "not found" is the expected state till then)
-🔴 Blocked: none
-⚪ Pending: code-0c one-liner on superset's measured cause (asked 14:0xZ); then the deep-trace reply to the founder
-🔧 TOUCHES: platform/llm/{litellm,postgres,spend-breaker-digest}.yaml, platform/mcp/{estate-mcp,github-mcp}.yaml, platform/priority-classes/priorityclasses.yaml — uncommitted
-🔀 OVERLAP: code-f9 owns vault/otto chain; code-0c owns superset; dagster kyverno denial = unclaimed lane
-📎 FACTS: estate-state doc 12:34:33Z; code-f9 msg 14:0xZ (PR#1144 c7e413ad 22/22)
-📍 State: batch mid-flight
-
-
 ## 2026-09-02T14:07:19Z · session 54539261 · lane .wt-eye-breaker
 🟢 Done: idp#1144 MERGED c7e413ad; Battlefront 1 CLOSED BY MEASUREMENT — live estate-vars ConfigMap AND live ClusterSecretStore both carry ACTIVE vault ervi35puaagem (kubectl 14:05Z): the 404 GetVault is stale, no git fix exists; today's reds = notify-channels + otto-staging-telegram (unseeded, await founder apply) + verdict-key-wall (by-design IAM wall)
 🟡 Active: Battlefront 2 — branch fix/tailscale-egress-exception pushed: PolicyException for BOTH blocked egress proxies (ts-founder-mac-vnc + ts-sunshine-mac), 9 policies named from operator-log denial 14:02Z, scoped tailscale ns + name globs only
@@ -3458,4 +3392,92 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: session 5f6f4e72 holds the idp lane and touched bin/catalog-platform and backstage/platform/catalog-info.yaml inside 2h — idp#1463 regenerates both (one added layer, additive only), so it rebases behind theirs
 📎 FACTS: kyverno render over platform/flux-webhook returned 0; catalog-platform regenerated to 60 layers
 📍 State: https://github.com/chidionyema/idp/pull/1463
+
+
+## 2026-09-04T13:16:10Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: oke-check apply run 33877149523 seeding the flux-webhook-token vault entry; research-engine checked against crew#829
+🟢 Done: idp#1463 merged a3b60464 — Receiver/github exists in flux-system; research-engine confirmed to run GPT Researcher on its live retrieval path
+⚪ Pending: vault entry lands, ExternalSecret resolves, then register the receiver URL on the repository with gh api
+🔧 TOUCHES: none this turn (read-only in ../research-engine)
+🔀 OVERLAP: session 5f6f4e72 on platform/estate-db; no shared file
+📎 FACTS: Receiver/github is Ready=False with "unable to read token from secret flux-system/flux-webhook-token"; the entry comes from platform/oci/flux-webhook.tf and oke-check applies OCI tf only in mode=apply, never on a pull request
+📍 State: https://github.com/chidionyema/idp/actions/runs/33877149523
+
+
+## 2026-09-04T13:16:59Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1450 rebased onto main and the four red checks fixed; idp#1467 opened for the no-token admission rule
+🟢 Done: the catalogue gained a data system, the alert rows cover estate-db, the Temporal test moved onto the estate address, and the research engine repointed off hindsight-db onto estate-rw
+⚪ Pending: full tests run in flight, then push; founder merges idp#1450 and idp#1467
+🔧 TOUCHES: platform/estate-db/*, platform/research-engine/*, clusters/oke/platform.yaml, docs/reference/policy/root-trust.md, backstage/platform/catalog-info.yaml, platform/alerts/alert.yaml
+🔀 OVERLAP: session 85f840c5 holds tests/ and bin/idp-ci; its idp#1451 deleted three test files this branch also edited, resolved in favour of the deletion
+📎 FACTS: root-trust PASS after registering flux-webhook-token, which main left unregistered (53 entries, 52 rows, MEETS 49); catalogue now 63 layers, 10 systems
+📍 State: https://github.com/chidionyema/idp/pull/1450
+
+
+## 2026-09-04T13:27:12Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: nothing in flight; both pull requests are green and waiting on the founder's merge
+🟢 Done: idp#1450 green after the rebase and four fixes; idp#1467 opened and green; the research engine repointed onto the estate cluster in the same change
+⚪ Pending: founder merges idp#1450 then idp#1467; then back to the research engine
+🔧 TOUCHES: platform/estate-db/*, platform/research-engine/*, platform/edge/no-token-by-default.yaml, clusters/oke/platform.yaml, docs/reference/{policy/root-trust.md,security-policy.md}
+🔀 OVERLAP: session 85f840c5 merged idp#1451 and idp#1463; this branch rebased onto both
+📎 FACTS: idp#1450 run 33877726868 all checks pass, 15 successes and no failures; idp#1467 run 33877706472 the same, 13 successes
+📍 State: https://github.com/chidionyema/idp/pull/1450
+
+
+## 2026-09-04T13:38:01Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: unifying the messaging layer — hermes-v2 PR 73 (psycopg[binary]) so otto-gateway can boot, then the return path it never had
+🟢 Done: root-caused why the one door has never run: bare psycopg on python:3.12-slim, "no pq wrapper available", 18 crashes in 72 minutes; measured that nothing consumes OTTO_TASKS and that the task envelope carries no reply address
+⚪ Pending: reply_to on SurfaceEnvelope/TaskEnvelope, a durable pull consumer in otto.boot, then repoint @numun_bot at /webhook/telegram
+🔧 TOUCHES: ../hermes-v2 otto/{spine/envelope.py,surface,ingress,boot}, deploy/k8s/boot-contract.txt
+🔀 OVERLAP: session 5f6f4e72 on platform/estate-db; otto-gateway waits on its estate-db-migrate dependency, no shared file
+📎 FACTS: Bus.durable_pull exists and no caller outside tests; TelegramBinding.normalize drops chat.id, keeping only an allowlist principal name; clusters/oke/platform.yaml still says suspend true for otto-gateway while the live Kustomization is unsuspended and blocked on estate-db-migrate
+📍 State: https://github.com/chidionyema/hermes-v2/pull/73
+
+
+## 2026-09-04T13:46:30Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: research engine — the CronJob calls `python -m engine.cli run` and the CLI had no `run`, so every hourly pass since it merged exited 2; the subcommand and its ledger writes are in research-engine#2
+🟢 Done: spec-gate removed fleet-wide (idp#1473 merged) — its action was deleted in the CI purge, so a required check that can never report was blocking every repository; 13 rulesets fixed, auto-merge switched on in 26
+⚪ Pending: research-engine#2 green then merged, the new image sha pinned into platform/research-engine/cronjob.yaml, and claude-guards#243 auto-merges
+🔧 TOUCHES: research-engine engine/cli.py, engine/store.py, tests/; idp platform/github/*, bin/estate-security-rollout
+🔀 OVERLAP: none seen; session 85f840c5 is on tests/ and bin/idp-ci
+📎 FACTS: 28 active repositories swept at 13:38Z, 26 auto-merge switched on, 13 rulesets no longer require spec-gate; oke-check apply run 33879562132 is seeding estate-db.research-password
+📍 State: https://github.com/chidionyema/research-engine/pull/2
+
+
+## 2026-09-04T13:53:42Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: hermes-v2 PR 73 on auto-merge — the unified door, waiting on its own checks
+🟢 Done: the messaging layer is unified in code — reply_to on both envelopes, outbound_secret_ref on the binding row, send_reply on the channel plugins, answer_envelope shared by both doors, and otto/ingress/worker.py as the durable pull consumer nothing had ever been
+⚪ Pending: PR 73 auto-merges; then seed the channel_binding rows with outbound_secret_ref and repoint both Telegram webhooks at /webhook/telegram
+🔧 TOUCHES: ../hermes-v2 otto/{spine/envelope.py,surface,ingress,boot}, README.md, deploy/k8s/boot-contract.txt; hermes-v2 ruleset estate-default-branch-protection
+🔀 OVERLAP: session 5f6f4e72 swept rulesets fleet-wide at 13:38Z; this adds five required contexts to hermes-v2 only, additive to that sweep
+📎 FACTS: hermes-v2 required only security-scan, so auto-merge would have merged on one green check out of six — build, gates, incident-tests, otto-tests and shell-strict are now required on main; 10 new tests, 103 across ingress and boot
+📍 State: https://github.com/chidionyema/hermes-v2/pull/73
+
+
+## 2026-09-04T14:01:03Z · session c0ca7d0d · lane .claude
+🔴 Blocked: idp otto tree conflicted; :7107 may be down
+🟡 Active: restore tree; guest sign-in; status check
+🟢 Done: PR 813 CI green 52f15e9e, not merged
+⚪ Pending: Golden Goose §9
+🔧 TOUCHES: idp/backstage; :3100 :7107
+🔀 OVERLAP: e83508bc
+📎 FACTS: https://github.com/chidionyema/prospector/pull/813
+📍 State: http://localhost:3100
+
+
+## 2026-09-04T14:04:24Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: research-engine#3 — a lane is a file (SPEC-v1 §8); build check finishing, then merge
+🟢 Done: found SPEC-v1 (crew commit e6064684, deleted from main); reverted the ideas table I had started inside the engine, which §1 and the I2 lint both forbid
+⚪ Pending: merge #3, then idp platform/research-engine/cronjob.yaml runs --profile market-demand on the new image sha and its questions ConfigMap goes away
+🔧 TOUCHES: research-engine engine/{profiles,cli,pipeline,store}.py, profiles/*.yaml; next idp platform/research-engine/cronjob.yaml
+🔀 OVERLAP: none seen; session 85f840c5 is on hermes-v2 and tests/
+📎 FACTS: 63 tests pass, ruff and scripts/i2_lint.py clean; auto-merge cannot be switched on for research-engine (private repo, API PATCH returns false), so #3 is merged by hand when green
+📍 State: https://github.com/chidionyema/research-engine/pull/3
 

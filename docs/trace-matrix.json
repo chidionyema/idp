@@ -1,5 +1,82 @@
 [
  {
+  "feature": "features/chaos/chaos-target-namespace-labelled.feature",
+  "title": "A chaos experiment targets a namespace Chaos Mesh is allowed to inject into",
+  "scenarios": [
+   "The backstage namespace is labelled for injection"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "44f1883c",
+  "pr": 190,
+  "ticket": "crew#292"
+ },
+ {
+  "feature": "features/drills/chaos-drill.feature",
+  "title": "The weekly pod-kill experiment is graded from outside the cluster",
+  "scenarios": [
+   "A Task pod is admitted without probes, a long-running pod is not"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "772db8c9",
+  "pr": 191,
+  "ticket": "crew#292"
+ },
+ {
+  "feature": "features/drills/cluster-state.feature",
+  "title": "The cluster reports its own state and a runner grades it without a laptop",
+  "scenarios": [
+   "The receipt pod is admitted as a Job pod and refused as a long-running one",
+   "A fresh receipt with every node Ready grades ok",
+   "A stale receipt grades FAIL",
+   "A node that is not Ready grades FAIL",
+   "A Flux object that is not Ready grades FAIL",
+   "A receipt from a collector that predates the Flux rows grades FAIL, never clean",
+   "A DaemonSet short of its desired count grades FAIL",
+   "A receipt from a collector that predates the DaemonSet row grades FAIL, never clean",
+   "A receipt from a collector that predates the monitoring row grades FAIL, never clean",
+   "An ExternalSecret that is Ready but has not refreshed in twice its interval grades FAIL"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "3d1d0b9d",
+  "pr": 267,
+  "ticket": "crew#345"
+ },
+ {
+  "feature": "features/estate-rebuild/rebuild-and-gates.feature",
+  "title": "The estate can be torn down and rebuilt from the phone, and no past error can recur",
+  "scenarios": [
+   "A stale local state file can never overwrite the shared remote state",
+   "a pull request's planned changes are the PR, not drift (incident 2026-08-26, run 32925504695)",
+   "a lost-state apply never re-creates a vault that already exists (incident 2026-08-26 02:26Z)",
+   "the secret store is never repointed at a vault while secrets still live in the current one (incident 2026-08-26 02:26Z)",
+   "a failing rebuild step shows its cause, not only its footer (incident 2026-08-26, run 32930359052)",
+   "node cycling is never asked of a BASIC cluster (incident 2026-08-26, run 32930359052)"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "d06bc6bd",
+  "pr": 123,
+  "ticket": null
+ },
+ {
+  "feature": "features/gates/model-routing.feature",
+  "title": "Model routing is an estate service, not a laptop process",
+  "scenarios": [
+   "The cluster router carries every hosted model the laptop router carries",
+   "The router is reachable at llm.<zone> through the one edge",
+   "Upstream keys reach the pod only from the estate vault",
+   "The founder picks and adds models in the Admin UI, never by pull request"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "da950638",
+  "pr": 225,
+  "ticket": "crew#284"
+ },
+ {
   "feature": "features/sovereign-bus/cp10_dual_read.feature",
   "title": "Dual-read router \u2014 every read runs twice, legacy and DAG, and is compared",
   "scenarios": [
@@ -1257,20 +1334,6 @@
   "ticket": "crew#495"
  },
  {
-  "feature": "features/chaos/chaos-target-namespace-labelled.feature",
-  "title": "A chaos experiment targets a namespace Chaos Mesh is allowed to inject into",
-  "scenarios": [
-   "The backstage namespace is labelled for injection"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_chaos_target_namespace.py"
-  ],
-  "status": "BOUND",
-  "added_in": "44f1883c",
-  "pr": 190,
-  "ticket": "crew#292"
- },
- {
   "feature": "features/cloud-agnostic/disposable-compute-universal-state.feature",
   "title": "Disposable compute, universal state",
   "scenarios": [
@@ -1283,43 +1346,6 @@
   "added_in": "4f833833",
   "pr": 124,
   "ticket": null
- },
- {
-  "feature": "features/drills/chaos-drill.feature",
-  "title": "The weekly pod-kill experiment is graded from outside the cluster",
-  "scenarios": [
-   "A Task pod is admitted without probes, a long-running pod is not"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_chaos_drill.py"
-  ],
-  "status": "BOUND",
-  "added_in": "772db8c9",
-  "pr": 191,
-  "ticket": "crew#292"
- },
- {
-  "feature": "features/drills/cluster-state.feature",
-  "title": "The cluster reports its own state and a runner grades it without a laptop",
-  "scenarios": [
-   "The receipt pod is admitted as a Job pod and refused as a long-running one",
-   "A fresh receipt with every node Ready grades ok",
-   "A stale receipt grades FAIL",
-   "A node that is not Ready grades FAIL",
-   "A Flux object that is not Ready grades FAIL",
-   "A receipt from a collector that predates the Flux rows grades FAIL, never clean",
-   "A DaemonSet short of its desired count grades FAIL",
-   "A receipt from a collector that predates the DaemonSet row grades FAIL, never clean",
-   "A receipt from a collector that predates the monitoring row grades FAIL, never clean",
-   "An ExternalSecret that is Ready but has not refreshed in twice its interval grades FAIL"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_cluster_state.py"
-  ],
-  "status": "BOUND",
-  "added_in": "3d1d0b9d",
-  "pr": 267,
-  "ticket": "crew#345"
  },
  {
   "feature": "features/drills/drill-catalogue.feature",
@@ -1353,25 +1379,6 @@
   "added_in": "d2ae3603",
   "pr": 243,
   "ticket": "crew#284"
- },
- {
-  "feature": "features/estate-rebuild/rebuild-and-gates.feature",
-  "title": "The estate can be torn down and rebuilt from the phone, and no past error can recur",
-  "scenarios": [
-   "A stale local state file can never overwrite the shared remote state",
-   "a pull request's planned changes are the PR, not drift (incident 2026-08-26, run 32925504695)",
-   "a lost-state apply never re-creates a vault that already exists (incident 2026-08-26 02:26Z)",
-   "the secret store is never repointed at a vault while secrets still live in the current one (incident 2026-08-26 02:26Z)",
-   "a failing rebuild step shows its cause, not only its footer (incident 2026-08-26, run 32930359052)",
-   "node cycling is never asked of a BASIC cluster (incident 2026-08-26, run 32930359052)"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_estate_rebuild_incidents.py"
-  ],
-  "status": "BOUND",
-  "added_in": "d06bc6bd",
-  "pr": 123,
-  "ticket": null
  },
  {
   "feature": "features/gates/capacity-cap.feature",
@@ -1479,23 +1486,6 @@
   "status": "BOUND",
   "added_in": "73640ff4",
   "pr": 253,
-  "ticket": "crew#284"
- },
- {
-  "feature": "features/gates/model-routing.feature",
-  "title": "Model routing is an estate service, not a laptop process",
-  "scenarios": [
-   "The cluster router carries every hosted model the laptop router carries",
-   "The router is reachable at llm.<zone> through the one edge",
-   "Upstream keys reach the pod only from the estate vault",
-   "The founder picks and adds models in the Admin UI, never by pull request"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_model_routing.py"
-  ],
-  "status": "BOUND",
-  "added_in": "da950638",
-  "pr": 225,
   "ticket": "crew#284"
  },
  {
