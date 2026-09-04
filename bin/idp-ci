@@ -677,7 +677,13 @@ if command -v kyverno >/dev/null && command -v helm >/dev/null; then
   # dir with no changed file cannot render differently from main, where it was judged.
   kyv_scope="every dir"
   if [ -n "${IDP_CI_BASE:-}" ] && changed=$(cd "$IDP" && git diff --name-only "$IDP_CI_BASE...HEAD" 2>/dev/null); then
-    if printf '%s\n' "$changed" | grep -E '^(bin/idp-kyverno-render|bin/idp-ci|tests/fixtures/kyverno/|platform/kyverno/|platform/policies/|clusters/)' >/dev/null ; then
+    # clusters/oke/flux-system/ is Flux's own controllers (gotk-components.yaml) and the sync
+    # wiring. Nothing in it is a postBuild substitution source and no platform render reads it, so
+    # a change there cannot alter any render's verdict -- unlike clusters/oke/estate-config.yaml,
+    # which is a substitution source and stays in the escalation below. Measured 2026-09-04:
+    # idp#1431 added one annotation to clusters/oke/flux-system/kustomization.yaml, escalated to
+    # every dir, and offline-gate's bin/idp-ci step ran over 8 min against 56 s on the run before.
+    if printf '%s\n' "$changed" | grep -vE '^clusters/oke/flux-system/' | grep -E '^(bin/idp-kyverno-render|bin/idp-ci|tests/fixtures/kyverno/|platform/kyverno/|platform/policies/|clusters/)' >/dev/null ; then
       kyv_scope="every dir: the judge, a policy or the cluster wiring changed"
     else
       scoped=$(for d in $dirs; do printf '%s\n' "$changed" | grep "^$d/" >/dev/null && echo "$d"; done)
