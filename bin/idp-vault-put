@@ -2,6 +2,7 @@
 # Put one JSON secret into the estate vault from named keys of the operator's env file.
 #   bin/idp-vault-put <secret-name> <KEY=envkey>...      e.g. bin/idp-vault-put flux-telegram token=TELEGRAM_BOT_TOKEN channel=TELEGRAM_HOME_CHANNEL
 #   bin/idp-vault-put --merge <secret-name> <KEY=envkey>...
+#   bin/idp-vault-put --unset <secret-name> <KEY>...   drop named keys, keep every other key
 #     --merge overlays the given keys on the JSON the vault already holds and keeps every other key
 #     (crew#506 CP4: one new provider key never re-seeds the whole entry). A pair whose env key is
 #     unset is skipped under --merge, so a CI step may list every key it might carry; without --merge
@@ -12,6 +13,11 @@ set -euo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 MERGE=0; [ "${1:-}" = --merge ] && { MERGE=1; shift; }
 DELETE=0; [ "${1:-}" = --delete ] && { DELETE=1; shift; }
+# --unset drops named KEYS from the entry and keeps every other key. The founder rotates the
+# vendor model keys himself in the LiteLLM console (2026-09-04: "i can change the keys nyself,
+# i eed to be ble to delete the esting keys set in config"), so a key can now leave the estate
+# without the entry being destroyed and re-seeded. Values are never printed; key NAMES only.
+UNSET=0; [ "${1:-}" = --unset ] && { UNSET=1; shift; }
 # SECRET_NAME, not `name`: bin/idp-oci-whoami is sourced below and its profile loop assigned `name`,
 # so the github-app entry was created as "DEFAULT" (vault-seed run 33089277235, crew#503).
 SECRET_NAME=$1; shift
@@ -37,6 +43,23 @@ case $rc in
   1) existing="";;
   *) echo "FAIL    vault   $(head -1 "${TMPDIR:-/tmp}/vault-put.err" | cut -c1-120)"; exit 2;;
 esac
+if [ "$UNSET" = 1 ]; then
+  [ -n "$existing" ] || { echo "ok      vault   $SECRET_NAME not present"; exit 0; }
+  payload=$(CURRENT="$current" python3 - "$@" <<'DROP'
+import sys, json, os
+out = json.loads(os.environ["CURRENT"])
+gone = [k for k in sys.argv[1:] if out.pop(k, None) is not None]
+if not gone:
+    sys.exit("none of those keys is in the entry")
+print(json.dumps(out))
+print("keys dropped: " + " ".join(gone) + "; kept: " + " ".join(sorted(out)), file=sys.stderr)
+DROP
+)
+  P=$(mktemp -d); trap 'rm -rf "$P"' EXIT; umask 077
+  printf '%s' "$payload" > "$P/secret"
+  verb=$("$IDP/bin/idp-cloud" secret put "$SECRET_NAME" --file "$P/secret") && echo "vault   $SECRET_NAME $verb ($# keys dropped)"
+  exit
+fi
 if [ "$DELETE" = 1 ]; then
   [ -n "$existing" ] || { echo "ok      vault   $SECRET_NAME not present"; exit 0; }
   "$IDP/bin/idp-cloud" secret delete "$SECRET_NAME" >/dev/null && echo "vault   $SECRET_NAME deletion scheduled"

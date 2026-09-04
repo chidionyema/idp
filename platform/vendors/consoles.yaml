@@ -50,17 +50,29 @@ vendors:
     rotation: assisted  # DeepSeek publishes no create-key API (measured 2026-09-04)
     store_default: human-vault  # founder-pasted key
     targets:
-      - { entry: litellm-upstream, field: DEEPSEEK_API_KEY }
+      # No litellm-upstream field: the router's DeepSeek key is console-owned (see below), so the
+      # vault entry the router mounts carries no DeepSeek key at all. prospector holds its own.
       - { entry: prospector-engine-env, field: DEEPSEEK_API_KEY }
     router:
-      lanes: |
-        - model_name: deepseek
-          litellm_params:
-            model: deepseek/deepseek-chat
-            api_key: os.environ/DEEPSEEK_API_KEY
-            timeout: 300
+      # Console-owned, founder 2026-09-04: "i can change the keys nyself, i eed to be ble to delete
+      # the esting keys set in config", then "delete the current deepseeky key, ill add a new one".
+      # A model row declared in the rendered config is read-only in the LiteLLM admin console --
+      # it refuses to attach, change or delete a key for a model that is "defined in config" -- so
+      # a git-owned row takes the credential out of his hands. The DeepSeek lane therefore renders
+      # no model_list row and holds no key in git or in the router's vault entry; he adds the key
+      # in the console's LLM Credentials tab and it lives encrypted in litellm-db, the same shape
+      # the Kimi lane has carried since 2026-09-03 (R75).
+      #
+      # `console_lanes` names a model group that exists at runtime but is rendered by nobody, so
+      # the renderer's own check (every fallback names a lane something serves) still passes and
+      # the chains below stay in git. The lane rejoins every chain the moment he adds the key --
+      # no pull request, no session, no wait.
+      console_lanes: [deepseek]
       fallbacks: |
-        - deepseek: [minimax]
+        # DeepSeek answered 401 from inside the router pod on 2026-09-04 21:5xZ (the key is revoked
+        # at the vendor; prospector's byte-identical copy fails the same way), which is why Gemini
+        # sits in this chain: a hop that always refuses is latency, not redundancy.
+        - deepseek: [minimax, gemini]
   minimax:
     kind: secret
     secret: SEED_MINIMAX_API_KEY
@@ -118,7 +130,15 @@ vendors:
             input_cost_per_token: 0.0000002
             output_cost_per_token: 0.0000011
       fallbacks: |
-        - minimax: [deepseek]
+        # Measured from inside the router pod 2026-09-04 21:5xZ: MiniMax answers 401 `invalid api
+        # key (2049)` on https://api.minimax.io/v1/chat/completions (request id
+        # 06ea7071f3bfa650df549152c286372b), and its native endpoint answers HTTP 200 carrying
+        # `base_resp.status_code 2049` in the body -- the same refusal wearing a 200, so a probe
+        # that grades only the HTTP status reads that account as healthy. DeepSeek answers 401.
+        # Those two were each other's only fallback, so a cheap turn walked minimax -> deepseek
+        # and died with nothing to answer the founder's Telegram message. Gemini answers, so it
+        # goes ahead of the dead pair rather than after it.
+        - minimax: [gemini, deepseek]
   kimi:
     # Moonshot's Kimi (platform.kimi.ai). The vendor documents no key shape (API overview and
     # list-models pages, read 2026-09-02), so the shape only refuses an empty or malformed paste;
@@ -244,9 +264,14 @@ vendors:
             api_key: os.environ/GEMINI_API_KEY
             timeout: 300
       fallbacks: |
+        # Gemini heads the neutral chains for the reason recorded on the minimax and deepseek
+        # blocks: on 2026-09-04 it was the only lane of the three that answered. The cheap model
+        # is still the last hop of every chain it does not head, which is what sovereign cp30
+        # grades and the `[routing] cheap` line of AGENTS.md declares; which lane is `cheap` is
+        # the founder's call, not this file's, so it is untouched.
         - gemini: [minimax, deepseek]
-        - default: [minimax, deepseek]
-        - fast: [minimax, deepseek]
+        - default: [gemini, minimax, deepseek]
+        - fast: [gemini, minimax, deepseek]
   exa:
     kind: secret
     secret: SEED_EXA_API_KEY

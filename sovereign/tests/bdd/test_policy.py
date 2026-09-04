@@ -88,6 +88,9 @@ def test_every_routing_alias_exists_in_the_litellm_config() -> None:
     repo_root = policy.agents_md_path().parent
     litellm = (repo_root / "llm" / "config.yaml").read_text()
     declared = set(re.findall(r"^\s*-\s*model_name:\s*(\S+)", litellm, flags=re.MULTILINE))
+    # A lane whose key the founder owns is served by the console, not by this file, and
+    # is declared in platform/vendors/consoles.yaml instead. It routes to something.
+    declared |= policy.console_lanes(repo_root)
     # llm/config.yaml declares no vision alias today; routing.vision is the
     # one entry this cannot check and the PR that lands it says so.
     unchecked = {"vision"}
@@ -95,4 +98,4 @@ def test_every_routing_alias_exists_in_the_litellm_config() -> None:
         if purpose in unchecked:
             continue
         for name in (alias if isinstance(alias, list) else [alias]):
-            assert name in declared, f"routing.{purpose} names {name!r}; llm/config.yaml declares {sorted(declared)}"
+            assert name in declared, f"routing.{purpose} names {name!r}; the config and the console declare {sorted(declared)}"

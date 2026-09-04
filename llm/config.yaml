@@ -15,12 +15,6 @@
 # and they stay the EUR 0 path (R14).
 
 model_list:
-  - model_name: deepseek
-    litellm_params:
-      model: deepseek/deepseek-chat
-      api_key: os.environ/DEEPSEEK_API_KEY
-      timeout: 300
-
   # --- the moat's cheap primary --------------------------------------------------------
   # MiniMax has no first-class LiteLLM provider; it is OpenAI-compatible, so it is declared
   # with an explicit api_base rather than a provider prefix.
@@ -136,13 +130,29 @@ router_settings:
     # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
     # job aliases) but sit in no chain while the account is unfunded: a hop that always
     # answers 402 is latency, not redundancy.
-    - deepseek: [minimax]
+    # DeepSeek answered 401 from inside the router pod on 2026-09-04 21:5xZ (the key is revoked
+    # at the vendor; prospector's byte-identical copy fails the same way), which is why Gemini
+    # sits in this chain: a hop that always refuses is latency, not redundancy.
+    - deepseek: [minimax, gemini]
 
-    - minimax: [deepseek]
+    # Measured from inside the router pod 2026-09-04 21:5xZ: MiniMax answers 401 `invalid api
+    # key (2049)` on https://api.minimax.io/v1/chat/completions (request id
+    # 06ea7071f3bfa650df549152c286372b), and its native endpoint answers HTTP 200 carrying
+    # `base_resp.status_code 2049` in the body -- the same refusal wearing a 200, so a probe
+    # that grades only the HTTP status reads that account as healthy. DeepSeek answers 401.
+    # Those two were each other's only fallback, so a cheap turn walked minimax -> deepseek
+    # and died with nothing to answer the founder's Telegram message. Gemini answers, so it
+    # goes ahead of the dead pair rather than after it.
+    - minimax: [gemini, deepseek]
 
+    # Gemini heads the neutral chains for the reason recorded on the minimax and deepseek
+    # blocks: on 2026-09-04 it was the only lane of the three that answered. The cheap model
+    # is still the last hop of every chain it does not head, which is what sovereign cp30
+    # grades and the `[routing] cheap` line of AGENTS.md declares; which lane is `cheap` is
+    # the founder's call, not this file's, so it is untouched.
     - gemini: [minimax, deepseek]
-    - default: [minimax, deepseek]
-    - fast: [minimax, deepseek]
+    - default: [gemini, minimax, deepseek]
+    - fast: [gemini, minimax, deepseek]
   # Alias, not a model row (R75, founder 2026-09-03). The Kimi lane is console-owned: the
   # founder brought the key through the LiteLLM console on 2026-09-04 and it is stored
   # encrypted in litellm-db under the vendor's own name, `moonshot/kimi-k3`. Rendering a

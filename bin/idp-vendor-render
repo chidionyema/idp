@@ -15,6 +15,11 @@ Registry shape, per vendor, all fields optional:
       cluster_lanes: |      # entries only the cluster serves (capability aliases)
       fallbacks: |          # fallback chains for the lanes above
       cluster_fallbacks: |  # chains only the cluster carries
+      console_lanes: [name] # model groups served from litellm-db and owned by the founder in
+                            # the LiteLLM console: nothing is rendered for them and no key is
+                            # held in git, but a chain here may name one (2026-09-04 -- a model
+                            # declared in this config is read-only in the console, so a lane
+                            # whose key he rotates himself must not be declared here).
 Block content is stored flush left; the marker's field decides the indent it gets back.
 
 Deterministic: same inputs, same bytes, every run (the idempotency rule in AGENTS.md).
@@ -44,7 +49,7 @@ FIELDS = {
     "# @vendor-fallbacks@": ("fallbacks", 4),
     "# @vendor-cluster-fallbacks@": ("cluster_fallbacks", 4),
 }
-KNOWN = {f for f, _ in FIELDS.values()}
+KNOWN = {f for f, _ in FIELDS.values()} | {"console_lanes"}
 
 
 def blocks(vendors: dict, field: str, indent: int) -> str:
@@ -66,6 +71,20 @@ def blocks(vendors: dict, field: str, indent: int) -> str:
                 )
             )
     return "\n\n".join(out)
+
+
+def console_lanes(vendors: dict) -> set:
+    """Model groups served from litellm-db instead of from this file.
+
+    They render nothing, so without this the check below would read a chain
+    that names one as a chain naming no lane. The founder owns their keys in
+    the LiteLLM console, and a lane he can delete cannot also be declared in
+    a config the console treats as read-only (2026-09-04).
+    """
+    out = set()
+    for v in vendors.values():
+        out |= set((v.get("router") or {}).get("console_lanes") or [])
+    return out
 
 
 def render(vendors: dict, base_text: str, base_name: str) -> str:
@@ -95,7 +114,7 @@ def main() -> int:
         text = render(vendors, base.read_text(), base_rel)
         try:
             parsed = yaml.safe_load(text)
-            lanes = {m["model_name"] for m in parsed["model_list"]}
+            lanes = {m["model_name"] for m in parsed["model_list"]} | console_lanes(vendors)
             for entry in parsed["router_settings"]["fallbacks"]:
                 for src, chain in entry.items():
                     missing = ({src} | set(chain)) - lanes

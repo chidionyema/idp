@@ -9,12 +9,6 @@
 # `vision` is an alias so photo intake names a capability, not a vendor (crew#284 CP1).
 
 model_list:
-  - model_name: deepseek
-    litellm_params:
-      model: deepseek/deepseek-chat
-      api_key: os.environ/DEEPSEEK_API_KEY
-      timeout: 300
-
   # --- the moat's cheap primary --------------------------------------------------------
   # MiniMax has no first-class LiteLLM provider; it is OpenAI-compatible, so it is declared
   # with an explicit api_base rather than a provider prefix.
@@ -140,36 +134,26 @@ router_settings:
     # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
     # job aliases) but sit in no chain while the account is unfunded: a hop that always
     # answers 402 is latency, not redundancy.
-    # 2026-09-04 19:55Z, measured direct at each vendor from the laptop with this router out
-    # of the path: DeepSeek answers 401 (the key is revoked at the vendor -- the byte-identical
-    # key prospector holds fails the same way), and MiniMax answers 429 `rate_limit_error`
-    # "Token Plan usage limit reached ... (2056)", request id 06ea54a72199e6818ce20d8bf90b4102
-    # (the key authenticates; that account's plan is spent). Those two were each other's only
-    # fallback, so a cheap turn walked deepseek -> minimax -> deepseek and died. Gemini
-    # answered HTTP 200 in the same sweep, so Gemini goes into every chain ahead of the pair
-    # that has gone dark -- the same rule the note above already states: a hop that always
-    # fails is latency, not redundancy. Nothing here changes a credential.
-    #
-    # 2026-09-04 21:5xZ, re-measured from inside the router pod against each vendor's own API
-    # with the key this pod mounts: MiniMax has moved on from the plan limit above and now
-    # answers 401 `invalid api key (2049)` on https://api.minimax.io/v1/chat/completions
-    # (request id 06ea7071f3bfa650df549152c286372b); its native endpoint answers HTTP 200 with
-    # `base_resp.status_code 2049` in the body, which is the same refusal wearing a 200, so a
-    # probe that grades only the HTTP status reads that account as healthy. DeepSeek still
-    # answers 401. Gemini still answers. The router's own throughput says the same thing:
-    # 5.85M tokens in the 16:00Z hour, 193k at 19:00Z, 5.2k at 20:00Z, 24 tokens across 32
-    # calls at 21:00Z. This is why Otto takes the founder's Telegram message and answers
-    # nothing: hermes-agent asks for `minimax`, and its only fallback was `deepseek`.
-    #
-    # Gemini goes in front of the dead pair rather than after it. The cheap model is still the
-    # last hop of every chain it does not head, which is the rule sovereign cp30 grades and the
-    # `[routing] cheap` line of AGENTS.md declares; putting Gemini ahead of it means a turn
-    # reaches a lane that answers on the second hop instead of walking two refusals first.
-    # Changing which lane is `cheap` is the founder's call, not this file's, so it is untouched.
+    # DeepSeek answered 401 from inside the router pod on 2026-09-04 21:5xZ (the key is revoked
+    # at the vendor; prospector's byte-identical copy fails the same way), which is why Gemini
+    # sits in this chain: a hop that always refuses is latency, not redundancy.
     - deepseek: [minimax, gemini]
 
+    # Measured from inside the router pod 2026-09-04 21:5xZ: MiniMax answers 401 `invalid api
+    # key (2049)` on https://api.minimax.io/v1/chat/completions (request id
+    # 06ea7071f3bfa650df549152c286372b), and its native endpoint answers HTTP 200 carrying
+    # `base_resp.status_code 2049` in the body -- the same refusal wearing a 200, so a probe
+    # that grades only the HTTP status reads that account as healthy. DeepSeek answers 401.
+    # Those two were each other's only fallback, so a cheap turn walked minimax -> deepseek
+    # and died with nothing to answer the founder's Telegram message. Gemini answers, so it
+    # goes ahead of the dead pair rather than after it.
     - minimax: [gemini, deepseek]
 
+    # Gemini heads the neutral chains for the reason recorded on the minimax and deepseek
+    # blocks: on 2026-09-04 it was the only lane of the three that answered. The cheap model
+    # is still the last hop of every chain it does not head, which is what sovereign cp30
+    # grades and the `[routing] cheap` line of AGENTS.md declares; which lane is `cheap` is
+    # the founder's call, not this file's, so it is untouched.
     - gemini: [minimax, deepseek]
     - default: [gemini, minimax, deepseek]
     - fast: [gemini, minimax, deepseek]
