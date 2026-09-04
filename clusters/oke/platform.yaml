@@ -1124,3 +1124,27 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
+---
+# The estate's own search backend (crew#751 research engine, and prospector's grounding chain):
+# SearXNG, keyless, ClusterIP only. It depends on nothing -- no vault entry, no identity, no
+# route -- because every keyless search path that is not self-hosted has been measured dead
+# (platform/searxng/settings.yaml carries the numbers).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: searxng
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/searxng
+  prune: true
+  wait: true
+  timeout: 10m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: searxng
+      namespace: searxng

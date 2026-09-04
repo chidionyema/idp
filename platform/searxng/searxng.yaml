@@ -1,0 +1,117 @@
+# SearXNG: the estate's own search backend, and the only one that answers.
+#
+# WHY IT EXISTS. Every workload in the estate that has to read the open web -- the research
+# engine (~/dev/code/research-engine, GPT Researcher behind the router) and prospector's
+# grounding chain -- needs a keyless way to ask "which pages are about this". Measured, the
+# keyless options are gone: the DuckDuckGo scraper libraries answer with a DNS error inside
+# their own resolver, Exa answers 401 without a paid key, and every public SearXNG instance
+# probed has the JSON format switched off or an anti-bot page in front of it (the evidence is
+# in settings.yaml's header). SearXNG is the mature tool for this (LAW 43, AGPL-3.0), and
+# self-hosting it is the difference between a search path that works and one that does not.
+#
+# It is deliberately internal: ClusterIP, no Gateway route, no certificate, no login. The
+# caller is another pod in this cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: searxng
+  namespace: searxng
+  labels: { app.kubernetes.io/name: searxng, app.kubernetes.io/part-of: idp }
+spec:
+  # One replica on purpose: a stateless query proxy with no session and no database, and the
+  # cluster is tight. A second copy would double the outbound rate-limiting the public engines
+  # apply to this cluster's egress address, which is the thing that breaks first.
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: searxng }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: searxng, app.kubernetes.io/part-of: idp }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # The image's own searxng user (SEARXNG_UID/SEARXNG_GID default to 977 in the upstream
+        # Dockerfile); pinned here so runAsNonRoot is verifiable and the rendered settings file
+        # is readable by the process that reads it.
+        runAsUser: 977
+        runAsGroup: 977
+        seccompProfile: { type: RuntimeDefault }
+      initContainers:
+        # The settings file ships from the ConfigMap with a placeholder where the secret key
+        # goes, and this renders it into the writable copy the entrypoint expects. The key is 32
+        # random bytes minted per pod, so nothing secret is in git and no vault entry, and no
+        # founder step, stands between this and running.
+        - name: render-settings
+          image: docker.io/searxng/searxng:2026.9.4-15b0c8ef3
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              key="$(tr -dc 'a-f0-9' < /dev/urandom | head -c 64)"
+              sed "s|__SECRET_KEY__|${key}|" /run/settings/settings.yml > /etc/searxng/settings.yml
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: settings-source, mountPath: /run/settings, readOnly: true }
+            - { name: settings, mountPath: /etc/searxng }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }
+      containers:
+        - name: searxng
+          image: docker.io/searxng/searxng:2026.9.4-15b0c8ef3
+          ports:
+            - { containerPort: 8080, name: http }
+          env:
+            # Not a secret: the in-cluster address this instance answers on. SearXNG builds the
+            # absolute URLs in its own responses from it.
+            - { name: SEARXNG_BASE_URL, value: "http://searxng.searxng.svc.cluster.local:8080/" }
+            - { name: SEARXNG_SETTINGS_PATH, value: "/etc/searxng/settings.yml" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 30
+          # A cold start pulls the image and builds the engine table; a startupProbe is what
+          # lets the kubelet tell a slow start from a hang instead of SIGKILLing the evidence
+          # (crew#573, hindsight-api, 13h at 0/1 ready with the reason destroyed 392 times).
+          startupProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 5
+            failureThreshold: 36
+          resources:
+            requests: { cpu: 50m, memory: 192Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:
+            - { name: settings, mountPath: /etc/searxng }
+            - { name: cache, mountPath: /var/cache/searxng }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: settings-source
+          configMap: { name: searxng-settings }
+        - { name: settings, emptyDir: {} }
+        - { name: cache, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: searxng
+  namespace: searxng
+  # backstage.io/kubernetes-id: the catalogue entity this port belongs to, which the cluster
+  # policy require-catalogue-entity refuses a Service without. bin/catalog-platform generates
+  # layer-searxng from the Flux row in clusters/oke/platform.yaml.
+  labels: { app.kubernetes.io/name: searxng, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: layer-searxng }
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: searxng }
+  ports:
+    - { name: http, port: 8080, targetPort: 8080 }

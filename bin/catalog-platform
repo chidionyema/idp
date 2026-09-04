@@ -158,6 +158,11 @@ LAYERS = {
         "Event bus",
         "Carries 'this customer paid' to whatever needs to know, so nothing waits on the payment provider to answer. Not switched on yet.",
     ),
+    "searxng": (
+        "agents",
+        "Search backend",
+        "The estate's own web search, keyless and internal: what the research engine and the grounding chain ask when they need to know which pages are about something.",
+    ),
     "priority-classes": (
         "scheduling",
         "Priorities",
