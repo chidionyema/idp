@@ -3470,3 +3470,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: ten Postgres servers measured running at 12:52Z (otto-gateway-db was missing from the earlier count of nine); langfuse runs postgres:18, so the estate cluster must be PostgreSQL 18 or its dump cannot be restored; the CloudNativePG standard image carries pgvector by its own build definition (docker-bake.hcl extensions list)
 📍 State: https://github.com/chidionyema/idp/pull/1450
 
+
+## 2026-09-04T12:49:25Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1460 — docs rung scoped to docs/ and mkdocs.yml on a pull request, plus bin/test-executes-gate refusing a newly added test that runs nothing
+🟢 Done: idp#1451 merged 519d59e8 — 322 inert tests gone, offline-gate off the PR path, the seven pinned CLIs cached in .github/actions/estate-tools
+⚪ Pending: idp#1460 green, then merge
+🔧 TOUCHES: bin/idp-ci, bin/test-executes-gate, .github/workflows/ci.yml
+🔀 OVERLAP: session 5f6f4e72 on the idp lane (platform/estate-db, idp#1450)
+📎 FACTS: the catalog rungs are not scoped on purpose — their input is the whole estate inventory, and they cost 7s and 8s; the licence scan is the security-scan job, parallel, 43s
+📍 State: https://github.com/chidionyema/idp/pull/1460
+
