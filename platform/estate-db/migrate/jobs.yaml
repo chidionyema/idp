@@ -25,6 +25,12 @@
 # Ready -- every consumer's Kustomization waits on estate-db-migrate in clusters/oke/platform.yaml.
 # A Job that cannot find its old server at all exits clean rather than failing, so a cluster
 # rebuilt from scratch, where the old servers never existed, is not deadlocked by this file.
+# That escape hatch only works if the old end's Secret volume is marked `optional: true`: the
+# kubelet resolves volumes before the container starts, so a required Secret that no longer
+# exists stops the Job in ContainerCreating and the `exit 0` branch is never reached. Every
+# `old` volume added from now on carries `optional: true`. The nine Jobs already Complete cannot
+# be corrected in place -- a Job's pod template is immutable -- so they carry the trap until they
+# are next renamed, at which point the new name must carry the flag.
 #
 # A Job is immutable, so a Job that failed or stalled for a reason outside itself can only be
 # re-run under a new name; every name here carries an -r2 suffix for that reason. dagster and
@@ -767,10 +773,10 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: estate-db-copy-dagster-r2
+  name: estate-db-copy-dagster-r3
   namespace: dagster
   labels:
-    app.kubernetes.io/name: estate-db-copy-dagster-r2
+    app.kubernetes.io/name: estate-db-copy-dagster-r3
     app.kubernetes.io/part-of: idp
     backstage.io/kubernetes-id: layer-estate-db
 spec:
@@ -778,7 +784,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: estate-db-copy-dagster-r2
+        app.kubernetes.io/name: estate-db-copy-dagster-r3
         app.kubernetes.io/part-of: idp
     spec:
       restartPolicy: Never
@@ -841,7 +847,18 @@ spec:
             - { name: tmp, mountPath: /tmp }
       volumes:
         - name: old
-          secret: { secretName: dagster-postgresql-secret }
+          # optional, and this is the whole point of the -r3 rename. The script below already
+          # treats a missing old server as "nothing to copy" and exits 0, but that branch is
+          # inside the container and a required Secret volume is resolved by the kubelet before
+          # the container ever starts. Measured 2026-09-04: dagster's bundled PostgreSQL is gone
+          # -- no `dagster-postgresql` Service, no StatefulSet, and no `dagster-postgresql-secret`
+          # in the namespace -- so estate-db-copy-dagster-r2 sat in ContainerCreating for 148
+          # minutes on `MountVolume.SetUp failed for volume "old" : secret
+          # "dagster-postgresql-secret" not found`, held estate-db-migrate in Reconciling, and
+          # through the dependency chain held otto-gateway at Ready=False on a revision from
+          # before the one-door work merged. An old end that no longer exists must not be able to
+          # stop the Job from starting.
+          secret: { secretName: dagster-postgresql-secret, optional: true }
         - name: new
           secret: { secretName: estate-db-dagster }
         - name: tmp
