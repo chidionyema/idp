@@ -51,6 +51,25 @@ except ImportError:
 
 SYSTEM_NAMESPACES = {"kube-system", "kube-public", "kube-node-lease", "default"}
 
+# A namespace declared in git that the cluster does not hold yet has no fence, and cannot have
+# one: a ResourceQuota cannot be created into a namespace that does not exist, and Flux applies
+# platform/ns-fences as one set, so a single such object fails the whole reconcile and every
+# fence on the cluster stops being updated. bin/idp-ns-fence-gen already refuses to emit those
+# and prints them as pending; this gate used to call the same namespaces defects, so CI was red
+# for a condition the generator was deliberately creating. One record now, read by both.
+PENDING_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "..", "platform", "ns-fences", "live-namespaces.txt")
+
+
+def pending_namespaces(declared: set[str]) -> set[str]:
+    """Declared in git, not on the cluster -- so not yet fenceable, and not a defect."""
+    try:
+        with open(PENDING_FILE, encoding="utf-8") as fh:
+            live = {n.strip() for n in fh if n.strip()}
+    except OSError:
+        return set()  # no record means judge everything, which is the safe direction
+    return declared - live
+
 
 def load_manifests(path: str) -> list[dict]:
     """Every YAML document under `path`, whether it is a file or a directory."""
@@ -138,8 +157,9 @@ def check(docs: list[dict], source: str) -> list[str]:
             by_ns[ns].append(d)
 
     problems: list[str] = []
+    pending = pending_namespaces(set(namespaces))
     for ns in sorted(namespaces):
-        if ns in SYSTEM_NAMESPACES:
+        if ns in SYSTEM_NAMESPACES or ns in pending:
             continue
         kinds = [d.get("kind") for d in by_ns[ns]]
         nps = [d for d in by_ns[ns] if d.get("kind") == "NetworkPolicy"]
@@ -233,6 +253,13 @@ def main() -> int:
         docs, source = load_manifests(args.path), args.path
 
     problems = check(docs, source)
+    if not args.live:
+        waiting = sorted(pending_namespaces({
+            d["metadata"]["name"] for d in docs
+            if d.get("kind") == "Namespace" and d.get("metadata", {}).get("name")}))
+        if waiting:
+            print("note   ns-fence-gate: declared in git, not on the cluster, so not yet "
+                  "fenceable: " + ", ".join(waiting))
     if problems:
         holed = len({p.split(":")[0] for p in problems})
         print(f"FAIL   ns-fence-gate: {len(problems)} defect(s) across {holed} "

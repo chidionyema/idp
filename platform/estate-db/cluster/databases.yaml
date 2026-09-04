@@ -159,3 +159,17 @@ spec:
   name: research
   owner: research
   ensure: present
+---
+# The money ledger (crew#623). Lago's migrations create every table in it on first boot; there
+# is no copy Job for this one because the layer has never run and there is nothing to move.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: lago
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: lago
+  owner: lago
+  ensure: present

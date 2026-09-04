@@ -62,4 +62,7 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: commerce
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: otto-gateway

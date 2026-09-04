@@ -49,30 +49,50 @@ def _rows():
     }
 
 
-# ---------------------------------------------------------------- it is dark
+# ------------------------------------------------- it runs, and it still takes no money
 
 
-# The two rows that hold money -- Lago and its database. The bus is not one of them: it carries
-# `estate.commerce.order_paid`, it does not price, charge or store a card. It was suspended
-# alongside them only because nothing published to it, which LAW 28 refuses. On 2026-09-04 the
-# founder gave the word this test asks for ("lets get this wrking wuickly, its all built and
-# decisions ade") and otto-gateway, which publishes to the bus, was woken in the same commit --
-# so the bus now has a publisher and comes up with it. Lago and its database stay dark, and this
-# test still refuses either of them being woken without the other, and without a PR of its own.
+# The two rows that hold money -- Lago and its ledger. The bus is not one of them: it carries
+# `estate.commerce.order_paid`, it does not price, charge or store a card.
+#
+# Both were suspended until 2026-09-04, when the founder gave the word ("need ithis fiilly
+# enabled JetStream/Lago suspension") and they were woken in one commit. Waking them is not the
+# same as taking money, and the difference is what the rest of this file guards: no edge-attach
+# label so the Gateway refuses a route from the namespace, signup off, and no payment provider
+# configured. This test now asks the two questions that outlived the suspension -- the pair wake
+# together, and the ledger brings no database of its own.
 MONEY_ROWS = {"commerce-data", "commerce"}
 
 
-def test_every_money_row_is_suspended():
+def test_the_money_rows_wake_together():
     rows = _rows()
     assert set(rows) == {"commerce-data", "commerce", "event-bus"}
     for name in sorted(MONEY_ROWS):
-        assert rows[name]["spec"].get("suspend") is True, (
-            f"{name} is not suspended: merging this branch would put a money layer on the "
-            f"cluster. The cutover is its own PR, on the founder's word (LAW 11)."
+        assert rows[name]["spec"].get("suspend") is False, (
+            f"{name} is suspended while the other money row is not. Lago and its ledger run "
+            f"as a pair: one without the other is a billing engine with no storage, or storage "
+            f"nothing writes to."
         )
 
 
-def test_the_commerce_namespace_cannot_attach_to_the_edge_while_dark():
+def test_the_ledger_lives_on_the_estate_database_and_brings_no_other():
+    """Founder, 2026-09-04: a new layer never brings its own Postgres."""
+    depends = [d["name"] for d in _rows()["commerce-data"]["spec"]["dependsOn"]]
+    assert "estate-db" in depends, (
+        "the ledger is a database on the estate cluster, so this row waits for that cluster"
+    )
+    stateful = sorted(
+        d["metadata"]["name"]
+        for d in _all_docs(COMMERCE)
+        if d.get("kind") == "StatefulSet"
+    )
+    assert stateful == ["commerce-redis"], (
+        f"{stateful} -- the only stateful thing this layer may bring is its own queue. A "
+        f"Postgres here would be a second database in an estate that has one."
+    )
+
+
+def test_the_commerce_namespace_cannot_attach_to_the_edge():
     ns = [d for d in _all_docs(COMMERCE) if d.get("kind") == "Namespace"][0]
     labels = ns["metadata"].get("labels", {})
     assert "idp.estate/edge-attach" not in labels, (

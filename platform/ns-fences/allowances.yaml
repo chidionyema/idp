@@ -67,6 +67,19 @@ overrides:
       requests.memory: 384Mi
       pods: "5"
     max: { cpu: 500m, memory: 512Mi }
+  commerce:
+    # The money layer was switched on on 2026-09-04 and had never been measured, so the derived
+    # ceiling would be the floor -- 500m and ten pods -- and the floor would refuse the layer on
+    # the day it was switched on, which is a fence refusing correct work (LAW 38). Sized from what
+    # platform/commerce actually declares instead: 775m across Lago's eight components plus 50m
+    # for the Valkey queue, 2816Mi plus 128Mi, and eleven pods with the migrate Job among them.
+    # The headroom above that is one rolling update, not room to grow into.
+    hard:
+      requests.cpu: "1500m"
+      requests.memory: 6Gi
+      requests.storage: 2Gi
+      pods: "20"
+      services.loadbalancers: "0"   # the money layer is reached through the shared Gateway or not at all
 
 # Declared cross-namespace traffic. Derived from a scan of every manifest in platform/ for
 # <service>.<namespace>.svc references, then extended by hand where a flow does not appear as a
@@ -127,9 +140,14 @@ flows:
   robusta:
     ingress_from: [monitoring]
   event-bus:
-    ingress_from: [otto-gateway]
+    ingress_from: [otto-gateway, commerce]
   estate-db:
-    ingress_from: [otto-gateway, hindsight, temporal, llm, observability]
+    ingress_from: [otto-gateway, hindsight, temporal, llm, observability, commerce]
+  commerce:
+    # Lago's ledger is database `lago` on the estate cluster, its queue is in this namespace, and
+    # it publishes estate.commerce.order_paid to the bus. It reaches nothing else in the estate --
+    # in particular it never dials prospector, which is the direction the firewall bans.
+    egress: [estate-db, event-bus, observability]
   kyverno:
     ingress_from: [backstage]
   edge:
