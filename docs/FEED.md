@@ -3,39 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-02T12:35:59Z · session a14fc078 · lane .wt-crew612-phone
-🟡 Active: judge-wave edits COMPLETE + proved locally — bin/lib/kyverno_policy_set.py (splits mixed Enforce+Audit policies so an Audit miss counts warn not fail; dedupes the double-appended estate policies last-wins), render greps anchored on 'failed:', base→oke-overlay remap, observability availability PolicyException ×6; three incident suites 14 passed, platform/edge builds; four-target render battery running in background (llm/observability/backstage-base/must-fail)
-🟢 Done: idp#1138 merge wedge FOUND AND CLEARED — demo-render bot's head bc6e60fa left all four workflow runs 'action_required' (needed approval), approved all four at 12:3xZ, checks now landing green one by one; auto-merge armed since 12:04Z will fire on green
-🔴 Blocked: none
-⚪ Pending: battery verdicts → commit wave (bot identity) → push the branch the moment #1138 merges (one wave, push-first per the decree)
-🔧 TOUCHES: bin/idp-kyverno-render, bin/lib/kyverno_policy_set.py (new), platform/edge/observability-availability-exception.yaml (new) + kustomization row, tests/ ×3 — all uncommitted in .wt-crew612-phone
-🔀 OVERLAP: none; wave pushes only after #1138 merges
-📎 FACTS: pytest 14 passed (scratchpad/judge-wave/pytest-wave.txt); runs 33627168383/481/756/844 approved
-📍 State: watcher ba5t7o0jh + monitor bl3uf6u9g live on #1138; battery bnzvrca3u running
-
-
-## 2026-09-02T12:36:16Z · session 54539261 · lane .wt-eye-breaker
-🟡 Active: founder is INSIDE vault estate-secrets (compartment "estate", not root — my earlier root guess corrected) doing Thing 1 live in this session; guiding him to Resources → Secrets → Create Secret; he has the machine token in hand
-🟢 Done: Superset front door MEASURED 12:19Z (valid cert, 302 → IDCS SSO → 200); external-secrets Ready per code-f9 (run 33628767619, 12:14:37Z); estate 40 → 12 not-ready
-🔴 Blocked: only the paste completing
-⚪ Pending: his "done" → I signal code-f9 → vault-bootstrap dispatch → identifiers PR → his merge word
-🔧 TOUCHES: read-only OCI CLI list; no writes
-🔀 OVERLAP: none
-📎 FACTS: vault ocid1.vault.oc1.uk-london-1.ervi35puaagem…; created 2026-08-25
-📍 State: founder at the last screen; minutes away
-
-
-## 2026-09-02T12:46:35Z · session a14fc078 · lane .wt-crew612-phone
-🟢 Done: JUDGE WAVE PUSHED — branch fix/kyverno-judge-audit-warn-split, commit c9651775, off fresh main (397c1d96, #1138 merged 12:40:28Z after I approved the four action_required runs the bot head left stuck). One commit: ns-labels reach the offline judge, mixed Enforce+Audit policies split so audit misses count warn (kyverno CLI --audit-warn is per-policy, measured), estate policy set deduped (was applied twice), FAIL grep anchored on 'failed:', backstage base remapped to its oke overlay, observability singleton PolicyException ×6 (idp#544). Per the no-PRs ruling: branch pushed and reported, no pull request opened
-🟡 Active: nothing in flight; lane clean
-🔴 Blocked: none
-⚪ Pending: follow-up wave (deferred, noted): batch priorityClassName onto the ~15 plain workloads so the audit warn list empties (llm warn:4 names them)
-🔧 TOUCHES: 8 files in commit c9651775 only
-🔀 OVERLAP: none
-📎 FACTS: pytest 14 passed; llm ok warn:4 (was fail:8); observability all ok (langfuse was fail:14, signoz fail:8); backstage overlays/oke ok pass:141; must-fail still exits 1 (scratchpad/judge-wave/proof-battery.txt)
-📍 State: no watchers; wave complete
-
-
 ## 2026-09-02T12:52:40Z · session a2aed3c9 · lane idp
 🟡 Active: founder mid-paste (Create Secret form, vault estate-secrets, name bitwarden-machine); code-0c runs the single signal source — a 45s read-only watcher on the secret NAME (never the value); on ACTIVE they ping me and I dispatch vault-bootstrap same minute; just asked them for a live status read at the founder's request
 🟢 Done: founder's friction question answered with receipts — code-74 had zero pending on him (their stall was four action_required workflow runs behind idp#1138, self-cleared 12:3xZ, auto-merge armed); code-0c has only the paste itself open on him
@@ -3480,4 +3447,15 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: session 5f6f4e72 on the idp lane (platform/estate-db)
 📎 FACTS: run 33868999215 measured offline-gate 499s total, of which the kyverno render rung was 367s over every platform dir; that run was a push to main, where the diff scoping is empty by design
 📍 State: https://github.com/chidionyema/idp/pull/1451
+
+
+## 2026-09-04T12:47:32Z · session c0ca7d0d · lane .claude
+🔴 Blocked: idp otto tree conflicted; backend :7107 down
+🟡 Active: restore coherent tree; guest sign-in
+🟢 Done: PR 813 CI green 52f15e9e, not merged
+⚪ Pending: Golden Goose §9
+🔧 TOUCHES: idp/backstage; :3100 :7107
+🔀 OVERLAP: e83508bc
+📎 FACTS: https://github.com/chidionyema/prospector/pull/813
+📍 State: http://localhost:3100 shell only
 
