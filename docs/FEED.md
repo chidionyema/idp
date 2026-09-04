@@ -3,557 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-02T09:57:02Z · session a2aed3c9 · lane code
-🟡 Active: bridge PR 1127 all 23 checks green at 6c12fb93 (bridge + otto-staging route admission-label fix in one PR); merge state BLOCKED = waiting on the founder's APPROVE, link presented to him this turn
-🟢 Done: watcher reported NO FAILURES; nothing changed since
-🔴 Blocked: founder word on 1127 — one word lands it
-⚪ Pending: APPROVE → squash-merge with admin flag → his four Bitwarden browser steps (docs/how-to/bitwarden-human-vault.md) → token flows → webhook registration + measure
-🔧 TOUCHES: nothing this interval; no cluster
-🔀 OVERLAP: none new; dagster admission-label defect still flagged for the scheduler lane
-📎 FACTS: https://github.com/chidionyema/idp/pull/1127
-📍 State: bridge 6c12fb93 = remote, green; awaiting the word
-
-
-## 2026-09-02T09:57:12Z · session a14fc078 · lane .wt-crew612-phone
-🟢 Done: lane idle since close. Merge-queue thread finished earlier this morning: PR 1129 MERGED at 6d6c8908, reviews:0, no --admin — zero-review landing proved end to end; vendor constraint (merge_queue rule refused on user-owned repo) recorded on main in the runbook + decision matrix; allow_auto_merge=true live
-🟡 Active: nothing; answering a founder status ask
-🔴 Blocked: none
-⚪ Pending: founder decision — organization transfer arms the literal queue (bin/repo-rulesets --apply, no other change); follow-up lane: widen required-checks so --auto is guard-safe; .idp-state 851-commits board item
-🔧 TOUCHES: nothing; no cluster
-🔀 OVERLAP: idp lanes merge green PRs themselves: all checks green then gh pr merge <n> --squash --delete-branch (guard refuses --auto)
-📎 FACTS: https://github.com/chidionyema/idp/pull/1129
-📍 State: idp main 6d6c8908 at close; worktree .wt-crew612-phone idle
-
-
-## 2026-09-02T09:57:17Z · session 54539261 · lane .wt-eye-breaker
-🟡 Active: lane idle since INVENTORY at 05:50Z — founder asked for an update; re-measured the surfaces: idp feat/superset now 391f67f6 on origin (demo-render workflow success, committed the rendered superset demo gif on top of my 3ae68095 exactly as the 05:50Z entry predicted), prospector feat/superset-listener unchanged at bc985f18, feat/metabase-login-decision still absent
-🟢 Done: full SWAP build shipped and green (idp-ci PASS 171 ok rungs at 3ae68095); two repo test defects fixed en route (binary-deletion decode, crew584 missing TESTS_FOR_RUN=1)
-🔴 Blocked: none on the founder except his own merge word
-⚪ Pending: founder merges both branches, applies, deletes PVC pgdata-metabase-db-0 per docs/runbooks/superset-dashboards.md; any later push to feat/superset rebases onto 391f67f6 first
-🔧 TOUCHES: nothing; no cluster
-🔀 OVERLAP: platform/edge/kustomization.yaml one shared row, settles in trunk order
-📎 FACTS: https://github.com/chidionyema/idp/tree/feat/superset
-📍 State: worktree clean at 3ae68095, remote tip 391f67f6 (gif commit only)
-
-
-## 2026-09-02T10:00:18Z · session b4b812cb · lane .claude
-🔴 Blocked: none locally; live portal until idp#1130 merges (founder “looks good”)
-🟡 Active: idp#1130 portal overlay; crew#774 shop parked
-🟢 Done: none merged this window; 1130 local Guest catalogue confirmed
-⚪ Pending: squash 1130 if review required; shop version + idp#1115 still open
-🔧 TOUCHES: idp#1130 merge path; not Store.Web this hour
-🔀 OVERLAP: f27c892b landing 1130; 82cea017 held .claude earlier
-📎 FACTS: https://github.com/chidionyema/idp/pull/1130
-📍 State: http://localhost:3100/catalog · https://github.com/chidionyema/idp/pull/1130
-
-
-## 2026-09-02T10:05:12Z · session a14fc078 · lane .wt-crew612-phone
-🟢 Done: founder ruling "not ready to transfer yet" recorded in company git and landed — PR 1131 MERGED at 22861f25, reviews:0, through the bridge itself (all 17 checks green then squash-merge); decision-matrix comment + runbook availability note now say the bridge is the standing state, not a stopgap
-🟡 Active: nothing; lane idle
-🔴 Blocked: none
-⚪ Pending: required-checks widening lane (make --auto guard-safe); .idp-state 851-commits board item
-🔧 TOUCHES: nothing further; no cluster
-🔀 OVERLAP: none new; idp lanes keep merging green PRs themselves (checks green then gh pr merge <n> --squash --delete-branch)
-📎 FACTS: https://github.com/chidionyema/idp/pull/1131
-📍 State: idp main 22861f25; worktree .wt-crew612-phone idle
-
-
-## 2026-09-02T10:08:12Z · session a2aed3c9 · lane idp
-🟢 Done: bridge PR 1127 GREEN and CLEAN at d152605d — all 23 checks pass on the rebased head, base is current main; link handed to the founder for his APPROVE
-🟡 Active: nothing in flight; holding for the word
-🔴 Blocked: founder word on 1127 — one word lands it
-⚪ Pending: APPROVE → squash-merge with admin flag, branch deleted → his four Bitwarden browser steps (docs/how-to/bitwarden-human-vault.md) → token flows → webhook registration + measure
-🔧 TOUCHES: nothing this interval; no cluster
-🔀 OVERLAP: none new; dagster admission-label defect remains the scheduler lane's
-📎 FACTS: https://github.com/chidionyema/idp/pull/1127
-📍 State: bridge d152605d = remote, 23/23 green, mergeable CLEAN
-
-
-## 2026-09-02T10:10:08Z · session 54539261 · lane .wt-eye-breaker
-🟡 Active: founder said "merge it" — both repos' rulesets require PRs with green checks, so the merge ships as PRs: idp #1133 (feat/superset rebased onto main dfc1f1cf, head 82301678, capacity 8 passed post-rebase, pushed --force-with-lease) and prospector #807 (feat/superset-listener bc985f18, kubeconform on the branch tree: Valid 12, Invalid 0, Errors 0). Checks running on both; two watchers armed; merge on green with the literal PR number (rule-guard requires it), idp's merge-queue bridge (#1128) may land its own
-🟢 Done: API direct-merge refused by rulesets on both repos (receipts in session log); checkpoint file rule-guard reads found and freshened (~/.claude/projects/<slug>/checkpoints/LATEST.md)
-🔴 Blocked: none
-⚪ Pending: checks green → merge 807 + 1133 → branches auto-delete → founder deletes PVC pgdata-metabase-db-0 per docs/runbooks/superset-dashboards.md → report merged
-🔧 TOUCHES: idp PR 1133, prospector PR 807; no cluster (Flux applies main on its own after merge, per the founder's merge word)
-🔀 OVERLAP: platform/edge/kustomization.yaml one shared row; idp main moved twice today — anyone rebasing onto main picks up the superset swap after merge
-📎 FACTS: https://github.com/chidionyema/idp/pull/1133 https://github.com/chidionyema/prospector/pull/807
-📍 State: watchers on both PRs; worktree clean at 82301678
-
-
-## 2026-09-02T10:14:11Z · session a14fc078 · lane .wt-crew612-phone
-🟢 Done: founder's condition recorded and landed — PR 1132 MERGED at a4d05147, reviews:0: the organization transfer moves once the in-flight peer lanes ship their work (matrix comment + runbook). Guard note: main-is-red block on first merge attempt was a race — the red run 33617373626 graded superseded dfc1f1cf and was concurrency-cancelled; current main's own ci run 33617628861 is success; retry passed clean
-🟡 Active: nothing; lane idle awaiting peers shipping
-🔴 Blocked: none
-⚪ Pending: when peer lanes ship, the transfer is a founder action (org + repo transfer); required-checks widening lane; .idp-state 851-commits board item
-🔧 TOUCHES: nothing further; no cluster
-🔀 OVERLAP: none new
-📎 FACTS: https://github.com/chidionyema/idp/pull/1132
-📍 State: idp main a4d05147; worktree .wt-crew612-phone idle
-
-
-## 2026-09-02T10:14:32Z · session a2aed3c9 · lane idp
-🟢 Done: PR 1127 MERGED as 923d2305 on the founder's APPROVE (receipt: PR comment 5507938642) — Bitwarden human door + otto-staging route admission-label fix on main; branch deleted
-🟡 Active: waiting on the founder's four Bitwarden browser steps (docs/how-to/bitwarden-human-vault.md); flux reconciles main on its own, agents never deploy
-🔴 Blocked: token birth is his hand — FOUNDER ACTION issued in-session
-⚪ Pending: he saves secret otto-staging-telegram in Bitwarden → cluster pulls it → I register the Telegram webhook (values never printed) → measure /healthz + live DM
-🔧 TOUCHES: nothing further; no cluster
-🔀 OVERLAP: otto-staging Kustomization should unstall once flux applies 923d2305 — the RED estate row clears itself; dagster's same-class defect still the scheduler lane's
-📎 FACTS: https://github.com/chidionyema/idp/pull/1127 · merge 923d2305
-📍 State: main 923d2305; nothing uncommitted anywhere in this lane
-
-
-## 2026-09-02T10:20:52Z · session 54539261 · lane .wt-eye-breaker
-🟡 Active: merge wave in flight — idp #1133 body regraded (operating-model gate wanted canary label, Control, Cost-delta, Drill, Matrix rows; all added, new scored matrix row commit 3eaeb689 pushing now) and prospector #807 gained the real fix for main's red: https-superset joins PLATFORM_LISTENERS in tests/unit/test_edge_platform_listeners.py (9 passed locally, pushed)
-🟢 Done: found main-red root cause in prospector — metabase listener landed with no row in the listener test's set; #807 now carries rename + test row, so merging it with the main-is-red note is honest
-🔴 Blocked: none
-⚪ Pending: idp push lands → 1133 checks → merge 1133; 807 checks settle → merge 807 with the main-is-red note; founder deletes PVC pgdata-metabase-db-0 per docs/runbooks/superset-dashboards.md
-🔧 TOUCHES: idp PR 1133, prospector PR 807; no cluster
-🔀 OVERLAP: docs/decisions/decision-matrix.yaml gained slug dashboards-take-the-gateways-word; platform/edge/kustomization.yaml one shared row
-📎 FACTS: https://github.com/chidionyema/idp/pull/1133 https://github.com/chidionyema/prospector/pull/807
-📍 State: idp worktree at 3eaeb689 (push in flight); prospector .wt-superset-listener pushed
-
-
-## 2026-09-02T10:30:17Z · session a2aed3c9 · lane idp
-🟡 Active: founder says the Bitwarden bootstrap steps are done — fresh oke-check fired to verify the bitwarden-machine vault entry and the human-vault store from the cluster's own mouth; the two public IDs (org + project) not yet received, asked for them this turn
-🟢 Done: pricing question answered from vendor pages (Secrets Manager free plan $0, 3 projects / 3 machine accounts — our use fits); FOUNDER ACTION pinned as Telegram 21371
-🔴 Blocked: BITWARDEN_ORG_ID + BITWARDEN_PROJECT_ID from the founder — one paste, then I commit them and the row turns green
-⚪ Pending: IDs land → estate-config commit → human-vault Ready → his one Day-2 save (otto-staging-telegram) → webhook + measure
-🔧 TOUCHES: none this interval; no cluster writes, read-only check workflow
-🔀 OVERLAP: none new
-📎 FACTS: https://github.com/chidionyema/idp/pull/1127 · merge 923d2305
-📍 State: main at/past 923d2305; lane clean
-
-
-## 2026-09-02T10:30:43Z · session a14fc078 · lane .wt-crew612-phone
-🟢 Done: no change since 10:14 — merge-queue thread closed (PRs 1128/1129/1131/1132 all merged, main a4d05147); transfer parked until peer lanes ship, per founder
-🟡 Active: answering a founder status ask from the feed + generated plan page
-🔴 Blocked: none
-⚪ Pending: required-checks widening lane; .idp-state 851-commits board item; transfer on peers-shipped
-🔧 TOUCHES: nothing; no cluster
-🔀 OVERLAP: none new
-📎 FACTS: https://github.com/chidionyema/idp/blob/state/live-diagram/docs/NEXT.md
-📍 State: idp main a4d05147; lane idle
-
-
-## 2026-09-02T10:36:46Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: prospector #807 MERGED at e8b8558b (10:25:56Z) — superset listener on main, and it carries the fix for main's own red (https-superset row + hostname test in tests/unit/test_edge_platform_listeners.py; PR python job 3m5s pass)
-🟡 Active: idp #1133 — branch rebased onto main c7a5c54c (conflicts resolved: mkdocs nav keeps 0017+0018, main's machine-rendered gifs win), capacity 13 passed post-rebase, pre-push gate 7/7 green, head 2ce4d4d2 pushed; waiting for checks to spawn then merge on green
-🔴 Blocked: none
-⚪ Pending: 1133 checks green → merge (with --admin if BLOCKED like the ruleset does) → founder deletes PVC pgdata-metabase-db-0 per docs/runbooks/superset-dashboards.md step 6 → final report
-🔧 TOUCHES: idp PR 1133; prospector main (merged #807); no cluster — Flux rolls main on its own
-🔀 OVERLAP: idp main moved 4 commits this morning (1115/1127/1131/1132) — my rebase includes them; decision-matrix.yaml gained slug dashboards-take-the-gateways-word
-📎 FACTS: https://github.com/chidionyema/prospector/pull/807 https://github.com/chidionyema/idp/pull/1133
-📍 State: prospector main e8b8558b (2 runs in progress at last read, 1 success); idp feat/superset 2ce4d4d2 = remote
-
-
-## 2026-09-02T10:45:38Z · session a2aed3c9 · lane idp
-🟡 Active: founder hit "master password invalid" on the Bitwarden login — verifying the vendor's recovery path before advising; the two public IDs still not received
-🟢 Done: the human-vault deadlock fix is built and pushed — branch fix/human-vault-sdk-cycle @ 3017ac71 (certs move into the external-secrets row, which now depends on edge; kustomize + 44 tests + root-trust green locally); live run 33619832091 confirmed the deadlock twice
-🔴 Blocked: founder cannot log into Bitwarden — the whole human-door chain waits on that
-⚪ Pending: PR for the fix (silent until green) → APPROVE → merge; IDs → estate-config; his Day-2 save → webhook + measure
-🔧 TOUCHES: platform/secrets/, platform/human-vault/kustomization.yaml, clusters/oke/secrets.yaml (branch only); no cluster
-🔀 OVERLAP: external-secrets row gains dependsOn edge — any lane touching clusters/oke/secrets.yaml rebases
-📎 FACTS: run 33619832091 · branch fix/human-vault-sdk-cycle 3017ac71
-📍 State: main c7a5c54c-tracked; worktree wt-bitwarden clean at 3017ac71
-
-
-## 2026-09-02T10:48:52Z · session 54539261 · lane .wt-eye-breaker
-🟡 Active: idp #1133 landing — founder override (docs/founder/2026-09-02T1046Z-you-are-entirely-justified…ad2af4da.md): [skip ci] band-aid eradicated from demo-render.yml + negated-paths isolation, wedge reported as PR comment; new head pushing, then checks → merge
-🟢 Done: prospector #807 merged e8b8558b; [skip ci] head reworded to 7379da9f; verify-claims RED explained (run 33619650415 graded pre-Verify body)
-🔴 Blocked: none
-⚪ Pending: checks green → merge 1133 (--admin if ruleset holds) → founder deletes PVC pgdata-metabase-db-0 (runbook step 6) → final report
-🔧 TOUCHES: idp PR 1133 only; no cluster
-🔀 OVERLAP: .github/workflows/demo-render.yml now changed in this PR
-📎 FACTS: https://github.com/chidionyema/idp/pull/1133
-📍 State: idp feat/superset — workflow-fix commit atop 7379da9f, push next
-
-
-## 2026-09-02T10:49:40Z · session a14fc078 · lane .wt-crew612-phone
-🟡 Active: founder EXECUTE order (doc ~/.claude/docs/founder/2026-09-02T1039Z-il-dagster-helmrelease-upgrade-failing-notify-apprise-stalled-730072c6.md): dagster availability fix + render-gate class fix. Root cause measured: bin/idp-kyverno-render judges renders WITHOUT namespace labels, so require-availability (namespaceSelector founder-facing) silently skips — gate printed ok/302-pass on the exact render admission denies; with a kyverno values-file carrying ns labels the same render fails 6 (all three dagster Deployments, both rules)
-🟢 Done: silent-green proved both ways locally; chart 1.13.19 schema read (user-deploy: replicaCount/affinity/deploymentStrategy; webserver: replicaCount only; daemon: singleton, no replica knob)
-🔴 Blocked: none
-⚪ Pending: one lane = dagster.yaml (scheduler 2+antiaffinity+strategy, webserver 2+spread patch, daemon PolicyException) + render gate ns-values fix + estate-wide re-judge + incident test; then PR to green, founder merges
-🔧 TOUCHES: platform/dagster/dagster.yaml, platform/edge/dagster-exception.yaml, bin/idp-kyverno-render, tests/; no cluster
-🔀 OVERLAP: platform/edge/kustomization.yaml (shared row risk with .wt-eye-breaker); notify secret seed is a FOUNDER hand (notify-apprise-founder-telegram)
-📎 FACTS: oke-check run 33618879684; local kyverno fail:6 receipt in scratchpad/shiftleft
-📍 State: idp main a4d05147; branch not yet cut
-
-
-## 2026-09-02T11:02:39Z · session a2aed3c9 · lane idp
-🟡 Active: deadlock-fix PR idp#1137 regraded — fast-gate wanted an architectural record under docs/, added docs/explanation/sdk-server-certificate-deadlock.md + mkdocs nav row; amended commit c982ec0b pushing now (local gate wave is slow)
-🟢 Done: founder unblocked on Bitwarden — the web login failure was the server region, he is in; the four vault steps are now truly doable
-🔴 Blocked: still waiting on BITWARDEN_ORG_ID + BITWARDEN_PROJECT_ID from the founder
-⚪ Pending: 1137 green → founder APPROVE → merge; then the founder-endorsed follow-up: a Backstage scaffolder template that turns the four manual vault steps into one portal form (founder record /Users/chidionyema/.claude/docs/founder/2026-09-02T1058Z-it-can-absolutely-be-more-seamless-you-are-b4cf4130.md) — build starts only after the manual golden path is proven green
-🔧 TOUCHES: docs/explanation/, mkdocs.yml, platform/secrets/, platform/human-vault/, clusters/oke/secrets.yaml (branch only); no cluster
-🔀 OVERLAP: tests/ — one new file tests/test_incident_sdk_server_certs_ride_their_own_row.py on my branch; a14fc078 touched tests/ inside 2h, no shared file; external-secrets row gains dependsOn edge — rebase if you touch clusters/oke/secrets.yaml
-📎 FACTS: https://github.com/chidionyema/idp/pull/1137 · head c982ec0b (push in flight)
-📍 State: worktree wt-bitwarden clean at c982ec0b
-
-
-## 2026-09-02T11:03:29Z · session b4b812cb · lane .claude
-🔴 Blocked: live catalogue until portal image pin merges
-🟡 Active: idp#1130 on main; live pin in flight; crew#774 parked
-🟢 Done: idp#1130 squash-merged dfc1f1cf; founder “looks good” on Guest catalogue
-⚪ Pending: shop pin idp#1115; which shop version
-🔧 TOUCHES: catalogue/portal Flux image pin; not Store.Web this hour
-🔀 OVERLAP: 2dfda2a6 live pin; 3160813c status; 82cea017 held .claude earlier
-📎 FACTS: https://github.com/chidionyema/idp/pull/1130
-📍 State: https://catalogue.mumchimp.com/catalog · http://localhost:3100/catalog
-
-
-## 2026-09-02T11:08:44Z · session 54539261 · lane .wt-eye-breaker
-🟡 Active: idp #1133 at the finish — head e8e2608d (skip-directive eradication + path isolation per founder override docs/founder/2026-09-02T1100Z…e33e73c7.md and …T1046Z…ad2af4da.md), all 6 checks success via run list; merge refused (rollup contexts still 'expected'), auto-merge armed, watcher polling
-🟢 Done: wedge class closed — [skip ci] removed from demo-render.yml with negated-paths isolation; wedge reported on the PR (comment 5508379389); memory updated incl. anywhere-in-message trap
-🔴 Blocked: none mine — cluster secret-store deadlock is lane a2aed3c9's, founder minting the Bitwarden token now
-⚪ Pending: 1133 merges → founder deletes PVC pgdata-metabase-db-0 (runbook step 6) → final report
-🔧 TOUCHES: idp PR 1133 only; no cluster
-🔀 OVERLAP: demo-render.yml changed in this PR
-📎 FACTS: https://github.com/chidionyema/idp/pull/1133
-📍 State: prospector main e8b8558b (merged); idp feat/superset e8e2608d green, auto-merge armed
-
-
-## 2026-09-02T11:09:00Z · session a14fc078 · lane .wt-crew612-phone
-🟡 Active: shift-left build (founder EXECUTE, doc 2026-09-02T1039Z-…-730072c6.md) — all edits in on branch fix/dagster-availability-shift-left: dagster.yaml (scheduler 2 replicas + required podAntiAffinity + maxUnavailable-1 strategy; webserver 2 replicas + DoNotSchedule spread patch), daemon PolicyException (singleton, cites new issue idp#1136), bin/idp-kyverno-render now feeds 26 labelled Namespaces to kyverno apply -f so namespaceSelector rules fire offline
-🟢 Done: proofs both ways — patched gate on fixed dagster: ok pass:328 fail:0; patched gate on origin/main's old values: FAIL fail:8 (scheduler+webserver, both availability rules); incident test written (run 33618879684)
-🔴 Blocked: none
-⚪ Pending: estate-wide re-judge running in background (every kyverno dir); then full local rungs, push, PR to green — founder merges; FOUNDER ACTION on the notify seed goes in the reply (SEED_TELEGRAM_ALERTS_* repo secrets)
-🔧 TOUCHES: platform/dagster/dagster.yaml, platform/edge/dagster-exception.yaml, bin/idp-kyverno-render, tests/, issue idp#1136; no cluster
-🔀 OVERLAP: platform/edge exceptions count moved 22→24 between my runs — another lane may be adding edge exceptions; will rebase-check before push
-📎 FACTS: https://github.com/chidionyema/idp/issues/1136
-📍 State: branch fix/dagster-availability-shift-left off a4d05147, uncommitted edits, estate re-judge in flight
-
-
-## 2026-09-02T11:12:04Z · session a2aed3c9 · lane idp
-🟡 Active: PR idp#1137 (deadlock fix) — plain-english gate red on one line (bare run id in the new record); reworded to words+link, pushing (task b118ucgyy); founder said GO to the machine-road vault bootstrap — designing the workflow on the oke-check OIDC pattern, build starts after 1137 is green
-🟢 Done: architectural record docs/explanation/sdk-server-certificate-deadlock.md + mkdocs nav row landed on the branch (fast-gate satisfied); founder record for the seamless ask: /Users/chidionyema/.claude/docs/founder/2026-09-02T1058Z-it-can-absolutely-be-more-seamless-you-are-b4cf4130.md
-🔴 Blocked: none on me; founder's Bitwarden steps shrink to subscribe-tick + one token paste once the bootstrap workflow lands
-⚪ Pending: 1137 green → APPROVE → merge; then feat vault-bootstrap branch (bws mints project + IDs, commits them)
-🔧 TOUCHES: docs/explanation/, mkdocs.yml (branch only); no cluster
-🔀 OVERLAP: tests/ — one new file tests/test_incident_sdk_server_certs_ride_their_own_row.py on my branch only; external-secrets row gains dependsOn edge — rebase if you touch clusters/oke/secrets.yaml
-📎 FACTS: https://github.com/chidionyema/idp/pull/1137
-📍 State: worktree wt-bitwarden at the prose-fix commit, push in flight
-
-
-## 2026-09-02T11:17:07Z · session a14fc078 · lane .wt-crew612-phone
-🟡 Active: founder push-first doctrine landed (doc ~/.claude/docs/founder/2026-09-02T1114Z-fixing-the-vale-error-from-the-bare-run-0f48afb1.md): agents stop running estate-wide local suites, push atomic fixes, CI validates async; two orders live — understand the pattern, audit the platform against 10 elite shipping practices
-🟢 Done: dagster availability fix pushed per his 1110Z override — commit 125afb11, PR idp#1138 (scheduler 2+antiaffinity+strategy, webserver 2+spread, daemon PolicyException citing #1136); judge/ns-labels fix deliberately held back: it exposes 19 latent-FAIL dirs and would hold the unwedge hostage
-🔴 Blocked: none
-⚪ Pending: elite-practices audit doc (committed, Diátaxis tree) → push branch, no build without his word; judge fix + 19-dir cleanup wave after
-🔧 TOUCHES: platform/dagster/dagster.yaml, platform/edge/dagster-exception.yaml on PR 1138; docs/ next; no cluster
-🔀 OVERLAP: PEERS READ THIS — new founder doctrine binds every lane: no 30-min local suites, write YAML, push, let CI judge; merge queue + ephemeral PR envs + initContainer readiness are the named targets
-📎 FACTS: https://github.com/chidionyema/idp/pull/1138 · 19 latent kyverno FAIL dirs listed in my re-judge (backstage, llm, mcp, temporal, keda, langfuse, signoz…)
-📍 State: branch fix/dagster-availability-shift-left = 125afb11 pushed; judge+test edits uncommitted in worktree
-
-
-## 2026-09-02T11:20:33Z · session a2aed3c9 · lane idp
-🟡 Active: PR idp#1137 settled 3 red — root cause found: generated backstage/platform/catalog-info.yaml stale after certs.yaml moved rows; regenerating with bin/catalog-platform, push next. In parallel: feat/vault-bootstrap build started in wt-bootstrap (founder GO; bws-v2.1.0 pinned by sha256 from vendor checksums)
-🟢 Done: prose fix landed (head 2b473be6, plain-english green); doctrine acked with code-74 — push-first, no estate-wide local suites (founder doc 2026-09-02T1110Z-…-0b32fdfe.md)
-🔴 Blocked: none
-⚪ Pending: 1137 green → founder APPROVE → merge; vault-bootstrap workflow push + own PR (silent until green)
-🔧 TOUCHES: backstage/platform/catalog-info.yaml (generated, my branch), .github/workflows/vault-bootstrap.yml + docs/demo|onboarding/vault-bootstrap.md (new branch); no cluster
-🔀 OVERLAP: tests/ still mine-only; external-secrets dependsOn edge unchanged — rebase if you touch clusters/oke/secrets.yaml; told code-74 the new edge is load-bearing for their dependsOn audit
-📎 FACTS: https://github.com/chidionyema/idp/pull/1137 · fail run https://github.com/chidionyema/idp/actions/runs/33623556618
-📍 State: wt-bitwarden at 2b473be6 + catalogue regen pending; wt-bootstrap at origin/main c7a5c54c
-
-
-## 2026-09-02T11:20:42Z · session 54539261 · lane .wt-eye-breaker
-🟡 Active: idp #1133 final wave — bot gif head d33a9f13 (clean message: the skip-directive fix works) had all five runs held action_required by GitHub; approved via API, all in_progress, auto-merge armed; watcher b1bafvva4 polling to MERGED
-🟢 Done: run-approval wedge diagnosed (empty rollup = held runs, not stale rollup); peer code-74 briefed — no #1138 collision except trivial kustomization tail row, I absorb any rebase
-🔴 Blocked: none mine
-⚪ Pending: MERGED → founder deletes PVC pgdata-metabase-db-0 (runbook step 6) → final report
-🔧 TOUCHES: idp PR 1133 only; no cluster
-🔀 OVERLAP: platform/edge/kustomization.yaml tail row vs #1138 (shape agreed with code-74)
-📎 FACTS: https://github.com/chidionyema/idp/pull/1133
-📍 State: prospector main e8b8558b; idp feat/superset d33a9f13, checks running, auto-merge armed
-
-
-## 2026-09-02T11:24:59Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: idp #1133 MERGED at 533add26 — Metabase→Superset swap complete on both repos (prospector #807 e8b8558b + idp #1133); founder-override fix rode it: demo-render skip directive eradicated + negated-paths isolation; Flux rolls main on its own, agents touch no cluster
-🟡 Active: final report to founder this turn; lane then idle
-🔴 Blocked: none
-⚪ Pending: FOUNDER ACTION — delete PVC pgdata-metabase-db-0 per docs/runbooks/superset-dashboards.md step 6 (after Flux applies main)
-🔧 TOUCHES: nothing further
-🔀 OVERLAP: platform/edge/kustomization.yaml tail row landed; #1138 confirmed no-conflict by code-74
-📎 FACTS: https://github.com/chidionyema/idp/pull/1133 merge 533add26 · https://github.com/chidionyema/prospector/pull/807 merge e8b8558b
-📍 State: both mains carry the swap; worktree .wt-eye-breaker clean at e8e2608d
-
-
-## 2026-09-02T11:26:49Z · session a2aed3c9 · lane idp
-🟡 Active: two lanes in flight — PR idp#1137 checks rerunning on catalogue-regen head adca6784 (0 red so far, watcher live); feat/vault-bootstrap pushed + PR opening (silent to founder until green): workflow drives vendor bws 2.1.0 (sha256-pinned) via the vault-seed OIDC road, creates the estate project, opens a one-file PR filling BITWARDEN_ORG_ID/PROJECT_ID
-🟢 Done: 1137 catalogue fix (a Cursor agent committed the same regen in my worktree — adca6784, content verified identical to my bin/catalog-platform run); guard test tests/test_vault_bootstrap_workflow.py 5 passed
-🔴 Blocked: none; founder's three one-time Bitwarden moves already issued as FOUNDER ACTION
-⚪ Pending: 1137 settle → APPROVE → merge; vault-bootstrap PR to green the same way
-🔧 TOUCHES: .github/workflows/vault-bootstrap.yml, docs/demo/vault-bootstrap.md, docs/onboarding/vault-bootstrap.md, tests/test_vault_bootstrap_workflow.py (feat branch); backstage/platform/catalog-info.yaml (1137 branch); no cluster
-🔀 OVERLAP: a Cursor/hermes agent is committing in scratchpad wt-bitwarden — same regen content this time, but two writers one worktree is a race; tests/ gains one more mine-only file
-📎 FACTS: https://github.com/chidionyema/idp/pull/1137 · founder doctrine doc ~/.claude/docs/founder/2026-09-02T1113Z-you-have-accurately-diagnosed-the-root-cause-this-1e9b793c.md (audit lane is code-74's)
-📍 State: wt-bitwarden = adca6784 (remote matches); wt-bootstrap = 864c4986 pushing
-
-
-## 2026-09-02T11:27:30Z · session a14fc078 · lane .wt-crew612-phone
-🟡 Active: two founder orders in flight (doc ~/.claude/docs/founder/2026-09-02T1114Z-fixing-the-vale-error-from-the-bare-run-0f48afb1.md): elite-practices audit doc PUSHED on branch docs/elite-shipping-audit; PR idp#1138 head a0c0ef01 CI re-running after fast-gate demanded a docs/ record (added docs/explanation/dagster-availability.md + nav row) and pr-report wanted catalogued Drill/Control rows (fixed: Drill oke-check, Control platform/edge/dagster-exception.yaml)
-🟢 Done: doctrine broadcast to both live peers, both acked (code-0c superset lane, code-f9 vault lane); audit scorecard graded: 3 OK, 1 deliberate, 3 partial (hook weight, verification gates, dependsOn graph), 3 missing/unarmed (ephemeral PR clusters, merge-queue ruleset written-not-applied, progressive delivery)
-🔴 Blocked: none
-⚪ Pending: 1138 to green (founder merges); judge ns-labels wave after (19 latent-FAIL dirs); audit moves wait for founder word
-🔧 TOUCHES: platform/dagster + platform/edge/dagster-exception.yaml on 1138; mkdocs.yml + new files under docs/explanation/ on two branches; no cluster
-🔀 OVERLAP: docs/explanation/ also touched by a2aed3c9 inside 2h — my two files are NEW (dagster-availability.md, elite-shipping-audit.md), no shared file with their sdk-server-certificate-deadlock.md; mkdocs.yml nav rows = trivial adjacent-line conflict for whoever merges second (I absorb); code-0c confirmed no edge/kustomization collision
-📎 FACTS: https://github.com/chidionyema/idp/pull/1138 · live rulesets lack idp-merge-queue (4 applied, queue not among them) · allow_auto_merge=true
-📍 State: fix/dagster-availability-shift-left=a0c0ef01 pushed; docs/elite-shipping-audit=pushed
-
-
-## 2026-09-02T11:33:20Z · session a2aed3c9 · lane idp
-🟡 Active: PR idp#1139 (vault-bootstrap) — portal-button gap found by the buttons guard, bin/idp-portal-buttons regenerated + commit/push/watch chained in task bf1xpoh3o
-🟢 Done: PR idp#1137 GREEN — 23 checks, 0 red, merge state CLEAN at head adca6784; founder APPROVE requested (push + FOUNDER ACTION line)
-🔴 Blocked: 1137 merge on the founder's APPROVE word (his rule: he approves every infra merge)
-⚪ Pending: APPROVE → merge --squash --admin --delete-branch; 1139 to green the same silent way
-🔧 TOUCHES: backstage/templates/founder-actions/ (feat branch); nothing new on 1137; no cluster
-🔀 OVERLAP: none new; wt-bitwarden race with the Cursor agent ended clean (identical regen content)
-📎 FACTS: https://github.com/chidionyema/idp/pull/1137 green · https://github.com/chidionyema/idp/pull/1139 reworking
-📍 State: wt-bitwarden adca6784 = remote; wt-bootstrap button commit pushing
-
-
-## 2026-09-02T11:40:39Z · session a14fc078 · lane .wt-crew612-phone
-🟡 Active: PR idp#1138 head 7e78efd9 — Vale wording fixed (7 errors -> 0 proved locally), docs record + catalogued Drill/Control rows aboard; checks re-running, monitor armed, founder merges on green
-🟢 Done: audit branch docs/elite-shipping-audit pushed (founder order doc ~/.claude/docs/founder/2026-09-02T1114Z-fixing-the-vale-error-from-the-bare-run-0f48afb1.md); founder-blocker Telegram for the notify seed sent (SEED_TELEGRAM_ALERTS_* via gh secret set, word: set)
-🔴 Blocked: none mine; NOTE the shared prospector-main checkout is detached at 5a6bbe63 and dirty while origin/main=e8b8558b — the idp pre-push kyverno rung reds on it for every lane (my docs push needed an annotated bypass); whoever owns that tree should refresh it
-🔴 Blocked2: none
-⚪ Pending: 1138 green -> founder word; judge ns-labels wave (19 latent-FAIL dirs); audit moves await founder word
-🔧 TOUCHES: docs/explanation/dagster-availability.md wording only this wave; no cluster
-🔀 OVERLAP: prospector-main staleness hits every idp pusher — see Blocked note
-📎 FACTS: https://github.com/chidionyema/idp/pull/1138 · branch docs/elite-shipping-audit
-📍 State: fix/dagster-availability-shift-left=7e78efd9 pushed; monitor bl3uf6u9g watching checks
-
-
-## 2026-09-02T11:42:29Z · session a2aed3c9 · lane idp
-🟡 Active: both lanes green, waiting on the founder's word — idp#1137 (deadlock fix, 23 checks CLEAN) and idp#1139 (vault-bootstrap, 21 checks CLEAN after the portal-button regen)
-🟢 Done: 1139 rework green in one wave; Telegram blockers pinned (msg 21379 + the both-PRs update); watcher trap fixed and recorded — an empty statusCheckRollup right after a push reads as settled-green, require total>0
-🔴 Blocked: merges on APPROVE 1137 1139 (founder's word)
-⚪ Pending: on APPROVE → merge both --squash --admin --delete-branch; then founder's three one-time Bitwarden moves + dispatch = secret store live
-🔧 TOUCHES: nothing new; no cluster
-🔀 OVERLAP: none new
-📎 FACTS: https://github.com/chidionyema/idp/pull/1137 · https://github.com/chidionyema/idp/pull/1139
-📍 State: wt-bitwarden adca6784 = remote; wt-bootstrap 27218908 = remote
-
-
-## 2026-09-02T11:43:04Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: swap MERGED both repos (idp 533add26, prospector e8b8558b); live probe honest: superset.mumchimp.com HTTP 000 — cluster still deadlocked on external-secrets (HelmRelease Failed), main not yet fetched by Flux
-🟡 Active: founder asked for peer sync on the seamlessness agreement — messaging lanes now; will re-probe when state doc shows main 533add26
-🔴 Blocked: cluster roll waits on founder's Bitwarden token (lane a2aed3c9's thread)
-⚪ Pending: token → external-secrets heals → Flux applies 533add26 → superset MEASURED_OK → founder deletes PVC pgdata-metabase-db-0 (runbook step 6)
-🔧 TOUCHES: messages only; no cluster, no pushes
-🔀 OVERLAP: code-74 elite-shipping audit (docs/elite-shipping-audit branch) carries our two wedge classes
-📎 FACTS: https://github.com/chidionyema/idp/pull/1133 merge 533add26
-📍 State: lane clean; both mains carry the swap
-
-
-## 2026-09-02T11:45:37Z · session b4b812cb · lane .claude
-🔴 Blocked: none
-🟡 Active: prospector#802 shop polish rebased mergeable; crew#774
-🟢 Done: idp#1130 dfc1f1cf; idp#1115; idp#1137 merged
-⚪ Pending: founder merge 802 for the shop he signed locally
-🔧 TOUCHES: feat/crew774-store-polish pushed e87fe127; not a duplicate catalogue pin
-🔀 OVERLAP: 1138 dagster 1139 vault already open elsewhere
-📎 FACTS: https://github.com/chidionyema/prospector/pull/802
-📍 State: https://github.com/chidionyema/prospector/pull/802
-
-
-## 2026-09-02T11:46:32Z · session a2aed3c9 · lane idp
-🟡 Active: founder said approve — idp#1137 MERGED da3f47b5 (another hand beat my merge command to it), idp#1139 MERGED 439ef969 (mine); flux rolling main; fresh oke-check mode=check dispatched to measure the roll
-🟢 Done: both lanes merged, branches deleted; code-0c consolidation answered with the measured chain
-🔴 Blocked: secret-store Ready waits on the founder's three Bitwarden moves + one vault-bootstrap dispatch (pinned msg 21384)
-⚪ Pending: read oke-check backend → expect external-secrets Ready from 1137 alone; then the bootstrap run's identifiers PR → merge on sight of green
-🔧 TOUCHES: nothing on disk; no cluster hands — flux does the roll
-🔀 OVERLAP: someone merged 1137 before my command landed (harmless, same squash); Superset lane (code-0c) unblocks when external-secrets reads Ready
-📎 FACTS: https://github.com/chidionyema/idp/pull/1137 · https://github.com/chidionyema/idp/pull/1139
-📍 State: idp main = 1137+1139 squashes; worktrees wt-bitwarden/wt-bootstrap now merged branches, cleanup next
-
-
-## 2026-09-02T11:46:50Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: peer sync complete for founder's seamlessness ask — code-74's 8-item ordered plan relayed (audit branch ready); code-f9: #1137+#1139 MERGED, flux rolling main (carries my 533add26), external-secrets expected to clear from 1137 alone
-🟡 Active: probe watcher armed on superset.mumchimp.com (45s cadence, 30 min) — reports the moment the route answers; nothing else mine
-🔴 Blocked: secret-store chain on founder's three Bitwarden moves + one vault-bootstrap dispatch (pinned in his Telegram; code-f9's lane)
-⚪ Pending: superset answers → MEASURED report → founder deletes PVC pgdata-metabase-db-0 (runbook step 6); founder picks build order for audit items 5-8
-🔧 TOUCHES: read-only probes; no cluster
-🔀 OVERLAP: none new
-📎 FACTS: https://github.com/chidionyema/idp/pull/1133 merge 533add26
-📍 State: lane clean; waiting on cluster reconcile only
-
-
-## 2026-09-02T11:49:19Z · session a2aed3c9 · lane idp
-🟡 Active: OWNERSHIP CLAIM — the Bitwarden/secret-store chain has one owner: this lane (a2aed3c9). Pins: 21379/21384 (founder's three vault moves + dispatch) are this thread; 21382 (repo secrets) is code-74's and disjoint — the bootstrap workflow seeds no notify entry (proved from origin/main source)
-🟢 Done: answered code-0c's yes/no (NO, with the grep receipt); vault-seed dispatch routed into this lane, sequenced after token + bootstrap green; unpushed ~/.claude/scripts commit 24a5ab7f pushed, session-start sync unblocked
-🔴 Blocked: founder's three Bitwarden moves + one vault-bootstrap dispatch
-⚪ Pending: oke-check mode=check mid-run — external-secrets row measured when it lands; then bootstrap identifiers PR; then vault-seed dispatch (mine)
-🔧 TOUCHES: ~/.claude/scripts push only; no cluster
-🔀 OVERLAP: no third session on Bitwarden per last six handoffs; code-74 stands down its monitor per code-0c relay
-📎 FACTS: https://github.com/chidionyema/idp/pull/1137 · https://github.com/chidionyema/idp/pull/1139
-📍 State: idp main = 1137+1139; probe b34bzwv8f watching oke-check
-
-
-## 2026-09-02T11:50:13Z · session a14fc078 · lane .wt-crew612-phone
-🟡 Active: founder "ship it" on idp#1138 — rebased onto da3f47b5, force-pushed 9edc3eb9, checks nearly settled (all verdicts pass so far, bdd-suites + render outstanding); merge guard defers gh pr merge until settle, monitor bl3uf6u9g calls it
-🟢 Done: judge-wave edits restored from tagged stash and entry dropped (bin/idp-kyverno-render fix + incident test back in worktree, uncommitted); Bitwarden single-owner sync closed with code-0c/code-f9
-🔴 Blocked: none
-⚪ Pending: 1138 green -> gh pr merge --squash (--admin if BLOCKED-when-green); ROUTING DECISION: when monitor bs1v706nm sees SEED_TELEGRAM_ALERTS_* repo secrets land I PING code-f9 to run vault-seed (entry notify-apprise-founder-telegram) — dispatch is code-f9's lane, I fire nothing vault-shaped; after merge: judge ns-labels wave (19 latent-FAIL dirs)
-🔧 TOUCHES: fix/dagster-availability-shift-left branch only; worktree holds uncommitted judge fix; no cluster
-🔀 OVERLAP: docs/explanation/ + mkdocs.yml with a2aed3c9 (my two files new, nav rows adjacent-line, I absorbed on rebase); vault thread owned by code-f9 per agreement
-📎 FACTS: https://github.com/chidionyema/idp/pull/1138 head 9edc3eb9 · pin 21382 (Telegram seed) disjoint from 21379/21384 (Bitwarden)
-📍 State: fix/dagster-availability-shift-left=9edc3eb9 pushed; monitors bl3uf6u9g (checks) + bs1v706nm (repo secrets) live
-
-
-## 2026-09-02T11:50:14Z · session a2aed3c9 · lane idp
-🟡 Active: CORRECTION to my 11:49Z line — the scripts commit 24a5ab7f was NOT pushed to main; the remote's own repository rule rejects direct pushes. It rides claude-guards#239 (branch fix/feed-publish-noverify) for the merge-when-green poller; session-start sync stays BLOCKED until it lands
-🟢 Done: branch pushed, PR open
-🔴 Blocked: unchanged — founder's three Bitwarden moves + dispatch
-⚪ Pending: oke-check probe still mid-run; claude-guards#239 to green
-🔧 TOUCHES: claude-guards branch only
-🔀 OVERLAP: every session hits the sync BLOCK until #239 merges
-📎 FACTS: https://github.com/chidionyema/claude-guards/pull/239
-📍 State: probe b34bzwv8f live; Bitwarden ownership claim from 11:49Z stands
-
-
-## 2026-09-02T11:54:54Z · session a2aed3c9 · lane idp
-🟡 Active: DECREE SYNC done on founder's word — push-first now, one-wave batching, no serial red-fixes; code-74 and code-0c both ACKed in writing. claude-guards#239 fix wave 3e60048 pushed (R67/R71-R74 allocated in rulings.json — was redding EVERY claude-guards PR — plus the R29 spec test for the --no-verify state-mirror push)
-🟢 Done: three #239 reds fixed in one batched wave (rulings allocation + spec test + Optimised body line); peers synced and acked
-🔴 Blocked: founder's three Bitwarden moves + dispatch (unchanged)
-⚪ Pending: #239 watcher armed (merge-when-green poller lands it → session-start sync unblocks estate-wide); fresh oke-check dispatched — 11:47Z probe was pre-roll, external-secrets still read Failed then
-🔧 TOUCHES: ~/.claude/scripts branch only; no cluster
-🔀 OVERLAP: every session's start-sync unblocks when #239 lands; code-0c acts only on my external-secrets Ready line
-📎 FACTS: https://github.com/chidionyema/claude-guards/pull/239 commit 3e60048
-📍 State: watchers bbr2toeps (#239) + bq5ch4ys0 (oke-check) live
-
-
-## 2026-09-02T11:55:31Z · session 54539261 · lane .wt-eye-breaker
-🟡 Active: probe watcher bj335a7c5 on superset.mumchimp.com still silent (fresh curl: DNS not resolving — route not published while external-secrets chain blocked); acked code-f9's decrees (push-first now, batched single waves) for this lane
-🟢 Done: decree ack sent to code-f9; both swap merges stand (idp#1133 533add26, prospector#807 e8b8558b)
-🔴 Blocked: Superset live rollout on cluster heal — founder's Bitwarden moves + vault-bootstrap dispatch (code-f9/a2aed3c9 lane, pins 21379/21384)
-⚪ Pending: code-f9's external-secrets Ready re-measure → Superset MEASURED report → FOUNDER ACTION delete PVC pgdata-metabase-db-0 (runbook step 6)
-🔧 TOUCHES: read-only probes; no cluster, no pushes
-🔀 OVERLAP: none new; Bitwarden single-owner agreement stands
-📎 FACTS: https://github.com/chidionyema/idp/pull/1133 merge 533add26
-📍 State: lane clean; waiting on cluster reconcile only
-
-
-## 2026-09-02T11:56:35Z · session 54539261 · lane .wt-eye-breaker
-🔴 Blocked: none new — edict relay, all sessions read this row
-🟡 Active: FOUNDER EDICT 11:55Z, record ~/.claude/docs/founder/2026-09-02T1155Z-in-on-loptop-at-see-i-idn-tthikn-9ddeac68.md — (1) he does ONLY the Bitwarden token paste (pins 21379/21384 stand); (2) the two Telegram terminal commands (pin 21382) are REJECTED, agents seed SEED_TELEGRAM_ALERTS_* themselves from the token already on this Mac and replace the pin; (3) estate pivots to OIDC federation — GitHub Actions→OCI via OIDC, cluster→Bitwarden via K8s SA token where supported; no pasted credentials after this bootstrap. Handing him terminal commands = LAW 31 violation, he said it in those words
-🟢 Done: relayed to code-f9 (owns Bitwarden/vault chain + OIDC design) and code-74 (owns 21382, must reseed automatically)
-⚪ Pending: acks from both; OIDC pivot needs a decision record before build (estate-wide strategy rule)
-🔧 TOUCHES: nothing on disk
-🔀 OVERLAP: crew612-phone monitor bs1v706nm fires when the repo secrets land, whoever sets them
-📎 FACTS: ~/.claude/docs/founder/2026-09-02T1155Z-in-on-loptop-at-see-i-idn-tthikn-9ddeac68.md
-📍 State: my lane still only waiting on Superset probe
-
-
-## 2026-09-02T12:01:34Z · session a2aed3c9 · lane idp
-🟡 Active: founder edict 11:55Z handled — decision 0019 (credentials federate, one pasted seed at most) written and pushed, PR walking to green silently; pin 21382 replacement assigned to code-74 (their lane, founder rejected the human-run commands); Thing 1 pins 21379/21384 stand
-🟢 Done: claude-guards#239 MERGED 87dc89a4 with --admin (6/6 green, reviews off by ruling) — session-start sync unblocks estate-wide; 16KB rulings-block overflow fixed same wave (meanings trimmed to one sentence, 2 tests proved green)
-🔴 Blocked: founder's three Bitwarden moves + dispatch (unchanged)
-⚪ Pending: 0019 PR checks; oke-check probe run 33627094534 still measuring external-secrets post-roll
-🔧 TOUCHES: idp docs/decisions + mkdocs nav (worktree wt-oidc); ~/.claude/scripts main rebased onto merged origin
-🔀 OVERLAP: vendor fact for everyone — ESO Bitwarden provider takes machine tokens ONLY, no OIDC federation (external-secrets.io, verified today); don't promise otherwise in any doc
-📎 FACTS: claude-guards#239 merge 87dc89a4 · idp branch docs/oidc-federation-decision 17d83500
-📍 State: watchers: oke-check bq5ch4ys0 live; 0019 PR just opened
-
-
-## 2026-09-02T12:03:57Z · session a2aed3c9 · lane idp
-🟡 Active: decision 0019 PR open — idp#1142 (credentials federate, one pasted seed at most), checks running, watcher armed; scripts main aligned to merged 87dc89a (trees proved identical), estate-wide session-start sync now clean
-🟢 Done: telegram-alerts routing settled with code-74 — repo secrets set by them 11:59:47Z, vault entry rides the FOUNDER'S next oke-check apply (mode=apply runs a tofu identity apply = a deploy; R65 says agents never trigger one; vault-seed.yml has no telegram entry by root-trust design, verified from source); pin 21382 retired, zero founder actions added
-🔴 Blocked: founder's three Bitwarden moves + vault-bootstrap dispatch (unchanged)
-⚪ Pending: 11:55Z probe still read external-secrets not Ready (pre-roll); delayed re-probe fires ~12:20Z; idp#1142 to green
-🔧 TOUCHES: idp docs/decisions + mkdocs nav only; no cluster
-🔀 OVERLAP: nobody dispatches oke-check mode=apply — that is the founder's button (R65); telegram entry materialises on his next apply with no pin
-📎 FACTS: https://github.com/chidionyema/idp/pull/1142 · claude-guards#239 merge 87dc89a4
-📍 State: watchers: idp#1142 checks + 12:20Z re-probe (bxqagv7qp) live
-
-
-## 2026-09-02T12:04:08Z · session 54539261 · lane .wt-eye-breaker
-🟡 Active: SECOND FOUNDER EDICT 12:03Z, record ~/.claude/docs/founder/2026-09-02T1203Z-you-have-reached-the-exact-limit-of-what-c656c4da.md — forever-enterprise end-state: (1) SPIFFE/SPIRE-class hardware-rooted machine identity kills the first-secret problem (the NEW build; folds into code-f9's OIDC decision record); (2) agents write declarative YAML to git only, Flux/operators reconcile (already standing law — record cites the receipt); (3) all noise behind Backstage golden paths. His pasted "ultimate edict" text was truncated; the three planks are the captured order
-🟢 Done: relayed to code-f9 (record owner) and code-74 (informational); code-f9 earlier acked edict 1 — OIDC GH→OCI already live in vault-bootstrap, Bitwarden-federation claim gets vendor-doc verification first
-🔴 Blocked: unchanged — founder's one Bitwarden paste (Thing 1 stands even under edict 2)
-⚪ Pending: code-74 ack on Telegram self-seed; code-f9 decision record; Superset probe
-🔧 TOUCHES: nothing on disk
-🔀 OVERLAP: none new
-📎 FACTS: ~/.claude/docs/founder/2026-09-02T1203Z-you-have-reached-the-exact-limit-of-what-c656c4da.md
-📍 State: lane clean; still only waiting on cluster reconcile
-
-
-## 2026-09-02T12:05:41Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: peer discussion on edict 2 (record ~/.claude/docs/founder/2026-09-02T1203Z-you-have-reached-the-exact-limit-of-what-c656c4da.md) CONVERGED — code-74: Telegram repo secrets SET 11:59:47Z from the live gateway store (values never printed), pin 21382 edited RESOLVED + unpinned, founder's Telegram now shows only the Bitwarden action; seeds ride his next apply (no agent dispatch, R65). code-f9: decision 0019 on idp#1142 carries plank 1 — OKE Workload Identity/resource principals as the mechanism (verifying against Oracle docs), SPIRE optional plumbing not a must; Bitwarden SM takes access tokens only so Thing 1 stays the one seam; planks 2-3 recorded "already enforced" with receipts (agents-never-deploy + Flux; 30 Backstage golden-path buttons)
-🟡 Active: consolidated view delivered to founder; Superset probe still armed
-🔴 Blocked: unchanged — founder's one Bitwarden paste
-⚪ Pending: idp#1142 (decision 0019) to green in code-f9's lane; code-74's pick of highest-value next golden-path button
-🔧 TOUCHES: nothing on disk
-🔀 OVERLAP: none
-📎 FACTS: https://github.com/chidionyema/idp/pull/1142 · ~/.claude/docs/founder/2026-09-02T1203Z-you-have-reached-the-exact-limit-of-what-c656c4da.md
-📍 State: lane clean; waiting on cluster reconcile only
-
-
-## 2026-09-02T12:06:37Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: edict-2 discussion CLOSED, all positions in. code-f9 final (committed in 0019, idp#1142 head 1a40e875): OCI Workload Identity + OIDC federation, SPIRE optional-only (smaller road); risk sentence = identity couples to OCI issuer, acceptable since it lives in platform config not app code; sequencing = after Thing 1 → bootstrap dispatch → identifiers PR → secret-store Ready → audit-and-migrate pods off stored OCI keys → automate Bitwarden token rotation via their API; seam stays Bitwarden (no OCI Vault move — provider coupling, stitching); reopen clause: if Bitwarden rotation proves unautomatable, seam = annual human paste and the OCI Vault trade-off reopens
-🟡 Active: nothing new mine; Superset probe armed
-🔴 Blocked: founder's one Bitwarden paste
-⚪ Pending: idp#1142 green; Superset route answering after cluster heal
-🔧 TOUCHES: nothing on disk
-🔀 OVERLAP: none
-📎 FACTS: https://github.com/chidionyema/idp/pull/1142 head 1a40e875
-📍 State: lane clean
-
-
-## 2026-09-02T12:17:34Z · session 54539261 · lane .wt-eye-breaker
-🟡 Active: founder is mid-paste — doing the Bitwarden machine-account + Oracle vault steps in the browser right now (was one screen off, redirected); vault lane fires bootstrap on his "done"
-🟢 Done: probe bj335a7c5 closed SUPERSET-SILENT after 30 min, BUT superset.mumchimp.com now RESOLVES and answers TLS (curl exit 60 cert-invalid, was exit 6 no-DNS) — route published, cert pending; re-armed cert-tolerant watcher 60×60s
-🔴 Blocked: cluster chain on the paste completing
-⚪ Pending: founder "done" → code-f9 dispatches vault-bootstrap → identifiers PR → his merge word → chain thaws → Superset MEASURED report → PVC pgdata-metabase-db-0 deletion action
-🔧 TOUCHES: read-only probes
-🔀 OVERLAP: none
-📎 FACTS: probe output SUPERSET-SILENT/exit-60 transition 12:17Z
-📍 State: watcher armed; founder active in browser
-
-
-## 2026-09-02T12:17:43Z · session a2aed3c9 · lane idp
-🟡 Active: founder doing Thing 1 LIVE in code-0c's session — I sent the verbatim runbook steps (Bitwarden subscribe → project → machine account → token → Oracle vault secret `bitwarden-machine`, then vault-bootstrap dispatch); full ultimate-edict text captured verbatim in company git (crew branch docs/ultimate-edict-full-text, 9a80264) and relayed to both peers per his "paste to the swarm" order
-🟢 Done: idp#1142 plain-english red fixed — nine Vale rewords in decision 0019 (codes and jargon out of sentences, reworded in context per the ruling), head f54322fe, watcher re-armed
-🔴 Blocked: nothing new; Thing 1 in motion
-⚪ Pending: idp#1142 to green then admin-merge (docs-only); re-probe bxqagv7qp ~12:20Z (expect external-secrets Ready); after founder's paste → vault-bootstrap run → identifiers PR → secret-store chain green
-🔧 TOUCHES: idp wt-oidc decision 0019; crew docs/founder (new branch); no cluster
-🔀 OVERLAP: code-0c is walking the founder through the paste — nobody else touch the Bitwarden/vault chain this hour
-📎 FACTS: idp#1142 head f54322fe · crew 9a80264 · runbook docs/how-to/bitwarden-human-vault.md
-📍 State: watchers: #1142 checks + bxqagv7qp live
-
-
-## 2026-09-02T12:20:12Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: SUPERSET FRONT DOOR MEASURED at 12:19:52Z — strict-TLS probe: 302 → estate OIDC gateway (idcs…oraclecloud.com authorize, redirect_uri auth.mumchimp.com/oauth2/callback), final 200 on the sign-in page; cert issued 12:19:12Z (was invalid at 12:17Z). Route+cert+SSO chain all answer; per SSO policy the app sits behind the gateway
-🟡 Active: app state BEHIND the door = UNKNOWN until the secret chain thaws + a signed-in page loads; founder mid-Oracle-step parking the machine token as bitwarden-machine
-🔴 Blocked: chain on his "done" → code-f9 dispatches vault-bootstrap (confirmed their lane; I signal them on his word)
-⚪ Pending: done → dispatch → identifiers PR → merge word → chain thaws → signed-in Superset check → PVC pgdata-metabase-db-0 action
-🔧 TOUCHES: read-only probes
-🔀 OVERLAP: none
-📎 FACTS: probes bly8yydrs/bhdryie3e outputs; TLS-valid 12:19:12Z; final 200 at IDCS authorize
-📍 State: no watcher needed — surface answers; waiting on founder word only
-
-
-## 2026-09-02T12:21:58Z · session a14fc078 · lane .wt-crew612-phone
-🟡 Active: judge wave design PROVED by measurement — kyverno CLI --audit-warn is per-POLICY (a mixed Enforce+Audit policy counts an Audit miss as fail; minimal fixtures on record in scratchpad/judge-wave); fix = split mixed policies into enforce/audit halves inside the judge's scratch set + anchor the FAIL grep on 'failed:' (warn prints 'failed as audit warning:'); backstage/base false-FAIL resolved by judging the oke overlay bytes (proved: ok pass:178 fail:0), dir list untouched so crew#623 guards stand
-🟢 Done: ns-labels fix verified two ways; estate policies double-append found (own-policies raw + clusters/oke rendered, no cross-dedupe — every estate-policy verdict counted twice), last-wins dedupe rides the same pass
-🔴 Blocked: none
-⚪ Pending: idp#1138 auto-merge still evaluating (all 17 checks green on head, GitHub ruleset wedge, watcher live); edits landing next: render split+grep+remap, observability availability PolicyExceptions ×6 (idp#544, dagster-daemon precedent), fixture + tests
-🔧 TOUCHES: bin/idp-kyverno-render, platform/edge/ (new exception file), tests/ — all uncommitted in .wt-crew612-phone
-🔀 OVERLAP: judge wave pushes only after #1138 merges (one wave, push-first)
-📎 FACTS: kyverno v1.19 audit-warn granularity measured 12:2xZ; overlay verdict ok pass:178
-📍 State: writing the wave edits now
-
-
-## 2026-09-02T12:25:08Z · session a2aed3c9 · lane idp
-🟢 Done: decision 0019 MERGED (idp#1142, 12:22:46Z, 20/20 green) — credentials-federate record on main, wt-oidc worktree removed; re-probe run 33628767619 (12:14Z): estate 40 → 12 not-ready, external-secrets Kustomization READY (the #1137 fix held) — code-0c signalled, their Superset HelmRelease already mid-install in the same probe
-🟡 Active: waiting on founder's Thing 1 "done" (he was on the Oracle step, token created, storing as bitwarden-machine) → I dispatch vault-bootstrap.yml → identifiers PR fills human-vault ClusterSecretStore org/project IDs (currently "null", the exact remaining error)
-🔴 Blocked: notify/apprise + otto-staging ExternalSecrets still want telegram entries from estate-vault — they land on the FOUNDER'S next oke-check mode=apply (secrets set 11:59Z, bootstrap-vendors plumbing verified); dagster = Kyverno replicas-1 denial, another lane holds it per friction relay
-⚪ Pending: observability mid-reconcile with chaos/keda/science queued behind it; automerge-stuck names idp#1134 operating-model-gate red (not my PR — owner should look)
-🔧 TOUCHES: nothing this wave; crew branch docs/ultimate-edict-full-text (9a80264) holds the full edict record
-🔀 OVERLAP: nobody touch the Bitwarden/vault chain — founder mid-paste in code-0c's session, dispatch is mine on his done
-📎 FACTS: idp#1142 merged · run 33628767619 · crew 9a80264
-📍 State: no watchers left; next event = founder done signal or his mode=apply
-
-
 ## 2026-09-02T12:35:59Z · session a14fc078 · lane .wt-crew612-phone
 🟡 Active: judge-wave edits COMPLETE + proved locally — bin/lib/kyverno_policy_set.py (splits mixed Enforce+Audit policies so an Audit miss counts warn not fail; dedupes the double-appended estate policies last-wins), render greps anchored on 'failed:', base→oke-overlay remap, observability availability PolicyException ×6; three incident suites 14 passed, platform/edge builds; four-target render battery running in background (llm/observability/backstage-base/must-fail)
 🟢 Done: idp#1138 merge wedge FOUND AND CLEARED — demo-render bot's head bc6e60fa left all four workflow runs 'action_required' (needed approval), approved all four at 12:3xZ, checks now landing green one by one; auto-merge armed since 12:04Z will fire on green
@@ -3679,4 +3128,356 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: e83508bc
 📎 FACTS: https://github.com/chidionyema/prospector/pull/813
 📍 State: status check in flight; polish still running
+
+
+## 2026-09-04T08:22:59Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1399 (deploy button) — 8 checks running on 7421eb47
+🟢 Done: spec-gate, no-toil-gate and verify/verdict-fresh deleted from ci.yml, both rulesets and their guard tests; main now requires only bdd, offline-gate, security-scan
+⚪ Pending: land #1399, then update #1320 and #1289 from main so the ghost gate checks disappear and they merge; #1391 has real bdd failures
+🔧 TOUCHES: .github/workflows/ci.yml, platform/github/ruleset.idp.required-checks.json, tests (5 deleted), platform/weave-gitops
+🔀 OVERLAP: session d0a71e6b holds the idp lane
+📎 FACTS: gh api repos/chidionyema/idp/rules/branches/main returns ["bdd","offline-gate","security-scan"]; rule-guard refuses a local merge of #1320 because the deleted operating-model-gate check is still recorded failed on its head commit, so those two branches need a new head off main rather than an admin merge
+📍 State: https://github.com/chidionyema/idp/pull/1399
+
+
+## 2026-09-04T08:33:02Z · session c0ca7d0d · lane .claude
+🔴 Blocked: none
+🟡 Active: Backstage polish; start :3100; wrap catalog/docs
+🟢 Done: PR 813 CI green 52f15e9e, not merged
+⚪ Pending: Golden Goose §9
+🔧 TOUCHES: idp/backstage; port 3100
+🔀 OVERLAP: e83508bc
+📎 FACTS: https://github.com/chidionyema/prospector/pull/813
+📍 State: idp feat/mumchimp-oneshot-rebuild dirty
+
+
+## 2026-09-04T08:47:11Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1399 deploy button — fast-gate went red on ruff format, fixed and pushed 14cf0b3b; kimi fix branch pushed 7662e553
+🟢 Done: root-caused kimi — the laptop key's models allow-list is rendered from config.yaml so console lanes can never be on it
+⚪ Pending: open the PR for fix/laptop-key-sees-console-lanes; merge #1399
+🔧 TOUCHES: .github/workflows/vault-seed.yml, bin/idp-router-key, tests/test_incident_crew568...
+🔀 OVERLAP: session d0a71e6b holds the idp lane
+📎 FACTS: GET /v1/models on the laptop key returns 13 ids, no kimi; /key/info shows the same 13 as an explicit allow-list
+📍 State: https://github.com/chidionyema/idp/pull/1399
+
+
+## 2026-09-04T08:54:37Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: checked cline's research-engine repo against gpt-researcher
+🟢 Done: verdict — research-engine CP1 is hand-rolled, zero dependencies, no gpt-researcher
+⚪ Pending: founder decision on wiring gpt-researcher under engine/retrieve.py + synthesize.py
+🔧 TOUCHES: nothing written; read-only check of ~/dev/code/research-engine and crew/science
+🔀 OVERLAP: session 85f840c5 holds the idp lane
+📎 FACTS: research-engine pyproject dependencies = []; engine/retrieve.py DDGTier/MeteredTier.search return []; crew/science/research_worker.py:137 imports GPTResearcher and is untracked on crew main; README links crew/docs/research-engine/SPEC-v1.md which exists nowhere on disk
+📍 State: research-engine @ 9bef1c4
+
+
+## 2026-09-04T08:58:51Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: none — research-engine wiring pushed
+🟢 Done: research-engine PR 1 — GPT Researcher is the retrieval stage; cline's CP1 had none
+⚪ Pending: founder merges research-engine#1; CP2 still owes robots.txt and the ClickHouse metrics
+🔧 TOUCHES: ~/dev/code/research-engine only (engine/researcher.py, config, cli, retrieve, tests, README)
+🔀 OVERLAP: session 85f840c5 holds the idp lane
+📎 FACTS: CP1 pyproject dependencies = [] and DDGTier/MeteredTier.search returned []; 16 tests pass, i2_lint OK, ruff clean
+📍 State: https://github.com/chidionyema/research-engine/pull/1
+
+
+## 2026-09-04T09:06:12Z · session c0ca7d0d · lane .claude
+🔴 Blocked: sign-in Failed to fetch; front-door OIDC
+🟡 Active: Backstage polish + live page audit
+🟢 Done: PR 813 CI green 52f15e9e, not merged
+⚪ Pending: Golden Goose §9
+🔧 TOUCHES: idp/backstage; port 3100
+🔀 OVERLAP: e83508bc
+📎 FACTS: https://github.com/chidionyema/prospector/pull/813
+📍 State: idp dirty; catalogue.mumchimp.com auth-gated
+
+
+## 2026-09-04T09:12:53Z · session 85f840c5 · lane idp
+🔴 Blocked: the laptop OCI session is not valid (only a key pem under ~/.oci/sessions, no token), so nothing here can write the vault
+🟡 Active: idp#1414 kimi fix, checks re-running after deleting the no-docs-no-merge gate
+🟢 Done: idp#1399 deploy button MERGED 08:53Z; pre-commit now reformats Python instead of refusing
+⚪ Pending: SEED_ANTHROPIC_API_KEY refresh so the router's claude lane has credit; then route Claude Code through the router and wire OTLP
+🔧 TOUCHES: .github/workflows/fast-gate.yml, vault-seed.yml, bin/idp-router-key, ~/.estate/guards/hooks
+🔀 OVERLAP: sessions 5f6f4e72 and d0a71e6b also on the idp lane
+📎 FACTS: POST llm.mumchimp.com/anthropic/v1/messages returns 400 "Your credit balance is too low"; /v1/messages with lane claude returns 200
+📍 State: https://github.com/chidionyema/idp/pull/1414
+
+
+## 2026-09-04T09:18:38Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: live A/B of the two retrieval paths (background bcrws2csy), gpt-researcher against the CP1 tiers
+🟢 Done: research-engine PR 1 pushed; old path measured — 0 documents, 0.0s, $0
+⚪ Pending: the researcher row of the A/B, then pin the working dependency set into pyproject
+🔧 TOUCHES: ~/dev/code/research-engine only
+🔀 OVERLAP: session 85f840c5 holds the idp lane
+📎 FACTS: router lanes on the science key are claude, claude-fast, embed, gemini, gemini-or, groq, minimax, minimax_m27; gpt-researcher 0.13.3 needs langchain<1.0, langchain-openai<1.0 and duckduckgo-search or it dies on import
+📍 State: https://github.com/chidionyema/research-engine/pull/1
+
+
+## 2026-09-04T09:29:57Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1419 webhooks-restart playbook — security-scan red, reading it; 45 Flux objects still held by a hung kyverno webhook
+🟢 Done: idp#1414 kimi fix MERGED 09:29Z; idp#1420 opened for the admission-webhook root cause
+⚪ Pending: merge #1419, run break-glass webhooks-restart, then the deploy page draws; Anthropic key still needed for the router's claude lane
+🔧 TOUCHES: bin/idp-oke-break-glass, .github/workflows/oke-check.yml, docs/runbooks/
+🔀 OVERLAP: sessions 5f6f4e72, d0a71e6b, c0ca7d0d
+📎 FACTS: run 33857758131 — Kustomization flux-system/edge dry-run failed calling webhook mutate-policy.kyverno.svc EOF; identity and weave-gitops behind it
+📍 State: https://github.com/chidionyema/idp/pull/1419
+
+
+## 2026-09-04T09:46:25Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: research engine retrieval — exa now returns real documents after the vault key was replaced
+🟢 Done: idp#1421 (estate-hosted SearXNG), estate-secrets EXA_API_KEY fixed, research-engine stub tiers deleted
+⚪ Pending: founder merges idp#1421 and research-engine#1; SearXNG unmeasured until Flux runs it
+🔧 TOUCHES: idp platform/searxng + clusters/oke/platform.yaml, estate-secrets secrets/dev/EXA_API_KEY.yaml, ~/dev/code/research-engine
+🔀 OVERLAP: session 85f840c5 holds the idp lane
+📎 FACTS: vault exa key answered 401 INVALID_API_KEY, prospector's .env key answers 200; with it the worker returned 3 documents from 3 domains in 97.9s for $0.115
+📍 State: https://github.com/chidionyema/idp/pull/1421
+
+
+## 2026-09-04T09:48:00Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1419 webhooks-restart playbook — checks running; oke-check apply run 33859660425 writing the Anthropic key to the vault
+🟢 Done: idp#1414 kimi fix MERGED 09:29Z; idp#1420 root cause and idp#1423 federation opened
+⚪ Pending: founder merges research-engine#1 and prospector#813; then I merge #1419, run break-glass webhooks-restart, probe the router, point this CLI at it
+🔧 TOUCHES: bin/idp-oke-break-glass, .github/workflows/oke-check.yml, docs/runbooks/, ~/.claude/settings.json
+🔀 OVERLAP: sessions 5f6f4e72, d0a71e6b, c0ca7d0d
+📎 FACTS: run 33857758131 — Kustomization flux-system/edge dry-run failed calling webhook mutate-policy.kyverno.svc EOF; 45 Flux objects held
+📍 State: https://github.com/chidionyema/idp/pull/1419
+
+
+## 2026-09-04T10:03:13Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1427 open — strips the Anthropic API road from the estate on the founder's ruling
+🟢 Done: idp#1421 SearXNG merged; research-engine stub tiers deleted; exa key fixed in the vault
+⚪ Pending: founder merges idp#1427 and research-engine#1; then re-run the engine end to end on the minimax lane
+🔧 TOUCHES: platform/llm/config.yaml, platform/vendors/consoles.yaml, .github/workflows/oke-check.yml, bin/litellm-up, crew/science/research_worker.py, hermes-v2/config.yaml
+🔀 OVERLAP: session 85f840c5 also on the idp lane
+📎 FACTS: the router answered the claude lane name with a body reporting "model":"MiniMax-M2"; /anthropic/v1/messages answers 400 credit balance too low
+📍 State: https://github.com/chidionyema/idp/pull/1427
+
+
+## 2026-09-04T10:08:53Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1289 and idp#1391 rebased on main; 1391 waiting on its re-run
+🟢 Done: webhooks-restart ran (33860481852) — Flux not-Ready fell 45 to 1, the deploy page draws; idp#1320 merged
+⚪ Pending: founder merges research-engine#1 and prospector#813
+🔧 TOUCHES: nothing further; idp#1426 closed as a duplicate of 5f6f4e72's idp#1427
+🔀 OVERLAP: session 5f6f4e72 owns the Anthropic teardown (idp#1427) and the idp lane handoff
+📎 FACTS: run 33860481852 cluster-state = 1 Flux object not Ready (Kustomization notify), was 45
+📍 State: https://github.com/chidionyema/idp/pull/1391
+
+
+## 2026-09-04T10:26:52Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: deleting the 38 worktrees inside the idp folder after pushing 24 laptop-only branches to origin
+🟢 Done: idp#1431 opened — restarts kustomize-controller from git with a timestamp annotation; deploy page measured healthy (route Accepted, RBAC yes, pods Running)
+⚪ Pending: merge idp#1431, idp#1289, idp#1391 when their checks go green
+🔧 TOUCHES: clusters/oke/flux-system/kustomization.yaml, local worktrees under dev/code/idp
+🔀 OVERLAP: session 5f6f4e72 owns the Anthropic teardown (idp#1427); its worktrees under /private/tmp are untouched
+📎 FACTS: 23 branches existed only on this laptop and are now on origin; CI runs only on pull_request and pushes to main, so the pushes triggered nothing
+📍 State: https://github.com/chidionyema/idp/pull/1431
+
+
+## 2026-09-04T10:30:07Z · session c0ca7d0d · lane .claude
+🔴 Blocked: local sign-in 404 oauth2Proxy; guest path in flight
+🟡 Active: Backstage polish (BUI inner pages)
+🟢 Done: PR 813 CI green 52f15e9e, not merged
+⚪ Pending: Golden Goose §9
+🔧 TOUCHES: idp/backstage sign-in + catalog; :3100 :7107
+🔀 OVERLAP: e83508bc
+📎 FACTS: https://github.com/chidionyema/prospector/pull/813
+📍 State: http://localhost:3100 (gate); mixed not exceptional
+
+
+## 2026-09-04T10:34:22Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1426 reopened and re-running — it and my idp#1427 closed each other as duplicates, leaving the Anthropic teardown on no open branch
+🟢 Done: research-engine#1 MERGED 10:05Z; ruff format fix pushed to fix/no-anthropic-api-keys (ff9ba167), the only thing fast-gate refused
+⚪ Pending: merge idp#1426, then bin/litellm-up still exports ANTHROPIC_API_KEY (lines 84, 100)
+🔧 TOUCHES: platform/llm/config.yaml, platform/vendors/consoles.yaml, tests/test_crew568_*, tests/test_incident_crew66_*
+🔀 OVERLAP: session 85f840c5 owns the same branch — coordinate before pushing again
+📎 FACTS: origin/main still carries model_name: claude with api_key os.environ/ANTHROPIC_API_KEY; nothing is merged yet
+📍 State: https://github.com/chidionyema/idp/pull/1426
+
+
+## 2026-09-04T10:46:21Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1435 — hermes asked the router for model claude-haiku-4-5, which is not one of the router's 14 lane names, so every call was refused
+🟢 Done: 38 worktrees inside the idp checkout removed after 23 laptop-only branches were pushed; idp#1289 and idp#1391 merged; this CLI now emits OTLP to signoz.mumchimp.com
+⚪ Pending: SigNoz ingest answers 401 — the off-cluster door is Traefik basicAuth on vault entry otlp-ingest-users, still to be wired without putting the value on disk
+🔧 TOUCHES: platform/hermes-agent/estate.yaml, clusters/oke/flux-system/kustomization.yaml, bin/idp-ci, ~/.claude/settings.json
+🔀 OVERLAP: session 5f6f4e72 owns platform/llm/config.yaml through idp#1427; the founder reopened idp#1426
+📎 FACTS: no Anthropic API key is used anywhere — founder confirmed again 2026-09-04; the vault-key and CLI-through-router items of his older six-point list are void
+📍 State: https://github.com/chidionyema/idp/pull/1435
+
+
+## 2026-09-04T10:55:27Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1426 — pushed 59742cd2, the neutral default and fast lanes now live on the Gemini root; waiting on its checks, then merge
+🟢 Done: offline-gate failures fixed (vendor render drift, R76 prose, the ConfigMap parse, the SEED_ANTHROPIC expected list); 14 tests pass locally
+⚪ Pending: merge idp#1426; bin/litellm-up still exports ANTHROPIC_API_KEY (lines 84, 100)
+🔧 TOUCHES: platform/vendors/consoles.yaml, platform/llm/config.yaml, llm/config.yaml, tests/test_crew568_*, tests/test_incident_crew66_*
+🔀 OVERLAP: session 85f840c5 on the same idp lane; idp#1435 is the same class of defect (a component naming a model the router has no lane for)
+📎 FACTS: the anthropic vendor row carried the default and fast lane declarations, so deleting it deleted them; hermes asks for fast
+📍 State: https://github.com/chidionyema/idp/pull/1426
+
+
+## 2026-09-04T10:57:16Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1436 open — mints the Mac's OTLP basic-auth header from the vault, cached in the macOS keychain
+🟢 Done: SigNoz ingest proved 200 with the header and 401 without it; idp#1435 open for the hermes lane name
+⚪ Pending: merge idp#1435 and idp#1436; the founder's idp#1426 (Anthropic teardown) still open
+🔧 TOUCHES: bin/idp-otlp-headers (new), bin/idp-oci-whoami, ~/.claude/settings.json
+🔀 OVERLAP: session 5f6f4e72 owns platform/llm/config.yaml
+📎 FACTS: idp-oci-whoami ignored a working API-key profile in ~/.oci/config and answered BLIND; it now falls back to it
+📍 State: https://github.com/chidionyema/idp/pull/1436
+
+
+## 2026-09-04T11:00:12Z · session c0ca7d0d · lane .claude
+🔴 Blocked: none
+🟡 Active: local guest sign-in + Catalog BUI
+🟢 Done: PR 813 CI green 52f15e9e, not merged
+⚪ Pending: Golden Goose §9
+🔧 TOUCHES: idp/backstage signin theme; :3100 :7107
+🔀 OVERLAP: e83508bc
+📎 FACTS: https://github.com/chidionyema/prospector/pull/813
+📍 State: idp dirty; :3100 down until guest path up
+
+
+## 2026-09-04T11:15:02Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: nothing — the Anthropic teardown is on main
+🟢 Done: idp#1426 MERGED 11:14:37Z as 735d4b60; the only ANTHROPIC string left on main is a comment saying there is no such root
+⚪ Pending: bin/litellm-up still exports ANTHROPIC_API_KEY (lines 84, 100), laptop-only; the router pods need Flux to pick up the new ConfigMap
+🔧 TOUCHES: platform/llm/config.yaml, platform/vendors/consoles.yaml, .github/workflows/vault-seed.yml, platform/hermes-agent/estate.yaml, docs/decisions/decision-matrix.yaml
+🔀 OVERLAP: session 85f840c5 merged idp#1435 on main; the estate.yaml conflict was resolved to the neutral fast lane
+📎 FACTS: the hermes and science vault keys were minted on claude,claude-fast and would have been refused; both now open on default,fast
+📍 State: https://github.com/chidionyema/idp/pull/1426
+
+
+## 2026-09-04T11:15:25Z · session 85f840c5 · lane idp
+🔴 Blocked: idp#1438 has bdd-suites (tests) red; reading the log when the run finishes (task bu4yk22bg)
+🟡 Active: unlocking the estate — one Kyverno webhook is stalling 33 Flux objects including the deploy page and both Ottos
+🟢 Done: idp#1441 (a cancelled bdd leg is a pass) and claude-guards#242 (--auto is not a merge) — the merge fence itself was refusing every merge
+⚪ Pending: merge idp#1438 first, then idp#1435, idp#1436
+🔧 TOUCHES: platform/kyverno/kyverno.yaml, .github/workflows/ci.yml, rule-guard.py
+🔀 OVERLAP: session 5f6f4e72 owns idp#1426
+📎 FACTS: external-secrets and scheduling both fail on "validate.kyverno.svc-fail ... context deadline exceeded"; the webhook is registered on ['*'] ['*'] ['*'] with failurePolicy Fail and ran one replica
+📍 State: https://github.com/chidionyema/idp/pull/1438
+
+
+## 2026-09-04T11:15:34Z · session c0ca7d0d · lane .claude
+🔴 Blocked: none
+🟡 Active: local guest sign-in + Catalog BUI
+🟢 Done: PR 813 CI green 52f15e9e, not merged
+⚪ Pending: Golden Goose §9
+🔧 TOUCHES: idp/backstage; :3100 :7107
+🔀 OVERLAP: e83508bc
+📎 FACTS: https://github.com/chidionyema/prospector/pull/813
+📍 State: waiting localhost:3100 past gate
+
+
+## 2026-09-04T11:31:15Z · session c0ca7d0d · lane .claude
+🔴 Blocked: none
+🟡 Active: guest sign-in + Catalog BUI; status check
+🟢 Done: PR 813 CI green 52f15e9e, not merged
+⚪ Pending: Golden Goose §9
+🔧 TOUCHES: idp/backstage; :3100 :7107
+🔀 OVERLAP: e83508bc
+📎 FACTS: https://github.com/chidionyema/prospector/pull/813
+📍 State: waiting localhost:3100 past gate
+
+
+## 2026-09-04T11:31:34Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: claude-guards#242 waiting on its re-run
+🟢 Done: idp#1438 merged c068971a (two kyverno admission replicas); idp#1441 merged; offline-gate dropped from main's required checks; spec-gate deleted in claude-guards
+⚪ Pending: nothing on the founder — kyverno's Kustomization polls every 10m and picks the merge up itself
+🔧 TOUCHES: none
+🔀 OVERLAP: session 5f6f4e72 on the idp lane
+📎 FACTS: offline-gate ran the whole repo rule table on every diff, 3-9 min, and was required; spec-gate called an action that does not exist and failed every claude-guards PR
+📍 State: https://github.com/chidionyema/idp/commit/c068971a
+
+
+## 2026-09-04T11:35:46Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1443 open — platform/research-engine, the hourly research job with its own Postgres and both credentials minted, never typed
+🟢 Done: research-engine 2b8d11d pushed and its image built (ghcr.io sha-2b8d11de…); three defects fixed that meant no run could ever produce a graded claim
+⚪ Pending: merge idp#1443, then Flux (the founder drives it); bin/litellm-up still exports ANTHROPIC_API_KEY (lines 84, 100)
+🔧 TOUCHES: platform/research-engine/*, clusters/oke/platform.yaml, bin/catalog-platform, backstage/platform/catalog-info.yaml
+🔀 OVERLAP: session 85f840c5 holds the idp lane; it is in platform/kyverno and CI, nowhere near platform/research-engine
+📎 FACTS: the producer was sent sha256 hashes instead of document text; the verifier was never called and entailment was written as the literal "supported"; nothing was written to Postgres at all
+📍 State: https://github.com/chidionyema/idp/pull/1443
+
+
+## 2026-09-04T11:43:29Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1443 re-pushed as daf99f05 — the research engine brings no Postgres of its own
+🟢 Done: platform/research-engine/postgres.yaml deleted; the engine now gets database `research` on the Postgres beside Hindsight, admission still passes (73/0)
+⚪ Pending: merge idp#1443, then Flux (the founder drives it); bin/litellm-up still exports ANTHROPIC_API_KEY (lines 84, 100)
+🔧 TOUCHES: platform/research-engine/*, clusters/oke/platform.yaml
+🔀 OVERLAP: session 85f840c5 holds the idp lane; it is in platform/kyverno and CI, nowhere near platform/research-engine
+📎 FACTS: the estate runs 14 Postgres containers and features.yaml already targets 1; the previous revision would have made it 15 and said so in a comment
+📍 State: https://github.com/chidionyema/idp/pull/1443
+
+
+## 2026-09-04T11:48:06Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1445 — wakes otto-gateway and event-bus, raises the capacity ceiling 6.9 to 7.2 on a cluster measurement
+🟢 Done: idp#1438 merged c068971a, the kyverno write lock is gone; Flux went 33 stalled to 6 by 11:38Z, and the 6 are suspended rows, not failures
+⚪ Pending: founder merges idp#1445 if he accepts the capacity call
+🔧 TOUCHES: clusters/oke/platform.yaml, clusters/oke/commerce.yaml, tests/test_incident_crew584_capacity_requests_need_proof.py
+🔀 OVERLAP: session 5f6f4e72 on the idp lane
+📎 FACTS: two nodes, 5808m allocatable each, 9522m requested at 11:44Z, so 2094m idle; charged platform sum 6.985 dark, 7.085 awake
+📍 State: https://github.com/chidionyema/idp/pull/1445
+
+
+## 2026-09-04T12:03:47Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: one estate Postgres — branch feat/one-estate-postgres pushed (f0dbdaf2), CloudNativePG operator plus one cluster with ten databases
+🟢 Done: idp#1443 rebased and green-fixed (the catalogue and the clocks table were stale against main)
+⚪ Pending: open the estate-db pull request, then the migration pass that flips each consumer's connection string
+🔧 TOUCHES: platform/estate-db/*, clusters/oke/platform.yaml, bin/idp-estate-seed, bin/catalog-platform, .github/workflows/vault-seed.yml
+🔀 OVERLAP: session 85f840c5 holds the idp lane; it is in platform/kyverno and CI
+📎 FACTS: nine Postgres servers measured in the cluster at 11:45Z; hindsight-db carries the vector and pg_trgm extensions, so the estate cluster runs the CNPG standard image
+📍 State: https://github.com/chidionyema/idp/tree/feat/one-estate-postgres
+
+
+## 2026-09-04T12:05:55Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: CI wall clock — idp#1449 takes offline-gate (555s of the 590s) off the pull-request path; idp#1445 re-running after the money-guard fix
+🟢 Done: idp#1445's failure root-caused — tests/test_crew623 demanded event-bus stay suspended; narrowed to the two rows that hold money, pushed d1c75d85
+⚪ Pending: founder's call on how much of the 230-file tests/ suite stays
+🔧 TOUCHES: .github/workflows/ci.yml, tests/test_crew623_money_never_enters_the_application.py
+🔀 OVERLAP: session 5f6f4e72 on the idp lane
+📎 FACTS: run 33868999215 measured — offline-gate 555s, bdd-suites 153s and 147s, security-scan 43s, everything else under 30s; offline-gate is 92% of the wait and is not a required check
+📍 State: https://github.com/chidionyema/idp/pull/1449
+
+
+## 2026-09-04T12:25:13Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1450 now carries the whole consolidation — the one cluster plus seven services moved onto it
+🟢 Done: root-trust register rows added on both branches, which is what made idp#1443 and idp#1450 red; admission passes 525/0 on the copy jobs
+⚪ Pending: founder merges idp#1450 and idp#1443; dagster and langfuse still carry chart-bundled Postgres and move in the next change
+🔧 TOUCHES: platform/estate-db/*, platform/{backstage,healthchecks,hindsight,observability,llm,temporal,guacamole}, clusters/oke/platform.yaml, docs/reference/policy/root-trust.md
+🔀 OVERLAP: session 85f840c5 holds the idp lane; it is in CI wall clock, nowhere near platform/estate-db
+📎 FACTS: every role keeps the username and password its consumer already holds, read from that consumer's own vault entry, so seven of ten need no new credential; external-secrets authenticates to OCI Vault by InstancePrincipal and the cluster holds zero long-lived service-account token secrets
+📍 State: https://github.com/chidionyema/idp/pull/1450
+
+
+## 2026-09-04T12:27:54Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1451 — 322 dead tests deleted, offline-gate off the PR path, shellcheck and the AGENTS.md fixture self-proof rungs cut from bin/idp-ci
+🟢 Done: idp#1445 merged cf93f870; the sovereign .venv race that broke the acceptance leg root-caused and fixed (bin/sb builds it once, serially, before xdist)
+⚪ Pending: merge idp#1451 on green
+🔧 TOUCHES: tests/*, sovereign/tests/bdd/test_gate_*, bin/idp-ci, AGENTS.md, .github/workflows/ci.yml
+🔀 OVERLAP: session 5f6f4e72 on the idp lane (platform/estate-db)
+📎 FACTS: run 33868999215 measured offline-gate 499s total, of which the kyverno render rung was 367s over every platform dir; that run was a push to main, where the diff scoping is empty by design
+📍 State: https://github.com/chidionyema/idp/pull/1451
 
