@@ -23,6 +23,10 @@ on:
         type: choice
         options: [diagnose, architect-doctor, otto-parity, otto-lockdown, otto-restore, healthchecks-door, cilium-unchain, cilium-replace, helm-retry, webhooks-restart, namespace-unstick, ghcr-pull-restore, k8sgpt-analyze, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll, router-spend, registries-conf]
         default: diagnose
+      rotate_vendor:
+        description: "apply only: rewrite this one vendor's key in the vault from its SEED_ secret even though the vault's key still verifies -- a key can authenticate and still be out of credit, and the plain run keeps it. Blank rotates nothing."
+        type: string
+        default: ""
   pull_request:
     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
 permissions:
@@ -280,8 +284,11 @@ jobs:
           SEED_STRIPE_SECRET_KEY: ${{ secrets.SEED_STRIPE_SECRET_KEY }}
           SEED_GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.SEED_GOOGLE_OAUTH_CLIENT_ID }}
           SEED_GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.SEED_GOOGLE_OAUTH_CLIENT_SECRET }}
+          ROTATE_VENDOR: ${{ inputs.rotate_vendor }}
         run: |
-          bin/idp-bootstrap-vendors || { rc=$?; [ "$rc" = 2 ] || exit "$rc"; }
+          set --
+          if [ -n "${ROTATE_VENDOR:-}" ]; then set -- --rotate --only "$ROTATE_VENDOR"; fi
+          bin/idp-bootstrap-vendors "$@" || { rc=$?; [ "$rc" = 2 ] || exit "$rc"; }
 
   # crew#292 CP4: the in-cluster chaos experiment leaves a receipt in Object Storage; this reads
   # it with the same machine identity and grades its age. A runner has no kube path, so the
