@@ -1,12 +1,19 @@
-"""crew#568 phase 1 (ADR 0011): Claude is a lane on the one router, not a key on the Mac.
+"""LAW 34, founder 2026-09-04: no lane on either router is biased to one vendor.
 
-Pins: both routers carry `claude` and `claude-fast` on the Anthropic provider reading
-ANTHROPIC_API_KEY; the key reaches litellm-upstream by the vendor bootstrapper (R52), the
-secret-name doc line the external-secret test greps names it; both lanes sit in a fallback chain
-that ends in the cheap model; the ADR and the scored matrix entry exist and agree.
+He said it three times that morning, ending with "we supposoed to be provider agnostic yet we
+fuckoing biased with anything claude and thropoc, we haevv to take this whle shit down".
+
+This replaces the crew#568 pins, which required the opposite: that `claude` and `claude-fast`
+sat on the Anthropic provider reading ANTHROPIC_API_KEY. The estate holds no Anthropic API
+account and never will -- Claude reaches it through the Claude Max monthly subscription -- so
+those lanes billed an unfunded account and answered 400 for every caller.
+
+Pins now: no lane on either router names the Anthropic provider; nothing anywhere reads
+ANTHROPIC_API_KEY; the vendor register carries no Anthropic root; every component names a lane,
+never a vendor's model id; and the two neutral lane names exist so nothing has to say "claude"
+to get a model.
 """
 
-import re
 from pathlib import Path
 
 import yaml
@@ -14,56 +21,61 @@ import yaml
 IDP = Path(__file__).resolve().parents[1]
 CLUSTER = yaml.safe_load((IDP / "platform/llm/config.yaml").read_text())
 LAPTOP = yaml.safe_load((IDP / "llm/config.yaml").read_text())
-LANES = {
-    "claude": "anthropic/claude-sonnet-5",
-    "claude-fast": "anthropic/claude-haiku-4-5-20251001",
-}
 
 
 def _lanes(cfg):
     return {m["model_name"]: m for m in cfg["model_list"]}
 
 
-def test_both_routers_carry_the_two_claude_lanes_on_the_anthropic_provider():
+def test_no_lane_on_either_router_calls_the_anthropic_provider():
+    for cfg in (CLUSTER, LAPTOP):
+        for lane in cfg["model_list"]:
+            p = lane["litellm_params"]
+            assert not str(p["model"]).startswith("anthropic/"), lane["model_name"]
+            assert p.get("api_key") != "os.environ/ANTHROPIC_API_KEY", lane["model_name"]
+
+
+def test_both_routers_offer_a_lane_whose_name_names_no_vendor():
     for cfg in (CLUSTER, LAPTOP):
         lanes = _lanes(cfg)
-        for name, model in LANES.items():
-            p = lanes[name]["litellm_params"]
-            assert p["model"] == model, (name, p)
-            assert p["api_key"] == "os.environ/ANTHROPIC_API_KEY"
-            assert lanes[name]["model_info"]["max_input_tokens"] == 200000
+        for name in ("default", "fast"):
+            assert name in lanes, (name, sorted(lanes))
+            assert not str(lanes[name]["litellm_params"]["model"]).startswith("anthropic/")
 
 
-def test_the_key_is_born_by_the_vendor_bootstrapper_into_litellm_upstream():
-    reg = yaml.safe_load((IDP / "platform/vendors/consoles.yaml").read_text())[
-        "vendors"
-    ]["anthropic"]
-    assert reg["secret"] == "SEED_ANTHROPIC_API_KEY"  # noqa: S105 a secret NAME, never a value (R49)
-    assert {"entry": "litellm-upstream", "field": "ANTHROPIC_API_KEY"} in reg["targets"]
-    doc = (IDP / "platform/llm/external-secret.yaml").read_text()
-    assert "ANTHROPIC_API_KEY=ANTHROPIC_API_KEY" in doc
+def test_the_vendor_register_carries_no_anthropic_root():
+    reg = yaml.safe_load((IDP / "platform/vendors/consoles.yaml").read_text())["vendors"]
+    assert "anthropic" not in reg, sorted(reg)
 
 
-def test_every_claude_chain_ends_in_the_cheap_model():
-    for cfg in (CLUSTER, LAPTOP):
-        chains = {
-            k: v for d in cfg["router_settings"]["fallbacks"] for k, v in d.items()
-        }
-        assert chains["claude"] == ["minimax", "deepseek"]
-        assert chains["claude-fast"] == ["claude", "deepseek"]
+def test_nothing_that_runs_reads_an_anthropic_key():
+    for rel in (
+        "platform/llm/external-secret.yaml",
+        "llm/litellm.yml",
+        ".github/workflows/oke-check.yml",
+    ):
+        for line in (IDP / rel).read_text().splitlines():
+            if line.lstrip().startswith("#"):
+                continue    # the note saying why it is gone is the point
+            assert "ANTHROPIC_API_KEY" not in line, (rel, line)
 
 
-def test_the_decision_is_written_and_scored():
-    adr = (
-        IDP
-        / "docs/decisions/0011-claude-is-a-lane-on-the-router-not-a-key-on-the-mac.md"
-    )
-    assert re.search(r"^Matrix: claude-on-the-router", adr.read_text(), re.M)
-    m = yaml.safe_load((IDP / "docs/decisions/decision-matrix.yaml").read_text())
-    d = next(x for x in m["decisions"] if x["slug"] == "claude-on-the-router")
-    assert d["decision"] == "router-lane-direct"
-    assert set(d["candidates"]) == {
-        "router-lane-direct",
-        "claude-code-subscription",
-        "openrouter-lane",
-    }
+def test_the_agent_names_a_lane_and_not_a_vendors_model_id():
+    est = yaml.safe_load((IDP / "platform/hermes-agent/estate.yaml").read_text())
+
+    def models(node):
+        if isinstance(node, dict):
+            if "models" in node and isinstance(node["models"], dict):
+                yield node["models"]
+            for v in node.values():
+                yield from models(v)
+        elif isinstance(node, list):
+            for v in node:
+                yield from models(v)
+
+    seen = list(models(est))
+    assert seen, "the agent declares no models at all"
+    lanes = set(_lanes(CLUSTER))
+    for m in seen:
+        for role, lane in m.items():
+            assert lane in lanes, (role, lane, sorted(lanes))

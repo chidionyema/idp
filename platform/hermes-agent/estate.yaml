@@ -51,8 +51,10 @@ data:
       cli: kubectl
 
     models:
-      watch: claude-haiku-4-5
-      work: claude-haiku-4-5
+      # LAW 34, founder 2026-09-04: a component names a lane on the router, never a
+      # vendor's model id. The lane decides which provider serves it.
+      watch: fast
+      work: fast
 
     dispatch:
       board: chidionyema/crew

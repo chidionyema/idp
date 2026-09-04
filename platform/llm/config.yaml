@@ -36,6 +36,26 @@ model_list:
     model_info:
       max_input_tokens: 1048576
 
+  # LAW 34: two lane names that name no vendor, so nothing has to say "claude" to get a model.
+  # A component names one of these; the lane decides which provider serves it.
+  - model_name: default
+    litellm_params:
+      model: gemini/gemini-2.5-pro
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 300
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 1048576
+
+  - model_name: fast
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 300
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 1048576
+
   - model_name: openrouter
     litellm_params:
       model: openrouter/deepseek/deepseek-chat
