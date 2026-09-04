@@ -64,7 +64,7 @@ metadata:
   name: event-bus
   namespace: flux-system
 spec:
-  suspend: true
+  suspend: false
   interval: 10m
   sourceRef:
     kind: GitRepository
