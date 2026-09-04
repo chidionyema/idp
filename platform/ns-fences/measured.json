@@ -1,0 +1,187 @@
+{
+  "backstage": {
+    "cpu_millicores": 460,
+    "memory_mib": 2592,
+    "pods": 11
+  },
+  "cert-manager": {
+    "cpu_millicores": 40,
+    "memory_mib": 160,
+    "pods": 3
+  },
+  "chaos-mesh": {
+    "cpu_millicores": 25,
+    "memory_mib": 256,
+    "pods": 3
+  },
+  "dagster": {
+    "cpu_millicores": 2350,
+    "memory_mib": 8320,
+    "pods": 21
+  },
+  "edge": {
+    "cpu_millicores": 130,
+    "memory_mib": 576,
+    "pods": 5
+  },
+  "estate-db": {
+    "cpu_millicores": 1050,
+    "memory_mib": 2176,
+    "pods": 3
+  },
+  "event-bus": {
+    "cpu_millicores": 110,
+    "memory_mib": 288,
+    "pods": 1
+  },
+  "external-secrets": {
+    "cpu_millicores": 45,
+    "memory_mib": 192,
+    "pods": 4
+  },
+  "flux-system": {
+    "cpu_millicores": 600,
+    "memory_mib": 512,
+    "pods": 7
+  },
+  "guacamole": {
+    "cpu_millicores": 500,
+    "memory_mib": 1920,
+    "pods": 6
+  },
+  "healing": {
+    "cpu_millicores": 255,
+    "memory_mib": 448,
+    "pods": 5
+  },
+  "healthchecks": {
+    "cpu_millicores": 300,
+    "memory_mib": 896,
+    "pods": 4
+  },
+  "hermes-agent": {
+    "cpu_millicores": 100,
+    "memory_mib": 1088,
+    "pods": 1
+  },
+  "hindsight": {
+    "cpu_millicores": 450,
+    "memory_mib": 2176,
+    "pods": 9
+  },
+  "identity": {
+    "cpu_millicores": 90,
+    "memory_mib": 192,
+    "pods": 3
+  },
+  "infra-crew": {
+    "cpu_millicores": 550,
+    "memory_mib": 1664,
+    "pods": 2
+  },
+  "keda": {
+    "cpu_millicores": 210,
+    "memory_mib": 512,
+    "pods": 6
+  },
+  "kube-system": {
+    "cpu_millicores": 710,
+    "memory_mib": 1478,
+    "pods": 16
+  },
+  "kyverno": {
+    "cpu_millicores": 230,
+    "memory_mib": 512,
+    "pods": 4
+  },
+  "llm": {
+    "cpu_millicores": 385,
+    "memory_mib": 1680,
+    "pods": 7
+  },
+  "mcp": {
+    "cpu_millicores": 240,
+    "memory_mib": 832,
+    "pods": 6
+  },
+  "metrics-server": {
+    "cpu_millicores": 50,
+    "memory_mib": 100,
+    "pods": 1
+  },
+  "monitoring": {
+    "cpu_millicores": 90,
+    "memory_mib": 272,
+    "pods": 3
+  },
+  "notify": {
+    "cpu_millicores": 150,
+    "memory_mib": 384,
+    "pods": 3
+  },
+  "observability": {
+    "cpu_millicores": 4280,
+    "memory_mib": 13352,
+    "pods": 22
+  },
+  "observability-agent": {
+    "cpu_millicores": 130,
+    "memory_mib": 352,
+    "pods": 3
+  },
+  "otto-gateway": {
+    "cpu_millicores": 250,
+    "memory_mib": 832,
+    "pods": 5
+  },
+  "otto-golden": {
+    "cpu_millicores": 50,
+    "memory_mib": 320,
+    "pods": 3
+  },
+  "prospector": {
+    "cpu_millicores": 900,
+    "memory_mib": 2048,
+    "pods": 5
+  },
+  "reloader": {
+    "cpu_millicores": 10,
+    "memory_mib": 64,
+    "pods": 1
+  },
+  "robusta": {
+    "cpu_millicores": 120,
+    "memory_mib": 768,
+    "pods": 2
+  },
+  "scheduling": {
+    "cpu_millicores": 450,
+    "memory_mib": 32,
+    "pods": 2
+  },
+  "searxng": {
+    "cpu_millicores": 60,
+    "memory_mib": 224,
+    "pods": 1
+  },
+  "spire-mgmt": {
+    "cpu_millicores": 270,
+    "memory_mib": 448,
+    "pods": 5
+  },
+  "tailscale": {
+    "cpu_millicores": 52,
+    "memory_mib": 66,
+    "pods": 3
+  },
+  "temporal": {
+    "cpu_millicores": 470,
+    "memory_mib": 1216,
+    "pods": 9
+  },
+  "weave-gitops": {
+    "cpu_millicores": 50,
+    "memory_mib": 128,
+    "pods": 2
+  }
+}

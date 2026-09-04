@@ -1,0 +1,137 @@
+# The input data for bin/idp-ns-fence-gen (crew#839). Every fence in this directory is generated
+# from this file plus measured.json; nothing here is hand-written per namespace, which is what the
+# founder meant by one shot (~/.claude/docs/founder/2026-09-04T1753Z-we-nder-that-constraint-a-professional-team-shifts-30a728b9.md).
+#
+# Change a number here and re-run the generator. Never edit a generated file: the next run
+# overwrites it, and the run is byte-identical when nothing here changed.
+
+# How a ceiling is derived from what a namespace actually asks for today. measured.json holds the
+# reading (kubectl get pods -A, 2026-09-04, 37 namespaces); the headroom is what a namespace may
+# grow into before the quota refuses it, and the floor is the smallest ceiling any namespace gets
+# so a two-pod namespace is not fenced into its current shape.
+sizing:
+  headroom:
+    cpu: 3.0
+    memory: 2.5
+    pods: 3.0
+  floor:
+    cpu_millicores: 500
+    memory_mib: 1024
+    pods: 10
+
+# A quota that counts requests.cpu makes every pod that declares no cpu request unschedulable,
+# refused with "must specify limits.cpu" -- a fence that refuses correct work is an outage
+# (LAW 38). The LimitRange supplies the missing request so that never happens. It deliberately
+# sets no default LIMIT: 42 containers across 15 namespaces run today with no memory limit, and
+# handing them one would OOM-kill whichever of them uses more than the default. For the same
+# reason the quota counts requests and pods only, never limits.
+default_request:
+  cpu: 25m
+  memory: 64Mi
+
+# Namespaces that get no fence, each with the reason it is exempt rather than missed.
+exempt:
+  kube-system: "the cluster's own control plane; a quota here is Oracle's to set, not ours"
+  kube-public: "empty by design"
+  kube-node-lease: "holds only Lease objects, no pods"
+  default: "nothing of ours runs here; a workload appearing here is the defect, not the quota"
+  flux-system: "the estate's only writer of the cluster. A quota that refuses a Flux controller
+    pod locks the cluster out of its own repair path, including the pull request that would
+    raise the quota. Fenced by hand, deliberately, or not at all."
+
+# Where a namespace was deliberately tuned by hand before this generator existed, its intent moves
+# here rather than being lost. `hard` is merged into that namespace's quota after the sizing above,
+# so a deliberate ceiling beats a derived one; `max` adds a per-container ceiling to its LimitRange.
+overrides:
+  staging:
+    # A staging copy of a product can never crowd out production on the shared node, and staging is
+    # reached over Tailscale only, so it may not ask for a public load balancer.
+    hard:
+      requests.cpu: "1"
+      requests.memory: 2Gi
+      requests.storage: 2Gi
+      services.loadbalancers: "0"
+  research:
+    # The research engine had no pod running when the estate was measured, so the derived ceiling
+    # would be the floor -- ten pods. It fans lanes out as jobs, so the floor is the wrong shape
+    # for it and a quota is not the place to discover that. Sized for a wide fan-out instead.
+    hard:
+      requests.cpu: "2"
+      requests.memory: 4Gi
+      pods: "40"
+  otto-golden:
+    # Two replicas plus one surge pod during a rolling update: sized for three, so a rollout is
+    # never forbidden by its own quota (the main-62 roll wedged on exactly that).
+    hard:
+      requests.cpu: 200m
+      requests.memory: 384Mi
+      pods: "5"
+    max: { cpu: 500m, memory: 512Mi }
+
+# Declared cross-namespace traffic. Derived from a scan of every manifest in platform/ for
+# <service>.<namespace>.svc references, then extended by hand where a flow does not appear as a
+# hostname in a manifest. THIS DATA IS NOT COMPLETE AND IS KNOWN NOT TO BE: a scan cannot see a
+# flow that arrives through a secret, an operator's client-go call to the API server, or
+# Prometheus scraping a namespace it monitors. That is why the generated NetworkPolicies are held
+# in network/ and are not applied to the cluster (see network/README.md) until the cluster can
+# produce a flow log to correct this from -- which needs a CNI that enforces policy, which this
+# cluster does not have.
+#
+# Every namespace additionally gets DNS egress to kube-system and OTLP egress to the collector in
+# observability (LAW 50); those two are in the generator, not repeated per namespace here.
+flows:
+  backstage:
+    egress: [dagster, identity, kyverno]
+    ingress_from: [edge]
+  guacamole:
+    egress: [identity]
+    ingress_from: [edge, monitoring]
+  healing:
+    egress: [llm]
+  healthchecks:
+    egress: [identity]
+    ingress_from: [edge]
+  hermes-agent:
+    egress: [hindsight, observability]
+    ingress_from: [edge]
+  infra-crew:
+    egress: [observability, llm]
+  keda:
+    egress: [observability]
+  llm:
+    egress: [observability]
+    ingress_from: [edge, healing, infra-crew, mcp]
+  mcp:
+    egress: [observability]
+    ingress_from: [edge]
+  monitoring:
+    egress: [guacamole, robusta]
+    ingress_from: [observability, edge]
+  observability:
+    egress: [monitoring, identity]
+    ingress_from: [edge, monitoring]
+  observability-agent:
+    egress: [observability]
+  otto-golden:
+    egress: [observability]
+    ingress_from: [edge]
+  otto-gateway:
+    egress: [observability, event-bus, estate-db]
+    ingress_from: [edge]
+  identity:
+    ingress_from: [edge, backstage, guacamole, healthchecks, observability]
+  dagster:
+    ingress_from: [edge, backstage]
+  hindsight:
+    ingress_from: [hermes-agent, edge]
+  robusta:
+    ingress_from: [monitoring]
+  event-bus:
+    ingress_from: [otto-gateway]
+  estate-db:
+    ingress_from: [otto-gateway, hindsight, temporal, llm, observability]
+  kyverno:
+    ingress_from: [backstage]
+  edge:
+    egress: [backstage, dagster, guacamole, healthchecks, hermes-agent, identity, llm, mcp,
+             monitoring, observability, otto-gateway, otto-golden, hindsight]

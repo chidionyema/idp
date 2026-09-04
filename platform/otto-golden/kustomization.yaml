@@ -8,7 +8,6 @@ kind: Kustomization
 namespace: otto-golden
 resources:
   - namespace.yaml
-  - quota.yaml
   - network-policy.yaml
   - telegram-secret.yaml
   - router-key.yaml

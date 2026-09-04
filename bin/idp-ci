@@ -527,13 +527,16 @@ else say "FAIL  binds    bin/bind-audit --selftest"; printf '%s\n' "$out" | sed 
 #    runs it over the manifests that are actually committed, because a gate that
 #    works on fixtures and is never pointed at the real thing protects fixtures.
 #    Measured on `estate` before these existed: a pod in one namespace reached a pod
-#    in another by IP, no credential, HTTP 200 in 4ms. Report-only until crew#191
-#    fences the namespaces that exist today (2026-08-27: 76 defects across 19): a
-#    gate that refuses every namespace on main is the outage (LAW 38), and a count
-#    that falls to 0 is the moment this row becomes a FAIL.
+#    in another by IP, no credential, HTTP 200 in 4ms. This was report-only from
+#    2026-08-27 (76 defects across 19 namespaces) because a gate that refuses every
+#    namespace on main is itself the outage (LAW 38). crew#839 generated the missing
+#    fences in one pass, the count reached 0, and this row is a FAIL from here on.
 if out=$(cd "$IDP" && python3 bin/ns-fence-gate platform 2>&1); then
   say "ok    fences   $(printf '%s' "$out" | sed 's/^ok *ns-fence-gate: //')"
-else say "warn  fences   $(printf '%s' "$out" | head -1 | sed 's/^FAIL *ns-fence-gate: //') -- crew#191 fences them; report-only until 0"; fi
+else
+  say "FAIL  fences   a namespace ships with no fence; add it to platform/ns-fences/allowances.yaml and run bin/idp-ns-fence-gen"
+  printf '%s\n' "$out" | sed 's/^/      /'; fail=1
+fi
 
 # 8. The estate diagram renders from the inventory it claims to draw. The three MCP
 #    rungs that stood here (crew#216 CP1-CP3) ran test files #1451 deleted, so they
