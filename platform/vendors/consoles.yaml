@@ -24,44 +24,11 @@
 # for a vendor that grades a credential by refusing it rather than by answering 2xx. Every vendor
 # without those three behaves exactly as before.
 vendors:
-  anthropic:
-    kind: secret
-    secret: SEED_ANTHROPIC_API_KEY
-    page: https://console.anthropic.com/settings/keys
-    shape: "sk-ant-[A-Za-z0-9_-]{60,}"
-    verify: { method: GET, url: https://api.anthropic.com/v1/models, headers: { x-api-key: "{key}", anthropic-version: "2023-06-01" } }
-    targets:
-      - { entry: prospector-engine-env, field: ANTHROPIC_API_KEY }
-      - { entry: hermes-agent-env, field: ANTHROPIC_API_KEY }
-      - { entry: litellm-upstream, field: ANTHROPIC_API_KEY }   # crew#568 phase 1: the claude lanes on the router
-    router:
-      lanes: |
-        # crew#568 phase 1 (ADR 0011): Claude is a lane on the router, not a key on the Mac. Every
-        # caller that wants Claude asks the router by name; the key lives in litellm-upstream and is
-        # born by bin/idp-bootstrap-vendors from SEED_ANTHROPIC_API_KEY (R52), never pasted anywhere.
-        # Model ids from https://docs.anthropic.com/en/docs/about-claude/models (read 2026-08-29).
-        - model_name: claude
-          litellm_params:
-            model: anthropic/claude-sonnet-5
-            api_key: os.environ/ANTHROPIC_API_KEY
-            timeout: 300
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 200000
-
-        - model_name: claude-fast
-          litellm_params:
-            model: anthropic/claude-haiku-4-5-20251001
-            api_key: os.environ/ANTHROPIC_API_KEY
-            timeout: 300
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 200000
-      fallbacks: |
-        # crew#568 phase 1: a Claude turn that 4xx/5xxs falls to the funded direct lanes and ends
-        # in the cheap model (cp30), like every other chain; claude-fast tries claude first.
-        - claude: [minimax, deepseek]
-        - claude-fast: [claude, deepseek]
+  # Anthropic was removed on 2026-09-04. Founder: "estate will never use antropic api keys",
+  # "we only use the pro nax nothly subscriptio", "final and end of". Claude reaches the estate
+  # through the Claude Max monthly subscription the Claude Code sessions sign in with, so there
+  # is no Anthropic API root to seed, no SEED_ANTHROPIC_API_KEY, and no anthropic lane on the
+  # router (platform/llm/config.yaml). Do not add one back.
   openrouter:
     kind: secret
     secret: SEED_OPENROUTER_API_KEY

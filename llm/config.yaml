@@ -15,27 +15,32 @@
 # and they stay the EUR 0 path (R14).
 
 model_list:
-  # crew#568 phase 1 (ADR 0011): Claude is a lane on the router, not a key on the Mac. Every
-  # caller that wants Claude asks the router by name; the key lives in litellm-upstream and is
-  # born by bin/idp-bootstrap-vendors from SEED_ANTHROPIC_API_KEY (R52), never pasted anywhere.
-  # Model ids from https://docs.anthropic.com/en/docs/about-claude/models (read 2026-08-29).
+  # Founder, 2026-09-04: "estate will never use antropic api keys ... we only use the pro nax
+  # nothly subscriptio ... final and end of". The estate holds a Claude Max monthly subscription
+  # and no funded Anthropic API account, so every anthropic/* call through this router answered
+  # 400 "Your credit balance is too low to access the Anthropic API". Claude reaches the estate
+  # through the subscription the Claude Code sessions sign in with; it is never a metered lane
+  # here. The two lane names stay so existing callers keep working, and they serve from Gemini,
+  # bought direct from the vendor and verified in the 2026-09-04 09:48Z apply run
+  # ("ok gemini every target verifies"). Model ids from
+  # https://ai.google.dev/gemini-api/docs/models (read 2026-09-04).
   - model_name: claude
     litellm_params:
-      model: anthropic/claude-sonnet-5
-      api_key: os.environ/ANTHROPIC_API_KEY
+      model: gemini/gemini-2.5-pro
+      api_key: os.environ/GEMINI_API_KEY
       timeout: 300
       max_tokens: 8192
     model_info:
-      max_input_tokens: 200000
+      max_input_tokens: 1048576
 
   - model_name: claude-fast
     litellm_params:
-      model: anthropic/claude-haiku-4-5-20251001
-      api_key: os.environ/ANTHROPIC_API_KEY
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
       timeout: 300
       max_tokens: 8192
     model_info:
-      max_input_tokens: 200000
+      max_input_tokens: 1048576
 
   - model_name: openrouter
     litellm_params:
