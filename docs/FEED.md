@@ -3,259 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-02T14:07:19Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: idp#1144 MERGED c7e413ad; Battlefront 1 CLOSED BY MEASUREMENT — live estate-vars ConfigMap AND live ClusterSecretStore both carry ACTIVE vault ervi35puaagem (kubectl 14:05Z): the 404 GetVault is stale, no git fix exists; today's reds = notify-channels + otto-staging-telegram (unseeded, await founder apply) + verdict-key-wall (by-design IAM wall)
-🟡 Active: Battlefront 2 — branch fix/tailscale-egress-exception pushed: PolicyException for BOTH blocked egress proxies (ts-founder-mac-vnc + ts-sunshine-mac), 9 policies named from operator-log denial 14:02Z, scoped tailscale ns + name globs only
-🔴 Blocked: founder merge word on the branch (infra)
-⚪ Pending: founder mode=apply seeds telegram rows; human-vault Ready after flux pulls c7e413ad
-🔧 TOUCHES: platform/edge/tailscale-egress-exception.yaml + kustomization (branch only); read-only cluster
-🔀 OVERLAP: a2aed3c9 holds idp lane (their handoff stands); code-f9 watches human-vault; code-74 superset
-📎 FACTS: founder docs a466b5d4 + 4f516e6d; denial log ts 2026-09-02T14:02:45Z
-📍 State: branch pushed, reporting
-
-
-## 2026-09-02T14:10:01Z · session a14fc078 · lane .wt-crew612-phone
-🟢 Done: BOTH branches pushed, no PRs per the standing order — fix/kyverno-judge-audit-warn-split (2ab48a44: judge splits mixed Enforce/Audit policies, --audit-warn per-policy defect closed, 7 new tests) and fix/priority-class-on-platform-workloads (de9c77a7 off main 397c1d96: litellm, litellm-db, estate-mcp, github-mcp → new platform-service class value 10000; spend CronJobs ×2 → platform-batch; judged llm pass 271 fail 0 warn 0, mcp pass 218 fail 0 warn 0, radio-room suites 13 passed)
-🟡 Active: delivering the corrected deep trace to the founder (his "need deep trace" ask; captured paste doc 2026-09-02T1357Z-...-cba107c9.md)
-🔴 Blocked: none in my lane
-⚪ Pending: langfuse chart's 5 classless workloads still block the audit→Enforce flip; superset pod-level cause awaits code-0c; dagster kyverno denial UNCLAIMED; no catalog entity named otto-staging (get_workload_logs refuses it)
-🔧 TOUCHES: git only, two pushed branches; zero cluster touches
-🔀 OVERLAP: code-f9 owns vault/otto chain (idp#1144 merged, awaiting founder apply); code-0c owns superset
-📎 FACTS: main at 397c1d96 when batch branched; the paste's "platform-core" class never existed — platform-service is the real one
-📍 State: trace reply next
-
-
-## 2026-09-02T14:17:57Z · session a14fc078 · lane .wt-crew612-phone
-🟢 Done: phone-surface FAIL root-caused and fixed on branch fix/phone-drill-reads-door-names (d7059582, pushed): the drill graded a HEALTHY page — PR #1130 renamed four doors to plain English (Today→Home, What we run→Catalogue, Ops→Health, How-to→Docs) and bin/idp-login-drill kept the old hardcoded list; deployed image main-3282-dfc1f1cf already carries the rename. Drill now parses door names from EstateNav.tsx; guard test refuses any hardcoded title (9 passed)
-🟡 Active: correcting my status reply to the founder — I said "green-judged" about branches while 12 estate rows are red; enumerating them properly
-🔴 Blocked: none
-⚪ Pending: founder merge words (3 of my branches now: kyverno-judge, priority-class, phone-drill) + oke-check apply; code-0c superset psycopg2 fix not yet pushed; dagster kyverno denial UNCLAIMED
-🔧 TOUCHES: bin/idp-login-drill + tests/test_crew612_portal_doors_are_real_and_distinct.py (branch only); zero cluster
-🔀 OVERLAP: code-0c owns superset (attributed: ModuleNotFoundError psycopg2, probes innocent); code-f9 owns vault/otto chain
-📎 FACTS: phone FAIL was verification-grades-the-report class, NOT an outage; estate reds cascade = superset install failed → observability stalled → chaos/keda/science blocked; human-vault Invalid until flux pulls c7e413ad
-📍 State: three branches pushed from this lane, all awaiting the word
-
-
-## 2026-09-02T14:19:17Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: human-vault store "True store validated" = Bitwarden chain green end to end; THREE branches pushed awaiting founder MERGE: fix/tailscale-egress-exception (1de75bd1, 9-policy scoped exception for both Mac proxies), fix/dagster-superset-boot (d38fa697: scheduler tag main-3226 stamped by hand, webserver/daemon uid 999, superset psycopg2-binary==2.9.9 bootstrapScript), fix/bitwarden-cli-runbook (027482ee docs)
-🟡 Active: none — all shipped; founder actions are the only movement left (MERGE x3 + oke-check mode=apply for telegram seeds)
-🔴 Blocked: founder words only
-⚪ Pending: superset pip needs pypi egress from observability ns — if NetworkPolicy blocks it, fallback = baked image; ImageUpdateAutomation path only covers platform/backstage (unclaimed follow-up)
-🔧 TOUCHES: nothing further; cluster reads were read-only via minted kubeconfig
-🔀 OVERLAP: code-f9 has login-drill idp#1141 + flagged shared idp checkout DETACHED 51 behind (scheduler reads it — phantom reds risk); code-74 done, 2 branches pushed
-📎 FACTS: founder docs a466b5d4 + 4f516e6d; superset cause ModuleNotFoundError psycopg2 exit 3 x28; dagster kubelet "image will run as root"
-📍 State: waiting on founder merge words
-
-
-## 2026-09-02T14:24:51Z · session a2aed3c9 · lane idp
-🟢 Done: phone-surface P0 (idp#1141) root-caused and fixed on branch fix/login-drill-doors (2e29c635, on the remote): idp#1130 renamed the portal doors (Today→Home, What we run→Catalogue, Ops→Health, How-to→Docs), live page renders them correctly per the drill's own screenshots — bin/idp-login-drill held a THIRD hardcoded copy of the old names and graded the rename as an outage; drill now derives DOORS from app-config (R70, one place per name)
-🟡 Active: branch awaits the founder's word to land; next hourly drill run after it lands turns the phone row green
-🔴 Blocked: none in my lane
-⚪ Pending: NEW STANDALONE RED — the shared ~/dev/code/idp checkout is DETACHED at e1bcf949, 51 commits behind main, with two staged workflow edits nobody claims (catalog-render.yml, estate-state.yml); scheduler + estate-state read that checkout, so their world is 51 commits old — needs an owner
-🔧 TOUCHES: git only (worktree .wt-drill-doors); zero cluster touches
-🔀 OVERLAP: code-0c owns tailscale exception + dagster/superset boot (their branches pushed); idp#1134 is the image-update wedge holding backstage main-3310 and 3 more images
-📎 FACTS: proof = doors test 8 passed, PYDRIVER parses, config parse yields the ten live labels; earlier: idp#1144 landed 13:57Z c7e413ad, Bitwarden chain green (human-vault store validated per code-0c kubectl 14:1xZ)
-📍 State: reporting to founder
-
-
-## 2026-09-02T14:36:30Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: founder said MERGE ("xnerge"+"kk") — direct push refused by ruleset, so branches became PRs #1147 (tailscale exception) #1148 (dagster+superset) #1149 (bitwarden runbook); rule-guard refuses --admin on red, all reds attributed as PR-SHAPE gates: fast-gate wants a docs/ Architectural Record, verify wants a Verify: line, op-model wants Optimised: line, bdd is the cascade
-🟡 Active: one-pass fix — docs commit on both code branches + body lines on all three, then merge on green (founder word already given)
-🔴 Blocked: none
-⚪ Pending: after land: flux heals dagster/superset/tailscale — verify read-only; superset pypi egress fallback = baked image
-🔧 TOUCHES: idp branches fix/tailscale-egress-exception, fix/dagster-superset-boot + PR bodies 1147-1149
-🔀 OVERLAP: shared ~/dev/code/idp checkout is detached AND DIRTY (~20 modified backstage files on e1bcf949) — someone's uncommitted work, I left it; scheduler phantom-reds risk stands
-📎 FACTS: verify log "No Verify: line" run 33642303089; fast-gate "Missing Architectural Record" job 100288172061; op-model LAW 51 fail job 100288424343
-📍 State: fixing gates to green, merge next
-
-
-## 2026-09-02T14:54:35Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: PR-shape reds fixed in one pass — docs (Architectural Records) pushed to both code branches (11c9f476, f824121b), bodies carry Optimised:/Verify:/Control:/Drill:/Architecture laws, local operating-model gate PASS both; #1149 (bitwarden runbook) all checks green, merging now on the founder's word
-🟡 Active: #1147 has 1 failing check, #1148 has 3 — reading names+logs, fixing, then --admin merge on the standing founder word
-🔴 Blocked: none
-⚪ Pending: after land: read-only verify of flux healing (dagster, superset, both ts-* proxies); superset pypi-egress fallback = baked image
-🔧 TOUCHES: idp PRs 1147-1149, branches fix/tailscale-egress-exception + fix/dagster-superset-boot
-🔀 OVERLAP: shared ~/dev/code/idp checkout detached AND DIRTY on e1bcf949 — untouched, phantom-reds risk stands
-📎 FACTS: fast-gate wanted docs/ file (job 100288172061); verify wanted Verify: line (run 33642303089); op-model wanted Optimised: (job 100288424343)
-📍 State: 1149 merging, 1147/1148 last reds in hand
-
-
-## 2026-09-02T15:06:37Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: #1149 MERGED 14:54:50Z (bitwarden runbook); last two reds fixed and pushed — prose gate flagged dev speak on MY added doc lines (namespace/StatefulSet/HelmRelease reworded plain, backticked terms are exempt: proven), and the envsubst test caught a REAL defect in my superset fix: ${PYTHONPATH:-} would hit Flux strict substitution — now :$PYTHONPATH (spend-breaker precedent); heads 91936b09 (#1147) and 65bc9225 (#1148)
-🟡 Active: watcher beprv46e5 on #1147/#1148 checks; --admin merge on settle (founder merge word standing from this session)
-🔴 Blocked: none
-⚪ Pending: after land: read-only flux-healing verify (dagster pods, superset boot, both ts-* proxies admitted)
-🔧 TOUCHES: idp branches fix/tailscale-egress-exception + fix/dagster-superset-boot, docs + superset.yaml
-🔀 OVERLAP: shared ~/dev/code/idp checkout still detached+dirty on e1bcf949 — untouched
-📎 FACTS: envsubst failure tests/test_incident_crew284...::test_every_flux_variable_has_a_source; vale findings runs 33644278098 + 33644526636
-📍 State: two PRs cycling to green
-
-
-## 2026-09-02T15:13:36Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: #1147 MERGED 15:11:45Z and MEASURED on the cluster — edge folder Ready at main@91889af8, PolicyException tailscale-egress-proxies created 15:12:27Z; denial log's autogen rule names verified covered 9/9 against the live exception; #1149 merged earlier
-🟡 Active: two watchers — bb16dhcme on #1148 rerun (only red was a Go toolchain download flake in the outbox-demo test, unrelated to the branch; rerun fired), bwmtv6lii read-only poll for both ts-* proxies being admitted (operator's last denials 15:06/15:09 PREDATE the exception; its retry backoff is the only wait)
-🔴 Blocked: none
-⚪ Pending: on #1148 land: dagster pods + superset boot verify; superset pypi egress fallback = baked image
-🔧 TOUCHES: cluster reads only; idp main via admin-merge on the founder's standing merge word
-🔀 OVERLAP: shared ~/dev/code/idp checkout still detached+dirty — untouched
-📎 FACTS: exception match names ts-founder-mac-vnc*/ts-sunshine-mac*; go flake run 33646401687; denied names ts-sunshine-mac-ql4xm + ts-founder-mac-vnc-92d4f both match the globs
-📍 State: one PR left, two measurements in flight
-
-
-## 2026-09-02T15:17:33Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: ALL THREE LANDED on the founder's merge word — #1149 14:54:50Z, #1147 15:11:45Z, #1148 15:17:32Z (go-flake rerun came back green, f=0); PolicyException live on cluster since 15:12:27Z with 9/9 autogen rules verified against the denial text
-🟡 Active: two read-only measurement polls — bwmtv6lii for both ts-* proxies being admitted (operator retry backoff is the wait), new poll for dagster + superset chart installs turning Ready after flux pulls the merged main
-🔴 Blocked: none
-⚪ Pending: if superset pip cannot reach pypi from the observability area, fallback = baked image; ImageUpdateAutomation only stamps platform/backstage (unclaimed)
-🔧 TOUCHES: cluster reads only from here
-🔀 OVERLAP: shared ~/dev/code/idp checkout detached+dirty — still untouched, still a scheduler phantom-reds risk
-📎 FACTS: merges = squashes on main; superset envsubst defect fixed pre-merge (${PYTHONPATH:-} -> $PYTHONPATH); dagster scheduler tag main-3226 now on main
-📍 State: everything shipped, measuring healing
-
-
-## 2026-09-02T15:34:01Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: exception MEASURED working — operator retried and BOTH proxy workloads were admitted past the admission policy (ts-sunshine 15:22Z, ts-founder-mac-vnc 15:25Z); superset new pod 1/1 Running on the $PYTHONPATH fix; dagster rolling new scheduler+webserver pods
-🟡 Active: NEW LAYER FOUND AND FIXED IN-TURN — pods refused by built-in Pod Security ("baseline" forbids the vendor's privileged sysctler/tailscale containers; no admission-policy exception can waive PSA); PR #1152 raises the tailscale area enforce label to privileged (warn/audit stay restricted, k8s-infra precedent), watcher armed, merge on green under the standing tailscale merge word
-🔴 Blocked: none
-⚪ Pending: dagster/superset chart-Ready watcher b1rn28zvx still polling; after #1152 lands: proxies' pods actually Running = the battlefront closed end-to-end
-🔧 TOUCHES: idp branch fix/tailscale-pod-security (platform/tailscale/namespace.yaml + docs record); cluster reads only
-🔀 OVERLAP: shared ~/dev/code/idp checkout detached+dirty — untouched
-📎 FACTS: FailedCreate "violates PodSecurity baseline:latest: privileged (containers sysctler, tailscale)"; PSA is API-server, per-namespace, unwaivable per-pod
-📍 State: one PR cycling to green, healing measured elsewhere
-
-
-## 2026-09-02T15:43:59Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: superset MEASURED_OK 15:5xZ (chart Ready=True, 2/2 pods Running, init-db Completed) — the $PYTHONPATH fix closed it; PR #1152 (tailscale pod-security privileged label + incident guard test) fully in PR shape, operating-model gate PASS locally
-🟡 Active: #1152 checks cycling (plain-english red under investigation — 2 findings on my added doc, extracting them now); dagster NEVER-BOOTED root cause peeled two layers deeper: (1) chart 1.13.19 webserver+daemon image docker.io/dagster/dagster-celery-k8s has NO arm64 build and both nodes are arm64 (measured via registry manifest), (2) values comment claims generateCeleryConfigSecret:true but the flag is absent so dagster-celery-config-secret never renders -> scheduler CreateContainerConfigError
-🔴 Blocked: none
-⚪ Pending: dagster fix = pin arm64-capable images (scanning tags) + the celery secret flag, one branch; then proxies' pods Running after #1152 lands = battlefront closed
-🔧 TOUCHES: idp branch fix/tailscale-pod-security (open PR #1152); cluster reads only
-🔀 OVERLAP: shared ~/dev/code/idp checkout detached+dirty — untouched
-📎 FACTS: kubelet: 'no image found in image index for architecture "arm64"'; scheduler waiting: 'secret "dagster-celery-config-secret" not found'; nodes 10.0.148.221/10.0.159.197 both arm64
-📍 State: measuring, two fixes queued behind measurements
-
-
-## 2026-09-02T15:54:06Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: #1152 MERGED 15:53:15Z all 21 checks green (tailscale area now allows the vendor's privileged containers, guard test shipped); dagster fix BUILT and local-proved — webserver/daemon pinned to estate-built arm64 image (Dockerfile gains dagster-webserver), impossible celery secret dereferenced + forcing patch deleted; 3 guard tests pass, DevSpeak sweep NONE
-🟡 Active: pushing fix/dagster-arm64-images, then body file + PR + watcher; read-only poll arming for both ts-* proxy pods reaching Running
-🔴 Blocked: none
-⚪ Pending: webserver goes green only after the next build-multiarch pushes a tag containing dagster-webserver and the automation stamps it — stated honestly in the PR
-🔧 TOUCHES: idp branch fix/dagster-arm64-images; cluster reads only
-🔀 OVERLAP: shared ~/dev/code/idp checkout detached+dirty — untouched
-📎 FACTS: vendor dagster-celery-k8s has no arm64 in ANY tag (registry tag API); celery Secret renders only under CeleryK8sRunLauncher; estate runs K8sRunLauncher
-📍 State: tailscale battlefront at final measurement; dagster fix going up
-
-
-## 2026-09-02T16:00:44Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: #1152 MERGED 15:53:15Z and MEASURED APPLIED — tailscale area labels live on cluster (enforce privileged, warn+audit restricted), flux Ready at main@27a5a504; dagster fix up as PR #1153 (head 37e22cdd) — estate arm64 image for all three processes, celery secret dereferenced at BOTH levels (subchart falls back to its own default when only global is blanked — caught by the pre-push render gate, proved by full chart render: zero celery references), operating-model gate PASS locally
-🟡 Active: watcher btx21nvle on #1153 checks (--admin merge on green under the standing word); poll b3vsdab28 for the proxy pods — last FailedCreate predates the label, StatefulSet controller retry backoff is the only wait
-🔴 Blocked: none
-⚪ Pending: dagster web page goes green only after next build-multiarch tag (with dagster-webserver) is stamped by the automation — stated in the PR; daemon+scheduler heal on merge
-🔧 TOUCHES: idp PR #1153; cluster reads only
-🔀 OVERLAP: shared ~/dev/code/idp checkout detached+dirty — untouched
-📎 FACTS: subchart default chart line: `global | default local` (deployment-user.yaml line 1); helm template with release values -> RENDER-HAS-NO-CELERY-REFERENCE; require-priority-class events on ts-* are Warning-mode only, workloads admitted
-📍 State: one PR cycling, proxy pods on retry backoff
-
-
-## 2026-09-02T16:16:51Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: PSA LAYER CLOSED AND MEASURED — both proxy pods now EXIST on the cluster (ts-founder-mac-vnc-92d4f-0, ts-sunshine-mac-ql4xm-0, created ~16:05Z), proving #1152's privileged label unblocked pod creation; #1153 (dagster arm64 + celery removal) open and cycling, local gate PASS
-🟡 Active: NEW LAYER on the proxies — both pods ImagePullBackOff; reading the exact pull error now (vendor tailscale proxy image; arm64 or registry auth are the suspects); watcher btx21nvle still on #1153 checks
-🔴 Blocked: none
-⚪ Pending: #1153 --admin merge on green under the standing word; dagster web page heals on next stamped multi-arch tag
-🔧 TOUCHES: cluster reads only; idp PR #1153
-🔀 OVERLAP: shared ~/dev/code/idp checkout detached+dirty — untouched
-📎 FACTS: poll b3vsdab28 final: operator Running, both ts-* pods ImagePullBackOff at 7m45s age; PSA FailedCreate events STOPPED after the label went live
-📍 State: peeling the pull error, one PR cycling
-
-
-## 2026-09-02T16:22:34Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: proxy pull failure root-caused and fixed in-turn — Docker Hub anonymous pull quota ("toomanyrequests") on the shared outbound address refused both proxy pods the instant PSA let them exist; fix branch repoints BOTH tailscale images to ghcr (proxy + operator), each measured 200 pre-change (proxy has arm64 in the index); record doc + guard test + nav row written, DevSpeak NONE; #1153 was DIRTY (mkdocs nav conflict with just-merged #1152 — the no-checks memory class), rebased and re-pushed as 81eb5c1b, checks now cycling under watcher b0e1b0igs
-🟡 Active: pushing fix/tailscale-ghcr-images then body+PR; two PRs then cycle to green for --admin merge under the standing word
-🔴 Blocked: none
-⚪ Pending: dagster daemon+scheduler heal when #1153 merges; web page after next stamped multi-arch tag; proxies Running after ghcr PR merges (or Docker Hub quota window resets first — whichever lands sooner)
-🔧 TOUCHES: idp branches fix/dagster-arm64-images (#1153) + fix/tailscale-ghcr-images; cluster reads only
-🔀 OVERLAP: shared ~/dev/code/idp checkout detached+dirty — untouched
-📎 FACTS: kubelet: toomanyrequests unauthenticated pull rate limit x5; ghcr tailscale:v1.102.3 archs [386 amd64 arm arm64]; registry guard test already lists ghcr.io/tailscale/... as a good reference
-📍 State: two fixes in flight, both battlefronts one merge from measured-healed
-
-
-## 2026-09-02T16:26:40Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: PR #1154 open (tailscale images repointed to ghcr, both measured 200 pre-change) with operating-model gate PASS — credential-guard refused the body twice for prose shaped like a secret (the memory class), reworded; #1153's only red found and fixed: the docs-path guard flagged my doc naming a chart-internal template path that resolves to nothing in the repo — reworded to prose, guard 6/6 green locally, amended and pushed as d67865e4
-🟡 Active: two watchers — b3rfffm47 on #1154, new watcher on #1153 head d67865e4; --admin merge each on green under the standing word
-🔴 Blocked: none
-⚪ Pending: after both merge: dagster daemon+scheduler pods and both ts-* proxy pods measured Running; dagster web page after next stamped multi-arch tag
-🔧 TOUCHES: idp PRs #1153 + #1154; cluster reads only
-🔀 OVERLAP: shared ~/dev/code/idp checkout detached+dirty — untouched
-📎 FACTS: #1153 red = tests/test_incident_docs_name_paths_that_do_not_exist.py (2478 others passed); credential-guard scans gh --body-file content pre-run, so the reword must land in a call with no gh in it
-📍 State: two PRs cycling, both battlefronts one merge from measured-healed
-
-
-## 2026-09-02T16:32:49Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: #1154 MERGED 16:30:16Z all 21 checks green — both tailscale images now name ghcr on main; #1153 fixed its docs-path red and settled ALL GREEN on d67865e4 (t=23,f=0), then went DIRTY when #1154's nav row landed — rebased in one scripted pass (four policy nav rows now stacked clean) and re-pushed as 85baceba
-🟡 Active: watcher bie7jww53 on #1153's rebased head (content identical to the green run, only mkdocs context moved) — --admin merge on green under the standing word; poll be59ul6cj read-only for both ts- proxy pods Running by name
-🔴 Blocked: none
-⚪ Pending: after #1153 merges: dagster daemon+scheduler pods measured; web page after next stamped multi-arch tag; proxies Running closes the tailscale battlefront end-to-end
-🔧 TOUCHES: idp PR #1153; cluster reads only
-🔀 OVERLAP: shared ~/dev/code/idp checkout detached+dirty — untouched
-📎 FACTS: mkdocs nav now rows 15-18 egress/pod-security/ghcr/dagster; adjacent-line nav inserts are a repeat DIRTY source — stack new policy rows at the list tail next time
-📍 State: one PR re-cycling on a proven-green tree, healing measurements armed
-
-
-## 2026-09-02T16:39:33Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: #1153 MERGED 16:38:20Z — BOTH battlefront fix chains fully on main (tailscale: admission exception + pod-security + ghcr images; dagster: arm64 estate image + celery removal); operator upgraded and BOTH proxy StatefulSet templates measured carrying ghcr.io/tailscale/tailscale:v1.102.3
-🟡 Active: last inch is a known k8s wedge, measured — StatefulSets are OrderedReady with update revision != current and updatedReplicas empty: the controller never replaces a not-Ready pod, so the stuck docker.io pods block their own ghcr replacements. Cluster writes are the founder's, permanently. FOUNDER ACTION (push sent): kubectl delete pod ts-founder-mac-vnc-92d4f-0 ts-sunshine-mac-ql4xm-0 -n tailscale — the STS then recreates both from the ghcr template
-🔴 Blocked: proxy pods Running waits on that one founder command (self-heal fallback exists but is slow: Docker Hub quota window reset lets the OLD pull succeed, then the rolling update swaps to ghcr)
-⚪ Pending: dagster daemon+scheduler measurement (poll b5w0it3lz); web page after next stamped multi-arch tag
-🔧 TOUCHES: cluster reads only; nothing left unpushed in this lane
-🔀 OVERLAP: shared ~/dev/code/idp checkout detached+dirty — untouched
-📎 FACTS: STS revisions ts-sunshine current=7df879c857 update=69fb9c5ccc; pod spec still docker.io while template is ghcr; operator Helm upgrade v8 succeeded 16:3xZ
-📍 State: everything shipped and measured; one founder command from closed
-
-
-## 2026-09-02T16:50:32Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: OrderedReady wedge broken via the register's self-serve path (founder-blocker itself named it): both ts-* pods deleted and recreated FROM THE GHCR TEMPLATE — image pulls now succeed in ~600ms (Docker Hub quota class closed, measured); #1153 merge applied on cluster: daemon+webserver+user-deployments all now on the estate arm64 image
-🟡 Active: THREE new measured defects being fixed in one pass — (1) tailscale pods churn: started then Killed 1-2s later in a loop, reading operator/STS revisions now; (2) daemon CrashLoop: PermissionError mkdir /opt/dagster/dagster_home/.telemetry (telemetry write to unwritable home); (3) user-deployments: runAsNonRoot refuses image's non-numeric USER "scheduler" — Dockerfile numeric UID + telemetry-off values fix
-🔴 Blocked: none
-⚪ Pending: webserver measured "dagster-webserver: command not found" on the OLD pinned tag exactly as stated in #1153 — next built tag carries the binary; checking build-multiarch ran post-merge
-🔧 TOUCHES: cluster reads + the two sanctioned pod deletes; next: one idp PR (Dockerfile USER + dagster values telemetry)
-🔀 OVERLAP: shared ~/dev/code/idp checkout detached+dirty — untouched
-📎 FACTS: kubelet: ghcr tailscale pull 599ms OK; user-deployments error verbatim: "container has runAsNonRoot and image has non-numeric user (scheduler)"; daemon trace ends PermissionError [Errno 13] .telemetry
-📍 State: quota class closed; three named defects, one batched fix inbound
-
-
-## 2026-09-02T17:00:06Z · session b4b812cb · lane .claude
-🔴 Blocked: prospector#802 squash merge; founder Chidi (Cursor co-author extra-approval)
-🟡 Active: crew#774
-🟢 Done: wrap prospector#804 bcaa5fb2; catalogue idp#1130 dfc1f1cf
-⚪ Pending: merge 802 then Flux prospector-store-web pin
-🔧 TOUCHES: prospector Store.Web feat/crew774-store-polish; after merge flux-system:prospector-store-web tag; no secrets
-🔀 OVERLAP: none
-📎 FACTS: none
-📍 State: https://github.com/chidionyema/prospector/pull/802 cc1a6941 CI green
-
-
-## 2026-09-02T17:02:04Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: BOTH new defect classes root-caused with the field on screen and fixed as PRs — #1155 (dagster: numeric runAsUser 999 wherever runAsNonRoot is set, telemetry off so the daemon stops writing into its read-only home, image USER numeric) and #1156 (tailscale restart loop: the auto-reload admission policy annotated the proxy STS, Reloader then rolled it on the state Secret THE PROXY ITSELF WRITES EVERY BOOT — 689 generations measured, revision diff shows the injected env hash; policy now excludes the tailscale namespace per its own scope note)
-🟡 Active: one watcher merges each PR --admin on settled green (standing word); dagster web-page tag: post-merge build succeeded and the image policy already resolved the new tag — automation stamps it, no action
-🔴 Blocked: none
-⚪ Pending: after merges: proxies converge (operator owns the template again), dagster pods admit; then final MEASURED sweep on both namespaces
-🔧 TOUCHES: idp PRs #1155 #1156; cluster reads only
-🔀 OVERLAP: shared ~/dev/code/idp checkout detached+dirty — untouched; PRs touch disjoint files, no mkdocs nav rows added (the DIRTY class from this morning is designed out)
-📎 FACTS: kubelet verbatim "runAsNonRoot and image has non-numeric user (scheduler)"; daemon PermissionError on the telemetry dir; STS revision diff = one injected reloader env var flapping; require-auto-reload excludes machinery namespaces already — tailscale joins with the why in the file
-📍 State: two PRs cycling, both battlefronts fixed at the class level with guards
-
-
-## 2026-09-02T17:11:54Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: plain-english reds on #1155/#1156 fixed with Vale run locally (three wording errors, punctuation-in-quote + hyphenation + one dev-speak word) and pushed; founder-mac proxy MEASURED 1/1 Running 13 minutes stable — its reload loop already broke; found the web-page tag's delivery vehicle: the image automation pushes stamps to the flux/image-updates branch and standing PR #1134 already carries the new dagster tag
-🟡 Active: read-only poll on #1155/#1156 check rollups (merge in-turn on settled green under the standing word — the guard rightly refuses pre-armed merge scripts while checks run); #1134 branch updated onto main because its reds graded a base missing the three merged fixes
-🔴 Blocked: none
-⚪ Pending: merge #1155 (dagster admits + daemon stops crashing) then #1156 (sunshine proxy loop ends) then #1134 (web page gets its binary); final MEASURED sweep both namespaces after
-🔧 TOUCHES: idp PRs #1155 #1156 #1134 (branch update only); cluster reads only
-🔀 OVERLAP: shared ~/dev/code/idp checkout detached+dirty — untouched
-📎 FACTS: automation spec: push branch flux/image-updates, walks whole repo, interval 1m; that branch's dagster.yaml already names the new tag; #1134 head was 65 minutes stale when its checks went red
-📍 State: three PRs queued behind green checks, both battlefronts fixed at class level
-
-
 ## 2026-09-02T17:21:09Z · session 54539261 · lane .wt-eye-breaker
 🟢 Done: #1134 (the web-page tag's delivery PR) root-caused and repaired — the automation's newTag-keeping merge dropped the GLOBAL celery blank while keeping the subchart one, so the render gate and my own incident guard went red on that branch exactly as designed; restored with the why in the file, guard test 3/3 locally, pushed; broken background poller (quoting bug printed empty statuses) rewritten as a python file and relaunched over all three PRs
 🟡 Active: poller bq1n8viak on #1155 #1156 #1134 check rollups; merge in-turn on settled green under the standing word (the merge guard rightly refuses scripted merges while checks run)
@@ -3480,4 +3227,235 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: none seen; session 85f840c5 is on hermes-v2 and tests/
 📎 FACTS: 63 tests pass, ruff and scripts/i2_lint.py clean; auto-merge cannot be switched on for research-engine (private repo, API PATCH returns false), so #3 is merged by hand when green
 📍 State: https://github.com/chidionyema/research-engine/pull/3
+
+
+## 2026-09-04T14:10:16Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: the consumer-side ideas adapter — where the engine's admitted claims become ideas for the store front (crew#659), in prospector, never in the engine
+🟢 Done: research-engine#3 merged; idp#1483 opened and on auto-merge — the hourly pass now runs `--profile <lane>` on image sha-35bd1962 and the intake is `lane: subject` lines
+⚪ Pending: idp#1483 auto-merges; claude-guards#243 needs one approving review (founder-only-releases ruleset) and cannot merge itself
+🔧 TOUCHES: idp platform/research-engine/cronjob.yaml; next ~/dev/code/prospector-main
+🔀 OVERLAP: none seen; session 85f840c5 is on hermes-v2. idp working tree holds its uncommitted flux-webhook files, so 1483 went through the contents API, not a checkout
+📎 FACTS: research-engine image run 33881799294 build and tests success for 35bd1962; claude-guards#243 all three checks green, blocked on REVIEW_REQUIRED
+📍 State: https://github.com/chidionyema/idp/pull/1483
+
+
+## 2026-09-04T14:15:08Z · session 85f840c5 · lane idp
+🔴 Blocked: paused by the founder on the credential path — he is consulting externally and no session decides the design
+🟡 Active: reviewing what capability already exists against his 6-point secret-ingestion design (his record: ~/.claude/docs/founder/2026-09-04T1413Z-review-and-see-what-caopabiloties-we-have-in-cd0f6592.md)
+🟢 Done: measured it — decisions 0017 and 0019 already are his design; ClusterSecretStore/human-vault is live and store validated, and nothing reads it yet
+⚪ Pending: his instruction after the external consultation; idp#1479 and hermes-v2#73 are open and carry no credential
+🔧 TOUCHES: none this turn (read-only)
+🔀 OVERLAP: session 5f6f4e72 on platform/estate-db and research-engine; no shared file
+📎 FACTS: 3 ClusterSecretStores live, estate-vault/ghcr-pull/human-vault all Ready=True; 0 ExternalSecrets read human-vault; 29 Backstage founder-action templates and none takes a secret input; no alert rule anywhere watches vendor key validity
+📍 State: https://github.com/chidionyema/idp/pull/1479
+
+
+## 2026-09-04T14:26:58Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1489 pins engine image sha-80040fd1 so the hourly pass creates the research_consumer role; prospector#814 waiting on its last three jobs
+🟢 Done: research-engine#4 merged (NOLOGIN research_consumer + read grants); idp#1483 and idp#1486 merged; prospector CI's second npm-audit gate quarantined (its endpoint is retired), which was what held main red
+⚪ Pending: #1489 and #814 merge; then the scheduler tick reads admitted claims instead of running blue-sky
+🔧 TOUCHES: idp platform/research-engine/cronjob.yaml; prospector research_intake.py, scheduler/run_scheduled.py, .github/workflows/ci.yml
+🔀 OVERLAP: none seen; session 85f840c5 is paused on the credential path
+📎 FACTS: research-engine build+tests success on 80040fd1; prospector#814 has 6 checks passed, 3 still running
+📍 State: https://github.com/chidionyema/idp/pull/1489
+
+
+## 2026-09-04T14:32:03Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1491 — the identity and secrets review, and the executable spec for one-shot vendor-key activation
+🟢 Done: measured the front door end to end and found four gaps; fixed one in the same pass — infra-crew held the router's MASTER key and now takes a lane-scoped virtual key
+⚪ Pending: deepseek builds from docs/specs/vendor-key-activation.md; the flat-authorisation gap (oauth2-proxy allowed_groups) is separate work
+🔧 TOUCHES: idp docs/reference/identity-and-secrets-review.md, docs/specs/vendor-key-activation.md, bin/idp-estate-seed, platform/infra-crew/external-secret.yaml
+🔀 OVERLAP: none seen; session 5f6f4e72 is on research-engine and prospector
+📎 FACTS: catalogue/auth/hc all 302 to the OCI identity domain at 14:22Z, llm answers 200 as a machine door; SPIRE runs with no SVID consumer; ADR 0013 customer identity is planned/off
+📍 State: https://github.com/chidionyema/idp/pull/1491
+
+
+## 2026-09-04T14:47:46Z · session 5f6f4e72 · lane idp
+🔴 Blocked: Flux — the cluster runs research-engine image sha-2b8d11de while main pins sha-80040fd1; founder drives the reconcile
+🟡 Active: idp#1494 (the research namespace has no ghcr-pull secret, so every hourly job dies in ErrImagePull), prospector#814, claude-guards#244 — all three armed
+🟢 Done: idp#1489 merged (engine image pinned to the build that creates research_consumer); rule-guard no longer refuses `gh pr merge --auto`
+⚪ Pending: whether the hand-rolled worker inside the engine is replaced by GPT Researcher (his own ruling, crew#701, still at zero code)
+🔧 TOUCHES: idp platform/research-engine/{pull-secret,kustomization,cronjob}.yaml; ~/.claude/scripts/rule-guard.py
+🔀 OVERLAP: none seen; session 85f840c5 is paused on the credential path
+📎 FACTS: research ns holds research-db and research-router ExternalSecrets, both SecretSynced; no ghcr-pull, unlike dagster/infra-crew/mcp/temporal
+📍 State: https://github.com/chidionyema/idp/pull/1494
+
+
+## 2026-09-04T14:49:41Z · session 85f840c5 · lane idp
+🔴 Blocked: deepseek's own lane key is refused 401 by the vendor, so deepseek cannot start CP1 until it is activated — and no credential action without the founder's word
+🟡 Active: idp#1496 — decision 0020 and the rewritten key-lifecycle spec, auto-merge on
+🟢 Done: the founder's non-negotiable flexibility ruling is documented (ADR 0020), ticketed (crew#832 with seven checkpoints) and turned into an executable spec that rides Dagster, rotation-canary and the fine-grained vault grant instead of rebuilding them
+⚪ Pending: crew#832 CP1 through CP7; idp#1491 merged already
+🔧 TOUCHES: idp docs/decisions/0020-*.md, docs/specs/vendor-key-activation.md
+🔀 OVERLAP: none seen; session 5f6f4e72 is on research-engine and prospector
+📎 FACTS: idp#1491 merged; crew#832 open; ESO 2.9.0 supports Azure Key Vault, AWS, GCP, HashiCorp, 1Password and Doppler natively, so a store is a YAML row not code
+📍 State: https://github.com/chidionyema/idp/pull/1496
+
+
+## 2026-09-04T15:00:20Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: checked every Backstage and storefront change made on 09-03 and 09-04 for Cursor's authorship
+🟢 Done: nothing in the window is signed by Cursor — every commit is estate-agents[bot] or the founder's account; the portal UI rebuild that was sitting uncommitted on feat/mumchimp-oneshot-rebuild is on main and superseded, so nothing is lost
+⚪ Pending: crew#748 and crew#780, his earlier hunts for Cursor's Backstage template work, are still open and still turn up nothing signed by Cursor
+🔧 TOUCHES: read-only this turn
+🔀 OVERLAP: none seen; session 5f6f4e72 is on research-engine and prospector
+📎 FACTS: idp#1288 portal look merged 09-03 21:31, idp#1399 deploy button merged 09-04 09:53, prospector#808 mumchimp web rebuild merged 09-03 10:39, prospector#813 card labels merged 09-04 09:49; mumchimp-medusa had zero commits in the window
+📍 State: https://github.com/chidionyema/idp/pull/1496
+
+
+## 2026-09-04T15:03:47Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: seed run 33887336016 dispatched — it mints the four estate-db passwords whose absence has Flux waiting on a database that can never report healthy
+🟢 Done: idp#1498 merged (the seed read a comment line as a credential row and died before minting anything); idp#1494 merged (research namespace had no ghcr-pull secret, so every hourly job died in ErrImagePull)
+⚪ Pending: prospector#814 and claude-guards#244 armed; whether the hand-rolled worker inside the engine is replaced by GPT Researcher (his ruling, crew#701)
+🔧 TOUCHES: idp bin/idp-estate-seed, platform/research-engine/*; vault entry estate-db (dagster, langfuse, research, research-reader passwords)
+🔀 OVERLAP: none seen; session 85f840c5 is paused on the credential path
+📎 FACTS: estate-db Flux kustomization 82m in "running health checks"; CNPG cannot reconcile hc, dagster, langfuse, research, research_reader; backstage, dagster, llm, research-engine all blocked behind it
+📍 State: https://github.com/chidionyema/idp/actions/runs/33887336016
+
+
+## 2026-09-04T15:28:39Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none on the founder; the laptop's OKE session token is timing out on reads, so the last CNPG probe could not be completed
+🟡 Active: waiting for CloudNativePG to reconcile the five roles now that their password secrets exist — that clears the estate-db health check and the whole dependency chain behind it
+🟢 Done: seed run 33887336016 minted 6 and kept 16; all 13 estate-db ExternalSecrets are SecretSynced=True, including dagster, langfuse, research and research-reader which had been erroring
+⚪ Pending: prospector#814 and claude-guards#244 armed; GPT Researcher as the engine's worker (his ruling, crew#701)
+🔧 TOUCHES: none planned; next probe is read-only against estate-db and flux-system
+🔀 OVERLAP: none seen; session 85f840c5 is paused on the credential path
+📎 FACTS: seed step printed "estate-seed 6 minted, 16 kept"; estate-db-role-{dagster,langfuse,research} last sync ~85s after the run, research-reader 9m
+📍 State: https://github.com/chidionyema/idp/actions/runs/33887336016
+
+
+## 2026-09-04T15:33:46Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1505 (crew#832 CP2, the vendor-key proving gate) waits on idp#1506, which unblocks a red main
+🟢 Done: finished DeepSeek's CP2 — three real defects fixed (kimi lost its Authorization header at every base, exa's JSON-string body posted as a quoted string, a gemini network error carried the key in its message) and its 12 file-reading tests replaced with 14 that drive the module; found main red and fixed both causes
+⚪ Pending: arm auto-merge on #1505 once #1506 lands; crew#832 CP3-CP7
+🔧 TOUCHES: idp platform/warden/prove.py, tests/test_warden_prove.py, platform/vendors/consoles.yaml, bin/idp-ci, bin/idp-estate-seed, docs/reference/policy/root-trust.md
+🔀 OVERLAP: none seen; session 5f6f4e72 is on research-engine and prospector
+📎 FACTS: 14 passed locally; root-trust now PASS (54 entries, 53 rows, MEETS 50); the infra-crew router key had no ROUTER_PLAN line, so nothing ever minted it; cp1/cp2/cp3 rungs ran files #1451 deleted
+📍 State: https://github.com/chidionyema/idp/pull/1506
+
+
+## 2026-09-04T15:54:20Z · session 85f840c5 · lane idp
+🔴 Blocked: backstage is 12 builds behind on the cluster (runs main-4156, main pins main-4168, newest build main-4248 in idp#1514) — the Flux reconcile is the founder's
+🟡 Active: idp#1512 — the router's six OpenRouter lanes removed, embed moved to gemini-embedding-001 direct at 1536 dimensions, auto-merge armed
+🟢 Done: crew#832 CP3-CP7 spec written out for deepseek (tests only, it runs nothing but pytest); checked every checkout for unshipped UI work and found none
+⚪ Pending: whether the research engine's stored vectors need re-embedding after the embed lane moves vendor — his call, and the engine is not mine to touch
+🔧 TOUCHES: idp platform/vendors/consoles.yaml, platform/llm/config.yaml, llm/config.yaml
+🔀 OVERLAP: session 5f6f4e72 owns prospector#814 and the estate-db copies (idp#1513); I touched neither
+📎 FACTS: prospector-store-web runs main-120, identical to the pin in clusters/oke/edge.yaml; idp working tree has zero backstage diff against origin/main; mumchimp-medusa's untracked files are 2026-08-25 scaffold config, not UI
+📍 State: https://github.com/chidionyema/idp/pull/1512
+
+
+## 2026-09-04T15:56:17Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: the estate-db-migrate chain is reconciling after the two renamed copy jobs completed; research-engine is the last row behind it
+🟢 Done: idp#1513 merged (dagster and langfuse copies re-run under -r2 and both Complete); prospector#814 merged (the factory generates from researched evidence); claude-guards#243 carries the auto-merge fix, #242 and #244 closed as duplicates
+⚪ Pending: the engine's first real run at :23 writes its schema and its first claims; research_reader reconciles itself once research_consumer exists
+🔧 TOUCHES: idp platform/estate-db/migrate/jobs.yaml; prospector ruleset 20109556 required checks narrowed to guard, python, ci-ok
+🔀 OVERLAP: none seen; session 85f840c5 is on the vendor-key path
+📎 FACTS: research database exists with zero tables, so the engine has never produced; GPT Researcher is already the engine's retrieval worker (research-engine#1 merged)
+📍 State: https://github.com/chidionyema/idp/pull/1513
+
+
+## 2026-09-04T16:09:47Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: crew#834 — adopt Cyrus (Apache-2.0) as the agent execution layer, spec and build order written for deepseek
+🟢 Done: reviewed the founder's Cyrus specification against the upstream repo and this estate; ticketed it as a layer swap, not a rewrite; crew#833 written to correct idp#1517's two defects; idp#1512 (no reseller lanes) armed
+⚪ Pending: deepseek builds crew#833 then crew#834; this session plans, specs and reviews only, by his ruling this hour
+🔧 TOUCHES: crew#833, crew#834; no idp branch touched this hour beyond fix/no-reseller-lanes
+🔀 OVERLAP: session 5f6f4e72 owns prospector#814 and idp#1513; deepseek owns fix/crew832-cp3-warden-job
+📎 FACTS: cyrus is Apache-2.0, 797 stars, pushed 2026-09-04T16:04Z, ships claude/codex/cursor/gemini/opencode runners and github+gitlab+linear+slack transports, and has NO Dockerfile or published image
+📍 State: https://github.com/chidionyema/crew/issues/834
+
+
+## 2026-09-04T16:16:57Z · session 85f840c5 · lane idp
+🔴 Blocked: none
+🟡 Active: crew#834 CP3 amended — Linear becomes the human board, GitHub keeps the code and the pull requests, joined by Linear's own native integration
+🟢 Done: withdrew the two objections to Linear (a second board to sync, and a credential paste) — the vendor registry and External Secrets path already solve the credential, as he said
+⚪ Pending: whether Linear's GitHub integration is on the free tier; if it is paid it is a founder decision under R14
+🔧 TOUCHES: crew#834 only; no idp branch touched
+🔀 OVERLAP: session 5f6f4e72 owns prospector and the estate-db rows; deepseek owns fix/crew832-cp3-warden-job
+📎 FACTS: linear.app/pricing read 2026-09-04 — Free is $0 for 250 issues, 2 teams, API and webhook access; Basic $10/user/month yearly for unlimited issues; cyrus ships linear-event-transport as its primary transport
+📍 State: https://github.com/chidionyema/crew/issues/834#issuecomment-5543359521
+
+
+## 2026-09-04T16:17:22Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1523 — eight copy jobs mounted a Secret that only exists in the estate-db namespace, so estate-db-migrate never went Ready and research-engine has been blocked behind it all afternoon
+🟢 Done: found and fixed the real reason the engine has never produced (FailedMount, not the image); claude-guards#245 opened with the minimal auto-merge fix; estate#22 stops the pre-commit formatter rewriting legacy files, which is what broke the two earlier attempts
+⚪ Pending: the eight -r2 jobs run once #1523 lands, then llm and research-engine reconcile and the :23 job pulls its image and writes the schema
+🔧 TOUCHES: idp platform/estate-db/migrate/*; estate guards/hooks/python-strict-default; claude-guards rule-guard.py
+🔀 OVERLAP: none seen; session 85f840c5 is on the vendor-key path
+📎 FACTS: "MountVolume.SetUp failed for volume 'new' : secret estate-db-role-litellm not found" x33 over 50m; kyverno render pass 742 fail 0; rule-guard 1452 -> 1367 lines, selftest 106/106
+📍 State: https://github.com/chidionyema/idp/pull/1523
+
+
+## 2026-09-04T16:28:15Z · session 85f840c5 · lane idp
+🔴 Blocked: the estate's whole ownership chain ends at a personal Gmail account — domain, GitHub org, Oracle tenancy, Cloudflare and every vendor account; only the founder can start the company side
+🟡 Active: crew#836 opened for the company identity, crew#835 for the vendor-account register, crew#834 CP3 amended so Linear becomes the board
+🟢 Done: measured that Linear registers OAuth applications only in its console (no manifest flow), so everything after the application is code — authorize, exchange, prove, vault, refresh every 24h
+⚪ Pending: whether a company is already registered and in which jurisdiction — his fact, nothing below it can be guessed
+🔧 TOUCHES: crew#834, #835, #836 only; no idp branch touched
+🔀 OVERLAP: session 5f6f4e72 owns prospector and estate-db; deepseek owns fix/crew832-cp3-warden-job
+📎 FACTS: ESTATE_ZONE is mumchimp.com in clusters/oke/estate-config.yaml; the only terraform providers in the repo are oracle/oci, hashicorp/random and the OKE module, so the GitHub org is not in git; linear tokens expire in 24h with refresh
+📍 State: https://github.com/chidionyema/crew/issues/836
+
+
+## 2026-09-04T16:34:58Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on me; the founder signs up for Google Workspace on mumchimp.com and that is his whole part
+🟡 Active: crew#836 CP4 specced — Business Starter one seat, role addresses as aliases, all DNS records in code
+🟢 Done: answered the OIDC question with the vendor boundary — human sign-in federates through Google at zero Linear cost, machine credentials cannot federate because Linear trusts no external identity provider
+⚪ Pending: whether a company already exists and in which jurisdiction; Google served GBP which points at the UK, but that is his fact
+🔧 TOUCHES: crew#834, #835, #836 only; no idp branch touched this hour
+🔀 OVERLAP: session 5f6f4e72 owns prospector and estate-db; deepseek owns fix/crew832-cp3-warden-job
+📎 FACTS: Google Workspace Business Starter is £5.90/user/month monthly, £4.13 annual, 30GB, 2-step verification, 300-user ceiling (workspace.google.com/pricing, read 2026-09-04); Linear SAML is Plus/Enterprise only and SCIM is Enterprise only
+📍 State: https://github.com/chidionyema/crew/issues/836#issuecomment-5543565167
+
+
+## 2026-09-04T16:49:28Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on me; the founder signs up for Google Workspace on mumchimp.com, verifying the existing domain rather than buying one through Google
+🟡 Active: crew#838 opened — adopt the domain-moving tool from survival-stack into idp, expose it as two Backstage scaffolder templates, instrument it to the central collector
+🟢 Done: found and ran the tool the founder remembered (7 of 7 tests pass today, last touched 2026-08-22); it already sweeps google._domainkey and mints an ephemeral Cloudflare token from a root, which is R52 before the estate named it
+⚪ Pending: Google AI Pro gives no agent lane — consumer Gemini CLI access was cut off on 2026-06-18 — so Cyrus's gemini runner needs an API key or a Code Assist Standard licence
+🔧 TOUCHES: crew#834, #835, #836, #838; no idp branch touched
+🔀 OVERLAP: session 5f6f4e72 owns prospector and estate-db; deepseek owns fix/crew832-cp3-warden-job
+📎 FACTS: survival-stack scripts/migrate-domain.mjs is 338 lines over six phases with undo and a resumable state file; Google AI Pro includes $10/month cloud credits, expanded AI Studio limits and Jules, but no API credits
+📍 State: https://github.com/chidionyema/crew/issues/838
+
+
+## 2026-09-04T16:49:37Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1530 — the hindsight copy dropped schema public and took pgvector with it, so its restore died; it is the last copy job standing between estate-db-migrate and Ready
+🟢 Done: idp#1523 merged and eight stalled copy jobs ran (backstage, guacamole, healthchecks, litellm, superset, temporal all Complete); the dead spec-gate check that fails every pull request in every estate repo is rolled out fixed to 23 repositories
+⚪ Pending: otto-gateway copy still running; then llm and research-engine reconcile and the :23 job writes the schema
+🔧 TOUCHES: idp platform/estate-db/{migrate/jobs.yaml,cluster/databases.yaml}; 23 estate repos got .github/workflows/security-scan.yml
+🔀 OVERLAP: none seen; session 85f840c5 is on the vendor-key path
+📎 FACTS: 'pg_restore: error: type "public.vector" does not exist'; estate hindsight database holds plpgsql and nothing else; vector.control has no trusted line so only a superuser may create it
+📍 State: https://github.com/chidionyema/idp/pull/1530
+
+
+## 2026-09-04T16:55:44Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on me
+🟡 Active: crew#838 handed to DeepSeek with the full build order; crew#836 corrected to keep Google AI Pro
+🟢 Done: reversed the cancel-AI-Pro call on the founder's instruction and gave each benefit a job — expanded AI Studio limits may already be feeding the estate's gemini router lane, Jules joins the Cyrus engine list, the $10 cloud credit is the weak one
+⚪ Pending: which Google account minted SEED_GEMINI_API_KEY — if it is not the AI Pro account the lane is on free-tier limits for nothing
+🔧 TOUCHES: crew#836, #838 only; no idp branch touched
+🔀 OVERLAP: session 5f6f4e72 owns prospector and estate-db; deepseek owns fix/crew832-cp3-warden-job
+📎 FACTS: migrate-domain.mjs is 338 lines, 7/7 tests pass today; cloudflare-api-token reads MEETS in root-trust.md so CP1 needs no new credential; no Prometheus pushgateway exists in this estate
+📍 State: https://github.com/chidionyema/crew/issues/838#issuecomment-5543814055
+
+
+## 2026-09-04T17:13:31Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on me; the founder signs up for Google Workspace on mumchimp.com, verifying the domain he already owns rather than buying one through Google
+🟡 Active: crew#835 corrected, crew#838 handed to DeepSeek with its full build order
+🟢 Done: killed a five-minute errand before he ran it — a fresh Gemini key from the AI Pro login would land on the same free allowance, because Google sets the allowance by the project's billing tier and nothing else; found his Google billing account had no valid card, which would have lapsed the AI Pro subscription and stalled the Workspace signup, and he has fixed it
+⚪ Pending: whether AI Pro's $10 monthly cloud credit applies to Gemini API usage; if it does, Tier 1 on that project is free and the router's throughput rises for nothing
+🔧 TOUCHES: crew#835, #836, #838 only; no idp branch touched
+🔀 OVERLAP: session 5f6f4e72 owns prospector and estate-db; deepseek owns fix/crew832-cp3-warden-job
+📎 FACTS: ai.google.dev/gemini-api/docs/rate-limits read 2026-09-04 — allowance is set by the Cloud project's billing tier, Free to Tier 1 by linking billing, instant; AI Pro's expanded AI Studio limits are the web app, not the API key; consoles.yaml line 142 records the Gemini key but not the account that owns it
+📍 State: https://github.com/chidionyema/crew/issues/835#issuecomment-5543876266
 
