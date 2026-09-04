@@ -125,13 +125,23 @@ router_settings:
     # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
     # job aliases) but sit in no chain while the account is unfunded: a hop that always
     # answers 402 is latency, not redundancy.
-    - deepseek: [minimax]
+    # 2026-09-04 19:55Z, measured direct at each vendor from the laptop with this router out
+    # of the path: DeepSeek answers 401 (the key is revoked at the vendor -- the byte-identical
+    # key prospector holds fails the same way), and MiniMax answers 429 `rate_limit_error`
+    # "Token Plan usage limit reached ... (2056)", request id 06ea54a72199e6818ce20d8bf90b4102
+    # (the key authenticates; that account's plan is spent). Those two were each other's only
+    # fallback, so a cheap turn walked deepseek -> minimax -> deepseek and died. Gemini
+    # answered HTTP 200 in the same sweep, so every chain now ends in a lane that was measured
+    # answering rather than in a two-node cycle of dead ones -- the same rule the note above
+    # already states, applied to the pair that has since gone dark: a hop that always fails is
+    # latency, not redundancy. Nothing here changes a credential.
+    - deepseek: [minimax, gemini]
 
-    - minimax: [deepseek]
+    - minimax: [deepseek, gemini]
 
     - gemini: [minimax, deepseek]
-    - default: [minimax, deepseek]
-    - fast: [minimax, deepseek]
+    - default: [minimax, deepseek, gemini]
+    - fast: [minimax, deepseek, gemini]
 
   # Alias, not a model row (R75, founder 2026-09-03). The Kimi lane is console-owned: the
   # founder brought the key through the LiteLLM console on 2026-09-04 and it is stored
