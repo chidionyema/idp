@@ -18,7 +18,7 @@ binds:
           mode: strict
           keys:
           # SHA-256 of MCP_GATEWAY_KEY (vault entry mcp-gateway); the key itself is never in git or env.
-          - keyHash: sha256:24a593ed6b7a908829b98077341837334811ec9b6c9d1eb9766d6cd7d78de12e
+          - keyHash: sha256:a4f5939a14493c1d44cdad51bb1c824d109f23dfb872fc9d40e2d93d470e313a
       backends:
       - mcp:
           statefulMode: stateless
@@ -40,7 +40,7 @@ binds:
           mode: strict
           keys:
           # SHA-256 of MCP_GATEWAY_KEY (vault entry mcp-gateway); the key itself is never in git or env.
-          - keyHash: sha256:24a593ed6b7a908829b98077341837334811ec9b6c9d1eb9766d6cd7d78de12e
+          - keyHash: sha256:a4f5939a14493c1d44cdad51bb1c824d109f23dfb872fc9d40e2d93d470e313a
       backends:
       - mcp:
           statefulMode: stateless
