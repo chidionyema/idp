@@ -48,7 +48,7 @@ const note = async (event, extra = {}) => {
 }
 
 if (!domain || domain.startsWith('-') || (phase && !ph.PHASES.includes(phase))) {
-  say('usage: node scripts/migrate-domain.mjs <domain> [--watch] [--dry-run]')
+  say('usage: node bin/idp/migrate-domain/migrate-domain.mjs <domain> [--watch] [--dry-run]')
   say('                                       [--phase=' + ph.PHASES.join('|') + ']')
   say('                                       [--rollback] [--no-notify]')
   process.exit(2)
