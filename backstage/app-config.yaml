@@ -291,6 +291,14 @@ catalog:
       rules:
         - allow: [Template]
 
+    # crew#819: onboards a paying customer's messaging channel by opening a reviewed
+    # pull request with the binding. It never takes a credential and never claims a
+    # connection it has not made -- the row is applied after the merge, not by the form.
+    - type: file
+      target: ../../templates/customer-onboarding/template.yaml
+      rules:
+        - allow: [Template]
+
     # The guest identity. Load-bearing, not an example: the guest auth provider
     # resolves user:default/guest through the catalog, so removing this file
     # breaks sign-in.

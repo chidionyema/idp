@@ -1,0 +1,174 @@
+# Onboarding a paying customer onto the estate's messaging ingress (crew#819).
+#
+# What this template does, and the line it does not cross: it opens a pull request
+# carrying the customer's channel binding, and it stops there. It does not call an
+# onboarding API, because the estate has no such service -- otto's ingress reads the
+# `channel_binding` table (hermes-v2 otto/ingress/store.py) and `otto onboard` binds
+# internal services, not customers, which is the gap this ticket was raised for. A
+# template that POSTed to an invented endpoint would report success against nothing.
+#
+# It also never takes a credential. The form asks where the customer's key already
+# lives and records that reference; the token itself stays in the secret store it is
+# already in (LAW 31, R52). `secret_ref` in the binding row is exactly that pointer.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: onboard-messaging-customer
+  title: Onboard a customer onto messaging
+  description: >-
+    Connect a customer's messaging service to the estate. The form records which
+    service, which account, and where their key already lives, then opens a pull
+    request with the binding for review. You never paste a token into this page.
+  tags:
+    - onboarding
+    - messaging
+    - customer
+spec:
+  owner: group:default/platform
+  type: service
+
+  parameters:
+    - title: Who is being onboarded
+      required:
+        - organisation
+        - slug
+      properties:
+        organisation:
+          title: What is the organisation called?
+          type: string
+          description: >-
+            The customer's name as a person would write it. It appears in logs and
+            dashboards so the team can tell whose events these are.
+          pattern: '^[a-zA-Z0-9][a-zA-Z0-9 \-_.]{0,62}[a-zA-Z0-9]$'
+          ui:autofocus: true
+        slug:
+          title: A short name for it
+          type: string
+          description: >-
+            Lower case, no spaces. This becomes the tenant id on the binding row and
+            the name of the file this pull request adds, so two customers onboarded on
+            the same day do not overwrite each other.
+          pattern: '^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$'
+
+    - title: Which service, and which account on it
+      required:
+        - provider
+        - account
+      properties:
+        provider:
+          title: Which messaging service?
+          type: string
+          enum:
+            - slack
+            - teams
+            - discord
+            - telegram
+            - webhook
+          enumNames:
+            - Slack (their workspace)
+            - Microsoft Teams (their tenant)
+            - Discord (their server)
+            - Telegram (their bot)
+            - Webhook (any HTTP endpoint)
+          description: >-
+            The service the customer's events arrive from. This becomes `channel` on
+            the binding row.
+        account:
+          title: Which account on it?
+          type: string
+          description: >-
+            The account as the service itself names it -- the Slack workspace, the
+            Teams tenant domain, the Discord server, the Telegram bot username, or the
+            webhook URL. This becomes `external_id`, and with `channel` it is the
+            primary key, so it has to be the value the incoming event carries.
+          pattern: '^.+$'
+
+    - title: Where their key already lives
+      required:
+        - secretStore
+        - secretPath
+      properties:
+        secretStore:
+          title: Which secret store?
+          type: string
+          enum:
+            - vault
+            - aws-secrets-manager
+            - gcp-secret-manager
+          enumNames:
+            - The estate vault
+            - AWS Secrets Manager
+            - Google Cloud Secret Manager
+          description: >-
+            Deliberately not a box to paste a token into. The estate never holds a
+            customer credential in a form, a form submission log or a pull request --
+            it holds a reference, and reads the secret at the moment it needs it.
+        secretPath:
+          title: The path or name in that store
+          type: string
+          description: >-
+            The exact path. For the estate vault, the key name without a prefix. For
+            AWS, the secret name. For Google, the secret id. Do not put the secret
+            here; if what you are about to type looks like a token, it is the wrong
+            field.
+          pattern: '^[^\s]+$'
+
+  steps:
+    - id: render
+      name: Render the binding
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          organisation: ${{ parameters.organisation }}
+          slug: ${{ parameters.slug }}
+          provider: ${{ parameters.provider }}
+          account: ${{ parameters.account }}
+          secretStore: ${{ parameters.secretStore }}
+          secretPath: ${{ parameters.secretPath }}
+
+    - id: publish
+      name: Open the pull request
+      action: publish:github:pull-request
+      input:
+        repoUrl: github.com?owner=chidionyema&repo=idp
+        branchName: customer-onboarding/${{ parameters.slug }}
+        targetPath: platform/customers/requests
+        title: "Onboard ${{ parameters.organisation }} onto messaging (${{ parameters.provider }})"
+        description: |
+          Adds the channel binding for **${{ parameters.organisation }}** so events from
+          their ${{ parameters.provider }} account reach the estate's messaging ingress.
+
+          What is in this pull request: one file under `platform/customers/requests/`,
+          holding the four values otto's `channel_binding` row needs -- tenant id,
+          channel, external id and the reference to where the customer's credential
+          already lives. No credential is in it, and reviewing it does not require
+          access to one.
+
+          What this pull request does not do: it does not write the row. Applying it is
+          a reviewed action against hermes-v2's ingress database, taken after this is
+          read and merged. The scaffolder has no runner with that database's
+          credentials and this template does not invent one -- an onboarding endpoint
+          that answered "connected" without an event having arrived would be worse than
+          the manual step it replaced (crew#819).
+
+          Organisation: ${{ parameters.organisation }}
+          Tenant id: ${{ parameters.slug }}
+          Channel: ${{ parameters.provider }}
+          External id: ${{ parameters.account }}
+          Secret reference: ${{ parameters.secretStore }}:${{ parameters.secretPath }}
+
+  output:
+    links:
+      - title: The pull request carrying this customer's binding
+        url: ${{ steps.publish.output.remoteUrl }}
+    text:
+      - title: What happens next
+        content: |
+          A pull request is open with ${{ parameters.organisation }}'s binding. Nothing
+          is live yet, and nothing will claim to be: the binding takes effect when the
+          pull request is merged and the row is applied to the ingress database.
+
+          If events do not arrive after that, the first thing to check is `external_id`
+          -- it has to be exactly what ${{ parameters.provider }} puts on the event, or
+          the lookup misses and the ingress refuses the message rather than guessing.
