@@ -3459,3 +3459,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: https://github.com/chidionyema/prospector/pull/813
 📍 State: http://localhost:3100 shell only
 
+
+## 2026-09-04T12:48:55Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: rebuilding idp#1450 as the one merge that empties and deletes all ten Postgres servers, not a staged retreat
+🟢 Done: the two chart-bundled servers decoded — dagster holds its data in database `test` as user `test`, langfuse in `langfuse` as `postgres`; both charts take external-database values, so both move in this same change
+⚪ Pending: regenerate the copy jobs on the PostgreSQL 18 image, delete the seven raw servers and turn off the two chart ones, then open the pull request
+🔧 TOUCHES: platform/estate-db/*, platform/{backstage,healthchecks,hindsight,observability,llm,temporal,guacamole,otto-gateway,dagster}, clusters/oke/platform.yaml
+🔀 OVERLAP: session 85f840c5 holds the idp lane; it is in CI wall clock and the tests directory, nowhere near platform/estate-db
+📎 FACTS: ten Postgres servers measured running at 12:52Z (otto-gateway-db was missing from the earlier count of nine); langfuse runs postgres:18, so the estate cluster must be PostgreSQL 18 or its dump cannot be restored; the CloudNativePG standard image carries pgvector by its own build definition (docker-bake.hcl extensions list)
+📍 State: https://github.com/chidionyema/idp/pull/1450
+
