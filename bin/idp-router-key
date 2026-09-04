@@ -40,6 +40,21 @@ LLM=${ROUTER_URL:-https://llm.$ZONE}
 BUDGET=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['llm']['virtual_key_daily_usd'])" "$IDP/estate-defaults.yaml") \
   || { echo "BLIND   router-key   estate-defaults.yaml has no llm.virtual_key_daily_usd"; exit 2; }
 
+# --- @router: every lane the router actually serves, config rows and console rows alike ----------
+# A key carries an explicit models allow-list, and the laptop list used to be rendered from
+# platform/llm/config.yaml. A lane the founder brings through the router's own console (the
+# enterprise intake -- LLM Credentials, then Models; kimi is one, platform/vendors/consoles.yaml
+# says so on purpose) lives only in litellm-db, so it was never in that list and never appeared
+# in the picker: `moonshot/kimi-k3` existed and answered, and /v1/models on the laptop key did
+# not name it. Asking the router itself is the list that cannot go stale.
+if [ "$MODELS" = @router ]; then
+  MASTER=$("$CLOUD" secret get litellm-upstream 2>/dev/null | jq -r '.LITELLM_MASTER_KEY // empty' 2>/dev/null || true)
+  [ -n "$MASTER" ] || { echo "FAIL    router-key   litellm-upstream holds no LITELLM_MASTER_KEY"; exit 1; }
+  MODELS=$(curl -sS -f -H "Authorization: Bearer $MASTER" "$LLM/v1/models" 2>/dev/null | jq -r '[.data[].id] | sort | join(",")' || true)
+  unset MASTER
+  [ -n "$MODELS" ] || { echo "FAIL    router-key   $LLM/v1/models named no lane"; exit 1; }
+fi
+
 # --- an existing key the router still accepts is kept ------------------------------------------
 rc=0; cur=$("$CLOUD" secret get "$ENTRY" 2>/dev/null) || rc=$?
 [ "$rc" -le 1 ] || { echo "FAIL    router-key   vault read of $ENTRY exited $rc (split or unreadable)"; exit 1; }

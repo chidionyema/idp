@@ -113,8 +113,11 @@ jobs:
             # and holds no vendor key (crew#568, LAW 34). Minted here; delivered through the estate's
             # sops vault: sops encrypts to the age recipient estate-secrets/.sops.yaml names (the public
             # half), so this runner decrypts nothing, and the Mac reads it with scripts/secret-load.
-            # The lanes are the whole cluster router, read from the generated config (the registry is the one list, 2026-09-02).
-            bin/idp-router-key laptop "$(python3 -c 'import yaml; print(",".join(m["model_name"] for m in yaml.safe_load(open("platform/llm/config.yaml"))["model_list"]))')"
+            # The lanes are every model the router serves, asked of the router itself (@router), so a
+            # lane the founder brings through the console -- kimi is one, and console-owned on purpose
+            # (platform/vendors/consoles.yaml) -- is in his picker on the next seed run, instead of
+            # being invisible because the generated config never named it (2026-09-04).
+            bin/idp-router-key laptop @router
             tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
             git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
             bin/idp-cloud secret get laptop | jq -r .key | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LITELLM_LAPTOP_KEY LITELLM_API_KEY
