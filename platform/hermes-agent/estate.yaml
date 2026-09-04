@@ -52,14 +52,14 @@ data:
 
     models:
       # These are LANE names on the estate router (platform/llm/config.yaml), never a vendor's
-      # model id. Measured 2026-09-04 against the running ConfigMap litellm-config-244dm67c88:
-      # the router serves claude, claude-fast, openrouter, minimax-or, deepseek-or, gemini-or,
-      # deepseek, minimax, minimax_m27, gemini, embed, image-or, vision, image -- and
-      # `claude-haiku-4-5`, which this file asked for, is not one of them, so every call the
-      # agent made was refused by the router as an unknown model. `gemini` is a lane the estate
-      # buys direct from the vendor, so it satisfies LAW 34 as well as fixing the fault.
-      watch: gemini
-      work: gemini
+      # model id (LAW 34, founder 2026-09-04). Measured that day against the running ConfigMap
+      # litellm-config-244dm67c88: this file asked for `claude-haiku-4-5`, which is not one of
+      # the router's lanes, so every call the agent made was refused as an unknown model
+      # (idp#1435 named `gemini`). `fast` is the neutral cheap lane and is served by
+      # gemini-2.5-flash today -- the same model idp#1435 measured -- so the lane can move to
+      # another vendor without this file changing.
+      watch: fast
+      work: fast
 
     dispatch:
       board: chidionyema/crew

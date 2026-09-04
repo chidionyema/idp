@@ -140,7 +140,7 @@ jobs:
             # Hermes (the founder's Telegram agent, hermes-v2/config.yaml) calls the router on its own
             # virtual key, lane claude first, never a vendor key (crew#568 Phase 5, LAW 34). Same road as
             # the laptop: minted here, delivered through the sops vault, read by scripts/secret-load.
-            bin/idp-router-key hermes claude,claude-fast,minimax,deepseek
+            bin/idp-router-key hermes default,fast,minimax,deepseek
             tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
             git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
             bin/idp-cloud secret get hermes | jq -r .key | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LITELLM_HERMES_KEY LITELLM_API_KEY
@@ -165,7 +165,7 @@ jobs:
             # a frontier API rather than a local model"): claude and gemini for the worker and the grader,
             # embed for ranking what it scraped; a local or small lane is not on the key, so no env var can
             # reach one. Same road as the laptop: minted here, delivered through the sops vault.
-            bin/idp-router-key science claude,claude-fast,gemini,gemini-or,minimax,minimax_m27,embed
+            bin/idp-router-key science default,fast,gemini,gemini-or,minimax,minimax_m27,embed
             tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
             git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
             bin/idp-cloud secret get science | jq -r .key | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LITELLM_SCIENCE_KEY LITELLM_API_KEY

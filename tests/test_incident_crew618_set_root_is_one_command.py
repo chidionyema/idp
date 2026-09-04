@@ -91,7 +91,6 @@ def test_all_walks_every_provider_once_and_skips_the_ones_already_set(tmp_path):
     names = [l.split()[1] for l in (tmp_path / "set.log").read_text().splitlines()]
     assert names == [
         "SEED_CLOUDFLARE_ROOT_TOKEN",
-        "SEED_ANTHROPIC_API_KEY",
         "SEED_OPENROUTER_API_KEY",
         "SEED_DEEPSEEK_API_KEY",
         "SEED_MINIMAX_API_KEY",
