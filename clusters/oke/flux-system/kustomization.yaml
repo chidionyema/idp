@@ -19,3 +19,17 @@ patches:
     - op: add
       path: /spec/template/spec/containers/0/args/-
       value: --rate-limit-interval=1h
+
+# A restart of kustomize-controller, driven from git. Founder, 2026-09-04: "If the
+# kustomize-controller itself is deadlocked and needs a restart, the GitOps way is to touch its
+# manifest in your repository." Changing this timestamp changes the pod template hash, so the
+# Deployment rolls its pod the next time Flux applies this directory. Nothing else about the
+# controller changes. To restart it again, set a new timestamp and merge.
+- target:
+    kind: Deployment
+    name: kustomize-controller
+    namespace: flux-system
+  patch: |
+    - op: add
+      path: /spec/template/metadata/annotations/estate.mumchimp.com~1restarted-at
+      value: "2026-09-04T10:22:11Z"
