@@ -52,11 +52,21 @@ def _rows():
 # ---------------------------------------------------------------- it is dark
 
 
+# The two rows that hold money -- Lago and its database. The bus is not one of them: it carries
+# `estate.commerce.order_paid`, it does not price, charge or store a card. It was suspended
+# alongside them only because nothing published to it, which LAW 28 refuses. On 2026-09-04 the
+# founder gave the word this test asks for ("lets get this wrking wuickly, its all built and
+# decisions ade") and otto-gateway, which publishes to the bus, was woken in the same commit --
+# so the bus now has a publisher and comes up with it. Lago and its database stay dark, and this
+# test still refuses either of them being woken without the other, and without a PR of its own.
+MONEY_ROWS = {"commerce-data", "commerce"}
+
+
 def test_every_money_row_is_suspended():
     rows = _rows()
     assert set(rows) == {"commerce-data", "commerce", "event-bus"}
-    for name, row in rows.items():
-        assert row["spec"].get("suspend") is True, (
+    for name in sorted(MONEY_ROWS):
+        assert rows[name]["spec"].get("suspend") is True, (
             f"{name} is not suspended: merging this branch would put a money layer on the "
             f"cluster. The cutover is its own PR, on the founder's word (LAW 11)."
         )
