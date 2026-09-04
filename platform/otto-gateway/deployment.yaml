@@ -118,6 +118,11 @@ spec:
             - { name: OTTO_INGRESS_DB_USER, value: otto_gateway }
             - { name: OTTO_INGRESS_DB_PASSWORD_FILE, value: /run/secrets/otto-gateway-db/POSTGRES_PASSWORD }
             - { name: OTTO_NATS_URL, value: "nats://nats.event-bus.svc:4222" }
+            # The estate's memory (platform/hindsight), one bank for every surface, so a
+            # person remembered from Telegram is remembered on the next channel too.
+            # otto/memory/hindsight.py: unset is a no-op, unreachable never costs an answer.
+            - { name: OTTO_MEMORY_HINDSIGHT_URL, value: "http://hindsight-api.hindsight.svc:8888" }
+            - { name: OTTO_MEMORY_BANK, value: "hermes" }
             # LAW 50. The entrypoint refuses to start without this, so a door that cannot be
             # seen never opens rather than running dark.
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }

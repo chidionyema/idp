@@ -101,3 +101,23 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+---
+# The estate's memory (platform/hindsight): one bank on the one estate Postgres. Without this
+# rule the answering lane's recall and retain calls are refused by the fence and the door
+# answers with no memory at all -- which is what it did from 2026-09-03 until this row landed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-memory
+  namespace: otto-golden
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: hindsight
+      ports:
+        - protocol: TCP
+          port: 8888
