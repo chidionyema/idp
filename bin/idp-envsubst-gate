@@ -60,11 +60,35 @@ def kustomizations():
                 yield d
 
 
+# Flux's own opt-out, one resource at a time. A ConfigMap that holds a shell script owns its
+# dollar signs: `CALLS=$(...)` on one line and `${CALLS}` on the next is the script assigning to
+# itself, not a cluster value someone forgot to define, and escaping each one `$${...}` regresses
+# the moment somebody adds a variable. The controller reads this annotation and substitutes
+# nothing in that resource; a gate that judged the resource anyway would refuse what the cluster
+# accepts, which is a guard refusing correct work (LAW 38). Measured 2026-09-05: main's
+# offline-gate failed on platform/llm for exactly that -- the file carries the annotation, Flux
+# reconciles it, and only this gate disagreed.
+SUBSTITUTE_DISABLED = ("kustomize.toolkit.fluxcd.io/substitute", "disabled")
+
+
+def substituted_docs(rendered: str) -> str:
+    """What Flux will actually run envsubst over: everything not opted out by annotation."""
+    kept = []
+    for d in yaml.safe_load_all(rendered):
+        if not isinstance(d, dict):
+            continue
+        ann = (d.get("metadata") or {}).get("annotations") or {}
+        if str(ann.get(SUBSTITUTE_DISABLED[0], "")).strip() == SUBSTITUTE_DISABLED[1]:
+            continue
+        kept.append(d)
+    return yaml.safe_dump_all(kept)
+
+
 def render(path: str, env: dict[str, str]) -> tuple[int, str]:
     build = subprocess.run(["kustomize", "build", path], capture_output=True, text=True, cwd=ROOT)
     if build.returncode:
         return build.returncode, "kustomize: " + build.stderr.strip().splitlines()[-1]
-    sub = subprocess.run(["flux", "envsubst", "--strict"], input=build.stdout, capture_output=True, text=True, env={**os.environ, **env})
+    sub = subprocess.run(["flux", "envsubst", "--strict"], input=substituted_docs(build.stdout), capture_output=True, text=True, env={**os.environ, **env})
     return sub.returncode, (sub.stderr or sub.stdout).strip().splitlines()[-1] if sub.returncode else ""
 
 
