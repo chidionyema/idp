@@ -1,78 +1,327 @@
-/* Landing page only. Do not restyle every BUI header and card in the portal. */
+/* The estate's own pages. Vendor plugin pages are styled by modules/theme, not here.
+   Every colour, radius and face below is a --bui-* variable, which modules/theme/buiVars.ts
+   fills from modules/theme/tokens.ts. No hex belongs in this file. */
 
-.estate-today .bui-HeaderTop,
-.estate-today .bui-HeaderContent,
-.estate-today .bui-HeaderBottom,
-.estate-today .bui-HeaderTop.bui-Container,
-.estate-today .bui-HeaderContent.bui-Container,
-.estate-today .bui-HeaderBottom.bui-Container {
-  padding-left: 0;
-  padding-right: 0;
-  max-width: none;
+/* Every estate page sits in this. The measure is capped because a line of prose that runs the
+   full width of a 27-inch screen is unreadable, and the founder reads these pages on both a
+   phone and a desktop. */
+.estate-page {
   width: 100%;
+  max-width: 90rem;
+  margin: 0 auto;
 }
 
-.estate-today .bui-HeaderTitle {
+/* The page top, shared by every estate page (modules/shell/EstatePage.tsx). The title is the
+   page's h1 and the lead sits under it in secondary text; the actions sit on the same row on a
+   desktop and wrap under the lead on a phone. The rule underneath is a border, never a shadow. */
+.estate-page-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--bui-border-1);
+}
+
+.estate-page-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.estate-page-titles h1 {
   font-size: clamp(1.75rem, 3vw, 2.25rem);
   letter-spacing: -0.03em;
-  font-weight: 700;
   line-height: 1.15;
+  margin: 0;
 }
 
-.estate-today .bui-HeaderDescription {
-  font-size: 1rem;
+.estate-page-titles p {
+  max-width: 44rem;
   line-height: 1.5;
-  max-width: 36rem;
 }
 
-.estate-today-doors .bui-Card {
+.estate-page-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 600px) {
+  .estate-page-top {
+    align-items: flex-start;
+  }
+
+  .estate-page-actions {
+    width: 100%;
+  }
+}
+
+.estate-home-doors .bui-Card {
   min-height: 7.5rem;
 }
 
-.estate-today-doors .bui-CardHeader {
+.estate-home-doors .bui-CardHeader {
   display: flex;
   align-items: center;
   gap: 0.75rem;
 }
 
 /* The home plugin's search bar, made into a single find field. */
-.estate-today-search .MuiCardHeader-root,
-.estate-today-search .MuiCardHeader-root + hr,
-.estate-today-search header {
+.estate-home-search .MuiCardHeader-root,
+.estate-home-search .MuiCardHeader-root + hr,
+.estate-home-search header {
   display: none;
 }
 
-.estate-today-search .MuiCard-root,
-.estate-today-search .MuiPaper-root {
+.estate-home-search .MuiCard-root,
+.estate-home-search .MuiPaper-root {
   background: transparent;
   border: none;
   box-shadow: none;
   transform: none;
 }
 
-.estate-today-search .MuiCardContent-root {
+.estate-home-search .MuiCardContent-root {
   padding: 0;
 }
 
-.estate-today-search .MuiOutlinedInput-root {
+.estate-home-search .MuiOutlinedInput-root {
   min-height: 48px;
   border-radius: var(--bui-radius-4, 1rem);
   background: var(--bui-bg-neutral-1);
   font-size: 1rem;
 }
 
-.estate-today-search .MuiOutlinedInput-input {
+.estate-home-search .MuiOutlinedInput-input {
   padding: 12px 16px;
   font-size: 1rem;
 }
 
-.estate-today-aside .MuiCard-root {
+.estate-home-aside .MuiCard-root {
   border-radius: var(--bui-radius-4, 1rem);
   background: var(--bui-bg-neutral-1);
   border-color: var(--bui-border-2);
   height: 100%;
 }
 
-.estate-today-aside .MuiCard-root:hover {
+.estate-home-aside .MuiCard-root:hover {
   transform: none;
+}
+
+/* ---------------------------------------------------------------------------
+   The page shell (modules/shell). Every estate-built page draws its tiles, its
+   facts, its lists and its states from these rules, so the pages stop drifting
+   apart at the pixel level. Sizes follow DESIGN-RULES.md: h2 24, tile title 15,
+   body 14, small print 12, and each step differs in at least two of size,
+   weight and colour.
+   --------------------------------------------------------------------------- */
+
+.estate-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.estate-tiles {
+  display: grid;
+  gap: 1rem;
+  /* min() so a tile never asks for more width than a 375px phone can give. */
+  grid-template-columns: repeat(auto-fill, minmax(min(21rem, 100%), 1fr));
+}
+
+.estate-tile {
+  min-width: 0;
+  height: 100%;
+}
+
+/* A tile is a surface, not a button: it lifts only where it is actually a link. */
+.estate-tile:not(a):hover {
+  transform: none;
+}
+
+.estate-fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.estate-names {
+  margin: 0;
+  padding-left: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--bui-fg-secondary);
+}
+
+.estate-name {
+  font-family: var(--bui-font-monospace);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.estate-state-line {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--bui-fg-secondary);
+}
+
+.estate-unread {
+  color: var(--bui-fg-negative);
+}
+
+/* A table keeps its columns and scrolls sideways rather than squeezing to nothing. */
+.estate-sheet {
+  overflow-x: auto;
+  border: 1px solid var(--bui-border-1);
+  border-radius: var(--bui-radius-4, 1rem);
+}
+
+.estate-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.estate-table th,
+.estate-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--bui-border-1);
+}
+
+.estate-table thead th {
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--bui-fg-secondary);
+  background: var(--bui-bg-neutral-1);
+  position: sticky;
+  top: 0;
+}
+
+.estate-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.estate-table tbody tr:hover {
+  background: var(--bui-bg-neutral-1);
+}
+
+.estate-missing {
+  color: var(--bui-fg-negative);
+  font-weight: 600;
+}
+
+.estate-tile-top {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.estate-chip {
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--bui-fg-secondary);
+  border: 1px solid var(--bui-border-1);
+  border-radius: 999px;
+  padding: 0.25rem 0.5rem;
+  white-space: nowrap;
+}
+
+.estate-fold {
+  border-top: 1px solid var(--bui-border-1);
+  padding-top: 0.5rem;
+}
+
+.estate-fold-summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.5rem 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.estate-fold-summary::-webkit-details-marker {
+  display: none;
+}
+
+.estate-fold-summary:focus-visible {
+  outline: 2px solid var(--bui-ring);
+  outline-offset: 2px;
+}
+
+.estate-fold-arrow {
+  display: inline-block;
+  width: 1em;
+  margin-right: 0.25rem;
+  color: var(--bui-fg-secondary);
+  transition: transform 120ms;
+}
+
+.estate-fold[open] > .estate-fold-summary .estate-fold-arrow {
+  transform: rotate(90deg);
+}
+
+.estate-fold-body {
+  padding-top: 0.75rem;
+}
+
+/* Two lines of description, then an ellipsis: a tile is a summary, not the page. */
+.estate-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.estate-tile-actions {
+  margin-top: auto;
+  padding-top: 0.25rem;
+}
+
+.estate-tile-chosen {
+  border-color: var(--bui-accent-bg);
+}
+
+/* The panel a report's own text is read in. */
+.estate-panel {
+  border: 1px solid var(--bui-border-1);
+  border-radius: var(--bui-radius-4, 1rem);
+  background: var(--bui-bg-neutral-1);
+  padding: 1.25rem 1.5rem;
+  overflow-x: auto;
+}
+
+.estate-panel table {
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.estate-panel th,
+.estate-panel td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.25rem 0.75rem;
+  border-bottom: 1px solid var(--bui-border-1);
+}
+
+.estate-panel-top {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
 }

@@ -6,7 +6,7 @@ import { DOOR_WHY } from './doorCopy';
 export function DoorGrid() {
   return (
     <Grid.Root
-      className="estate-today-doors"
+      className="estate-home-doors"
       columns={{ initial: '1', sm: '2', lg: '3' }}
       gap="3"
     >

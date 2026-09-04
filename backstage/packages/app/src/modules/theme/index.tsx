@@ -24,6 +24,7 @@ import {
   ease,
   fontFamily,
   light,
+  monoFamily,
   phone,
   reducedMotion,
   stateDark,
@@ -260,6 +261,338 @@ const componentsFor = (t: Tone, states: typeof stateDark) => ({
         boxShadow: '0 16px 40px rgba(0,0,0,.55)',
       },
     },
+  },
+
+  // ------------------------------------------------------------------------------------
+  // The vendor's own pages (crew#843, founder 2026-09-04: "all other need serious work").
+  //
+  // Six of the ten places the sidebar sends a person -- the catalogue, the Kubernetes view,
+  // Find, Docs, Create and You -- plus the entity page and the Map are drawn by Backstage's
+  // own components, not by anything in modules/home. Forking a plugin to restyle its page
+  // is the half-stitched answer: it takes the fork's maintenance for ever and it fixes one
+  // page. Every one of those components names itself to the theme, so the estate's scale,
+  // spacing and colour reach all of them from here, in one place, and keep reaching them
+  // through a plugin upgrade.
+  // ------------------------------------------------------------------------------------
+
+  // The title block on a stock page. Same scale as the shell's own page top.
+  BackstageContentHeader: {
+    styleOverrides: {
+      container: { marginBottom: 20, alignItems: 'flex-end' },
+      title: {
+        fontSize: 24,
+        fontWeight: 700,
+        letterSpacing: '-0.02em',
+        color: t.textPrimary,
+      },
+      description: { fontSize: 14, color: t.textSecondary, marginTop: 4 },
+      leftItemsBox: { minWidth: 0 },
+    },
+  },
+
+  // The entity page's tab strip: the vendor's is upper-case and widely tracked, which is
+  // the single loudest 2020 tell on the most visited page in the portal.
+  BackstageHeaderTabs: {
+    styleOverrides: {
+      tabsWrapper: {
+        backgroundColor: t.canvas,
+        borderBottom: `1px solid ${t.borderSubtle}`,
+        paddingLeft: 24,
+        [phone]: { paddingLeft: 16 },
+      },
+      tabRoot: {
+        textTransform: 'none',
+        letterSpacing: 0,
+        fontSize: 14,
+        fontWeight: 600,
+        color: t.textMuted,
+        minWidth: 0,
+        padding: '10px 14px',
+        '&:hover': { color: t.textPrimary },
+      },
+      defaultTab: {
+        textTransform: 'none',
+        letterSpacing: 0,
+        fontSize: 14,
+        padding: '10px 14px',
+      },
+      selected: { color: t.textPrimary },
+    },
+  },
+
+  // Nothing found, nothing loaded, nothing built yet. The vendor draws a cartoon beside the
+  // sentence; the estate draws the sentence and what to do next, inside the same bordered
+  // surface every other empty state on the portal uses.
+  BackstageEmptyState: {
+    styleOverrides: {
+      root: {
+        backgroundColor: t.surface1,
+        border: `1px solid ${t.border}`,
+        borderRadius: 16,
+        padding: 32,
+      },
+      imageContainer: { display: 'none' },
+      action: { marginTop: 12 },
+    },
+  },
+  BackstageEmptyStateImage: {
+    styleOverrides: { generalImg: { display: 'none' } },
+  },
+  BackstageMissingAnnotationEmptyState: {
+    styleOverrides: {
+      code: {
+        fontFamily: monoFamily,
+        fontSize: 12,
+        borderRadius: 8,
+        backgroundColor: t.surface3,
+        border: `1px solid ${t.borderSubtle}`,
+      },
+    },
+  },
+
+  // The catalogue table's own chrome: its toolbar, its head row and its left filter rail.
+  BackstageTableToolbar: {
+    styleOverrides: {
+      root: { padding: 0, minHeight: 0 },
+      title: { '& h6': { fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' } },
+      searchField: { minWidth: 220 },
+    },
+  },
+  BackstageTableHeader: {
+    styleOverrides: {
+      header: {
+        backgroundColor: t.canvas,
+        color: t.textMuted,
+        fontSize: 12,
+        fontWeight: 600,
+        letterSpacing: 0,
+        textTransform: 'none',
+        borderTop: 'none',
+        borderBottom: `1px solid ${t.border}`,
+      },
+    },
+  },
+  BackstageTableFilters: {
+    styleOverrides: {
+      root: { paddingRight: 24 },
+      header: { fontSize: 15, fontWeight: 600, color: t.textPrimary },
+      filters: { padding: 0 },
+      value: { fontSize: 13, color: t.textSecondary },
+    },
+  },
+  BackstageSelect: {
+    styleOverrides: {
+      formControl: { width: '100%' },
+      formLabel: {
+        fontSize: 12,
+        fontWeight: 600,
+        color: t.textMuted,
+        textTransform: 'none',
+        letterSpacing: 0,
+      },
+      root: { fontSize: 14 },
+    },
+  },
+
+  // The About card on an entity page is a metadata table; it carried the vendor's
+  // upper-case keys and a 24px gutter that no other card on the portal uses.
+  BackstageMetadataTableTitleCell: {
+    styleOverrides: {
+      root: {
+        color: t.textMuted,
+        fontSize: 12,
+        fontWeight: 600,
+        textTransform: 'none',
+        letterSpacing: 0,
+        verticalAlign: 'top',
+        padding: '8px 16px 8px 0',
+        whiteSpace: 'nowrap',
+        border: 'none',
+      },
+    },
+  },
+  BackstageMetadataTableCell: {
+    styleOverrides: {
+      root: {
+        fontSize: 14,
+        color: t.textPrimary,
+        padding: '8px 0',
+        border: 'none',
+      },
+    },
+  },
+  BackstageHeaderIconLinkRow: { styleOverrides: { links: { gap: 20 } } },
+  BackstageIconLinkVertical: {
+    styleOverrides: {
+      link: { color: t.accent, fontWeight: 600 },
+      label: { fontSize: 12, textTransform: 'none', letterSpacing: 0 },
+      disabled: { color: t.textMuted },
+    },
+  },
+
+  // Every rendered document in the portal -- a technical document, a report, a README on an
+  // entity page -- comes through this one component.
+  BackstageMarkdownContent: {
+    styleOverrides: {
+      markdown: {
+        fontSize: 15,
+        lineHeight: 1.65,
+        color: t.textPrimary,
+        '& h1': { fontSize: 28, fontWeight: 700, letterSpacing: '-0.02em' },
+        '& h2': { fontSize: 21, fontWeight: 700, letterSpacing: '-0.01em' },
+        '& h3': { fontSize: 17, fontWeight: 600 },
+        '& a': { color: t.accent },
+        '& code': {
+          fontFamily: monoFamily,
+          fontSize: 13,
+          backgroundColor: t.surface3,
+          borderRadius: 6,
+          padding: '1px 5px',
+        },
+        '& pre': {
+          backgroundColor: t.surface2,
+          border: `1px solid ${t.border}`,
+          borderRadius: 12,
+          padding: 16,
+        },
+        '& pre code': { backgroundColor: 'transparent', padding: 0 },
+        '& blockquote': {
+          borderLeft: `3px solid ${t.borderStrong}`,
+          color: t.textSecondary,
+          margin: 0,
+          padding: '2px 0 2px 16px',
+        },
+        '& table': { borderCollapse: 'collapse', width: '100%' },
+        '& th, & td': {
+          borderBottom: `1px solid ${t.borderSubtle}`,
+          padding: '8px 12px',
+          textAlign: 'left',
+        },
+        '& img': { maxWidth: '100%' },
+      },
+    },
+  },
+
+  // The Map page. Its nodes and edges are SVG, so they take fill and stroke, not colour.
+  BackstageDependencyGraphDefaultNode: {
+    styleOverrides: {
+      node: { fill: t.surface2, stroke: t.borderStrong, strokeWidth: 1 },
+      text: { fill: t.textPrimary, fontSize: 13, fontWeight: 600 },
+    },
+  },
+  BackstageDependencyGraphDefaultLabel: {
+    styleOverrides: { text: { fill: t.textSecondary, fontSize: 12 } },
+  },
+
+  // The Create page's template cards, and the same grid the estate's own tiles use.
+  BackstageItemCardGrid: {
+    styleOverrides: {
+      root: {
+        gridTemplateColumns: 'repeat(auto-fill, minmax(min(21rem, 100%), 1fr))',
+        gridGap: 16,
+      },
+    },
+  },
+  BackstageItemCardHeader: {
+    styleOverrides: {
+      root: {
+        backgroundImage: 'none',
+        backgroundColor: t.surface2,
+        color: t.textPrimary,
+        borderBottom: `1px solid ${t.borderSubtle}`,
+        padding: '16px 20px 12px',
+      },
+    },
+  },
+
+  // Something went wrong, said the same way as everywhere else: a tinted panel with a word
+  // and a border, never colour on its own.
+  BackstageWarningPanel: {
+    styleOverrides: {
+      panel: {
+        backgroundColor: states.needs.bg,
+        border: `1px solid ${states.needs.edge}`,
+        borderRadius: 12,
+        boxShadow: 'none',
+      },
+      summary: { padding: '8px 16px' },
+      summaryText: { color: states.needs.ink, fontWeight: 600 },
+      message: { backgroundColor: 'transparent' },
+    },
+  },
+  BackstageGauge: {
+    styleOverrides: {
+      description: { fontSize: 12, color: t.textSecondary },
+      colorUnknown: { stroke: t.borderStrong },
+    },
+  },
+  BackstageBottomLink: {
+    styleOverrides: {
+      root: { borderTop: `1px solid ${t.borderSubtle}` },
+      boxTitle: { fontSize: 14, fontWeight: 600, color: t.accent },
+    },
+  },
+
+  // The Material components those pages are built out of. A stock table is where the age
+  // shows most: tight rows, a heavy divider under every one, and no hover.
+  MuiTableCell: {
+    styleOverrides: {
+      root: {
+        borderBottom: `1px solid ${t.borderSubtle}`,
+        padding: '12px 16px',
+        fontSize: 14,
+      },
+      head: { fontSize: 12, fontWeight: 600, color: t.textMuted },
+    },
+  },
+  MuiTableRow: {
+    styleOverrides: {
+      root: { '&:hover': { backgroundColor: t.surface3 } },
+      head: { '&:hover': { backgroundColor: 'transparent' } },
+    },
+  },
+  MuiTablePagination: {
+    styleOverrides: {
+      root: { borderTop: `1px solid ${t.borderSubtle}`, fontSize: 13 },
+      toolbar: { minHeight: 48 },
+    },
+  },
+  MuiAccordion: {
+    styleOverrides: {
+      root: {
+        border: `1px solid ${t.border}`,
+        borderRadius: 12,
+        boxShadow: 'none',
+        '&:before': { display: 'none' },
+        '& + &': { marginTop: 8 },
+      },
+    },
+  },
+  MuiAccordionSummary: {
+    styleOverrides: {
+      root: { minHeight: 48, padding: '0 16px' },
+      content: { margin: '10px 0' },
+    },
+  },
+  MuiCardHeader: {
+    styleOverrides: {
+      title: { fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' },
+      subheader: { fontSize: 13, color: t.textSecondary },
+    },
+  },
+  MuiDivider: { styleOverrides: { root: { backgroundColor: t.borderSubtle } } },
+  MuiLinearProgress: {
+    styleOverrides: {
+      root: { height: 4, borderRadius: 999, backgroundColor: t.surface3 },
+    },
+  },
+  MuiAvatar: {
+    styleOverrides: {
+      root: { backgroundColor: t.surface3, color: t.textSecondary },
+    },
+  },
+  MuiBreadcrumbs: {
+    styleOverrides: { root: { fontSize: 13, color: t.textMuted } },
   },
 });
 

@@ -186,9 +186,9 @@ describe('Ops', () => {
     expect(await screen.findByTestId('ops-sentence')).toHaveTextContent(
       '2 of 2 nodes ready, 1 pods not ready, 2 of 3 Flux rows ready.',
     );
-    expect(screen.getByTestId('ops-lead')).toHaveTextContent(
-      'The cluster right now',
-    );
+    expect(
+      screen.getByText(/The cluster right now/),
+    ).toBeInTheDocument();
     expect(screen.getByTestId('ops-cluster')).toHaveAttribute(
       'data-state',
       'red',
