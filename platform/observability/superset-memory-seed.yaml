@@ -1,0 +1,465 @@
+# Seed the "Memory" dashboard into Superset (decision 0018: Superset is the estate's dashboard).
+#
+# The founder, 2026-09-05, on the work that put one memory behind every surface: "what i need
+# visibility over this ncp process" and "its just happening in thr dark". It was: nothing in this
+# estate rendered a single number about what the platform remembers. This is that page.
+#
+# What it reads. Hindsight is the memory store and it keeps its memories in the one estate
+# Postgres, database `hindsight` (platform/hindsight/hindsight.yaml points the chart at
+# estate-rw.estate-db.svc). The estate MCP (platform/mcp) is the door in front of the same store,
+# not a second store, so a memory written through `remember` and a memory written by the Telegram
+# door land in the same rows and appear on the same page here.
+#
+# What each panel answers, and why it is drawn from the column it is drawn from:
+#   - memories per day says whether the estate is still learning. It is the number that fell from
+#     268 a day (08-30) to 1 (09-04) when the extraction lane's model was revoked, and nothing
+#     rendered it, which is how a dead memory went unnoticed for five days.
+#   - where a memory came from reads metadata->>'platform' (written by the hermes-agent surface)
+#     or metadata->>'surface' (written by the one Telegram door), coalesced, because two writers
+#     name the same idea with two keys and a dashboard that reported "unknown" for half the estate
+#     would answer nothing. Measured 2026-09-05: the keys present on memory_units.metadata are
+#     agent_identity, chat_id, chat_name, chat_type, message_count, platform, retained_at,
+#     session_id, turn_index, user_id, user_name.
+#   - the ingest queue is async_operations, the store's own worker queue: a memory that was
+#     accepted and never written shows up here as pending or failed, not as a missing row.
+#   - extraction is llm_requests, the store's own record of the model calls that turn a
+#     conversation into facts. A revoked lane shows here as status errors before the memory count
+#     falls.
+#
+# Not on this page, and why: hindsight's `audit_log` table holds 0 rows (measured 2026-09-05 on
+# estate-db), so the per-call volume of retain and recall is not recorded by the store today and
+# no chart here can claim it. What is drawn is what was measured.
+#
+# Idempotent: every object carries a fixed uuid, so a re-run overwrites the same rows rather than
+# doubling them. Jobs are immutable, so the Flux force annotation lets a changed seed be recreated
+# in place instead of failing the row with "field is immutable".
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: superset-memory-seed
+  namespace: observability
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: Enabled
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: superset-memory-seed
+    spec:
+      restartPolicy: Never
+      priorityClassName: platform-batch   # batch bucket: seated by preempting the balloon, never standing capacity
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: seed
+          # Same image and config surface as the running superset web pods.
+          image: apachesuperset.docker.scarf.sh/apache/superset:6.1.0
+          envFrom:
+            - secretRef:
+                name: superset-env
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: superset-config
+              mountPath: /app/pythonpath
+              readOnly: true
+            - name: superset-secrets
+              mountPath: /run/secrets/superset
+              readOnly: true
+            - name: hindsight-db
+              mountPath: /secrets/hindsight
+              readOnly: true
+            - name: superset-home
+              mountPath: /app/superset_home
+            - name: tmp
+              mountPath: /tmp
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              # The image ships no postgres driver; install it pinned, into the writable home
+              # (root filesystem is read-only by policy) -- the same pattern as the web pods'
+              # bootstrapScript in superset.yaml.
+              export PYTHONUSERBASE=/app/superset_home/.pyuser
+              pip install --no-cache-dir --user psycopg2-binary==2.9.9
+              # No dollar-variable here: Flux's strict envsubst would demand a source for it (crew#284).
+              export PYTHONPATH=/app/pythonpath:/app/superset_home/.pyuser/lib/python3.10/site-packages
+
+              python3 - <<'RENDER'
+              import datetime
+              import urllib.parse
+              import zipfile
+
+              import yaml
+
+              with open("/secrets/hindsight/password", encoding="utf-8") as f:
+                  password = f.read().strip()
+              uri = (
+                  "postgresql+psycopg2://hindsight:"
+                  + urllib.parse.quote(password, safe="")
+                  + "@estate-rw.estate-db.svc.cluster.local:5432/hindsight"
+              )
+
+              DB = "7a1c33d2-6b40-4e19-9f52-3c8e1d740001"
+              DS_MEM = "7a1c33d2-6b40-4e19-9f52-3c8e1d740002"
+              DS_QUEUE = "7a1c33d2-6b40-4e19-9f52-3c8e1d740003"
+              DS_EXTRACT = "7a1c33d2-6b40-4e19-9f52-3c8e1d740004"
+              C_PER_DAY = "7a1c33d2-6b40-4e19-9f52-3c8e1d740005"
+              C_CHANNEL = "7a1c33d2-6b40-4e19-9f52-3c8e1d740006"
+              C_PER_DAY_CHANNEL = "7a1c33d2-6b40-4e19-9f52-3c8e1d740007"
+              C_CONVERSATIONS = "7a1c33d2-6b40-4e19-9f52-3c8e1d740008"
+              C_KIND = "7a1c33d2-6b40-4e19-9f52-3c8e1d740009"
+              C_LATEST = "7a1c33d2-6b40-4e19-9f52-3c8e1d740010"
+              C_QUEUE = "7a1c33d2-6b40-4e19-9f52-3c8e1d740011"
+              C_EXTRACT = "7a1c33d2-6b40-4e19-9f52-3c8e1d740012"
+              DASH = "7a1c33d2-6b40-4e19-9f52-3c8e1d740013"
+
+              def sql_metric(expression, label):
+                  return {
+                      "expressionType": "SQL",
+                      "sqlExpression": expression,
+                      "label": label,
+                      "aggregate": None,
+                      "column": None,
+                      "hasCustomLabel": True,
+                  }
+
+              def col(name, kind, dttm=False):
+                  return {
+                      "column_name": name,
+                      "verbose_name": None,
+                      "is_dttm": dttm,
+                      "is_active": True,
+                      "type": kind,
+                      "groupby": True,
+                      "filterable": True,
+                      "expression": None,
+                      "description": None,
+                      "python_date_format": None,
+                  }
+
+              count_metric = {
+                  "metric_name": "count",
+                  "verbose_name": "COUNT(*)",
+                  "metric_type": "count",
+                  "expression": "COUNT(*)",
+                  "description": None,
+              }
+
+              files = {}
+              files["metadata.yaml"] = {
+                  "version": "1.0.0",
+                  # ImportDashboardsCommand validates metadata.type == "Dashboard"; "assets" is the
+                  # bundle type of the command 6.1 does not ship.
+                  "type": "Dashboard",
+                  "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              }
+              files["databases/estate_memory.yaml"] = {
+                  "database_name": "Estate memory (Hindsight)",
+                  "sqlalchemy_uri": uri,
+                  "expose_in_sqllab": True,
+                  # This connection carries the role that owns the database, because estate-db mints
+                  # no reader today (see superset-memory-secret.yaml). allow_dml false is what stops
+                  # a chart or a SQL Lab tab writing to the estate's memory through it.
+                  "allow_dml": False,
+                  "allow_ctas": False,
+                  "allow_cvas": False,
+                  "extra": {},
+                  "uuid": DB,
+                  "version": "1.0.0",
+              }
+              files["datasets/estate_memory/memories.yaml"] = {
+                  "table_name": "memories",
+                  "main_dttm_col": "created_at",
+                  "schema": "public",
+                  "sql": (
+                      "SELECT created_at,\n"
+                      "       bank_id AS bank,\n"
+                      "       COALESCE(NULLIF(metadata->>'platform', ''),"
+                      " NULLIF(metadata->>'surface', ''), 'unknown') AS channel,\n"
+                      "       COALESCE(NULLIF(metadata->>'chat_name', ''),"
+                      " NULLIF(metadata->>'chat_id', ''), 'unknown') AS conversation,\n"
+                      "       COALESCE(NULLIF(metadata->>'user_name', ''), 'unknown') AS person,\n"
+                      "       COALESCE(NULLIF(metadata->>'agent_identity', ''),"
+                      " NULLIF(metadata->>'source', ''), 'unknown') AS written_by,\n"
+                      "       COALESCE(NULLIF(fact_type, ''), 'unclassified') AS kind,\n"
+                      "       left(text, 240) AS excerpt\n"
+                      "FROM memory_units"
+                  ),
+                  "filter_select_enabled": True,
+                  "columns": [
+                      col("created_at", "TIMESTAMP WITH TIME ZONE", dttm=True),
+                      col("bank", "TEXT"),
+                      col("channel", "TEXT"),
+                      col("conversation", "TEXT"),
+                      col("person", "TEXT"),
+                      col("written_by", "TEXT"),
+                      col("kind", "TEXT"),
+                      col("excerpt", "TEXT"),
+                  ],
+                  "metrics": [count_metric],
+                  "uuid": DS_MEM,
+                  "version": "1.0.0",
+                  "database_uuid": DB,
+              }
+              files["datasets/estate_memory/ingest_queue.yaml"] = {
+                  "table_name": "ingest_queue",
+                  "main_dttm_col": "created_at",
+                  "schema": "public",
+                  "sql": (
+                      "SELECT created_at, operation_type, status, retry_count,\n"
+                      "       COALESCE(error_message, '') AS error_message\n"
+                      "FROM async_operations"
+                  ),
+                  "filter_select_enabled": True,
+                  "columns": [
+                      col("created_at", "TIMESTAMP WITH TIME ZONE", dttm=True),
+                      col("operation_type", "TEXT"),
+                      col("status", "TEXT"),
+                      col("retry_count", "INTEGER"),
+                      col("error_message", "TEXT"),
+                  ],
+                  "metrics": [count_metric],
+                  "uuid": DS_QUEUE,
+                  "version": "1.0.0",
+                  "database_uuid": DB,
+              }
+              files["datasets/estate_memory/extraction_calls.yaml"] = {
+                  "table_name": "extraction_calls",
+                  "main_dttm_col": "started_at",
+                  "schema": "public",
+                  "sql": (
+                      "SELECT started_at, operation, provider, model, status,\n"
+                      "       duration_ms, total_tokens\n"
+                      "FROM llm_requests"
+                  ),
+                  "filter_select_enabled": True,
+                  "columns": [
+                      col("started_at", "TIMESTAMP WITH TIME ZONE", dttm=True),
+                      col("operation", "TEXT"),
+                      col("provider", "TEXT"),
+                      col("model", "TEXT"),
+                      col("status", "TEXT"),
+                      col("duration_ms", "INTEGER"),
+                      col("total_tokens", "INTEGER"),
+                  ],
+                  "metrics": [count_metric],
+                  "uuid": DS_EXTRACT,
+                  "version": "1.0.0",
+                  "database_uuid": DB,
+              }
+
+              def chart(uuid_, name, viz, params, dataset):
+                  params = dict(params)
+                  params["viz_type"] = viz
+                  params["adhoc_filters"] = params.get("adhoc_filters", [])
+                  params["time_range"] = params.get("time_range", "No filter")
+                  return {
+                      "slice_name": name,
+                      "viz_type": viz,
+                      "params": params,
+                      "uuid": uuid_,
+                      "version": "1.0.0",
+                      "dataset_uuid": dataset,
+                  }
+
+              remembered = sql_metric("COUNT(*)", "Memories")
+              files["charts/memories_per_day.yaml"] = chart(
+                  C_PER_DAY, "Memories written per day", "echarts_timeseries_bar",
+                  {"x_axis": "created_at", "time_grain_sqla": "P1D",
+                   "metrics": [remembered], "groupby": [], "row_limit": 10000},
+                  DS_MEM)
+              files["charts/where_memories_come_from.yaml"] = chart(
+                  C_CHANNEL, "Where a memory came from", "pie",
+                  {"groupby": ["channel"], "metric": remembered, "row_limit": 25},
+                  DS_MEM)
+              files["charts/memories_per_day_by_channel.yaml"] = chart(
+                  C_PER_DAY_CHANNEL, "Memories per day by channel", "echarts_timeseries_line",
+                  {"x_axis": "created_at", "time_grain_sqla": "P1D",
+                   "metrics": [remembered], "groupby": ["channel"], "row_limit": 10000},
+                  DS_MEM)
+              files["charts/conversations_remembered.yaml"] = chart(
+                  C_CONVERSATIONS, "Conversations remembered", "table",
+                  {"query_mode": "aggregate", "groupby": ["conversation", "person", "channel"],
+                   "metrics": [remembered, sql_metric("MAX(created_at)", "Last remembered")],
+                   "row_limit": 50, "order_desc": True},
+                  DS_MEM)
+              files["charts/kinds_of_memory.yaml"] = chart(
+                  C_KIND, "What kind of thing is remembered", "pie",
+                  {"groupby": ["kind"], "metric": remembered, "row_limit": 25},
+                  DS_MEM)
+              files["charts/latest_memories.yaml"] = chart(
+                  C_LATEST, "Latest memories", "table",
+                  {"query_mode": "raw",
+                   "all_columns": ["created_at", "channel", "conversation", "kind", "excerpt"],
+                   "order_by_cols": ['["created_at", false]'],
+                   "row_limit": 50},
+                  DS_MEM)
+              files["charts/ingest_queue.yaml"] = chart(
+                  C_QUEUE, "Ingest queue by day and outcome", "echarts_timeseries_bar",
+                  {"x_axis": "created_at", "time_grain_sqla": "P1D",
+                   "metrics": [sql_metric("COUNT(*)", "Operations")],
+                   "groupby": ["status"], "row_limit": 10000},
+                  DS_QUEUE)
+              files["charts/extraction_calls.yaml"] = chart(
+                  C_EXTRACT, "Extraction calls by model and outcome", "table",
+                  {"query_mode": "aggregate", "groupby": ["model", "operation", "status"],
+                   "metrics": [sql_metric("COUNT(*)", "Calls"),
+                               sql_metric("AVG(duration_ms)", "Avg duration (ms)")],
+                   "row_limit": 50, "order_desc": True},
+                  DS_EXTRACT)
+
+              chart_names = {
+                  C_PER_DAY: "Memories written per day",
+                  C_CHANNEL: "Where a memory came from",
+                  C_PER_DAY_CHANNEL: "Memories per day by channel",
+                  C_CONVERSATIONS: "Conversations remembered",
+                  C_KIND: "What kind of thing is remembered",
+                  C_LATEST: "Latest memories",
+                  C_QUEUE: "Ingest queue by day and outcome",
+                  C_EXTRACT: "Extraction calls by model and outcome",
+              }
+              order = [C_PER_DAY, C_CHANNEL, C_PER_DAY_CHANNEL, C_CONVERSATIONS,
+                       C_KIND, C_LATEST, C_QUEUE, C_EXTRACT]
+              rows = len(order) // 2
+              position = {
+                  "DASHBOARD_VERSION_KEY": "v2",
+                  "ROOT_ID": {"type": "ROOT", "id": "ROOT_ID", "children": ["GRID_ID"]},
+                  "GRID_ID": {"type": "GRID", "id": "GRID_ID",
+                              "children": ["ROW-" + str(r + 1) for r in range(rows)],
+                              "parents": ["ROOT_ID"]},
+                  "HEADER_ID": {"id": "HEADER_ID", "type": "HEADER",
+                                "meta": {"text": "Memory"}},
+              }
+              for r in range(rows):
+                  row_id = "ROW-" + str(r + 1)
+                  kids = []
+                  for c in range(2):
+                      i = r * 2 + c
+                      node = "CHART-" + str(i + 1)
+                      kids.append(node)
+                      position[node] = {
+                          "type": "CHART", "id": node, "children": [],
+                          "parents": ["ROOT_ID", "GRID_ID", row_id],
+                          # chartId is the exporting instance's chart id; the importer maps
+                          # it to the imported chart by uuid and fails without it
+                          "meta": {"uuid": order[i], "chartId": i + 1, "width": 6, "height": 50,
+                                   "sliceName": chart_names[order[i]]},
+                      }
+                  position[row_id] = {"type": "ROW", "id": row_id, "children": kids,
+                                      "parents": ["ROOT_ID", "GRID_ID"],
+                                      "meta": {"background": "BACKGROUND_TRANSPARENT"}}
+
+              files["dashboards/memory.yaml"] = {
+                  "dashboard_title": "Memory",
+                  "description": ("What the estate remembers, where it came from and whether it is "
+                                  "still being written. One store behind every surface."),
+                  "css": "",
+                  "slug": "memory",
+                  "uuid": DASH,
+                  "position": position,
+                  "metadata": {"color_scheme": "supersetColors",
+                               "native_filter_configuration": []},
+                  "version": "1.0.0",
+                  "published": True,
+              }
+
+              with zipfile.ZipFile("/tmp/memory-assets.zip", "w") as bundle:
+                  for path, doc in files.items():
+                      bundle.writestr("memory_seed/" + path,
+                                      yaml.safe_dump(doc, sort_keys=False))
+              print("BUNDLE-RENDERED", len(files), "files")
+              RENDER
+
+              # Superset 6.1 ships no assets importer command, and `import-dashboards` demands a
+              # username, so this calls the class that command wraps and owns the result with the
+              # first active Admin (no username typed into the manifest).
+              python3 - <<'IMPORT'
+              from zipfile import ZipFile
+
+              from flask import g
+
+              from superset.app import create_app
+
+              app = create_app()
+              with app.app_context():
+                  from superset import security_manager
+                  from superset.commands.dashboard.importers.dispatcher import (
+                      ImportDashboardsCommand,
+                  )
+                  from superset.commands.importers.v1.utils import get_contents_from_bundle
+
+                  admin = security_manager.find_role("Admin")
+                  owners = [u for u in (admin.user if admin else []) if u.active]
+                  g.user = owners[0] if owners else None
+                  with ZipFile("/tmp/memory-assets.zip") as bundle:
+                      contents = get_contents_from_bundle(bundle)
+                  ImportDashboardsCommand(contents, overwrite=True).run()
+                  print("BUNDLE-IMPORTED", len(contents), "files, owner:",
+                        g.user.username if g.user else "none")
+              IMPORT
+
+              # Receipt: prove the rows landed, and that the page can actually read the store --
+              # a dashboard that imports cleanly over an unreachable database is a page of errors.
+              python3 - <<'VERIFY'
+              from superset.app import create_app
+
+              app = create_app()
+              with app.app_context():
+                  from superset import db
+                  from superset.models.core import Database
+                  from superset.models.dashboard import Dashboard
+
+                  dash = (
+                      db.session.query(Dashboard)
+                      .filter_by(uuid="7a1c33d2-6b40-4e19-9f52-3c8e1d740013")
+                      .one()
+                  )
+                  print("MEMORY-SEEDED", dash.dashboard_title, "charts:", len(dash.slices))
+                  assert len(dash.slices) == 8, "expected 8 charts on the Memory dashboard"
+
+                  store = (
+                      db.session.query(Database)
+                      .filter_by(uuid="7a1c33d2-6b40-4e19-9f52-3c8e1d740001")
+                      .one()
+                  )
+                  # sqlalchemy 2 removed Engine.execute, so this opens a connection and passes
+                  # a text() statement -- the form that works on both 1.4 and 2.x.
+                  from sqlalchemy import text
+
+                  with store.get_sqla_engine() as engine, engine.connect() as conn:
+                      rows = conn.execute(
+                          text("SELECT count(*), max(created_at) FROM memory_units")).fetchone()
+                  print("MEMORY-READABLE units:", rows[0], "latest:", rows[1])
+              VERIFY
+      volumes:
+        - name: superset-config
+          secret:
+            secretName: superset-config
+        - name: superset-secrets
+          secret:
+            secretName: superset
+        - name: hindsight-db
+          secret:
+            secretName: hindsight-db-reader
+        - name: superset-home
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
