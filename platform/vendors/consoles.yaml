@@ -41,65 +41,6 @@ vendors:
       - { entry: litellm-upstream, field: OPENROUTER_API_KEY }
       - { entry: prospector-engine-env, field: OPENROUTER_API_KEY }
       - { entry: hermes-agent-env, field: OPENROUTER_API_KEY }
-    router:
-      lanes: |
-        - model_name: openrouter
-          litellm_params:
-            model: openrouter/deepseek/deepseek-chat
-            api_key: os.environ/OPENROUTER_API_KEY
-            timeout: 300
-
-        # crew#284: every direct consensus account (MiniMax, DeepSeek, Gemini) answered 429 on balance on
-        # 2026-08-26 while the OpenRouter account answered 200. These three route the same models through
-        # OpenRouter and sit first in each fallback chain, so consensus survives one empty account.
-        - model_name: minimax-or
-          litellm_params:
-            model: openrouter/minimax/minimax-m2
-            api_key: os.environ/OPENROUTER_API_KEY
-            timeout: 300
-
-        - model_name: deepseek-or
-          litellm_params:
-            model: openrouter/deepseek/deepseek-chat
-            api_key: os.environ/OPENROUTER_API_KEY
-            timeout: 300
-
-        - model_name: gemini-or
-          litellm_params:
-            model: openrouter/google/gemini-2.5-flash
-            api_key: os.environ/OPENROUTER_API_KEY
-            timeout: 300
-      cluster_lanes: |
-        # crew#659 CP3 (founder 2026-08-30, "GPT Researcher is the worker"): the research worker ranks
-        # what it scraped with an embedding model, and the router is the only door to a model (LAW 34).
-        # Served through OpenRouter, the one account that answered on 2026-08-30 05:3xZ when Google's
-        # prepaid credit was depleted (embed answered 429 RESOURCE_EXHAUSTED and had no fallback group).
-        # Endpoint and model id from https://openrouter.ai/docs/api-reference/embeddings (read
-        # 2026-08-30): POST /api/v1/embeddings, model openai/text-embedding-3-small. Callers ask for "embed".
-        - model_name: embed
-          litellm_params:
-            model: openai/openai/text-embedding-3-small
-            api_base: https://openrouter.ai/api/v1
-            api_key: os.environ/OPENROUTER_API_KEY
-            timeout: 120
-          model_info:
-            mode: embedding
-
-        # The same Google model bought through OpenRouter, and it exists for the reason `embed` moved
-        # there on 2026-08-30: one empty account must not take a capability off the estate. Both routes
-        # to this model were measured empty on 2026-08-30 -- Google answered 429 RESOURCE_EXHAUSTED
-        # "Your prepayment credits are depleted" on every image model, and /api/v1/credits returned
-        # total_credits 10 against total_usage 10.17171079 -- so this pair is what makes funding EITHER
-        # one enough. Model id and its presence as an image-output model read from
-        # openrouter.ai/api/v1/models on 2026-08-30, where it is one of eleven rows whose
-        # architecture.output_modalities contains "image".
-        - model_name: image-or
-          litellm_params:
-            model: openrouter/google/gemini-3.1-flash-image
-            api_key: os.environ/OPENROUTER_API_KEY
-            timeout: 300
-      fallbacks: |
-        - openrouter: [minimax, deepseek]
   deepseek:
     kind: secret
     secret: SEED_DEEPSEEK_API_KEY
@@ -242,6 +183,23 @@ vendors:
           model_info:
             max_input_tokens: 1048576
       cluster_lanes: |
+        # The research worker ranks what it scraped with an embedding model, and the router is
+        # the only door to a model (LAW 34, crew#659 CP3). It read that model through OpenRouter
+        # until 2026-09-04, when the founder ruled the estate buys model capacity direct and
+        # never through a reseller; Google sells this one direct on the key the lanes above
+        # already use. `dimensions: 1536` keeps the vector width the OpenRouter row produced, so
+        # a store sized for it needs no migration -- but the two models are different spaces, and
+        # anything embedded before today has to be embedded again to be comparable. Model id from
+        # https://ai.google.dev/gemini-api/docs/embeddings (read 2026-09-04).
+        - model_name: embed
+          litellm_params:
+            model: gemini/gemini-embedding-001
+            api_key: os.environ/GEMINI_API_KEY
+            dimensions: 1536
+            timeout: 120
+          model_info:
+            mode: embedding
+
         - model_name: vision
           litellm_params:
             model: gemini/gemini-2.5-flash
@@ -274,12 +232,6 @@ vendors:
         - gemini: [minimax, deepseek]
         - default: [minimax, deepseek]
         - fast: [minimax, deepseek]
-      cluster_fallbacks: |
-        # An image chain may only contain image models. Every other chain here ends in the cheap
-        # text model (cp30) and that is right for text; landing a picture request on a chat model
-        # would answer a caller waiting for bytes with prose, which is worse than a clean failure.
-        # So this chain is two ways to buy one Google model and stops there.
-        - image: [image-or]
   exa:
     kind: secret
     secret: SEED_EXA_API_KEY

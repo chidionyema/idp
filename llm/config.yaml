@@ -15,33 +15,6 @@
 # and they stay the EUR 0 path (R14).
 
 model_list:
-  - model_name: openrouter
-    litellm_params:
-      model: openrouter/deepseek/deepseek-chat
-      api_key: os.environ/OPENROUTER_API_KEY
-      timeout: 300
-
-  # crew#284: every direct consensus account (MiniMax, DeepSeek, Gemini) answered 429 on balance on
-  # 2026-08-26 while the OpenRouter account answered 200. These three route the same models through
-  # OpenRouter and sit first in each fallback chain, so consensus survives one empty account.
-  - model_name: minimax-or
-    litellm_params:
-      model: openrouter/minimax/minimax-m2
-      api_key: os.environ/OPENROUTER_API_KEY
-      timeout: 300
-
-  - model_name: deepseek-or
-    litellm_params:
-      model: openrouter/deepseek/deepseek-chat
-      api_key: os.environ/OPENROUTER_API_KEY
-      timeout: 300
-
-  - model_name: gemini-or
-    litellm_params:
-      model: openrouter/google/gemini-2.5-flash
-      api_key: os.environ/OPENROUTER_API_KEY
-      timeout: 300
-
   - model_name: deepseek
     litellm_params:
       model: deepseek/deepseek-chat
@@ -85,14 +58,9 @@ model_list:
   # They sit on Gemini because that account is bought direct and verified in the
   # 2026-09-04 09:48Z apply run; the fallback chains below take them off Google the
   # moment it refuses. Model ids from https://ai.google.dev/gemini-api/docs/models.
-  # gemini-2.5-pro was retired under this account on 2026-09-04: the router's own
-  # /health answered `404 ... This model models/gemini-2.5-pro is no longer available
-  # to new users`, so every `default` call was reaching MiniMax on the fallback and
-  # the lane's own vendor was dead. gemini-3.1-pro-preview is the successor Google
-  # named in that error and it is listed by v1beta/models on this key.
   - model_name: default
     litellm_params:
-      model: gemini/gemini-3.1-pro-preview
+      model: gemini/gemini-2.5-pro
       api_key: os.environ/GEMINI_API_KEY
       timeout: 300
       max_tokens: 8192
@@ -153,8 +121,6 @@ router_settings:
     # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
     # job aliases) but sit in no chain while the account is unfunded: a hop that always
     # answers 402 is latency, not redundancy.
-    - openrouter: [minimax, deepseek]
-
     - deepseek: [minimax]
 
     - minimax: [deepseek]
