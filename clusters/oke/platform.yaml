@@ -1324,9 +1324,12 @@ spec:
 # Oracle refuses the policy-only-beside-flannel arrangement in writing, so this row REPLACES the
 # datapath, and that is why it ships suspended rather than applied.
 #
-# The cutover is platform/calico/README.md and its first step is a cluster property Flux cannot
-# set: disable Oracle's flannel add-on, or the add-on controller reinstalls flannel underneath
-# Calico. Then remove kube-flannel-ds, then `suspend: false` here.
+# Calico is installed FIRST, while flannel is still routing. The order in Oracle's page --
+# remove flannel, then apply Calico -- deadlocks here: `tigera-operator` is an ordinary pod, so
+# with no CNI configuration on the node it can never start, and nothing would ever install the
+# replacement. calico-node runs on the host network and does not have that problem. So this row
+# is live, and the second half of the cutover is the one step Flux cannot take: disabling
+# Oracle's flannel add-on, which is what stops its controller putting flannel back.
 #
 # `wait: false` deliberately: the health of this row is the cluster's own network, and a
 # Kustomization that blocks waiting for the network it is installing has nothing left to report
@@ -1338,7 +1341,6 @@ metadata:
   name: calico
   namespace: flux-system
 spec:
-  suspend: true
   interval: 10m
   sourceRef:
     kind: GitRepository

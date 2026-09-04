@@ -22,15 +22,20 @@ rather than for one datapath swap.
 
 ## The order, and why each step is where it is
 
-1. **Disable Oracle's flannel add-on** on the cluster, so the add-on controller stops reinstalling
-   flannel. If this is skipped, flannel comes back underneath Calico and the two fight over the
-   same routes — the failure Oracle's sentence is about. This is a cluster property, not a
-   manifest: it is the one step Flux cannot take.
-2. **Remove the flannel daemonset.** `kube-flannel-ds` in `kube-system`.
-3. **Unsuspend this row.** Flux installs the operator, the operator writes the CNI configuration
-   and rolls `calico-node` onto both nodes on the same 10.244.0.0/16 VXLAN pool flannel used.
-4. **Prove it.** `bin/ns-fence-gate --live` refuses to report a pass while no CNI enforces policy,
-   so a clean line from it is the receipt that step 3 worked — not a guess from a quiet Flux.
+Oracle's page says remove flannel first and then apply Calico. That order deadlocks on this
+cluster: `tigera-operator` is an ordinary pod, so once the node has no CNI configuration it can
+never start, and nothing is left to install the replacement. The order below is the reverse, and
+the overlap between the two plugins lasts minutes rather than being the permanent arrangement
+Oracle refuses.
+
+1. **Install Calico while flannel still routes.** The Flux row is live, so this happens on merge.
+   The operator gets a flannel address and starts; `calico-node` runs on the host network and
+   rolls onto both nodes on the same 10.244.0.0/16 VXLAN pool flannel uses.
+2. **Disable Oracle's flannel add-on**, removing its resources. This is a cluster property rather
+   than a manifest, and it is the one step Flux cannot take. Leaving the add-on enabled is what
+   would make the overlap permanent, because its controller puts flannel back.
+3. **Prove it.** `bin/ns-fence-gate --live` refuses to report a pass while no CNI enforces policy,
+   so a clean line from it is the receipt — not a guess from a quiet Flux.
 
 ## What breaks the moment step 3 finishes, and it is not nothing
 

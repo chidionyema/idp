@@ -19,10 +19,12 @@
 # (docs.tigera.io/calico/latest/getting-started/kubernetes/requirements, read 2026-09-04). This
 # cluster serves 1.35.2, so the pairing is inside the tested set rather than beside it.
 #
-# THE FLUX ROW FOR THIS DIRECTORY IS SUSPENDED. Merging this file changes nothing on the cluster.
-# The cutover is the runbook in README.md, and its first step is disabling Oracle's flannel
-# add-on -- without that the add-on controller reinstalls flannel underneath Calico and the two
-# fight over the same routes, which is the failure Oracle's sentence above is about.
+# Order: Calico is installed while flannel is still routing, and flannel is removed after. Oracle's
+# page gives the opposite order, and it deadlocks on this cluster -- `tigera-operator` is an
+# ordinary pod, so with the CNI configuration already gone it could never start and nothing would
+# install the replacement. The overlap is minutes, and it ends with Oracle's flannel add-on being
+# disabled; leaving that add-on enabled is what would make the overlap permanent, which is the
+# arrangement Oracle's sentence above refuses.
 apiVersion: v1
 kind: Namespace
 metadata:
