@@ -1,49 +1,35 @@
-# RESUME HERE — 2026-09-04T22:2xZ, session 5f6f4e72
+# Checkpoint — session 36c9262c — lane: the estate's memory
 
-## What I am doing
-Building crew#843, the portal modernisation, myself. The founder read the specification and
-said "you may as well do it", so the DeepSeek handoff is off and this session builds it.
+## RESUME HERE
 
-Branch: `feat/portal-modernisation`, worktree at
-`$TMPDIR/.../scratchpad/wt-portal`, cut from `origin/main`.
-Remove the worktree when the pull request is merged — worktrees must not accumulate.
+The memory lane. Hindsight is the estate's memory store (namespace `hindsight`, on the one
+estate Postgres, database `hindsight`, one bank `hermes`); estate-mcp is the interface in front
+of it and holds no memory of its own.
 
-## The specification
-https://github.com/chidionyema/crew/issues/843 — ten checkpoints, six pull requests.
-Checkpoint one is the Health page at `/ops`, which he named as broken.
+Landed:
+- hermes-v2#76 — the one Telegram door recalls before it answers and retains after.
+- idp#1637 — three workloads were still calling the revoked DeepSeek lane; hindsight's
+  extraction model is now the `fast` alias.
+- idp#1640 — both Otto deployments carry the memory URL and the fence to reach it.
 
-## The two facts that shape every change
-- The portal is on Backstage's new frontend system. Pages are changed by declaring
-  extensions in a `createFrontendModule`, never by adding routes. Never convert
-  `backstage/packages/app/src/App.tsx` back to `<Route>` elements.
-- The Backstage UI stylesheet is loaded (`index.tsx:4`). The Health page looks wrong because
-  `modules/home/Ops.tsx` renders `@backstage/ui` and Material-UI `makeStyles` in one file,
-  not because a stylesheet is missing.
+Open right now:
+- **idp#1644** — main's offline-gate is red and blocks everything. Two gates disagreed with the
+  controller they predict: `bin/idp-envsubst-gate` ignored Flux's per-resource
+  `kustomize.toolkit.fluxcd.io/substitute: disabled` (platform/llm), and `bin/ns-fence-gate`
+  failed three namespaces that are declared in git, switched off, and correctly skipped by
+  `bin/idp-ns-fence-gen`. Both fixed, both fixtures still prove both ways.
+- **idp#1642** — `remember` / `recall` on the estate MCP, every check green, waiting only on
+  main going green so the merge does not inherit a red main.
+- **next** — the founder said the memory work "is just happening in the dark". The deliverable
+  is a Superset "Memory" dashboard seeded exactly like
+  `platform/observability/superset-boardroom-seed.yaml`, over the `hindsight` database:
+  memories per day, which channel they came from (`metadata->>'platform'` or `'surface'`),
+  which conversation and person, what kind of fact, the latest memories, the ingest queue from
+  `async_operations` and the extraction calls from `llm_requests`. Measured 2026-09-05:
+  `audit_log` is empty, so per-call retain/recall volume is not visible from it today.
+  Worktree for that work: `wt-mem3`, branch `feat/memory-in-the-open`.
 
-## Also open on this session
-crew#841, the break-glass bridge: cloud-init runs out of memory installing the Oracle CLI
-on a 1 GB machine, so the instance never joins the tailnet.
-
-## RESUME HERE — 2026-09-05T00:0xZ, session 36c9262c (idp lane)
-
-**Open:** idp#1632 (`fix/deepseek-lane-console-owned`, worktree `$SCRATCH/wt-ds`) — the DeepSeek
-model row leaves the rendered config so the founder can delete and replace its key in the LiteLLM
-console himself. Two acceptance checks read `llm/config.yaml` as the whole list of lanes the router
-serves; `sovereign/policy.py console_lanes()` now unions it with `platform/vendors/consoles.yaml`
-`router.console_lanes` and both pass. Waiting on `bdd-suites (acceptance)`. After it merges:
-`bin/idp-vault-put --unset litellm-upstream DEEPSEEK_API_KEY`, then remove the worktree.
-
-**Starting now:** `fix/dead-lane-consumers` (worktree `$SCRATCH/wt-mem`) — three workloads still
-name the dead `deepseek` lane: Hindsight's extraction model, the infra-crew verifier and
-otto-golden's bulk lane. All three move to `fast`.
-
-**Measured 2026-09-04 23:5xZ–2026-09-05 00:0xZ:** Hindsight is live on the one estate Postgres
-(bank `hermes`, 684 memory units, 15,054 links, 371 entities) and is the estate's memory provider,
-but writes have stopped: 268 units on 08-30, 154 on 09-02, 14 on 09-03, 1 on 09-04. Only
-`platform/hermes-agent` is wired to it (`HINDSIGHT_API_URL`); otto-gateway and otto-golden are not,
-and `otto/boot/pipeline.py` round-trips a memory fact without ever writing it. So the one door
-answers with no memory at all.
-
-**Next:** the specification for one permanent fast-retrieval memory layer on the Hindsight row —
-both Ottos, then crew, agents and k8sgpt, through a structured ingest/retrieval tool pair on the
-existing estate MCP server (ADR 0006). Build goes to DeepSeek.
+Still unapplied from the one-door ruling: `hermes-agent` is a second Telegram registrant
+(`platform/hermes-agent/gateway.yaml` TELEGRAM_WEBHOOK_URL). The pinned fork's polling
+behaviour must be read before that env is touched, or removing it drops the fork into
+long-polling and it steals the door from otto-gateway.
