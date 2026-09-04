@@ -1,0 +1,163 @@
+# Customer onboarding for external messaging integrations.
+# Crew#819: a fail-closed onboarding flow that writes the binding row,
+# stores the secret by reference, and proves events arrive before saying success.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: onboard-messaging-integration
+  title: Connect a messaging service
+  description: >-
+    Set up a messaging channel for your organisation. The integration is verified
+    by waiting for a test event to arrive — if nothing comes, it says so instead
+    of pretending it worked. Keys live in your vault, never in the form.
+  tags:
+  - integration
+  - onboarding
+  - channel
+spec:
+  owner: group:default/platform
+  type: service
+
+  parameters:
+    - title: Connect a messaging service
+      description: >-
+        Tell us which service you're connecting, which account on it, what to call
+        your organisation, and where your key already lives. Nothing leaves this page.
+      required:
+        - provider
+        - account
+        - organisation
+        - secretLocation
+      properties:
+        provider:
+          title: Which messaging service?
+          type: string
+          enum:
+            - slack
+            - teams
+            - discord
+            - telegram
+            - webhook
+          enumNames:
+            - Slack (your workspace)
+            - Microsoft Teams (your tenant)
+            - Discord (your server)
+            - Telegram (your bot)
+            - Webhook (any HTTP endpoint)
+          description: >-
+            The messaging service you want to receive events from. Each service has
+            its own setup guide that appears after verification.
+          ui:autofocus: true
+
+        account:
+          title: Which account on it?
+          type: string
+          description: >-
+            The account name or ID as it appears in the service. For Slack, this is
+            the workspace name. For Teams, your tenant domain. For Discord, the server
+            name. For Telegram, your bot's username. For webhooks, the endpoint URL.
+          pattern: '^.+$'
+
+        organisation:
+          title: What do you call your organisation?
+          type: string
+          description: >-
+            A friendly name for your organisation in this system. This appears in
+            logs and dashboards so your team knows which events are yours.
+          pattern: '^[a-zA-Z0-9][a-zA-Z0-9\s\-_]{0,62}[a-zA-Z0-9]$'
+
+        secretLocation:
+          title: Where does your key already live?
+          type: string
+          enum:
+            - vaultkv
+            - env
+            - aws-secrets-manager
+            - gcp-secret-manager
+          enumNames:
+            - Vault KV (our secret store)
+            - Environment variable
+            - AWS Secrets Manager
+            - Google Cloud Secret Manager
+          description: >-
+            Your API key or webhook secret lives in our existing secrets infrastructure.
+            You never paste a token into this form — you point to where it already is.
+            The form will ask for the exact path or variable name. This is deliberate:
+            we never hold credentials, your vault does.
+
+        secretPath:
+          title: The path or name
+          type: string
+          description: >-
+            The exact path in your secret store. For Vault KV: path/to/secret (without
+            the kv/ prefix). For env: the variable name. For AWS: the secret name.
+            For GCP: the secret ID.
+          pattern: '^.+$'
+
+  steps:
+    - id: validate
+      name: Validate the integration
+      action: http:fetch
+      input:
+        method: POST
+        url: ${{ secrets.INTEGRATION_API_URL }}/validate
+        headers:
+          Content-Type: application/json
+        body:
+          provider: ${{ parameters.provider }}
+          account: ${{ parameters.account }}
+          organisation: ${{ parameters.organisation }}
+          secretLocation: ${{ parameters.secretLocation }}
+          secretPath: ${{ parameters.secretPath }}
+
+    - id: wait-for-events
+      name: Wait for a test event
+      action: http:fetch
+      input:
+        method: GET
+        url: ${{ secrets.INTEGRATION_API_URL }}/events/wait?organisation=${{ parameters.organisation }}&timeout=30
+        headers:
+          Accept: application/json
+
+    - id: render-guide
+      name: Generate your setup guide
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          provider: ${{ parameters.provider }}
+          account: ${{ parameters.account }}
+          organisation: ${{ parameters.organisation }}
+          secretLocation: ${{ parameters.secretLocation }}
+          secretPath: ${{ parameters.secretPath }}
+          eventReceived: ${{ steps.wait-for-events.output.eventId }}
+
+  output:
+    links:
+      - title: Your setup guide
+        content: |
+          # ${{ parameters.organisation }} — ${{ parameters.provider }} integration
+
+          ## Status: Connected ✓
+
+          A test event arrived (ID: ${{ steps.wait-for-events.output.eventId }}).
+
+          ## What happens next
+
+          Events from ${{ parameters.account }} now flow to your organisation.
+
+          ## Troubleshooting
+
+          If events stop arriving:
+          1. Check the secret at ${{ parameters.secretLocation }} is still valid
+          2. Verify the account still has the integration installed
+          3. Contact your platform team with the organisation name above
+
+    text:
+      - title: What was created
+        content: |
+          - Organisation: ${{ parameters.organisation }}
+          - Provider: ${{ parameters.provider }}
+          - Account: ${{ parameters.account }}
+          - Secret: ${{ parameters.secretLocation }}/${{ parameters.secretPath }}
+          - Test event: ${{ steps.wait-for-events.output.eventId }}
