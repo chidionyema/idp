@@ -3448,3 +3448,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 📎 FACTS: 'function "banks_needing_consolidation" already exists with same argument types'; 'pods estate-db-copy-otto-gateway-r2-cxl97 is forbidden: exceeded quota' repeated for 43 minutes; otto-gateway pods crash on 'no pq wrapper available ... libpq library not found'
 📍 State: https://github.com/chidionyema/idp/pull/1537
 
+
+## 2026-09-04T17:29:21Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on me; crew#820 staged for his word, Google Workspace with Google for the bank check
+🟡 Active: crew#819 fully specced and handed to DeepSeek — command, portal page, guide, and the experience section that keeps our database columns off a customer's screen
+🟢 Done: caught that crew#819 as first written would have rebuilt working code — the binding upsert, the four-facts refusal, secret-by-reference and tenant isolation all already exist in hermes-v2 at 577cf23, so the ticket shrank to a door and a guide
+⚪ Pending: crew#820 estate-wide customer-readiness review, staged 60 minutes; first finding already measured
+🔧 TOUCHES: crew#819, #820, #834, #835, #838 only; no idp branch touched this session
+🔀 OVERLAP: session 5f6f4e72 owns prospector and estate-db; deepseek owns crew#819 and idp#1521
+📎 FACTS: Tailscale needs no hand step — oke-check.yml:206 exchanges the runner OIDC token under TAILSCALE_FEDERATED_CLIENT_ID (estate-config.yaml:68) and bin/idp-tailscale-policy pushes the ACL from git; the estate names one person in estate-config.yaml:50 FOUNDER_MAC_USER and in policy.hujson group:founder / tag:founder-mac
+📍 State: https://github.com/chidionyema/crew/issues/819#issuecomment-5544142759
+
