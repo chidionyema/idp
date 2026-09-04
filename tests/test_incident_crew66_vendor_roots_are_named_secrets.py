@@ -160,8 +160,11 @@ def test_a_missing_root_is_blind_for_that_vendor_only_and_the_exit_is_two(tmp_pa
         "BLIND   gemini" in r.stdout and "gh secret set SEED_GEMINI_API_KEY" in r.stdout
     )
     assert "1 blind" in r.stdout
+    # blind for that vendor only: gemini is missing from the vault writes, the other roots
+    # in the same run still land.
     assert (
-        "GEMINI_API_KEY" not in log.read_text() and "GEMINI_API_KEY" in log.read_text()
+        "GEMINI_API_KEY" not in log.read_text()
+        and "OPENROUTER_API_KEY" in log.read_text()
     )
 
 

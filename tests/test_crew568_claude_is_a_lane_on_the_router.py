@@ -51,7 +51,16 @@ def test_the_vendor_register_carries_no_anthropic_root():
     reg = yaml.safe_load((IDP / "platform/vendors/consoles.yaml").read_text())[
         "vendors"
     ]
-    assert "anthropic" not in reg, sorted(reg)
+    # Graded on what each row would do, not on the spelling of its key: a root is an
+    # Anthropic root when its name, its seed secret or the URL it verifies against is
+    # Anthropic's. R76 refuses a test that only asks whether a word appears in a file.
+    rows = [
+        name
+        for name, row in reg.items()
+        if "anthropic"
+        in (name + str(row.get("secret", "")) + str(row.get("verify", ""))).lower()
+    ]
+    assert rows == [], rows
 
 
 def test_nothing_that_runs_reads_an_anthropic_key():
