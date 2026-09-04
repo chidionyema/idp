@@ -51,8 +51,15 @@ data:
       cli: kubectl
 
     models:
-      watch: claude-haiku-4-5
-      work: claude-haiku-4-5
+      # These are LANE names on the estate router (platform/llm/config.yaml), never a vendor's
+      # model id. Measured 2026-09-04 against the running ConfigMap litellm-config-244dm67c88:
+      # the router serves claude, claude-fast, openrouter, minimax-or, deepseek-or, gemini-or,
+      # deepseek, minimax, minimax_m27, gemini, embed, image-or, vision, image -- and
+      # `claude-haiku-4-5`, which this file asked for, is not one of them, so every call the
+      # agent made was refused by the router as an unknown model. `gemini` is a lane the estate
+      # buys direct from the vendor, so it satisfies LAW 34 as well as fixing the fault.
+      watch: gemini
+      work: gemini
 
     dispatch:
       board: chidionyema/crew
