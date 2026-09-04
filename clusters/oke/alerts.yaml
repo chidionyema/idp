@@ -42,7 +42,28 @@ spec:
 # crew#406 row 4: the GitHub App (vault key github-app) was never created, so the github-app
 # ExternalSecret never became Ready, alerts-secret (wait: true) never became Ready, and `alerts`
 # was never applied: the Telegram channel was dead behind a credential it does not use. The
-# githubdispatch ledger has its own Kustomization; it waits on the App, nothing else waits on it.
+# githubdispatch ledger has its own Kustomization; it waits on the App, nothing else waits on it
+# -- but four more rows (drills, hermes-agent, infra-crew, mcp) have since grown a real dependsOn
+# on this one for the Secret its postBuild substitutes, so "nothing else waits on it" no longer
+# holds.
+#
+# Measured 2026-09-04: `wait: true` here has kustomize-controller kstatus-check every applied
+# object, including the ExternalSecret itself. Its own controller (external-secrets) can flip
+# that ExternalSecret's Ready condition to False on a vault template error -- e.g. a dataFrom
+# key going missing on refresh -- even while the Secret it already wrote stays valid and served
+# (creationPolicy Owner, deletionPolicy Retain: a failed *refresh* never deletes the existing
+# data). kstatus has no way to tell "stale but usable" from "never synced", so the Kustomization
+# sat Reconciling/HealthCheckFailed on a 10m loop for days, and the four dependants above sat
+# behind it on DependencyNotReady the whole time (kubectl describe kustomization alerts-github -n
+# flux-system: "health check failed ... timeout waiting for: [ExternalSecret/flux-system/github-app
+# status: 'InProgress']"; kubectl describe externalsecret github-app -n flux-system: "could not
+# execute template ... map has no entry for key installation_id" -- a vault-side sync defect,
+# not a manifest one, and out of this Kustomization's control).
+#
+# None of the three objects this path applies (ExternalSecret, Provider, Alert) is a workload
+# with pods; there is nothing here for `wait` to usefully block on. Apply-and-prune, same as the
+# CronJob rows below that carry no readiness of their own -- the App Secret's actual content is
+# a separate concern for whoever owns the vault-side github-app onboarding.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -57,5 +78,5 @@ spec:
     name: flux-system
   path: ./platform/alerts-github
   prune: true
-  wait: true
+  wait: false
   timeout: 10m
