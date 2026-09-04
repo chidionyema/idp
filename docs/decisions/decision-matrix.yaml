@@ -226,7 +226,11 @@ decisions:
   - slug: claude-on-the-router
     requirement: "a workload on the estate uses Claude through one platform layer, with the key born once by code and never on the Mac (crew#568 phase 1, crew#617)"
     date: 2026-08-29
-    status: proposed
+    status: rejected  # 2026-09-04: overturned by the founder, "estate will never use antropic
+                      # api keys ... final and end of". Every candidate below buys Anthropic API
+                      # access, which the estate does not do. Claude reaches the estate through
+                      # the Claude Max monthly subscription (`claude -p`); a workload that wants a
+                      # frontier model asks the router for the `default` lane (idp#1426).
     candidates:
       router-lane-direct:
         note: "claude / claude-fast lanes on the one LiteLLM router, ANTHROPIC_API_KEY in litellm-upstream from SEED_ANTHROPIC_API_KEY"
