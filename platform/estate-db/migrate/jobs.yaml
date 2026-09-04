@@ -205,10 +205,10 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: estate-db-copy-hindsight-r2
+  name: estate-db-copy-hindsight-r3
   namespace: hindsight
   labels:
-    app.kubernetes.io/name: estate-db-copy-hindsight-r2
+    app.kubernetes.io/name: estate-db-copy-hindsight-r3
     app.kubernetes.io/part-of: idp
     backstage.io/kubernetes-id: layer-estate-db
 spec:
@@ -216,7 +216,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: estate-db-copy-hindsight-r2
+        app.kubernetes.io/name: estate-db-copy-hindsight-r3
         app.kubernetes.io/part-of: idp
     spec:
       restartPolicy: Never
@@ -256,8 +256,31 @@ spec:
                           --no-owner --no-privileges --exclude-extension=vector --exclude-extension=pg_trgm \
                           -Fc -f /tmp/db.dump
                   PGPASSWORD="$(cat /new/password)"; export PGPASSWORD
-                  psql -h estate-rw.estate-db.svc.cluster.local -U hindsight -d hindsight -v ON_ERROR_STOP=1 \
-                       -c 'drop schema if exists public cascade' -c 'create schema public'
+                  # Not 'drop schema public cascade' here, which every other Job in this file
+                  # uses. hindsight's database carries the vector and pg_trgm extensions, both
+                  # of which live in public, and dropping the schema took them with it: the
+                  # restore then died on 'type "public.vector" does not exist' (2026-09-04), and
+                  # the role cannot put vector back because pgvector is not a trusted extension
+                  # and only a superuser may create it. So drop the application's own objects
+                  # and leave anything an extension owns where it is.
+                  psql -h estate-rw.estate-db.svc.cluster.local -U hindsight -d hindsight -v ON_ERROR_STOP=1 -c "
+                    do \$\$
+                    declare r record;
+                    begin
+                      for r in select c.relname, c.relkind from pg_class c
+                               join pg_namespace n on n.oid = c.relnamespace
+                               left join pg_depend d on d.objid = c.oid and d.deptype = 'e'
+                               where n.nspname = 'public' and d.objid is null
+                                 and c.relkind in ('r', 'p', 'v', 'm', 'S')
+                      loop
+                        execute format('drop %s if exists public.%I cascade',
+                                       case r.relkind when 'v' then 'view'
+                                                      when 'm' then 'materialized view'
+                                                      when 'S' then 'sequence'
+                                                      else 'table' end, r.relname);
+                      end loop;
+                    end
+                    \$\$;"
                   pg_restore -h estate-rw.estate-db.svc.cluster.local -U hindsight -d hindsight --no-owner --no-privileges --exit-on-error /tmp/db.dump
                   psql -h estate-rw.estate-db.svc.cluster.local -U hindsight -d hindsight -v ON_ERROR_STOP=1 \
                        -c 'create table estate_db_migration (copied_at timestamptz not null default now())' \

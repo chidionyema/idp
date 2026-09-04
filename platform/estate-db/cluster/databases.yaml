@@ -31,6 +31,13 @@ kind: Database
 metadata:
   name: hindsight
   namespace: estate-db
+  annotations:
+    # Bumped 2026-09-04 to make CloudNativePG reconcile this Database again. The copy Job had
+    # dropped schema public, which took the vector and pg_trgm extensions with it, and the
+    # controller does not notice an extension that disappears underneath an already-applied
+    # Database. Every reconcile issues CREATE EXTENSION IF NOT EXISTS for the list below, so an
+    # annotation change is enough to put them back.
+    estate.idp/extensions-reapplied: "2026-09-04"
 spec:
   cluster:
     name: estate
