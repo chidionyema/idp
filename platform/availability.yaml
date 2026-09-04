@@ -39,6 +39,16 @@ waivers:
       cache and the cooldown state, moving the failure rather than removing it; the remedy is
       Sentinel or a managed Redis, not a replica count.
     issue: chidionyema/idp#1184
+  - surface: flux-system/webhook-receiver
+    reason: >-
+      The service behind this route is Flux's own notification-controller, rendered by
+      clusters/oke/flux-system/gotk-components.yaml -- a path this gate does not scan, so it
+      reads as a backend nothing renders. A replica count is the wrong lever regardless: the
+      Flux controllers are deliberate singletons that hold a leader-election lease, and a
+      second one does not serve, it waits. What a lost webhook costs is latency, not delivery,
+      because the GitRepository still polls every minute underneath it.
+    issue: chidionyema/idp#544
+
 
 # ## front_doors
 # Every HTTPRoute names a Gateway in parentRefs, and something implements that Gateway. Nothing in

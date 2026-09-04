@@ -11,6 +11,8 @@ kind: HTTPRoute
 metadata:
   name: flux-webhook
   namespace: flux-system
+  annotations:
+    idp.estate/auth: github-hmac-signature
 spec:
   parentRefs:
     - name: prospector-edge
