@@ -7,9 +7,7 @@ resources:
 - backstage.yaml
 - cert-manager.yaml
 - chaos-mesh.yaml
-- commerce.yaml
 - dagster.yaml
-- demo-sandbox.yaml
 - edge.yaml
 - estate-db.yaml
 - event-bus.yaml
