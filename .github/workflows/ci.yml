@@ -18,8 +18,22 @@ jobs:
   # crew#584 CP-C: the 60 s gate every heavy job below waits for (fast-gate.yml).
   fast-gate:
     uses: ./.github/workflows/fast-gate.yml
+  # 2026-09-04: this job is 9 of the 9.5 minutes a pull request waits. Measured on run
+  # 33869529041: fast-gate 24 s, security-scan 47 s, portal-app 8 s, messaging-demo 25 s,
+  # bdd-suites 2m06 and 3m42, offline-gate 9m03. It walks the whole AGENTS.md rule table over
+  # the entire repository whatever the diff touches, so a three-line change waits the same nine
+  # minutes as a platform rewrite, and it was dropped from main's required checks earlier the
+  # same day for exactly that reason -- it was already advisory on pull requests and still held
+  # every run open.
+  #
+  # It now runs where it can still stop something landing and costs no one a wait: the merge
+  # queue (which builds the pull request on top of main and reruns the required checks before
+  # anything lands) and the push to main itself. A pull request's feedback is the four minutes
+  # the suites take; the rule table is graded on the merged state, which is the state that
+  # matters. Nothing is deleted -- this is a placement change, and `if:` is the switch.
   offline-gate:
     needs: fast-gate
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
