@@ -141,6 +141,17 @@ def main() -> int:
     exempt, flows, sizing = allow["exempt"], allow["flows"], allow["sizing"]
 
     every = (declared_namespaces() | set(measured) | set(flows)) - set(exempt)
+    # A ResourceQuota cannot be created into a namespace that does not exist yet, and Flux applies
+    # this directory as one set, so a single such file fails the whole reconcile and every fence
+    # on the cluster stops being updated. live-namespaces.txt is the record of what the cluster
+    # actually holds, so a namespace missing from it is declared in git but not yet applied -- it
+    # is fenced on the next run, once whatever owns it has created it. (Found live: ns-fences
+    # reported `ResourceQuota/commerce/ns-ceiling not found: namespaces "commerce" not found`, and
+    # commerce is a Kustomization that has never reconciled.) measured.json is deliberately not the
+    # test: it records usage, and an empty namespace that exists has no row in it.
+    live = {n.strip() for n in open(os.path.join(FENCES, "live-namespaces.txt")) if n.strip()}
+    pending = sorted(n for n in every if n not in live)
+    every -= set(pending)
     os.makedirs(NETWORK, exist_ok=True)
 
     for stale_dir in (FENCES, NETWORK):
@@ -155,6 +166,10 @@ def main() -> int:
         write(os.path.join(FENCES, f"{ns}.yaml"),
               [limitrange_doc(ns, allow["default_request"], over), quota_doc(ns, cap, over)])
         write(os.path.join(NETWORK, f"{ns}.yaml"), policy_docs(ns, flows.get(ns) or {}))
+
+    if pending:
+        print("note   idp-ns-fence-gen: not fenced, declared in git but not on the cluster: "
+              + ", ".join(pending))
 
     for d, note in ((FENCES, "the quota and the request defaults, applied to the cluster"),
                     (NETWORK, "the policies, held until a CNI enforces them")):
