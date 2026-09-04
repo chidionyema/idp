@@ -39,6 +39,7 @@ spec:
         - cilium-unchain
         - cilium-replace
         - helm-retry
+        - webhooks-restart
         - namespace-unstick
         - ghcr-pull-restore
         - k8sgpt-analyze
