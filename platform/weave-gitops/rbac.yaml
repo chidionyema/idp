@@ -1,0 +1,61 @@
+# WHO THE DASHBOARD ACTS AS.
+#
+# Weave GitOps does not hold a password and does not show a login screen. The estate's one login
+# already happened at the edge (decision 0003: OIDC at the gateway, never in an app), so the server
+# runs with --insecure-no-authentication-user=founder and impersonates the Kubernetes user
+# "founder" for every call. That flag is only safe behind an auth proxy, which is exactly where it
+# sits: the HTTPRoute in this directory attaches login-forward-auth, so an unauthenticated request
+# never reaches the pod. The vendor's own guide says the same
+# (website/docs/guides/anonymous-access.mdx: "It is designed to be used with other external
+# authentication systems like auth proxies").
+#
+# The rules below are what that user may do, and they are the whole blast radius of the button.
+# Read everything the dashboard draws; patch Flux's own objects, which is how Reconcile and
+# Suspend are implemented. No secrets: a deploy button has no reason to read a credential (LAW 21).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: weave-gitops-founder
+rules:
+  # Everything the dashboard draws, read-only.
+  - apiGroups: [""]
+    resources: [pods, pods/log, services, configmaps, events, namespaces, nodes, persistentvolumeclaims]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets, replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [get, list, watch]
+  - apiGroups: [apiextensions.k8s.io]
+    resources: [customresourcedefinitions]
+    verbs: [get, list, watch]
+  # Flux's objects. get/list/watch draws them; patch is the Reconcile and Suspend buttons, which
+  # write the annotation reconcile.fluxcd.io/requestedAt and the field spec.suspend and nothing
+  # else. Both of those fields are themselves declared in git for every row in
+  # clusters/oke/platform.yaml, so the parent Kustomization puts them back within its interval:
+  # the dashboard cannot leave the cluster in a state git does not describe.
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+      - kustomize.toolkit.fluxcd.io
+      - helm.toolkit.fluxcd.io
+      - notification.toolkit.fluxcd.io
+      - image.toolkit.fluxcd.io
+    resources: ["*"]
+    verbs: [get, list, watch, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: weave-gitops-founder
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: weave-gitops-founder
+subjects:
+  - kind: User
+    name: founder
+    apiGroup: rbac.authorization.k8s.io

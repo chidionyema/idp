@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# idp-otlp-headers: print the Authorization header a program off the cluster needs to post OTLP
+# to signoz.<zone>/v1/{traces,metrics,logs}, as JSON on stdout. Nothing else is printed, ever.
+#
+# Why this exists. The collector enforces no credential of its own, so the edge checks one:
+# Traefik basicAuth against the `science:<bcrypt>` line platform/oci/otlp-ingest.tf writes to
+# vault entry otlp-ingest-users (platform/observability/httproute.yaml, Middleware
+# otlp-basic-auth). Without the header the door answers 401, which is what the Mac's Claude Code
+# telemetry got. The plaintext half of that pair is vault entry otlp-ingest-password, written by
+# the same Terraform, and this reads it.
+#
+# Where the credential lives on the Mac. Not in a file. macOS already ships a secret store that
+# is encrypted at rest and unlocked with the login session, so the value is cached in the login
+# keychain under service `idp-otlp-ingest`, account `science`, and read back per call. That
+# matters because the OCI session this laptop uses to reach the vault expires within hours
+# (bin/idp-cloud answers BLIND once it has), while telemetry has to keep flowing; the keychain
+# copy survives that, and a rotation is one `--seed` away.
+#
+#   bin/idp-otlp-headers          {"Authorization":"Basic ..."} on stdout, exit 0
+#   bin/idp-otlp-headers --seed   read the vault (needs a live OCI session), cache, then print
+#   bin/idp-otlp-headers --check  say whether a credential is reachable; print no header
+#
+# Exit 0 ok, 1 no credential anywhere (caller sends no header and ingest stays 401), 2 BLIND.
+# Consumed by ~/.claude/settings.json otelHeadersHelper, which expects a JSON object of headers.
+set -euo pipefail
+
+IDP=$(cd -- "$(dirname -- "$0")/.." && pwd)
+CLOUD=${IDP_CLOUD:-$IDP/bin/idp-cloud}
+SERVICE=${IDP_OTLP_KEYCHAIN_SERVICE:-idp-otlp-ingest}
+USER_NAME=${IDP_OTLP_USER:-science}
+ENTRY=${IDP_OTLP_VAULT_ENTRY:-otlp-ingest-password}
+
+from_keychain() { security find-generic-password -s "$SERVICE" -a "$USER_NAME" -w 2>/dev/null; }
+
+from_vault() { # prints nothing on failure
+  local v
+  v=$("$CLOUD" secret get "$ENTRY" 2>/dev/null) || return 1
+  [ -n "$v" ] || return 1
+  security add-generic-password -U -s "$SERVICE" -a "$USER_NAME" -w "$v" >/dev/null 2>&1 || true
+  printf '%s' "$v"
+}
+
+mode=${1:-print}
+case "$mode" in
+  --seed) pw=$(from_vault) || { echo "BLIND   otlp-headers vault entry $ENTRY unreadable (no live OCI session?)" >&2; exit 2; } ;;
+  *)      pw=$(from_keychain) || pw=$(from_vault) || pw="" ;;
+esac
+
+if [ -z "$pw" ]; then
+  echo "FAIL    otlp-headers no credential: run bin/idp-otlp-headers --seed with a live OCI session" >&2
+  exit 1
+fi
+
+if [ "$mode" = "--check" ]; then
+  echo "ok      otlp-headers credential for $USER_NAME is reachable (${#pw} chars, not printed)"
+  exit 0
+fi
+
+printf '{"Authorization":"Basic %s"}\n' "$(printf '%s:%s' "$USER_NAME" "$pw" | base64 | tr -d '\n')"
