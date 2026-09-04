@@ -269,10 +269,18 @@ jobs:
           # skips it -- and this gate used to read that skip as a failure and
           # refuse the pull request. Every change outside the bdd surface was
           # red for a reason that had nothing to do with the change. LAW 38: a
-          # guard that refuses correct work is an outage. `failure` and
-          # `cancelled` are still red.
+          # guard that refuses correct work is an outage. `failure` is still red.
+          #
+          # `cancelled` is a pass too, since 2026-09-04. ci.yml cancels an
+          # in-flight run when a newer commit arrives, so a cancelled leg means
+          # only "a newer run is already grading this branch" -- it measures
+          # nothing about the code. This gate turned that into `bdd: FAIL
+          # (cancelled)`, exit 1, and the merge fence in rule-guard then read
+          # main's newest run as red and refused every merge in the estate
+          # while the whole Flux tree was stalled waiting for one of them.
+          # Same class as the `skipped` case above, one case short.
           case "$result" in
-            success|skipped) echo "bdd: pass" ;;
+            success|skipped|cancelled) echo "bdd: pass" ;;
             *) echo "bdd: FAIL ($result)"; exit 1 ;;
           esac
 
