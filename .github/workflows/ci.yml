@@ -18,8 +18,22 @@ jobs:
   # crew#584 CP-C: the 60 s gate every heavy job below waits for (fast-gate.yml).
   fast-gate:
     uses: ./.github/workflows/fast-gate.yml
+  # 2026-09-04: this job is 9 of the 9.5 minutes a pull request waits. Measured on run
+  # 33869529041: fast-gate 24 s, security-scan 47 s, portal-app 8 s, messaging-demo 25 s,
+  # bdd-suites 2m06 and 3m42, offline-gate 9m03. It walks the whole AGENTS.md rule table over
+  # the entire repository whatever the diff touches, so a three-line change waits the same nine
+  # minutes as a platform rewrite, and it was dropped from main's required checks earlier the
+  # same day for exactly that reason -- it was already advisory on pull requests and still held
+  # every run open.
+  #
+  # It now runs where it can still stop something landing and costs no one a wait: the merge
+  # queue (which builds the pull request on top of main and reruns the required checks before
+  # anything lands) and the push to main itself. A pull request's feedback is the four minutes
+  # the suites take; the rule table is graded on the merged state, which is the state that
+  # matters. Nothing is deleted -- this is a placement change, and `if:` is the switch.
   offline-gate:
     needs: fast-gate
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -48,20 +62,7 @@ jobs:
           pip install -q check-jsonschema sqlite-utils pyyaml dagster dagster-webserver
           pip install -q -r sovereign/requirements-dev.txt   # crew#219 R39: the bdd acceptance leg
           pip install -q "mkdocs<2" mkdocs-techdocs-core   # bin/idp-ci rung 8c: docs site builds --strict (ADR 0002)
-          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
-          # bin/idp-ci rung 9: helm + kyverno CLI judge HelmRelease renders against the ClusterPolicies
-          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
-          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/kyverno/kyverno/releases/download/v1.19.0/kyverno-cli_v1.19.0_linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin kyverno
-          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/fluxcd/flux2/releases/download/v2.9.4/flux_2.9.4_linux_amd64.tar.gz | sudo tar -xz -C /usr/local/bin flux   # crew#483: bin/idp-envsubst-gate
-          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.7.1/kustomize_v5.7.1_linux_amd64.tar.gz | sudo tar -xz -C /usr/local/bin kustomize
-          # bin/idp-ci rung 9c: kubeconform type-checks rung 9's render (idp#1027). Without it
-          # that rung is BLIND, which this job counts as a failure -- it never reads green unjudged.
-          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin kubeconform
-      - name: temporal cli (bin/idp-ci runs the same bdd suite; cp27 needs the dev server)
-        run: |
-          curl -sSf --retry 5 --retry-all-errors --retry-delay 2 https://temporal.download/cli.sh | sh -s -- --version 1.8.2
-          echo "$HOME/.temporalio/bin" >> "$GITHUB_PATH"
-          "$HOME/.temporalio/bin/temporal" --version
+      - uses: ./.github/actions/estate-tools
       - run: bin/idp-ci
         env:
           IDP_KYVERNO_POLICIES: ${{ runner.temp }}/kyverno-policies/deploy/k8s/policies
@@ -136,15 +137,13 @@ jobs:
       - name: tools
         run: |
           pip install -q -r sovereign/requirements.txt -r sovereign/requirements-dev.txt
-          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
-          # test_gate_langfuse_render runs bin/idp-kyverno-render for real: same pinned helm and kyverno as the idp-ci job
-          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
-          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/kyverno/kyverno/releases/download/v1.19.0/kyverno-cli_v1.19.0_linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin kyverno
-      - name: temporal cli (cp27 runs branch workflows on the SDK's local dev server)
-        run: |
-          curl -sSf --retry 5 --retry-all-errors --retry-delay 2 https://temporal.download/cli.sh | sh -s -- --version 1.8.2
-          echo "$HOME/.temporalio/bin" >> "$GITHUB_PATH"
-          "$HOME/.temporalio/bin/temporal" --version
+          # bin/sb builds sovereign/.venv on first use and skips the install when the directory
+          # already exists. Under `pytest -n auto` several xdist workers reach that check at the
+          # same moment: the first creates the venv, the others see it and exec straight into a
+          # python whose pip install is still running, so `import temporalio` fails. Building it
+          # once here, serially, is the fix -- the workers then all find a complete venv.
+          bin/sb --help >/dev/null 2>&1 || true
+      - uses: ./.github/actions/estate-tools
       - name: acceptance suite (strict on PRs to main)
         if: matrix.suite == 'acceptance'
         env:

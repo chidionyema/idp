@@ -2,9 +2,14 @@
 
 This file is the version-controlled boundary for agent work in `idp` (crew #180, CP6).
 The estate's laws live in `~/AGENTS.md`; this file holds only what is specific to this
-repo, and every rule here is machine-checked. A rule with no gate is a wish (LAW 44), so
-the table below is not prose: `bin/idp-ci` parses it, runs each gate on its two fixtures,
-and fails if any gate does not refuse the bad case and pass the good one in the same run.
+repo. Each row names the gate that enforces it and the two fixtures that document what the
+gate calls bad and good.
+
+The rung that re-ran every gate against those two fixtures on every single run was deleted on
+2026-09-04 (founder: "run each of the nine gates in the AGENTS.md table against its two
+fixtures ... this is stupid"). It graded this file's own fixtures, so no defect in the estate
+could ever fail it and no change to the estate could ever pass it differently. The gates
+themselves still run, against the repository, where a real defect can trip them.
 
 Row format, one rule per row. `gate` is a shell function or command defined in `bin/idp-ci`;
 `must-fail` and `must-pass` are paths relative to this file.
@@ -30,8 +35,7 @@ every entity reference in it must resolve to an entity something defines
 (`bin/catalog-refcheck`, proved both ways in the same run). Those run unconditionally in
 `bin/idp-ci`.
 
-Adding a rule: add a row, add both fixtures, run `bin/idp-ci`. A row whose gate cannot
-tell the fixtures apart fails CI, so a rule cannot be written without its proof.
+Adding a rule: add a row, add both fixtures, run `bin/idp-ci`.
 
 ## Platform queries go through the estate MCP server (ADR 0006)
 

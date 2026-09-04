@@ -1,0 +1,31 @@
+name: estate tools
+description: >
+  The pinned CLIs bin/idp-ci and the bdd suites shell out to. They were curl'd fresh from six
+  release servers in every job of every run -- measured 2026-09-04 at 40s a job across three
+  jobs, for seven files whose versions are literals in this file. Cached on those versions, a
+  warm run copies them out of the runner cache and touches no network at all; a version bump
+  here misses once and then stays warm.
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: cache
+      with:
+        path: ~/.cache/estate-tools
+        key: estate-tools-${{ runner.os }}-conftest0.62.0-helm3.19.0-kyverno1.19.0-flux2.9.4-kustomize5.7.1-kubeconform0.8.0-temporal1.8.2
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        d=~/.cache/estate-tools; mkdir -p "$d"
+        curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | tar -xz -C "$d" conftest
+        curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz | tar -xz -C "$d" --strip-components=1 linux-amd64/helm
+        curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/kyverno/kyverno/releases/download/v1.19.0/kyverno-cli_v1.19.0_linux_x86_64.tar.gz | tar -xz -C "$d" kyverno
+        curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/fluxcd/flux2/releases/download/v2.9.4/flux_2.9.4_linux_amd64.tar.gz | tar -xz -C "$d" flux
+        curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.7.1/kustomize_v5.7.1_linux_amd64.tar.gz | tar -xz -C "$d" kustomize
+        curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | tar -xz -C "$d" kubeconform
+        curl -sSf --retry 5 --retry-all-errors --retry-delay 2 https://temporal.download/cli.sh | sh -s -- --version 1.8.2
+        cp "$HOME/.temporalio/bin/temporal" "$d/temporal"
+        chmod +x "$d"/*
+    - shell: bash
+      run: echo "$HOME/.cache/estate-tools" >> "$GITHUB_PATH"
