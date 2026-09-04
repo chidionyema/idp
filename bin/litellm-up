@@ -81,7 +81,7 @@ if [ ! -f "$ENVF" ]; then
   # Only the upstream keys this proxy needs. Decrypting 22 secrets into a file that only
   # needs 5 is a blast radius nobody chose.
   age -d -i "$AGE_ID" "$AGE_BLOB" \
-    | grep -E '^(MINIMAX_API_KEY|DEEPSEEK_API_KEY|OPENROUTER_API_KEY|GEMINI_API_KEY|ANTHROPIC_API_KEY)=' \
+    | grep -E '^(MINIMAX_API_KEY|DEEPSEEK_API_KEY|OPENROUTER_API_KEY|GEMINI_API_KEY)=' \
     > "$ENVF"
   {
     echo "LITELLM_MASTER_KEY=sk-$(openssl rand -hex 24)"
@@ -97,7 +97,7 @@ fi
 # Which upstreams actually have a credential. NAMES only -- a missing key is a routing
 # fact the operator needs, and the value is never the way to report it.
 log "upstream credentials present:"
-for k in MINIMAX_API_KEY DEEPSEEK_API_KEY OPENROUTER_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY; do
+for k in MINIMAX_API_KEY DEEPSEEK_API_KEY OPENROUTER_API_KEY GEMINI_API_KEY; do
   if grep -q "^$k=." "$ENVF"; then echo "    $k    present"; else echo "    $k    MISSING - that tier will fail over"; fi
 done
 
