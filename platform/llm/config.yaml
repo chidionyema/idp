@@ -131,17 +131,33 @@ router_settings:
     # "Token Plan usage limit reached ... (2056)", request id 06ea54a72199e6818ce20d8bf90b4102
     # (the key authenticates; that account's plan is spent). Those two were each other's only
     # fallback, so a cheap turn walked deepseek -> minimax -> deepseek and died. Gemini
-    # answered HTTP 200 in the same sweep, so every chain now ends in a lane that was measured
-    # answering rather than in a two-node cycle of dead ones -- the same rule the note above
-    # already states, applied to the pair that has since gone dark: a hop that always fails is
-    # latency, not redundancy. Nothing here changes a credential.
+    # answered HTTP 200 in the same sweep, so Gemini goes into every chain ahead of the pair
+    # that has gone dark -- the same rule the note above already states: a hop that always
+    # fails is latency, not redundancy. Nothing here changes a credential.
+    #
+    # 2026-09-04 21:5xZ, re-measured from inside the router pod against each vendor's own API
+    # with the key this pod mounts: MiniMax has moved on from the plan limit above and now
+    # answers 401 `invalid api key (2049)` on https://api.minimax.io/v1/chat/completions
+    # (request id 06ea7071f3bfa650df549152c286372b); its native endpoint answers HTTP 200 with
+    # `base_resp.status_code 2049` in the body, which is the same refusal wearing a 200, so a
+    # probe that grades only the HTTP status reads that account as healthy. DeepSeek still
+    # answers 401. Gemini still answers. The router's own throughput says the same thing:
+    # 5.85M tokens in the 16:00Z hour, 193k at 19:00Z, 5.2k at 20:00Z, 24 tokens across 32
+    # calls at 21:00Z. This is why Otto takes the founder's Telegram message and answers
+    # nothing: hermes-agent asks for `minimax`, and its only fallback was `deepseek`.
+    #
+    # Gemini goes in front of the dead pair rather than after it. The cheap model is still the
+    # last hop of every chain it does not head, which is the rule sovereign cp30 grades and the
+    # `[routing] cheap` line of AGENTS.md declares; putting Gemini ahead of it means a turn
+    # reaches a lane that answers on the second hop instead of walking two refusals first.
+    # Changing which lane is `cheap` is the founder's call, not this file's, so it is untouched.
     - deepseek: [minimax, gemini]
 
-    - minimax: [deepseek, gemini]
+    - minimax: [gemini, deepseek]
 
     - gemini: [minimax, deepseek]
-    - default: [minimax, deepseek, gemini]
-    - fast: [minimax, deepseek, gemini]
+    - default: [gemini, minimax, deepseek]
+    - fast: [gemini, minimax, deepseek]
 
   # Alias, not a model row (R75, founder 2026-09-03). The Kimi lane is console-owned: the
   # founder brought the key through the LiteLLM console on 2026-09-04 and it is stored
