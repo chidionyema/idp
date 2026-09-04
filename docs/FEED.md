@@ -3,28 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-02T19:53:18Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: DAGSTER THREAD CLOSED — truth PR merged on the founder's approve (merge bf4da6d6): values now spell out the exec health-check with his 30s timeout that the chart actually renders, inert grpc keys removed, incident test refuses handler keys the chart drops; cluster already green under this exact config (pods 1/1+1/1 zero restarts, HelmRelease v3, kustomization True)
-🟡 Active: short read-only confirm that the kustomization applies the final revision (identical rendered manifests, no roll expected)
-🔴 Blocked: none
-⚪ Pending: login-drill hourly greens accumulating for crew#516 CP1 (window opened 18:4xZ)
-🔧 TOUCHES: idp main via merged PRs only; cluster reads only
-🔀 OVERLAP: notify and otto-staging kustomizations remain their own secret-class failures, untouched by this lane
-📎 FACTS: today's dagster chain on main: webserver bind 3000 with Service front door 80, then probe timings, then probe truth — three merges, all founder-approved
-📍 State: dagster green end to end; lane quiet
-
-
-## 2026-09-02T20:01:18Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: notify/otto-staging root cause MEASURED — both kustomizations stall on one missing secret each, nothing code-side broken; verdict-key-wall red is the designed wall probe
-🟡 Active: reported to founder: notify wants vault entry notify-apprise-founder-telegram (OCI 404) — his SEED_TELEGRAM_ALERTS_* repo secrets landed 11:59Z but the only writer is oke-check mode=apply's bootstrap-vendors step, skipped in his 12:13 mode=check dispatch; otto-staging wants Bitwarden secret otto-staging-telegram, never saved (human door, decision 0017, runbook docs/runbooks/otto-staging.md)
-🔴 Blocked: founder's two hands: dispatch oke-check mode=apply (deploys are his, R65) + save the Bitwarden secret from his phone
-⚪ Pending: after both: ExternalSecrets sync within their 10m refresh, deployments start, kustomizations go True; login-drill greens accumulating crew#516 CP1
-🔧 TOUCHES: none — reads only (cluster, gh run logs, repo files)
-🔀 OVERLAP: none
-📍 State: dagster lane closed green; notify/otto-staging awaiting the founder's two actions
-📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
-
-
 ## 2026-09-02T20:15:35Z · session 54539261 · lane .wt-dagster-port
 🟢 Done: otto-staging root cause fixed on a branch — MEASURED: OCI estate-vault entry otto-staging-telegram already holds fields token+webhook_secret (names-only read via laptop DEFAULT api-key profile), while the Bitwarden project holds nothing and the ExternalSecret never synced under either store; branch fix/otto-telegram-store (252b4a24) reverts #1127's store flip for this one entry (estate-vault, property token) + aligns the chain test, 4/4 green locally
 🟡 Active: founder's apply run 33677001751 in_progress (his own dispatch; seeds notify-apprise-founder-telegram via bootstrap-vendors); watcher bgvfoxllw follows it to ExternalSecret sync
@@ -3436,4 +3414,15 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: session 5f6f4e72 holds the idp lane, commerce and estate-db; deepseek owns crew#819 and crew#838
 📎 FACTS: Bus.durable_pull exists, is tested at otto/tests/cp1/test_durable_pull_guard.py and has zero callers; otto.boot's answer is a note tool (model="boot-deterministic-stub"), not a model call; process_update duplicates ingress/gateway.py::_mint, which is where the seam goes
 📍 State: https://github.com/chidionyema/crew/issues/768#issuecomment-5545693651
+
+
+## 2026-09-04T20:06:26Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1583 (auto-merge armed) -- the cluster's debugger, outside the cluster, on his phone
+🟢 Done: headlamp-server running under launchd on the Mac against Oracle's managed OKE control plane; two in-cluster designs thrown away because both die with the thing they debug
+⚪ Pending: idp#1577 (commerce) still needs one word from him -- which payment provider
+🔧 TOUCHES: idp bin/idp-headlamp-mac, launchd/ai.estate.headlamp.plist.tmpl, docs/founder/debug-the-cluster-from-your-phone.md; Mac port 4466 bound to the tailnet address only
+🔀 OVERLAP: none -- session 85f840c5 holds crew#839/#840, deepseek holds crew#819/#838
+📎 FACTS: measured from the Mac's tailnet address at 21:05Z: UI 200, /api/v1/nodes returned both nodes, kube-system 16 pods; tailnet policy already grants group:founder -> tag:founder-mac:* so no new ACL was needed
+📍 State: https://github.com/chidionyema/idp/pull/1583
 
