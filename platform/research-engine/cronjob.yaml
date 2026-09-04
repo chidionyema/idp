@@ -66,7 +66,7 @@ spec:
               # Pinned to the commit that built it, so the image the cluster runs can be read
               # in the repository it came from. Built by the research-engine repository's own
               # image workflow on a GitHub runner, never on the founder's Mac (LAW 31).
-              image: ghcr.io/chidionyema/research-engine:sha-35bd196255ee17e872fefadc179196fb728760ba
+              image: ghcr.io/chidionyema/research-engine:sha-80040fd15f298bd80369c99aea13e443fa4512bf
               command: ["/bin/sh", "-c"]
               args:
                 - |
