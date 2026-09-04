@@ -20,4 +20,4 @@ resources:
   - registration-reconciler.yaml
 images:
   - name: ghcr.io/chidionyema/hermes-agent
-    newTag: main-69-55ec247708ebbfb548fd1796a123e2404726d8ae # {"$imagepolicy": "flux-system:hermes-agent:tag"}
+    newTag: main-74-9b2f74d9fe9c7260e9473d0f7839c9aa07618c3c # {"$imagepolicy": "flux-system:hermes-agent:tag"}
