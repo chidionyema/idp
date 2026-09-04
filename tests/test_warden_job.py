@@ -8,13 +8,10 @@ These tests verify:
 """
 
 import os
-import re
 import sys
-from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 import yaml
 
 # Add platform to path
@@ -205,7 +202,6 @@ class TestWardenRedaction:
 
     def test_error_messages_are_redacted(self, monkeypatch, capsys):
         """Error messages from prove failures are redacted."""
-        import datetime
 
         SENTINEL = "sk-0123456789abcdef0123456789abcdef"
 
