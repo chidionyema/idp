@@ -1,18 +1,32 @@
 # Flux: what is applied
 
-Read from the cluster receipt taken at 2026-09-04T07:00:10Z. Every Kustomization and HelmRelease, with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose (temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has never graded.
+Read from the cluster receipt taken at 2026-09-04T08:00:10Z. Every Kustomization and HelmRelease, with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose (temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has never graded.
 
-**82 objects: 76 ready, 1 not ready, 0 unknown, 5 suspended.**
+**82 objects: 69 ready, 8 not ready, 0 unknown, 5 suspended.**
 
 ## Not ready right now
 
-- **Kustomization flux-system/notify** since 2026-09-04T06:53:51Z: Reconciliation in progress
+- **Kustomization flux-system/chaos** since 2026-09-04T07:51:56Z: dependency 'flux-system/observability' is not ready
+- **Kustomization flux-system/guacamole** since 2026-09-04T07:52:32Z: Namespace/guacamole dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.kyverno.svc-fail": failed to call webhook: Post "https://kyverno-svc.kyverno.svc:443/validate/fail?timeout=10s": context deadline exceeded 
+- **Kustomization flux-system/healthchecks** since 2026-09-04T07:52:35Z: Namespace/healthchecks dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.kyverno.svc-fail": failed to call webhook: Post "https://kyverno-svc.kyverno.svc:443/validate/fail?timeout=10s": context deadline exceeded 
+- **Kustomization flux-system/hermes-agent** since 2026-09-04T07:52:25Z: Namespace/hermes-agent dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.kyverno.svc-fail": failed to call webhook: Post "https://kyverno-svc.kyverno.svc:443/validate/fail?timeout=10s": context deadline exceeded 
+- **Kustomization flux-system/infra-crew** since 2026-09-04T07:52:38Z: Namespace/infra-crew dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.kyverno.svc-fail": failed to call webhook: Post "https://kyverno-svc.kyverno.svc:443/validate/fail?timeout=10s": context deadline exceeded 
+- **Kustomization flux-system/notify** since 2026-09-04T07:54:55Z: Reconciliation in progress
+- **Kustomization flux-system/observability** since 2026-09-04T07:52:28Z: ClusterRole/telemetry-coverage-reader dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.kyverno.svc-fail": failed to call webhook: Post "https://kyverno-svc.kyverno.svc:443/validate/fail?timeout=10s": context deadline exceeded 
+- **Kustomization flux-system/science** since 2026-09-04T07:50:47Z: dependency 'flux-system/observability' is not ready
 
 ## Every row
 
 | Kind | Namespace | Name | State | Applied revision | Since | Message |
 |---|---|---|---|---|---|---|
-| Kustomization | flux-system | notify | Not ready | main@7080c25 | 2026-09-04T06:53:51Z | Reconciliation in progress |
+| Kustomization | flux-system | chaos | Not ready | main@f1382cd | 2026-09-04T07:51:56Z | dependency 'flux-system/observability' is not ready |
+| Kustomization | flux-system | guacamole | Not ready | main@f1382cd | 2026-09-04T07:52:32Z | Namespace/guacamole dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.kyverno.svc-fail": failed to call webhook: Post "h |
+| Kustomization | flux-system | healthchecks | Not ready | main@f1382cd | 2026-09-04T07:52:35Z | Namespace/healthchecks dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.kyverno.svc-fail": failed to call webhook: Post |
+| Kustomization | flux-system | hermes-agent | Not ready | main@f1382cd | 2026-09-04T07:52:25Z | Namespace/hermes-agent dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.kyverno.svc-fail": failed to call webhook: Post |
+| Kustomization | flux-system | infra-crew | Not ready | main@f1382cd | 2026-09-04T07:52:38Z | Namespace/infra-crew dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.kyverno.svc-fail": failed to call webhook: Post " |
+| Kustomization | flux-system | notify | Not ready | main@ef2e174 | 2026-09-04T07:54:55Z | Reconciliation in progress |
+| Kustomization | flux-system | observability | Not ready | main@f1382cd | 2026-09-04T07:52:28Z | ClusterRole/telemetry-coverage-reader dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.kyverno.svc-fail": failed to cal |
+| Kustomization | flux-system | science | Not ready | main@f1382cd | 2026-09-04T07:50:47Z | dependency 'flux-system/observability' is not ready |
 | Kustomization | flux-system | commerce | Suspended |  |  |  |
 | Kustomization | flux-system | commerce-data | Suspended |  |  |  |
 | Kustomization | flux-system | event-bus | Suspended |  |  |  |
@@ -44,53 +58,46 @@ Read from the cluster receipt taken at 2026-09-04T07:00:10Z. Every Kustomization
 | HelmRelease | spire-mgmt | spire-crds | Ready | 0.6.1 | 2026-08-31T07:12:02Z |  |
 | HelmRelease | tailscale | tailscale-operator | Ready | 1.102.3 | 2026-09-02T16:32:30Z |  |
 | HelmRelease | temporal | temporal | Ready | 1.6.0 | 2026-08-29T19:01:39Z |  |
-| Kustomization | flux-system | alerts | Ready | main@7080c25 | 2026-09-04T06:50:46Z |  |
-| Kustomization | flux-system | alerts-github | Ready | main@7080c25 | 2026-09-04T06:50:31Z |  |
-| Kustomization | flux-system | alerts-secret | Ready | main@7080c25 | 2026-09-04T06:50:37Z |  |
-| Kustomization | flux-system | autoscaler | Ready | main@7080c25 | 2026-09-04T06:50:34Z |  |
-| Kustomization | flux-system | backstage | Ready | main@7080c25 | 2026-09-04T06:50:39Z |  |
-| Kustomization | flux-system | backstage-namespace | Ready | main@7080c25 | 2026-09-04T06:59:36Z |  |
-| Kustomization | flux-system | chaos | Ready | main@7080c25 | 2026-09-04T06:50:46Z |  |
-| Kustomization | flux-system | chaos-mesh | Ready | main@7080c25 | 2026-09-04T06:50:32Z |  |
-| Kustomization | flux-system | cluster-state | Ready | main@7080c25 | 2026-09-04T06:50:30Z |  |
-| Kustomization | flux-system | dagster | Ready | main@7080c25 | 2026-09-04T06:50:37Z |  |
-| Kustomization | flux-system | dns | Ready | main@7080c25 | 2026-09-04T06:50:35Z |  |
-| Kustomization | flux-system | drills | Ready | main@7080c25 | 2026-09-04T06:50:44Z |  |
-| Kustomization | flux-system | edge | Ready | main@7080c25 | 2026-09-04T06:59:30Z |  |
-| Kustomization | flux-system | estate-catalog | Ready | latest@sha256:82f278899756548537674edf7e | 2026-09-04T06:51:30Z |  |
-| Kustomization | flux-system | external-secrets | Ready | main@7080c25 | 2026-09-04T06:50:25Z |  |
-| Kustomization | flux-system | flux-system | Ready | main@7080c25 | 2026-09-04T06:59:19Z |  |
-| Kustomization | flux-system | gateway-api-crds | Ready | v1.5.1@e7677b7 | 2026-09-04T06:59:13Z |  |
-| Kustomization | flux-system | guacamole | Ready | main@7080c25 | 2026-09-04T06:50:42Z |  |
-| Kustomization | flux-system | healing | Ready | main@7080c25 | 2026-09-04T06:50:45Z |  |
-| Kustomization | flux-system | healing-analyzer | Ready | main@7080c25 | 2026-09-04T06:50:48Z |  |
-| Kustomization | flux-system | healthchecks | Ready | main@7080c25 | 2026-09-04T06:50:45Z |  |
-| Kustomization | flux-system | hermes-agent | Ready | main@7080c25 | 2026-09-04T06:55:44Z |  |
-| Kustomization | flux-system | hindsight | Ready | main@7080c25 | 2026-09-04T06:50:44Z |  |
-| Kustomization | flux-system | human-vault | Ready | main@7080c25 | 2026-09-04T06:50:30Z |  |
-| Kustomization | flux-system | identity | Ready | main@7080c25 | 2026-09-04T06:50:36Z |  |
-| Kustomization | flux-system | image-automation | Ready | main@7080c25 | 2026-09-04T06:50:43Z |  |
-| Kustomization | flux-system | infra-crew | Ready | main@7080c25 | 2026-09-04T06:50:48Z |  |
-| Kustomization | flux-system | keda | Ready | main@7080c25 | 2026-09-04T06:50:28Z |  |
-| Kustomization | flux-system | kyverno | Ready | main@7080c25 | 2026-09-04T06:59:14Z |  |
-| Kustomization | flux-system | llm | Ready | main@7080c25 | 2026-09-04T06:50:39Z |  |
-| Kustomization | flux-system | mcp | Ready | main@7080c25 | 2026-09-04T06:50:43Z |  |
-| Kustomization | flux-system | metrics-server | Ready | main@7080c25 | 2026-09-04T06:59:33Z |  |
-| Kustomization | flux-system | monitoring | Ready | main@7080c25 | 2026-09-04T06:50:40Z |  |
-| Kustomization | flux-system | monitoring-rules | Ready | main@7080c25 | 2026-09-04T06:50:48Z |  |
-| Kustomization | flux-system | observability | Ready | main@7080c25 | 2026-09-04T06:50:35Z |  |
-| Kustomization | flux-system | observability-collector | Ready | main@7080c25 | 2026-09-04T06:50:30Z |  |
-| Kustomization | flux-system | otto-golden | Ready | main@7080c25 | 2026-09-04T06:50:50Z |  |
-| Kustomization | flux-system | otto-golden-secret | Ready | main@7080c25 | 2026-09-04T06:50:40Z |  |
-| Kustomization | flux-system | priority-classes | Ready | main@7080c25 | 2026-09-04T06:59:18Z |  |
-| Kustomization | flux-system | prospector | Ready | main@5972126 | 2026-09-04T06:57:39Z |  |
-| Kustomization | flux-system | prospector-platform | Ready | main@7080c25 | 2026-09-04T06:50:28Z |  |
-| Kustomization | flux-system | reloader | Ready | main@7080c25 | 2026-09-04T06:50:36Z |  |
-| Kustomization | flux-system | robusta | Ready | main@7080c25 | 2026-09-04T06:50:32Z |  |
-| Kustomization | flux-system | scheduling | Ready | main@7080c25 | 2026-09-04T06:59:46Z |  |
-| Kustomization | flux-system | science | Ready | main@7080c25 | 2026-09-04T06:50:47Z |  |
-| Kustomization | flux-system | secret-store | Ready | main@7080c25 | 2026-09-04T06:50:28Z |  |
-| Kustomization | flux-system | spire | Ready | main@7080c25 | 2026-09-04T06:50:31Z |  |
-| Kustomization | flux-system | staging | Ready | main@7080c25 | 2026-09-04T06:59:21Z |  |
-| Kustomization | flux-system | tailscale | Ready | main@7080c25 | 2026-09-04T06:50:32Z |  |
-| Kustomization | flux-system | verification | Ready | main@7080c25 | 2026-09-04T06:50:34Z |  |
+| Kustomization | flux-system | alerts | Ready | main@ef2e174 | 2026-09-04T07:51:57Z |  |
+| Kustomization | flux-system | alerts-github | Ready | main@ef2e174 | 2026-09-04T07:51:52Z |  |
+| Kustomization | flux-system | alerts-secret | Ready | main@ef2e174 | 2026-09-04T07:51:53Z |  |
+| Kustomization | flux-system | autoscaler | Ready | main@ef2e174 | 2026-09-04T07:51:54Z |  |
+| Kustomization | flux-system | backstage | Ready | main@ef2e174 | 2026-09-04T07:51:53Z |  |
+| Kustomization | flux-system | backstage-namespace | Ready | main@ef2e174 | 2026-09-04T07:50:45Z |  |
+| Kustomization | flux-system | chaos-mesh | Ready | main@ef2e174 | 2026-09-04T07:51:50Z |  |
+| Kustomization | flux-system | cluster-state | Ready | main@ef2e174 | 2026-09-04T07:51:49Z |  |
+| Kustomization | flux-system | dagster | Ready | main@ef2e174 | 2026-09-04T07:51:52Z |  |
+| Kustomization | flux-system | dns | Ready | main@ef2e174 | 2026-09-04T07:51:56Z |  |
+| Kustomization | flux-system | drills | Ready | main@ef2e174 | 2026-09-04T07:51:54Z |  |
+| Kustomization | flux-system | edge | Ready | main@ef2e174 | 2026-09-04T07:51:19Z |  |
+| Kustomization | flux-system | estate-catalog | Ready | latest@sha256:0bfbbe901b68351d71b27ad788 | 2026-09-04T07:59:59Z |  |
+| Kustomization | flux-system | external-secrets | Ready | main@ef2e174 | 2026-09-04T07:51:45Z |  |
+| Kustomization | flux-system | flux-system | Ready | main@ef2e174 | 2026-09-04T07:50:48Z |  |
+| Kustomization | flux-system | gateway-api-crds | Ready | v1.5.1@e7677b7 | 2026-09-04T07:50:47Z |  |
+| Kustomization | flux-system | healing | Ready | main@ef2e174 | 2026-09-04T07:52:01Z |  |
+| Kustomization | flux-system | healing-analyzer | Ready | main@ef2e174 | 2026-09-04T07:52:02Z |  |
+| Kustomization | flux-system | hindsight | Ready | main@ef2e174 | 2026-09-04T07:52:01Z |  |
+| Kustomization | flux-system | human-vault | Ready | main@ef2e174 | 2026-09-04T07:51:53Z |  |
+| Kustomization | flux-system | identity | Ready | main@ef2e174 | 2026-09-04T07:51:54Z |  |
+| Kustomization | flux-system | image-automation | Ready | main@ef2e174 | 2026-09-04T07:52:00Z |  |
+| Kustomization | flux-system | keda | Ready | main@ef2e174 | 2026-09-04T07:51:50Z |  |
+| Kustomization | flux-system | kyverno | Ready | main@ef2e174 | 2026-09-04T07:50:46Z |  |
+| Kustomization | flux-system | llm | Ready | main@ef2e174 | 2026-09-04T07:51:59Z |  |
+| Kustomization | flux-system | mcp | Ready | main@ef2e174 | 2026-09-04T07:52:02Z |  |
+| Kustomization | flux-system | metrics-server | Ready | main@ef2e174 | 2026-09-04T07:51:51Z |  |
+| Kustomization | flux-system | monitoring | Ready | main@ef2e174 | 2026-09-04T07:51:56Z |  |
+| Kustomization | flux-system | monitoring-rules | Ready | main@ef2e174 | 2026-09-04T07:51:58Z |  |
+| Kustomization | flux-system | observability-collector | Ready | main@ef2e174 | 2026-09-04T07:51:49Z |  |
+| Kustomization | flux-system | otto-golden | Ready | main@ef2e174 | 2026-09-04T07:51:59Z |  |
+| Kustomization | flux-system | otto-golden-secret | Ready | main@ef2e174 | 2026-09-04T07:51:56Z |  |
+| Kustomization | flux-system | priority-classes | Ready | main@ef2e174 | 2026-09-04T07:50:45Z |  |
+| Kustomization | flux-system | prospector | Ready | main@5972126 | 2026-09-04T07:59:41Z |  |
+| Kustomization | flux-system | prospector-platform | Ready | main@ef2e174 | 2026-09-04T07:51:48Z |  |
+| Kustomization | flux-system | reloader | Ready | main@ef2e174 | 2026-09-04T07:51:51Z |  |
+| Kustomization | flux-system | robusta | Ready | main@ef2e174 | 2026-09-04T07:51:59Z |  |
+| Kustomization | flux-system | scheduling | Ready | main@ef2e174 | 2026-09-04T07:51:45Z |  |
+| Kustomization | flux-system | secret-store | Ready | main@ef2e174 | 2026-09-04T07:51:50Z |  |
+| Kustomization | flux-system | spire | Ready | main@ef2e174 | 2026-09-04T07:51:48Z |  |
+| Kustomization | flux-system | staging | Ready | main@ef2e174 | 2026-09-04T07:50:45Z |  |
+| Kustomization | flux-system | tailscale | Ready | main@ef2e174 | 2026-09-04T07:52:00Z |  |
+| Kustomization | flux-system | verification | Ready | main@ef2e174 | 2026-09-04T07:51:55Z |  |
