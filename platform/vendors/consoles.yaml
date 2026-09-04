@@ -35,6 +35,8 @@ vendors:
     page: https://openrouter.ai/settings/keys
     shape: "sk-or-v1-[0-9a-f]{64}"
     verify: { method: GET, url: https://openrouter.ai/api/v1/auth/key, headers: { Authorization: "Bearer {key}" } }
+    rotation: assisted  # OpenRouter's /api/v1/keys needs a provisioning key that is console-born
+    store_default: human-vault
     targets:
       - { entry: litellm-upstream, field: OPENROUTER_API_KEY }
       - { entry: prospector-engine-env, field: OPENROUTER_API_KEY }
@@ -104,6 +106,8 @@ vendors:
     page: https://platform.deepseek.com/api_keys
     shape: "sk-[0-9a-f]{32}"
     verify: { method: GET, url: https://api.deepseek.com/models, headers: { Authorization: "Bearer {key}" } }
+    rotation: assisted  # DeepSeek publishes no create-key API (measured 2026-09-04)
+    store_default: human-vault  # founder-pasted key
     targets:
       - { entry: litellm-upstream, field: DEEPSEEK_API_KEY }
       - { entry: prospector-engine-env, field: DEEPSEEK_API_KEY }
@@ -126,6 +130,8 @@ vendors:
     # probe is the proof, as for kimi.
     shape: "[A-Za-z0-9_.-]{20,}"
     verify: { method: GET, url: https://api.minimax.io/v1/models, headers: { Authorization: "Bearer {key}" } }
+    rotation: assisted  # MiniMax publishes no create-key API (R52)
+    store_default: human-vault
     targets:
       - { entry: litellm-upstream, field: MINIMAX_API_KEY }
       - { entry: prospector-engine-env, field: MINIMAX_API_KEY }
@@ -178,6 +184,8 @@ vendors:
       - https://api.kimi.com/coding/v1
       - https://api.moonshot.cn/v1
     verify: { method: GET, url: "{base}/models", headers: { Authorization: "Bearer {key}" } }
+    rotation: assisted  # Kimi publishes no create-key API
+    store_default: human-vault
     targets:
       - { entry: litellm-upstream, field: MOONSHOT_API_KEY }
       - { entry: litellm-upstream, field: MOONSHOT_API_BASE, derived: base }
@@ -198,6 +206,8 @@ vendors:
     page: https://aistudio.google.com/apikey
     shape: "AIza[A-Za-z0-9_-]{35}"
     verify: { method: GET, url: "https://generativelanguage.googleapis.com/v1beta/models?key={key}", headers: {} }
+    rotation: assisted  # Google key creation needs gcloud SSO
+    store_default: human-vault
     targets:
       - { entry: litellm-upstream, field: GEMINI_API_KEY }
     router:
@@ -214,14 +224,9 @@ vendors:
         # They sit on Gemini because that account is bought direct and verified in the
         # 2026-09-04 09:48Z apply run; the fallback chains below take them off Google the
         # moment it refuses. Model ids from https://ai.google.dev/gemini-api/docs/models.
-        # gemini-2.5-pro was retired under this account on 2026-09-04: the router's own
-        # /health answered `404 ... This model models/gemini-2.5-pro is no longer available
-        # to new users`, so every `default` call was reaching MiniMax on the fallback and
-        # the lane's own vendor was dead. gemini-3.1-pro-preview is the successor Google
-        # named in that error and it is listed by v1beta/models on this key.
         - model_name: default
           litellm_params:
-            model: gemini/gemini-3.1-pro-preview
+            model: gemini/gemini-2.5-pro
             api_key: os.environ/GEMINI_API_KEY
             timeout: 300
             max_tokens: 8192
@@ -281,6 +286,8 @@ vendors:
     page: https://dashboard.exa.ai/api-keys
     shape: "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
     verify: { method: POST, url: https://api.exa.ai/search, headers: { x-api-key: "{key}", Content-Type: application/json }, body: '{"query":"estate bootstrap","numResults":1}' }
+    rotation: assisted  # Exa publishes no create-key API
+    store_default: human-vault
     targets:
       - { entry: prospector-engine-env, field: EXA_API_KEY }
       - { entry: hermes-agent-env, field: EXA_API_KEY }
@@ -293,6 +300,8 @@ vendors:
     page: https://cursor.com/dashboard/integrations
     shape: "(key_|crsr_|cursor_)[A-Za-z0-9_-]{16,}"
     verify: { method: GET, url: https://api.cursor.com/v1/me, headers: { Authorization: "Bearer {key}" } }
+    rotation: assisted  # Cursor publishes no create-key API
+    store_default: human-vault
     targets:
       - { entry: hermes-agent-env, field: CURSOR_API_KEY }
   telegram:
@@ -301,6 +310,8 @@ vendors:
     page: https://t.me/BotFather
     shape: "[0-9]{8,10}:[A-Za-z0-9_-]{35}"
     verify: { method: GET, url: "https://api.telegram.org/bot{key}/getMe", headers: {} }
+    rotation: assisted  # BotFather has no HTTP API
+    store_default: human-vault
     targets:
       - { entry: hermes-agent-env, field: TELEGRAM_BOT_TOKEN, secret: SEED_TELEGRAM_HERMES_BOT_TOKEN }
       - { entry: flux-telegram, field: token, secret: SEED_TELEGRAM_ALERTS_BOT_TOKEN }
@@ -318,6 +329,8 @@ vendors:
       method: GET
       url: "https://api.telegram.org/bot{token}/getChat?chat_id={chat}"
       headers: {}
+    rotation: assisted  # BotFather has no HTTP API
+    store_default: human-vault
     targets:
       - { entry: notify-apprise-founder-telegram, field: token, secret: SEED_TELEGRAM_ALERTS_BOT_TOKEN, shape: "[0-9]{8,10}:[A-Za-z0-9_-]{35}" }
       - { entry: notify-apprise-founder-telegram, field: chat, secret: SEED_TELEGRAM_ALERTS_CHAT_ID, shape: "-?[0-9]{6,14}" }
@@ -327,6 +340,8 @@ vendors:
     page: https://dashboard.stripe.com/apikeys
     shape: "sk_(live|test)_[A-Za-z0-9]{24,}"
     verify: { method: GET, url: https://api.stripe.com/v1/balance, headers: { Authorization: "Bearer {key}" } }
+    rotation: assisted  # Stripe key creation needs dashboard
+    store_default: human-vault
     targets:
       - { entry: prospector-store-api-env, field: Stripe__SecretKey }
   google_oauth:
@@ -368,6 +383,8 @@ vendors:
       headers: { Content-Type: application/x-www-form-urlencoded }
       body: "grant_type=authorization_code&code=idp-bootstrap-probe&client_id={Authentication__Google__ClientId}&client_secret={Authentication__Google__ClientSecret}&redirect_uri=https://api.${ESTATE_ZONE}/signin-google"
       refuse_when: '"error"\s*:\s*"invalid_client"'
+    rotation: assisted  # Google publishes no create-OAuth-client API
+    store_default: human-vault
     # Nothing downstream changes. Kyverno secrets-not-from-env-vars refuses envFrom.secretRef and
     # secretKeyRef, so the store reads its secrets as FILES through KeyPerFile, which turns a file
     # named Authentication__Google__ClientId into the configuration key Authentication:Google:ClientId
