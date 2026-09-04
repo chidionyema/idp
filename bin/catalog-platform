@@ -219,6 +219,11 @@ LAYERS = {
         "The estate clock",
         "Runs the estate's schedules from the cluster, off the Mac; every run and its logs on one screen.",
     ),
+    "weave-gitops": (
+        "edge",
+        "Deploy button",
+        "Flux's own dashboard: every layer, the revision it is running, and a button that applies main now.",
+    ),
     "temporal": (
         "scheduling",
         "Workflows",
