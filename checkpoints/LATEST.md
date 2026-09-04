@@ -1,6 +1,6 @@
 # RESUME HERE
 
-2026-09-04T21:1xZ, session 5f6f4e72, lane idp.
+2026-09-04T21:03:32Z, session 5f6f4e72, lane idp.
 
 ## What is being built
 
@@ -11,7 +11,7 @@ works fir now t crete dependency on laptop ... we need t consider debugging fro 
 ## The design, after reading the VCN
 
 The bridge does **not** need a public IP and does **not** need `control_plane_allowed_cidrs`
-widened. Measured 2026-09-04T21:0xZ:
+widened. Measured 2026-09-04T21:03:32Z:
 
 - the cluster has a private control-plane endpoint at `10.0.0.11:6443` as well as the public
   `141.147.80.229:6443`;
