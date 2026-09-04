@@ -1,0 +1,44 @@
+# Alert rules for the API key warden (crew#832 CP3)
+# Three rules:
+#   1. VendorKeyInvalid - a key failed its proof
+#   2. VendorKeyUnchecked - warden hasn't reported inside its cron window
+#   3. VendorKeyWardenJobFailed - the warden job itself failed
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: api-key-warden
+  namespace: monitoring
+spec:
+  groups:
+    - name: estate.api-key-warden
+      rules:
+        - alert: VendorKeyInvalid
+          expr: estate_vendor_key_valid == 0
+          for: 10m
+          labels:
+            severity: critical
+            owner: idp
+          annotations:
+            summary: "Vendor key {{ $labels.vendor }} is invalid"
+            description: "The API key for vendor {{ $labels.vendor }} failed its proof check and is no longer valid. Replace it at the vendor's console and re-activate through the portal."
+        
+        - alert: VendorKeyUnchecked
+          expr: |
+            time() - estate_vendor_key_checked_timestamp > (4 * 3600)
+          for: 10m
+          labels:
+            severity: warning
+            owner: idp
+          annotations:
+            summary: "API key warden has not reported in over 4 hours"
+            description: "The api-key-warden job has not reported key status in over 4 hours. Check that the scheduled job is running and the pushgateway is reachable."
+        
+        - alert: VendorKeyWardenJobFailed
+          expr: kube_job_failed{job_name=~"api-key-warden.*"} > 0
+          for: 5m
+          labels:
+            severity: warning
+            owner: idp
+          annotations:
+            summary: "API key warden job failed"
+            description: "The api-key-warden Kubernetes job has failed. Check the job logs for details."
