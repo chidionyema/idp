@@ -23,10 +23,21 @@ simultaneously.
 
 ## What has to happen before this directory is wired in
 
-1. A CNI that enforces policy. The staged decision is Calico in policy-only mode beside flannel —
-   the configuration Project Calico documents for exactly this cluster shape, where flannel keeps
-   the networking it already does. It is the smaller road than replacing the CNI, and replacing the
-   CNI is the road that took coredns down here in idp#505 and had to be reverted in idp#514.
+1. A CNI that enforces policy, and on this cluster that is not a small change. Calico in
+   policy-only mode beside flannel was staged and is **ruled out by Oracle in writing**:
+   "Installing the Calico network policy engine alongside the flannel CNI plugin causes network
+   issues. For this reason, Kubernetes Engine does not support the installation of Calico
+   alongside the flannel CNI plugin."
+   (docs.oracle.com/en-us/iaas/Content/ContEng/Tasks/contengsettingupcalico.htm, read 2026-09-04).
+   Oracle's supported route is to replace flannel: disable the flannel cluster add-on, remove its
+   daemonset, and apply Calico — swapping the datapath under a running estate, which is the road
+   that took coredns down here in idp#505 and had to be reverted in idp#514. The alternative is a
+   cluster built on VCN-native pod networking, and Oracle is equally explicit that "after a cluster
+   has been created, you cannot change the CNI plugin you originally selected for it"
+   (contengpodnetworking.htm, same day), so that means recreating the cluster —
+   `bin/idp-oke-rebuild --teardown-rebuild`, with downtime for the run. `platform/oci/main.tf:15`
+   pins `cni_type = "flannel"` and line 13 pins `cluster_type = "basic"`.
+   Either way this is a founder decision, not a merge.
 2. A flow log from that CNI, read over a full cycle of the estate's scheduled work, so
    `../allowances.yaml` is corrected from observed traffic rather than from a grep.
 3. Re-run `bin/idp-ns-fence-gen`, add the row to `clusters/oke/platform.yaml`, and merge.
