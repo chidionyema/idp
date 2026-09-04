@@ -1458,6 +1458,27 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: layer-searxng
+  title: 'Search backend'
+  description: 'The estate''s own web search, keyless and internal: what the research engine and the grounding chain ask when they need to know which pages are about something.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=searxng'
+    estate/flux-kustomization: 'searxng'
+    estate/path: './platform/searxng'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-secret-store
   title: 'Vault connection'
   description: 'The cluster''s one root credential to the vault; every other secret is minted from it.'
