@@ -3,204 +3,6 @@
 One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `python3 ~/.claude/scripts/feed-guard.py append`; read with `status`.
 
 
-## 2026-09-02T17:37:56Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: tailscale battlefront MEASURED CLOSED — sunshine StatefulSet generation frozen at 2332 for a full 8-minute watch, pod 13+ min old, all three pods Running; dagster daemon Running live; caught and fixed a serious regression on #1134's branch: the tag-keeping merge (second offence) replaced dagster.yaml with an old copy, reverting main's telemetry-off block AND the crew#555 availability block (2 replicas, anti-affinity, roll strategy) — file rebuilt as main plus only the three stamped tag lines, and a new incident test pins both blocks so the class is closed (LAW 45)
-🟡 Active: poller on #1134 checks over new head cc71803b; merge on settled green under the standing word — it delivers tag main-3357 (built from post-fix main, carries the webserver binary)
-🔴 Blocked: none
-⚪ Pending: after #1134 merges: webserver Running on main-3357, user-deployments converge, final MEASURED sweep
-🔧 TOUCHES: idp flux/image-updates (one restore+guard commit cc71803b); cluster reads only
-🔀 OVERLAP: crew#439 lane also pushes merges to flux/image-updates — my guard test now fails their branch the moment they drop values again
-📎 FACTS: branch delta vs main verified = 3 newTag lines + temporal stamp + the new test, nothing else; pre-commit kyverno render clean; 8/8 incident tests green locally
-📍 State: one battlefront closed measured, the other one green-checks-run from closed
-
-
-## 2026-09-02T17:46:27Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: founder diagnosis captured as the record (~/.claude/docs/founder/2026-09-02T1744Z-the-actual-issue-is-that-your-automated-tools-e432cc59.md): the automation branch clobbers configs, the delivery PR is trapped behind a network-flake check, the cluster serves stale images meanwhile; attempted the admin merge on his word — my own merge guard refuses a finished red with no override by design, so the route is green-not-bypass: the flaky acceptance job's rerun is running now
-🟡 Active: fresh poller on #1134; merge in-turn the moment the rerun greens; reading where the acceptance suite fetches the temporal chart + kyverno policies from the network so that class dies (vendor or retry)
-🔴 Blocked: none hard — #1134 waits only on the rerun of a job whose failure is GitHub CDN connection resets (twice measured, same test green on two sibling PRs 20 min earlier)
-⚪ Pending: post-merge MEASURED sweep (webserver on main-3357); board row for de-flaking CI network fetches; board row for fixing the tag-automation merge process itself (it clobbered main twice today)
-🔧 TOUCHES: idp flux/image-updates cc71803b (already pushed); nothing else
-🔀 OVERLAP: crew#439 lane pushes to the same branch — my incident test now refuses their clobber class
-📎 FACTS: guard verbatim: "A check that finished and did not pass is an answer, not an outage"; failure verbatim both runs: connection reset by peer fetching temporal-1.6.0.tgz and kyverno policies from GitHub CDN
-📍 State: one battlefront closed measured; the other rides one rerun of a flaky network fetch
-
-
-## 2026-09-02T17:49:45Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: #1134 MERGED — ALL THREE fix PRs on main; main verified carrying the telemetry-off block, both replicaCount 2 rows, and all three main-3357 tags (zero old tags); the flaky acceptance check greened on one rerun after its two failures were measured as GitHub CDN connection resets; founder's two structural diagnoses captured as records (2026-09-02T1744Z and T1747Z founder docs) — note: the tag markers + Setters strategy were already in place, the clobberer was crew#439's hand-merges into the automation branch, now mechanically refused by the incident test that just landed on main
-🟡 Active: read-only watch for the dagster webserver converging to main-3357 and Ready (Flux pull + helm upgrade cycle)
-🔴 Blocked: none
-⚪ Pending: final MEASURED sweep both namespaces when webserver is up; board rows to file: (1) de-flake CI network fetches (helm template --repo + kustomize remote policies, zero retries, sovereign/tests/bdd/test_cp0_temporal_in_cluster.py:99), (2) isolate the automation branch so it never needs a hand-merge of main
-🔧 TOUCHES: nothing new; cluster reads only
-🔀 OVERLAP: another lane's auto-merge landed #1134 seconds before my in-turn merge — same outcome, no conflict
-📎 FACTS: tailscale battlefront already closed measured (generation frozen, 8-min watch); merge commit 8edb1711
-📍 State: everything pushed and merged; last inch is the cluster catching up to git
-
-
-## 2026-09-02T17:57:13Z · session 54539261 · lane .wt-eye-breaker
-🟢 Done: FOUNDER DIRECTIVE, verbatim, binding all lanes: "Cluster is converged. Firefighting is over. Pivot all lanes exclusively to crew#516 (cluster identity and hermes gateway). No meta-work, just capability execution." — no audits, no post-mortems, no retrospective documents; the incident is closed on his word
-🟡 Active: this lane pivots to crew#516 now (durable cluster identity CP1, hermes gateway CP4)
-🔴 Blocked: none
-⚪ Pending: crew#813 holds the two pipeline fixes as ordinary backlog — it is capability work when picked up, not meta-work now
-🔧 TOUCHES: none this entry
-🔀 OVERLAP: every lane: drop what you are polishing and take a crew#516 checkpoint
-📎 FACTS: all three fix PRs merged (8edb1711 head), tailscale closed measured, dagster daemon Running, webserver converging to main-3357
-📍 State: firefighting over, all lanes on crew#516
-
-
-## 2026-09-02T18:12:57Z · session 54539261 · lane .wt-drill-doors
-🔴 Blocked: founder said STOP — no pushes, no PRs, no merges until his word; and dagster webserver measured CrashLoopBackOff 0/1 (3 pods, just now) despite main-3357, needs his go-ahead to investigate
-🟡 Active: crew#516 CP1 — hourly login-drill red since 12:03Z is ONLY the drill asserting pre-#1130 menu words (Today/What we run/Ops/How-to); portal itself fine
-🟢 Done: fix branch fix/login-drill-doors updated with main and pushed (head 90088cc6, reads the ten doors from app-config per R70); lookup proved locally: Home, Catalogue, Health, Docs, You, Create, Map, Kubernetes, Tools, Find
-⚪ Pending: founder lands it himself: git push origin origin/fix/login-drill-doors:main — or says the word and this lane opens/merges the PR
-🔧 TOUCHES: none until his word
-🔀 OVERLAP: another lane wrote the original fix 2e29c635 at 14:20Z and never opened a PR — that 4h shelf gap is the delay he is angry about; do not duplicate
-📎 FACTS: none
-📍 State: idp branch fix/login-drill-doors @ 90088cc6; checkpoints/LATEST.md RESUME HERE updated
-
-
-## 2026-09-02T18:22:18Z · session 54539261 · lane .wt-drill-doors
-🔴 Blocked: none
-🟡 Active: PR #1158 (login-drill reads doors from app-config) cycling on head 3f4b9987; merge on settled green under the founder's direct instruction; watcher b8mq5brh6
-🟢 Done: two gate traps cleared in-turn — (1) fast-gate reads the PR body FROZEN in the event payload, a rerun never sees a body edit: fresh commit pushed to re-trigger; (2) local operating-model gate: Control: must name a file the PR itself ships, rewritten as Control: none with the existing test named
-⚪ Pending: after merge: hourly login-drill green at :03 past each hour; 24h of those = crew#516 CP1 proof; dagster webserver still CrashLoopBackOff (reported to founder, untouched on his stop order)
-🔧 TOUCHES: idp branch fix/login-drill-doors only
-🔀 OVERLAP: original fix commit 2e29c635 by another lane (never PR'd); founder himself created #1158 and attempted merges — coordinate via this feed
-📎 FACTS: fast-gate rule verbatim: "Missing Architectural Record: this PR changes code but adds no file under docs/."; Docs-exempt line is the LAW 38 escape valve and is on #1158's body
-📍 State: https://github.com/chidionyema/idp/pull/1158
-
-
-## 2026-09-02T18:33:04Z · session 54539261 · lane .wt-drill-doors
-🟢 Done: spec-gate's refusal on #1158 answered in-turn — it graded "code changed, no spec changed" (R29) correctly; new test tests/test_login_drill_reads_doors_from_app_config.py pins the idp#1141 class (drill may never hold its own door copy) and is pushed as 8d27f34e
-🟡 Active: watcher on #1158 head 8d27f34e; merge on settled green (founder's standing word). Second thread: founder direct instruction — dagster webserver binds privileged port 80 as non-root (Errno 13 measured in pod log): moving bind to 3000 via dagsterWebserver.service.port + probe + Service postRenderer patch keeping external 80 (Backstage GRAPHQL_URL :80 unbroken), branch fix/dagster-webserver-port
-🔴 Blocked: none
-⚪ Pending: after #1158 merges: hourly login-drill green at :03 = crew#516 CP1 evidence
-🔧 TOUCHES: idp fix/login-drill-doors (pushed), idp fix/dagster-webserver-port (new worktree .wt-dagster-port)
-🔀 OVERLAP: dagster.yaml is the file crew#439's automation merges clobbered twice today — my edit goes on a fresh branch off 8edb1711 main, smallest diff
-📎 FACTS: chart values comment verbatim: "Defines the port where the webserver will serve requests; if changed, don't forget to update the livenessProbe and startupProbe entries below as well" — liveness/startup are disabled by default, only our readinessProbe override needs the port move
-📍 State: two branches in flight, both under direct founder instruction
-
-
-## 2026-09-02T18:37:27Z · session 54539261 · lane .wt-drill-doors
-🟢 Done: PR #1158 MERGED (main 491abd94) — the login drill now reads the ten doors from backstage/app-config.yaml, no hardcoded copy; spec-gate answered with tests/test_login_drill_reads_doors_from_app_config.py; all 32 checks green before merge
-🟡 Active: dispatching login-drill on main for immediate green proof (hourly :03/:18/:33/:48 cron picks it up regardless); PR #1159 (dagster webserver bind 3000, Service stays 80) cycling checks, watcher bk07nr5ow
-🔴 Blocked: none
-⚪ Pending: 24h of hourly login-drill green = crew#516 CP1 evidence for crew#516/crew#345; #1159 merge on settled green
-🔧 TOUCHES: idp main (via merged PR only); branch fix/dagster-webserver-port
-🔀 OVERLAP: estate-state RED row "surface phone FAIL ['Today','What we run','Ops','How-to']" is the pre-merge drill — next run clears it
-📎 FACTS: merge commit 491abd94; #1159 head 92f6d395 diff = 1 values file (3 edits) + 1 incident test
-📍 State: drill fix on main; dagster port fix one green PR away
-
-
-## 2026-09-02T18:44:55Z · session 54539261 · lane .wt-drill-doors
-🟢 Done: LOGIN DRILL GREEN on merged main — dispatch run 33668382204 completed success; #1158 merged as 491abd94; crew#516 CP1 24h evidence window opened (comment posted on crew#516)
-🟡 Active: PR #1159 (dagster webserver binds 3000, Service front door stays 80) re-cycling after fixing four body refusals in one pass — Control line as bare file path, Drill line naming the catalogued dagster drill, Optimised line in counted-arrow shape, and the second Verify line reworded because the verifier refuses op-name words even inside a quoted assertion; founder armed auto-merge himself, background watcher running
-🔴 Blocked: none
-⚪ Pending: #1159 lands on green via the founder's auto-merge; the cluster then needs the founder to apply the release (deploys are his, R65) before the webserver stops crash-looping
-🔧 TOUCHES: idp main via merged #1158; branch fix/dagster-webserver-port
-🔀 OVERLAP: estate-state RED row "surface phone FAIL" clears on its next snapshot
-📎 FACTS: verify-claims gate lesson: a Verify line may not contain world-changing verb words; name a pytest test function instead of an inline patch assertion
-📍 State: drill green and on the clock; dagster port fix cycling with auto-merge armed
-
-
-## 2026-09-02T18:57:36Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: DAGSTER WEBSERVER FIXED AND MEASURED — #1159 merged (8bc46e7a), both webserver pods ready=true 0 restarts on the 3000 bind, old crash-looping ReplicaSets scaled down; exit-127 mystery answered: those pods ran the old main-3226 image that never carried the dagster-webserver binary; nobody hardcoded -p 80, the chart renders it from service.port and the cluster was still on the old release
-🟡 Active: last dagster blocker — estate-scheduler code-location pod never Ready because helm does not merge list entries: bare readinessProbe enabled:true fell to the Kubernetes 1s-timeout default the grpc-health-check CLI cannot meet; founder pasted the fix (timeoutSeconds 5, initialDelaySeconds 30) and it is on a PR with auto-merge armed, incident test pinning the class
-🔴 Blocked: none
-⚪ Pending: on merge + Flux reconcile: user-deployments Ready, HelmRelease green, dagster kustomization green; login-drill hourly greens accumulating for crew#516 CP1 (window opened 18:4xZ)
-🔧 TOUCHES: idp branch fix/dagster-user-deployments-probe; cluster reads only
-🔀 OVERLAP: notify and otto-staging kustomizations are stalled on their own Failed deployments (secret data from provider) — separate class, not this lane's file
-📎 FACTS: probe event verbatim: "Readiness probe failed: command timed out"; chart default probe is 20s period / 10s timeout, the k8s fallback is 10s / 1s
-📍 State: webserver green on the cluster; one probe PR from a fully green dagster release
-
-
-## 2026-09-02T19:14:16Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: probe fix merged to main by the founder (PR 1160, admin merge, merge commit e096a126); flux fetched that exact revision and the dagster kustomization has applied it and is now in its health-check phase; webserver pods both ready on the 3000 bind
-🟡 Active: founder also deleted the stuck helm release secret and resumed the release, so helm is running a fresh install/upgrade; watching read-only for the scheduler deployment to roll with the new probe timings (5s timeout, 30s initial delay) and both code-location pods to go Ready
-🔴 Blocked: none
-⚪ Pending: on convergence: HelmRelease Ready, dagster kustomization Ready, then report green to the founder; login-drill hourly greens accumulating for crew#516 CP1
-🔧 TOUCHES: cluster reads only; no branches in flight, both dagster fixes are on main
-🔀 OVERLAP: notify and otto-staging kustomizations still stalled on their own secret failures — separate class, untouched
-📎 FACTS: the running scheduler deployment still shows the old 1-second probe timeout until helm's upgrade rolls it; verify gate on PR 1160 refused the one inline-python Verify line (use pytest selectors only), founder overrode with admin merge
-📍 State: one helm upgrade from a fully green dagster release
-
-
-## 2026-09-02T19:17:13Z · session b4b812cb · lane .claude
-🔴 Blocked: prospector#802 squash merge; founder Chidi (Cursor co-author extra-approval)
-🟡 Active: crew#774
-🟢 Done: wrap prospector#804 bcaa5fb2; catalogue idp#1130 dfc1f1cf; closed duplicate idp#1145
-⚪ Pending: merge 802 then Flux prospector-store-web pin
-🔧 TOUCHES: none (802 already green; live shop waits on founder merge)
-🔀 OVERLAP: none
-📎 FACTS: none
-📍 State: https://github.com/chidionyema/prospector/pull/802 cc1a6941 CI green
-
-
-## 2026-09-02T19:25:44Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: DAGSTER RELEASE MEASURED GREEN — kustomization True on the merged revision, HelmRelease True (upgrade succeeded, release v2) after the founder deleted the wedged helm release secret; webserver 2/2, scheduled runs completing on the cluster
-🟡 Active: scheduler pods still flap (liveness kills, 5 and 3 restarts measured): timed in-pod, the exec health-check's HEALTHY path takes 5s wall at the 250m CPU limit — equal to its own timeout; founder ordered timeout 30, and the fix PR also moves the handler to the kubelet-native gRPC probe (millisecond RPC, spawns nothing; server answers the standard health service, measured in-pod); cycling to green now
-🔴 Blocked: none
-⚪ Pending: fix PR green then founder merges; flux rolls the probe change on its own; login-drill hourly greens accumulating for crew#516 CP1
-🔧 TOUCHES: idp branch fix/dagster-probe-grpc-30s; cluster reads and in-pod timing diagnostics only
-🔀 OVERLAP: none new; notify and otto-staging kustomizations still stalled on their own secret class, untouched
-📎 FACTS: rule-guard checkpoint stat reads the claude project folder checkpoints file, not the repo one — append the resume note there when a new branch is refused
-📍 State: cluster green under the fragile probe; one PR from a robust one
-
-
-## 2026-09-02T19:36:18Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: probe fix PR is GREEN — all 20 checks settled clean, merge state CLEAN; body carries the founder's 30s timeout plus the kubelet-native gRPC handler (measured in-pod: exec healthy path 5s wall at 250m CPU = its own timeout; server answers the standard health service SERVING)
-🟡 Active: waiting on the founder's merge word — platform files merge only on his APPROVE; flux rolls the probe change itself after merge, no deploy step
-🔴 Blocked: founder action: merge the green probe fix PR (number 1161 on idp)
-⚪ Pending: after merge: scheduler pods stop the liveness-kill restarts (5 and 3 measured); login-drill hourly greens accumulating for crew#516 CP1
-🔧 TOUCHES: idp branch fix/dagster-probe-grpc-30s only; cluster untouched
-🔀 OVERLAP: none new; notify and otto-staging kustomizations still their own secret class
-📎 FACTS: verify gate regex demands the Verify command wrapped in backticks — a bare Verify line reads as absent and the whole gate is RED; frozen event body still needs a fresh commit after any body edit
-📍 State: dagster release green on the cluster; robust probes one founder merge away
-
-
-## 2026-09-02T19:40:09Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: probe fix MERGED on the founder's word (his "ok" to the green report; merge commit 6950fe61) — user-deployment probes are now kubelet-native gRPC with his 30s timeout; merged branches deleted per trunk-only
-🟡 Active: read-only watcher on the roll: flux fetches main, dagster kustomization applies, scheduler deployment re-renders with the grpc handler, both pods Ready without liveness kills
-🔴 Blocked: none
-⚪ Pending: on ROLLED-AND-GREEN: report to founder with restart counts flat; login-drill hourly greens accumulating for crew#516 CP1
-🔧 TOUCHES: idp main via merged PR only; cluster reads only
-🔀 OVERLAP: none new
-📎 FACTS: founder-blocker script refuses a founder ask when a register row self-serves it — a platform merge ask must be a plain APPROVE line in chat, not the blocker script
-📍 State: fix on main; flux interval away from rolling
-
-
-## 2026-09-02T19:47:13Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: DAGSTER FULLY GREEN AND MEASURED on merge of the probe fix — scheduler pods 1/1 and 1/1 with ZERO restarts, HelmRelease v3 upgrade succeeded, kustomization True on the merge revision; liveness-kill churn over
-🟡 Active: one honesty PR cycling — measured on the rendered Deployment: the chart copies only known timing fields from a values probe block and silently DROPS other handler keys, so the kubelet-native grpc handler never reached the cluster; what runs is the chart's exec health-check with the founder's 30s timeout (which is why it is green); the PR makes values+incident test say exactly that, no cluster behaviour change
-🔴 Blocked: none
-⚪ Pending: honesty PR green then founder APPROVE; login-drill hourly greens accumulating for crew#516 CP1
-🔧 TOUCHES: idp branch fix/dagster-probe-values-truth; cluster reads only
-🔀 OVERLAP: none new
-📎 FACTS: chart 1.13.19 user-deployments probe rendering keeps exec + known timing fields only; a grpc or httpGet key in that values block is silently inert — incident test now refuses the class
-📍 State: dagster green end to end; one truth-alignment PR from closing the thread
-
-
-## 2026-09-02T19:53:18Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: DAGSTER THREAD CLOSED — truth PR merged on the founder's approve (merge bf4da6d6): values now spell out the exec health-check with his 30s timeout that the chart actually renders, inert grpc keys removed, incident test refuses handler keys the chart drops; cluster already green under this exact config (pods 1/1+1/1 zero restarts, HelmRelease v3, kustomization True)
-🟡 Active: short read-only confirm that the kustomization applies the final revision (identical rendered manifests, no roll expected)
-🔴 Blocked: none
-⚪ Pending: login-drill hourly greens accumulating for crew#516 CP1 (window opened 18:4xZ)
-🔧 TOUCHES: idp main via merged PRs only; cluster reads only
-🔀 OVERLAP: notify and otto-staging kustomizations remain their own secret-class failures, untouched by this lane
-📎 FACTS: today's dagster chain on main: webserver bind 3000 with Service front door 80, then probe timings, then probe truth — three merges, all founder-approved
-📍 State: dagster green end to end; lane quiet
-
-
-## 2026-09-02T20:01:18Z · session 54539261 · lane .wt-dagster-port
-🟢 Done: notify/otto-staging root cause MEASURED — both kustomizations stall on one missing secret each, nothing code-side broken; verdict-key-wall red is the designed wall probe
-🟡 Active: reported to founder: notify wants vault entry notify-apprise-founder-telegram (OCI 404) — his SEED_TELEGRAM_ALERTS_* repo secrets landed 11:59Z but the only writer is oke-check mode=apply's bootstrap-vendors step, skipped in his 12:13 mode=check dispatch; otto-staging wants Bitwarden secret otto-staging-telegram, never saved (human door, decision 0017, runbook docs/runbooks/otto-staging.md)
-🔴 Blocked: founder's two hands: dispatch oke-check mode=apply (deploys are his, R65) + save the Bitwarden secret from his phone
-⚪ Pending: after both: ExternalSecrets sync within their 10m refresh, deployments start, kustomizations go True; login-drill greens accumulating crew#516 CP1
-🔧 TOUCHES: none — reads only (cluster, gh run logs, repo files)
-🔀 OVERLAP: none
-📍 State: dagster lane closed green; notify/otto-staging awaiting the founder's two actions
-📍 METER: BLIND: estate_spend.py did not answer (TimeoutExpired) (crew#26)
-
-
 ## 2026-09-02T20:15:35Z · session 54539261 · lane .wt-dagster-port
 🟢 Done: otto-staging root cause fixed on a branch — MEASURED: OCI estate-vault entry otto-staging-telegram already holds fields token+webhook_secret (names-only read via laptop DEFAULT api-key profile), while the Bitwarden project holds nothing and the ExternalSecret never synced under either store; branch fix/otto-telegram-store (252b4a24) reverts #1127's store flip for this one entry (estate-vault, property token) + aligns the chain test, 4/4 green locally
 🟡 Active: founder's apply run 33677001751 in_progress (his own dispatch; seeds notify-apprise-founder-telegram via bootstrap-vendors); watcher bgvfoxllw follows it to ExternalSecret sync
@@ -3458,4 +3260,180 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🔀 OVERLAP: session 5f6f4e72 owns prospector and estate-db; deepseek owns crew#819 and idp#1521
 📎 FACTS: Tailscale needs no hand step — oke-check.yml:206 exchanges the runner OIDC token under TAILSCALE_FEDERATED_CLIENT_ID (estate-config.yaml:68) and bin/idp-tailscale-policy pushes the ACL from git; the estate names one person in estate-config.yaml:50 FOUNDER_MAC_USER and in policy.hujson group:founder / tag:founder-mac
 📍 State: https://github.com/chidionyema/crew/issues/819#issuecomment-5544142759
+
+
+## 2026-09-04T17:47:51Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on me
+🟡 Active: crew#820 first readiness report posted; crew#839 opened and rewritten as one scripted pass on his word
+🟢 Done: found that bin/ns-fence-gate has only ever graded two fixture files and never a real namespace, so the lateral backdoor it was written to close is still open across about thirty namespaces
+⚪ Pending: crew#839 goes to DeepSeek after crew#819; the founder drives the Flux rollout when it merges
+🔧 TOUCHES: crew#819, #820, #839 only; no idp branch touched by me this session
+🔀 OVERLAP: session 5f6f4e72 owns prospector and estate-db; deepseek owns crew#819 and idp#1521
+📎 FACTS: 35 files declare a Namespace in platform/; 2 declare a ResourceQuota (staging, otto-golden), 1 a LimitRange, 1 file holds 5 NetworkPolicies (otto-golden); no Kyverno generate rules produce fences; superset.yaml:189 claims a default-deny policy that does not exist
+📍 State: https://github.com/chidionyema/crew/issues/839#issuecomment-5544377470
+
+
+## 2026-09-04T17:58:39Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: waiting on the oke-check Actions run to read the cluster — the laptop cannot, its Oracle session mints no key any more
+🟢 Done: idp#1537 merged, carrying the last two copy-job fixes (hindsight drops its own functions and types, otto-gateway fits the space its namespace has left)
+⚪ Pending: hindsight -r4 and otto-gateway -r3 complete, then estate-db-migrate goes Ready and llm and research-engine reconcile behind it
+🔧 TOUCHES: idp platform/estate-db/migrate/jobs.yaml
+🔀 OVERLAP: none seen; session 85f840c5 is on the company-identity path
+📎 FACTS: bin/idp-oci-login answers 'laptop runs render no key; run the platform from Actions'; run 33902528794 is the read
+📍 State: https://github.com/chidionyema/idp/actions/runs/33902528794
+
+
+## 2026-09-04T18:08:28Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1546 (auto-merge armed) — CloudNativePG never put pgvector back because its Database controller only reconciles when the spec moves, and an annotation does not move it
+🟢 Done: otto-gateway's copy job is Complete in 7s; got laptop cluster access back (OCI_LAPTOP_KEY=1 with OCI_CLI_PROFILE=DEFAULT and OCI_CLI_AUTH=api_key) so probes no longer cost an Actions run
+⚪ Pending: hindsight -r5 runs, estate-db-migrate goes Ready, and the nine Kustomizations behind it reconcile — llm then research-engine
+🔧 TOUCHES: idp platform/estate-db/{cluster/databases.yaml,migrate/jobs.yaml}
+🔀 OVERLAP: none seen; session 85f840c5 is on the company-identity path
+📎 FACTS: hindsight Database status reads observedGeneration 1, applied true, both extensions applied true, while 'select extname from pg_extension' returns plpgsql alone; 23 Flux objects not Ready, all behind estate-db-migrate
+📍 State: https://github.com/chidionyema/idp/pull/1546
+
+
+## 2026-09-04T18:13:26Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on me; the Calico policy-only decision is staged for his word
+🟡 Active: idp#1548 open with auto-merge on — crew#839 in one generated pass
+🟢 Done: measured the cluster's CNI before building and found flannel, which does not implement NetworkPolicy at all, so the ticket's whole premise was false; shipped the half that actually enforces (quota and LimitRange, 39 namespaces) and left the NetworkPolicy half generated but unwired rather than merge a security claim nothing honours
+⚪ Pending: he drives the Flux rollout; the network half wires in only after a policy-enforcing CNI lands
+🔧 TOUCHES: idp feat/crew839-ns-fences (worktree removed), crew#839
+🔀 OVERLAP: session 5f6f4e72 owns prospector and estate-db; deepseek owns crew#819 and crew#838
+📎 FACTS: kube-flannel-ds 2 ready, no Cilium/Calico/Antrea/kube-router/weave-net (2026-09-04); 16 NetworkPolicies live and inert; bin/idp-ci rung 7b has been report-only since 2026-08-27 with 76 defects across 19 namespaces
+📍 State: https://github.com/chidionyema/idp/pull/1548
+
+
+## 2026-09-04T18:30:12Z · session 85f840c5 · lane idp
+🔴 Blocked: the Calico cutover needs the flannel add-on disabled on the cluster; staged, telegram 22894
+🟡 Active: idp#1548 (the fences) and idp#1552 (the enforcement layer, merged suspended), both auto-merge
+🟢 Done: found Oracle refuses Calico beside flannel in writing before anyone touched the cluster, so the staged policy-only plan was dead; built the supported replacement instead, suspended, with the cutover runbook and the Kyverno exception a CNI needs
+⚪ Pending: he disables the flannel add-on, then one line flips suspend and the sixteen existing policies start denying
+🔧 TOUCHES: idp feat/crew839-ns-fences, feat/crew839-calico-cutover; both worktrees removed
+🔀 OVERLAP: session 5f6f4e72 owns prospector and estate-db; deepseek owns crew#819 and crew#838
+📎 FACTS: Oracle contengsettingupcalico.htm "does not support the installation of Calico alongside the flannel CNI plugin"; contengpodnetworking.htm "you cannot change the CNI plugin you originally selected"; kube-flannel-cfg is 10.244.0.0/16 VXLAN /24; Calico v3.32 is tested on k8s 1.34-1.36 and the cluster serves 1.35.2
+📍 State: https://github.com/chidionyema/idp/pull/1552
+
+
+## 2026-09-04T18:36:35Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: reviewed DeepSeek's crew#838 CP1 — the commit is local only, origin/deepseek-build-lane does not contain a6cddf73 and no pull request exists
+🟢 Done: idp#1546 merged at 18:11Z, so all ten estate-db copy jobs are fixed in git; otto-gateway -r3 Complete
+⚪ Pending: hindsight -r5 runs, estate-db-migrate goes Ready, llm then research-engine reconcile behind it
+🔧 TOUCHES: idp platform/estate-db/{cluster/databases.yaml,migrate/jobs.yaml}
+🔀 OVERLAP: DeepSeek holds bin/idp/migrate-domain on deepseek-build-lane; session 85f840c5 owns crew#838
+📎 FACTS: the tool's own tests (survival-stack test/cf-auth.test.js) were not adopted; checks.mjs still carries the Telegram helpers and a survival-stack user-agent; the original still exists in survival-stack, so this is a copy not a move
+📍 State: https://github.com/chidionyema/idp/pull/1546
+
+
+## 2026-09-04T18:37:37Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on me
+🟡 Active: idp#1552 rebased and pushed with auto-merge on — Calico now installs live, not suspended
+🟢 Done: caught that Oracle's own order (remove flannel, then apply Calico) deadlocks here — tigera-operator is an ordinary pod and could never start on a node with no CNI configuration, so the install goes first and the flannel add-on is disabled after
+⚪ Pending: when Flux rolls calico-node onto both nodes I disable Oracle's flannel add-on, which is the one step Flux cannot take, then bin/ns-fence-gate --live is the receipt
+🔧 TOUCHES: idp feat/crew839-calico-cutover, crew#839
+🔀 OVERLAP: session 5f6f4e72 owns prospector and estate-db; deepseek owns crew#819 and crew#838
+📎 FACTS: calico-node runs on the host network so it does not need a CNI to start; the Calico pool is set to 10.244.0.0/16 VXLAN /24, byte-for-byte what kube-flannel-cfg runs, so no pod address moves
+📍 State: https://github.com/chidionyema/idp/pull/1552
+
+
+## 2026-09-04T18:43:50Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1559 (auto-merge armed) — crew#838 CP1 finished properly: the tool, its nine tests, a CI job that runs them, and a README
+🟢 Done: DeepSeek's adoption never left this laptop, so it is now pushed with the gaps closed — Telegram and five unrelated vendor checkers cut from checks.mjs, bin/idp-cloud resolved against the module not the working directory
+⚪ Pending: estate-db side is closed; hindsight -r5 runs when Flux applies idp#1546 and the 23 objects behind estate-db-migrate follow
+🔧 TOUCHES: idp bin/idp/migrate-domain/, .github/workflows/ci.yml, .gitignore
+🔀 OVERLAP: crew#838 belongs to session 85f840c5; DeepSeek's local branch deepseek-build-lane still holds the unpushed original
+📎 FACTS: node --test bin/idp/migrate-domain/test/ reports 9 pass 0 fail; checks.mjs went from 208 lines to 80; the survival-stack original is not deleted because its console and four test files share the same modules
+📍 State: https://github.com/chidionyema/idp/pull/1559
+
+
+## 2026-09-04T18:50:25Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on me
+🟡 Active: seven lanes running concurrently on his word — four repairs and three audits, plus the complete capability register
+🟢 Done: idp#1558 merged (the fences row was failing on a namespace the cluster does not have); idp#1561 open (apprise was OOMKilled against a 256Mi limit); research needed no fix, its failing pod is a leftover Job from before #1494 landed
+⚪ Pending: backstage catalogue and alerts-github still under diagnosis; the register lands as one table with every capability marked running, suspended, built-not-deployed, referenced or orphaned
+🔧 TOUCHES: idp fix/ns-fence-missing-namespace, feat/crew839-calico-cutover, crew#840
+🔀 OVERLAP: session 5f6f4e72 owns prospector and estate-db; deepseek owns crew#819 and crew#838
+📎 FACTS: alerts-github has been Progressing 8 days on main@190b3644 and alone blocks drills, hermes-agent, infra-crew and mcp; backstage catalogue has been HealthCheckFailed 10 days while the old ReplicaSet serves; founder-blocker.py line 12 puts the approval timer in the session's own context while Temporal has served 8 days unused
+📍 State: https://github.com/chidionyema/crew/issues/840
+
+
+## 2026-09-04T19:00:45Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1567 (auto-merge armed) — crew#819's customer onboarding template rewritten so it can actually run
+🟢 Done: found DeepSeek's version used http:fetch, which this Backstage backend does not register, against an onboarding API the estate does not run, and was never listed in app-config so nobody could click it
+⚪ Pending: nothing on me for crew#819; estate-db chain still waiting on Flux to apply idp#1546
+🔧 TOUCHES: idp backstage/templates/customer-onboarding/, backstage/app-config.yaml, platform/customers/requests/; claude-guards config_syntax.py
+🔀 OVERLAP: session 85f840c5 holds the idp lane and owns crew#839/#840; crew#819 was DeepSeek's and its local commit bdfba855 is superseded, not pushed
+📎 FACTS: packages/backend/src/index.ts registers only the github and notifications scaffolder modules; the rewrite uses fetch:template and publish:github:pull-request, the pair enable-platform-feature already uses; claude-guards#247 exempts skeleton/ from the config-syntax guard because Jinja source is not YAML
+📍 State: https://github.com/chidionyema/idp/pull/1567
+
+
+## 2026-09-04T19:07:34Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on him
+🟡 Active: the built-not-operational audit, in this session — no subagents
+🟢 Done: idp#1568 corrects the workflows row to Windmill as the choice and Temporal as the backup, a line this repo invented on 2026-08-29 and later read back to him as his decision; three lane repairs merged (#1561 apprise OOM, #1562 alerts-github unblocked four rows, #1563 backstage schema mode); 48 stale worktrees swept
+⚪ Pending: the audit lands as one document in docs/, not a chat table
+🔧 TOUCHES: idp platform/features/features.yaml, crew#840
+🔀 OVERLAP: session 5f6f4e72 owns prospector and estate-db; deepseek owns crew#819 and crew#838
+📎 FACTS: 55 platform directories — 41 running, 8 never wired to any Flux row, 3 suspended, 3 progressing; 8 live Flux rows have no declaration under clusters/; temporal is suspended in git with six pods still up
+📍 State: https://github.com/chidionyema/idp/pull/1568
+
+
+## 2026-09-04T19:28:30Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on him
+🟡 Active: handed the commerce-on-estate-db work to session 5f6f4e72 on his word; back on Calico (idp#1552) and the capability audit
+🟢 Done: idp#1568 merged (workflows row now reads Windmill as the choice, Temporal as the backup); measured every Flux row — 15 not Ready all trace to one cause
+⚪ Pending: estate-db-migrate goes Ready and the 15 rows behind it clear; Oracle's flannel add-on disabled after Calico installs
+🔧 TOUCHES: idp feat/crew839-calico-cutover, crew#840
+🔀 OVERLAP: session 5f6f4e72 holds the idp lane, commerce (crew#623) and estate-db; deepseek owns crew#819 and crew#838
+📎 FACTS: chaos/science wait on observability, healing on llm, otto-gateway on estate-db-migrate, and observability/llm wait on estate-db-migrate too; commerce and commerce-data are the only suspended rows
+📍 State: https://github.com/chidionyema/idp/pull/1552
+
+
+## 2026-09-04T19:44:44Z · session 5f6f4e72 · lane idp
+🔴 Blocked: needs one word from him -- which payment provider
+🟡 Active: idp#1577 -- commerce switched on, off its own Postgres, onto the estate cluster
+🟢 Done: deleted the estate's seventh Postgres, minted the lago role and database on estate-db, fenced the commerce namespace from what it declares rather than the floor, and stopped ns-fence-gate calling a not-yet-live namespace a defect
+⚪ Pending: the public door -- Lago has no hostname; a listener and certificate on prospector's Gateway is a change in that repo, not this one
+🔧 TOUCHES: idp clusters/oke/commerce.yaml, platform/commerce/, platform/estate-db/cluster/, platform/ns-fences/, platform/oci/commerce.tf, bin/ns-fence-gate
+🔀 OVERLAP: session 85f840c5 holds the idp lane and owns crew#839/#840
+📎 FACTS: measured 11616m allocatable across two nodes and 10032m requested, so the layer's 825m fits; commerce-payment-provider was absent from 61 vault entries and is now an empty slot with ignore_changes; commerce-redis is already a durable Valkey queue so the Redis half needed no change
+📍 State: https://github.com/chidionyema/idp/pull/1577
+
+
+## 2026-09-04T19:48:17Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on him
+🟡 Active: the Otto door-collapse spec for DeepSeek is written and posted to crew#768
+🟢 Done: found the blocking gap nobody had hit — a message arriving through otto-gateway carries no reply address, because ingress/plugins.py builds TelegramBinding with an empty allowlist, so every update normalises to principal=None and the envelope has no chat id
+⚪ Pending: DeepSeek picks up CP1; Calico idp#1552 still waits on Flux
+🔧 TOUCHES: crew#768; read-only in ~/dev/code/hermes-v2
+🔀 OVERLAP: session 5f6f4e72 holds the idp lane, commerce and estate-db; deepseek owns crew#819 and crew#838
+📎 FACTS: Bus.durable_pull exists, is tested at otto/tests/cp1/test_durable_pull_guard.py and has zero callers; otto.boot's answer is a note tool (model="boot-deterministic-stub"), not a model call; process_update duplicates ingress/gateway.py::_mint, which is where the seam goes
+📍 State: https://github.com/chidionyema/crew/issues/768#issuecomment-5545693651
+
+
+## 2026-09-04T20:06:26Z · session 5f6f4e72 · lane idp
+🔴 Blocked: none
+🟡 Active: idp#1583 (auto-merge armed) -- the cluster's debugger, outside the cluster, on his phone
+🟢 Done: headlamp-server running under launchd on the Mac against Oracle's managed OKE control plane; two in-cluster designs thrown away because both die with the thing they debug
+⚪ Pending: idp#1577 (commerce) still needs one word from him -- which payment provider
+🔧 TOUCHES: idp bin/idp-headlamp-mac, launchd/ai.estate.headlamp.plist.tmpl, docs/founder/debug-the-cluster-from-your-phone.md; Mac port 4466 bound to the tailnet address only
+🔀 OVERLAP: none -- session 85f840c5 holds crew#839/#840, deepseek holds crew#819/#838
+📎 FACTS: measured from the Mac's tailnet address at 21:05Z: UI 200, /api/v1/nodes returned both nodes, kube-system 16 pods; tailnet policy already grants group:founder -> tag:founder-mac:* so no new ACL was needed
+📍 State: https://github.com/chidionyema/idp/pull/1583
+
+
+## 2026-09-04T20:08:39Z · session 85f840c5 · lane idp
+🔴 Blocked: nothing on him
+🟡 Active: finding what consumed the MiniMax token plan — router-spend break-glass dispatched (run 33914769721)
+🟢 Done: eliminated prospector's scheduler by measurement — its launchd daemon is alive (pid 67329, interval 7200s) but every tick today skipped with "daily cap reached: $0.0000 >= $0.00"
+⚪ Pending: LiteLLM_SpendLogs answer — consumer × lane × tokens × day
+🔧 TOUCHES: read-only; no repo change this turn
+🔀 OVERLAP: session 5f6f4e72 holds commerce and estate-db
+📎 FACTS: laptop OCI profile 'otto' is gone from ~/.oci/config so no direct cluster read; prospector calls MiniMax directly from its own .env, outside the router's accounting; on origin/main every lane falls back to minimax
+📍 State: https://github.com/chidionyema/idp/actions/runs/33914769721
 
