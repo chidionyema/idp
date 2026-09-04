@@ -25,14 +25,24 @@
 # Ready -- every consumer's Kustomization waits on estate-db-migrate in clusters/oke/platform.yaml.
 # A Job that cannot find its old server at all exits clean rather than failing, so a cluster
 # rebuilt from scratch, where the old servers never existed, is not deadlocked by this file.
+#
+# A Job is immutable, so a Job that failed or stalled for a reason outside itself can only be
+# re-run under a new name; every name here carries an -r2 suffix for that reason. dagster and
+# langfuse failed on 2026-09-04 with 'password authentication failed', before their passwords had
+# been minted. The other eight never started at all: each mounted estate-db-role-<name>, which
+# platform/estate-db/cluster/secrets.yaml publishes into estate-db and not into the namespace the
+# Job runs in, so all eight sat in ContainerCreating on "MountVolume.SetUp failed ... secret not
+# found" for 50 minutes and estate-db-migrate never reported Ready. role-secrets.yaml now
+# publishes each password into its Job's own namespace. The marker table still makes a second
+# copy a no-op if any of them had in fact finished.
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: estate-db-copy-backstage
+  name: estate-db-copy-backstage-r2
   namespace: backstage
   labels:
-    app.kubernetes.io/name: estate-db-copy-backstage
+    app.kubernetes.io/name: estate-db-copy-backstage-r2
     app.kubernetes.io/part-of: idp
     backstage.io/kubernetes-id: layer-estate-db
 spec:
@@ -40,7 +50,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: estate-db-copy-backstage
+        app.kubernetes.io/name: estate-db-copy-backstage-r2
         app.kubernetes.io/part-of: idp
     spec:
       restartPolicy: Never
@@ -112,10 +122,10 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: estate-db-copy-healthchecks
+  name: estate-db-copy-healthchecks-r2
   namespace: healthchecks
   labels:
-    app.kubernetes.io/name: estate-db-copy-healthchecks
+    app.kubernetes.io/name: estate-db-copy-healthchecks-r2
     app.kubernetes.io/part-of: idp
     backstage.io/kubernetes-id: layer-estate-db
 spec:
@@ -123,7 +133,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: estate-db-copy-healthchecks
+        app.kubernetes.io/name: estate-db-copy-healthchecks-r2
         app.kubernetes.io/part-of: idp
     spec:
       restartPolicy: Never
@@ -195,10 +205,10 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: estate-db-copy-hindsight
+  name: estate-db-copy-hindsight-r2
   namespace: hindsight
   labels:
-    app.kubernetes.io/name: estate-db-copy-hindsight
+    app.kubernetes.io/name: estate-db-copy-hindsight-r2
     app.kubernetes.io/part-of: idp
     backstage.io/kubernetes-id: layer-estate-db
 spec:
@@ -206,7 +216,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: estate-db-copy-hindsight
+        app.kubernetes.io/name: estate-db-copy-hindsight-r2
         app.kubernetes.io/part-of: idp
     spec:
       restartPolicy: Never
@@ -278,10 +288,10 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: estate-db-copy-superset
+  name: estate-db-copy-superset-r2
   namespace: observability
   labels:
-    app.kubernetes.io/name: estate-db-copy-superset
+    app.kubernetes.io/name: estate-db-copy-superset-r2
     app.kubernetes.io/part-of: idp
     backstage.io/kubernetes-id: layer-estate-db
 spec:
@@ -289,7 +299,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: estate-db-copy-superset
+        app.kubernetes.io/name: estate-db-copy-superset-r2
         app.kubernetes.io/part-of: idp
     spec:
       restartPolicy: Never
@@ -361,10 +371,10 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: estate-db-copy-litellm
+  name: estate-db-copy-litellm-r2
   namespace: llm
   labels:
-    app.kubernetes.io/name: estate-db-copy-litellm
+    app.kubernetes.io/name: estate-db-copy-litellm-r2
     app.kubernetes.io/part-of: idp
     backstage.io/kubernetes-id: layer-estate-db
 spec:
@@ -372,7 +382,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: estate-db-copy-litellm
+        app.kubernetes.io/name: estate-db-copy-litellm-r2
         app.kubernetes.io/part-of: idp
     spec:
       restartPolicy: Never
@@ -444,10 +454,10 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: estate-db-copy-temporal
+  name: estate-db-copy-temporal-r2
   namespace: temporal
   labels:
-    app.kubernetes.io/name: estate-db-copy-temporal
+    app.kubernetes.io/name: estate-db-copy-temporal-r2
     app.kubernetes.io/part-of: idp
     backstage.io/kubernetes-id: layer-estate-db
 spec:
@@ -455,7 +465,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: estate-db-copy-temporal
+        app.kubernetes.io/name: estate-db-copy-temporal-r2
         app.kubernetes.io/part-of: idp
     spec:
       restartPolicy: Never
@@ -545,10 +555,10 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: estate-db-copy-guacamole
+  name: estate-db-copy-guacamole-r2
   namespace: guacamole
   labels:
-    app.kubernetes.io/name: estate-db-copy-guacamole
+    app.kubernetes.io/name: estate-db-copy-guacamole-r2
     app.kubernetes.io/part-of: idp
     backstage.io/kubernetes-id: layer-estate-db
 spec:
@@ -556,7 +566,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: estate-db-copy-guacamole
+        app.kubernetes.io/name: estate-db-copy-guacamole-r2
         app.kubernetes.io/part-of: idp
     spec:
       restartPolicy: Never
@@ -628,10 +638,10 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: estate-db-copy-otto-gateway
+  name: estate-db-copy-otto-gateway-r2
   namespace: otto-gateway
   labels:
-    app.kubernetes.io/name: estate-db-copy-otto-gateway
+    app.kubernetes.io/name: estate-db-copy-otto-gateway-r2
     app.kubernetes.io/part-of: idp
     backstage.io/kubernetes-id: layer-estate-db
 spec:
@@ -639,7 +649,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: estate-db-copy-otto-gateway
+        app.kubernetes.io/name: estate-db-copy-otto-gateway-r2
         app.kubernetes.io/part-of: idp
     spec:
       restartPolicy: Never
