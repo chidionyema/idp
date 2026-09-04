@@ -205,3 +205,35 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
+---
+# The Flux webhook receiver: GitHub POSTs a push event to hc.${ESTATE_ZONE}/hook/<id>, the
+# notification-controller verifies the HMAC-SHA256 signature against the token this row's
+# ExternalSecret pulls from Vault, and the flux-system GitRepository reconciles at once instead
+# of waiting out its 1m poll. It rides here, and not in clusters/oke/flux-system, because the
+# route names the zone as ${ESTATE_ZONE}: only a Flux Kustomization with postBuild substitutes
+# that, and the flux-system build has none -- wired there, the Gateway would be handed the
+# literal string "hc.${ESTATE_ZONE}" as a hostname and no push would ever land.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: flux-webhook
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  dependsOn:
+    # the HTTPRoute has nothing to attach to until the Gateway exists,
+    - name: edge
+    # and the ExternalSecret has nowhere to read flux-webhook-token from until the store does.
+    - name: secret-store
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/flux-webhook
+  prune: true
+  wait: true
+  timeout: 10m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config

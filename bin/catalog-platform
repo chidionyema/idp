@@ -68,6 +68,11 @@ SYSTEMS = {
 
 # kustomization name -> (area, plain title, one sentence)
 LAYERS = {
+    "flux-webhook": (
+        "delivery",
+        "Push-to-deploy door",
+        "The door GitHub knocks on the moment a change is merged, so the estate reconciles at once instead of waiting out the one-minute poll; the knock is refused unless it carries the shared token.",
+    ),
     "demo-sandbox": (
         "products",
         "Buyer sandbox",

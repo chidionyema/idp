@@ -308,6 +308,26 @@ def _oauth2_proxy_in_front(state: dict) -> None:
                 f"{p}: annotated telegram-webhook-secret-token but gateway.yaml mints no token"
             )
             continue
+        if auth == "github-hmac-signature":
+            # The Flux webhook receiver (crew#736). GitHub cannot follow an OAuth redirect, so
+            # the shared token IS the authentication: the notification-controller verifies
+            # X-Hub-Signature-256 against it and answers anything else with a rejection. As
+            # everywhere else in this file the annotation is a label and a label is not a proof,
+            # so two things are checked -- the route reaches /hook/ and nothing else, and the
+            # directory ships a Receiver that actually names a secret to verify against.
+            paths = [
+                m.get("path", {})
+                for r in d["spec"]["rules"]
+                for m in r.get("matches", [])
+            ]
+            assert paths and all(
+                x == {"type": "PathPrefix", "value": "/hook/"} for x in paths
+            ), f"{p}: github-hmac-signature route exposes {paths}"
+            rcv = (p.parent / "receiver.yaml").read_text()
+            assert "kind: Receiver" in rcv and "secretRef:" in rcv, (
+                f"{p}: annotated github-hmac-signature but receiver.yaml verifies no secret"
+            )
+            continue
         assert auth == "bearer-master-key", (
             f"{p}: route {d['metadata']['name']} has no oauth2-proxy Middleware in front ({refs}) and no idp.estate/auth annotation"
         )
