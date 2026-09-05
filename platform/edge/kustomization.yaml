@@ -19,6 +19,7 @@ resources:
   - scheduling-exception.yaml
   - hindsight-exception.yaml
   - robusta-exception.yaml
+  - monitoring-exception.yaml
   - litellm-cache-exception.yaml
   - tailscale-operator-exception.yaml
   - calico-exception.yaml
