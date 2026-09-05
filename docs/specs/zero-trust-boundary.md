@@ -80,6 +80,19 @@ flannel, and it is the smallest change that closes the defect. Rejected: migrati
 (replaces a working data plane to gain enforcement we can have without touching it), and rewriting
 the 154 objects (they are correct; nothing reads them).
 
+### The danger in the remedy, and it is the reason this is not a same-night fix
+
+The 154 policies have never enforced, so no service's real traffic has ever been graded against
+them. Switching enforcement on switches all 154 on at once, and any policy that does not allow
+traffic a service actually needs takes that service down the moment Calico starts. The fences are
+untested in the only sense that matters.
+
+So the order inside item 0 is: install Calico policy-only with enforcement in **log-only** posture
+first, collect one full day of would-be-denied flows, and merge the allow rules those flows
+demand before anything is dropped. Only then does enforcement go on. That audit is the work; the
+install is not. A flag-day cutover here is an estate-wide outage with 154 causes, and LAW 11
+applies to the decision to flip it.
+
 Nothing else in this spec matters until the enforcement agent is in and the drill is green,
 because a policy engine at the edge beside an unenforced network is a lock on a door in a field.
 

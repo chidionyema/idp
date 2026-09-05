@@ -62,7 +62,9 @@ objects enforce nothing. Only `kube-flannel-ds` runs, flannel does not implement
 and a pod in the both-ways-fenced `dagster` namespace opened TCP to `1.1.1.1:443`, `8.8.8.8:53`
 and to a pod in the equally fenced `backstage` namespace. All three connected. Evidence and
 remedy: `docs/specs/zero-trust-boundary.md` step 1. Calico in policy-only mode beside flannel
-turns every existing policy on at once and rewrites none. Nothing else in this queue is worth its
+turns every existing policy on at once and rewrites none — which is also the danger: those 154
+policies have never been graded against real traffic, so enforcement goes on in log-only posture
+first and the flows it would have denied are read before anything is dropped. Nothing else in this queue is worth its
 own tests until that lands, because every isolation claim below currently rests on objects the
 network ignores.
 
@@ -90,7 +92,7 @@ can run at once.
 
 | # | item | spec | lane | done when |
 |---|---|---|---|---|
-| 0 | Calico policy-only beside flannel; every existing NetworkPolicy starts enforcing | ZT step 1 | estate | the fence-enforcement drill (1) is green against the live cluster |
+| 0 | Calico policy-only beside flannel, **log-only first**: one day of would-be-denied flows collected, the allow rules those flows demand merged, and only then enforcement on | ZT step 1 | estate | the fence-enforcement drill (1) is green against the live cluster and no service lost traffic in the cutover |
 | 1 | `fence-enforcement` drill: a scheduled workflow under `.github/workflows/` **and** its row in `drills/catalogue.yaml`. Reachability check first; fails closed when the probe could not run | ZT step 1 | repo | the workflow has one green run, the `drills` row of `bin/idp-verify` is fresh, and a denied path is graded denied while a probe that could not run is graded a failure |
 | 2 | The customer bot's binding row moves `estate` → `customer-zero` in `platform/otto-gateway/binding-seed.yaml`; the `alerts-bot:` row stays `estate` | TH change 1 | repo | `SELECT tenant_id, external_id FROM channel_binding` returns the two tenants (estate), and a worker log line quotes `tenant_id=customer-zero` |
 | 3 | `bin/idp-tenant-split`: one secret is one tenant; no operator principal on a customer allowlist; the estate tenant owns no customer-facing channel. Fixtures `tests/fixtures/tenant-split/{bad,good}.yaml`, row in `AGENTS.md`, `tenant_split_gate` in `bin/idp-ci` | TH change 2 | repo | `bin/idp-ci` grades the two fixtures differently in one run |
