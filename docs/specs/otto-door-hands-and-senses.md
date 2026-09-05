@@ -228,6 +228,74 @@ in the terminal" answers with an empty directory and the door's log shows
 Done: the progress edit and the deferred result are each quoted from the door's log on a
 real task from the phone; a "stop" message ends a running loop within one tool turn.
 
+## Step 8, conversation: the door remembers the last thing you said
+
+Measured: `answer_envelope` sends the model one user message made of the contract prompt, the
+recalled memory and this message (`_prompt_for`, `_with_memory`). No earlier turn is in it.
+The door has no session transcript at all; only what pgvector recall happens to surface. That
+is the "awkward" the founder feels: Otto cannot answer "and the second one?" because it never
+saw the first. The fork's gateway keeps a full session (`config.yaml` `max_turns: 90`,
+compaction at 150k tokens) and the door threw that away.
+
+- A `conversations` table in the door's Postgres (`otto/ingress/pg_store.py` owns the
+  connection): one thread per principal, not per surface, so the same thread continues
+  from Telegram to the portal to a voice session (crew#773, "follows the conversation on every
+  surface"). Columns: thread id, principal, surface, role, content, tool name, created at.
+- The provider call sends `messages` as the last N turns of that thread (N by token budget,
+  `OTTO_ROUTER_THREAD_TOKENS`, default 24k), then the recalled memory as a labelled context
+  block, then this message. Tool turns from step 2 are stored too, so "run it again" works.
+- Compaction: past the budget the oldest turns are summarised by the bulk lane into one
+  stored summary turn, the fork's own rule at a smaller size. Nothing is deleted; the raw
+  turns stay in the table for the memory hygiene job.
+- A thread idles out after `OTTO_THREAD_IDLE_HOURS` (default 12); "new topic" from the
+  founder starts a fresh one. An untrusted sender gets a thread of their own, never the
+  founder's.
+- The memory retain step keeps writing facts to pgvector exactly as today; the thread is
+  short-term, memory is long-term, and the two are not merged.
+
+Done: `otto/tests/cp4/test_thread.py` (new): three envelopes from one principal produce a
+provider call whose `messages` holds the earlier two turns; a fourth from another principal
+holds none of them. From the phone: "what is the second file you listed" answers correctly
+after a listing, quoted from the door's log with `router.thread_turns=<n>`.
+
+## Step 9, every surface: what was designed, what the fork already carries, what to enable
+
+Measured: the door has two bindings, `telegram.py` and `http.py` (a pure normaliser for the
+companion app's socket, nothing listening yet). `otto/surface/adapter.py` names web, Slack,
+email, a voice session and a glasses card as the designed surfaces; none exists. The fork
+ships transports for WhatsApp Cloud, Signal, iMessage (BlueBubbles), Microsoft Graph (Teams
+and Outlook mail), a generic webhook and an API server, and `config.yaml` enables Telegram
+alone.
+
+The binding rule stays: a surface is one normaliser in `otto/surface/bindings/` producing the
+same `SurfaceEnvelope`, one plugin in `otto/ingress/plugins.py` that can `send_reply` (and
+`send_voice` where the surface has audio), and one row in the channel binding store. The
+transport is the fork's platform adapter, never rewritten. Everything past the envelope is
+the same code as Telegram, so a surface is one file and one row, and it inherits hands,
+senses and the thread of step 8.
+
+In order, each its own pull request, each proved by a message from the founder on that
+surface quoted from the door's log:
+
+1. **Backstage portal chat** (crew#758, "Backstage is the one door"): the `http.py` binding
+   goes live behind the gateway's OIDC as `POST /surface/web` and the portal's Otto entity
+   page gets the chat panel. Same principal as Telegram, same thread.
+2. **Slack** (crew#682): Slack is the machine alert channel. Otto reads the alert channel
+   and answers a thread when addressed; the founder can say "look at this" under an alert.
+   Fork adapter: the generic webhook with Slack's event payload; the normaliser maps the
+   Slack user to the principal allow-list.
+3. **WhatsApp** (fork `whatsapp_cloud`, ready): the founder's second phone channel and the
+   first customer-facing one, tenant-scoped (ADR 0021, two hats).
+4. **Email** (fork `msgraph_webhook`): an email to Otto's address is a message; the reply is
+   an email in the same thread.
+5. **Voice session** (crew#773 CP3 beyond notes): a Telegram call or a web microphone
+   stream, speech-to-text local first, the same thread; the glasses card (crew#770) is a
+   read-only render of the thread's last turn and lands with it.
+
+Done for each: the binding's test in `otto/tests/ingress/`, the row seeded by
+`platform/otto-gateway/binding-seed.yaml`, and the log line `worker.answered channel=<name>`
+for a real message from the founder on that surface.
+
 ## Out of scope, and said so
 
 Verification plane wiring (crew#768 CP3), a red-team pass on the sandbox, memory hygiene job (CP4), chaos pass and weekly
