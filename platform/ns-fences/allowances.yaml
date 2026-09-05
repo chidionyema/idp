@@ -87,10 +87,12 @@ overrides:
 # <service>.<namespace>.svc references, then extended by hand where a flow does not appear as a
 # hostname in a manifest. THIS DATA IS NOT COMPLETE AND IS KNOWN NOT TO BE: a scan cannot see a
 # flow that arrives through a secret, an operator's client-go call to the API server, or
-# Prometheus scraping a namespace it monitors. That is why the generated NetworkPolicies are held
-# in network/ and are not applied to the cluster (see network/README.md) until the cluster can
-# produce a flow log to correct this from -- which needs a CNI that enforces policy, which this
-# cluster does not have.
+# Prometheus scraping a namespace it monitors. The generated NetworkPolicies ARE applied now
+# (Calico has been the enforcement layer since crew#839), so a flow missing from this file is a
+# flow that stops. hindsight was exactly that on 2026-09-05: it had an ingress_from list and no
+# egress key at all, while estate-db's own ingress_from already named it. Correct this file from
+# what a denial names -- Calico's flow log and the namespace's own pod log -- and re-run the
+# generator; never hand-edit network/.
 #
 # Every namespace additionally gets DNS egress to kube-system and OTLP egress to the collector in
 # observability (LAW 50); those two are in the generator, not repeated per namespace here.
@@ -118,7 +120,7 @@ flows:
     # The router's whole job is calling a model vendor's API; declared here so the fence
     # still says yes on the day this cluster runs a CNI that enforces it.
     egress_internet: [443]
-    ingress_from: [edge, healing, agent-workforce, mcp]
+    ingress_from: [edge, healing, agent-workforce, mcp, hindsight]
   mcp:
     egress: [observability, hindsight]
     ingress_from: [edge]
@@ -148,6 +150,13 @@ flows:
     # Every surface that remembers: both Otto doors write from the answering lane
     # (hermes-v2 otto/memory/hindsight.py) and estate-mcp serves the same bank to crew, the
     # agent classes and k8sgpt over the remember/recall tools.
+    #
+    # The egress side was missing until 2026-09-05, while estate-db.ingress_from below already
+    # named hindsight -- one direction of the same conversation was declared and the other was
+    # not, so a default-deny would have cut the memory service off from its own database.
+    # estate-db is estate-rw.estate-db.svc.cluster.local:5432 (platform/hindsight/hindsight.yaml);
+    # llm is the estate router it calls for HINDSIGHT_API_LLM_MODEL.
+    egress: [estate-db, llm, observability]
     ingress_from: [hermes-agent, edge, otto-gateway, otto-golden, mcp]
   robusta:
     # The runner posts to Telegram, which is on the public internet, and HolmesGPT calls the

@@ -94,4 +94,7 @@ spec:
           kubernetes.io/metadata.name: healing
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: hindsight
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: mcp

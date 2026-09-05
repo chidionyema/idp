@@ -242,7 +242,12 @@ def live_docs() -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("path", nargs="?", default="platform/k8s/namespaces",
+    # platform, not platform/k8s/namespaces: that directory has never existed in this repo, so
+    # every run with no argument died on FileNotFoundError instead of grading anything. The gate
+    # needs both halves in one tree -- the Namespace objects, which live beside each workload in
+    # platform/<ns>/namespace.yaml, and the fences the generator writes into platform/ns-fences --
+    # so the root of platform/ is the only path that can answer the question it asks.
+    ap.add_argument("path", nargs="?", default="platform",
                     help="manifest file or directory (ignored with --live)")
     ap.add_argument("--live", action="store_true",
                     help="read the running cluster instead of the manifests")
