@@ -21,7 +21,7 @@ running, and the whole shape of the work is "connect them", not "build them".
 | Capability | Where it lives | What it already does |
 |---|---|---|
 | Machine secret store | `ClusterSecretStore/estate-vault` (OCI Vault) | Ready. Holds machine-minted values. |
-| Human secret store | `ClusterSecretStore/human-vault` (Bitwarden Secrets Manager, chart `bitwarden-sdk-server` 0.6.0) | Ready, ids populated, nothing reads it yet. |
+| Human secret store, **read only** | `ClusterSecretStore/human-vault` (Bitwarden Secrets Manager, chart `bitwarden-sdk-server` 0.6.0) | Ready, ids populated, nothing reads it yet. Zero-knowledge: the estate can sync **from** it and can never write **to** it (decision 0020 amendment 2026-09-05, measured by `bin/idp-human-vault-probe --write`). A pasted key lands in `estate-vault`. |
 | Any other store | External Secrets Operator **2.9.0** | Native providers for Azure Key Vault, AWS Secrets Manager, Google Secret Manager, HashiCorp Vault, 1Password, Doppler, Akeyless, CyberArk, Infisical and more. Each is a `ClusterSecretStore` YAML row — no code. |
 | Per-entry source selection | ESO 2.9.0 `spec.data[].sourceRef.storeRef` | One Kubernetes Secret can be assembled from several stores at once; a later `data:` entry wins over an earlier `extract:`. |
 | Fine-grained write scoping | `platform/oci/vault.tf:39` — `where target.secret.name != 'verdict-hmac-key'` | A grant can be scoped to exactly the entries a principal may touch. `platform/verification/verdict-key-wall.yaml` proves the refusal holds (annotated `estate/expect-ready: "false"`; Ready would be the breach). |
