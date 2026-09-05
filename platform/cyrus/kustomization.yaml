@@ -11,3 +11,9 @@ resources:
   - deployment.yaml
   - service.yaml
   - httproute.yaml
+# The tag is moved by Flux image automation (platform/image-automation/cyrus.yaml), the same way
+# hermes-agent, backstage and sovereign-worker move. It is pinned here rather than in
+# deployment.yaml so the marker sits on one line the automation owns.
+images:
+  - name: ghcr.io/chidionyema/cyrus
+    newTag: main-5020-3c4c3802b5e69f58ab8bce8c1b134ff5332bedb3 # {"$imagepolicy": "flux-system:cyrus:tag"}
