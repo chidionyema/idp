@@ -13,7 +13,11 @@
 # behaviour, not wording: does this file start a process, open a socket or make a request. A
 # file that already exists is never graded -- only what a change adds.
 #
-# LAW 46: the checkout is computed from this script, never named.
+# It also refuses the NAME. A file called test_incident_<date-or-ticket> is a note about one
+# instance, and the naming convention is what reproduces the practice: a session reads the
+# directory, sees the pattern, and writes the next one. A new test names the rule it holds.
+#
+# LAW 46: the checkout is computed from this script, never named."
 set -uo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 BASE="${1:-origin/main}"
@@ -33,7 +37,15 @@ bad=0
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   if grep -qE "$EXECUTES" "$IDP/$f"; then
-    echo "ok    executes  $f runs something"
+    case "$(basename "$f")" in
+      test_incident_*)
+        echo "FAIL  executes  $f is named for the day something broke, not for the rule it holds."
+        echo "                A file named test_incident_* is a note about one instance; the next"
+        echo "                session reads the name and writes the next one. Name the invariant."
+        bad=1
+        ;;
+      *) echo "ok    executes  $f runs something" ;;
+    esac
   else
     echo "FAIL  executes  $f asserts this repository's own files back at it and runs nothing."
     echo "                Grade what the value causes -- a render admission accepts, a request the"
