@@ -217,8 +217,8 @@ spec:
             # while judgment on minimax answered in 1595 ms. deepseek is in the router key's
             # allowed set (kimi, minimax, deepseek) and in otto/router/config.py's family map,
             # and its family differs from judgment's minimax, which that file requires.
-            - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "deepseek" }
-            - { name: OTTO_ROUTER_LANE_VERIFY_MODEL, value: "deepseek" }
+            - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "gemini" }
+            - { name: OTTO_ROUTER_LANE_VERIFY_MODEL, value: "gemini" }
             - { name: PYTHONUNBUFFERED, value: "1" }
           ports:
             - { containerPort: 8080, name: http }

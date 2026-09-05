@@ -144,7 +144,7 @@ spec:
               # allowed set (kimi, minimax, deepseek) and in otto/router/config.py's family map,
               # and its family differs from judgment's minimax, which that file requires.
             - name: OTTO_ROUTER_LANE_BULK_MODEL
-              value: deepseek
+              value: gemini
             # The estate's memory (platform/hindsight), one bank for every surface, so a
             # person remembered from Telegram is remembered on the next channel too.
             # otto/memory/hindsight.py: unset is a no-op, unreachable never costs an answer.

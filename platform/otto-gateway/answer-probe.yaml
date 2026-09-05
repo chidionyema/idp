@@ -238,9 +238,9 @@ spec:
                 # allowed set (kimi, minimax, deepseek) and in otto/router/config.py's family map,
                 # and its family differs from judgment's minimax, which that file requires.
                 - name: OTTO_ROUTER_LANE_BULK_MODEL
-                  value: "deepseek"
+                  value: "gemini"
                 - name: OTTO_ROUTER_LANE_VERIFY_MODEL
-                  value: "deepseek"
+                  value: "gemini"
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
                   value: "http://signoz-otel-collector.observability.svc:4318"
               volumeMounts:
