@@ -9,6 +9,14 @@
 // ${{ parameters.featureTier.feature }} and ${{ parameters.featureTier.tier }}.
 import React, { useEffect, useState } from 'react';
 import FormControl from '@material-ui/core/FormControl';
+import FormHelperText from '@material-ui/core/FormHelperText';
+import InputLabel from '@material-ui/core/InputLabel';
+import MenuItem from '@material-ui/core/MenuItem';
+import Select from '@material-ui/core/Select';
+import Typography from '@material-ui/core/Typography';
+import { makeStyles } from '@material-ui/core/styles';
+import { useApi, fetchApiRef, configApiRef } from '@backstage/core-plugin-api';
+
 const useStyles = makeStyles(theme => ({
   root: { margin: theme.spacing(2, 0) },
   fieldRow: { display: 'flex', gap: theme.spacing(2) },
@@ -69,6 +77,15 @@ interface PlanData {
     name: string; ocpus: number; memory_gb: number; usd_month: number; fits: boolean;
   };
   node_smallest?: {
+    name: string; ocpus: number; memory_gb: number; usd_month: number;
+  } | null;
+}
+
+interface RegisterData {
+  features: FeatureEntry[];
+  [key: string]: unknown;
+}
+
 export const FeatureRegisterField = ({
   onChange,
   rawErrors,
@@ -240,20 +257,3 @@ export const FeatureRegisterField = ({
     </div>
   );
 };
-    name: string; ocpus: number; memory_gb: number; usd_month: number;
-  } | null;
-}
-
-interface RegisterData {
-  features: FeatureEntry[];
-  [key: string]: unknown;
-}
-import FormHelperText from '@material-ui/core/FormHelperText';
-import InputLabel from '@material-ui/core/InputLabel';
-import MenuItem from '@material-ui/core/MenuItem';
-import Select from '@material-ui/core/Select';
-import Typography from '@material-ui/core/Typography';
-import { makeStyles } from '@material-ui/core/styles';
-import { useApi } from '@backstage/core-plugin-api';
-import { fetchApiRef } from '@backstage/core-plugin-api';
-import { configApiRef } from '@backstage/frontend-plugin-api';
