@@ -85,8 +85,15 @@ spec:
             requests:
               cpu: 100m
               memory: 256Mi
+            # 1 core, not 2. The namespace quota is limits.cpu: 4 (namespace.yaml), so a
+            # 2-core limit let exactly two pods exist and a rolling update -- which needs the
+            # old pod plus one surge pod, and a third the moment either is slow to go -- was
+            # refused by the quota rather than by anything wrong with the image. Measured
+            # 2026-09-05: `limits.cpu: 4/4` with two pods, both ContainerCreating, one from
+            # each of two ReplicaSets, and no third pod admissible. Cyrus is a webhook agent;
+            # it has never needed two cores.
             limits:
-              cpu: "2"
+              cpu: "1"
               memory: 2Gi
           securityContext:
             allowPrivilegeEscalation: false
