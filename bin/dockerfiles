@@ -13,7 +13,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 # Excluded, with the reason. Anything Dockerfile-shaped not listed here and not
 # produced below is a gate finding.
-EXCLUDE='backstage/packages/backend/Dockerfile backstage/Dockerfile.dockerignore'   # upstream scaffold: needs a host yarn build and the repo root as context; the .dockerignore is backstage/Dockerfile's build context filter, not an image
+EXCLUDE='backstage/packages/backend/Dockerfile'   # upstream scaffold: needs a host yarn build and the repo root as context; idp#29 brings backstage/Dockerfile
 rows=()
 while IFS= read -r f; do
   f=${f#./}

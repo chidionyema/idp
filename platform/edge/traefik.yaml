@@ -38,9 +38,7 @@ spec:
       kubernetesIngress:
         enabled: false
       kubernetesCRD:
-        # Middleware CRs (ForwardAuth, ADR 0003) are ExtensionRef filters on HTTPRoutes and
-        # need this provider on; IngressRoute stays unused (ADR 0001: Gateway API only).
-        enabled: true
+        enabled: false
     gateway:
       enabled: false
     ingressRoute:
@@ -48,8 +46,11 @@ spec:
         enabled: false
     service:
       type: LoadBalancer
-      # No provider annotations here (R36): the cluster row (clusters/<cluster>/edge.yaml)
-      # patches in the load-balancer shape its cloud needs.
+      annotations:
+        oci.oraclecloud.com/load-balancer-type: lb
+        service.beta.kubernetes.io/oci-load-balancer-shape: flexible
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "10"
     resources:
       requests:
         cpu: 50m

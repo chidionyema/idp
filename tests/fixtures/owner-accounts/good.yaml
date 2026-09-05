@@ -1,2 +1,0 @@
-providers:
-  - {name: example, login: founder-gmail, second_owner: ops-lead, recovery: ops-lead}

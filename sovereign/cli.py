@@ -59,16 +59,6 @@ def cmd_start(args: argparse.Namespace) -> int:
         from sovereign.attach import core as attach_core  # noqa: F401
 
         args.repo = args.repo or args.estate
-    if getattr(args, "branches", None) and int(args.branches) > 1:
-        from sovereign.shadow import branching
-
-        res = asyncio.run(
-            branching.start_on_estate(
-                args.task, runner=args.runner, repo=args.repo, budget=int(budget_resolved.value), count=int(args.branches)
-            )
-        )
-        _emit(res, args.json)
-        return 0
     res = asyncio.run(
         engine_client.start(
             args.task, runner=args.runner, repo=args.repo, by=args.by, budget=int(budget_resolved.value)
@@ -97,96 +87,12 @@ def cmd_verify_receipts(args: argparse.Namespace) -> int:
 
 
 def cmd_audit(args: argparse.Namespace) -> int:
-    """cp34: the audit log IS the signed receipt chain (cp19), plus the
-    DAG under heads/main. `--verify` checks every signature, the monotonic
-    counter and the head anchor, then walks heads/main to genesis, and
-    exits non-zero on the first break. `--at <hash>` answers who did what,
-    when, under which policy, and which trust backend signed it, for one
-    chain line. With neither flag, verify."""
-    from sovereign.engine import checkpoint
-
-    if args.at:
-        res = checkpoint.audit_at(args.at)
-        if res is None:
-            print(f"no receipt with hash {args.at}", file=sys.stderr)
-            return config.CLI_EXIT_USAGE_ERROR
-        _emit(res, args.json)
-        return 0 if res["chain_ok"] else 1
-    res = checkpoint.audit_verify()
-    _emit(res, args.json)
-    return 0 if res["ok"] else 1
-
-
-def cmd_undo(args: argparse.Namespace) -> int:
-    """R7: revert the commit a receipt names, by walking the chain back to
-    that receipt (`--to <receipt hash>`) or to the session's newest receipt
-    that carries a commit. One receipt of kind "undo" is written."""
-    from sovereign.engine import undo as undo_mod
-
-    try:
-        res = undo_mod.undo(args.session_id, args.by, receipt_hash=args.to)
-    except undo_mod.NothingToUndo as exc:
-        print(str(exc), file=sys.stderr)
-        return config.CLI_EXIT_USAGE_ERROR
-    _emit(res, args.json)
-    return 0
-
-
-def _services_down() -> dict[str, str]:
-    """Stop the worker and Temporal by their pid files; the same code path
-    as `sb down`, so rewind stops exactly what up started."""
-    ns = argparse.Namespace(json=True)
-    import contextlib
-    import io
-
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        cmd_down(ns)
-    return json.loads(buf.getvalue())
-
-
-def _services_up() -> dict[str, str]:
-    ns = argparse.Namespace(json=True)
-    import contextlib
-    import io
-
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        cmd_up(ns)
-    return json.loads(buf.getvalue())
-
-
-def cmd_rewind(args: argparse.Namespace) -> int:
-    """cp33: stop services, move heads/main to the named hash, rebuild the
-    projection view from the DAG, write one signed REWIND receipt. Nothing
-    after the hash is deleted. Services are brought back up afterwards
-    when recover.start_services is on, the same switch `sb recover` uses."""
-    from sovereign.engine import checkpoint
-
-    if not args.signed:
-        print("rewind is a destructive op and needs --signed", file=sys.stderr)
-        return config.CLI_EXIT_USAGE_ERROR
-    stopped = _services_down()
-    try:
-        res = checkpoint.rewind(args.hash, args.by, signed=True)
-    except checkpoint.UnknownRoot as exc:
-        print(str(exc), file=sys.stderr)
-        return config.CLI_EXIT_USAGE_ERROR
-    started = _services_up() if config.RECOVER_START_SERVICES else {}
-    _emit({**res, "services_stopped": stopped, "services_started": started}, args.json)
-    return 0
-
-
-def cmd_recover(args: argparse.Namespace) -> int:
-    """cp35: point heads/main at the last fully committed root, rebuild
-    the projection view, bring the services back, write one RECOVER
-    receipt."""
-    from sovereign.engine import checkpoint
-
-    res = checkpoint.recover(args.by)
-    started = _services_up() if config.RECOVER_START_SERVICES else {}
-    _emit({**res, "services": started, "services_started": bool(config.RECOVER_START_SERVICES)}, args.json)
-    return 0
+    """cp34: `sb audit --verify` -- phase 1's audit chain IS the signed
+    receipt chain (cp19), so this is a thin alias of verify-receipts, not a
+    second implementation. --verify is accepted (and currently the only
+    mode) for cp34's exact CLI shape; audit with no flag also verifies,
+    since phase 1 has no other audit action yet."""
+    return cmd_verify_receipts(args)
 
 
 def cmd_root(args: argparse.Namespace) -> int:
@@ -227,134 +133,10 @@ def cmd_stop(args: argparse.Namespace) -> int:
     return 0
 
 
-APPROVE_ACTION = "approve"
-
-
 def cmd_approve(args: argparse.Namespace) -> int:
-    """R11/R22: no signature, no act (cp29).
-
-    `--sign` mints a challenge and signs it here and now -- Touch ID
-    through presence_helper.swift when this Mac has an enclave, and the
-    configured 2-of-3 signer set when it does not (cp29 scenario 3, R24).
-    `--signature` takes an envelope somebody else already signed, as JSON
-    or as a path to it.
-
-    With neither, and trust.require_signed_approval left on, the command
-    refuses. That refusal is the requirement: before it, the founder's
-    name in `--by` was the only credential on a destructive override, and
-    a name is not a secret."""
-    from sovereign.engine import interventions as interventions_mod
-    from sovereign.engine import receipts as receipts_mod
-    from sovereign.trust import approval
-    from sovereign.trust.anchor import HardwareTrustAnchor
-
-    envelope = approval.load(args.signature)
-
-    if envelope is None and args.sign:
-        trust_anchor = HardwareTrustAnchor()
-        challenge = approval.challenge(args.session_id, APPROVE_ACTION, args.by)
-        if trust_anchor.backend == "secure_enclave":
-            envelope = approval.sign(challenge, trust_anchor)
-        else:
-            # cp29 scenario 3: degraded mode is logged, not silent. The
-            # fallback happens automatically because refusing outright
-            # would make every non-Mac host unable to approve anything,
-            # and a guard that refuses correct work is an outage (LAW 38).
-            envelope = approval.sign_fallback(challenge)
-
-    if envelope is None and not config.REQUIRE_SIGNED_APPROVAL:
-        res = asyncio.run(engine_client.signal(args.session_id, APPROVE_ACTION, args.by))
-        _emit(res, args.json)
-        return 0
-
-    verdict = approval.verify(envelope)
-    if not verdict["ok"]:
-        print(verdict["reason"], file=sys.stderr)
-        return config.CLI_EXIT_USAGE_ERROR
-
-    # Spend the counter before acting, never after: a crash between the
-    # two must leave an approval that cannot be replayed, not one that can.
-    approval.spend(int(verdict["counter"]))
-    entry = receipts_mod.append(
-        {
-            "session_id": args.session_id,
-            # kind is the action name so interventions.is_intervention()
-            # recognises the line; "intervention" was not in
-            # interventions.kinds and the approve never reached the
-            # interventions/ view cp29 reads (found writing its steps).
-            "kind": APPROVE_ACTION,
-            "by": args.by,
-            "text": APPROVE_ACTION,
-            "step": 0,
-            "status": APPROVE_ACTION,
-            "task": "",
-            "runner": "",
-            "attestation": verdict["attestation"],
-            "approval_counter": int(verdict["counter"]),
-            "approval_sig": envelope.get("sig") or envelope.get("signers"),
-            "approval_backend": envelope.get("backend"),
-            "approval_signers": verdict["signers"],
-        }
-    )
-    interventions_mod.mirror(entry)
-    res = asyncio.run(
-        engine_client.signal(args.session_id, APPROVE_ACTION, args.by, attestation=verdict["attestation"])
-    )
-    _emit(
-        {**res, "attestation": verdict["attestation"], "counter": entry["counter"], "hash": entry["hash"]},
-        args.json,
-    )
-    return 0
-
-
-def cmd_model_consensus(args: argparse.Namespace) -> int:
-    """cp30: three models vote through LiteLLM, and policy overrules them.
-
-    Deliberately NOT folded into `sb consensus`, which is cp11's
-    DB-versus-DAG dual read. Same English word, two unrelated questions."""
-    from sovereign.consensus import decide as decide_mod
-
-    destructive = True if args.destructive else (False if args.non_destructive else None)
-    res = decide_mod.decide(args.op, destructive=destructive)
+    res = asyncio.run(engine_client.signal(args.session_id, "approve", args.by))
     _emit(res, args.json)
-    return 0 if res["ok"] else 1
-
-
-def cmd_identity(args: argparse.Namespace) -> int:
-    """R31: this agent's SPIFFE identity, and the heartbeat registry that
-    revokes a ghost after 3 missed beats."""
-    from sovereign.trust import spiffe
-
-    if args.beat:
-        _emit(spiffe.beat(args.beat), args.json)
-        return 0
-    if args.miss:
-        _emit(spiffe.miss(args.miss), args.json)
-        return 0
-    if args.sweep:
-        _emit({"revoked": spiffe.sweep()}, args.json)
-        return 0
-    me = spiffe.identity()
-    _emit({**me, "revoked": spiffe.is_revoked(me["spiffe_id"]), "registry": spiffe.status()}, args.json)
-    return 0 if me["trusted"] else 1
-
-
-def cmd_self_check(args: argparse.Namespace) -> int:
-    """R32: evaluate the self-termination conditions from spec section 5
-    against what is observable right now, and print the action they ask
-    for. Reports; it does not halt anything by itself."""
-    from sovereign.engine import termination
-
-    signals = termination.Signals(
-        low_confidence_streak=args.low_confidence_streak,
-        last_latency_s=args.last_latency_s,
-        latency_retries_used=args.latency_retries_used,
-        langfuse_blind_s=termination.langfuse_blind_seconds(),
-        alerts_last_hour=termination.alerts_in_last_hour(),
-    )
-    res = termination.evaluate(signals)
-    _emit({**res, "signals": vars(signals)}, args.json)
-    return 0 if res["action"] == termination.ACTIONS[0] else 1
+    return 0
 
 
 def cmd_deny(args: argparse.Namespace) -> int:
@@ -538,6 +320,21 @@ def cmd_worker(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_install_plugin(args: argparse.Namespace) -> int:
+    try:
+        otto_cli = importlib.import_module("sovereign.otto.cli")
+    except ImportError:
+        _emit({"status": "not-installed", "reason": "sovereign.otto is not present on this checkout"}, args.json)
+        return 0
+    fn = getattr(otto_cli, "install_plugin", None)
+    if fn is None:
+        _emit({"status": "not-installed", "reason": "sovereign.otto.cli has no install_plugin()"}, args.json)
+        return 0
+    res = fn()
+    _emit(res, args.json)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="sb", description="Sovereign Bus")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -549,7 +346,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--by", default="cli")
     p.add_argument("--budget", type=int, default=None)
     p.add_argument("--estate", default=None, help="attach root; repo defaults to it, receipts chain under its estate dir")
-    p.add_argument("--branches", type=int, default=None, help="R19: fork this many silent child sessions instead of one (sovereign/shadow)")
     _add_json(p)
     p.set_defaults(func=cmd_start)
 
@@ -565,30 +361,10 @@ def main(argv: list[str] | None = None) -> int:
     _add_json(p)
     p.set_defaults(func=cmd_verify_receipts)
 
-    p = sub.add_parser("audit", help="cp34 -- verify the signed receipt chain and the DAG, or explain one receipt")
-    p.add_argument("--verify", action="store_true", help="verify every signature, the counter, the anchor and heads/main")
-    p.add_argument("--at", default=None, help="explain the receipt with this chain hash")
+    p = sub.add_parser("audit", help="cp34 -- verify the audit chain (alias of verify-receipts in phase 1)")
+    p.add_argument("--verify", action="store_true", help="verify the chain (the only mode phase 1 has)")
     _add_json(p)
     p.set_defaults(func=cmd_audit)
-
-    p = sub.add_parser("undo", help="R7 -- revert the commit a session's receipt names")
-    p.add_argument("session_id")
-    p.add_argument("--by", required=True)
-    p.add_argument("--to", default=None, help="receipt hash to walk the chain back to; default is the newest with a commit")
-    _add_json(p)
-    p.set_defaults(func=cmd_undo)
-
-    p = sub.add_parser("rewind", help="cp33 -- move heads/main to a DAG hash and rebuild the views")
-    p.add_argument("hash")
-    p.add_argument("--by", required=True)
-    p.add_argument("--signed", action="store_true", help="sign the receipt with the trust anchor (required)")
-    _add_json(p)
-    p.set_defaults(func=cmd_rewind)
-
-    p = sub.add_parser("recover", help="cp35 -- point heads/main at the last fully committed root and rebuild")
-    p.add_argument("--by", default="recover")
-    _add_json(p)
-    p.set_defaults(func=cmd_recover)
 
     p = sub.add_parser("config", help="show or change engine configuration")
     _add_json(p)
@@ -624,34 +400,11 @@ def main(argv: list[str] | None = None) -> int:
     _add_json(p)
     p.set_defaults(func=cmd_stop)
 
-    p = sub.add_parser("approve", help="approve a waiting session (requires a signature)")
+    p = sub.add_parser("approve", help="approve a waiting session")
     p.add_argument("session_id")
     p.add_argument("--by", required=True)
-    p.add_argument("--sign", action="store_true", help="sign here and now with Touch ID, or with the 2-of-3 fallback set")
-    p.add_argument("--signature", default=None, help="a signed approval envelope, as JSON or a path to it")
     _add_json(p)
     p.set_defaults(func=cmd_approve)
-
-    p = sub.add_parser("model-consensus", help="cp30 -- three models vote via LiteLLM, policy overrules them")
-    p.add_argument("--op", required=True, help="the operation to put to the models")
-    p.add_argument("--destructive", action="store_true", help="force the 3-model path")
-    p.add_argument("--non-destructive", action="store_true", dest="non_destructive", help="force the single cheap model")
-    _add_json(p)
-    p.set_defaults(func=cmd_model_consensus)
-
-    p = sub.add_parser("identity", help="R31 -- this agent's SPIFFE identity and heartbeat state")
-    p.add_argument("--beat", default=None, help="record a heartbeat for this SPIFFE ID")
-    p.add_argument("--miss", default=None, help="record a missed heartbeat for this SPIFFE ID")
-    p.add_argument("--sweep", action="store_true", help="charge a missed beat to every stale identity")
-    _add_json(p)
-    p.set_defaults(func=cmd_identity)
-
-    p = sub.add_parser("self-check", help="R32 -- evaluate the self-termination conditions")
-    p.add_argument("--low-confidence-streak", type=int, default=0, dest="low_confidence_streak")
-    p.add_argument("--last-latency-s", type=float, default=0.0, dest="last_latency_s")
-    p.add_argument("--latency-retries-used", type=int, default=0, dest="latency_retries_used")
-    _add_json(p)
-    p.set_defaults(func=cmd_self_check)
 
     p = sub.add_parser("deny", help="deny a waiting session")
     p.add_argument("session_id")
@@ -683,9 +436,13 @@ def main(argv: list[str] | None = None) -> int:
     _add_json(p)
     p.set_defaults(func=cmd_worker)
 
+    p = sub.add_parser("install-plugin", help="install the hermes plugin (delegates to otto.cli)")
+    _add_json(p)
+    p.set_defaults(func=cmd_install_plugin)
+
     # Plug-in hook: otto and cockpit register their own subcommands here if
     # their package is present. Absence of either is not an error (cp6).
-    for modname in ("sovereign.otto.cli", "sovereign.cockpit.cli", "sovereign.attach.cli", "sovereign.intake.cli", "sovereign.presence.cli", "sovereign.shadow.cli"):
+    for modname in ("sovereign.otto.cli", "sovereign.cockpit.cli", "sovereign.attach.cli"):
         try:
             mod = importlib.import_module(modname)
         except ImportError:
@@ -693,16 +450,6 @@ def main(argv: list[str] | None = None) -> int:
         register = getattr(mod, "register", None)
         if callable(register):
             register(sub)
-
-    # otto.cli registers its own `install-plugin`. This fallback exists for
-    # a checkout without otto, and it is added after the hook because
-    # argparse on Python 3.11+ raises "conflicting subparser" for a second
-    # parser of the same name -- which broke every `bin/sb` command under
-    # a 3.11+ venv while the 3.10 venv accepted the duplicate silently.
-    if "install-plugin" not in sub.choices:
-        p = sub.add_parser("install-plugin", help="install the hermes plugin (delegates to otto.cli)")
-        _add_json(p)
-        p.set_defaults(func=cmd_install_plugin)
 
     args = parser.parse_args(argv)
     return args.func(args)

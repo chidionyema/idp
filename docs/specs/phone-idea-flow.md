@@ -124,12 +124,9 @@ transcript contains zero lines originating from the Telegram message.
 
 ### CP3 — R3 pre-flight dedup before drafting
 
-**Requirement:** before hermes-v2 drafts anything, it reads the board (every
-open GitHub issue in `chidionyema/crew`, whatever its label), the estate's
-active branches and worktrees, and open PRs — read-only, through `gh` and
-`git` (`hermes-v2/handlers/idea_flow.py dedup`; crew#188 made GitHub issues
-the one board, so `idp/board` and the crew#180 MCP dependency no longer
-apply). If a match
+**Requirement:** before hermes-v2 drafts anything, it reads `idp/board` (all
+open columns, not just one), the estate's active branches and worktrees, and
+open PRs — read-only, via MCP tools once `crew#180` CP5 lands. If a match
 exists, it replies naming the card or branch and asks whether to update that
 one or leave it, rather than drafting a duplicate.
 

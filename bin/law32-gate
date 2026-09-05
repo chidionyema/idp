@@ -47,9 +47,8 @@ def feature_names():
 
 
 def has_pair(stem, names):
-    # accept the full stem too: bin/spec-gate is documented as docs/demo/spec-gate.md
-    stems = {stem, re.sub(r"-(gate|report)$", "", stem)}
-    cands = [n for n in names if any(s == n or s.startswith(n + "-") for s in stems)]
+    stem = re.sub(r"-(gate|report)$", "", stem)
+    cands = [n for n in names if stem == n or stem.startswith(n + "-")]
     for n in sorted(cands, key=len, reverse=True):
         if all(os.path.isfile(os.path.join(ROOT, "docs", d, n + ".md")) for d in ("demo", "onboarding")):
             return n

@@ -49,32 +49,26 @@ spec:
               value: backstage
             - name: POSTGRES_DB
               value: backstage
-          # POSTGRES_PASSWORD is read from a file (app-config.container.yaml, `$file`),
-          # never from the environment: the estate policy secrets-not-from-env-vars
-          # (prospector-main/deploy/k8s/policies/estate.yaml) refused the pod on
-          # 2026-08-25 and the catalogue had no pod for 12 minutes after its image
-          # finally built. Same pattern as prospector's file_secrets.py.
+          envFrom:
+            - secretRef:
+                name: backstage-env   # POSTGRES_PASSWORD, BACKEND_SECRET
           ports:
             - containerPort: 3100
               name: http
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true   # require-ro-rootfs; the backend writes only to /tmp
+            readOnlyRootFilesystem: false   # backstage-cli writes a cache under /app on boot
             capabilities:
               drop: ["ALL"]
-          # Incident 2026-08-25: /healthcheck does not exist in the new backend system; the
-          # app-backend catch-all answered it with index.html (200, text/html), so a pod whose
-          # plugins had not mounted still read Ready. Measured: /nonsense-path also returned 200.
-          # The backend's own endpoints answer JSON and only once the plugins are up.
           startupProbe:
-            httpGet: { path: /.backstage/health/v1/readiness, port: http }
+            httpGet: { path: /healthcheck, port: http }
             periodSeconds: 5
             failureThreshold: 36   # 180s; compose.yml gives start_period 120s
           readinessProbe:
-            httpGet: { path: /.backstage/health/v1/readiness, port: http }
+            httpGet: { path: /healthcheck, port: http }
             periodSeconds: 15
           livenessProbe:
-            httpGet: { path: /.backstage/health/v1/liveness, port: http }
+            httpGet: { path: /healthcheck, port: http }
             periodSeconds: 30
           resources:
             requests: { cpu: 250m, memory: 512Mi }
@@ -83,18 +77,7 @@ spec:
             - name: estate
               mountPath: /estate
               readOnly: true
-            - name: secrets
-              mountPath: /run/secrets/backstage
-              readOnly: true
-            - name: tmp
-              mountPath: /tmp
       volumes:
         - name: estate
           configMap:
             name: estate-catalog
-        - name: secrets
-          secret:
-            secretName: backstage-env   # POSTGRES_PASSWORD; no-optional-secret-references enforces optional: false
-            optional: false
-        - name: tmp
-          emptyDir: {}

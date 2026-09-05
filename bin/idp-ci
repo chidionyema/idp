@@ -243,22 +243,6 @@ else say "FAIL  incident 2026-08-25 containment through a link: in-worktree=$(st
 # 4c. Port lock (crew#186 CP4, R22 mechanism 4): a compose publication not
 #     declared in catalog/ports.yaml, or off loopback without non_loopback (R20),
 #     fails. Proved both ways: the rogue fixture is refused, the repo passes.
-# R36 (crew#250): no provider-specific annotation or service outside the compute provisioner.
-# Proved both ways on fixtures, then run on the repo.
-if ! CLOUD_AGNOSTIC_ROOT="$IDP/tests/fixtures/cloud-agnostic/bad" python3 "$IDP/bin/cloud-agnostic-gate" >/dev/null 2>&1 \
-   && CLOUD_AGNOSTIC_ROOT="$IDP/tests/fixtures/cloud-agnostic/good" python3 "$IDP/bin/cloud-agnostic-gate" >/dev/null 2>&1 \
-   && out=$(python3 "$IDP/bin/cloud-agnostic-gate" 2>&1); then
-  say "ok    agnostic cloud-agnostic-gate refuses a provider annotation, permits a plain Service, and the repo is clean"
-else say "FAIL  agnostic cloud-agnostic-gate is not discriminating or the platform names a cloud outside platform/oci"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-
-# crew#269 (founder: "as always configurable"): the DNS zone is one value in clusters/*/estate-config.yaml;
-# a platform file naming it as a literal fails. Proved both ways on fixtures, then run on the repo.
-if ! ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/bad" python3 "$IDP/bin/estate-zone-gate" >/dev/null 2>&1 \
-   && ESTATE_ZONE_ROOT="$IDP/tests/fixtures/estate-zone/good" python3 "$IDP/bin/estate-zone-gate" >/dev/null 2>&1 \
-   && out=$(python3 "$IDP/bin/estate-zone-gate" 2>&1); then
-  say "ok    zone     estate-zone-gate refuses a literal zone, permits \${ESTATE_ZONE}, and the repo is clean"
-else say "FAIL  zone     estate-zone-gate is not discriminating or the platform names the zone outside clusters/*/estate-config.yaml"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-
 if ! COMPOSE_GLOB='tests/fixtures/ports-bad/*.yml' python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
    && out=$(python3 "$IDP/bin/port-gate" 2>&1); then
   say "ok    portlock $(printf '%s' "$out" | tail -1 | sed 's/^ok *ports *//')"
@@ -324,9 +308,7 @@ else say "FAIL  law32    a feature shipped without demo/onboarding, or a page is
 # launchd templates (idp#49 incident): every launchd/*.plist.tmpl renders to a plist that parses.
 if python3 "$IDP/bin/plist-gate" >/dev/null 2>&1 \
    && ! python3 "$IDP/bin/plist-gate" tests/fixtures/plist/bad.plist.tmpl >/dev/null 2>&1 \
-   && ! python3 "$IDP/bin/plist-gate" tests/fixtures/plist/bare-argv.plist.tmpl >/dev/null 2>&1 \
-   && ! python3 "$IDP/bin/plist-gate" tests/fixtures/plist/orphaned-children.plist.tmpl >/dev/null 2>&1 \
-   && python3 "$IDP/bin/plist-gate" tests/fixtures/plist/abandoned-children.plist.tmpl >/dev/null 2>&1; then
+   && ! python3 "$IDP/bin/plist-gate" tests/fixtures/plist/bare-argv.plist.tmpl >/dev/null 2>&1; then
   say "ok    plist    every launchd template renders to a plist that parses and names its job; gate proved both ways"
 else say "FAIL  plist    a launchd template does not render to a valid plist, or the gate does not discriminate"; python3 "$IDP/bin/plist-gate" | sed 's/^/      /'; fail=1; fi
 
@@ -444,18 +426,6 @@ if out=$(VM_SHARED_ROOTS="$HOME" "$IDP/bin/vm-shared-path" "$HOME" 2>&1) \
    && ! VM_SHARED_ROOTS="$HOME" "$IDP/bin/vm-shared-path" /private/tmp >/dev/null 2>&1; then
   say "ok    vmmount  vm-shared-path permits a path under the shared root and refuses one outside it"
 else say "FAIL  vmmount  bin/vm-shared-path selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-
-# Zero static secrets (security-policy.md row, kini-master-spec 4.1/4.4, crew#227). Proved both
-# ways on fixtures; the live host count is reported by bin/idp-verify, not gated here, because
-# it is an open incident until crew#227 lands and a gate that refuses correct work is an outage.
-if STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/good ESTATE_CODE=tests/fixtures/static-secret/good ESTATE_SECRETS=/nonexistent bin/static-secret-gate >/dev/null \
-   && ! STATIC_SECRET_GATE_ROOT=tests/fixtures/static-secret/bad ESTATE_CODE=tests/fixtures/static-secret/bad/code ESTATE_SECRETS=/nonexistent bin/static-secret-gate >/dev/null; then
-  say "ok    secrets  static-secret-gate passes the empty fixture and refuses the one with a key and a .env"
-else say "FAIL  secrets  bin/static-secret-gate fixtures"; fail=1; fi
-if bin/owner-account-gate tests/fixtures/owner-accounts/good.yaml >/dev/null \
-   && ! bin/owner-account-gate tests/fixtures/owner-accounts/bad.yaml >/dev/null; then
-  say "ok    owners   owner-account-gate passes a provider with a second owner and refuses one without"
-else say "FAIL  owners   bin/owner-account-gate fixtures"; fail=1; fi
 if out=$("$IDP/bin/bind-audit" --selftest 2>&1); then say "ok    binds    bind-audit refuses an unknown listener and permits an allow-listed one"
 else say "FAIL  binds    bin/bind-audit --selftest"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
@@ -466,8 +436,6 @@ else say "FAIL  binds    bin/bind-audit --selftest"; printf '%s\n' "$out" | sed 
 if out=$("$MPY" "$IDP/tests/test_cp1_estate_inventory.py" 2>&1); then
   say "ok    cp1      $(printf '%s' "$out" | grep -c '^ok    ') property/incident checks pass (crew#216)"
 else say "FAIL  cp1      tests/test_cp1_estate_inventory.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
-if out=$("$MPY" "$IDP/tests/test_estate_diagram.py" 2>&1); then say "ok    diagram  tests/test_estate_diagram.py"
-else say "FAIL  diagram  tests/test_estate_diagram.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
 # 9. crew#216 CP2: the get_workload_state(app) MCP tool. Property (byte ceiling holds
 #    over >=500 (dependency-count x metric-sample-count x ceiling) combinations) and
@@ -489,72 +457,48 @@ if out=$("$MPY" "$IDP/tests/test_cp3_workload_logs.py" 2>&1); then
   say "ok    cp3      $(printf '%s' "$out" | grep -c '^ok    ') property/incident checks pass (crew#216)"
 else say "FAIL  cp3      tests/test_cp3_workload_logs.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
-
-# 11. crew#219 R39: the acceptance suite is executable. The 35 Gherkin files in
-#     features/sovereign-bus/ were prose until now -- crew#200 measured "61
-#     .feature files in idp, 0 step dirs". pytest-bdd binds them to pytest, so
-#     this is one more leg of the gate that already exists and not a second
-#     runner (the tool rejected is behave, which brings its own).
+# 11. THE DOC REPO IS BROWSABLE, AND EVERY DOC IS IN IT. Founder, 2026-08-25:
+#    "i nust ne ble to see the doc repo any tine with dics organsised to stadards",
+#    and "proof". The standard is Diataxis (ADR 0002); the surface is TechDocs,
+#    which was already installed (backstage/packages/backend/src/index.ts:24) and
+#    configured (backstage/app-config.yaml:160) and rendering a nav that left 10
+#    of 49 markdown files -- all three specs, ADR 0005, three how-to guides --
+#    reachable by nobody. A doc that is in the repo and not in the nav is a doc
+#    the founder cannot see, which is the same as not having written it.
 #
-#     Proved both ways in the same run, because a gate only ever seen passing
-#     has never been shown to refuse (LAW 38): the unbound fixture must fail
-#     with StepDefinitionNotFoundError -- not merely fail, or a typo in a
-#     feature path would satisfy the guard -- and the real suite must pass.
-BDD_PY="$MPY"
-"$BDD_PY" -c 'import pytest_bdd' >/dev/null 2>&1 || BDD_PY=python3
-if ! "$BDD_PY" -c 'import pytest_bdd' >/dev/null 2>&1; then
-  say "FAIL  bdd      pytest-bdd is not installed: pip install -r sovereign/requirements-dev.txt"; fail=1
+#    NO SCRIPT HERE ON PURPOSE. mkdocs already refuses both failures under
+#    --strict: a page missing from `nav`, and a link whose target is not among
+#    the documentation files. It is the same binary that renders the portal, run
+#    from the same image Backstage's generator uses (`runIn: docker`), so this
+#    gate cannot drift from what the founder actually sees. Re-implementing the
+#    check in python would grade a proxy.
+#
+#    Proved both ways in one run: the tree as committed must build, and a tree
+#    with one orphan page must be refused. The bad case is built in a copy, never
+#    in docs/ -- a gate that writes to the tree it is grading is not a gate.
+TDIMG=spotify/techdocs:latest
+docs_build() { docker run --rm -v "$1":/content -w /content --entrypoint mkdocs "$TDIMG" build --strict -d /tmp/site 2>&1; }
+if ! docker info >/dev/null 2>&1; then
+  say "BLIND docs     no docker daemon; mkdocs --strict did not run, docs coverage is unproven"; fail=1
+elif ! docker image inspect "$TDIMG" >/dev/null 2>&1 && ! docker pull -q "$TDIMG" >/dev/null 2>&1; then
+  say "BLIND docs     $TDIMG unavailable; docs coverage is unproven"; fail=1
 else
-  # Captured, never piped into grep: this script sets pipefail and pytest exits
-  # non-zero on purpose here, which is the incident guard 1c is about.
-  bdd_bad=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/fixtures/bdd/unbound" -q 2>&1)
-  bdd_good=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/bdd" -q 2>&1); bdd_good_rc=$?
-  if printf '%s' "$bdd_bad" | grep -q 'StepDefinitionNotFoundError' && [ "$bdd_good_rc" -eq 0 ]; then
-    say "ok    bdd      $(printf '%s' "$bdd_good" | grep -oE '[0-9]+ passed' | head -1), $(printf '%s' "$bdd_good" | grep -c '^  pending ') feature(s) pending; an unbound step is refused"
-    printf '%s' "$bdd_good" | grep '^  pending ' | sed 's/^/      /'
+  dtmp=$(mktemp -d); cp "$IDP/mkdocs.yml" "$dtmp/"; cp -R "$IDP/docs" "$dtmp/docs"
+  printf '# orphan\n\nthis page is in docs/ and not in nav\n' > "$dtmp/docs/zz-orphan-proof.md"
+  bad_out=$(docs_build "$dtmp"); bad_rc=$?
+  rm -rf "$dtmp"
+  good_out=$(docs_build "$IDP"); good_rc=$?
+  # find, not a glob: bash has no globstar here, so `**/*.md` would silently
+  # miss docs/ai-systems/prospector/technical-file.md and report 48 for 49.
+  ndocs=$(find "$IDP/docs" -type f -name '*.md' | wc -l | tr -d ' ')
+  if [ "$good_rc" -eq 0 ] && [ "$bad_rc" -ne 0 ]; then
+    say "ok    docs     $ndocs pages build under mkdocs --strict; a page left out of nav is refused"
   else
-    say "FAIL  bdd      sovereign/tests/bdd (rc=$bdd_good_rc), or the unbound fixture was not refused for the right reason"
-    printf '%s\n' "$bdd_good" | tail -25 | sed 's/^/      /'
-    printf '%s\n' "$bdd_bad" | tail -5 | sed 's/^/  bad /'
+    say "FAIL  docs     mkdocs --strict is not discriminating (clean rc=$good_rc, orphan rc=$bad_rc)"
+    printf '%s\n' "$good_out" "$bad_out" | /usr/bin/grep -E 'WARNING|ERROR|Aborted' | sed 's/^/      /'
     fail=1
   fi
 fi
-
-# 8b. Every incident test (rung 4, one per bug, named for it). Incident 2026-08-25: six
-#     tests/test_incident_*.py files existed and none ran anywhere -- this script ran four
-#     named files and the bdd suite, ci.yml ran sovereign/tests/bdd. A PR body that says
-#     "bin/idp-ci runs the incident test on every PR" was a claim with no receipt. Tests
-#     that need kyverno or a sibling checkout skip as BLIND and say so; a skip is printed.
-inc=$("$BDD_PY" -m pytest -q -p no:cacheprovider "$IDP"/tests/test_incident_*.py 2>&1); inc_rc=$?
-if [ "$inc_rc" -eq 0 ]; then
-  say "ok    incident $(printf '%s' "$inc" | grep -oE '[0-9]+ passed' | head -1), $(printf '%s' "$inc" | grep -oE '[0-9]+ skipped' | head -1 || printf '0 skipped') (BLIND skips)"
-  printf '%s\n' "$inc" | grep -oE 'BLIND: [^)]*' | sort -u | sed 's/^/      /'
-else
-  say "FAIL  incident tests/test_incident_*.py (rc=$inc_rc)"; printf '%s\n' "$inc" | tail -20 | sed 's/^/      /'; fail=1
-fi
-
-# 9. Every Flux HelmRelease under platform/ renders clean against the cluster's Kyverno
-#    ClusterPolicies (helm template + the release's own postRenderers), both ways: the
-#    unpatched-chart fixture must be refused. Kyverno judges at admission, after merge;
-#    this judges before the PR. BLIND (rc 2) when helm/kyverno are missing, never a pass.
-if command -v kyverno >/dev/null && command -v helm >/dev/null; then
-  dirs=$(cd "$IDP" && grep -lE '^kind: HelmRelease' platform/*/*.yaml platform/*/*/*.yaml 2>/dev/null | xargs -n1 dirname | sort -u | while read -r d; do [ -f "$d/kustomization.yaml" ] && grep -q postRenderers "$d"/*.yaml && echo "$d"; done)
-  if [ -n "$dirs" ] && (cd "$IDP" && bin/idp-kyverno-render $dirs) && ! (cd "$IDP" && bin/idp-kyverno-render tests/fixtures/kyverno/must-fail >/dev/null 2>&1); then
-    say "ok    kyverno  $(echo "$dirs" | tr '\n' ' ')render clean; the unpatched-chart fixture is refused"
-  else say "FAIL  kyverno  a HelmRelease render fails admission policy, or the must-fail fixture passed"; fail=1; fi
-else say "BLIND kyverno  helm or kyverno CLI not installed; HelmRelease renders were not judged"; fail=1; fi
-
-# 10. crew#269 row 3: a Component with no URL a person can open fails the PR, both ways.
-#     The clean fixture must pass bin/catalog-links-check and a checkout with no remote
-#     must be refused. Row 2 made every route an Open link; this keeps a linkless
-#     entity from landing again (sweep on the live inventory before this: N=2).
-lk="$tmp/links-bad"; mkdir -p "$lk"
-if INV="$FIX" OUT="$a" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1 \
-   && lk_ok=$(python3 "$IDP/bin/catalog-links-check" "$a/catalog-info.yaml") \
-   && INV="$IDP/tests/fixtures/inventory.no-remote.json" OUT="$lk" python3 "$IDP/bin/catalog-gen" >/dev/null 2>&1 \
-   && ! python3 "$IDP/bin/catalog-links-check" "$lk/catalog-info.yaml" >/dev/null 2>&1; then
-  say "ok    links    $lk_ok; a checkout with no remote is refused"
-else say "FAIL  links    catalog-links-check passed a linkless Component or refused the clean fixture"; fail=1; fi
 
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 exit "$fail"

@@ -3,7 +3,7 @@
 ```
 bin/idp-oci-login                       # ok    oci     identity estate-tofu answers in uk-london-1; ...
 (cd platform/oci && tofu apply)         # Plan: 60 to add ... Apply complete
-bin/idp-flux-bootstrap                  # ok apiserver ready / ok no sops-age secret / flux get kustomizations
+bin/idp-flux-bootstrap                  # ok apiserver ready / ok sops-age secret / flux get kustomizations
 bin/idp-catalog-push                    # ok      estate-catalog pushed, revision <sha>@<utc>
 ```
 

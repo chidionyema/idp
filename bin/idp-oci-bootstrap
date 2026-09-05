@@ -21,11 +21,7 @@ vget() { sops -d --extract "[\"$1\"]" "$VAULT/secrets/$ENV_NAME/$1.yaml" 2>/dev/
 vput() { # name on argv, VALUE ON STDIN ONLY
   local f="$VAULT/secrets/$ENV_NAME/$1.yaml"
   if [ -e "$f" ] && [ "${2:-}" != replace ]; then cat >/dev/null; echo "vault   $1 kept"; return; fi
-  # 2026-08-25: vget returned "" (SOPS_AGE_KEY_FILE unset) and vput wrote two EMPTY secrets to
-  # the vault. An empty value is never a secret; refuse it instead of recording a blank verdict.
-  local v; v="$(cat)"
-  [ -n "$v" ] || { echo "FAIL    vault $1: refusing to write an empty value" >&2; return 1; }
-  printf %s "$v" | SECRET_REPLACE=1 "$VAULT/scripts/secret-add" "$ENV_NAME" "$1" "$1" >/dev/null && echo "vault   $1 written"
+  SECRET_REPLACE=1 "$VAULT/scripts/secret-add" "$ENV_NAME" "$1" "$1" >/dev/null && echo "vault   $1 written"
 }
 
 REGION="$(vget OCI_REGION)"; TENANCY="$(vget OCI_TENANCY_OCID)"
@@ -67,122 +63,31 @@ oci iam group add-user "${O[@]}" --group-id "$GROUP" --user-id "$USER_ID" >/dev/
 POLICY_NAME=estate-operators-manage-estate
 # Statements are reconciled, not only created: a re-run after a statement is added here updates
 # the live policy (2026-08-25: `read all-resources` does not cover the limits service; capacity
-# checks need `inspect limits`; 2026-08-25 evening: CP3 apply failed 404 NotAuthorized creating the
-# dynamic group and the vault, so dynamic-groups, policies, vaults, keys and secret-family were added).
-# 2026-08-25: the objects statement lost its `where target.bucket.name=...` condition. OCI stored
-# the condition without its quotes and refused every PutObject from estate-tofu (404 BucketNotFound)
-# while GetObject still passed; the state upload after the vault apply failed and errored.tfstate
-# had to be pushed by hand. Unconditional `manage objects in compartment estate` is the scope now:
-# the compartment holds only estate buckets.
-STATEMENTS='["Allow group estate-operators to manage cluster-family in compartment estate","Allow group estate-operators to use cluster-node-pools in compartment estate","Allow group estate-operators to manage virtual-network-family in compartment estate","Allow group estate-operators to manage instance-family in compartment estate","Allow group estate-operators to manage volume-family in compartment estate","Allow group estate-operators to use subnets in compartment estate","Allow group estate-operators to use vnics in compartment estate","Allow group estate-operators to use network-security-groups in compartment estate","Allow group estate-operators to use private-ips in compartment estate","Allow group estate-operators to manage public-ips in compartment estate","Allow group estate-operators to inspect compartments in tenancy","Allow group estate-operators to read all-resources in tenancy","Allow group estate-operators to inspect limits in tenancy","Allow group estate-operators to use tag-namespaces in tenancy","Allow group estate-operators to read buckets in compartment estate","Allow group estate-operators to manage objects in compartment estate","Allow group estate-operators to manage dynamic-groups in tenancy","Allow group estate-operators to manage policies in compartment estate","Allow group estate-operators to manage vaults in compartment estate","Allow group estate-operators to manage keys in compartment estate","Allow group estate-operators to manage secret-family in compartment estate"]'   # docs.oracle.com ContEng contengpolicyconfig, 2026-08-25
+# checks need `inspect limits`).
+STATEMENTS='["Allow group estate-operators to manage cluster-family in compartment estate","Allow group estate-operators to use cluster-node-pools in compartment estate","Allow group estate-operators to manage virtual-network-family in compartment estate","Allow group estate-operators to manage instance-family in compartment estate","Allow group estate-operators to manage volume-family in compartment estate","Allow group estate-operators to use subnets in compartment estate","Allow group estate-operators to use vnics in compartment estate","Allow group estate-operators to use network-security-groups in compartment estate","Allow group estate-operators to use private-ips in compartment estate","Allow group estate-operators to manage public-ips in compartment estate","Allow group estate-operators to inspect compartments in tenancy","Allow group estate-operators to read all-resources in tenancy","Allow group estate-operators to inspect limits in tenancy","Allow group estate-operators to use tag-namespaces in tenancy"]'   # docs.oracle.com ContEng contengpolicyconfig, 2026-08-25
 PID=$(oci iam policy list "${O[@]}" --compartment-id "$TENANCY" --name "$POLICY_NAME" --query 'data[0].id' --raw-output 2>/dev/null || true)
 if [ -z "$PID" ] || [ "$PID" = null ]; then
   oci iam policy create "${O[@]}" --compartment-id "$TENANCY" --name "$POLICY_NAME" --description "least privilege for platform/oci (ADR 0004)" --statements "$STATEMENTS" >/dev/null
 elif [ "$(oci iam policy get "${O[@]}" --policy-id "$PID" --query 'data.statements' 2>/dev/null | jq -c .)" != "$(printf %s "$STATEMENTS" | jq -c .)" ]; then
-  oci iam policy update "${O[@]}" --policy-id "$PID" --statements "$STATEMENTS" --version-date "" --force >/dev/null; echo "iam     policy statements updated"
+  oci iam policy update "${O[@]}" --policy-id "$PID" --statements "$STATEMENTS" --force >/dev/null; echo "iam     policy statements updated"
 fi
 echo "iam     policy $POLICY_NAME"
-
-# crew#220 hand step 1: the remote-state bucket. Versioned so a bad apply can be rolled back to
-# the previous state object. Created here, under the bootstrap identity, because the operator
-# policy above deliberately cannot create buckets (2026-08-25: BucketAlreadyExists-or-unauthorised).
-if ! oci os bucket get "${O[@]}" -bn estate-tofu-state >/dev/null 2>&1; then
-  oci os bucket create "${O[@]}" --compartment-id "$COMP" --name estate-tofu-state --versioning Enabled --public-access-type NoPublicAccess >/dev/null
-  echo "os      bucket estate-tofu-state created (versioned)"
-else
-  echo "os      bucket estate-tofu-state"
-fi
-# 2026-08-25 incident: the objects statement carried `where target.bucket.name='estate-tofu-state'`;
-# OCI stored it without the quotes and every PutObject from estate-tofu got 404, found only after
-# an apply had to be pushed by hand. Class: a policy granted on paper and never exercised by the
-# identity it was granted to. So exercise it: write and delete one object as estate-tofu.
-# BLIND (not FAIL) when the estate-tofu profile does not exist yet (bin/idp-oci-login writes it).
-probe_state_write() { # $1 bucket, $2 the estate-tofu user OCID the policy was written for
-  local bucket="$1" want="$2" profile="${OCI_TOFU_PROFILE:-DEFAULT}" cfg="${OCI_CLI_CONFIG_FILE:-$HOME/.oci/config}" have
-  # bin/idp-oci-login writes [DEFAULT] as estate-tofu; prove it is that user, not the tenancy owner,
-  # or the probe exercises the wrong identity and passes regardless of the policy (idp#119 review).
-  have=$(awk -v p="[$profile]" '$0==p{f=1;next} /^\[/{f=0} f&&/^user[ \t]*=/{sub(/^user[ \t]*=[ \t]*/,"");print}' "$cfg" 2>/dev/null)
-  [ -n "$have" ] || { echo "BLIND   state-write probe: no profile $profile in $cfg yet (bin/idp-oci-login); policy unexercised"; return 0; }
-  [ "$have" = "$want" ] || { echo "BLIND   state-write probe: profile $profile is not estate-tofu (${have:0:24}...); policy unexercised"; return 0; }
-  if printf ok | oci os object put --profile "$profile" -bn "$bucket" --name .write-probe --file - --force >/dev/null 2>&1; then
-    oci os object delete --profile "$profile" -bn "$bucket" --name .write-probe --force >/dev/null 2>&1 || true
-    echo "os      state-write probe ok: estate-tofu ($profile) can PutObject on $bucket"; return 0
-  fi
-  echo "FAIL    state-write probe: estate-tofu ($profile) cannot PutObject on $bucket; the objects policy statement is not in force (2026-08-25: OCI strips quotes from a where clause)" >&2
-  return 1
-}
-probe_state_write estate-tofu-state "$USER_ID"
-NS_VAL=$(oci os ns get "${O[@]}" --query data --raw-output); printf %s "$NS_VAL" | vput OCI_OS_NAMESPACE
-if [ ! -e "$VAULT/secrets/$ENV_NAME/OCI_S3_SECRET_KEY.yaml" ]; then
-  SK=$(oci iam customer-secret-key create "${O[@]}" --user-id "$USER_ID" --display-name estate-tofu-state)
-  printf %s "$SK" | jq -r '.data.id'  | vput OCI_S3_ACCESS_KEY
-  printf %s "$SK" | jq -r '.data.key' | vput OCI_S3_SECRET_KEY
-else echo "vault   OCI_S3_SECRET_KEY kept"; fi
 
 # --- key pair: generated here, public half registered, private half vaulted -----------
 if [ -e "$VAULT/secrets/$ENV_NAME/OCI_FINGERPRINT.yaml" ] && [ "${1:-}" != --rotate ]; then
   echo "key     OCI_FINGERPRINT already in the vault; pass --rotate to add a new key"
 else
-  T=$(mktemp -d); chmod 700 "$T"; openssl genrsa -out "$T/key.pem" 2048 2>/dev/null; chmod 600 "$T/key.pem"
+  T=$(mktemp -d); chmod 700 "$T"; trap 'rm -rf "$T"' EXIT
+  openssl genrsa -out "$T/key.pem" 2048 2>/dev/null; chmod 600 "$T/key.pem"
   openssl rsa -in "$T/key.pem" -pubout -out "$T/pub.pem" 2>/dev/null
   FP=$(oci iam user api-key upload "${O[@]}" --user-id "$USER_ID" --key-file "$T/pub.pem" --query data.fingerprint --raw-output)
   vput OCI_API_PRIVATE_KEY replace < "$T/key.pem"
   printf %s "$FP" | vput OCI_FINGERPRINT replace
   echo "key     registered on estate-tofu, fingerprint ${FP:0:8}..."
 fi
-# --- workload identity for GitHub Actions (crew#227 CP2), idempotent by name --------------------
-# A job's OIDC token is exchanged at the identity domain for a session token that impersonates
-# the service user estate-ci. Three objects, all SCIM: the user, a confidential OAuth client, and
-# the identity propagation trust that names both. Nothing here is a long-lived credential except
-# the client secret, which goes to the vault and to the repo's GitHub secrets, never to stdout.
-EP="$(vget OCI_IDENTITY_DOMAIN_URL || true)"
-[ -n "$EP" ] || EP=$(oci iam domain list "${O[@]}" --compartment-id "$TENANCY" --query 'data[0].url' --raw-output)
-[ -n "$EP" ] && [ "$EP" != null ] || { echo "FAIL    no identity domain URL"; exit 1; }
-printf %s "$EP" | vput OCI_IDENTITY_DOMAIN_URL
-scim() { oci raw-request "${O[@]}" --http-method "$1" --target-uri "$EP/admin/v1/$2" "${@:3}"; }
-scim_find() { oci identity-domains "$1" list "${O[@]}" --endpoint "$EP" --filter "$2" --query 'data.resources[0].id' --raw-output 2>/dev/null | grep -v '^null$' || true; }
-T2=$(mktemp -d); chmod 700 "$T2"; trap 'rm -rf "$T2" ${T:-}' EXIT
-CI_UID=$(scim_find users 'userName eq "estate-ci"')
-if [ -z "$CI_UID" ]; then
-  printf '%s' '{"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:oracle:idcs:extension:user:User"],"userName":"estate-ci","name":{"givenName":"estate","familyName":"ci"},"displayName":"estate-ci (GitHub Actions service user)","urn:ietf:params:scim:schemas:oracle:idcs:extension:user:User":{"serviceUser":true}}' > "$T2/u.json"
-  CI_UID=$(scim POST Users --request-body "file://$T2/u.json" | jq -r .data.id); echo "wif     user estate-ci created"
-else echo "wif     user estate-ci"; fi
-G_ID=$(scim_find groups 'displayName eq "estate-operators"')
-printf '{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"add","path":"members","value":[{"value":"%s","type":"User"}]}]}' "$CI_UID" > "$T2/g.json"
-scim PATCH "Groups/$G_ID" --request-body "file://$T2/g.json" >/dev/null 2>&1 || true   # already a member is not an error
-APP_ID=$(scim_find apps 'displayName eq "estate-github-oidc"')
-if [ -z "$APP_ID" ]; then
-  printf '%s' '{"schemas":["urn:ietf:params:scim:schemas:oracle:idcs:App"],"displayName":"estate-github-oidc","description":"GitHub Actions OIDC to OCI session token exchange (crew#227)","basedOnTemplate":{"value":"CustomWebAppTemplateId"},"isOAuthClient":true,"clientType":"confidential","allowedGrants":["client_credentials","urn:ietf:params:oauth:grant-type:jwt-bearer"],"active":true,"trustScope":"Explicit"}' > "$T2/a.json"
-  scim POST Apps --request-body "file://$T2/a.json" > "$T2/app.out"
-  jq -r .data.name "$T2/app.out" | vput OCI_OIDC_CLIENT_ID replace
-  jq -r .data.clientSecret "$T2/app.out" | vput OCI_OIDC_CLIENT_SECRET replace
-  echo "wif     app estate-github-oidc created"
-else echo "wif     app estate-github-oidc"; fi
-CLIENT_ID="$(vget OCI_OIDC_CLIENT_ID)"; [ -n "$CLIENT_ID" ] || { echo "FAIL    app exists but OCI_OIDC_CLIENT_ID is not in the vault; delete the app in the console and re-run"; exit 1; }
-REPO="${GITHUB_REPO:-$(git -C "$IDP" remote get-url origin | sed -E 's#\.git$##; s#.*[:/]([^/]+/[^/]+)$#\1#')}"
-# GitHub's OIDC `sub` carries numeric ids: repo:<owner>@<owner id>/<repo>@<repo id>:<context>
-# (measured 2026-08-25 in run 32883584446; a rule on the bare name matches nothing).
-SUB_PREFIX=$(gh api "repos/$REPO" -q '"repo:\(.owner.login)@\(.owner.id)/\(.name)@\(.id):"' 2>/dev/null) || { echo "FAIL    gh cannot read repos/$REPO for the OIDC subject ids"; exit 1; }
-TR_ID=$(scim_find identity-propagation-trusts 'name eq "github-actions-estate"')
-if [ -z "$TR_ID" ]; then
-  jq -n --arg c "$CLIENT_ID" --arg u "$CI_UID" --arg r "sub eq ${SUB_PREFIX}*" '{"schemas":["urn:ietf:params:scim:schemas:oracle:idcs:IdentityPropagationTrust"],"name":"github-actions-estate","type":"JWT","issuer":"https://token.actions.githubusercontent.com","active":true,"subjectType":"User","subjectClaimName":"sub","publicKeyEndpoint":"https://token.actions.githubusercontent.com/.well-known/jwks","oauthClients":[$c],"clientClaimName":"aud","clientClaimValues":["https://cloud.oracle.com"],"allowImpersonation":true,"impersonationServiceUsers":[{"rule":$r,"value":$u}]}' > "$T2/t.json"
-  scim POST IdentityPropagationTrusts --request-body "file://$T2/t.json" | jq -e .data.id >/dev/null; echo "wif     trust github-actions-estate created for $REPO"
-else
-  jq -n --arg u "$CI_UID" --arg r "sub eq ${SUB_PREFIX}*" '{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"replace","path":"impersonationServiceUsers","value":[{"rule":$r,"value":$u}]}]}' > "$T2/tp.json"
-  scim PATCH "IdentityPropagationTrusts/$TR_ID" --request-body "file://$T2/tp.json" | jq -e .data.id >/dev/null && echo "wif     trust github-actions-estate rule reconciled"
-fi
-if command -v gh >/dev/null && gh repo view "$REPO" >/dev/null 2>&1; then
-  printf %s "$CLIENT_ID:$(vget OCI_OIDC_CLIENT_SECRET)" | gh secret set OIDC_CLIENT_IDENTIFIER -R "$REPO"
-  printf %s "$TENANCY" | gh secret set OCI_TENANCY_OCID -R "$REPO"
-  gh variable set DOMAIN_BASE_URL -R "$REPO" --body "$EP"; gh variable set OCI_REGION -R "$REPO" --body "$REGION"; gh variable set OCI_COMPARTMENT_OCID -R "$REPO" --body "$COMP"
-  echo "wif     GitHub secrets and variables set on $REPO (OIDC_CLIENT_IDENTIFIER, OCI_TENANCY_OCID, DOMAIN_BASE_URL, OCI_REGION, OCI_COMPARTMENT_OCID)"
-else echo "wif     gh cannot reach $REPO; set OIDC_CLIENT_IDENTIFIER, OCI_TENANCY_OCID, DOMAIN_BASE_URL, OCI_REGION, OCI_COMPARTMENT_OCID by hand (docs/how-to/check-the-cluster-from-github.md)"; fi
-
 printf %s "$USER_ID" | vput OCI_USER_OCID replace
 printf %s "$COMP"    | vput OCI_COMPARTMENT_OCID replace
 printf %s "$TENANCY_NAME" | vput OCI_TENANCY_NAME
 ( cd "$VAULT" && git add -- "secrets/$ENV_NAME" && git commit -q -m "$ENV_NAME: OCI estate-tofu user, key and compartment (bin/idp-oci-bootstrap)" && git push -q ) && echo "vault   committed and pushed"
-# The session token stays for its hour so follow-up steps (bucket, OIDC trust) reuse it.
-# 2026-08-25: deleting it here cost the founder a second browser sign-in.
-echo "login   session token kept for the remaining hour: profile $PROFILE"
+rm -rf "$HOME/.oci/sessions/$PROFILE" 2>/dev/null || true
 echo "done    next: bin/idp-oci-login"

@@ -31,26 +31,8 @@ class SidecarTestBase(unittest.TestCase):
         self.dag_dir = root / "dag"
         self._sb_receipts_patch = patch.object(config, "SB_RECEIPTS", root / "receipts.jsonl")
         self._head_patch = patch.object(config, "RECEIPTS_HEAD", root / "receipts.head")
-        self._counter_patch = patch.object(config, "RECEIPTS_COUNTER", root / "receipts.counter")
-        # R15 sweep: this file used to patch the receipts path but not the
-        # DAG root or the heads dir, so every run of it advanced the
-        # ESTATE'S REAL .estate/heads/shadow_main to name this test's own
-        # temporary directory -- which is exactly the dangling head found
-        # on 2026-08-25. dag.write_head() now refuses a DAG dir outside
-        # the configured root, so patching both is no longer optional.
-        self._dag_root_patch = patch.object(config, "SIDECAR_DAG_DIR", self.dag_dir)
-        self._heads_patch = patch.object(config, "SHADOW_HEADS_DIR", root / "heads")
-        self._interventions_patch = patch.object(config, "INTERVENTIONS_DIR", root / "interventions")
         self._key_patch = patch.object(receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file"))
-        for p in (
-            self._sb_receipts_patch,
-            self._head_patch,
-            self._counter_patch,
-            self._dag_root_patch,
-            self._heads_patch,
-            self._interventions_patch,
-            self._key_patch,
-        ):
+        for p in (self._sb_receipts_patch, self._head_patch, self._key_patch):
             p.start()
             self.addCleanup(p.stop)
 

@@ -56,22 +56,12 @@ _ROUTE_HEALTHZ = config_keys.resolve("cockpit.route_healthz", config)
 _ROUTE_ROOT = config_keys.resolve("cockpit.route_root", config)
 _ROUTE_API_SESSIONS = config_keys.resolve("cockpit.route_api_sessions", config)
 _ROUTE_API_INBOX = config_keys.resolve("cockpit.route_api_inbox", config)
-# W3 presence routes (spec 2.1 Spatial, 2.6 Siri): the status counts the
-# shortcut speaks and the graph the Spatial view draws, both shaped by
-# sovereign.presence from the same engine rows /api/sessions serves.
-from sovereign.presence import config_keys as presence_keys  # noqa: E402
-from sovereign.presence import spatial as presence_spatial  # noqa: E402
-from sovereign.presence import status as presence_status  # noqa: E402
-
-_ROUTE_API_STATUS = presence_keys.resolve("presence.route_api_status", config)
-_ROUTE_API_SPATIAL = presence_keys.resolve("presence.route_api_spatial", config)
 _ROUTE_API_CONFIG = config_keys.resolve("cockpit.route_api_config", config)
 
 _CT_JSON = config_keys.resolve("cockpit.content_type_json", config)
 _CT_HTML = config_keys.resolve("cockpit.content_type_html", config)
 _CT_TEXT = config_keys.resolve("cockpit.content_type_text", config)
 
-_HTTP_CREATED = config_keys.resolve("cockpit.http_status_created", config)
 _HTTP_OK = config_keys.resolve("cockpit.http_status_ok", config)
 _HTTP_UNAUTHORIZED = config_keys.resolve("cockpit.http_status_unauthorized", config)
 _HTTP_NOT_FOUND = config_keys.resolve("cockpit.http_status_not_found", config)
@@ -178,14 +168,6 @@ class Handler(BaseHTTPRequestHandler):
         if path == _ROUTE_API_INBOX:
             self._send_json(_HTTP_OK, _tail_inbox(int(config_keys.resolve("cockpit.inbox_tail", config))))
             return
-        if path in (_ROUTE_API_STATUS, _ROUTE_API_SPATIAL):
-            if engine_client is None:
-                self._send_json(_HTTP_UNAVAILABLE, {"error": "engine not available"})
-                return
-            sessions = _run(engine_client.list_sessions())
-            shaped = presence_status.summarize(sessions) if path == _ROUTE_API_STATUS else presence_spatial.graph(sessions)
-            self._send_json(_HTTP_OK, shaped)
-            return
         if path == _ROUTE_API_CONFIG:
             self._send_json(_HTTP_OK, config_keys.non_secret_dict(config))
             return
@@ -203,9 +185,6 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib handler name
         path = self.path.split("?", 1)[0]
-        if path == _ROUTE_API_SESSIONS:
-            self._start_session()
-            return
         m = _SIGNAL_RE.match(path)
         if not m:
             self._send_json(_HTTP_NOT_FOUND, {"error": "not found"})
@@ -232,51 +211,6 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(_HTTP_NOT_FOUND, {"error": str(exc)})
             return
         self._send_json(_HTTP_OK, result)
-
-
-    def _start_session(self) -> None:
-        """POST /api/sessions {task, budget?} -> 201 {session_id}. The Start form.
-
-        Definition of Done v2.1, Gate 1: the founder operates the feature on the
-        surface he normally uses, and he does not run scripts (LAW 31). Before this
-        route the only way to start a session was `bin/sb start`. Runner and default
-        budget come from config_keys, never from the browser: a page cannot choose
-        `burn` or a 10^9 budget, only the task text and a budget number.
-        """
-        if not self._authorized():
-            self._send_json(_HTTP_UNAUTHORIZED, {"error": "unauthorized"})
-            return
-        if engine_client is None:
-            self._send_json(_HTTP_UNAVAILABLE, {"error": "engine not available"})
-            return
-        length = int(self.headers.get("Content-Length", 0) or 0)
-        raw = self.rfile.read(length) if length else b"{}"
-        try:
-            body = json.loads(raw or b"{}")
-        except json.JSONDecodeError:
-            self._send_json(_HTTP_BAD_REQUEST, {"error": "bad json body"})
-            return
-        task = str(body.get("task") or "").strip()
-        max_chars = int(config_keys.resolve("cockpit.start_task_max_chars", config))
-        if not task or len(task) > max_chars:
-            self._send_json(_HTTP_BAD_REQUEST, {"error": f"task must be 1..{max_chars} characters"})
-            return
-        try:
-            budget = int(body.get("budget") or config_keys.resolve("cockpit.start_budget_default", config))
-        except (TypeError, ValueError):
-            self._send_json(_HTTP_BAD_REQUEST, {"error": "budget must be an integer"})
-            return
-        if budget <= 0:
-            self._send_json(_HTTP_BAD_REQUEST, {"error": "budget must be positive"})
-            return
-        runner = str(config_keys.resolve("cockpit.start_runner", config))
-        by = str(body.get("by") or "founder")
-        try:
-            result = _run(engine_client.start(task, runner=runner, repo=None, by=by, budget=budget))
-        except Exception as exc:
-            self._send_json(_HTTP_UNAVAILABLE, {"error": str(exc)})
-            return
-        self._send_json(_HTTP_CREATED, result)
 
 
 def _resolve_bind(bind: str) -> str:

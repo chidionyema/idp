@@ -53,14 +53,7 @@ model_list:
   # Local, free, and the only tier that survives every credential expiring at once.
   - model_name: ollama
     litellm_params:
-      model: ollama/qwen2.5-coder:7b
-      api_base: http://host.docker.internal:11434
-      timeout: 300
-  # routing.vision in AGENTS.md (sovereign model.vision, R8: an alias, never a
-  # provider model name). gemma3:4b is multimodal and is already pulled locally.
-  - model_name: ollama-vision
-    litellm_params:
-      model: ollama/gemma3:4b
+      model: ollama/llama3.1
       api_base: http://host.docker.internal:11434
       timeout: 300
 

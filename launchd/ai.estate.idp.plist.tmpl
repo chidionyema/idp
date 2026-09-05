@@ -30,13 +30,13 @@
 	<key>LowPriorityIO</key>
 	<true/>
 	<key>Nice</key>
-	<integer>10</integer>
+	<integer>5</integer>
 	<key>ProgramArguments</key>
 	<array>
 		<string>${IDP}/bin/idp-up</string>
 	</array>
 	<key>RunAtLoad</key>
-	<false/>
+	<true/>
 	<!-- bin/idp-up nohups Backstage and exits. Without this key launchd kills the
 	     job's process group at exit and the portal it just started dies with it. -->
 	<key>AbandonProcessGroup</key>

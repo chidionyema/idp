@@ -79,16 +79,7 @@ async def _fake_signal(session_id, kind, by, text=""):
 _fake_engine_client = types.ModuleType("sovereign.engine.client")
 _fake_engine_client.list_sessions = _fake_list_sessions
 _fake_engine_client.show = _fake_show
-_started: list = []
-
-
-async def _fake_start(task, runner="echo", repo=None, by="cli", budget=0):
-    _started.append((task, runner, repo, by, budget))
-    return {"session_id": "sb-started01"}
-
-
 _fake_engine_client.signal = _fake_signal
-_fake_engine_client.start = _fake_start
 
 sys.modules["sovereign.engine.client"] = _fake_engine_client
 try:
@@ -177,22 +168,6 @@ class CockpitServerTests(unittest.TestCase):
         conn.request("GET", "/api/sessions/sb-doesnotexist")
         resp = conn.getresponse()
         self.assertEqual(resp.status, 404)
-
-    def test_post_sessions_starts_with_configured_runner_and_rejects_empty_task(self):
-        """Gate 1 of the Definition of Done: the founder starts a session from the
-        cockpit, never from a terminal. The runner is config, not the browser's choice."""
-        conn = self._conn()
-        conn.request("POST", "/api/sessions", body=json.dumps({"task": "count bin/", "runner": "burn", "budget": 7}))
-        resp = conn.getresponse()
-        self.assertEqual(resp.status, 201)
-        self.assertEqual(json.loads(resp.read())["session_id"], "sb-started01")
-        task, runner, repo, by, budget = _started[-1]
-        self.assertEqual((task, by, budget), ("count bin/", "founder", 7))
-        self.assertNotEqual(runner, "burn")
-
-        conn = self._conn()
-        conn.request("POST", "/api/sessions", body=json.dumps({"task": "   "}))
-        self.assertEqual(conn.getresponse().status, 400)
 
     def test_post_stop_signals_and_changes_status(self):
         conn = self._conn()

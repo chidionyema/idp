@@ -5,7 +5,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - namespace.yaml
-  - store-api-external-secret.yaml
-  # Secret cloudflare-api-token, namespace edge, key CF_API_TOKEN: pulled from OCI Vault
-  # (secret cloudflare-api-token) by External Secrets; the token survival-stack issued.
-  - cloudflare-external-secret.yaml
+  - store-api-env.sops.yaml
+  # Secret cloudflare-api-token, namespace edge, key CF_API_TOKEN: the token survival-stack
+  # issued (scripts/migrate.sh, kept in the login keychain as survival-stack-cloudflare-token).
+  - cloudflare.sops.yaml

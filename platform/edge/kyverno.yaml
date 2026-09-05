@@ -38,9 +38,3 @@ spec:
       enabled: false
     reportsController:
       enabled: false
-    features:
-      # PolicyException objects are honoured, from namespace kyverno only, so a workload
-      # namespace cannot exempt itself. The first one is platform/chaos/mesh/exception.yaml.
-      policyExceptions:
-        enabled: true
-        namespace: kyverno

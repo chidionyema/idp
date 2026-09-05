@@ -164,17 +164,6 @@ jobs:
     max_load: 6.0
     skip_on_battery: false
     timeout_s: 1800
-  com.estate.catalog-render:
-    after: com.estate.inventory
-    command:
-    - ~/.claude/scripts/hc-wrap.sh
-    - estate-catalog-render
-    - /usr/local/bin/python3
-    - $IDP/bin/catalog-render
-    cwd: $IDP
-    max_load: 6.0
-    skip_on_battery: false
-    timeout_s: 900
   com.estate.costsentinel:
     command:
     - ~/.claude/scripts/hc-wrap.sh

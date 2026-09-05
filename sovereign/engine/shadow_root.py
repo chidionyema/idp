@@ -19,11 +19,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 from sovereign import config
-from sovereign.engine import dag as dag_mod
 
 # Mirrors sovereign.sidecar.core.GENESIS_NODE_HASH exactly (same derivation
 # from config.RECEIPTS_HASH_HEX_LEN) rather than importing it -- core.py
@@ -32,7 +32,7 @@ GENESIS_NODE_HASH = "0" * config.RECEIPTS_HASH_HEX_LEN
 
 
 def head_path() -> Path:
-    return dag_mod.head_path(config.SHADOW_HEAD_FILENAME)
+    return config.SHADOW_HEADS_DIR / config.SHADOW_HEAD_FILENAME
 
 
 def update_head(node_hash: str, dag_dir: Path) -> None:
@@ -40,16 +40,12 @@ def update_head(node_hash: str, dag_dir: Path) -> None:
     the same "never blocks the legacy write" contract applies here: this
     runs during drain(), after the legacy write already committed, so a
     failure here is a sidecar-side degradation, not a legacy-write
-    failure.
-
-    The write itself is dag.write_head(), which is the one writer of a
-    branch pointer in this estate and refuses a dag_dir outside the
-    configured DAG root (R15). Before that guard existed this function
-    wrote whatever directory it was handed, which is how the founder's
-    real .estate/heads/shadow_main came to name a reaped unittest
-    temporary directory -- see sovereign/engine/dag.py's module docstring
-    for the class and the sweep."""
-    dag_mod.write_head(config.SHADOW_HEAD_FILENAME, node_hash, dag_dir)
+    failure."""
+    hp = head_path()
+    hp.parent.mkdir(parents=True, exist_ok=True)
+    tmp = hp.with_suffix(hp.suffix + ".tmp")
+    tmp.write_text(json.dumps({"root": node_hash, "dag_dir": str(dag_dir)}, sort_keys=True))
+    os.replace(tmp, hp)
 
 
 def verify() -> dict[str, Any]:

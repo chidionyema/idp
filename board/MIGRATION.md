@@ -102,7 +102,7 @@ resource could appear — the test is a row count on the `users` table before an
 ## Blocked on
 
 - Traefik is not deployed. ADR 0001 chose it; nothing has been booted.
-- The front door is oauth2-proxy with GitHub login (ADR 0007, 2026-08-26). ADR 0003 chose Authelia; it was superseded after its file user database put a password in a chat message.
+- Authelia is not deployed. ADR 0003 chose it 2026-08-24; nothing has been booted.
 - `board.localhost` needs an `/etc/hosts` line, which needs sudo, which needs the founder once
   (LAW 27). **Tested on this machine 2026-08-24, and the convenient assumption is false:**
 

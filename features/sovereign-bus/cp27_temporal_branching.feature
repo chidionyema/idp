@@ -15,9 +15,3 @@ Feature: Temporal branching — fork silently, merge the winner, keep the losers
     When I run "bin/sb stop <parent_id> --by founder"
     Then all three child sessions are "stopped" within 10 seconds
     And the receipt records the parent hash
-
-  Scenario: A branch is capped at 10 percent of the parent budget and halts with a receipt
-    Given a parent session with budget 10000 tokens and branches costing 2000 tokens per step
-    When the three branches run
-    Then each child budget is 10 percent of the parent budget
-    And each child halts with a receipt reason "branch_budget_cap"

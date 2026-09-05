@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: backstage-env
+    namespace: backstage
+type: Opaque
+stringData:
+    POSTGRES_PASSWORD: ENC[AES256_GCM,data:XTESGghN8a2XnYIr8L4PoNsaImiDnSe8JZrsh4eHbGCNbf0g9oBlkpt1tULPrQ7R,iv:Tx62uaXD01HjVEijVcy9O8EW1FGnJ3pC85owKNat6tw=,tag:AULUYhBma8+zsaDz1kCkRw==,type:str]
+    BACKEND_SECRET: ENC[AES256_GCM,data:Cn3dUByOgQZK5AvnZRdtYrjUh6ArN0nnsW0ExJusAEl9JWJL9abDdFAn2FRICBNT7mdLlnaPqIGCl4AGiXcVUA==,iv:zgp8V/qXmzx5eCHAYg6Hff9zS4be4hgTCiIqJAMUDiY=,tag:UaqmX0APsji1hRJAb0UCQQ==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBNbG1JQUY3MmxSd1ZoZmpO
+            TVdzSVB2aGlPS0traWVCZmc3MWpUQnZSdUFBCitQdTZqT28wL0E4akthN2tjSE1T
+            SmJGKzRTR1JydSt4b05OU3pEak9Mc2cKLS0tIFM0U0JlYld0MGpGZitILzVlMkxD
+            ZnE2VDJyYlVOV2VLcU5FZ3dhTE13dGcKyBehPonhzA7XqhyaT38771V6GBIxW0eV
+            CdXXGo2q3t1i5PVlWARIHQy02kLWupBR+oKW74hQjeqLKKDr2Dlh1w==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1fu2vxerpmpj48dslvzdmstnv68427u4kspulr78avg8g7q4yeudsu7rwdg
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-08-25T02:17:17Z"
+    mac: ENC[AES256_GCM,data:Kksd6BBjpxUH+fm6L97EZeGJZUOEDK+HCzrGWG8ajkLkQqwM+mPOD+KVKQ0HL0KojwzjKJYxCbfe31kL2cr6zBODx2z/wJoc4Obi9DQ0yd7AL6agSL52ztzhNWfLWH1ZH7Abl00cTcfmmG3TDd2ilSnyRZxgh224qrD+r+3pndA=,iv:4A+iiY5GKI6hvb5gXTj4L3XGFEqkEUzDWsNS5Ir7vgk=,tag:+dRLJiHfkAj0jUDW5DW58Q==,type:str]
+    version: 3.13.3

@@ -7,18 +7,13 @@
 
   bin/scheduler-up starts dagster-daemon and dagster-webserver in the background
   and exits, so KeepAlive is absent (it would restart it forever) and the
-  10-minute repeat is what brings a crashed daemon back. AbandonProcessGroup is
-  what lets those two outlive scheduler-up: without it launchd kills the process
-  group on exit, which is how the scheduler ran 28 ticks on 2026-08-25 and was
-  never up (bin/plist-gate refuses that shape now).
+  10-minute repeat is what brings a crashed daemon back.
 
   Install:    bin/idp-install-launchd
   Remove:     launchctl bootout gui/$(id -u)/ai.estate.scheduler
 -->
 <plist version="1.0">
 <dict>
-	<key>AbandonProcessGroup</key>
-	<true/>
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>PATH</key>
@@ -29,7 +24,7 @@
 	<key>Label</key>
 	<string>ai.estate.scheduler</string>
 	<key>Nice</key>
-	<integer>10</integer>
+	<integer>5</integer>
 	<key>ProgramArguments</key>
 	<array>
 		<string>${IDP}/bin/scheduler-up</string>

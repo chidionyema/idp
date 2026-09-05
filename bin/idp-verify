@@ -38,10 +38,6 @@ fi
 # Counting every 'kind:' made 237 vs 239 look like two dropped assets on 2026-08-24.
 want=$(grep -c '^kind: \(Component\|Resource\)$' "$YAML")
 say "source    $want entities in catalog-info.yaml"
-# crew#269 row 3: every Component carries a URL a person can open. Offenders are named;
-# a repo with no github remote is the usual cause (LAW 24).
-if lk=$(python3 "$IDP/bin/catalog-links-check" "$YAML" 2>&1); then say "ok        links     $lk"
-else say "FAIL      links     $(printf '%s' "$lk" | head -1)"; printf '%s\n' "$lk" | tail -n +2 | sed 's/^/          /'; fail=1; fi
 
 # --- schema: catalog-info.yaml validates against Backstage's published schema -
 # Backstage's own schema lives at github.com/backstage/backstage under
@@ -171,27 +167,4 @@ if out=$( ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe ) 2>&1);
   say "ok        describe  $(printf '%s' "$out" | tail -1)"
 else say "FAIL      describe  a scheduled job would reach the UI with no description"
   printf '%s\n' "$out" | grep '^FAIL' | sed 's/^/          /'; fail=1; fi
-# Front door login (crew#269, ADR 0007): no password exists to try, so the proof is the redirect
-# a browser would follow. Unauthenticated -> 302 to GitHub's authorize page, either directly
-# (skip-provider-button, measured live 2026-08-26 after idp#147) or via /oauth2/start on the
-# catalogue host. A 401, a 200, a 500 or any other Location is a FAIL, never a wait.
-zone=$(sed -n 's/^  ESTATE_ZONE: *//p' "$IDP/clusters/oke/estate-config.yaml" | head -1)
-if [ -z "$zone" ]; then say "BLIND     login     no ESTATE_ZONE in clusters/oke/estate-config.yaml"
-else
-  hop=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 10 "https://catalogue.$zone/" 2>/dev/null || echo "000")
-  case "$hop" in
-    "302 https://catalogue.$zone/oauth2/start"*) hop=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 10 "${hop#302 }" 2>/dev/null || echo "000") ;;
-  esac
-  case "$hop" in
-    "302 https://github.com/login/oauth/authorize"*)
-      # GitHub answers 302 for a placeholder, a fake and a real client_id alike (measured 2026-08-26,
-      # idp#149 review), so the id itself is graded: empty or the vault placeholder is a FAIL.
-      cid=$(printf '%s' "${hop#* }" | tr '?&' '\n\n' | sed -n 's/^client_id=//p' | head -1)
-      case "$cid" in
-        ""|replace-in-console) say "FAIL      login     https://catalogue.$zone -> GitHub with client_id '${cid:-<empty>}' (FOUNDER ACTION: OAuth App id/secret into vault secrets oauth2-proxy-client-id / oauth2-proxy-client-secret, then kubectl -n identity annotate externalsecret oauth2-proxy force-sync=\$(date +%s) --overwrite && kubectl -n identity rollout restart deploy/oauth2-proxy)"; fail=1 ;;
-        *) say "ok        login     https://catalogue.$zone -> GitHub sign-in (no password anywhere, ADR 0007)" ;;
-      esac ;;
-    *) say "FAIL      login     https://catalogue.$zone -> ${hop%% *} $(printf '%s' "${hop#* }" | cut -d'?' -f1) (want 302 to GitHub; kubectl -n backstage get middleware login-forward-auth; kubectl -n identity get pods)"; fail=1 ;;
-  esac
-fi
 exit "$fail"

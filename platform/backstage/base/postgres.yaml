@@ -47,16 +47,14 @@ spec:
               value: backstage
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
-            # The official image reads *_FILE variants; the Secret is a volume, not env
-            # (secrets-not-from-env-vars, see catalogue.yaml).
-            - name: POSTGRES_PASSWORD_FILE
-              value: /run/secrets/backstage/POSTGRES_PASSWORD
+          envFrom:
+            - secretRef:
+                name: backstage-env   # POSTGRES_PASSWORD
           ports:
             - containerPort: 5432
               name: pg
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true   # require-ro-rootfs; postgres writes PGDATA, /var/run/postgresql and /tmp
             capabilities:
               drop: ["ALL"]
           readinessProbe:
@@ -69,22 +67,6 @@ spec:
           volumeMounts:
             - name: pgdata
               mountPath: /var/lib/postgresql/data
-            - name: secrets
-              mountPath: /run/secrets/backstage
-              readOnly: true
-            - name: run
-              mountPath: /var/run/postgresql
-            - name: tmp
-              mountPath: /tmp
-      volumes:
-        - name: secrets
-          secret:
-            secretName: backstage-env
-            optional: false
-        - name: run
-          emptyDir: {}
-        - name: tmp
-          emptyDir: {}
   volumeClaimTemplates:
     - metadata:
         name: pgdata

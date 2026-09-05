@@ -1,4 +1,4 @@
-# The OKE overlay: base, backstage-env as an ExternalSecret from OCI Vault (platform/secret-store)
+# The OKE overlay: base, backstage-env as a sops file Flux decrypts in cluster
 # (clusters/oke/platform.yaml, decryption.provider: sops). The estate-catalog ConfigMap is NOT
 # here: catalog/catalog-info.yaml is generated from this machine's inventory and gitignored, so
 # bin/idp-catalog-push publishes it as an OCI artifact and clusters/oke/catalog.yaml pulls it.
@@ -9,17 +9,11 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base
-  - backstage-external-secret.yaml
-  - httproute.yaml
+  - backstage-env.sops.yaml
 images:
-  # build-multiarch pushes ghcr.io/chidionyema/<image name from bin/dockerfiles>:<commit sha>
-  # and nothing else (its header: a moving tag leaves a rollback nothing to roll back to).
-  # 2026-08-25: this pointed at idp/backstage:main, a name and a tag that never existed, and
-  # the pod sat in ImagePullBackOff after idp#132. Until crew#267 (image automation) lands,
-  # every main build that changes the image is followed by a PR that moves this sha.
   - name: idp/backstage
-    newName: ghcr.io/chidionyema/backstage
-    newTag: 0c7e98b2d43a9269d2c8ff5a471efd8a235a9c07
+    newName: ghcr.io/chidionyema/idp/backstage
+    newTag: main
   # OKE's CRI-O enforces fully qualified names: `postgres:17.6-alpine` failed with
   # "short name mode is enforcing" on 2026-08-25. k3d resolves either form.
   - name: postgres
@@ -39,10 +33,5 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: IfNotPresent
-      # The portal's origin: the hostname httproute.yaml publishes, behind Authelia
-      # (ADR 0003). ESTATE_ZONE is substituted by Flux from estate-vars when set.
-      - op: add
-        path: /spec/template/spec/containers/0/env/-
-        value: {name: APP_BASE_URL, value: "https://catalogue.${ESTATE_ZONE}"}
 generatorOptions:
   disableNameSuffixHash: true

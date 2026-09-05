@@ -70,17 +70,6 @@
   <div class="counts" id="counts">loading…</div>
 </header>
 <main>
-  <section class="panel" id="panel-start">
-    <h2 onclick="toggle('start')">Start a session<span class="chev">▾</span></h2>
-    <div class="body" id="body-start">
-      <textarea id="start-task" rows="3" style="width:100%;box-sizing:border-box" placeholder="What should the agent do? Plain English. It runs in this estate and every step lands in the receipt chain."></textarea>
-      <div style="display:flex;gap:.5rem;align-items:center;margin-top:.5rem">
-        <label>budget <input id="start-budget" type="number" min="1" style="width:7em" placeholder="default"></label>
-        <button id="start-btn" onclick="startSession()">Start</button>
-        <span id="start-msg" class="empty"></span>
-      </div>
-    </div>
-  </section>
   <section class="panel" id="panel-sessions">
     <h2 onclick="toggle('sessions')">Sessions <span id="count-sessions"></span><span class="chev">▾</span></h2>
     <div class="body" id="body-sessions"><div class="empty">loading…</div></div>
@@ -173,27 +162,6 @@ function sessionCard(s, opts){
 }
 
 const busyState = {};
-
-async function startSession(){
-  const task = document.getElementById("start-task").value.trim();
-  const budgetRaw = document.getElementById("start-budget").value;
-  const msg = document.getElementById("start-msg");
-  const btn = document.getElementById("start-btn");
-  if (!task) { msg.textContent = "say what to do first"; return; }
-  btn.disabled = true; msg.textContent = "starting…";
-  try {
-    const body = { task, by: "founder" };
-    if (budgetRaw) body.budget = parseInt(budgetRaw, 10);
-    const res = await api("/api/sessions", { method: "POST", body: JSON.stringify(body) });
-    msg.textContent = "started " + res.session_id;
-    document.getElementById("start-task").value = "";
-  } catch (e) {
-    msg.textContent = String(e.message || e);
-  } finally {
-    btn.disabled = false;
-    await refresh();
-  }
-}
 
 async function act(id, kind, text){
   busyState[id] = Object.assign({}, busyState[id], { [kind]: true });

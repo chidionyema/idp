@@ -31,12 +31,6 @@ class DualReadTestBase(unittest.TestCase):
         for name, val in (
             ("SB_RECEIPTS", root / "receipts.jsonl"),
             ("RECEIPTS_HEAD", root / "receipts.head"),
-            # R15 sweep: same class as test_sidecar.py -- without these the
-            # test's temp DAG dir sits outside the configured root, so
-            # dag.write_head() refuses it and every read reports a mismatch.
-            ("RECEIPTS_COUNTER", root / "receipts.counter"),
-            ("SIDECAR_DAG_DIR", root / "dag"),
-            ("INTERVENTIONS_DIR", root / "interventions"),
             ("SHADOW_HEADS_DIR", self.heads_dir),
         ):
             p = patch.object(config, name, val)

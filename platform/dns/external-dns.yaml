@@ -1,6 +1,6 @@
 # external-dns writes Cloudflare from HTTPRoute hostnames and the Gateway's load-balancer address.
-# The token comes from platform/prospector/cloudflare-external-secret.yaml (Secret cloudflare-api-token in
-# this namespace, key CF_API_TOKEN), scoped to Zone:DNS:Edit on the estate zone (clusters/<cluster>/estate-config.yaml, ESTATE_ZONE).
+# The token comes from platform/prospector/cloudflare.sops.yaml (Secret cloudflare-api-token in
+# this namespace, key CF_API_TOKEN), scoped to Zone:DNS:Edit on mumchimp.com.
 #
 # Policy is upsert-only with a TXT registry: it creates and updates only records it owns and
 # never deletes. Records that predate it (the Fly CNAMEs) are foreign to it and are removed once
@@ -43,7 +43,7 @@ spec:
     policy: upsert-only
     txtOwnerId: oke-estate
     domainFilters:
-      - ${ESTATE_ZONE}
+      - mumchimp.com
     # Kyverno (prospector policies) refuses secrets as env vars and pods without limits.
     # external-dns reads the token from a file when the env value is file:<path>.
     env:
