@@ -6,6 +6,7 @@ FROM node:20-slim
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     git \
     jq \
     curl \
