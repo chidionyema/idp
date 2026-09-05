@@ -106,8 +106,15 @@ IDS = [f"{rel}::{kind}/{name}" for rel, kind, name, _ in TABLE]
 
 
 def test_the_table_found_the_estate_and_not_an_empty_list() -> None:
-    """A discovery that finds nothing passes every row below and grades nothing (LAW 28)."""
-    assert len(TABLE) >= 20, [i for i in IDS]
+    """A discovery that finds nothing passes every row below and grades nothing (LAW 28).
+
+    The floor is emptiness, not a census. It was `>= 20` until 2026-09-05, when moving commerce
+    off its own Postgres and onto the estate's one database (crew#623) deleted a StatefulSet and
+    took the count to 19 -- correct work, refused by a number that goes stale every time the
+    estate legitimately gains or loses a workload (LAW 38). What this row is actually for is the
+    case the docstring names: a glob that matches nothing, which would pass every row below.
+    """
+    assert TABLE, "no workloads discovered under platform/ -- the glob found nothing"
 
 
 def test_the_watcher_watches_every_namespace_and_only_workloads_that_opted_in() -> None:

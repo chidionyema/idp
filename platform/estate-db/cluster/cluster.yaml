@@ -148,6 +148,21 @@ spec:
       # Ordering: the cluster cannot add the membership until research_consumer exists, and
       # the engine creates it on its next hourly run. Until then this role reconciles with an
       # error on that one line and nothing else is affected; it heals itself within the hour.
+      # lago: the money layer's ledger owner (crew#623). Unlike every role above it, this one
+      # replaces no server -- platform/commerce/data/postgres.yaml would have been the estate's
+      # seventh Postgres and was deleted before it ever ran, on the founder's ruling of
+      # 2026-09-04 that a new layer never brings its own database. Its password is the same
+      # value the layer's own Secret carries (vault entry commerce-lago-credentials,
+      # POSTGRES_PASSWORD), so the cluster and Lago's connection string cannot drift.
+      #
+      # The isolation the money firewall needs is not a separate server: prospector's roles
+      # have no grant on database lago, and lago owns it, so the .NET API cannot read the
+      # ledger even though the bytes now sit on the same cluster.
+      - name: lago
+        ensure: present
+        login: true
+        passwordSecret:
+          name: estate-db-role-lago
       - name: research_reader
         ensure: present
         login: true
