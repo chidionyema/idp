@@ -54,6 +54,15 @@ spec:
           resources:
             requests: { cpu: 10m, memory: 16Mi }
             limits: { cpu: 50m, memory: 32Mi }
+          # crew#656: upstream require-probes (pinned in prospector deploy/k8s/policies) refuses a
+          # container with no liveness and no readiness probe. #1776 and #1777 each deleted one of
+          # the two copies two sessions had added, which left none; this is the single copy.
+          readinessProbe:
+            httpGet: { path: /metrics, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /metrics, port: http }
+            periodSeconds: 30
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
