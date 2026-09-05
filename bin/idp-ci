@@ -486,6 +486,17 @@ else
   printf '%s\n' "$out" | sed 's/^/      /'; fail=1
 fi
 
+# 6b. The namespace fence, against the estate rather than against its own fixtures (crew#839).
+#     Until now ns_fence_gate ran only inside the loop above, on tests/fixtures/ns-fence/*.yaml,
+#     so it could prove itself both ways forever while thirty-eight real namespaces had no quota,
+#     no request defaults and no policy. This runs it on platform/, where a real defect fails it.
+if python3 "$IDP/bin/ns-fence-gate" "$IDP/platform" >/tmp/ns-fence.$$ 2>&1; then
+  say "ok    fence    $(tail -1 /tmp/ns-fence.$$ | cut -c1-140)"
+else
+  say "FAIL  fence    bin/ns-fence-gate refuses platform/"; sed 's/^/               /' /tmp/ns-fence.$$; fail=1
+fi
+rm -f /tmp/ns-fence.$$
+
 # 7. The bind audit proves itself both ways with no machine under it. R20: the
 #    gateway is the only process that may bind a non-loopback address. The AGENTS.md
 #    row above already runs bind_audit on the two recorded tables; this runs the
