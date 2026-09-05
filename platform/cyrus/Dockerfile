@@ -28,8 +28,10 @@ RUN arch="$(dpkg --print-architecture)" \
 
 # npm 10 bundles tar 6.2.1, which the scan fails on (CVE-2026-59873, a gzip-bomb
 # denial of service). npm 11 bundles tar 7.x, so upgrading npm is the fix, and it
-# has to happen before anything else is installed with it.
-RUN npm install -g npm@latest
+# has to happen before anything else is installed with it. The version is pinned
+# to 11 rather than latest: npm 12 requires node 22 or newer, and this base is
+# node 20, so `npm@latest` fails the build with EBADENGINE.
+RUN npm install -g npm@11
 
 # Install Cyrus CLI globally
 ARG CYRUS_VERSION=latest
