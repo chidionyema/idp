@@ -50,6 +50,11 @@ spec:
   install: { remediation: { retries: 3 } }
   upgrade: { remediation: { retries: 3 } }
   values:
+    # The application version the chart renders into every image tag (getlago/api:v<version>,
+    # getlago/front:v<version>). The chart's default, 1.33.4, ships Rails 8.0.2.1 with a
+    # CRITICAL Active Storage CVE (2026-33195); 1.52.1 carries 8.0.5.1 and is the newest tag
+    # on 2026-09-05. lago-api.Dockerfile and lago-front.Dockerfile rebase exactly this tag.
+    version: "1.52.1"
     # Internal names only. These become public hostnames in the cutover PR, never before.
     apiUrl: "http://lago-api.commerce.svc:3000"
     frontUrl: "http://lago-front.commerce.svc:80"

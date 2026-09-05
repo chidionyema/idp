@@ -7,9 +7,15 @@
 # This image changes nothing but who the process is and which directories it may write:
 # Puma's pidfile is tmp/pids/server.pid (config/puma.rb), bootsnap writes tmp/cache, Rails
 # logs to log/, and the chart mounts the invoice PVC at /app/storage (fsGroup 1000 in
-# lago.yaml makes that one writable). The tag must match the chart's appVersion:
-# lago-1.28.0 renders getlago/api:v1.33.4.
-FROM docker.io/getlago/api:v1.33.4
+# lago.yaml makes that one writable). The tag is the one lago.yaml's `version:` value
+# tells the chart to render; the chart's own default (v1.33.4) carries activestorage
+# 8.0.2.1 (CVE-2026-33195, CRITICAL) and build-multiarch refuses it (run 33967534541).
+FROM docker.io/getlago/api:v1.52.1
+# The scan that gates this image also fails the base on libgnutls30t64 (CVE-2026-33845),
+# which Debian security already ships fixed; upgrading takes whatever the base is behind on.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 RUN groupadd --gid 1000 lago \
     && useradd --uid 1000 --gid 1000 --no-create-home --shell /usr/sbin/nologin lago \
     && mkdir -p /app/tmp/pids /app/tmp/cache /app/log /app/storage \
