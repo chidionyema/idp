@@ -1,0 +1,23 @@
+{
+  "jobId": "93da4653-78f1-4195-b34f-9a3a4b9b81d2",
+  "task": "Build crew#819: a customer-onboarding portal step for external messaging integrations.\n\nREQUIREMENTS (from the spec and inventory):\n1. Form fields are human-readable, NOT database column names:\n   - \"Which messaging service are you connecting?\" (not \"channel\")\n   - \"Which account on it?\" (not \"external id\") \n   - \"What do you call your organisation?\" (not \"tenant id\")\n   - \"Where does your key already live?\" (not \"secret ref\")\n\n2. The form MUST validate before submission:\n   - Every refusal says what's missing AND how to fix it\n   - Re-submitting an already-set-up integration says \"already set up\" (not an error)\n\n3. Success is proven, not asserted:\n   - The last step is NOT \"submitted\" — it checks that events actually arrive\n   - Only then does it say it worked\n\n4. The guide appears on the page once that check passes:\n   - Written for their engineer, not a link to a document\n\n5. Works on a phone (mobile-responsive)\n\n6. Copy the pattern from backstage/templates/external-integration/template.yaml:\n   - Human-worded options in enums\n   - A sentence on every field\n   - Note in description that there is deliberately no \"paste a token\" option\n\nDELIVERABLE:\nCreate a new Backstage Scaffolder template in backstage/templates/customer-onboarding/ that:\n- Has a form matching the requirements above\n- Validates input with clear error messages\n- Simulates the \"events arriving\" check (or calls an existing endpoint)\n- Shows the setup guide on success\n\nThe template should follow the v1beta3 format like external-integration/template.yaml.",
+  "cwd": "/Users/chidionyema/dev/code/idp",
+  "routing_version": "extended-v1",
+  "attempts": [
+    {
+      "rung": 0,
+      "model": "minimax/MiniMax-M3",
+      "cost": 1,
+      "exit": 1,
+      "durationMs": 46904,
+      "gate_results": [
+        {
+          "name": "syntax",
+          "command": "/Users/chidionyema/.pi/agent/extensions/pi-delegate/verify.sh syntax",
+          "exit": 130,
+          "durationMs": 33034
+        }
+      ]
+    }
+  ]
+}

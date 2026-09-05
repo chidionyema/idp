@@ -1,0 +1,6 @@
+{"t":"2026-09-04T17:34:42.917Z","m":"🔁 retry policy: 1 retries per rung before escalating"}
+{"t":"2026-09-04T17:34:43.842Z","m":"🔒 protecting 1416 verify/test file(s): tests/"}
+{"t":"2026-09-04T17:34:43.858Z","m":"▶ Builder [paid] minimax-m3-direct (minimax/MiniMax-M3) …"}
+{"t":"2026-09-04T17:35:30.714Z","m":"■ cancel requested."}
+{"t":"2026-09-04T17:35:30.765Z","m":"  ✗ minimax-m3-direct [attempt 0/1] did not reach green (pi exit 1) — retrying."}
+{"t":"2026-09-04T17:35:30.768Z","m":"■ job canceled."}
