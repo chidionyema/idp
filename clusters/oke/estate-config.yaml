@@ -43,6 +43,12 @@ data:
   # is the username OKE hands Kubernetes for that user. Measured 2026-09-03 with the OCI API
   # (iam user list, name estate-ci, state ACTIVE). Every laptop key, agent and person is refused.
   ESTATE_BREAK_GLASS_USER: "ocid1.user.oc1..aaaaaaaaorwkemualmpcvtnculbqqh7p5kml5wccrdxrtszgmnej4rg5tmra"
+  # Founder break-glass 2026-09-05: the founder's own OCI user, the identity his laptop's API key
+  # presents to OKE. The lockdown above refused `flux reconcile` during an incident, so this one
+  # identity may UPDATE Flux toolkit resources (and only those) -- the annotation write that forces
+  # a sync. Same class of value as the line above: a user OCID is an identifier, not a secret, and
+  # it is written here once so platform/edge/flux-only-writes.yaml never names it.
+  ESTATE_FOUNDER_USER: "ocid1.user.oc1..aaaaaaaay4rrvpfuz7rkyexkbduyc3qgvift2bm67x7zsbvsy5yzxkwzbncq"
   # crew#516 CP5, founder's locked spec (crew#66 5451926212): the founder's Mac, reached by mac-run
   # (platform/hermes-agent/mac-run.tpl) over the Tailscale sidecar's SOCKS5 proxy, and named in
   # platform/tailscale/policy.hujson's ssh rule (bin/idp-tailscale-policy reads FOUNDER_MAC_USER

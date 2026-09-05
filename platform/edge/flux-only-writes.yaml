@@ -11,6 +11,14 @@
 # That workflow is the founder's deploy button; a person runs nothing else against the cluster.
 # The value lives in clusters/oke/estate-config.yaml (LAW 46, R70: one place for every name)
 # and Flux postBuild substitutes it on the edge row.
+#
+# Founder break-glass, 2026-09-05: the lockdown also refused `flux reconcile`, which is an UPDATE
+# of the reconcile.fluxcd.io/requestedAt annotation on a Flux object -- so during an incident the
+# founder could not force the sync that applies the fix git already holds. ${ESTATE_FOUNDER_USER}
+# (his OCI user, named once in estate-config beside the one above) may UPDATE resources in the
+# *.toolkit.fluxcd.io groups and nothing else: not CREATE, not DELETE, and no other kind. That is
+# exactly `flux reconcile` / `flux suspend` / `flux resume`; every object those touch is still
+# defined by git, so the narrow hole cannot become drift -- the next reconcile overwrites it.
 # Proof it refuses and passes: tests/test_incident_founder_lockdown_flux_only_writes.py.
 # What this does not cover, on purpose: kube-system and the kyverno namespace (the chart's
 # webhook excludes them, so the control plane's own addons keep working) and reads.
@@ -56,3 +64,9 @@ spec:
               - key: "{{ request.userInfo.username }}"
                 operator: NotEquals
                 value: "${ESTATE_BREAK_GLASS_USER}"
+              # The founder forcing a Flux reconcile during an incident: his identity, the UPDATE
+              # verb, and a Flux toolkit group, all three or the deny stands. One expression
+              # because Kyverno's deny conditions are a flat AND with no nested any/all.
+              - key: "{{ request.userInfo.username == '${ESTATE_FOUNDER_USER}' && request.operation == 'UPDATE' && contains(request.object.apiVersion || '', 'toolkit.fluxcd.io') }}"
+                operator: Equals
+                value: false

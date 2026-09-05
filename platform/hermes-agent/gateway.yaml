@@ -16,14 +16,18 @@
 # state.db, sessions/, memories/, cron/jobs.json, auth.json. A new image changes what the agent
 # is, never what it remembers; a pod restart loses nothing.
 #
-# Telegram is webhook mode (crew#736, founder blueprint 2026-08-31T15:24Z: zero-downtime — a
-# poller is a single consumer, a webhook is an ordinary HTTP service). TELEGRAM_WEBHOOK_URL below
-# turns the mode on in the pinned fork (plugins/platforms/telegram/adapter.py connect()); the
-# adapter registers the URL with Telegram itself on startup and REFUSES to start without the
-# secret token that authenticates every POST (GHSA-3vpc-7q5r-276h), minted in-cluster below.
-# While the pod is down Telegram queues the updates and retries the POSTs, so a rollout delays
-# replies and loses none. The a2a port (9900) stays in-cluster behind the Service. The token
-# rule stands: one TELEGRAM_BOT_TOKEN, held by exactly one process (crew#284).
+# Telegram does not live here (founder 2026-09-05, after both bots sat silent for a day). This pod
+# used to register the bot's webhook with Telegram itself on every start (adapter connect(), the
+# pinned fork's plugins/platforms/telegram/adapter.py) and point it at its own /telegram door. That
+# door has been dead since the adapter hung at "Connecting to Telegram (attempt 1/8)", so every
+# restart of this pod silently took the bot away from otto-gateway, which is the estate's one
+# ingress for every channel. The token is now renamed out of this pod's environment by the
+# ExternalSecret below, which is what the fork's gateway/config.py reads to decide whether the
+# Telegram platform exists at all (`telegram_token = getenv("TELEGRAM_BOT_TOKEN")`): with no token
+# the platform is never loaded, so this pod cannot call setWebhook, cannot long-poll, and cannot
+# take the bot back. The a2a port (9900) stays in-cluster behind the Service and is what talks to
+# this agent now. The token rule stands and is simply held elsewhere: one TELEGRAM_BOT_TOKEN, one
+# process, and that process is otto-gateway (platform/otto-gateway).
 #
 # Secrets: one vault entry, hermes-agent-env, the env names the gateway reads (.env on the Mac),
 # seeded by oke-check's vault-put step from SEED_HERMES_* repo secrets, never a value in git
@@ -62,7 +66,16 @@ spec:
     # Merged in the order listed (ExternalSecret API: "If multiple dataFrom are specified, secrets
     # are merged in the specified order"), so the token minted below always wins over the stale
     # GITHUB_TOKEN field the vault entry still carries from the retired refresh lane (idp#852).
+    #
+    # Founder 2026-09-05: every TELEGRAM_* field of the vault entry is renamed on the way in, so the
+    # entrypoint exports DISABLED_TELEGRAM_BOT_TOKEN and the fork's config loader finds no
+    # TELEGRAM_BOT_TOKEN, never enables the Telegram platform, and never registers a webhook. A
+    # rename, not a deletion: the vault entry is untouched and otto-gateway keeps reading the same
+    # value from it, so there is one token and one holder. Keys that do not match are passed
+    # through unchanged (ESO applies the regexp to every key and leaves non-matches alone).
     - extract: { key: hermes-agent-env }
+      rewrite:
+        - regexp: { source: "^TELEGRAM_(.*)$", target: "DISABLED_TELEGRAM_$1" }
     - sourceRef:
         generatorRef:
           apiVersion: generators.external-secrets.io/v1alpha1
@@ -161,41 +174,6 @@ spec:
       rewrite:
         - transform: { template: "A2A_BEARER_TOKEN" }
 ---
-# The Telegram webhook secret token (crew#736). Telegram echoes it in X-Telegram-Bot-Api-Secret-Token
-# on every POST and the adapter drops anything else; without it the endpoint would accept forged
-# updates from anyone who can reach otto.<zone> (GHSA-3vpc-7q5r-276h — the adapter refuses to start
-# rather than run fail-open). Same shape as hermes-agent-a2a: born in the cluster by ESO's Password
-# generator, never seeded, never in git, exported by the entrypoint from the projected env dir.
-apiVersion: generators.external-secrets.io/v1alpha1
-kind: Password
-metadata:
-  name: hermes-agent-webhook
-  namespace: hermes-agent
-spec:
-  length: 48
-  digits: 8
-  symbols: 0
-  symbolCharacters: ""
-  noUpper: false
-  allowRepeat: true
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: hermes-agent-webhook
-  namespace: hermes-agent
-spec:
-  refreshInterval: "0"   # generated once; a rotation is a deliberate change and one clean roll
-  target: { name: hermes-agent-webhook, creationPolicy: Owner }
-  dataFrom:
-    - sourceRef:
-        generatorRef:
-          apiVersion: generators.external-secrets.io/v1alpha1
-          kind: Password
-          name: hermes-agent-webhook
-      rewrite:
-        - transform: { template: "TELEGRAM_WEBHOOK_SECRET" }
----
 # HERMES_HOME. 5Gi is the Mac's checkout today (state.db, sessions, hindsight, kanban) with room.
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -223,9 +201,6 @@ spec:
     - name: a2a
       port: 9900
       targetPort: a2a
-    - name: telegram
-      port: 8443
-      targetPort: telegram
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -308,14 +283,6 @@ spec:
             # public by design; every POST needs the token.
             - name: A2A_HOST
               value: 0.0.0.0
-            # crew#736: webhook mode (see the head comment). The URL is what the adapter registers
-            # with Telegram (setWebhook) on startup; the path is fixed and the HTTPRoute beside this
-            # file exposes exactly that path and nothing else. Not a secret — the secret is the
-            # token above, which arrives through the projected env dir like every credential here.
-            - name: TELEGRAM_WEBHOOK_URL
-              value: "https://otto.${ESTATE_ZONE}/telegram"
-            - name: TELEGRAM_WEBHOOK_PORT
-              value: "8443"
             # crew#516 CP5: mac-run.tpl's only variables (LAW 46 — the Mac's tailnet IP and login
             # user are named nowhere else). ConfigMap, not Secret: neither is a credential, Tailscale
             # SSH authenticates by tailnet node identity, not by these values.
@@ -326,8 +293,6 @@ spec:
           ports:
             - containerPort: 9900
               name: a2a
-            - containerPort: 8443
-              name: telegram
           # /.well-known/agent-card.json is the a2a adapter's own health surface (config.yaml
           # platforms.a2a.enabled: true, port 9900). The first boot copies the build and renders
           # estate.yaml before the gateway starts; the startup probe covers that.
@@ -475,7 +440,6 @@ spec:
             sources:
               - secret: { name: hermes-agent-env }
               - secret: { name: hermes-agent-a2a }   # crew#516 CP4: A2A_BEARER_TOKEN
-              - secret: { name: hermes-agent-webhook }   # crew#736: TELEGRAM_WEBHOOK_SECRET (webhook mode refuses to start without it)
               - secret: { name: hermes-agent-mcp, optional: true }   # crew#561 CP3: ESTATE_MCP_KEY (mcp-key.yaml)
               - secret: { name: hermes-agent-langfuse, optional: true }   # crew#717 wave 1: LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY (langfuse-key.yaml)
         - name: estate
