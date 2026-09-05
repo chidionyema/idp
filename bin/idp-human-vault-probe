@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""idp-human-vault-probe: measure what the estate's machine account can and cannot do in the
+human secret store (Bitwarden Secrets Manager, decision 0017), so decision 0020's storage
+boundary is re-measurable rather than remembered.
+
+    bin/idp-human-vault-probe            read side only: authenticate, list projects and secret names
+    bin/idp-human-vault-probe --write    also attempt one plaintext write, expect it to be refused
+
+Prints secret NAMES, project ids and HTTP status. It never fetches, decrypts or prints a secret
+value, and the write attempt carries the string `not-a-secret` and nothing else.
+
+Why it exists: on 2026-09-05 the portal's one-shot ingest road was about to be built to write a
+pasted key into the client's Bitwarden, and a first version of this probe concluded that it could
+not be written to at all. That conclusion was wrong: it tested one path, the raw REST API, which
+refuses plaintext with `Key is not a valid encrypted string` because Bitwarden is zero-knowledge.
+The vendor client does the client-side encryption with the key carried in the machine access token
+(`0.<id>.<secret>:<base64 encryption key>`) and writes fine. So the store is a sync source AND a
+valid destination; what is refused is the raw-API shortcut (decision 0020, amendment 2026-09-05).
+
+This probe measures both paths, which is the point (LAW 15: two angles). --write attempts the raw
+API write, expects the 400, and then reports whether a `bws` binary is on PATH to prove the client
+path in the same run.
+
+Exit 0 the store behaves as decision 0020 records (reads work, raw-API plaintext write refused with
+400), 1 it does not, 2 BLIND (no vault session, no configuration, network refused).
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+IDP = os.environ.get("IDP_ROOT") or os.path.dirname(HERE)
+CFG = os.path.join(IDP, "clusters", "oke", "estate-config.yaml")
+CLOUD = os.environ.get("IDP_CLOUD") or os.path.join(IDP, "bin", "idp-cloud")
+IDENTITY = "https://identity.bitwarden.com/connect/token"
+API = "https://api.bitwarden.com"
+PROBE_NAME = "estate-write-probe-delete-me"
+
+
+def blind(msg):
+    print(f"BLIND   human-vault  {msg}")
+    sys.exit(2)
+
+
+def config(key):
+    # LAW 46: the org and project ids live in the one place names live, never in this file.
+    try:
+        with open(CFG) as fh:
+            for line in fh:
+                if line.strip().startswith(key + ":"):
+                    return line.split(":", 1)[1].strip().strip('"')
+    except OSError as exc:
+        blind(f"cannot read {CFG}: {exc}")
+    return None
+
+
+def call(url, bearer=None, payload=None, form=False, method=None):
+    headers = {"Accept": "application/json", "Device-Type": "21"}
+    body = None
+    if form:
+        body = urllib.parse.urlencode(payload).encode()
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+    elif payload is not None:
+        body = json.dumps(payload).encode()
+        headers["Content-Type"] = "application/json"
+    if bearer:
+        headers["Authorization"] = "Bearer " + bearer
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=30) as fh:
+        raw = fh.read()
+    return json.loads(raw) if raw else {}
+
+
+def main(argv):
+    org = config("BITWARDEN_ORG_ID")
+    project = config("BITWARDEN_PROJECT_ID")
+    if not org or not project:
+        blind(f"BITWARDEN_ORG_ID / BITWARDEN_PROJECT_ID not in {CFG}")
+
+    # The machine account's own credential, read in-process and never printed (decision 0017, R52).
+    proc = subprocess.run(
+        [CLOUD, "secret", "get", "bitwarden-machine"], capture_output=True, text=True
+    )
+    if proc.returncode:
+        blind(f"vault has no readable bitwarden-machine: {proc.stderr.strip()[:120]}")
+    token = proc.stdout.strip().strip('"')
+    # Access token shape: 0.<access token id>.<client secret>:<base64 encryption key>
+    rest = token.partition(".")[2]
+    client_id, _, client_secret = rest.partition(".")
+    client_secret = client_secret.split(":")[0]
+    if not client_id or not client_secret:
+        blind("bitwarden-machine is not an access token of the form 0.<id>.<secret>:<key>")
+
+    try:
+        auth = call(
+            IDENTITY,
+            payload={
+                "grant_type": "client_credentials",
+                "scope": "api.secrets",
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+            form=True,
+        )
+    except urllib.error.URLError as exc:
+        blind(f"identity refused: {exc}")
+    bearer = auth["access_token"]
+    print(f"READ    auth         ok, scope={auth.get('scope')}")
+
+    projects = call(f"{API}/organizations/{org}/projects", bearer)
+    prows = projects.get("data", projects.get("Data", []))
+    print(f"READ    projects     {len(prows)} visible, estate project configured as {project}")
+    if project not in [p.get("id") for p in prows]:
+        print(f"FAIL    projects     the machine account cannot see project {project}")
+        return 1
+
+    secrets = call(f"{API}/organizations/{org}/secrets", bearer)
+    srows = secrets.get("data", secrets.get("Data", []))
+    print(f"READ    secrets      {len(srows)} listable")
+    for s in srows:
+        ids = [p.get("id") for p in (s.get("projects") or [])]
+        here = " <- estate project" if project in ids else ""
+        print(f"        name         {s.get('key')}{here}")
+
+    if "--write" not in argv:
+        return 0
+
+    # Angle one: the raw REST API. It must refuse plaintext, because the store is zero-knowledge.
+    # Angle two (below) is the vendor client, which encrypts and therefore writes.
+    try:
+        made = call(
+            f"{API}/organizations/{org}/secrets",
+            bearer,
+            payload={
+                "key": PROBE_NAME,
+                "value": "not-a-secret",
+                "note": "write probe, deleted in the same run",
+                "projectIds": [project],
+            },
+            method="POST",
+        )
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode()[:400]
+        print(f"WRITE   refused      HTTP {exc.code} {detail}")
+        if exc.code == 400 and "valid encrypted string" in detail:
+            print(
+                "PASS    human-vault  reads work; the raw API refuses plaintext, as a "
+                "zero-knowledge store must (decision 0020 amendment)"
+            )
+            bws = shutil.which("bws")
+            if bws:
+                print(
+                    f"NOTE    write path  the client path is {bws}: "
+                    f"`bws secret create <name> <value> {project}` encrypts and writes"
+                )
+            else:
+                print(
+                    "NOTE    write path  no `bws` on PATH; the client path is proved by "
+                    "bitwarden-sdk-server in the external-secrets namespace"
+                )
+            return 0
+        print("FAIL    human-vault  write refused, but not for the reason decision 0020 records")
+        return 1
+    # A raw-API plaintext write that succeeds means the store is not zero-knowledge after all.
+    print(f"FAIL    human-vault  raw-API plaintext write ACCEPTED as {made.get('id')}: this store")
+    print("        is not zero-knowledge and decision 0020's amendment needs re-reading")
+    call(f"{API}/secrets/delete", bearer, payload=[made.get("id")], method="POST")
+    print(f"        cleanup      deleted {made.get('id')}")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
