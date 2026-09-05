@@ -179,8 +179,57 @@ founder's Telegram, and the reply arrived on the phone.
 The `kubectl get events -n otto-gateway` output during those six messages shows no restart, no
 OOM. Then, and only then, a QA session ticks crew#768 CP2 and crew#773 CP2, CP3, CP4.
 
+## What the estate has and lacks for this spec, measured 2026-09-05 22:20Z
+
+Measured through `bin/idp-kube` and Otto's own router key (`otto-gateway-router`), not assumed.
+
+| need | state | what to do |
+|---|---|---|
+| a model that calls tools through the router | `deepseek` (the judgment lane) and `minimax` both returned a `terminal` tool call with Otto's key; `gemini` did not | nothing; the judgment lane is already the tool lane |
+| git with credentials | `git` in the image; `GITHUB_TOKEN` in `hermes-agent-env` answers 200 on the repo permission endpoint | step 5 mounts the same secret on the door |
+| speech-to-text, local first (ADR 0022) | `faster_whisper` and `ffmpeg` present in the image; nodes are arm64, 5.8 CPU and 20 GB each, so the `small` model runs on CPU | step 3 uses it; first note downloads the model once |
+| speech-to-text, cloud fallback | no Groq, OpenAI, ElevenLabs or Mistral key exists in the vault | do not add a provider: the fallback is `gemini` through the router, which accepts audio in a chat message. No new key, no console step (R52) |
+| text-to-speech | `edge_tts` present, no key needed; needs internet egress | step 5 egress rule |
+| vision | `gemini` alias, proved in hermes-v2 PR #86 | step 4 |
+| estate queries | `ESTATE_MCP_KEY` projected in `hermes-agent`, absent in `otto-gateway` | step 5 |
+| state that survives a restart | storage class `oci-bv`, agent has a bound 5 GiB claim, the door has none | step 5, a claim for `HERMES_HOME` |
+| a sandbox for the terminal | none; the fork's `code_execution` wants a container runtime the pod does not have, and `terminal` today would run inside the pod that holds the secrets | step 6 below, and `code_execution` is left out of `OTTO_TOOLSETS` until it lands |
+
+## Step 6, the sandbox: a terminal that cannot reach the secrets (crew#768 CP2, sandbox row)
+
+The highest standard is that a model-driven shell never runs in the process that holds the
+bot token, the database password and the GitHub token. So `terminal` executes as a
+Kubernetes Job in a `otto-sandbox` namespace: same image, a 5 minute deadline, no secrets
+mounted, the founder's repositories cloned read-write on an ephemeral volume with a
+short-lived token minted per task (GitHub App installation token, 1 hour, repository-scoped;
+the app is the one root, R52), egress only to `github.com` and the estate router. The door
+submits the Job through the Kubernetes API with a namespaced service account that can create
+Jobs and read their logs and nothing else; the gateway's audit line carries the Job name. The
+`otto-sandbox` namespace gets the both-ways default-deny, quota and limit range every
+namespace must carry (`ns_fence_gate`). Reads that do not need a shell (`web`, `search`,
+`vision`, `estate`) stay in-process.
+
+Done: `bin/idp-ci` green with the new namespace; from the phone, "run `ls -la /run/secrets`
+in the terminal" answers with an empty directory and the door's log shows
+`gateway.call tool=terminal job=<name>`.
+
+## Step 7, what a 2026 assistant does that neither ticket names
+
+- **Typing and progress.** Telegram `sendChatAction typing` the moment a task starts, and for
+  a task past 8 seconds a single progress message edited in place ("reading the repo",
+  "searching", "writing"), never a stream of messages. `otto/boot/presence.py` is the seam.
+- **Long tasks do not block the phone.** A tool loop past 60 seconds keeps running; the door
+  answers "on it, I will send the result" and the worker sends the result when it lands. NATS
+  already carries the task; the worker acknowledges early and publishes the result on the
+  task's own subject.
+- **Interrupt.** A second message from the founder while a task runs is delivered to the loop
+  as a user turn, so "stop" stops and "also check the logs" adds to the task.
+
+Done: the progress edit and the deferred result are each quoted from the door's log on a
+real task from the phone; a "stop" message ends a running loop within one tool turn.
+
 ## Out of scope, and said so
 
-Verification plane wiring (crew#768 CP3), memory hygiene job (CP4), chaos pass and weekly
+Verification plane wiring (crew#768 CP3), a red-team pass on the sandbox, memory hygiene job (CP4), chaos pass and weekly
 digest (CP6), constitution suite (CP7). Each is its own spec after this one lands. Nothing
 here makes them harder.
