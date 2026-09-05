@@ -265,7 +265,17 @@ print(f"{len(items)} {c} {h} {m} {l}")
       fi
     fi
   elif [ $rc = 2 ]; then
-    say "BLIND images    bin/idp-kube could not reach the cluster"; blind=1
+    # A GitHub-hosted runner has no route to the cluster: the security-scan job holds no OCI
+    # identity and no tailnet, so "cannot reach" there is a fact about the runner, not about
+    # the code in the pull request, and grading a pull request on it refuses correct work
+    # (LAW 38). The live question is asked once a day by oke-check, which does hold the
+    # machine identity, and that job sets SECURITY_SCAN_REQUIRE_CLUSTER=1 so an unreachable
+    # cluster is still BLIND where reaching it is the point.
+    if [ "${SECURITY_SCAN_REQUIRE_CLUSTER:-0}" = 1 ]; then
+      say "BLIND images    bin/idp-kube could not reach the cluster"; blind=1
+    else
+      say "ok    images    no cluster reachable from here; the daily oke-check run grades this"
+    fi
   elif printf '%s' "$out" | grep -qiE "doesn.t have a resource type|could not find the requested resource"; then
     say "BLIND images    Trivy Operator's VulnerabilityReport CRD is not installed on this cluster yet"; blind=1
   else

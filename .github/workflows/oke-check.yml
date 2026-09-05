@@ -498,6 +498,20 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
         run: bin/idp-cluster-state --json
+      # crew#846: the image-vulnerability question estate-security-scan asks is the only one that
+      # has nothing to lint in git -- it reads Trivy Operator's VulnerabilityReport objects off the
+      # cluster. This job holds the machine identity, so it is where that question is asked;
+      # SECURITY_SCAN_REQUIRE_CLUSTER=1 makes an unreachable cluster BLIND here, where a pull
+      # request's runner is allowed to skip it.
+      - name: bin/estate-security-scan (the live image question)
+        if: ${{ always() }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
+          SECURITY_SCAN_REQUIRE_CLUSTER: "1"
+        run: bin/estate-security-scan
       # crew#401 CP4: the hostnames the cluster publishes (HTTPRoute, from the same receipt) diffed
       # against backstage/**/catalog-info.yaml. 0 unregistered is the only green.
       - name: bin/idp-catalogue-drift
