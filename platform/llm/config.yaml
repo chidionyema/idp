@@ -155,8 +155,8 @@ router_settings:
     # grades and the `[routing] cheap` line of AGENTS.md declares; which lane is `cheap` is
     # the founder's call, not this file's, so it is untouched.
     - gemini: [minimax, deepseek]
-    - default: [deepseek, gemini, minimax]
-    - fast: [deepseek, gemini, minimax]
+    - default: [gemini, minimax, deepseek]
+    - fast: [gemini, minimax, deepseek]
 
   # Alias, not a model row (R75, founder 2026-09-03). The Kimi lane is console-owned: the
   # founder brought the key through the LiteLLM console on 2026-09-04 and it is stored

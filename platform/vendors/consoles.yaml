@@ -270,8 +270,8 @@ vendors:
         # grades and the `[routing] cheap` line of AGENTS.md declares; which lane is `cheap` is
         # the founder's call, not this file's, so it is untouched.
         - gemini: [minimax, deepseek]
-        - default: [deepseek, gemini, minimax]
-        - fast: [deepseek, gemini, minimax]
+        - default: [gemini, minimax, deepseek]
+        - fast: [gemini, minimax, deepseek]
   exa:
     kind: secret
     secret: SEED_EXA_API_KEY
