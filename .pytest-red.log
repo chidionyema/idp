@@ -1,0 +1,110 @@
+bringing up nodes...
+bringing up nodes...
+
+........FF.....FFFFFF.F.F.F.FFFFFFFFFFFFF                                [100%]
+=================================== FAILURES ===================================
+[gw1] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   AssertionError: assert ['/api/v1/sec...workpolicies'] == ['/apis/ciliu...workpolicies']
+      
+      At index 0 diff: '/api/v1/secrets' != '/apis/cilium.io/v2/ciliumnetworkpolicies'
+      Left contains one more item: '/apis/cilium.io/v2/ciliumnetworkpolicies'
+      Use -v to get more diff
+/Users/chidionyema/dev/code/.wt-secrets-rotation/tests/test_incident_crew483_cluster_state_rbac_covers_every_api_path.py:76: AssertionError: assert ['/api/v1/sec...workpolicies'] == ['/apis/ciliu...workpolicies']
+[gw5] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   AssertionError: assert ['/api/v1/secrets'] == []
+      
+      Left contains one more item: '/api/v1/secrets'
+      Use -v to get more diff
+/Users/chidionyema/dev/code/.wt-secrets-rotation/tests/test_incident_crew483_cluster_state_rbac_covers_every_api_path.py:66: AssertionError: assert ['/api/v1/secrets'] == []
+[gw2] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-oke-dispatch', 'catalogue-roll']' timed out after 30 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-oke-dispatch', 'catalogue-roll']' timed out after 30 seconds
+[gw0] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw0/test_a_stale_drill_is_a_red_ro0/bin/idp-verify-drill']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw0/test_a_stale_drill_is_a_red_ro0/bin/idp-verify-drill']' timed out after 60 seconds
+[gw1] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw1/test_a_healthy_node_whose_json0/bin/idp-verify-drill']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw1/test_a_healthy_node_whose_json0/bin/idp-verify-drill']' timed out after 60 seconds
+[gw5] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw5/test_a_ready_node_read_through0/bin/idp-verify-drill']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw5/test_a_ready_node_read_through0/bin/idp-verify-drill']' timed out after 60 seconds
+[gw4] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw4/test_a_notready_node_is_a_red_0/bin/idp-verify-drill']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw4/test_a_notready_node_is_a_red_0/bin/idp-verify-drill']' timed out after 60 seconds
+[gw3] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw3/test_a_layer_exit_2_on_cluster0/bin/idp-verify-drill']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw3/test_a_layer_exit_2_on_cluster0/bin/idp-verify-drill']' timed out after 60 seconds
+[gw2] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw2/test_a_updating_pool_keeps_the0/bin/idp-verify-drill']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw2/test_a_updating_pool_keeps_the0/bin/idp-verify-drill']' timed out after 60 seconds
+[gw0] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw0/test_no_github_is_a_blind_row_0/bin/idp-verify-drill']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw0/test_no_github_is_a_blind_row_0/bin/idp-verify-drill']' timed out after 60 seconds
+[gw1] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw1/test_a_failed_read_that_is_not0/bin/idp-verify-drill']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw1/test_a_failed_read_that_is_not0/bin/idp-verify-drill']' timed out after 60 seconds
+[gw5] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw5/test_a_refused_read_is_a_blind0/bin/idp-verify-drill']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw5/test_a_refused_read_is_a_blind0/bin/idp-verify-drill']' timed out after 60 seconds
+[gw4] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw4/test_a_one_cluster_two_active_0/bin/idp-verify-drill']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/private/var/folders/gq/jbt0858s1g99w05n7k7531040000gn/T/pytest-of-chidionyema/pytest-5407/popen-gw4/test_a_one_cluster_two_active_0/bin/idp-verify-drill']' timed out after 60 seconds
+[gw3] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale']' timed out after 60 seconds
+[gw2] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale', '--rotate']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale', '--rotate']' timed out after 60 seconds
+[gw0] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale', '--rotate']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale', '--rotate']' timed out after 60 seconds
+[gw1] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale']' timed out after 60 seconds
+[gw5] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale']' timed out after 60 seconds
+[gw4] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale']' timed out after 60 seconds
+[gw3] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale', '--check']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale', '--check']' timed out after 60 seconds
+[gw2] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale']' timed out after 60 seconds
+[gw0] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale']' timed out after 60 seconds
+[gw1] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale']' timed out after 60 seconds
+[gw5] darwin -- Python 3.14.7 /Users/chidionyema/dev/code/idp/.venv/bin/python
+E   subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale']' timed out after 60 seconds
+/usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/Users/chidionyema/dev/code/.wt-secrets-rotation/bin/idp-bootstrap-tailscale']' timed out after 60 seconds
+=========================== short test summary info ============================
+FAILED tests/test_incident_crew483_cluster_state_rbac_covers_every_api_path.py::test_incident_crew483_an_ungranted_path_fails
+FAILED tests/test_incident_crew483_cluster_state_rbac_covers_every_api_path.py::test_incident_crew483_every_api_path_the_collector_calls_is_granted
+FAILED tests/test_incident_crew412_dispatch_queue_depth_one.py::test_dispatches_when_nothing_is_pending
+FAILED tests/test_incident_crew292_drills_row_is_read_hourly.py::test_a_stale_drill_is_a_red_row_and_a_failed_verify_drill
+FAILED tests/test_incident_crew484_the_runner_has_a_kube_path.py::test_a_healthy_node_whose_json_contains_403_is_still_ok
+FAILED tests/test_incident_crew484_the_runner_has_a_kube_path.py::test_a_ready_node_read_through_the_api_server_is_an_ok_row
+FAILED tests/test_incident_crew484_the_runner_has_a_kube_path.py::test_a_notready_node_is_a_red_row
+FAILED tests/test_incident_crew66_cp5d_cluster_noun.py::test_a_layer_exit_2_on_cluster_list_makes_the_row_blind
+FAILED tests/test_incident_crew66_cp5d_cluster_noun.py::test_a_updating_pool_keeps_the_cluster_row_ok_and_names_it
+FAILED tests/test_incident_crew292_drills_row_is_read_hourly.py::test_no_github_is_a_blind_row_never_a_green_one
+FAILED tests/test_incident_crew484_the_runner_has_a_kube_path.py::test_a_failed_read_that_is_not_a_refusal_is_blind_without_the_iam_text
+FAILED tests/test_incident_crew484_the_runner_has_a_kube_path.py::test_a_refused_read_is_a_blind_row_that_names_the_iam_gap
+FAILED tests/test_incident_crew66_cp5d_cluster_noun.py::test_a_one_cluster_two_active_pools_is_an_ok_row
+FAILED tests/test_incident_crew66_tailscale_operator_client_is_minted_through_the_api.py::test_incident_crew66_a_working_entry_is_kept_and_check_reads_it_without_the_seed
+FAILED tests/test_incident_crew66_tailscale_operator_client_is_minted_through_the_api.py::test_incident_crew66_rotate_mints_anew_and_deletes_the_client_it_replaced
+FAILED tests/test_incident_crew66_tailscale_operator_client_is_minted_through_the_api.py::test_incident_crew66_a_refused_delete_on_rotate_is_a_failure_not_a_deleted_line
+FAILED tests/test_incident_crew66_tailscale_operator_client_is_minted_through_the_api.py::test_incident_crew66_run_33266374431_a_federated_identity_holding_the_operator_scopes_mints
+FAILED tests/test_incident_crew66_tailscale_operator_client_is_minted_through_the_api.py::test_incident_crew66_the_operator_client_is_minted_by_post_keys_with_the_four_scopes_and_vaulted
+FAILED tests/test_incident_crew66_tailscale_operator_client_is_minted_through_the_api.py::test_incident_crew66_no_seed_is_one_named_human_step_and_nothing_is_minted
+FAILED tests/test_incident_crew66_tailscale_operator_client_is_minted_through_the_api.py::test_incident_crew66_a_dead_entry_fails_check_and_mint_replaces_it
+FAILED tests/test_incident_crew66_tailscale_operator_client_is_minted_through_the_api.py::test_incident_crew66_an_api_refusal_writes_nothing
+FAILED tests/test_incident_crew66_tailscale_operator_client_is_minted_through_the_api.py::test_incident_crew66_a_seed_with_more_than_oauth_keys_is_refused_before_minting
+FAILED tests/test_incident_crew66_tailscale_operator_client_is_minted_through_the_api.py::test_incident_crew66_a_federated_identity_missing_an_operator_scope_is_refused_before_minting
+FAILED tests/test_incident_crew66_tailscale_operator_client_is_minted_through_the_api.py::test_incident_crew66_a_seed_pair_from_the_environment_mints_and_is_vaulted_so_the_repo_secret_can_go
+24 failed, 17 passed in 286.93s (0:04:46)
