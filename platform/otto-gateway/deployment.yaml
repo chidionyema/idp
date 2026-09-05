@@ -141,8 +141,16 @@ spec:
             # Claude capacity here is the Pro Max subscription reached through `claude -p`.
             # Leaving the default in place is what routed every message to needs_human.
             - { name: OTTO_ROUTER_LANE_JUDGMENT_MODEL, value: "minimax" }
-            - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "fast" }
-            - { name: OTTO_ROUTER_LANE_VERIFY_MODEL, value: "gemini" }
+            # `kimi` and `minimax` are the only two models the estate router actually serves:
+            # `GET /model/info` with this pod's own key returns exactly those two, measured from
+            # inside this pod on 2026-09-05. `fast` and `gemini` are rows in llm/config.yaml that
+            # are not in the running router, and `fast` is in no family mapping either, so
+            # otto/router/config.py refused the whole configuration on every inbound message:
+            # "policy defect: model 'fast' is in no family mapping". That refusal is why Otto
+            # answered nothing. Bulk and verify may share a family; only judgment must differ
+            # from each of them, and judgment is minimax.
+            - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "kimi" }
+            - { name: OTTO_ROUTER_LANE_VERIFY_MODEL, value: "kimi" }
             - { name: PYTHONUNBUFFERED, value: "1" }
           ports:
             - { containerPort: 8080, name: http }
