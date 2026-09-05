@@ -30,25 +30,23 @@ not the behaviour. Do not flip a flag to make a sentence true.
 
 ## The decisions
 
-1. **Voice replies stay off by default; `/voice on` is the switch and it must work.** Auto-TTS on
-   every reply is a per-chat preference, not a platform default. Rejected: `voice.auto_tts: true`
-   in `config.yaml` (every customer would get audio unasked).
-2. **The `screenshot_handler` and `bench` flags are deleted.** A flag that gates nothing is a
-   claim the file does not support, and a buyer's engineer finds it in one sitting. `bench` is
-   not a feature until a founder request names what it does; today no file does. Rejected:
-   building "bench" from the name.
-3. **Speech-to-text goes through the estate router, not a local model.** `stt.openai.base_url`
-   is honoured (`transcription_tools.py:121,3326`), so the bot sends audio to the LiteLLM
-   `/v1/audio/transcriptions` endpoint with the key it already holds, and the router owns the
-   provider root (LAW 52, one root per provider; 0020, the client chooses the road). Rejected:
-   `faster-whisper` in the image (a model download at first use on a read-only rootfs behind a
-   default-deny fence, plus ffmpeg), and a vendor key in the pod (a second secret road).
+The decisions are the founder's, recorded in ADR 0022
+(`docs/decisions/0022-the-founder-override-is-voice-first-and-nothing-is-deleted.md`, 2026-09-05).
+The first draft of this spec made three of them on its own and was corrected the same evening
+("ur not a decision maker here"); this section now only points at the record.
+
+1. **Voice replies are on by default** (`voice.auto_tts: true`, hermes-v2 #87). A chat opts out
+   with `/voice off`.
+2. **No flag is deleted.** `bench` and `screenshot_handler` stay; what they should gate is a
+   founder request, not an agent's inference from the name.
+3. **Speech-to-text is local-first** (`faster-whisper` and ffmpeg in the image, hermes-v2 #87),
+   with the estate router as the fallback.
 4. **Vision is proved, not re-fixed.** hermes-v2 #86 is merged; the finish line is a photo
    described in the log.
 
 ## The work, in order
 
-### 1. STT through the router
+### 1. STT local-first, router as fallback
 
 idp:
 - `llm/config.yaml`: add a `model_name: stt` entry on a transcription-capable provider. The
@@ -63,17 +61,10 @@ idp:
 
 hermes-v2:
 - `config.yaml`: 
-  ```yaml
-  stt:
-    enabled: true
-    provider: openai
-    openai:
-      model: stt
-      base_url: https://llm.mumchimp.com/v1
-      key_env: LITELLM_API_KEY
-  ```
-  (verify the exact key names against `tools/transcription_tools.py:3300-3350`, `_resolve_openai_audio_client_config`; the
-  spec names the intent, the code names the keys.)
+  the local-first chain needs no `stt:` block (faster-whisper is auto-detected,
+  `transcription_tools.py:1140`); the router fallback is `stt.openai.base_url` pointed at the
+  estate router (`transcription_tools.py:121,3326`), key names verified against
+  `_resolve_openai_audio_client_config` before they are written.
 - A test under `tests/` that loads `config.yaml` and asserts the STT provider resolves to the
   router base URL, in the style of `tests/test_incident_crew516_cp4_image_carries_the_estate.py`
   (structure, not prose; `prose_pin_scan` refuses a string-membership test). README row for the file.
@@ -84,12 +75,10 @@ hermes-v2:
 - If the reply carries no audio, the defect is in `_send_voice_reply` (`gateway/run.py:22231`) or
   the edge-tts extra; fix at the site, never by adding a second TTS road.
 
-### 3. Delete the decorative flags
+### 3. Flags stay
 
-hermes-v2: remove `bench` and `screenshot_handler` from `bin/features`, `estate.yaml`,
-`estate.example.yaml`, `README.md:102`, `tests/test_features_switch.py`; delete
-`templates/handlers/screenshot_to_issue.py.tmpl` and its `.gitignore:60` line.
-idp: remove both lines from `platform/hermes-agent/estate.yaml`. `bin/idp-ci` green.
+No change. `bench` and `screenshot_handler` remain in `bin/features` and both `estate.yaml` files
+until a founder request names what each gates.
 
 ### 4. Vision: prove it
 
@@ -105,7 +94,6 @@ phone. A probe, a unit test or a 200 is not done.
 | STT | `bin/idp-kube logs -n hermes-agent deploy/hermes-agent --since=10m \| grep -E 'transcrib'` | a line naming the transcript of the founder's voice note, and the reply answers it |
 | voice replies | same log, `grep -E 'send_voice\|voice_reply'` | a `send_voice` line for the founder's chat after `/voice on`, and the audio arrives on the phone |
 | vision | same log, `grep -E 'vision'` | a line with the photo's description, and the reply names what is in it |
-| flags | `grep -rn 'bench\|screenshot_handler' hermes-v2 idp/platform` | nothing |
 | silent failures | `bin/idp-kube get events -n hermes-agent --sort-by=.lastTimestamp \| tail -20` | no restart, OOM or refused create after the messages |
 
 Reply with `INVENTORY:` when every row above is quoted; `DONE:` only with the founder's receipt.
