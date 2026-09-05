@@ -293,6 +293,16 @@ if ! CLOUD_AGNOSTIC_ROOT="$IDP/tests/fixtures/cloud-agnostic/bad" python3 "$IDP/
   say "ok    agnostic cloud-agnostic-gate refuses a provider annotation, permits a plain Service, and the repo is clean"
 else say "FAIL  agnostic cloud-agnostic-gate is not discriminating or the platform names a cloud outside platform/oci"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
 
+# ADR 0021 two-hats (deepseek-brief Task C): a channel_binding row must never share a
+# secret_ref across two tenant_ids, never grant an operator identifier to a customer
+# allowlist, and never bind the estate tenant to a customer-facing channel. Proved both
+# ways on fixtures in one run (bad refused, good passed), then run on the repo tree.
+if ! python3 "$IDP/bin/idp-tenant-split" "$IDP/tests/fixtures/tenant-split/bad.yaml" >/dev/null 2>&1 \
+   && python3 "$IDP/bin/idp-tenant-split" "$IDP/tests/fixtures/tenant-split/good.yaml" >/dev/null 2>&1 \
+   && out=$(python3 "$IDP/bin/idp-tenant-split" "$IDP/platform/otto-gateway/binding-seed.yaml" 2>&1); then
+  say "ok    twohats idp-tenant-split refuses a shared secret / operator-on-customer row, and the repo seed is clean"
+else say "FAIL  twohats idp-tenant-split is not discriminating or the seed crosses the two planes"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+
 # crew#269 (founder: "as always configurable"): the DNS zone is one value in clusters/*/estate-config.yaml;
 # a platform file naming it as a literal fails. Proved both ways on fixtures, then run on the repo.
 # crew#796 (founder 2026-09-01, P0: "can't ever happen again ... PR rejection"): the same gate grades a

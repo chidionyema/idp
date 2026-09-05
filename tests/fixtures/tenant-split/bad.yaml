@@ -1,0 +1,40 @@
+# Intentional violation of rule 1 (one secret, one tenant) PLUS rule 3 (estate on a
+# customer channel) — two hats sharing one secret_ref across different tenant_ids is the
+# exact cross-plane leak the two-hats rule forbids. This fixture MUST be refused by
+# bin/idp-tenant-split (AGENTS.md must-fail).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otto-gateway-binding-seed
+  namespace: otto-gateway
+data:
+  seed.sql: |
+    CREATE TABLE IF NOT EXISTS channel_binding (
+        tenant_id         TEXT        NOT NULL,
+        channel           TEXT        NOT NULL,
+        external_id       TEXT        NOT NULL,
+        secret_ref        TEXT        NOT NULL,
+        token_fingerprint TEXT        NOT NULL,
+        status            TEXT        NOT NULL DEFAULT 'active',
+        created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+        outbound_secret_ref  TEXT,
+        principal_allowlist  JSONB      NOT NULL DEFAULT '{}'::jsonb
+    );
+
+    INSERT INTO channel_binding
+        (tenant_id, channel, external_id, secret_ref, token_fingerprint, status,
+         outbound_secret_ref, principal_allowlist)
+    VALUES
+        -- The operator's own estate row: allowed channel = telegram, own secret.
+        ('estate', 'telegram', :'chat_id',
+         'vault://otto-staging-telegram/webhook_secret', :'fingerprint', 'active',
+         'vault://otto-staging-telegram/token',
+         jsonb_build_object(:'chat_id', 'founder')),
+        -- A paying customer, acme, REUSING the estate's webhook secret_ref below.
+        -- That is the cross-plane leak: one secret under two tenant_ids.
+        ('customer-acme', 'slack', 'acme-channel',
+         'vault://otto-staging-telegram/webhook_secret', :'fingerprint_acme', 'active',
+         'vault://otto-staging-telegram/token',
+         jsonb_build_object('acme-ops', 'alice'))
+    ON CONFLICT (channel, external_id) DO UPDATE SET
+        tenant_id = excluded.tenant_id;

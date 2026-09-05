@@ -1,0 +1,39 @@
+# A clean two-plane seed: the estate operator on its own telegram channel and one customer
+# tenant (acme) on its OWN channel with its OWN secret — no shared secret_ref, no customer
+# allowlisting an operator identifier, no estate row off the operator channel set. This
+# fixture MUST pass bin/idp-tenant-split (AGENTS.md must-pass).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otto-gateway-binding-seed
+  namespace: otto-gateway
+data:
+  seed.sql: |
+    CREATE TABLE IF NOT EXISTS channel_binding (
+        tenant_id         TEXT        NOT NULL,
+        channel           TEXT        NOT NULL,
+        external_id       TEXT        NOT NULL,
+        secret_ref        TEXT        NOT NULL,
+        token_fingerprint TEXT        NOT NULL,
+        status            TEXT        NOT NULL DEFAULT 'active',
+        created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+        outbound_secret_ref  TEXT,
+        principal_allowlist  JSONB      NOT NULL DEFAULT '{}'::jsonb
+    );
+
+    INSERT INTO channel_binding
+        (tenant_id, channel, external_id, secret_ref, token_fingerprint, status,
+         outbound_secret_ref, principal_allowlist)
+    VALUES
+        -- estate (operator): telegram channel, its OWN secret and bot token.
+        ('estate', 'telegram', :'chat_id',
+         'vault://otto-staging-telegram/webhook_secret', :'fingerprint', 'active',
+         'vault://otto-staging-telegram/token',
+         jsonb_build_object(:'chat_id', 'founder')),
+        -- customer acme: its OWN slack channel, its OWN secret. Keeps the two hats apart.
+        ('customer-acme', 'slack', 'acme-channel',
+         'vault://acme-slack/webhook_secret', :'fingerprint_acme', 'active',
+         'vault://acme-slack/token',
+         jsonb_build_object('acme-ops', 'alice'))
+    ON CONFLICT (channel, external_id) DO UPDATE SET
+        tenant_id = excluded.tenant_id;

@@ -1,0 +1,400 @@
+#!/usr/bin/env python3
+"""Refuse a channel binding that crosses a tenant plane.
+
+Two-hats (ADR 0021, docs/decisions/0021-...): the founder is one person with two
+identities the platform must treat as strangers -- the operator who runs the estate,
+and customer zero, a paying tenant like any other. They must never share a credential
+or a channel.
+
+Bindings live in platform/otto-gateway/binding-seed.yaml, which is a ConfigMap whose
+data.seed.sql holds the channel_binding rows. Every row is one `INSERT INTO
+channel_binding (...)` statement carrying (at least) tenant_id, channel, external_id,
+secret_ref, outbound_secret_ref and principal_allowlist.
+
+Three things are graded, each against the parsed structure of the SQL, never against a
+name, a label or a comment:
+
+  1. One secret, one tenant. A secret_ref or outbound_secret_ref value that appears
+     under two DIFFERENT tenant_id values is a FAIL -- the two hats may never share a
+     credential.
+  2. No operator identity on a customer allowlist. A row whose tenant_id is not 'estate'
+     (i.e. a customer tenant) must not carry the operator's real chat identifier in
+     principal_allowlist. The operator's principal is whatever external identifier the
+     estate tenant's own row names; a customer row reusing that identifier leaks the
+     operator chat to a paying tenant.
+  3. The estate tenant owns no customer-facing channel. A row with tenant_id='estate'
+     must use a channel on the OPERATOR_CHANNELS allow-list (today: 'telegram', the real
+     operator channel in git -- 'alerts-bot' was a fiction that never matched the file).
+
+The estate file today seeds ONLY the operator/estate telegram rows, so rules 2 and 3 are
+future-tense guards that fail loudly the day a customer row is added wrongly. The gate is
+idempotent (reads only) and runs in bin/idp-ci over the repository tree.
+"""
+from __future__ import annotations
+
+import os
+import re
+import sys
+
+try:
+    import yaml
+except ImportError:
+    sys.exit("idp-tenant-split needs PyYAML: python3 -m pip install pyyaml")
+
+OPERATOR_CHANNELS = {"telegram"}
+
+# A psql psql-var placeholder like :'chat_id' is git-time-unknown (its value is read from the
+# vault at run time and appears in no file). It cannot be graded as tenant-specific, so each
+# placeholder de-duplicates into its own symbol.
+_PSQL_VAR = re.compile(r":'(?P<name>[a-z_]+)'")
+
+
+def _norm(value_text: str) -> str:
+    """Collapse a SQL value to a stable gradeable token.
+
+    A quoted literal keeps its text; a psql var becomes <var:name> so two rows that both
+    reference :'chat_id' grade as the same unknown rather than as distinct tenants.
+    """
+    def _sub(m: "re.Match[str]") -> str:
+        return f"<var:{m.group('name')}>"
+    return _PSQL_VAR.sub(_sub, value_text)
+
+
+def _split_top_level(text: str) -> "list[str]":
+    """Split a comma list on commas that are not inside quotes/brackets/parens.
+
+    The estate's VALUES rows nest jsonb_build_object(:'chat_id', 'founder') and
+    'alerts-bot:' || :'chat_id', so a naive text split on ',' would shred a row.
+    """
+    parts: "list[str]" = []
+    depth = 0
+    cur: "list[str]" = []
+    i = 0
+    n = len(text)
+    quote = None  # None | '\'' ; strings may contain '' (Sqlite/psql escape)
+    while i < n:
+        ch = text[i]
+        if quote:
+            cur.append(ch)
+            if ch == "\'":
+                if i + 1 < n and text[i + 1] == "\'":
+                    cur.append(text[i + 1]); i += 1
+                else:
+                    quote = None
+            i += 1
+            continue
+        if ch == "\'":
+            quote = "\'"
+            cur.append(ch)
+        elif ch == "(":
+            depth += 1; cur.append(ch)
+        elif ch == ")":
+            depth -= 1; cur.append(ch)
+        elif ch == "," and depth == 0:
+            parts.append("".join(cur)); cur = []
+        else:
+            cur.append(ch)
+        i += 1
+    if cur:
+        parts.append("".join(cur))
+    return parts
+
+
+def _balanced_groups(text: str) -> "list[str]":
+    """Return the (non-overlapping) top-level parenthesised groups in text, bodies only.
+
+    Each returned string is the content INSIDE one top-level ( ... ) pair. Used once on the
+    whole INSERT statement so the opening paren that belongs to the first VALUES tuple is
+    counted correctly (the estate nests jsonb_build_object( :'chat_id', 'founder') inside
+    a row tuple, and a tuple inside the outer column list must stay nested).
+    """
+    groups = []
+    depth = 0
+    start = None
+    i = 0
+    n = len(text)
+    in_str = False
+    while i < n:
+        ch = text[i]
+        if in_str:
+            if ch == "\'":
+                if i + 1 < n and text[i + 1] == "\'":
+                    i += 2
+                    continue
+                in_str = False
+            i += 1
+            continue
+        if ch == "\'":
+            in_str = True
+            i += 1
+            continue
+        if ch == "(":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0 and start is not None:
+                groups.append(text[start + 1:i])
+                start = None
+        i += 1
+    return groups
+
+
+def _extract_inserts(seed_sql: str) -> "list[dict]":
+    """Pull every channel_binding INSERT into a {columns, rows} dict.
+
+    The first top-level paren group after the table name is the column list; the group
+    immediately following the VALUES keyword is the full value-tuple block, whose own
+    top-level paren groups are the individual rows. Only INSERT INTO channel_binding is
+    read; the same table definition also appears in a CREATE TABLE, which is skipped.
+    """
+    inserts = []
+    # Split the seed into statements on semicolons outside strings, then keep only the
+    # INSERT ... INTO channel_binding statements.
+    stmts = _split_top_level_statements(seed_sql)
+    for stmt in stmts:
+        m = re.match(
+            r"^\s*INSERT\s+INTO\s+channel_binding\b", stmt, re.IGNORECASE
+        )
+        if not m:
+            continue
+        groups = _balanced_groups(stmt)
+        if not groups:
+            continue
+        # first group = column list
+        cols = [c.strip().strip('"') for c in _split_top_level(groups[0])]
+        cols = [c for c in cols if c]
+        # Every top-level group after the VALUES keyword, up to any ON CONFLICT / other
+        # clause, is one row tuple.
+        values_start = _index_upcase(stmt, "VALUES")
+        conflict_start = _index_upcase(stmt, "ON CONFLICT")
+        value_text = stmt[values_start:] if values_start >= 0 else ""
+        if conflict_start >= 0:
+            value_text = value_text[: conflict_start - values_start]
+        rows = []
+        for g in _balanced_groups(value_text):
+            vals = _split_top_level(g)
+            rows.append([_strip_literal(v) for v in vals])
+        inserts.append({"columns": cols, "rows": rows})
+    return inserts
+
+
+def _index_upcase(text: str, word: str) -> int:
+    """Index of the given word, respecting string literals (the word must sit outside
+    quotes). Case-insensitive. Returns -1 when absent."""
+    i = 0
+    n = len(text)
+    in_str = False
+    while i < n:
+        ch = text[i]
+        if in_str:
+            if ch == "\'":
+                if i + 1 < n and text[i + 1] == "\'":
+                    i += 2
+                    continue
+                in_str = False
+            i += 1
+            continue
+        if ch == "\'":
+            in_str = True
+            i += 1
+            continue
+        if text[i:i + len(word)].upper() == word.upper():
+            # word boundary: prev/next not alnum or underscore
+            prev = text[i - 1] if i > 0 else " "
+            after = text[i + len(word)] if i + len(word) < n else " "
+            if not (prev.isalnum() or prev == "_") and not (after.isalnum() or after == "_"):
+                return i
+        i += 1
+    return -1
+
+
+def _split_top_level_statements(text: str) -> "list[str]":
+    """Split SQL into statements on top-level semicolons (not inside strings)."""
+    out = []
+    cur = []
+    in_str = False
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if in_str:
+            cur.append(ch)
+            if ch == "\'":
+                if i + 1 < n and text[i + 1] == "\'":
+                    cur.append(text[i + 1]); i += 1
+                else:
+                    in_str = False
+            i += 1
+            continue
+        if ch == "\'":
+            in_str = True; cur.append(ch); i += 1; continue
+        if ch == ";":
+            out.append("".join(cur)); cur = []
+            i += 1
+            continue
+        cur.append(ch); i += 1
+    if cur:
+        out.append("".join(cur))
+    return out
+
+
+
+def _strip_sql_comments(sql: str) -> str:
+    """Remove SQL -- line comments without touching comments inside string literals.
+
+    The estate's seed.sql braces every row with -- prose between tuples; the parser must
+    not read a comment line as a value. A naive regex delete would shred a '--' inside a
+    quoted secret, so this walks the string and only treats -- as a comment outside quotes.
+    """
+    out = []
+    i = 0
+    n = len(sql)
+    in_str = False
+    while i < n:
+        c = sql[i]
+        if in_str:
+            out.append(c)
+            if c == "\'":
+                if i + 1 < n and sql[i + 1] == "\'":
+                    out.append(sql[i + 1]); i += 1
+                else:
+                    in_str = False
+            i += 1
+            continue
+        if c == "\'":
+            in_str = True; out.append(c); i += 1; continue
+        if c == "-" and i + 1 < n and sql[i + 1] == "-":
+            while i < n and sql[i] != "\n":
+                i += 1
+            continue
+        out.append(c); i += 1
+    return "".join(out)
+
+
+def _strip_literal(v: str) -> str:
+    """Normalise one value token to a gradeable atom: strip surrounding quotes and
+    outer parens, unify psql vars to their symbol, drop sql concatenation fluff."""
+    v = v.strip()
+    if v.startswith("(") and v.endswith(")"):
+        v = v[1:-1].strip()
+    if v.startswith("jsonb_build_object"):
+        # keep just the tokens inside to see the principals we grade; lowercase nothing,
+        # but normalise the enclosing quotes away per inner literal.
+        inner = v[len("jsonb_build_object"):].strip()
+        if inner.startswith("(") and inner.endswith(")"):
+            inner = inner[1:-1].strip()
+        return "jsonb[" + ",".join(_strip_literal(x) for x in _split_top_level(inner)) + "]"
+    if v.startswith("\'") and v.endswith("\'") and len(v) >= 2:
+        v = v[1:-1]
+    v = v.replace("\'\'", "\'")
+    return _norm(v) or v
+
+
+def _row_map(row: "list[str]", cols: "list[str]") -> "dict[str,str]":
+    return dict(zip(cols, row))
+
+
+def _findings_from_file(path: str) -> "list[str]":
+    with open(path, "r", encoding="utf-8") as fh:
+        text = fh.read()
+    # The ConfigMap wraps seed SQL in data.seed.sql. Parse YAML only if the file is a
+    # ConfigMap; otherwise treat the whole file as the SQL.
+    seed_sql = text
+    try:
+        doc = yaml.safe_load(text)
+        if isinstance(doc, dict):
+            data = doc.get("data") or {}
+            if isinstance(data, dict) and "seed.sql" in data:
+                seed_sql = data["seed.sql"]
+    except yaml.YAMLError:
+        pass  # raw .sql or a file that is not YAML
+
+    seed_sql = _strip_sql_comments(seed_sql)
+
+    findings = []
+    inserts = _extract_inserts(seed_sql)
+
+    if not inserts:
+        findings.append("no channel_binding INSERT found to grade")
+        return findings
+
+    # ---- rule 1: one secret, one tenant ------------------------------------
+    secret_to_tenants: "dict[str,set[str]]" = {}
+    for ins in inserts:
+        cols = ins["columns"]
+        for row in ins["rows"]:
+            rm = _row_map(row, cols)
+            tenant = rm.get("tenant_id", "")
+            for ref_col in ("secret_ref", "outbound_secret_ref"):
+                ref = rm.get(ref_col, "")
+                if not ref or ref.startswith("<var:"):
+                    continue
+                secret_to_tenants.setdefault(ref, set()).add(tenant)
+    for ref, tenants in secret_to_tenants.items():
+        # an empty tenant (missing column) is ungradeable; two real different tenants is a FAIL
+        real = {t for t in tenants if t}
+        if len(real) > 1:
+            findings.append(
+                f"secret_ref {ref} appears under {len(real)} tenants: {sorted(real)}"
+            )
+
+    # ---- rule 2: no operator principal on a customer allowlist -------------
+    # Determine the estate row's own identifiers first (the operator's real chat), then
+    # refuse a customer row that reuses one.
+    operator_ids: "set[str]" = set()
+    for ins in inserts:
+        cols = ins["columns"]
+        for row in ins["rows"]:
+            rm = _row_map(row, cols)
+            if rm.get("tenant_id", "").strip("\'") == "estate":
+                operator_ids.add(rm.get("external_id", ""))
+    for ins in inserts:
+        cols = ins["columns"]
+        for row in ins["rows"]:
+            rm = _row_map(row, cols)
+            tenant = rm.get("tenant_id", "").strip("\'")
+            if tenant and tenant != "estate":
+                allow = rm.get("principal_allowlist", "")
+                for oid in operator_ids:
+                    if oid and oid in allow:
+                        findings.append(
+                            f"customer tenant {tenant} allowlist reuses operator identifier {oid}"
+                        )
+
+    # ---- rule 3: estate tenant owns only operator channels -----------------
+    for ins in inserts:
+        cols = ins["columns"]
+        for row in ins["rows"]:
+            rm = _row_map(row, cols)
+            tenant = rm.get("tenant_id", "").strip("\'").strip()
+            if tenant == "estate":
+                ch = rm.get("channel", "").strip("\'").strip()
+                if ch and ch not in OPERATOR_CHANNELS:
+                    findings.append(
+                        f"estate tenant bound to customer-facing channel {ch!r} "
+                        f"(allow: {sorted(OPERATOR_CHANNELS)})"
+                    )
+    return findings
+
+
+def main(argv: "list[str]") -> int:
+    if len(argv) != 1:
+        sys.exit("use: idp-tenant-split <binding-seed.yaml|fixture.sql>")
+    target = argv[0]
+    if not os.path.isfile(target):
+        sys.exit(f"idp-tenant-split: no such file: {target}")
+
+    findings = _findings_from_file(target)
+    for f in findings:
+        print(f"FAIL  {f}")
+    if findings:
+        print(f"FAIL    tenant-split: {len(findings)} finding(s)")
+        return 1
+    print("PASS    tenant-split: every channel_binding row keeps the two hats apart")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
