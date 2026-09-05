@@ -94,6 +94,9 @@ spec:
           kubernetes.io/metadata.name: backstage
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: dagster
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: mcp
     - namespaceSelector:
         matchLabels:

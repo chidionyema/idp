@@ -47,7 +47,19 @@ spec:
   - to:
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: estate-db
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: notify
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: observability
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: robusta
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

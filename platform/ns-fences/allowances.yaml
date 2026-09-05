@@ -150,7 +150,9 @@ flows:
     ingress_from: [edge, hermes-agent]
   monitoring:
     egress: [guacamole, robusta]
-    ingress_from: [observability, edge]
+    # dagster: the scheduler reads Alertmanager's firing alerts to decide there is
+    # anything worth investigating at all.
+    ingress_from: [observability, edge, dagster]
   observability:
     egress: [monitoring, identity, estate-db]
     ingress_from: [edge, monitoring]
@@ -169,6 +171,12 @@ flows:
   identity:
     ingress_from: [edge, backstage, guacamole, healthchecks, observability]
   dagster:
+    # The scheduler is what makes HolmesGPT active (scheduler/estate_scheduler/holmes_watch.py):
+    # it reads what is firing from Alertmanager in monitoring, asks the investigator in robusta,
+    # and publishes the answer through Apprise in notify. Both directions of each of those three
+    # conversations are declared -- on 2026-09-05 hindsight was cut off from its own database
+    # because only one side was.
+    egress: [monitoring, robusta, notify, estate-db, observability]
     ingress_from: [edge, backstage]
   hindsight:
     # Every surface that remembers: both Otto doors write from the answering lane
@@ -191,12 +199,18 @@ flows:
     egress_internet: [443]
     # mcp and backstage are the two front doors onto the investigator: the ask_holmes MCP tool
     # (agents, and Otto on Telegram through it) and the portal's Investigate page. monitoring is
-    # the alert path that was already here.
-    ingress_from: [monitoring, mcp, backstage]
+    # the alert path that was already here, and dagster is the scheduler POSTing to
+    # robusta-holmes /api/chat to start an investigation of its own.
+    ingress_from: [monitoring, mcp, backstage, dagster]
+  notify:
+    # Apprise, the estate's publish-once-deliver-everywhere layer. It delivers to Telegram,
+    # which is on the public internet. dagster: HolmesGPT's answer is published here.
+    egress_internet: [443]
+    ingress_from: [dagster]
   event-bus:
     ingress_from: [otto-gateway, commerce]
   estate-db:
-    ingress_from: [otto-gateway, hindsight, temporal, llm, observability, commerce]
+    ingress_from: [otto-gateway, hindsight, temporal, llm, observability, commerce, dagster]
   commerce:
     # Lago's ledger is database `lago` on the estate cluster, its queue is in this namespace, and
     # it publishes estate.commerce.order_paid to the bus. It reaches nothing else in the estate --

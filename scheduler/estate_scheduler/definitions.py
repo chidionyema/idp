@@ -81,6 +81,13 @@ try:
 except ImportError:  # loaded as a file, not as a package member
     from describe import describe as describe_job
 
+# HolmesGPT, active (crew: the investigator nothing could ask). Same by-path
+# fallback as describe above: workspace.yaml loads this file, not the package.
+try:
+    from .holmes_watch import holmes_alert_sensor, holmes_investigation
+except ImportError:  # loaded as a file, not as a package member
+    from holmes_watch import holmes_alert_sensor, holmes_investigation  # type: ignore[no-redef]
+
 
 def _expand(s: str) -> str:
     return os.path.expandvars(os.path.expanduser(s))
@@ -300,7 +307,7 @@ def estate_failure_log(context):
 
 def build() -> Definitions:
     spec = load_spec()
-    jobs, schedules, sensors = {}, [], [estate_failure_log]
+    jobs, schedules, sensors = {}, [], [estate_failure_log, holmes_alert_sensor]
     # A row graded `runs_on: retire` (crew#516) has left the Mac; it gets no job and no
     # schedule. crew#539: ai.idp.reconcile kept ticking retired and failing exit 2.
     spec = {label: s for label, s in spec.items() if s.get("runs_on") != "retire"}
@@ -314,7 +321,9 @@ def build() -> Definitions:
             if up not in jobs:
                 raise ValueError(f"{label}: after={up!r} is not a job in {SCHEDULE_FILE}")
             sensors.append(make_dependency_sensor(label, s, jobs[label], jobs[up]))
-    return Definitions(jobs=list(jobs.values()), schedules=schedules, sensors=sensors)
+    # holmes_investigation is not a schedule.yml row: it runs no command and is
+    # started by its sensor, never by a clock.
+    return Definitions(jobs=[*jobs.values(), holmes_investigation], schedules=schedules, sensors=sensors)
 
 
 defs = build()
