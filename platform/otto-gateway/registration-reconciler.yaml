@@ -80,7 +80,7 @@ data:
         with urllib.request.urlopen(req, context=ctx, timeout=TIMEOUT_S) as r:
             return json.load(r)
 
-    def set_webhook(token, url, secret_token):
+    def set_webhook(token, url, secret_token, drop_pending=True):
         """Point Telegram at the door. The token rides the URL path exactly as the Bot API
         requires and the shared secret rides the body; neither is logged, and neither appears
         in an exception message this script prints."""
@@ -90,8 +90,10 @@ data:
                 "secret_token": secret_token,
                 # Telegram drops anything queued against the old URL rather than replaying
                 # it at the new door: a backlog of updates aimed at a route that no longer
-                # exists is not work, and replaying it would answer messages twice.
-                "drop_pending_updates": True,
+                # exists is not work, and replaying it would answer messages twice. When the
+                # URL was already right and only the shared secret was wrong, the queue is
+                # aimed at this door and is real work, so it is kept.
+                "drop_pending_updates": drop_pending,
             }
         ).encode()
         req = urllib.request.Request(
@@ -171,12 +173,30 @@ data:
             info = get_webhook_info(token)
             result = info.get("result", {}) if info.get("ok") else {}
             registered = result.get("url") or ""
-            if WANTED_URL and registered != WANTED_URL:
+            # A registration is not healthy just because the URL is right. Telegram signs
+            # every delivery with the secret_token it was registered with, and the door
+            # refuses a POST that does not carry it -- so a webhook pointing at exactly the
+            # right URL with a stale secret is refused on every single delivery while
+            # getWebhookInfo still reports the URL this estate wanted. That is the shape the
+            # founder hit on 2026-09-05: @Ottototbot registered on /webhook/telegram with no
+            # secret, every delivery answered 401 "no credential presented" for hours, and
+            # this job printed ok on all of them. Telegram names the refusal itself in
+            # last_error_message, so the repair is driven off the vendor's own truth rather
+            # than off our side's guess.
+            last_error = (result.get("last_error_message") or "")
+            refused = any(code in last_error for code in ("401", "403"))
+            url_wrong = bool(WANTED_URL) and registered != WANTED_URL
+            if url_wrong or (registered and refused):
                 # The registration is wrong, and this pod is the thing that can fix it.
                 # Reporting and waiting for a person would mean a human holding a bot token.
                 with open(SECRET_TOKEN_FILE) as f:
                     secret_token = f.read().strip()
-                set_webhook(token, WANTED_URL, secret_token)
+                set_webhook(
+                    token,
+                    WANTED_URL or registered,
+                    secret_token,
+                    drop_pending=url_wrong,
+                )
                 repaired = 1
                 info = get_webhook_info(token)
                 result = info.get("result", {}) if info.get("ok") else {}
@@ -185,7 +205,16 @@ data:
             # somewhere: a webhook still registered against a route that was deleted reads
             # as "registered" and answers nobody.
             correct = bool(registered) and (not WANTED_URL or registered == WANTED_URL)
-            registration_ok = 1 if info.get("ok") and correct else 0
+            # A door that refuses Telegram is not a healthy registration, whatever the URL
+            # says. After a repair the next poll is what clears this, so the receipt line
+            # tells the truth about the run it describes.
+            # Telegram keeps last_error_message until the next delivery succeeds, so a run
+            # that just repaired the registration would otherwise grade itself FAIL on the
+            # error it has already fixed. The run after this one is the honest judge.
+            still_refused = not repaired and any(
+                code in (result.get("last_error_message") or "") for code in ("401", "403")
+            )
+            registration_ok = 1 if info.get("ok") and correct and not still_refused else 0
             pending_updates = result.get("pending_update_count", -1)
             verdict = "ok" if registration_ok else "FAIL"
             print(

@@ -109,6 +109,12 @@ spec:
               export OTTO_CHANNEL_SECRET_VAULT_OTTO_STAGING_TELEGRAM_WEBHOOK_SECRET
               OTTO_CHANNEL_SECRET_VAULT_OTTO_STAGING_TELEGRAM_TOKEN=$(cat /run/secrets/otto-gateway-channels/OTTO_TELEGRAM_BOT_TOKEN)
               export OTTO_CHANNEL_SECRET_VAULT_OTTO_STAGING_TELEGRAM_TOKEN
+              # otto.router.providers reads this from the environment and refuses to call a
+              # model without it; the file is the mount, the environment is what the library
+              # reads, and this line is the join between the two (same shape as the two above
+              # and as platform/research-engine/cronjob.yaml).
+              LITELLM_API_KEY=$(cat /run/secrets/otto-gateway-router/LITELLM_API_KEY)
+              export LITELLM_API_KEY
               exec python -m otto.ingress
           env:
             - { name: OTTO_INGRESS_PORT, value: "8080" }
@@ -126,6 +132,17 @@ spec:
             # LAW 50. The entrypoint refuses to start without this, so a door that cannot be
             # seen never opens rather than running dark.
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            # The estate's one model router, by its in-cluster Service name -- no vendor host,
+            # no key in this file (LAW 46, LAW 43: one router, not a second path to a vendor).
+            - { name: LITELLM_BASE_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
+            # Lane names on the estate router, never vendor model identifiers (LAW 34). The
+            # library's built-in default for the judgment lane is "anthropic/claude", which
+            # this estate can never call: it holds no Anthropic API key by decision, because
+            # Claude capacity here is the Pro Max subscription reached through `claude -p`.
+            # Leaving the default in place is what routed every message to needs_human.
+            - { name: OTTO_ROUTER_LANE_JUDGMENT_MODEL, value: "minimax" }
+            - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "fast" }
+            - { name: OTTO_ROUTER_LANE_VERIFY_MODEL, value: "gemini" }
             - { name: PYTHONUNBUFFERED, value: "1" }
           ports:
             - { containerPort: 8080, name: http }
@@ -150,12 +167,15 @@ spec:
           volumeMounts:
             - { name: db-password, mountPath: /run/secrets/otto-gateway-db, readOnly: true }
             - { name: channels, mountPath: /run/secrets/otto-gateway-channels, readOnly: true }
+            - { name: router, mountPath: /run/secrets/otto-gateway-router, readOnly: true }
             - { name: tmp, mountPath: /tmp }
       volumes:
         - name: db-password
           secret: { secretName: otto-gateway-db }
         - name: channels
           secret: { secretName: otto-gateway-channels }
+        - name: router
+          secret: { secretName: otto-gateway-router }
         - name: seed
           configMap: { name: otto-gateway-binding-seed }
         - name: tmp

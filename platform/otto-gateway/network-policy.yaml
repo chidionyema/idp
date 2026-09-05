@@ -140,3 +140,24 @@ spec:
       ports:
         - protocol: TCP
           port: 8888
+---
+# The namespace default-denies egress, and until this rule existed there was no route from
+# this pod to the estate's model router at all -- so even a pod holding the key could not
+# have reached it. One destination, one port: the router's own Service, never the internet
+# (every vendor call leaves from litellm, which is the point of having one router).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-llm
+  namespace: otto-gateway
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: llm
+      ports:
+        - protocol: TCP
+          port: 4000
