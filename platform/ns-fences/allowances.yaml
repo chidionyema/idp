@@ -135,6 +135,12 @@ flows:
     # agent classes and k8sgpt over the remember/recall tools.
     ingress_from: [hermes-agent, edge, otto-gateway, otto-golden, mcp]
   robusta:
+    # The runner posts to Telegram, which is on the public internet, and HolmesGPT calls the
+    # estate's own router and reads Prometheus. Declared here so the fence still says yes on the
+    # day this cluster runs a CNI that enforces it -- the trap this estate is repeatedly warned
+    # about is an AI tool that silently cannot reach its model because the namespace is default-deny.
+    egress: [llm, monitoring, observability]
+    egress_internet: [443]
     ingress_from: [monitoring]
   event-bus:
     ingress_from: [otto-gateway]

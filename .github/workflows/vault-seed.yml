@@ -15,7 +15,7 @@ on:
       entry:
         description: "which vault entry to write"
         type: choice
-        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, tailscale-operator, laptop, hermes, science, router-rows]
+        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, holmes, tailscale-operator, laptop, hermes, science, router-rows]
         default: all
       delete:
         description: "schedule deletion of one vault entry by name (for a mis-named entry); the entry field is ignored when this is set"
@@ -107,6 +107,12 @@ jobs:
             # K8sGPT's LiteLLM virtual key, a router key never a vendor key (platform/healing/external-secret.yaml, crew#539 CP7).
             # Minted here from the vault's master key, never seeded by a person (LAW 27, R5).
             bin/idp-router-key k8sgpt minimax
+          fi
+          if [ "$ENTRY" = all ] || [ "$ENTRY" = holmes ]; then
+            # HolmesGPT's own LiteLLM virtual key (platform/robusta/external-secret.yaml). Separate from
+            # k8sgpt's on purpose: a key alias is the only thing that attributes router spend to a caller,
+            # so the investigator and the smoke alarm must never share one.
+            bin/idp-router-key holmes minimax
           fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = laptop ]; then
             # The founder's Mac (pi, every CLI, the consult path) calls the router with ONE virtual key

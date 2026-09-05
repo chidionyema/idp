@@ -39,7 +39,66 @@ spec:
   values:
     clusterName: oke
     enablePrometheusStack: false
-    enableHolmesGPT: false
+    # HolmesGPT, the chart's own investigator. K8sGPT says a configuration is broken; Holmes pulls the
+    # pod's logs and events and says why. It is a subchart of the chart already installed here, so it
+    # needs no second namespace, no second ServiceAccount and no second Helm release -- the usual advice
+    # to `helm install robusta/holmes` into its own namespace would be a second copy of what is already
+    # running. Its brain is the estate's own router, so no log line leaves the cluster.
+    enableHolmesGPT: true
+    globalConfig:
+      # The investigator reads the estate's own Prometheus. Measured 2026-09-05: service kps-prometheus
+      # in namespace monitoring, port 9090.
+      prometheus_url: http://kps-prometheus.monitoring.svc:9090
+    holmes:
+      # require-registry-host: every image names its registry, so no pull can be silently redirected by
+      # a daemon's default. The subchart's default is the bare "robustadev", the same reason
+      # runner.image.registry above is spelled out.
+      registry: docker.io/robustadev
+      # The one Secret, mounted whole with envFrom; `envRef:` below reads it by env-var name.
+      extraEnvVarsSecrets: [holmes-llm]
+      modelList:
+        minimax:
+          # `openai/` is the protocol, not the vendor: LiteLLM speaks the OpenAI wire format, so Holmes
+          # talks to the estate's router exactly as it would to OpenAI, and the router decides which
+          # vendor actually answers. Changing lane is a one-word change here (platform/llm/config.yaml
+          # declares minimax, gemini, deepseek, fast, ollama and the rest).
+          model: openai/minimax
+          api_base: http://litellm.llm.svc:4000/v1
+          api_key: envRef:LITELLM_API_KEY
+      toolsets:
+        kubernetes/core: { enabled: true }
+        kubernetes/logs: { enabled: true }
+        prometheus/metrics: { enabled: true }
+        robusta: { enabled: true }
+        connectivity_check: { enabled: true }
+        skills: { enabled: true }
+        # Off, deliberately, and both are on by default in the chart.
+        #  - `bash` hands the model a shell inside the cluster with an "extended" allowlist. An
+        #    investigator reads; it does not run commands (LAW 21).
+        #  - `internet` fetches arbitrary URLs. The point of running the model through our own router is
+        #    that nothing about this estate leaves it, and a browsing tool undoes that in one call.
+        bash: { enabled: false }
+        internet: { enabled: false }
+      resources:
+        requests: { cpu: 100m, memory: 1Gi }
+        limits: { memory: 1Gi }
+      podSecurityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      # readOnlyRootFilesystem is NOT set here and must not be: the chart hardcodes it true on the
+      # container and merges this block after it, so setting it again renders a duplicate mapping key
+      # and the manifest stops being YAML. The chart also mounts its own writable emptyDir at /tmp for
+      # exactly this reason (charts/holmes/templates/holmes.yaml, "Required for OpenShift restricted
+      # SCC and other security-hardened environments that enforce read-only root filesystems").
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        privileged: false
+        runAsNonRoot: true
+        capabilities: { drop: [ALL] }
+        seccompProfile: { type: RuntimeDefault }
     # crew#539, 2026-08-28: run 33162263652 (`bin/idp-oke-rebuild --break-glass`) showed
     # robusta-forwarder and robusta-runner stuck `ImageInspectError`/`Init:ImageInspectError`;
     # the pod event was `InspectFailed: short name mode is enforcing, but image name
