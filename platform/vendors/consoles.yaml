@@ -72,7 +72,7 @@ vendors:
         # DeepSeek answered 401 from inside the router pod on 2026-09-04 21:5xZ (the key is revoked
         # at the vendor; prospector's byte-identical copy fails the same way), which is why Gemini
         # sits in this chain: a hop that always refuses is latency, not redundancy.
-        - deepseek: [minimax, gemini]
+        - deepseek: [gemini, minimax]
   minimax:
     kind: secret
     secret: SEED_MINIMAX_API_KEY
@@ -138,7 +138,7 @@ vendors:
         # Those two were each other's only fallback, so a cheap turn walked minimax -> deepseek
         # and died with nothing to answer the founder's Telegram message. Gemini answers, so it
         # goes ahead of the dead pair rather than after it.
-        - minimax: [gemini, deepseek]
+        - minimax: [deepseek, gemini]
   kimi:
     # Moonshot's Kimi (platform.kimi.ai). The vendor documents no key shape (API overview and
     # list-models pages, read 2026-09-02), so the shape only refuses an empty or malformed paste;
@@ -269,9 +269,9 @@ vendors:
         # is still the last hop of every chain it does not head, which is what sovereign cp30
         # grades and the `[routing] cheap` line of AGENTS.md declares; which lane is `cheap` is
         # the founder's call, not this file's, so it is untouched.
-        - gemini: [minimax, deepseek]
-        - default: [gemini, minimax, deepseek]
-        - fast: [gemini, minimax, deepseek]
+        - gemini: [deepseek, minimax]
+        - default: [deepseek, gemini, minimax]
+        - fast: [deepseek, gemini, minimax]
   exa:
     kind: secret
     secret: SEED_EXA_API_KEY
