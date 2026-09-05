@@ -121,6 +121,11 @@ spec:
               # and as platform/research-engine/cronjob.yaml).
               LITELLM_API_KEY=$(cat /run/secrets/otto-gateway-router/LITELLM_API_KEY)
               export LITELLM_API_KEY
+              # The same key under the second name that reads it: the memory engine's
+              # embedding provider (hermes-v2 otto/memory/embeddings_litellm.py). One
+              # credential and one router, not a second door to a vendor.
+              OTTO_MEMORY_EMBEDDING_API_KEY=$LITELLM_API_KEY
+              export OTTO_MEMORY_EMBEDDING_API_KEY
               # The fact store the answering lane now reads memory from, instead of
               # waiting on hindsight's cross-encoder for 31.87s per question
               # (hermes-v2 otto/memory/fast_recall.py, and its PR for the trace).
@@ -162,6 +167,19 @@ spec:
             # costs no one their answer, it just arrives without memory.
             - { name: OTTO_MEMORY_RECALL_TIMEOUT_S, value: "30" }
             - { name: OTTO_MEMORY_RETAIN_TIMEOUT_S, value: "5" }
+            # The vector half of the L2 read. Without these the lane still answers --
+            # Postgres full-text search over the same rows is the lexical arm of the
+            # hybrid and is a tested mode, not a failure -- but only half the recall
+            # quality. `embed` is a lane on the estate router, never a vendor model id
+            # (LAW 34); platform/llm/config.yaml resolves it to gemini-embedding-001 at
+            # 1536 dimensions, which is the width otto_facts.embedding is created at, so
+            # the column and the model cannot drift apart.
+            - { name: OTTO_MEMORY_EMBEDDING_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
+            - { name: OTTO_MEMORY_EMBEDDING_MODEL, value: "embed" }
+            - { name: OTTO_MEMORY_EMBEDDING_DIM, value: "1536" }
+            # Bounded on the answering path like every other call here. An embedding that
+            # overruns costs no one their answer: retrieval falls back to the lexical arm.
+            - { name: OTTO_MEMORY_EMBEDDING_TIMEOUT_S, value: "1.5" }
             # LAW 50. The entrypoint refuses to start without this, so a door that cannot be
             # seen never opens rather than running dark.
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }

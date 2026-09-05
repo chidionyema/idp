@@ -44,9 +44,9 @@ metadata:
 spec:
   ttlSecondsAfterFinished: 86400
   backoffLimit: 3
-  # Several hundred memories, one embedding-free write each, plus the paged reads
-  # from hindsight. Twenty minutes is generous and is a hard stop, so a run that
-  # hangs against a slow dependency cannot sit in the namespace forever.
+  # Several hundred memories: one embedding call and one write each, plus the paged
+  # reads from hindsight. Twenty minutes is generous and is a hard stop, so a run
+  # that hangs against a slow dependency cannot sit in the namespace forever.
   activeDeadlineSeconds: 1200
   template:
     metadata:
@@ -82,6 +82,12 @@ spec:
               # environment, so the file is the mount and this line is the join.
               PGPASSWORD=$(cat /run/secrets/otto-gateway-db/POSTGRES_PASSWORD)
               export PGHOST PGPORT PGUSER PGDATABASE PGPASSWORD
+              # The backfill embeds every memory it copies, through the same router
+              # lane the gateway reads with, so a backfilled fact and a fact written
+              # tonight sit in one vector space. Same mount, same key, same reason the
+              # line above exists: the secret is a file, the library reads an env var.
+              OTTO_MEMORY_EMBEDDING_API_KEY=$(cat /run/secrets/otto-gateway-router/LITELLM_API_KEY)
+              export OTTO_MEMORY_EMBEDDING_API_KEY
               python -m otto.memory.migrate
               python -m otto.memory.backfill
           env:
@@ -98,6 +104,16 @@ spec:
             # hindsight's list endpoint is a plain database read, unlike its recall.
             - { name: OTTO_MEMORY_BACKFILL_PAGE_SIZE, value: "200" }
             - { name: OTTO_MEMORY_BACKFILL_TIMEOUT_S, value: "60" }
+            # Identical to the gateway's three, and they have to be: a backfill that
+            # embedded with a different lane or a different width would produce rows the
+            # read path cannot compare. An embedding failure is logged and the memory is
+            # still copied, so a router outage costs vector quality, never the fact.
+            - { name: OTTO_MEMORY_EMBEDDING_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
+            - { name: OTTO_MEMORY_EMBEDDING_MODEL, value: "embed" }
+            - { name: OTTO_MEMORY_EMBEDDING_DIM, value: "1536" }
+            # Longer than the gateway's 1.5s: nothing is waiting on this run, and a
+            # batch job that gives up early leaves rows without vectors.
+            - { name: OTTO_MEMORY_EMBEDDING_TIMEOUT_S, value: "30" }
             # LAW 50: the run's own log lines reach the estate collector like every
             # other workload's, so a failed migration is visible without kubectl.
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
@@ -111,9 +127,12 @@ spec:
             limits: { cpu: 500m, memory: 512Mi }
           volumeMounts:
             - { name: db-password, mountPath: /run/secrets/otto-gateway-db, readOnly: true }
+            - { name: router, mountPath: /run/secrets/otto-gateway-router, readOnly: true }
             - { name: tmp, mountPath: /tmp }
       volumes:
         - name: db-password
           secret: { secretName: otto-gateway-db }
+        - name: router
+          secret: { secretName: otto-gateway-router }
         - name: tmp
           emptyDir: {}
