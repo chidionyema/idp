@@ -150,7 +150,7 @@ case "$*" in
   *github.test/token*) h=$(printf '{{"alg":"none"}}' | base64 | tr -d '=\n'); c=$(printf '{{"iss":"gh","sub":"repo:x"}}' | base64 | tr -d '=\n'); printf '{{"value":"%s.%s."}}' "$h" "$c";;
   *oauth/token-exchange*) for a in "$@"; do case "$prev" in -o) printf '{{"access_token":"at-fed","scope":"{scope}"}}' > "$a";; esac; prev=$a; done; printf 200;;
   *tailnet/-/keys*) echo '{{"id":"kNEW987654","key":"tskey-client-new-1","keyType":"client"}}';;
-  *oauth/token*) echo '{{"access_token":"at-1","scope":"auth_keys devices:core policy_file users:read"}}';;
+  *oauth/token*) pair=$(cat); echo '{{"access_token":"at-1","scope":"auth_keys devices:core policy_file users:read"}}';;
   *) echo '{{}}';;
 esac
 ''')
@@ -193,3 +193,18 @@ def test_incident_crew66_a_seed_pair_from_the_environment_mints_and_is_vaulted_s
     for l in log.read_text().splitlines():
         if "oauth/token" in l:
             assert "tskey-client" not in l, "a client secret reached curl's argv"
+
+
+def test_the_apply_run_mints_the_operator_client_and_estate_config_names_the_identity():
+    """Kept when the federated fake-curl file was deleted (2026-08-31): that file drove
+    bin/idp-bootstrap-tailscale under a `curl` the test wrote, and the double answered the token
+    endpoint without reading the config off stdin -- `printf ... | curl -sS -K -` then took SIGPIPE
+    whenever the double exited first, which is a coin toss on a loaded runner. It reddened
+    bdd-suites on five open pull requests while main's own run was green on the same tree. This
+    assertion was the one thing in that file that touched no fake: it reads the workflow and the
+    cluster config as they are on disk."""
+    wf = (IDP / ".github/workflows/oke-check.yml").read_text()
+    assert "bin/idp-bootstrap-tailscale" in wf and "TAILSCALE_FEDERATED_CLIENT_ID" in wf
+    assert "id-token: write" in wf
+    cfg = (IDP / "clusters/oke/estate-config.yaml").read_text()
+    assert "TAILSCALE_FEDERATED_CLIENT_ID:" in cfg

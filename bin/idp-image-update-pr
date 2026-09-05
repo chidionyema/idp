@@ -13,15 +13,22 @@ branch=${IMAGE_UPDATE_BRANCH:-flux/image-updates}
 # the tag lines the image-automation-controller wrote, and nothing else in the diff.
 # shellcheck disable=SC2016  # backticks are the gate's own syntax, not a substitution
 VERIFY='Verify: `grep -rn imagepolicy platform/ clusters/ --include=*.yaml`'
+# idp#1053, founder 2026-08-31: rule control_shipped demands a control from anything touching
+# platform/ or clusters/, and an image bump touches both and ships no test -- so the rule's own
+# `Control: none: <reason>` half is what a tag bump writes. The rule landed and nothing checked
+# whether the five generators that open pull requests could satisfy it; not one of them wrote a
+# Control line, and this one has been re-pushing a refused body ever since.
+CONTROL="Control: none: a machine-written tag bump ships no code a test could fence; what judges it is tests/test_incident_catalogue_image_never_repulled.py and the image policy that chose the tag, both already on main"
 OPTIMISED="Optimised: 1 -> 1 steps (a newTag line written by the image controller), 1 -> 1 round trips (one push, one pull request); cut: nothing, a machine-written tag bump has no plan to shrink (operating-model-gate rule optimised_plan, LAW 51)"
 n=$(gh pr list --head "$branch" --base main --state open --json number -q '.[0].number')
 if [ -z "$n" ]; then
   gh pr create --head "$branch" --base main \
     --title "$(git log -1 --format=%s)" \
-    --body "$(printf '%s\n\n%s\n%s\n%s\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n' \
+    --body "$(printf '%s\n\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n' \
       "$(git log -1 --format=%b)" \
       "$VERIFY" \
       "$OPTIMISED" \
+      "$CONTROL" \
       "Spec: tests/test_incident_catalogue_image_never_repulled.py" \
       "Drill: login-drill" \
       "Cost-delta-usd-month: 0" \
@@ -52,6 +59,15 @@ case "$body" in
     gh pr edit "$n" --body "$(printf '%s\n\n%s\n' "$(gh pr view "$n" --json body -q .body)" "$VERIFY")"
     # A note about the body, not the verdict: the last line of stdout is what the caller reads.
     echo "refresh image-update-pr #$n body gained the Verify line (idp#1046)" >&2
+    ;;
+esac
+# The same backfill again, for the same reason: a pull request opened before the control_shipped
+# rule keeps its refused body on every controller push until something adds the line.
+case "$body" in
+  *"Control: "*) ;;
+  *)
+    gh pr edit "$n" --body "$(printf '%s\n\n%s\n' "$(gh pr view "$n" --json body -q .body)" "$CONTROL")"
+    echo "refresh image-update-pr #$n body gained the Control line (idp#1053)" >&2
     ;;
 esac
 m=UNKNOWN
