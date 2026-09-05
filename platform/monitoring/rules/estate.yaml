@@ -35,14 +35,14 @@ spec:
     - name: estate.otto
       rules:
         - alert: OttoDown
-          expr: kube_deployment_status_replicas_available{namespace="hermes-agent", deployment="hermes-agent-gateway"} == 0
+          expr: kube_deployment_status_replicas_available{namespace="otto-gateway", deployment="otto-gateway"} == 0
           for: 10m
           labels:
             severity: critical
             owner: idp
           annotations:
             summary: "Otto (the Architect gateway) has no running pod"
-            description: "hermes-agent-gateway has had zero available replicas for 10 minutes: Otto answers nobody on Telegram. On 2026-08-29 the pod sat at ContainerCreating for 4h behind a missing sidecar secret and only a break-glass run noticed. Read it with: gh workflow run oke-check.yml -f mode=break-glass -f playbook=architect-doctor (rows pods, externalsecrets, alerts-firing)."
+            description: "otto-gateway has had zero available replicas for 10 minutes: Otto answers nobody on Telegram. It watched hermes-agent-gateway until 2026-09-05, which stopped being Otto's door when the Universal Event Gateway took the channel over -- an alert pointed at a workload that no longer serves the surface is an instrument nobody can act on (LAW 28). On 2026-08-29 the old pod sat at ContainerCreating for 4h behind a missing sidecar secret and only a break-glass run noticed."
     - name: estate.gateway
       rules:
         - alert: GatewayRefusals
