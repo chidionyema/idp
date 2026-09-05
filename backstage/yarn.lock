@@ -27303,6 +27303,11 @@ __metadata:
     node-gyp: "npm:^10.0.0"
     prettier: "npm:^2.3.2"
     typescript: "npm:~5.8.0"
+  dependenciesMeta:
+    cpu-features:
+      built: false
+    keytar:
+      built: false
   languageName: unknown
   linkType: soft
 
