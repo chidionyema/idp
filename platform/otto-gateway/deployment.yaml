@@ -139,9 +139,13 @@ spec:
             # timings on 2026-09-05 read recall=96.951s and recall=1.886s in consecutive
             # batches, and the client's old hardcoded 3s meant hindsight logged
             # `[RECALL CANCELLED] reason=client disconnected` for every request this gateway
-            # made. Ten seconds is what a person waiting in a chat will tolerate; a recall
-            # that overruns costs no one their answer, it just arrives without memory.
-            - { name: OTTO_MEMORY_RECALL_TIMEOUT_S, value: "10" }
+            # made. Ten seconds was not enough either: on 2026-09-05 hindsight logged the only
+            # two recalls of the day, 09:04:38 and 09:05:19, and cancelled both -- the client
+            # gave up at exactly 10.0s while the server was still working 27s and 31s in.
+            # Not one recall completed, so every answer that day was composed with chars=0.
+            # Thirty seconds is the founder's call (2026-09-05); a recall that overruns still
+            # costs no one their answer, it just arrives without memory.
+            - { name: OTTO_MEMORY_RECALL_TIMEOUT_S, value: "30" }
             - { name: OTTO_MEMORY_RETAIN_TIMEOUT_S, value: "5" }
             # LAW 50. The entrypoint refuses to start without this, so a door that cannot be
             # seen never opens rather than running dark.
