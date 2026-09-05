@@ -32,6 +32,14 @@ waivers:
       gateway.yaml:18-23) and HERMES_HOME is a ReadWriteOnce volume holding state.db, so
       replicas 2 here is an outage, not a fix. The remedy is a webhook or a lease, not a number.
     issue: chidionyema/idp#547
+  - surface: cyrus/cyrus
+    reason: >-
+      Cyrus keeps the git worktree of the issue it is working in an emptyDir on its own pod,
+      and a webhook that starts a session on one replica would be continued on the other,
+      which holds none of that work. Two replicas split the sessions rather than surviving a
+      node, so replicas 2 here loses work. The remedy is shared worktree storage and a claim
+      per issue, not a replica count.
+    issue: chidionyema/crew#834
   - surface: llm/litellm-cache
     reason: >-
       One Redis holds the router's answer cache and shared cooldown counters; losing it costs

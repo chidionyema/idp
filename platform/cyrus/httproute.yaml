@@ -16,9 +16,14 @@ metadata:
   annotations:
     idp.estate/auth: webhook-hmac-signature
 spec:
+  # The estate has one Gateway and it is prospector/prospector-edge; `edge/gateway`, which
+  # this route named when it merged, exists in no manifest in either repository, so the
+  # route attached to nothing and no webhook could ever have arrived. The https-cyrus
+  # listener and its certificate are the prospector repository's side of this.
   parentRefs:
-    - name: gateway
-      namespace: edge
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-cyrus
   hostnames:
     - "cyrus.${ESTATE_ZONE}"
   rules:
