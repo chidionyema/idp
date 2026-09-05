@@ -23,6 +23,7 @@ is typed twice, so a price or a floor that changes in its file changes the plan 
 from __future__ import annotations
 
 import argparse
+import json
 import pathlib
 import re
 import sys
@@ -165,13 +166,24 @@ def selection(reg: dict, overrides: dict[str, str]) -> dict[str, dict]:
 def plan(reg: dict, overrides: dict[str, str], cluster: str = "oke") -> tuple[list[str], bool, dict]:
     """Sum what git asks for across the unique set of enabled switches (a switch two features share is
     counted once), plus the typed floor of any tier whose switch does not exist yet (status planned)."""
+    data = plan_data(reg, overrides, cluster)
+    today = data["node_today"]
+    sm = data.get("node_smallest")
+    return format_plan(data), today["fits"], sm or data["node_today"]
+
+
+def plan_data(reg: dict, overrides: dict[str, str], cluster: str = "oke") -> dict:
+    """Compute structured plan data: features, totals, node fit, switch list.
+    Returns a dict suitable for JSON serialisation (crew#857)."""
     shape, kust = node_shape(), kustomizations(cluster)
     chosen = selection(reg, overrides)
     switches = set(reg["core"]["switches"])
     for p in reg.get("products", []):
         if str(p.get("default", "on")) == "on":
             switches |= set(p["switches"])
-    lines, planned = [], {"cpu": 0.0, "memory_gb": 0.0, "storage_gb": 0.0}
+    features_out = []
+    planned = {"cpu": 0.0, "memory_gb": 0.0, "storage_gb": 0.0}
+    failures = []
     for fname, tier in chosen.items():
         st = tier.get("status")
         if st in SELECTABLE:
@@ -180,13 +192,17 @@ def plan(reg: dict, overrides: dict[str, str], cluster: str = "oke") -> tuple[li
             switches |= set(tier.get("switches", []))
         else:
             got = dict(tier.get("floor", planned))
-            note = f"  ({st}: typed floor, no manifests yet)"
+            note = f"{st}: typed floor, no manifests yet"
             for k in planned:
                 planned[k] += got[k]
-        lines.append(f"feature {fname:<20} tier {str(tier['name']):<10} cpu {got['cpu']:<5} memory_gb {got['memory_gb']:<5} storage_gb {got['storage_gb']}{note}")
+        entry = {"name": fname, "tier": str(tier["name"]),
+                 "cpu": got["cpu"], "memory_gb": got["memory_gb"], "storage_gb": got["storage_gb"],
+                 "title": tier.get("what", tier.get("title", "")),
+                 "note": note}
+        features_out.append(entry)
         for dep in tier.get("depends", []):
             if dep in chosen and str(chosen[dep]["name"]) == "off":
-                lines.append(f"FAIL    features  {fname}/{tier['name']} depends on {dep}, which is off")
+                failures.append(f"{fname}/{tier['name']} depends on {dep}, which is off")
     total = dict(planned)
     for sw in switches:
         if sw in kust:
@@ -200,15 +216,22 @@ def plan(reg: dict, overrides: dict[str, str], cluster: str = "oke") -> tuple[li
     def fits(size):
         return total["cpu"] <= size["ocpus"] - reserved["cpu"] and total["memory_gb"] <= size["memory_gb"] - reserved["memory_gb"]
 
-    smallest = next((s for s in sorted(reg["node"]["sizes"], key=lambda s: (price(s["ocpus"], s["memory_gb"], shape), s["ocpus"])) if fits(s)), None)
-    lines.append(f"total cpu {total['cpu']} memory_gb {total['memory_gb']} storage_gb {total['storage_gb']} (git requests over {len(switches)} switches + node reserve cpu {reserved['cpu']} memory_gb {reserved['memory_gb']})")
-    lines.append(f"node {today['name']} usd_month {price(today['ocpus'], today['memory_gb'], shape)} fits {'yes' if fits(today) else 'no'}")
-    if smallest:
-        lines.append(f"smallest {smallest['name']} ocpus {smallest['ocpus']} memory_gb {smallest['memory_gb']} usd_month {price(smallest['ocpus'], smallest['memory_gb'], shape)}")
-    else:
-        lines.append("smallest NONE: no size in the register holds this combination; add a size or drop a tier")
-    lines.append("switches on: " + " ".join(sorted(switches)))
-    return lines, fits(today), smallest or today
+    smallest_node = next((s for s in sorted(reg["node"]["sizes"], key=lambda s: (price(s["ocpus"], s["memory_gb"], shape), s["ocpus"])) if fits(s)), None)
+    return {
+        "features": features_out,
+        "total": {"cpu": total["cpu"], "memory_gb": total["memory_gb"], "storage_gb": total["storage_gb"]},
+        "depend_failures": failures,
+        "switches_count": len(switches),
+        "switches": sorted(switches),
+        "reserved": {"cpu": reserved["cpu"], "memory_gb": reserved["memory_gb"]},
+        "node_today": {"name": today["name"], "ocpus": today["ocpus"], "memory_gb": today["memory_gb"],
+                       "usd_month": price(today["ocpus"], today["memory_gb"], shape),
+                       "fits": fits(today)},
+        "node_smallest": None if smallest_node is None else {
+            "name": smallest_node["name"], "ocpus": smallest_node["ocpus"],
+            "memory_gb": smallest_node["memory_gb"],
+            "usd_month": price(smallest_node["ocpus"], smallest_node["memory_gb"], shape)},
+    }
 
 
 def parse_set(items: list[str]) -> dict[str, str]:
@@ -222,9 +245,37 @@ def parse_set(items: list[str]) -> dict[str, str]:
 
 
 def cmd_plan(a):
-    lines, _, _ = plan(register(), parse_set(a.set), a.cluster)
-    print("\n".join(lines))
-    return 1 if any(l.startswith("FAIL") for l in lines) else 0
+    data = plan_data(register(), parse_set(a.set), a.cluster)
+    errors = any(l.startswith("FAIL") for l in data.get("depend_failures", []))
+    if a.json:
+        print(json.dumps(data, indent=2))
+    else:
+        print("\n".join(format_plan(data)))
+    return 1 if errors else 0
+
+
+def format_plan(data: dict) -> list[str]:
+    """Format structured plan data as human-readable lines."""
+    lines = []
+    for f in data["features"]:
+        line = f"feature {f['name']:<20} tier {f['tier']:<10} cpu {f['cpu']:<5} memory_gb {f['memory_gb']:<5} storage_gb {f['storage_gb']}"
+        if f.get("note"):
+            line += f"  ({f['note']})"
+        lines.append(line)
+    for dep in data.get("depend_failures", []):
+        lines.append(f"FAIL    features  {dep}")
+    t = data["total"]
+    r = data["reserved"]
+    lines.append(f"total cpu {t['cpu']} memory_gb {t['memory_gb']} storage_gb {t['storage_gb']} (git requests over {data['switches_count']} switches + node reserve cpu {r['cpu']} memory_gb {r['memory_gb']})")
+    today = data["node_today"]
+    lines.append(f"node {today['name']} usd_month {today['usd_month']} fits {'yes' if today['fits'] else 'no'}")
+    sm = data.get("node_smallest")
+    if sm:
+        lines.append(f"smallest {sm['name']} ocpus {sm['ocpus']} memory_gb {sm['memory_gb']} usd_month {sm['usd_month']}")
+    else:
+        lines.append("smallest NONE: no size in the register holds this combination; add a size or drop a tier")
+    lines.append("switches on: " + " ".join(sorted(data["switches"])))
+    return lines
 
 
 def cmd_check(a):
@@ -295,7 +346,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="idp-features", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cluster", default="oke")
     sub = ap.add_subparsers(dest="verb", required=True)
-    p = sub.add_parser("plan"); p.add_argument("--set", action="append", metavar="feature=tier"); p.set_defaults(fn=cmd_plan)
+    p = sub.add_parser("plan"); p.add_argument("--set", action="append", metavar="feature=tier"); p.add_argument("--json", action="store_true"); p.set_defaults(fn=cmd_plan)
     sub.add_parser("floors").set_defaults(fn=cmd_floors)
     sub.add_parser("check").set_defaults(fn=cmd_check)
     e = sub.add_parser("enable"); e.add_argument("feature"); e.add_argument("tier"); e.set_defaults(fn=cmd_enable)
