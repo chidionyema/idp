@@ -133,3 +133,19 @@ Prior context: #1717 merged 03:57:07Z fixed the probe's stale model names and th
 estate.otto alert group; monitoring-rules Flux row True at 03:59:49Z, so both Otto alerts exist
 again. Cluster reads from this Mac are blind since ~04:02Z — OCI session expired, founder is
 refreshing with bin/idp-oci-login. Verification of the deepseek change needs that session back.
+
+## RESUME HERE
+
+**Left mid-flight:** idp PR #1784 (`feat/otto-memory-store`) — Otto L2 memory: embedding lane wired,
+two-sided `llm` fence, `vector` extension on the `otto-gateway` Database, Job renamed
+`otto-memory-store-2`. All checks green. It must be rebased onto the main commit where Flux bumps
+`platform/otto-gateway/kustomization.yaml` `newTag` off `main-79-0a94c6a3...` before it lands, or the
+Job starts on an image with no `otto.memory.migrate` — that is exactly how `-1` failed.
+
+**Switched to:** the controls budget. 432 `tests/test_incident_*.py` files in idp, 1835 test
+functions, 90% of the test tree. Only 10 run a real gate against a fixture; 422 are pure assertions.
+`docs/reference/incidents/2026-08-30-three-incidents-one-defect.md` already rules that a control at
+rung 2 or above requires deleting the weaker one it subsumes, and that subtraction was never done.
+Founder, 2026-09-05: "this incident test thing is a farce", "its basically patching and
+firefighting", "i dont want any of that in this estate", "fix problems at root cause level and batch
+once and for all", "shows laws are not being followed". Branch `chore/controls-budget`.
