@@ -81,7 +81,12 @@ spec:
     # 2026-09-05 silence. This one grades the end-to-end answer probe beside the door
     # (platform/otto-gateway/answer-probe.yaml), which fails its Job when any lane the door routes
     # to cannot produce a completion.
-    - name: estate.otto
+    # The group name has to differ from estate.otto above: Prometheus Operator refuses a
+    # PrometheusRule with two groups of one name, and from the day this rule was added the
+    # whole object stopped applying -- "duplicate entries for key [name=\"estate.otto\"]" on
+    # the monitoring-rules Flux row -- so neither Otto alert existed and a silent Otto paged
+    # nobody. One object, one name per group.
+    - name: estate.otto-answers
       rules:
         - alert: OttoCannotAnswer
           expr: kube_job_status_failed{namespace="otto-gateway", job_name=~"otto-answer-probe.*"} > 0

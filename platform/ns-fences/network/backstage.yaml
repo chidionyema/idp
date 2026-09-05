@@ -57,6 +57,9 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: observability
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: robusta
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

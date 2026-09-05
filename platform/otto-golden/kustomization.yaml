@@ -18,4 +18,4 @@ resources:
   - availability.yaml
 images:
   - name: ghcr.io/chidionyema/hermes-agent
-    newTag: main-76-b0eab7890e6f3bb7cab69b507debedf57e9c4c36 # {"$imagepolicy": "flux-system:hermes-agent:tag"}
+    newTag: main-79-0a94c6a3b0b794c3884ec0fe684b8bd547445fbc # {"$imagepolicy": "flux-system:hermes-agent:tag"}

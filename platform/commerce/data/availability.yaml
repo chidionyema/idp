@@ -6,17 +6,6 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: commerce-db
-  namespace: commerce
-spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: commerce-db
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
   name: commerce-redis
   namespace: commerce
 spec:

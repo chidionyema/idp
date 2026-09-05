@@ -13,14 +13,18 @@ spec:
     - name: estate.k8sgpt
       rules:
         - alert: K8sGPTFinding
-          expr: sum by (kind, name) (k8sgpt_number_of_results_by_type) > 0
+          # object_namespace is kept so each line of the grouped message says where the object
+          # lives. It is deliberately NOT promoted to a `namespace` label: that would split the
+          # one message into one per namespace (12 on 2026-09-05), and volume is what killed
+          # this channel before.
+          expr: sum by (object_namespace, kind, name) (k8sgpt_number_of_results_by_type) > 0
           for: 10m
           labels:
             severity: warning
             owner: idp
           annotations:
-            summary: "K8sGPT: {{ $labels.kind }} {{ $labels.name }} needs attention"
-            description: "K8sGPT has reported this object as broken for 10 minutes. Read its diagnosis: break-glass playbook `diagnose` (k8sgpt-results row) or the Result object in namespace healing."
+            summary: "{{ $labels.kind }} {{ $labels.name }} in {{ $labels.object_namespace }}"
+            description: "Each object above has been reported broken for 10 minutes. K8sGPT writes the full diagnosis and the fix it suggests as a Result object in the healing namespace; the break-glass playbook `diagnose` (k8sgpt-results row) prints them."
         - alert: K8sGPTBlind
           expr: increase(k8sgpt_number_of_failed_backend_ai_calls[30m]) > 0 or absent(k8sgpt_number_of_results)
           for: 15m

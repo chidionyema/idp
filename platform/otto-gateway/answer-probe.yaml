@@ -220,14 +220,27 @@ spec:
                 - name: OTTO_TENANT_ID
                   value: "estate"
                 # The same three values platform/otto-gateway/deployment.yaml gives the door.
+                # They are literals in two files, so they drift: #1678 moved the door's bulk and
+                # verify lanes to kimi on 2026-09-05 and left these two behind, after which every
+                # run of this probe reported Otto unable to answer while the door was answering.
+                # The router key otto-gateway holds serves kimi, minimax and deepseek and refuses
+                # anything else with http 403 key_model_access_denied; `fast` is a LiteLLM alias
+                # the key does not carry and `gemini` sits on empty credit. Measured 2026-09-05
+                # 03:45Z: judgment ok on minimax in 1511 ms, bulk and verify both 403.
                 - name: LITELLM_BASE_URL
                   value: "http://litellm.llm.svc.cluster.local:4000/v1"
                 - name: OTTO_ROUTER_LANE_JUDGMENT_MODEL
                   value: "minimax"
+                # deepseek, not kimi, on the founder's instruction 2026-09-05 04:0xZ ("try deepseek").
+                # kimi is served and accepted -- it answers nothing: probe otto-answer-probe-29809680
+                # at 03:59Z read bulk kimi 2730 ms "empty completion" and verify kimi 26 ms the same,
+                # while judgment on minimax answered in 1595 ms. deepseek is in the router key's
+                # allowed set (kimi, minimax, deepseek) and in otto/router/config.py's family map,
+                # and its family differs from judgment's minimax, which that file requires.
                 - name: OTTO_ROUTER_LANE_BULK_MODEL
-                  value: "fast"
+                  value: "deepseek"
                 - name: OTTO_ROUTER_LANE_VERIFY_MODEL
-                  value: "gemini"
+                  value: "deepseek"
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
                   value: "http://signoz-otel-collector.observability.svc:4318"
               volumeMounts:
