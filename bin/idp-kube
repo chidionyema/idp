@@ -36,6 +36,17 @@ if [ "$fresh" -eq 0 ]; then
   mkdir -p "$STATE" && chmod 700 "$STATE"
   out=$("$IDP/bin/idp-cloud" cluster kubeconfig "$cid" --file "$KC" 2>&1) || blind "create-kubeconfig failed ($want): $(printf '%s' "$out" | tail -1 | sed -E 's/.*"code": "([^"]+)".*"message": "([^"]+)".*/\1: \2/' | cut -c1-240)"
   chmod 600 "$KC"
+  # The OCI CLI writes `command: oci`, a bare name, and that is only findable when the caller has a
+  # login shell's PATH. Headlamp.app launched from Finder does not: a GUI app inherits
+  # /usr/bin:/bin:/usr/sbin:/sbin, `oci` lives outside all four, the exec plugin cannot run, and
+  # Headlamp falls back to the one thing ADR 0003 and ADR 0007 refuse -- "Please paste your
+  # authentication token". So the path is resolved here, once, at the moment the file is minted.
+  # Resolved with command -v, never written down: the machine is not named in a tracked file (LAW 46).
+  OCI_BIN="$(command -v oci || true)"
+  if [ -n "$OCI_BIN" ]; then
+    tmp="$KC.$$"
+    sed -e "s|^\( *command: \)oci *$|\1$OCI_BIN|" "$KC" >"$tmp" && mv "$tmp" "$KC" && chmod 600 "$KC"
+  fi
 fi
 if [ $# -eq 0 ]; then printf 'ok      kube  kubeconfig %s\n' "$KC"; exit 0; fi
 KUBECONFIG="$KC" exec kubectl "$@"
