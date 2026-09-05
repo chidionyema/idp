@@ -9,7 +9,8 @@
 One template per workflow, generated from the workflow's own `workflow_dispatch.inputs` (a choice
 becomes a drop-down, a default stays a default), one step: `github:actions:dispatch` on main,
 authenticated by the portal's GitHub integration (`integrations.github[].token` in the app
-config; the token is a lane-narrowed installation token of the estate-agents App, never a PAT). The
+config; the token is a lane-narrowed installation token of the estate-agents App, minted by
+bin/idp-github-app refresh through platform/github-app/token-consumers.json, never a PAT). The
 founder taps Create; the run lands under Actions and the template's output links it.
 Nothing here is typed by hand, so a new dispatchable workflow with no button fails
 tests/test_incident_crew66_every_dispatchable_workflow_has_a_button.py until this is re-run.

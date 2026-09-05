@@ -227,7 +227,7 @@ spec:
                 - { name: HOME, value: /tmp }
                 - { name: GITHUB_REPO, value: "${ESTATE_GITHUB_REPO}" }
                 # every non-pending catalogue drill with its cron (spaces as _); the period comes from the cron
-                - { name: WORKFLOWS, value: "login-drill.yml=7_*_*_*_* stale.yml=17_*_*_*_* oke-check.yml=17_6_*_*_* estate-escrow.yml=29_*/6_*_*_* verdict-langfuse.yml=37_*_*_*_* messaging-drill.yml=47_5_*_*_* catalog-render.yml=58_1,7,13,19_*_*_* estate-state.yml=*/15_*_*_*_* otto-parity.yml=41_*_*_*_* storefront-drill.yml=23_*_*_*_*" }
+                - { name: WORKFLOWS, value: "login-drill.yml=7_*_*_*_* stale.yml=17_*_*_*_* oke-check.yml=17_6_*_*_* estate-escrow.yml=29_*/6_*_*_* verdict-langfuse.yml=37_*_*_*_* messaging-drill.yml=47_5_*_*_* catalog-render.yml=58_1,7,13,19_*_*_* estate-state.yml=*/15_*_*_*_*" }
                 # kyverno secrets-not-from-env-vars: the App's id, installation id and key are files
                 # from the mounted Secret, never env values (offline-gate refused the secretKeyRef form).
                 - { name: GITHUB_APP_DIR, value: /var/run/github-app }

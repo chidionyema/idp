@@ -6,7 +6,7 @@
 #   bin/idp-github-app seed <file>     retry the repo-secret write from a key file convert kept
 #   bin/idp-github-app token <lane>    mint an installation token narrowed to platform/github-app/lanes.json
 #   bin/idp-github-app installation    record the App's installation id in the vault (Flux's git writer reads it, crew#267)
-#   bin/idp-github-app refresh         re-mint any vault-held tokens listed in token-consumers.json (empty by design: workloads mint in-cluster via GithubAccessToken generators)
+#   bin/idp-github-app refresh         mint the tokens workloads read from the vault (mcp-gateway.GITHUB_MCP_TOKEN, hermes-agent-env.GITHUB_TOKEN)
 #                                      from the App, replacing the PATs a person pasted (crew#577); run hourly by verify-drill
 #   bin/idp-github-app status          which identity gh acts as, and whether it is the App
 # GitHub creates Apps only through the manifest flow, which ends in a browser redirect (crew#288);
@@ -169,10 +169,8 @@ refresh)
   # platform/hermes-agent: GITHUB_TOKEN) used to hold a PAT a person minted in the console and pasted
   # (SEED_GITHUB_MCP_TOKEN, SEED_HERMES_GITHUB_TOKEN). An installation token of the App does the same
   # job with a lane's permissions and expires in an hour, so it is re-minted here every hour by
-  # The consumers list is empty by design since the in-cluster move (idp#852 root): each workload's
-  # ExternalSecret mints its own installation token through a GithubAccessToken generator beside it
-  # (platform/hermes-agent/gateway.yaml, platform/mcp/external-secret.yaml). This lane remains for any
-  # future vault-held consumer someone lists here. Nothing is printed but names.
+  # bin/idp-verify-drill (machine identity, no laptop) and the ExternalSecrets refresh every 15 minutes
+  # (platform/github-app/token-consumers.json names entry, field and lane). Nothing is printed but names.
   CONSUMERS="$D/token-consumers.json"
   [ -f "$CONSUMERS" ] || { echo "BLIND   github-app no $CONSUMERS"; exit 2; }
   n=0

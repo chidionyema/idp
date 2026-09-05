@@ -6,10 +6,8 @@ Reads the Flux Kustomizations under clusters/<cluster>/*.yaml, the one list of w
 made of, and writes backstage/platform/catalog-info.yaml: one System per area and one Component
 (type `platform-layer`) per Kustomization, with `backstage.io/kubernetes-label-selector` set to the
 label Flux stamps on every object it applies, so the Kubernetes plugin finds the live pods with
-nothing typed by hand. `spec.dependsOn` mirrors Flux `dependsOn`. A layer whose own manifests carry
-a `kind: HTTPRoute` or `kind: Ingress` also gets one `kind: API`, linked with `providesApis`, its
-hostname read off that manifest -- so the APIs tab answers "what can I call" instead of staying
-empty. Nothing here names a host, a provider or a path outside the repository (LAW 46, R36).
+nothing typed by hand. `spec.dependsOn` mirrors Flux `dependsOn`. Nothing here names a host, a
+provider or a path outside the repository (LAW 46, R36).
 
     bin/catalog-platform            # rewrite the file
     bin/catalog-platform --check    # exit 1 when the file is stale (the gate)
@@ -72,11 +70,6 @@ LAYERS = {
         "delivery",
         "Secrets bridge",
         "Pulls every secret from the vault into the cluster; nothing is typed into a console.",
-    ),
-    "verification": (
-        "identity",
-        "Verification wall",
-        "Proves, on every run, that the cluster's pods are refused the key that signs a verdict; the probe is meant to stay refused.",
     ),
     "secret-store": (
         "delivery",
@@ -320,28 +313,6 @@ def q(s):
     return "'" + str(s).replace("'", "''") + "'"
 
 
-def http_hostnames(src):
-    """Hostnames a layer declares reachable over HTTP: kind: HTTPRoute (spec.hostnames) or
-    kind: Ingress (spec.rules[].host), read only from the *.yaml files sitting directly in the
-    Kustomization's own spec.path -- never typed here as a literal (LAW 46, R36). A layer with
-    neither gets no API: an API entity with no reachable interface is a promise the catalogue
-    cannot back."""
-    hosts = []
-    for f in sorted(glob.glob(os.path.join(src, "*.yaml"))):
-        try:
-            docs = list(yaml.safe_load_all(open(f)))
-        except yaml.YAMLError:
-            continue
-        for d in docs:
-            if not isinstance(d, dict):
-                continue
-            if d.get("kind") == "HTTPRoute":
-                hosts += (d.get("spec") or {}).get("hostnames", [])
-            elif d.get("kind") == "Ingress":
-                hosts += [rule["host"] for rule in (d.get("spec") or {}).get("rules", []) if rule.get("host")]
-    return sorted(set(hosts))
-
-
 def render(rows):
     names = {r["metadata"]["name"] for r in rows}
     missing = sorted(names - set(LAYERS))
@@ -377,8 +348,6 @@ def render(rows):
         n = r["metadata"]["name"]
         area, title, desc = LAYERS[n]
         spec = r["spec"]
-        src = os.path.normpath(os.path.join(ROOT, spec.get("path", "./")))
-        hosts = http_hostnames(src)
         out += [
             "---",
             "apiVersion: backstage.io/v1alpha1",
@@ -399,33 +368,10 @@ def render(rows):
             "  owner: group:default/platform",
             f"  system: {area}",
         ]
-        if hosts:
-            out += ["  providesApis:", f"    - api:default/{n}-api"]
         deps = [d["name"] for d in spec.get("dependsOn", []) if d.get("name") in names]
         if deps:
             out.append("  dependsOn:")
             out += [f"    - component:default/layer-{d}" for d in deps]
-        # crew#459 follow-up: a layer with an HTTPRoute or an Ingress is reachable over HTTP, so
-        # the APIs tab gets an entry, not an empty tab -- "what can I call" answered from the
-        # cluster's own manifests, never invented.
-        if hosts:
-            host_str = " and ".join(hosts)
-            out += [
-                "---",
-                "apiVersion: backstage.io/v1alpha1",
-                "kind: API",
-                "metadata:",
-                f"  name: {n}-api",
-                f"  description: {q(title + ': the HTTP interface, answering at ' + host_str + '.')}",
-                "spec:",
-                "  type: openapi",
-                "  lifecycle: production",
-                "  owner: group:default/platform",
-                f"  system: system:default/{area}",
-                "  definition: |",
-                f"    # Not published. {n} answers at {host_str}; this entity",
-                "    # exists so the catalogue records that the interface is reachable and who owns it.",
-            ]
     return "\n".join(out) + "\n"
 
 

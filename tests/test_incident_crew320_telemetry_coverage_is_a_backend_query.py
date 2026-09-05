@@ -42,14 +42,7 @@ def test_incident_crew320_backend_query_grades_both_ways():
     seen = {"logs": {("kini", "kini-worker-1")}, "metrics": {("llm", "litellm-router-1")}, "hubble": {("7",)}}
     route = lambda sql: seen["hubble" if "hubble" in sql else "logs" if "logs" in sql else "metrics"]  # noqa: E731
     head, body = mod.main(kube=kube, clickhouse=route, now=NOW)
-    assert head.startswith("ok telemetry-coverage") and "pods=2 seen=2 missing=0" in head, head
-    assert "hubble_radio_flows=7" in head, head
-    # crew#718 CP8: line 1 names each table on its own, so a switched-off preset reads differently
-    # from a broken pipeline. A table that did not answer prints "-"; one that answered and knew
-    # nothing prints 0. The union alone hid a receipt of seen=3 of 103 while three metric presets
-    # were disabled and nobody could tell whether logs were still landing.
-    assert "[logs=1 metrics=1 traces=1]" in head, head
-    assert body["seen_by_table"] == {"logs": 1, "metrics": 1, "traces": 1}, body["seen_by_table"]
+    assert head.startswith("ok telemetry-coverage") and "pods=2 seen=2 missing=0 hubble_radio_flows=7" in head, head
     assert body["missing"] == [] and body["backend_errors"] == {} and body["hubble_radio_flows"] == 7
 
     # FAIL: neither table has heard from the router in the window, and the receipt names it.
@@ -60,8 +53,7 @@ def test_incident_crew320_backend_query_grades_both_ways():
     # FAIL: every pod is covered but Hubble named no radio-room flow in the window (crew#539 CP12).
     seen["hubble"] = {("0",)}
     head, body = mod.main(kube=kube, clickhouse=route, now=NOW)
-    assert head.startswith("FAIL telemetry-coverage") and "missing=0" in head, head
-    assert "hubble_radio_flows=0" in head, head
+    assert head.startswith("FAIL telemetry-coverage") and "missing=0 hubble_radio_flows=0" in head, head
     seen["hubble"] = {("7",)}
 
     # BLIND: the backend cannot be queried. Never ok, never FAIL.

@@ -347,15 +347,9 @@ spec:
       # ESTATE_ZONE for the estate ConfigMap's probe URLs (crew#524 CP2), like every other row.
       - kind: ConfigMap
         name: estate-config
-      # The estate-agents App's id and installation id for the GithubAccessToken generator;
-      # rendered into flux-system by platform/alerts-github/github-app.yaml from the vault.
-      - kind: Secret
-        name: github-app
   dependsOn:
     - name: scheduling
     - name: secret-store
-    # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
-    - name: alerts-github
   wait: true
   timeout: 10m
   healthChecks:
@@ -383,8 +377,6 @@ spec:
     - name: scheduling
     - name: edge
     - name: secret-store
-    # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
-    - name: alerts-github
   wait: true
   timeout: 10m
   healthChecks:
@@ -404,10 +396,6 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
-      # The estate-agents App's id and installation id for the GithubAccessToken generator;
-      # rendered into flux-system by platform/alerts-github/github-app.yaml from the vault.
-      - kind: Secret
-        name: github-app
 ---
 # crew#345: the cluster writes its own state receipt to Object Storage every 15 minutes, so no
 # session needs a kube path or `oci session authenticate` to read it (bin/idp-cluster-state).
@@ -423,8 +411,6 @@ spec:
     # crew#539: the namespace, not the portal. This row lands objects in namespace backstage and
     # needs it to exist; it must never wait on Deployment/catalogue being healthy.
     - name: backstage-namespace
-    # crew#722: rotation-canary.yaml carries an ExternalSecret; the CRD row must land first.
-    - name: external-secrets
   sourceRef:
     kind: GitRepository
     name: flux-system

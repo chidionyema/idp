@@ -1,21 +1,20 @@
 {
-  "pr": {
-    "number": 191,
-    "files": [
-      "platform/backstage/chaos/pod-kill-workflow.yaml",
-      "drills/catalogue.yaml",
-      "features/drills/chaos-drill.feature",
-      "tests/test_incident_crew292_drills_row_is_read_hourly.py"
-    ],
-    "added": "+  - name: chaos-pod-kill\n+    workflow: oke-check.yml\n+    job: chaos-drill\n",
-    "body": "Weekly pod-kill leaves a receipt; chaos-drill job grades it.\nCost-delta-usd-month: 0\nUse: gh workflow run oke-check.yml -f mode=check\n\nDrill: chaos-pod-kill\n\n## Architecture laws\n- LAW 1 zero-gravity: bin/cloud-agnostic-gate -> 0\n- LAW 2 fractal: n/a: no service boundary changes\n- LAW 3 nervous system: n/a: no workload changes\n- LAW 4 calibration: n/a: no prediction made\n\nOptimised: 3 steps -> 2, 1 round trip -> 1; cut: the second fixture pass, it proved nothing new\n\nControl: tests/test_incident_crew292_drills_row_is_read_hourly.py\n",
-    "labels": [
-      "canary"
-    ]
-  },
-  "budget_monthly_usd": 50,
-  "drills": [
-    "oke-check",
-    "login-drill"
+ "pr": {
+  "number": 191,
+  "files": [
+   "platform/backstage/chaos/pod-kill-workflow.yaml",
+   "drills/catalogue.yaml",
+   "features/drills/chaos-drill.feature"
+  ],
+  "added": "+  - name: chaos-pod-kill\n+    workflow: oke-check.yml\n+    job: chaos-drill\n",
+  "body": "Weekly pod-kill leaves a receipt; chaos-drill job grades it.\nCost-delta-usd-month: 0\nUse: gh workflow run oke-check.yml -f mode=check\n\nDrill: chaos-pod-kill\n\n## Architecture laws\n- LAW 1 zero-gravity: bin/cloud-agnostic-gate -> 0\n- LAW 2 fractal: n/a: no service boundary changes\n- LAW 3 nervous system: n/a: no workload changes\n- LAW 4 calibration: n/a: no prediction made\n\nOptimised: 3 steps -> 2, 1 round trip -> 1; cut: the second fixture pass, it proved nothing new\n",
+  "labels": [
+   "canary"
   ]
+ },
+ "budget_monthly_usd": 50,
+ "drills": [
+  "oke-check",
+  "login-drill"
+ ]
 }

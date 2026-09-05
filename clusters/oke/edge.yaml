@@ -139,30 +139,6 @@ spec:
   prune: true
   wait: true
   timeout: 5m
-  # Which build runs is decided here, not in prospector's overlay (crew#693): the markers below are
-  # written by the image-automation-controller from platform/image-automation/prospector.yaml, and
-  # this override is applied after kustomize renders the overlay, so the hand-pinned tags there are
-  # inert. A merge to prospector main becomes a pull request here and a RollingUpdate on merge.
-  #
-  # THE SEED IS A DEPLOY. This override wins over the overlay the moment it merges, before the
-  # automation has written anything, so whatever is typed here is what production runs for the
-  # next few minutes. The first draft of this file carried 99cdc96a, the 25 August build: merging
-  # it would have rolled the shop BACK off the storefront the founder released by hand at
-  # 2026-08-30T17:01:51Z (prospector#792, merge commit 7489661f). The seed is therefore the newest
-  # tag the policy itself would pick, and a test pins that it always is.
-  #
-  # Moved main-73 -> main-85 by hand on 2026-08-30. The controller cannot do it: it pushes to
-  # flux/image-updates and .github/workflows/image-update-pr.yml then calls `gh pr merge --auto`,
-  # which the repository refuses -- `allow_auto_merge` is false, so every run since 20:45Z ends
-  # `GraphQL: Auto merge is not allowed for this repository (enablePullRequestAutoMerge)` (run
-  # 33336842115). Meanwhile prospector#793 built main-85-0299e2c4 at 2026-08-30T21:01:04Z and
-  # mumchimp.com kept serving main-73: every /pack/<id>.jpg returned 404 an hour later. Both
-  # images carry main-85 in ghcr, listed 2026-08-30T22:0xZ.
-  images:
-    - name: ghcr.io/chidionyema/prospector-store-web
-      newTag: main-85-0299e2c4bbc059f58cabe2e6dde968d64fae20bd # {"$imagepolicy": "flux-system:prospector-store-web:tag"}
-    - name: ghcr.io/chidionyema/prospector-store-api
-      newTag: main-85-0299e2c4bbc059f58cabe2e6dde968d64fae20bd # {"$imagepolicy": "flux-system:prospector-store-api:tag"}
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment

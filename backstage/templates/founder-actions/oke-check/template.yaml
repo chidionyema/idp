@@ -61,7 +61,6 @@ spec:
         - chi-resize
         - catalogue-roll
         - router-spend
-        - registries-conf
         default: diagnose
   steps:
   - id: dispatch

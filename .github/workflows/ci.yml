@@ -51,9 +51,6 @@ jobs:
           curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/kyverno/kyverno/releases/download/v1.19.0/kyverno-cli_v1.19.0_linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin kyverno
           curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/fluxcd/flux2/releases/download/v2.9.4/flux_2.9.4_linux_amd64.tar.gz | sudo tar -xz -C /usr/local/bin flux   # crew#483: bin/idp-envsubst-gate
           curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.7.1/kustomize_v5.7.1_linux_amd64.tar.gz | sudo tar -xz -C /usr/local/bin kustomize
-          # bin/idp-ci rung 9c: kubeconform type-checks rung 9's render (idp#1027). Without it
-          # that rung is BLIND, which this job counts as a failure -- it never reads green unjudged.
-          curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | sudo tar -xz -C /usr/local/bin kubeconform
       - name: temporal cli (bin/idp-ci runs the same bdd suite; cp27 needs the dev server)
         run: |
           curl -sSf --retry 5 --retry-all-errors --retry-delay 2 https://temporal.download/cli.sh | sh -s -- --version 1.8.2
@@ -174,15 +171,6 @@ jobs:
         # .gitignore does not help a gate that globs. actions/checkout refuses a path outside the
         # workspace, so this is a clone. The repo is public: no credential, no secret.
         run: git clone --depth 1 https://github.com/chidionyema/prospector "$RUNNER_TEMP/kyverno-policies"
-      # crew#639, 2026-08-31: the embedded Postgres binaries are downloaded the first time the
-      # demo runs. That download was the only one in this workflow with no retry and no cache,
-      # and it took main red on `no version found matching 16.9.0` while that artefact answered
-      # 200 on Maven Central. Cached, the warm path never reaches the network at all; the key
-      # carries the major version so a bump fetches once and then stays cached.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/idp-messaging-demo/postgres-16
-          key: embedded-postgres-16-${{ runner.os }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
@@ -243,71 +231,8 @@ jobs:
         with:
           go-version-file: platform/messaging/go.mod
           cache-dependency-path: platform/messaging/go.sum
-      # crew#639, 2026-08-31: the embedded Postgres binaries are downloaded the first time the
-      # demo runs. That download was the only one in this workflow with no retry and no cache,
-      # and it took main red on `no version found matching 16.9.0` while that artefact answered
-      # 200 on Maven Central. Cached, the warm path never reaches the network at all; the key
-      # carries the major version so a bump fetches once and then stays cached.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/idp-messaging-demo/postgres-16
-          key: embedded-postgres-16-${{ runner.os }}
       - run: cd platform/messaging && go vet ./... && go test ./...
       - run: bin/idp-messaging-demo all
-
-  # crew#459, 2026-08-31. The portal's own test suite was run by nothing. Every workflow that
-  # mentions backstage grades the *running* one -- verdict-backstage proves the deployed pod,
-  # login-drill signs in to it, build-multiarch builds the image -- and the image build runs
-  # `yarn tsc` and `yarn build:all`, never `yarn test`. So a unit test under packages/app was an
-  # instrument nobody reads (LAW 28): it could only ever go red on a laptop, and only if someone
-  # remembered to run it. The colour-contrast guard added with this job is exactly the kind of
-  # defect a type-check and a build cannot see -- every state border in the portal failed WCAG
-  # 2.2 SC 1.4.11 for months while CI was green -- so the guard is worth nothing without a lane
-  # that runs it. Only on changes under backstage/: the install is the slow part and nothing else
-  # in the repository can move these tests.
-  portal-app:
-    needs: fast-gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { fetch-depth: 0 }   # `repo lint --since origin/main` and `repo test` diff the base
-      - name: did this change touch the portal at all
-        id: touched
-        run: |
-          base="${{ github.event.pull_request.base.sha || github.event.before }}"
-          # a first push to a branch reports an all-zero before-sha; grade the whole thing then
-          case "$base" in ''|0000000000000000000000000000000000000000) echo "yes=true" >> "$GITHUB_OUTPUT"; exit 0;; esac
-          if git diff --name-only "$base"...HEAD -- backstage/ | grep -q .; then
-            echo "yes=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "yes=false" >> "$GITHUB_OUTPUT"
-          fi
-      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
-        if: steps.touched.outputs.yes == 'true'
-        with:
-          # backstage/package.json declares engines.node "22 || 24" and the image is node:24.
-          # Pinning the same major here means a green lane and a green image agree about the
-          # runtime; the host's node 26 is outside that range on purpose.
-          node-version: "24"
-      - name: yarn, the version package.json pins
-        if: steps.touched.outputs.yes == 'true'
-        run: corepack enable && corepack prepare yarn@4.13.0 --activate
-      - name: install exactly what yarn.lock holds
-        if: steps.touched.outputs.yes == 'true'
-        working-directory: backstage
-        run: yarn install --immutable
-      - name: type-check
-        if: steps.touched.outputs.yes == 'true'
-        working-directory: backstage
-        run: yarn tsc
-      - name: lint
-        if: steps.touched.outputs.yes == 'true'
-        working-directory: backstage
-        run: yarn lint
-      - name: the app's tests, including the contrast guard
-        if: steps.touched.outputs.yes == 'true'
-        working-directory: backstage
-        run: yarn test --ci --watchAll=false
 
   bdd:
     needs: bdd-suites

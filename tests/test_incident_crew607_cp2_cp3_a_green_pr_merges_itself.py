@@ -22,49 +22,26 @@ def _load():
 
 
 class _Gh:
-    def __init__(self, last_comment="", arm_says=""):
-        self.calls, self.last_comment, self.arm_says, self.argv0 = [], last_comment, arm_says, ""
+    def __init__(self, last_comment=""):
+        self.calls, self.last_comment = [], last_comment
 
     def __call__(self, argv, **kw):
         self.calls.append(argv[1:])
-        if argv[0].endswith("idp-pr-arm"):
-            self.argv0 = argv[0]
-            return subprocess.CompletedProcess(argv, 0, stdout=self.arm_says, stderr="")
         out = self.last_comment if argv[1:3] == ["pr", "view"] else ""
         return subprocess.CompletedProcess(argv, 0, stdout=out, stderr="")
 
 
-def _wire(monkeypatch, last_comment="", arm_says=""):
+def _wire(monkeypatch, last_comment=""):
     mod = _load()
-    rec = _Gh(last_comment, arm_says)
+    rec = _Gh(last_comment)
     monkeypatch.setattr(mod.subprocess, "run", rec)
     return mod, rec
 
 
-def test_a_green_row_is_armed_through_the_arm_tool(monkeypatch):
-    """idp#1046: the green row goes through bin/idp-pr-arm, never `gh pr merge --auto` -- auto-merge
-    is off on this repository, so the raw call answers `enablePullRequestAutoMerge` and exits 1."""
-    mod, rec = _wire(monkeypatch, arm_says="ok      pr-arm  #647 auto-merge armed (--merge)\n")
-    assert mod.act("idp", 647, 1.0, "green", 4) == "auto-merge"
-    assert len(rec.calls) == 1 and rec.calls[0][-2:] == ["647", "--merge"]
-    assert rec.argv0.endswith("idp-pr-arm"), rec.argv0
-
-
-def test_a_green_row_the_repository_will_not_arm_waits_on_the_founder(monkeypatch):
-    """And it is not an error: where auto-merge is off the merge is the founder's, and a red run here
-    would only hide the rest of the table."""
-    mod, rec = _wire(monkeypatch, arm_says="waiting pr-arm  #647 is open and green-or-pending\n")
-    assert mod.act("idp", 647, 1.0, "green", 4) == "waiting-on-founder"
-
-
-def test_the_deploy_pull_request_is_never_drafted_or_closed(monkeypatch):
-    """idp#1046, the third fault: PR 1011 carried the portal the founder was waiting on, went red for
-    an unrelated reason, and this robot drafted it at the 4h bound -- and would have closed it at 24.
-    A PR from the image-automation branch IS the deploy; hygiene does not touch it at any age."""
+def test_a_green_row_is_put_on_auto_merge(monkeypatch):
     mod, rec = _wire(monkeypatch)
-    assert mod.act("idp", 1011, 25.0, "red:open", 4, mod.DEPLOY_BRANCH) == "deploy-untouched"
-    assert mod.act("idp", 1011, 7.0, "conflict", 4, mod.DEPLOY_BRANCH) == "deploy-untouched"
-    assert rec.calls == [], "no comment, no draft, no close on the deploy"
+    assert mod.act("idp", 647, 1.0, "green", 4) == "auto-merge"
+    assert rec.calls == [["pr", "merge", "647", "-R", "chidionyema/idp", "--auto", "--merge"]]
 
 
 def test_a_row_over_the_bound_is_told_why_once(monkeypatch):

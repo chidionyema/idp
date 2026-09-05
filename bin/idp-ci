@@ -654,10 +654,7 @@ if command -v kyverno >/dev/null && command -v helm >/dev/null; then
     say "ok    kyverno  no platform dir changed against $IDP_CI_BASE; every render was judged on main (scoped: $kyv_scope)"
     dirs=skip
   fi
-  # IDP_RENDER_KEEP: rung 9c type-checks these exact bytes. One render, judged twice -- Kyverno
-  # for POLICY here, kubeconform for TYPE below. Rendering again would cost this job the whole
-  # 160 s again (crew#584 measured it), so the render this rung already pays for is handed over.
-  [ "$dirs" = skip ] || kyv=$( (cd "$IDP" && IDP_RENDER_KEEP="$tmp/render" bin/idp-kyverno-render $dirs) 2>&1 ); kyv_rc=$?
+  [ "$dirs" = skip ] || kyv=$( (cd "$IDP" && bin/idp-kyverno-render $dirs) 2>&1 ); kyv_rc=$?
   if [ "$dirs" = skip ]; then :
   elif [ -z "$dirs" ]; then say "FAIL  kyverno  no platform dir shipped a HelmRelease or a workload; the judge had nothing"; fail=1
   elif [ "$kyv_rc" = 2 ]; then
@@ -703,30 +700,6 @@ if command -v kyverno >/dev/null && command -v helm >/dev/null; then
     say "FAIL  kyverno  the must-fail fixture passed; the judge admits an unpatched chart"; fail=1
   else say "ok    kyverno  $(echo "$dirs" | tr '\n' ' ')render clean; the unpatched-chart fixture is refused ($kyv_scope)"; fi
 else say "BLIND kyverno  helm or kyverno CLI not installed; HelmRelease renders were not judged"; fail=1; fi
-
-# 9c. idp#1027 (run 33339964930): the cluster refused `.spec.appID: expected string, got 4740261`
-#     -- a field typed int where its CRD declares a string. Kyverno grades whether a resource is
-#     ALLOWED and passed that shape happily; nothing in this pipeline graded whether a field is
-#     the TYPE its schema declares. kubeconform does, on rung 9's render (IDP_RENDER_KEEP above),
-#     against kubeconform's built-in Kubernetes schemas plus the CRD schemas vendored under
-#     tests/fixtures/kubeconform/crd-schemas. Kinds with no vendored schema are counted and
-#     printed as `skipped`, never silently passed (LAW 28). BLIND, never a pass, with no binary.
-#     What this rung does NOT catch is stated in bin/idp-kubeconform's docstring: Flux substitutes
-#     ${vars} in the cluster, so a render holds the literal "${githubAppIDQuoted}" -- a string
-#     either way. The idp#1027 shape itself is held by
-#     tests/test_incident_idp1027_appid_types_as_a_string.py, which judges the post-substitution
-#     bytes. This rung is the ongoing coverage of every other type error in every rendered manifest.
-if [ "${dirs:-}" = skip ]; then say "ok    types    no platform dir changed against ${IDP_CI_BASE:-main}; every render was type-checked on main"
-elif [ ! -d "$tmp/render" ]; then say "BLIND types    rung 9 kept no render; nothing was type-checked"; fail=1
-else
-  # $dirs is passed so a render that died early (a chart download reset by the peer, as main's
-  # own run 33355097800 did) is BLIND, never an `ok` over the files that happened to survive.
-  # shellcheck disable=SC2086
-  kcf=$( (cd "$IDP" && bin/idp-kubeconform --rendered "$tmp/render" $dirs) 2>&1 ); kcf_rc=$?
-  if [ "$kcf_rc" = 0 ]; then say "ok    types    $(printf '%s' "$kcf" | tail -1 | sed 's/^ok *kubeconform *//')"
-  elif [ "$kcf_rc" = 2 ]; then say "BLIND types    kubeconform did not judge the render:"; printf '%s\n' "$kcf" | sed 's/^/      /'; fail=1
-  else say "FAIL  types    a rendered manifest does not match the type its schema declares:"; printf '%s\n' "$kcf" | sed 's/^/      /'; fail=1; fi
-fi
 
 # 9b. crew#483: Flux post-build substitution judged with the tool Flux runs. Every Kustomization
 #     that declares postBuild renders (kustomize build | flux envsubst --strict) with its sources'

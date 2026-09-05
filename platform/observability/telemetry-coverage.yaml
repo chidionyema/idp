@@ -94,23 +94,12 @@ data:
             if not start or datetime.fromisoformat(start.replace("Z", "+00:00")) > cutoff:
                 continue
             running.append((p["metadata"]["namespace"], p["metadata"]["name"]))
-        seen, errors, by_table = set(), {}, {}
+        seen, errors = set(), {}
         for name, sql in QUERIES.items():
             try:
-                rows = {(ns, pod) for ns, pod in clickhouse(sql) if pod}
+                seen |= {(ns, pod) for ns, pod in clickhouse(sql) if pod}
             except Exception as e:  # a backend that cannot answer is BLIND, never a pass
                 errors[name] = str(e)[:160]
-                by_table[name] = None   # None is "did not answer", never the same as 0
-                continue
-            # crew#718 CP8: the union alone cannot say WHICH signal is carrying the estate, so a
-            # zero cannot be told from a preset that was switched off. On 2026-08-30 the receipt
-            # read seen=3 of 103 while hostMetrics, kubeletMetrics and clusterMetrics were all
-            # disabled in platform/observability-collector/k8s-infra.yaml (ClickHouse was refusing
-            # metrics batches at its 3.60 GiB ceiling and starving the log inserts), and the union
-            # gave no way to see whether logsCollection -- the one preset left on, and the one the
-            # founder actually reads -- was landing at all. Count each table on its own.
-            by_table[name] = len(rows & set(running))
-            seen |= rows
         missing = sorted(set(running) - seen)
         hubble = -1  # -1: the backend did not answer; 0: it answered and Hubble named no radio-room flow
         try:
@@ -119,17 +108,13 @@ data:
             errors["hubble"] = str(e)[:160]
         body = {"at": at, "pods_running": len(running), "pods_seen": len(seen),
                 "missing": [{"ns": ns, "pod": pod} for ns, pod in missing], "backend_errors": errors,
-                "seen_by_table": by_table, "hubble_radio_flows": hubble}
+                "hubble_radio_flows": hubble}
         if len(errors) >= len(QUERIES) + 1:
             head = f"BLIND telemetry-coverage at {at} backend unreachable: {'; '.join(errors.values())}"
         else:
             verdict = "ok" if not missing and hubble > 0 else "FAIL"
-            # crew#718 CP8: per-table counts on line 1, so a reader can tell a switched-off
-            # preset from a broken pipeline without opening the JSON. "-" is a table that did
-            # not answer; 0 is a table that answered and knew nothing.
-            per = " ".join(f"{n}={'-' if by_table.get(n) is None else by_table[n]}" for n in sorted(QUERIES))
             head = (f"{verdict} telemetry-coverage at {at} pods={len(running)} seen={len(running) - len(missing)} "
-                    f"missing={len(missing)} [{per}] hubble_radio_flows={hubble}")
+                    f"missing={len(missing)} hubble_radio_flows={hubble}")
         return head, body
     if __name__ == "__main__":
         head, body = main()

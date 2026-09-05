@@ -1,28 +1,27 @@
 {
-  "pr": {
-    "number": 6,
-    "files": [
-      "platform/oci/identity/main.tf",
-      "platform/identity/oauth2-proxy.yaml",
-      "tests/test_incident_crew287_zcp_grant_in_the_same_pr.py"
-    ],
-    "added": "+resource \"oci_identity_domains_app\" \"front_door\" {\n+resource \"oci_identity_domains_grant\" \"founder\" {\n",
-    "body": "Front door OIDC client by Terraform.\nApproval-word: front-door\nCost-delta-usd-month: 0\nUse: bin/idp-identity-apply apply\n\nDrill: oke-check\n\n## Architecture laws\n- LAW 1 zero-gravity: bin/cloud-agnostic-gate -> 0\n- LAW 2 fractal: n/a: no service boundary changes\n- LAW 3 nervous system: n/a: no workload changes\n- LAW 4 calibration: n/a: no prediction made\n\nOptimised: 3 steps -> 2, 1 round trip -> 1; cut: the second fixture pass, it proved nothing new\n\nControl: tests/test_incident_crew287_zcp_grant_in_the_same_pr.py\n",
-    "labels": [
-      "canary"
-    ],
-    "founder": "chidionyema",
-    "approvals": [
-      "front-door"
-    ],
-    "denials": [
-      "front-door"
-    ]
-  },
-  "budget_monthly_usd": 50,
-  "drills": [
-    "oke-check",
-    "drill-heartbeat",
-    "login-drill"
+ "pr": {
+  "number": 6,
+  "files": [
+   "platform/oci/identity/main.tf",
+   "platform/identity/oauth2-proxy.yaml"
+  ],
+  "added": "+resource \"oci_identity_domains_app\" \"front_door\" {\n+resource \"oci_identity_domains_grant\" \"founder\" {\n",
+  "body": "Front door OIDC client by Terraform.\nApproval-word: front-door\nCost-delta-usd-month: 0\nUse: bin/idp-identity-apply apply\n\nDrill: oke-check\n\n## Architecture laws\n- LAW 1 zero-gravity: bin/cloud-agnostic-gate -> 0\n- LAW 2 fractal: n/a: no service boundary changes\n- LAW 3 nervous system: n/a: no workload changes\n- LAW 4 calibration: n/a: no prediction made\n\nOptimised: 3 steps -> 2, 1 round trip -> 1; cut: the second fixture pass, it proved nothing new\n",
+  "labels": [
+   "canary"
+  ],
+  "founder": "chidionyema",
+  "approvals": [
+   "front-door"
+  ],
+  "denials": [
+   "front-door"
   ]
+ },
+ "budget_monthly_usd": 50,
+ "drills": [
+  "oke-check",
+  "drill-heartbeat",
+  "login-drill"
+ ]
 }

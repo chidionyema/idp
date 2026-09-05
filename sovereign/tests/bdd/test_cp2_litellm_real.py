@@ -9,7 +9,6 @@ the pytest line, so a skip is visible and a pass means the router answered.
 
 Run:  cd sovereign && .venv/bin/python -m pytest tests/bdd/test_cp2_litellm_real.py -q -rs
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -31,26 +30,15 @@ scenarios("features/sovereign-bus/cp2_litellm_real.feature")
 # Captured at import, before the estate_home fixture points HOME at a fake:
 # the age identity secret-load reads lives under the real home.
 _REAL_HOME = Path(os.environ.get("HOME", str(Path.home())))
-_REAL_VAULT = Path(
-    os.environ.get("ESTATE_SECRETS")
-    or Path(__file__).resolve().parents[4] / "estate-secrets"
-)
-_AGE_KEY = Path(
-    os.environ.get("SOPS_AGE_KEY_FILE")
-    or _REAL_HOME / ".config" / "prospector" / "age-key.txt"
-)
+_REAL_VAULT = Path(os.environ.get("ESTATE_SECRETS") or Path(__file__).resolve().parents[4] / "estate-secrets")
+_AGE_KEY = Path(os.environ.get("SOPS_AGE_KEY_FILE") or _REAL_HOME / ".config" / "prospector" / "age-key.txt")
 DESTRUCTIVE_OP = "delete the local git branch feature/old-experiment"
 
 
 def _with_real_vault(monkeypatch: pytest.MonkeyPatch) -> Any:
     """config re-resolved against the real secret store and no estate.env."""
-    if (
-        not (_REAL_VAULT / "scripts" / "secret-load").is_file()
-        or not _AGE_KEY.is_file()
-    ):
-        pytest.skip(
-            f"no estate secret store on this host ({_REAL_VAULT}); the vault lives on the estate machine"
-        )
+    if not (_REAL_VAULT / "scripts" / "secret-load").is_file() or not _AGE_KEY.is_file():
+        pytest.skip(f"no estate secret store on this host ({_REAL_VAULT}); the vault lives on the estate machine")
     monkeypatch.delenv("LITELLM_BASE_URL", raising=False)
     monkeypatch.delenv("LITELLM_API_KEY", raising=False)
     monkeypatch.setenv("ESTATE_SECRETS", str(_REAL_VAULT))
@@ -74,21 +62,14 @@ def _master_key() -> str | None:
 
 @given("this host has the estate secret store")
 def _has_store(context: dict[str, Any]) -> None:
-    if (
-        not (_REAL_VAULT / "scripts" / "secret-load").is_file()
-        or not _AGE_KEY.is_file()
-    ):
+    if not (_REAL_VAULT / "scripts" / "secret-load").is_file() or not _AGE_KEY.is_file():
         pytest.skip(f"no estate secret store on this host ({_REAL_VAULT})")
     context["vault"] = _REAL_VAULT
 
 
 @when("the kernel resolves its configuration with no estate.env at all")
-def _resolve(
-    estate_home: Path, monkeypatch: pytest.MonkeyPatch, context: dict[str, Any]
-) -> None:
-    assert not Path(os.environ["ESTATE_ENV"]).exists(), (
-        "the fixture must point ESTATE_ENV at nothing"
-    )
+def _resolve(estate_home: Path, monkeypatch: pytest.MonkeyPatch, context: dict[str, Any]) -> None:
+    assert not Path(os.environ["ESTATE_ENV"]).exists(), "the fixture must point ESTATE_ENV at nothing"
     context["config"] = _with_real_vault(monkeypatch)
 
 
@@ -97,26 +78,10 @@ def _from_store(context: dict[str, Any]) -> None:
     cfg = context["config"]
     loader = str(_REAL_VAULT / "scripts" / "secret-load")
     env = {**os.environ, "SOPS_AGE_KEY_FILE": str(_AGE_KEY)}
-    stored_url = subprocess.run(
-        [loader, "dev", "LITELLM_BASE_URL", "LITELLM_BASE_URL"],
-        capture_output=True,
-        text=True,
-        env=env,
-        check=True,
-    ).stdout
-    stored_key = subprocess.run(
-        [loader, "dev", "LITELLM_API_KEY", "LITELLM_API_KEY"],
-        capture_output=True,
-        text=True,
-        env=env,
-        check=True,
-    ).stdout
-    assert cfg.LITELLM_BASE_URL and cfg.LITELLM_BASE_URL == stored_url, (
-        "base url did not come from the vault"
-    )
-    assert cfg.LITELLM_API_KEY and cfg.LITELLM_API_KEY == stored_key, (
-        "api key did not come from the vault"
-    )
+    stored_url = subprocess.run([loader, "dev", "LITELLM_BASE_URL", "LITELLM_BASE_URL"], capture_output=True, text=True, env=env, check=True).stdout
+    stored_key = subprocess.run([loader, "dev", "LITELLM_API_KEY", "LITELLM_API_KEY"], capture_output=True, text=True, env=env, check=True).stdout
+    assert cfg.LITELLM_BASE_URL and cfg.LITELLM_BASE_URL == stored_url, "base url did not come from the vault"
+    assert cfg.LITELLM_API_KEY and cfg.LITELLM_API_KEY == stored_key, "api key did not come from the vault"
     context["api_key"] = cfg.LITELLM_API_KEY
 
 
@@ -124,34 +89,22 @@ def _from_store(context: dict[str, Any]) -> None:
 def _not_master(context: dict[str, Any]) -> None:
     master = _master_key()
     if master is None:
-        pytest.skip(
-            "llm/.env is not on this host, so the master key cannot be compared"
-        )
-    assert context["api_key"] != master, (
-        "the kernel is holding the proxy master key; mint a virtual key"
-    )
+        pytest.skip("llm/.env is not on this host, so the master key cannot be compared")
+    assert context["api_key"] != master, "the kernel is holding the proxy master key; mint a virtual key"
 
 
 # --- Scenarios 2 and 3 --------------------------------------------------------
 
 
 @given("the live router answers")
-def _router_up(
-    estate_home: Path, monkeypatch: pytest.MonkeyPatch, context: dict[str, Any]
-) -> None:
+def _router_up(estate_home: Path, monkeypatch: pytest.MonkeyPatch, context: dict[str, Any]) -> None:
     cfg = _with_real_vault(monkeypatch)
     if not cfg.LITELLM_BASE_URL:
         pytest.skip("LITELLM_BASE_URL is not in the secret store")
     try:
-        r = httpx.get(
-            str(cfg.LITELLM_BASE_URL) + "/models",
-            headers={"Authorization": f"Bearer {cfg.LITELLM_API_KEY}"},
-            timeout=5,
-        )
+        r = httpx.get(str(cfg.LITELLM_BASE_URL) + "/models", headers={"Authorization": f"Bearer {cfg.LITELLM_API_KEY}"}, timeout=5)
     except httpx.HTTPError as exc:
-        pytest.skip(
-            f"no router at {cfg.LITELLM_BASE_URL}: {exc.__class__.__name__} (bin/litellm-up)"
-        )
+        pytest.skip(f"no router at {cfg.LITELLM_BASE_URL}: {exc.__class__.__name__} (bin/litellm-up)")
     assert r.status_code == 200, f"router answered {r.status_code}: {r.text[:200]}"
     context["config"] = cfg
     context["served"] = {m["id"] for m in r.json()["data"]}
@@ -167,46 +120,22 @@ def _three_distinct(context: dict[str, Any]) -> None:
 @then("GET /models on the live router lists every one of them")
 def _all_served(context: dict[str, Any]) -> None:
     missing = [v for v in context["voters"] if v not in context["served"]]
-    assert not missing, (
-        f"router does not serve {missing}; it serves {sorted(context['served'])}"
-    )
+    assert not missing, f"router does not serve {missing}; it serves {sorted(context['served'])}"
 
 
 @when("the kernel decides a destructive op through the live router")
 def _decide_live(context: dict[str, Any]) -> None:
     decide_mod = importlib.import_module("sovereign.consensus.decide")
-    context["result"] = asyncio.run(
-        decide_mod.decide_async(DESTRUCTIVE_OP, destructive=True)
-    )
+    context["result"] = asyncio.run(decide_mod.decide_async(DESTRUCTIVE_OP, destructive=True))
 
 
 @then("two different models agree before the deadline")
 def _quorum(context: dict[str, Any]) -> None:
     result = context["result"]
-    votes = result["votes"]
-    # crew#718 (2026-08-30): this step is a live call to three providers and it sits in the
-    # pre-push gate. A provider that errors or runs past the deadline is that provider's
-    # outage, not a defect in this repository, and one refused a push here while the same
-    # test passed on its own a minute later -- a whole gate wave for somebody else's blip.
-    # An absent router already skips visibly in _router_up; too few answers is the same
-    # class of fact and skips the same way, with the reason in the pytest line. Two models
-    # that answer and disagree is still a failure, because that is ours.
-    answered = [v for v in votes if not v["error"] and not v["stale"]]
-    if len({v["model"] for v in answered}) < 2:
-        why = "; ".join(
-            f"{v['model']}: {v['error'] or 'past the deadline'}"
-            for v in votes
-            if v not in answered
-        )
-        pytest.skip(
-            f"only {len(answered)} of {len(votes)} voters answered, so quorum was never reachable -- {why}"
-        )
-    fresh = [v for v in answered if v["proposal"] == result["quorum"]["proposal"]]
+    fresh = [v for v in result["votes"] if not v["stale"] and not v["error"] and v["proposal"] == result["quorum"]["proposal"]]
     names = {v["model"] for v in fresh}
     assert result["quorum"]["agreed"], result["quorum"]
-    assert len(names) >= 2, (
-        f"quorum needs two different models, got {sorted(names)}: {votes}"
-    )
+    assert len(names) >= 2, f"quorum needs two different models, got {sorted(names)}: {result['votes']}"
 
 
 @then("the model_consensus receipt names each voter and its elapsed time")

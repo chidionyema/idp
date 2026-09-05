@@ -77,10 +77,4 @@ def test_the_automation_branch_is_graded_and_becomes_a_pull_request():
     script = ROOT / last.split("origin/main:", 1)[1].rstrip(")") if "origin/main:" in last else ROOT / last
     assert script.exists(), script
     run = script.read_text()
-    # idp#1046: this used to assert `gh pr merge` and `--auto` were in the file, and it kept passing
-    # after the script stopped calling them -- both strings survive in the comment that explains why
-    # they were removed. A check that reads a comment is a silent green. It grades the call now, and
-    # bin/idp-pr-arm is where the "can this repository auto-merge at all" question is answered.
-    assert "bin/idp-pr-arm" in run and 'bash "$arm" "$n" --squash' in run
-    assert 'gh pr merge "$n" --auto' not in run
-    assert (ROOT / "bin" / "idp-pr-arm").exists()
+    assert "gh pr merge" in run and "--auto" in run

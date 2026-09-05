@@ -213,9 +213,8 @@ jobs:
             gh pr create --base main --head "$BRANCH" --title "docs(conscience): daily page, $score tenets green (crew#586 CP5)" --body-file "$RUNNER_TEMP/body.md" >/dev/null
             n=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number')
           fi
-          # idp#1046: auto-merge is off on this repository (allow_auto_merge=false, set beside the founder-only-releases ruleset on 2026-08-30), so `gh pr merge --auto` answers `enablePullRequestAutoMerge` and exits 1. bin/idp-pr-arm arms it where the repository allows it and names the founder's merge where it does not.
-          bin/idp-pr-arm "$n" --squash
-          echo "page -> $BRANCH, PR #$n armed or waiting on the founder"
+          gh pr merge "$n" --auto --squash
+          echo "page -> $BRANCH, PR #$n set to auto-merge"
       - name: BLIND fails the job, after every surface has had its turn
         run: |
           rc="${{ steps.grade.outputs.rc }}"

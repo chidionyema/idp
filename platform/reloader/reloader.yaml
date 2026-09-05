@@ -13,16 +13,9 @@
 # Chart pinned; 2.2.16 was the latest on 2026-08-27
 # (api.github.com/repos/stakater/Reloader/releases/latest).
 #
-# Scope: every namespace, and only the workloads that opt in. That pairing is the crew#684 fix.
-# Until 2026-08-30 this row watched a hand-kept list of four namespaces, so the annotations on
-# hermes-agent (idp#955), healthchecks and the portal sat in the manifests doing nothing at all --
-# an annotation in an unwatched namespace is inert, and inert looks exactly like working. A list of
-# namespaces here is the same defect as a list of Secret names in an annotation: a name someone has
-# to remember to add. `watchGlobally: true` with `namespaces: []` deletes it (the chart's own
-# values.yaml, 2.2.16: the scoped Role-per-namespace mode applies only "when non-empty (and
-# watchGlobally is false)"). `autoReloadAll: false` keeps the opt-in: only a workload carrying
-# `reloader.stakater.com/auto: "true"` is ever rolled, and platform/edge/require-auto-reload.yaml
-# puts that annotation on every workload at admission. `reloadOnCreate: true` because a Secret that
+# Scope: only the namespaces listed under `reloader.namespaces` are watched, and only workloads
+# carrying `secret.reloader.stakater.com/reload: "<name>"` are rolled (autoReloadAll stays false),
+# so a rotation never surprises a row that did not ask. `reloadOnCreate: true` because a Secret that
 # already existed when Reloader arrived never emits an update: the first GROQ_API_KEY sat in
 # `litellm-upstream` while the pod kept answering `Invalid API Key` (crew#506 CP4, 2026-08-27).
 # The price is one roll of each opted-in workload whenever Reloader itself restarts.
@@ -50,20 +43,6 @@ metadata:
   name: reloader
   namespace: reloader
 spec:
-  # Bounded remediation, and the last failure is remediated too, so a wedged release is not left
-  # Failed for a person to untangle: helm-controller spends its retries once and then waits forever
-  # for a spec change (tailscale-operator sat Failed blocking guacamole, idp#1027).
-  # NOT `strategy: uninstall`, which idp#1027 set here and this row takes back out. Founder,
-  # 2026-08-30 (~/.claude/docs/founder/2026-08-30T2332Z-yes-and-the-pattern-is-sound-but-two
-  # -c08d08d9.md): uninstalling a wedged release turns a degraded service into a deleted one --
-  # the PVCs, PDBs and Secrets the release made go with it -- and it erases the state that says
-  # which invariant was violated, which is the state an incident is converted into a control from.
-  # The default strategy is rollback: the previous revision is restored and the failed one is
-  # readable. Repaving stays a hand after capture: `bin/idp-oke-break-glass helm-retry`.
-  install:
-    remediation: { retries: 3 }
-  upgrade:
-    remediation: { retries: 3, remediateLastFailure: true }
   interval: 1h
   chart:
     spec:
@@ -77,11 +56,14 @@ spec:
     reloader:
       autoReloadAll: false
       reloadOnCreate: true
-      watchGlobally: true
-      # Explicitly empty, not absent: the chart reads a non-empty list as scoped mode and builds a
-      # Role per named namespace instead of the ClusterRole global mode needs (chart 2.2.16
-      # values.yaml, `namespaces`). One watcher, every namespace, no list to keep in step.
-      namespaces: []
+      watchGlobally: false
+      namespaces:
+        - llm
+        # crew#684 (2026-08-30): the annotations on hermes-agent (idp#955), healthchecks and the
+        # portal did nothing while this list held one namespace. A row that opts in is watched.
+        - hermes-agent
+        - healthchecks
+        - backstage
       readOnlyRootFileSystem: true
       deployment:
         # the estate policy set (prospector-main/deploy/k8s/policies) refused the chart defaults on

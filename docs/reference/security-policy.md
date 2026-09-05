@@ -55,11 +55,9 @@ PR alongside these.
 | `dev-loop-mirrord-fence` | Enforce | mirrord agents only where the namespace allows the dev loop | `edge` | `platform/edge/dev-loop-policy.yaml` |
 | `protect-namespaces` | Enforce | A platform namespace cannot be deleted | `edge` | `platform/edge/protect-namespaces.yaml` |
 | `provider-independence` | Enforce | Provider independence (R43) | `edge` | `platform/edge/provider-independence.yaml` |
-| `require-auto-reload` | Audit 1, Enforce 1 | Every workload restarts when its config changes | `edge` | `platform/edge/require-auto-reload.yaml` |
 | `require-availability` | Enforce | Founder-facing workloads survive losing one node | `scheduling` | `platform/scheduling/require-availability.yaml` |
 | `require-catalogue-entity` | Enforce | Everything that serves a port names its catalogue entity | `edge` | `platform/edge/require-catalogue-entity.yaml` |
 | `require-priority-class` | Audit 1, Enforce 2 | Require a PriorityClass on platform workloads | `scheduling` | `platform/scheduling/require-priority-class.yaml` |
-| `require-registry-host` | Audit | Every image names its registry | `edge` | `platform/edge/require-registry-host.yaml` |
 | `secrets-not-from-env-vars` | Audit | Disallow Secrets from Env Vars in CEL expressions | `edge` | `platform/edge/kyverno-secrets-policy.yaml` |
 <!-- admission-policies:end -->
 

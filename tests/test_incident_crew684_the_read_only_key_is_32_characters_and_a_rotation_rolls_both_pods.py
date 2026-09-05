@@ -5,12 +5,7 @@ the database (hc/api/decorators.py:79). The vault minted a 36-character UUID.
 
 Second half: a rotated key reaches neither pod by itself. enrol runs at Healthchecks start and
 the portal reads `$file` once at start, and Reloader watched only the llm namespace, so the
-annotations that were meant to roll the pods (idp#955 included) were inert.
-
-That second half is no longer graded here. It was graded by naming these two workloads and the
-Secret each one lists, which is the rot the fix deleted; it is now
-tests/test_incident_crew684_every_workload_restarts_when_its_config_changes.py, over every workload
-in the estate, with no name in it."""
+annotations that were meant to roll the pods (idp#955 included) were inert."""
 
 import re
 import uuid
@@ -20,6 +15,9 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 TF = ROOT / "platform" / "oci" / "healthchecks.tf"
+HC = ROOT / "platform" / "healthchecks" / "healthchecks.yaml"
+CATALOGUE = ROOT / "platform" / "backstage" / "base" / "catalogue.yaml"
+RELOADER = ROOT / "platform" / "reloader" / "reloader.yaml"
 ES = [
     ROOT / "platform" / "healthchecks" / "external-secret.yaml",
     ROOT
@@ -40,6 +38,33 @@ def test_the_read_only_key_the_vault_mints_is_exactly_32_characters():
     assert expr == 'replace(random_uuid.healthchecks_ro_key.result, "-", "")', expr
     # what that expression yields for any uuid
     assert len(str(uuid.uuid4()).replace("-", "")) == VENDOR_KEY_LENGTH
+
+
+def _deployment(path: Path, name: str) -> dict:
+    for doc in yaml.safe_load_all(path.read_text()):
+        if doc and doc.get("kind") == "Deployment" and doc["metadata"]["name"] == name:
+            return doc
+    raise AssertionError(f"no Deployment {name} in {path}")
+
+
+def test_a_rotated_key_rolls_both_pods():
+    hc = _deployment(HC, "healthchecks")["metadata"]["annotations"][
+        "secret.reloader.stakater.com/reload"
+    ]
+    assert "healthchecks" in hc.split(",")
+    cat = _deployment(CATALOGUE, "catalogue")["metadata"]["annotations"][
+        "secret.reloader.stakater.com/reload"
+    ]
+    assert "healthchecks-ro" in cat.split(",")
+    values = None
+    for doc in yaml.safe_load_all(RELOADER.read_text()):
+        if doc and doc.get("kind") == "HelmRelease":
+            values = doc["spec"]["values"]
+    assert values is not None
+    watched = values["reloader"]["namespaces"]
+    assert values["reloader"]["watchGlobally"] is False
+    for ns in ("healthchecks", "backstage", "hermes-agent", "llm"):
+        assert ns in watched, f"Reloader does not watch {ns}; its annotations are inert"
 
 
 def test_the_key_reaches_the_cluster_within_one_tile_refresh():

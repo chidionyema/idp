@@ -22,5 +22,5 @@ labels:
       app.kubernetes.io/part-of: idp
     includeSelectors: true
 images:
-  - name: ghcr.io/chidionyema/backstage
+  - name: idp/backstage
     newTag: local

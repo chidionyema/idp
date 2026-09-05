@@ -9,9 +9,6 @@ resources:
   - estate.yaml
   - mac-run-key.yaml
   - tailscale.yaml
-  - rbac.yaml
-  - mcp-key.yaml
-  - langfuse-key.yaml
 # crew#561: mac-run is mounted with `subPath`, and Kubernetes never updates a subPath mount in
 # place, so editing a hand-written ConfigMap changed nothing in the running pod. idp#955 hung a
 # Reloader annotation off the Deployment, which cannot work either: the script had already changed

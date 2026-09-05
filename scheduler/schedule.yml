@@ -271,8 +271,8 @@ jobs:
     skip_on_battery: false
     timeout_s: 1800
   com.estate.downshift:
-    runs_on: mac
-    runs_on_ref: crew#719
+    runs_on: retire
+    runs_on_ref: crew#85
     command:
     - /usr/local/bin/python3
     - ~/.claude/scripts/estate/estate_downshift.py

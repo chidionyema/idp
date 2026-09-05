@@ -20,20 +20,6 @@ metadata:
   name: external-dns
   namespace: edge
 spec:
-  # Bounded remediation, and the last failure is remediated too, so a wedged release is not left
-  # Failed for a person to untangle: helm-controller spends its retries once and then waits forever
-  # for a spec change (tailscale-operator sat Failed blocking guacamole, idp#1027).
-  # NOT `strategy: uninstall`, which idp#1027 set here and this row takes back out. Founder,
-  # 2026-08-30 (~/.claude/docs/founder/2026-08-30T2332Z-yes-and-the-pattern-is-sound-but-two
-  # -c08d08d9.md): uninstalling a wedged release turns a degraded service into a deleted one --
-  # the PVCs, PDBs and Secrets the release made go with it -- and it erases the state that says
-  # which invariant was violated, which is the state an incident is converted into a control from.
-  # The default strategy is rollback: the previous revision is restored and the failed one is
-  # readable. Repaving stays a hand after capture: `bin/idp-oke-break-glass helm-retry`.
-  install:
-    remediation: { retries: 3 }
-  upgrade:
-    remediation: { retries: 3, remediateLastFailure: true }
   # docs/policy/every-interface-is-a-door.md: the chart's Services name their door.
   postRenderers:
     - kustomize:

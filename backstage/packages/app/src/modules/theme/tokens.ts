@@ -73,29 +73,21 @@ export const STATE_WORD: Record<State, string> = {
   blind: "Can't check",
 };
 export type StateTint = { ink: string; bg: string; edge: string };
-// EDGE CONTRAST, 2026-08-31. Every one of these twelve `edge` values was measured against its
-// own canvas and all twelve failed WCAG 2.2 SC 1.4.11 Non-text Contrast (3:1) -- stateLight.needs
-// was the worst at 1.30:1, a border nobody can see on white. The pill's border is what carries
-// the state, so it is the boundary the criterion is about. Each one was raised by lightness only:
-// the hue and saturation are the originals, so the palette reads the same and the shape is now
-// findable. The `ink` values are untouched; all twelve already cleared 4.5:1. Held by
-// tokens.contrast.test.ts, which fails on the old values.
-
 export const stateDark: Record<State, StateTint> = {
-  red: { ink: '#ff5c5c', bg: '#2a1214', edge: '#a43b42' },
-  needs: { ink: '#ffb020', bg: '#2a1e08', edge: '#7b5915' },
-  running: { ink: '#4c8dff', bg: '#101a2e', edge: '#375ea3' },
-  good: { ink: '#3ecf8e', bg: '#0e241b', edge: '#2b6a50' },
-  stale: { ink: '#a78bfa', bg: '#1c1730', edge: '#6751a3' },
-  blind: { ink: '#8a93a0', bg: '#1a1c20', edge: '#57606c' },
+  red: { ink: '#ff5c5c', bg: '#2a1214', edge: '#5e2226' },
+  needs: { ink: '#ffb020', bg: '#2a1e08', edge: '#5c4310' },
+  running: { ink: '#4c8dff', bg: '#101a2e', edge: '#20365e' },
+  good: { ink: '#3ecf8e', bg: '#0e241b', edge: '#1e4a38' },
+  stale: { ink: '#a78bfa', bg: '#1c1730', edge: '#3a2e5c' },
+  blind: { ink: '#8a93a0', bg: '#1a1c20', edge: '#33383f' },
 };
 export const stateLight: Record<State, StateTint> = {
-  red: { ink: '#b42318', bg: '#fef3f2', edge: '#fc5e55' },
-  needs: { ink: '#b54708', bg: '#fffaeb', edge: '#bd8b02' },
-  running: { ink: '#175cd3', bg: '#eff8ff', edge: '#1296ff' },
-  good: { ink: '#067647', bg: '#ecfdf3', edge: '#20a957' },
-  stale: { ink: '#6941c6', bg: '#f4f3ff', edge: '#8d84fc' },
-  blind: { ink: '#475467', bg: '#f9fafb', edge: '#8894a9' },
+  red: { ink: '#b42318', bg: '#fef3f2', edge: '#fecdca' },
+  needs: { ink: '#b54708', bg: '#fffaeb', edge: '#fedf89' },
+  running: { ink: '#175cd3', bg: '#eff8ff', edge: '#b2ddff' },
+  good: { ink: '#067647', bg: '#ecfdf3', edge: '#abefc6' },
+  stale: { ink: '#6941c6', bg: '#f4f3ff', edge: '#d9d6fe' },
+  blind: { ink: '#475467', bg: '#f9fafb', edge: '#d0d5dd' },
 };
 
 // Backstage's own palette.status keys, fed from the same six colours so the vendor's

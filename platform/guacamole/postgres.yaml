@@ -17,12 +17,6 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  # Founder blueprint 2026-08-30 (4ca529a0.md): no hand-kept list of Secret names. Reloader
-  # discovers every Secret and ConfigMap this pod references, and
-  # platform/edge/require-auto-reload.yaml injects this annotation at admission, so git and the
-  # cluster say the same thing.
-  annotations:
-    reloader.stakater.com/auto: "true"
   name: guacamole-db
   namespace: guacamole
   labels: { app.kubernetes.io/name: guacamole-db, app.kubernetes.io/part-of: idp }

@@ -14,38 +14,7 @@ metadata:
 spec:
   exceptions:
     - policyName: require-pod-probes
-      ruleNames: [validate-probes, autogen-validate-probes]
-  match:
-    any:
-      - resources:
-          kinds: [Deployment, Pod, ReplicaSet]
-          namespaces: [tailscale]
-          names: [operator*]
----
-# crew#661 CP1, 2026-08-31: two rules this image cannot satisfy, same class as the Lago images in
-# commerce-exception.yaml, and measured the same way, not assumed. The image config declares no
-# USER (registry config blob for docker.io/tailscale/k8s-operator:v1.102.3, read 2026-08-31), so
-# the process starts as root and `runAsNonRoot: true` is a container the kubelet refuses at start
-# -- "container has runAsNonRoot and image will run as root", 86 refusals in 28 minutes in
-# diagnose run 33354635731, with 102 re-pulls that then hit Docker Hub's unauthenticated rate
-# limit. And the operator writes $HOME/.config when it boots, so a read-only root filesystem is
-# the same crash one step later, and a forced non-root uid is "permission denied on file
-# creation" (tailscale/tailscale#10638). The fix is upstream or a rebuilt image, not a line in
-# this repository. What is NOT excused: the seccomp profile, privilege escalation, dropping every
-# capability, requests and limits -- platform/tailscale/operator.yaml keeps all of them.
-# Reconsidered when the chart ships a non-root image; crew#661 CP2's drill row is where a
-# regression shows first.
-apiVersion: kyverno.io/v2
-kind: PolicyException
-metadata:
-  name: tailscale-operator-image-runs-as-root
-  namespace: kyverno
-spec:
-  exceptions:
-    - policyName: require-run-as-nonroot
-      ruleNames: [run-as-non-root, autogen-run-as-non-root]
-    - policyName: require-ro-rootfs
-      ruleNames: [validate-readOnlyRootFilesystem, autogen-validate-readOnlyRootFilesystem]
+      ruleNames: [require-pod-probes, autogen-validate-probes]
   match:
     any:
       - resources:

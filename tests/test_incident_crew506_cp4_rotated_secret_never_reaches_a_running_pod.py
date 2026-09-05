@@ -19,6 +19,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 ROW = ROOT / "platform" / "reloader" / "reloader.yaml"
+LITELLM = ROOT / "platform" / "llm" / "litellm.yaml"
+EXTERNAL_SECRET = ROOT / "platform" / "llm" / "external-secret.yaml"
 FLUX = ROOT / "clusters" / "oke" / "platform.yaml"
 ESTATE_CODE = Path(os.environ.get("ESTATE_CODE", ROOT.parent))
 POLICIES = ESTATE_CODE / "prospector-main" / "deploy" / "k8s" / "policies"
@@ -32,13 +34,27 @@ def _one(docs: list[dict], kind: str, name: str) -> dict:
     return next(d for d in docs if d["kind"] == kind and d["metadata"]["name"] == name)
 
 
-# The router's opt-in, the watcher's namespace list and reloadOnCreate were graded here, by name,
-# until 2026-08-31. Naming litellm and the Secret it lists is the O(n) shape the founder's blueprint
-# refuses (c08d08d9.md), and the namespace list it asserted is the thing that made three annotations
-# inert in crew#684. All three properties are now graded once, over every workload, in
-# tests/test_incident_crew684_every_workload_restarts_when_its_config_changes.py.
-# What stays here is what is genuinely about this row: Flux's ordering, and the chart rendering
-# clean against the estate policy set.
+def test_router_opts_in_to_a_restart_on_its_upstream_secret() -> None:
+    dep = _one(_docs(LITELLM), "Deployment", "litellm")
+    target = _one(_docs(EXTERNAL_SECRET), "ExternalSecret", "litellm-upstream")["spec"]["target"]["name"]
+    ann = dep["metadata"].get("annotations", {})
+    assert ann.get("secret.reloader.stakater.com/reload") == target, (
+        f"litellm Deployment must name the Secret {target!r} in secret.reloader.stakater.com/reload; got {ann}")
+
+
+def test_reloader_row_watches_the_router_namespace_and_only_opted_in_workloads() -> None:
+    hr = _one(_docs(ROW), "HelmRelease", "reloader")
+    values = hr["spec"]["values"]["reloader"]
+    assert values["autoReloadAll"] is False, "a rotation must never roll a workload that did not opt in"
+    assert values["watchGlobally"] is False and "llm" in values["namespaces"], values
+    assert re.fullmatch(r"\d+\.\d+\.\d+", str(hr["spec"]["chart"]["spec"]["version"])), "chart is pinned"
+
+
+def test_a_secret_that_predates_reloader_still_rolls_its_workload() -> None:
+    """Incident 2026-08-27 15:12Z: #414 applied, GROQ_API_KEY already in the Secret, router still
+    `Invalid API Key` -- no update event ever came. reloadOnCreate is the chart's knob for that."""
+    values = _one(_docs(ROW), "HelmRelease", "reloader")["spec"]["values"]["reloader"]
+    assert values["reloadOnCreate"] is True
 
 
 def test_flux_applies_the_reloader_row_after_the_secret_store_and_waits_on_it() -> None:

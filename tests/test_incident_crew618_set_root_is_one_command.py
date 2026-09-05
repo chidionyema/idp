@@ -47,9 +47,6 @@ def test_all_walks_every_provider_once_and_skips_the_ones_already_set(tmp_path):
     names = [l.split()[1] for l in (tmp_path / "set.log").read_text().splitlines()]
     assert names == ["SEED_CLOUDFLARE_ROOT_TOKEN", "SEED_ANTHROPIC_API_KEY", "SEED_OPENROUTER_API_KEY", "SEED_DEEPSEEK_API_KEY",
                      "SEED_MINIMAX_API_KEY", "SEED_GROQ_API_KEY", "SEED_GEMINI_API_KEY", "SEED_EXA_API_KEY", "SEED_STRIPE_SECRET_KEY",
-                     "SEED_TELEGRAM_HERMES_BOT_TOKEN", "SEED_TELEGRAM_ALERTS_BOT_TOKEN",
-                     # a pair: two hidden reads, two repository secrets, one client (the shop's
-                     # Continue with Google button)
-                     "SEED_GOOGLE_OAUTH_CLIENT_ID", "SEED_GOOGLE_OAUTH_CLIENT_SECRET"], names
+                     "SEED_TELEGRAM_HERMES_BOT_TOKEN", "SEED_TELEGRAM_ALERTS_BOT_TOKEN"], names
     assert (tmp_path / "run.log").read_text().count("run") == 1, "one apply run at the end, not one per provider"
     assert "x" not in "".join(l for l in r.stdout.splitlines() if "SEED_" in l and "set on" in l)

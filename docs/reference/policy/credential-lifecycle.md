@@ -42,7 +42,6 @@ list, a slug) are listed at the end so the gate knows them; they have no life cy
 | `SEED_GEMINI_API_KEY` | Google | AI Studio, API key; restrict to Generative Language API | model calls | none | as Anthropic | delete the key | Google Cloud API key usage |
 | `SEED_EXA_API_KEY` | Exa | dashboard, API keys | search calls | none | as Anthropic | delete the key | Exa usage |
 | `SEED_STRIPE_SECRET_KEY` | Stripe | dashboard, API keys; restricted key with the store's needs only | payments on the store account | none | new restricted key, same name, apply; roll the old key | roll the key in the dashboard | Stripe request log |
-| `SEED_GOOGLE_OAUTH_CLIENT_ID` / `SEED_GOOGLE_OAUTH_CLIENT_SECRET` (one client, two halves) | Google | `bin/idp-set-root google-oauth`: Clients page, Create Client, Web application, one authorised redirect URI `https://api.mumchimp.com/signin-google`. Google publishes no create-client API — the IAP one cannot set a redirect URI — so the client is the root | the shop's "Continue with Google" button and nothing else: it identifies the store to Google during a sign-in. It reads no Google data beyond the signed-in person's email, profile and `email_verified`, and holds no token (`SaveTokens = false`) | none; a Google OAuth client does not expire | make a second client with the same redirect URI, set both secret names, apply, then delete the old client. Both halves move together or the pair stops working | delete the client on the Clients page; every sign-in is refused at once and the button disappears from the panel at the next provider read | Google Cloud audit log on the project; the apply run logs the field names, never a value |
 | `github-app` (vault bundle: app id, client id, private key) | GitHub | once, by `bin/idp-github-app convert <code>` after the App manifest flow; the bundle lands in the vault, never in a repository secret | mints installation tokens narrowed to one lane in `platform/github-app/lanes.json` (issues, checks, contents), each valid one hour | the private key never expires; every minted token dies in one hour | generate a new private key on the App (docs.github.com, managing private keys for GitHub Apps), `bin/idp-vault-put github-app pem_b64=<new>`, delete the old key on the App | delete the private key on the App, or uninstall the App from the organisation; every token minted from it stops at once | the App's recent deliveries on GitHub and the organisation audit log (`integration_installation` events); apply and workflow logs name lanes, never tokens |
 | `SEED_TELEGRAM_HERMES_BOT_TOKEN` | Telegram | BotFather, `/newbot` or `/token` | the Hermes bot | none | `/revoke` in BotFather gives a new token; set the same name; apply | `/revoke` | none at Telegram; the gateway logs every update |
 | `SEED_TELEGRAM_ALERTS_BOT_TOKEN` | Telegram | BotFather | the alerts bot | none | as above | `/revoke` | as above |
@@ -76,12 +75,6 @@ vendor: Anthropic, OpenRouter, DeepSeek, Minimax, Groq, Gemini, Exa, Stripe.
 **Telegram.** In BotFather, `/token`, pick the bot, copy the token. Hermes bot:
 `gh secret set SEED_TELEGRAM_HERMES_BOT_TOKEN -R chidionyema/idp`. Alerts bot:
 `gh secret set SEED_TELEGRAM_ALERTS_BOT_TOKEN -R chidionyema/idp`.
-
-**Google, for the shop's sign-in button.** `bin/idp-set-root google-oauth` opens Google's Clients
-page and walks the five steps. The one thing he can get wrong is the redirect URI, so the command
-prints it on its own line: `https://api.mumchimp.com/signin-google`, no trailing slash. This is a
-pair — a client id and a client secret — and neither half means anything to Google alone, so the
-apply run proves them together in one call and writes both or neither.
 
 **GitHub, OCI, Sunshine.** Nothing. They already run on machine identity.
 

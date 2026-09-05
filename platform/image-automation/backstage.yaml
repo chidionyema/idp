@@ -73,13 +73,10 @@ spec:
       messageTemplate: |
         platform: image update {{ range $resource, $changes := .Changed.Objects }}{{ range $_, $change := $changes }}{{ $resource.Name }} -> {{ $change.NewValue }} {{ end }}{{ end }}(crew#267)
 
-        Written by image-automation-controller. One automation walks the whole repository for
-        every ImagePolicy marker; two automations on one push branch collide (crew#406).
+        Written by image-automation-controller. One automation walks ./platform for every
+        ImagePolicy marker; two automations on one push branch collide (crew#406).
     push:
       branch: flux/image-updates
   update:
-    # The whole checkout, not ./platform: the prospector images: override lives on its Flux
-    # Kustomization in clusters/oke/edge.yaml (crew#693). Only lines carrying a $imagepolicy
-    # marker are ever rewritten.
-    path: ./
+    path: ./platform
     strategy: Setters

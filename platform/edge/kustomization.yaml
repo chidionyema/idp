@@ -5,10 +5,6 @@ resources:
   - traefik.yaml
   - status-page.yaml
   - require-catalogue-entity.yaml
-  # crew#684 and the founder blueprint that closed it: the invariant "a workload restarts when
-  # its config changes" moves out of three hand-kept annotation lists and one hand-kept test
-  # into one mutation every workload gets at admission.
-  - require-auto-reload.yaml
   - catalogue-entity-exception.yaml
   - cert-manager.yaml
   - langfuse-exception.yaml
@@ -25,7 +21,6 @@ resources:
   # the cluster never held it. Audit mode until bin/idp-ci's kyverno row reports zero violations.
   - kyverno-secrets-policy.yaml
   - provider-independence.yaml
-  - require-registry-host.yaml
   - dev-loop-policy.yaml
   - provider-edge-exception.yaml
   - provider-storage-exception.yaml

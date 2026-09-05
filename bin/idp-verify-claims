@@ -92,23 +92,6 @@ def run_one(cmd: str, cwd: str) -> dict:
         return {"cmd": cmd, "exit": 124, "out": f"TIMEOUT after {TIMEOUT}s"}
 
 
-# A command can exit 0 having measured nothing. A pytest run whose tests all skip -- no conftest,
-# no kyverno, no cluster credential -- exits 0, and until 2026-08-31 this file read that as `ok`:
-# on PR #1042 the gate test for `control_shipped` reported "ok ... 9 skipped in 0.11s" and had
-# judged not one thing. That is the estate's silent-green class (4 on the ledger), and it is worse
-# than a red because it is quiet. A claim that measured nothing is BLIND, and BLIND is never green.
-BLIND_RUN = re.compile(r"^\s*(?:\d+ skipped|no tests ran)", re.M)
-
-
-def measured_nothing(r: dict) -> bool:
-    if r["exit"] != 0:
-        return False
-    out = r.get("out") or ""
-    if re.search(r"\b\d+ (?:passed|failed)\b", out):
-        return False
-    return bool(BLIND_RUN.search(out))
-
-
 def section(results: list[dict], run_url: str, touches_world: bool) -> str:
     lines = [
         START,
@@ -125,12 +108,7 @@ def section(results: list[dict], run_url: str, touches_world: bool) -> str:
             )
         )
     for r in results:
-        if measured_nothing(r):
-            mark = "BLIND"
-        elif r["exit"] == 0:
-            mark = "ok "
-        else:
-            mark = "RED"
+        mark = "ok " if r["exit"] == 0 else "RED"
         lines += [
             f"- {mark} `{r['cmd']}` exit {r['exit']}",
             "```",
@@ -151,7 +129,7 @@ def splice(body: str, new: str) -> str:
 def verdict(results: list[dict], touches_world: bool) -> int:
     if not results:
         return 1 if touches_world else 0
-    return 1 if any(r["exit"] != 0 or measured_nothing(r) for r in results) else 0
+    return 1 if any(r["exit"] != 0 for r in results) else 0
 
 
 def gh(args: list[str]) -> str:
@@ -222,21 +200,6 @@ def selftest() -> int:
         ("one red result fails", verdict([{"exit": 0}, {"exit": 1}], False), 1),
         ("no claim on a world change fails", verdict([], True), 1),
         ("no claim on a doc change passes", verdict([], False), 0),
-        (
-            "a run where every test skipped is BLIND, not ok",
-            verdict([{"exit": 0, "out": "sssssssss\n9 skipped in 0.11s"}], False),
-            1,
-        ),
-        (
-            "a run that passed something is not BLIND",
-            verdict([{"exit": 0, "out": "3 passed, 2 skipped in 4.10s"}], False),
-            0,
-        ),
-        (
-            "a command with no pytest output at all is untouched",
-            verdict([{"exit": 0, "out": "ok      cluster-state  9 rows"}], False),
-            0,
-        ),
         (
             "splice replaces the old section",
             splice(

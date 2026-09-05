@@ -154,9 +154,9 @@ case "$rt_rc" in
   *) bl root-trust "$(printf '%s\n' "$rt_out" | tail -1 | cut -c1-160)";;
 esac
 
-# --- github-tokens: workloads mint their own one-hour installation tokens in-cluster (GithubAccessToken
-# generators beside each consumer, idp#852 root); this lane re-mints only vault-held consumers listed in
-# token-consumers.json (empty by design) and stays as the guard that none quietly reappear. No PAT anywhere.
+# --- github-tokens: the tokens workloads read (platform/github-app/token-consumers.json) are one-hour
+# installation tokens of the App; each is re-minted here every hour and the ExternalSecrets that render
+# them refresh every 15 minutes (crew#66 root trust, crew#577). No PAT anywhere.
 gt_out=$("$(dirname "$0")/idp-github-app" refresh 2>&1); gt_rc=$?
 case "$gt_rc" in
   0) say ok github-tokens "$(printf '%s\n' "$gt_out" | tail -1 | cut -c1-160)";;

@@ -1,6 +1,0 @@
-# Verification wall (crew#631 CP2): objects that prove a refusal. Nothing in this directory is
-# meant to become Ready; the Flux row that applies it never waits (clusters/oke/verification.yaml).
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - verdict-key-wall.yaml

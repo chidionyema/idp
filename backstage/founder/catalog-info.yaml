@@ -126,7 +126,7 @@ kind: Component
 metadata:
   name: founder-telemetry
   title: "Telemetry (SigNoz)"
-  description: "Every workload's traces, metrics and logs land here. The telemetry-coverage receipt in the cluster check is the count of pods this backend has seen; the alert rules are declared against it. This is the one tool that asks for a second sign-in: SigNoz community has no OIDC, so the estate login gets you to its door and its own account gets you in. Prometheus and Alertmanager run beside it with no web page of their own, and Grafana is switched off on purpose so there is one place to look, not two."
+  description: "Every workload's traces, metrics and logs land here. The telemetry-coverage receipt in the cluster check is the count of pods this backend has seen; the alert rules are declared against it."
   annotations:
     estate/group: "Watch"
     idp/updated-by: "Flux from platform/observability; rows arrive live from the OTel collector"
@@ -135,9 +135,6 @@ metadata:
     - title: "Open"
       url: "https://signoz.${ESTATE_ZONE}"
       icon: dashboard
-    - title: "How to sign in (the second credential, and why)"
-      url: "https://github.com/chidionyema/idp/blob/main/docs/how-to/sign-in-to-signoz.md"
-      icon: docs
     - title: "Alert rules, where they are tracked"
       url: "https://github.com/chidionyema/crew/issues/495"
       icon: docs
@@ -178,7 +175,7 @@ kind: Component
 metadata:
   name: founder-login
   title: "The one login (auth)"
-  description: "oauth2-proxy in front of every hostname on the zone; Oracle IDCS is the identity provider. One tool still asks for a second credential after this one: SigNoz, because its community edition has no OIDC. Every other door opens on this login alone, and the hourly login-drill proves it door by door."
+  description: "oauth2-proxy in front of every hostname on the zone; Oracle IDCS is the identity provider. There is no second login anywhere."
   annotations:
     estate/group: "Build"
     idp/updated-by: "Flux from platform/identity"

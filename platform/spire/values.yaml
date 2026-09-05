@@ -19,19 +19,6 @@ global:
       create: true
 
 spire-server:
-  # The one short image name in this umbrella. Every other image the chart runs already names a
-  # host (ghcr.io/spiffe/*, registry.k8s.io/*, cgr.dev/chainguard/*, read from the render, not
-  # assumed); the StatefulSet's chown init container did not -- chart 0.30.1 ships it with an
-  # empty registry and the bare name (charts/spire-server/values.yaml:1584-1593). On cri-o with
-  # short-name mode enforcing that is admitted and then fails to pull with "returns ambiguous
-  # list" (crew#284, crew#396, crew#325, tailscale-operator run 33341390235). The whole path goes
-  # in `repository` rather than being split across the chart's `registry` key, because the
-  # file-scanning guard reads `repository:` values and a name split over two keys reads short to
-  # it. Not global.spire.image.registry: that key would move the ghcr.io images to docker.io too
-  # (charts/spire-lib/_helpers.tpl:43-49).
-  chown:
-    image:
-      repository: docker.io/library/busybox
   # One replica; the k3d cluster is one node.
   replicaCount: 1
   # SVIDs are short-lived on purpose: an hour, so a stolen identity dies fast.

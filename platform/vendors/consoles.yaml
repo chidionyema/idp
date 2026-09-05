@@ -16,13 +16,6 @@
 # key must match, anchored), verify (method, url, auth header template; {key} is substituted
 # in-process, never on argv), targets (vault entry + field pairs; other keys untouched). Telegram
 # carries one secret per bot on the target.
-#
-# Three fields exist for a credential that is a PAIR rather than one string: `pair: true` on the
-# vendor keeps its targets in one group so both halves are proved and written together; `shape` and
-# `secret` may then be set per target, because the two halves have different shapes and different
-# repository secrets; and `refuse_when` in `verify` is a regex the response body must NOT match,
-# for a vendor that grades a credential by refusing it rather than by answering 2xx. Every vendor
-# without those three behaves exactly as before.
 vendors:
   anthropic:
     kind: secret
@@ -106,53 +99,5 @@ vendors:
     verify: { method: GET, url: https://api.stripe.com/v1/balance, headers: { Authorization: "Bearer {key}" } }
     targets:
       - { entry: prospector-store-api-env, field: Stripe__SecretKey }
-  google_oauth:
-    # The shop's "Continue with Google" button. It has been absent from mumchimp.com since the move
-    # to Kubernetes: Store.Api registers Google only when both halves are non-empty
-    # (Auth/AuthServiceCollectionExtensions.cs:203-211), the k8s manifest never carried them, so
-    # /v1/auth/external/providers answers 200 {"providers":[]} and the sign-in panel renders nothing
-    # (SocialSignIn.tsx:52-53 returns null on an empty list). Measured against the live API
-    # 2026-08-31.
-    #
-    # Google publishes no create-OAuth-client API. The only programmatic road is IAP-scoped, and its
-    # own page says the clients it makes are "locked for IAP usage only, and therefore the API does
-    # not allow any updates to the redirect URI or other attributes"
-    # (its "Creating OAuth clients programmatically" page under /iap/docs, read 2026-08-31) -- so it
-    # cannot make a client whose redirect URI is the store's. The host is deliberately not spelled
-    # out: this file is the provider-blind layer and the conscience rule no_provider_in_diff refuses
-    # a cloud host named outside platform/oci, platform/secret-store and clusters/ (R36).
-    # Same shape as BotFather above: the client IS the root, made once at `page` (R52).
-    #
-    # It is a PAIR, and that is the one thing this registry could not express before. Neither half
-    # can be graded alone: an id with no secret and a secret with no id are both meaningless to
-    # Google. `pair: true` keeps the two halves in one group, each with its own repository secret and
-    # its own anchored shape, verified in one call and written together or not at all.
-    kind: secret
-    pair: true
-    page: https://console.developers.google.com/auth/clients
-    # The token endpoint is the only thing that will grade a client without a real authorization
-    # code, and it grades it by REFUSING. Measured 2026-08-31 with a made-up pair: 401
-    # {"error":"invalid_client","error_description":"The OAuth client was not found."}. Google's own
-    # error table calls invalid_client "The OAuth client secret is incorrect", and a pair it knows
-    # gets past that to grade the code, answering invalid_grant, "The supplied authorization code is
-    # invalid or in the wrong format" (https://developers.google.com/identity/protocols/oauth2/
-    # web-server, read 2026-08-31). So the rule is refuse-on-invalid_client, which is exactly the
-    # failure this has to catch: a typo, a revoked client, or another project's client. The probe
-    # code is junk on purpose and no token is ever issued.
-    verify:
-      method: POST
-      url: https://oauth2.googleapis.com/token
-      headers: { Content-Type: application/x-www-form-urlencoded }
-      body: "grant_type=authorization_code&code=idp-bootstrap-probe&client_id={Authentication__Google__ClientId}&client_secret={Authentication__Google__ClientSecret}&redirect_uri=https://api.${ESTATE_ZONE}/signin-google"
-      refuse_when: '"error"\s*:\s*"invalid_client"'
-    # Nothing downstream changes. Kyverno secrets-not-from-env-vars refuses envFrom.secretRef and
-    # secretKeyRef, so the store reads its secrets as FILES through KeyPerFile, which turns a file
-    # named Authentication__Google__ClientId into the configuration key Authentication:Google:ClientId
-    # -- the exact key AuthServiceCollectionExtensions.cs:203 reads. The ExternalSecret pulls the
-    # whole prospector-store-api-env object with dataFrom.extract, so a new field in the vault object
-    # reaches the pod with no manifest edit at all.
-    targets:
-      - { entry: prospector-store-api-env, field: Authentication__Google__ClientId, secret: SEED_GOOGLE_OAUTH_CLIENT_ID, shape: "[0-9]+-[a-z0-9]+\\.apps\\.googleusercontent\\.com" }
-      - { entry: prospector-store-api-env, field: Authentication__Google__ClientSecret, secret: SEED_GOOGLE_OAUTH_CLIENT_SECRET, shape: "GOCSPX-[A-Za-z0-9_-]{20,}" }
-# Not here yet (crew#579 stays open for it): Mailjet, a key AND a secret pair, two
-# prospector-store-api-env fields. `pair: true` above is the road it will take.
+# Not here yet (crew#579 stays open for them): Mailjet (a key AND a secret pair, two fields), the
+# store's Google OAuth client. Both are prospector-store-api-env fields.

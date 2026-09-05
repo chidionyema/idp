@@ -57,14 +57,18 @@ founder=$(gh repo view --json owner -q .owner.login 2>/dev/null || echo "")
 gh pr view "$n" --json comments -q --arg f "$founder" \
   '{founder: $f, approvals: [.comments[] | select(.author.login == $f) | .body | capture("(?m)^APPROVE:\\s*(?<w>\\S+)") | .w], denials: [.comments[] | select(.author.login == $f) | .body | capture("(?m)^DENY:\\s*(?<w>\\S+)") | .w]}' \
   > "$REPORTS/pr-words.json" 2>/dev/null || echo '{"founder": "", "approvals": [], "denials": []}' > "$REPORTS/pr-words.json"
-# The drills the policy may name: the catalogue on IDP_ROOT (main) and, always, the catalogue at
-# the PR head. bin/idp-pr-catalogues resolves both and carries the two incidents that shaped the
-# rule (idp#191, idp#1014); a copy it cannot fetch is skipped, and idp-drill-names treats a
-# missing file as adding nothing.
-cats=()
-while IFS= read -r c; do cats+=("$c"); done < <(
-  "$IDP/bin/idp-pr-catalogues" "$n" "$IDP" "$REPORTS/pr-catalogue.yaml"
-)
+# The drills the policy may name: the catalogue on IDP_ROOT plus, when the PR itself changes
+# drills/catalogue.yaml, the catalogue at the PR head. Without the second copy the drill_named
+# rule's own fix ("add the drill to the catalogue in this PR") could never pass: idp#191 was
+# refused for naming the row it added (incident test tests/test_incident_gate_read_catalogue_from_main.py).
+cats=("$IDP/drills/catalogue.yaml")
+if jq -e '.files | index("drills/catalogue.yaml")' "$REPORTS/pr-meta.json" >/dev/null; then
+  head_sha=$(gh pr view "$n" --json headRefOid -q .headRefOid)
+  repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+  if gh api "repos/$repo/contents/drills/catalogue.yaml?ref=$head_sha" -H 'Accept: application/vnd.github.raw+json' > "$REPORTS/pr-catalogue.yaml" 2>/dev/null; then
+    cats+=("$REPORTS/pr-catalogue.yaml")
+  fi
+fi
 drills=$("$IDP/bin/idp-drill-names" "${cats[@]}" 2>/dev/null || echo '[]')
 # ADR 0009 (crew#562): the scored decisions a PR may cite with `Matrix: <slug>`; the rule
 # matrix_cited also accepts a slug the PR itself adds to the matrix.

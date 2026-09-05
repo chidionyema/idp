@@ -1,21 +1,20 @@
 {
-  "pr": {
-    "number": 1,
-    "files": [
-      "platform/oci/identity/main.tf",
-      "platform/identity/oauth2-proxy.yaml",
-      "tests/test_incident_crew287_zcp_grant_in_the_same_pr.py"
-    ],
-    "added": "+resource \"oci_identity_domains_app\" \"front_door\" {\n+resource \"oci_identity_domains_grant\" \"founder\" {\n",
-    "body": "Front door OIDC client by Terraform.\nApproval-word: front-door\nCost-delta-usd-month: 0\nUse: bin/idp-identity-apply apply\n\nDrill: oke-check\n\nOptimised: 3 steps -> 2, 1 round trip -> 1; cut: the second fixture pass, it proved nothing new\n\nControl: tests/test_incident_crew287_zcp_grant_in_the_same_pr.py\n",
-    "labels": [
-      "canary"
-    ]
-  },
-  "budget_monthly_usd": 50,
-  "drills": [
-    "oke-check",
-    "drill-heartbeat",
-    "login-drill"
+ "pr": {
+  "number": 1,
+  "files": [
+   "platform/oci/identity/main.tf",
+   "platform/identity/oauth2-proxy.yaml"
+  ],
+  "added": "+resource \"oci_identity_domains_app\" \"front_door\" {\n+resource \"oci_identity_domains_grant\" \"founder\" {\n",
+  "body": "Front door OIDC client by Terraform.\nApproval-word: front-door\nCost-delta-usd-month: 0\nUse: bin/idp-identity-apply apply\n\nDrill: oke-check\n\nOptimised: 3 steps -> 2, 1 round trip -> 1; cut: the second fixture pass, it proved nothing new\n",
+  "labels": [
+   "canary"
   ]
+ },
+ "budget_monthly_usd": 50,
+ "drills": [
+  "oke-check",
+  "drill-heartbeat",
+  "login-drill"
+ ]
 }

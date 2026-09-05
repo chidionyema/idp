@@ -46,5 +46,5 @@ export const toolsSentence = (groups: ToolGroup[]): string => {
   if (n === 0) return 'No tools are registered yet; they appear here on their own once a door is listed.';
   const doors = n === 1 ? 'door' : 'doors';
   const gs = groups.length === 1 ? 'group' : 'groups';
-  return `Every tool we use, ${n} ${doors} in ${groups.length} ${gs}; choose one and it opens on your estate login, unless its tile says it asks for a second credential.`;
+  return `Every tool we use, ${n} ${doors} in ${groups.length} ${gs}; choose one and it opens already knowing who you are.`;
 };

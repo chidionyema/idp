@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The founder's whole part for one provider, in one command, zero copying between windows (R52; crew#618).
-#   bin/idp-set-root tailscale | cloudflare | anthropic | openrouter | deepseek | minimax | groq | gemini | exa | stripe | telegram-hermes | telegram-alerts | google-oauth
+#   bin/idp-set-root tailscale | cloudflare | anthropic | openrouter | deepseek | minimax | groq | gemini | exa | stripe | telegram-hermes | telegram-alerts
 #   bin/idp-set-root all        every provider above in turn, skipping any whose secrets are already set; one apply run at the end
 #
 # It opens the provider's page, says exactly what to click and what to type, then asks for each
@@ -13,7 +13,7 @@ set -euo pipefail
 REPO=${IDP_REPO:-chidionyema/idp}
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 P=${1:-}; [ -n "$P" ] || { sed -n 3,4p "$0"; exit 2; }
-ALL="tailscale cloudflare anthropic openrouter deepseek minimax groq gemini exa stripe telegram-hermes telegram-alerts google-oauth"
+ALL="tailscale cloudflare anthropic openrouter deepseek minimax groq gemini exa stripe telegram-hermes telegram-alerts"
 if [ "$P" = all ]; then
   # Founder, 2026-08-29: "a single command for the master key for all". Each provider is one turn;
   # one already set (its secret names exist on the repository) is skipped, so this is safe to re-run.
@@ -26,7 +26,6 @@ if [ "$P" = all ]; then
       telegram-hermes) need=SEED_TELEGRAM_HERMES_BOT_TOKEN ;;
       telegram-alerts) need=SEED_TELEGRAM_ALERTS_BOT_TOKEN ;;
       stripe) need=SEED_STRIPE_SECRET_KEY ;;
-      google-oauth) need="SEED_GOOGLE_OAUTH_CLIENT_ID SEED_GOOGLE_OAUTH_CLIENT_SECRET" ;;
       *) need=SEED_$(printf %s "$p" | tr a-z A-Z)_API_KEY ;;
     esac
     missing=0; for k in $need; do printf '%s\n' "$have" | grep -x "$k" >/dev/null || missing=1; done
@@ -42,8 +41,6 @@ gh auth status >/dev/null 2>&1 || { echo "FAIL    gh is not signed in: run gh au
 open_page() { if command -v open >/dev/null; then open "$1"; elif command -v xdg-open >/dev/null; then xdg-open "$1"; else echo "        open $1"; fi; }
 # a field of one vendor in platform/vendors/consoles.yaml, with no yaml module (the founder's Mac python has none)
 field() { awk -v v="  $1:" -v k="$2:" '$0==v{on=1;next} on&&/^  [a-z]/{exit} on&&$1==k{print $2;exit}' "$IDP/platform/vendors/consoles.yaml"; }
-# the estate's DNS zone, written once in clusters/<cluster>/estate-config.yaml (crew#269)
-zone() { awk '$1=="ESTATE_ZONE:"{print $2; exit}' "$IDP"/clusters/*/estate-config.yaml; }
 ask() { # ask NAME "what it is"; hidden input, straight into gh, never echoed
   local name=$1 what=$2 v
   printf '        %s (%s): ' "$name" "$what"; IFS= read -rs v; echo
@@ -83,30 +80,6 @@ T
     echo "        1. Create a key. Name it: estate"
     echo "        2. Copy it when asked below."
     ask "$name" "the key shown" ;;
-  google-oauth)
-    # The shop's "Continue with Google" button. Google publishes no create-client API (the IAP one
-    # cannot set a redirect URI), so this client is a root made once, like a BotFather token.
-    # Every step below is quoted from Google's own page, read 2026-08-31:
-    # https://developers.google.com/identity/protocols/oauth2/web-server (R54).
-    echo "Google: one OAuth client for the shop's Continue with Google button, once. The page is opening."
-    open_page "$(field google_oauth page)"
-    # The one thing he can get wrong, so it is printed for him rather than remembered -- built from
-    # the estate's own zone, never typed here (LAW 46).
-    redirect="https://api.$(zone)/signin-google"
-    cat <<T
-        1. Press "Create Client".
-        2. Application type: "Web application".
-        3. Name: store sign-in
-        4. Under "Authorised redirect URIs" press "ADD URI" and paste this line exactly, with no
-           trailing slash. The store serves this path and no other; any other URI and Google will
-           refuse every sign-in:
-
-             $redirect
-
-        5. Press "Create". Keep the panel that appears open; copy each value when asked below.
-T
-    ask SEED_GOOGLE_OAUTH_CLIENT_ID "the Client ID shown"
-    ask SEED_GOOGLE_OAUTH_CLIENT_SECRET "the Client secret shown" ;;
   telegram-hermes|telegram-alerts)
     [ "$P" = telegram-hermes ] && name=SEED_TELEGRAM_HERMES_BOT_TOKEN || name=SEED_TELEGRAM_ALERTS_BOT_TOKEN
     echo "Telegram: the bot token, once. BotFather is opening."

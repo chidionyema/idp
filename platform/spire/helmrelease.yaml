@@ -30,20 +30,6 @@ metadata:
   name: spire-crds
   namespace: spire-mgmt
 spec:
-  # Bounded remediation, and the last failure is remediated too, so a wedged release is not left
-  # Failed for a person to untangle: helm-controller spends its retries once and then waits forever
-  # for a spec change (tailscale-operator sat Failed blocking guacamole, idp#1027).
-  # NOT `strategy: uninstall`, which idp#1027 set here and this row takes back out. Founder,
-  # 2026-08-30 (~/.claude/docs/founder/2026-08-30T2332Z-yes-and-the-pattern-is-sound-but-two
-  # -c08d08d9.md): uninstalling a wedged release turns a degraded service into a deleted one --
-  # the PVCs, PDBs and Secrets the release made go with it -- and it erases the state that says
-  # which invariant was violated, which is the state an incident is converted into a control from.
-  # The default strategy is rollback: the previous revision is restored and the failed one is
-  # readable. Repaving stays a hand after capture: `bin/idp-oke-break-glass helm-retry`.
-  install:
-    remediation: { retries: 3 }
-  upgrade:
-    remediation: { retries: 3, remediateLastFailure: true }
   interval: 1h
   chart:
     spec:
@@ -76,15 +62,6 @@ spec:
   # DaemonSet was still creating refused pods: a HelmRelease in Failed keeps the stale objects until
   # the last failure is remediated. With this flag the failed install is uninstalled and re-run from
   # the current values; tests/test_spire_row.py holds it.
-  #
-  # This is the ONE row in the estate that keeps install remediation, and it is deliberate, not an
-  # oversight of the sweep that took `strategy: uninstall` back out of the other nine (founder,
-  # 2026-08-30, c08d08d9.md: uninstalling a wedged release destroys the evidence an incident is
-  # converted into a control from; reinstall stays a hand). It is kept because the flag here was
-  # never set by that blueprint -- bc6dcfef (#312, 2026-08-27) set it for the opposite failure, a
-  # release stuck in Failed whose stale DaemonSet went on creating refused pods for 24 minutes --
-  # and because spire-crds and the SPIRE server hold no PVC, PDB or Secret of their own to lose:
-  # the SVIDs are re-issued on restart. Anything with state keeps `retries: 3` alone.
   install:
     remediation: { retries: 3, remediateLastFailure: true }
   upgrade:
