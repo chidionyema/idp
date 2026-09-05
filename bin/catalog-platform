@@ -334,7 +334,7 @@ LAYERS = {
         "Agent tools",
         "The tools an agent may use, behind one gateway with one audit log.",
     ),
-    "infra-crew": (
+    "agent-workforce": (
         "agents",
         "Infrastructure crew",
         "The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.",

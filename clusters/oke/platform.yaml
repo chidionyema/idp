@@ -552,24 +552,24 @@ spec:
       - kind: Secret
         name: github-app
 ---
-# The infrastructure crew (crew#729 step 3): a crewAI CronJob that takes a `lane:infra` board
+# The agent workforce (crew#729 step 3): a crewAI CronJob that takes a queued-lane board
 # ticket to a plan comment and a pull request. No RBAC, no cluster hand; the founder merges and
 # deploys. After scheduling (its priority class), secret-store (the vault), alerts-github (the
 # App Secret its token generator reads through strict envsubst) and llm (the router it calls).
 # `wait: true` on a CronJob proves the objects applied, nothing more: a CronJob carries no
 # readiness, so kstatus reads it Current the moment it exists. Whether a run succeeds is read
-# from outside by the infra-crew drill (drills/catalogue.yaml), never from this row.
+# from outside by the agent-workforce drill (drills/catalogue.yaml), never from this row.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: infra-crew
+  name: agent-workforce
   namespace: flux-system
 spec:
   interval: 10m
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./platform/infra-crew
+  path: ./platform/agent-workforce
   prune: true
   postBuild:
     substituteFrom:

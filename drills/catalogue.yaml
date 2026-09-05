@@ -107,17 +107,17 @@ drills:
       of it dying); the receipt is written from the node's identity and graded by
       bin/idp-chaos-drill langfuse-alert-drill alert-drill (age max 194h).
 
-  - name: infra-crew
+  - name: agent-workforce
     owner: idp
     workflow: oke-check.yml
-    job: infra-crew
+    job: agent-workforce
     schedule: "17 6 * * *"
     max_age_hours: 26
     proves: >-
-      The infrastructure crew is taking its queue, read from outside the cluster: no open board
+      The agent workforce is taking its queue, read from outside the cluster: no open board
       ticket with the crew's label has waited more than an hour without a plan comment, and every
       plan comment the crew left in the last day has a matching trace in Langfuse
-      (bin/idp-infra-crew-drill, as the estate's own GitHub identity). A queued ticket left
+      (bin/idp-agent-workforce-drill, as the estate's own GitHub identity). A queued ticket left
       unplanned, or work with no trace, is the red.
 
   - name: cluster-state

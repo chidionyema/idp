@@ -43,7 +43,7 @@ spec:
 # ExternalSecret never became Ready, alerts-secret (wait: true) never became Ready, and `alerts`
 # was never applied: the Telegram channel was dead behind a credential it does not use. The
 # githubdispatch ledger has its own Kustomization; it waits on the App, nothing else waits on it
-# -- but four more rows (drills, hermes-agent, infra-crew, mcp) have since grown a real dependsOn
+# -- but four more rows (drills, hermes-agent, agent-workforce, mcp) have since grown a real dependsOn
 # on this one for the Secret its postBuild substitutes, so "nothing else waits on it" no longer
 # holds.
 #

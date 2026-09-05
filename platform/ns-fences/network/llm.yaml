@@ -85,13 +85,13 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: agent-workforce
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: edge
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: healing
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: infra-crew
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: mcp

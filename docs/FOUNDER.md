@@ -129,7 +129,7 @@ By model (merge-commit trailers): Claude Opus 5 (1M context) 66. By session: SvL
 | 2026-09-04T15:50Z | — | [fix(llm): the router buys every lane direct, no reseller](https://github.com/chidionyema/idp/pull/1512) |
 | 2026-09-04T15:47Z | — | [fix(estate-db): the hc role named a secret nothing creates](https://github.com/chidionyema/idp/pull/1510) |
 | 2026-09-04T15:37Z | crew#832 | [feat(warden): one proving gate every vendor key must pass (crew#832 CP2)](https://github.com/chidionyema/idp/pull/1505) |
-| 2026-09-04T15:36Z | idp#1491 | [fix(ci): main is red — mint the infra-crew router key, drop three rungs whose tests are gone](https://github.com/chidionyema/idp/pull/1506) |
+| 2026-09-04T15:36Z | idp#1491 | [fix(ci): main is red — mint the agent-workforce router key, drop three rungs whose tests are gone](https://github.com/chidionyema/idp/pull/1506) |
 | 2026-09-04T15:05Z | crew#832 | [decision(0020): a key has a lifecycle and the client chooses every road on it](https://github.com/chidionyema/idp/pull/1496) |
 | 2026-09-04T14:57Z | — | [fix(seed): a comment inside the plan was read as a credential row](https://github.com/chidionyema/idp/pull/1498) |
 | 2026-09-04T14:49Z | — | [fix(research-engine): the hourly job could not pull its own image](https://github.com/chidionyema/idp/pull/1494) |

@@ -18,7 +18,7 @@ Read from the cluster receipt taken at 2026-09-04T22:00:10Z. Every Kustomization
 - **Kustomization flux-system/hermes-agent** since 2026-09-04T21:56:44Z: Reconciliation in progress
 - **Kustomization flux-system/hindsight** since 2026-09-04T21:56:31Z: dependency 'flux-system/llm' is not ready
 - **Kustomization flux-system/image-automation** since 2026-09-04T21:54:57Z: Reconciliation in progress
-- **Kustomization flux-system/infra-crew** since 2026-09-04T21:56:32Z: dependency 'flux-system/alerts-github' revision is not up to date
+- **Kustomization flux-system/agent-workforce** since 2026-09-04T21:56:32Z: dependency 'flux-system/alerts-github' revision is not up to date
 - **Kustomization flux-system/llm** since 2026-09-04T21:56:31Z: dependency 'flux-system/estate-db-migrate' is not ready
 - **Kustomization flux-system/notify** since 2026-09-04T21:50:10Z: Reconciliation in progress
 - **Kustomization flux-system/observability** since 2026-09-04T21:56:31Z: dependency 'flux-system/estate-db-migrate' is not ready
@@ -42,7 +42,7 @@ Read from the cluster receipt taken at 2026-09-04T22:00:10Z. Every Kustomization
 | Kustomization | flux-system | hermes-agent | Not ready | main@593eb66 | 2026-09-04T21:56:44Z | Reconciliation in progress |
 | Kustomization | flux-system | hindsight | Not ready | main@36f470b | 2026-09-04T21:56:31Z | dependency 'flux-system/llm' is not ready |
 | Kustomization | flux-system | image-automation | Not ready | main@190b364 | 2026-09-04T21:54:57Z | Reconciliation in progress |
-| Kustomization | flux-system | infra-crew | Not ready | main@9d9d3f9 | 2026-09-04T21:56:32Z | dependency 'flux-system/alerts-github' revision is not up to date |
+| Kustomization | flux-system | agent-workforce | Not ready | main@9d9d3f9 | 2026-09-04T21:56:32Z | dependency 'flux-system/alerts-github' revision is not up to date |
 | Kustomization | flux-system | llm | Not ready | main@36f470b | 2026-09-04T21:56:31Z | dependency 'flux-system/estate-db-migrate' is not ready |
 | Kustomization | flux-system | notify | Not ready | main@e9930b6 | 2026-09-04T21:50:10Z | Reconciliation in progress |
 | Kustomization | flux-system | observability | Not ready | main@36f470b | 2026-09-04T21:56:31Z | dependency 'flux-system/estate-db-migrate' is not ready |

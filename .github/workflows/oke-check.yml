@@ -615,10 +615,10 @@ jobs:
           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
         run: bin/idp-kini-state --json
 
-  infra-crew:
-    # crew#729 step 3: is the infrastructure crew taking its queue? Read from outside the cluster:
+  agent-workforce:
+    # crew#729 step 3: is the agent workforce taking its queue? Read from outside the cluster:
     # the board through the estate App's ticket-verifier lane (issues), and Langfuse through the
-    # project keys in the vault. bin/idp-infra-crew-drill; drills/catalogue.yaml row infra-crew.
+    # project keys in the vault. bin/idp-agent-workforce-drill; drills/catalogue.yaml row agent-workforce.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -638,7 +638,7 @@ jobs:
           domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           oci_region: ${{ vars.OCI_REGION }}
-      - name: bin/idp-infra-crew-drill
+      - name: bin/idp-agent-workforce-drill
         env:
           OCI_CI: "1"
           OCI_CLI_AUTH: security_token
@@ -648,13 +648,13 @@ jobs:
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
           set -o pipefail
-          tok=$(bin/idp-github-app token ticket-verifier 2>&1) || { echo "BLIND   infra-crew  no App token: ${tok:0:160}"; exit 2; }
+          tok=$(bin/idp-github-app token ticket-verifier 2>&1) || { echo "BLIND   agent-workforce  no App token: ${tok:0:160}"; exit 2; }
           echo "::add-mask::$tok"
           pk=$(bin/idp-cloud secret get langfuse-init-public-key 2>/dev/null || true)
           sk=$(bin/idp-cloud secret get langfuse-init-secret-key 2>/dev/null || true)
           [ -n "$sk" ] && echo "::add-mask::$sk"
-          GH_TOKEN="$tok" LANGFUSE_PUBLIC_KEY="$pk" LANGFUSE_SECRET_KEY="$sk" bin/idp-infra-crew-drill 2>&1 | tee drill.out
-          printf '### infra-crew\n```\n%s\n```\n' "$(cat drill.out)" >> "$GITHUB_STEP_SUMMARY"
+          GH_TOKEN="$tok" LANGFUSE_PUBLIC_KEY="$pk" LANGFUSE_SECRET_KEY="$sk" bin/idp-agent-workforce-drill 2>&1 | tee drill.out
+          printf '### agent-workforce\n```\n%s\n```\n' "$(cat drill.out)" >> "$GITHUB_STEP_SUMMARY"
 
   telemetry-coverage:
     # crew#320 / LAW 50: coverage is a backend query, never a file scan. The cluster diffs Running

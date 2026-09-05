@@ -249,6 +249,6 @@ nav:
       - Merge queue (hands-free landing): runbooks/merge-queue.md
       - Estate clock: runbooks/dagster.md
       - Estate inventory: runbooks/estate-inventory.md
-      - Infrastructure crew: runbooks/infra-crew.md
-      - Infrastructure crew identity: runbooks/infra-crew-identity.md
+      - Infrastructure crew: runbooks/agent-workforce.md
+      - Infrastructure crew identity: runbooks/agent-workforce-identity.md
       - Otto's Telegram webhook: runbooks/otto-telegram-webhook.md
