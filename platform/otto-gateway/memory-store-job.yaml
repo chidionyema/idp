@@ -1,0 +1,119 @@
+# The one-time migration that gives Otto a memory it can read in under a second.
+#
+# Until 2026-09-05 the answering lane read memory by calling hindsight's
+# /memories/recall and waiting. That call was traced on this cluster the same day:
+# 31.87 seconds for one question, 34.77 at a lower budget, and no language model
+# anywhere on the path -- the time is a local cross-encoder scoring about a hundred
+# candidates inside a container capped at one CPU. The client gave up at ten
+# seconds, so not one recall completed all day and every answer was composed with
+# no memory at all.
+#
+# hermes-v2 splits that in two: the synchronous read is now pgvector plus Postgres
+# full-text search fused by reciprocal rank fusion, over otto_facts in the estate's
+# own database (otto/memory/fast_recall.py), and hindsight keeps the asynchronous
+# work it is good at -- entity extraction, consolidation, the knowledge graph --
+# where taking half a minute costs nobody anything.
+#
+# This Job is what makes that store exist and stop being empty. Two steps, in order:
+#
+#   python -m otto.memory.migrate    creates otto_facts and its indexes, idempotent
+#   python -m otto.memory.backfill   copies hindsight's existing memories across
+#
+# Both are safe to repeat. The migration records what it has applied; the backfill
+# keeps each hindsight memory's own id as the fact id and skips a row that is
+# already there, so an interrupted run is simply re-run.
+#
+# A Job is immutable once created, so re-running this means changing the name below
+# (the -1 suffix) in a commit. That is deliberate: a migration that silently re-runs
+# on every reconcile is not a migration, it is a cron job nobody chose.
+#
+# If this never runs, nothing breaks: the read path finds no store, returns nothing,
+# and the lane answers exactly as it did before while hindsight keeps every write.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: otto-memory-store-1
+  namespace: otto-gateway
+  labels:
+    app.kubernetes.io/name: otto-memory-store
+    app.kubernetes.io/part-of: idp
+  annotations:
+    # The catalogue entity this workload belongs to; the gateway's own entity owns
+    # its migration rather than the migration being a thing nobody has heard of.
+    backstage.io/kubernetes-id: otto-gateway
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 3
+  # Several hundred memories, one embedding-free write each, plus the paged reads
+  # from hindsight. Twenty minutes is generous and is a hard stop, so a run that
+  # hangs against a slow dependency cannot sit in the namespace forever.
+  activeDeadlineSeconds: 1200
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: otto-memory-store
+        app.kubernetes.io/part-of: idp
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      priorityClassName: platform-batch
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: migrate
+          # The same image the gateway runs, so the migration and the code that
+          # reads the schema can never be two different versions of otto/memory.
+          # The tag carries the kustomization's $imagepolicy marker by name.
+          image: ghcr.io/chidionyema/hermes-agent
+          workingDir: /app/estate
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              # libpq's own variables rather than one URL: the password is read from
+              # a mounted file and may contain characters a URL would need escaped.
+              # The estate's admission policy refuses a secret delivered as pod
+              # environment, so the file is the mount and this line is the join.
+              PGPASSWORD=$(cat /run/secrets/otto-gateway-db/POSTGRES_PASSWORD)
+              export PGHOST PGPORT PGUSER PGDATABASE PGPASSWORD
+              python -m otto.memory.migrate
+              python -m otto.memory.backfill
+          env:
+            - { name: PGHOST, value: estate-rw.estate-db.svc.cluster.local }
+            - { name: PGPORT, value: "5432" }
+            - { name: PGUSER, value: otto_gateway }
+            - { name: PGDATABASE, value: otto_gateway }
+            # Where the memories being copied across are read from. Same row and
+            # same bank the gateway retains into, so this copies the estate's own
+            # memory rather than someone else's.
+            - { name: OTTO_MEMORY_HINDSIGHT_URL, value: "http://hindsight-api.hindsight.svc:8888" }
+            - { name: OTTO_MEMORY_BANK, value: "hermes" }
+            # A page of memories per request, and a minute of patience per page --
+            # hindsight's list endpoint is a plain database read, unlike its recall.
+            - { name: OTTO_MEMORY_BACKFILL_PAGE_SIZE, value: "200" }
+            - { name: OTTO_MEMORY_BACKFILL_TIMEOUT_S, value: "60" }
+            # LAW 50: the run's own log lines reach the estate collector like every
+            # other workload's, so a failed migration is visible without kubectl.
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            - { name: PYTHONUNBUFFERED, value: "1" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: db-password, mountPath: /run/secrets/otto-gateway-db, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: db-password
+          secret: { secretName: otto-gateway-db }
+        - name: tmp
+          emptyDir: {}
