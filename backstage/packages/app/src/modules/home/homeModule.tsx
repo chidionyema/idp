@@ -67,6 +67,19 @@ const reportsPage = PageBlueprint.make({
   },
 });
 
+// /investigate (founder 2026-09-05: "no i would need to be able to aks it fron telegrn and
+// backstage also"): ask HolmesGPT a question in plain English and read what it found. The other
+// front door onto the same investigator is the ask_holmes tool on the estate MCP server, which
+// is how Otto answers it on Telegram. Listed as a founder surface in
+// backstage/founder/catalog-info.yaml so the crew#401 gate and the login drill carry it.
+const investigatePage = PageBlueprint.make({
+  name: 'investigate',
+  params: {
+    path: '/investigate',
+    loader: () => import('./Investigate').then(m => <m.Investigate />),
+  },
+});
+
 export const homeModule = createFrontendModule({
   pluginId: 'home',
   extensions: [
@@ -76,5 +89,6 @@ export const homeModule = createFrontendModule({
     toolsPage,
     opsPage,
     reportsPage,
+    investigatePage,
   ],
 });

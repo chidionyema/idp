@@ -682,6 +682,30 @@ spec:
   owner: group:default/platform
   system: system:default/estate
 ---
+# Founder 2026-09-05, on HolmesGPT: "no i would need to be able to aks it fron telegrn and
+# backstage also". This is the Backstage half; the Telegram half is the ask_holmes tool on the
+# estate MCP server, which Otto reaches over the same agentgateway he already reads estate state
+# through. One investigator, two doors.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-investigate
+  title: "Investigate: ask what is wrong and why"
+  description: "Ask the estate's investigator a question in plain English and it reads the pods, events, logs and metrics for itself before answering. It has no shell and no internet access and changes nothing, so it is safe to ask anything. The same investigator answers Otto on Telegram."
+  annotations:
+    estate/group: "Watch"
+    idp/updated-by: "backstage/packages/app/src/modules/home/Investigate.tsx ships with the portal image; the investigator is HolmesGPT in platform/robusta, reached through the /holmes proxy endpoint in backstage/app-config.yaml"
+  tags: [founder]
+  links:
+    - title: "Open"
+      url: "https://catalogue.${ESTATE_ZONE}/investigate"
+      icon: dashboard
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
+---
 # crew#684 (founder 2026-09-01: "can we automate all reports, need report tab in Backstage"): every
 # report the estate writes on a clock, on one page, each dated and red when it is late.
 apiVersion: backstage.io/v1alpha1
