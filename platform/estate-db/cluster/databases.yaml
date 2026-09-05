@@ -123,6 +123,17 @@ spec:
   name: otto_gateway
   owner: otto_gateway
   ensure: present
+  # Otto's fact store is a pgvector table (hermes-v2 otto/memory/migrations/0001_facts_core.sql).
+  # pgvector is not a trusted extension, so `otto_gateway` cannot CREATE EXTENSION it however the
+  # role is granted -- only a superuser can, which is exactly why the hindsight Database above
+  # carries the same three lines. The operator issues the CREATE; the migration's own
+  # `CREATE EXTENSION IF NOT EXISTS vector` then finds it present and does nothing, which is a
+  # notice rather than a permission error. Without this the migration Job fails on its first
+  # statement and the read path stays empty.
+  extensions:
+    - name: vector
+      ensure: present
+      schema: public
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
