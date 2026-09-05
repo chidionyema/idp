@@ -139,7 +139,7 @@ spec:
                 # name it does not have). The verifier runs on a different alias from the builder so it
                 # never grades with the builder's brain. `embed` is the router's embedding row.
                 - { name: LITELLM_BASE_URL, value: "http://litellm.llm.svc:4000" }
-                - { name: AGENT_WORKFORCE_MODEL, value: "minimax" }
+                - { name: AGENT_WORKFORCE_MODEL, value: "deepseek" }
                 # `fast` since 2026-09-04: the deepseek lane answers 401 at the vendor and its row
                 # has left platform/llm/config.yaml, so this verifier had no model at all.
                 - { name: AGENT_WORKFORCE_VERIFIER_MODEL, value: "fast" }

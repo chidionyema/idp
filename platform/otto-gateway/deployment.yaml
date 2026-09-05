@@ -196,7 +196,7 @@ spec:
             # this estate can never call: it holds no Anthropic API key by decision, because
             # Claude capacity here is the Pro Max subscription reached through `claude -p`.
             # Leaving the default in place is what routed every message to needs_human.
-            - { name: OTTO_ROUTER_LANE_JUDGMENT_MODEL, value: "minimax" }
+            - { name: OTTO_ROUTER_LANE_JUDGMENT_MODEL, value: "deepseek" }
             # `gemini`, not `fast`: otto/router/config.py derives a lane's family from an
             # explicit map (_DEFAULT_MODEL_FAMILIES) and refuses any model absent from it --
             # "policy defect: model 'fast' is in no family mapping", logged as

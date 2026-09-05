@@ -230,7 +230,7 @@ spec:
                 - name: LITELLM_BASE_URL
                   value: "http://litellm.llm.svc.cluster.local:4000/v1"
                 - name: OTTO_ROUTER_LANE_JUDGMENT_MODEL
-                  value: "minimax"
+                  value: "deepseek"
                 # gemini, since 2026-09-05 13:30Z. The two readings above that ruled it out ("not served",
                 # "empty credit") were the otto router key's allowlist (kimi, minimax, deepseek) refusing
                 # it with 403, not the router. Measured through the router with its own key: gemini, fast,
