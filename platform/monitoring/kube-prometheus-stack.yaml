@@ -88,6 +88,15 @@ spec:
         nodeExporterAlerting: false
         nodeExporterRecording: false
         windows: false
+      # Ceilings above reservations, deliberately (founder 2026-09-05, measured: the nodes
+      # were reserving 92% of their CPU while using 31%, and prometheus sat at 447Mi of a
+      # hard 768Mi). The reservation is what the cluster pays for and what forces a new
+      # node; the ceiling only bounds what a pod may take from capacity already bought and
+      # idle, so raising it costs nothing. The trade this makes is real and was accepted
+      # with the numbers in front of him: these pods are Burstable now rather than
+      # Guaranteed, so under genuine node memory pressure the kubelet evicts them before a
+      # Guaranteed pod. An eviction is recoverable and visible; an out-of-memory kill at a
+      # 768Mi ceiling is a silent Prometheus with a hole in its history.
     prometheusOperator:
       # No admission webhook: one less cert Job and one less hostile row for the restricted
       # profile; PrometheusRule syntax is checked by tests/ before it is merged.
@@ -105,7 +114,7 @@ spec:
     kube-state-metrics:
       resources:
         requests: { cpu: 20m, memory: 96Mi }
-        limits: { cpu: 20m, memory: 96Mi }
+        limits: { cpu: 100m, memory: 192Mi }
     alertmanager:
       enabled: true
       alertmanagerSpec:
@@ -114,7 +123,7 @@ spec:
         configSecret: alertmanager-telegram
         resources:
           requests: { cpu: 40m, memory: 128Mi }
-          limits: { cpu: 40m, memory: 128Mi }
+          limits: { cpu: 200m, memory: 256Mi }
     prometheus:
       enabled: true
       prometheusSpec:
@@ -130,7 +139,10 @@ spec:
         scrapeConfigSelectorNilUsesHelmValues: false
         resources:
           requests: { cpu: 200m, memory: 768Mi }
-          limits: { cpu: 200m, memory: 768Mi }
+          # Start-up replays the write-ahead log and compaction runs periodically; both want
+          # several times the 34m this idles at. Capped at 200m it did not fail, it simply
+          # took longer -- which is how a readiness probe kills a healthy Prometheus.
+          limits: { cpu: 1000m, memory: 1536Mi }
         storageSpec:
           volumeClaimTemplate:
             spec:

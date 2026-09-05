@@ -47,7 +47,10 @@ spec:
     fullnameOverride: blackbox
     resources:
       requests: { cpu: 20m, memory: 48Mi }
-      limits: { cpu: 20m, memory: 48Mi }
+      # Ceiling above the reservation for the same reason as the stack's own pods, and with
+      # the same trade: measured at 9m of 20m and 28Mi of 48Mi on 2026-09-05, so a probe
+      # burst had nowhere to go.
+      limits: { cpu: 100m, memory: 96Mi }
     # The chart sets the rest of the restricted profile; the seccomp profile is the one field
     # it leaves out (kyverno render, restrict-seccomp-strict).
     podSecurityContext:
