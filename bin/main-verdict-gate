@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""main-verdict-gate: a workflow that grades main never cancels main's own run.
+
+    bin/main-verdict-gate WORKFLOW.yml [...]      default: every workflow in this repository
+
+Measured 2026-09-05, `gh run list --branch main --workflow ci.yml -L 12`: nine cancelled, two
+failures, one success. `concurrency.cancel-in-progress: true` applied to every ref, so each merge
+and each image-update commit cancelled the run grading the commit before it. main is the only
+place offline-gate runs, so the whole AGENTS.md rule table was graded once in twelve pushes and
+the canary's six admission refusals sat on main for an hour behind three cancelled runs.
+
+The trade is kept where it was right (crew#516): a superseded run on a pull request is waste and
+is still cancelled. So, for a workflow that pushes on main and groups its concurrency by ref:
+
+  cancel-in-progress: true        FAIL  main's verdict is cancelled by the next commit
+  cancel-in-progress: false       FAIL  crew#516's stale duplicates come back on every branch
+  an expression excluding main    ok    e.g. ${{ github.ref != 'refs/heads/main' }}
+
+Prints one line per finding, exit 1 on any, exit 0 clean. Report mode only: it never edits.
+LAW 46: the checkout is computed from this script, never named.
+"""
+import glob
+import os
+import re
+import sys
+
+import yaml
+
+
+# The two contexts the trade is about: the run grading main, and a superseded pull-request run.
+MAIN_PUSH = {"github.ref": "refs/heads/main", "github.ref_name": "main", "github.event_name": "push"}
+PULL_REQUEST = {"github.ref": "refs/pull/1/merge", "github.ref_name": "1/merge",
+                "github.event_name": "pull_request"}
+_OPS = [("&&", " and "), ("||", " or "), ("!=", " != "), ("==", " == ")]
+
+
+def evaluate(expr, ctx):
+    """Evaluate a `${{ ... }}` expression of ==, !=, &&, ||, ! over the three context keys.
+    None when the expression uses anything else, which the caller reports rather than guesses."""
+    e = str(expr).strip()
+    if e.startswith("${{") and e.endswith("}}"):
+        e = e[3:-2]
+    for key, val in sorted(ctx.items(), key=lambda kv: -len(kv[0])):
+        e = e.replace(key, repr(val))
+    for src, dst in _OPS:
+        e = e.replace(src, dst)
+    e = re.sub(r"!(?!=)", " not ", e)
+    if re.search(r"[A-Za-z_][A-Za-z_.]*", re.sub(r"'[^']*'", "", e).replace("and", "").replace("or", "").replace("not", "")):
+        return None
+    try:
+        return bool(eval(e, {"__builtins__": {}}, {}))  # noqa: S307 -- literals and operators only
+    except Exception:
+        return None
+
+
+def findings(path):
+    try:
+        doc = yaml.safe_load(open(path)) or {}
+    except yaml.YAMLError as e:
+        return [f"{path}: unparseable workflow ({e.__class__.__name__})"]
+    c = doc.get("concurrency")
+    if not isinstance(c, dict) or "github.ref" not in str(c.get("group", "")):
+        return []
+    on = doc.get(True) or doc.get("on") or {}   # `on:` parses to the boolean True
+    push = (on if isinstance(on, dict) else {}).get("push") or {}
+    if "main" not in ((push if isinstance(push, dict) else {}).get("branches") or []):
+        return []
+    cancel = c.get("cancel-in-progress")
+    if cancel is True:
+        return [f"{path}: cancel-in-progress is true for every ref, so the next commit to main "
+                "cancels the run grading this one; exempt main with an expression"]
+    if cancel is False or cancel is None:
+        return [f"{path}: cancel-in-progress is off for every ref, so stale pull-request runs "
+                "queue again (crew#516); cancel off main, keep main"]
+    on_main = evaluate(cancel, MAIN_PUSH)
+    on_pr = evaluate(cancel, PULL_REQUEST)
+    if on_main is None or on_pr is None:
+        return [f"{path}: cancel-in-progress expression is not one this gate can evaluate: {cancel}"]
+    if on_main:
+        return [f"{path}: cancel-in-progress is true on a push to main: {cancel}"]
+    if not on_pr:
+        return [f"{path}: cancel-in-progress is false on a pull request (crew#516): {cancel}"]
+    return []
+
+
+def main(argv):
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    paths = argv or sorted(glob.glob(os.path.join(root, ".github", "workflows", "*.yml")))
+    out = [f for p in paths for f in findings(p)]
+    for line in out:
+        print(line)
+    print(f"{'FAIL' if out else 'ok'}  main-verdict  {len(paths)} workflows, {len(out)} findings")
+    return 1 if out else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
