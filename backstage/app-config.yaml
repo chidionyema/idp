@@ -162,6 +162,18 @@ proxy:
       changeOrigin: true
       allowedMethods: ['GET']
 
+    # The Investigate page (/investigate) asks HolmesGPT a question in plain English and shows
+    # what it found. HolmesGPT is an in-cluster Service on port 80 (platform/robusta), so the
+    # browser cannot reach it and must not: the backend's proxy plugin is the door, the same one
+    # /estate-state uses. POST only for /api/chat -- the page sends {"ask": "..."} and reads back
+    # {"analysis": ...}. No credential: the Service is inside the namespace fence
+    # (platform/ns-fences/allowances.yaml declares backstage -> robusta both ways), and the
+    # portal itself sits behind the estate's one login.
+    '/holmes':
+      target: 'http://robusta-holmes.robusta.svc.cluster.local'
+      changeOrigin: true
+      allowedMethods: ['POST']
+
 # Reference documentation http://backstage.io/docs/features/techdocs/configuration
 # Note: After experimenting with basic setup, use CI/CD to generate docs
 # and an external cloud storage when deploying TechDocs for production use-case.

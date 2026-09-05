@@ -79,6 +79,10 @@ spec:
             # The self-hosted store takes no credential, so there is nothing here but a URL.
             - { name: ESTATE_MEMORY_URL, value: "http://hindsight-api.hindsight.svc:8888" }
             - { name: ESTATE_MEMORY_BANK, value: hermes }   # one bank, or context stops crossing surfaces
+            # The investigator behind the ask_holmes tool (mcp/plugins/estate_holmes.py). Port 80
+            # on this Service forwards to Holmes' own 5050; the fence for this conversation is
+            # declared both ways in platform/ns-fences/allowances.yaml.
+            - { name: ESTATE_HOLMES_URL, value: "http://robusta-holmes.robusta.svc.cluster.local" }
           volumeMounts:
             - { name: data, mountPath: /data, readOnly: true }
             - { name: tmp, mountPath: /tmp }   # crew#458: python tempfile needs one under readOnlyRootFilesystem

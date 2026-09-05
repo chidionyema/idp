@@ -111,7 +111,11 @@ overrides:
 # observability (LAW 50); those two are in the generator, not repeated per namespace here.
 flows:
   backstage:
-    egress: [dagster, identity, kyverno]
+    # robusta: the portal's Investigate page asks HolmesGPT a question through the backend's
+    # own proxy plugin, so the conversation is backstage -> robusta and it is declared on both
+    # sides. On 2026-09-05 hindsight was cut off from its own database because only one side
+    # of the same conversation had been written down; that is not repeated here.
+    egress: [dagster, identity, kyverno, robusta]
     ingress_from: [edge]
   guacamole:
     egress: [identity]
@@ -122,7 +126,11 @@ flows:
     egress: [identity]
     ingress_from: [edge]
   hermes-agent:
-    egress: [hindsight, observability]
+    # mcp: Otto is the estate's Telegram door, and the agentgateway in the mcp namespace is the
+    # one place he reads estate state and now asks HolmesGPT (mcp/plugins/estate_holmes.py).
+    # The key for it is already mounted (platform/hermes-agent/mcp-key.yaml, ESTATE_MCP_KEY);
+    # hermes-v2 config.yaml names the server. Both directions declared, as everywhere else.
+    egress: [hindsight, observability, mcp]
     ingress_from: [edge]
   agent-workforce:
     egress: [observability, llm]
@@ -135,8 +143,11 @@ flows:
     egress_internet: [443]
     ingress_from: [edge, healing, agent-workforce, mcp, hindsight]
   mcp:
-    egress: [observability, hindsight]
-    ingress_from: [edge]
+    # robusta: the estate MCP server hosts the ask_holmes tool (mcp/plugins/estate_holmes.py),
+    # which is how an agent -- an assistant session, Otto on Telegram -- asks the investigator
+    # a question. Both directions declared, as above.
+    egress: [observability, hindsight, robusta]
+    ingress_from: [edge, hermes-agent]
   monitoring:
     egress: [guacamole, robusta]
     ingress_from: [observability, edge]
@@ -178,7 +189,10 @@ flows:
     # about is an AI tool that silently cannot reach its model because the namespace is default-deny.
     egress: [llm, monitoring, observability]
     egress_internet: [443]
-    ingress_from: [monitoring]
+    # mcp and backstage are the two front doors onto the investigator: the ask_holmes MCP tool
+    # (agents, and Otto on Telegram through it) and the portal's Investigate page. monitoring is
+    # the alert path that was already here.
+    ingress_from: [monitoring, mcp, backstage]
   event-bus:
     ingress_from: [otto-gateway, commerce]
   estate-db:

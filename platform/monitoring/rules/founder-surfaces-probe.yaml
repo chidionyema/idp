@@ -31,6 +31,7 @@ spec:
         - https://catalogue.${ESTATE_ZONE}/ops
         - https://catalogue.${ESTATE_ZONE}/pair
         - https://catalogue.${ESTATE_ZONE}/reports
+        - https://catalogue.${ESTATE_ZONE}/investigate
         - https://catalogue.${ESTATE_ZONE}/screen/
         - https://catalogue.${ESTATE_ZONE}/screen/#dagster
         - https://catalogue.${ESTATE_ZONE}/screen/#ollama
