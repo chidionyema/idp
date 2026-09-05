@@ -26,10 +26,17 @@ the identity area of the cluster. Identity questions are gateway questions
 
 ## One-time cleanup after the swap lands
 
-The evicted Metabase leaves one thing behind (prune is off in this directory): the
-PersistentVolumeClaim `pgdata-metabase-db-0` in observability, holding the dead Metabase
-database. The founder deletes it when he applies the change: `kubectl -n observability delete
-pvc pgdata-metabase-db-0`. Nothing references it after the swap.
+The evicted Metabase left one thing behind: the PersistentVolumeClaim `pgdata-metabase-db-0` in
+observability, holding the dead Metabase database. Flux cannot prune it -- the claim came from the
+StatefulSet's volumeClaimTemplate, so it was never in Flux's inventory, and prune is off in this
+directory besides (idp#648).
+
+This runbook used to ask the founder to delete it by hand. It no longer does:
+`platform/observability/metabase-volume-removal.yaml` is a Job that deletes exactly that one claim,
+through an identity whose entire right is `get` and `delete` on the single resource name
+`pgdata-metabase-db-0` in this one namespace. Running it again is boring -- a claim that is already
+gone is success, not an error -- so the Job carries the Flux force annotation and re-runs safely
+whenever the manifest changes. Nothing references the claim after the swap.
 
 ## Human step
 

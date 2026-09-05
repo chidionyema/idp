@@ -221,14 +221,18 @@ def test_probe_targets_are_exactly_the_founder_surfaces_and_the_module_accepts_4
 def test_estate_rules_carry_founder_surface_down_and_the_cp14_pvc_alert():
     pr = one("platform/monitoring/rules/estate.yaml", "PrometheusRule", "estate")
     rules = {r["alert"]: r for g in pr["spec"]["groups"] for r in g["rules"]}
-    assert set(rules) == {
+    # A superset check, not an equality one. This assertion used to pin the exact set of alert
+    # names, so every alert added to the estate failed a test about alerts that already existed --
+    # a test reading the estate's own file back to itself rather than judging the world (founder,
+    # 2026-09-04). What it is actually for is that these six exist and are shaped correctly.
+    assert {
         "FounderSurfaceDown",
         "MacScreenSharingOff",
         "PersistentVolumeAlmostFull",
         "GatewayRefusals",
         "GatewayMetricsAbsent",
         "OttoDown",
-    }
+    } <= set(rules)
     assert (
         rules["FounderSurfaceDown"]["expr"]
         == 'probe_success{job="founder-surfaces"} == 0'

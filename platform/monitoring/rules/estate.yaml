@@ -35,14 +35,14 @@ spec:
     - name: estate.otto
       rules:
         - alert: OttoDown
-          expr: kube_deployment_status_replicas_available{namespace="hermes-agent", deployment="hermes-agent-gateway"} == 0
+          expr: kube_deployment_status_replicas_available{namespace="otto-gateway", deployment="otto-gateway"} == 0
           for: 10m
           labels:
             severity: critical
             owner: idp
           annotations:
             summary: "Otto (the Architect gateway) has no running pod"
-            description: "hermes-agent-gateway has had zero available replicas for 10 minutes: Otto answers nobody on Telegram. On 2026-08-29 the pod sat at ContainerCreating for 4h behind a missing sidecar secret and only a break-glass run noticed. Read it with: gh workflow run oke-check.yml -f mode=break-glass -f playbook=architect-doctor (rows pods, externalsecrets, alerts-firing)."
+            description: "otto-gateway has had zero available replicas for 10 minutes: Otto answers nobody on Telegram. It watched hermes-agent-gateway until 2026-09-05, which stopped being Otto's door when the Universal Event Gateway took the channel over -- an alert pointed at a workload that no longer serves the surface is an instrument nobody can act on (LAW 28). On 2026-08-29 the old pod sat at ContainerCreating for 4h behind a missing sidecar secret and only a break-glass run noticed."
     - name: estate.gateway
       rules:
         - alert: GatewayRefusals
@@ -76,3 +76,23 @@ spec:
           annotations:
             summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is over 90% full"
             description: "{{ $value | humanizePercentage }} free on {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} for 10 minutes."
+    # Otto answering is a founder surface in its own right, and the one the founder-surfaces probe
+    # above cannot grade: that probe fetches /healthz, which stayed 200 through the whole of the
+    # 2026-09-05 silence. This one grades the end-to-end answer probe beside the door
+    # (platform/otto-gateway/answer-probe.yaml), which fails its Job when any lane the door routes
+    # to cannot produce a completion.
+    - name: estate.otto
+      rules:
+        - alert: OttoCannotAnswer
+          expr: kube_job_status_failed{namespace="otto-gateway", job_name=~"otto-answer-probe.*"} > 0
+          for: 15m
+          labels:
+            severity: critical
+            owner: idp
+          annotations:
+            summary: "Otto cannot produce an answer"
+            description: >-
+              The end-to-end answer probe in otto-gateway has failed for 15 minutes: at least one
+              model lane the door routes to did not return a completion, so a message to the bot
+              is answered with silence. The failed Job's log names the lane and the router's own
+              refusal.

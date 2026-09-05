@@ -16,6 +16,7 @@ resources:
   - superset-httproute.yaml
   - metabase-recovery-dump.yaml
   - superset-boardroom-seed.yaml
+  - metabase-volume-removal.yaml
   - superset-memory-secret.yaml
   - superset-memory-seed.yaml
 configMapGenerator:

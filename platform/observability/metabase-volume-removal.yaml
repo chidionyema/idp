@@ -1,0 +1,156 @@
+# The last thing Metabase left behind, removed by the deploy instead of by the founder.
+#
+# Decision 0018 evicted Metabase and its runbook carried one step the estate could not do for
+# itself: "the founder deletes it when he applies the change: kubectl -n observability delete pvc
+# pgdata-metabase-db-0". Two standing rules make that step wrong rather than merely untidy --
+# nothing may be left waiting on the founder, and he does not open a terminal to operate his own
+# estate. It is also a disk he pays for every month to hold a database nothing reads.
+#
+# Flux cannot prune it. The claim was created by the StatefulSet's volumeClaimTemplate, so it was
+# never in Flux's inventory to begin with, and prune is disabled in this directory anyway (idp#648:
+# a namespace dropped from git would take the cluster's observability with it). Deleting it needs
+# an actor with the right to delete that one object, which is what this is.
+#
+# The right is as small as the job: one verb, one resource kind, one resource NAME, in one
+# namespace. This identity cannot touch any other claim in observability, and holds nothing at all
+# anywhere else.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: metabase-volume-removal
+  namespace: observability
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: metabase-volume-removal
+  namespace: observability
+rules:
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
+    resourceNames: [pgdata-metabase-db-0]
+    verbs: [get, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: metabase-volume-removal
+  namespace: observability
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: metabase-volume-removal }
+subjects:
+  - kind: ServiceAccount
+    name: metabase-volume-removal
+    namespace: observability
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: metabase-volume-removal-script
+  namespace: observability
+data:
+  remove.py: |
+    """Delete one named PersistentVolumeClaim, and treat 'already gone' as success."""
+    import json
+    import os
+    import ssl
+    import sys
+    import urllib.error
+    import urllib.request
+
+    NS = os.environ.get("TARGET_NAMESPACE", "observability")
+    NAME = os.environ.get("TARGET_CLAIM", "pgdata-metabase-db-0")
+    ROOT = "/var/run/secrets/kubernetes.io/serviceaccount"
+    API = "https://kubernetes.default.svc/api/v1/namespaces/%s/persistentvolumeclaims/%s" % (NS, NAME)
+
+    def call(method):
+        with open(ROOT + "/token", encoding="utf-8") as f:
+            token = f.read().strip()
+        req = urllib.request.Request(
+            API, method=method, headers={"Authorization": "Bearer " + token}
+        )
+        ctx = ssl.create_default_context(cafile=ROOT + "/ca.crt")
+        with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
+            return json.load(r)
+
+    def main():
+        try:
+            claim = call("GET")
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                # The steady state after the first successful run, and the state on any cluster
+                # that never ran Metabase. Re-running this Job must be boring, not an error.
+                print("ok metabase-volume-removal claim=%s/%s already gone" % (NS, NAME))
+                return 0
+            raise
+        size = claim.get("spec", {}).get("resources", {}).get("requests", {}).get("storage", "?")
+        try:
+            call("DELETE")
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                print("ok metabase-volume-removal claim=%s/%s already gone" % (NS, NAME))
+                return 0
+            raise
+        print("ok metabase-volume-removal deleted claim=%s/%s size=%s" % (NS, NAME, size))
+        return 0
+
+    if __name__ == "__main__":
+        sys.exit(main())
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: metabase-volume-removal
+  namespace: observability
+  annotations:
+    # Jobs are immutable, so Flux recreates this one in place when the manifest changes rather
+    # than failing the apply; the script above is written to be safe to run again.
+    kustomize.toolkit.fluxcd.io/force: Enabled
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 120
+  ttlSecondsAfterFinished: 604800
+  template:
+    spec:
+      serviceAccountName: metabase-volume-removal
+      automountServiceAccountToken: true
+      restartPolicy: Never
+      priorityClassName: platform-batch
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: remove
+          # Standard library only -- no kubectl image introduced for one API call (LAW 43).
+          image: docker.io/library/python:3.11-slim
+          command: ["python3", "/scripts/remove.py"]
+          env:
+            - name: TARGET_NAMESPACE
+              value: "observability"
+            - name: TARGET_CLAIM
+              value: "pgdata-metabase-db-0"
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
+          resources:
+            requests: { cpu: "0", memory: 64Mi }
+            limits: { cpu: 25m, memory: 64Mi }
+      volumes:
+        - name: scripts
+          configMap:
+            name: metabase-volume-removal-script
+            defaultMode: 0o555
+        - name: tmp
+          emptyDir: {}
