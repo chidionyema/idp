@@ -110,6 +110,11 @@ overrides:
 # Every namespace additionally gets DNS egress to kube-system and OTLP egress to the collector in
 # observability (LAW 50); those two are in the generator, not repeated per namespace here.
 flows:
+  trivy-system:
+    # The operator and its scan jobs (scanJobsInSameNamespace: false, so they land here too) pull
+    # the vulnerability database from a public registry mirror (mirror.gcr.io); declared here so
+    # the fence still says yes the day this cluster runs a CNI that enforces it.
+    egress_internet: [443]
   backstage:
     # robusta: the portal's Investigate page asks HolmesGPT a question through the backend's
     # own proxy plugin, so the conversation is backstage -> robusta and it is declared on both
@@ -141,7 +146,7 @@ flows:
     # The router's whole job is calling a model vendor's API; declared here so the fence
     # still says yes on the day this cluster runs a CNI that enforces it.
     egress_internet: [443]
-    ingress_from: [edge, healing, agent-workforce, mcp, hindsight]
+    ingress_from: [edge, healing, agent-workforce, mcp, hindsight, otto-gateway]
   mcp:
     # robusta: the estate MCP server hosts the ask_holmes tool (mcp/plugins/estate_holmes.py),
     # which is how an agent -- an assistant session, Otto on Telegram -- asks the investigator
@@ -162,7 +167,13 @@ flows:
     egress: [observability, hindsight]
     ingress_from: [edge]
   otto-gateway:
-    egress: [observability, event-bus, estate-db, hindsight]
+    # llm is the estate's model router, and it is on the answering path twice over: the
+    # judgment and answer lanes, and (from 2026-09-05) the embedding call the memory
+    # engine's vector arm makes on every recall. The namespace's own policy had an
+    # egress rule for it already; the router's side did not name this namespace, so a
+    # default-deny would have refused the conversation at the far end -- the same
+    # one-direction-only defect recorded on the hindsight block below.
+    egress: [observability, event-bus, estate-db, hindsight, llm]
     # The answering lane calls api.telegram.org to deliver a reply, and the registration
     # reconciler calls the same host to keep the webhook pointed at this namespace's door.
     # Without this the fence is a silent gag on every answer Otto sends.

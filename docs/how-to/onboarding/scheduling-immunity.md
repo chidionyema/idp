@@ -13,7 +13,7 @@ will be enforced after the first zero-violation pass. The classes:
 | `balloon` | −1 | the pause pods in `platform/scheduling/balloon.yaml` and nothing else |
 
 **Do not touch the six.** The Kyverno policy `require-priority-class` refuses any of the six that
-drops the class; `tests/test_incident_crew539_radio_room_survives_node_swap.py` refuses a seventh.
+drops the class, and it is the only list: it judges what admission sees, not a copy kept by hand.
 
 **A new founder surface is a portal row.** `ping.yml` and oke-check's founder-links both read
 `backstage/founder/catalog-info.yaml`; add the URL there and it is probed from outside the

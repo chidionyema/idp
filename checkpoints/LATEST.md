@@ -12,3 +12,9 @@ wait ~10 min for the ExternalSecret, one router call with model kimi, report MEA
 Switching now (2026-09-03 04:1xZ) to record the founder's ruling "no agent can proceed without
 the estate snapshot" as docs/founder/estate-snapshot-is-mandatory.md on branch
 docs/founder-estate-snapshot-mandatory, then back to the Kimi wait.
+
+## RESUME HERE (2026-09-05 12:55Z, Headlamp)
+Headlamp credential prompt: the minted kubeconfig now carries the absolute oci path and SUPPRESS_LABEL_WARNING in its exec block (bin/idp-kube), and bin/idp-headlamp-mac links it into the desktop app store and ~/.kube/estate.yaml. PR fix/headlamp-exec-plugin.
+
+## RESUME HERE (2026-09-05 13:25Z, Otto lanes)
+Probe otto-answer-probe-29810160: bulk and verify lanes point at deepseek, which the router does not serve (400); Otto key allowlist was kimi,minimax,deepseek so gemini and embed were 403. PR fix/otto-lanes-gemini moves bulk+verify to gemini in the three lane files and sets the key rows in bin/idp-estate-seed to minimax,gemini,embed (agent-workforce: minimax,fast,embed). After merge: gh workflow run oke-check.yml -f mode=apply so idp-router-key updates the live keys.

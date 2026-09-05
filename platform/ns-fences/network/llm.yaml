@@ -98,3 +98,6 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: mcp
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: otto-gateway

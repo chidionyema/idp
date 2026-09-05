@@ -75,6 +75,18 @@ features:
         switches: [alerts-github, monitoring, monitoring-rules]
     default: enterprise
 
+  - name: vulnerability-scanning
+    title: Container image and cluster vulnerability scanning
+    why: "a buyer's engineer asks what CVEs are running today; this is the tool that answers with a report, not the gap they find themselves (crew#846)"
+    tiers:
+      - name: "on"
+        what: "Trivy Operator: a VulnerabilityReport per scanned image, read by bin/estate-security-scan"
+        switches: [trivy]
+      - name: "off"
+        what: "no image scanning; whichever check finds a CVE today is a diligence engineer, not the estate"
+        switches: []
+    default: "on"
+
   - name: workflows
     title: Durable workflow engine
     why: multi-step agent work survives a restart and is replayable

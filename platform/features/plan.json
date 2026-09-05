@@ -1,0 +1,254 @@
+{
+  "features": [
+    {
+      "name": "traces",
+      "tier": "enterprise",
+      "cpu": 4.1,
+      "memory_gb": 11.66,
+      "storage_gb": 0.0,
+      "title": "Langfuse (traces, prompts, evals, SSO) + SigNoz on ClickHouse (logs, metrics, spans) + the estate OTel collector",
+      "note": ""
+    },
+    {
+      "name": "logs-metrics-store",
+      "tier": "enterprise",
+      "cpu": 4.1,
+      "memory_gb": 11.66,
+      "storage_gb": 0.0,
+      "title": "SigNoz + ClickHouse, retention 3-7 days (retention is a tier knob, not a hand edit)",
+      "note": ""
+    },
+    {
+      "name": "alerting-healing",
+      "tier": "enterprise",
+      "cpu": 0.71,
+      "memory_gb": 3.16,
+      "storage_gb": 5.0,
+      "title": "Robusta runbooks + k8sgpt analyser + descheduler, alerts to Telegram and GitHub",
+      "note": ""
+    },
+    {
+      "name": "vulnerability-scanning",
+      "tier": "on",
+      "cpu": 0.15,
+      "memory_gb": 0.16,
+      "storage_gb": 0.0,
+      "title": "Trivy Operator: a VulnerabilityReport per scanned image, read by bin/estate-security-scan",
+      "note": ""
+    },
+    {
+      "name": "workflows",
+      "tier": "lean",
+      "cpu": 0,
+      "memory_gb": 0,
+      "storage_gb": 0,
+      "title": "Windmill: scripts, flows and schedules on Postgres, the chosen durable workflow engine",
+      "note": ""
+    },
+    {
+      "name": "agent-memory",
+      "tier": "enterprise",
+      "cpu": 0.05,
+      "memory_gb": 1.0,
+      "storage_gb": 0.0,
+      "title": "Hindsight API + its Postgres",
+      "note": ""
+    },
+    {
+      "name": "client-context",
+      "tier": "enterprise",
+      "cpu": 0.2,
+      "memory_gb": 0.5,
+      "storage_gb": 1,
+      "title": "the four context kinds (estate, catalog, constraint, workaround) served as MCP resources on the one door, ingested from the customer's git, the context API or a reader over a system they already run; design in docs/specs/client-context-ingest-and-session-runtime.md",
+      "note": "planned: typed floor, no manifests yet"
+    },
+    {
+      "name": "agent-session-runtime",
+      "tier": "platform-hosted",
+      "cpu": 0.5,
+      "memory_gb": 1,
+      "storage_gb": 5,
+      "title": "the session runs as a workload with a workload identity, reached from any device through the event gateway, the portal or a native app",
+      "note": "planned: typed floor, no manifests yet"
+    },
+    {
+      "name": "model-routing",
+      "tier": "enterprise",
+      "cpu": 0.14,
+      "memory_gb": 0.64,
+      "storage_gb": 0.0,
+      "title": "LiteLLM proxy with per-key budgets, fallbacks, spend in Langfuse",
+      "note": ""
+    },
+    {
+      "name": "agent-gateway",
+      "tier": "enterprise",
+      "cpu": 0.12,
+      "memory_gb": 0.41,
+      "storage_gb": 0.0,
+      "title": "agentgateway + estate MCP server",
+      "note": ""
+    },
+    {
+      "name": "hermes-agent",
+      "tier": "on",
+      "cpu": 0.1,
+      "memory_gb": 1.06,
+      "storage_gb": 5.0,
+      "title": "",
+      "note": ""
+    },
+    {
+      "name": "founder-screen",
+      "tier": "on",
+      "cpu": 0.2,
+      "memory_gb": 0.81,
+      "storage_gb": 0.0,
+      "title": "Guacamole behind IDCS SSO",
+      "note": ""
+    },
+    {
+      "name": "health-checks",
+      "tier": "enterprise",
+      "cpu": 0.1,
+      "memory_gb": 0.31,
+      "storage_gb": 0.0,
+      "title": "Healthchecks.io-style pinger with its own store",
+      "note": ""
+    },
+    {
+      "name": "autoscaling",
+      "tier": "lean",
+      "cpu": 0,
+      "memory_gb": 0,
+      "storage_gb": 0,
+      "title": "fixed node, no scaler (zealot rule: no paid scaling without a P95 >= 80 % proof)",
+      "note": ""
+    },
+    {
+      "name": "chaos-drills",
+      "tier": "enterprise",
+      "cpu": 0.25,
+      "memory_gb": 0.62,
+      "storage_gb": 0.0,
+      "title": "Chaos Mesh experiments + the hourly drill dispatcher",
+      "note": ""
+    },
+    {
+      "name": "science",
+      "tier": "on",
+      "cpu": 0.05,
+      "memory_gb": 0.12,
+      "storage_gb": 0.0,
+      "title": "",
+      "note": ""
+    },
+    {
+      "name": "staging",
+      "tier": "namespace",
+      "cpu": 0.07,
+      "memory_gb": 0.09,
+      "storage_gb": 0.0,
+      "title": "platform/staging/: namespace `staging`, dev-loop label, ResourceQuota ceiling (cpu 1, memory 2Gi, storage 2Gi, 0 public LBs)",
+      "note": ""
+    },
+    {
+      "name": "config-reload",
+      "tier": "on",
+      "cpu": 0.01,
+      "memory_gb": 0.06,
+      "storage_gb": 0.0,
+      "title": "",
+      "note": ""
+    },
+    {
+      "name": "dev-loop",
+      "tier": "on",
+      "cpu": 0,
+      "memory_gb": 0,
+      "storage_gb": 0,
+      "title": "mirrord agents confined to labelled namespaces (idp#678) + fast gate (idp#671)",
+      "note": ""
+    },
+    {
+      "name": "commerce",
+      "tier": "off",
+      "cpu": 0,
+      "memory_gb": 0,
+      "storage_gb": 0,
+      "title": "no commerce layer; whichever product needs money holds its own payment code, which is what this feature exists to end",
+      "note": ""
+    },
+    {
+      "name": "customer-identity",
+      "tier": "off",
+      "cpu": 0,
+      "memory_gb": 0,
+      "storage_gb": 0,
+      "title": "no customer identity layer; whichever product needs customers holds its own sign-in code, which is what this feature exists to end",
+      "note": ""
+    }
+  ],
+  "total": {
+    "cpu": 7.44,
+    "memory_gb": 23.55,
+    "storage_gb": 16.0
+  },
+  "depend_failures": [],
+  "switches_count": 40,
+  "switches": [
+    "alerts",
+    "alerts-github",
+    "alerts-secret",
+    "backstage",
+    "backstage-namespace",
+    "chaos",
+    "chaos-mesh",
+    "cluster-state",
+    "dns",
+    "drills",
+    "edge",
+    "estate-catalog",
+    "external-secrets",
+    "gateway-api-crds",
+    "guacamole",
+    "healing",
+    "healing-analyzer",
+    "healthchecks",
+    "hermes-agent",
+    "hindsight",
+    "identity",
+    "image-automation",
+    "kyverno",
+    "llm",
+    "mcp",
+    "metrics-server",
+    "monitoring",
+    "monitoring-rules",
+    "observability",
+    "priority-classes",
+    "prospector",
+    "prospector-platform",
+    "reloader",
+    "robusta",
+    "science",
+    "secret-store",
+    "spire",
+    "staging",
+    "tailscale",
+    "trivy"
+  ],
+  "reserved": {
+    "cpu": 0.3,
+    "memory_gb": 1.5
+  },
+  "node_today": {
+    "name": "today 6/24",
+    "ocpus": 6.0,
+    "memory_gb": 24.0,
+    "usd_month": 42.34,
+    "fits": false
+  },
+  "node_smallest": null
+}

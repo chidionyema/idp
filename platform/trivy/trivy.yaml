@@ -1,0 +1,92 @@
+# crew#846: the fourth question estate-security-scan asks. `git grep -il trivy origin/main --
+# 'platform/**' 'clusters/**'` returned nothing before this row, so no container image or cluster
+# vulnerability was ever scanned anywhere in the estate -- every VulnerabilityReport row
+# bin/estate-security-scan now reads (LAW 40, aquasecurity/trivy-operator, Apache-2.0) starts here.
+#
+# Only the vulnerability scanner runs. The chart also ships a config-audit, an RBAC-assessment, an
+# infra-assessment, a cluster-compliance and an SBOM-generation plugin; each is a second full scan
+# pass per image on a 6-core node, and config-audit and RBAC duplicate what Kyverno already refuses
+# at admission time (platform/kyverno) rather than reports after the fact. Turning one of those on
+# is a later row with its own reader, never a silent default.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: trivy-operator
+  namespace: trivy-system
+spec:
+  interval: 24h
+  url: https://aquasecurity.github.io/helm-charts/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: trivy-operator
+  namespace: trivy-system
+spec:
+  interval: 10m
+  timeout: 15m
+  install:
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3 }
+  chart:
+    spec:
+      chart: trivy-operator
+      version: 0.36.0
+      sourceRef:
+        kind: HelmRepository
+        name: trivy-operator
+  values:
+    operator:
+      replicas: 1
+      # Default 10: ten scan jobs at the 500m cpu limit below would ask for 5 of the node's 6
+      # cores at once, on top of everything else running. The estate scans opportunistically, not
+      # on a deadline, so a lower ceiling costs time, never correctness.
+      scanJobsConcurrentLimit: 2
+      # The chart's own default for the ephemeral scan-job container, typed here (not left to the
+      # chart) so `bin/idp-features plan` can see it: it only sums what a switch's manifests hold
+      # in git, never a chart's internal default it never rendered.
+      resources:
+        requests: { cpu: 100m, memory: 100Mi }
+        limits: { cpu: 500m, memory: 500Mi }
+      vulnerabilityScannerEnabled: true
+      exposedSecretScannerEnabled: false
+      configAuditScannerEnabled: false
+      rbacAssessmentScannerEnabled: false
+      infraAssessmentScannerEnabled: false
+      clusterComplianceEnabled: false
+    # The chart renders one ClusterComplianceReport per spec listed here even with the
+    # compliance scanner off, and the install failed on every retry because Kyverno's
+    # validate webhook (failurePolicy Fail) could not map that kind while its discovery
+    # cache predated the CRD the same release had just created (2026-09-05). No spec, no
+    # object to admit; the scanner is off above, so nothing is lost.
+    compliance:
+      specs: []
+      sbomGenerationEnabled: false
+      # Scan jobs land in this namespace, not the scanned workload's (chart default is already
+      # `false`, kept and named on purpose): trivy-system is the one namespace fenced for this
+      # row's egress to the vulnerability database, rather than every namespace a workload runs in.
+      scanJobsInSameNamespace: false
+      # trivy-system enforces the restricted Pod Security Standard; the chart's own scan-job
+      # security context already drops every capability and reads its root filesystem read-only
+      # (deploy/helm/values.yaml operator.scanJobPodTemplateContainerSecurityContext) but does not
+      # declare non-root, which restricted requires as a declaration, not just an image default.
+      scanJobPodTemplatePodSecurityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      scanJobPodTemplateContainerSecurityContext:
+        runAsNonRoot: true
+    # The operator deployment itself: a controller loop and a metrics endpoint, no admission
+    # webhook and no state of its own (findings live in the VulnerabilityReport CRDs, not here),
+    # so one replica with a small ceiling is enough (image is alpine + one static binary,
+    # build/trivy-operator/Dockerfile, `USER 10000` -- already non-root).
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 200m, memory: 256Mi }
+    podSecurityContext:
+      runAsNonRoot: true
+      seccompProfile: { type: RuntimeDefault }
+    securityContext:
+      runAsNonRoot: true
+    serviceMonitor:
+      enabled: false  # no Prometheus watches this namespace yet; turn on with the monitoring tier

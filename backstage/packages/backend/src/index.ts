@@ -20,6 +20,12 @@ backend.add(
   import('@backstage/plugin-scaffolder-backend-module-notifications'),
 );
 
+// crew#857: serves the feature register (features.yaml) and pre-computed
+// plan (plan.json) from the ConfigMap mounted at /app/feature-register/.
+// The scaffolder custom field extension reads these to render the store
+// form with live prices and fit.
+backend.add(import('./featureRegister'));
+
 // techdocs plugin
 backend.add(import('@backstage/plugin-techdocs-backend'));
 

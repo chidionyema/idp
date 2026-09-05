@@ -84,9 +84,9 @@ RAW_PLAN="oauth2-proxy-cookie-secret urlsafe32"
 # router keys: consumer entry, field, models (rows of platform/llm/config.yaml); minted by bin/idp-router-key
 ROUTER_PLAN=$(cat <<EOF
 hindsight         HINDSIGHT_API_LLM_API_KEY  minimax
-hermes-agent-env  LITELLM_API_KEY            kimi,minimax,deepseek
-otto-golden       LITELLM_API_KEY            kimi,minimax,deepseek
-agent-workforce   LITELLM_API_KEY            kimi,minimax,deepseek
+hermes-agent-env  LITELLM_API_KEY            minimax,gemini,deepseek,embed
+otto-golden       LITELLM_API_KEY            minimax,gemini,deepseek,embed
+agent-workforce   LITELLM_API_KEY            minimax,fast,deepseek,embed
 EOF
 )
 

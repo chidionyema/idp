@@ -137,12 +137,13 @@ spec:
             # not served: `GET /model/info` from inside the gateway pod returned exactly `kimi`
             # and `minimax` on 2026-09-05. `kimi` is both -- family moonshot, distinct from
             # judgment's minimax -- so it is the value here.
-              # deepseek, not kimi, on the founder's instruction 2026-09-05 04:0xZ ("try deepseek").
-              # kimi is served and accepted -- it answers nothing: probe otto-answer-probe-29809680
-              # at 03:59Z read bulk kimi 2730 ms "empty completion" and verify kimi 26 ms the same,
-              # while judgment on minimax answered in 1595 ms. deepseek is in the router key's
-              # allowed set (kimi, minimax, deepseek) and in otto/router/config.py's family map,
-              # and its family differs from judgment's minimax, which that file requires.
+              # gemini, since 2026-09-05 13:30Z. The two readings above that ruled it out ("not served",
+              # "empty credit") were the otto router key's allowlist (kimi, minimax, deepseek) refusing
+              # it with 403, not the router. Measured through the router with its own key: gemini, fast,
+              # minimax and embed all answer. deepseek is no alias there at all -- its row left
+              # platform/llm/config.yaml on 2026-09-04 (vendor 401) and the console row is
+              # deepseek-v4-flash -- so probe otto-answer-probe-29810160 read 400 on bulk and verify.
+              # The key rows in bin/idp-estate-seed now allow minimax, gemini and embed.
             - name: OTTO_ROUTER_LANE_BULK_MODEL
               value: deepseek
             # The estate's memory (platform/hindsight), one bank for every surface, so a
@@ -154,9 +155,13 @@ spec:
             # timings on 2026-09-05 read recall=96.951s and recall=1.886s in consecutive
             # batches, and the client's old hardcoded 3s meant hindsight logged
             # `[RECALL CANCELLED] reason=client disconnected` for every request this gateway
-            # made. Ten seconds is what a person waiting in a chat will tolerate; a recall
-            # that overruns costs no one their answer, it just arrives without memory.
-            - { name: OTTO_MEMORY_RECALL_TIMEOUT_S, value: "10" }
+            # made. Ten seconds was not enough either: on 2026-09-05 hindsight logged the only
+            # two recalls of the day, 09:04:38 and 09:05:19, and cancelled both -- the client
+            # gave up at exactly 10.0s while the server was still working 27s and 31s in.
+            # Not one recall completed, so every answer that day was composed with chars=0.
+            # Thirty seconds is the founder's call (2026-09-05); a recall that overruns still
+            # costs no one their answer, it just arrives without memory.
+            - { name: OTTO_MEMORY_RECALL_TIMEOUT_S, value: "30" }
             - { name: OTTO_MEMORY_RETAIN_TIMEOUT_S, value: "5" }
             # LAW 50: every workload emits to the central collector. Same endpoint and mode as
             # platform/llm/litellm.yaml; otto/obs/config.py reads OTEL_EXPORTER_OTLP_ENDPOINT

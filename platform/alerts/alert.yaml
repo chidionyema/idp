@@ -94,6 +94,9 @@ spec:
       namespace: tigera-operator
     - kind: HelmRelease
       name: "*"
+      namespace: trivy-system
+    - kind: HelmRelease
+      name: "*"
       namespace: weave-gitops
     # --- end generated ---
     - kind: GitRepository

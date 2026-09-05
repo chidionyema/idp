@@ -1,0 +1,95 @@
+# The injection scheduler: every window it decides the canary's true state and what the gauge
+# will say, writes that row to the injection log first, then sets the gauge and scales the
+# workload. The Role is the fence of spec section 5.2: it can touch exactly three named objects
+# in the staging namespace, so a false claim can never be injected about a real service.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: canary-scheduler
+  namespace: staging
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: canary-scheduler
+  namespace: staging
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [canary-gauge, canary-injection-log]
+    verbs: [get, patch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [canary]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: canary-scheduler
+  namespace: staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: canary-scheduler
+subjects:
+  - kind: ServiceAccount
+    name: canary-scheduler
+    namespace: staging
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: canary-scheduler
+  namespace: staging
+  labels:
+    idp.platform/canary: "true"
+spec:
+  schedule: "*/30 * * * *"   # one window per half hour; WINDOW_MINUTES below must match
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 300
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 120
+      ttlSecondsAfterFinished: 900
+      template:
+        metadata:
+          labels:
+            idp.platform/canary: "true"
+        spec:
+          restartPolicy: Never
+          serviceAccountName: canary-scheduler
+          automountServiceAccountToken: true
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: scheduler
+              image: ghcr.io/oracle/oci-cli:20260826   # the one pinned image every estate CronJob runs; ships python3
+              command: ["python3", "/opt/canary/canary-scheduler.py"]
+              env:
+                - { name: HOME, value: /tmp }
+                - { name: CANARY_NAMESPACE, value: staging }
+                - { name: HONEST_SHARE, value: "40" }     # percent of windows in which the gauge tells the truth (spec 5.3)
+                - { name: WINDOW_MINUTES, value: "30" }
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 200m, memory: 128Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              volumeMounts:
+                - { name: script, mountPath: /opt/canary, readOnly: true }
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: script
+              configMap:
+                name: canary-scheduler-script
+            - { name: tmp, emptyDir: {} }

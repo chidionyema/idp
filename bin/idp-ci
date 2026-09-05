@@ -157,6 +157,13 @@ if "$IDP/bin/idp-vendor-render" --check >/dev/null 2>&1; then
   say "ok    render   llm/config.yaml + platform/llm/config.yaml match platform/vendors/consoles.yaml"
 else say "FAIL  render   rendered router configs do not match the vendor registry; run bin/idp-vendor-render"; fail=1; fi
 
+# 4b3. crew#857: the store plan is generated from platform/features/features.yaml.
+#      A hand edit to features.yaml that skipped `bin/idp-features plan --json > platform/features/plan.json`
+#      is drift and keeps the price figures wrong until someone regenerates.
+if "$MPY" "$IDP/bin/idp-features" plan --json | diff -q - "$IDP/platform/features/plan.json" >/dev/null 2>&1; then
+  say "ok    plan     platform/features/plan.json matches bin/idp-features plan --json"
+else say "FAIL  plan     platform/features/plan.json is stale; run bin/idp-features plan --json > platform/features/plan.json"; fail=1; fi
+
 # 4c. The catalogue must carry relationships. An entity list with no edges renders
 #     exactly like a mapped estate and is the failure a peer session named on
 #     2026-08-24: "Backstage doesn't magically discover your architecture". Two
@@ -456,12 +463,20 @@ policy_gate() { conftest test --parser json -p "$IDP/policy" "$1" >/dev/null 2>&
 bind_audit() { "$IDP/bin/bind-audit" --table "$1" >/dev/null 2>&1; }
 ns_fence_gate() { python3 "$IDP/bin/ns-fence-gate" "$1" >/dev/null 2>&1; }
 job_described() { ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe "$1" ) >/dev/null 2>&1; }
+main_verdict_gate() { python3 "$IDP/bin/main-verdict-gate" "$1" >/dev/null 2>&1; }
 # A code location is loaded by PATH by workspace.yaml, never as a package. Loading
 # it any other way here would grade a proxy: on 2026-08-25 definitions.py imported a
 # sibling with `from .describe import`, passed every offline check, and put the live
 # code location in PythonError the moment it reloaded. So: load it the way it runs.
 prose_pin_scan() { python3 "$IDP/bin/test-prose-gate" "$1" >/dev/null 2>&1; }
 defs_validate() { ( cd "$(dirname "$1")" && DAGSTER_HOME="$(mktemp -d)" "$MPY" -m dagster definitions validate -f "$(basename "$1")" ) >/dev/null 2>&1; }
+# 6a. main's verdict, against the live workflows rather than the fixtures (crew#865). On 2026-09-05
+#     nine of twelve ci runs on main were cancelled by the commit after them, so the one branch the
+#     estate is graded on almost never produced a grade. The row above proves the gate both ways;
+#     this runs it on .github/workflows/, where a real regression fails it.
+if out=$(python3 "$IDP/bin/main-verdict-gate" 2>&1); then say "ok    verdict  $(tail -1 <<<"$out")"
+else say "FAIL  verdict  bin/main-verdict-gate refuses .github/workflows/"; sed 's/^/               /' <<<"$out"; fail=1; fi
+
 # 6b. R76 (founder 2026-09-03): the no-prose rule holds over the whole test tree, not just
 #     the fixtures. A test function that only asserts wording is refused here by name.
 if out=$(python3 "$IDP/bin/test-prose-gate" "$IDP"/tests/test_*.py); then
@@ -470,6 +485,17 @@ else
   say "FAIL  prose    a test function only asserts prose/string membership in file text (R76)"
   printf '%s\n' "$out" | sed 's/^/      /'; fail=1
 fi
+
+# 6b. The namespace fence, against the estate rather than against its own fixtures (crew#839).
+#     Until now ns_fence_gate ran only inside the loop above, on tests/fixtures/ns-fence/*.yaml,
+#     so it could prove itself both ways forever while thirty-eight real namespaces had no quota,
+#     no request defaults and no policy. This runs it on platform/, where a real defect fails it.
+if python3 "$IDP/bin/ns-fence-gate" "$IDP/platform" >/tmp/ns-fence.$$ 2>&1; then
+  say "ok    fence    $(tail -1 /tmp/ns-fence.$$ | cut -c1-140)"
+else
+  say "FAIL  fence    bin/ns-fence-gate refuses platform/"; sed 's/^/               /' /tmp/ns-fence.$$; fail=1
+fi
+rm -f /tmp/ns-fence.$$
 
 # 7. The bind audit proves itself both ways with no machine under it. R20: the
 #    gateway is the only process that may bind a non-loopback address. The AGENTS.md

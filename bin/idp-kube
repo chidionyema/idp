@@ -45,7 +45,9 @@ if [ "$fresh" -eq 0 ]; then
   OCI_BIN="$(command -v oci || true)"
   if [ -n "$OCI_BIN" ]; then
     tmp="$KC.$$"
-    sed -e "s|^\( *command: \)oci *$|\1$OCI_BIN|" "$KC" >"$tmp" && mv "$tmp" "$KC" && chmod 600 "$KC"
+    # The CLI also prints an API-key advisory on every call unless SUPPRESS_LABEL_WARNING is set;
+    # the plugin's env block carries it, so no consumer needs a shell that exports it.
+    sed -e "s|^\( *command: \)oci *$|\1$OCI_BIN|" -e 's|^\( *\)env: \[\] *$|\1env: [{name: SUPPRESS_LABEL_WARNING, value: "True"}]|' "$KC" >"$tmp" && mv "$tmp" "$KC" && chmod 600 "$KC"
   fi
 fi
 if [ $# -eq 0 ]; then printf 'ok      kube  kubeconfig %s\n' "$KC"; exit 0; fi

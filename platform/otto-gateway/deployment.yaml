@@ -78,6 +78,7 @@ spec:
             - |
               set -eu
               PGPASSWORD=$(cat /run/secrets/otto-gateway-db/POSTGRES_PASSWORD); export PGPASSWORD
+              PGCONNECT_TIMEOUT=5; export PGCONNECT_TIMEOUT
               fingerprint=$(sha256sum < /run/secrets/otto-gateway-channels/OTTO_TELEGRAM_WEBHOOK_SECRET | cut -d' ' -f1)
               psql -h estate-rw.estate-db.svc.cluster.local -U otto_gateway -d otto_gateway -v ON_ERROR_STOP=1 \
                 -v chat_id="$(cat /run/secrets/otto-gateway-channels/TELEGRAM_CHAT_ID)" \
@@ -121,6 +122,26 @@ spec:
               # and as platform/research-engine/cronjob.yaml).
               LITELLM_API_KEY=$(cat /run/secrets/otto-gateway-router/LITELLM_API_KEY)
               export LITELLM_API_KEY
+              # The same key under the second name that reads it: the memory engine's
+              # embedding provider (hermes-v2 otto/memory/embeddings_litellm.py). One
+              # credential and one router, not a second door to a vendor.
+              OTTO_MEMORY_EMBEDDING_API_KEY=$LITELLM_API_KEY
+              export OTTO_MEMORY_EMBEDDING_API_KEY
+              # The fact store the answering lane now reads memory from, instead of
+              # waiting on hindsight's cross-encoder for 31.87s per question
+              # (hermes-v2 otto/memory/fast_recall.py, and its PR for the trace).
+              # libpq's own variables rather than a single URL, because a password
+              # containing a URL-special character would otherwise have to be
+              # percent-encoded here; no credential is typed in this file either way,
+              # it is read from the file OTTO_INGRESS_DB_PASSWORD_FILE already names.
+              # Unset, the read path is a no-op and hindsight keeps every write, so a
+              # gateway that cannot reach this store answers exactly as it did before.
+              PGHOST=$OTTO_INGRESS_DB_HOST
+              PGPORT=$OTTO_INGRESS_DB_PORT
+              PGUSER=$OTTO_INGRESS_DB_USER
+              PGDATABASE=$OTTO_INGRESS_DB_NAME
+              PGPASSWORD=$(cat "$OTTO_INGRESS_DB_PASSWORD_FILE")
+              export PGHOST PGPORT PGUSER PGDATABASE PGPASSWORD
               exec python -m otto.ingress
           env:
             - { name: OTTO_INGRESS_PORT, value: "8080" }
@@ -128,6 +149,10 @@ spec:
             - { name: OTTO_INGRESS_DB_PORT, value: "5432" }
             - { name: OTTO_INGRESS_DB_NAME, value: otto_gateway }
             - { name: OTTO_INGRESS_DB_USER, value: otto_gateway }
+            # libpq's connect timeout. Without it a Postgres that accepts the TCP
+            # handshake and then says nothing holds the first query open for the
+            # kernel's default, minutes, and the app-level recall budget never runs.
+            - { name: PGCONNECT_TIMEOUT, value: "5" }
             - { name: OTTO_INGRESS_DB_PASSWORD_FILE, value: /run/secrets/otto-gateway-db/POSTGRES_PASSWORD }
             - { name: OTTO_NATS_URL, value: "nats://nats.event-bus.svc:4222" }
             # The estate's memory (platform/hindsight), one bank for every surface, so a
@@ -139,10 +164,27 @@ spec:
             # timings on 2026-09-05 read recall=96.951s and recall=1.886s in consecutive
             # batches, and the client's old hardcoded 3s meant hindsight logged
             # `[RECALL CANCELLED] reason=client disconnected` for every request this gateway
-            # made. Ten seconds is what a person waiting in a chat will tolerate; a recall
-            # that overruns costs no one their answer, it just arrives without memory.
-            - { name: OTTO_MEMORY_RECALL_TIMEOUT_S, value: "10" }
+            # made. Ten seconds was not enough either: on 2026-09-05 hindsight logged the only
+            # two recalls of the day, 09:04:38 and 09:05:19, and cancelled both -- the client
+            # gave up at exactly 10.0s while the server was still working 27s and 31s in.
+            # Not one recall completed, so every answer that day was composed with chars=0.
+            # Thirty seconds is the founder's call (2026-09-05); a recall that overruns still
+            # costs no one their answer, it just arrives without memory.
+            - { name: OTTO_MEMORY_RECALL_TIMEOUT_S, value: "30" }
             - { name: OTTO_MEMORY_RETAIN_TIMEOUT_S, value: "5" }
+            # The vector half of the L2 read. Without these the lane still answers --
+            # Postgres full-text search over the same rows is the lexical arm of the
+            # hybrid and is a tested mode, not a failure -- but only half the recall
+            # quality. `embed` is a lane on the estate router, never a vendor model id
+            # (LAW 34); platform/llm/config.yaml resolves it to gemini-embedding-001 at
+            # 1536 dimensions, which is the width otto_facts.embedding is created at, so
+            # the column and the model cannot drift apart.
+            - { name: OTTO_MEMORY_EMBEDDING_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
+            - { name: OTTO_MEMORY_EMBEDDING_MODEL, value: "embed" }
+            - { name: OTTO_MEMORY_EMBEDDING_DIM, value: "1536" }
+            # Bounded on the answering path like every other call here. An embedding that
+            # overruns costs no one their answer: retrieval falls back to the lexical arm.
+            - { name: OTTO_MEMORY_EMBEDDING_TIMEOUT_S, value: "1.5" }
             # LAW 50. The entrypoint refuses to start without this, so a door that cannot be
             # seen never opens rather than running dark.
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
@@ -169,14 +211,20 @@ spec:
             # that actually lets a message through. The map knowing only vendor identifiers,
             # while this estate configures lanes by router alias (LAW 34), is the defect
             # underneath: hermes-v2#77 adds every estate alias to it.
-            # deepseek, not kimi, on the founder's instruction 2026-09-05 04:0xZ ("try deepseek").
-            # kimi is served and accepted -- it answers nothing: probe otto-answer-probe-29809680
-            # at 03:59Z read bulk kimi 2730 ms "empty completion" and verify kimi 26 ms the same,
-            # while judgment on minimax answered in 1595 ms. deepseek is in the router key's
-            # allowed set (kimi, minimax, deepseek) and in otto/router/config.py's family map,
-            # and its family differs from judgment's minimax, which that file requires.
+            # gemini, since 2026-09-05 13:30Z. The two readings above that ruled it out ("not served",
+            # "empty credit") were the otto router key's allowlist (kimi, minimax, deepseek) refusing
+            # it with 403, not the router. Measured through the router with its own key: gemini, fast,
+            # minimax and embed all answer. deepseek had no alias there -- its row left
+            # platform/llm/config.yaml on 2026-09-04 (vendor 401) -- so probe
+            # otto-answer-probe-29810160 read 400 on bulk and verify.
+            # bulk is deepseek again since 2026-09-05 13:50Z: the founder re-added the DeepSeek
+            # key in the console (the row is console-owned, #1632), its litellm-db row is named
+            # `deepseek`, the alias every chain in platform/vendors/consoles.yaml uses, and it
+            # answers through the router on both replicas. verify stays on gemini, a family
+            # apart from the minimax judgment lane. The key rows in bin/idp-estate-seed allow
+            # minimax, gemini, deepseek and embed.
             - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "deepseek" }
-            - { name: OTTO_ROUTER_LANE_VERIFY_MODEL, value: "deepseek" }
+            - { name: OTTO_ROUTER_LANE_VERIFY_MODEL, value: "gemini" }
             - { name: PYTHONUNBUFFERED, value: "1" }
           ports:
             - { containerPort: 8080, name: http }

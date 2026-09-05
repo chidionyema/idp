@@ -32,8 +32,12 @@ spec:
               operations: [CREATE, UPDATE]
       exclude:
         any:
+          # crew#846: trivy-system joins the other admission/operator namespaces here. Its one
+          # Service is a metrics endpoint the chart names for itself (deploy/helm/values.yaml
+          # service.headless: true) -- no door a person opens, same shape as metrics-server and
+          # keda beside it.
           - resources:
-              namespaces: [kube-system, flux-system, kyverno, cert-manager, spire-mgmt, metrics-server, reloader, keda, external-secrets]
+              namespaces: [kube-system, flux-system, kyverno, cert-manager, spire-mgmt, metrics-server, reloader, keda, external-secrets, trivy-system]
           - resources:
               kinds: [Service]
               namespaces: [default]

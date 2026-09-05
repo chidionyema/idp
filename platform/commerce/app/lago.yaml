@@ -50,6 +50,11 @@ spec:
   install: { remediation: { retries: 3 } }
   upgrade: { remediation: { retries: 3 } }
   values:
+    # The application version the chart renders into every image tag (getlago/api:v<version>,
+    # getlago/front:v<version>). The chart's default, 1.33.4, ships Rails 8.0.2.1 with a
+    # CRITICAL Active Storage CVE (2026-33195); 1.52.1 carries 8.0.5.1 and is the newest tag
+    # on 2026-09-05. lago-api.Dockerfile and lago-front.Dockerfile rebase exactly this tag.
+    version: "1.52.1"
     # Internal names only. These become public hostnames in the cutover PR, never before.
     apiUrl: "http://lago-api.commerce.svc:3000"
     frontUrl: "http://lago-front.commerce.svc:80"
@@ -158,11 +163,21 @@ spec:
         # measured 2026-08-31, not assumed. The layer is suspended at replicas 0, so nothing has
         # ever tried to pull these -- which is exactly why it would have failed on the day it was
         # switched on rather than today.
+        # NON-ROOT, BY IMAGE AND NOT BY EXCEPTION. The cluster's restricted PodSecurity profile
+        # refused lago-migrate-db on 2026-09-05 ("runAsNonRoot != true"): getlago/api and
+        # getlago/front carry no USER line. Founder, 2026-09-05: keep the standard, no Kyverno
+        # hole for commerce. So the two images are rebased onto a non-root user by
+        # lago-api.Dockerfile and lago-front.Dockerfile beside this file, built by
+        # build-multiarch and tagged here by the flux-system:lago-api / lago-front ImagePolicies
+        # (platform/image-automation). The tag below is a placeholder of the right shape until
+        # the first main build lands; image automation rewrites the marked lines and nothing else.
         images:
           - name: getlago/api
-            newName: docker.io/getlago/api
+            newName: ghcr.io/chidionyema/lago-api
+            newTag: main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:lago-api:tag"}
           - name: getlago/front
-            newName: docker.io/getlago/front
+            newName: ghcr.io/chidionyema/lago-front
+            newTag: main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:lago-front:tag"}
           - name: getlago/lago-events-processor
             newName: docker.io/getlago/lago-events-processor
           - name: getlago/lago-gotenberg
@@ -212,6 +227,10 @@ spec:
                     priorityClassName: platform-batch
                     securityContext:
                       seccompProfile: { type: RuntimeDefault }
+                      runAsNonRoot: true
+                      runAsUser: 1000
+                      runAsGroup: 1000
+                      fsGroup: 1000
           - target: { kind: Job }
             patch: |
               apiVersion: batch/v1
@@ -224,6 +243,10 @@ spec:
                     priorityClassName: platform-batch
                     securityContext:
                       seccompProfile: { type: RuntimeDefault }
+                      runAsNonRoot: true
+                      runAsUser: 1000
+                      runAsGroup: 1000
+                      fsGroup: 1000
           # The container-level half, by position rather than by name: every pod this chart
           # ships holds exactly one container, and a strategic-merge patch would have to name
           # each of the eleven separately to reach them.
@@ -241,19 +264,34 @@ spec:
                 value:
                   allowPrivilegeEscalation: false
                   capabilities: { drop: [ALL] }
-          # The one exception to dropping everything, and it is narrow. lago-front is nginx
-          # binding port 80 (lago-1.28.0/templates/front-deployment.yaml, containerPort 80), and
-          # a process that has dropped ALL cannot bind a port below 1024 even as root. The
-          # restricted profile allows exactly this capability back and no other.
+          # THE FRONT IS NGINX AND NGINX IS UID 101. lago-front.Dockerfile runs the image's own
+          # nginx user on 8080 (a non-root process cannot bind 80, and a capability added in a
+          # securityContext never reaches a non-root process: the kubelet grants no ambient
+          # capabilities). The pod says who it is, the container port and the Service's
+          # targetPort follow the image, and the Service port stays 80 so frontUrl above holds.
           - target: { kind: Deployment, name: lago-front }
             patch: |
-              - op: add
-                path: /spec/template/spec/containers/0/securityContext/capabilities/add
-                value: [NET_BIND_SERVICE]
+              - op: replace
+                path: /spec/template/spec/securityContext/runAsUser
+                value: 101
+              - op: replace
+                path: /spec/template/spec/securityContext/runAsGroup
+                value: 101
+              - op: replace
+                path: /spec/template/spec/securityContext/fsGroup
+                value: 101
+              - op: replace
+                path: /spec/template/spec/containers/0/ports/0/containerPort
+                value: 8080
+          - target: { kind: Service, name: lago-front-svc }
+            patch: |
+              - op: replace
+                path: /spec/ports/0/targetPort
+                value: 8080
           # A DOOR THAT ANSWERS. The chart ships livenessProbe values for its eight Rails and
           # Sidekiq components and none for the front, so the cluster's require-pod-probes
-          # refuses it. nginx serves the built single-page app at / on the containerPort the
-          # chart declares (front-deployment.yaml, containerPort: 80), so this is the real
+          # refuses it. nginx serves the built single-page app at / on the port the non-root
+          # image listens on (lago-front.Dockerfile, 8080), so this is the real
           # surface answering, not a probe written to satisfy a policy: readiness keeps the
           # Service from routing at a pod that has not finished starting, and liveness restarts
           # one whose nginx has wedged. Both are the same URL because there is only one.
@@ -262,14 +300,14 @@ spec:
               - op: add
                 path: /spec/template/spec/containers/0/readinessProbe
                 value:
-                  httpGet: { path: /, port: 80 }
+                  httpGet: { path: /, port: 8080 }
                   periodSeconds: 10
                   timeoutSeconds: 2
                   failureThreshold: 3
               - op: add
                 path: /spec/template/spec/containers/0/livenessProbe
                 value:
-                  httpGet: { path: /, port: 80 }
+                  httpGet: { path: /, port: 8080 }
                   initialDelaySeconds: 15
                   periodSeconds: 20
                   timeoutSeconds: 2
