@@ -62,7 +62,7 @@ a PolicyReport row (Audit, flipped to Enforce after a zero-violation pass, the c
 $ kubectl get policyreport -A | grep require-priority-class
 ```
 
-Offline proof of all four: `python3 -m pytest -q tests/test_incident_crew539_radio_room_survives_node_swap.py`.
+Proof of all four: `bin/idp-kyverno-render platform/scheduling` renders every workload the way helm-controller will and judges it with the cluster's own policies, `require-priority-class.yaml` included.
 
 ## 5. The healing loops (CP6/CP7)
 

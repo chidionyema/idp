@@ -20,7 +20,11 @@ BASE="${1:-origin/main}"
 
 # The ways a python test reaches outside its own process. A file with none of these can only be
 # reading the repository and asserting what it read.
-EXECUTES='subprocess|requests\.|httpx|socket\.|urllib\.request|os\.system|pexpect|docker|kubernetes\.client'
+# `docker` is anchored as an attribute access: the bare word matches the path "Dockerfile",
+# which a reads-only test opens, and hermes-v2's test_incident_crew751 passed this gate as
+# "runs something" on exactly that. `importlib` and `spec_from_file` load a module of this
+# repository and call it, which is running something.
+EXECUTES='subprocess|requests\.|httpx|socket\.|urllib\.request|os\.system|pexpect|docker\.|kubernetes\.client|importlib|spec_from_file'
 
 added=$(cd "$IDP" && git diff --name-only --diff-filter=A "$BASE...HEAD" -- 'tests/*.py' 2>/dev/null)
 [ -n "$added" ] || { echo "ok    executes  no new test file in this change"; exit 0; }
