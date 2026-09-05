@@ -108,6 +108,14 @@ features:
         what: "the Hermes agent's own memory files (on its volume, no database); founder 2026-08-29"
         switches: []
         depends: [hermes-agent]
+      - name: session-memory
+        what: "claude-mem in its server runtime: coding-session capture for any IDE or agent client, its store a database on the one estate Postgres, its compression model routed through LiteLLM; clients keep nothing locally (docs/specs/hosted-session-memory.md)"
+        switches: [claude-mem]
+        status: planned
+        # Typed only because the switch does not exist yet: one API pod, its queue and no store of
+        # its own beyond the shared Postgres.
+        floor: { cpu: 0.3, memory_gb: 0.75, storage_gb: 1 }
+        depends: [postgres, llm]
     default: enterprise
 
   - name: client-context
