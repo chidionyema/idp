@@ -59,6 +59,21 @@ overrides:
       requests.cpu: "2"
       requests.memory: 4Gi
       pods: "40"
+  monitoring:
+    # The derived ceiling was read on 2026-09-04, while Prometheus was dead -- Kyverno had been
+    # refusing the operator's StatefulSet since 2026-08-28 -- so the reading saw four small pods
+    # and fenced the namespace into the shape of its own outage. When the StatefulSet was finally
+    # allowed through on 2026-09-05 the pod was refused a second time, by this quota:
+    #   Warning FailedCreate statefulset/prometheus-kps: pods "prometheus-kps-0" is forbidden:
+    #   exceeded quota: ns-ceiling, requested: requests.memory=800Mi, used: requests.memory=432Mi,
+    #   limited: requests.memory=1Gi
+    # Sized for what actually runs here: 432Mi standing (Alertmanager, kube-state-metrics,
+    # blackbox, the operator) plus the 800Mi Prometheus asks for is 1232Mi, and 2Gi leaves room
+    # for the surge pod of a Prometheus rollout without another outage. CPU likewise: 140m
+    # standing plus 200m for Prometheus and its reloader sat 20m under the old 500m ceiling.
+    hard:
+      requests.cpu: "1"
+      requests.memory: 2Gi
   otto-golden:
     # Two replicas plus one surge pod during a rolling update: sized for three, so a rollout is
     # never forbidden by its own quota (the main-62 roll wedged on exactly that).
