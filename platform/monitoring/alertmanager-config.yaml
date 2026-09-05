@@ -53,13 +53,24 @@ spec:
                   chat_id: {{ .channel }}
                   parse_mode: ""
                   send_resolved: true
+                  # Four different programs post into this one chat -- Prometheus through here,
+                  # Robusta with its crash logs, Otto, and Flux when its Alert is unsuspended --
+                  # and until now none of them said which one was talking. Every message from this
+                  # receiver opens with the sender and the state, so the founder can tell at a
+                  # glance who is speaking and whether it is starting or ending.
+                  message: |-
+                    {{ "{{" }} if eq .Status "firing" {{ "}}" }}PROMETHEUS - FIRING{{ "{{" }} else {{ "}}" }}PROMETHEUS - RESOLVED{{ "{{" }} end {{ "}}" }} - {{ "{{" }} .CommonLabels.severity {{ "}}" }}
+                    {{ "{{" }} .CommonLabels.alertname {{ "}}" }} in {{ "{{" }} .CommonLabels.namespace {{ "}}" }}
+                    {{ "{{" }} range .Alerts {{ "}}" }}{{ "{{" }} .Annotations.summary {{ "}}" }}
+                    {{ "{{" }} .Annotations.description {{ "}}" }}
+                    {{ "{{" }} end {{ "}}" }}
             - name: telegram-p1-page
               telegram_configs:
                 - bot_token: "{{ .token }}"
                   chat_id: {{ .channel }}
                   parse_mode: ""
                   send_resolved: true
-                  message: 'P1 page: {{ "{{" }} .CommonLabels.alertname {{ "}}" }} has been red for 10 minutes and no rule names an owner. Add an owner label to the rule in platform/monitoring/rules and a next action.'
+                  message: 'PROMETHEUS - P1 PAGE - {{ "{{" }} .CommonLabels.alertname {{ "}}" }} has been red for 10 minutes and no rule names an owner. Add an owner label to the rule in platform/monitoring/rules and a next action.'
             - name: robusta
               webhook_configs:
                 - url: http://robusta-runner.robusta.svc.cluster.local/api/alerts
