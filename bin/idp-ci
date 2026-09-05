@@ -157,6 +157,13 @@ if "$IDP/bin/idp-vendor-render" --check >/dev/null 2>&1; then
   say "ok    render   llm/config.yaml + platform/llm/config.yaml match platform/vendors/consoles.yaml"
 else say "FAIL  render   rendered router configs do not match the vendor registry; run bin/idp-vendor-render"; fail=1; fi
 
+# 4b3. crew#857: the store plan is generated from platform/features/features.yaml.
+#      A hand edit to features.yaml that skipped `bin/idp-features plan --json > platform/features/plan.json`
+#      is drift and keeps the price figures wrong until someone regenerates.
+if "$MPY" "$IDP/bin/idp-features" plan --json | diff -q - "$IDP/platform/features/plan.json" >/dev/null 2>&1; then
+  say "ok    plan     platform/features/plan.json matches bin/idp-features plan --json"
+else say "FAIL  plan     platform/features/plan.json is stale; run bin/idp-features plan --json > platform/features/plan.json"; fail=1; fi
+
 # 4c. The catalogue must carry relationships. An entity list with no edges renders
 #     exactly like a mapped estate and is the failure a peer session named on
 #     2026-08-24: "Backstage doesn't magically discover your architecture". Two
