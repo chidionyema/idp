@@ -942,9 +942,9 @@
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/agent-workforce",
-   "id": "_/Namespace/agent-workforce",
-   "name": "agent-workforce",
+   "declared_in": "Kustomization flux-system/infra-crew",
+   "id": "_/Namespace/infra-crew",
+   "name": "infra-crew",
    "plane": "kubernetes",
    "type": "Namespace",
    "verdict": "MANAGED",
@@ -1203,9 +1203,9 @@
    "why": "no Flux owner label, no owner"
   },
   {
-   "declared_in": "Kustomization flux-system/agent-workforce",
-   "id": "agent-workforce/PersistentVolumeClaim/agent-workforce-data",
-   "name": "agent-workforce-data",
+   "declared_in": "Kustomization flux-system/infra-crew",
+   "id": "infra-crew/PersistentVolumeClaim/infra-crew-data",
+   "name": "infra-crew-data",
    "plane": "kubernetes",
    "type": "PersistentVolumeClaim",
    "verdict": "MANAGED",
@@ -1915,7 +1915,7 @@
   },
   {
    "declared_in": "owned by ExternalSecret/ghcr-pull",
-   "id": "agent-workforce/Secret/ghcr-pull",
+   "id": "infra-crew/Secret/ghcr-pull",
    "name": "ghcr-pull",
    "plane": "kubernetes",
    "type": "Secret",
@@ -1923,8 +1923,8 @@
    "why": ""
   },
   {
-   "declared_in": "owned by ExternalSecret/agent-workforce-github-app-pem",
-   "id": "agent-workforce/Secret/github-app-pem",
+   "declared_in": "owned by ExternalSecret/infra-crew-github-app-pem",
+   "id": "infra-crew/Secret/github-app-pem",
    "name": "github-app-pem",
    "plane": "kubernetes",
    "type": "Secret",
@@ -1932,27 +1932,27 @@
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/agent-workforce",
-   "id": "agent-workforce/Secret/agent-workforce-github",
-   "name": "agent-workforce-github",
+   "declared_in": "Kustomization flux-system/infra-crew",
+   "id": "infra-crew/Secret/infra-crew-github",
+   "name": "infra-crew-github",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "MANAGED",
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/agent-workforce",
-   "id": "agent-workforce/Secret/agent-workforce-langfuse",
-   "name": "agent-workforce-langfuse",
+   "declared_in": "Kustomization flux-system/infra-crew",
+   "id": "infra-crew/Secret/infra-crew-langfuse",
+   "name": "infra-crew-langfuse",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "MANAGED",
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/agent-workforce",
-   "id": "agent-workforce/Secret/agent-workforce-router",
-   "name": "agent-workforce-router",
+   "declared_in": "Kustomization flux-system/infra-crew",
+   "id": "infra-crew/Secret/infra-crew-router",
+   "name": "infra-crew-router",
    "plane": "kubernetes",
    "type": "Secret",
    "verdict": "MANAGED",
@@ -2706,9 +2706,9 @@
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/agent-workforce",
-   "id": "agent-workforce/ServiceAccount/agent-workforce",
-   "name": "agent-workforce",
+   "declared_in": "Kustomization flux-system/infra-crew",
+   "id": "infra-crew/ServiceAccount/infra-crew",
+   "name": "infra-crew",
    "plane": "kubernetes",
    "type": "ServiceAccount",
    "verdict": "MANAGED",
@@ -7089,9 +7089,9 @@
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/agent-workforce",
-   "id": "agent-workforce/CronJob/agent-workforce",
-   "name": "agent-workforce",
+   "declared_in": "Kustomization flux-system/infra-crew",
+   "id": "infra-crew/CronJob/infra-crew",
+   "name": "infra-crew",
    "plane": "kubernetes",
    "type": "CronJob",
    "verdict": "MANAGED",
@@ -7449,9 +7449,9 @@
    "why": ""
   },
   {
-   "declared_in": "owned by CronJob/agent-workforce",
-   "id": "agent-workforce/Job/agent-workforce-29808435",
-   "name": "agent-workforce-29808435",
+   "declared_in": "owned by CronJob/infra-crew",
+   "id": "infra-crew/Job/infra-crew-29808435",
+   "name": "infra-crew-29808435",
    "plane": "kubernetes",
    "type": "Job",
    "verdict": "MANAGED",
@@ -9159,8 +9159,8 @@
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/agent-workforce",
-   "id": "agent-workforce/ExternalSecret/ghcr-pull",
+   "declared_in": "Kustomization flux-system/infra-crew",
+   "id": "infra-crew/ExternalSecret/ghcr-pull",
    "name": "ghcr-pull",
    "plane": "kubernetes",
    "type": "ExternalSecret",
@@ -9168,36 +9168,36 @@
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/agent-workforce",
-   "id": "agent-workforce/ExternalSecret/agent-workforce-github",
-   "name": "agent-workforce-github",
+   "declared_in": "Kustomization flux-system/infra-crew",
+   "id": "infra-crew/ExternalSecret/infra-crew-github",
+   "name": "infra-crew-github",
    "plane": "kubernetes",
    "type": "ExternalSecret",
    "verdict": "MANAGED",
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/agent-workforce",
-   "id": "agent-workforce/ExternalSecret/agent-workforce-github-app-pem",
-   "name": "agent-workforce-github-app-pem",
+   "declared_in": "Kustomization flux-system/infra-crew",
+   "id": "infra-crew/ExternalSecret/infra-crew-github-app-pem",
+   "name": "infra-crew-github-app-pem",
    "plane": "kubernetes",
    "type": "ExternalSecret",
    "verdict": "MANAGED",
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/agent-workforce",
-   "id": "agent-workforce/ExternalSecret/agent-workforce-langfuse",
-   "name": "agent-workforce-langfuse",
+   "declared_in": "Kustomization flux-system/infra-crew",
+   "id": "infra-crew/ExternalSecret/infra-crew-langfuse",
+   "name": "infra-crew-langfuse",
    "plane": "kubernetes",
    "type": "ExternalSecret",
    "verdict": "MANAGED",
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/agent-workforce",
-   "id": "agent-workforce/ExternalSecret/agent-workforce-router",
-   "name": "agent-workforce-router",
+   "declared_in": "Kustomization flux-system/infra-crew",
+   "id": "infra-crew/ExternalSecret/infra-crew-router",
+   "name": "infra-crew-router",
    "plane": "kubernetes",
    "type": "ExternalSecret",
    "verdict": "MANAGED",
@@ -9636,9 +9636,9 @@
    "why": ""
   },
   {
-   "declared_in": "Kustomization flux-system/agent-workforce",
-   "id": "agent-workforce/GithubAccessToken/agent-workforce-github",
-   "name": "agent-workforce-github",
+   "declared_in": "Kustomization flux-system/infra-crew",
+   "id": "infra-crew/GithubAccessToken/infra-crew-github",
+   "name": "infra-crew-github",
    "plane": "kubernetes",
    "type": "GithubAccessToken",
    "verdict": "MANAGED",
@@ -10321,8 +10321,8 @@
   },
   {
    "declared_in": "flux-system (git)",
-   "id": "flux-system/Kustomization/agent-workforce",
-   "name": "agent-workforce",
+   "id": "flux-system/Kustomization/infra-crew",
+   "name": "infra-crew",
    "plane": "kubernetes",
    "type": "Kustomization",
    "verdict": "MANAGED",
