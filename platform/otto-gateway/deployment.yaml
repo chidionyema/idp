@@ -141,7 +141,18 @@ spec:
             # Claude capacity here is the Pro Max subscription reached through `claude -p`.
             # Leaving the default in place is what routed every message to needs_human.
             - { name: OTTO_ROUTER_LANE_JUDGMENT_MODEL, value: "minimax" }
-            - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "fast" }
+            # `gemini`, not `fast`: otto/router/config.py derives a lane's family from an
+            # explicit map (_DEFAULT_MODEL_FAMILIES) and refuses any model absent from it --
+            # "policy defect: model 'fast' is in no family mapping", logged as
+            # worker.answer_failed on every inbound message (founder's log, 2026-09-05,
+            # ~/.claude/docs/founder/2026-09-05T0218Z-eed-seed-sql-25-notice-relation-channel-binding-d1240816.md).
+            # `gemini` is in that map, its family (google) differs from judgment's minimax as
+            # the distinct-family guard requires, and on the estate router `gemini` and `fast`
+            # are the same model (gemini/gemini-2.5-flash, platform/llm/config.yaml:52 and :73),
+            # so nothing about the model or its cost changes. The map knowing only vendor
+            # identifiers, while this estate configures lanes by router alias (LAW 34), is the
+            # defect underneath and it is hermes-v2's to fix.
+            - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "gemini" }
             - { name: OTTO_ROUTER_LANE_VERIFY_MODEL, value: "gemini" }
             - { name: PYTHONUNBUFFERED, value: "1" }
           ports:
