@@ -14,31 +14,74 @@ Founder records, verbatim, at
 
 ---
 
-## Step 1 — find out whether the fences enforce anything. Tonight.
+## Step 1 — MEASURED, AND IT IS RED. The fences enforce nothing.
 
-The estate holds 154 NetworkPolicy objects, 40 of them ns-fence default-denies that `bin/idp-ci`
-refuses a namespace without. The CNI is flannel and no NetworkPolicy enforcement agent runs
-anywhere in the cluster. Flannel does not implement NetworkPolicy. Every check we own reads the
-objects; none reads the traffic; so all of them are green either way.
+This step was written as "find out". It ran on 2026-09-05T21:5xZ and the answer is that the
+estate has a live isolation defect, so LAW 1 applies before any other step in this spec.
 
-New drill `fence-enforcement`, row in `drills/catalogue.yaml`, owner `idp`, daily. In a throwaway
-namespace carrying the standard fence, it does one thing and reports one word:
+**Angle one, the objects.** The only CNI DaemonSet in the cluster is `kube-flannel-ds`
+(`kubectl get ds -A`): no Calico, no Cilium, no Antrea, no NetworkPolicy enforcement agent of any
+kind. Flannel does not implement NetworkPolicy. The cluster carries 154 NetworkPolicy objects,
+40 of them the both-ways default-deny that `bin/idp-ci` refuses a namespace without.
 
-1. Start two pods in two fenced namespaces that the fences forbid to talk.
-2. From one, open a TCP connection to the other, and separately to the public internet.
-3. **Both must fail.** A connection that succeeds is the fence proved decorative.
+**Angle two, the traffic.** From `dagster-daemon-9cd8bd67f-45h8x`, a pod in the `dagster`
+namespace, which carries `default-deny-all` with `policyTypes: [Ingress, Egress]` and an empty
+`podSelector`:
+
+```
+internet 1.1.1.1:443 -> CONNECTED
+internet 8.8.8.8:53  -> CONNECTED
+cross-namespace 10.244.1.240:3100 (backstage/catalogue) -> CONNECTED
+```
+
+Both namespaces carry a both-ways default-deny. Every one of those three packets is on a path the
+fences deny, and every one arrived. The 154 objects are a decoration.
+
+Two smaller findings fell out of the same probe and belong here because they change how any of
+this is graded:
+
+- A pod in a fenced namespace could not be created to run the drill: the cluster refuses writes
+  from user principals ("Git is the only writer of this cluster; change the file on main and Flux
+  applies it"). So the drill lands as a Flux-reconciled row, never as a `kubectl apply` from a
+  laptop, and that is correct.
+- A first pass of the same probe reported `EGRESS_BLOCKED` because the pod had no `wget` and the
+  shell returned 127. A drill that grades a missing binary as a passing fence is the class of
+  mistake this whole spec exists to catch, so the drill below must fail closed on a probe that
+  could not run, and must prove its own reachability against a path the fences allow.
+
+### What still gets built
+
+`fence-enforcement`, and in this repository a drill is two things: a scheduled workflow under
+`.github/workflows/` and a row in `drills/catalogue.yaml` (owner `idp`, `schedule` copied verbatim
+from the workflow's own cron line, `max_age_hours: 26`, a one-sentence `proves`). `bin/idp-verify`
+grades the freshness of the last green run and nothing else, so a drill that is only a row is a
+drill that never fires.
+
+The workflow authenticates as the service user `estate-ci` through the OIDC identity propagation
+`oke-check.yml` already uses — the one identity the cluster excuses from the Git-only-writer
+lockdown. A laptop cannot run this drill and must not be able to. In two fenced namespaces it:
+
+1. proves the probe works, by reaching a destination the fences allow — a probe that cannot reach
+   anything measures nothing;
+2. opens TCP to the other fenced namespace's pod, and to a public address;
+3. **fails unless both are refused**, and fails when step 1 could not run.
 
 `proves:` line:
 
 > A packet on a path the fences deny is actually dropped, so the 154 NetworkPolicy objects are a
 > wall rather than a decoration.
 
-If the drill is red, that is a live isolation defect and LAW 1 applies before any other step here.
-The remedy is an enforcement agent on the existing CNI, and it is the smallest change that turns
-every existing policy on at once — not a CNI migration, and not a rewrite of the 154 objects.
+### The remedy, and it is one change
 
-Nothing else in this spec matters until step 1 has run once, because a policy engine at the edge
-beside an unenforced network is a lock on a door in a field.
+An enforcement agent on the CNI that already runs: **Calico in policy-only mode beside flannel**,
+the combination that has shipped as Canal for a decade. It turns all 154 existing policies on at
+once and rewrites none of them. It is not a CNI migration, the pod network keeps working through
+flannel, and it is the smallest change that closes the defect. Rejected: migrating to Cilium
+(replaces a working data plane to gain enforcement we can have without touching it), and rewriting
+the 154 objects (they are correct; nothing reads them).
+
+Nothing else in this spec matters until the enforcement agent is in and the drill is green,
+because a policy engine at the edge beside an unenforced network is a lock on a door in a field.
 
 ## Step 2 — the edge asks a policy engine before it forwards
 
