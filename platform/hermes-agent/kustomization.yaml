@@ -6,7 +6,6 @@ kind: Kustomization
 namespace: hermes-agent
 resources:
   - gateway.yaml
-  - httproute.yaml
   - edge-manners.yaml
   - estate.yaml
   - mac-run-key.yaml

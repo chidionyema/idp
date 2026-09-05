@@ -95,10 +95,12 @@ def test_secrets_are_files_the_container_exports_never_pod_env():
         if d and d.get("kind") == "ExternalSecret"
     }
     ess.update(mcp)
+    # Founder 2026-09-05: hermes-agent-webhook is gone with the Telegram door. This pod
+    # re-registered the bot's webhook onto its own dead /telegram path on every restart and
+    # took the bot away from otto-gateway, the estate's one ingress.
     assert secrets == [
         "hermes-agent-env",
         "hermes-agent-a2a",
-        "hermes-agent-webhook",
         "hermes-agent-mcp",
         "hermes-agent-langfuse",
     ]
@@ -107,7 +109,10 @@ def test_secrets_are_files_the_container_exports_never_pod_env():
     assert set(ess) == set(secrets) | {"hermes-agent-github-app-pem"}
     assert ess["hermes-agent-env"]["spec"]["target"]["name"] == "hermes-agent-env"
     assert ess["hermes-agent-env"]["spec"]["dataFrom"][0] == {
-        "extract": {"key": "hermes-agent-env"}
+        "extract": {"key": "hermes-agent-env"},
+        "rewrite": [
+            {"regexp": {"source": "^TELEGRAM_(.*)$", "target": "DISABLED_TELEGRAM_$1"}}
+        ],
     }
 
 
@@ -329,3 +334,22 @@ def test_the_flux_rows_define_the_generators_substitution_vars():
         ], name
         # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
         assert {"name": "alerts-github"} in row["spec"]["dependsOn"], name
+
+
+def test_this_pod_can_never_register_the_telegram_webhook_again():
+    """Founder 2026-09-05, both bots silent: this pod called setWebhook on every start and pointed
+    @Ottototbot at its own /telegram door, which has been dead since the adapter hung at
+    "Connecting to Telegram (attempt 1/8)". The fork enables the Telegram platform only when
+    TELEGRAM_BOT_TOKEN is in the environment (gateway/config.py), so renaming every TELEGRAM_*
+    key on the way out of the vault is what makes the registration impossible -- not a comment."""
+    docs = _docs()
+    spec, c = _container(docs)
+    env = {e["name"] for e in c["env"]}
+    assert not [n for n in env if n.startswith("TELEGRAM_")], sorted(env)
+    assert not [p for p in c.get("ports", []) if p.get("name") == "telegram"]
+    svc = _one(docs, "Service")
+    assert [p["name"] for p in svc["spec"]["ports"]] == ["a2a"]
+    assert not (DIR / "httproute.yaml").exists(), (
+        "the /telegram door is otto-gateway's, and only otto-gateway's"
+    )
+    assert "httproute.yaml" not in (DIR / "kustomization.yaml").read_text()
