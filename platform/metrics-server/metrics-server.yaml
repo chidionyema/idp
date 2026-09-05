@@ -52,7 +52,7 @@ spec:
     replicas: 1
     # The chart's own default, the built-in class every cluster carries: the usage feed the
     # descheduler reads must outlive the pods it ranks. `infrastructure-critical` is strictly the
-    # radio-room set (tests/test_incident_crew539_radio_room_survives_node_swap.py), not this.
+    # radio-room set (platform/scheduling/require-priority-class.yaml), not this.
     priorityClassName: system-cluster-critical
     # Kyverno refuses pods without limits; 100m/200Mi is the upstream sizing for < 100 nodes.
     resources:
