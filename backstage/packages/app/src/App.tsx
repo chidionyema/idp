@@ -25,6 +25,9 @@ import { themeModule } from './modules/theme';
 import { wordsModule } from './modules/i18n';
 // Live numbers on every cluster entity: the Prometheus tab (founder 2026-08-29, crew#645 CP5).
 import { metricsPlugin } from './modules/metrics';
+// crew#857: the scaffolder form reads the feature register (features.yaml) at
+// render time and shows prices from the pre-computed plan (plan.json).
+import { featureRegisterModule } from './modules/featureRegister';
 
 export default createApp({
   features: [
@@ -44,5 +47,6 @@ export default createApp({
     themeModule,
     wordsModule,
     metricsPlugin,
+    featureRegisterModule,
   ],
 });
