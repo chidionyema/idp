@@ -11,7 +11,8 @@
 #
 # The rules below are what that user may do, and they are the whole blast radius of the button.
 # Read everything the dashboard draws; patch Flux's own objects, which is how Reconcile and
-# Suspend are implemented. No secrets: a deploy button has no reason to read a credential (LAW 21).
+# Suspend are implemented. A deploy button reads no credential (LAW 21), and the secrets rule at
+# the bottom of this role is how that stays true while the vendor's namespace filter still passes.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -46,6 +47,34 @@ rules:
       - image.toolkit.fluxcd.io
     resources: ["*"]
     verbs: [get, list, watch, patch]
+  # WHY A DASHBOARD THAT READS NO SECRET ASKS FOR SECRETS.
+  #
+  # This one rule is the whole reason every page under /deploy drew "No data". Weave GitOps does
+  # not list Flux objects across the namespaces the user can read; it first filters the namespace
+  # list, and the filter is all-or-nothing against a fixed set of permissions the vendor compiled
+  # in -- core/nsaccess/nsaccess.go, DefautltWegoAppRules, v0.38.0. Fourteen grants, and the very
+  # first one is secrets get/list. A namespace where the user lacks any single grant is dropped
+  # (hasAllRules), so lacking one dropped all of them: the server answered every query with
+  # {"objects":[],"errors":[],"searchedNamespaces":[]} -- 200 OK, nothing searched, nothing drawn.
+  # Measured 2026-09-05 against the running pod, and confirmed from the other side by asking the
+  # API server which of the fourteen this user is refused: exactly these two, and nothing else.
+  #
+  # So the verb is required and the read is not. resourceNames pins the grant to a single name,
+  # and that name cannot be borne by any Secret that will ever exist: a Secret name must be a
+  # lowercase RFC 1123 subdomain, and this one is uppercase, so the API server refuses to create
+  # it (apimachinery IsDNS1123Subdomain). The dashboard therefore satisfies the filter and can
+  # read no credential in this estate -- not by a policy that watches for the mistake, but because
+  # the object the grant names is unnameable. `list` cannot be narrowed by resourceNames at all,
+  # so that half is dead on arrival by RBAC's own rules, which is the intent.
+  #
+  # The chart carries its own switch for this (rbac.viewSecretsEnabled in weave-gitops.yaml) and
+  # it is deliberately left false: it writes secrets into the ServiceAccount's role, and the
+  # filter runs as the impersonated user, not as the ServiceAccount. Flipping it would have handed
+  # the pod real secret access and still left the page empty.
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list]
+    resourceNames: ["WEAVE-GITOPS-READS-NO-SECRET"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -73,9 +102,13 @@ subjects:
 #   kubectl auth can-i impersonate users/founder --as=system:serviceaccount:weave-gitops:weave-gitops
 # and on 2026-09-05 that answered "yes" -- from the chart's own ClusterRole, created 2026-09-04
 # 08:55:49Z from the rbac.impersonationResourceNames value in weave-gitops.yaml, five seconds
-# before the pods started. The permission has been in place since the install. The Applications
-# page is empty for some other reason, and weave-gitops.yaml now runs the server at debug so the
-# next page load says which.
+# before the pods started. The permission has been in place since the install.
+#
+# The debug pass that comment asked for ran, and it did not name the defect either: at debug the
+# server logs "Found principal {user: founder}" and "request success {uri: /deploy/v1/objects,
+# status: 200}" for every page load, because from its point of view nothing failed. The answer was
+# in the response body rather than the log -- searchedNamespaces was empty -- and the cause is the
+# secrets grant described in the first role above.
 #
 # The role is kept because it states the grant in this repository instead of leaving it implicit in
 # a chart value, and resourceNames pins it to the single username above: this ServiceAccount may
