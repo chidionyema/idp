@@ -37,12 +37,28 @@ RUN npm install -g npm@11
 ARG CYRUS_VERSION=latest
 RUN npm install -g "cyrus-ai@${CYRUS_VERSION}"
 
-# cyrus-ai bundles a cloudflared binary to open its own tunnel for webhooks. This
-# estate has one ingress door, the gateway, and a second one is not a thing we are
-# willing to have present, let alone running. Deleting it also removes the third
-# critical the scan finds: golang.org/x/crypto v0.53.0, CVE-2026-56854 in the ssh
-# package. Webhooks reach Cyrus through the gateway, so nothing here uses it.
-RUN rm -rf /usr/local/lib/node_modules/cyrus-ai/node_modules/cloudflared
+# cyrus-ai depends on the `cloudflared` npm package, which downloads a Go binary at install
+# time so cyrus can open its own tunnel for webhooks. This estate has one ingress door, the
+# gateway, and a second one is not a thing we are willing to have present, let alone running.
+# That binary is also the third critical the scan finds: golang.org/x/crypto v0.53.0,
+# CVE-2026-56854 in the ssh package.
+#
+# The binary goes and the JavaScript stays. Deleting the whole package was the first attempt
+# and it built an image that could not start: cyrus-cloudflare-tunnel-client imports
+# 'cloudflared' at the top of dist/CloudflareTunnelClient.js, unconditionally, so node exited
+# with ERR_MODULE_NOT_FOUND on boot, before any transport was chosen, and every pod sat in
+# CrashLoopBackOff behind a green build. The JavaScript is inert without its binary:
+# cloudflared/lib/constants.js resolves the executable to `<pkg>/bin/cloudflared` and nothing
+# reads that path unless a tunnel is actually opened, which webhook transport never does.
+#
+# The `node --input-type=module` line is the guard, not decoration. It is the exact failure
+# the running pod hit, run at build time, so this image can never again leave the builder
+# unable to resolve a package cyrus imports on its first line.
+RUN set -eux; \
+    find /usr/local/lib/node_modules -type d -path '*/node_modules/cloudflared/bin' -prune -exec rm -rf {} +; \
+    test ! -e /usr/local/lib/node_modules/cyrus-ai/node_modules/cloudflared/bin; \
+    cd /usr/local/lib/node_modules/cyrus-ai; \
+    node --input-type=module -e "await import('cloudflared'); console.log('cloudflared resolves, binary gone')"
 
 # Configure git user for commits
 RUN git config --global user.name "estate-bot" && \
