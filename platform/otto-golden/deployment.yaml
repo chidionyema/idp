@@ -115,7 +115,7 @@ spec:
             # 2026-09-04. otto/router/config.py already calls minimax the
             # founder-verified lane.
             - name: OTTO_ROUTER_LANE_JUDGMENT_MODEL
-              value: minimax
+              value: deepseek
             # The bulk lane's shipped default is also minimax, and otto/router/config.py
             # refuses a configuration whose judgment and bulk lanes share one model family
             # so their error modes cannot correlate. With judgment overridden to minimax

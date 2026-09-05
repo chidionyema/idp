@@ -96,10 +96,10 @@ contract_max_usd_month = 150
 days_per_month = 31   # the longest month, so a sum under the cap holds in every month
 
 [routing]
-default = "minimax"
+default = "deepseek"
 vision = "vision"
 cheap = "deepseek"
-consensus = ["minimax", "deepseek", "gemini"]
+consensus = ["deepseek", "minimax", "gemini"]
 
 [merge]
 strict_branches = ["main"]

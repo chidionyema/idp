@@ -274,9 +274,9 @@ KEYS: dict[str, KeySpec] = {
 
     "budget.default": KeySpec(None, "int", "SB_DEFAULT_BUDGET", "tokens; None means budget is required at start"),
     "runner.default": KeySpec("echo", "str", "SB_DEFAULT_RUNNER", ""),
-    "model.default": KeySpec("minimax", "str", "SB_MODEL", "LiteLLM alias for the llm runner"),
+    "model.default": KeySpec("deepseek", "str", "SB_MODEL", "LiteLLM alias for the llm runner"),
     "model.vision": KeySpec("vision", "str", "SB_MODEL_VISION", "LiteLLM alias, vision-capable"),
-    "model.consensus": KeySpec(["minimax", "deepseek", "gemini"], "list", "SB_MODEL_CONSENSUS", "comma-separated aliases; three different models (spec 4.2): one local, two hosted, because a second local voter on a 16 GB laptop misses the 30 s deadline (measured 2026-08-26: 3-4B models 60-75 s per answer)"),
+    "model.consensus": KeySpec(["deepseek", "minimax", "gemini"], "list", "SB_MODEL_CONSENSUS", "comma-separated aliases; three different models (spec 4.2): one local, two hosted, because a second local voter on a 16 GB laptop misses the 30 s deadline (measured 2026-08-26: 3-4B models 60-75 s per answer)"),
 
     "step.start_to_close_min": KeySpec(30, "int", "SB_STEP_TIMEOUT_MIN", "activity start-to-close timeout"),
     "step.heartbeat_s": KeySpec(10, "int", "SB_HEARTBEAT_S", "activity heartbeat timeout"),
