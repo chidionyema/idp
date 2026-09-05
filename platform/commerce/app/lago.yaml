@@ -47,8 +47,8 @@ spec:
       sourceRef:
         kind: HelmRepository
         name: lago
-  install: { remediation: { retries: 3 } }
-  upgrade: { remediation: { retries: 3 } }
+  install: {remediation: {retries: 3}}
+  upgrade: {remediation: {retries: 3}}
   values:
     # The application version the chart renders into every image tag (getlago/api:v<version>,
     # getlago/front:v<version>). The chart's default, 1.33.4, ships Rails 8.0.2.1 with a
@@ -109,14 +109,14 @@ spec:
     # schedule the day it was switched on. Limits, because the cluster's own admission policy
     # (require-pod-requests-limits) refuses a container that names one without the other, and
     # requests == limits is Guaranteed QoS: the layer holding the money is not the first evicted.
-    front:         { replicas: 1, resources: { requests: { cpu: 50m,  memory: 128Mi }, limits: { cpu: 50m,  memory: 128Mi } } }
-    api:           { replicas: 1, resources: { requests: { cpu: 200m, memory: 512Mi }, limits: { cpu: 200m, memory: 512Mi } } }
-    worker:        { replicas: 1, resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: 100m, memory: 512Mi } } }
-    clock:         { replicas: 1, resources: { requests: { cpu: 25m,  memory: 128Mi }, limits: { cpu: 25m,  memory: 128Mi } } }
-    clockWorker:   { enabled: true, replicas: 1, resources: { requests: { cpu: 100m, memory: 384Mi }, limits: { cpu: 100m, memory: 384Mi } } }
-    billingWorker: { enabled: true, replicas: 1, resources: { requests: { cpu: 100m, memory: 384Mi }, limits: { cpu: 100m, memory: 384Mi } } }
-    webhookWorker: { enabled: true, replicas: 1, resources: { requests: { cpu: 100m, memory: 384Mi }, limits: { cpu: 100m, memory: 384Mi } } }
-    paymentWorker: { enabled: true, replicas: 1, resources: { requests: { cpu: 100m, memory: 384Mi }, limits: { cpu: 100m, memory: 384Mi } } }
+    front: {replicas: 1, resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {cpu: 50m, memory: 128Mi}}}
+    api: {replicas: 1, resources: {requests: {cpu: 200m, memory: 512Mi}, limits: {cpu: 200m, memory: 512Mi}}}
+    worker: {replicas: 1, resources: {requests: {cpu: 100m, memory: 512Mi}, limits: {cpu: 100m, memory: 512Mi}}}
+    clock: {replicas: 1, resources: {requests: {cpu: 25m, memory: 128Mi}, limits: {cpu: 25m, memory: 128Mi}}}
+    clockWorker: {enabled: true, replicas: 1, resources: {requests: {cpu: 100m, memory: 384Mi}, limits: {cpu: 100m, memory: 384Mi}}}
+    billingWorker: {enabled: true, replicas: 1, resources: {requests: {cpu: 100m, memory: 384Mi}, limits: {cpu: 100m, memory: 384Mi}}}
+    webhookWorker: {enabled: true, replicas: 1, resources: {requests: {cpu: 100m, memory: 384Mi}, limits: {cpu: 100m, memory: 384Mi}}}
+    paymentWorker: {enabled: true, replicas: 1, resources: {requests: {cpu: 100m, memory: 384Mi}, limits: {cpu: 100m, memory: 384Mi}}}
     # Off. pdfWorker has a guard and takes it. events-worker and pdf have no guard, so the
     # chart renders them whatever you say: they are removed from the manifest below instead of
     # being shipped as husks at zero replicas -- an object a buyer's engineer would open and
@@ -124,14 +124,14 @@ spec:
     # `replicas: 0` stays as the second line of defence: if a chart bump ever renames those
     # Deployments and the removal stops matching, what appears is a pod with no requests, which
     # the cluster's own require-pod-requests-limits refuses loudly, not a 1.1-core default pod.
-    pdfWorker:     { enabled: false }
-    eventsWorker:  { replicas: 0 }
-    pdf:           { replicas: 0 }
+    pdfWorker: {enabled: false}
+    eventsWorker: {replicas: 0}
+    pdf: {replicas: 0}
     job:
       migrate:
         # Runs once per install and upgrade as a Helm hook, and it is a pod like any other:
         # without this block it asks for nothing, and require-pod-requests-limits refuses it.
-        resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: 200m, memory: 512Mi } }
+        resources: {requests: {cpu: 100m, memory: 512Mi}, limits: {cpu: 200m, memory: 512Mi}}
   # WHAT THIS CHART CANNOT BE TOLD IN VALUES, and is therefore patched at render time.
   # lago 1.28.0 exposes no securityContext, no priorityClassName and no Service labels: grep of
   # lago-1.28.0.tgz finds `securityContext` in no template and `priorityClassName` only in the
@@ -177,7 +177,7 @@ spec:
             newTag: main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:lago-api:tag"}
           - name: getlago/front
             newName: ghcr.io/chidionyema/lago-front
-            newTag: main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:lago-front:tag"}
+            newTag: main-4847-28118b6fe4684905db1f895a2f3bf4f752f9ff96 # {"$imagepolicy": "flux-system:lago-front:tag"}
           - name: getlago/lago-events-processor
             newName: docker.io/getlago/lago-events-processor
           - name: getlago/lago-gotenberg
@@ -191,20 +191,20 @@ spec:
           # disabled husks for a reader to trip over. Kustomize's `$patch: delete` is how a
           # post-renderer drops a resource; the render is the proof it matched (the workload
           # list is pinned by tests/test_crew623_money_never_enters_the_application.py).
-          - target: { kind: Deployment, name: lago-pdf }
+          - target: {kind: Deployment, name: lago-pdf}
             patch: |
               $patch: delete
               apiVersion: apps/v1
               kind: Deployment
               metadata: { name: lago-pdf }
-          - target: { kind: Deployment, name: lago-events-worker }
+          - target: {kind: Deployment, name: lago-events-worker}
             patch: |
               $patch: delete
               apiVersion: apps/v1
               kind: Deployment
               metadata: { name: lago-events-worker }
           # docs/policy/every-interface-is-a-door.md: the chart's Services name their door.
-          - target: { kind: Service }
+          - target: {kind: Service}
             patch: |
               apiVersion: v1
               kind: Service
@@ -215,7 +215,7 @@ spec:
           # The pod-level half: a class the scheduler can rank, and the seccomp profile the
           # restricted profile asks for. Both kinds, because the migrate Job is a pod too and a
           # patch targeting Deployment alone never reaches it.
-          - target: { kind: Deployment }
+          - target: {kind: Deployment}
             patch: |
               apiVersion: apps/v1
               kind: Deployment
@@ -231,7 +231,7 @@ spec:
                       runAsUser: 1000
                       runAsGroup: 1000
                       fsGroup: 1000
-          - target: { kind: Job }
+          - target: {kind: Job}
             patch: |
               apiVersion: batch/v1
               kind: Job
@@ -250,14 +250,14 @@ spec:
           # The container-level half, by position rather than by name: every pod this chart
           # ships holds exactly one container, and a strategic-merge patch would have to name
           # each of the eleven separately to reach them.
-          - target: { kind: Deployment }
+          - target: {kind: Deployment}
             patch: |
               - op: add
                 path: /spec/template/spec/containers/0/securityContext
                 value:
                   allowPrivilegeEscalation: false
                   capabilities: { drop: [ALL] }
-          - target: { kind: Job }
+          - target: {kind: Job}
             patch: |
               - op: add
                 path: /spec/template/spec/containers/0/securityContext
@@ -269,7 +269,7 @@ spec:
           # securityContext never reaches a non-root process: the kubelet grants no ambient
           # capabilities). The pod says who it is, the container port and the Service's
           # targetPort follow the image, and the Service port stays 80 so frontUrl above holds.
-          - target: { kind: Deployment, name: lago-front }
+          - target: {kind: Deployment, name: lago-front}
             patch: |
               - op: replace
                 path: /spec/template/spec/securityContext/runAsUser
@@ -283,7 +283,7 @@ spec:
               - op: replace
                 path: /spec/template/spec/containers/0/ports/0/containerPort
                 value: 8080
-          - target: { kind: Service, name: lago-front-svc }
+          - target: {kind: Service, name: lago-front-svc}
             patch: |
               - op: replace
                 path: /spec/ports/0/targetPort
@@ -295,7 +295,7 @@ spec:
           # surface answering, not a probe written to satisfy a policy: readiness keeps the
           # Service from routing at a pod that has not finished starting, and liveness restarts
           # one whose nginx has wedged. Both are the same URL because there is only one.
-          - target: { kind: Deployment, name: lago-front }
+          - target: {kind: Deployment, name: lago-front}
             patch: |
               - op: add
                 path: /spec/template/spec/containers/0/readinessProbe
