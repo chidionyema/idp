@@ -1,35 +1,33 @@
-# Checkpoint — session 36c9262c — lane: the estate's memory
+# Checkpoint
 
-## RESUME HERE
+## RESUME HERE — the agent workforce (crew#850)
 
-The memory lane. Hindsight is the estate's memory store (namespace `hindsight`, on the one
-estate Postgres, database `hindsight`, one bank `hermes`); estate-mcp is the interface in front
-of it and holds no memory of its own.
+The founder asked for three things in a row on 2026-09-05: take CrewAI to its full advanced
+surface, rename it to something general rather than "infra", and get it right because "we
+[are] setting up a company and [a] proper crew". The design, the research and the checkpoints
+are all on https://github.com/chidionyema/crew/issues/850.
 
-Landed:
-- hermes-v2#76 — the one Telegram door recalls before it answers and retains after.
-- idp#1637 — three workloads were still calling the revoked DeepSeek lane; hindsight's
-  extraction model is now the `fast` alias.
-- idp#1640 — both Otto deployments carry the memory URL and the fence to reach it.
+**Where the work is.** `~/dev/code/infra-crew`, branch `crew850-agent-workforce`. The pass in
+flight renames the package `infra_crew` to `agent_workforce`, the environment prefix
+`INFRA_CREW_*` to `AGENT_WORKFORCE_*`, and the queue from the single label `lane:infra` to the
+general lane set already on the board. After that comes the feature adoption: a Flow with
+structured state and `@persist`, `CheckpointConfig` so a killed pod resumes, `MCPServerAdapter`
+against the estate MCP server, a `PRE_TOOL_CALL` hook that raises `HookAborted` on merge,
+deploy, dispatch and cluster verbs, the unified `Memory` class, native `planning`, and the
+version move from 1.9.3 to 1.15.20.
 
-Open right now:
-- **idp#1644** — main's offline-gate is red and blocks everything. Two gates disagreed with the
-  controller they predict: `bin/idp-envsubst-gate` ignored Flux's per-resource
-  `kustomize.toolkit.fluxcd.io/substitute: disabled` (platform/llm), and `bin/ns-fence-gate`
-  failed three namespaces that are declared in git, switched off, and correctly skipped by
-  `bin/idp-ns-fence-gen`. Both fixed, both fixtures still prove both ways.
-- **idp#1642** — `remember` / `recall` on the estate MCP, every check green, waiting only on
-  main going green so the merge does not inherit a red main.
-- **next** — the founder said the memory work "is just happening in the dark". The deliverable
-  is a Superset "Memory" dashboard seeded exactly like
-  `platform/observability/superset-boardroom-seed.yaml`, over the `hindsight` database:
-  memories per day, which channel they came from (`metadata->>'platform'` or `'surface'`),
-  which conversation and person, what kind of fact, the latest memories, the ingest queue from
-  `async_operations` and the extraction calls from `llm_requests`. Measured 2026-09-05:
-  `audit_log` is empty, so per-call retain/recall volume is not visible from it today.
-  Worktree for that work: `wt-mem3`, branch `feat/memory-in-the-open`.
+**Two measured facts that shape it.** The `lane:infra` label never existed on the board, so the
+CronJob has matched nothing on every run since it was deployed — that is why "we have it set up"
+produced nothing. And the estate MCP server offers nine tools including `remember`, `recall` and
+`get_workload_logs`, which replaces our own `tools/estate.py`, while the github route offers only
+six read tools, so the write path still needs the official GitHub MCP server (CP7).
 
-Still unapplied from the one-door ruling: `hermes-agent` is a second Telegram registrant
-(`platform/hermes-agent/gateway.yaml` TELEGRAM_WEBHOOK_URL). The pinned fork's polling
-behaviour must be read before that env is touched, or removing it drops the fork into
-long-polling and it steals the door from otto-gateway.
+**Cannot be verified on this Mac.** It is an Intel machine, and `crewai==1.15.20` depends on
+lancedb, which publishes no macOS x86_64 wheel. Verification is the repository's own CI on
+ubuntu, not a local run.
+
+**Other lanes.** idp#1656 (the one-shot cleanup) is open with auto-merge on and deletes the two
+crew539 incident tests that are the last red on idp#1521 (Cyrus). idp#1521 also carries the
+CA-bundle fix, commit 92196da5. The founder still owes two calls on crew#850: CrewAI AMP against
+self-hosting, and whether the customer-facing agent surface is CrewAI's frontend protocol or
+Backstage. BuilderPack, which he sent as an input, is recorded on crew#846.
