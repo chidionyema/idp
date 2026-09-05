@@ -24,6 +24,7 @@ Row format, one rule per row. `gate` is a shell function or command defined in `
 | No namespace without a both-ways default-deny NetworkPolicy, a ResourceQuota, a LimitRange and a DNS exception (crew#191) | ns_fence_gate | tests/fixtures/ns-fence/bad.yaml | tests/fixtures/ns-fence/good.yaml |
 | Every scheduled job reaches the Dagster UI with a description of what it does (LAW 28) | job_described | tests/fixtures/schedule-undescribed.yml | tests/fixtures/schedule-described.yml |
 | A code location loads the way workspace.yaml loads it: by file path, not as a package (LAW 45) | defs_validate | tests/fixtures/definitions/relative-import.py | tests/fixtures/definitions/loads-by-path.py |
+| A workflow that grades main never cancels main's own run; stale pull-request runs still are (crew#865) | main_verdict_gate | tests/fixtures/main-verdict/bad.yml | tests/fixtures/main-verdict/good.yml |
 | A test grades behavior or parsed structure, never prose: no test function may only assert sentences or string membership in file text (R76, founder 2026-09-03) | prose_pin_scan | tests/fixtures/prose-pin/bad.py | tests/fixtures/prose-pin/good.py |
 
 Rules that are already types or tools, and so need no row: compose files must parse
