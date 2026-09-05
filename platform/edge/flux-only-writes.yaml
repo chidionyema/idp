@@ -44,6 +44,24 @@ spec:
           - resources:
               kinds: ["*"]
               operations: [CREATE, UPDATE, DELETE]
+      exclude:
+        any:
+          # The authorization API's review kinds are CREATE calls that persist nothing: the server
+          # answers "may this identity do X" and stores no object. Kyverno still sees them as a
+          # CREATE, so the lockdown above refused them, and refusing them breaks every client that
+          # asks the cluster what it is allowed to do before it shows a page. Headlamp is the one
+          # that matters here: its desktop app opens a cluster by posting a SelfSubjectRulesReview,
+          # read that 400 as "not authenticated", and put a bearer-token prompt in front of the
+          # founder on 2026-09-05 while every read call it made returned 200. Excusing them takes
+          # nothing off the lockdown, because there is no write to refuse.
+          - resources:
+              kinds:
+                - authorization.k8s.io/v1/SelfSubjectRulesReview
+                - authorization.k8s.io/v1/SelfSubjectAccessReview
+                - authorization.k8s.io/v1/SubjectAccessReview
+                - authorization.k8s.io/v1/LocalSubjectAccessReview
+                - authentication.k8s.io/v1/SelfSubjectReview
+                - authentication.k8s.io/v1/TokenReview
       preconditions:
         all:
           # kyverno apply in bin/idp-kyverno-render carries no admission identity; that render
