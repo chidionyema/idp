@@ -58,7 +58,14 @@ metadata:
   name: backstage
   namespace: flux-system
 spec:
-  interval: 1m
+  # 15m, not 1m. At one minute this automation opened a commit on main for every new image
+  # tag CI published: 183 of the 285 commits on main in the 24 hours to 2026-09-05T03:20Z,
+  # about one every five minutes. Flux's dependsOn requires each dependency to be applied at
+  # the source's *current* revision, so a commit every five minutes means a row five deep in
+  # the graph -- otto-gateway is one -- only reconciles when it wins a race against the bot.
+  # Fifteen minutes batches the tags into one commit and leaves a quiet window longer than
+  # the 10m reconcile interval every row in the chain uses.
+  interval: 15m
   sourceRef:
     kind: GitRepository
     name: idp-writer
