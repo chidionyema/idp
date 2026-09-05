@@ -231,6 +231,18 @@ drills:
       01:58Z schedule never fired, the Ops page read "What waits on you could not be read" and the
       founder saw the portal as down; GitHub's cron is best effort, this row is the estate's promise.
 
+  - name: estate-inventory
+    owner: idp
+    workflow: estate-inventory.yml
+    job: inventory
+    schedule: "23 2 * * *"
+    max_age_hours: 26
+    proves: >-
+      Every plane the estate runs on (the cloud tenancy, the cluster, GitHub, Cloudflare,
+      Tailscale, the Mac) was read from its own control plane in the last day and every thing
+      found was graded MANAGED, DRIFTED, ORPHAN or GHOST against what git declares. A plane
+      that could not be read is an UNKNOWN row on the table, never a green zero.
+
   - name: otto-parity
     owner: science
     workflow: otto-parity.yml

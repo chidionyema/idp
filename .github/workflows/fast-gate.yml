@@ -25,3 +25,34 @@ jobs:
         run: |
           base=$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse HEAD~1)
           PYTHON_STRICT_RANGE="${base}...HEAD" .estate-hooks/guards/hooks/python-strict-default
+      # No docs, no merge (founder blueprint 2026-08-31, doc 2026-08-31T0959Z...b276fe41):
+      # a PR that changes code but adds nothing under docs/ fails with "Missing Architectural
+      # Record". Enforced at the git layer, never by scanning chat replies. Graded against the
+      # estate before landing (R: a-new-gate-is-run-against-the-estate-before-it-merges):
+      # PRs opened before 2026-09-01 warn only; bot PRs (image updates, dependabot) are exempt;
+      # a PR body line "Docs-exempt: <reason>" is the LAW 38 escape valve and is printed loud.
+      - name: no docs, no merge
+        if: github.event_name == 'pull_request'
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_CREATED: ${{ github.event.pull_request.created_at }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          base=$(git merge-base origin/main HEAD)
+          changed=$(git diff --name-only "$base"...HEAD)
+          code=$(printf '%s\n' "$changed" | grep -vE '^docs/|\.md$' || true)
+          docs_added=$(git diff --name-only --diff-filter=AM "$base"...HEAD -- docs/ | wc -l)
+          [ -z "$code" ] && { echo "docs-only change"; exit 0; }
+          case "$PR_AUTHOR" in *'[bot]') echo "bot PR ($PR_AUTHOR): exempt"; exit 0;; esac
+          if printf '%s\n' "$PR_BODY" | grep -qi '^Docs-exempt:'; then
+            printf '%s\n' "$PR_BODY" | grep -i '^Docs-exempt:' | head -1
+            echo "::warning::Docs-exempt claimed; the reason above is on the record."; exit 0
+          fi
+          if [ "$docs_added" -eq 0 ]; then
+            if [ "$(printf '%s' "$PR_CREATED" | cut -c1-10)" \< "2026-09-01" ]; then
+              echo "::warning::Missing Architectural Record (grandfathered: PR opened $PR_CREATED)"; exit 0
+            fi
+            echo "::error::Missing Architectural Record: this PR changes code but adds no file under docs/."
+            exit 1
+          fi
+          echo "code change carries $docs_added docs file(s)"

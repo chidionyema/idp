@@ -14,6 +14,7 @@ import { catalogApiRef } from '@backstage/plugin-catalog-react';
 import { catalogApiMock } from '@backstage/plugin-catalog-react/testUtils';
 import { Entity } from '@backstage/catalog-model';
 import { HC_CHECKS } from './healthchecks';
+import { INVENTORY_JSON } from './inventory';
 import { Ops } from './Ops';
 import { HELMRELEASES, KUSTOMIZATIONS, NODES, PODS } from './useClusterHealth';
 import { ALERTS } from './useOpenReds';
@@ -95,6 +96,30 @@ const healthchecks = {
   ],
 };
 
+const inventory = {
+  generated_at: new Date(Date.now() - 3 * 60 * 60_000).toISOString(),
+  counts: {
+    mac: {
+      MANAGED: 44,
+      DRIFTED: 0,
+      ORPHAN: 6,
+      GHOST: 0,
+      UNKNOWN: false,
+      read: 'yes',
+    },
+    github: {
+      MANAGED: 0,
+      DRIFTED: 0,
+      ORPHAN: 0,
+      GHOST: 0,
+      UNKNOWN: true,
+      read: 'UNKNOWN',
+    },
+  },
+  blind: ['github: steampipe is not installed'],
+  rows: [],
+};
+
 const render = (lists: Record<string, unknown[]>, fail = false) =>
   renderInTestApp(
     <TestApiProvider
@@ -129,7 +154,11 @@ const render = (lists: Record<string, unknown[]>, fail = false) =>
                     ok: true,
                     status: 200,
                     json: async () =>
-                      url.endsWith(HC_CHECKS) ? healthchecks : founder,
+                      url.endsWith(HC_CHECKS)
+                        ? healthchecks
+                        : url.endsWith(INVENTORY_JSON)
+                        ? inventory
+                        : founder,
                   },
           } as any,
         ],
@@ -251,5 +280,36 @@ describe('Ops', () => {
       await screen.findByTestId('ops-healthchecks-error'),
     ).toHaveTextContent('answered 502');
     expect(screen.queryByTestId('ops-healthchecks')).toBeNull();
+  });
+
+  it('draws the estate inventory tile from inventory.json on the state branch (crew#740)', async () => {
+    await render({});
+    expect(
+      await screen.findByTestId('ops-inventory-sentence'),
+    ).toHaveTextContent('6 things not as git says; 1 plane could not be read.');
+    const rows = screen.getAllByTestId('ops-inventory-row');
+    expect(rows.map(r => r.getAttribute('data-read'))).toEqual([
+      'UNKNOWN',
+      'yes',
+    ]);
+    expect(rows[0]).toHaveTextContent(
+      'GitHub: could not be read, so what it holds is unknown',
+    );
+    expect(rows[1]).toHaveTextContent('Mac: 44 managed, 6 orphans');
+    expect(screen.getByTestId('ops-inventory-blind')).toHaveTextContent(
+      'steampipe is not installed',
+    );
+    expect(screen.getByTestId('ops-inventory')).toHaveTextContent('3h ago');
+    expect(screen.getByTestId('ops-inventory')).toHaveTextContent(
+      'The full table',
+    );
+  });
+
+  it('says the inventory is unknown when inventory.json cannot be read', async () => {
+    await render({}, true);
+    expect(await screen.findByTestId('ops-inventory-error')).toHaveTextContent(
+      'answered 502',
+    );
+    expect(screen.queryByTestId('ops-inventory')).toBeNull();
   });
 });

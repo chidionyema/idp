@@ -66,6 +66,24 @@ PA=""
 if command -v pip-audit >/dev/null; then PA="pip-audit";
 elif command -v uvx >/dev/null; then PA="uvx pip-audit"; fi
 reqs=$(git ls-files | grep -E '(^|/)requirements[^/]*\.txt$')
+# Recorded dismissals: a TRACKED .pip-audit-ignores file in the scanned repository,
+# one advisory per line: "<ID> <reason>". The reason is mandatory: an unexplained
+# dismissal is an unaudited dependency and fails the scan. Each ID rides pip-audit's
+# own --ignore-vuln flag, and every dismissal is printed in the receipt, so nothing
+# is silenced invisibly. An untracked file is not the codebase and is not read.
+ig=()
+if git ls-files --error-unmatch .pip-audit-ignores >/dev/null 2>&1; then
+  while IFS= read -r iline; do
+    case "$iline" in ''|'#'*) continue ;; esac
+    iid=${iline%% *}; ireason=${iline#* }
+    if [ "$ireason" = "$iline" ] || [ -z "$(printf '%s' "$ireason" | tr -d '[:space:]')" ]; then
+      say "FAIL  deps      .pip-audit-ignores entry $iid has no reason; an unexplained dismissal is refused"; fail=1
+      continue
+    fi
+    ig+=(--ignore-vuln "$iid")
+    say "note  deps      dismissed $iid: $(printf '%s' "$ireason" | cut -c1-160)"
+  done < .pip-audit-ignores
+fi
 if [ -z "$PA" ]; then
   say "BLIND deps      pip-audit not on PATH (pipx install pip-audit, or uv)"; blind=1
 elif [ -z "$reqs" ]; then
@@ -75,7 +93,7 @@ else
   # and the three together exceeded five minutes on the founder machine.
   args=(); for r in $reqs; do args+=(-r "$r"); done
   # shellcheck disable=SC2086  # $PA is "pip-audit" or "uvx pip-audit": two words on purpose
-  out=$(timeout 240 $PA "${args[@]}" --progress-spinner off 2>&1); rc=$?
+  out=$(timeout 240 $PA "${args[@]}" ${ig[@]+"${ig[@]}"} --progress-spinner off 2>&1); rc=$?
   if [ $rc = 0 ]; then
     say "ok    deps      pip-audit over $(( ${#args[@]} / 2 )) requirements files: no known vulnerabilities"
   elif [ $rc = 124 ]; then
@@ -89,7 +107,7 @@ else
     perfile_rc=0; perfile_out=""; perfile_install=0
     for r in $reqs; do
       # shellcheck disable=SC2086
-      o=$(timeout 240 $PA -r "$r" --progress-spinner off 2>&1); c=$?
+      o=$(timeout 240 $PA -r "$r" ${ig[@]+"${ig[@]}"} --progress-spinner off 2>&1); c=$?
       if [ $c = 124 ]; then perfile_rc=124; break; fi
       if [ $c != 0 ]; then
         if printf '%s' "$o" | grep 'Failed to install packages' >/dev/null; then perfile_install=1; else perfile_rc=1; perfile_out="$perfile_out
@@ -109,7 +127,7 @@ $o"; fi
     # FAIL: audit the pins as written, without resolving or installing anything.
     why=$(printf '%s' "$out" | grep -m1 -oE 'No matching distribution found for [^ ]+|No module named [^ ]+' || echo "see pip-audit output")
     # shellcheck disable=SC2086
-    out2=$(timeout 240 $PA "${args[@]}" --no-deps --disable-pip --progress-spinner off 2>&1); rc2=$?
+    out2=$(timeout 240 $PA "${args[@]}" ${ig[@]+"${ig[@]}"} --no-deps --disable-pip --progress-spinner off 2>&1); rc2=$?
     if [ $rc2 = 0 ]; then
       say "ok    deps      pip-audit over $(( ${#args[@]} / 2 )) requirements files: no known vulnerabilities (pins audited without resolution; install failed: $why)"
     elif [ $rc2 = 124 ]; then

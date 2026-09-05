@@ -4,6 +4,7 @@
 // owner, since when, the next action and the board link; a red with no owner is itself a red.
 import { Content, Link, Page } from '@backstage/core-components';
 import { Typography, makeStyles } from '@material-ui/core';
+import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import { Pill } from './EstateHome';
 import { ClusterHealth, healthSentence } from './clusterHealth';
 import { useClusterHealth } from './useClusterHealth';
@@ -13,6 +14,15 @@ import { FounderData, receiptsSentence, waitingSentence } from './founder';
 import { useFounder } from './useFounder';
 import { useHealthchecks } from './useHealthchecks';
 import { Checks, STATUS_WORD, checksSentence, notUp } from './healthchecks';
+import {
+  INVENTORY_TABLE,
+  InventoryData,
+  PLANE_WORD,
+  inventorySentence,
+  planeOrder,
+  planeSentence,
+} from './inventory';
+import { useInventory } from './useInventory';
 import { ago } from './estate';
 import { monoFamily } from '../theme/tokens';
 
@@ -278,12 +288,57 @@ const HealthchecksTile = ({ data }: { data: Checks }) => {
   );
 };
 
+// crew#740: what every plane actually holds, graded against git, from the table the inventory
+// workflow publishes on the state branch. An unread plane is said so, never a green zero.
+const InventoryTile = ({ data, now }: { data: InventoryData; now: number }) => {
+  const classes = useStyles();
+  const config = useApi(configApiRef);
+  const base = config.getOptionalString('backend.baseUrl') ?? '';
+  return (
+    <div className={classes.tile} data-testid="ops-inventory">
+      <div className={classes.tileTop}>
+        <span className={classes.tileTitle}>Estate inventory</span>
+        <span className={classes.mono} title={data.generated_at}>
+          {ago(data.generated_at, now) ?? 'Unknown'}
+        </span>
+      </div>
+      <p data-testid="ops-inventory-sentence">{inventorySentence(data)}</p>
+      <ul className={classes.list}>
+        {planeOrder(data).map(plane => (
+          <li
+            key={plane}
+            data-testid="ops-inventory-row"
+            data-read={data.counts[plane].read}
+          >
+            {PLANE_WORD[plane] ?? plane}: {planeSentence(data.counts[plane])}
+          </li>
+        ))}
+      </ul>
+      {data.blind.length > 0 && (
+        <ul className={classes.list}>
+          {data.blind.map(b => (
+            <li
+              key={b}
+              className={classes.mono}
+              data-testid="ops-inventory-blind"
+            >
+              {b}
+            </li>
+          ))}
+        </ul>
+      )}
+      <Link to={`${base}/api/proxy${INVENTORY_TABLE}`}>The full table</Link>
+    </div>
+  );
+};
+
 export const Ops = () => {
   const classes = useStyles();
   const loaded = useClusterHealth();
   const reds = useOpenReds();
   const founder = useFounder();
   const checks = useHealthchecks();
+  const inventory = useInventory();
   const now = Date.now();
   return (
     <Page themeId="home">
@@ -325,6 +380,15 @@ export const Ops = () => {
             <div className={classes.tile} data-testid="ops-healthchecks-error">
               Scheduled jobs could not be read, so their state is unknown.{' '}
               <span className={classes.mono}>{checks.error}</span>
+            </div>
+          )}
+          {inventory.state === 'ready' && (
+            <InventoryTile data={inventory.data} now={now} />
+          )}
+          {inventory.state === 'error' && (
+            <div className={classes.tile} data-testid="ops-inventory-error">
+              The estate inventory could not be read, so it is unknown.{' '}
+              <span className={classes.mono}>{inventory.error}</span>
             </div>
           )}
           {founder.state === 'error' && (

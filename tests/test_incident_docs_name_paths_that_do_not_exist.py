@@ -20,6 +20,7 @@ The ratchet is `ALLOWED` below. A path is allowed only with a reason on the line
 has to say why the file is legitimately absent -- not "we have not got to it yet". Adding a name
 here is a decision someone can read; leaving a dead path in the prose was not.
 """
+
 import re
 import subprocess
 from pathlib import Path
@@ -29,40 +30,55 @@ ROOT = Path(__file__).resolve().parents[1]
 #: Every repo in `~/dev/code` a doc may point into. A path starting with one of these names is a
 #: cross-repo reference, and CI checks out one repo, so it cannot be resolved here. Repointing the
 #: 34 bare paths into this form was most of the fix; a prefix at least tells the reader WHERE.
-SIBLINGS = {"crew", "idp", "prospector", "prospector-main", "hermes-v2", "hermes-audit",
-            "survival-stack", "maestro", "agent-guard", "ebookStore", "ecommerce-clean",
-            "QAlgo", "mumchimp-medusa", "e26-rescue", "forex_trend_prediction"}
+SIBLINGS = {
+    "crew",
+    "idp",
+    "prospector",
+    "prospector-main",
+    "hermes-v2",
+    "hermes-audit",
+    "survival-stack",
+    "maestro",
+    "agent-guard",
+    "ebookStore",
+    "ecommerce-clean",
+    "QAlgo",
+    "mumchimp-medusa",
+    "e26-rescue",
+    "forex_trend_prediction",
+}
 
 #: A backticked token with a slash and a source-file extension. Deliberately narrow: prose is full
 #: of bare words in backticks, and grading those would be grading English.
-TICK = re.compile(r'`([A-Za-z0-9_./-]+\.(?:py|sh|tf|ya?ml|md|rego|json|ts|go))`')
+TICK = re.compile(r"`([A-Za-z0-9_./-]+\.(?:py|sh|tf|ya?ml|md|rego|json|ts|go))`")
 
 #: Placeholders in templates (`docs/decisions/NNNN-title.md`) name a shape, not a file.
 PLACEHOLDER = re.compile(r"NNNN|issue-N\.|<[a-z]+>|\.\.\.")
 
 #: path -> why it is legitimately absent. Read this as a list of things the estate has NOT got.
 ALLOWED = {
-    "claude-guards/laws/AGENTS.md":
-        "the laws file in the claude-guards repository, which is checked out under the home "
-        "directory (not as a sibling of this one); named by the Langfuse incident report",
-    ".github/workflows/security-scan.yml":
-        "the copy bin/estate-security-rollout installs in every OTHER repository; idp's own copy "
-        "is platform/github/workflows/security-scan.yml, named in the same sentence",
-    "docs/configuration/integrations/traefik.md":
-        "upstream oauth2-proxy documentation, read while deciding ADR 0007; not a file here",
-    "providers/github.md":
-        "upstream oauth2-proxy documentation, read while deciding ADR 0007; not a file here",
-    "catalog/manifests/cp5-caddy.yaml":
-        "the manifest `idp-reconcile --fix` removed; the sentence records the removal, so the "
-        "file being absent is the thing it says",
-    "scratchpad/phase1.sh":
-        "the scratch script the 2026-08-25 demo transcript was recorded from; never committed",
+    "docs/inventory.json": "written by the estate-inventory workflow onto the state/live-diagram branch only "
+    "(crew#740); the Ops tile reads it there through the /estate-state proxy, never from main",
+    "docs/inventory.md": "the same table as text, on the state/live-diagram branch only (crew#740)",
+    "claude-guards/laws/AGENTS.md": "the laws file in the claude-guards repository, which is checked out under the home "
+    "directory (not as a sibling of this one); named by the Langfuse incident report",
+    ".github/workflows/security-scan.yml": "the copy bin/estate-security-rollout installs in every OTHER repository; idp's own copy "
+    "is platform/github/workflows/security-scan.yml, named in the same sentence",
+    "docs/configuration/integrations/traefik.md": "upstream oauth2-proxy documentation, read while deciding ADR 0007; not a file here",
+    "providers/github.md": "upstream oauth2-proxy documentation, read while deciding ADR 0007; not a file here",
+    "catalog/manifests/cp5-caddy.yaml": "the manifest `idp-reconcile --fix` removed; the sentence records the removal, so the "
+    "file being absent is the thing it says",
+    "scratchpad/phase1.sh": "the scratch script the 2026-08-25 demo transcript was recorded from; never committed",
 }
 
 
 def _tracked_markdown() -> list[str]:
-    out = subprocess.run(["git", "-C", str(ROOT), "ls-files", "*.md", "**/*.md"],
-                         capture_output=True, text=True, check=True).stdout
+    out = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files", "*.md", "**/*.md"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
     return sorted(set(out.split()))
 
 
@@ -70,12 +86,16 @@ def _tracked_markdown() -> list[str]:
 #: an absolute `t` is `t` itself, so `/Users/<someone>/dev/code/...` EXISTS on the machine that
 #: wrote it and does not exist anywhere else -- the check passed on the laptop and failed on the
 #: CI runner (crew#616, run 33228113856). LAW 46: a file never names where the checkout lives.
-_ABSOLUTE = "an absolute path names this machine (LAW 46) -- write it relative to the repo, or "\
-            "prefixed with the sibling repo: `hermes-v2/profiles/architect/MEMORY.md`"
+_ABSOLUTE = (
+    "an absolute path names this machine (LAW 46) -- write it relative to the repo, or "
+    "prefixed with the sibling repo: `hermes-v2/profiles/architect/MEMORY.md`"
+)
 
 
-_OUTSIDE = "a `../` path escapes the checkout -- write the sibling repo's name instead: "\
-           "`crew/science/scheduler/estate_dagster/facts.py`, not `../../crew/science/...`"
+_OUTSIDE = (
+    "a `../` path escapes the checkout -- write the sibling repo's name instead: "
+    "`crew/science/scheduler/estate_dagster/facts.py`, not `../../crew/science/...`"
+)
 
 
 def _escapes(rel: str) -> bool:
@@ -90,8 +110,12 @@ def _is_generated(rel: str) -> bool:
     present after one. `science/foresight-state.json` is real; refusing it would be a guard that
     refuses correct work (LAW 38)."""
     #: check=False is the point: exit 1 means "not ignored", which is an answer, not a failure.
-    return subprocess.run(["git", "-C", str(ROOT), "check-ignore", "-q", rel],
-                          check=False).returncode == 0
+    return (
+        subprocess.run(
+            ["git", "-C", str(ROOT), "check-ignore", "-q", rel], check=False
+        ).returncode
+        == 0
+    )
 
 
 def dead_paths() -> dict[str, list[str]]:
@@ -104,14 +128,14 @@ def dead_paths() -> dict[str, list[str]]:
             if "/" not in t or PLACEHOLDER.search(t):
                 continue
             if t.startswith(("http", "//")) or "github.com/" in t:
-                continue                              # a URL that happens to end in .md
+                continue  # a URL that happens to end in .md
             if t.startswith("/"):
-                dead.setdefault(doc, []).append(t)    # LAW 46, and see _ABSOLUTE below
+                dead.setdefault(doc, []).append(t)  # LAW 46, and see _ABSOLUTE below
                 continue
             if t.split("/")[0] in SIBLINGS:
-                continue                              # another repo; not checked out here
+                continue  # another repo; not checked out here
             if _escapes(t):
-                dead.setdefault(doc, []).append(t)    # see _OUTSIDE
+                dead.setdefault(doc, []).append(t)  # see _OUTSIDE
                 continue
             if (ROOT / t).exists() or (p.parent / t).exists():
                 continue
@@ -122,14 +146,16 @@ def dead_paths() -> dict[str, list[str]]:
 
 
 def test_no_doc_names_a_file_that_does_not_exist():
-    unexplained = {doc: [t for t in ts if t not in ALLOWED]
-                   for doc, ts in dead_paths().items()}
+    unexplained = {
+        doc: [t for t in ts if t not in ALLOWED] for doc, ts in dead_paths().items()
+    }
     unexplained = {d: ts for d, ts in unexplained.items() if ts}
     assert not unexplained, (
         f"these docs name paths that resolve to nothing ({_ABSOLUTE}; {_OUTSIDE}). Repoint the path (a cross-repo reference "
         "needs its repo prefix: `idp/drills/catalogue.yaml`, not `drills/catalogue.yaml`), delete "
         "the sentence, or add the path to ALLOWED with the reason it is legitimately absent:\n"
-        + "\n".join(f"  {d}: {', '.join(ts)}" for d, ts in sorted(unexplained.items())))
+        + "\n".join(f"  {d}: {', '.join(ts)}" for d, ts in sorted(unexplained.items()))
+    )
 
 
 def test_no_doc_names_an_absolute_path():
@@ -140,28 +166,37 @@ def test_no_doc_names_an_absolute_path():
     crew#616 run 33228113856 caught four of them in AGENT-ONBOARDING.md after the local run said
     4 passed. This assertion holds on the laptop too.
     """
-    absolute = {doc: [t for t in ts if t.startswith("/")] for doc, ts in dead_paths().items()}
+    absolute = {
+        doc: [t for t in ts if t.startswith("/")] for doc, ts in dead_paths().items()
+    }
     absolute = {d: ts for d, ts in absolute.items() if ts}
     assert not absolute, f"{_ABSOLUTE}\n" + "\n".join(
-        f"  {d}: {', '.join(ts)}" for d, ts in sorted(absolute.items()))
+        f"  {d}: {', '.join(ts)}" for d, ts in sorted(absolute.items())
+    )
 
 
 def test_the_allowlist_does_not_outlive_the_paths_it_excuses():
     """An excuse for a path nobody names any more is dead weight that hides the next one."""
     named = {t for ts in dead_paths().values() for t in ts}
     stale = sorted(set(ALLOWED) - named)
-    assert not stale, ("ALLOWED still excuses paths no doc names. Delete these entries:\n  "
-                       + "\n  ".join(stale))
+    assert not stale, (
+        "ALLOWED still excuses paths no doc names. Delete these entries:\n  "
+        + "\n  ".join(stale)
+    )
 
 
 def test_every_excuse_says_why_the_file_is_absent():
     thin = sorted(k for k, v in ALLOWED.items() if len(v) < 25)
-    assert not thin, f"an entry with no real reason is not a decision anyone can review: {thin}"
+    assert not thin, (
+        f"an entry with no real reason is not a decision anyone can review: {thin}"
+    )
 
 
 def test_a_cross_repo_path_is_recognised_by_its_prefix():
     """The fix's whole shape in one assertion: the prefix is what makes the sentence followable."""
-    assert "idp" in SIBLINGS and "hermes-v2" in SIBLINGS and "survival-stack" in SIBLINGS
+    assert (
+        "idp" in SIBLINGS and "hermes-v2" in SIBLINGS and "survival-stack" in SIBLINGS
+    )
     assert "drills/catalogue.yaml".split("/")[0] not in SIBLINGS
     assert "idp/drills/catalogue.yaml".split("/")[0] in SIBLINGS
 

@@ -953,6 +953,27 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
         </span>
       </div>
 
+      <section className={classes.section} data-testid="band-everything">
+        <h2 className={classes.h}>
+          <SectionIcon section="everything" />
+          {SECTIONS.everything.title}
+          <span className={classes.hCount}>{everythingSentence(held)}</span>
+        </h2>
+        <p className={classes.hDesc}>{SECTIONS.everything.blurb}</p>
+        <div className={classes.inventory} data-testid="inventory">
+          {estate.inventory.map(r => (
+            <Link
+              key={`${r.kind}/${r.type ?? ''}`}
+              to={listPath(r.kind, r.type)}
+              className={classes.chip}
+              data-testid={`held-${r.kind.toLowerCase()}-${r.type ?? 'all'}`}
+            >
+              <span className={classes.chipN}>{r.count}</span>
+              <span>{inventoryWord(r.kind, r.type, r.count)}</span>
+            </Link>
+          ))}
+        </div>
+      </section>
       <section
         className={classes.section}
         id="screens"
@@ -970,8 +991,8 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
         <p className={classes.hDesc}>{SECTIONS.screens.blurb}</p>
         {allScreens.length === 0 ? (
           <p className={classes.note} data-testid="no-screens">
-            No screens are registered yet, so there is nothing to open from
-            here.
+            No screens are registered yet.{' '}
+            <Link to="/create">Create a component</Link> to add one.
           </p>
         ) : (
           <div className={classes.screens}>
@@ -1035,27 +1056,6 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
           />
         ))}
       </div>
-      <section className={classes.section} data-testid="band-everything">
-        <h2 className={classes.h}>
-          <SectionIcon section="everything" />
-          {SECTIONS.everything.title}
-          <span className={classes.hCount}>{everythingSentence(held)}</span>
-        </h2>
-        <p className={classes.hDesc}>{SECTIONS.everything.blurb}</p>
-        <div className={classes.inventory} data-testid="inventory">
-          {estate.inventory.map(r => (
-            <Link
-              key={`${r.kind}/${r.type ?? ''}`}
-              to={listPath(r.kind, r.type)}
-              className={classes.chip}
-              data-testid={`held-${r.kind.toLowerCase()}-${r.type ?? 'all'}`}
-            >
-              <span className={classes.chipN}>{r.count}</span>
-              <span>{inventoryWord(r.kind, r.type, r.count)}</span>
-            </Link>
-          ))}
-        </div>
-      </section>
       <section className={classes.section} data-testid="band-layers">
         <h2 className={classes.h}>
           <SectionIcon section="layers" />

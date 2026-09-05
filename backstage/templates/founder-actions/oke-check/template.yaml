@@ -33,6 +33,8 @@ spec:
         - diagnose
         - architect-doctor
         - otto-parity
+        - otto-lockdown
+        - otto-restore
         - healthchecks-door
         - cilium-unchain
         - cilium-replace

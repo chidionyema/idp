@@ -73,6 +73,7 @@ nav:
       - Cloud-agnostic: tutorials/demo/cloud-agnostic.md
       - Estate zone: tutorials/demo/estate-zone.md
       - MCP: tutorials/demo/mcp.md
+      - Estate inventory: tutorials/demo/estate-inventory.md
       - Sovereign bus: tutorials/demo/sb.md
       - VM-shared path guard: tutorials/demo/vm-shared-path.md
       - Placement: tutorials/demo/placement.md
@@ -128,6 +129,7 @@ nav:
       - Oracle identity: how-to/onboarding/oci.md
       - Flux on OKE: how-to/onboarding/oke.md
       - Cloud-agnostic: how-to/onboarding/cloud-agnostic.md
+      - Estate inventory: how-to/onboarding/estate-inventory.md
       - Cluster autoscaler: how-to/onboarding/autoscaler.md
       - Money: how-to/onboarding/commerce.md
       - Estate zone: how-to/onboarding/estate-zone.md
