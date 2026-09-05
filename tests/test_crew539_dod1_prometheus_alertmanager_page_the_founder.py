@@ -86,7 +86,9 @@ def test_flux_row_substitutes_the_zone_and_waits_on_both_releases():
         "agentgateway-servicemonitor.yaml",
         "k8sgpt.yaml",
         "capacity.yaml",
-    }  # capacity.yaml: crew#645 CP5; K8sGPT findings PrometheusRule, idp#696
+        "canary-servicemonitor.yaml",
+    }  # capacity.yaml: crew#645 CP5; K8sGPT findings PrometheusRule, idp#696;
+    # canary-servicemonitor.yaml: the verification canary's gauge, crew#656 CP4
     ns = one("platform/monitoring/namespace.yaml", "Namespace")
     assert (
         ns["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "restricted"

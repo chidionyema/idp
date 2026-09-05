@@ -83,8 +83,22 @@ def test_the_platform_tree_as_it_stands_carries_no_coupling(tmp_path):
     """LAW 38. Every plain object of a judged kind in every kustomization under platform/,
     rendered as Flux renders it, passes the policy with only the declared exception."""
     assert shutil.which("kubectl"), "BLIND: kubectl is not installed"
+    every = sorted(ROOT.glob("platform/**/kustomization.yaml"))
+    # A directory another kustomization lists as a resource is rendered through that parent.
+    # Rendering it a second time on its own puts the same object in the tree twice, and the
+    # kyverno CLI panics on a duplicate ("services \"canary-gauge\" already exists") rather
+    # than reporting a verdict -- so this walks the roots only. crew#656 added the first such
+    # nested directory (platform/staging/canary, which needs its own configMapGenerator).
+    nested = set()
+    for kz in every:
+        for r in yaml.safe_load(kz.read_text()).get("resources", []) or []:
+            d = (kz.parent / r).resolve()
+            if d.is_dir():
+                nested.add(d)
     docs, dirs = [], []
-    for kz in sorted(ROOT.glob("platform/**/kustomization.yaml")):
+    for kz in every:
+        if kz.parent.resolve() in nested:
+            continue
         if any(
             part in {"k3d", "overlays", "base"} for part in kz.relative_to(ROOT).parts
         ):
