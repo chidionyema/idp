@@ -9,7 +9,7 @@
    "use": "`python -m engine.cli lanes` lists them; `python -m engine.cli run --profile market-demand --subject \"council planning data\"` runs one."
   }
  ],
- "taken": "2026-09-05T08:05Z",
+ "taken": "2026-09-05T11:42Z",
  "waiting": [
   {
    "cp": "CP1",

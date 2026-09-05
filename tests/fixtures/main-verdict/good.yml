@@ -1,0 +1,14 @@
+# Stale pull-request runs are cancelled; main's own run is never cancelled.
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+    steps:
+      - run: true

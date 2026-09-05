@@ -4,7 +4,7 @@
       "name": "traces",
       "tier": "enterprise",
       "cpu": 4.1,
-      "memory_gb": 11.6,
+      "memory_gb": 11.66,
       "storage_gb": 0.0,
       "title": "Langfuse (traces, prompts, evals, SSO) + SigNoz on ClickHouse (logs, metrics, spans) + the estate OTel collector",
       "note": ""
@@ -13,7 +13,7 @@
       "name": "logs-metrics-store",
       "tier": "enterprise",
       "cpu": 4.1,
-      "memory_gb": 11.6,
+      "memory_gb": 11.66,
       "storage_gb": 0.0,
       "title": "SigNoz + ClickHouse, retention 3-7 days (retention is a tier knob, not a hand edit)",
       "note": ""
@@ -21,10 +21,19 @@
     {
       "name": "alerting-healing",
       "tier": "enterprise",
-      "cpu": 0.61,
-      "memory_gb": 2.16,
+      "cpu": 0.71,
+      "memory_gb": 3.16,
       "storage_gb": 5.0,
       "title": "Robusta runbooks + k8sgpt analyser + descheduler, alerts to Telegram and GitHub",
+      "note": ""
+    },
+    {
+      "name": "vulnerability-scanning",
+      "tier": "on",
+      "cpu": 0.15,
+      "memory_gb": 0.16,
+      "storage_gb": 0.0,
+      "title": "Trivy Operator: a VulnerabilityReport per scanned image, read by bin/estate-security-scan",
       "note": ""
     },
     {
@@ -138,8 +147,8 @@
     {
       "name": "staging",
       "tier": "namespace",
-      "cpu": 0.0,
-      "memory_gb": 0.0,
+      "cpu": 0.07,
+      "memory_gb": 0.09,
       "storage_gb": 0.0,
       "title": "platform/staging/: namespace `staging`, dev-loop label, ResourceQuota ceiling (cpu 1, memory 2Gi, storage 2Gi, 0 public LBs)",
       "note": ""
@@ -182,12 +191,12 @@
     }
   ],
   "total": {
-    "cpu": 7.12,
-    "memory_gb": 22.24,
+    "cpu": 7.44,
+    "memory_gb": 23.55,
     "storage_gb": 16.0
   },
   "depend_failures": [],
-  "switches_count": 39,
+  "switches_count": 40,
   "switches": [
     "alerts",
     "alerts-github",
@@ -227,7 +236,8 @@
     "secret-store",
     "spire",
     "staging",
-    "tailscale"
+    "tailscale",
+    "trivy"
   ],
   "reserved": {
     "cpu": 0.3,

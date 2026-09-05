@@ -12,3 +12,6 @@ wait ~10 min for the ExternalSecret, one router call with model kimi, report MEA
 Switching now (2026-09-03 04:1xZ) to record the founder's ruling "no agent can proceed without
 the estate snapshot" as docs/founder/estate-snapshot-is-mandatory.md on branch
 docs/founder-estate-snapshot-mandatory, then back to the Kimi wait.
+
+## RESUME HERE (2026-09-05 12:55Z, Headlamp)
+Headlamp credential prompt: the minted kubeconfig now carries the absolute oci path and SUPPRESS_LABEL_WARNING in its exec block (bin/idp-kube), and bin/idp-headlamp-mac links it into the desktop app store and ~/.kube/estate.yaml. PR fix/headlamp-exec-plugin.

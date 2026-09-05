@@ -1,0 +1,149 @@
+# The one-time migration that gives Otto a memory it can read in under a second.
+#
+# Until 2026-09-05 the answering lane read memory by calling hindsight's
+# /memories/recall and waiting. That call was traced on this cluster the same day:
+# 31.87 seconds for one question, 34.77 at a lower budget, and no language model
+# anywhere on the path -- the time is a local cross-encoder scoring about a hundred
+# candidates inside a container capped at one CPU. The client gave up at ten
+# seconds, so not one recall completed all day and every answer was composed with
+# no memory at all.
+#
+# hermes-v2 splits that in two: the synchronous read is now pgvector plus Postgres
+# full-text search fused by reciprocal rank fusion, over otto_facts in the estate's
+# own database (otto/memory/fast_recall.py), and hindsight keeps the asynchronous
+# work it is good at -- entity extraction, consolidation, the knowledge graph --
+# where taking half a minute costs nobody anything.
+#
+# This Job is what makes that store exist and stop being empty. Two steps, in order:
+#
+#   python -m otto.memory.migrate    creates otto_facts and its indexes, idempotent
+#   python -m otto.memory.backfill   copies hindsight's existing memories across
+#
+# Both are safe to repeat. The migration records what it has applied; the backfill
+# keeps each hindsight memory's own id as the fact id and skips a row that is
+# already there, so an interrupted run is simply re-run.
+#
+# A Job is immutable once created, so re-running this means changing the name below
+# (the -2 suffix) in a commit. That is deliberate: a migration that silently re-runs
+# on every reconcile is not a migration, it is a cron job nobody chose.
+#
+# -1 ran at 11:05Z on 2026-09-05 and failed four times with, from its own pod log,
+# `No module named otto.memory.migrate`. Not a database problem: the tag pinned above
+# was built before hermes-v2 #80 landed, so the image did not yet contain the code
+# this Job invokes. The rename to -2 is the re-run, and it belongs in the same commit
+# as the spec change below (a Job's pod template is immutable too, so Flux could not
+# have applied the embedding variables to -1 even if it had succeeded).
+#
+# If this never runs, nothing breaks: the read path finds no store, returns nothing,
+# and the lane answers exactly as it did before while hindsight keeps every write.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: otto-memory-store-3
+  namespace: otto-gateway
+  labels:
+    app.kubernetes.io/name: otto-memory-store
+    app.kubernetes.io/part-of: idp
+  annotations:
+    # The catalogue entity this workload belongs to; the gateway's own entity owns
+    # its migration rather than the migration being a thing nobody has heard of.
+    backstage.io/kubernetes-id: otto-gateway
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 3
+  # Several hundred memories: one embedding call and one write each, plus the paged
+  # reads from hindsight. Twenty minutes is generous and is a hard stop, so a run
+  # that hangs against a slow dependency cannot sit in the namespace forever.
+  activeDeadlineSeconds: 1200
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: otto-memory-store
+        app.kubernetes.io/part-of: idp
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      priorityClassName: platform-batch
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: migrate
+          # The same image the gateway runs, so the migration and the code that
+          # reads the schema can never be two different versions of otto/memory.
+          # The tag carries the kustomization's $imagepolicy marker by name.
+          image: ghcr.io/chidionyema/hermes-agent
+          workingDir: /app/estate
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              # libpq's own variables rather than one URL: the password is read from
+              # a mounted file and may contain characters a URL would need escaped.
+              # The estate's admission policy refuses a secret delivered as pod
+              # environment, so the file is the mount and this line is the join.
+              PGPASSWORD=$(cat /run/secrets/otto-gateway-db/POSTGRES_PASSWORD)
+              export PGHOST PGPORT PGUSER PGDATABASE PGPASSWORD
+              # The backfill embeds every memory it copies, through the same router
+              # lane the gateway reads with, so a backfilled fact and a fact written
+              # tonight sit in one vector space. Same mount, same key, same reason the
+              # line above exists: the secret is a file, the library reads an env var.
+              OTTO_MEMORY_EMBEDDING_API_KEY=$(cat /run/secrets/otto-gateway-router/LITELLM_API_KEY)
+              export OTTO_MEMORY_EMBEDDING_API_KEY
+              python -m otto.memory.migrate
+              python -m otto.memory.backfill
+          env:
+            - { name: PGHOST, value: estate-rw.estate-db.svc.cluster.local }
+            - { name: PGPORT, value: "5432" }
+            - { name: PGUSER, value: otto_gateway }
+            - { name: PGDATABASE, value: otto_gateway }
+            # libpq's connect timeout. Without it a Postgres that accepts the TCP
+            # handshake and then says nothing holds the first query open for the
+            # kernel's default, minutes, and the app-level recall budget never runs.
+            - { name: PGCONNECT_TIMEOUT, value: "5" }
+            # Where the memories being copied across are read from. Same row and
+            # same bank the gateway retains into, so this copies the estate's own
+            # memory rather than someone else's.
+            - { name: OTTO_MEMORY_HINDSIGHT_URL, value: "http://hindsight-api.hindsight.svc:8888" }
+            - { name: OTTO_MEMORY_BANK, value: "hermes" }
+            # A page of memories per request, and a minute of patience per page --
+            # hindsight's list endpoint is a plain database read, unlike its recall.
+            - { name: OTTO_MEMORY_BACKFILL_PAGE_SIZE, value: "200" }
+            - { name: OTTO_MEMORY_BACKFILL_TIMEOUT_S, value: "60" }
+            # Identical to the gateway's three, and they have to be: a backfill that
+            # embedded with a different lane or a different width would produce rows the
+            # read path cannot compare. An embedding failure is logged and the memory is
+            # still copied, so a router outage costs vector quality, never the fact.
+            - { name: OTTO_MEMORY_EMBEDDING_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
+            - { name: OTTO_MEMORY_EMBEDDING_MODEL, value: "embed" }
+            - { name: OTTO_MEMORY_EMBEDDING_DIM, value: "1536" }
+            # Longer than the gateway's 1.5s: nothing is waiting on this run, and a
+            # batch job that gives up early leaves rows without vectors.
+            - { name: OTTO_MEMORY_EMBEDDING_TIMEOUT_S, value: "30" }
+            # LAW 50: the run's own log lines reach the estate collector like every
+            # other workload's, so a failed migration is visible without kubectl.
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            - { name: PYTHONUNBUFFERED, value: "1" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: db-password, mountPath: /run/secrets/otto-gateway-db, readOnly: true }
+            - { name: router, mountPath: /run/secrets/otto-gateway-router, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: db-password
+          secret: { secretName: otto-gateway-db }
+        - name: router
+          secret: { secretName: otto-gateway-router }
+        - name: tmp
+          emptyDir: {}

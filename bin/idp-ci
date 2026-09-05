@@ -463,12 +463,20 @@ policy_gate() { conftest test --parser json -p "$IDP/policy" "$1" >/dev/null 2>&
 bind_audit() { "$IDP/bin/bind-audit" --table "$1" >/dev/null 2>&1; }
 ns_fence_gate() { python3 "$IDP/bin/ns-fence-gate" "$1" >/dev/null 2>&1; }
 job_described() { ( cd "$IDP/scheduler" && python3 -m estate_scheduler.describe "$1" ) >/dev/null 2>&1; }
+main_verdict_gate() { python3 "$IDP/bin/main-verdict-gate" "$1" >/dev/null 2>&1; }
 # A code location is loaded by PATH by workspace.yaml, never as a package. Loading
 # it any other way here would grade a proxy: on 2026-08-25 definitions.py imported a
 # sibling with `from .describe import`, passed every offline check, and put the live
 # code location in PythonError the moment it reloaded. So: load it the way it runs.
 prose_pin_scan() { python3 "$IDP/bin/test-prose-gate" "$1" >/dev/null 2>&1; }
 defs_validate() { ( cd "$(dirname "$1")" && DAGSTER_HOME="$(mktemp -d)" "$MPY" -m dagster definitions validate -f "$(basename "$1")" ) >/dev/null 2>&1; }
+# 6a. main's verdict, against the live workflows rather than the fixtures (crew#865). On 2026-09-05
+#     nine of twelve ci runs on main were cancelled by the commit after them, so the one branch the
+#     estate is graded on almost never produced a grade. The row above proves the gate both ways;
+#     this runs it on .github/workflows/, where a real regression fails it.
+if out=$(python3 "$IDP/bin/main-verdict-gate" 2>&1); then say "ok    verdict  $(tail -1 <<<"$out")"
+else say "FAIL  verdict  bin/main-verdict-gate refuses .github/workflows/"; sed 's/^/               /' <<<"$out"; fail=1; fi
+
 # 6b. R76 (founder 2026-09-03): the no-prose rule holds over the whole test tree, not just
 #     the fixtures. A test function that only asserts wording is refused here by name.
 if out=$(python3 "$IDP/bin/test-prose-gate" "$IDP"/tests/test_*.py); then

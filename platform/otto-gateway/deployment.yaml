@@ -78,6 +78,7 @@ spec:
             - |
               set -eu
               PGPASSWORD=$(cat /run/secrets/otto-gateway-db/POSTGRES_PASSWORD); export PGPASSWORD
+              PGCONNECT_TIMEOUT=5; export PGCONNECT_TIMEOUT
               fingerprint=$(sha256sum < /run/secrets/otto-gateway-channels/OTTO_TELEGRAM_WEBHOOK_SECRET | cut -d' ' -f1)
               psql -h estate-rw.estate-db.svc.cluster.local -U otto_gateway -d otto_gateway -v ON_ERROR_STOP=1 \
                 -v chat_id="$(cat /run/secrets/otto-gateway-channels/TELEGRAM_CHAT_ID)" \
@@ -121,6 +122,26 @@ spec:
               # and as platform/research-engine/cronjob.yaml).
               LITELLM_API_KEY=$(cat /run/secrets/otto-gateway-router/LITELLM_API_KEY)
               export LITELLM_API_KEY
+              # The same key under the second name that reads it: the memory engine's
+              # embedding provider (hermes-v2 otto/memory/embeddings_litellm.py). One
+              # credential and one router, not a second door to a vendor.
+              OTTO_MEMORY_EMBEDDING_API_KEY=$LITELLM_API_KEY
+              export OTTO_MEMORY_EMBEDDING_API_KEY
+              # The fact store the answering lane now reads memory from, instead of
+              # waiting on hindsight's cross-encoder for 31.87s per question
+              # (hermes-v2 otto/memory/fast_recall.py, and its PR for the trace).
+              # libpq's own variables rather than a single URL, because a password
+              # containing a URL-special character would otherwise have to be
+              # percent-encoded here; no credential is typed in this file either way,
+              # it is read from the file OTTO_INGRESS_DB_PASSWORD_FILE already names.
+              # Unset, the read path is a no-op and hindsight keeps every write, so a
+              # gateway that cannot reach this store answers exactly as it did before.
+              PGHOST=$OTTO_INGRESS_DB_HOST
+              PGPORT=$OTTO_INGRESS_DB_PORT
+              PGUSER=$OTTO_INGRESS_DB_USER
+              PGDATABASE=$OTTO_INGRESS_DB_NAME
+              PGPASSWORD=$(cat "$OTTO_INGRESS_DB_PASSWORD_FILE")
+              export PGHOST PGPORT PGUSER PGDATABASE PGPASSWORD
               exec python -m otto.ingress
           env:
             - { name: OTTO_INGRESS_PORT, value: "8080" }
@@ -128,6 +149,10 @@ spec:
             - { name: OTTO_INGRESS_DB_PORT, value: "5432" }
             - { name: OTTO_INGRESS_DB_NAME, value: otto_gateway }
             - { name: OTTO_INGRESS_DB_USER, value: otto_gateway }
+            # libpq's connect timeout. Without it a Postgres that accepts the TCP
+            # handshake and then says nothing holds the first query open for the
+            # kernel's default, minutes, and the app-level recall budget never runs.
+            - { name: PGCONNECT_TIMEOUT, value: "5" }
             - { name: OTTO_INGRESS_DB_PASSWORD_FILE, value: /run/secrets/otto-gateway-db/POSTGRES_PASSWORD }
             - { name: OTTO_NATS_URL, value: "nats://nats.event-bus.svc:4222" }
             # The estate's memory (platform/hindsight), one bank for every surface, so a
@@ -147,6 +172,19 @@ spec:
             # costs no one their answer, it just arrives without memory.
             - { name: OTTO_MEMORY_RECALL_TIMEOUT_S, value: "30" }
             - { name: OTTO_MEMORY_RETAIN_TIMEOUT_S, value: "5" }
+            # The vector half of the L2 read. Without these the lane still answers --
+            # Postgres full-text search over the same rows is the lexical arm of the
+            # hybrid and is a tested mode, not a failure -- but only half the recall
+            # quality. `embed` is a lane on the estate router, never a vendor model id
+            # (LAW 34); platform/llm/config.yaml resolves it to gemini-embedding-001 at
+            # 1536 dimensions, which is the width otto_facts.embedding is created at, so
+            # the column and the model cannot drift apart.
+            - { name: OTTO_MEMORY_EMBEDDING_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
+            - { name: OTTO_MEMORY_EMBEDDING_MODEL, value: "embed" }
+            - { name: OTTO_MEMORY_EMBEDDING_DIM, value: "1536" }
+            # Bounded on the answering path like every other call here. An embedding that
+            # overruns costs no one their answer: retrieval falls back to the lexical arm.
+            - { name: OTTO_MEMORY_EMBEDDING_TIMEOUT_S, value: "1.5" }
             # LAW 50. The entrypoint refuses to start without this, so a door that cannot be
             # seen never opens rather than running dark.
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
