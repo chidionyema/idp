@@ -121,7 +121,12 @@ def test_kube_prometheus_stack_ships_the_upstream_rules_and_honours_every_rule_a
         v["alertmanager"]["alertmanagerSpec"]["configSecret"] == "alertmanager-telegram"
     )
     assert v["grafana"]["enabled"] is False and v["nodeExporter"]["enabled"] is False
-    # requests == limits on every block we size (Guaranteed, crew#539 CP9)
+    # Founder 2026-09-05, on the monitoring ceilings: "rasie then to what? dont need etra costs".
+    # crew#539 CP9 had asked for requests == limits, which is Guaranteed QoS -- and which also
+    # means a pod can never use a core the cluster has already paid for and nobody is using. The
+    # reservation is what costs money; the ceiling only bounds a burst into capacity already
+    # bought. So the rule now is limits >= requests, and the reservation total below is the guard
+    # that keeps the bill where it was.
     blocks = [
         v["prometheusOperator"]["resources"],
         v["prometheusOperator"]["prometheusConfigReloader"]["resources"],
@@ -130,7 +135,10 @@ def test_kube_prometheus_stack_ships_the_upstream_rules_and_honours_every_rule_a
         ps["resources"],
     ]
     for b in blocks:
-        assert b["requests"] == b["limits"], b
+        for kind, unit in (("cpu", "m"), ("memory", "Mi")):
+            floor = int(b["requests"][kind].removesuffix(unit))
+            ceiling = int(b["limits"][kind].removesuffix(unit))
+            assert ceiling >= floor, (kind, b)
     total_m = sum(int(b["requests"]["cpu"][:-1]) for b in blocks)
     assert total_m == 320, total_m  # the number the file's header states
     text = (MON / "kube-prometheus-stack.yaml").read_text()
