@@ -20,4 +20,4 @@ resources:
   - memory-store-job.yaml
 images:
   - name: ghcr.io/chidionyema/hermes-agent
-    newTag: main-80-9354215da29143378c4eb20383863101fbe573d9 # {"$imagepolicy": "flux-system:hermes-agent:tag"}
+    newTag: main-81-3f6d36fcbf0dc7d4881c7fed1316fc673e2a6b80 # {"$imagepolicy": "flux-system:hermes-agent:tag"}
