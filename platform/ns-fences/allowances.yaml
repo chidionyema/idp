@@ -110,6 +110,11 @@ overrides:
 # Every namespace additionally gets DNS egress to kube-system and OTLP egress to the collector in
 # observability (LAW 50); those two are in the generator, not repeated per namespace here.
 flows:
+  trivy-system:
+    # The operator and its scan jobs (scanJobsInSameNamespace: false, so they land here too) pull
+    # the vulnerability database from a public registry mirror (mirror.gcr.io); declared here so
+    # the fence still says yes the day this cluster runs a CNI that enforces it.
+    egress_internet: [443]
   backstage:
     # robusta: the portal's Investigate page asks HolmesGPT a question through the backend's
     # own proxy plugin, so the conversation is backstage -> robusta and it is declared on both

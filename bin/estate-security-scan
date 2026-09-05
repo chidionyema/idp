@@ -2,13 +2,16 @@
 # estate-security-scan: the "Security passes" evidence named by the Definition
 # of Done v2.1 (docs/reference/policy/definition-of-done.md, Gate 3 and section 3.3).
 #
-# Three questions, each answered by a mature tool rather than by this file:
+# Four questions, each answered by a mature tool rather than by this file:
 #
 #   1. Static secrets in the codebase = 0     gitleaks   (git history, so every
 #                                                          tracked byte ever committed)
 #   2. Unaudited dependencies = 0             pip-audit  (every requirements*.txt)
 #   3. Policy contradiction = 0               bin/security-policy-gate (every control
 #                                                          row names a proof that exists)
+#   4. Container image vulnerabilities = 0    Trivy Operator (platform/trivy, crew#846):
+#                                                          its own VulnerabilityReport CRDs,
+#                                                          read live through bin/idp-kube
 #
 # Output is the receipt: a header with the UTC timestamp and the commit hash, one
 # line per check, and a last line SECURITY-SCAN PASS|FAIL|BLIND. Exit 0 on PASS,
@@ -30,6 +33,10 @@
 # requirements*.txt exists, npm audit only where a tracked package-lock.json
 # exists, and the policy gate only where bin/security-policy-gate exists. A
 # check with nothing to scan prints "ok ... none tracked", never BLIND.
+#
+# Check 4 is cluster-wide, not per-repository: it runs only from the checkout that
+# carries bin/idp-kube (idp itself). A product repository scanned with --source has
+# no cluster of its own to ask and prints "ok ... no bin/idp-kube", never BLIND.
 set -uo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$IDP"; quiet=0
@@ -217,6 +224,65 @@ elif out=$(python3 bin/security-policy-gate 2>&1); then
   say "ok    policy    security-policy-gate: every control row has a proof"
 else
   say "FAIL  policy    security-policy-gate"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -10 | sed 's/^/      /'; fail=1
+fi
+
+# 4. container images: Trivy Operator's own VulnerabilityReport CRDs (platform/trivy, crew#846),
+# read live -- there is nothing to lint in git, only a cluster to ask. bin/idp-kube is the one
+# door to the cluster (a repo hook refuses bare kubectl); it prints BLIND and exits 2 when no
+# cluster is reachable, which this folds into the same BLIND this check reports for a missing
+# CRD -- a guard that cannot reach its evidence reports BLIND, never a verdict (LAW 45).
+if [ ! -x bin/idp-kube ]; then
+  say "ok    images    no bin/idp-kube in this repository (idp carries the cluster)"
+else
+  out=$(bin/idp-kube get vulnerabilityreports.aquasecurity.github.io -A -o json 2>&1) && rc=0 || rc=$?
+  if [ $rc = 0 ]; then
+    summary=$(printf '%s' "$out" | python3 -c '
+import json, sys
+try:
+    items = json.load(sys.stdin).get("items", [])
+except Exception:
+    print("PARSE-ERROR"); sys.exit(0)
+c = h = m = l = 0
+for it in items:
+    s = (it.get("report") or {}).get("summary") or {}
+    c += s.get("criticalCount", 0) or 0
+    h += s.get("highCount", 0) or 0
+    m += s.get("mediumCount", 0) or 0
+    l += s.get("lowCount", 0) or 0
+print(f"{len(items)} {c} {h} {m} {l}")
+' 2>/dev/null)
+    if [ -z "$summary" ] || [ "$summary" = "PARSE-ERROR" ]; then
+      say "BLIND images    vulnerabilityreports.aquasecurity.github.io: kubectl answered but the JSON did not parse"; blind=1
+    else
+      read -r n_reports crit high med low <<<"$summary"
+      if [ "$n_reports" = "0" ]; then
+        say "BLIND images    0 VulnerabilityReport objects; Trivy Operator has not scanned anything yet"; blind=1
+      elif [ "$crit" -gt 0 ] || [ "$high" -gt 0 ]; then
+        say "FAIL  images    $n_reports VulnerabilityReport(s): $crit critical, $high high, $med medium, $low low"
+        fail=1
+      else
+        say "ok    images    trivy-operator over $n_reports VulnerabilityReport(s): 0 critical, 0 high ($med medium, $low low)"
+      fi
+    fi
+  elif [ $rc = 2 ]; then
+    # A GitHub-hosted runner has no route to the cluster: the security-scan job holds no OCI
+    # identity and no tailnet, so "cannot reach" there is a fact about the runner, not about
+    # the code in the pull request, and grading a pull request on it refuses correct work
+    # (LAW 38). The live question is asked once a day by oke-check, which does hold the
+    # machine identity, and that job sets SECURITY_SCAN_REQUIRE_CLUSTER=1 so an unreachable
+    # cluster is still BLIND where reaching it is the point.
+    if [ "${SECURITY_SCAN_REQUIRE_CLUSTER:-0}" = 1 ]; then
+      say "BLIND images    bin/idp-kube could not reach the cluster"; blind=1
+    else
+      say "ok    images    no cluster reachable from here; the daily oke-check run grades this"
+    fi
+  elif printf '%s' "$out" | grep -qiE "doesn.t have a resource type|could not find the requested resource"; then
+    say "BLIND images    Trivy Operator's VulnerabilityReport CRD is not installed on this cluster yet"; blind=1
+  else
+    say "BLIND images    bin/idp-kube get vulnerabilityreports.aquasecurity.github.io failed"
+    [ $quiet = 1 ] || printf '%s\n' "$out" | tail -5 | sed 's/^/      /'
+    blind=1
+  fi
 fi
 
 if [ $fail = 1 ]; then say "SECURITY-SCAN FAIL commit=$(git rev-parse --short HEAD)"; exit 1; fi
