@@ -137,12 +137,13 @@ spec:
             # not served: `GET /model/info` from inside the gateway pod returned exactly `kimi`
             # and `minimax` on 2026-09-05. `kimi` is both -- family moonshot, distinct from
             # judgment's minimax -- so it is the value here.
-              # deepseek, not kimi, on the founder's instruction 2026-09-05 04:0xZ ("try deepseek").
-              # kimi is served and accepted -- it answers nothing: probe otto-answer-probe-29809680
-              # at 03:59Z read bulk kimi 2730 ms "empty completion" and verify kimi 26 ms the same,
-              # while judgment on minimax answered in 1595 ms. deepseek is in the router key's
-              # allowed set (kimi, minimax, deepseek) and in otto/router/config.py's family map,
-              # and its family differs from judgment's minimax, which that file requires.
+              # gemini, since 2026-09-05 13:30Z. The two readings above that ruled it out ("not served",
+              # "empty credit") were the otto router key's allowlist (kimi, minimax, deepseek) refusing
+              # it with 403, not the router. Measured through the router with its own key: gemini, fast,
+              # minimax and embed all answer. deepseek is no alias there at all -- its row left
+              # platform/llm/config.yaml on 2026-09-04 (vendor 401) and the console row is
+              # deepseek-v4-flash -- so probe otto-answer-probe-29810160 read 400 on bulk and verify.
+              # The key rows in bin/idp-estate-seed now allow minimax, gemini and embed.
             - name: OTTO_ROUTER_LANE_BULK_MODEL
               value: gemini
             # The estate's memory (platform/hindsight), one bank for every surface, so a
