@@ -56,16 +56,15 @@ spec:
                 value: founder-deploy-button
   values:
     fullnameOverride: weave-gitops
-    # Debug, not info, and this is the reason. The Applications page renders empty
-    # (founder 2026-09-05: "this has no data https://catalogue.${ESTATE_ZONE}/deploy/applications"),
-    # and at info the server writes nothing after start-up: 34 log lines in 17 hours across both
-    # pods, no error, no warning, no request. Measured 2026-09-05:
-    #   kubectl -n weave-gitops logs weave-gitops-5f74bdb7f8-6978q | wc -l   ->  34
-    # Every permission the page needs is already granted and proved on the running cluster:
-    #   auth can-i impersonate users/founder --as=system:serviceaccount:weave-gitops:weave-gitops -> yes
-    #   auth can-i list kustomizations.kustomize.toolkit.fluxcd.io -A --as=founder                -> yes
-    # So the cause is inside the request, and at info the request leaves no trace to read.
-    logLevel: debug
+    # Back to info. Debug was turned on to find out why the Applications page rendered empty
+    # (founder 2026-09-05: "this has no data https://catalogue.${ESTATE_ZONE}/deploy/applications")
+    # and it did not find out: at debug the server reports "Found principal {user: founder}" and
+    # "request success {uri: /deploy/v1/objects, status: 200}" on every page load and nothing else,
+    # roughly two lines a second per pod, because from the server's point of view nothing failed.
+    # The defect was in the response body, not the log -- searchedNamespaces was empty -- and it is
+    # fixed in rbac.yaml. Leaving debug on would buy a permanent log bill for a question already
+    # answered, so the level goes back and the finding stays written down next to the grant.
+    logLevel: info
     # Two replicas kept off one node: the deploy button is a routed founder surface, and
     # bin/idp-ci grades every routed surface on surviving the loss of a node. The page holds
     # no state -- it reads Flux objects -- so a second replica is a plain availability win.
@@ -94,7 +93,10 @@ spec:
       create: true
       impersonationResources: ["users"]
       impersonationResourceNames: ["founder"]   # it may become that one user and nobody else
-      viewSecretsEnabled: false                  # a deploy button reads no credential (LAW 21)
+      # Stays false, and rbac.yaml explains why at length: this writes secrets into the
+      # ServiceAccount's role, but the namespace filter that needed the grant runs as the
+      # impersonated user. Turning it on gives the pod real secret access and fixes nothing.
+      viewSecretsEnabled: false
     envVars:
       - name: WEAVE_GITOPS_FEATURE_TENANCY
         value: "false"
