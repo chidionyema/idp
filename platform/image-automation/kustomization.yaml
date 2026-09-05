@@ -7,3 +7,5 @@ resources:
   - estate-mcp.yaml
   - estate-scheduler.yaml
   - prospector.yaml
+  - lago-api.yaml
+  - lago-front.yaml

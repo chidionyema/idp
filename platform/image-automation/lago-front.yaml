@@ -1,0 +1,28 @@
+# lago-front: getlago's image rebased onto a non-root user (platform/commerce/app/lago-front.Dockerfile),
+# built and tagged main-<run>-<sha> by build-multiarch like every image this estate owns.
+# The tag marker lives in platform/commerce/app/lago.yaml's postRenderer images: block.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: lago-front
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/lago-front
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: lago-front
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: lago-front
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc
