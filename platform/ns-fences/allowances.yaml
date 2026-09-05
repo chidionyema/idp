@@ -126,7 +126,9 @@ flows:
     ingress_from: [edge]
   monitoring:
     egress: [guacamole, robusta]
-    ingress_from: [observability, edge]
+    # dagster: the scheduler reads Alertmanager's firing alerts to decide there is
+    # anything worth investigating at all.
+    ingress_from: [observability, edge, dagster]
   observability:
     egress: [monitoring, identity, estate-db]
     ingress_from: [edge, monitoring]
@@ -145,6 +147,12 @@ flows:
   identity:
     ingress_from: [edge, backstage, guacamole, healthchecks, observability]
   dagster:
+    # The scheduler is what makes HolmesGPT active (scheduler/estate_scheduler/holmes_watch.py):
+    # it reads what is firing from Alertmanager in monitoring, asks the investigator in robusta,
+    # and publishes the answer through Apprise in notify. Both directions of each of those three
+    # conversations are declared -- on 2026-09-05 hindsight was cut off from its own database
+    # because only one side was.
+    egress: [monitoring, robusta, notify, estate-db, observability]
     ingress_from: [edge, backstage]
   hindsight:
     # Every surface that remembers: both Otto doors write from the answering lane
@@ -165,11 +173,17 @@ flows:
     # about is an AI tool that silently cannot reach its model because the namespace is default-deny.
     egress: [llm, monitoring, observability]
     egress_internet: [443]
-    ingress_from: [monitoring]
+    # dagster: the scheduler POSTs to robusta-holmes /api/chat to start an investigation.
+    ingress_from: [monitoring, dagster]
+  notify:
+    # Apprise, the estate's publish-once-deliver-everywhere layer. It delivers to Telegram,
+    # which is on the public internet. dagster: HolmesGPT's answer is published here.
+    egress_internet: [443]
+    ingress_from: [dagster]
   event-bus:
     ingress_from: [otto-gateway]
   estate-db:
-    ingress_from: [otto-gateway, hindsight, temporal, llm, observability]
+    ingress_from: [otto-gateway, hindsight, temporal, llm, observability, dagster]
   kyverno:
     ingress_from: [backstage]
   edge:
