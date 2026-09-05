@@ -135,6 +135,14 @@ spec:
             # otto/memory/hindsight.py: unset is a no-op, unreachable never costs an answer.
             - { name: OTTO_MEMORY_HINDSIGHT_URL, value: "http://hindsight-api.hindsight.svc:8888" }
             - { name: OTTO_MEMORY_BANK, value: "hermes" }
+            # Recall is on the answering path, so it is bounded: hindsight's own consolidation
+            # timings on 2026-09-05 read recall=96.951s and recall=1.886s in consecutive
+            # batches, and the client's old hardcoded 3s meant hindsight logged
+            # `[RECALL CANCELLED] reason=client disconnected` for every request this gateway
+            # made. Ten seconds is what a person waiting in a chat will tolerate; a recall
+            # that overruns costs no one their answer, it just arrives without memory.
+            - { name: OTTO_MEMORY_RECALL_TIMEOUT_S, value: "10" }
+            - { name: OTTO_MEMORY_RETAIN_TIMEOUT_S, value: "5" }
             # LAW 50. The entrypoint refuses to start without this, so a door that cannot be
             # seen never opens rather than running dark.
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
