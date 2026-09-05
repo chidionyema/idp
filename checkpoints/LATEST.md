@@ -1,17 +1,74 @@
+# LATEST — session 102eafc6 (idp, Otto door spec lane)
+
+## RESUME HERE (2026-09-05T22:05Z)
+
+Founder rejected the 3-day estimate: "need minutes, spec for deepseek". Writing
+`docs/specs/otto-door-hands-and-senses.md`: DeepSeek brief for wiring the fork's 35 toolsets
+behind the door's tool gateway (crew#768 CP2 on otto/ingress/worker.py, router tool loop) and
+voice/photo into the Telegram binding (crew#773 CP2-CP4). Founder record:
+`~/.claude/docs/founder/2026-09-05T2200Z-what-did-founder-request-9360268a.md`.
+Reading hermes-v2 origin/main in a scratchpad worktree, never the stale ~/dev/code/hermes-v2.
+Bypass to hermes-agent gateway: dropped, spec demands the door with hands.
+
+# LATEST — session 56eac889 (idp, specs review lane)
+
+## RESUME HERE (2026-09-05T22:0xZ)
+
+**Founder ask:** "so review all and lets plan this for deepseek"
+(`~/.claude/docs/founder/2026-09-05T2132Z-so-review-all-and-lets-plan-this-for-87f5df34.md`).
+
+**Shipped:** PR #1889, branch `spec/two-hats-and-key-ingest`, worktree
+`/private/tmp/claude-501/-Users-chidionyema-dev-code-idp/2eb24bf7-.../scratchpad/wt-specs`.
+Three commits: the three build specs + ADR 0023 + ADR 0020 amendment; the review finding; the
+cutover warning. New file `docs/specs/deepseek-work-order.md` — one dependency order across all
+eighteen changes in the three specs, each item lanned repo / estate / founder with the command
+that proves it done. 14 of 18 are repo work a model with no privileges can finish.
+
+**THE FIRE (LAW 1, unfixed, needs a founder decision):** the estate's 154 NetworkPolicy objects
+enforce nothing. `kubectl get ds -A` -> `kube-flannel-ds` is the only CNI DaemonSet; flannel does
+not implement NetworkPolicy. From `dagster-daemon-9cd8bd67f-45h8x` (namespace carries
+`default-deny-all`, both policyTypes, empty podSelector): `1.1.1.1:443` CONNECTED, `8.8.8.8:53`
+CONNECTED, `10.244.1.240:3100` (backstage/catalogue, equally fenced) CONNECTED.
+Remedy: Calico policy-only beside flannel — but log-only first. The 154 policies have never been
+graded against real traffic, so a flag-day cutover is an estate-wide outage with 154 causes.
+LAW 11 decision, not a same-night fix.
+
+**FOUNDER ACTION:** the `deepseek` lane does not answer. `llm/config.yaml` names it in five
+fallback chains with no `model_name` row; no DeepSeek env var in the router pod;
+`api.deepseek.com/models` -> 401. `consoles.yaml` marks it `console_lanes: [deepseek]`, so the
+key comes through https://litellm.mumchimp.com -> Models -> `deepseek`, as Kimi did on 09-04.
+`[routing] default` and `cheap` in AGENTS.md both name that unserved lane.
+
+**Two method corrections landed in the specs:** a drill is a scheduled workflow PLUS its
+`drills/catalogue.yaml` row (`bin/idp-verify` only grades freshness of the last green run), and a
+cluster drill runs as service user `estate-ci` via the `oke-check.yml` OIDC propagation — the
+cluster refuses writes from user principals outright.
+
+**Next:** merge #1889 when CI is green (`gh pr merge 1889 --squash --delete-branch` from the
+worktree). Then item 1 of the work order: the `fence-enforcement` drill workflow + row.
+
+---
+
 # LATEST — session 2c88870e (.wt-vendor-probe, Kimi/aider lane)
 
-## RESUME HERE
+## RESUME HERE (2026-09-05T21:29Z)
 
-Kimi lane is blocked on the root itself: apply run 33711941272 (2026-09-03 03:42Z) proved
-SEED_KIMI_API_KEY refused at all three Kimi homes and SEED_DEEPSEEK_API_KEY refused by DeepSeek.
-PR 1201 (e7d2e684) merged: the seeder probes every Kimi home and writes MOONSHOT_API_BASE.
-Waiting on the founder to re-set both repo secrets from his own tab (Telegram 21834) and say
-"go"; then: gh workflow run oke-check.yml --ref main -f mode=apply, read the kimi seeder line,
-wait ~10 min for the ExternalSecret, one router call with model kimi, report MEASURED.
-
-Switching now (2026-09-03 04:1xZ) to record the founder's ruling "no agent can proceed without
-the estate snapshot" as docs/founder/estate-snapshot-is-mandatory.md on branch
-docs/founder-estate-snapshot-mandatory, then back to the Kimi wait.
+Otto: gateway pods on main-84 (idp #1872 force annotation fixed the immutable memory Job; both
+bots answered 4 tasks at ~20:26Z, tenant estate). Founder says the bot is still awkward: every
+Telegram message on both bots lands on the v1 spine (`otto/`, no tools, no git, no research);
+the proactive hermes-agent gateway holds Ottototbot's token as DISABLED_TELEGRAM_BOT_TOKEN
+(platform/hermes-agent/gateway.yaml:19-29, founder 2026-09-05) and received 0 messages in 14h.
+Open founder decision: keep both bots on the spine, or point Ottototbot's webhook back at the
+hermes-agent gateway until crew#768 CP2 gives the spine hands.
+Merged tonight: idp #1872, #1874 (ADR 0021 two hats), #1876 (five-capabilities spec), #1873
+(root-trust rows, fixed red main); hermes-v2 #86 (aux/vision -> gemini), #87 (ADR 0022: voice on,
+flags kept, STT local-first; image build pending -> idp pin PR by cron).
+Waiting: task bz0rhijmu (main CI on #1873 merge, then #1887 checks). Then merge idp #1880 (ADR
+0022 record) and #1887 (spec defers to ADR 0022): `gh pr merge <n> --squash --delete-branch`
+from the branch's worktree. Then watch the main-86 image pin land and Flux roll hermes-agent.
+Board: crew#768 0/7, #773 0/7, #717 0/33 ticked. Founder records:
+`~/.claude/docs/founder/2026-09-05T2023Z-spec-for-deepseek-to-get-everything-done-and-a8f82afe.md`,
+`~/.claude/docs/founder/2026-09-05T1904Z-document-e37607fd.md`.
 
 ## RESUME HERE (2026-09-05 12:55Z, Headlamp)
 Headlamp credential prompt: the minted kubeconfig now carries the absolute oci path and SUPPRESS_LABEL_WARNING in its exec block (bin/idp-kube), and bin/idp-headlamp-mac links it into the desktop app store and ~/.kube/estate.yaml. PR fix/headlamp-exec-plugin.
