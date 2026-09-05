@@ -52,6 +52,13 @@ data:
 
     TENANT = os.environ.get("OTTO_TENANT_ID", "estate")
     CHANNEL = os.environ.get("OTTO_CHANNEL", "telegram")
+    # Every bot registered on this door: "<label>:<token file>:<secret-token file>" pairs,
+    # comma separated. Both files come from the one channels Secret the gateway itself reads.
+    BOTS = os.environ.get(
+        "OTTO_TELEGRAM_BOTS",
+        "staging:/run/secrets/otto-gateway-channels/OTTO_TELEGRAM_BOT_TOKEN"
+        ":/run/secrets/otto-gateway-channels/OTTO_TELEGRAM_WEBHOOK_SECRET",
+    )
     TOKEN_FILE = os.environ.get(
         "OTTO_TELEGRAM_TOKEN_FILE",
         "/run/secrets/otto-gateway-channels/OTTO_TELEGRAM_BOT_TOKEN",
@@ -107,7 +114,7 @@ data:
             return json.load(r)
 
 
-    def _gauge(name, value, at_nano):
+    def _gauge(name, value, at_nano, bot):
         return {
             "name": name,
             "gauge": {
@@ -118,13 +125,14 @@ data:
                         "attributes": [
                             {"key": "tenant_id", "value": {"stringValue": TENANT}},
                             {"key": "channel", "value": {"stringValue": CHANNEL}},
+                            {"key": "bot", "value": {"stringValue": bot}},
                         ],
                     }
                 ]
             },
         }
 
-    def push_metrics(registration_ok, pending_updates, repaired, at_nano):
+    def push_metrics(registration_ok, pending_updates, repaired, at_nano, bot):
         body = {
             "resourceMetrics": [
                 {
@@ -140,12 +148,12 @@ data:
                         {
                             "scope": {"name": "otto.registration.reconciler"},
                             "metrics": [
-                                _gauge("channel_registration_ok", registration_ok, at_nano),
-                                _gauge("channel_pending_updates", pending_updates, at_nano),
+                                _gauge("channel_registration_ok", registration_ok, at_nano, bot),
+                                _gauge("channel_pending_updates", pending_updates, at_nano, bot),
                                 # How many times this poll had to move the registration back.
                                 # Zero on a healthy estate; a rising line means something
                                 # outside this repository keeps re-pointing the webhook.
-                                _gauge("channel_registration_repaired", repaired, at_nano),
+                                _gauge("channel_registration_repaired", repaired, at_nano, bot),
                             ],
                         }
                     ],
@@ -162,52 +170,38 @@ data:
         with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
             r.read()
 
-    def main():
+    def reconcile(bot, token_file, secret_file):
+        """One bot. Returns (registration_ok, pending_updates, repaired); prints its receipt line."""
         at_nano = time.time_ns()
         registration_ok = 0
         repaired = 0
         pending_updates = -1  # -1: could not be determined this run, never confused with a real 0
         try:
-            with open(TOKEN_FILE) as f:
+            with open(token_file) as f:
                 token = f.read().strip()
+            with open(secret_file) as f:
+                secret_token = f.read().strip()
             info = get_webhook_info(token)
             result = info.get("result", {}) if info.get("ok") else {}
             registered = result.get("url") or ""
-            # A registration is not healthy just because the URL is right. Telegram signs
-            # every delivery with the secret_token it was registered with, and the door
-            # refuses a POST that does not carry it -- so a webhook pointing at exactly the
-            # right URL with a stale secret is refused on every single delivery while
-            # getWebhookInfo still reports the URL this estate wanted. That is the shape the
-            # founder hit on 2026-09-05: @Ottototbot registered on /webhook/telegram with no
-            # secret, every delivery answered 401 "no credential presented" for hours, and
-            # this job printed ok on all of them. Telegram names the refusal itself in
-            # last_error_message, so the repair is driven off the vendor's own truth rather
-            # than off our side's guess.
-            last_error = (result.get("last_error_message") or "")
-            refused = any(code in last_error for code in ("401", "403"))
+            # Telegram signs every delivery with the secret_token the webhook was registered
+            # with, and getWebhookInfo never reveals which one that is. So a webhook on exactly
+            # the right URL with a stale or missing secret is refused on every delivery while
+            # the URL reads as correct -- the shape @Ottototbot sat in on 2026-09-05 (401 "no
+            # credential presented" for hours, this job printing ok). The only honest repair is
+            # to register URL and secret together on every run: Telegram answers "Webhook is
+            # already set" when nothing changed, so the call is idempotent and costs one
+            # request every five minutes. Pending updates are dropped only when the URL moves.
             url_wrong = bool(WANTED_URL) and registered != WANTED_URL
-            if url_wrong or (registered and refused):
-                # The registration is wrong, and this pod is the thing that can fix it.
-                # Reporting and waiting for a person would mean a human holding a bot token.
-                with open(SECRET_TOKEN_FILE) as f:
-                    secret_token = f.read().strip()
-                set_webhook(
-                    token,
-                    WANTED_URL or registered,
-                    secret_token,
-                    drop_pending=url_wrong,
-                )
-                repaired = 1
+            last_error = result.get("last_error_message") or ""
+            refused = any(code in last_error for code in ("401", "403"))
+            if WANTED_URL:
+                set_webhook(token, WANTED_URL, secret_token, drop_pending=url_wrong)
+                repaired = 1 if (url_wrong or refused) else 0
                 info = get_webhook_info(token)
                 result = info.get("result", {}) if info.get("ok") else {}
                 registered = result.get("url") or ""
-            # Correct means pointing at the door this estate serves, not merely pointing
-            # somewhere: a webhook still registered against a route that was deleted reads
-            # as "registered" and answers nobody.
             correct = bool(registered) and (not WANTED_URL or registered == WANTED_URL)
-            # A door that refuses Telegram is not a healthy registration, whatever the URL
-            # says. After a repair the next poll is what clears this, so the receipt line
-            # tells the truth about the run it describes.
             # Telegram keeps last_error_message until the next delivery succeeds, so a run
             # that just repaired the registration would otherwise grade itself FAIL on the
             # error it has already fixed. The run after this one is the honest judge.
@@ -218,29 +212,43 @@ data:
             pending_updates = result.get("pending_update_count", -1)
             verdict = "ok" if registration_ok else "FAIL"
             print(
-                f"{verdict} registration-reconciler tenant={TENANT} channel={CHANNEL} "
+                f"{verdict} registration-reconciler tenant={TENANT} channel={CHANNEL} bot={bot} "
                 f"registration_ok={registration_ok} pending_updates={pending_updates} "
                 f"repaired={repaired}"
             )
         except OSError as e:
             print(
-                f"FAIL registration-reconciler tenant={TENANT} channel={CHANNEL} "
+                f"FAIL registration-reconciler tenant={TENANT} channel={CHANNEL} bot={bot} "
                 f"could not read the token file: {type(e).__name__}"
             )
         except (urllib.error.URLError, TimeoutError, ValueError) as e:
             print(
-                f"FAIL registration-reconciler tenant={TENANT} channel={CHANNEL} "
+                f"FAIL registration-reconciler tenant={TENANT} channel={CHANNEL} bot={bot} "
                 f"telegram unreachable: {type(e).__name__}"
             )
         try:
-            push_metrics(registration_ok, pending_updates, repaired, at_nano)
+            push_metrics(registration_ok, pending_updates, repaired, at_nano, bot)
         except Exception as e:  # a collector that will not take the metric is BLIND, never a pass
             print(
-                f"BLIND registration-reconciler tenant={TENANT} channel={CHANNEL} "
+                f"BLIND registration-reconciler tenant={TENANT} channel={CHANNEL} bot={bot} "
                 f"metric push failed: {type(e).__name__}"
             )
             sys.exit(1)
-        if registration_ok != 1:
+        return registration_ok
+
+    def main():
+        bots = []
+        for spec in BOTS.split(","):
+            spec = spec.strip()
+            if not spec:
+                continue
+            label, token_file, secret_file = spec.split(":", 2)
+            bots.append((label, token_file, secret_file))
+        if not bots:
+            print(f"FAIL registration-reconciler tenant={TENANT} channel={CHANNEL} no bots configured")
+            sys.exit(1)
+        ok = all([reconcile(*b) for b in bots])
+        if not ok:
             sys.exit(1)
 
     if __name__ == "__main__":
@@ -265,6 +273,7 @@ spec:
         spec:
           automountServiceAccountToken: false
           restartPolicy: Never
+          priorityClassName: platform-batch
           securityContext:
             runAsNonRoot: true
             runAsUser: 10001
@@ -287,6 +296,9 @@ spec:
                 # estate config and never typed as a literal (LAW 46).
                 - name: OTTO_WEBHOOK_URL
                   value: "https://otto.${ESTATE_ZONE}/webhook/telegram"
+                - name: OTTO_TELEGRAM_BOTS
+                  value: >-
+                    staging:/run/secrets/otto-gateway-channels/OTTO_TELEGRAM_BOT_TOKEN:/run/secrets/otto-gateway-channels/OTTO_TELEGRAM_WEBHOOK_SECRET,alerts:/run/secrets/otto-gateway-channels/OTTO_ALERTS_BOT_TOKEN:/run/secrets/otto-gateway-channels/OTTO_ALERTS_WEBHOOK_SECRET
                 # LAW 50: every workload emits to the central collector; same endpoint as
                 # platform/otto-gateway/deployment.yaml.
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT

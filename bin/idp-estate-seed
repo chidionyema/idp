@@ -52,6 +52,7 @@ ZONE=$(awk '/ESTATE_ZONE:/{print $2}' "$CFG" 2>/dev/null || true)
 PLAN=$(cat <<EOF
 temporal-db               password                    hex32
 otto-gateway-db           password                    hex32
+flux-telegram             webhook_secret              urlsafe32
 guacamole                 postgres-password           hex32
 hindsight                 postgres-password           hex32
 # the one Postgres (platform/estate-db). Seven of its ten roles keep the password their

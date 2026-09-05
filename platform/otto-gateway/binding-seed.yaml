@@ -65,6 +65,10 @@ data:
         ('estate', 'telegram', :'chat_id',
          'vault://otto-staging-telegram/webhook_secret', :'fingerprint', 'active',
          'vault://otto-staging-telegram/token',
+         jsonb_build_object(:'chat_id', 'founder')),
+        ('estate', 'telegram', 'alerts-bot:' || :'chat_id',
+         'vault://flux-telegram/webhook_secret', :'fingerprint_alerts', 'active',
+         'vault://flux-telegram/token',
          jsonb_build_object(:'chat_id', 'founder'))
     ON CONFLICT (channel, external_id) DO UPDATE SET
         tenant_id = excluded.tenant_id,
