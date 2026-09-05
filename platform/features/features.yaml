@@ -110,6 +110,38 @@ features:
         depends: [hermes-agent]
     default: enterprise
 
+  - name: client-context
+    title: Client context ingest
+    why: "an agent session starts knowing the customer's platform, their constraints and the workarounds that are deliberate, instead of re-deriving it and proposing what their rules forbid"
+    tiers:
+      - name: enterprise
+        what: "the four context kinds (estate, catalog, constraint, workaround) served as MCP resources on the one door, ingested from the customer's git, the context API or a reader over a system they already run; design in docs/specs/client-context-ingest-and-session-runtime.md"
+        switches: [mcp]
+        status: planned
+        # Typed only because the ingest and validation service does not exist yet; the door,
+        # the snapshot producer and the memory store it reads are already running under [mcp].
+        floor: { cpu: 0.2, memory_gb: 0.5, storage_gb: 1 }
+        depends: [postgres]
+      - name: lean
+        what: "the generated estate snapshot and the catalogue only, read through the same door; no customer-declared constraints or workarounds"
+        switches: [mcp]
+    default: enterprise
+
+  - name: agent-session-runtime
+    title: Where an agent session runs
+    why: "a laptop-bound session cannot be the only option: it dies with the machine, holds its own credentials and cannot be governed; founder 2026-09-05"
+    tiers:
+      - name: platform-hosted
+        what: "the session runs as a workload with a workload identity, reached from any device through the event gateway, the portal or a native app"
+        switches: [mcp]
+        status: planned
+        # Typed only because the session runtime does not exist yet. One concurrent session.
+        floor: { cpu: 0.5, memory_gb: 1, storage_gb: 5 }
+      - name: workstation
+        what: "the engineer's own MCP-capable client pointed at the same door, authenticated by the same identity layer; supported on purpose, never the only road"
+        switches: [mcp]
+    default: platform-hosted
+
   - name: model-routing
     title: Model routing and spend control
     why: "one endpoint, any provider, per-lane budgets (provider agnostic from day 0)"
