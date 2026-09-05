@@ -1,14 +1,8 @@
-# LATEST — session a0d64ea4 (crew#66 founder lane)
-
-## RESUME HERE
-
-Branch `feat/crew66-root-trust` (from crew459-portal-polish worktree): root-trust gate PR
-for crew#66 ruling 5453747447 / crew#580. Files: bin/idp-root-trust (+ test
-tests/test_incident_crew66_root_trust_register.py, 5 passed), docs/reference/policy/root-trust.md
-(register, 33 entries, MEETS 11 / PARTIAL 1 / MISS 19), bin/idp-bootstrap-tailscale (written,
-not run end to end), security-policy row, idp-ci + verify-drill rows, stale comments fixed,
-vault-seed tailscale entry refused. Next: commit, push, bin/pr-report, PR (Tracked: crew#66,
-Drill: root-trust), then tell the founder `bin/idp-bootstrap-tailscale` is ready to run.
-Then the bootstrappers PR (#575–#579): bin/idp-estate-seed, router keys, github-app tokens,
-bin/idp-bootstrap-cloudflare, bin/idp-bootstrap-vendors, umbrella bin/idp-bootstrap-estate.
-Founder plan recorded crew#66 5453918598 (one-shot, "just you").
+## RESUME HERE (2026-09-02T22:45Z, session a2aed3c9, lane .wt-kimi)
+Kimi provider work is MERGED (idp 84260b86, hermes-v2 922fbc6a + otto/boot-surface). Open thread:
+founder ruling tonight — ZERO credential friction, machines own the lifecycle. Building now on
+branch feat/vendor-probe: bin/idp-bootstrap-vendors --verify (read-only root probe) + oke-check.yml
+scheduled verify step + telegram alert (ping.yml pattern, SEED_HERMES_TELEGRAM_*), lifecycle doc.
+Dead roots still outstanding: kimi, deepseek, minimax (run 33685104831 verdicts); groq cancelled
+by founder. Downstream virtual keys already exist (docs/how-to/onboarding/litellm.md).
+Rejected tonight by founder: OpenRouter (expensive), browser-driving consoles, Backstage paste page.
