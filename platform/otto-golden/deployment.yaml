@@ -137,8 +137,14 @@ spec:
             # not served: `GET /model/info` from inside the gateway pod returned exactly `kimi`
             # and `minimax` on 2026-09-05. `kimi` is both -- family moonshot, distinct from
             # judgment's minimax -- so it is the value here.
+              # deepseek, not kimi, on the founder's instruction 2026-09-05 04:0xZ ("try deepseek").
+              # kimi is served and accepted -- it answers nothing: probe otto-answer-probe-29809680
+              # at 03:59Z read bulk kimi 2730 ms "empty completion" and verify kimi 26 ms the same,
+              # while judgment on minimax answered in 1595 ms. deepseek is in the router key's
+              # allowed set (kimi, minimax, deepseek) and in otto/router/config.py's family map,
+              # and its family differs from judgment's minimax, which that file requires.
             - name: OTTO_ROUTER_LANE_BULK_MODEL
-              value: kimi
+              value: deepseek
             # The estate's memory (platform/hindsight), one bank for every surface, so a
             # person remembered from Telegram is remembered on the next channel too.
             # otto/memory/hindsight.py: unset is a no-op, unreachable never costs an answer.
