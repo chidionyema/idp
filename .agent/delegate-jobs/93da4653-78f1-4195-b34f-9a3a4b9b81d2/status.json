@@ -1,0 +1,13 @@
+{
+  "jobId": "93da4653-78f1-4195-b34f-9a3a4b9b81d2",
+  "state": "canceled",
+  "step": "canceled",
+  "builder": "minimax-m3-direct",
+  "tier": "paid",
+  "reviewer": null,
+  "approved": null,
+  "verify": "cd /Users/chidionyema/dev/code/idp && ls -la backstage/templates/customer-onboarding/ 2>/dev/null && cat backstage/templates/customer-onboarding/template.yaml | head -80",
+  "startedAt": "2026-09-04T17:34:42.914Z",
+  "updatedAt": "2026-09-04T17:35:30.766Z",
+  "pid": null
+}

@@ -1,0 +1,185 @@
+{
+  "domain": "example.com",
+  "discoveredAt": "2026-09-04T17:59:21.989Z",
+  "oldNameServers": [
+    "elliott.ns.cloudflare.com",
+    "hera.ns.cloudflare.com"
+  ],
+  "oldIps": [
+    "162.159.44.228",
+    "172.64.35.228",
+    "108.162.195.228",
+    "108.162.192.162",
+    "173.245.58.162",
+    "172.64.32.162"
+  ],
+  "records": [
+    {
+      "name": "_dmarc.example.com",
+      "type": "TXT",
+      "content": "v=DMARC1;p=reject;sp=reject;adkim=s;aspf=s"
+    },
+    {
+      "name": "default._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "dkim._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "em._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "example.com",
+      "type": "A",
+      "content": "104.20.23.154"
+    },
+    {
+      "name": "example.com",
+      "type": "A",
+      "content": "172.66.147.243"
+    },
+    {
+      "name": "example.com",
+      "type": "AAAA",
+      "content": "2606:4700:10::6814:179a"
+    },
+    {
+      "name": "example.com",
+      "type": "AAAA",
+      "content": "2606:4700:10::ac42:93f3"
+    },
+    {
+      "name": "example.com",
+      "type": "MX",
+      "content": "",
+      "priority": 0
+    },
+    {
+      "name": "example.com",
+      "type": "TXT",
+      "content": "_k2n1y4vw3qtb4skdx9e7dxt97qrmmq9"
+    },
+    {
+      "name": "example.com",
+      "type": "TXT",
+      "content": "v=spf1 -all"
+    },
+    {
+      "name": "fm1._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "fm2._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "fm3._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "google._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "k1._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "k2._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "mail._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "mailjet._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "mandrill._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "pm._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "s1._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "s2._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "selector1._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "selector2._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "sendgrid._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "smtp._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    },
+    {
+      "name": "www.example.com",
+      "type": "A",
+      "content": "104.20.23.154"
+    },
+    {
+      "name": "www.example.com",
+      "type": "A",
+      "content": "172.66.147.243"
+    },
+    {
+      "name": "www.example.com",
+      "type": "AAAA",
+      "content": "2606:4700:10::6814:179a"
+    },
+    {
+      "name": "www.example.com",
+      "type": "AAAA",
+      "content": "2606:4700:10::ac42:93f3"
+    },
+    {
+      "name": "zoho._domainkey.example.com",
+      "type": "TXT",
+      "content": "v=DKIM1; p="
+    }
+  ],
+  "registrar": {
+    "known": true,
+    "locked": false,
+    "statuses": []
+  },
+  "hasMx": true
+}
