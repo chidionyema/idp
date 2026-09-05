@@ -78,6 +78,7 @@ spec:
             - |
               set -eu
               PGPASSWORD=$(cat /run/secrets/otto-gateway-db/POSTGRES_PASSWORD); export PGPASSWORD
+              PGCONNECT_TIMEOUT=5; export PGCONNECT_TIMEOUT
               fingerprint=$(sha256sum < /run/secrets/otto-gateway-channels/OTTO_TELEGRAM_WEBHOOK_SECRET | cut -d' ' -f1)
               psql -h estate-rw.estate-db.svc.cluster.local -U otto_gateway -d otto_gateway -v ON_ERROR_STOP=1 \
                 -v chat_id="$(cat /run/secrets/otto-gateway-channels/TELEGRAM_CHAT_ID)" \
@@ -148,6 +149,10 @@ spec:
             - { name: OTTO_INGRESS_DB_PORT, value: "5432" }
             - { name: OTTO_INGRESS_DB_NAME, value: otto_gateway }
             - { name: OTTO_INGRESS_DB_USER, value: otto_gateway }
+            # libpq's connect timeout. Without it a Postgres that accepts the TCP
+            # handshake and then says nothing holds the first query open for the
+            # kernel's default, minutes, and the app-level recall budget never runs.
+            - { name: PGCONNECT_TIMEOUT, value: "5" }
             - { name: OTTO_INGRESS_DB_PASSWORD_FILE, value: /run/secrets/otto-gateway-db/POSTGRES_PASSWORD }
             - { name: OTTO_NATS_URL, value: "nats://nats.event-bus.svc:4222" }
             # The estate's memory (platform/hindsight), one bank for every surface, so a

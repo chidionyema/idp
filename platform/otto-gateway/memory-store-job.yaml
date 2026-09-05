@@ -102,6 +102,10 @@ spec:
             - { name: PGPORT, value: "5432" }
             - { name: PGUSER, value: otto_gateway }
             - { name: PGDATABASE, value: otto_gateway }
+            # libpq's connect timeout. Without it a Postgres that accepts the TCP
+            # handshake and then says nothing holds the first query open for the
+            # kernel's default, minutes, and the app-level recall budget never runs.
+            - { name: PGCONNECT_TIMEOUT, value: "5" }
             # Where the memories being copied across are read from. Same row and
             # same bank the gateway retains into, so this copies the estate's own
             # memory rather than someone else's.
