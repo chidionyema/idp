@@ -178,9 +178,9 @@ def test_recall_reads_the_rendered_context_shape_too(store):
     """The vendor answers recall with a rendered `context` string or a `memories` list
     depending on the request; a version bump that switches one for the other must not
     silently return nothing."""
-    s = store({"context": "what the estate knows"})
+    s = store({"context": "estate-context-marker"})
     out = memory.do_recall("anything", "", "", [], 5, cfg=cfg_for(s.url))
-    assert out["memories"][0]["text"] == "what the estate knows"
+    assert out["memories"][0]["text"] == "estate-context-marker"
 
 
 def test_a_store_that_is_down_never_costs_the_answer(store):
