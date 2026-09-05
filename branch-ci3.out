@@ -1,0 +1,941 @@
+ok    hardcode 0 files hardcode a checkout path  (25s)
+ok    pipeverdict 0 scripts let a pipeline's exit status stand in for a grep match  (6s)
+ok    compose  llm/litellm.yml
+ok    compose  observability/langfuse.yml
+ok    compose  mcp/agentgateway.yml
+ok    schema   mcp/agentgateway.yaml against agentgateway v1.4.1  (23s)
+ok    policy   fixtures pass and fail as expected  (13s)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+ok    incident 2026-08-24 dropped assets: 8 rows -> 8 entities, 8 db rows (two concurrent db-gens)  (91s)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+ok    idempot  catalog-gen twice over one inventory: identical (236662 bytes)  (118s)
+ok    render   llm/config.yaml + platform/llm/config.yaml match platform/vendors/consoles.yaml
+ok    graph    3 entities carry dependsOn: 1 containment, 1 vendor-coupling
+ok    refs     every entity reference resolves; a dangling one is refused (164 entities, 325 references, all resolve)  (11s)
+ok    ports    catalog-gen refuses a port claimed twice, passes the clean inventory, emits port entities  (65s)
+ok    incident 2026-08-25 false port collision: an attributed listener is one claim with its container, an unattributed one is still two  (15s)
+ok    incident 2026-08-25 containment through a link: a worktree and a symlink resolve to their repo, a genuine orphan keeps outside-any-repo  (11s)
+ok    agnostic cloud-agnostic-gate refuses a provider annotation, permits a plain Service, and the repo is clean
+ok    zone     estate-zone-gate refuses a literal zone (tree and diff), permits ${ESTATE_ZONE}, and the repo is clean
+ok    intent   intent-compile refuses unknown vocabulary and a spoken estate name, compiles the good intents, byte-deterministic
+ok    portlock 21 declared, 0 findings
+ok    portbind port-gate --live refuses a bind that differs from the declared address and passes a matching one
+ok    portprobe incident 2026-08-25: a script may only probe a declared port; the gate names the probing file, passes the real ledger, and a comment about a dead port stays legal
+ok    multiarch multiarch-gate refuses a single-arch build-push-action, a raw docker build and a Dockerfile-shaped file nothing builds; passes the dual-arch fixture; this repo is clean  (3s)
+ok    security-policy every control on docs/reference/security-policy.md names a proof command that exists; gate proved both ways
+FAIL  root-trust an ExternalSecret reads a credential nobody registered, or a register row has no bootstrapper/ticket  (3s)
+      FAIL    bridge-instance-ocid: read by platform/rbac-identity/external-secret.yaml but absent from the register
+      FAIL    root-trust: 1 finding(s); 55 vault entries read by ExternalSecrets, 53 register rows: MEETS 50 PARTIAL 0 MISS 3
+ok    ai-act   every registered AI system has its Annex IV file, risk entries and declared data; gate proved both ways
+ok    law32    every new bin file has its demo and onboarding; every page is above the prose floor and in the nav; gate proved both ways
+ok    plist    every launchd template renders to a plist that parses and names its job; gate proved both ways
+ok    portlive port-gate --live reads the machine, not a saved inventory
+ok    reconcile idp-reconcile names the rogue fixture and passes the clean one
+ok    manifest idp-apply refuses no-health, :latest and an undeclared port; a declared manifest dry-runs clean  (3s)
+ok    kustomize platform/backstage/base renders ClusterIP-only; the NodePort fixture is refused
+ok    migration gate refuses the non-idempotent fixture
+BLIND migration dagster not importable; gate not run
+ok    schema   164 entity documents valid
+FAIL  prose    a test function only asserts prose/string membership in file text (R76)
+      /Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/tests/test_estate_memory_mcp.py: test_recall_reads_the_rendered_context_shape_too only asserts prose/string membership in file text (R76)
+BLIND codeloc dagster not importable; the code location was not loaded
+ok    describe job descriptions derive from the script, and are refused when absent
+ok    vmmount  vm-shared-path permits a path under the shared root and refuses one outside it
+ok    secrets  static-secret-gate passes the empty fixture and refuses the one with a key and a .env
+ok    ethos    idp-conscience scores the good fixture 2/2, the bad 1/2, and refuses a tenet with no command
+ok    ethos    conscience.rego fires all 5 rules on conscience-bad.json and none on conscience-clean.json
+ok    owners   owner-account-gate passes a provider with a second owner and refuses one without
+ok    binds    bind-audit refuses an unknown listener and permits an allow-listed one
+ok    fences   skip   commerce: declared in git, not on the cluster (platform/ns-fences/live-namespaces.txt), so there is nothing to fence yet; bin/idp-ns-fence-gen writes its fence on the first run after it appears
+skip   demo-sandbox: declared in git, not on the cluster (platform/ns-fences/live-namespaces.txt), so there is nothing to fence yet; bin/idp-ns-fence-gen writes its fence on the first run after it appears
+skip   tigera-operator: declared in git, not on the cluster (platform/ns-fences/live-namespaces.txt), so there is nothing to fence yet; bin/idp-ns-fence-gen writes its fence on the first run after it appears
+skip   trivy-system: declared in git, not on the cluster (platform/ns-fences/live-namespaces.txt), so there is nothing to fence yet; bin/idp-ns-fence-gen writes its fence on the first run after it appears
+37 namespace(s) DECLARE a quota, a LimitRange, a both-ways default deny and a DNS exception in platform. Whether the cluster holds them, and whether anything on it enforces a policy, is --live's answer, not this one: backstage, cert-manager, chaos-mesh, dagster, edge, estate-db, event-bus, external-secrets, guacamole, healing, healthchecks, hermes-agent, hindsight, identity, infra-crew, keda, kyverno, llm, mcp, metrics-server, monitoring, notify, observability, observability-agent, otto-gateway, otto-golden, prospector, reloader, research, robusta, scheduling, searxng, spire-mgmt, staging, tailscale, temporal, weave-gitops  (3s)
+ok    diagram  tests/test_estate_diagram.py
+FAIL  bdd      sovereign/tests/bdd (rc=2), or the unbound fixture was not refused for the right reason  (4s)
+      ____________ ERROR collecting tests/bdd/test_cp3_worker_registry.py ____________
+      ImportError while importing test module '/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/sovereign/tests/bdd/test_cp3_worker_registry.py'.
+      Hint: make sure your test modules/packages have valid Python names.
+      Traceback:
+      /usr/local/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/importlib/__init__.py:88: in import_module
+          return _bootstrap._gcd_import(name[level:], package, level)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      sovereign/tests/bdd/test_cp3_worker_registry.py:14: in <module>
+          from temporalio import activity
+      E   ModuleNotFoundError: No module named 'temporalio'
+      =============================== warnings summary ===============================
+      ../../../../../../Library/Python/3.14/lib/python/site-packages/gherkin/gherkin_line.py:79: 15 warnings
+        /Users/chidionyema/Library/Python/3.14/lib/python/site-packages/gherkin/gherkin_line.py:79: DeprecationWarning: 'maxsplit' is passed as positional argument
+          uncommented_line = re.split(r"\s#", self._trimmed_line_text.strip(), 2)[0]
+      
+      -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+      =========================== short test summary info ============================
+      ERROR sovereign/tests/bdd/test_cp0c_kini_finish_workflow.py
+      ERROR sovereign/tests/bdd/test_cp0d_kini_finish_trigger.py
+      ERROR sovereign/tests/bdd/test_cp27.py
+      ERROR sovereign/tests/bdd/test_cp28.py
+      ERROR sovereign/tests/bdd/test_cp29.py
+      ERROR sovereign/tests/bdd/test_cp3_worker_registry.py
+      !!!!!!!!!!!!!!!!!!! Interrupted: 6 errors during collection !!!!!!!!!!!!!!!!!!!!
+      15 warnings, 6 errors in 0.68s
+  bad E   pytest_bdd.exceptions.StepDefinitionNotFoundError: Step definition is not found: Then "a step that nobody defined runs". Line 9 in scenario "One step is bound and one is not" in the feature "/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/sovereign/tests/fixtures/bdd/unbound/unbound_step.feature"
+  bad All traceback entries are hidden. Pass `--full-trace` to see hidden and internal frames.
+  bad =========================== short test summary info ============================
+  bad FAILED sovereign/tests/fixtures/bdd/unbound/test_unbound.py::test_one_step_is_bound_and_one_is_not
+  bad 1 failed in 0.02s
+FAIL  incident tests/test_incident_*.py (rc=4)
+      ERROR: usage: python3.14 -m pytest [options] [file_or_dir] [file_or_dir] [...]
+      python3.14 -m pytest: error: unrecognized arguments: -n
+        inifile: /Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/pyproject.toml
+        rootdir: /Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1
+ok    docs     no docs/ or mkdocs.yml change against origin/main; the site was built on main
+ok    kyverno  platform/backstage/base platform/calico platform/chaos/mesh platform/commerce/app platform/commerce/data platform/dagster platform/dns platform/drills platform/edge platform/estate-db/migrate platform/estate-db/operator platform/event-bus platform/guacamole platform/healing platform/healthchecks platform/hermes-agent platform/hindsight platform/identity platform/infra-crew platform/keda platform/kyverno platform/llm platform/mcp platform/metrics-server platform/monitoring platform/notify platform/observability platform/observability-collector platform/oci/autoscaler platform/otto-gateway platform/otto-golden platform/prospector platform/reloader platform/research-engine platform/robusta platform/sandbox/vcluster platform/scheduling platform/science platform/searxng platform/secrets platform/spire platform/state platform/tailscale platform/temporal platform/trivy platform/weave-gitops render clean; the unpatched-chart fixture is refused (every dir: the judge, a policy or the cluster wiring changed)  (561s)
+ok    types    valid=921 invalid=0 errors=0 skipped=185 (46 source(s): platform/backstage/base, platform/calico, platform/chaos/mesh, platform/commerce/app, platform/commerce/data, platform/dagster, platform/dns, platform/drills, platform/edge, platform/estate-db/migrate, platform/estate-db/operator, platform/event-bus, platform/guacamole, platform/healing, platform/healthchecks, platform/hermes-agent, platform/hindsight, platform/identity, platform/infra-crew, platform/keda, platform/kyverno, platform/llm, platform/mcp, platform/metrics-server, platform/monitoring, platform/notify, platform/observability, platform/observability-collector, platform/oci/autoscaler, platform/otto-gateway, platform/otto-golden, platform/prospector, platform/reloader, platform/research-engine, platform/robusta, platform/sandbox/vcluster, platform/scheduling, platform/science, platform/searxng, platform/secrets, platform/spire, platform/state, platform/tailscale, platform/temporal, platform/trivy, platform/weave-gitops)  (4s)
+ok    envsubst 23 Kustomization(s) substitute clean; the unescaped-shell fixture is refused  (12s)
+ok    links    catalog: every entity carries a URL (136 Components); a checkout with no remote is refused  (18s)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+/Users/chidionyema/dev/code/idp/.claude/worktrees/agent-a92f8c4fd6864fbc1/bin/catalog-gen:272: DeprecationWarning: 'maxsplit' is passed as positional argument
+  parts = re.split(r"(?<=[.!?])\s", text, 2)
+ok    grade    estate-showcase grades the fixture catalogue (0 GAP rows) and --check refuses a stale page  (10s)
+ok    ha       14/14 graded surface(s) survive losing one node (6 waived)  (6s)
+      WAIVED    availability otto.${ESTATE_ZONE}        hermes-agent/hermes-agent-gateway: One Telegram token may be long-polled by exactly one process (two are 409s on both, gateway.yaml:18-23) and HERMES_HOME is a ReadWriteOnce volume holding state.db, so replicas 2 here is an outage, not a fix. The remedy is a webhook or a lease, not a number. (chidionyema/idp#547)
+      WAIVED    availability signoz.${ESTATE_ZONE}      observability/signoz: SigNoz stands on one ClickHouse; two replicas against a single database moves the single point of failure rather than removing it. HA here is a ClickHouse topology change, not a replica count. (chidionyema/idp#544)
+      WAIVED    availability hc.${ESTATE_ZONE}          flux-system/webhook-receiver: The service behind this route is Flux's own notification-controller, rendered by clusters/oke/flux-system/gotk-components.yaml -- a path this gate does not scan, so it reads as a backend nothing renders. A replica count is the wrong lever regardless: the Flux controllers are deliberate singletons that hold a leader-election lease, and a second one does not serve, it waits. What a lost webhook costs is latency, not delivery, because the GitRepository still polls every minute underneath it. (chidionyema/idp#544)
+      WAIVED    availability langfuse.${ESTATE_ZONE}    observability/langfuse-web: A component of the langfuse chart (langfuse-values.yaml:32,44 set replicas 1), sharing the same ClickHouse and Postgres as signoz. (chidionyema/idp#544)
+      WAIVED    availability signoz.${ESTATE_ZONE}      observability/signoz-otel-collector: A component of the signoz chart; this repository renders no Deployment for it, so the values are the only lever and they follow the signoz row above. (chidionyema/idp#544)
+      WAIVED    availability (behind a route)           llm/litellm-cache: One Redis holds the router's answer cache and shared cooldown counters; losing it costs cache hits, not answers -- the router keeps serving. Two plain replicas would split the cache and the cooldown state, moving the failure rather than removing it; the remedy is Sentinel or a managed Redis, not a replica count. (chidionyema/idp#1184)
+timing   1020s total; slowest rungs:
+         561s  ok    kyverno  platform/backstage/base platform/calico platform/chaos/mesh platform/commer
+         118s  ok    idempot  catalog-gen twice over one inventory: identical (236662 bytes)
+         91s  ok    incident 2026-08-24 dropped assets: 8 rows -> 8 entities, 8 db rows (two concurrent 
+         65s  ok    ports    catalog-gen refuses a port claimed twice, passes the clean inventory, emits
+         37s  namespace(s) DECLARE a quota, a LimitRange, a both-ways default deny and a DNS exception i
+FAIL  idp-ci
+rc=1
