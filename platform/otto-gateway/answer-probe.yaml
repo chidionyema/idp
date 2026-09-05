@@ -1,0 +1,265 @@
+# Does Otto actually answer? Every fifteen minutes, without anyone messaging the bot.
+#
+# Founder, 2026-09-05, after being asked to send a test message himself: "Otto — we need better
+# testing for this as entrpise product, cant be doin all tgis". He is right, and the outage that
+# prompted it shows why the tests that already existed could not have caught it.
+#
+# What was already watched, and what each of those proves:
+#   * the founder-surfaces probe (platform/monitoring/rules/founder-surfaces-probe.yaml) fetches
+#     https://otto.${ESTATE_ZONE}/healthz -- it proves the door is up.
+#   * the registration reconciler beside this file asks Telegram where the webhook points -- it
+#     proves the vendor will deliver to that door.
+#   * the otto-parity drill checks the pod has a model lane configured -- it proves the setting
+#     exists.
+# On 2026-09-05 all three were green for hours while every message the founder sent was answered
+# with silence: the door held no router credential, so otto.router.providers raised EgressDenied
+# on the first attempt and the task went to needs_human in five milliseconds. A door answering 200
+# proves the door, never the answer.
+#
+# So this probe tests the layer that actually broke, and it tests it the way the gateway itself
+# uses it: it takes the SAME credential the door mounts, the SAME router URL the door calls, and
+# every lane the door can route to, and it requires a real completion to come back. A lane that
+# answers 200 with no content fails, because an empty answer is what the founder experiences as
+# silence.
+#
+# Why not replay a synthetic Telegram update through the front door instead: the door's binding
+# holds one allowlisted chat -- the founder's -- so a synthetic update either arrives from a
+# principal the door correctly refuses (proving nothing about the model path) or is delivered to
+# his phone (making the estate's own tests a source of messages he did not ask for).
+#
+# It costs a handful of tokens per lane per run: max_tokens is 8 and the prompt is three words.
+# The spend lands on the same otto-golden router key the door uses, so it is attributable to Otto
+# rather than hidden in an unlabelled budget, and it appears in the Boardroom dashboard alongside
+# real traffic, tagged by the prompt name below.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otto-answer-probe-script
+  namespace: otto-gateway
+data:
+  probe.py: |
+    """Ask every lane the gateway can route to for a real answer, and grade the answer."""
+    import json
+    import os
+    import time
+    import urllib.error
+    import urllib.request
+
+    TENANT = os.environ.get("OTTO_TENANT_ID", "estate")
+    KEY_FILE = os.environ.get(
+        "OTTO_ROUTER_KEY_FILE", "/run/secrets/otto-gateway-router/LITELLM_API_KEY"
+    )
+    BASE_URL = os.environ.get(
+        "LITELLM_BASE_URL", "http://litellm.llm.svc.cluster.local:4000/v1"
+    ).rstrip("/")
+    OTLP_ENDPOINT = os.environ.get(
+        "OTEL_EXPORTER_OTLP_ENDPOINT", "http://signoz-otel-collector.observability.svc:4318"
+    )
+    TIMEOUT_S = 45
+
+    # Lane name -> the model the door would send that lane to. Read from the environment so this
+    # file never repeats a value platform/otto-gateway/deployment.yaml already sets: if the door's
+    # lane moves and this probe is not moved with it, the probe tests a lane nobody uses, which is
+    # the class of test that reports green through an outage.
+    LANES = {
+        "judgment": os.environ.get("OTTO_ROUTER_LANE_JUDGMENT_MODEL", ""),
+        "bulk": os.environ.get("OTTO_ROUTER_LANE_BULK_MODEL", ""),
+        "verify": os.environ.get("OTTO_ROUTER_LANE_VERIFY_MODEL", ""),
+    }
+
+    def ask(key, model):
+        """One real completion. Returns (ok, latency_ms, detail) and never raises."""
+        body = json.dumps(
+            {
+                "model": model,
+                "messages": [{"role": "user", "content": "Reply with the word ready."}],
+                "max_tokens": 8,
+                "temperature": 0,
+                # Names this call in the trace store so it is separable from the founder's real
+                # conversations in the Boardroom dashboard rather than inflating them.
+                "metadata": {"generation_name": "otto-answer-probe", "tenant": TENANT},
+            }
+        ).encode()
+        req = urllib.request.Request(
+            BASE_URL + "/chat/completions",
+            data=body,
+            headers={"Content-Type": "application/json", "Authorization": "Bearer " + key},
+            method="POST",
+        )
+        started = time.monotonic()
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
+                payload = json.load(r)
+        except urllib.error.HTTPError as e:
+            # The router's own words, truncated: a 401 here means the key, a 400 means the lane
+            # name is not a model the router serves. Both are the failure this probe exists for
+            # and both must reach the log, so the next session does not have to guess.
+            try:
+                detail = e.read().decode("utf-8", "replace")[:200]
+            except Exception:  # noqa: BLE001
+                detail = e.reason or ""
+            return False, (time.monotonic() - started) * 1000.0, "http %d %s" % (e.code, detail)
+        except Exception as e:  # noqa: BLE001 -- a probe that raises is a probe nobody trusts
+            return False, (time.monotonic() - started) * 1000.0, type(e).__name__
+        latency_ms = (time.monotonic() - started) * 1000.0
+        choices = payload.get("choices") or []
+        content = (choices[0].get("message", {}).get("content") or "").strip() if choices else ""
+        if not content:
+            # 200 with nothing in it is silence, which is exactly what the founder reported.
+            return False, latency_ms, "empty completion"
+        return True, latency_ms, "%d chars" % len(content)
+
+    def _gauge(name, value, lane, at_nano):
+        return {
+            "name": name,
+            "gauge": {
+                "dataPoints": [
+                    {
+                        "asDouble": float(value),
+                        "timeUnixNano": str(at_nano),
+                        "attributes": [
+                            {"key": "tenant_id", "value": {"stringValue": TENANT}},
+                            {"key": "lane", "value": {"stringValue": lane}},
+                        ],
+                    }
+                ]
+            },
+        }
+
+    def push_metrics(results, at_nano):
+        metrics = []
+        for lane, (ok, latency_ms, _detail) in results.items():
+            metrics.append(_gauge("otto_answer_ok", 1 if ok else 0, lane, at_nano))
+            metrics.append(_gauge("otto_answer_latency_ms", latency_ms, lane, at_nano))
+        body = {
+            "resourceMetrics": [
+                {
+                    "resource": {
+                        "attributes": [
+                            {
+                                "key": "service.name",
+                                "value": {"stringValue": "otto-answer-probe"},
+                            }
+                        ]
+                    },
+                    "scopeMetrics": [
+                        {"scope": {"name": "otto.answer.probe"}, "metrics": metrics}
+                    ],
+                }
+            ]
+        }
+        req = urllib.request.Request(
+            OTLP_ENDPOINT.rstrip("/") + "/v1/metrics",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
+            r.read()
+
+    def main():
+        with open(KEY_FILE, encoding="utf-8") as f:
+            key = f.read().strip()
+        lanes = {name: model for name, model in LANES.items() if model}
+        if not lanes:
+            print("FAIL answer-probe no lane configured; the door has no model to call")
+            return 1
+        results = {}
+        for lane, model in lanes.items():
+            ok, latency_ms, detail = ask(key, model)
+            results[lane] = (ok, latency_ms, detail)
+            print(
+                "%s answer-probe tenant=%s lane=%s model=%s latency_ms=%d %s"
+                % ("ok" if ok else "FAIL", TENANT, lane, model, latency_ms, detail)
+            )
+        at_nano = time.time_ns()
+        try:
+            push_metrics(results, at_nano)
+        except Exception as e:  # noqa: BLE001
+            # A collector that is down must not turn a working Otto into a failed probe.
+            print("warn answer-probe metrics not pushed:", type(e).__name__)
+        return 0 if all(ok for ok, _l, _d in results.values()) else 1
+
+    if __name__ == "__main__":
+        raise SystemExit(main())
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: otto-answer-probe
+  namespace: otto-gateway
+spec:
+  # Fifteen minutes: long enough that the spend stays in the noise, short enough that a broken
+  # Otto is known before the founder is the one who finds out.
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 180
+      ttlSecondsAfterFinished: 900
+      template:
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          priorityClassName: platform-batch
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: probe
+              # Standard library only, and the same interpreter tag the reconciler beside it
+              # runs -- no pip install, no second image to keep patched (LAW 43).
+              image: docker.io/library/python:3.11-slim
+              command: ["python3", "/scripts/probe.py"]
+              env:
+                - name: OTTO_TENANT_ID
+                  value: "estate"
+                # The same three values platform/otto-gateway/deployment.yaml gives the door.
+                - name: LITELLM_BASE_URL
+                  value: "http://litellm.llm.svc.cluster.local:4000/v1"
+                - name: OTTO_ROUTER_LANE_JUDGMENT_MODEL
+                  value: "minimax"
+                - name: OTTO_ROUTER_LANE_BULK_MODEL
+                  value: "fast"
+                - name: OTTO_ROUTER_LANE_VERIFY_MODEL
+                  value: "gemini"
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://signoz-otel-collector.observability.svc:4318"
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                # The door's own credential, mounted as a file exactly as the door mounts it:
+                # Kyverno's secrets-not-from-env-vars policy refuses it in the environment, and
+                # a probe holding a different key would prove nothing about the door's key.
+                - name: router
+                  mountPath: /run/secrets/otto-gateway-router
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+              securityContext:
+                allowPrivilegeEscalation: false
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                capabilities: { drop: ["ALL"] }
+                seccompProfile: { type: RuntimeDefault }
+              resources:
+                # Awake for three HTTP calls every fifteen minutes; no standing CPU reserved
+                # (crew#584), memory requests == limits so an OOM cannot turn into a false FAIL.
+                requests: { cpu: "0", memory: 64Mi }
+                limits: { cpu: 50m, memory: 64Mi }
+          volumes:
+            - name: scripts
+              configMap:
+                name: otto-answer-probe-script
+                defaultMode: 0o555
+            - name: router
+              secret: { secretName: otto-gateway-router }
+            - name: tmp
+              emptyDir: {}

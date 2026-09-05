@@ -76,3 +76,23 @@ spec:
           annotations:
             summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is over 90% full"
             description: "{{ $value | humanizePercentage }} free on {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} for 10 minutes."
+    # Otto answering is a founder surface in its own right, and the one the founder-surfaces probe
+    # above cannot grade: that probe fetches /healthz, which stayed 200 through the whole of the
+    # 2026-09-05 silence. This one grades the end-to-end answer probe beside the door
+    # (platform/otto-gateway/answer-probe.yaml), which fails its Job when any lane the door routes
+    # to cannot produce a completion.
+    - name: estate.otto
+      rules:
+        - alert: OttoCannotAnswer
+          expr: kube_job_status_failed{namespace="otto-gateway", job_name=~"otto-answer-probe.*"} > 0
+          for: 15m
+          labels:
+            severity: critical
+            owner: idp
+          annotations:
+            summary: "Otto cannot produce an answer"
+            description: >-
+              The end-to-end answer probe in otto-gateway has failed for 15 minutes: at least one
+              model lane the door routes to did not return a completion, so a message to the bot
+              is answered with silence. The failed Job's log names the lane and the router's own
+              refusal.
