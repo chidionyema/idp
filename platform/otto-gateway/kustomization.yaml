@@ -17,6 +17,7 @@ resources:
   - availability.yaml
   - registration-reconciler.yaml
   - answer-probe.yaml
+  - memory-store-job.yaml
 images:
   - name: ghcr.io/chidionyema/hermes-agent
     newTag: main-79-0a94c6a3b0b794c3884ec0fe684b8bd547445fbc # {"$imagepolicy": "flux-system:hermes-agent:tag"}

@@ -121,6 +121,21 @@ spec:
               # and as platform/research-engine/cronjob.yaml).
               LITELLM_API_KEY=$(cat /run/secrets/otto-gateway-router/LITELLM_API_KEY)
               export LITELLM_API_KEY
+              # The fact store the answering lane now reads memory from, instead of
+              # waiting on hindsight's cross-encoder for 31.87s per question
+              # (hermes-v2 otto/memory/fast_recall.py, and its PR for the trace).
+              # libpq's own variables rather than a single URL, because a password
+              # containing a URL-special character would otherwise have to be
+              # percent-encoded here; no credential is typed in this file either way,
+              # it is read from the file OTTO_INGRESS_DB_PASSWORD_FILE already names.
+              # Unset, the read path is a no-op and hindsight keeps every write, so a
+              # gateway that cannot reach this store answers exactly as it did before.
+              PGHOST=$OTTO_INGRESS_DB_HOST
+              PGPORT=$OTTO_INGRESS_DB_PORT
+              PGUSER=$OTTO_INGRESS_DB_USER
+              PGDATABASE=$OTTO_INGRESS_DB_NAME
+              PGPASSWORD=$(cat "$OTTO_INGRESS_DB_PASSWORD_FILE")
+              export PGHOST PGPORT PGUSER PGDATABASE PGPASSWORD
               exec python -m otto.ingress
           env:
             - { name: OTTO_INGRESS_PORT, value: "8080" }
