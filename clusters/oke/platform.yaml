@@ -474,11 +474,13 @@ spec:
     - name: secret-store
     - name: edge
     - name: event-bus
-    # Its Postgres data is copied onto the estate cluster before this row is applied, and
-    # this row is what deletes the old server. estate-db-migrate is the copy (crew: one
-    # Postgres for the estate) -- it must report Ready first or the data would be pruned
-    # ahead of being moved.
-    - name: estate-db-migrate
+    # estate-db-migrate is deliberately absent. It guarded a one-time copy of this
+    # gateway's Postgres data onto the estate cluster, because this row is what deletes the
+    # old server and the data would have been pruned ahead of being moved. That copy has
+    # run: Job estate-db-copy-otto-gateway-r3 is Completed in namespace otto-gateway. The
+    # guard is spent, and while it stood it was a permanent brake -- estate-db-migrate has
+    # been Ready=False for 13 hours on its own dependency, so every otto-gateway change
+    # since then, including the bulk-lane fix in #1678, could not reach the cluster.
   wait: true
   timeout: 10m
   healthChecks:
