@@ -24,15 +24,22 @@
 # already there, so an interrupted run is simply re-run.
 #
 # A Job is immutable once created, so re-running this means changing the name below
-# (the -1 suffix) in a commit. That is deliberate: a migration that silently re-runs
+# (the -2 suffix) in a commit. That is deliberate: a migration that silently re-runs
 # on every reconcile is not a migration, it is a cron job nobody chose.
+#
+# -1 ran at 11:05Z on 2026-09-05 and failed four times with, from its own pod log,
+# `No module named otto.memory.migrate`. Not a database problem: the tag pinned above
+# was built before hermes-v2 #80 landed, so the image did not yet contain the code
+# this Job invokes. The rename to -2 is the re-run, and it belongs in the same commit
+# as the spec change below (a Job's pod template is immutable too, so Flux could not
+# have applied the embedding variables to -1 even if it had succeeded).
 #
 # If this never runs, nothing breaks: the read path finds no store, returns nothing,
 # and the lane answers exactly as it did before while hindsight keeps every write.
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: otto-memory-store-1
+  name: otto-memory-store-2
   namespace: otto-gateway
   labels:
     app.kubernetes.io/name: otto-memory-store
