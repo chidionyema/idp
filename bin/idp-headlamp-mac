@@ -72,6 +72,19 @@ if [ -d "$(dirname "$HL_STORE")" ]; then
 	ln -sfn "$KC" "$HL_STORE/estate.yaml"
 fi
 
+# And the file the app is actually pointed at. Headlamp.app launches its own headlamp-server with
+# KUBECONFIG=$HOME/.kube/estate.yaml (read out of the running process's environment, 2026-09-05),
+# not from the store above, so a correct store and a stale estate.yaml still ends in the token
+# prompt -- which is exactly what happened: that file was a copy taken on 2026-08-31 carrying the
+# OCI CLI's bare `command: oci`, and `oci` is on no directory of the PATH a GUI app inherits
+# (/usr/bin:/bin:/usr/sbin:/sbin). The exec plugin could not run, so Headlamp asked for a bearer
+# token. It is a symlink to the minted kubeconfig now, so it cannot drift again.
+HL_ENV_KC="$HOME/.kube/estate.yaml"
+if [ -d "$(dirname "$HL_ENV_KC")" ] && [ ! -L "$HL_ENV_KC" ]; then
+	[ -e "$HL_ENV_KC" ] && mv "$HL_ENV_KC" "$HL_ENV_KC.bak-$(date -u +%Y%m%dT%H%M%SZ)"
+	ln -s "$KC" "$HL_ENV_KC"
+fi
+
 # The API key profile, never the session-token one: session tokens die within hours and this job is
 # meant to be there at 3am (docs/reference/oke-laptop-session.md).
 export OCI_CLI_PROFILE="${OCI_CLI_PROFILE:-DEFAULT}" OCI_CLI_AUTH="${OCI_CLI_AUTH:-api_key}" SUPPRESS_LABEL_WARNING=True
