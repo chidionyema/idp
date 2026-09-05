@@ -303,6 +303,17 @@ features:
         switches: []
     default: "off"
 
+  - name: test-prove-crew857
+    title: "TEST PROVE crew#857 (throwaway)"
+    why: "Proves adding a row to features.yaml makes it selectable in the store with no second edit. Remove before merging."
+    tiers:
+      - name: "on"
+        what: "no-op: no switches, no cluster impact"
+        switches: []
+      - name: "off"
+        switches: []
+    default: "off"
+
 products:
   # Products run ON the platform; they are rows so the plan sums them, never platform layers.
   - name: prospector
