@@ -50,9 +50,32 @@ def required_contexts(path=RULESET):
     return out
 
 
+def latest_per_name(checks):
+    """One entry per check NAME, not one per run.
+
+    statusCheckRollup returns a row for every run of every check, so a run that was superseded --
+    cancelled because a newer push started, or re-run after a fix -- stays in the list beside the
+    run that replaced it. Reading the list raw makes a green pull request report as failing and a
+    merge lane wait forever on a verdict that was already reached. Measured on the deploy itself,
+    #1011: `open` carried a FAILURE from the broken robot and a SUCCESS from the re-run that fixed
+    it, and the unfiltered read called the pull request failing while GitHub called it mergeable.
+
+    The later run wins, ordered by when it finished and then by when it started, so a re-run that
+    is still going beats the completed run it supersedes rather than the other way round -- which
+    lands as "still running", the honest answer, instead of a stale pass.
+    """
+    latest = {}
+    for c in checks:
+        name = c.get("name") or c.get("context") or "?"
+        key = (c.get("completedAt") or "", c.get("startedAt") or "")
+        if name not in latest or key >= latest[name][0]:
+            latest[name] = (key, c)
+    return [c for _, c in latest.values()]
+
+
 def verdict(pr, required):
     labels = {lbl["name"].lower() for lbl in pr.get("labels") or []}
-    checks = pr.get("statusCheckRollup") or []
+    checks = latest_per_name(pr.get("statusCheckRollup") or [])
     names = {c.get("name") or c.get("context") for c in checks}
     done = [c for c in checks if (c.get("status") or "COMPLETED") == "COMPLETED"]
     bad = [
