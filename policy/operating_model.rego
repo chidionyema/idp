@@ -268,22 +268,3 @@ deny contains msg if {
 	not matrix_line in slugs_added_in_pr
 	msg := sprintf("rule=matrix_cited | `Matrix: %s` names no entry in docs/decisions/decision-matrix.yaml | fix: use a scored slug, or add the decision to the matrix in this PR", [matrix_line])
 }
-
-# --- optimised_plan (LAW 51, crew#584) ------------------------------------------------------
-# Founder, 2026-08-29: "optimise before build ... note this process down as it will become law ...
-# how to plan and optimise before starting any execution ... i want to trial and if successful to
-# enforce this process". Trial measured on crew#584 5459773413: go -> three PRs merged in 12 min
-# against a 45-minute estimate. The body carries one `Optimised:` line of the shape the procedure
-# fixes (~/AGENTS-FULL.md): `Optimised: <steps before> -> <after>, <round trips before> -> <after>;
-# cut: <what, why>`. The gate grades the shape: a number on each side of an `->` and a `cut:` clause.
-# A sentence ("we made it faster") is not a plan that was counted.
-
-optimised_line_ok if {
-	regex.match(`(?m)^Optimised: [^\n]*\d[^\n]*->[^\n]*\d[^\n]*; *cut: \S[^\n]*$`, input.pr.body)
-}
-
-deny contains msg if {
-	is_string(input.pr.body)
-	not optimised_line_ok
-	msg := "rule=optimised_plan | the PR body has no counted `Optimised:` line (LAW 51) | fix: plan first, then add `Optimised: <steps before> -> <after>, <round trips before> -> <after>; cut: <what, why>` — numbers on both sides of the arrow and a cut clause; the procedure is in ~/AGENTS-FULL.md"
-}

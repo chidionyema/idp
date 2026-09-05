@@ -2,6 +2,8 @@
 # do nothing. When a real pod needs the CPU during a node swap the scheduler preempts a balloon in
 # milliseconds instead of waiting the 3-5 minutes a new VM takes. Sized for the one 4 OCPU node
 # (platform/keda/keda.yaml): 2 x 300m = 600m, 15 % of the node, inside the founder's 10-20 %.
+# crew#584 (founder 2026-08-29, cost): 2 x 200m = 400m, the 10 % floor. The request is the
+# reserve, so it stays == limit; a 50m placeholder would reserve nothing and defeat the mechanism.
 # A preempted balloon then sits Pending, which is exactly the signal the OKE Cluster Autoscaler
 # (CP4, through oke-check) boots a node on; until CP4 lands this is a standing 15 % reservation.
 # registry.k8s.io/pause, not k8s.gcr.io: the old registry is frozen (kubernetes.io, 2023-03).
@@ -9,14 +11,14 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: balloon
-  labels: { app.kubernetes.io/name: balloon, app.kubernetes.io/part-of: idp, idp.platform/capacity-approved: "true" }  # the reserve is the point (crew#539); measured, not fat
+  labels: { app.kubernetes.io/name: balloon, app.kubernetes.io/part-of: idp }
 spec:
   replicas: 2
   selector:
     matchLabels: { app.kubernetes.io/name: balloon }
   template:
     metadata:
-      labels: { app.kubernetes.io/name: balloon, app.kubernetes.io/part-of: idp, idp.platform/capacity-approved: "true" }   # the reserve is the point (crew#539), not a fat pod
+      labels: { app.kubernetes.io/name: balloon, app.kubernetes.io/part-of: idp }
     spec:
       priorityClassName: balloon
       terminationGracePeriodSeconds: 0
@@ -30,8 +32,8 @@ spec:
         - name: pause
           image: registry.k8s.io/pause:3.10
           resources:
-            requests: { cpu: 300m, memory: 16Mi }
-            limits: { cpu: 300m, memory: 16Mi }
+            requests: { cpu: 200m, memory: 16Mi }
+            limits: { cpu: 200m, memory: 16Mi }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

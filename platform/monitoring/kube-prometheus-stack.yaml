@@ -9,7 +9,7 @@
 # UI), no node-exporter (k8s-infra's kubeletMetrics preset already lands node metrics in SigNoz;
 # the node rule groups are off with it), no scrapes of the managed control plane OKE does not
 # expose (etcd, scheduler, controller-manager, kube-proxy — their TargetDown rows would be noise).
-# Requests summed from the blocks below: 320m CPU / 1152Mi across operator (+reloader),
+# Requests summed from the blocks below: 170m CPU (crew#584: prometheus 200m -> 50m) / 1152Mi across operator (+reloader),
 # prometheus, alertmanager and KSM; blackbox adds 20m / 48Mi. Live usage is the receipt's job.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
@@ -109,7 +109,7 @@ spec:
         probeSelectorNilUsesHelmValues: false
         scrapeConfigSelectorNilUsesHelmValues: false
         resources:
-          requests: { cpu: 200m, memory: 768Mi }
+          requests: { cpu: 50m, memory: 768Mi }
           limits: { cpu: 200m, memory: 768Mi }
         storageSpec:
           volumeClaimTemplate:

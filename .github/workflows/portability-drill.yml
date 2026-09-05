@@ -50,26 +50,19 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Two attempts, because cluster creation reaches the network and the network is the one
-      # thing this drill does not own. Run 33234248201 died in 11s on `docker failed to pull
-      # ghcr.io/k3d-io/k3d-tools:5.9.0: TLS handshake timeout`, and its predecessor died at 304s
-      # on `k3d-estate-agent-0 failed to get ready`. Neither says anything about whether this
-      # estate's tree hydrates, which is the only question the drill exists to answer, and both
-      # rolled the cluster back and uploaded no receipt at all. A drill that reds on the weather
-      # teaches every session to press re-run without reading, which is how a real red gets
-      # pressed through too (crew#307, and the same reasoning as the k3s node-ready wait below).
-      # The arguments live in .github/actions/k3d-estate so the second attempt cannot drift from
-      # the first. A second consecutive failure is left red and honest.
       - name: k3d cluster from platform/k3d/estate.yaml (crew#191)
-        id: k3d
-        continue-on-error: true
-        uses: ./.github/actions/k3d-estate
-      - name: the rolled-back attempt may have left a cluster behind
-        if: steps.k3d.outcome == 'failure'
-        run: k3d cluster delete estate || true
-      - name: k3d cluster, second attempt
-        if: steps.k3d.outcome == 'failure'
-        uses: ./.github/actions/k3d-estate
+        uses: AbsaOSS/k3d-action@4e8b3239042be1dc0aed6c5eb80c13b18200fc79 # v2.4.0
+        with:
+          cluster-name: estate
+          # the action's default k3d (v5.4.6) 404s on download and predates k3d.io/v1alpha5,
+          # the apiVersion platform/k3d/estate.yaml declares (run 33062980960)
+          k3d-version: v5.9.0
+          # crew#488 CP5: a second node. The estate's front door runs two traefik replicas
+          # spread hostname/DoNotSchedule (crew#555: a routed surface survives one node), so a
+          # one-node cluster can never seat the second pod and edge reads red forever (runs
+          # 33212542369, 33212575403). estate.yaml stays one node for the founder's 16 GB Mac;
+          # a CLI flag overrides the file on the runner, which has the memory and nothing else on it.
+          args: --config=platform/k3d/estate.yaml --agents 1
       - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
       - name: flux install, then the same tree OKE runs, from this commit
         env:
@@ -115,9 +108,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "T0=$(date +%s)" >> "$GITHUB_ENV"
-          # retried for the same reason the k3d creation above is: a transient fetch
-          # failure here reds the second provider and proves nothing about the tree.
-          curl -sfL --retry 5 --retry-all-errors --retry-delay 2 https://get.k3s.io | sh -
+          curl -sfL https://get.k3s.io | sh -
           echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> "$GITHUB_ENV"
           export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
           # crew#539 CP12: with --flannel-backend=none the node carries no CNI yet, so it never
@@ -128,10 +119,7 @@ jobs:
       - name: Cilium replaces k3s's flannel (crew#539 CP12, rehearsal of the OKE break-glass playbook)
         run: |
           set -euo pipefail
-          # helm has no --retry; the chart comes from quay.io over the same network that
-          # took run 33234248201 down, so the pull gets the same two attempts.
-          helm install cilium oci://quay.io/cilium/charts/cilium --version 1.20.1 --namespace kube-system -f platform/cni/cilium-values.yaml \
-            || { sleep 10; helm install cilium oci://quay.io/cilium/charts/cilium --version 1.20.1 --namespace kube-system -f platform/cni/cilium-values.yaml; }
+          helm install cilium oci://quay.io/cilium/charts/cilium --version 1.20.1 --namespace kube-system -f platform/cni/cilium-values.yaml
           kubectl rollout status ds/cilium -n kube-system --timeout=300s
           # crew#307, 2026-08-28: `kubectl wait --all` does NOT wait for a resource to appear.
           # It resolves its selector once, and an empty set is `error: no matching resources
@@ -157,9 +145,6 @@ jobs:
           # guide prescribes; without them the cilium pod on this node crash-loops.
           IP=$(hostname -I | awk '{print $1}')
           TOKEN=$(sudo cat /var/lib/rancher/k3s/server/node-token)
-          # `docker run` pulls the image implicitly and gives up on the first failure, so the
-          # pull is done first and retried; the run below is then a local-image start.
-          docker pull rancher/k3s:v1.33.4-k3s1 || { sleep 10; docker pull rancher/k3s:v1.33.4-k3s1; }
           docker run -d --name k3s-agent-2 --hostname k3s-agent-2 --privileged \
             --tmpfs /run --tmpfs /var/run \
             rancher/k3s:v1.33.4-k3s1 agent --server "https://${IP}:6443" --token "${TOKEN}" --node-name k3s-agent-2

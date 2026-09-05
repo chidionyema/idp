@@ -52,7 +52,6 @@ PR alongside these.
 |---|---|---|---|---|
 | `capacity-affinity` | Audit | Preemptible capacity is for pods that can lose a node | `scheduling` | `platform/scheduling/capacity-affinity.yaml` |
 | `capacity-requests-need-proof` | Audit 1, Enforce 1 | No paid capacity without proof (crew#584) | `edge` | `platform/edge/capacity-policy.yaml` |
-| `dev-loop-mirrord-fence` | Enforce | mirrord agents only where the namespace allows the dev loop | `edge` | `platform/edge/dev-loop-policy.yaml` |
 | `protect-namespaces` | Enforce | A platform namespace cannot be deleted | `edge` | `platform/edge/protect-namespaces.yaml` |
 | `provider-independence` | Enforce | Provider independence (R43) | `edge` | `platform/edge/provider-independence.yaml` |
 | `require-availability` | Enforce | Founder-facing workloads survive losing one node | `scheduling` | `platform/scheduling/require-availability.yaml` |

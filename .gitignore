@@ -54,11 +54,3 @@ platform/oci/identity/.terraform*
 platform/oci/identity/*.tfstate*
 
 # CI checks prospector's ClusterPolicies out here so idp-kyverno-render judges all 26 (crew#539).
-
-# Every session works in a git worktree checked out at .wt-<name>/ in this directory; 33 of them
-# were registered on 2026-08-29. They are checkouts of this same repository, graded on their own
-# branches when those branches are pushed. Untracked and unignored, they were scanned by every
-# root-level tool run here, so `IDP_CI_FAST=1 bin/idp-ci` on a clean branch read
-# `FAIL ruff` for three F821s in .wt-keyless, .wt-p0 and .wt-stale -- another session's
-# work-in-progress refusing this session's push, and a red that says nothing about either branch.
-/.wt-*/

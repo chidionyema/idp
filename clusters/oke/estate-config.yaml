@@ -39,11 +39,3 @@ data:
   # (GET /tailnet/-/users, the single "owner"); no owner answer is BLIND, never a PUT naming nobody.
   # A value here overrides the API answer. Nobody's hand is needed.
   FOUNDER_TAILNET_USER: ""
-  # crew#584 traces/lean (idp#702): where the node agent (platform/observability-collector,
-  # SigNoz k8s-infra) ships every log, metric and trace. Enterprise leaves it at the in-cluster
-  # store; the lean tier, which installs no store, points it at a remote OTLP receiver (a hosted
-  # SigNoz, Langfuse's OTLP endpoint, or another estate). Substituted by Flux postBuild on the
-  # observability-collector row; the http(s):// scheme and the 4318 HTTP port are load-bearing
-  # (crew#483: the otlphttp exporter takes this value verbatim and a bare host:4317 exports
-  # nothing). tests/test_incident_crew483_k8s_infra_endpoint_scheme.py judges the value here.
-  OTLP_ENDPOINT: "http://signoz-otel-collector.observability.svc:4318"

@@ -24,10 +24,7 @@ def test_k3s_job_is_a_second_distribution_on_the_runner_vm_not_docker() -> None:
     install = next(s for s in k3s["steps"] if "k3s on the runner VM" in s.get("name", ""))
     assert re.fullmatch(r"v\d+\.\d+\.\d+\+k3s\d+", install["env"]["INSTALL_K3S_VERSION"]), "k3s version must be pinned"
     assert "--disable traefik" in install["env"]["INSTALL_K3S_EXEC"], "the estate's traefik comes from the Flux tree"
-    # comments stripped: this asks what the step runs, and the word k3d appearing in an
-    # explanation of why a fetch is retried is not the k3s job reaching for k3d.
-    cmds = "\n".join(ln for ln in install["run"].splitlines() if not ln.strip().startswith("#"))
-    assert "get.k3s.io" in cmds and "k3d" not in cmds
+    assert "get.k3s.io" in install["run"] and "k3d" not in install["run"]
     assert "docker" not in install["run"], "CP2 is a second distribution, not k3d under another name"
     # crew#488 CP5: the front door's DoNotSchedule spread (crew#555) needs a second node and one VM
     # cannot run two kubelets, so the second node is the k3s image joined as an agent over Docker.

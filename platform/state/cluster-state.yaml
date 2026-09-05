@@ -36,12 +36,6 @@ rules:
   - apiGroups: ["source.toolkit.fluxcd.io", "kustomize.toolkit.fluxcd.io", "helm.toolkit.fluxcd.io", "image.toolkit.fluxcd.io"]
     resources: ["gitrepositories", "ocirepositories", "helmrepositories", "kustomizations", "helmreleases", "imagerepositories", "imagepolicies", "imageupdateautomations"]
     verbs: ["get", "list"]
-  # 2026-08-29, founder: "can Otto use it?" K8sGPT's findings are Result objects in ns healing;
-  # they ride the receipt so every reader -- a session, Otto's dispatch, oke-check -- sees the
-  # cluster's own diagnosis without a kube login (idp#696 pages on them; this is the read).
-  - apiGroups: ["core.k8sgpt.ai"]
-    resources: ["results"]
-    verbs: ["get", "list"]
   - apiGroups: ["external-secrets.io"]
     resources: ["externalsecrets", "clustersecretstores"]
     verbs: ["get", "list"]
@@ -334,16 +328,6 @@ data:
                              for o in get("/apis/kyverno.io/v2/policyexceptions")["items"]]
     except Exception as e:
         policy_exceptions = [{"ns": "", "name": "*", "policies": [], "matches": [], "error": f"list failed: {e}"[:300]}]
-    # K8sGPT (platform/healing): one Result per broken object, with the model's plain-English
-    # explanation. The receipt carries kind, namespace/name, the first error line and the
-    # details, so "what is broken and why" is one read; a list that fails is a row, not a zero.
-    try:
-        k8sgpt = [{"kind": (o.get("spec") or {}).get("kind", ""), "name": (o.get("spec") or {}).get("name", ""),
-                   "error": ((((o.get("spec") or {}).get("error") or [{}])[0]).get("text") or "")[:300],
-                   "details": ((o.get("spec") or {}).get("details") or "")[:600]}
-                  for o in get("/apis/core.k8sgpt.ai/v1alpha1/results")["items"]]
-    except Exception as e:
-        k8sgpt = [{"kind": "*", "name": "*", "error": f"list failed: {e}"[:300], "details": ""}]
     # crew#320: a DaemonSet with fewer ready pods than desired is invisible to every row above
     # (its pods do not exist, so they are neither Running nor not-ready). k8s-infra-otel-agent
     # ran at 0/1 for a day while telemetry-coverage said seen=0 and nothing said why. The
@@ -579,11 +563,11 @@ data:
             f" flux={len(flux)} flux_not_ready={len(flux_not_ready)} ds={len(ds)} ds_short={len(ds_short)} events_warning={len(events)}"
             f" hostnames={len(hostnames or [])} spiffe_ids={len(spiffe['clusterspiffeids'] or [])} spiffe_workloads={len(spiffe['csi_workloads'])}"
             f" svids={sum(len(r['spiffe_ids']) for r in spiffe['svids'])} spire_agents={len(spiffe['agents'])}"
-            f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)} policy_exceptions={len(policy_exceptions)} k8sgpt_findings={len(k8sgpt)}"
+            f" oci_pods={len(oci_pods)} oci_static_key_pods={len(oci_static_key_pods)} policy_exceptions={len(policy_exceptions)}"
             f" monitoring_rules={monitoring_rules} alert_watchdog={alert_watchdog}"
             f" cpu_used_pct={cpu_used_pct} mem_used_pct={mem_used_pct} cpu_req_pct={cpu_req_pct} mem_req_pct={mem_req_pct}")
     body = {"at": at, "capacity": capacity, "capacity_error": cap_error, "nodes": node_rows, "pods_total": len(pods), "pods_not_ready": not_ready,
-            "flux": flux, "flux_not_ready": flux_not_ready, "policy_exceptions": policy_exceptions, "k8sgpt": k8sgpt, "daemonsets": ds, "ds_short": ds_short, "events_warning": events,
+            "flux": flux, "flux_not_ready": flux_not_ready, "policy_exceptions": policy_exceptions, "daemonsets": ds, "ds_short": ds_short, "events_warning": events,
             "hostnames": hostnames, "hostnames_error": hostnames_error, "spiffe": spiffe,
             "oci_identity": {"pods": oci_pods, "static_key_pods": oci_static_key_pods,
                               "unknown_identity_pods": oci_unknown_identity_pods},

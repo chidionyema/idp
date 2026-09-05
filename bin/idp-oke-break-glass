@@ -174,16 +174,6 @@ pb_diagnose() {
   show cni-chain $K get ds,deploy -n kube-system -l app.kubernetes.io/part-of=cilium
   show gitrepositories $K get gitrepositories -A
   show kustomizations $K get kustomizations -A
-  # idp#685 and idp#697, 2026-08-29: Kustomization/mcp and Kustomization/temporal each timed out
-  # after 20 min on `ExternalSecret/<ns>/ghcr-pull status: InProgress`, five identical bot posts
-  # over three hours and not one line saying why, because a diagnose printed kustomizations,
-  # helmreleases, pods and k8sgpt findings and never an ExternalSecret. The Kustomization row can
-  # only ever repeat the object name it is waiting on; the reason is on that object's own Ready
-  # condition, and on the store it reads through. Both are printed here, store first: one unready
-  # ClusterSecretStore is every ExternalSecret behind it, and reading the dependents first invites
-  # the repair to start at the wrong end (LAW 29, attribute before you repair).
-  show clustersecretstores-not-ready sh -c "$K get clustersecretstores.external-secrets.io -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type==\"Ready\")]}{.status}{\"\t\"}{end}{.metadata.name}{\"\t\"}{range .status.conditions[?(@.type==\"Ready\")]}{.reason}: {.message}{end}{\"\n\"}{end}' 2>&1"
-  show externalsecrets-not-ready sh -c "$K get externalsecrets.external-secrets.io -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type==\"Ready\")]}{.status}{\"\t\"}{.reason}{\"\t\"}{end}{.metadata.namespace}/{.metadata.name}{\"\tstore=\"}{.spec.secretStoreRef.kind}/{.spec.secretStoreRef.name}{\"\t\"}{range .status.conditions[?(@.type==\"Ready\")]}{.message}{end}{\"\n\"}{end}' 2>&1"
   # Run 33226089358 (idp#648, 2026-08-29): backstage-namespace said "timeout waiting for
   # Namespace/backstage status: Terminating" for 16 min and nothing said why. A Terminating
   # namespace carries the reason on its own conditions (NamespaceContentRemaining names the
@@ -266,13 +256,6 @@ pb_diagnose() {
   # before Kyverno sees it; a provider-named default made every new claim fail. Both facts are
   # read here so the next such outage is one diagnose run, not ninety minutes.
   show storage-classes $K get storageclasses
-  # crew#307 (2026-08-29, founder: "gods view isn't there", "everything that has an interface"): the
-  # founder's surfaces come from /estate/founder/catalog-info.yaml in the catalogue pod. Three rows
-  # say whether the file is there, whether the catalogue read it, and what it holds.
-  show catalogue-founder-file sh -c "$K exec -n backstage deploy/catalogue -- ls -la /estate /estate/founder 2>&1"
-  show catalogue-founder-configmap sh -c "$K get configmap founder-catalog estate-catalog -n backstage -o jsonpath='{range .items[*]}{.metadata.name}{\"\t\"}{.metadata.creationTimestamp}{\"\n\"}{end}' 2>&1"
-  show catalogue-log-locations sh -c "$K logs -n backstage deploy/catalogue --all-containers --tail=2000 2>&1 | grep -iE 'founder|location|catalog.*(error|fail|refus|invalid)' | tail -40"
-  show catalogue-entities sh -c "$K exec -n backstage deploy/catalogue -- sh -c 'wget -qO- http://catalogue.backstage.svc:3100/api/catalog/entities?filter=spec.type=founder-surface | head -c 600' 2>&1"
   show claims-not-bound sh -c "$K get pvc -A --field-selector=status.phase!=Bound 2>/dev/null; true"
   # The audit of the rules by the cluster: Kyverno scans every existing object in the background and
   # records which rule would refuse it. A rule with fails here is a rule that judges reality, not
@@ -296,7 +279,7 @@ pb_diagnose() {
   show_redacted k8s-infra-deployment-log telemetry_log observability-agent otel-deployment
   show collector-config collector_config_dump
   show_redacted clickhouse-counts-15m clickhouse_counts_15m
-  show otlp-endpoint-declared $K get helmrelease k8s-infra -n observability-agent -o jsonpath='{"k8s-infra otelCollectorEndpoint: "}{.spec.values.otelCollectorEndpoint}{"\n"}'
+  show otlp-endpoint-declared $K get helmrelease k8s-infra -n observability -o jsonpath='{"k8s-infra otelCollectorEndpoint: "}{.spec.values.otelCollectorEndpoint}{"\n"}'
   show otlp-endpoint-workloads otlp_endpoints_by_workload
   $K get nodes >/dev/null || FAILED="$FAILED nodes"
 }
@@ -562,25 +545,8 @@ pb_helm_retry() {
 # k8sgpt-analyze: print every K8sGPT finding (cause + fix in plain English) and force a fresh
 # scan by restarting the analyzer so the results are minutes old, not hours.
 pb_k8sgpt_analyze() {
-  # run 33233870612 (crew#503): rescan printed "No resources found in healing namespace" and the
-  # playbook still PASSED. The operator (k8sgpt-operator-controller-manager 1/1) had never turned
-  # the K8sGPT object into an analyzer deployment, and nothing here said why. Eyes first: the
-  # object's status, the secret it names, and the operator's own log; then the restart is refused
-  # when there is nothing to restart, so an absent analyzer is a FAIL, not a silent green.
-  show k8sgpt-object sh -c "$K get k8sgpt.core.k8sgpt.ai -n healing -o wide; $K get k8sgpt.core.k8sgpt.ai -n healing -o jsonpath='{range .items[*]}{.metadata.name}{\" status=\"}{.status}{\"\n\"}{end}'"
-  show k8sgpt-secret sh -c "$K get externalsecret,secret -n healing 2>&1 | grep -iE 'NAME|k8sgpt'; $K get externalsecret -n healing -o jsonpath='{range .items[*]}{.metadata.name}{\" \"}{range .status.conditions[*]}{.type}={.status} {.message}{end}{\"\n\"}{end}'"
-  show k8sgpt-deployments $K get deploy,pods -n healing -o wide
-  show k8sgpt-operator-log sh -c "$K logs -n healing deploy/k8sgpt-operator-controller-manager --all-containers --tail=60 2>&1 | grep -iE 'error|fail|secret|k8sgpt|reconcil' | tail -30"
-  # The operator names the analyzer Deployment after the K8sGPT object and labels it app=<name>
-  # (k8sgpt-operator pkg/resources/k8sgpt.go: Name: config.Name, MatchLabels app: config.Name).
-  # The old selector app.kubernetes.io/name=k8sgpt matched nothing by construction.
-  if [ -z "$($K get deployment -n healing -l app=estate -o name 2>/dev/null)" ]; then
-    echo "FAIL  k8sgpt-analyze  no analyzer deployment in healing: the operator has not reconciled the K8sGPT object (see k8sgpt-operator-log above)"
-    FAILED="$FAILED k8sgpt-analyzer-absent"
-    return 0
-  fi
-  step rescan $K rollout restart deployment -n healing -l app=estate
-  step rescan-ready $K rollout status deployment -n healing -l app=estate --timeout=3m
+  step rescan $K rollout restart deployment -n healing -l app.kubernetes.io/name=k8sgpt
+  step rescan-ready $K rollout status deployment -n healing -l app.kubernetes.io/name=k8sgpt --timeout=3m
   show k8sgpt-results sh -c "$K get results.core.k8sgpt.ai -A -o jsonpath='{range .items[*]}{.spec.kind}/{.metadata.namespace}/{.spec.name}{\"\n\"}{range .spec.error[*]}{\"  error: \"}{.text}{\"\n\"}{end}{\"  \"}{.spec.details}{\"\n\n\"}{end}'"
 }
 

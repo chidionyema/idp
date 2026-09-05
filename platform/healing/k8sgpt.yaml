@@ -69,12 +69,8 @@ spec:
                           initialDelaySeconds: 5
                           periodSeconds: 10
   values:
-    # Founder, 2026-08-29: "why install anything if we don't use it ... it just fell into the void".
-    # false meant every finding K8sGPT wrote was read by nobody (LAW 28). On, the operator's
-    # k8sgpt_number_of_results* metrics reach the one Prometheus, and
-    # platform/monitoring/rules/k8sgpt.yaml pages them through Alertmanager -> Telegram.
     serviceMonitor:
-      enabled: true
+      enabled: false
     grafanaDashboard:
       enabled: false
     controllerManager:

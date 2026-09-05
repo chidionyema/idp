@@ -186,7 +186,7 @@ def test_missing_collector_configmap_names_the_reason_not_silence(tmp_path):
 def test_otlp_endpoint_is_read_from_the_live_helmrelease_and_workloads_are_filtered_to_the_ones_that_carry_it(tmp_path):
     switch = (
         'case "$*" in\n'
-        '  *"get helmrelease k8s-infra -n observability-agent -o jsonpath"*) printf "k8s-infra otelCollectorEndpoint: signoz-otel-collector.observability.svc:4317\\n";;\n'
+        '  *"get helmrelease k8s-infra -n observability -o jsonpath"*) printf "k8s-infra otelCollectorEndpoint: signoz-otel-collector.observability.svc:4317\\n";;\n'
         # matched on OTEL_EXPORTER_OTLP_ENDPOINT rather than "get deploy -A -o jsonpath": the
         # existing stalled-deployments row (pb_diagnose) also runs `get deploy -A -o jsonpath=...`
         # and must not be intercepted by this fixture.
@@ -198,7 +198,7 @@ def test_otlp_endpoint_is_read_from_the_live_helmrelease_and_workloads_are_filte
     assert "signoz-otel-collector.observability.svc:4317" in p.stdout
     assert "llm/litellm" in p.stdout and "http://signoz-otel-collector.observability.svc:4318" in p.stdout
     assert "observability/signoz-otel-collector\t" not in p.stdout, "a Deployment with no OTLP env var is not listed"
-    assert any("get helmrelease k8s-infra -n observability-agent -o jsonpath" in c for c in calls)
+    assert any("get helmrelease k8s-infra -n observability -o jsonpath" in c for c in calls)
 
 
 def test_telemetry_section_runs_after_the_existing_diagnose_rows(tmp_path):
@@ -218,11 +218,3 @@ def test_list_and_playbook_case_are_unchanged():
     listed = subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
     assert "telemetry" not in listed
     assert listed.count("diagnose") == 1
-
-
-def test_the_declared_endpoint_is_read_where_idp702_put_the_helmrelease():
-    """idp#702 moved the k8s-infra HelmRelease to observability-agent; a diagnose that reads it in
-    observability prints an empty otlp-endpoint-declared section and nobody notices (idp#710)."""
-    src = (IDP / "bin" / "idp-oke-break-glass").read_text()
-    assert "get helmrelease k8s-infra -n observability-agent " in src
-    assert "get helmrelease k8s-infra -n observability " not in src

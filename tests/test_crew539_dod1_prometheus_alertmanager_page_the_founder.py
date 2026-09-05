@@ -61,7 +61,7 @@ def test_flux_row_substitutes_the_zone_and_waits_on_both_releases():
     assert rules["spec"]["path"] == "./platform/monitoring/rules" and rules["spec"]["dependsOn"] == [{"name": "monitoring"}]
     assert {"kind": "ConfigMap", "name": "estate-config"} in rules["spec"]["postBuild"]["substituteFrom"]
     kz2 = yaml.safe_load((MON / "rules/kustomization.yaml").read_text())
-    assert set(kz2["resources"]) == {"estate.yaml", "founder-surfaces-probe.yaml", "founder-mac-screen-sharing-probe.yaml", "agentgateway-servicemonitor.yaml", "k8sgpt.yaml"}  # K8sGPT findings PrometheusRule, idp#696
+    assert set(kz2["resources"]) == {"estate.yaml", "founder-surfaces-probe.yaml", "founder-mac-screen-sharing-probe.yaml", "agentgateway-servicemonitor.yaml"}
     ns = one("platform/monitoring/namespace.yaml", "Namespace")
     assert ns["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "restricted"
 
@@ -80,13 +80,15 @@ def test_kube_prometheus_stack_ships_the_upstream_rules_and_honours_every_rule_a
         assert ps[f"{k}SelectorNilUsesHelmValues"] is False, k
     assert v["alertmanager"]["alertmanagerSpec"]["configSecret"] == "alertmanager-telegram"
     assert v["grafana"]["enabled"] is False and v["nodeExporter"]["enabled"] is False
-    # requests == limits on every block we size (Guaranteed, crew#539 CP9)
+    # memory request == limit on every block we size (Guaranteed memory, crew#539 CP9); the CPU
+    # request is micro and never above the limit (crew#584, founder 2026-08-29: request inflation)
     blocks = [v["prometheusOperator"]["resources"], v["prometheusOperator"]["prometheusConfigReloader"]["resources"],
               v["kube-state-metrics"]["resources"], v["alertmanager"]["alertmanagerSpec"]["resources"], ps["resources"]]
     for b in blocks:
-        assert b["requests"] == b["limits"], b
+        assert b["requests"]["memory"] == b["limits"]["memory"], b
+        assert int(b["requests"]["cpu"][:-1]) <= int(b["limits"]["cpu"][:-1]), b
     total_m = sum(int(b["requests"]["cpu"][:-1]) for b in blocks)
-    assert total_m == 320, total_m  # the number the file's header states
+    assert total_m == 170, total_m  # the number the file's header states
     text = (MON / "kube-prometheus-stack.yaml").read_text()
     assert f"{total_m}m CPU" in text
 
@@ -179,7 +181,7 @@ def grade(line1, body="{}"):
 
 BASE = ("ok cluster-state at 2026-08-27T23:00:00Z nodes=2 ready=2 pods=60 pods_not_ready=0 flux=40 flux_not_ready=0"
         " ds=6 ds_short=0 events_warning=0 hostnames=9 spiffe_ids=3 spiffe_workloads=3 svids=3 spire_agents=2"
-        " oci_pods=2 oci_static_key_pods=0 policy_exceptions=9 cpu_used_pct=12 cpu_req_pct=45 mem_used_pct=30 mem_req_pct=50")
+        " oci_pods=2 oci_static_key_pods=0 policy_exceptions=9 cpu_used_pct=30 mem_used_pct=25 cpu_req_pct=12 mem_req_pct=4")
 
 
 def test_grader_passes_with_rules_and_watchdog_and_fails_without():

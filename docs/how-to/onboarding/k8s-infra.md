@@ -17,7 +17,3 @@ Changing it: edit the `values:` block in `platform/observability-collector/k8s-i
 `bin/idp-kyverno-render platform/observability`, and open the PR. A change that needs a new
 policy waiver fails `tests/test_incident_crew388_k8s_infra_node_agent_waiver.py` until the
 exception in `platform/edge/k8s-infra-exception.yaml` names exactly the failing policies.
-
-## Lean tier: pointing the agent elsewhere
-
-The agent's destination is `OTLP_ENDPOINT` in `clusters/oke/estate-config.yaml` (crew#584, idp#702). An estate on `traces/lean` installs no store; set that one value to a remote OTLP receiver (`https://...:4318`, the HTTP port with its scheme) and reconcile. `platform/observability-collector/k8s-infra.yaml` carries `${OTLP_ENDPOINT}`, substituted by Flux on the `observability-collector` row; `tests/test_incident_crew483_k8s_infra_endpoint_scheme.py` judges the resolved value.

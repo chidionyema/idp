@@ -5,7 +5,6 @@
 global:
   storageClass: oci-bv
 clickhouse:
-  podLabels: { idp.platform/capacity-approved: "true" }   # 1000m Guaranteed, measured (crew#539 CP9, run 33140351385)
   # crew#539 (2026-08-28, diagnose run 33140351385): with a 2Gi limit ClickHouse 25.12 sets its
   # server ceiling at 1.80 GiB (90% of the cgroup) and the merge of one signoz_traces part
   # (20260827_658_11785_163) needs 1.39 GiB on top of table loading, so every start ends in
@@ -18,8 +17,8 @@ clickhouse:
   # node reserved for an idle database; the request is now micro and the limit doubled, so loading
   # still finishes inside the probe window and the memory floor above stays as measured.
   resources:
-    requests: { cpu: 1000m, memory: 4Gi }
-    limits: { cpu: 1000m, memory: 4Gi }
+    requests: { cpu: 50m, memory: 4Gi }
+    limits: { cpu: 2000m, memory: 4Gi }
   # crew#483 (2026-08-28, diagnose run 33172481714): once the node agents reached the collector
   # (c03fb77), signoz-otel-collector logged `code: 241 ... (total) memory limit exceeded: would use
   # 3.61 GiB ... current RSS: 1.87 GiB, maximum: 3.60 GiB` on every batch of spans, logs and
@@ -56,7 +55,7 @@ signoz:
     SIGNOZ_USER_ROOT_ENABLED: "true"
     SIGNOZ_USER_ROOT_ORG_NAME: "Bytesync estate"
   resources:
-    requests: { cpu: 100m, memory: 256Mi }
+    requests: { cpu: 50m, memory: 256Mi }
     limits: { cpu: 500m, memory: 1Gi }
   persistence:
     size: 1Gi
@@ -85,7 +84,7 @@ otelCollector:
         logs: { processors: [k8sattributes, batch] }
   replicaCount: 1
   resources:
-    requests: { cpu: 100m, memory: 200Mi }
+    requests: { cpu: 50m, memory: 200Mi }
     limits: { cpu: 500m, memory: 512Mi }
 telemetryStoreMigrator:
   resources:

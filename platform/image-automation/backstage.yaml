@@ -13,7 +13,7 @@ metadata:
   namespace: flux-system
 spec:
   image: ghcr.io/chidionyema/backstage
-  interval: 1m
+  interval: 5m
   # ghcr packages under this account are private; bin/idp-flux-bootstrap writes ghcr-pull here.
   secretRef:
     name: ghcr-pull
@@ -44,7 +44,7 @@ metadata:
   name: idp-writer
   namespace: flux-system
 spec:
-  interval: 1m
+  interval: 10m
   url: https://github.com/chidionyema/idp
   provider: github   # the estate-agents App (flux-writer.yaml renders githubApp* from vault entry github-app)
   ref:
@@ -58,7 +58,7 @@ metadata:
   name: backstage
   namespace: flux-system
 spec:
-  interval: 1m
+  interval: 10m
   sourceRef:
     kind: GitRepository
     name: idp-writer

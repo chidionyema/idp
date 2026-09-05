@@ -113,15 +113,6 @@ print(f"ok      capacity       cpu used {kv2['cpu_used_pct']}% requested {kv2['c
 for r in rows:
     print(f"  node {r['name']}: cpu {r['cpu_used']}/{r['cpu_allocatable']} cores used ({r['cpu_used_pct']}%), requests {r['cpu_requested']} ({r['cpu_requested_pct']}%);"
           f" memory {r['memory_used_gb']}/{r['memory_allocatable_gb']} GB used ({r['memory_used_pct']}%), requests {r['memory_requested_gb']} GB ({r['memory_requested_pct']}%)")
-# K8sGPT findings (2026-08-29, founder: nothing is done until operational). Printed, never
-# graded here: K8sGPTFinding (platform/monitoring/rules/k8sgpt.yaml) is the pager; this is the read.
-try:
-    for f in (json.loads(rest).get("k8sgpt") or [])[:12]:
-        print(f"  k8sgpt     {f.get('kind')} {f.get('name')}: {(f.get('error') or '')[:160]}")
-        if f.get("details"):
-            print(f"             {f['details'][:300]}")
-except Exception as e:
-    print(f"  k8sgpt     body unreadable: {e}")
 if flag == "--json":
     print(rest)
 PY

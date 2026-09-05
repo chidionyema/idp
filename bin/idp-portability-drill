@@ -8,16 +8,11 @@ described in prose since crew#250; this is the first time it runs. The workflow 
 `kubectl get kustomizations -A -o json` and hands the file here.
 
 Prints one line, like every drill, after one line per layer that did not come up:
-  ok      portability  ready N/M (root-red R all named, cascaded C, pending P) on a cluster with no OCI (floor F); the cascade waits C1 on <row>, C2 on <row>
+  ok      portability  ready N/M (root-red R all named, cascaded C) on a cluster with no OCI (floor F)
   FAIL    portability  root-red not on drills/portability-oci-reds.txt: <layers>  -- a break of its own that no one has explained
   FAIL    portability  ready N/M is below the floor F        -- a layer that hydrated last week no longer does
   FAIL    portability  no Kustomization was applied           -- the drill itself is broken, nothing was graded
   BLIND   portability  <why>                                  -- the receipt is missing or unreadable
-
-A cascade also names the row at the end of its chain. `cascaded 25` alone cannot tell twenty-five
-rows each broken on their own from twenty-five queued behind one door, and those are opposite
-answers to "does this platform port". On run 33232172215 the answer is the second: 22 of the 25
-wait on secret-store, the vault door, whose own red is named and expected off OCI.
 
 crew#488 CP5: a not-ready layer is one of three things, and the line says which.
   cascaded   its Ready message is Flux's "dependency X is not ready": a row above it is red, it is not
@@ -53,30 +48,6 @@ def read_floor(path: str) -> int:
 
 PENDING = {"Progressing", "Reconciling"}
 CASCADE = re.compile(r"dependency '?[\w./-]+'? is not ready")
-# Same message, but keeping the blocker's short name: `dependency 'flux-system/secret-store' is
-# not ready` -> secret-store. crew#488: `cascaded 26` is one opaque number, and the only question
-# a buyer's engineer asks of it is "behind what". Twenty-six rows waiting on one vault door is a
-# different platform from twenty-six rows each broken on their own, and the line could not tell
-# them apart.
-BLOCKER = re.compile(r"dependency '?(?:[\w.-]+/)?([\w.-]+)'? is not ready")
-
-
-def resolve_root(start: str, blocked_by: dict[str, str]) -> str:
-    """The row at the end of the dependency chain: the one red for a reason of its own.
-
-    Walks `blocked_by` (cascaded row -> the row it names) until it reaches a row that is not
-    itself a cascade. Returns that row's short name. A cycle -- Flux permits dependsOn loops and
-    reports both ends as waiting on the other -- stops at the row it re-enters rather than
-    hanging, so a malformed tree makes this print a name, never spin.
-    """
-    seen, cur = {start}, start
-    while cur in blocked_by:
-        nxt = blocked_by[cur]
-        if nxt in seen:
-            return nxt
-        seen.add(nxt)
-        cur = nxt
-    return cur
 
 
 def read_reds(path: str) -> list[tuple[str, str]]:
@@ -101,8 +72,6 @@ def grade(items: list[dict], floor: int, reds: list[tuple[str, str]] = ()) -> tu
     if not items:
         return ("FAIL    portability  no Kustomization was applied; the drill itself is broken", [])
     ready, lines, cascaded, oci, roots, pending = 0, [], 0, 0, [], 0
-    blocked_by: dict[str, str] = {}   # cascaded row -> the row its Ready message names
-    cascade_rows: list[tuple[int, str]] = []   # (index into `lines`, short name), patched below
     for it in items:
         meta = it.get("metadata", {})
         short = meta.get("name", "?")
@@ -119,10 +88,6 @@ def grade(items: list[dict], floor: int, reds: list[tuple[str, str]] = ()) -> tu
             lines.append(f"  pending    {name}: {msg[:160]}")
         elif CASCADE.search(msg):
             cascaded += 1
-            blocker = BLOCKER.search(msg)
-            if blocker:
-                blocked_by[short] = blocker.group(1)
-            cascade_rows.append((len(lines), short))
             lines.append(f"  cascaded   {name}: {msg[:160]}")
         elif any(layer == short and why in msg for layer, why in reds):
             oci += 1
@@ -130,16 +95,6 @@ def grade(items: list[dict], floor: int, reds: list[tuple[str, str]] = ()) -> tu
         else:
             roots.append(short)
             lines.append(f"  ROOT-RED   {name}: {msg[:160]}")
-    # Attribution: every cascade carries the row at the end of its chain, and the verdict carries
-    # the tally. The per-row prefix is untouched, so a reader (and the gate) still counts cascades
-    # the same way.
-    behind: dict[str, int] = {}
-    for idx, short in cascade_rows:
-        root = resolve_root(short, blocked_by)
-        behind[root] = behind.get(root, 0) + 1
-        lines[idx] = f"{lines[idx]}  -> root {root}"
-    tally = ", ".join(f"{n} on {r}" for r, n in sorted(behind.items(), key=lambda kv: (-kv[1], kv[0])))
-
     total = len(items)
     if roots:
         return (f"FAIL    portability  root-red not on drills/portability-oci-reds.txt: {' '.join(roots)} "
@@ -147,8 +102,7 @@ def grade(items: list[dict], floor: int, reds: list[tuple[str, str]] = ()) -> tu
     if ready < floor:
         return (f"FAIL    portability  ready {ready}/{total} is below the floor {floor}", lines)
     return (f"ok      portability  ready {ready}/{total} (root-red {oci} all named, cascaded {cascaded}, pending {pending}) "
-            f"on a cluster with no OCI (floor {floor})"
-            + (f"; the cascade waits {tally}" if tally else ""), lines)
+            f"on a cluster with no OCI (floor {floor})", lines)
 
 
 def main(argv: list[str]) -> int:

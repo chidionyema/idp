@@ -4,8 +4,8 @@ came from push runs; nothing was scheduling the drills. platform/drills/drill-di
 them on the estate's clock as the GitHub App. Rules (rung 2 over the manifests, rung 4 for drift):
   1. the dispatcher is a restricted CronJob on the pinned image every estate CronJob uses, hourly,
      Forbid, authenticating as the App Secret Flux's githubdispatch Provider already reads;
-  2. WORKFLOWS is exactly the catalogue's non-pending workflows, each with its cron -- a drill
-     added to the catalogue without the dispatcher, or the reverse, or a changed schedule, is a diff;
+  2. WORKFLOWS is exactly the catalogue's hourly, non-pending workflows -- a drill added to the
+     catalogue without the dispatcher, or the reverse, is a diff;
   3. the repo slug comes from estate-config (LAW 46), never a literal in platform/;
   4. the embedded dispatcher compiles, and its plan() skips a workflow the CLOCK already ran this
      hour (GitHub's own schedule, or this Job) and dispatches one that did not;
@@ -41,15 +41,14 @@ def _script() -> str:
     return args[args.index("<<'PY'\n") + len("<<'PY'\n"):args.rindex("\nPY")]
 
 
-def _catalogue_workflows() -> set[str]:
-    """Every non-pending catalogue drill as `<workflow>=<cron, spaces as _>` -- the shape WORKFLOWS
-    carries, so the dispatcher's period is the catalogue's schedule and nothing else."""
+def _hourly_workflows() -> set[str]:
     out = set()
     for d in yaml.safe_load((ROOT / "drills/catalogue.yaml").read_text())["drills"]:
         if d.get("pending"):
             continue
-        assert re.fullmatch(r"\d+", d["schedule"].split()[0]), d["name"]
-        out.add("%s=%s" % (d["workflow"], d["schedule"].replace(" ", "_")))
+        minute, hour, *_ = d["schedule"].split()
+        if hour == "*" and re.fullmatch(r"\d+", minute):
+            out.add(d["workflow"])
     return out
 
 
@@ -76,50 +75,12 @@ def test_dispatcher_is_a_restricted_hourly_cronjob_on_the_pinned_image() -> None
     assert "drill-dispatcher.yaml" in (ROOT / "platform/drills/kustomization.yaml").read_text()
 
 
-def test_workflows_are_exactly_the_catalogues_drills_with_their_crons() -> None:
+def test_workflows_are_exactly_the_catalogues_hourly_drills() -> None:
     env = {e["name"]: e.get("value") for e in _container()["env"]}
-    assert set(env["WORKFLOWS"].split()) == _catalogue_workflows()
-    for entry in env["WORKFLOWS"].split():
-        wf, _cron = entry.split("=", 1)
+    assert set(env["WORKFLOWS"].split()) == _hourly_workflows()
+    for wf in env["WORKFLOWS"].split():
         text = (ROOT / ".github/workflows" / wf).read_text()
         assert "workflow_dispatch" in text, f"{wf} cannot be dispatched"
-
-
-def test_a_slow_cron_is_covered_once_per_period_after_its_own_firing_time() -> None:
-    """crew#554 CP4, verify-drill 33234050516 (2026-08-29 04:32Z): `estate-escrow.yml fired 0 of 4
-    promised in 24h (cron 29 */6 * * *, 0 dispatched by the App)` and `kyverno-secrets-drill.yml
-    last green 34.0h ago, older than 26h (cron 41 7 * * *)`. GitHub dropped both schedules and the
-    dispatcher only covered hourly crons. Now the period is the cron's: skip until the cron's own
-    minute in the period, skip if the clock ran in the period, else dispatch -- never twice."""
-    import pytest
-
-    ns: dict = {"__name__": "test"}
-    exec(compile(_script(), str(MANIFEST), "exec"), ns)  # noqa: S102 - the manifest's own program
-    plan, six, daily, weekly = ns["plan"], "29 */6 * * *", "41 7 * * *", "23 5 * * 1"
-    assert ns["period_hours"](six) == 6 and ns["period_hours"](daily) == 24 and ns["period_hours"](weekly) == 168
-    # 6-hourly: not due at 00:03, due at 01:03; a clock run at 00:29 covers the whole 00-06 period
-    assert plan([], datetime(2026, 8, 29, 0, 3, tzinfo=timezone.utc), six) == "skipped: not due until 2026-08-29T00:29:00Z"
-    assert plan([], datetime(2026, 8, 29, 1, 3, tzinfo=timezone.utc), six) == "dispatch"
-    fired = [{"created_at": "2026-08-29T00:29:10Z", "event": "schedule", "id": 3}]
-    assert plan(fired, datetime(2026, 8, 29, 5, 3, tzinfo=timezone.utc), six).startswith("skipped: schedule run 3")
-    assert plan(fired, datetime(2026, 8, 29, 7, 3, tzinfo=timezone.utc), six) == "dispatch", "the 06-12 period is a new promise"
-    # daily 07:41: nothing before 07:41, one dispatch after, none once the clock (or the App) ran today
-    assert plan([], datetime(2026, 8, 29, 7, 3, tzinfo=timezone.utc), daily) == "skipped: not due until 2026-08-29T07:41:00Z"
-    assert plan([], datetime(2026, 8, 29, 8, 3, tzinfo=timezone.utc), daily) == "dispatch"
-    app = [{"created_at": "2026-08-29T08:03:20Z", "event": "workflow_dispatch", "id": 4,
-            "triggering_actor": {"login": "estate-agents[bot]"}}]
-    assert plan(app, datetime(2026, 8, 29, 23, 3, tzinfo=timezone.utc), daily).startswith("skipped: workflow_dispatch run 4")
-    yesterday = [{"created_at": "2026-08-28T07:41:30Z", "event": "schedule", "id": 5}]
-    assert plan(yesterday, datetime(2026, 8, 29, 8, 3, tzinfo=timezone.utc), daily) == "dispatch", "yesterday's run is not today's"
-    # weekly Monday 05:23 (2026-08-31 is a Monday): 03:03 that Monday is before the firing, Tuesday is after
-    assert plan([], datetime(2026, 8, 31, 3, 3, tzinfo=timezone.utc), weekly) == "skipped: not due until 2026-08-31T05:23:00Z"
-    assert plan([], datetime(2026, 9, 1, 12, 3, tzinfo=timezone.utc), weekly) == "dispatch"
-    # a hand dispatch still does not stand in for the clock, whatever the period
-    hand = [{"created_at": "2026-08-29T08:00:00Z", "event": "workflow_dispatch", "id": 6,
-             "triggering_actor": {"login": "chidionyema"}}]
-    assert plan(hand, datetime(2026, 8, 29, 9, 3, tzinfo=timezone.utc), daily) == "dispatch"
-    with pytest.raises(ValueError):
-        ns["period_hours"]("*/5 * * * *")
 
 
 def test_repo_slug_is_estate_config_not_a_literal() -> None:

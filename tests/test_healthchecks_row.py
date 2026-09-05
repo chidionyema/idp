@@ -72,7 +72,7 @@ def test_flux_row_waits_on_the_deployment_after_the_front_door():
     docs = [d for d in yaml.safe_load_all((ROOT / "clusters/oke/platform.yaml").read_text()) if d]
     ks = next(d for d in docs if d["kind"] == "Kustomization" and d["metadata"]["name"] == "healthchecks")
     assert {d["name"] for d in ks["spec"]["dependsOn"]} >= {"identity", "secret-store"}
-    assert ks["spec"]["wait"] is True and ks["spec"]["interval"] == "1m"
+    assert ks["spec"]["wait"] is True and ks["spec"]["interval"] == "10m"
     assert ks["spec"]["healthChecks"] == [{"apiVersion": "apps/v1", "kind": "Deployment",
                                           "name": "healthchecks", "namespace": "healthchecks"}]
     assert {s["name"] for s in ks["spec"]["postBuild"]["substituteFrom"]} == {"estate-config"}

@@ -52,7 +52,7 @@ spec:
                   set -u
                   exec python3 - <<'PY'
                   import base64, json, os, sys, time, urllib.error, urllib.request
-                  from datetime import datetime, timezone, timedelta
+                  from datetime import datetime, timezone
 
                   API = "https://api.github.com"
                   PERMISSIONS = {"actions": "write", "metadata": "read"}   # a subset of platform/github-app/lanes.json platform-engineer
@@ -97,48 +97,8 @@ spec:
                       return ev == "workflow_dispatch" and actor.endswith("[bot]")
 
 
-                  def period_hours(cron):
-                      """Hours between two firings of a catalogue cron. Only the shapes drills/catalogue.yaml
-                      uses: `m * * * *` hourly, `m */N * * *` every N hours, `m H * * *` daily,
-                      `m H * * D` weekly. Anything else is refused loudly, never guessed."""
-                      minute, hour, dom, mon, dow = cron.split()
-                      if not minute.isdigit() or dom != "*" or mon != "*":
-                          raise ValueError("unsupported cron %r" % cron)
-                      if hour == "*":
-                          return 1
-                      if hour.startswith("*/") and hour[2:].isdigit() and 24 % int(hour[2:]) == 0:
-                          return int(hour[2:])
-                      if hour.isdigit():
-                          return 168 if dow != "*" else 24
-                      raise ValueError("unsupported cron %r" % cron)
-
-
-                  def bucket_and_due(cron, now):
-                      """(start of the period `now` is in, the moment the cron fires inside it). Hourly keeps
-                      the original rule -- due at the top of the hour, so the Job at :03 covers the hour
-                      before GitHub's cron gets its chance. Slower crons are due at their own H:M, so a
-                      daily 07:41 drill is not dispatched at 00:03 and again by the cron at 07:41."""
-                      minute, hour, _dom, _mon, dow = cron.split()
-                      p = period_hours(cron)
-                      day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                      if p == 1:
-                          start = now.replace(minute=0, second=0, microsecond=0)
-                          return start, start
-                      if p < 24:
-                          start = day + timedelta(hours=(now.hour // p) * p)
-                          return start, start + timedelta(minutes=int(minute))
-                      if p == 24:
-                          return day, day + timedelta(hours=int(hour), minutes=int(minute))
-                      start = day - timedelta(days=now.weekday())            # Monday 00:00; cron dow 1 = Monday
-                      return start, start + timedelta(days=(int(dow) - 1) % 7, hours=int(hour), minutes=int(minute))
-
-
-                  def plan(runs, now, cron="0 * * * *"):
-                      """'dispatch' unless the CLOCK already ran this workflow in the current period, or the
-                      period's own firing time has not come yet (crew#554 CP4, 2026-08-29: verify-drill
-                      33234050516 graded `estate-escrow.yml fired 0 of 4 promised in 24h` and
-                      `kyverno-secrets-drill last green 34.0h ago` -- GitHub dropped both schedules and this
-                      Job only knew hours).
+                  def plan(runs, now):
+                      """'dispatch' unless the CLOCK already ran this workflow in the current UTC hour.
 
                       Measured 2026-08-28 11:5xZ over 24h, the reason this is not "any run": of the
                       24 hours, login-drill had a run in 19 but only 3 were clock-driven, 16 being
@@ -147,20 +107,16 @@ spec:
                       counts only schedule + App runs, so the row read them as dropped and could never
                       go green on a repo anyone works in. The two now use one definition of the clock
                       and tests/test_incident_crew554_drills_run_on_the_estates_clock.py holds them to it."""
-                      start, due = bucket_and_due(cron, now)
+                      hour = now.replace(minute=0, second=0, microsecond=0)
                       for r in runs:
                           at = datetime.strptime(r["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                          if at >= start and by_the_clock(r):
+                          if at >= hour and by_the_clock(r):
                               return "skipped: %s run %s started %s" % (r.get("event"), r.get("id"), r["created_at"])
-                      if now < due:
-                          return "skipped: not due until %s" % due.strftime("%Y-%m-%dT%H:%M:%SZ")
                       return "dispatch"
 
 
                   def main():
-                      repo = os.environ["GITHUB_REPO"]
-                      # `<workflow>=<cron, spaces as _>`: the catalogue's own schedule decides the period
-                      workflows = [w.split("=", 1) for w in os.environ["WORKFLOWS"].split()]
+                      repo, workflows = os.environ["GITHUB_REPO"], os.environ["WORKFLOWS"].split()
                       d = os.environ["GITHUB_APP_DIR"]
                       app_id = open(os.path.join(d, "githubAppID")).read().strip()
                       inst = open(os.path.join(d, "githubAppInstallationID")).read().strip()
@@ -175,12 +131,12 @@ spec:
                       if code != 200:
                           print(f"FAIL drill-dispatcher GET /repos/{repo} -> {code} at {stamp}"); sys.exit(1)
                       ref, failed = meta["default_branch"], 0
-                      for wf, cron in workflows:
+                      for wf in workflows:
                           # 30, not 5: with pushes no longer suppressing, the clock run still has to be FOUND,
                           # and login-drill alone took 24 push runs in 24h (crew#554).
                           code, page = call("GET", f"/repos/{repo}/actions/workflows/{wf}/runs?per_page=30", token)
                           runs = page.get("workflow_runs", []) if code == 200 and isinstance(page, dict) else []
-                          verdict = plan(runs, at, cron.replace("_", " "))
+                          verdict = plan(runs, at)
                           if verdict != "dispatch":
                               print(f"ok   drill-dispatcher {wf} {verdict} at {stamp}"); continue
                           code, err = call("POST", f"/repos/{repo}/actions/workflows/{wf}/dispatches", token, {"ref": ref})
@@ -197,8 +153,7 @@ spec:
               env:
                 - { name: HOME, value: /tmp }
                 - { name: GITHUB_REPO, value: "${ESTATE_GITHUB_REPO}" }
-                # every non-pending catalogue drill with its cron (spaces as _); the period comes from the cron
-                - { name: WORKFLOWS, value: "login-drill.yml=7_*_*_*_* trace-drill.yml=23_*_*_*_* verify-drill.yml=23_*_*_*_* stale.yml=17_*_*_*_* oke-check.yml=17_6_*_*_* kyverno-secrets-drill.yml=41_7_*_*_* portability-drill.yml=23_5_*_*_1 estate-escrow.yml=29_*/6_*_*_*" }
+                - { name: WORKFLOWS, value: "login-drill.yml trace-drill.yml verify-drill.yml stale.yml" }
                 # kyverno secrets-not-from-env-vars: the App's id, installation id and key are files
                 # from the mounted Secret, never env values (offline-gate refused the secretKeyRef form).
                 - { name: GITHUB_APP_DIR, value: /var/run/github-app }

@@ -155,11 +155,7 @@ def test_the_drill_clusters_have_two_nodes_because_the_front_door_spreads():
     """traefik: replicas 2, hostname spread, DoNotSchedule (crew#555). One node can never seat
     the second pod; weakening the spread is refused by require-availability, so the drill
     clusters grow a node instead of the tree losing a law."""
-    # The flag lives wherever cluster creation is declared: run 33234248201 made the drill
-    # attempt creation twice, and the arguments moved into .github/actions/k3d-estate so
-    # the two attempts could not drift. This asks the cluster question, not the file one.
-    wf = ((ROOT / ".github/workflows/portability-drill.yml").read_text()
-          + (ROOT / ".github/actions/k3d-estate/action.yml").read_text())
+    wf = (ROOT / ".github/workflows/portability-drill.yml").read_text()
     assert "--config=platform/k3d/estate.yaml --agents 1" in wf
     assert "rancher/k3s:v1.33.4-k3s1 agent --server" in wf
     assert "kubectl wait node --all --for=condition=Ready" in wf.split("rancher/k3s:v1.33.4-k3s1 agent --server")[1]

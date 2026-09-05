@@ -19,7 +19,6 @@ resources:
   # the cluster never held it. Audit mode until bin/idp-ci's kyverno row reports zero violations.
   - kyverno-secrets-policy.yaml
   - provider-independence.yaml
-  - dev-loop-policy.yaml
   - provider-edge-exception.yaml
   - provider-storage-exception.yaml
   - capacity-policy.yaml

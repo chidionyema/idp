@@ -74,7 +74,7 @@ data:
       # (idp) does not carry hermes-v2's system prompt (SOUL.md, a separate repo) to place that
       # sentence into — recorded here as Not done, with the follow-up path, rather than claimed.
       runtimes:
-        claude: [mac-run, claude, -p, "{prompt}", --permission-mode, acceptEdits, --allowedTools, "Bash(git *) Bash(gh *) Bash(bin/idp-cluster-state*)"]
+        claude: [mac-run, claude, -p, "{prompt}", --permission-mode, acceptEdits, --allowedTools, "Bash(git *) Bash(gh *)"]
         gemini: [gemini, -p, "{prompt}", --yolo]
         opencode: [opencode, run, "{prompt}"]
         codex: [codex, exec, --full-auto, "{prompt}"]

@@ -15,7 +15,6 @@ a HelmRelease's spec.values.otelCollectorEndpoint, or a Deployment container's
 OTEL_EXPORTER_OTLP_ENDPOINT env value -- that targets the collector's HTTP port 4318 must carry
 an http(s):// scheme, and no HelmRelease whose otlphttp exporter is on (the signoz k8s-infra
 chart default, unless explicitly disabled) may point that endpoint at the bare gRPC port 4317."""
-import re
 from pathlib import Path
 
 import yaml
@@ -28,28 +27,6 @@ def _yaml_docs(path: Path):
     for doc in yaml.safe_load_all(path.read_text()):
         if doc:
             yield doc
-
-
-def _estate_config() -> dict:
-    """clusters/oke/estate-config.yaml data: the one place a ${VAR} in a platform file resolves
-    from (Flux postBuild substituteFrom). crew#584: the k8s-infra endpoint became OTLP_ENDPOINT
-    there so the lean tier can point the agent elsewhere; the scheme rule below judges the value
-    the cluster actually sees, not the placeholder."""
-    for doc in _yaml_docs(ROOT / "clusters" / "oke" / "estate-config.yaml"):
-        if doc.get("kind") == "ConfigMap" and doc["metadata"]["name"] == "estate-config":
-            return doc.get("data") or {}
-    raise AssertionError("clusters/oke/estate-config.yaml carries no estate-config ConfigMap")
-
-
-def _resolve(value: str) -> str:
-    """Substitute ${VAR} from estate-config the way Flux postBuild does; an unknown VAR is red
-    here, not '${VAR}' shipped as an endpoint on the cluster."""
-    cfg = _estate_config()
-
-    def sub(m):
-        assert m.group(1) in cfg, f"{value!r}: {m.group(1)} is not in clusters/oke/estate-config.yaml"
-        return cfg[m.group(1)]
-    return re.sub(r"\$\{([A-Z0-9_]+)\}", sub, value)
 
 
 def _helmrelease_otel_endpoints():
@@ -68,7 +45,6 @@ def _helmrelease_otel_endpoints():
             endpoint = values.get("otelCollectorEndpoint")
             if not endpoint:
                 continue
-            endpoint = _resolve(endpoint)
             presets = values.get("presets") or {}
             otlphttp_enabled = ((presets.get("otlphttpExporter") or {}).get("enabled", True))
             out.append((f, endpoint, otlphttp_enabled))
@@ -89,7 +65,7 @@ def _deployment_otlp_env_endpoints():
             for c in containers:
                 for env in c.get("env") or []:
                     if env.get("name") == "OTEL_EXPORTER_OTLP_ENDPOINT":
-                        out.append((f, c.get("name"), _resolve(env.get("value") or "")))
+                        out.append((f, c.get("name"), env.get("value")))
     return out
 
 

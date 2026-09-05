@@ -5,7 +5,6 @@ kind: Kustomization
 namespace: monitoring
 resources:
   - estate.yaml
-  - k8sgpt.yaml
   - founder-surfaces-probe.yaml
   - founder-mac-screen-sharing-probe.yaml
   - agentgateway-servicemonitor.yaml

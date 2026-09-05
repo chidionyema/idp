@@ -30,7 +30,6 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              operations: [CREATE, UPDATE]   # never DELETE: a fat pod must always be removable
       exclude:
         any:
           - resources:

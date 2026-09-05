@@ -35,34 +35,14 @@ if [ -n "$since" ]; then
     since=
   fi
 fi
-sources() {  # sources <dockerfile> <context>: the context paths the image copies in
-  # Every COPY/ADD source that is not another stage (--from=) or a heredoc,
-  # resolved against the context. `.` is the whole context. A Dockerfile that
-  # copies nothing falls back to its whole context (crew#584 CP-G).
-  local ctx=$2 line s
-  grep -iE '^[[:space:]]*(COPY|ADD)[[:space:]]' "$1" | grep -viE -- '--from=' | while IFS= read -r line; do
-    set -- $line; shift
-    while [ $# -gt 1 ]; do
-      s=$1; shift
-      case "$s" in --*|'<<'*) continue ;; esac
-      s=${s#./}
-      if [ "$s" = . ] || [ -z "$s" ]; then echo "$ctx"; elif [ "$ctx" = . ]; then echo "$s"; else echo "$ctx/$s"; fi
-    done
-  done | sort -u
-}
 touched() {  # touched <dockerfile> <context>: does the diff reach this image?
   [ -z "$since" ] && return 0
-  local f s srcs
-  srcs=$(sources "$1" "$2")
-  [ -z "$srcs" ] && srcs=$2
+  local f
   while IFS= read -r f; do
     [ -z "$f" ] && continue
     [ "$f" = "$1" ] && return 0
-    while IFS= read -r s; do
-      [ "$s" = . ] && return 0
-      # shellcheck disable=SC2254  # unquoted on purpose: a COPY glob like app-config*.yaml must match
-      case "$f" in $s|$s/*) return 0 ;; esac   # unquoted: a COPY glob like app-config*.yaml matches
-    done <<< "$srcs"
+    [ "$2" = . ] && return 0
+    case "$f" in "$2"/*) return 0 ;; esac
   done <<< "$changed"
   return 1
 }
@@ -79,7 +59,7 @@ while IFS= read -r f; do
   rows+=("$n $f $d")
 done < <(find . \( -name Dockerfile -o -name '*.Dockerfile' \) -not -path '*/node_modules/*' -not -path './.git/*' -not -path './tests/*' | sort)
 if [ "$json" = 1 ]; then
-  { printf '%s\n' "${rows[@]:-}" | grep . || true; } | jq -Rc 'split(" ") | {name: .[0], dockerfile: .[1], context: .[2]}' | jq -sc .   # no image touched prints [], never a non-zero exit (crew#584 CP-G)
+  printf '%s\n' "${rows[@]:-}" | grep . | jq -Rc 'split(" ") | {name: .[0], dockerfile: .[1], context: .[2]}' | jq -sc .
 else
   printf '%s\n' "${rows[@]:-}" | grep . || true
 fi
