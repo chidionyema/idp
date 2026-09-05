@@ -21,3 +21,5 @@ Probe otto-answer-probe-29810160: bulk and verify lanes point at deepseek, which
 
 ## 2026-09-05T22:28Z RESUME HERE (session 102eafc6, inventory lane)
 Assembling docs/inventory/otto-capabilities.md on branch docs/otto-capability-inventory from origin/main 4177b3a2. Inputs: scratchpad inv-board.md, inv-platform.md, plus otto/ and fork agent results. Next: commit, push, PR, comment crew#717/#768/#773.
+
+## 2026-09-05T22:44Z inventory lane: PR #1901 open (05a87867), board told on crew#717/#768/#773. Next: merge on green; DeepSeek executes the spec under the crew#768 claim.
