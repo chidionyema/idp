@@ -12783,6 +12783,7 @@ __metadata:
     "@backstage/plugin-notifications": "npm:^0.5.20"
     "@backstage/plugin-org": "npm:^0.7.7"
     "@backstage/plugin-scaffolder": "npm:^1.38.2"
+    "@backstage/plugin-scaffolder-react": "npm:^2.0.3"
     "@backstage/plugin-search": "npm:^1.7.7"
     "@backstage/plugin-signals": "npm:^0.0.34"
     "@backstage/plugin-techdocs": "npm:^1.18.0"
