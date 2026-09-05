@@ -173,6 +173,25 @@ def check(docs: list[dict], source: str) -> list[str]:
     return problems
 
 
+# A CNI that enforces NetworkPolicy announces itself as a DaemonSet in kube-system. flannel is the
+# one in this list that does not enforce policy at all: it routes pods and ignores every policy
+# object the API server holds. Measured 2026-09-04: this estate runs kube-flannel-ds and nothing
+# else, so sixteen NetworkPolicies were being reported as protection while denying nothing.
+POLICY_ENFORCING_CNI = ("cilium", "calico", "canal", "antrea", "kube-router", "weave-net")
+
+
+def enforcing_cni() -> str | None:
+    """The name of whatever in kube-system actually reads a NetworkPolicy, or None."""
+    raw = subprocess.run(
+        ["kubectl", "get", "daemonset", "-n", "kube-system", "-o", "json"],
+        capture_output=True, text=True, timeout=60, check=True).stdout
+    names = [d["metadata"]["name"] for d in json.loads(raw)["items"]]
+    for n in names:
+        if any(c in n for c in POLICY_ENFORCING_CNI):
+            return n
+    return None
+
+
 def live_docs() -> list[dict]:
     """The cluster's own objects, or an exception if it is not reachable."""
     out: list[dict] = []
@@ -195,10 +214,21 @@ def main() -> int:
     if args.live:
         try:
             docs, source = live_docs(), "the live cluster"
+            cni = enforcing_cni()
         except Exception as exc:  # noqa: BLE001 -- any failure to reach it is the same answer
             print(f"BLIND  ns-fence-gate could not read the cluster: {exc}")
             print("       This is not a pass. Nothing was checked.")
             return 2
+        if cni is None:
+            policies = sum(1 for d in docs if d.get("kind") == "NetworkPolicy")
+            print("FAIL   ns-fence-gate: no CNI in kube-system enforces NetworkPolicy, so the "
+                  f"{policies} policy object(s) this cluster holds deny nothing.")
+            print("       A quota and a LimitRange still work -- they are admission controllers "
+                  "in the API server -- but no answer about network isolation is available here, "
+                  "and reporting the namespaces as fenced would be a claim the cluster cannot "
+                  "support. Install a policy-enforcing CNI first "
+                  "(platform/ns-fences/network/README.md).")
+            return 1
     else:
         docs, source = load_manifests(args.path), args.path
 
@@ -215,9 +245,18 @@ def main() -> int:
         d["metadata"]["name"] for d in docs
         if d.get("kind") == "Namespace"
         and d.get("metadata", {}).get("name") not in SYSTEM_NAMESPACES)
-    print(f"ok     ns-fence-gate: {len(fenced)} namespace(s) in {source} carry a quota, "
-          f"a LimitRange, a both-ways default deny and a DNS exception: "
-          f"{', '.join(fenced)}")
+    if args.live:
+        print(f"ok     ns-fence-gate: {len(fenced)} namespace(s) in {source} carry a quota, a "
+              f"LimitRange, a both-ways default deny and a DNS exception, and {cni} is on the "
+              f"nodes to enforce the deny: {', '.join(fenced)}")
+    else:
+        # Say what was actually graded. These are files: they declare a fence, they do not apply
+        # one, and whether the cluster holds what they declare -- or has anything that would
+        # enforce a policy -- is a question only --live can answer.
+        print(f"ok     ns-fence-gate: {len(fenced)} namespace(s) DECLARE a quota, a LimitRange, a "
+              f"both-ways default deny and a DNS exception in {source}. Whether the cluster holds "
+              f"them, and whether anything on it enforces a policy, is --live's answer, not this "
+              f"one: {', '.join(fenced)}")
     return 0
 
 

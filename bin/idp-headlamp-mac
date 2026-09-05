@@ -61,6 +61,24 @@ KC="${IDP_KUBECONFIG:-${XDG_STATE_HOME:-$HOME/.local/state}/idp/kubeconfig}"
 "$IDP/bin/idp-kube" >/dev/null 2>&1 || printf 'warn    headlamp  bin/idp-kube could not refresh the kubeconfig; using the cached one\n' >&2
 [ -f "$KC" ] || die "no kubeconfig at $KC -- run bin/idp-oci-login then bin/idp-kube"
 
+# The Headlamp desktop app is the founder's cluster UI and it is a second, separate copy of
+# headlamp-server: it reads its cluster list from its own store, not from this one. That store was
+# empty, so the app had no estate cluster to open and asked for a bearer token. The minted
+# kubeconfig is linked into it here, beside the tailnet server that serves the same file, so both
+# surfaces show the same cluster with the same short-lived, attributable OCI identity.
+HL_STORE="$HOME/Library/Application Support/Headlamp/kubeconfigs"
+if [ -d "$(dirname "$HL_STORE")" ]; then
+	mkdir -p "$HL_STORE"
+	ln -sfn "$KC" "$HL_STORE/estate.yaml"
+fi
+
+# The desktop app hands its own server KUBECONFIG=$HOME/.kube/estate.yaml, and shells read the same
+# path from ~/.zshrc. On 2026-09-05 that file had been renamed away and never restored, so the app
+# had no cluster with a credential and asked the founder to paste a bearer token, which he should
+# never be shown. It is linked to the minted kubeconfig rather than copied, so bin/idp-kube's
+# refresh reaches every surface at once and no second copy can go stale behind this one.
+ln -sfn "$KC" "$HOME/.kube/estate.yaml"
+
 # The API key profile, never the session-token one: session tokens die within hours and this job is
 # meant to be there at 3am (docs/reference/oke-laptop-session.md).
 export OCI_CLI_PROFILE="${OCI_CLI_PROFILE:-DEFAULT}" OCI_CLI_AUTH="${OCI_CLI_AUTH:-api_key}" SUPPRESS_LABEL_WARNING=True

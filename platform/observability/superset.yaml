@@ -185,8 +185,12 @@ spec:
       estate_identity: |
         # Decision 0018: the gateway is the only login. Traefik's ForwardAuth overwrites
         # X-Auth-Request-Email with oauth2-proxy's verdict on every request (authResponseHeaders,
-        # httproute.yaml), so the value is the gateway's word, never the client's. The namespace
-        # default-deny NetworkPolicy means no request reaches this pod except through the gateway.
+        # httproute.yaml), so the value is the gateway's word, never the client's.
+        # This used to claim a namespace default-deny NetworkPolicy kept every other route out.
+        # It did not: measured 2026-09-04, this cluster's CNI is flannel, which enforces no
+        # NetworkPolicy at all, so nothing stops a pod in another namespace reaching this one by
+        # IP (crew#839, platform/ns-fences/network/README.md). The gateway header is the whole of
+        # the protection today, and a pod that bypasses the gateway is admitted as an Admin.
         from flask_appbuilder.security.manager import AUTH_REMOTE_USER
         AUTH_TYPE = AUTH_REMOTE_USER
         AUTH_USER_REGISTRATION = True
