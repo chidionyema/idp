@@ -13,7 +13,13 @@ on:
 # 20 queued runs, 12 of them stale duplicates, and a one-line oke-check waited 19 min (crew#516).
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  # ...except on main. Measured 2026-09-05: of the last twelve ci runs on main, NINE were
+  # cancelled, one succeeded. Every merge and every image-update commit cancelled the run grading
+  # the commit before it, so the branch the whole estate is graded on almost never produced a
+  # verdict, and offline-gate -- which is skipped on pull requests on purpose and runs only here
+  # -- graded nothing. A stale run on a pull request is waste; a cancelled run on main is the
+  # estate's only grade, lost.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
   # crew#584 CP-C: the 60 s gate every heavy job below waits for (fast-gate.yml).
   fast-gate:
