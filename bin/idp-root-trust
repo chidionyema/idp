@@ -29,6 +29,14 @@ BIN = os.path.join(IDP, "bin")
 PLATFORM = os.path.join(IDP, "platform")
 IN_ESTATE = ("ESO generator", "Terraform")
 VERDICTS = {"MEETS", "PARTIAL", "MISS"}
+# Who is asked for the credential, which is a different question from whether code can mint it
+# (founder 2026-09-05: "need to understand what is customer and what is estate/founder credentials
+# also / founder as discussed is customer 0"). Supplier rows are ours and a customer never sees
+# one; Operator rows are the installation's, paid for once by an SSO consent at install; Customer
+# rows are the only ones a business user may ever be asked for, so their count is the number that
+# decides whether onboarding is finished. An unclassified row is a FAIL: a credential nobody has
+# said who to ask for is how a customer ends up in a terminal.
+OWNERS = ("Supplier", "Operator", "Customer")
 
 
 def register_rows(text):
@@ -37,14 +45,15 @@ def register_rows(text):
         if not line.startswith("|"):
             continue
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) != 6 or cells[4] not in VERDICTS:
+        if len(cells) != 7 or cells[5] not in VERDICTS:
             continue
         keys = re.findall(r"`([^`]+)`", cells[0])
         rows.append(
             {
                 "keys": [k.split(" ")[0] for k in keys] or [cells[0]],
-                "verdict": cells[4],
-                "path": cells[5],
+                "owner": cells[3],
+                "verdict": cells[5],
+                "path": cells[6],
                 "raw": cells[0],
             }
         )
@@ -80,6 +89,10 @@ def grade(rows, keys, bin_dir):
     for r in rows:
         for k in r["keys"]:
             registered.setdefault(k, []).append(r)
+        if r["owner"] not in OWNERS:
+            findings.append(
+                f"FAIL    {r['raw']}: owner is {r['owner'] or 'blank'}, not one of {', '.join(OWNERS)}"
+            )
         if r["verdict"] == "MEETS":
             tools = re.findall(r"`bin/([^`]+)`", r["path"])
             if tools:
@@ -118,6 +131,17 @@ def main(argv):
         for v in ("MEETS", "PARTIAL", "MISS")
     }
     summary = f"{len(keys)} vault entries read by ExternalSecrets, {len(rows)} register rows: MEETS {counts['MEETS']} PARTIAL {counts['PARTIAL']} MISS {counts['MISS']}"
+    # The onboarding number, printed on every run whether the gate passes or fails: how many
+    # credentials a customer can still be asked for, and how many of those have no door but a
+    # terminal or a hand-typed name in someone else's web interface.
+    by_owner = {o: [r for r in rows if r["owner"] == o] for o in OWNERS}
+    cust_open = [r for r in by_owner["Customer"] if r["verdict"] != "MEETS"]
+    print(
+        "        onboarding: "
+        + ", ".join(f"{len(by_owner[o])} {o.lower()}" for o in OWNERS)
+        + f"; {len(cust_open)} of the {len(by_owner['Customer'])} customer rows still need a human door"
+        + (" (" + ", ".join(r["raw"].split("`")[1] for r in cust_open) + ")" if cust_open else "")
+    )
     if findings:
         print(f"FAIL    root-trust: {len(findings)} finding(s); {summary}")
         return 1
