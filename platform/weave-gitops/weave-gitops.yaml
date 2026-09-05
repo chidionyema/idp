@@ -56,6 +56,16 @@ spec:
                 value: founder-deploy-button
   values:
     fullnameOverride: weave-gitops
+    # Debug, not info, and this is the reason. The Applications page renders empty
+    # (founder 2026-09-05: "this has no data https://catalogue.${ESTATE_ZONE}/deploy/applications"),
+    # and at info the server writes nothing after start-up: 34 log lines in 17 hours across both
+    # pods, no error, no warning, no request. Measured 2026-09-05:
+    #   kubectl -n weave-gitops logs weave-gitops-5f74bdb7f8-6978q | wc -l   ->  34
+    # Every permission the page needs is already granted and proved on the running cluster:
+    #   auth can-i impersonate users/founder --as=system:serviceaccount:weave-gitops:weave-gitops -> yes
+    #   auth can-i list kustomizations.kustomize.toolkit.fluxcd.io -A --as=founder                -> yes
+    # So the cause is inside the request, and at info the request leaves no trace to read.
+    logLevel: debug
     # Two replicas kept off one node: the deploy button is a routed founder surface, and
     # bin/idp-ci grades every routed surface on surviving the loss of a node. The page holds
     # no state -- it reads Flux objects -- so a second replica is a plain availability win.
