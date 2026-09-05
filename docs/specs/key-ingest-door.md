@@ -45,11 +45,15 @@ customer road, is graded as customer zero, and may not require an operator ident
    This door therefore cannot be a generated button, and `bin/idp-portal-buttons` must not generate it.
 2. **The value must never land in a Backstage task log.** The scaffolder records step inputs.
    The value travels as a POST body to a backend endpoint, never as a template parameter.
-3. **The write target must have a plaintext write path.** Measured 2026-09-05 with
-   `bin/idp-human-vault-probe --write`: Bitwarden refuses plaintext with
-   `400 Key is not a valid encrypted string`, because it is zero-knowledge. So road one writes to
-   `estate-vault` and to no other store, and the picker must not offer a zero-knowledge store as a
-   write target (decision 0020 amendment).
+3. **A zero-knowledge store is written through its own client, never its REST API.** Measured
+   2026-09-05T22:08Z: `bws secret create` into the estate project succeeded and was deleted in the
+   same run, while the same payload posted at `https://api.bitwarden.com/organizations/<org>/secrets`
+   is refused with `400 Key is not a valid encrypted string`. The machine access token
+   (`0.<id>.<secret>:<base64 encryption key>`) carries the encryption key, so the vendor client can
+   encrypt and the raw API correctly cannot. Road one therefore writes to `estate-vault` **or** to a
+   zero-knowledge store the client has issued a write-capable machine token for, and it routes every
+   such write through that store's client — for Bitwarden, the `bitwarden-sdk-server` already
+   deployed in `external-secrets` for the read path (decision 0020 amendment).
 4. **No terminal, no repository secret, no second key while one exists** (LAW 54, LAW 52). The
    founder is customer zero and is graded as a paying client.
 

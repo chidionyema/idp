@@ -124,6 +124,8 @@ would have lied to us.
 - A second policy engine. Kyverno already runs; item 12 is one more policy on it.
 - gVisor for every tenant. Item 12 is scoped to workloads that execute code a model wrote, which
   do not exist yet, and it is last for that reason.
-- Any write into a zero-knowledge store. Measured: Bitwarden refuses plaintext with
-  `400 Key is not a valid encrypted string`. It is a sync source, never a destination
-  (decision 0020 amendment, re-measurable with `bin/idp-human-vault-probe --write`).
+- Any write that posts plaintext straight at a zero-knowledge store's REST API. Measured
+  2026-09-05T22:08Z: that is refused with `400 Key is not a valid encrypted string`, while the same
+  write through `bws` succeeds. Such a store is both a sync source and a valid destination, but only
+  through its own client (decision 0020 amendment, re-measurable with
+  `bin/idp-human-vault-probe --write`).

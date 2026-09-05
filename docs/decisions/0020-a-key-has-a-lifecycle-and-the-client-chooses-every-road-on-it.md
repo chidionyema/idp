@@ -96,71 +96,69 @@ nothing built to be offered.
 
 ---
 
-## Amendment, 2026-09-05 — a zero-knowledge store can be read from and never written to
+## Amendment, 2026-09-05 — a zero-knowledge store is written through its SDK, never its REST API
 
 Record: `~/.claude/docs/founder/2026-09-05T2025Z-ok-need-do-addrees-quicck-wwe-have-deepseek-29766295.md`
 
-This decision named three ingest roads and let the client pick the store on each. Building road
-one turned up a constraint that decides where a pasted key can land, and it is a property of the
-store rather than of our code, so it belongs in the decision rather than the spec.
+**This amendment replaces an earlier version of itself, written the same evening, which concluded
+that Bitwarden could not be written to at all. That conclusion was wrong, and it was wrong in the
+way LAW 15 exists to catch: it rested on one probe, from one angle, against the raw REST API.**
+The second angle — the vendor's own client — was never run. It is run now and it succeeds. The
+earlier text is deleted rather than struck through, because a spec DeepSeek executes from must not
+contain a false fact in any form.
 
-**Measured, with the estate's own Bitwarden machine account, 2026-09-05.** Reading works exactly
-as designed:
-
-```
-auth: ok, scope=api.secrets
-secrets the machine account can list: 0
-projects visible: [('18e57b2f-d5c6-4c0b-9ba9-b4b900e1d792', '2.QKtQmaAK7Ns0k9LuR0qmyw==|...')]
-```
-
-Writing does not, and the refusal is the whole point:
+**Measured, estate machine account, 2026-09-05T22:08Z.** Reading is exactly as designed:
 
 ```
-POST https://api.bitwarden.com/organizations/<org>/secrets
-{"key": "...", "value": "...", "note": "...", "projectIds": ["18e57b2f-..."]}
+$ bws project list --output json
+[{"id":"18e57b2f-d5c6-4c0b-9ba9-b4b900e1d792",
+  "organizationId":"a9f79fcf-7059-4bad-94ab-b4b900acc259",
+  "name":"estate","creationDate":"2026-09-02T13:42:15.938396Z"}]
 
-400 {"object":"error","message":"The model state is invalid.","validationErrors":{
-  "Key":["Key is not a valid encrypted string."],
-  "Value":["Value is not a valid encrypted string."],
-  "Note":["Note is not a valid encrypted string."]}}
+$ bws secret list --output json
+[]
 ```
 
-Bitwarden is zero-knowledge: every field is encrypted on the client with a key derived from the
-access token before it reaches the API, which is why the project's own *name* comes back as
-`2.QKtQ…|…|…` rather than a word. There is no plaintext write path and there is not meant to be.
-The two probes are `bin/idp-human-vault-probe` (this PR), so the finding is re-measurable rather
-than remembered.
+Writing works too, through the vendor's client and only through it:
 
-**What this changes.** Ingest and storage were being treated as one choice, and they are two:
+```
+$ bws secret create estate-write-probe-delete-me not-a-secret 18e57b2f-...-b4b900e1d792
+{"id":"7b6c411d-a695-48fc-b5f9-b4bc016cff1c",
+ "projectId":"18e57b2f-d5c6-4c0b-9ba9-b4b900e1d792",
+ "key":"estate-write-probe-delete-me","value":"not-a-secret",
+ "creationDate":"2026-09-05T22:08:54.696383100Z"}
+$ bws secret delete 7b6c411d-a695-48fc-b5f9-b4bc016cff1c
+1 secret deleted successfully.
+```
+
+The same payload posted straight at `https://api.bitwarden.com/organizations/<org>/secrets` is
+refused with `400 {"validationErrors":{"Key":["Key is not a valid encrypted string."], ...}}`.
+Both results are correct and they are the same fact seen twice. Bitwarden is zero-knowledge, so
+every field is encrypted before it reaches the API; the API therefore refuses plaintext. The
+machine access token has the shape `0.<id>.<secret>:<base64 encryption key>` — the part after the
+colon **is** the encryption key. A client that holds the token can encrypt, and `bws` does. Hand
+the API plaintext and it correctly says no.
+
+**What this changes.** Ingest and storage are still two choices, but the storage boundary is not
+where the earlier text drew it:
 
 | Stage | The client's choice | What the store's design permits |
 |---|---|---|
 | Ingest — where the key is typed | portal paste, sync from their store, programmatic | free choice, all three roads stand |
-| Storage — where the pasted value lands | any store the estate can write | **only a store with a plaintext write path** |
+| Storage — where the pasted value lands | any store the estate holds a write credential for | **any store, provided the write goes through that store's own client** |
 
-So road one, the one-shot paste, writes to `estate-vault` and no other store. This is not a
-narrowing of the client's choice; it is the honest shape of it. A client who keeps keys in
-Bitwarden, 1Password or any other zero-knowledge vault does not want us writing into it — that
-would mean handing us the ability to encrypt as them. They want road two: they put the key in
-their own vault with their own client, and the estate reads it. That road already runs, and
-`human-vault` has been Valid for four days waiting for its first consumer.
+So road one, the one-shot paste, may write to `estate-vault` **or** to a zero-knowledge store the
+client has issued a write-capable machine token for. What is refused is not the store; it is the
+raw-API shortcut. This also costs nothing to build: `bitwarden-sdk-server` is already deployed in
+`external-secrets` and is already doing this encryption on the read path — the write path is the
+same bridge and the same credential.
 
-The only way to make road one write into such a store is to ship the vendor's client-side
-encryption SDK inside the portal and hold a credential able to encrypt as the customer. That is
-refused: it is a second secret store in the portal's process (the HEADLINE), it is a per-vendor
-SDK for every vendor a client might use, and it puts customer-encrypting material in a web
-front end. `bitwarden-sdk-server` stays what the chart ships it as — a read bridge for ESO.
+**What is still refused.** Holding a *person's* master-password-derived key, or any material that
+lets the estate encrypt as a human user rather than as a machine account the client created and
+can revoke. The trust boundary is the machine token, and it is the client's to issue and to take
+back.
 
 **Corrected sentence.** Where this decision says provenance decides the default and not the
-boundary, that remains true of *ingest*. For *storage* the boundary is real and the store draws
-it: a zero-knowledge store is a source the estate syncs from, never a destination the estate
-writes to. A UI that offers a customer "save this into my Bitwarden" is offering something no
-correct implementation can deliver, so the store picker does not offer it (see
+boundary, that stands, for ingest and for storage both. The store picker offers every store the
+estate holds a write credential for, zero-knowledge stores included (see
 `docs/specs/key-ingest-door.md`, part 3).
-
-**Consequence for the register.** The `cyrus-linear-api-token` row stays Customer-owned and keeps
-its `human-vault` read, because that key genuinely is born in a browser and the founder genuinely
-holds it. What changes is that the *hand-over* stops being "type the exact name into Bitwarden's
-web interface and pick the right project", which failed three times on 2026-09-05, and becomes
-one paste into the portal that lands in `estate-vault`. The client may later move the key onto
-the human road with their own client, and the ExternalSecret follows with a one-line store swap.

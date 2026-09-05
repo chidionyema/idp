@@ -48,11 +48,13 @@ TCP 10.244.1.240:3100  (backstage/catalogue, equally fenced) -> CONNECTED
 
 Three packets on paths the fences deny, three arrivals.
 
-**Fact 2 — Bitwarden Secrets Manager cannot be written to.** It is zero-knowledge: fields are
-encrypted client-side before they reach the API. A plaintext write returns
-`400 {"validationErrors":{"Key":["Key is not a valid encrypted string."]}}`. So it is a **sync
-source, never a write target**, and any credential-ingest interface must write to the estate's own
-OCI vault.
+**Fact 2 — Bitwarden Secrets Manager is written through its client, never its REST API.** It is
+zero-knowledge: fields are encrypted client-side before they reach the API, so a plaintext POST
+returns `400 {"validationErrors":{"Key":["Key is not a valid encrypted string."]}}`. The vendor
+client does that encryption with the key carried in the machine access token
+(`0.<id>.<secret>:<base64 encryption key>`), and it writes fine — measured 2026-09-05T22:08Z,
+`bws secret create` into the estate project, deleted in the same run. So a credential-ingest
+interface may target such a store, and every write to one goes through that store's client.
 
 **Fact 3 — a drill here is two artefacts, not one.** A "drill" is a scheduled workflow under
 `.github/workflows/` **plus** a row in `drills/catalogue.yaml`. A checker grades only how fresh
@@ -257,11 +259,12 @@ Every one of these is a requirement with a test:
   primitive into the vault.
 - The caller's tenant must own the entry. An operator identity gets **no wider** allow-list here
   than customer zero does.
-- `store` must be a store with a plaintext write path. The list is read from a file
+- `store` must be a store the estate holds a write credential for. The list is read from a file
   `platform/vendors/stores.yaml` — never a hard-coded string. Design that file too: one row per
-  store, with `write` and `sync` as **separate** booleans, because a zero-knowledge store can be
-  read from and not written to, and a picker in the portal must be able to show the user that we
-  support their store and explain in one sentence why we are not writing into it.
+  store, with `write` and `sync` as **separate** booleans and a `client` field naming how a write is
+  performed (`api` for a store that takes plaintext, or the client binary or sidecar for a
+  zero-knowledge one, e.g. `bitwarden-sdk-server`). The picker offers every row whose `write` is
+  true.
 - The write goes through the existing `bin/idp-vault-put --merge <entry> <key>=<value>` so that
   another key already in the same entry is never clobbered.
 - Each submission emits one telemetry span with attributes `entry`, `key`, `store`,

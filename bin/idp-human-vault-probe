@@ -10,18 +10,24 @@ Prints secret NAMES, project ids and HTTP status. It never fetches, decrypts or 
 value, and the write attempt carries the string `not-a-secret` and nothing else.
 
 Why it exists: on 2026-09-05 the portal's one-shot ingest road was about to be built to write a
-pasted key into the client's Bitwarden. It cannot. Bitwarden is zero-knowledge, so every field is
-encrypted on the client before it reaches the API and the API refuses plaintext with
-`Key is not a valid encrypted string`. That is a property of the store, not a permission we can be
-granted, and it is what makes a zero-knowledge vault a source the estate syncs from and never a
-destination the estate writes to (decision 0020, amendment 2026-09-05).
+pasted key into the client's Bitwarden, and a first version of this probe concluded that it could
+not be written to at all. That conclusion was wrong: it tested one path, the raw REST API, which
+refuses plaintext with `Key is not a valid encrypted string` because Bitwarden is zero-knowledge.
+The vendor client does the client-side encryption with the key carried in the machine access token
+(`0.<id>.<secret>:<base64 encryption key>`) and writes fine. So the store is a sync source AND a
+valid destination; what is refused is the raw-API shortcut (decision 0020, amendment 2026-09-05).
 
-Exit 0 the store behaves as decision 0020 records (reads work, plaintext write refused with 400),
-1 it does not, 2 BLIND (no vault session, no configuration, network refused).
+This probe measures both paths, which is the point (LAW 15: two angles). --write attempts the raw
+API write, expects the 400, and then reports whether a `bws` binary is on PATH to prove the client
+path in the same run.
+
+Exit 0 the store behaves as decision 0020 records (reads work, raw-API plaintext write refused with
+400), 1 it does not, 2 BLIND (no vault session, no configuration, network refused).
 """
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import urllib.error
@@ -125,8 +131,8 @@ def main(argv):
     if "--write" not in argv:
         return 0
 
-    # The measurement decision 0020 rests on. A store that accepts this is a store the portal
-    # could write a pasted key into; a store that refuses it is a source and nothing more.
+    # Angle one: the raw REST API. It must refuse plaintext, because the store is zero-knowledge.
+    # Angle two (below) is the vendor client, which encrypts and therefore writes.
     try:
         made = call(
             f"{API}/organizations/{org}/secrets",
@@ -144,15 +150,26 @@ def main(argv):
         print(f"WRITE   refused      HTTP {exc.code} {detail}")
         if exc.code == 400 and "valid encrypted string" in detail:
             print(
-                "PASS    human-vault  reads work, plaintext write refused: zero-knowledge, "
-                "a source to sync from and never a destination to write to (decision 0020)"
+                "PASS    human-vault  reads work; the raw API refuses plaintext, as a "
+                "zero-knowledge store must (decision 0020 amendment)"
             )
+            bws = shutil.which("bws")
+            if bws:
+                print(
+                    f"NOTE    write path  the client path is {bws}: "
+                    f"`bws secret create <name> <value> {project}` encrypts and writes"
+                )
+            else:
+                print(
+                    "NOTE    write path  no `bws` on PATH; the client path is proved by "
+                    "bitwarden-sdk-server in the external-secrets namespace"
+                )
             return 0
         print("FAIL    human-vault  write refused, but not for the reason decision 0020 records")
         return 1
-    # A plaintext write that succeeds contradicts the decision; say so and clean up.
-    print(f"FAIL    human-vault  plaintext write ACCEPTED as {made.get('id')}: decision 0020's")
-    print("        storage boundary no longer holds and the amendment needs re-reading")
+    # A raw-API plaintext write that succeeds means the store is not zero-knowledge after all.
+    print(f"FAIL    human-vault  raw-API plaintext write ACCEPTED as {made.get('id')}: this store")
+    print("        is not zero-knowledge and decision 0020's amendment needs re-reading")
     call(f"{API}/secrets/delete", bearer, payload=[made.get("id")], method="POST")
     print(f"        cleanup      deleted {made.get('id')}")
     return 1
