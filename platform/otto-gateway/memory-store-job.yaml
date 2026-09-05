@@ -39,7 +39,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: otto-memory-store-2
+  name: otto-memory-store-3
   namespace: otto-gateway
   labels:
     app.kubernetes.io/name: otto-memory-store
