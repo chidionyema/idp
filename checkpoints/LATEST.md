@@ -18,3 +18,28 @@ Headlamp credential prompt: the minted kubeconfig now carries the absolute oci p
 
 ## RESUME HERE (2026-09-05 13:25Z, Otto lanes)
 Probe otto-answer-probe-29810160: bulk and verify lanes point at deepseek, which the router does not serve (400); Otto key allowlist was kimi,minimax,deepseek so gemini and embed were 403. PR fix/otto-lanes-gemini moves bulk+verify to gemini in the three lane files and sets the key rows in bin/idp-estate-seed to minimax,gemini,embed (agent-workforce: minimax,fast,embed). After merge: gh workflow run oke-check.yml -f mode=apply so idp-router-key updates the live keys.
+
+## RESUME HERE — 2026-09-05T20:5xZ, idp session 2eb24bf7 (specs lane)
+
+**Doing:** writing the two build specs the founder asked for
+(`~/.claude/docs/founder/2026-09-05T2025Z-ok-need-do-addrees-quicck-wwe-have-deepseek-29766295.md`):
+`docs/specs/key-ingest-door.md` and `docs/specs/two-hats-tenant-split.md`, plus the ADR 0020
+amendment recording that Bitwarden cannot be written to.
+
+**Why a worktree:** this checkout is shared. At ~20:50Z another session stashed my tracked edits
+(`stash@{0}`, "wip before sync branch") and a `git clean` deleted my untracked new files —
+`bin/idp-human-vault-probe`, `docs/specs/key-ingest-door.md`,
+`docs/specs/two-hats-tenant-split.md` — which had to be rewritten. Branch:
+`spec/two-hats-and-key-ingest`. Worktree under the session scratchpad. Nothing of another
+session's is carried: `stash@{0}` also holds their `checkpoints/LATEST.md` and is left alone.
+
+**Measured, and it is the load-bearing fact:** Bitwarden Secrets Manager refuses a plaintext write
+(`400 Key is not a valid encrypted string`) because it is zero-knowledge, and the estate project
+holds zero secrets while the machine account reads it fine. So the portal's one-shot ingest road
+writes to `estate-vault`; a zero-knowledge store is a source to sync from, never a destination.
+Re-measure with `bin/idp-human-vault-probe --write`.
+
+**Still down:** `cyrus-webhook` is `SecretSyncedError` on `cyrus-linear-api-token`. The fix is the
+door, not a fourth trip to Bitwarden's web interface.
+
+**Next:** commit the specs in the worktree, push, open the PR.
