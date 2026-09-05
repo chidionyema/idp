@@ -93,3 +93,74 @@ full-disk encryption and holds no API keys; the Microsoft-managed store this des
 Key Vault, backed by Entra ID. External Secrets Operator has a native Azure Key Vault provider, so
 that road is a `ClusterSecretStore` row and no new code — it is on the list above and needs
 nothing built to be offered.
+
+---
+
+## Amendment, 2026-09-05 — a zero-knowledge store can be read from and never written to
+
+Record: `~/.claude/docs/founder/2026-09-05T2025Z-ok-need-do-addrees-quicck-wwe-have-deepseek-29766295.md`
+
+This decision named three ingest roads and let the client pick the store on each. Building road
+one turned up a constraint that decides where a pasted key can land, and it is a property of the
+store rather than of our code, so it belongs in the decision rather than the spec.
+
+**Measured, with the estate's own Bitwarden machine account, 2026-09-05.** Reading works exactly
+as designed:
+
+```
+auth: ok, scope=api.secrets
+secrets the machine account can list: 0
+projects visible: [('18e57b2f-d5c6-4c0b-9ba9-b4b900e1d792', '2.QKtQmaAK7Ns0k9LuR0qmyw==|...')]
+```
+
+Writing does not, and the refusal is the whole point:
+
+```
+POST https://api.bitwarden.com/organizations/<org>/secrets
+{"key": "...", "value": "...", "note": "...", "projectIds": ["18e57b2f-..."]}
+
+400 {"object":"error","message":"The model state is invalid.","validationErrors":{
+  "Key":["Key is not a valid encrypted string."],
+  "Value":["Value is not a valid encrypted string."],
+  "Note":["Note is not a valid encrypted string."]}}
+```
+
+Bitwarden is zero-knowledge: every field is encrypted on the client with a key derived from the
+access token before it reaches the API, which is why the project's own *name* comes back as
+`2.QKtQ…|…|…` rather than a word. There is no plaintext write path and there is not meant to be.
+The two probes are `bin/idp-human-vault-probe` (this PR), so the finding is re-measurable rather
+than remembered.
+
+**What this changes.** Ingest and storage were being treated as one choice, and they are two:
+
+| Stage | The client's choice | What the store's design permits |
+|---|---|---|
+| Ingest — where the key is typed | portal paste, sync from their store, programmatic | free choice, all three roads stand |
+| Storage — where the pasted value lands | any store the estate can write | **only a store with a plaintext write path** |
+
+So road one, the one-shot paste, writes to `estate-vault` and no other store. This is not a
+narrowing of the client's choice; it is the honest shape of it. A client who keeps keys in
+Bitwarden, 1Password or any other zero-knowledge vault does not want us writing into it — that
+would mean handing us the ability to encrypt as them. They want road two: they put the key in
+their own vault with their own client, and the estate reads it. That road already runs, and
+`human-vault` has been Valid for four days waiting for its first consumer.
+
+The only way to make road one write into such a store is to ship the vendor's client-side
+encryption SDK inside the portal and hold a credential able to encrypt as the customer. That is
+refused: it is a second secret store in the portal's process (the HEADLINE), it is a per-vendor
+SDK for every vendor a client might use, and it puts customer-encrypting material in a web
+front end. `bitwarden-sdk-server` stays what the chart ships it as — a read bridge for ESO.
+
+**Corrected sentence.** Where this decision says provenance decides the default and not the
+boundary, that remains true of *ingest*. For *storage* the boundary is real and the store draws
+it: a zero-knowledge store is a source the estate syncs from, never a destination the estate
+writes to. A UI that offers a customer "save this into my Bitwarden" is offering something no
+correct implementation can deliver, so the store picker does not offer it (see
+`docs/specs/key-ingest-door.md`, part 3).
+
+**Consequence for the register.** The `cyrus-linear-api-token` row stays Customer-owned and keeps
+its `human-vault` read, because that key genuinely is born in a browser and the founder genuinely
+holds it. What changes is that the *hand-over* stops being "type the exact name into Bitwarden's
+web interface and pick the right project", which failed three times on 2026-09-05, and becomes
+one paste into the portal that lands in `estate-vault`. The client may later move the key onto
+the human road with their own client, and the ExternalSecret follows with a one-line store swap.
