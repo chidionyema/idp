@@ -540,7 +540,7 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 
 ## 2026-09-03T01:21:09Z · session a14fc078 · lane idp
 🟡 Active: last two 1182 reds fixed in the tree (rotation-SLO exception row for the minted litellm-cache secret; acceptance twin now reads redis.yaml rewrite templates like tests/test_llm_row.py) — tests running, push next; 1185 re-armed: Docs-exempt line on the body + empty commit a6caf8de so fast-gate reads the fresh body, poller on it
-🟢 Done: PR 1185 built (git add -f in both publish jobs + guard test, 09e41287); 1182 first wave green (waiver, balloon 225m, infra-crew 225m) — only bdd suites were left red
+🟢 Done: PR 1185 built (git add -f in both publish jobs + guard test, 09e41287); 1182 first wave green (waiver, balloon 225m, agent-workforce 225m) — only bdd suites were left red
 🔴 Blocked: none
 ⚪ Pending: merge both on green under founder 00:39Z word; then dispatch estate-state.yml to write the reports index (un-404s the Reports tab); fragile-points list owed to the board
 🔧 TOUCHES: tests/test_incident_crew727*, sovereign/tests/bdd/test_gate_model_routing.py, PR 1185 body
@@ -1204,7 +1204,7 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🟢 Done: none merged
 ⚪ Pending: founder pick — update to land Today cards, Tools, Ops, Remix, accent tokens
 🔧 TOUCHES: backstage/packages/app (home, nav, theme, signin, styles.css), tests/test_crew612_portal_doors_are_real_and_distinct.py, yarn.lock
-🔀 OVERLAP: dirty idp checkout (hermes/infra-crew WIP); store session b4b812cb is a different repo
+🔀 OVERLAP: dirty idp checkout (hermes/agent-workforce WIP); store session b4b812cb is a different repo
 📎 FACTS: none
 📍 State: backstage/packages/app/src/modules/home/homeLayout.tsx
 
@@ -1270,14 +1270,14 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🟢 Done: none merged
 ⚪ Pending: founder pick — land Today cards, Tools, Ops, Remix, accent tokens without the hermes WIP
 🔧 TOUCHES: backstage/packages/app (home, nav, theme, signin, styles.css), tests/test_crew612_portal_doors_are_real_and_distinct.py, yarn.lock
-🔀 OVERLAP: dirty idp checkout (hermes/infra-crew WIP on feat/mumchimp-oneshot-rebuild); store session b4b812cb is a different repo
+🔀 OVERLAP: dirty idp checkout (hermes/agent-workforce WIP on feat/mumchimp-oneshot-rebuild); store session b4b812cb is a different repo
 📎 FACTS: none
 📍 State: backstage/packages/app/src/modules/home/homeLayout.tsx (uncommitted)
 
 
 ## 2026-09-03T09:41:32Z · session 2c88870e · lane code
 🟢 Done: estate snapshot v2 live (idp 1213 merged), gate PR claude-guards 240 green awaiting merge word
-🟡 Active: founder word 'ok ship cursor latest backstage and mumchimp work' — CLAIMING (a) the uncommitted portal look in the shared idp checkout (crew#612, session 9528444c's lane): shipping it from a fresh worktree off origin/main on a fix(portal) branch, portal files only, hermes/infra-crew WIP untouched; (b) the 22 staged Store.Web files in ~/dev/code/.wt-crew774-store onto prospector PR 808's branch
+🟡 Active: founder word 'ok ship cursor latest backstage and mumchimp work' — CLAIMING (a) the uncommitted portal look in the shared idp checkout (crew#612, session 9528444c's lane): shipping it from a fresh worktree off origin/main on a fix(portal) branch, portal files only, hermes/agent-workforce WIP untouched; (b) the 22 staged Store.Web files in ~/dev/code/.wt-crew774-store onto prospector PR 808's branch
 🔴 Blocked: Kimi lane waits on the founder re-setting the two seed keys and saying go
 ⚪ Pending: both PRs to green, merge on his ship word; claude-guards 240 merge word
 🔧 TOUCHES: new idp worktree only (no writes to ~/dev/code/idp working tree); ~/dev/code/.wt-crew774-store commit+push on feat/mumchimp-oneshot-rebuild
@@ -1555,7 +1555,7 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 🟢 Done: none merged
 ⚪ Pending: founder pick — land the one-column Today layout; live catalogue is still the old page
 🔧 TOUCHES: backstage/packages/app (homeLayout, DoorGrid, styles.css), tests/test_crew612_portal_doors_are_real_and_distinct.py
-🔀 OVERLAP: dirty idp checkout (hermes/infra-crew WIP on feat/mumchimp-oneshot-rebuild)
+🔀 OVERLAP: dirty idp checkout (hermes/agent-workforce WIP on feat/mumchimp-oneshot-rebuild)
 📎 FACTS: none
 📍 State: backstage/packages/app/src/modules/home/homeLayout.tsx (uncommitted)
 
@@ -1571,7 +1571,7 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 
 
 ## 2026-09-03T11:20:32Z · session a14fc078 · lane .wt-reports
-🟢 Done: founder asked "is it live" — measured: superset login live and proven (11:0xZ probe stands); Redis NOT live — the moment 1244 hit main, Kyverno's require-availability refused the one-replica litellm-cache at admission and wedged the llm kustomization (healing, hindsight, infra-crew waiting) — the identical incident that reverted idp#1182. The planned-but-never-built remedy is now built: PolicyException litellm-cache-one-replica (ns kyverno, scoped to one Deployment by name, both replica rules) in platform/edge beside the estate's ten existing exceptions, pushed as fix/litellm-cache-policy-exception 4edebb76, PR opening now
+🟢 Done: founder asked "is it live" — measured: superset login live and proven (11:0xZ probe stands); Redis NOT live — the moment 1244 hit main, Kyverno's require-availability refused the one-replica litellm-cache at admission and wedged the llm kustomization (healing, hindsight, agent-workforce waiting) — the identical incident that reverted idp#1182. The planned-but-never-built remedy is now built: PolicyException litellm-cache-one-replica (ns kyverno, scoped to one Deployment by name, both replica rules) in platform/edge beside the estate's ten existing exceptions, pushed as fix/litellm-cache-policy-exception 4edebb76, PR opening now
 🟡 Active: watching the exception PR's checks; merge over the proven REST road on the standing "need everyting shipped" word, then verify llm reconciles + cache pod Running + per-worker banner gone from litellm logs
 🔴 Blocked: none
 ⚪ Pending: after merge: kill watcher bvfnkws0w once cache pod confirmed; reply to founder with live/not-live per surface
@@ -1626,7 +1626,7 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 
 
 ## 2026-09-03T11:51:06Z · session a14fc078 · lane .wt-reports
-🟢 Done: REDIS IS LIVE, proven two angles at 11:4xZ: the "per worker without Redis" banner is GONE from both fresh router pods (0 matches; both rolled at 11:38Z on the new config) and the cache answers — litellm-cache pod Running, redis log "Ready to accept connections tcp", live Service endpoint on 6379, zero redis errors in router logs. llm kustomization Ready=True at main cacd383e; healing/hindsight/infra-crew unblocked with it. LAW 48 catch while verifying: spend digest (idp#1117) has failed EVERY run since 09-02 — init ran pip install into root-owned /usr/local/lib as uid 10001 with stderr swallowed and no set -e; init read green, digest died ModuleNotFoundError (silent-green class). Fixed: --target into the writable emptyDir, loud output, set -e + incident test (2 passed), pushed acfa9c8e, PR opening
+🟢 Done: REDIS IS LIVE, proven two angles at 11:4xZ: the "per worker without Redis" banner is GONE from both fresh router pods (0 matches; both rolled at 11:38Z on the new config) and the cache answers — litellm-cache pod Running, redis log "Ready to accept connections tcp", live Service endpoint on 6379, zero redis errors in router logs. llm kustomization Ready=True at main cacd383e; healing/hindsight/agent-workforce unblocked with it. LAW 48 catch while verifying: spend digest (idp#1117) has failed EVERY run since 09-02 — init ran pip install into root-owned /usr/local/lib as uid 10001 with stderr swallowed and no set -e; init read green, digest died ModuleNotFoundError (silent-green class). Fixed: --target into the writable emptyDir, loud output, set -e + incident test (2 passed), pushed acfa9c8e, PR opening
 🟡 Active: watching the spend-digest PR to green then REST-merge on the standing shipped word
 🔴 Blocked: none
 ⚪ Pending: lead not touched: platform/state/rotation-canary.yaml:86 uploads its drill receipt with >/dev/null || true then touches ok — receipt can silently never land; needs grading before edit
@@ -2794,9 +2794,9 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 ## 2026-09-04T14:32:03Z · session 85f840c5 · lane idp
 🔴 Blocked: none
 🟡 Active: idp#1491 — the identity and secrets review, and the executable spec for one-shot vendor-key activation
-🟢 Done: measured the front door end to end and found four gaps; fixed one in the same pass — infra-crew held the router's MASTER key and now takes a lane-scoped virtual key
+🟢 Done: measured the front door end to end and found four gaps; fixed one in the same pass — agent-workforce held the router's MASTER key and now takes a lane-scoped virtual key
 ⚪ Pending: deepseek builds from docs/specs/vendor-key-activation.md; the flat-authorisation gap (oauth2-proxy allowed_groups) is separate work
-🔧 TOUCHES: idp docs/reference/identity-and-secrets-review.md, docs/specs/vendor-key-activation.md, bin/idp-estate-seed, platform/infra-crew/external-secret.yaml
+🔧 TOUCHES: idp docs/reference/identity-and-secrets-review.md, docs/specs/vendor-key-activation.md, bin/idp-estate-seed, platform/agent-workforce/external-secret.yaml
 🔀 OVERLAP: none seen; session 5f6f4e72 is on research-engine and prospector
 📎 FACTS: catalogue/auth/hc all 302 to the OCI identity domain at 14:22Z, llm answers 200 as a machine door; SPIRE runs with no SVID consumer; ADR 0013 customer identity is planned/off
 📍 State: https://github.com/chidionyema/idp/pull/1491
@@ -2809,7 +2809,7 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 ⚪ Pending: whether the hand-rolled worker inside the engine is replaced by GPT Researcher (his own ruling, crew#701, still at zero code)
 🔧 TOUCHES: idp platform/research-engine/{pull-secret,kustomization,cronjob}.yaml; ~/.claude/scripts/rule-guard.py
 🔀 OVERLAP: none seen; session 85f840c5 is paused on the credential path
-📎 FACTS: research ns holds research-db and research-router ExternalSecrets, both SecretSynced; no ghcr-pull, unlike dagster/infra-crew/mcp/temporal
+📎 FACTS: research ns holds research-db and research-router ExternalSecrets, both SecretSynced; no ghcr-pull, unlike dagster/agent-workforce/mcp/temporal
 📍 State: https://github.com/chidionyema/idp/pull/1494
 
 
@@ -2864,7 +2864,7 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 ⚪ Pending: arm auto-merge on #1505 once #1506 lands; crew#832 CP3-CP7
 🔧 TOUCHES: idp platform/warden/prove.py, tests/test_warden_prove.py, platform/vendors/consoles.yaml, bin/idp-ci, bin/idp-estate-seed, docs/reference/policy/root-trust.md
 🔀 OVERLAP: none seen; session 5f6f4e72 is on research-engine and prospector
-📎 FACTS: 14 passed locally; root-trust now PASS (54 entries, 53 rows, MEETS 50); the infra-crew router key had no ROUTER_PLAN line, so nothing ever minted it; cp1/cp2/cp3 rungs ran files #1451 deleted
+📎 FACTS: 14 passed locally; root-trust now PASS (54 entries, 53 rows, MEETS 50); the agent-workforce router key had no ROUTER_PLAN line, so nothing ever minted it; cp1/cp2/cp3 rungs ran files #1451 deleted
 📍 State: https://github.com/chidionyema/idp/pull/1506
 
 
@@ -3106,7 +3106,7 @@ One handoff per session per 30 minutes (R33). Newest at the bottom. Written by `
 ⚪ Pending: backstage catalogue and alerts-github still under diagnosis; the register lands as one table with every capability marked running, suspended, built-not-deployed, referenced or orphaned
 🔧 TOUCHES: idp fix/ns-fence-missing-namespace, feat/crew839-calico-cutover, crew#840
 🔀 OVERLAP: session 5f6f4e72 owns prospector and estate-db; deepseek owns crew#819 and crew#838
-📎 FACTS: alerts-github has been Progressing 8 days on main@190b3644 and alone blocks drills, hermes-agent, infra-crew and mcp; backstage catalogue has been HealthCheckFailed 10 days while the old ReplicaSet serves; founder-blocker.py line 12 puts the approval timer in the session's own context while Temporal has served 8 days unused
+📎 FACTS: alerts-github has been Progressing 8 days on main@190b3644 and alone blocks drills, hermes-agent, agent-workforce and mcp; backstage catalogue has been HealthCheckFailed 10 days while the old ReplicaSet serves; founder-blocker.py line 12 puts the approval timer in the session's own context while Temporal has served 8 days unused
 📍 State: https://github.com/chidionyema/crew/issues/840
 
 

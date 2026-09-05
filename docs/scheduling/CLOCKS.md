@@ -79,7 +79,7 @@ Regenerate with `bin/estate-clocks`; the test tests/test_clocks_table_matches_so
 | `spiffe-proof` | cluster · backstage | */15 * * * * | `platform/spire/proof-cronjob.yaml` | A workload that holds an SVID, on the cluster, every 15 minutes, with no hand. |
 | `drill-dispatcher` | cluster · flux-system | 3,18,33,48 * * * * | `platform/drills/drill-dispatcher.yaml` | The hourly drills run on the estate's clock, not GitHub's. |
 | `front-door-heartbeat` | cluster · identity | */5 * * * * | `platform/identity/front-door-heartbeat.yaml` | The front door's pulse, on the estate's own clock. |
-| `infra-crew` | cluster · infra-crew | */15 * * * * | `platform/infra-crew/cronjob.yaml` | The crew's identity in the cluster is a name and nothing else. No Role, no RoleBinding, no |
+| `agent-workforce` | cluster · agent-workforce | */15 * * * * | `platform/agent-workforce/cronjob.yaml` | The crew's identity in the cluster is a name and nothing else. No Role, no RoleBinding, no |
 | `spend-digest` | cluster · llm | 0 * * * * | `platform/llm/spend-breaker-digest.yaml` | Spend velocity circuit breaker and hourly digest |
 | `spend-velocity-check` | cluster · llm | */5 * * * * | `platform/llm/spend-breaker-digest.yaml` | Spend velocity circuit breaker and hourly digest |
 | `science-facts` | cluster · observability | 7 * * * * | `platform/science/science-facts.yaml` | The science collector, `science-collect`, on the Mac reads 41 stores, 31 of them |

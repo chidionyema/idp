@@ -997,13 +997,13 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: layer-infra-crew
+  name: layer-agent-workforce
   title: 'Infrastructure crew'
   description: 'The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.'
   annotations:
-    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=infra-crew'
-    estate/flux-kustomization: 'infra-crew'
-    estate/path: './platform/infra-crew'
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=agent-workforce'
+    estate/flux-kustomization: 'agent-workforce'
+    estate/path: './platform/agent-workforce'
     estate/cluster: 'oke'
   tags: [platform, agents]
   links:

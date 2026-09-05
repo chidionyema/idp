@@ -104,7 +104,7 @@ registering every arrival as an administrator.
 
 ### 2. One workload holds the router's root credential
 
-`platform/infra-crew/external-secret.yaml` reads `LITELLM_API_KEY` from
+`platform/agent-workforce/external-secret.yaml` reads `LITELLM_API_KEY` from
 `{ key: litellm-upstream, property: LITELLM_MASTER_KEY }`. That is not a per-consumer key; it is
 the router's master key, which can mint keys, read every consumer's spend and change the model
 list. Its own comment says so and parks the fix.

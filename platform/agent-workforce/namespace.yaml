@@ -1,4 +1,4 @@
-# The infrastructure crew (crew#729 step 3): a crewAI workload that takes a `lane:infra` board
+# The agent workforce (crew#729 step 3): a crewAI workload that takes a queued-lane board
 # ticket to a plan comment and a pull request, and nothing further. It has no hand on the cluster
 # (no RBAC, no kube path, no deploy tool); the founder merges and deploys. The workload manifests
 # copy platform/mcp and platform/hermes-agent: restricted pod security, secrets as files, every
@@ -10,7 +10,7 @@ metadata:
     # Never garbage-collected by Flux: a namespace moved between Kustomization rows or
     # dropped from git stays, with everything in it (portal 404, 2026-08-29 01:05Z, idp#648).
     kustomize.toolkit.fluxcd.io/prune: disabled
-  name: infra-crew
+  name: agent-workforce
   labels:
     app.kubernetes.io/part-of: idp
     pod-security.kubernetes.io/enforce: restricted

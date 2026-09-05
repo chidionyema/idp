@@ -86,7 +86,7 @@ ROUTER_PLAN=$(cat <<EOF
 hindsight         HINDSIGHT_API_LLM_API_KEY  minimax
 hermes-agent-env  LITELLM_API_KEY            kimi,minimax,deepseek
 otto-golden       LITELLM_API_KEY            kimi,minimax,deepseek
-infra-crew        LITELLM_API_KEY            kimi,minimax,deepseek
+agent-workforce   LITELLM_API_KEY            kimi,minimax,deepseek
 EOF
 )
 

@@ -9,7 +9,7 @@
 # Sentinel or a managed Redis, not a second naive replica.
 #
 # Without this file the policy's dry-run refusal wedges the whole llm kustomization and every
-# dependent layer (healing, hindsight, infra-crew) -- the exact incident that forced the revert
+# dependent layer (healing, hindsight, agent-workforce) -- the exact incident that forced the revert
 # of the first landing (idp#1182 -> idp#1192, run 33239797940, 2026-09-03 01:59Z).
 #
 # Kyverno honours exceptions from namespace kyverno only (platform/kyverno/kyverno.yaml); this

@@ -1,10 +1,10 @@
-# The infrastructure crew on the cluster (crew#729 step 3). One CronJob, no RBAC, secrets as
+# The agent workforce on the cluster (crew#729 step 3). One CronJob, no RBAC, secrets as
 # files, the law files fetched at each start. The image tag is `:main`, published by the
-# chidionyema/infra-crew image workflow on every main commit; there is no image-automation
+# chidionyema/agent-workforce image workflow on every main commit; there is no image-automation
 # marker here because the tag does not change, the digest behind it does.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: infra-crew
+namespace: agent-workforce
 resources:
   - namespace.yaml
   - pull-secret.yaml

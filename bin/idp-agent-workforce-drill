@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""The infra-crew drill (crew#729 step 3): is the infrastructure crew taking its queue?
+"""The agent-workforce drill (crew#729 step 3): is the agent workforce taking its queue?
 
-    bin/idp-infra-crew-drill
+    bin/idp-agent-workforce-drill
 
 Reads two surfaces from outside the cluster, with no kube path and no laptop session token:
 
-  1. the board (GitHub issues of <owner>/crew carrying the crew's queue label), through `gh`
+  1. the board (GitHub issues of <owner>/crew in any of the crew's queued lanes), through `gh`
      with GH_TOKEN, an installation token of the estate's App;
   2. Langfuse's public API at https://langfuse.<zone>, with the project keys in
      LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY.
@@ -17,8 +17,8 @@ a drill that lost its evidence reports BLIND, never green (silent green is the d
 
 Everything the estate is allowed to name comes from clusters/oke/estate-config.yaml (LAW 46):
 ESTATE_GITHUB_OWNER for the board, ESTATE_ZONE for the Langfuse door. Overridable for tests and
-for a hosted Langfuse: INFRA_CREW_BOARD (owner/repo), INFRA_CREW_QUEUE_LABEL, LANGFUSE_HOST,
-INFRA_CREW_GRACE_MINUTES (default 60), INFRA_CREW_WINDOW_HOURS (default 24).
+for a hosted Langfuse: AGENT_WORKFORCE_BOARD (owner/repo), AGENT_WORKFORCE_QUEUE_LABEL, LANGFUSE_HOST,
+AGENT_WORKFORCE_GRACE_MINUTES (default 60), AGENT_WORKFORCE_WINDOW_HOURS (default 24).
 """
 
 from __future__ import annotations
@@ -41,12 +41,12 @@ IDP = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(IDP / "bin" / "lib"))
 from receipt_age import served_now  # noqa: E402 - path has to be set before the import
 
-CLAIM_MARK = "Optimised:"  # the plan comment's last line; the crew's own claim mark (src/infra_crew/main.py)
-TRACE_NAME = "infra-crew.run"  # the root span the crew opens on every worked ticket
+CLAIM_MARK = "Optimised:"  # the plan comment's last line; the crew's own claim mark (src/agent_workforce/main.py)
+TRACE_NAME = "agent-workforce.run"  # the root span the crew opens on every worked ticket
 
 
 def row(status: str, text: str) -> None:
-    print("%-6s %-11s %s" % (status, "infra-crew", text))
+    print("%-6s %-11s %s" % (status, "agent-workforce", text))
 
 
 def config(key: str) -> str | None:
@@ -105,6 +105,12 @@ def langfuse_traces(host: str, pk: str, sk: str, since: datetime) -> int | None:
     return len(data)
 
 
+# The lanes the workforce takes work from; the same default the image carries. A label the
+# board does not carry matches nothing, which is how the first deployment idled for a
+# fortnight without ever taking a ticket (crew#850 CP0).
+QUEUE_LABELS = "lane:platform,lane:agents,lane:observability,lane:security,lane:process,lane:dr"
+
+
 def main() -> int:
     now = served_now()
     if now is None:
@@ -113,11 +119,15 @@ def main() -> int:
             "GitHub did not answer `gh api -i rate_limit` with a Date header; no age can be measured",
         )
         return 2
-    grace = timedelta(minutes=float(os.environ.get("INFRA_CREW_GRACE_MINUTES", "60")))
-    window = timedelta(hours=float(os.environ.get("INFRA_CREW_WINDOW_HOURS", "24")))
-    label = os.environ.get("INFRA_CREW_QUEUE_LABEL", "lane:infra")
+    grace = timedelta(minutes=float(os.environ.get("AGENT_WORKFORCE_GRACE_MINUTES", "60")))
+    window = timedelta(hours=float(os.environ.get("AGENT_WORKFORCE_WINDOW_HOURS", "24")))
+    labels = [
+        name.strip()
+        for name in os.environ.get("AGENT_WORKFORCE_QUEUE_LABELS", QUEUE_LABELS).split(",")
+        if name.strip()
+    ]
     owner = config("ESTATE_GITHUB_OWNER")
-    board = os.environ.get("INFRA_CREW_BOARD") or (f"{owner}/crew" if owner else None)
+    board = os.environ.get("AGENT_WORKFORCE_BOARD") or (f"{owner}/crew" if owner else None)
     if not board:
         row(
             "BLIND",
@@ -134,17 +144,23 @@ def main() -> int:
     )
 
     since = now - window
-    q = urllib.parse.urlencode(
-        {"labels": label, "state": "all", "since": since.isoformat(), "per_page": 100}
-    )
-    issues = gh_json(f"repos/{board}/issues?{q}")
-    if issues is None:
-        row(
-            "BLIND",
-            f"cannot list {board} issues labelled {label} through gh (GH_TOKEN?)",
+    # GitHub's `labels` filter is an AND, so one call per lane and merge by issue number.
+    merged: dict[int, dict] = {}
+    for name in labels:
+        q = urllib.parse.urlencode(
+            {"labels": name, "state": "all", "since": since.isoformat(), "per_page": 100}
         )
-        return 2
-    issues = [i for i in issues if isinstance(i, dict) and "pull_request" not in i]
+        answer = gh_json(f"repos/{board}/issues?{q}")
+        if answer is None:
+            row(
+                "BLIND",
+                f"cannot list {board} issues labelled {name} through gh (GH_TOKEN?)",
+            )
+            return 2
+        for issue in answer:
+            if isinstance(issue, dict) and "pull_request" not in issue:
+                merged.setdefault(int(issue["number"]), issue)
+    issues = list(merged.values())
 
     planned: list[tuple[int, datetime]] = []
     waiting: list[tuple[int, float]] = []
@@ -179,10 +195,10 @@ def main() -> int:
     if not planned:
         # Nothing was queued past the grace period and nothing was worked: the queue is empty.
         # That is the state of the world, printed as such -- an empty queue is not a dead crew,
-        # and a dead crew shows up here the moment a ticket is seeded (docs/runbooks/infra-crew.md).
+        # and a dead crew shows up here the moment a ticket is seeded (docs/runbooks/agent-workforce.md).
         row(
             "ok",
-            f"queue empty: no {label} ticket on {board} waited past {grace.total_seconds() / 60:.0f} min and none was planned in the last {window.total_seconds() / 3600:.0f}h",
+            f"queue empty: no queued ticket on {board} waited past {grace.total_seconds() / 60:.0f} min and none was planned in the last {window.total_seconds() / 3600:.0f}h",
         )
         return 0
 

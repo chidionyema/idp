@@ -94,7 +94,7 @@ flows:
   hermes-agent:
     egress: [hindsight, observability]
     ingress_from: [edge]
-  infra-crew:
+  agent-workforce:
     egress: [observability, llm]
   keda:
     egress: [observability]
@@ -103,7 +103,7 @@ flows:
     # The router's whole job is calling a model vendor's API; declared here so the fence
     # still says yes on the day this cluster runs a CNI that enforces it.
     egress_internet: [443]
-    ingress_from: [edge, healing, infra-crew, mcp]
+    ingress_from: [edge, healing, agent-workforce, mcp]
   mcp:
     egress: [observability, hindsight]
     ingress_from: [edge]
