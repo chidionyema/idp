@@ -122,10 +122,18 @@ spec:
             # on 2026-09-04 against image main-68-ce246e2. Bulk is not on the Telegram path
             # (default_lane is judgment), so it is the lane that moves.
             # gemini, not deepseek, since 2026-09-04: the deepseek lane answers 401 at the vendor
-            # and its row has left the rendered config, so bulk pointed at nothing. `fast` is a
-            # different model family from minimax, which is what the refusal above is about.
+            # and its row has left the rendered config, so bulk pointed at nothing.
+            #
+            # The value here was `fast` until 2026-09-05, on the assumption that a router alias
+            # gets a family the same way a vendor identifier does. It does not:
+            # otto/router/config.py derives the family from _DEFAULT_MODEL_FAMILIES, a literal
+            # map of vendor identifiers plus `minimax`, `gemini`, `claude` and `deepseek`, and
+            # refuses anything absent from it -- "policy defect: model 'fast' is in no family
+            # mapping", which is what both doors logged on every message. `gemini` is in the map,
+            # its family (google) differs from judgment's minimax, and it is the same model on
+            # the router that `fast` names (gemini/gemini-2.5-flash, platform/llm/config.yaml).
             - name: OTTO_ROUTER_LANE_BULK_MODEL
-              value: fast
+              value: gemini
             # The estate's memory (platform/hindsight), one bank for every surface, so a
             # person remembered from Telegram is remembered on the next channel too.
             # otto/memory/hindsight.py: unset is a no-op, unreachable never costs an answer.
