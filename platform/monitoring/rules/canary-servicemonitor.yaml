@@ -1,0 +1,21 @@
+# crew#656 CP4: the one Prometheus scrapes the canary's gauge (platform/staging/canary/gauge.yaml)
+# so `canary_reported_state{service="canary"}` is a real metric a session can query and be lied
+# to by. No PrometheusRule references it and none may (tests/test_verification_canary_feature.py):
+# the canary never pages anyone.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: canary-gauge
+  namespace: monitoring
+  labels:
+    idp.platform/canary: "true"
+spec:
+  namespaceSelector:
+    matchNames: [staging]
+  selector:
+    matchLabels:
+      app: canary-gauge
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 60s

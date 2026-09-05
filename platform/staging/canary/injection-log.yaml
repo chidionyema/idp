@@ -1,0 +1,16 @@
+# The injection log: one JSON line per window, written by the scheduler BEFORE the window opens
+# (true_state, reported_state, lie). Flux creates it empty once and never touches it again
+# (ssa: IfNotPresent); bin/idp-canary-log copies it into the append-only table and the auditor
+# in claude-guards (canary-auditor.py) reads it from there.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: canary-injection-log
+  namespace: staging
+  labels:
+    idp.platform/canary: "true"
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: IfNotPresent
+    kustomize.toolkit.fluxcd.io/prune: disabled   # the ground truth survives the row being dropped
+data:
+  log.jsonl: ""
