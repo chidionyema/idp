@@ -31,7 +31,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: cyrus
-          image: ghcr.io/chidionyema/cyrus:main
+          image: ghcr.io/chidionyema/cyrus
           env:
             # GitHub token from ExternalSecret
             - name: GH_TOKEN_FILE
