@@ -46,15 +46,3 @@ spec:
       - resources:
           kinds: [Service]
           namespaces: [demo-sandbox]
-      # crew#656 (2026-09-05): the verification canary's gauge Service exists so the one
-      # Prometheus can scrape `canary_reported_state` and be caught lying about it. It is not a
-      # door a person opens -- the canary carries no route, no alert rule and deliberately no
-      # catalogue entity (platform/staging/canary/canary.yaml), because a canary in the portal
-      # is an interface someone would try to use. Matched by the label every canary object
-      # carries, so a second one needs no second entry here.
-      - resources:
-          kinds: [Service]
-          namespaces: [staging]
-          selector:
-            matchLabels:
-              idp.platform/canary: "true"
