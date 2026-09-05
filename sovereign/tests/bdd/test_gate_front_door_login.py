@@ -345,6 +345,26 @@ def _oauth2_proxy_in_front(state: dict) -> None:
                 f"{p}: annotated github-hmac-signature but receiver.yaml verifies no secret"
             )
             continue
+        if auth == "webhook-hmac-signature":
+            # Cyrus's delivery door (crew#834 CP3). Linear and GitHub both POST webhook
+            # deliveries signed with an HMAC, and neither delivery fleet can follow an OAuth
+            # redirect -- so the signature IS the authentication. As everywhere else in this
+            # file the annotation is a label and a label is not a proof, so two things are
+            # checked: the route reaches /webhook and nothing else, and the directory ships an
+            # ExternalSecret that actually pulls the signing secrets it verifies against.
+            paths = [
+                m.get("path", {})
+                for r in d["spec"]["rules"]
+                for m in r.get("matches", [])
+            ]
+            assert paths and all(
+                x == {"type": "PathPrefix", "value": "/webhook"} for x in paths
+            ), f"{p}: webhook-hmac-signature route exposes {paths}"
+            es = (p.parent / "external-secret.yaml").read_text()
+            assert "webhook-secret" in es or "webhook_secret" in es, (
+                f"{p}: annotated webhook-hmac-signature but external-secret.yaml pulls no signing secret"
+            )
+            continue
         assert auth == "bearer-master-key", (
             f"{p}: route {d['metadata']['name']} has no oauth2-proxy Middleware in front ({refs}) and no idp.estate/auth annotation"
         )

@@ -1,0 +1,13 @@
+# Cyrus agent orchestration (crew#834). The runtime that proves every engine works
+# and publishes metrics to the central collector.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cyrus
+resources:
+  - namespace.yaml
+  - pull-secret.yaml
+  - external-secret.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - httproute.yaml

@@ -1,0 +1,109 @@
+# Cyrus configuration (crew#834). Mounted as a ConfigMap, watched by Cyrus.
+# Engines: claude, codex, cursor, gemini, opencode. Claude on Max subscription;
+# OpenCode points at the estate router.
+# Transports: GitHub and Linear together (crew#834 CP3). Cyrus ships both, an issue can arrive
+# from either board, and neither is removed -- a capability the component already supports is
+# offered as a set of roads, not narrowed to one.
+# The agent holds no cluster verbs: it opens a pull request and Flux reconciles it. kubectl and
+# flux were in the first version of this file and are gone, because the estate is strictly GitOps.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cyrus-config
+  namespace: cyrus
+data:
+  config.json: |
+    {
+      "promptDefaults": {
+        "debugger": { "allowedTools": "readOnly" },
+        "builder": { "allowedTools": "safe" }
+      },
+      "repositories": [
+        {
+          "id": "idp",
+          "name": "idp",
+          "repositoryPath": "/repo/idp",
+          "baseBranch": "main",
+          "githubUrl": "https://github.com/chidionyema/idp",
+          "workspaceBaseDir": "/worktrees",
+          "isActive": true,
+          "allowedTools": [
+            "Read", "Edit", "Write", "Glob", "Grep",
+            "Bash(git:*)", "Bash(gh:*)", "Bash(pytest:*)", "Bash(ruff:*)",
+            "Task", "TaskCreate", "TaskUpdate", "TaskList"
+          ],
+          "routingLabels": ["claude", "codex", "cursor", "gemini", "opencode"],
+          "labelPrompts": {
+            "claude": {
+              "labels": ["claude"],
+              "engine": "claude"
+            },
+            "codex": {
+              "labels": ["codex"],
+              "engine": "codex"
+            },
+            "cursor": {
+              "labels": ["cursor"],
+              "engine": "cursor"
+            },
+            "gemini": {
+              "labels": ["gemini"],
+              "engine": "gemini"
+            },
+            "opencode": {
+              "labels": ["opencode"],
+              "engine": "opencode",
+              "env": {
+                "OPENAI_API_KEY": "os.environ/OPENAI_API_KEY"
+              }
+            }
+          }
+        },
+        {
+          "id": "crew",
+          "name": "crew",
+          "repositoryPath": "/repo/crew",
+          "baseBranch": "main",
+          "githubUrl": "https://github.com/chidionyema/crew",
+          "workspaceBaseDir": "/worktrees",
+          "isActive": true,
+          "allowedTools": [
+            "Read", "Edit", "Write", "Glob", "Grep",
+            "Bash(git:*)", "Bash(gh:*)", "Bash(pytest:*)",
+            "Task", "TaskCreate", "TaskUpdate", "TaskList"
+          ],
+          "routingLabels": ["claude", "codex", "cursor", "gemini", "opencode"]
+        },
+        {
+          "id": "hermes-v2",
+          "name": "hermes-v2",
+          "repositoryPath": "/repo/hermes-v2",
+          "baseBranch": "main",
+          "githubUrl": "https://github.com/chidionyema/hermes-v2",
+          "workspaceBaseDir": "/worktrees",
+          "isActive": true,
+          "allowedTools": [
+            "Read", "Edit", "Write", "Glob", "Grep",
+            "Bash(git:*)", "Bash(gh:*)", "Bash(go:*)",
+            "Task", "TaskCreate", "TaskUpdate", "TaskList"
+          ],
+          "routingLabels": ["claude", "codex", "cursor", "gemini", "opencode"]
+        }
+      ],
+      "transports": {
+        "github": {
+          "enabled": true,
+          "webhookSecretFile": "/secrets/webhook/github-webhook-secret"
+        },
+        "linear": {
+          "enabled": true,
+          "webhookSecretFile": "/secrets/webhook/linear-webhook-secret",
+          "apiTokenFile": "/secrets/webhook/linear-api-token"
+        }
+      },
+      "sandbox": {
+        "enabled": false
+      },
+      "maxTurns": 50,
+      "maxSessionTurns": 100
+    }

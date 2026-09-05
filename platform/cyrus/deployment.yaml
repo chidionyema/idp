@@ -1,0 +1,148 @@
+# Cyrus agent orchestration deployment (crew#834).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cyrus
+  namespace: cyrus
+  labels:
+    app.kubernetes.io/name: cyrus
+    app.kubernetes.io/part-of: idp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cyrus
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cyrus
+        app.kubernetes.io/part-of: idp
+    spec:
+      serviceAccountName: cyrus
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cyrus
+          image: ghcr.io/chidionyema/cyrus:main
+          env:
+            # GitHub token from ExternalSecret
+            - name: GH_TOKEN_FILE
+              value: /secrets/github/token
+            # Claude runs on the Max subscription through `claude -p`. The estate holds no
+            # Anthropic API key, so none is set here and none is pulled from the vault.
+            - name: LINEAR_WEBHOOK_SECRET_FILE
+              value: /secrets/webhook/linear-webhook-secret
+            - name: LINEAR_API_TOKEN_FILE
+              value: /secrets/webhook/linear-api-token
+            - name: GITHUB_WEBHOOK_SECRET_FILE
+              value: /secrets/webhook/github-webhook-secret
+            # Cyrus configuration
+            - name: CYRUS_CONFIG_PATH
+              value: /config/config.json
+            - name: CYRUS_SERVER_PORT
+              value: "3456"
+            # The public URL Linear and GitHub deliver to. The zone is substituted by Flux from
+            # estate-config; a literal hostname here would be a hardcoded machine name (LAW 46).
+            - name: CYRUS_BASE_URL
+              value: "https://cyrus.${ESTATE_ZONE}"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: github-secret
+              mountPath: /secrets/github
+              readOnly: true
+            - name: webhook-secret
+              mountPath: /secrets/webhook
+              readOnly: true
+            - name: worktrees
+              mountPath: /worktrees
+            - name: repos
+              mountPath: /repo
+            - name: tmp
+              mountPath: /tmp
+            - name: home
+              mountPath: /home/node
+            - name: npm-cache
+              mountPath: /.npm
+          livenessProbe:
+            httpGet: { path: /health, port: 3456 }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /health, port: 3456 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: cyrus-config
+        - name: github-secret
+          secret:
+            secretName: cyrus-github
+        - name: webhook-secret
+          secret:
+            secretName: cyrus-webhook
+        - name: worktrees
+          emptyDir: {}
+        - name: repos
+          emptyDir: {}
+        # The root filesystem is read-only, so the three paths git, npm and the engine CLIs
+        # write to are explicit volumes rather than a writable image.
+        - name: tmp
+          emptyDir: {}
+        - name: home
+          emptyDir: {}
+        - name: npm-cache
+          emptyDir: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cyrus
+  namespace: cyrus
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cyrus
+  namespace: cyrus
+rules:
+  # Read-only: can list pods to check status, but nothing else
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cyrus
+  namespace: cyrus
+subjects:
+  - kind: ServiceAccount
+    name: cyrus
+    namespace: cyrus
+roleRef:
+  kind: Role
+  name: cyrus
+  apiGroup: rbac.authorization.k8s.io
