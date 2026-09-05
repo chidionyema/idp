@@ -100,6 +100,9 @@ spec:
             - name: estate
               mountPath: /estate
               readOnly: true
+            - name: feature-register
+              mountPath: /app/feature-register
+              readOnly: true
             - name: secrets
               mountPath: /run/secrets/backstage
               readOnly: true
@@ -109,6 +112,9 @@ spec:
         - name: estate
           configMap:
             name: estate-catalog
+        - name: feature-register
+          configMap:
+            name: feature-register
         - name: secrets
           secret:
             secretName: backstage-env   # POSTGRES_PASSWORD; no-optional-secret-references enforces optional: false
