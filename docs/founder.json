@@ -1,15 +1,6 @@
 {
- "receipts": [
-  {
-   "merged_at": "2026-09-04T14:06:13Z",
-   "number": 3,
-   "repo": "chidionyema/research-engine",
-   "title": "feat(engine): a lane is a file, which is what \u00a78 always said",
-   "url": "https://github.com/chidionyema/research-engine/pull/3",
-   "use": "`python -m engine.cli lanes` lists them; `python -m engine.cli run --profile market-demand --subject \"council planning data\"` runs one."
-  }
- ],
- "taken": "2026-09-05T14:05Z",
+ "receipts": [],
+ "taken": "2026-09-05T16:35Z",
  "waiting": [
   {
    "cp": "CP1",
