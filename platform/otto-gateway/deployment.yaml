@@ -214,11 +214,16 @@ spec:
             # gemini, since 2026-09-05 13:30Z. The two readings above that ruled it out ("not served",
             # "empty credit") were the otto router key's allowlist (kimi, minimax, deepseek) refusing
             # it with 403, not the router. Measured through the router with its own key: gemini, fast,
-            # minimax and embed all answer. deepseek is no alias there at all -- its row left
-            # platform/llm/config.yaml on 2026-09-04 (vendor 401) and the console row is
-            # deepseek-v4-flash -- so probe otto-answer-probe-29810160 read 400 on bulk and verify.
-            # The key rows in bin/idp-estate-seed now allow minimax, gemini and embed.
-            - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "gemini" }
+            # minimax and embed all answer. deepseek had no alias there -- its row left
+            # platform/llm/config.yaml on 2026-09-04 (vendor 401) -- so probe
+            # otto-answer-probe-29810160 read 400 on bulk and verify.
+            # bulk is deepseek again since 2026-09-05 13:50Z: the founder re-added the DeepSeek
+            # key in the console (the row is console-owned, #1632), its litellm-db row is named
+            # `deepseek`, the alias every chain in platform/vendors/consoles.yaml uses, and it
+            # answers through the router on both replicas. verify stays on gemini, a family
+            # apart from the minimax judgment lane. The key rows in bin/idp-estate-seed allow
+            # minimax, gemini, deepseek and embed.
+            - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "deepseek" }
             - { name: OTTO_ROUTER_LANE_VERIFY_MODEL, value: "gemini" }
             - { name: PYTHONUNBUFFERED, value: "1" }
           ports:

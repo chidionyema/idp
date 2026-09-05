@@ -145,7 +145,7 @@ spec:
               # deepseek-v4-flash -- so probe otto-answer-probe-29810160 read 400 on bulk and verify.
               # The key rows in bin/idp-estate-seed now allow minimax, gemini and embed.
             - name: OTTO_ROUTER_LANE_BULK_MODEL
-              value: gemini
+              value: deepseek
             # The estate's memory (platform/hindsight), one bank for every surface, so a
             # person remembered from Telegram is remembered on the next channel too.
             # otto/memory/hindsight.py: unset is a no-op, unreachable never costs an answer.
