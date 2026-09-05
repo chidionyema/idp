@@ -58,6 +58,7 @@ def _dispatch(state: dict) -> None:
         "mcp-gateway",
         "hindsight",
         "k8sgpt",
+        "holmes",
         "tailscale-operator",
         "laptop",
         "hermes",

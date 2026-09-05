@@ -16,4 +16,4 @@ spec:
       - resources:
           kinds: [Deployment, Pod, ReplicaSet]
           namespaces: [robusta]
-          names: [robusta-runner*]
+          names: [robusta-runner*, robusta-holmes*]
