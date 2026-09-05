@@ -53,7 +53,9 @@ python3 bin/idp-ns-fence-gen
 
 It writes every namespace's fence in one pass and is idempotent: a second run
 over unchanged input produces byte-identical files. The quota and the LimitRange
-land in `platform/ns-fences/` and are applied by Flux. The NetworkPolicies land
-in `platform/ns-fences/network/` and are deliberately not applied; that
-directory's README says what has to be true about the cluster's CNI before they
-are.
+land in `platform/ns-fences/` and the NetworkPolicies land in
+`platform/ns-fences/network/`. All four kinds are applied by the one `ns-fences`
+Flux row: the top-level kustomization lists `network` as a resource. The policies
+were held back while flannel was the datapath and read no policy object; Calico
+has been the enforcement layer since crew#839, and that directory's README says
+how to read a denial when one of them stops a flow the scan never saw.
