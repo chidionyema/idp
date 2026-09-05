@@ -1,0 +1,29 @@
+# Intended violation (decision 0021 rule 1, the change-2 bad fixture): ONE webhook secret is
+# shared across the TWO planes -- customer-zero owes the same `vault://otto-customer/webhook_secret`
+# as the estate's operator alerts row. The gate must refuse a credential that appears under two
+# different tenant_id values. Rule 3 must not mask it: the estate row here correctly carries the
+# alerts-bot: prefix and the customer row a foreign external id, so the ONLY finding is the shared
+# secret, and it reads cleanly instead of being buried under a rule-3 echo.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otto-gateway-binding-seed
+  namespace: otto-gateway
+data:
+  seed.sql: |
+    INSERT INTO channel_binding
+        (tenant_id, channel, external_id, secret_ref, token_fingerprint, status,
+         outbound_secret_ref, principal_allowlist)
+    VALUES
+        -- customer zero: owns its own chat, but the secret_ref below is the OPERATOR's.
+        ('customer-zero', 'telegram', 'customer-chat',
+         'vault://otto-customer/webhook_secret', :'fingerprint', 'active',
+         'vault://otto-customer/token',
+         jsonb_build_object('customer-chat', 'founder')),
+        -- estate: the alerts bot, its own secret.
+        ('estate', 'telegram', 'alerts-bot:' || :'chat_id',
+         'vault://otto-customer/webhook_secret', :'fingerprint_alerts', 'active',
+         'vault://otto-customer/token',
+         jsonb_build_object(:'chat_id', 'founder'))
+    ON CONFLICT (channel, external_id) DO UPDATE SET
+        tenant_id = excluded.tenant_id;
