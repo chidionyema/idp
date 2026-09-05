@@ -58,12 +58,20 @@ spec:
                   # and until now none of them said which one was talking. Every message from this
                   # receiver opens with the sender and the state, so the founder can tell at a
                   # glance who is speaking and whether it is starting or ending.
+                  #
+                  # The layout is built for a group, not for one alert, because the groups here are
+                  # large: K8sGPTFinding carries no namespace label, so every open K8sGPT finding
+                  # on the cluster arrives in ONE message -- 20 of them on 2026-09-05. One line per
+                  # finding and the shared explanation printed once at the end, rather than the
+                  # same paragraph repeated twenty times. group_by is [alertname, namespace], so
+                  # every alert in a group comes from one rule and CommonAnnotations.description is
+                  # that rule's description; `with` prints nothing when a rule has none.
                   message: |-
                     {{ "{{" }} if eq .Status "firing" {{ "}}" }}PROMETHEUS - FIRING{{ "{{" }} else {{ "}}" }}PROMETHEUS - RESOLVED{{ "{{" }} end {{ "}}" }} - {{ "{{" }} .CommonLabels.severity {{ "}}" }}
-                    {{ "{{" }} .CommonLabels.alertname {{ "}}" }} in {{ "{{" }} .CommonLabels.namespace {{ "}}" }}
-                    {{ "{{" }} range .Alerts {{ "}}" }}{{ "{{" }} .Annotations.summary {{ "}}" }}
-                    {{ "{{" }} .Annotations.description {{ "}}" }}
-                    {{ "{{" }} end {{ "}}" }}
+                    {{ "{{" }} .CommonLabels.alertname {{ "}}" }}{{ "{{" }} with .CommonLabels.namespace {{ "}}" }} in {{ "{{" }} . {{ "}}" }}{{ "{{" }} end {{ "}}" }}{{ "{{" }} if gt (len .Alerts) 1 {{ "}}" }} ({{ "{{" }} len .Alerts {{ "}}" }}){{ "{{" }} end {{ "}}" }}
+                    {{ "{{" }} range .Alerts {{ "}}" }}- {{ "{{" }} .Annotations.summary {{ "}}" }}
+                    {{ "{{" }} end {{ "}}" }}{{ "{{" }} with .CommonAnnotations.description {{ "}}" }}
+                    {{ "{{" }} . {{ "}}" }}{{ "{{" }} end {{ "}}" }}
             - name: telegram-p1-page
               telegram_configs:
                 - bot_token: "{{ .token }}"
