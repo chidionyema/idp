@@ -72,7 +72,7 @@ vendors:
         # DeepSeek answered 401 from inside the router pod on 2026-09-04 21:5xZ (the key is revoked
         # at the vendor; prospector's byte-identical copy fails the same way), which is why Gemini
         # sits in this chain: a hop that always refuses is latency, not redundancy.
-        - deepseek: [minimax, gemini]
+        - deepseek: [gemini, minimax]
   minimax:
     kind: secret
     secret: SEED_MINIMAX_API_KEY

@@ -223,7 +223,7 @@ spec:
             # answers through the router on both replicas. verify stays on gemini, a family
             # apart from the minimax judgment lane. The key rows in bin/idp-estate-seed allow
             # minimax, gemini, deepseek and embed.
-            - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "deepseek" }
+            - { name: OTTO_ROUTER_LANE_BULK_MODEL, value: "gemini" }
             - { name: OTTO_ROUTER_LANE_VERIFY_MODEL, value: "gemini" }
             - { name: PYTHONUNBUFFERED, value: "1" }
           ports:

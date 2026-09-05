@@ -137,7 +137,7 @@ router_settings:
     # DeepSeek answered 401 from inside the router pod on 2026-09-04 21:5xZ (the key is revoked
     # at the vendor; prospector's byte-identical copy fails the same way), which is why Gemini
     # sits in this chain: a hop that always refuses is latency, not redundancy.
-    - deepseek: [minimax, gemini]
+    - deepseek: [gemini, minimax]
 
     # Measured from inside the router pod 2026-09-04 21:5xZ: MiniMax answers 401 `invalid api
     # key (2049)` on https://api.minimax.io/v1/chat/completions (request id

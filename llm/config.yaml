@@ -143,16 +143,16 @@ router_settings:
     # Those two were each other's only fallback, so a cheap turn walked minimax -> deepseek
     # and died with nothing to answer the founder's Telegram message. Gemini answers, so it
     # goes ahead of the dead pair rather than after it.
-    - minimax: [deepseek, gemini]
+    - minimax: [gemini, deepseek]
 
     # Gemini heads the neutral chains for the reason recorded on the minimax and deepseek
     # blocks: on 2026-09-04 it was the only lane of the three that answered. The cheap model
     # is still the last hop of every chain it does not head, which is what sovereign cp30
     # grades and the `[routing] cheap` line of AGENTS.md declares; which lane is `cheap` is
     # the founder's call, not this file's, so it is untouched.
-    - gemini: [deepseek, minimax]
-    - default: [deepseek, gemini, minimax]
-    - fast: [deepseek, gemini, minimax]
+    - gemini: [minimax, deepseek]
+    - default: [gemini, minimax, deepseek]
+    - fast: [gemini, minimax, deepseek]
   # Alias, not a model row (R75, founder 2026-09-03). The Kimi lane is console-owned: the
   # founder brought the key through the LiteLLM console on 2026-09-04 and it is stored
   # encrypted in litellm-db under the vendor's own name, `moonshot/kimi-k3`. Rendering a
