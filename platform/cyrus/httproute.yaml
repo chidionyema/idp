@@ -1,0 +1,29 @@
+# The one path Linear and GitHub POST webhook deliveries to (crew#834 CP3).
+# No oauth2-proxy on purpose: the caller is Linear's and GitHub's delivery fleet, not a browser,
+# and neither can follow an OAuth redirect. The door is not open though -- Cyrus verifies the
+# HMAC signature on every delivery (Linear's `linear-signature`, GitHub's `X-Hub-Signature-256`)
+# against the secrets in external-secret.yaml, and drops anything that does not match. The route
+# therefore exposes exactly /webhook and nothing else.
+# sovereign/tests/bdd/test_gate_front_door_login.py holds the proof behind the annotation.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: cyrus
+  namespace: cyrus
+  labels:
+    app.kubernetes.io/part-of: idp
+    backstage.io/kubernetes-id: layer-cyrus
+  annotations:
+    idp.estate/auth: webhook-hmac-signature
+spec:
+  parentRefs:
+    - name: gateway
+      namespace: edge
+  hostnames:
+    - "cyrus.${ESTATE_ZONE}"
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /webhook }
+      backendRefs:
+        - name: cyrus
+          port: 3456

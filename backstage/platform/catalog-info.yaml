@@ -1810,3 +1810,26 @@ spec:
   definition: |
     # Not published. weave-gitops answers at catalogue.${ESTATE_ZONE}; this entity
     # exists so the catalogue records that the interface is reachable and who owns it.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-cyrus
+  title: 'Agent execution'
+  description: 'Takes an issue from either board -- GitHub or Linear -- and works it with whichever engine the label names: Claude, Codex, Cursor, Gemini or OpenCode. It holds no hand on the cluster; its output is a pull request and the founder merges it.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=cyrus'
+    estate/flux-kustomization: 'cyrus'
+    estate/path: './platform/cyrus'
+    estate/cluster: 'oke'
+  tags: [platform, agents]
+  links:
+    - url: https://signoz.${ESTATE_ZONE}
+      title: 'Live logs and metrics'
+    - url: https://langfuse.${ESTATE_ZONE}
+      title: 'Model traces'
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: agents
