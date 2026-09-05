@@ -103,7 +103,7 @@ flows:
     # The router's whole job is calling a model vendor's API; declared here so the fence
     # still says yes on the day this cluster runs a CNI that enforces it.
     egress_internet: [443]
-    ingress_from: [edge, healing, agent-workforce, mcp]
+    ingress_from: [edge, healing, agent-workforce, mcp, hindsight]
   mcp:
     egress: [observability, hindsight]
     ingress_from: [edge]
@@ -133,6 +133,13 @@ flows:
     # Every surface that remembers: both Otto doors write from the answering lane
     # (hermes-v2 otto/memory/hindsight.py) and estate-mcp serves the same bank to crew, the
     # agent classes and k8sgpt over the remember/recall tools.
+    #
+    # The egress side was missing until 2026-09-05, while estate-db.ingress_from below already
+    # named hindsight -- one direction of the same conversation was declared and the other was
+    # not, so a default-deny would have cut the memory service off from its own database.
+    # estate-db is estate-rw.estate-db.svc.cluster.local:5432 (platform/hindsight/hindsight.yaml);
+    # llm is the estate router it calls for HINDSIGHT_API_LLM_MODEL.
+    egress: [estate-db, llm, observability]
     ingress_from: [hermes-agent, edge, otto-gateway, otto-golden, mcp]
   robusta:
     ingress_from: [monitoring]

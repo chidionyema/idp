@@ -11,9 +11,11 @@ This writes all four for every namespace the estate declares, from one input fil
 is idempotent: a second run over unchanged input rewrites byte-identical files. There is no
 per-namespace hand-editing and no per-namespace exception that is not written down in the input.
 
-The quota and the LimitRange land in platform/ns-fences/ and are applied. The NetworkPolicies land
-in platform/ns-fences/network/ and are NOT applied, because this cluster runs flannel, which does
-not implement NetworkPolicy; see that directory's README.
+The quota and the LimitRange land in platform/ns-fences/; the NetworkPolicies land in
+platform/ns-fences/network/. Both are applied: the top-level kustomization lists `network` as a
+resource, so the one Flux row at clusters/oke/platform.yaml carries all four kinds. They were held
+back while flannel was the datapath and read no policy object; Calico has been the enforcement
+layer since crew#839 (platform/calico), so holding them back only left the fences decorative.
 """
 from __future__ import annotations
 
@@ -195,10 +197,15 @@ def main() -> int:
         print("note   idp-ns-fence-gen: not fenced, declared in git but not on the cluster: "
               + ", ".join(pending))
 
-    for d, note in ((FENCES, "the quota and the request defaults, applied to the cluster"),
-                    (NETWORK, "the policies, held until a CNI enforces them")):
+    for d, note in ((FENCES, "the quota, the request defaults and the policies, applied to the cluster"),
+                    (NETWORK, "the policies; included by the kustomization one directory up")):
         rows = sorted(f for f in os.listdir(d) if f.endswith(".yaml")
                       and f not in ("allowances.yaml", "kustomization.yaml"))
+        # The policies are a sibling directory, not a sibling file, so the top-level kustomization
+        # has to name it. Without this line the whole of network/ is generated and never applied,
+        # which is how sixteen namespaces sat unfenced with their policies sitting in git.
+        if d == FENCES:
+            rows = rows + ["network"]
         with open(os.path.join(d, "kustomization.yaml"), "w") as fh:
             fh.write(BANNER + f"# {note}\n")
             yaml.safe_dump({"apiVersion": "kustomize.config.k8s.io/v1beta1",
